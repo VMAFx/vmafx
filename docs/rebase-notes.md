@@ -10280,10 +10280,10 @@ inline.*
     `_wait_for_workfiles` overrides; drop unused
     `from time import sleep`.
 - **Fork carve-outs** (load-bearing on rebase):
-  1. **`python/vmaf/__init__.py:__version__`** stays `"3.0.0"` —
-     do NOT port upstream's bump to `"4.0.0"`. The fork tracks
-     its own versioning (`v3.x.y-lusoris.N`) per
-     [ADR-0025](adr/0025-copyright-handling-dual-notice.md).
+  1. **`compat/python-vmaf/__init__.py:__version__`** follows the root
+     `x-release-please-version` marker — do NOT port upstream's bump to
+     `"4.0.0"` independently. The fork uses one release stream per
+     [ADR-1127](adr/1127-single-semver-release-stream.md).
   2. **`from time import sleep` is dropped from both files** —
      upstream leaves the import in place (unused after their
      patch); the fork removes it because ADR-0141 touched-file
@@ -20898,10 +20898,10 @@ inline.*
     `_wait_for_workfiles` overrides; drop unused
     `from time import sleep`.
 - **Fork carve-outs** (load-bearing on rebase):
-  1. **`python/vmaf/__init__.py:__version__`** stays `"3.0.0"` —
-     do NOT port upstream's bump to `"4.0.0"`. The fork tracks
-     its own versioning (`v3.x.y-lusoris.N`) per
-     [ADR-0025](adr/0025-copyright-handling-dual-notice.md).
+  1. **`compat/python-vmaf/__init__.py:__version__`** follows the root
+     `x-release-please-version` marker — do NOT port upstream's bump to
+     `"4.0.0"` independently. The fork uses one release stream per
+     [ADR-1127](adr/1127-single-semver-release-stream.md).
   2. **`from time import sleep` is dropped from both files** —
      upstream leaves the import in place (unused after their
      patch); the fork removes it because ADR-0141 touched-file
@@ -31344,10 +31344,10 @@ inline.*
     `_wait_for_workfiles` overrides; drop unused
     `from time import sleep`.
 - **Fork carve-outs** (load-bearing on rebase):
-  1. **`python/vmaf/__init__.py:__version__`** stays `"3.0.0"` —
-     do NOT port upstream's bump to `"4.0.0"`. The fork tracks
-     its own versioning (`v3.x.y-lusoris.N`) per
-     [ADR-0025](adr/0025-copyright-handling-dual-notice.md).
+  1. **`compat/python-vmaf/__init__.py:__version__`** follows the root
+     `x-release-please-version` marker — do NOT port upstream's bump to
+     `"4.0.0"` independently. The fork uses one release stream per
+     [ADR-1127](adr/1127-single-semver-release-stream.md).
   2. **`from time import sleep` is dropped from both files** —
      upstream leaves the import in place (unused after their
      patch); the fork removes it because ADR-0141 touched-file
@@ -47000,6 +47000,13 @@ No upstream rebase impact: preserve VMAFx's one independent `vX.Y.Z` root
 release stream, coordinated version-file list, and draft-publication fan-out
 when importing upstream release metadata. Do not restore the historical
 `-lusoris.N` suffix or component release-please packages.
+
+The release fan-out is fail-closed: every write/OIDC job follows the exact-tag
+version preflight; native and `vmaf-mcp` hashes use distinct SLSA jobs and asset
+names; Anchore's implicit uploads stay disabled so SBOMs pass through signing;
+and attachment refuses missing globs. Manual recovery may overwrite GitHub
+release assets, but an existing PyPI filename must have the exact reproducible
+SHA-256 before `skip-existing` is allowed.
 
 ## 2026-08-31 — ADR-1128 fragment-owned release cuts
 

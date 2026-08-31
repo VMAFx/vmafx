@@ -22,13 +22,14 @@ creates the tag that fans out into the supply-chain and container workflows.
 ## Decision
 
 VMAFx will use one independent ordinary SemVer stream, starting with `v3.2.1`.
-The root release-please package owns libvmaf, the three Python package versions,
-Helm `appVersion`, and the node image's pkg-config version. Helm chart packaging
-and Rust crate versions remain independently versioned. Upstream alignment is
-recorded in documentation and commits, not encoded in the release tag. The
-release remains a draft until an authenticated operator publishes it, which is
-the event that creates the tag and starts downstream publication workflows.
-This decision supersedes [ADR-0011](0011-versioning-lusoris-suffix.md).
+The root release-please package owns libvmaf, the compatibility `vmaf` Python
+distribution, the three fork-local Python package versions, Helm `appVersion`,
+and the node image's pkg-config version. Helm chart packaging and Rust crate
+versions remain independently versioned. Upstream alignment is recorded in
+documentation and commits, not encoded in the release tag. The release remains
+a draft until an authenticated operator publishes it, which is the event that
+creates the tag and starts downstream publication workflows. This decision
+supersedes [ADR-0011](0011-versioning-lusoris-suffix.md).
 
 ## Alternatives considered
 
@@ -44,9 +45,12 @@ This decision supersedes [ADR-0011](0011-versioning-lusoris-suffix.md).
   one unambiguous `vX.Y.Z` tag.
 - **Negative**: consumers cannot infer the Netflix baseline from the tag alone.
 - **Neutral / follow-ups**: publish the release-please draft to trigger signing
-  and image workflows; remove the one-time `bootstrap-sha` after `v3.2.1` is
-  published. Historical suffix examples remain historical evidence or legacy
-  parser fixtures.
+  and image workflows; the transferred `VMAFx/vmafx` identity is configured as
+  the Pending Trusted Publisher for the first `vmaf-mcp` upload. A one-time
+  `release-as` selects the first 3.2.1 patch even when the migration PR is
+  squash-merged; release-PR rollover removes it and `bootstrap-sha` before
+  merge. Historical suffix examples remain historical evidence or legacy parser
+  fixtures.
 
 ## References
 

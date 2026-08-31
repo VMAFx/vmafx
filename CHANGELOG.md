@@ -9274,7 +9274,7 @@ tag (`v*`) and builds amd64 + arm64 for the CPU, Vulkan, and server variants; am
 for GPU SDK variants. All images are signed via Sigstore keyless cosign and carry a
 CycloneDX SBOM attached as a cosign attestation.
 
-Tag matrix: `latest` / `vX.Y.Z-lusoris.N` (CPU CLI), `-server`, `-cuda12`, `-rocm6`,
+Tag matrix: `latest` / `vX.Y.Z` (CPU CLI), `-server`, `-cuda12`, `-rocm6`,
 `-oneapi2026`, `-vulkan`. See `docs/development/docker-production.md` and ADR-0698.
 
 
@@ -10904,7 +10904,18 @@ all GPU backends link without modification.
   and T-SYCL-MOTION-ADD-UV-SIGSEGV-2026-06-07.
 
 
-- Replace the fork-suffixed component release layout with one independent VMAFx SemVer stream, beginning with the `3.2.1` patch release.
+- Replace the fork-suffixed component release layout with one independent VMAFx
+  SemVer stream, beginning with the `3.2.1` patch release.
+- Update governance, security, C API, and MCP examples to the ordinary SemVer
+  contract; document the transferred repository's exact PyPI Trusted Publisher
+  identity and make release signing/hash loops safe for dash-prefixed assets.
+- Coordinate the compatibility `vmaf` Python package with the same version and
+  make publication fail closed on tag/version drift, missing assets, unsigned
+  or empty SBOMs, provenance source/collision errors, or immutable PyPI
+  filename/hash divergence before and after trusted publication.
+- Keep the 3.2.1 override strictly one-time, pause automation behind any
+  unpublished release draft, and retire both cutover fields during release-PR
+  changelog rollover.
 
 
 - Make changelog fragments the sole release-note source and add a validated, idempotent release rollover that consumes active sources into one versioned section with an audit receipt.
@@ -22319,6 +22330,11 @@ default path is bit-for-bit unchanged. (ADR-0453 / Research-0136)
 - **`feature_extractor_test.py` failed to load due to missing `PyPsnrFeatureExtractor` and `PyPsnrMaxdb100FeatureExtractor` class names.** The upstream Netflix/vmaf codebase treats `PyPsnrFeatureExtractor` (TYPE `"PyPsnr_feature"`) and `PyPsnrMaxdb100FeatureExtractor` (TYPE `"PyPsnr_maxdb100_feature"`) as the primary classes, with `PypsnrFeatureExtractor` and `PypsnrMaxdb100FeatureExtractor` as deprecated aliases. The fork had inadvertently dropped the primary classes and retained only the aliases, leaving the test file with broken imports and silently skipping all `test_run_pypsnr_*` and `test_run_pypsnr_fextractor_maxdb100_16bit` test cases. The fix restores the upstream class hierarchy: `PyPsnrFeatureExtractor` and `PyPsnrMaxdb100FeatureExtractor` carry the full implementation; `PypsnrFeatureExtractor` and `PypsnrMaxdb100FeatureExtractor` become `@deprecated` subclasses that delegate to the primary class. The import for `deprecated` was added to `vmaf.tools.decorator`. The `test_run_pypsnr_fextractor_deprecated` test now correctly emits a `DeprecationWarning`. A separate pre-existing bug was newly exposed: `PyFeatureExtractorMixin._get_feature_scores` uses `ast.literal_eval` to parse a log file written by `str(log_dicts)`, which produces unparseable `np.float64(...)` call expressions under numpy 2.x + Python 3.14. This is tracked in `docs/state.md` as a separate open item; it is not part of this PR.
 
 
+Parse the compatibility Python package version from the quoted assignment so the
+inline release-please marker remains metadata, rather than becoming the package
+version reported by ``setup.py``.
+
+
 - **Python-surfaces bug-audit bundle (14 defects across `ai/src/corpus/`,
   `ai/src/vmaf_train/data/`, and `mcp-server/vmaf-mcp/src/vmaf_mcp/`).**
   Closes a class of hang / locale-leak / NaN-propagation / pickle-execution /
@@ -22594,6 +22610,10 @@ Fix three RC-gate failures surfaced by the pre-release validation matrix:
 
 Remove duplicate `chore` entry in `ai` package `changelog-sections` array that caused a
 JSON parse error at line 64 column 9, breaking every release-please workflow run.
+
+Split draft-release creation from next-PR generation so release-please does not
+try to resolve a tag that intentionally remains absent until an operator publishes
+the draft.
 
 
 - docs: remove stale "Vulkan image import" entry from `docs/index.md` C API section.

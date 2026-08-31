@@ -566,7 +566,7 @@ confirming which fork build is running before scoring. Added in
 ```json
 {
   "binary_path": "/usr/local/bin/vmaf",
-  "version":     "3.0.0-lusoris.5",
+  "version":     "3.2.1",
   "build_flags": {
     "cpu":    true,
     "cuda":   true,

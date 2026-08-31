@@ -64,6 +64,23 @@ For a `vmaf-mcp` Python package release:
 - Publish and sign through the same release workflow used for the
   rest of the fork.
 
+The Pending Trusted Publisher for the first PyPI publication was configured on
+2026-08-31. Its binding uses these exact current repository identities:
+
+| PyPI field   | Value              |
+|--------------|--------------------|
+| Project name | `vmaf-mcp`         |
+| GitHub owner | `VMAFx`            |
+| Repository   | `vmafx`            |
+| Workflow     | `supply-chain.yml` |
+| Environment  | `pypi-publish`     |
+
+PyPI returns 404 for the project until that first trusted publication
+completes. Before publishing the GitHub draft, confirm the pending row still
+matches this table. Do not reuse the historical `lusoris/vmaf` identity from
+ADR-0166; the repository was transferred and renamed after that accepted
+decision.
+
 For the `vmafx-mcp` Go binary release:
 
 - Build from `cmd/vmafx-mcp/` with `go build -o vmafx-mcp ./cmd/vmafx-mcp`.

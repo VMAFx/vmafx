@@ -48,8 +48,10 @@ fixture() {
   printf '{".":"%s"}\n' "$manifest_version" >"$root/.release-please-manifest.json"
   printf '%s\n' \
     '{' \
+    '  "bootstrap-sha": "0000000000000000000000000000000000000000",' \
     '  "packages": {' \
     '    ".": {' \
+    '      "release-as": "3.2.1",' \
     '      "skip-changelog": true,' \
     '      "extra-files": [{"type":"generic","path":"version-marker.txt"}]' \
     '    }' \
@@ -103,6 +105,9 @@ else
 fi
 if [[ ! -e "$happy/changelog.d/_pre_fragment_legacy.md" ]] &&
   [[ "$(find "$happy/changelog.d/added" "$happy/changelog.d/fixed" -type f | wc -l)" -eq 0 ]] &&
+  jq -e '(has("bootstrap-sha") | not) and
+    (.packages["."] | has("release-as") | not)' \
+    "$happy/release-please-config.json" >/dev/null &&
   jq -e '.version == "3.2.1" and .source_count == 3' \
     "$happy/changelog.d/releases/3.2.1.json" >/dev/null &&
   VMAFX_REPO_ROOT="$happy" "$happy/scripts/release/concat-changelog-fragments.sh" --check; then
@@ -170,7 +175,24 @@ else
   check 'renderer drift is rejected without mutation' fail
 fi
 
-# T6: Duplicate target heading fails before mutation.
+# T6: A stale release-as override for another version fails before mutation.
+wrong_release_as="$scratch/wrong-release-as"
+fixture "$wrong_release_as"
+jq '.packages["."]."release-as" = "3.2.0"' \
+  "$wrong_release_as/release-please-config.json" >"$wrong_release_as/config.tmp"
+mv "$wrong_release_as/config.tmp" "$wrong_release_as/release-please-config.json"
+before="$(tree_hash "$wrong_release_as")"
+rc=0
+VMAFX_REPO_ROOT="$wrong_release_as" \
+  "$wrong_release_as/scripts/release/rollover-changelog-fragments.sh" \
+  --version 3.2.1 --date 2026-08-31 >/dev/null 2>&1 || rc=$?
+if [[ "$rc" -ne 0 && "$(tree_hash "$wrong_release_as")" == "$before" ]]; then
+  check 'mismatched release-as is rejected without mutation' pass
+else
+  check 'mismatched release-as is rejected without mutation' fail
+fi
+
+# T7: Duplicate target heading fails before mutation.
 duplicate="$scratch/duplicate"
 fixture "$duplicate"
 printf '\n## [3.2.1] - 2026-08-30\n' >>"$duplicate/CHANGELOG.md"
@@ -184,7 +206,7 @@ else
   check 'duplicate target release is rejected without mutation' fail
 fi
 
-# T7: An empty active release is refused.
+# T8: An empty active release is refused.
 empty="$scratch/empty"
 fixture "$empty"
 rm -f "$empty/changelog.d/_pre_fragment_legacy.md" \

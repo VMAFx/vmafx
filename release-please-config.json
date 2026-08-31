@@ -35,6 +35,7 @@
       ],
       "extra-files": [
         { "type": "generic", "path": "core/meson.build" },
+        { "type": "generic", "path": "compat/python-vmaf/__init__.py" },
         { "type": "generic", "path": "ai/pyproject.toml" },
         { "type": "generic", "path": "ai/src/vmaf_train/__init__.py" },
         { "type": "generic", "path": "dev-llm/pyproject.toml" },

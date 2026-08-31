@@ -1,8 +1,8 @@
-# release-please — on push to master, open or update a release PR that
-# (a) bumps the version per Conventional Commits, (b) regenerates CHANGELOG.md,
-# and (c) when merged, creates a draft `vMAJOR.MINOR.PATCH` release. Publishing
-# that draft creates the tag and fires the release/tag workflows for signing,
-# SBOM, SLSA, and container publication (ADR-1127).
+# release-please — on each push to master, first create a draft release when a
+# completed release PR is present; otherwise open or update that release PR.
+# Changelog fragments own CHANGELOG.md (ADR-1128). Publishing the draft creates
+# the `vMAJOR.MINOR.PATCH` tag and fires release workflows for signing, SBOM,
+# SLSA, and container publication (ADR-1127).
 
 name: release-please
 
@@ -32,15 +32,65 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5.0.0
+      - name: Detect an unpublished ordinary-SemVer draft
+        id: draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          releases="$RUNNER_TEMP/releases.json"
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$releases"
+          mapfile -t drafts < <(jq -r '
+            .[][]
+            | select(.draft == true)
+            | select(.tag_name | test("^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"))
+            | .tag_name
+          ' "$releases")
+          if [[ ${#drafts[@]} -gt 1 ]]; then
+            echo "ERROR: multiple ordinary-SemVer draft releases require operator cleanup" >&2
+            printf '  %s\n' "${drafts[@]}" >&2
+            exit 1
+          fi
+          if [[ ${#drafts[@]} -eq 1 ]]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "tag=${drafts[0]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # release-please 17.6.0 otherwise tries release creation and next-PR
+      # creation in one process. With draft releases (and therefore no tag yet),
+      # that second phase can fail on an invalid previous_tag. Split the phases:
+      # a successful release creation suppresses the PR-only invocation below.
+      - name: Create draft release after a completed release PR
+        if: steps.draft.outputs.exists != 'true'
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5.0.0
         id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           token: ${{ secrets.GITHUB_TOKEN }}
+          skip-github-pull-request: true
+
+      - name: Open or update the release PR
+        if: >-
+          steps.draft.outputs.exists != 'true' &&
+          steps.release.outputs.release_created != 'true'
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+          skip-github-release: true
 
       - name: Dump outputs
         if: steps.release.outputs.release_created == 'true'
         run: |
           echo "Tag: ${{ steps.release.outputs.tag_name }}"
           echo "Version: ${{ steps.release.outputs.version }}"
+
+      - name: Preserve the authenticated publication gate
+        if: steps.draft.outputs.exists == 'true'
+        run: |
+          echo "Draft ${{ steps.draft.outputs.tag }} is awaiting authenticated publication."
+          echo "Release creation and next-PR generation remain paused."

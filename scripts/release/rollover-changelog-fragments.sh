@@ -27,7 +27,8 @@ usage() {
 Usage: rollover-changelog-fragments.sh --version X.Y.Z --date YYYY-MM-DD
 
 Versions the exact rendered Unreleased body, removes the active fragment
-sources, and writes changelog.d/releases/X.Y.Z.json as a verification receipt.
+sources, retires one-time release-please cutover fields, and writes
+changelog.d/releases/X.Y.Z.json as a verification receipt.
 EOF
 }
 
@@ -119,6 +120,12 @@ for relative_path in "${marker_files[@]}"; do
   fi
 done
 
+release_as="$(jq -r '.packages["."]."release-as" // empty' "$CONFIG")"
+if [[ -n "$release_as" && "$release_as" != "$version" ]]; then
+  printf 'ERROR: one-time release-as is %s, expected %s\n' "$release_as" "$version" >&2
+  exit 1
+fi
+
 if [[ "$(grep -Ec '^## \[Unreleased\]' "$CHANGELOG")" -ne 1 ]]; then
   printf 'ERROR: CHANGELOG.md must contain exactly one Unreleased heading\n' >&2
   exit 1
@@ -134,11 +141,13 @@ if grep -Eq "^## \\[${escaped_version}\\] - " "$CHANGELOG"; then
     fi
   done
   [[ -f "$FRAG_ROOT/_pre_fragment_legacy.md" ]] && active_after=$((active_after + 1))
-  if [[ "$active_after" -eq 0 && -f "$receipt" ]]; then
+  one_time_fields="$(jq '[has("bootstrap-sha"), (.packages["."] | has("release-as"))] |
+    map(select(.)) | length' "$CONFIG")"
+  if [[ "$active_after" -eq 0 && -f "$receipt" && "$one_time_fields" -eq 0 ]]; then
     printf 'Changelog release %s is already rolled over.\n' "$version"
     exit 0
   fi
-  printf 'ERROR: release heading exists but active sources remain or receipt is missing\n' >&2
+  printf 'ERROR: release heading exists but sources, receipt, or cutover config are inconsistent\n' >&2
   exit 1
 fi
 
@@ -162,7 +171,8 @@ fi
 
 tmp_body="$(mktemp)"
 tmp_changelog="$(mktemp)"
-trap 'rm -f "$tmp_body" "$tmp_changelog"' EXIT
+tmp_config="$(mktemp)"
+trap 'rm -f "$tmp_body" "$tmp_changelog" "$tmp_config"' EXIT
 "$CONCAT" >"$tmp_body"
 if [[ ! -s "$tmp_body" ]]; then
   printf 'ERROR: rendered Unreleased body is empty\n' >&2
@@ -185,6 +195,15 @@ if [[ "$(grep -Ec "^## \\[${escaped_version}\\] - ${release_date}$" "$tmp_change
   exit 1
 fi
 
+jq 'del(."bootstrap-sha", .packages["."]."release-as")' "$CONFIG" >"$tmp_config"
+if ! jq -e '
+  (has("bootstrap-sha") | not) and
+  (.packages["."] | has("release-as") | not)
+' "$tmp_config" >/dev/null; then
+  printf 'ERROR: failed to retire one-time release-please fields\n' >&2
+  exit 1
+fi
+
 mkdir -p "$FRAG_ROOT/releases"
 source_commit="unknown"
 if [[ -d "$REPO_ROOT/.git" || -f "$REPO_ROOT/.git" ]]; then
@@ -197,6 +216,7 @@ if [[ -e "$receipt" ]]; then
 fi
 
 mv "$tmp_changelog" "$CHANGELOG"
+mv "$tmp_config" "$CONFIG"
 printf '{\n  "version": "%s",\n  "date": "%s",\n  "source_commit": "%s",\n  "source_count": %d,\n  "rendered_sha256": "%s"\n}\n' \
   "$version" "$release_date" "$source_commit" "${#sources[@]}" "$body_sha256" >"$receipt"
 rm -f -- "${sources[@]}"

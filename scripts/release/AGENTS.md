@@ -44,7 +44,9 @@ The fragment renderer is the sole owner of `CHANGELOG.md`; release-please has
 `skip-changelog: true`. Before merging a generated release PR, run
 `rollover-changelog-fragments.sh` with the release PR's exact version and UTC
 date. It versions the rendered body, empties Unreleased, consumes the active
-fragment sources, and writes a receipt under `changelog.d/releases/`.
+fragment sources, removes the one-time `bootstrap-sha` / `release-as` cutover
+fields, and writes a receipt under `changelog.d/releases/`. Stage
+`release-please-config.json` with the CHANGELOG, receipt, and fragment removals.
 
 The `## [Unreleased]` header must be preserved verbatim and the rendered body
 must not inject extra blank lines before the first `### Section` heading. The
@@ -56,15 +58,30 @@ simplify it to `sed -i` without running both release-script test harnesses.
 This is a release-PR-only operation. Preconditions are deliberately strict:
 the working tree is clean, the manifest and every generic version marker equal
 the requested version, fragment rendering is current, the target heading is
-absent, and at least one active source exists. After the cut, active fragments
-and `_pre_fragment_legacy.md` are removed; their exact rendered content remains
-in the versioned CHANGELOG section and their source history remains in Git.
+absent, at least one active source exists, and any remaining `release-as`
+matches the requested version. After the cut, active fragments and
+`_pre_fragment_legacy.md` are removed and the one-time release-please fields are
+retired; their exact rendered content remains in the versioned CHANGELOG section
+and their source history remains in Git.
 
 The generated receipt records the source count and rendered SHA-256. A second
 identical invocation is a no-op only when the target heading and receipt exist
-and no active sources remain. Any late merge after rollover adds an active
-fragment again, invalidating the release PR until the operator rebuilds the
-cut.
+and no active sources or cutover fields remain. Any late merge after rollover
+adds an active fragment again, invalidating the release PR until the operator
+rebuilds the cut.
 
 Test coverage:
 `scripts/release/tests/test-rollover-changelog-fragments.sh`.
+
+## verify-release-version.sh
+
+Every publication workflow checks out the selected ordinary `vX.Y.Z` tag and
+runs this preflight before any job receives write or OIDC permissions. The
+script validates the root manifest, discovers every coordinated marker from
+release-please's `extra-files`, requires exactly one matching marker per file,
+and confirms that the checked-out commit is the selected tag. Add new release
+surfaces to `extra-files`; do not duplicate an independent version list in the
+workflow.
+
+Test coverage:
+`scripts/release/tests/test-verify-release-version.sh`.

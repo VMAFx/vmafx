@@ -18,7 +18,28 @@ Publishing that draft is the authenticated operation that creates the `vX.Y.Z`
 tag and starts `supply-chain.yml` plus both Docker publication workflows. Do not
 split release-please back into unqualified component tags or make the release
 non-draft without first providing and validating an explicit downstream
-workflow trigger.
+workflow trigger. The workflow pauses both release-please phases while one
+ordinary-SemVer draft exists; later master pushes must not move or duplicate a
+release waiting at the human publication gate. The initial 3.2.1 cut is selected
+by a one-time `release-as` config field; release-PR rollover must remove that
+field and `bootstrap-sha` before the release PR merges so neither override can
+affect 3.2.2.
+
+`supply-chain.yml` runs `scripts/release/verify-release-version.sh` before any
+write or OIDC job. It keeps native and `vmaf-mcp` hashes in distinct SLSA jobs
+with distinct provenance asset names. Its native SBOMs contain and hash every
+staged artifact; its Python SBOMs inventory the installed `vmaf-mcp` dependency
+graph plus the wheel and sdist. The workflow fails if either inventory becomes
+empty or mislabeled. Anchore's implicit artifact/release uploads stay disabled:
+the explicit SBOM artifact feeds keyless signing before the final strict
+attachment job. Do not bypass that DAG or restore permissive unmatched-file
+uploads; a green workflow must mean every promised asset exists.
+
+Manual supply-chain recovery must use the published tag as both the workflow ref
+and input (`gh workflow run supply-chain.yml --ref "$tag" -f tag="$tag"`). The
+validation job rejects branch-ref dispatches, missing/draft/prerelease releases,
+or an event SHA different from the checked-out tag. This binding is required so
+SLSA provenance describes the source that produced the artifacts.
 
 ### Rule-enforcement split (ADR-0124)
 

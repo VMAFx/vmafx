@@ -67,7 +67,7 @@ SYCL.
   depend on it.
 
 Semantic versioning follows the independent VMAFx `vX.Y.Z` stream — see
-[ADR-0011](../adr/0011-versioning-lusoris-suffix.md). Every change to the
+[ADR-1127](../adr/1127-single-semver-release-stream.md). Every change to the
 stable API that would break source or binary compatibility gets a major
 version bump.
 
