@@ -162,6 +162,13 @@ jobs:
         run: |
           brew install -q ninja nasm ccache llvm pkg-config
 
+      # Xcode 26 no longer bundles the Metal compiler with the base runner
+      # image. Metal.framework can be present while `xcrun metal` still fails,
+      # so install the separately shipped component before Meson probes it.
+      - name: Install Metal compiler toolchain
+        if: matrix.metal
+        run: xcodebuild -downloadComponent MetalToolchain
+
       # ── ONNX Runtime (Linux DNN) ─────────────────────────────────────
       - name: Install ONNX Runtime (Linux)
         if: matrix.dnn && startsWith(matrix.os, 'ubuntu')

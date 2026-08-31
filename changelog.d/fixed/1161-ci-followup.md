@@ -33,3 +33,5 @@
   invoking C analyzers, including on Ninja builds whose vendor-suffixed version
   string prevents Meson from generating that file during setup; missing C lint
   tools now fail the gate instead of claiming to skip successfully.
+- Installed Xcode's separately shipped Metal compiler component in the combined
+  macOS CPU + Metal build before Meson invokes `xcrun metal`.
