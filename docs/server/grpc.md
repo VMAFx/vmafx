@@ -13,16 +13,21 @@ HTTP endpoints (`/healthz`, `/readyz`, `/metrics`, `/v1/score`).
 VMAFX_VMAF_BINARY=core/build-cpu/tools/vmaf \
 VMAFX_MODEL_DIR=model/ \
 VMAFX_HTTP_ADDR=:8080 \
-VMAFX_GRPC_LISTEN=:50051 \
+VMAFX_GRPC_LISTEN=:9090 \
 go run ./cmd/vmafx-server
 
-# Docker
-docker build -f Dockerfile.go-server -t vmafx-server:dev .
+# Published release image (multi-architecture amd64/arm64)
 docker run --rm \
-    -e VMAFX_VMAF_BINARY=/usr/local/bin/vmaf \
-    -e VMAFX_MODEL_DIR=/usr/local/share/vmafx/model \
-    -p 8080:8080 -p 50051:50051 \
-    vmafx-server:dev
+    -p 8080:8080 -p 9090:9090 \
+    ghcr.io/vmafx/vmafx-server:v3.2.1
+
+# Verify the release version without starting listeners
+docker run --rm ghcr.io/vmafx/vmafx-server:v3.2.1 --version
+
+# Local image build; inject the version explicitly when testing release behavior
+docker build -f Dockerfile.go-server \
+    --build-arg VMAFX_VERSION=dev \
+    -t vmafx-server:dev .
 ```
 
 ## Proto definition
@@ -61,7 +66,7 @@ buf generate proto   # requires buf ≥ v1.30 and the buf CLI on PATH
 ```bash
 grpcurl -plaintext \
     -d '{"reference":"/data/ref.yuv","distorted":"/data/dis.yuv","model":"vmaf_v0.6.1"}' \
-    localhost:50051 vmafx.v1.VmafxScoring/Score
+    localhost:9090 vmafx.v1.VmafxScoring/Score
 ```
 
 Expected response (Netflix golden pair):
@@ -103,12 +108,15 @@ framework (ADR-1119). Configuration is read by golusoris' koanf layer from
 12-factor environment variables under the `VMAFX_` prefix; `_` in the env name
 maps to the `.` config-key separator (so `VMAFX_HTTP_ADDR` sets `http.addr`).
 The framework owns the listen sockets, so the HTTP and gRPC settings take **full
-listen addresses** (`:8080`), not bare port numbers. There are no CLI flags.
+listen addresses** (`:8080`), not bare port numbers. Runtime configuration is
+environment-only. The sole process switch is `--version`, which prints the
+build-time version and exits without constructing the fx application or binding
+listeners.
 
 | Env var | Config key | Default | Description |
 |---|---|---|---|
 | `VMAFX_HTTP_ADDR` | `http.addr` | `:8080` | HTTP listen address |
-| `VMAFX_GRPC_LISTEN` | `grpc.listen` | `:50051` | gRPC listen address |
+| `VMAFX_GRPC_LISTEN` | `grpc.listen` | `:9090` | gRPC listen address |
 | `VMAFX_LOG_LEVEL` | `log.level` | `INFO` | slog level (DEBUG/INFO/WARN/ERROR) |
 | `VMAFX_VMAF_BINARY` | `vmaf.binary` | _(PATH lookup)_ | Path to the `vmaf` CLI binary |
 | `VMAFX_MODEL_DIR` | `model.dir` | _(none)_ | Directory containing VMAF `.json` model files |
@@ -124,10 +132,9 @@ listen addresses** (`:8080`), not bare port numbers. There are no CLI flags.
 > **Breaking change (ADR-1119).** The pre-fx server used `VMAFX_PORT` /
 > `VMAFX_GRPC_PORT` (bare port numbers) plus `--port` / `--grpc-port` CLI flags.
 > These are gone. Use `VMAFX_HTTP_ADDR` / `VMAFX_GRPC_LISTEN` with full listen
-> addresses (`:8080`). The historical gRPC default `:50051` is **preserved**:
-> golusoris' `grpc.Module` defaults `grpc.listen` to `:9090`, but `vmafx-server`
-> restores `:50051` when `VMAFX_GRPC_LISTEN` is unset so existing clients keep
-> working without reconfiguration.
+> addresses (`:8080`). The gRPC default moved from the historical `:50051` to
+> golusoris' native `:9090`; set `VMAFX_GRPC_LISTEN=:50051` explicitly while
+> migrating existing clients.
 
 ## Prometheus metrics
 
