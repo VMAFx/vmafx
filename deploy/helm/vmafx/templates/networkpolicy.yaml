@@ -92,10 +92,12 @@ metadata:
   namespace: {{ $ns }}
   labels:
     {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
 spec:
   podSelector:
     matchLabels:
       {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: server
   policyTypes:
     - Ingress
   ingress:

@@ -10,6 +10,7 @@ metadata:
   {{- end }}
   labels:
     {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
     {{- with .Values.monitoring.serviceMonitor.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
@@ -17,6 +18,7 @@ spec:
   selector:
     matchLabels:
       {{- include "vmafx.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
   endpoints:
     - port: http
       path: {{ .Values.monitoring.serviceMonitor.path }}
