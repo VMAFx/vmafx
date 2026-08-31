@@ -78,7 +78,11 @@ the signature before pulling and exercising the published runtime.
   with their intended entrypoints and runtime dependencies.
 - **Positive**: the Helm operator Deployment now configures the release binary
   through supported environment variables and probes the ports on which the
-  process actually listens.
+  process actually listens. Both Helm validation workflows install their
+  pinned binary only after checking Helm's published archive SHA-256; no
+  network response is executed as shell input. Kubernetes E2E diagnostics can
+  still upload after a kuttl failure, but the final assertion now consumes the
+  raw step outcome so the workflow cannot convert that failure into success.
 - **Positive**: MCP tool registration now follows the installed 2.1 API,
   returns typed `CallToolResult(isError=True)` failures, translates wire-format
   progress tokens, and restores the documented authenticated HTTP surface.
@@ -113,7 +117,8 @@ the signature before pulling and exercising the published runtime.
 - **Build-time fetches**: CUDA installs `nv-codec-headers` at exact commit
   `876af32a202d0de83bd1d36fe74ee0f7fcf86b0d`; the commit is checked after the
   bounded fetch before installation. This replaces distro headers that lack
-  loader symbols required by the source.
+  loader symbols required by the source. Helm validation downloads its pinned
+  archive to disk and verifies the official fixed digest before extraction.
 - **Attestation**: all five production-image jobs and all three Go-service jobs
   use SHA-pinned `actions/attest-build-provenance` v4.2.2, cosign 3.1.3 keyless
   signing, and digest-addressed subjects. Smoke jobs verify the expected

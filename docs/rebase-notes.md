@@ -47142,3 +47142,8 @@ coupled invariants:
     default without clobbering an explicit `:9090` file or environment value.
     Its runtime image exports `VMAFX_MODEL_DIR`, not the unused
     `VMAF_MODEL_PATH`; keep that name coupled to the Go config contract.
+11. Helm validation keeps `HELM_VERSION` and the official archive
+    `HELM_SHA256` identical in `helm-chart.yml` and `e2e-k8s.yml`. Download to a
+    file, verify, then extract; never restore a moving remote installer piped
+    into a shell. Keep kuttl's raw `steps.kuttl.outcome` final assertion when
+    retaining `continue-on-error` for diagnostic uploads.

@@ -219,6 +219,20 @@ updated together from the official GitHub release asset metadata. Do not pipe a
 retrying `curl` transfer directly into `tar`: retries require a file-backed
 output, and privileged extraction must not see unverified bytes.
 
+### Helm workflow version and digest stay coupled
+
+[`workflows/helm-chart.yml`](workflows/helm-chart.yml) and
+[`workflows/e2e-k8s.yml`](workflows/e2e-k8s.yml) install the same pinned Helm
+archive from `get.helm.sh`. Keep `HELM_VERSION`, `HELM_SHA256`, and the verified
+file-backed extraction sequence identical in both workflows. Never restore the
+moving `helm/helm@main` installer or pipe network bytes into a shell; update the
+digest from Helm's official checksum whenever the version changes.
+
+The E2E workflow deliberately gives the kuttl step `continue-on-error` so
+diagnostics and XML can still upload. Its final assertion must inspect
+`steps.kuttl.outcome` (not `conclusion`) and fail unless it is `success`;
+otherwise command failures are converted into a green workflow.
+
 ## Sanitizer matrix test-set scope (ADR-0347)
 
 The `sanitizers` job in

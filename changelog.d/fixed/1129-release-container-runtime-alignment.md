@@ -22,3 +22,8 @@
   branch source. Both image workflows require the same existing published
   ordinary tag in their input, workflow ref, source SHA, checkout, and
   coordinated version files before any package write or OIDC operation.
+- Helm chart and Kubernetes E2E validation now verify the pinned Helm archive's
+  official SHA-256 before extraction instead of executing a moving remote
+  installer script. The E2E workflow also propagates the real kuttl step
+  outcome after uploading diagnostics instead of relying on an unwritten exit
+  code file.

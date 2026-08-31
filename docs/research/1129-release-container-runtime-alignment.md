@@ -41,6 +41,23 @@ OIDC or writes to GHCR.
   starting Kubernetes, gRPC, or Fx lifecycles. The previous ldflag targeted a
   nonexistent `main.buildVersion` symbol.
 
+### Helm validation executed an unverified moving installer
+
+- Both Helm workflows pinned the intended binary version but downloaded the
+  installer script from `helm/helm`'s moving `main` branch and piped the
+  response directly into Bash. The source that selected and installed the
+  binary was therefore neither immutable nor authenticated by the version pin.
+- The replacement downloads `helm-v4.2.4-linux-amd64.tar.gz` as a file from
+  Helm's official distribution endpoint, checks the published SHA-256
+  `c306b46f719b0a4da32d0f78ee21bf90ce8d602f15b22ab753f0674d1670a7f3`, and
+  extracts only after verification. The chart and Kubernetes E2E workflows
+  keep the version, digest, and install sequence identical.
+- The same audit found the E2E workflow assigning an unused `rc` from a file
+  that no step created. Because the kuttl step uses `continue-on-error` to
+  preserve diagnostics, a command failure without an XML failure marker could
+  be reported green. The final assertion now reads the step's raw `outcome`
+  and fails on every value other than `success` after evidence uploads finish.
+
 ### Build and runtime families crossed unsupported ABI boundaries
 
 - The CPU, Go server, and node paths crossed or depended on an external runtime
