@@ -10,6 +10,9 @@ Unreleased block without duplicating or losing release notes?
 
 - The pre-cut tree contains 411 added, 380 changed, 10 removed, 674 fixed, and
   22 security fragments plus the legacy source: 1,498 active inputs in total.
+- A separate directory audit found 24 `chore` and three `refactor` fragments.
+  The renderer emits a warning for those noncanonical directories but does not
+  include their contents, so the apparent 1,498-input total was incomplete.
 - `scripts/release/concat-changelog-fragments.sh` treats those inputs as
   canonical and rewrites only the Unreleased block. Keeping them after a
   release necessarily renders their entries again.
@@ -26,12 +29,13 @@ Unreleased block without duplicating or losing release notes?
 
 ## Result
 
-Keep fragment rendering as the sole changelog authority. Finalize a generated
-release PR with a fail-closed script that checks the manifest and every generic
-marker, verifies zero renderer drift, creates exactly one release heading,
-consumes all active inputs, and writes a hash receipt. Test successful,
-idempotent, stale, duplicate, invalid-input, drift, and empty-release paths in
-CI.
+Keep fragment rendering as the sole changelog authority. Move the 27 historical
+noncanonical fragments verbatim into `changed` before the first cut, preserving
+their original section in each filename. Finalize a generated release PR with a
+fail-closed script that checks the manifest and every generic marker, verifies
+zero renderer drift, creates exactly one release heading, consumes all active
+inputs, and writes a hash receipt. Test successful, idempotent, stale,
+duplicate, invalid-input, drift, and empty-release paths in CI.
 
 ## Reproducer
 
@@ -40,6 +44,7 @@ bash scripts/release/tests/test-concat-changelog-fragments.sh
 bash scripts/release/tests/test-rollover-changelog-fragments.sh
 scripts/release/concat-changelog-fragments.sh --check
 jq -e '.packages["."]."skip-changelog" == true' release-please-config.json
+test "$(find changelog.d/chore changelog.d/refactor -type f -name '*.md' 2>/dev/null | wc -l)" -eq 0
 ```
 
 ## Sources
