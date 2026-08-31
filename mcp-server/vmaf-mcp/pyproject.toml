@@ -1,6 +1,6 @@
 [project]
 name = "vmaf-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server exposing VMAF scoring, model listing, and benchmark runs via JSON-RPC."
 readme = "README.md"
 requires-python = ">=3.10"
