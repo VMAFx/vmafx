@@ -83,6 +83,22 @@
       "automerge": true
     },
     {
+      "description": "Keep the tool-only root Python floor at minor-series granularity so Dependabot's updater image can satisfy it; workflow runtime pins still receive patch updates.",
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchFileNames": [
+        "pyproject.toml"
+      ],
+      "matchPackageNames": [
+        "python"
+      ],
+      "matchDepTypes": [
+        "requires-python"
+      ],
+      "enabled": false
+    },
+    {
       "description": "Python minor grouped, manual review.",
       "matchManagers": [
         "pep621",
