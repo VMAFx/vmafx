@@ -78,7 +78,7 @@ jobs:
           echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
 
   build-artifacts:
-    name: Build release artifacts (libvmaf.so, vmaf CLI, models)
+    name: Build Linux release artifacts (libvmaf.so chain, vmaf CLI, models)
     needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -106,7 +106,20 @@ jobs:
       - name: Stage artifacts
         run: |
           mkdir -p artifacts
-          cp -L build/src/libvmaf.so artifacts/libvmaf.so
+          # actions/upload-artifact does not preserve symlinks. Materialize
+          # every Meson link-chain name so the downloaded CLI's DT_NEEDED
+          # entry (libvmaf.so.MAJOR) exists as a regular release asset.
+          mapfile -d '' libvmaf_chain < <(
+            find build/src -maxdepth 1 \( -type f -o -type l \) \
+              -name 'libvmaf.so*' -print0 | LC_ALL=C sort -z
+          )
+          if [[ ${#libvmaf_chain[@]} -lt 3 ]]; then
+            echo "ERROR: incomplete Meson libvmaf SONAME chain" >&2
+            exit 1
+          fi
+          for library in "${libvmaf_chain[@]}"; do
+            cp -L -- "$library" "artifacts/$(basename -- "$library")"
+          done
           cp build/tools/vmaf artifacts/
           archive_epoch="$(git show -s --format=%ct HEAD)"
           tar --sort=name --mtime="@$archive_epoch" --owner=0 --group=0 \
@@ -139,6 +152,12 @@ jobs:
           else
             echo "u2netp_mirror: binary not present, skipping (scaffold-only state per ADR-0325)"
           fi
+      - name: Verify staged Linux runtime in a clean environment
+        env:
+          VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          scripts/release/verify-native-release-artifacts.sh \
+            artifacts "$VMAFX_VERSION"
       - name: Compute SHA256 hashes (SLSA input)
         id: hash
         run: |
@@ -151,9 +170,34 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  verify-native-artifacts:
+    name: Verify downloaded Linux release runtime
+    needs: [validate-release, build-artifacts]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ needs.validate-release.outputs.tag }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { name: release-artifacts, path: artifacts/ }
+      - name: Prove the downloaded CLI resolves its staged SONAME library
+        env:
+          VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          # Raw GitHub artifact/release downloads do not encode POSIX mode
+          # bits. Restore the documented consumer-side executable bit before
+          # exercising the exact downloaded bytes.
+          chmod +x artifacts/vmaf
+          scripts/release/verify-native-release-artifacts.sh \
+            artifacts "$VMAFX_VERSION"
+
   sbom:
     name: Generate libvmaf + vmaf-mcp SBOMs (SPDX + CycloneDX)
-    needs: [validate-release, build-artifacts, mcp-build]
+    needs: [validate-release, build-artifacts, verify-native-artifacts, mcp-build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -356,7 +400,7 @@ jobs:
 
   slsa-provenance:
     name: SLSA L3 provenance — libvmaf artifacts
-    needs: [validate-release, build-artifacts]
+    needs: [validate-release, build-artifacts, verify-native-artifacts]
     permissions:
       id-token: write
       contents: write
@@ -635,6 +679,7 @@ jobs:
     needs:
       - validate-release
       - build-artifacts
+      - verify-native-artifacts
       - sbom
       - sign
       - slsa-provenance

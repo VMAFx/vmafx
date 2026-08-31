@@ -85,3 +85,21 @@ workflow.
 
 Test coverage:
 `scripts/release/tests/test-verify-release-version.sh`.
+
+## verify-native-release-artifacts.sh
+
+The native GitHub Release payload is currently Linux ELF. Meson's
+`libvmaf.so` -> SONAME -> real-name symlink chain must be staged under every
+name as identical regular-file bytes because GitHub artifact downloads do not
+preserve symlinks. The verifier parses both the library SONAME and the CLI's
+`DT_NEEDED`, rejects a missing or divergent chain member, and requires `ldd` to
+resolve the dependency from the staged directory before running the exact CLI
+version under `env -i`.
+
+Run the verifier both before hashing/signing and after the artifact
+upload/download round trip. The round-trip job restores `vmaf`'s executable
+bit first because raw artifact and release downloads do not carry POSIX mode
+metadata. Do not replace the runtime check with a filename-only assertion.
+
+Test coverage:
+`scripts/release/tests/test-verify-native-release-artifacts.sh`.

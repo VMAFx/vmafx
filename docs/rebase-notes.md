@@ -47008,6 +47008,12 @@ and attachment refuses missing globs. Manual recovery may overwrite GitHub
 release assets, but an existing PyPI filename must have the exact reproducible
 SHA-256 before `skip-existing` is allowed.
 
+The Linux native release stage must preserve every Meson shared-library chain
+name (`libvmaf.so`, its SONAME, and its real name) as identical regular-file
+assets. The pre-signing artifact round trip must keep proving that the exact
+downloaded CLI resolves the staged SONAME under `env -i` and reports the
+release version; filename-only checks do not protect runtime linkage.
+
 ## 2026-08-31 — ADR-1128 fragment-owned release cuts
 
 No upstream code impact: preserve `skip-changelog: true` and the pre-merge

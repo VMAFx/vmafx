@@ -35,6 +35,13 @@ the explicit SBOM artifact feeds keyless signing before the final strict
 attachment job. Do not bypass that DAG or restore permissive unmatched-file
 uploads; a green workflow must mean every promised asset exists.
 
+The native payload is Linux ELF and materializes the complete Meson
+`libvmaf.so` / SONAME / real-name chain as regular files. Before any native
+write or OIDC job, the artifact round-trip verifier must prove that the
+downloaded `vmaf` resolves its declared SONAME from that directory and reports
+the release version under `env -i`. Hashing, SBOM generation, signing, SLSA
+provenance, and strict attachment cover every materialized chain name.
+
 Manual supply-chain recovery must use the published tag as both the workflow ref
 and input (`gh workflow run supply-chain.yml --ref "$tag" -f tag="$tag"`). The
 validation job rejects branch-ref dispatches, missing/draft/prerelease releases,

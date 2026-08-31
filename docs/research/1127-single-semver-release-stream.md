@@ -34,13 +34,18 @@ release-please packages to one ordinary patch-release stream?
   fork-local Python packages had reached `3.2.1`. Making that file a
   release-please marker removes the last public-package version split while
   retaining the independent SONAME/API version in `core/meson.build`.
-- A clean 1,264-target Meson build places the shared-library link at
-  `build/src/libvmaf.so`; the release workflow's former `build/libvmaf/` copy
-  path did not exist and would have stopped publication before signing. The
-  staging copy dereferences the link so artifact upload receives a regular file.
-  The model archive now sorts entries, normalizes ownership and mtimes to the
-  tag commit, and suppresses the gzip timestamp so recovery does not change that
-  asset solely because it ran later.
+- A clean 1,264-target Meson build places the shared-library chain under
+  `build/src/`; the release workflow's former `build/libvmaf/` copy path did
+  not exist and would have stopped publication before signing. Staging only a
+  dereferenced `libvmaf.so` was also insufficient: the built CLI declares
+  `DT_NEEDED libvmaf.so.3`, and GitHub artifact downloads do not preserve
+  symlinks. The repaired stage materializes the unversioned, SONAME, and real
+  names as identical regular files. A verifier parses the ELF SONAME and
+  `DT_NEEDED`, proves `ldd` resolves the downloaded SONAME file under `env -i`,
+  and runs the downloaded CLI for the exact release version before native
+  signing or provenance. The model archive now sorts entries, normalizes
+  ownership and mtimes to the tag commit, and suppresses the gzip timestamp so
+  recovery does not change that asset solely because it ran later.
 - The `vmaf-mcp` project is not yet present on PyPI (the JSON project endpoint
   returned HTTP 404 on 2026-08-31). Its first publication therefore depends on
   a Pending Trusted Publisher for `VMAFx/vmafx`, `supply-chain.yml`, and the
@@ -91,6 +96,11 @@ jq -e '. == {".": "3.2.0"}' .release-please-manifest.json
 git tag --list 'v3.2.*'
 meson setup build core -Denable_metal=disabled && meson compile -C build
 test -e build/src/libvmaf.so
+mkdir -p artifacts
+find build/src -maxdepth 1 \( -type f -o -type l \) \
+  -name 'libvmaf.so*' -exec cp -L -t artifacts -- {} +
+cp build/tools/vmaf artifacts/
+scripts/release/verify-native-release-artifacts.sh artifacts 3.2.1
 ```
 
 ## Sources

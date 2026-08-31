@@ -50,6 +50,34 @@ policy.
    workflow-specific smoke checks, and publish them. The release PR's required
    CI is the gate for the broader Netflix and backend test suites.
 
+### Native Linux release layout
+
+The native files attached by `supply-chain.yml` are currently Linux ELF
+artefacts. Meson builds a three-name dynamic-library chain: `libvmaf.so`, its
+ABI SONAME such as `libvmaf.so.3`, and its ABI real name such as
+`libvmaf.so.3.0.0`. GitHub artifact and release downloads do not preserve
+symlinks, so the workflow publishes all three names as identical regular-file
+assets. Each name is hashed, inventoried in both native SBOMs, signed, and
+covered by the native SLSA provenance.
+
+Download the CLI with the entire library chain, restore the raw CLI asset's
+executable bit, and keep the files together when running it:
+
+```bash
+mkdir vmafx-linux && cd vmafx-linux
+gh release download v3.2.1 --repo VMAFx/vmafx \
+  --pattern vmaf --pattern 'libvmaf.so*'
+chmod +x vmaf
+LD_LIBRARY_PATH="$PWD" ./vmaf --version
+```
+
+The clean-environment release gate exercises that same layout after an
+artifact upload/download round trip and requires the CLI's `DT_NEEDED` entry
+to resolve to the staged SONAME file. Windows `vmaf.exe` remains a CI build
+artifact, not a GitHub Release asset, and this workflow currently publishes no
+macOS native CLI or dylib. Use the production containers or build from source
+for those platforms until platform-specific release bundles are introduced.
+
 ## ADR index regeneration policy
 
 `docs/adr/README.md` is the rendered index of every ADR in the fork. Its
@@ -113,7 +141,7 @@ repo or in CI secrets.
 
 ### What is signed
 
-- **Release blobs** (`libvmaf.so`, `vmaf`, `models.tar.gz`, optional
+- **Release blobs** (`libvmaf.so*`, `vmaf`, `models.tar.gz`, optional
   `u2netp_mirror.{onnx,pth}`): cosign sign-blob bundles attached to the
   GitHub Release. SLSA L3 provenance via
   `slsa-framework/slsa-github-generator`. SPDX + CycloneDX SBOM attached.
@@ -134,7 +162,7 @@ and MCP wheel come from `supply-chain.yml`; the container images come from
 `docker-publish-production.yml`.
 
 ```bash
-# Release blob. The cosign bundle ships next to the artefact as FILE.bundle.
+# Release blob. Every vmaf/libvmaf.so* asset has a matching FILE.bundle.
 cosign verify-blob --bundle vmaf.bundle vmaf \
   --certificate-identity-regexp 'https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com

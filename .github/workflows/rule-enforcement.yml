@@ -516,4 +516,5 @@ jobs:
         run: |
           bash scripts/release/tests/test-concat-changelog-fragments.sh
           bash scripts/release/tests/test-rollover-changelog-fragments.sh
+          bash scripts/release/tests/test-verify-native-release-artifacts.sh
           scripts/release/concat-changelog-fragments.sh --check

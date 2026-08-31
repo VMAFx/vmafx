@@ -22851,7 +22851,7 @@ Fix three RC-gate failures surfaced by the pre-release validation matrix:
   green for the first time (10/10 passing).
 
 
-- Repair release artifact staging to copy libvmaf from Meson's actual `build/src/` output directory, preventing the signing workflow from failing before upload.
+- Repair Linux release staging to publish Meson's complete materialized `libvmaf.so` SONAME chain and prove the downloaded CLI resolves it in a clean environment before signing or attestation.
 
 
 Remove duplicate `chore` entry in `ai` package `changelog-sections` array that caused a

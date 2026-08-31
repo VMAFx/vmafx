@@ -1,1 +1,1 @@
-- Repair release artifact staging to copy libvmaf from Meson's actual `build/src/` output directory, preventing the signing workflow from failing before upload.
+- Repair Linux release staging to publish Meson's complete materialized `libvmaf.so` SONAME chain and prove the downloaded CLI resolves it in a clean environment before signing or attestation.

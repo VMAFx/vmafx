@@ -122,6 +122,11 @@ OIDC or writes to GHCR.
 - Node amd64: the full `node-cpu` image ran as nonroot, returned `v3.2.1`,
   reported embedded libvmaf `3.2.1` and FFmpeg `n9.0.1-17-g8dcc9a8`, and
   `go test ./cmd/vmafx-node` passed in 0.122 seconds.
+- Node arm64: the full QEMU build completed all VMAF, SVT-AV1, FFmpeg, and Go
+  links with `--platform linux/arm64`; image inspection reported architecture
+  `arm64`, user `nonroot:nonroot`, and entrypoint
+  `/usr/local/bin/vmafx-node`. QEMU runtime probes returned node `v3.2.1`,
+  libvmaf `3.2.1`, and FFmpeg `n9.0.1-17-g7aff8bd`, all with exit status zero.
 - MCP: the production-runtime suite passed 460 tests with 2 skips in 1.92
   seconds; the focused installed-MCP adapter suite passed 5 tests in 0.32
   seconds.
@@ -131,10 +136,9 @@ OIDC or writes to GHCR.
 
 The local run cannot mint a GitHub OIDC identity, push a production digest, or
 prove GHCR's post-push attachment APIs. Those operations are deliberately left
-to the tag-bound release jobs. At the time of this digest, the full arm64 node
-build was still completing its final QEMU/LTO links and is not counted as a
-pass above; the architecture-neutral dependency-closure design and amd64 image
-were verified, while the workflow remains fail closed if arm64 fails.
+to the tag-bound release jobs. Both amd64 and the full QEMU arm64 node image
+were built and exercised locally; the workflow remains fail closed if either
+architecture fails in the release environment.
 
 ## Result
 
