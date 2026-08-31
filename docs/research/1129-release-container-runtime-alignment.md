@@ -9,7 +9,7 @@ by the release?
 
 ## Method
 
-The audit compared the two Docker publication workflows, four production
+The audit compared the two Docker publication workflows, five production
 Dockerfiles, Go entrypoints, and the installed MCP 2.1 API. It then built the
 reachable final images from their exact digest-pinned bases, inspected their
 configured users and entrypoints, ran their device-independent runtime probes,
@@ -29,7 +29,7 @@ OIDC or writes to GHCR.
   GitHub contract supplies the release tag ref and tagged commit. The repaired
   workflows explicitly check out `github.event.release.tag_name`, use that same
   value for all release image tags, and group concurrency by the release.
-- The operator and node Docker builds now receive that value as
+- The Go server, operator, and node Docker builds now receive that value as
   `VMAFX_VERSION`, inject it into
   `github.com/VMAFx/vmafx/pkg/version.version`, and answer `--version` before
   starting Kubernetes, gRPC, or Fx lifecycles. The previous ldflag targeted a
@@ -37,9 +37,9 @@ OIDC or writes to GHCR.
 
 ### Build and runtime families crossed unsupported ABI boundaries
 
-- The CPU and node paths compiled on Debian 13 but used distroless Debian 12.
-  They now build and run against Debian 13, with the final distroless image's
-  nonroot UID/GID 65532.
+- The CPU, Go server, and node paths crossed or depended on an external runtime
+  ABI. They now build the fork's own libvmaf and run against Debian 13, with the
+  final distroless image's nonroot UID/GID 65532.
 - A CPython virtualenv contains an interpreter link, not a portable interpreter
   and standard library. The old server copied a virtualenv and selected Python
   libraries into a non-Python base. The repaired server uses the identical
@@ -105,7 +105,7 @@ OIDC or writes to GHCR.
   wrong entrypoint, or nonzero process could still print a success message.
   GPU SBOM paths also carried `continue-on-error` or a `pip install syft || true`
   fallback that did not install Anchore's Go binary reliably.
-- Each of the five production and two operator/node image jobs now signs its
+- Each of the five production and three Go-service image jobs now signs its
   pushed digest with cosign 3.1.3, emits GitHub-native build provenance through
   SHA-pinned `actions/attest-build-provenance` v4.2.2, generates a Syft
   CycloneDX document, attaches that document through cosign, and uploads it as
@@ -113,12 +113,13 @@ OIDC or writes to GHCR.
   `|| true` escape hatch.
 - Dependent smoke jobs install cosign and verify the expected workflow identity
   against the digest before pulling. They then execute the CPU/GPU CLI, the
-  live authenticated Python HTTP server, or the exact operator/node version
-  and node `vmaf`/FFmpeg entrypoints. Summary jobs require every build and smoke
-  result to be `success`.
+  live authenticated Python HTTP server, the live Go server health/readiness
+  endpoints, or the exact operator/node version and node `vmaf`/FFmpeg
+  entrypoints. Summary jobs require every build and smoke result to be
+  `success`.
 - The separate artifact workflow adds signed SPDX and CycloneDX inventories for
   the native files and the installed `vmaf-mcp` dependency closure. The
-  container changes extend equivalent hard-failure coverage to all seven image
+  container changes extend equivalent hard-failure coverage to all eight image
   digests rather than creating a second authority for downloadable files.
 
 ## Verified results
@@ -140,6 +141,12 @@ OIDC or writes to GHCR.
   `operator.enabled=true` contained no removed CLI flags, exported the four
   supported environment variables, and aligned the named metrics/health ports
   and probes to `8080`/`8081`.
+- Go server amd64 and arm64: both release targets ran as UID/GID 65532 with
+  `/usr/local/bin/vmafx-server` as the entrypoint, returned `v3.2.1`, and
+  reported embedded libvmaf `3.2.1`. Detached runtime probes returned HTTP 200
+  with `{"status":"ok"}` from `/healthz` and `{"status":"ready"}` from
+  `/readyz`; the arm64 proof ran under QEMU from the loaded multi-platform
+  image.
 - Node amd64: the full `node-cpu` image ran as nonroot, returned `v3.2.1`,
   reported embedded libvmaf `3.2.1` and FFmpeg `n9.0.1-17-g8dcc9a8`, and
   `go test ./cmd/vmafx-node` passed in 0.122 seconds.
@@ -157,9 +164,9 @@ OIDC or writes to GHCR.
 
 The local run cannot mint a GitHub OIDC identity, push a production digest, or
 prove GHCR's post-push attachment APIs. Those operations are deliberately left
-to the tag-bound release jobs. Both amd64 and the full QEMU arm64 node image
-were built and exercised locally; the workflow remains fail closed if either
-architecture fails in the release environment.
+to the tag-bound release jobs. Both amd64 and full QEMU arm64 Go-server and node
+images were built and exercised locally; the workflow remains fail closed if
+either architecture fails in the release environment.
 
 ## Result
 
@@ -180,7 +187,8 @@ hadolint \
   docker/Dockerfile.production \
   docker/Dockerfile.production-gpu \
   docker/Dockerfile.operator \
-  docker/Dockerfile.node
+  docker/Dockerfile.node \
+  Dockerfile.go-server
 
 docker build --target cli -f docker/Dockerfile.production \
   -t vmafx-release-alignment:cli .
@@ -201,6 +209,10 @@ docker build --target operator --build-arg VMAFX_VERSION=v3.2.1 \
   -f docker/Dockerfile.operator -t vmafx-release-alignment:operator .
 docker run --rm vmafx-release-alignment:operator --version
 
+docker build --target go-server --build-arg VMAFX_VERSION=v3.2.1 \
+  -f Dockerfile.go-server -t vmafx-release-alignment:go-server .
+docker run --rm vmafx-release-alignment:go-server --version
+
 helm template vmafx deploy/helm/vmafx \
   --set operator.enabled=true \
   --show-only templates/operator-deployment.yaml
@@ -214,7 +226,7 @@ docker run --rm --entrypoint /usr/local/bin/vmaf \
 docker run --rm --entrypoint /usr/local/bin/ffmpeg \
   vmafx-release-alignment:node -version
 
-go test ./cmd/vmafx-operator ./cmd/vmafx-node
+go test ./cmd/vmafx-server ./cmd/vmafx-operator ./cmd/vmafx-node
 (cd mcp-server/vmaf-mcp && python -m pytest -q)
 ```
 

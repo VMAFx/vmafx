@@ -266,7 +266,8 @@ in `.github/workflows/supply-chain.yml`, carry a multi-layer signing chain that
 is load-bearing for the
 [release.md](../docs/development/release.md) consumer verification recipes.
 
-- Every container build job (CPU, CUDA, ROCm, oneAPI, server, operator, node)
+- Every container build job (CPU, CUDA, ROCm, oneAPI, Python MCP server, Go
+  scoring server, operator, node)
   must run
   **both** `cosign sign --yes` **and** `actions/attest-build-provenance@<v4>`
   against the same `${{ steps.push.outputs.digest }}`. The two

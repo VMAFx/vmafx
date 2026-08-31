@@ -47027,8 +47027,10 @@ The production Dockerfiles and their two publication workflows are fork-local;
 an upstream sync has no direct file counterpart to prefer. Preserve these
 coupled invariants:
 
-1. Debian 13-compiled CPU, server-adjacent, and node binaries must not return to
-   a Debian 12 runtime. The MCP server must keep a real Python 3.14 interpreter
+1. Debian 13-compiled CPU, Go-server, and node binaries must not return to a
+   Debian 12 runtime. `Dockerfile.go-server` must build the fork's libvmaf, its
+   CGO server, and the distroless runtime on that same ABI for both amd64 and
+   arm64. The Python MCP server must keep a real Python 3.14 interpreter
    matching the venv builder.
 2. CUDA 13.3.1, ROCm 7.2.4, and oneAPI 2025.3.1 builders come from their
    digest-pinned vendor devel images; their final stages use the matching
@@ -47045,11 +47047,13 @@ coupled invariants:
    decorator/request-context API. Its production image installs `[eval,http]`,
    keeps the documented HTTP CLI dispatch, and explicitly opts the container
    into `VMAFX_MCP_HTTP_BIND=0.0.0.0` without weakening fail-closed auth.
-6. Operator and node container builds inject the published tag into
-   `github.com/VMAFx/vmafx/pkg/version.version`; both binaries handle
+6. Go server, operator, and node container builds inject the published tag into
+   `github.com/VMAFx/vmafx/pkg/version.version`; all three binaries handle
    `--version` before starting their long-running fx graphs, and release smokes
-   assert the exact tag. Do not restore the removed `main.buildVersion` ldflag
-   target or success-masked `--help` probes.
+   assert the exact tag. The Go-server lane must keep the exact amd64+arm64
+   manifest assertion and digest-addressed `/healthz` plus `/readyz` probes.
+   Do not restore the removed `main.buildVersion` ldflag target or
+   success-masked `--help` probes.
 7. The node's hand-written `libvmaf.pc` must expose both `${includedir}` and
    `${includedir}/libvmaf`: FFmpeg includes the legacy `<libvmaf.h>` spelling
    while fork patches also include namespaced `<libvmaf/...>` headers.

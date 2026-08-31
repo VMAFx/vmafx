@@ -171,7 +171,8 @@ repo or in CI secrets.
   signature plus a GitHub-native build-provenance attestation
   (`actions/attest-build-provenance`). See
   [ADR-0902](../adr/0902-signing-and-attestation-audit.md).
-- **Operator and node images** (`ghcr.io/vmafx/vmafx-operator:<tag>` and
+- **Go service images** (`ghcr.io/vmafx/vmafx-server:<tag>`,
+  `ghcr.io/vmafx/vmafx-operator:<tag>`, and
   `ghcr.io/vmafx/vmafx-node:<tag>`): the same cosign signature, CycloneDX SBOM,
   and GitHub-native build provenance, emitted by
   `docker-publish-operator-node.yml`.
@@ -202,7 +203,7 @@ cosign verify ghcr.io/vmafx/vmafx@sha256:DIGEST \
 # Container image, GitHub-native attestation route (added by ADR-0902).
 gh attestation verify oci://ghcr.io/vmafx/vmafx@sha256:DIGEST --repo VMAFx/vmafx
 
-# Operator/node images use their own workflow identity.
+# Go server/operator/node images use their own workflow identity.
 cosign verify ghcr.io/vmafx/vmafx-node@sha256:DIGEST \
   --certificate-identity-regexp 'https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
@@ -210,10 +211,11 @@ cosign verify ghcr.io/vmafx/vmafx-node@sha256:DIGEST \
 
 The post-push smoke jobs in both Docker workflows run the matching cosign
 verification recipe before pulling an image. The production workflow also
-executes the CPU CLI and the Python 3.14 server entrypoints; the operator/node
-workflow verifies both entrypoint artifacts and executes `vmaf --version` plus
-`ffmpeg -version` from the node image. A signature or runtime-linkage gap fails
-the release rather than silently shipping a broken image.
+executes the CPU CLI and the Python 3.14 server entrypoints; the Go-service
+workflow starts the Go scoring server and probes `/healthz` plus `/readyz`,
+checks the operator version, and executes `vmaf --version` plus `ffmpeg -version`
+from the node image. A signature or runtime-linkage gap fails the release rather
+than silently shipping a broken image.
 
 ## CHANGELOG.md fragment workflow (ADR-0221)
 

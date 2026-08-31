@@ -8,7 +8,7 @@
 
 ## Context
 
-The first independent VMAFx patch release publishes seven container images in
+The first independent VMAFx patch release publishes eight container images in
 addition to the native and Python artifacts governed by
 [ADR-1127](1127-single-semver-release-stream.md). The old Docker workflows ran
 on any `v*` tag push, mixed a release tag with implicit checkout state, treated
@@ -37,12 +37,13 @@ together because fixing only one layer still permits a broken release.
 VMAFx container publication will be one tag-bound, fail-closed contract. Both
 Docker workflows will run on `release.published`, check out
 `github.event.release.tag_name`, and derive every release image tag from that
-same value. CPU and node builds will use a Debian 13 ABI through their Debian 13
-distroless runtime; the server will retain the exact pinned Python 3.14 base
-used to build its virtualenv; and CUDA 13.3.1, ROCm 7.2.4, and oneAPI 2025.3.1
+same value. CPU, Go server, and node builds will use a Debian 13 ABI through
+their Debian 13 distroless runtime; the Python server will retain the exact
+pinned Python 3.14 base used to build its virtualenv; and CUDA 13.3.1, ROCm
+7.2.4, and oneAPI 2025.3.1
 images will use digest-pinned, version-matched vendor build/runtime families.
-Every final image will run as UID/GID 65532. Operator and node builds will
-inject the release tag into `pkg/version.version` and expose a non-blocking
+Every final image will run as UID/GID 65532. Go server, operator, and node builds
+will inject the release tag into `pkg/version.version` and expose a non-blocking
 `--version` path. The operator image and Helm chart will share the env-only
 ADR-1119 contract, with metrics on `:8080` and health/readiness on `:8081`; the
 chart will not pass the removed pre-fx CLI flags, and its default Go server,
@@ -51,7 +52,7 @@ published by the release workflows. The MCP server will use the
 typed MCP 2.x constructor
 handlers, preserve tool-error and progress-session semantics, install
 `[eval,http]`, and opt only the container into all-interface HTTP binding while
-keeping bearer authentication fail closed. Each of the seven pushed image
+keeping bearer authentication fail closed. Each of the eight pushed image
 digests must receive a cosign signature, GitHub-native build provenance, a Syft
 CycloneDX SBOM and cosign SBOM attestation; a dependent smoke job must verify
 the signature before pulling and exercising the published runtime.
@@ -73,8 +74,8 @@ the signature before pulling and exercising the published runtime.
   source checkout, image tag, Go version output, signatures, attestations, and
   smoke inputs share one release identity.
 - **Positive**: local builds proved the CPU CLI, Python server, all three GPU
-  production variants, operator, and amd64 node start as UID/GID 65532 with
-  their intended entrypoints and runtime dependencies.
+  production variants, Go server, operator, and node start as UID/GID 65532
+  with their intended entrypoints and runtime dependencies.
 - **Positive**: the Helm operator Deployment now configures the release binary
   through supported environment variables and probes the ports on which the
   process actually listens.
@@ -107,13 +108,13 @@ the signature before pulling and exercising the published runtime.
   the already-documented HTTP listener, health/readiness routes, and metrics.
 - **Build/runtime images**: Debian 13 slim/distroless, Python 3.14 slim, NVIDIA
   CUDA 13.3.1, AMD ROCm 7.2.4, and Intel oneAPI 2025.3.1 references are pinned
-  by digest. The Go operator remains a static binary; the node moves its CGO
-  chain to Debian 13 end to end.
+  by digest. The Go operator remains a static binary; the Go server and node
+  move their CGO chains to Debian 13 end to end.
 - **Build-time fetches**: CUDA installs `nv-codec-headers` at exact commit
   `876af32a202d0de83bd1d36fe74ee0f7fcf86b0d`; the commit is checked after the
   bounded fetch before installation. This replaces distro headers that lack
   loader symbols required by the source.
-- **Attestation**: all five production-image jobs and both operator/node jobs
+- **Attestation**: all five production-image jobs and all three Go-service jobs
   use SHA-pinned `actions/attest-build-provenance` v4.2.2, cosign 3.1.3 keyless
   signing, and digest-addressed subjects. Smoke jobs verify the expected
   workflow identity before pulling.
@@ -136,8 +137,9 @@ document for each of these digest subjects:
 3. ROCm 7.2.4;
 4. oneAPI 2025.3.1;
 5. Python 3.14 MCP server;
-6. Go operator; and
-7. Go/FFmpeg node.
+6. Go HTTP/gRPC scoring server;
+7. Go operator; and
+8. Go/FFmpeg node.
 
 Each document is uploaded as workflow evidence and attached to the image via a
 cosign CycloneDX attestation; generation and attachment are hard failures. The
