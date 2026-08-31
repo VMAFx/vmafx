@@ -1288,13 +1288,22 @@ untouched; the functions remain compiled and linkable for a future re-dispatch P
 Clang `contract(off)` pragma and a GCC `optimize("-ffp-contract=off")` attribute. Do not
 widen the Clang pragma to the whole scalar translation unit: that changes unrelated ADM
 reductions. The NEON twin retains separate `vmulq_laneq_f32` plus `vaddq_f32` operations,
-split scalar multiply/add, and its dedicated `-ffp-contract=off` build flag. Do not
-introduce `vfmaq` or `fmaf`.
+starting every accumulator at +0 before its four taps, split scalar multiply/add, and its
+dedicated `-ffp-contract=off` build flag. The initial +0 preserves scalar-identical signed
+zero. Do not introduce `vfmaq`, `fmaf`, or initialize an accumulator directly from tap 0.
 
-Retest `test_float_adm_dwt2_neon` under both Clang and GCC AArch64 builds through QEMU.
-Also run the macOS Python quality suite: the unit parity test alone did not catch the
-`88.030459` versus `88.030322` end-to-end regression. Never alter Netflix assertions,
-snapshots, or parity tolerances to resolve a mismatch.
+Retest `test_float_adm_dwt2_neon`, including its signed-zero case, under both Clang and GCC
+AArch64 builds through QEMU.
+
+The integer ADM contract has a separate, intentional platform boundary. Keep
+`adm_dwt2_8_neon()` four-tap and scalar-bit-exact everywhere. In `integer_adm.c`, Apple
+AArch64 production dispatch must select `adm_dwt2_8_neon_apple_legacy()`, which runs the
+universal kernel and replaces only output column `j == 0` with the historical three-tap
+boundary recorded by the immutable Darwin quality tests. Linux AArch64 must continue to
+select the universal kernel. Retest `test_adm_dwt2_neon` under AArch64/QEMU and the complete
+macOS Python quality suite; the former locks both kernel contracts, while only the latter
+executes the real `__APPLE__` dispatch. Never alter Netflix assertions, snapshots, or parity
+tolerances to resolve a mismatch.
 
 ---
 

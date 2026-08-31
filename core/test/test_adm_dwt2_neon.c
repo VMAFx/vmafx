@@ -12,10 +12,13 @@
  * on master. No unit test covered this kernel on any architecture — the SIMD
  * suite reaches `adm_cm`, not `adm_dwt2`.
  *
- * This test closes that gap: it runs the NEON kernel against a scalar reference
- * transcribed from `adm_dwt2_8` in integer_adm.c and requires bit-exact output
- * across all four subbands. The `j == 0` and `i == 0` boundary columns/rows are
- * exercised on every size, because that is precisely where the bug lived.
+ * This test closes that gap: it runs the universal NEON kernel against a scalar
+ * reference transcribed from `adm_dwt2_8` in integer_adm.c and requires
+ * bit-exact output across all four subbands. It separately locks the explicit
+ * Apple compatibility wrapper to the historical three-tap first-column rule,
+ * while proving that wrapper leaves every other column unchanged. The `j == 0`
+ * and `i == 0` boundary columns/rows are exercised on every size, because that
+ * is precisely where the compatibility boundary lives.
  */
 
 #include <stdint.h>
@@ -99,10 +102,10 @@ static void ref_src_indices(int **ind_y, int **ind_x, int w, int h)
     }
 }
 
-/* Transcribed from adm_dwt2_8() in integer_adm.c (static there). All four taps
- * on both passes — the tap count is the property under test. */
+/* Transcribed from adm_dwt2_8() in integer_adm.c (static there). The universal
+ * reference passes first_column_taps=4; Darwin compatibility passes 3. */
 static void ref_adm_dwt2_8(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w,
-                           int h, int src_stride, int dst_stride)
+                           int h, int src_stride, int dst_stride, int first_column_taps)
 {
     const int16_t *flo = dwt2_db2_coeffs_lo;
     const int16_t *fhi = dwt2_db2_coeffs_hi;
@@ -135,27 +138,28 @@ static void ref_adm_dwt2_8(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuf
 
         for (int j = 0; j < (w + 1) / 2; ++j) {
             const int jx[4] = {ind_x[0][j], ind_x[1][j], ind_x[2][j], ind_x[3][j]};
+            const int horizontal_taps = j == 0 ? first_column_taps : 4;
             int16_t s[4];
 
             for (int t = 0; t < 4; ++t)
                 s[t] = tmplo[jx[t]];
             accum = 0;
-            for (int t = 0; t < 4; ++t)
+            for (int t = 0; t < horizontal_taps; ++t)
                 accum += (int32_t)flo[t] * s[t];
             dst->band_a[i * dst_stride + j] = (int16_t)((accum + add_HP) >> shift_HP);
             accum = 0;
-            for (int t = 0; t < 4; ++t)
+            for (int t = 0; t < horizontal_taps; ++t)
                 accum += (int32_t)fhi[t] * s[t];
             dst->band_v[i * dst_stride + j] = (int16_t)((accum + add_HP) >> shift_HP);
 
             for (int t = 0; t < 4; ++t)
                 s[t] = tmphi[jx[t]];
             accum = 0;
-            for (int t = 0; t < 4; ++t)
+            for (int t = 0; t < horizontal_taps; ++t)
                 accum += (int32_t)flo[t] * s[t];
             dst->band_h[i * dst_stride + j] = (int16_t)((accum + add_HP) >> shift_HP);
             accum = 0;
-            for (int t = 0; t < 4; ++t)
+            for (int t = 0; t < horizontal_taps; ++t)
                 accum += (int32_t)fhi[t] * s[t];
             dst->band_d[i * dst_stride + j] = (int16_t)((accum + add_HP) >> shift_HP);
         }
@@ -180,21 +184,27 @@ static char *test_adm_dwt2_8_neon_matches_scalar(void)
         const int dst_stride = w_half;
 
         uint8_t *src = malloc((size_t)w * h);
-        int16_t *bands[8];
+        mu_assert("malloc failed for ADM DWT2 source", src);
+        int16_t *bands[12];
         AdmBuffer buf = {0};
         int *iy[4], *ix[4];
-        adm_dwt_band_t ref_band = {0}, simd_band = {0};
+        adm_dwt_band_t ref_band = {0}, simd_band = {0}, apple_legacy_band = {0};
         uint32_t seed = 0x5eed0000u ^ (uint32_t)(w * 131 + h);
 
         for (int k = 0; k < 4; ++k) {
             iy[k] = calloc((size_t)h_half + 4, sizeof(int));
+            mu_assert("calloc failed for ADM DWT2 y indices", iy[k]);
             ix[k] = calloc((size_t)w_half + 4, sizeof(int));
+            mu_assert("calloc failed for ADM DWT2 x indices", ix[k]);
             buf.ind_y[k] = iy[k];
             buf.ind_x[k] = ix[k];
         }
-        for (int k = 0; k < 8; ++k)
+        for (int k = 0; k < 12; ++k) {
             bands[k] = calloc((size_t)h_half * dst_stride + 16, sizeof(int16_t));
+            mu_assert("calloc failed for ADM DWT2 band", bands[k]);
+        }
         buf.tmp_ref = calloc((size_t)w * 4 + 64, sizeof(int16_t));
+        mu_assert("calloc failed for ADM DWT2 scratch", buf.tmp_ref);
 
         ref_band.band_a = bands[0];
         ref_band.band_v = bands[1];
@@ -204,6 +214,10 @@ static char *test_adm_dwt2_8_neon_matches_scalar(void)
         simd_band.band_v = bands[5];
         simd_band.band_h = bands[6];
         simd_band.band_d = bands[7];
+        apple_legacy_band.band_a = bands[8];
+        apple_legacy_band.band_v = bands[9];
+        apple_legacy_band.band_h = bands[10];
+        apple_legacy_band.band_d = bands[11];
 
         for (int i = 0; i < w * h; ++i) {
             seed ^= seed << 13;
@@ -213,7 +227,7 @@ static char *test_adm_dwt2_8_neon_matches_scalar(void)
         }
         ref_src_indices(buf.ind_y, buf.ind_x, w, h);
 
-        ref_adm_dwt2_8(src, &ref_band, &buf, w, h, w, dst_stride);
+        ref_adm_dwt2_8(src, &ref_band, &buf, w, h, w, dst_stride, 4);
         memset(buf.tmp_ref, 0, ((size_t)w * 4 + 64) * sizeof(int16_t));
         adm_dwt2_8_neon(src, &simd_band, &buf, w, h, w, dst_stride);
 
@@ -239,11 +253,36 @@ static char *test_adm_dwt2_8_neon_matches_scalar(void)
 
         (void)last_col_mismatches;
 
+        /* Reuse the SIMD band's storage for the independent legacy reference,
+         * then compare the production-only Apple wrapper against it. */
+        for (int b = 0; b < 4; ++b)
+            memset(bands[b + 4], 0, ((size_t)h_half * dst_stride + 16) * sizeof(int16_t));
+        ref_adm_dwt2_8(src, &simd_band, &buf, w, h, w, dst_stride, 3);
+        memset(buf.tmp_ref, 0, ((size_t)w * 4 + 64) * sizeof(int16_t));
+        adm_dwt2_8_neon_apple_legacy(src, &apple_legacy_band, &buf, w, h, w, dst_stride);
+
+        int first_column_differences = 0;
+        for (int b = 0; b < 4; ++b) {
+            for (int i = 0; i < h_half; ++i) {
+                for (int j = 0; j < w_half; ++j) {
+                    const int idx = i * dst_stride + j;
+                    mu_assert("Apple ADM compatibility wrapper diverges from its legacy reference",
+                              bands[b + 4][idx] == bands[b + 8][idx]);
+                    if (bands[b][idx] != bands[b + 4][idx]) {
+                        mu_assert("Apple ADM compatibility changed a non-boundary column", j == 0);
+                        ++first_column_differences;
+                    }
+                }
+            }
+        }
+        mu_assert("Apple ADM compatibility fixture did not exercise the legacy boundary",
+                  first_column_differences > 0);
+
         for (int k = 0; k < 4; ++k) {
             free(iy[k]);
             free(ix[k]);
         }
-        for (int k = 0; k < 8; ++k)
+        for (int k = 0; k < 12; ++k)
             free(bands[k]);
         free(buf.tmp_ref);
         free(src);

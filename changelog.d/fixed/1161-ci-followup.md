@@ -9,8 +9,13 @@
   unsupported output conversions, keeping `ort_backend.c` above its ratcheted
   coverage floor without weakening the threshold.
 - Fixed unsigned output formatting, checked luminance-range return values, and
-  stabilized ARM float-ADM DWT2 on split multiply/add arithmetic by applying
-  contraction-off only to the scalar DWT2 function and its NEON twin.
+  stabilized ARM float-ADM DWT2 on +0-initialized split multiply/add arithmetic
+  by applying contraction-off only to the scalar DWT2 function and its NEON
+  twin, including scalar-identical signed-zero behavior.
+- Preserved the immutable Darwin AArch64 integer-ADM score through a named
+  production compatibility wrapper that applies the historical three-tap rule
+  only to the first DWT2 output column. The universal NEON kernel remains
+  four-tap and scalar-bit-exact on Linux ARM and in direct parity tests.
 - Brought the dev-MCP image back in sync with the FFmpeg n9.0.1 patch base and
   copied the complete Go module inputs into its six-binary build stage.
 - Preserved C linkage for the shared minunit test counter so C++ tests link on

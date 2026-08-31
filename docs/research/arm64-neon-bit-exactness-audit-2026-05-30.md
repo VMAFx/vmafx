@@ -120,7 +120,7 @@ removed to restore the immutable Netflix score contract. A Clang 22 AArch64
 cross-build failed 18 cells of the 3x5 fixture by 1–5 ULP; the same source
 passed under GCC 16.
 
-LLVM IR established the immediate parity cause: Clang lowered the production
+LLVM IR established the immediate float-parity cause: Clang lowered the production
 scalar four-tap accumulation to `llvm.fmuladd`, while the guarded NEON
 translation unit emitted separate `fmul` and `fadd`. GCC 16 kept both scalar
 and NEON arithmetic split. A compiler-matched NEON experiment (`vfmaq` / `fmaf`
@@ -128,17 +128,41 @@ for Clang, split operations for GCC) made the dedicated parity test green, but
 the full macOS Python suite then returned `88.030459` instead of the immutable
 Darwin `88.030322` value in three akiyo cases.
 
-The two failures together locate the required boundary. A file-wide scalar
-contraction guard is too broad, while a fused DWT2 is inconsistent with the
-Darwin quality contract. The smallest stable fix is:
+The macOS result did not come from float DWT2: the affected model's inputs are
+integer ADM, motion, and VIF only. Three falsification checks produced the same
+`88.030459` score: C++23 versus C++26 libsvm, libsvm with contraction disabled,
+and integer ADM with all SIMD disabled (`--cpumask 4294967295`). The corrected
+scalar and four-tap NEON paths also produced the same
+`integer_adm2_egl_1=0.95743329964815937`. A source bisect located the score
+transition at `a013c1410`, which corrected the first-column horizontal loop in
+`adm_dwt2_8_neon` from three taps to four. The immutable Darwin value had
+recorded the pre-fix Apple AArch64 boundary behavior.
+
+The smallest stable float-parity fix is:
 
 - apply contraction-off only inside `adm_dwt2_s` (Clang in-body pragma, GCC
   function attribute), leaving every unrelated `adm_tools.c` function alone;
-- keep the NEON vector loop on explicit `vmulq_laneq_f32` then `vaddq_f32`;
-- keep the NEON tail and horizontal bands on left-to-right scalar multiply/add;
+- start every NEON accumulator at +0, then apply four explicit
+  `vmulq_laneq_f32` / `vaddq_f32` steps so signed-zero behavior matches scalar;
+- keep the NEON tail and horizontal bands on the same +0-initialized,
+  left-to-right scalar multiply/add sequence;
 - retain the NEON translation unit's `-ffp-contract=off` build flag.
 
 The exhaustive geometry/stride suite passes with Clang 22 and GCC 16 AArch64
-cross-builds through QEMU. Disassembly of both AArch64 objects contains
-separate `fmul` / `fadd` operations and no `fmla` in either DWT2 function. No
-Netflix golden assertion, snapshot, or tolerance changed.
+cross-builds through QEMU. A targeted signed-zero fixture detects +0/-0 bit
+drift when the NEON accumulator starts with tap 0, and passes with the
+scalar-identical +0 initialization. Disassembly of both AArch64 objects
+contains separate `fmul` / `fadd` operations and no `fmla` in either DWT2
+function.
+
+For integer ADM, `adm_dwt2_8_neon()` remains the universal four-tap,
+scalar-bit-exact kernel. Apple AArch64 production dispatch instead uses the
+named `adm_dwt2_8_neon_apple_legacy()` wrapper, which runs the universal kernel
+and then recomputes only `j == 0` with the historical three-tap horizontal
+boundary. A direct test proves the wrapper matches an independent legacy
+reference and changes no other column. A Clang 22 AArch64/QEMU run with that
+dispatch forced returned `vmaf=88.030316780575973`, within `5.22e-6` of the
+immutable Darwin `88.030322` assertion; the universal path stayed
+`88.030458811118052`. Reverting the universal kernel was rejected because it
+would re-break Linux ARM parity, while disabling NEON was falsified by the
+scalar result. No Netflix golden assertion, snapshot, or tolerance changed.
