@@ -47147,3 +47147,8 @@ coupled invariants:
     file, verify, then extract; never restore a moving remote installer piped
     into a shell. Keep kuttl's raw `steps.kuttl.outcome` final assertion when
     retaining `continue-on-error` for diagnostic uploads.
+12. GHCR, GitHub Release, and Sigstore publication jobs use the protected
+    `release-publish` environment; PyPI uses `pypi-publish`. Reusable SLSA jobs
+    keep `contents: read` plus `upload-assets: false`, and the protected attach
+    job publishes both provenance artifacts. Container signature checks require
+    the exact `@refs/tags/${PUBLISH_TAG}` certificate identity, never `@.*`.

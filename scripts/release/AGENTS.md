@@ -86,6 +86,20 @@ workflow.
 Test coverage:
 `scripts/release/tests/test-verify-release-version.sh`.
 
+## Publication environment binding
+
+The two Docker publishers bind every GHCR write/OIDC job to
+`release-publish`; `supply-chain.yml` binds Sigstore and GitHub Release writes
+there while keeping PyPI on its trusted-publisher environment
+`pypi-publish`. The third-party SLSA reusable jobs cannot declare an
+environment, so they may mint provenance but must keep `contents: read` and
+`upload-assets: false`; the protected attachment job downloads and publishes
+their provenance artifacts. Container verification accepts only the exact
+release-tag workflow identity, never an `@.*` ref wildcard.
+
+Test coverage:
+`scripts/release/tests/test-publication-environment-binding.sh`.
+
 ## verify-native-release-artifacts.sh
 
 The native GitHub Release payload is currently Linux ELF. Meson's

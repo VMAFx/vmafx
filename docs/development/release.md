@@ -53,6 +53,19 @@ policy.
    pass. The release PR's required CI remains the gate for the broader Netflix
    golden-data and backend test suites.
 
+Before publication, repository setup must provide two protected environments:
+
+- `release-publish` for GHCR writes, release-blob signing, and GitHub Release
+  attachment;
+- `pypi-publish` for the `vmaf-mcp` Trusted Publisher identity.
+
+Both accept selected tag refs matching `v*`, require the release reviewer, and
+disallow administrator bypass. Read-only validation runs before environment
+approval. The external SLSA reusable workflow cannot carry a caller-side
+environment, so it writes only a workflow artifact with `contents: read`; the
+protected attachment job is the sole job that uploads its two provenance files
+to the GitHub Release.
+
 ### Native Linux release layout
 
 The native files attached by `supply-chain.yml` are currently Linux ELF
@@ -99,6 +112,9 @@ dispatching from `master` or a different ref would make rebuilt artefacts,
 containers, and signed provenance refer to source other than the published
 release. Each preflight also verifies the coordinated versions and published
 GitHub release before any write or OIDC job starts.
+The protected deployment environments still apply on recovery runs; approval
+authorizes the write-bearing jobs only, after the read-only preflight has
+proved the tag/ref/release identity.
 
 ## ADR index regeneration policy
 
@@ -189,9 +205,12 @@ and MCP wheel come from `supply-chain.yml`; the container images come from
 `docker-publish-production.yml`.
 
 ```bash
+tag=v3.2.1
+
 # Release blob. Every vmaf/libvmaf.so* asset has a matching FILE.bundle.
 cosign verify-blob --bundle vmaf.bundle vmaf \
-  --certificate-identity-regexp 'https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@.*' \
+  --certificate-identity \
+    "https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@refs/tags/${tag}" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # vmaf-mcp wheel on PyPI. The PyPI integrity API supplies the PEP 740
@@ -202,7 +221,8 @@ pypi-attestations verify pypi \
 
 # Container image, cosign route. Replace DIGEST with the actual sha256 digest.
 cosign verify ghcr.io/vmafx/vmafx@sha256:DIGEST \
-  --certificate-identity-regexp 'https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@.*' \
+  --certificate-identity \
+    "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/tags/${tag}" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # Container image, GitHub-native attestation route (added by ADR-0902).
@@ -210,7 +230,8 @@ gh attestation verify oci://ghcr.io/vmafx/vmafx@sha256:DIGEST --repo VMAFx/vmafx
 
 # Go server/operator/node images use their own workflow identity.
 cosign verify ghcr.io/vmafx/vmafx-node@sha256:DIGEST \
-  --certificate-identity-regexp 'https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@.*' \
+  --certificate-identity \
+    "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@refs/tags/${tag}" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 

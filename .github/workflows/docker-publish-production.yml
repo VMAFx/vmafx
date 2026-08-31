@@ -98,6 +98,7 @@ jobs:
     needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    environment: release-publish
     permissions:
       contents: read
       packages: write    # push to GHCR
@@ -222,8 +223,8 @@ jobs:
       - name: Verify signature before pull
         run: |
           cosign verify \
-            --certificate-identity-regexp \
-              'https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@.*' \
+            --certificate-identity \
+              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/tags/${PUBLISH_TAG}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-cpu.outputs.digest }}"
 
@@ -244,6 +245,7 @@ jobs:
     needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    environment: release-publish
     permissions:
       contents: read
       packages: write
@@ -338,6 +340,7 @@ jobs:
     needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    environment: release-publish
     permissions:
       contents: read
       packages: write
@@ -432,6 +435,7 @@ jobs:
     needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    environment: release-publish
     permissions:
       contents: read
       packages: write
@@ -553,8 +557,8 @@ jobs:
             "${{ needs.build-rocm7.outputs.digest }}" \
             "${{ needs.build-oneapi2025.outputs.digest }}"; do
             cosign verify \
-              --certificate-identity-regexp \
-                'https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@.*' \
+              --certificate-identity \
+                "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/tags/${PUBLISH_TAG}" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
               "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${digest}"
           done
@@ -580,6 +584,7 @@ jobs:
     needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    environment: release-publish
     permissions:
       contents: read
       packages: write
@@ -697,8 +702,8 @@ jobs:
       - name: Verify signature before pull
         run: |
           cosign verify \
-            --certificate-identity-regexp \
-              'https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@.*' \
+            --certificate-identity \
+              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/tags/${PUBLISH_TAG}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-server.outputs.digest }}"
 

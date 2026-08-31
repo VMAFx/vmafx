@@ -27,3 +27,6 @@
   installer script. The E2E workflow also propagates the real kuttl step
   outcome after uploading diagnostics instead of relying on an unwritten exit
   code file.
+- Publication writes and release signing now use selected-tag deployment
+  environments, SLSA provenance is attached only by the protected release
+  writer, and container verification rejects certificates from non-tag refs.

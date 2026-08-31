@@ -368,6 +368,7 @@ jobs:
     needs: [build-artifacts, sbom]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: release-publish
     permissions:
       id-token: write   # Sigstore keyless OIDC
       contents: read
@@ -406,7 +407,7 @@ jobs:
     needs: [validate-release, build-artifacts, verify-native-artifacts]
     permissions:
       id-token: write
-      contents: write
+      contents: read
       actions: read
     # Sole tag-pin exception: the SLSA generator rejects SHA-pinned reusable
     # workflow refs because its builder identity must be refs/tags/vX.Y.Z.
@@ -414,8 +415,10 @@ jobs:
     with:
       base64-subjects: ${{ needs.build-artifacts.outputs.hashes }}
       provenance-name: vmafx-build-provenance.intoto.jsonl
-      upload-assets: true
-      upload-tag-name: ${{ needs.validate-release.outputs.tag }}
+      # The reusable caller cannot reference an environment. Keep provenance
+      # as a workflow artifact; the environment-gated attachment job below is
+      # the sole GitHub Release writer.
+      upload-assets: false
 
   # ===== MCP server (vmaf-mcp Python package) =====
   # ADR-0166: ship to PyPI (Trusted Publishing) + GitHub release attachment
@@ -475,6 +478,7 @@ jobs:
     needs: mcp-build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: release-publish
     permissions:
       id-token: write   # Sigstore keyless OIDC
       contents: read
@@ -507,15 +511,15 @@ jobs:
     needs: [validate-release, mcp-build]
     permissions:
       id-token: write
-      contents: write
+      contents: read
       actions: read
     # See the documented SLSA reusable-workflow tag-pin exception above.
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
     with:
       base64-subjects: ${{ needs.mcp-build.outputs.hashes }}
       provenance-name: vmaf-mcp-provenance.intoto.jsonl
-      upload-assets: true
-      upload-tag-name: ${{ needs.validate-release.outputs.tag }}
+      # See the native provenance job: release upload is environment-gated.
+      upload-assets: false
 
   mcp-publish-pypi:
     name: Publish vmaf-mcp to PyPI (Trusted Publishing)
@@ -691,6 +695,7 @@ jobs:
       - mcp-slsa-provenance
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: release-publish
     permissions:
       contents: write   # upload files to the GitHub Release
     steps:
@@ -707,6 +712,8 @@ jobs:
             dist/sbom/vmafx.cdx.json
             dist/sbom/vmaf-mcp.spdx.json
             dist/sbom/vmaf-mcp.cdx.json
+            dist/vmafx-build-provenance.intoto.jsonl/vmafx-build-provenance.intoto.jsonl
+            dist/vmaf-mcp-provenance.intoto.jsonl/vmaf-mcp-provenance.intoto.jsonl
           )
           wheels=(dist/mcp-dist/vmaf_mcp-*.whl)
           sdists=(dist/mcp-dist/vmaf_mcp-*.tar.gz)
@@ -747,3 +754,5 @@ jobs:
             dist/signatures/*
             dist/mcp-dist/*
             dist/mcp-signatures/*
+            dist/vmafx-build-provenance.intoto.jsonl/vmafx-build-provenance.intoto.jsonl
+            dist/vmaf-mcp-provenance.intoto.jsonl/vmaf-mcp-provenance.intoto.jsonl

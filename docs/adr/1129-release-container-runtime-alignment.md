@@ -73,6 +73,10 @@ the signature before pulling and exercising the published runtime.
   images; the authenticated GitHub release is the publication authority and
   source checkout, image tag, Go version output, signatures, attestations, and
   smoke inputs share one release identity.
+- **Positive**: publication jobs are bound to selected-tag deployment
+  environments outside their mutable shell validation. SLSA reusable jobs
+  cannot declare an environment, so they no longer write release assets;
+  their provenance flows through the protected attachment job instead.
 - **Positive**: local builds proved the CPU CLI, Python server, all three GPU
   production variants, Go server, operator, and node start as UID/GID 65532
   with their intended entrypoints and runtime dependencies.
@@ -106,6 +110,11 @@ the signature before pulling and exercising the published runtime.
 - **Release authority**: `release.published` replaces arbitrary tag pushes for
   production publication. Manual dispatch remains a development/recovery path
   and does not redefine the authenticated release event.
+- **Deployment authority**: GHCR, GitHub Release, and release-blob signing jobs
+  use `release-publish`; PyPI uses its trusted-publisher identity
+  `pypi-publish`. Both environments are selected-tag-only and reviewer-gated.
+  Container consumers verify the exact release-tag workflow certificate
+  identity rather than accepting the same workflow path at an arbitrary ref.
 - **New runtime dependencies**: the server installs the existing optional
   `vmaf-mcp[http]` surface (`aiohttp>=3.9.0`, Apache-2.0; and
   `prometheus-client>=0.20.0`, Apache-2.0) in addition to `[eval]`. These enable

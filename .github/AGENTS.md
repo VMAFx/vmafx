@@ -25,6 +25,16 @@ by a one-time `release-as` config field; release-PR rollover must remove that
 field and `bootstrap-sha` before the release PR merges so neither override can
 affect 3.2.2.
 
+Every job that publishes to GHCR, uploads GitHub Release assets, or mints a
+release-artifact Sigstore identity is bound to the protected
+`release-publish` environment. PyPI stays bound to `pypi-publish` because that
+exact environment name is part of its Trusted Publisher identity. Both
+environments accept ordinary release tags only and require the configured
+release reviewer; read-only validation stays outside them. The SLSA reusable
+workflow caller cannot declare an environment, so it has `contents: read` and
+`upload-assets: false`; the environment-gated attachment job is the sole
+release-asset writer. Do not restore direct SLSA release upload.
+
 `supply-chain.yml` runs `scripts/release/verify-release-version.sh` before any
 write or OIDC job. It keeps native and `vmaf-mcp` hashes in distinct SLSA jobs
 with distinct provenance asset names. Its native SBOMs contain and hash every
@@ -46,7 +56,9 @@ Manual supply-chain recovery must use the published tag as both the workflow ref
 and input (`gh workflow run supply-chain.yml --ref "$tag" -f tag="$tag"`). The
 validation job rejects branch-ref dispatches, missing/draft/prerelease releases,
 or an event SHA different from the checked-out tag. This binding is required so
-SLSA provenance describes the source that produced the artifacts.
+SLSA provenance describes the source that produced the artifacts. Container
+signature verification requires the exact `@refs/tags/${PUBLISH_TAG}` workflow
+identity; a wildcard ref would accept signatures minted by branch workflows.
 
 ### Rule-enforcement split (ADR-0124)
 

@@ -104,6 +104,28 @@ OIDC or writes to GHCR.
   the shared middleware still returns HTTP 401 without its configured bearer
   token.
 
+### Publication authorization lived only in mutable workflow logic
+
+- Tag/ref/release validation correctly rejected accidental source drift, but
+  the jobs that received `packages: write`, `contents: write`, or release
+  signing OIDC were not attached to a deployment environment. A branch copy of
+  the workflow could remove its own validation, so the YAML check was not an
+  external authorization boundary.
+- GHCR, GitHub Release, and release-blob signing jobs now reference the
+  `release-publish` environment; PyPI remains on the separately named
+  `pypi-publish` environment required by its Trusted Publisher. Repository
+  reconciliation restricts both environments to selected `v*` tag refs and a
+  release reviewer, independently of the workflow's shell logic.
+- A caller job for GitHub's supported reusable-workflow syntax cannot declare
+  `environment`. Both SLSA generator calls therefore keep `contents: read` and
+  `upload-assets: false`: they produce signed workflow artifacts, and the
+  protected attachment job alone uploads those provenance files to the GitHub
+  Release.
+- Container smoke verification previously accepted the workflow path at any
+  ref through `@.*`. It now requires the exact
+  `@refs/tags/${PUBLISH_TAG}` certificate identity, so a signature from the same
+  workflow path on a branch is not accepted as release evidence.
+
 ### The Helm operator still deployed the removed pre-fx interface
 
 - ADR-1119 made operator runtime configuration environment-only, and the
@@ -263,4 +285,7 @@ go test ./cmd/vmafx-server ./cmd/vmafx-operator ./cmd/vmafx-node
 - [NVIDIA CUDA container images](https://hub.docker.com/r/nvidia/cuda)
 - [AMD ROCm Docker guidance](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/how-to/docker.html)
 - [Intel oneAPI containers](https://www.intel.com/content/www/us/en/developer/articles/technical/containers.html)
+- [GitHub deployment environments](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)
+- [GitHub reusable-workflow caller keywords](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#supported-keywords-for-jobs-that-call-a-reusable-workflow)
+- [PyPI Trusted Publisher security model](https://docs.pypi.org/trusted-publishers/security-model/)
 - [ADR-1127 research](1127-single-semver-release-stream.md)
