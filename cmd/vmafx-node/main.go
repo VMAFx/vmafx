@@ -56,6 +56,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"go.uber.org/fx"
@@ -71,11 +72,18 @@ import (
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
+	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
 
 // probeTimeout bounds the startup encoder probe so a hung ffmpeg binary cannot
 // stall node startup indefinitely (carried over from the pre-fx root).
 const probeTimeout = 30 * time.Second
+
+// isVersionRequest keeps the release-image smoke path independent of the fx
+// graph and its long-running gRPC lifecycle.
+func isVersionRequest(args []string) bool {
+	return len(args) == 2 && args[1] == "--version"
+}
 
 // nodeEnvOptions pins the VMAFX_ env contract for this binary. golusoris'
 // grpc.Module reads four underscore-bearing leaf keys (grpc.cert_file,
@@ -99,6 +107,11 @@ func nodeEnvOptions(watch bool) config.Options {
 }
 
 func main() {
+	if isVersionRequest(os.Args) {
+		fmt.Println(buildversion.Version())
+		return
+	}
+
 	fx.New(
 		// golusoris foundation: config + log + clock + id + validate + crypto,
 		// the OTel module, and the build-version supply (ADR-1119).

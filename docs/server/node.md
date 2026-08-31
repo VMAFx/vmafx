@@ -141,19 +141,23 @@ in-cluster controller Service name (`<release>-controller:8080`).
 
 ## Container images
 
-| Variant | `GPU_RUNTIME` ARG | Base |
+| Docker target | Published tag | Runtime |
 |---|---|---|
-| `vmafx-node:cpu` | `cpu` (default) | ubuntu:26.04 |
-| `vmafx-node:cuda12` | `cuda12` | ubuntu:26.04 + CUDA 12 runtime |
-| `vmafx-node:rocm6` | `rocm6` | ubuntu:26.04 + ROCm 6 runtime |
-| `vmafx-node:sycl-oneapi2026` | `sycl-oneapi2026` | ubuntu:26.04 + Intel oneAPI 2026 |
+| `node-cpu` | `vX.Y.Z` (amd64 + arm64) | distroless Debian 13 |
+| `node-cuda` | not yet published | Debian 13 + CUDA 13.3.1 libraries |
+| `node-rocm` | not yet published | Debian 13 + ROCm 7.2.4 libraries |
+| `node-sycl` | not yet published | Debian 13 + oneAPI 2025.3.1 libraries |
+
+The release workflow currently publishes only `node-cpu`. All targets use the
+same native-architecture FFmpeg dependency collector, so arm64 stages resolve
+`aarch64-linux-gnu` libraries rather than copying an amd64-only path.
 
 Build example:
 
 ```bash
 docker build -f docker/Dockerfile.node \
-  --build-arg GPU_RUNTIME=cuda12 \
-  -t vmafx-node:cuda12 .
+  --target node-cuda \
+  -t vmafx-node:cuda13 .
 ```
 
 ## Graceful shutdown

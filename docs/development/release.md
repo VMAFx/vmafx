@@ -45,10 +45,13 @@ policy.
    `vX.Y.Z` tag and emits the `release.published` event. This explicit gate is
    required because GitHub suppresses most follow-on workflow events created
    by the repository `GITHUB_TOKEN`.
-5. **The publication workflows** build release artefacts (libvmaf binaries,
-   Python wheels, and production images), sign and attest them, run their
-   workflow-specific smoke checks, and publish them. The release PR's required
-   CI is the gate for the broader Netflix and backend test suites.
+5. **The publication workflows** check out the published release's immutable
+   tag rather than the default branch. The Docker workflows derive their image
+   tags from the same `github.event.release.tag_name`; the other release jobs
+   build libvmaf binaries and Python wheels. Every workflow signs and attests
+   its outputs, runs its own smoke checks, and publishes only after those gates
+   pass. The release PR's required CI remains the gate for the broader Netflix
+   golden-data and backend test suites.
 
 ### Native Linux release layout
 
@@ -77,6 +80,20 @@ to resolve to the staged SONAME file. Windows `vmaf.exe` remains a CI build
 artifact, not a GitHub Release asset, and this workflow currently publishes no
 macOS native CLI or dylib. Use the production containers or build from source
 for those platforms until platform-specific release bundles are introduced.
+
+### Supply-chain recovery dispatch
+
+Use the manual supply-chain dispatch only to recover an existing, published,
+non-prerelease GitHub release. Run the workflow at the immutable tag ref and
+pass that same tag as its input:
+
+```bash
+tag=vX.Y.Z; gh workflow run supply-chain.yml --ref "$tag" -f tag="$tag"
+```
+
+The tag/ref equality is a release invariant: dispatching from `master` or from
+a different ref would make rebuilt artefacts and their signed provenance refer
+to source other than the published release.
 
 ## ADR index regeneration policy
 
@@ -154,6 +171,10 @@ repo or in CI secrets.
   signature plus a GitHub-native build-provenance attestation
   (`actions/attest-build-provenance`). See
   [ADR-0902](../adr/0902-signing-and-attestation-audit.md).
+- **Operator and node images** (`ghcr.io/vmafx/vmafx-operator:<tag>` and
+  `ghcr.io/vmafx/vmafx-node:<tag>`): the same cosign signature, CycloneDX SBOM,
+  and GitHub-native build provenance, emitted by
+  `docker-publish-operator-node.yml`.
 
 ### Consumer verification recipes
 
@@ -167,12 +188,11 @@ cosign verify-blob --bundle vmaf.bundle vmaf \
   --certificate-identity-regexp 'https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
-# vmaf-mcp wheel on PyPI. PEP 740 attestations — pip / uv verify automatically
-# when the index advertises the predicate. Manual check via cosign.
-cosign verify-blob --bundle vmaf_mcp-3.x.y-py3-none-any.whl.bundle \
-  vmaf_mcp-3.x.y-py3-none-any.whl \
-  --certificate-identity-regexp 'https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@.*' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+# vmaf-mcp wheel on PyPI. The PyPI integrity API supplies the PEP 740
+# provenance; pypi-attestations binds it to the expected source repository.
+pypi-attestations verify pypi \
+  --repository https://github.com/VMAFx/vmafx \
+  pypi:vmaf_mcp-3.x.y-py3-none-any.whl
 
 # Container image, cosign route. Replace DIGEST with the actual sha256 digest.
 cosign verify ghcr.io/vmafx/vmafx@sha256:DIGEST \
@@ -181,12 +201,19 @@ cosign verify ghcr.io/vmafx/vmafx@sha256:DIGEST \
 
 # Container image, GitHub-native attestation route (added by ADR-0902).
 gh attestation verify oci://ghcr.io/vmafx/vmafx@sha256:DIGEST --repo VMAFx/vmafx
+
+# Operator/node images use their own workflow identity.
+cosign verify ghcr.io/vmafx/vmafx-node@sha256:DIGEST \
+  --certificate-identity-regexp 'https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-The post-push `smoke-test` job in `docker-publish-production.yml` runs the
-cosign verify recipe above against every freshly-built CPU image before
-running it, so a signature gap fails CI loudly rather than silently
-shipping an unsigned image.
+The post-push smoke jobs in both Docker workflows run the matching cosign
+verification recipe before pulling an image. The production workflow also
+executes the CPU CLI and the Python 3.14 server entrypoints; the operator/node
+workflow verifies both entrypoint artifacts and executes `vmaf --version` plus
+`ffmpeg -version` from the node image. A signature or runtime-linkage gap fails
+the release rather than silently shipping a broken image.
 
 ## CHANGELOG.md fragment workflow (ADR-0221)
 

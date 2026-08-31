@@ -26,6 +26,7 @@ from typing import Any
 
 import pytest
 import pytest_asyncio  # noqa: F401 — needed for asyncio mode auto-detection
+
 from vmaf_mcp import server as srv
 
 REPO = Path(__file__).resolve().parents[3]
@@ -103,8 +104,8 @@ async def test_list_tools_each_has_input_schema() -> None:
     """Every tool carries a non-empty inputSchema dict."""
     tools = await srv._list_tools()
     for tool in tools:
-        assert isinstance(tool.inputSchema, dict), f"{tool.name}: inputSchema is not a dict"
-        assert "type" in tool.inputSchema, f"{tool.name}: inputSchema missing 'type'"
+        assert isinstance(tool.input_schema, dict), f"{tool.name}: inputSchema is not a dict"
+        assert "type" in tool.input_schema, f"{tool.name}: inputSchema missing 'type'"
 
 
 # ---------------------------------------------------------------------------

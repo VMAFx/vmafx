@@ -16,11 +16,13 @@ liveness/readiness probes, Prometheus scraping, and direct curl-based scoring.
 # Install with HTTP extras
 pip install 'vmaf-mcp[http]'
 
-# Start the server on port 8080
-vmaf-mcp --transport http --port 8080
+# Start the server on port 8080 with bearer authentication
+VMAFX_MCP_HTTP_TOKEN='replace-with-a-secret' \
+  vmaf-mcp --transport http --port 8080
 
 # Or via environment variable
-VMAFX_PORT=8080 vmaf-mcp --transport http
+VMAFX_PORT=8080 VMAFX_MCP_HTTP_TOKEN='replace-with-a-secret' \
+  vmaf-mcp --transport http
 ```
 
 ---
@@ -29,7 +31,8 @@ VMAFX_PORT=8080 vmaf-mcp --transport http
 
 ### `GET /healthz` — Liveness probe
 
-Always returns `200 OK` while the process is alive. Suitable for Kubernetes
+Returns `200 OK` while the process is alive after the request passes the shared
+authentication middleware. Suitable for an authenticated Kubernetes
 `livenessProbe`.
 
 **Response**
@@ -100,6 +103,7 @@ over the `vmaf_score` MCP tool.
 
 ```bash
 curl -X POST http://localhost:8080/v1/score \
+  -H 'Authorization: Bearer replace-with-a-secret' \
   -H 'Content-Type: application/json' \
   -d '{
     "reference": "/data/ref.yuv",
@@ -213,6 +217,10 @@ pip install 'vmaf-mcp[http]' aiohttp>=3.9 prometheus-client>=0.20
 
 If `aiohttp` or `prometheus-client` is absent and `--transport http` is
 requested, the server raises an `ImportError` with an installation hint.
+The published `vX.Y.Z-server` image installs `[eval,http]`, so its default
+HTTP entrypoint includes both dependencies. Its image configuration explicitly
+sets `VMAFX_MCP_HTTP_BIND=0.0.0.0`; standalone Python installs retain the safer
+`127.0.0.1` default.
 
 ---
 

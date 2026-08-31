@@ -55,6 +55,19 @@ func TestFFmpegBinary(t *testing.T) {
 	})
 }
 
+func TestVersionRequest(t *testing.T) {
+	t.Parallel()
+	if !isVersionRequest([]string{"vmafx-node", "--version"}) {
+		t.Fatal("--version must select the non-blocking version path")
+	}
+	if isVersionRequest([]string{"vmafx-node"}) {
+		t.Fatal("normal startup must not select the version path")
+	}
+	if isVersionRequest([]string{"vmafx-node", "--version", "extra"}) {
+		t.Fatal("version path must reject extra arguments")
+	}
+}
+
 // TestProvideExecutorBackendDefault verifies the executor backend reads
 // VMAFX_BACKEND (koanf key "backend") and defaults to "cpu" when unset.
 func TestProvideExecutorBackendDefault(t *testing.T) {

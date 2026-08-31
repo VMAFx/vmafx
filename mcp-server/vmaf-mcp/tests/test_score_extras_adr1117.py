@@ -49,7 +49,7 @@ def _tool_props(tool_name: str) -> dict:
     tools = anyio.run(srv._list_tools)
     for tool in tools:
         if tool.name == tool_name:
-            return tool.inputSchema["properties"]
+            return tool.input_schema["properties"]
     raise AssertionError(f"tool {tool_name!r} not found")
 
 

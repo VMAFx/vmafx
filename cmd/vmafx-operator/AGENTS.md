@@ -109,6 +109,12 @@ See [ADR-0714](../../docs/adr/0714-vmafx-operator-skeleton.md),
     CompoundKey; `TestEnvOptionsContract` fails if a new operator option is
     added upstream without registering it here.
 
+14. **`--version` exits before fx startup** (`main.go`, ADR-1129): release
+    images inject `pkg/version.version` through Go ldflags and the container
+    smoke executes `vmafx-operator --version`. Keep this exact early exit ahead
+    of `app().Run()` so version verification does not require Kubernetes
+    credentials or start the long-running manager.
+
 ## Test requirements
 
 ### Controller envtest (requires kubebuilder-envtest binaries)

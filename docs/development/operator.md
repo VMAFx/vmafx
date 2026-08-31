@@ -33,6 +33,19 @@ helm upgrade --install vmafx deploy/helm/vmafx \
 CRDs are installed automatically from `deploy/helm/vmafx/crds/` on first
 `helm install`.
 
+### Verify the operator image version
+
+The release image exposes a non-blocking version check that does not need
+Kubernetes credentials or start the manager:
+
+```bash
+docker run --rm ghcr.io/vmafx/vmafx-operator:v3.2.1 --version
+# v3.2.1
+```
+
+Release builds inject the published tag into `pkg/version.version`; an output
+of `dev` means the image was not built by the release workflow.
+
 ### Submit a scoring job
 
 ```yaml

@@ -4,11 +4,11 @@
 #
 # docker/Dockerfile.production-gpu — VMAFX production GPU-augmented runtime image
 #
-# Parametrized via GPU_RUNTIME build-arg:
-#   cpu        (default) — identical to Dockerfile.production; no GPU runtime added
-#   cuda12     — adds CUDA 12 runtime libs (libcuda.so stub + libcudart.so)
-#   rocm6      — adds ROCm 6 HIP runtime (libamdhip64.so + libhsa-runtime64.so)
-#   oneapi2026 — adds Intel oneAPI 2026 Level Zero runtime (libze1 + libze_intel_gpu1)
+# Targets use matching, digest-pinned build/runtime families:
+#   final-cpu        — Debian 13 builder + distroless Debian 13 runtime
+#   final-cuda13     — NVIDIA CUDA 13.3.1 devel + runtime images
+#   final-rocm7      — AMD ROCm 7.2.4 dev/application image
+#   final-oneapi2025 — Intel oneAPI 2025.3.1 basekit + runtime images
 #
 # Tag matrix (built by CI):
 #   ghcr.io/vmafx/vmafx:<tag>          (cpu default, same as Dockerfile.production)
@@ -17,14 +17,14 @@
 #   ghcr.io/vmafx/vmafx:<tag>-oneapi2025
 #
 # ADR-0698: vmafx-production-dockerfile
-
-ARG GPU_RUNTIME=cpu
+# ADR-1129: release-container-runtime-alignment
 
 # ---------------------------------------------------------------------------
-# Stage 1 — builder (same as Dockerfile.production but WITH GPU backend
-# selected by GPU_RUNTIME so the vmaf binary has the right backend compiled in)
+# Stage 1 — CPU builder plus one vendor-native builder per GPU backend
 # ---------------------------------------------------------------------------
-# Builder on debian:12-slim to match the distroless cc-debian12 runtime glibc (2.36).
+# CPU builder and runtime share the Debian 13 ABI floor. GPU builders below use
+# their vendors' official devel images instead of apt-installing from repos that
+# are absent from a plain Debian base.
 FROM debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS builder-base
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -64,97 +64,166 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-cpu \
         -Denable_sycl=false \
         -Denable_dnn=disabled \
         -Denable_avx512=true \
-    && ninja -C /build -j4 \
+    && ninja -C /build -j"${VMAF_BUILD_JOBS}" \
     && mkdir -p /dist/lib /dist/bin /dist/model \
     && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
     && cp /build/tools/vmaf /dist/bin/ \
     && cp -r model/ /dist/model/
 
-# --- cuda12 build ---
-FROM builder-base AS builder-cuda13
+# --- CUDA 13.3.1 build ---
+FROM nvidia/cuda:13.3.1-devel-ubuntu24.04@sha256:4ff859525f99de5782aa73607ce24219b07dddd48d12b97c1c301d7e1cfb0a87 AS builder-cuda13
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG VMAF_BUILD_JOBS=4
+ARG NV_CODEC_HEADERS_COMMIT=876af32a202d0de83bd1d36fe74ee0f7fcf86b0d
 
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \
     && apt-get install -y --no-install-recommends \
-        cuda-toolkit-13-3
+        ca-certificates \
+        ccache \
+        gcc \
+        g++ \
+        git \
+        make \
+        meson \
+        nasm \
+        ninja-build \
+        pkg-config
 
+# libvmaf's CUDA loader requires symbols newer than Ubuntu 24.04's packaged
+# headers. Install the exact minimum compatible upstream commit named by the
+# Meson configure check instead of floating on the distro snapshot.
+RUN git init /tmp/nv-codec-headers \
+    && git -C /tmp/nv-codec-headers remote add origin \
+        https://code.ffmpeg.org/FFmpeg/nv-codec-headers.git \
+    && git -C /tmp/nv-codec-headers fetch --depth=1 origin "${NV_CODEC_HEADERS_COMMIT}" \
+    && git -C /tmp/nv-codec-headers checkout --detach FETCH_HEAD \
+    && test "$(git -C /tmp/nv-codec-headers rev-parse HEAD)" = "${NV_CODEC_HEADERS_COMMIT}" \
+    && make -C /tmp/nv-codec-headers install \
+    && rm -rf /tmp/nv-codec-headers
+
+WORKDIR /src
+COPY . .
+
+# Ubuntu 24.04 ships Meson 1.3, whose final C23 spelling is still `c2x`.
+# Override the project's equivalent `c23` default in every vendor stage so the
+# vendor compiler mode stays C23 while Meson can parse the configuration.
+# GPU custom targets also use source-relative include paths, so their build
+# directories stay under `/src/core` instead of an external `/build`.
 RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-cuda13 \
     CCACHE_DIR=/root/.cache/ccache \
-    meson setup /build core \
+    meson setup /src/core/build core \
         --buildtype=release \
         --strip \
         -Denable_cuda=true \
+        -Denable_nvcc=true \
         -Denable_sycl=false \
         -Denable_dnn=disabled \
+        -Dc_std=c2x \
+        -Dcpp_std=c++23 \
         -Denable_avx512=true \
-    && ninja -C /build -j4 \
+    && ninja -C /src/core/build -j"${VMAF_BUILD_JOBS}" \
     && mkdir -p /dist/lib /dist/bin /dist/model \
-    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
-    && cp /build/tools/vmaf /dist/bin/ \
+    && find /src/core/build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
+    && cp /src/core/build/tools/vmaf /dist/bin/ \
     && cp -r model/ /dist/model/
 
-# --- rocm6 build ---
-FROM builder-base AS builder-rocm7
+# --- ROCm 7.2.4 build ---
+FROM rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054 AS builder-rocm7
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG VMAF_BUILD_JOBS=4
 
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \
     && apt-get install -y --no-install-recommends \
-        rocm-hip-runtime-dev
+        ca-certificates \
+        ccache \
+        gcc \
+        g++ \
+        meson \
+        nasm \
+        ninja-build \
+        pkg-config \
+        xxd
+
+WORKDIR /src
+COPY . .
 
 RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-rocm7 \
     CCACHE_DIR=/root/.cache/ccache \
-    meson setup /build core \
+    meson setup /src/core/build core \
         --buildtype=release \
         --strip \
         -Denable_cuda=false \
         -Denable_hip=true \
+        -Denable_hipcc=true \
         -Denable_sycl=false \
         -Denable_dnn=disabled \
+        -Db_lto=false \
+        -Dc_std=c2x \
+        -Dcpp_std=c++23 \
         -Denable_avx512=true \
-    && ninja -C /build -j4 \
+    && ninja -C /src/core/build -j"${VMAF_BUILD_JOBS}" \
     && mkdir -p /dist/lib /dist/bin /dist/model \
-    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
-    && cp /build/tools/vmaf /dist/bin/ \
+    && find /src/core/build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
+    && cp /src/core/build/tools/vmaf /dist/bin/ \
     && cp -r model/ /dist/model/
 
-# --- oneapi2026 build ---
-FROM builder-base AS builder-oneapi2025
+# --- oneAPI 2025.3.1 build ---
+FROM intel/oneapi-basekit:2025.3.1-0-devel-ubuntu24.04@sha256:bbe949c0126a2dd3e0017bc40e97cef5a74736940cc50b67962626a4dbb847dc AS builder-oneapi2025
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG VMAF_BUILD_JOBS=4
 
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \
     && apt-get install -y --no-install-recommends \
-        intel-oneapi-dpcpp-cpp-2025.3
+        ca-certificates \
+        ccache \
+        gcc \
+        g++ \
+        meson \
+        nasm \
+        ninja-build \
+        pkg-config
 
 ENV ONEAPI_ROOT=/opt/intel/oneapi
 ENV PATH="${ONEAPI_ROOT}/compiler/latest/bin:${PATH}"
 
+WORKDIR /src
+COPY . .
+
 RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-oneapi2025 \
     CCACHE_DIR=/root/.cache/ccache \
-    meson setup /build core \
+    CC=icx CXX=icpx meson setup /src/core/build core \
         --buildtype=release \
         --strip \
         -Denable_cuda=false \
         -Denable_sycl=true \
         -Denable_dnn=disabled \
+        -Db_lto=false \
+        -Dc_std=c2x \
         -Denable_avx512=true \
-    && ninja -C /build -j4 \
+    && ninja -C /src/core/build -j"${VMAF_BUILD_JOBS}" \
     && mkdir -p /dist/lib /dist/bin /dist/model \
-    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
-    && cp /build/tools/vmaf /dist/bin/ \
+    && find /src/core/build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
+    && cp /src/core/build/tools/vmaf /dist/bin/ \
     && cp -r model/ /dist/model/
 
 # (ADR-0726: Vulkan backend removed; builder-vulkan stage deleted)
 
 # ---------------------------------------------------------------------------
-# Runtime base — distroless cc-debian12
+# CPU runtime base — distroless Debian 13
 # ---------------------------------------------------------------------------
-FROM gcr.io/distroless/cc-debian12@sha256:e5d81ddde149641e2a9ba55be4545bc125c67de07508b03ba4c22e6eb0ded5aa AS runtime-base
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:c31ff9abcb1910f3ab25c7957bdaf0bfe12a01eb546e8df2282f1c8f682b606c AS runtime-base
 
 LABEL org.opencontainers.image.title="vmafx"
 LABEL org.opencontainers.image.description="VMAFX production GPU runtime"
@@ -178,41 +247,54 @@ COPY --from=builder-cpu /dist/model/ /usr/local/share/vmafx/model/
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmaf"]
 
-FROM runtime-base AS final-cuda13
-# CUDA runtime libs — only the runtime, not the full toolkit
-COPY --from=nvidia/cuda:13.3.1-runtime-ubuntu24.04@sha256:63da350831208559df18c7b8f3e0d5d1c984eaa815cdde690aacd6606cd0cb11 /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
+FROM nvidia/cuda:13.3.1-runtime-ubuntu24.04@sha256:63da350831208559df18c7b8f3e0d5d1c984eaa815cdde690aacd6606cd0cb11 AS final-cuda13
+LABEL org.opencontainers.image.title="vmafx"
+LABEL org.opencontainers.image.description="VMAFX production CUDA 13.3.1 runtime"
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.vendor="Lusoris"
+ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
+ENV VMAF_MODEL_PATH="/usr/local/share/vmafx/model"
 COPY --from=builder-cuda13 /dist/lib/   /usr/local/lib/
 COPY --from=builder-cuda13 /dist/bin/   /usr/local/bin/
 COPY --from=builder-cuda13 /dist/model/ /usr/local/share/vmafx/model/
 # Drop privileges. CUDA device access (/dev/nvidia*) is granted via the
 # NVIDIA Container Toolkit — `nonroot` UID 65532 still gets device access
 # when the runtime injects /dev nodes with mode 0666.
-USER nonroot:nonroot
+USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/vmaf"]
 
-FROM runtime-base AS final-rocm7
-# ROCm HIP runtime libs
-COPY --from=rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054 /opt/rocm/lib/libamdhip64.so*       /usr/local/lib/
-COPY --from=rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054 /opt/rocm/lib/libhsa-runtime64.so*  /usr/local/lib/
+FROM rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054 AS final-rocm7
+LABEL org.opencontainers.image.title="vmafx"
+LABEL org.opencontainers.image.description="VMAFX production ROCm 7.2.4 runtime"
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.vendor="Lusoris"
+ENV LD_LIBRARY_PATH="/usr/local/lib:/opt/rocm/lib:/opt/rocm/lib64"
+ENV VMAF_MODEL_PATH="/usr/local/share/vmafx/model"
 COPY --from=builder-rocm7 /dist/lib/   /usr/local/lib/
 COPY --from=builder-rocm7 /dist/bin/   /usr/local/bin/
 COPY --from=builder-rocm7 /dist/model/ /usr/local/share/vmafx/model/
 # Drop privileges. ROCm requires the host user to be a member of the
 # `render` and `video` groups; the runtime image inherits this from the
 # host group-mapping when `--group-add video,render` is passed.
-USER nonroot:nonroot
+USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/vmaf"]
 
-FROM runtime-base AS final-oneapi2025
-# Level Zero + Intel GPU plugin runtime
-COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04@sha256:79a5e333ff6f773793d124b78047001c51cbcd53035e5100313abf2f771af95a /opt/intel/oneapi/compiler/latest/lib/libsycl.so*  /usr/local/lib/
-COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04@sha256:79a5e333ff6f773793d124b78047001c51cbcd53035e5100313abf2f771af95a /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
+FROM intel/oneapi-runtime:2025.3.1-0-devel-ubuntu24.04@sha256:8942e89b6e6e0cd9a4ca26f12fd4b32a2f0dd1de7e631ea59101a183878d660f AS final-oneapi2025
+LABEL org.opencontainers.image.title="vmafx"
+LABEL org.opencontainers.image.description="VMAFX production oneAPI 2025.3.1 runtime"
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.vendor="Lusoris"
+ENV LD_LIBRARY_PATH="/usr/local/lib:/opt/intel/oneapi/redist/lib"
+ENV VMAF_MODEL_PATH="/usr/local/share/vmafx/model"
 COPY --from=builder-oneapi2025 /dist/lib/   /usr/local/lib/
 COPY --from=builder-oneapi2025 /dist/bin/   /usr/local/bin/
 COPY --from=builder-oneapi2025 /dist/model/ /usr/local/share/vmafx/model/
 # Drop privileges. Intel GPU access via /dev/dri/renderD* — group `render`
 # (GID 110/993 on Debian) needs to be passed via `--group-add` on `docker run`.
-USER nonroot:nonroot
+USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/vmaf"]
 
 # (ADR-0726: final-vulkan stage removed)

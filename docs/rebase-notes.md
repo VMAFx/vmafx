@@ -47020,3 +47020,41 @@ No upstream code impact: preserve `skip-changelog: true` and the pre-merge
 fragment rollover when rebasing release automation. Re-enabling
 release-please's changelog updater without also replacing the fragment renderer
 would republish every consumed release entry under Unreleased.
+
+## 2026-08-31 — ADR-1129 release container runtime alignment
+
+The production Dockerfiles and their two publication workflows are fork-local;
+an upstream sync has no direct file counterpart to prefer. Preserve these
+coupled invariants:
+
+1. Debian 13-compiled CPU, server-adjacent, and node binaries must not return to
+   a Debian 12 runtime. The MCP server must keep a real Python 3.14 interpreter
+   matching the venv builder.
+2. CUDA 13.3.1, ROCm 7.2.4, and oneAPI 2025.3.1 builders come from their
+   digest-pinned vendor devel images; their final stages use the matching
+   vendor runtime/application families.
+3. Node FFmpeg dependencies are collected from the native `ldd` closure. Do
+   not restore `/usr/lib/x86_64-linux-gnu` copies; they break the arm64 publish
+   leg.
+4. Both Docker workflows trigger on `release.published`, check out
+   `github.event.release.tag_name`, and derive image tags from the same value.
+   Each build keeps cosign signing, CycloneDX SBOM handling, and GitHub-native
+   provenance; smoke jobs verify signatures before pulling and contain no
+   success-masking fallback.
+5. The Python server uses MCP 2.x constructor handlers, not the removed
+   decorator/request-context API. Its production image installs `[eval,http]`,
+   keeps the documented HTTP CLI dispatch, and explicitly opts the container
+   into `VMAFX_MCP_HTTP_BIND=0.0.0.0` without weakening fail-closed auth.
+6. Operator and node container builds inject the published tag into
+   `github.com/VMAFx/vmafx/pkg/version.version`; both binaries handle
+   `--version` before starting their long-running fx graphs, and release smokes
+   assert the exact tag. Do not restore the removed `main.buildVersion` ldflag
+   target or success-masked `--help` probes.
+7. The node's hand-written `libvmaf.pc` must expose both `${includedir}` and
+   `${includedir}/libvmaf`: FFmpeg includes the legacy `<libvmaf.h>` spelling
+   while fork patches also include namespaced `<libvmaf/...>` headers.
+8. Ubuntu 24.04 vendor builders spell the C23 Meson option `c2x`, and GPU
+   custom targets require an in-source-tree `core/build` directory for their
+   relative include paths. CUDA also installs the exact minimum compatible
+   `nv-codec-headers` commit declared in `Dockerfile.production-gpu`; distro
+   headers are older than libvmaf's loader API. Preserve all three mechanics.

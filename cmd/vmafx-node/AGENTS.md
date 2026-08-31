@@ -98,3 +98,9 @@ wired into the fx graph.
     pinned at `v0.5.0` (module-wide). Do not change the pin or edit
     `internal/app/bootstrap` from this package — both are shared across all
     binaries.
+
+11. **`--version` exits before fx startup** (`main.go`, ADR-1129): release
+    images inject `pkg/version.version` through Go ldflags and the container
+    smoke executes `vmafx-node --version`. Keep this exact early exit ahead of
+    `fx.New(...).Run()` so version verification never starts the long-running
+    gRPC listener or requires scoring assets.

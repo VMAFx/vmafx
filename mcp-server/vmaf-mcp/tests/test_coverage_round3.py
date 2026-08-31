@@ -122,6 +122,7 @@ def _make_feature_parquet(path: Path, n: int = 30, with_mos: bool = True) -> Non
 def _has_eval_deps() -> bool:
     try:
         import numpy  # noqa: F401
+        import onnx  # noqa: F401
         import onnxruntime  # noqa: F401
         import pandas  # noqa: F401
         import scipy  # noqa: F401
@@ -854,7 +855,7 @@ def test_vmaf_score_bitdepth_schema_is_integer_with_enum():
 
     tools = anyio.run(get)
     by_name = {t.name: t for t in tools}
-    schema = by_name["vmaf_score"].inputSchema
+    schema = by_name["vmaf_score"].input_schema
     bitdepth_schema = schema["properties"]["bitdepth"]
     assert bitdepth_schema["type"] == "integer"
     enum_set = set(bitdepth_schema["enum"])
@@ -873,7 +874,7 @@ def test_vmaf_score_pixfmt_schema_enumerates_valid_values():
 
     tools = anyio.run(get)
     by_name = {t.name: t for t in tools}
-    schema = by_name["vmaf_score"].inputSchema
+    schema = by_name["vmaf_score"].input_schema
     pixfmt_schema = schema["properties"]["pixfmt"]
     assert set(pixfmt_schema["enum"]) == {"420", "422", "444"}
 

@@ -91,6 +91,7 @@ def _require_aiohttp() -> Any:
     """Return the aiohttp module; raise ImportError with install hint if absent."""
     try:
         import aiohttp
+        import aiohttp.web
 
         return aiohttp
     except ImportError as exc:
