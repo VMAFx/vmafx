@@ -1,5 +1,5 @@
 compat_cflags = []
-if cc.has_function('strsep')
+if cc.has_function('strsep', args : test_args)
   compat_cflags += '-DHAVE_STRSEP'
 endif
 

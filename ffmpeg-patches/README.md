@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 -->
 # ffmpeg-patches/
 
-Local patches against FFmpeg **n8.1.1** for integrating this VMAF fork into
+Local patches against FFmpeg **n9.0.1** for integrating this VMAF fork into
 `libavfilter/vf_libvmaf*` plus a new `vf_vmaf_pre` filter.
 
 ## Contents
@@ -113,7 +113,7 @@ hardware-frame import.
 ## How to apply
 
 ```bash
-cd /path/to/ffmpeg    # must be at tag n8.1.1
+cd /path/to/ffmpeg    # must be at tag n9.0.1
 for p in /path/to/vmaf/ffmpeg-patches/000*-*.patch; do
     git am --3way "$p" || break
 done
@@ -128,25 +128,13 @@ Or via the helper skill: `/ffmpeg-apply-patches /path/to/ffmpeg`.
 > [ADR-0186](../docs/adr/0186-vulkan-image-import-impl.md), the
 > verification gate for any change touching a libvmaf C-API surface
 > the patches consume is a **series replay** against a pristine
-> `n8.1.1` checkout (cumulative `git am --3way`), NOT a per-patch
+> `n9.0.1` checkout (cumulative `git am --3way`), NOT a per-patch
 > `git apply --check`. The latter rejects `0002+` because they
 > reference cumulative-state hunks that don't exist in pristine
-> `n8.1.1`. **Pending verification for patch 0016 (score_fmt, 2026-06-06)**:
-> patches 0001-0015 were last verified against n8.1.1 on 2026-05-20
-> (ADR-0643); patch 0016 has not yet been replay-verified — a series replay
-> of all 16 patches against pristine n8.1.1 is required before merge. The
-> most recent full no-drift verification is
-> the encoder-profile hand-off (ADR-0643, 2026-05-20): all 15 patches
-> (0001-0015) apply cleanly against pristine `n8.1.1`, the latest
-> released FFmpeg 8.x.x tag verified on 2026-05-20, with zero conflicts.
-> The previous verification was the full-feature-exposure
-> sync (ADR-0576, 2026-05-18) against pristine `n8.1.1`; before that was
-> the n8.1 to n8.1.1 base
-> bump (2026-05-09); before that was
-> [ADR-0277 (2026-05-04)](../docs/adr/0277-ffmpeg-patches-refresh-2026-05-04.md);
-> the procedure is captured in
-> [`docs/rebase-notes.md`](../docs/rebase-notes.md) under the same
-> ADR heading.
+> `n9.0.1`. All 17 patches were replayed cumulatively and FFmpeg was built
+> successfully in the dev-MCP image on 2026-08-31. The migration record and
+> earlier replay history live in
+> [`docs/rebase-notes.md`](../docs/rebase-notes.md).
 
 ## How to smoke-test
 
@@ -156,7 +144,7 @@ bash ffmpeg-patches/test/build-and-run.sh
 
 Requires `libvmaf` to be installed (`pkg-config --cflags libvmaf` must
 resolve). Set `VMAF_PREFIX` to point at a non-standard install prefix.
-Pins `FFMPEG_SHA=n8.1.1`; override to test against a newer tag.
+Pins `FFMPEG_SHA=n9.0.1`; override to test against another tag.
 
 ## How to regenerate
 

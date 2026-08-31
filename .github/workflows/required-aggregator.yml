@@ -58,7 +58,7 @@ jobs:
               'CodeQL (C/C++)',
               'CodeQL (Python)',
               'Pre-Commit (Formatters + Basic Checks)',
-              'Python Lint (Ruff + Black + isort + mypy)',
+              'Python Lint (Ruff + Black + mypy)',
               'Semgrep (CWE Top 25 + CERT-C + Custom)',
               'Clang-Tidy (Changed C/C++ Files)',
               'Cppcheck (Whole Project)',

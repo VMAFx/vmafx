@@ -17,12 +17,12 @@
  *
  * The reference is the *production* scalar `adm_dwt2_s()` from adm_tools.c,
  * linked out of `libvmaf_feature_static_lib`, rather than a transcription.
- * Both TUs come from the same build — adm_tools.c with the project default
- * flags, the NEON kernel with the `arm64_adm_dwt2_neon_lib`
- * `-ffp-contract=off` carve-out — so the comparison exercises the exact
- * object code that ships, including the FP-contraction contract from
- * ADR-1057.  A transcribed reference compiled with the test TU's own flags
- * would silently misrepresent that contract in either direction.
+ * Both TUs come from the same build — `adm_dwt2_s` with its function-scoped
+ * contraction guard, the NEON kernel with the `arm64_adm_dwt2_neon_lib`
+ * `-ffp-contract=off` carve-out and explicit split operations — so the
+ * comparison exercises the exact object code that ships, including the
+ * FP-contraction contract from ADR-1057. A transcribed reference compiled
+ * with the test TU's own flags could silently misrepresent that contract.
  *
  * What is asserted, per geometry:
  *   1. Bit-exact equality of all four subbands over the whole valid region.
@@ -46,9 +46,8 @@
  *
  * Negative controls run while writing this test (each reverted afterwards)
  * confirmed the assertions bite: disabling the vertical scalar tail, swapping
- * `ind_x` for clamped flat arithmetic, and reintroducing a true FMA
- * (`vfmaq_laneq_f32`) each produced a failure with the predicted mismatch
- * footprint.
+ * `ind_x` for clamped flat arithmetic, and introducing an explicit FMA each
+ * produced a failure with the predicted mismatch footprint.
  */
 
 #include <stdio.h>
@@ -106,8 +105,8 @@ static float next_sample(uint32_t *seed)
  * message on infrastructure failure (allocation / scalar error), NULL
  * otherwise, with the mismatch count in *out_mismatches.
  */
-static char *compare_geometry(int w, int h, int src_pad, int dst_pad, int verbose,
-                              int *out_mismatches)
+static char *compare_geometry(int w, int h, int src_pad, int dst_pad, int signed_zero_case,
+                              int verbose, int *out_mismatches)
 {
     const int w_half = (w + 1) / 2, h_half = (h + 1) / 2;
     const int src_px_stride = w + src_pad;
@@ -163,9 +162,24 @@ static char *compare_geometry(int w, int h, int src_pad, int dst_pad, int verbos
     /* Fill the stride padding too: a kernel that read past `w` would then be
      * consuming real data rather than whatever malloc left behind, which keeps
      * the failure deterministic instead of run-to-run noise. */
-    for (int i = 0; i < h; ++i)
+    for (int i = 0; i < h; ++i) {
         for (int j = 0; j < src_px_stride; ++j)
-            src[(size_t)i * src_px_stride + j] = next_sample(&seed);
+            src[(size_t)i * src_px_stride + j] = signed_zero_case ? 0.0f : next_sample(&seed);
+    }
+
+    if (signed_zero_case) {
+        /* At output (1, 1), the mirror tables select source rows/columns
+         * 1, 2, 3, 4.  For columns 1..3, make every low-pass vertical
+         * product -0; leave column 4 at +0.  A kernel that initializes an
+         * accumulator with tap 0 instead of scalar's +0 therefore produces
+         * vertical signs {-0,-0,-0,+0}, then a low-pass horizontal -0.
+         * The scalar +0 plus four products remains +0 at both stages. */
+        for (int j = 1; j <= 3; ++j) {
+            src[(size_t)1 * src_px_stride + j] = -0.0f;
+            src[(size_t)2 * src_px_stride + j] = -0.0f;
+            src[(size_t)3 * src_px_stride + j] = -0.0f;
+        }
+    }
 
     dwt2_src_indices_filt_s(iy, ix, w, h);
 
@@ -282,7 +296,7 @@ static char *test_float_adm_dwt2_neon_matches_scalar(void)
     for (size_t t = 0; t < sizeof(geom) / sizeof(geom[0]); ++t) {
         int mismatches = 0;
         char *msg =
-            compare_geometry(geom[t][0], geom[t][1], geom[t][2], geom[t][3], 1, &mismatches);
+            compare_geometry(geom[t][0], geom[t][1], geom[t][2], geom[t][3], 0, 1, &mismatches);
         mu_assert(msg, msg == NULL);
         mu_assert("float_adm_dwt2_neon diverges from adm_dwt2_s", mismatches == 0);
     }
@@ -304,12 +318,12 @@ static char *test_float_adm_dwt2_neon_geometry_sweep(void)
             int mismatches = 0;
             /* Vary the padding with the geometry so the sweep also covers
              * tight and padded strides for each residue class. */
-            char *msg = compare_geometry(w, h, w % 5, h % 3, 0, &mismatches);
+            char *msg = compare_geometry(w, h, w % 5, h % 3, 0, 0, &mismatches);
             mu_assert(msg, msg == NULL);
             if (mismatches) {
                 (void)fprintf(stderr, "  sweep: first divergence at %dx%d\n", w, h);
                 /* Re-run verbosely so the failure report carries the detail. */
-                (void)compare_geometry(w, h, w % 5, h % 3, 1, &mismatches);
+                (void)compare_geometry(w, h, w % 5, h % 3, 0, 1, &mismatches);
             }
             mu_assert("float_adm_dwt2_neon diverges from adm_dwt2_s in the geometry sweep",
                       mismatches == 0);
@@ -319,15 +333,34 @@ static char *test_float_adm_dwt2_neon_geometry_sweep(void)
 #endif
 }
 
+/* The production scalar starts each four-tap sum at +0.  That first addition
+ * is numerically redundant for ordinary finite samples but load-bearing for
+ * IEEE-754 signed zero, so exercise it independently of the positive-only
+ * pseudo-random geometry corpus above. */
+static char *test_float_adm_dwt2_neon_preserves_signed_zero(void)
+{
+#if !ARCH_AARCH64
+    return NULL;
+#else
+    int mismatches = 0;
+    char *msg = compare_geometry(8, 6, 0, 0, 1, 1, &mismatches);
+    mu_assert(msg, msg == NULL);
+    mu_assert("float_adm_dwt2_neon diverges from scalar signed-zero contract", mismatches == 0);
+    return NULL;
+#endif
+}
+
 char *run_tests(void)
 {
 #if ARCH_AARCH64
     mu_run_test(test_float_adm_dwt2_neon_matches_scalar);
     mu_run_test(test_float_adm_dwt2_neon_geometry_sweep);
+    mu_run_test(test_float_adm_dwt2_neon_preserves_signed_zero);
 #else
     (void)fprintf(stderr, "skipping: non-aarch64 arch\n");
     (void)test_float_adm_dwt2_neon_matches_scalar;
     (void)test_float_adm_dwt2_neon_geometry_sweep;
+    (void)test_float_adm_dwt2_neon_preserves_signed_zero;
 #endif
     return NULL;
 }

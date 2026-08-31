@@ -40,8 +40,25 @@ namespace
 
 #ifdef _WIN32
 constexpr char kPathSep = '\\';
+
+[[nodiscard]] constexpr bool is_path_separator(char ch) noexcept
+{
+    return ch == '/' || ch == '\\';
+}
+
+[[nodiscard]] constexpr bool starts_unc_prefix(std::string_view path, std::size_t pos) noexcept
+{
+    return pos == 0 && path.size() > 1 && is_path_separator(path[0]) && is_path_separator(path[1]);
+}
+
+static_assert(starts_unc_prefix("\\\\server\\share", 0));
 #else
 constexpr char kPathSep = '/';
+
+[[nodiscard]] constexpr bool is_path_separator(char ch) noexcept
+{
+    return ch == '/';
+}
 #endif
 
 /*
@@ -57,9 +74,18 @@ constexpr char kPathSep = '/';
     out.reserve(path.size());
 
     for (std::size_t i = 0; i < path.size(); ++i) {
-        out += path[i];
-        if (path[i] == '/') {
-            while (i + 1 < path.size() && path[i + 1] == '/')
+        const bool separator = is_path_separator(path[i]);
+        out += separator ? kPathSep : path[i];
+        if (separator) {
+            /* A leading separator pair is structural on Windows: it starts a
+             * UNC path (\\\\server\\share) or an extended-length path
+             * (\\\\?\\...). Preserve the pair while still collapsing any
+             * additional leading separators and all later redundant runs. */
+#ifdef _WIN32
+            if (starts_unc_prefix(path, i))
+                continue;
+#endif
+            while (i + 1 < path.size() && is_path_separator(path[i + 1]))
                 ++i;
         }
     }
@@ -86,12 +112,12 @@ extern "C" int mkdirp(const char *path, mode_t mode)
         if (pos < pathname.size() && pathname[pos] != kPathSep)
             continue;
         /* Create the prefix [0, pos). */
-        std::string prefix = pathname.substr(0, pos);
+        const std::string prefix = pathname.substr(0, pos);
 #ifdef _WIN32
         (void)mode;
-        int rc = _mkdir(prefix.c_str());
+        const int rc = _mkdir(prefix.c_str());
 #else
-        int rc = mkdir(prefix.c_str(), mode);
+        const int rc = mkdir(prefix.c_str(), mode);
 #endif
         if (rc != 0 && errno != EEXIST)
             return -1;

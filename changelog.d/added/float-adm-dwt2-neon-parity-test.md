@@ -6,7 +6,8 @@
   of `libvmaf_feature_static_lib`, not transcribed, so the ADR-1057
   FP-contraction contract is part of what is under test) and requires
   bit-exact equality of all four subbands, plus proof that nothing is written
-  into the destination stride padding.
+  into the destination stride padding. A targeted signed-zero fixture also
+  locks scalar's +0-initialized four-tap accumulation against +0/-0 bit drift.
 
   Coverage: 29 hand-picked geometries — every `w % 4` residue, widths below
   the 4-column vector stride, both height parities, independently padded
@@ -16,8 +17,12 @@
   in `adm.c` applies no width guard, so every one of those widths is a width
   the production path really takes.
 
-  The kernel passed on first run: no divergence found, and no production
-  source was changed. An A/B of the 576x324 golden pair with NEON enabled
-  versus `--cpumask 4294967295` (all SIMD off) is byte-identical at `%.17g`
-  precision across all 20 frames and the pooled metrics. Registered in suite
-  `['fast', 'simd']`, gated on `float_enabled` and aarch64.
+  The test caught a Clang-specific 1–5 ULP mismatch after the original
+  translation-unit-wide contraction guard was removed. The final correction
+  scopes contraction-off to `adm_dwt2_s()` alone and keeps the NEON kernel's
+  vector and scalar accumulations +0-initialized and explicitly split. The
+  exhaustive and signed-zero suites pass in both Clang 22 and GCC 16 AArch64
+  cross-builds through QEMU, and disassembly confirms neither implementation
+  emits `fmla`. No Netflix golden assertion, snapshot, or tolerance was
+  changed. Registered in suite `['fast', 'simd']`, gated on `float_enabled`
+  and aarch64.

@@ -104,7 +104,7 @@ void operator delete(void *p, std::size_t) noexcept
 #endif /* !VMAF_OOM_TEST_SANITIZED */
 
 /* R2-9: a transient OOM on the value snapshot must not poison the slot. */
-static char *test_env_oom_does_not_poison_slot(void)
+static mu_message_t test_env_oom_does_not_poison_slot(void)
 {
 #ifdef VMAF_OOM_TEST_SANITIZED
     /* Skip under sanitizers: the global-new override that arms the fault is
@@ -160,7 +160,7 @@ static char *test_env_oom_does_not_poison_slot(void)
 #endif /* VMAF_OOM_TEST_SANITIZED */
 }
 
-extern "C" char *run_tests(void)
+extern "C" mu_message_t run_tests(void)
 {
     mu_run_test(test_env_oom_does_not_poison_slot);
     return NULL;

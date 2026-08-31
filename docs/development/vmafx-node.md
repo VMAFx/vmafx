@@ -20,7 +20,7 @@ docker buildx build --target node-cpu \
 
 # Verify ffmpeg version
 docker run --rm vmafx-node:dev ffmpeg -version | head -1
-# → ffmpeg version n8.2 ...
+# → ffmpeg version n9.0.1 ...
 
 # Verify codec inventory
 docker run --rm vmafx-node:dev ffmpeg -encoders \
@@ -43,7 +43,7 @@ the additional GPU runtime libraries copied into the final stage.
 ## ffmpeg version policy
 
 The node image pins ffmpeg to the **latest stable tagged release**
-(`FFMPEG_TAG=n8.2` as of 2026-05-28). The tag is a Docker build argument:
+(`FFMPEG_TAG=n9.0.1` as of 2026-08-31). The tag is a Docker build argument:
 
 ```bash
 # Override to test against a specific release
@@ -183,7 +183,7 @@ docker run --rm \
 
 ## Relationship to dev container
 
-The dev container (`dev/Containerfile`) also builds ffmpeg (currently n8.1.1).
+The dev container (`dev/Containerfile`) also builds ffmpeg (currently n9.0.1).
 The two builds are intentionally separate:
 
 - Dev container: full workbench with CUDA toolchain, oneAPI, MCP server, Python
@@ -191,7 +191,7 @@ The two builds are intentionally separate:
 - Node image: lean production runtime based on distroless cc-debian12. Ships
   the `vmafx-node` binary + ffmpeg + libvmaf only.
 
-When the patch series base is bumped (e.g., n8.1.1 → n8.2), both the dev
+When the patch series base is bumped, both the dev
 container's `FFMPEG_TAG` ARG and the node Dockerfile's `FFMPEG_TAG` ARG are
 updated in the same PR.
 

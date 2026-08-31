@@ -31,6 +31,12 @@ cd mcp-server/vmaf-mcp
 pip install -e .
 ```
 
+The Python server requires MCP SDK 2.1.1 or newer and Pydantic 2.13.5 or
+newer. Its SDK integration uses the 2.x low-level `on_list_tools` and
+`on_call_tool` handlers. This is an implementation compatibility boundary;
+the advertised MCP tools, their JSON schemas, and the JSON-RPC transport
+remain unchanged for clients.
+
 Set `VMAF_BIN=/abs/path/to/vmaf` when the built CLI is not at the
 repo-default `build/tools/vmaf`, and set `VMAF_MCP_ALLOW` to any
 additional corpus roots the server is allowed to read.

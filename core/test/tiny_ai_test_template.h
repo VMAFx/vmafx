@@ -93,7 +93,7 @@ static int vmaf_tiny_ai_test_unsetenv(const char *name)
  * into its own `run_tests()` via `mu_run_test()`.
  */
 #define VMAF_TINY_AI_DEFINE_REGISTRATION_TESTS(ext_name, feat_name, env_var, fn_prefix)              \
-    static char *test_##fn_prefix##_is_registered(void)                                              \
+    static mu_message_t test_##fn_prefix##_is_registered(void)                                       \
     {                                                                                                \
         VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(ext_name);                    \
         mu_assert(ext_name " extractor must be registered by name", fex != NULL);                    \
@@ -105,7 +105,7 @@ static int vmaf_tiny_ai_test_unsetenv(const char *name)
         return NULL;                                                                                 \
     }                                                                                                \
                                                                                                      \
-    static char *test_##fn_prefix##_provides_primary_feature(void)                                   \
+    static mu_message_t test_##fn_prefix##_provides_primary_feature(void)                            \
     {                                                                                                \
         VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_feature_name(feat_name, 0);        \
         mu_assert("'" feat_name "' feature name must resolve to an extractor", fex != NULL);         \
@@ -114,7 +114,7 @@ static int vmaf_tiny_ai_test_unsetenv(const char *name)
         return NULL;                                                                                 \
     }                                                                                                \
                                                                                                      \
-    static char *test_##fn_prefix##_options_table_well_formed(void)                                  \
+    static mu_message_t test_##fn_prefix##_options_table_well_formed(void)                           \
     {                                                                                                \
         VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(ext_name);                    \
         mu_assert(ext_name " extractor missing", fex != NULL);                                       \
@@ -133,7 +133,7 @@ static int vmaf_tiny_ai_test_unsetenv(const char *name)
         return NULL;                                                                                 \
     }                                                                                                \
                                                                                                      \
-    static char *test_##fn_prefix##_init_rejects_missing_model(void)                                 \
+    static mu_message_t test_##fn_prefix##_init_rejects_missing_model(void)                          \
     {                                                                                                \
         /* With neither model_path option set nor env var in the                                   \
          * environment, init() must cleanly decline rather than crash. */ \

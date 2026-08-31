@@ -75,14 +75,12 @@ jobs:
       - name: Smoke test — vmaf --version
         run: |
           docker run --rm \
-            -e LD_LIBRARY_PATH=/usr/local/lib \
             vmaf-dev-mcp-gate:${{ github.sha }} \
             vmaf --version
 
       - name: Smoke test — CPU backend probe (48-frame fixture)
         run: |
           docker run --rm \
-            -e LD_LIBRARY_PATH=/usr/local/lib \
             vmaf-dev-mcp-gate:${{ github.sha }} \
             vmaf \
               --reference /build/vmaf/testdata/ref_576x324_48f.yuv \

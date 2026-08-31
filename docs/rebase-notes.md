@@ -1,6 +1,44 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/sanitizers-meson-c23 — Cython extern follows mem.c -> mem.cpp (2026-08-30)
+
+- `compat/python-vmaf/core/adm_dwt2_cy.pyx` — **rebase-sensitive.** Upstream
+  Netflix still has `libvmaf/src/mem.c` and its `.pyx` still text-includes it.
+  The fork renamed `libvmaf/` to `core/` (ADR-0700) *and* converted that TU to
+  C++23 `mem.cpp` (#1133), so the fork's extern reads `cdef extern from
+  "mem.h"`. An upstream sync touching this `.pyx` will conflict — keep the
+  fork's header-based extern; reverting to a `.c` text-include reintroduces a
+  failure that only shows up in the tox legs, never in a meson build.
+- `python/setup.py` — fork-local: appends `../core/src/mem.cpp` to the
+  extension sources and sets `language="c++"` for the link driver.
+
+## fix/sanitizers-meson-c23 — meson from PyPI + declared c23 floor (2026-08-30)
+
+- `core/meson.build` — **rebase-sensitive.** `meson_version` raised from
+  `'>= 0.58.0'` to `'>= 1.4.0'`. This is a fork-local edit to the upstream
+  project declaration, so an upstream sync that touches the `project()` call
+  will conflict here. Keep the fork's `>= 1.4.0`: it is load-bearing for the
+  fork's `c_std=c23` default option (ADR-0692), which upstream does not set.
+  If a future sync ever drops `c_std=c23`, this pin may be relaxed back to
+  upstream's value.
+- `.github/workflows/*.yml` — fork-local CI only, no upstream counterpart.
+  15 `apt-get install … meson` sites replaced with
+  `sudo pip3 install --break-system-packages --quiet meson`. Purely additive
+  against upstream, no rebase impact.
+## fix/precommit-master-green — isort retired in favour of ruff (2026-08-30)
+
+- `pyproject.toml`, `.pre-commit-config.yaml` — fork-local tooling config;
+  upstream Netflix/vmaf has neither a ruff nor an isort configuration, so an
+  upstream sync cannot conflict here.
+- `.github/workflows/required-aggregator.yml` + `lint-and-format.yml` —
+  **paired invariant, not rebase-sensitive but edit-sensitive.** The
+  aggregator matches required checks by *exact job name*. The `Python Lint`
+  job was renamed to `Python Lint (Ruff + Black + mypy)`; both files must
+  always be changed together. Renaming one alone leaves the aggregator
+  waiting on a check name that never registers, which blocks every PR
+  rather than failing loudly.
+
 ## feat/vmafx-tune-go-fast — Phase A.5 fast path ported to Go (2026-08-30)
 
 All fork-added surfaces; no upstream-mirror files touched, so nothing here
@@ -1239,6 +1277,33 @@ in-flight branch that rebases onto a version of `adm_tools.h` that still contain
 by simply not including the declaration (the function no longer exists after this
 revert). The SIMD kernel files (`adm_tools_avx2.c`, `adm_tools_neon.c`, etc.) are
 untouched; the functions remain compiled and linkable for a future re-dispatch PR.
+
+---
+
+## fix/pr1161-neon-adm-contract (2026-08-31, ADR-1057 follow-up)
+
+**Rebase impact:** preserve the scoped non-contracting arithmetic in
+`core/src/feature/adm_tools.c::adm_dwt2_s` and
+`core/src/feature/arm64/float_adm_dwt2_neon.c`. The scalar function carries an in-body
+Clang `contract(off)` pragma and a GCC `optimize("-ffp-contract=off")` attribute. Do not
+widen the Clang pragma to the whole scalar translation unit: that changes unrelated ADM
+reductions. The NEON twin retains separate `vmulq_laneq_f32` plus `vaddq_f32` operations,
+starting every accumulator at +0 before its four taps, split scalar multiply/add, and its
+dedicated `-ffp-contract=off` build flag. The initial +0 preserves scalar-identical signed
+zero. Do not introduce `vfmaq`, `fmaf`, or initialize an accumulator directly from tap 0.
+
+Retest `test_float_adm_dwt2_neon`, including its signed-zero case, under both Clang and GCC
+AArch64 builds through QEMU.
+
+The integer ADM contract has a separate, intentional platform boundary. Keep
+`adm_dwt2_8_neon()` four-tap and scalar-bit-exact everywhere. In `integer_adm.c`, Apple
+AArch64 production dispatch must select `adm_dwt2_8_neon_apple_legacy()`, which runs the
+universal kernel and replaces only output column `j == 0` with the historical three-tap
+boundary recorded by the immutable Darwin quality tests. Linux AArch64 must continue to
+select the universal kernel. Retest `test_adm_dwt2_neon` under AArch64/QEMU and the complete
+macOS Python quality suite; the former locks both kernel contracts, while only the latter
+executes the real `__APPLE__` dispatch. Never alter Netflix assertions, snapshots, or parity
+tolerances to resolve a mismatch.
 
 ---
 

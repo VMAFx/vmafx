@@ -24,4 +24,9 @@
 void adm_dwt2_8_neon(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w, int h,
                      int src_stride, int dst_stride);
 
+/* Production-only compatibility entry point for the immutable Darwin AArch64
+ * score contract. Direct SIMD parity tests must use adm_dwt2_8_neon(). */
+void adm_dwt2_8_neon_apple_legacy(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf,
+                                  int w, int h, int src_stride, int dst_stride);
+
 #endif /* ARM64_ADM_H_ */

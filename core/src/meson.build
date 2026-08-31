@@ -9,7 +9,7 @@ sycl_dir = './sycl/'
 
 vmaf_base_include = include_directories('./', './feature', './feature/common', '../include')
 
-vmaf_cflags_common = [
+vmaf_cflags_common = cc.get_supported_arguments([
     '-pedantic',
     # ADR-0692: enforce the JPL Rule-24 fallthrough annotation at compile time.
     # C23 provides the standard [[fallthrough]] spelling.
@@ -21,6 +21,7 @@ vmaf_cflags_common = [
     # in the final libvmaf.so. This eliminates the 207-symbol leak
     # found by Research-0092 (libsvm C API, pdjson, SIMD internals, etc.)
     '-fvisibility=hidden',
+]) + [
     # Suppresses the VMAF_POOL_METHOD_NB deprecation attribute for internal
     # translation units that legitimately iterate over all pool methods (e.g.
     # output.c). External consumers without this flag will see the warning.
@@ -45,12 +46,12 @@ int main() {
     return 0;
 }
 '''
-if cc.compiles(uselocale_test, name: 'uselocale availability')
+if cc.compiles(uselocale_test, name: 'uselocale availability', args : test_args)
     cdata.set('HAVE_USELOCALE', 1)
 endif
 
 # Check for xlocale.h header (needed on some older macOS versions)
-if cc.has_header('xlocale.h')
+if cc.has_header('xlocale.h', args : test_args)
     cdata.set('HAVE_XLOCALE_H', 1)
 endif
 
@@ -426,7 +427,7 @@ int main(void) {
 }
 '''
             is_sve2_supported = cc.compiles(sve2_test_src,
-                args: ['-march=armv9-a+sve2'],
+                args: test_args + ['-march=armv9-a+sve2'],
                 name: 'aarch64 SVE2 intrinsics')
         endif
         cdata.set10('HAVE_SVE2', is_sve2_supported)
@@ -751,12 +752,11 @@ if is_asm_enabled
         )
 
         # float-ADM DWT2 NEON carve-out (ADR-1057).
-        # float_adm_dwt2_neon.c replaces the vmlaq_laneq_f32 FMA intrinsics
-        # in the original DWT2 kernel with explicit vmulq_laneq_f32 + vaddq_f32
-        # pairs to match the scalar reference rounding.  The TU also carries
-        # `#pragma clang fp contract(off)` / GCC optimize attribute guards for
-        # the scalar tail.  Building in a dedicated static library keeps the
-        # contraction guard isolated from other TUs in arm64_v8_fp.
+        # `adm_dwt2_s` has a function-scoped non-contracting guard so unrelated
+        # adm_tools.c reductions retain their established compiler semantics.
+        # This NEON TU mirrors DWT2 with explicit `vmul` + `vadd` operations;
+        # `-ffp-contract=off` also keeps its scalar tail and horizontal pass
+        # split on every supported AArch64 compiler.
         arm64_adm_dwt2_neon_lib = static_library(
           'arm64_adm_dwt2_neon',
           feature_src_dir + 'arm64/float_adm_dwt2_neon.c',
@@ -1041,10 +1041,10 @@ endif
 
 if is_cuda_enabled
     # Check for required CUDA headers
-    if not cc.has_header('ffnvcodec/dynlink_cuda.h')
+    if not cc.has_header('ffnvcodec/dynlink_cuda.h', args : test_args)
         error('ffnvcodec/dynlink_cuda.h not found. Please install nv-codec-headers from https://code.ffmpeg.org/FFmpeg/nv-codec-headers (commit 876af32a202d0de83bd1d36fe74ee0f7fcf86b0d or greater required).')
     endif
-    if not cc.has_header('ffnvcodec/dynlink_loader.h')
+    if not cc.has_header('ffnvcodec/dynlink_loader.h', args : test_args)
         error('ffnvcodec/dynlink_loader.h not found. Please install nv-codec-headers from https://code.ffmpeg.org/FFmpeg/nv-codec-headers (commit 876af32a202d0de83bd1d36fe74ee0f7fcf86b0d or greater required).')
     endif
 

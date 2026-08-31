@@ -36,11 +36,34 @@ feature/arm64/
   regression tests in [`../../../test/`](../../test/) (`test_*_simd.c`,
   migrated through the [`simd_bitexact_test.h`](../../test/simd_bitexact_test.h)
   harness per ADR-0245) catch ULP drift.
+- **Integer-ADM has one named Apple production compatibility boundary
+  (ADR-1057, 2026-08-31).** `adm_dwt2_8_neon()` itself remains the universal
+  four-tap, scalar-bit-exact kernel and `test_adm_dwt2_neon` must keep proving
+  that on every AArch64 platform. On Apple AArch64 only, `integer_adm.c`
+  dispatches production calls through `adm_dwt2_8_neon_apple_legacy()`. That
+  wrapper overwrites only the first output column with the historical
+  three-tap boundary result recorded by the immutable Darwin Python goldens.
+  Do not move the three-tap rule back into the universal kernel, broaden it to
+  Linux AArch64, or replace it with a score offset. The same test separately
+  proves that the compatibility wrapper matches its legacy reference and
+  changes no column except `j == 0`.
 - **`#pragma STDC FP_CONTRACT OFF` is kept at TU level** even though
   aarch64 GCC ignores it with a non-fatal `-Wunknown-pragmas`. The
   pragma is portable and aarch64 GCC does not contract `a + b * c`
   across statements at default optimisation anyway. Removing it on
   rebase loses the cross-architecture documentation.
+- **Float-ADM DWT2 is unconditionally non-contracting (ADR-1057,
+  2026-08-31).** The golden-producing scalar `adm_dwt2_s` carries a
+  function-scoped Clang `contract(off)` pragma and GCC
+  `optimize("-ffp-contract=off")` attribute. Do not widen either guard to
+  all of `adm_tools.c`: the earlier file-scope form changed unrelated ADM
+  reductions. `float_adm_dwt2_neon.c` starts every accumulator at +0,
+  then uses four explicit `vmulq_laneq_f32` + `vaddq_f32` steps and
+  matching scalar sequences. The initial +0 is load-bearing for signed-zero
+  parity with `adm_dwt2_s`. Keep the NEON TU's `-ffp-contract=off`; do not
+  introduce `vfmaq`, `fmaf`, or another fused form. Guarded by bit-exact
+  `test_float_adm_dwt2_neon` (including signed zero) under both Clang and GCC
+  AArch64/QEMU.
 - **Float-arithmetic NEON TUs belong in `arm64_v8_fp`** (not
   `arm64_v8`). The `arm64_v8_fp` static lib is compiled with
   `-ffp-contract=off` (ADR-0873); the `arm64_v8` lib is integer-only

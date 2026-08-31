@@ -57,8 +57,15 @@ const char *vmaf_ort_internal_resolve_name(char **table, size_t count, const cha
 typedef enum {
     ELEM_TYPE_UNDEFINED = 0, /**< ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED */
     ELEM_TYPE_FLOAT = 1,     /**< ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT     */
-    ELEM_TYPE_FLOAT16 = 10   /**< ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16   */
+    ELEM_TYPE_INT32 = 6,     /**< ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32     */
+    ELEM_TYPE_INT64 = 7,     /**< ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64     */
+    ELEM_TYPE_FLOAT16 = 10,  /**< ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16   */
+    ELEM_TYPE_DOUBLE = 11    /**< ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE    */
 } VmafOrtElemType;
+
+/** Convert an ORT output buffer to the public fp32 representation. */
+int vmaf_ort_internal_convert_output_elems(VmafOrtElemType elem_type, const void *raw, float *dst,
+                                           size_t count);
 
 /**
  * Return the element type declared for the @p slot-th model input.
