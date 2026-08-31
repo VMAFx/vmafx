@@ -176,7 +176,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-rocm7
     && cp -r model/ /dist/model/
 
 # --- oneAPI 2025.3.1 build ---
-FROM intel/oneapi-basekit:2025.3.1-0-devel-ubuntu24.04@sha256:bbe949c0126a2dd3e0017bc40e97cef5a74736940cc50b67962626a4dbb847dc AS builder-oneapi2025
+FROM intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04@sha256:79a5e333ff6f773793d124b78047001c51cbcd53035e5100313abf2f771af95a AS builder-oneapi2025
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG VMAF_BUILD_JOBS=4
