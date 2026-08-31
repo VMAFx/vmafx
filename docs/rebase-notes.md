@@ -1282,17 +1282,19 @@ untouched; the functions remain compiled and linkable for a future re-dispatch P
 
 ## fix/pr1161-neon-adm-contract (2026-08-31, ADR-1057 follow-up)
 
-**Rebase impact:** preserve the compiler-matched arithmetic in
-`core/src/feature/arm64/float_adm_dwt2_neon.c`. Clang's production scalar path contracts
-the four-tap accumulation, so its NEON twin must use explicit `vfmaq_laneq_f32` / `fmaf`.
-GCC 16 keeps the scalar operations split, so its NEON twin must retain separate
-`vmulq_laneq_f32` plus `vaddq_f32` and scalar multiply/add. Keep the translation unit's
-`-ffp-contract=off` guard; it prevents implicit compiler-policy drift. In particular, do
-not replace Clang's `vfmaq_laneq_f32` with `vmlaq_laneq_f32`, which remains split when
-contraction is disabled.
+**Rebase impact:** preserve the scoped non-contracting arithmetic in
+`core/src/feature/adm_tools.c::adm_dwt2_s` and
+`core/src/feature/arm64/float_adm_dwt2_neon.c`. The scalar function carries an in-body
+Clang `contract(off)` pragma and a GCC `optimize("-ffp-contract=off")` attribute. Do not
+widen the Clang pragma to the whole scalar translation unit: that changes unrelated ADM
+reductions. The NEON twin retains separate `vmulq_laneq_f32` plus `vaddq_f32` operations,
+split scalar multiply/add, and its dedicated `-ffp-contract=off` build flag. Do not
+introduce `vfmaq` or `fmaf`.
 
 Retest `test_float_adm_dwt2_neon` under both Clang and GCC AArch64 builds through QEMU.
-Do not alter `adm_dwt2_s`, Netflix assertions, or parity tolerances to resolve a mismatch.
+Also run the macOS Python quality suite: the unit parity test alone did not catch the
+`88.030459` versus `88.030322` end-to-end regression. Never alter Netflix assertions,
+snapshots, or parity tolerances to resolve a mismatch.
 
 ---
 

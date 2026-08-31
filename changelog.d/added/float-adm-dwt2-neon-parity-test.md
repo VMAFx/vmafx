@@ -16,11 +16,11 @@
   in `adm.c` applies no width guard, so every one of those widths is a width
   the production path really takes.
 
-  The test caught a Clang-specific 1–5 ULP mismatch after PR #1161 restored
-  the scalar golden-producing contraction semantics: Clang contracts the
-  scalar four-tap accumulation while GCC 16 keeps it split. The NEON kernel
-  now spells out the matching operation for each compiler and the exhaustive
-  suite passes in both Clang 22 and GCC 16 AArch64 cross-builds through QEMU.
-  No scalar ADM source, Netflix golden assertion, snapshot, or tolerance was
-  changed. Registered in suite `['fast', 'simd']`, gated on `float_enabled`
-  and aarch64.
+  The test caught a Clang-specific 1–5 ULP mismatch after the original
+  translation-unit-wide contraction guard was removed. The final correction
+  scopes contraction-off to `adm_dwt2_s()` alone and keeps the NEON kernel's
+  vector and scalar accumulations explicitly split. The exhaustive suite
+  passes in both Clang 22 and GCC 16 AArch64 cross-builds through QEMU, and
+  disassembly confirms neither implementation emits `fmla`. No Netflix golden
+  assertion, snapshot, or tolerance was changed. Registered in suite
+  `['fast', 'simd']`, gated on `float_enabled` and aarch64.

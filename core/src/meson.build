@@ -752,12 +752,11 @@ if is_asm_enabled
         )
 
         # float-ADM DWT2 NEON carve-out (ADR-1057).
-        # The scalar golden-producing TU uses each compiler's established
-        # contraction semantics: Clang contracts the four-tap accumulation,
-        # while GCC keeps it split in the supported release configurations.
-        # This NEON TU mirrors that distinction explicitly (`vfmaq` / `fmaf`
-        # for Clang, `vmul` + `vadd` for GCC).  `-ffp-contract=off` prevents
-        # any additional implicit fusion outside those selected operations.
+        # `adm_dwt2_s` has a function-scoped non-contracting guard so unrelated
+        # adm_tools.c reductions retain their established compiler semantics.
+        # This NEON TU mirrors DWT2 with explicit `vmul` + `vadd` operations;
+        # `-ffp-contract=off` also keeps its scalar tail and horizontal pass
+        # split on every supported AArch64 compiler.
         arm64_adm_dwt2_neon_lib = static_library(
           'arm64_adm_dwt2_neon',
           feature_src_dir + 'arm64/float_adm_dwt2_neon.c',

@@ -17,13 +17,12 @@
  *
  * The reference is the *production* scalar `adm_dwt2_s()` from adm_tools.c,
  * linked out of `libvmaf_feature_static_lib`, rather than a transcription.
- * Both TUs come from the same build — adm_tools.c with the project default
- * flags, the NEON kernel with the `arm64_adm_dwt2_neon_lib`
- * `-ffp-contract=off` carve-out and explicit compiler-matched operations — so
- * the comparison exercises the exact object code that ships, including the
- * FP-contraction contract from ADR-1057.  A transcribed reference compiled
- * with the test TU's own flags would silently misrepresent that contract in
- * either direction.
+ * Both TUs come from the same build — `adm_dwt2_s` with its function-scoped
+ * contraction guard, the NEON kernel with the `arm64_adm_dwt2_neon_lib`
+ * `-ffp-contract=off` carve-out and explicit split operations — so the
+ * comparison exercises the exact object code that ships, including the
+ * FP-contraction contract from ADR-1057. A transcribed reference compiled
+ * with the test TU's own flags could silently misrepresent that contract.
  *
  * What is asserted, per geometry:
  *   1. Bit-exact equality of all four subbands over the whole valid region.
@@ -47,9 +46,8 @@
  *
  * Negative controls run while writing this test (each reverted afterwards)
  * confirmed the assertions bite: disabling the vertical scalar tail, swapping
- * `ind_x` for clamped flat arithmetic, and forcing the same contraction policy
- * for both GCC and Clang each produced a failure with the predicted mismatch
- * footprint.
+ * `ind_x` for clamped flat arithmetic, and introducing an explicit FMA each
+ * produced a failure with the predicted mismatch footprint.
  */
 
 #include <stdio.h>

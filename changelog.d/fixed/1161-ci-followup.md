@@ -9,8 +9,8 @@
   unsupported output conversions, keeping `ort_backend.c` above its ratcheted
   coverage floor without weakening the threshold.
 - Fixed unsigned output formatting, checked luminance-range return values, and
-  made the ARM float-ADM NEON DWT2 kernel match each compiler's established
-  scalar contraction behavior without changing scalar or golden-score results.
+  stabilized ARM float-ADM DWT2 on split multiply/add arithmetic by applying
+  contraction-off only to the scalar DWT2 function and its NEON twin.
 - Brought the dev-MCP image back in sync with the FFmpeg n9.0.1 patch base and
   copied the complete Go module inputs into its six-binary build stage.
 - Preserved C linkage for the shared minunit test counter so C++ tests link on
@@ -18,9 +18,9 @@
 - Pinned changed-file clang-tidy jobs to LLVM 22 instead of an ambiguous
   system alternatives link that could keep resolving to LLVM 18 and fail to
   parse C++26 `std::expected`.
-- Preserved the established scalar ADM contraction semantics on Clang-family
-  compilers; the attempted translation-unit-wide non-FMA pragma changed
-  golden-producing scores and is intentionally not part of the SIMD contract.
+- Replaced the overly broad scalar ADM contraction pragma with a function-scoped
+  DWT2 guard. This preserves unrelated ADM arithmetic while keeping the DWT2
+  kernel aligned with the immutable ARM golden-score contract.
 - Let dev-container smoke tests inherit the image's CUDA, oneAPI, and ROCm
   runtime search paths instead of hiding `libirc.so` behind a host-style
   `/usr/local/lib` override; initialize the image paths without undefined

@@ -112,7 +112,7 @@ bit-exact unit tests. They are exercised indirectly through the full VMAF
 score comparison against Netflix golden data in the build-matrix CI job.
 Adding dedicated unit tests is a follow-up to this PR.
 
-## Follow-up (2026-08-31) — compiler-matched float-ADM DWT2 contraction
+## Follow-up (2026-08-31) — scoped non-contracting float-ADM DWT2
 
 The dedicated `test_float_adm_dwt2_neon` test added on PR #1161 reproduced a
 macOS ARM failure after the scalar translation-unit-wide contraction guard was
@@ -120,22 +120,25 @@ removed to restore the immutable Netflix score contract. A Clang 22 AArch64
 cross-build failed 18 cells of the 3x5 fixture by 1–5 ULP; the same source
 passed under GCC 16.
 
-LLVM IR established the cause: Clang lowered the production scalar four-tap
-accumulation to `llvm.fmuladd`, while the guarded NEON translation unit emitted
-separate `fmul` and `fadd`. GCC 16 kept both scalar and NEON arithmetic split.
-It also established that `vmlaq_laneq_f32` is not an unconditional fused
-operation under Clang's `contract(off)`; the unconditional fused intrinsic is
-`vfmaq_laneq_f32`.
+LLVM IR established the immediate parity cause: Clang lowered the production
+scalar four-tap accumulation to `llvm.fmuladd`, while the guarded NEON
+translation unit emitted separate `fmul` and `fadd`. GCC 16 kept both scalar
+and NEON arithmetic split. A compiler-matched NEON experiment (`vfmaq` / `fmaf`
+for Clang, split operations for GCC) made the dedicated parity test green, but
+the full macOS Python suite then returned `88.030459` instead of the immutable
+Darwin `88.030322` value in three akiyo cases.
 
-The smallest parity-preserving fix is therefore compiler-matched and NEON-local:
+The two failures together locate the required boundary. A file-wide scalar
+contraction guard is too broad, while a fused DWT2 is inconsistent with the
+Darwin quality contract. The smallest stable fix is:
 
-| Compiler | Vector accumulation | Tail / horizontal accumulation |
-|---|---|---|
-| Clang | `vfmaq_laneq_f32` | `fmaf` |
-| GCC | `vmulq_laneq_f32` then `vaddq_f32` | separate multiply/add |
+- apply contraction-off only inside `adm_dwt2_s` (Clang in-body pragma, GCC
+  function attribute), leaving every unrelated `adm_tools.c` function alone;
+- keep the NEON vector loop on explicit `vmulq_laneq_f32` then `vaddq_f32`;
+- keep the NEON tail and horizontal bands on left-to-right scalar multiply/add;
+- retain the NEON translation unit's `-ffp-contract=off` build flag.
 
-Both implementations start from `0.0f` and keep the production scalar tap
-order. The translation unit retains `-ffp-contract=off` so only the explicit
-Clang operations fuse. The exhaustive geometry/stride suite passes with both
-Clang 22 and GCC 16 AArch64 cross-builds through QEMU. No scalar ADM source,
+The exhaustive geometry/stride suite passes with Clang 22 and GCC 16 AArch64
+cross-builds through QEMU. Disassembly of both AArch64 objects contains
+separate `fmul` / `fadd` operations and no `fmla` in either DWT2 function. No
 Netflix golden assertion, snapshot, or tolerance changed.

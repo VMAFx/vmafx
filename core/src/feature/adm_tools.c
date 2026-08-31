@@ -1078,9 +1078,21 @@ void dwt2_src_indices_filt_s(int **src_ind_y, int **src_ind_x, int w, int h)
     }
 }
 
+/* The float-ADM DWT2 feeds immutable Netflix golden scores.  Keep its four-tap
+ * accumulation on an explicit multiply-then-add contract on every supported
+ * compiler without changing any other arithmetic in this translation unit.
+ * The earlier file-scope Clang pragma changed unrelated ADM reductions; the
+ * function-scoped pragma and GCC attribute deliberately constrain only DWT2.
+ * See ADR-1057's 2026-08-31 correction. */
+#if defined(__GNUC__) && !defined(__clang__)
+__attribute__((optimize("-ffp-contract=off")))
+#endif
 int adm_dwt2_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x, int w,
                int h, int src_stride, int dst_stride)
 {
+#if defined(__clang__)
+#pragma clang fp contract(off)
+#endif
     const float *filter_lo = dwt2_db2_coeffs_lo_s;
     const float *filter_hi = dwt2_db2_coeffs_hi_s;
 

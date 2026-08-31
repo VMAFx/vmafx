@@ -18,15 +18,13 @@
  */
 
 /*
- * Compiler-matched NEON DWT2 kernel for float-ADM.
+ * Non-contracting NEON DWT2 kernel for float-ADM.
  *
- * The production scalar `adm_dwt2_s` keeps the toolchain's established
- * contraction semantics because its results feed immutable Netflix goldens.
- * Clang contracts each `accum += coefficient * sample` into `fmla`, while GCC
- * keeps a separate multiply and add in the supported release configurations.
- * The NEON body, scalar tail, and horizontal pass therefore select the same
- * compiler-specific arithmetic explicitly.  The TU-level contraction guard
- * remains in force so no additional operation is fused accidentally.
+ * The production scalar `adm_dwt2_s` carries a function-scoped contraction
+ * guard because its results feed immutable Netflix goldens.  The NEON body
+ * mirrors that stable contract with explicit `vmulq_laneq_f32` followed by
+ * `vaddq_f32`; its scalar tail and horizontal pass use the same left-to-right
+ * multiply/add sequence.  The TU-level guard prevents implicit fusion.
  *
  * See ADR-1057's 2026-08-31 update.
  */
@@ -43,7 +41,6 @@
 #endif
 
 #include <arm_neon.h>
-#include <math.h>
 #include "float_adm_neon.h"
 #include "mem.h"
 
@@ -52,15 +49,6 @@ static const float dwt2_db2_coeffs_lo_s[4] = {0.482962913144690f, 0.836516303737
 
 static const float dwt2_db2_coeffs_hi_s[4] = {-0.129409522550921f, -0.224143868041857f,
                                               0.836516303737469f, -0.482962913144690f};
-
-static inline float adm_dwt2_accumulate(float accum, float coefficient, float sample)
-{
-#if defined(__clang__)
-    return fmaf(coefficient, sample, accum);
-#else
-    return accum + coefficient * sample;
-#endif
-}
 
 /* GCC does not honour `#pragma clang fp contract(off)`, so the function also
  * carries a per-function attribute as a belt-and-suspenders guard. */
@@ -112,34 +100,18 @@ void float_adm_dwt2_neon(const float *src, const adm_dwt_band_t_s *dst, int **in
             float32x4_t s2 = vld1q_f32(row2 + j);
             float32x4_t s3 = vld1q_f32(row3 + j);
 
-            /* Start at +0 and accumulate left-to-right, matching the scalar
-             * source and preserving signed-zero behaviour. */
-            float32x4_t lo = vdupq_n_f32(0.0f);
-#if defined(__clang__)
-            lo = vfmaq_laneq_f32(lo, s0, flo, 0);
-            lo = vfmaq_laneq_f32(lo, s1, flo, 1);
-            lo = vfmaq_laneq_f32(lo, s2, flo, 2);
-            lo = vfmaq_laneq_f32(lo, s3, flo, 3);
-#else
-            lo = vaddq_f32(lo, vmulq_laneq_f32(s0, flo, 0));
+            /* Each step is an explicit multiply followed by an add, matching
+             * the function-scoped non-contracting scalar reference. */
+            float32x4_t lo = vmulq_laneq_f32(s0, flo, 0);
             lo = vaddq_f32(lo, vmulq_laneq_f32(s1, flo, 1));
             lo = vaddq_f32(lo, vmulq_laneq_f32(s2, flo, 2));
             lo = vaddq_f32(lo, vmulq_laneq_f32(s3, flo, 3));
-#endif
             vst1q_f32(tmplo + j, lo);
 
-            float32x4_t hi = vdupq_n_f32(0.0f);
-#if defined(__clang__)
-            hi = vfmaq_laneq_f32(hi, s0, fhi, 0);
-            hi = vfmaq_laneq_f32(hi, s1, fhi, 1);
-            hi = vfmaq_laneq_f32(hi, s2, fhi, 2);
-            hi = vfmaq_laneq_f32(hi, s3, fhi, 3);
-#else
-            hi = vaddq_f32(hi, vmulq_laneq_f32(s0, fhi, 0));
+            float32x4_t hi = vmulq_laneq_f32(s0, fhi, 0);
             hi = vaddq_f32(hi, vmulq_laneq_f32(s1, fhi, 1));
             hi = vaddq_f32(hi, vmulq_laneq_f32(s2, fhi, 2));
             hi = vaddq_f32(hi, vmulq_laneq_f32(s3, fhi, 3));
-#endif
             vst1q_f32(tmphi + j, hi);
         }
 
@@ -150,18 +122,16 @@ void float_adm_dwt2_neon(const float *src, const adm_dwt_band_t_s *dst, int **in
             float s2 = row2[j];
             float s3 = row3[j];
 
-            float accum = 0.0f;
-            accum = adm_dwt2_accumulate(accum, filter_lo[0], s0);
-            accum = adm_dwt2_accumulate(accum, filter_lo[1], s1);
-            accum = adm_dwt2_accumulate(accum, filter_lo[2], s2);
-            accum = adm_dwt2_accumulate(accum, filter_lo[3], s3);
+            float accum = filter_lo[0] * s0;
+            accum += filter_lo[1] * s1;
+            accum += filter_lo[2] * s2;
+            accum += filter_lo[3] * s3;
             tmplo[j] = accum;
 
-            accum = 0.0f;
-            accum = adm_dwt2_accumulate(accum, filter_hi[0], s0);
-            accum = adm_dwt2_accumulate(accum, filter_hi[1], s1);
-            accum = adm_dwt2_accumulate(accum, filter_hi[2], s2);
-            accum = adm_dwt2_accumulate(accum, filter_hi[3], s3);
+            accum = filter_hi[0] * s0;
+            accum += filter_hi[1] * s1;
+            accum += filter_hi[2] * s2;
+            accum += filter_hi[3] * s3;
             tmphi[j] = accum;
         }
 
@@ -177,20 +147,19 @@ void float_adm_dwt2_neon(const float *src, const adm_dwt_band_t_s *dst, int **in
             float sl2 = tmplo[j2];
             float sl3 = tmplo[j3];
 
-            float accum = 0.0f;
+            float accum;
             int off = i * dst_px_stride + j;
 
-            accum = adm_dwt2_accumulate(accum, filter_lo[0], sl0);
-            accum = adm_dwt2_accumulate(accum, filter_lo[1], sl1);
-            accum = adm_dwt2_accumulate(accum, filter_lo[2], sl2);
-            accum = adm_dwt2_accumulate(accum, filter_lo[3], sl3);
+            accum = filter_lo[0] * sl0;
+            accum += filter_lo[1] * sl1;
+            accum += filter_lo[2] * sl2;
+            accum += filter_lo[3] * sl3;
             dst->band_a[off] = accum;
 
-            accum = 0.0f;
-            accum = adm_dwt2_accumulate(accum, filter_hi[0], sl0);
-            accum = adm_dwt2_accumulate(accum, filter_hi[1], sl1);
-            accum = adm_dwt2_accumulate(accum, filter_hi[2], sl2);
-            accum = adm_dwt2_accumulate(accum, filter_hi[3], sl3);
+            accum = filter_hi[0] * sl0;
+            accum += filter_hi[1] * sl1;
+            accum += filter_hi[2] * sl2;
+            accum += filter_hi[3] * sl3;
             dst->band_v[off] = accum;
 
             float sh0 = tmphi[j0];
@@ -198,18 +167,16 @@ void float_adm_dwt2_neon(const float *src, const adm_dwt_band_t_s *dst, int **in
             float sh2 = tmphi[j2];
             float sh3 = tmphi[j3];
 
-            accum = 0.0f;
-            accum = adm_dwt2_accumulate(accum, filter_lo[0], sh0);
-            accum = adm_dwt2_accumulate(accum, filter_lo[1], sh1);
-            accum = adm_dwt2_accumulate(accum, filter_lo[2], sh2);
-            accum = adm_dwt2_accumulate(accum, filter_lo[3], sh3);
+            accum = filter_lo[0] * sh0;
+            accum += filter_lo[1] * sh1;
+            accum += filter_lo[2] * sh2;
+            accum += filter_lo[3] * sh3;
             dst->band_h[off] = accum;
 
-            accum = 0.0f;
-            accum = adm_dwt2_accumulate(accum, filter_hi[0], sh0);
-            accum = adm_dwt2_accumulate(accum, filter_hi[1], sh1);
-            accum = adm_dwt2_accumulate(accum, filter_hi[2], sh2);
-            accum = adm_dwt2_accumulate(accum, filter_hi[3], sh3);
+            accum = filter_hi[0] * sh0;
+            accum += filter_hi[1] * sh1;
+            accum += filter_hi[2] * sh2;
+            accum += filter_hi[3] * sh3;
             dst->band_d[off] = accum;
         }
     }
