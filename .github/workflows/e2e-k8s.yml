@@ -232,15 +232,29 @@ jobs:
       # ---- Install tools ----
       - name: Install kind ${{ env.KIND_VERSION }}
         run: |
-          curl -Lo /usr/local/bin/kind \
+          set -euo pipefail
+          install_dir="${RUNNER_TEMP}/vmafx-e2e-tools/bin"
+          install -d -m 0755 "${install_dir}"
+          curl --fail --location --show-error --silent \
+            --retry 5 --retry-all-errors \
+            --output "${install_dir}/kind" \
             "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
-          chmod +x /usr/local/bin/kind
+          chmod 0755 "${install_dir}/kind"
+          printf '%s\n' "${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/kind" version
 
       - name: Install kubectl ${{ env.KUBECTL_VERSION }}
         run: |
-          curl -Lo /usr/local/bin/kubectl \
+          set -euo pipefail
+          install_dir="${RUNNER_TEMP}/vmafx-e2e-tools/bin"
+          install -d -m 0755 "${install_dir}"
+          curl --fail --location --show-error --silent \
+            --retry 5 --retry-all-errors \
+            --output "${install_dir}/kubectl" \
             "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-          chmod +x /usr/local/bin/kubectl
+          chmod 0755 "${install_dir}/kubectl"
+          printf '%s\n' "${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/kubectl" version --client
 
       - name: Install helm ${{ env.HELM_VERSION }}
         run: |
@@ -260,9 +274,16 @@ jobs:
 
       - name: Install kuttl ${{ env.KUTTL_VERSION }}
         run: |
-          curl -Lo /usr/local/bin/kubectl-kuttl \
+          set -euo pipefail
+          install_dir="${RUNNER_TEMP}/vmafx-e2e-tools/bin"
+          install -d -m 0755 "${install_dir}"
+          curl --fail --location --show-error --silent \
+            --retry 5 --retry-all-errors \
+            --output "${install_dir}/kubectl-kuttl" \
             "https://github.com/kudobuilder/kuttl/releases/download/${KUTTL_VERSION}/kubectl-kuttl_${KUTTL_VERSION#v}_linux_x86_64"
-          chmod +x /usr/local/bin/kubectl-kuttl
+          chmod 0755 "${install_dir}/kubectl-kuttl"
+          printf '%s\n' "${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/kubectl-kuttl" version
 
       # ---- Restore artifacts ----
       - name: Download e2e images
@@ -339,12 +360,13 @@ jobs:
           path: test/e2e/results/
 
       - name: Publish test results
-        if: always()
+        if: always() && hashFiles('test/e2e/results/**/*.xml') != ''
         uses: EnricoMi/publish-unit-test-result-action@d0a4676d0e0b938bc201470d88276b7c74c712b3  # v2.24.0
         with:
           files: "test/e2e/results/**/*.xml"
           check_name: "E2E k8s results"
           comment_mode: off
+          check_run: false
 
       # ---- Teardown ----
       - name: Tear down kind cluster

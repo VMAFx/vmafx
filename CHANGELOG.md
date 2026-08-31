@@ -20210,6 +20210,9 @@ were never reached (wiring audit 2026-05-16, Layer 3).
   operator metrics from entering the scoring Service, and node images now put
   packaged models at the configured model root. Security Scans concurrency is
   now event-scoped so a weekly schedule cannot cancel CodeQL for a master push.
+  Pinned cluster tools install below the runner's temporary directory instead
+  of mutating protected `/usr/local/bin` entries, and JUnit results remain in
+  the workflow summary without requiring a write-capable pull-request token.
 
 
 - `ai/scripts/enrich_k150k_parquet_metadata.py`: add `sys.path` bootstrap so `from aiutils.parquet_utils import …` and `from extract_k150k_features import …` resolve when the script is run as a standalone CLI. Previously only worked when pytest happened to set the right `pythonpath`, and subprocess invocations (including the script's own unit test) failed with `ModuleNotFoundError: No module named 'aiutils'`.

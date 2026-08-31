@@ -141,6 +141,20 @@ class E2ERuntimeContractTest(unittest.TestCase):
         self.assertIn(invocation, rules)
         self.assertIn(invocation, self.workflow)
 
+    def test_tools_are_runner_local_and_results_need_no_write_token(self) -> None:
+        for tool in ("kind", "kubectl", "kuttl"):
+            with self.subTest(tool=tool):
+                name = f"Install {tool} ${{{{ env.{tool.upper()}_VERSION }}}}"
+                step = _workflow_step(self.workflow, name)
+                self.assertIn("${RUNNER_TEMP}/vmafx-e2e-tools/bin", step)
+                self.assertIn("--retry 5 --retry-all-errors", step)
+                self.assertIn('>> "${GITHUB_PATH}"', step)
+                self.assertNotIn("/usr/local/bin", step)
+
+        publish = _workflow_step(self.workflow, "Publish test results")
+        self.assertIn("hashFiles('test/e2e/results/**/*.xml') != ''", publish)
+        self.assertRegex(publish, r"(?m)^\s+check_run:\s+false\s*$")
+
     def test_kubernetes_mutations_use_an_isolated_kind_context(self) -> None:
         kind_script = KIND_SCRIPT.read_text(encoding="utf-8")
         context_guard = ASSERT_CONTEXT_SCRIPT.read_text(encoding="utf-8")

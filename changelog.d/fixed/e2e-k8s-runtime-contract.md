@@ -9,3 +9,6 @@
   operator metrics from entering the scoring Service, and node images now put
   packaged models at the configured model root. Security Scans concurrency is
   now event-scoped so a weekly schedule cannot cancel CodeQL for a master push.
+  Pinned cluster tools install below the runner's temporary directory instead
+  of mutating protected `/usr/local/bin` entries, and JUnit results remain in
+  the workflow summary without requiring a write-capable pull-request token.
