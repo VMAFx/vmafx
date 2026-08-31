@@ -63,7 +63,7 @@ RUN meson setup /build core \
 RUN mkdir -p /dist/lib /dist/bin /dist/model \
     && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
     && cp /build/tools/vmaf /dist/bin/ \
-    && cp -r model/ /dist/model/
+    && cp -r model/. /dist/model/
 
 # ---------------------------------------------------------------------------
 # Stage 2 — python-deps: install vmaf-mcp + vmaf-tune into a virtualenv
