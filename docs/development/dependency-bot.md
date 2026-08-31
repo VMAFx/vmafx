@@ -3,7 +3,7 @@
 
 The fork uses **Mend Renovate** as a [GitHub App][app], not self-hosted.
 The App reads the in-tree [`renovate.json`](../../renovate.json) and opens
-grouped dependency-update PRs continuously (no schedule throttling).
+grouped dependency-update PRs on the configured weekday schedule.
 
 [app]: https://github.com/apps/renovate
 
@@ -24,11 +24,24 @@ App reads it on every webhook. Top-level knobs:
 
 | Setting | Value |
 |---------|-------|
-| `schedule` | `at any time` |
+| `schedule` | `before 6am every weekday` (`Europe/Vienna`) |
 | `prHourlyLimit` | `0` (unlimited) |
-| `prConcurrentLimit` | `12` |
+| `prConcurrentLimit` | `10` |
 | `prCreation` | `immediate` |
 | `minimumReleaseAge` | `3 days` |
+
+### Root Python requirement
+
+The repository-root `pyproject.toml` contains shared tooling configuration, not
+a distributable Python package. Its `requires-python` value therefore records
+the supported Python 3.14 series (`>=3.14`) instead of following every CPython
+patch release. Dependabot's updater image can trail the newest patch and cannot
+build the pip dependency graph when the declared floor is newer than its bundled
+interpreter.
+
+An exact-root `pep621` package rule excludes only that metadata entry from
+Renovate. Patch-pinned workflow runtimes and each installable subpackage's own
+`requires-python` range continue to receive normal dependency maintenance.
 
 ## Disable / rollback to Dependabot
 

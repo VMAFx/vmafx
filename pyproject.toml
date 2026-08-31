@@ -6,7 +6,9 @@
 name = "vmaf-fork-tooling"
 version = "0.0.0"
 description = "VMAFx — Python tooling and scripts"
-requires-python = ">=3.14.7"
+# Keep the tool-only root metadata at minor-series granularity. Dependabot's
+# updater image can lag the latest CPython patch while workflows remain patch-pinned.
+requires-python = ">=3.14"
 
 [project.urls]
 Homepage = "https://github.com/VMAFx/vmafx"
