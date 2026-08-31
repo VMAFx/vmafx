@@ -501,3 +501,23 @@ jobs:
           fi
 
           echo "ADR-collision-check phase 2: no collisions with open PRs."
+
+  release-script-contract:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Release Script Contract (ADR-1128)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Test changelog renderer and release rollover
+        run: |
+          bash scripts/release/tests/test-concat-changelog-fragments.sh
+          bash scripts/release/tests/test-rollover-changelog-fragments.sh
+          bash scripts/release/tests/test-verify-native-release-artifacts.sh
+          bash scripts/release/tests/test-verify-release-version.sh
+          bash scripts/release/tests/test-docker-publish-source-binding.sh
+          bash scripts/release/tests/test-publication-environment-binding.sh
+          scripts/release/concat-changelog-fragments.sh --check

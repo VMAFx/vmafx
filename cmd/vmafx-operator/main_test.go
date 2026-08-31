@@ -22,6 +22,19 @@ import (
 	"go.uber.org/fx"
 )
 
+func TestVersionRequest(t *testing.T) {
+	t.Parallel()
+	if !isVersionRequest([]string{"vmafx-operator", "--version"}) {
+		t.Fatal("--version must select the non-blocking version path")
+	}
+	if isVersionRequest([]string{"vmafx-operator"}) {
+		t.Fatal("normal startup must not select the version path")
+	}
+	if isVersionRequest([]string{"vmafx-operator", "--version", "extra"}) {
+		t.Fatal("version path must reject extra arguments")
+	}
+}
+
 // TestOptionsGraphValidates asserts the production fx option list resolves into
 // a consistent dependency graph: golusoris.Core (config + slog + clock + id),
 // otel.Module, operator.Module (manager.Manager + Options), the CRD scheme

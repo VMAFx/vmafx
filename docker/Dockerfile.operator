@@ -24,20 +24,23 @@
 #
 # Run:
 #   docker run --rm \
-#     -e VMAFX_OPERATOR_METRICS_ADDR=:8081 \
-#     -e VMAFX_OPERATOR_HEALTH_PROBE_ADDR=:8082 \
-#     -e VMAFX_OPERATOR_LEADER_ELECTION=true \
+#     -e VMAFX_OPERATOR_METRICS_ADDR=:8080 \
+#     -e VMAFX_OPERATOR_HEALTH_PROBE_ADDR=:8081 \
+#     -e VMAFX_OPERATOR_LEADER_ELECTION=false \
 #     ghcr.io/vmafx/vmafx-operator:dev
 #
-# Environment variables (all optional; CLI flags override):
-#   VMAFX_OPERATOR_METRICS_ADDR   Prometheus metrics bind address (default ":8081")
+# Environment variables (all optional; `--version` is the only CLI switch):
+#   VMAFX_OPERATOR_METRICS_ADDR   Prometheus metrics bind address (default ":8080")
 #   VMAFX_OPERATOR_HEALTH_PROBE_ADDR  Health probe bind address (default ":8081")
 #   VMAFX_OPERATOR_LEADER_ELECTION Enable leader election ("true"/"false", default "false")
-#   VMAFX_OPERATOR_LOG_LEVEL      slog level string (default "info")
+#   VMAFX_LOG_LEVEL               slog level string (default "info")
 #
 # ADR-0814 (operator reconciler scope), ADR-0715 (operator skeleton),
 # ADR-0698 (distroless policy), ADR-0815 (this Dockerfile).
+# ADR-1129 (release container runtime alignment).
 # See docs/backends/operator.md for operator runbook.
+
+ARG VMAFX_VERSION=dev
 
 # ---------------------------------------------------------------------------
 # Stage 1 — go-builder: compile the vmafx-operator binary (CGO_ENABLED=0)
@@ -49,6 +52,7 @@ FROM golang:1.27-bookworm@sha256:ded31c68586d2e49e760acc2e65a884b23d032e9bbbed0a
 ARG CGO_ENABLED=0
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
+ARG VMAFX_VERSION
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -63,7 +67,7 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
     GOARCH=${TARGETARCH} \
     go build \
         -trimpath \
-        -ldflags "-s -w -X main.buildVersion=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+        -ldflags "-s -w -X github.com/VMAFx/vmafx/pkg/version.version=${VMAFX_VERSION}" \
         -o /out/vmafx-operator \
         ./cmd/vmafx-operator
 
@@ -83,8 +87,8 @@ LABEL org.opencontainers.image.vendor="Lusoris"
 
 COPY --from=go-builder /out/vmafx-operator /usr/local/bin/vmafx-operator
 
-# Expose Prometheus metrics and health-probe ports.
-EXPOSE 8081 8082
+# Expose the golusoris operator defaults: Prometheus metrics and health probes.
+EXPOSE 8080 8081
 
 # Run as non-root (distroless provides uid 65532 = nonroot).
 USER 65532:65532

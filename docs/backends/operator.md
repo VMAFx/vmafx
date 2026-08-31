@@ -5,7 +5,7 @@ The vmafx-operator is the Kubernetes operator binary that reconciles the
 (CRDs). It is published as a signed, SBOM-attested OCI image on every release tag.
 
 ADR reference: [ADR-0815](../adr/0815-operator-node-distroless-dockerfiles.md),
-[ADR-0714](../adr/0714-vmafx-operator-skeleton.md).
+[ADR-0714](../adr/0714-vmafx-operator-skeleton.md), and ADR-1129.
 
 ## Image coordinates
 
@@ -34,6 +34,7 @@ cosign verify \
 docker build \
   -f docker/Dockerfile.operator \
   --target operator \
+  --build-arg VMAFX_VERSION=dev \
   -t ghcr.io/vmafx/vmafx-operator:dev \
   .
 ```
@@ -45,19 +46,26 @@ docker buildx build \
   -f docker/Dockerfile.operator \
   --target operator \
   --platform linux/amd64,linux/arm64 \
+  --build-arg VMAFX_VERSION=dev \
   -t ghcr.io/vmafx/vmafx-operator:dev \
   --push \
   .
+```
+
+Confirm the injected build version without Kubernetes credentials:
+
+```bash
+docker run --rm ghcr.io/vmafx/vmafx-operator:dev --version
 ```
 
 ## Run
 
 ```bash
 docker run --rm \
-  -e VMAFX_OPERATOR_METRICS_ADDR=:8081 \
-  -e VMAFX_OPERATOR_PROBE_ADDR=:8082 \
-  -e VMAFX_OPERATOR_LEADER_ELECT=false \
-  -e VMAFX_OPERATOR_LOG_LEVEL=info \
+  -e VMAFX_OPERATOR_METRICS_ADDR=:8080 \
+  -e VMAFX_OPERATOR_HEALTH_PROBE_ADDR=:8081 \
+  -e VMAFX_OPERATOR_LEADER_ELECTION=false \
+  -e VMAFX_LOG_LEVEL=info \
   ghcr.io/vmafx/vmafx-operator:latest
 ```
 
@@ -70,24 +78,25 @@ uid 65532 (`nonroot`) by default.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `VMAFX_OPERATOR_METRICS_ADDR` | `:8081` | Prometheus `/metrics` endpoint bind address |
-| `VMAFX_OPERATOR_PROBE_ADDR` | `:8082` | `/healthz` + `/readyz` bind address |
-| `VMAFX_OPERATOR_LEADER_ELECT` | `false` | Enable leader election for HA deployments |
-| `VMAFX_OPERATOR_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
+| `VMAFX_OPERATOR_METRICS_ADDR` | `:8080` | Prometheus `/metrics` endpoint bind address |
+| `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` | `:8081` | `/healthz` + `/readyz` bind address |
+| `VMAFX_OPERATOR_LEADER_ELECTION` | `false` | Enable leader election for HA deployments |
+| `VMAFX_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
 
-CLI flags mirror all environment variables and take precedence.
+`--version` is the only process CLI switch; runtime configuration is supplied
+through the environment variables above.
 
 ## Exposed ports
 
 | Port | Protocol | Purpose |
 | --- | --- | --- |
-| 8081 | TCP | Prometheus metrics |
-| 8082 | TCP | Health and readiness probes (`/healthz`, `/readyz`) |
+| 8080 | TCP | Prometheus metrics |
+| 8081 | TCP | Health and readiness probes (`/healthz`, `/readyz`) |
 
 ## CI release pipeline
 
-The workflow `.github/workflows/docker-publish-operator-node.yml` fires on every
-`v*` tag push (release-please) and on `workflow_dispatch`. It:
+The workflow `.github/workflows/docker-publish-operator-node.yml` fires when a
+GitHub release is published and on `workflow_dispatch`. It:
 
 1. Builds `ghcr.io/vmafx/vmafx-operator` for `linux/amd64` + `linux/arm64`
    using BuildKit native cross-compilation (CGO_ENABLED=0 pure-Go binary; no QEMU
@@ -96,7 +105,17 @@ The workflow `.github/workflows/docker-publish-operator-node.yml` fires on every
 3. Generates a CycloneDX SBOM with `syft` and attaches it as a `cosign attest`
    predicate.
 4. Uploads the SBOM JSON as a workflow artifact (90-day retention).
-5. Runs a smoke-test (`--help`) before the aggregator gate passes.
+5. Attests GitHub-native build provenance for the pushed digest.
+6. Verifies the signature, then asserts the image's `--version` output matches
+   the published tag before the aggregator gate passes.
+
+Manual recovery must run at the existing published tag and pass the same tag
+as input; a branch ref or mismatched tag fails before any image is pushed:
+
+```bash
+tag=vX.Y.Z
+gh workflow run docker-publish-operator-node.yml --ref "$tag" -f tag="$tag"
+```
 
 ## Upgrade
 
@@ -106,7 +125,7 @@ Update the image tag (or digest) in the Helm `values.yaml`:
 operator:
   image:
     repository: ghcr.io/vmafx/vmafx-operator
-    tag: "v3.2.0-lusoris.5"
+    tag: "v3.2.1"
 ```
 
 Then run `helm upgrade vmafx ./deploy/helm/vmafx -n vmafx-system`.

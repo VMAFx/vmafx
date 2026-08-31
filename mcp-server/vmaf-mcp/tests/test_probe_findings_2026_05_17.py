@@ -27,6 +27,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
 from vmaf_mcp import server as srv
 
 # ---------------------------------------------------------------------------
@@ -188,7 +189,7 @@ def test_bug3_run_benchmark_surfaces_silent_pipefail(
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", AsyncMock(return_value=_FakeProc()))
 
-    with pytest.raises(RuntimeError, match="benchmark failed.*no output"):
+    with pytest.raises(RuntimeError, match=r"benchmark failed.*no output"):
         asyncio.run(srv._run_benchmark())
 
 

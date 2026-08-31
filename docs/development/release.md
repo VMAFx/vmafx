@@ -1,44 +1,120 @@
 <!-- markdownlint-disable MD051 -->
 # Release process
 
-The VMAFx fork of libvmaf releases via automation — not manual tag-and-draft.
+VMAFx releases through release-please and an explicit publication gate.
 Pushes to `master` drive a
 [release-please](https://github.com/googleapis/release-please-action)
-workflow that maintains a release PR, and merging that PR triggers the full
-release pipeline (build, sign, publish).
+workflow that maintains a release PR. Merging that PR creates a draft release;
+publishing the draft creates the tag and triggers the full build, signing, and
+publication pipeline.
 
 ## Version scheme
 
-Releases follow `vX.Y.Z-lusoris.N`:
+Releases follow ordinary SemVer tags, `vX.Y.Z`:
 
-- `X.Y.Z` tracks the upstream Netflix VMAF version the fork is aligned to.
-- `-lusoris.N` is the fork-specific revision. It bumps independently of
-  upstream and resets to `.1` when `X.Y.Z` changes.
+- `X` changes for incompatible public-surface changes.
+- `Y` changes for backward-compatible features.
+- `Z` changes for backward-compatible fixes.
 
 Example progression:
 
 ```text
-v3.0.0-lusoris.1  # initial fork release against upstream 3.0.0
-v3.0.0-lusoris.2  # second fork revision, still on upstream 3.0.0
-v3.1.0-lusoris.1  # reset after upstream 3.1.0 sync
+v3.2.1  # patch release
+v3.3.0  # backward-compatible feature release
+v4.0.0  # incompatible public-surface release
 ```
 
-Upstream sync PRs (see `/sync-upstream`) update the upstream component; regular
-fork PRs advance `-lusoris.N`.
+The VMAFx release stream advances independently of Netflix/vmaf. Upstream
+alignment remains recorded in sync commits and release notes, not encoded in
+the tag. [ADR-1127](../adr/1127-single-semver-release-stream.md) governs this
+policy.
 
 ## Automation flow
 
 1. **release-please watches master.** On each push it inspects Conventional
    Commit headers (`feat:`, `fix:`, `docs:`, `chore:`, `ci:`, …) to determine
-   whether a release is warranted. If so, it opens or updates a release PR that
-   bumps `VERSION`, updates `CHANGELOG.md`, and collects user-visible change
-   summaries.
-2. **Merging the release PR** tags the commit and triggers the release
-   workflow.
-3. **The release workflow** builds artefacts (libvmaf binaries, Python wheels),
-   runs the Netflix golden-data gate (CPU only — the GPU/SIMD backends
-   are covered by per-backend snapshot tests at ULP tolerance, not by
-   the goldens), and publishes signed artefacts to GitHub Releases.
+   whether a release is warranted. If so, it opens or updates one release PR
+   that bumps the root manifest and every coordinated version marker.
+2. **Finalize the generated release PR.** After all other release changes are
+   merged, regenerate Unreleased and run the fragment rollover with the PR's
+   exact version and UTC date. Commit that result as the release PR's final
+   change. Any later fragment invalidates the cut and must be rolled again.
+3. **Merging the release PR** creates a draft GitHub release. It does not yet
+   create the public release tag.
+4. **An authenticated operator publishes the draft.** Publication creates the
+   `vX.Y.Z` tag and emits the `release.published` event. This explicit gate is
+   required because GitHub suppresses most follow-on workflow events created
+   by the repository `GITHUB_TOKEN`.
+5. **The publication workflows** check out the published release's immutable
+   tag rather than the default branch. The Docker workflows derive their image
+   tags from the same `github.event.release.tag_name`; the other release jobs
+   build libvmaf binaries and Python wheels. Every workflow signs and attests
+   its outputs, runs its own smoke checks, and publishes only after those gates
+   pass. The release PR's required CI remains the gate for the broader Netflix
+   golden-data and backend test suites.
+
+Before publication, repository setup must provide two protected environments:
+
+- `release-publish` for GHCR writes, release-blob signing, and GitHub Release
+  attachment;
+- `pypi-publish` for the `vmaf-mcp` Trusted Publisher identity.
+
+Both accept selected tag refs matching `v*` and require the release reviewer.
+Read-only validation runs before environment approval. The external SLSA
+reusable workflow cannot carry a caller-side
+environment, so it writes only a workflow artifact with `contents: read`; the
+protected attachment job is the sole job that uploads its two provenance files
+to the GitHub Release.
+
+### Native Linux release layout
+
+The native files attached by `supply-chain.yml` are currently Linux ELF
+artefacts. Meson builds a three-name dynamic-library chain: `libvmaf.so`, its
+ABI SONAME such as `libvmaf.so.3`, and its ABI real name such as
+`libvmaf.so.3.0.0`. GitHub artifact and release downloads do not preserve
+symlinks, so the workflow publishes all three names as identical regular-file
+assets. Each name is hashed, inventoried in both native SBOMs, signed, and
+covered by the native SLSA provenance.
+
+Download the CLI with the entire library chain, restore the raw CLI asset's
+executable bit, and keep the files together when running it:
+
+```bash
+mkdir vmafx-linux && cd vmafx-linux
+gh release download v3.2.1 --repo VMAFx/vmafx \
+  --pattern vmaf --pattern 'libvmaf.so*'
+chmod +x vmaf
+LD_LIBRARY_PATH="$PWD" ./vmaf --version
+```
+
+The clean-environment release gate exercises that same layout after an
+artifact upload/download round trip and requires the CLI's `DT_NEEDED` entry
+to resolve to the staged SONAME file. Windows `vmaf.exe` remains a CI build
+artifact, not a GitHub Release asset, and this workflow currently publishes no
+macOS native CLI or dylib. Use the production containers or build from source
+for those platforms until platform-specific release bundles are introduced.
+
+### Release recovery dispatches
+
+Use the manual supply-chain and Docker dispatches only to recover an existing,
+published, non-prerelease GitHub release. Run each workflow at the immutable
+tag ref and pass that same tag as its input:
+
+```bash
+tag=vX.Y.Z
+gh workflow run supply-chain.yml --ref "$tag" -f tag="$tag"
+gh workflow run docker-publish-production.yml --ref "$tag" -f tag="$tag"
+gh workflow run docker-publish-operator-node.yml --ref "$tag" -f tag="$tag"
+```
+
+The tag/ref equality is a release invariant in all three workflows:
+dispatching from `master` or a different ref would make rebuilt artefacts,
+containers, and signed provenance refer to source other than the published
+release. Each preflight also verifies the coordinated versions and published
+GitHub release before any write or OIDC job starts.
+The protected deployment environments still apply on recovery runs; approval
+authorizes the write-bearing jobs only, after the read-only preflight has
+proved the tag/ref/release identity.
 
 ## ADR index regeneration policy
 
@@ -103,7 +179,7 @@ repo or in CI secrets.
 
 ### What is signed
 
-- **Release blobs** (`libvmaf.so`, `vmaf`, `models.tar.gz`, optional
+- **Release blobs** (`libvmaf.so*`, `vmaf`, `models.tar.gz`, optional
   `u2netp_mirror.{onnx,pth}`): cosign sign-blob bundles attached to the
   GitHub Release. SLSA L3 provenance via
   `slsa-framework/slsa-github-generator`. SPDX + CycloneDX SBOM attached.
@@ -112,10 +188,15 @@ repo or in CI secrets.
   (Trusted Publishing, no token). See
   [ADR-0166](../adr/0166-mcp-server-release-channel.md).
 - **Production container images** (`ghcr.io/vmafx/vmafx:<tag>` and the
-  `-cuda12` / `-rocm6` / `-oneapi2026` / `-server` variants): cosign keyless
+  `-cuda13` / `-rocm7` / `-oneapi2025` / `-server` variants): cosign keyless
   signature plus a GitHub-native build-provenance attestation
   (`actions/attest-build-provenance`). See
   [ADR-0902](../adr/0902-signing-and-attestation-audit.md).
+- **Go service images** (`ghcr.io/vmafx/vmafx-server:<tag>`,
+  `ghcr.io/vmafx/vmafx-operator:<tag>`, and
+  `ghcr.io/vmafx/vmafx-node:<tag>`): the same cosign signature, CycloneDX SBOM,
+  and GitHub-native build provenance, emitted by
+  `docker-publish-operator-node.yml`.
 
 ### Consumer verification recipes
 
@@ -124,31 +205,43 @@ and MCP wheel come from `supply-chain.yml`; the container images come from
 `docker-publish-production.yml`.
 
 ```bash
-# Release blob. The cosign bundle ships next to the artefact as FILE.bundle.
+tag=v3.2.1
+
+# Release blob. Every vmaf/libvmaf.so* asset has a matching FILE.bundle.
 cosign verify-blob --bundle vmaf.bundle vmaf \
-  --certificate-identity-regexp 'https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@.*' \
+  --certificate-identity \
+    "https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@refs/tags/${tag}" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
-# vmaf-mcp wheel on PyPI. PEP 740 attestations — pip / uv verify automatically
-# when the index advertises the predicate. Manual check via cosign.
-cosign verify-blob --bundle vmaf_mcp-3.x.y-py3-none-any.whl.bundle \
-  vmaf_mcp-3.x.y-py3-none-any.whl \
-  --certificate-identity-regexp 'https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@.*' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+# vmaf-mcp wheel on PyPI. The PyPI integrity API supplies the PEP 740
+# provenance; pypi-attestations binds it to the expected source repository.
+pypi-attestations verify pypi \
+  --repository https://github.com/VMAFx/vmafx \
+  pypi:vmaf_mcp-3.x.y-py3-none-any.whl
 
 # Container image, cosign route. Replace DIGEST with the actual sha256 digest.
 cosign verify ghcr.io/vmafx/vmafx@sha256:DIGEST \
-  --certificate-identity-regexp 'https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@.*' \
+  --certificate-identity \
+    "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/tags/${tag}" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # Container image, GitHub-native attestation route (added by ADR-0902).
 gh attestation verify oci://ghcr.io/vmafx/vmafx@sha256:DIGEST --repo VMAFx/vmafx
+
+# Go server/operator/node images use their own workflow identity.
+cosign verify ghcr.io/vmafx/vmafx-node@sha256:DIGEST \
+  --certificate-identity \
+    "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@refs/tags/${tag}" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-The post-push `smoke-test` job in `docker-publish-production.yml` runs the
-cosign verify recipe above against every freshly-built CPU image before
-running it, so a signature gap fails CI loudly rather than silently
-shipping an unsigned image.
+The post-push smoke jobs in both Docker workflows run the matching cosign
+verification recipe before pulling an image. The production workflow also
+executes the CPU CLI and the Python 3.14 server entrypoints; the Go-service
+workflow starts the Go scoring server and probes `/healthz` plus `/readyz`,
+checks the operator version, and executes `vmaf --version` plus `ffmpeg -version`
+from the node image. A signature or runtime-linkage gap fails the release rather
+than silently shipping a broken image.
 
 ## CHANGELOG.md fragment workflow (ADR-0221)
 
@@ -198,6 +291,31 @@ Three drift classes can develop between fragments and the rendered block:
 `--write` is conservative: it only rewrites the `## [Unreleased]` block.
 Released sections below are untouched.
 
+### Cutting a release from fragments
+
+Release-please has `skip-changelog: true`; it never edits `CHANGELOG.md`.
+Once the generated release PR contains the final manifest and version-marker
+updates, run:
+
+```bash
+scripts/release/concat-changelog-fragments.sh --write
+git commit -am 'docs(release): render final 3.2.1 notes'
+scripts/release/rollover-changelog-fragments.sh \
+  --version 3.2.1 --date 2026-08-31
+git add CHANGELOG.md changelog.d
+git commit -m 'chore(release): cut 3.2.1 changelog'
+```
+
+Replace the example version and UTC date for later releases. The rollover
+requires a clean tree, exact agreement between the root manifest and every
+coordinated marker, zero renderer drift, a unique target heading, and a
+non-empty active source set. It then removes the consumed fragments and legacy
+source, leaving their exact content in the versioned changelog section and a
+SHA-256 receipt under `changelog.d/releases/`. The removals are recoverable
+from Git history. A second identical invocation is a no-op.
+
+[ADR-1128](../adr/1128-fragment-owned-release-cuts.md) governs this cutover.
+
 ### Drift-sweep cadence
 
 CI runs `--check` on every PR (the docs-fragments lane) so new drift fails
@@ -224,6 +342,15 @@ validates:
   snapshot tests.
 - `CHANGELOG.md` renders correctly and references no removed files.
 - Signing credentials (OIDC) resolve in the current CI environment.
+
+Run the release-please preview from an origin-faithful clone, not directly from
+the development checkout. Local tags include tags fetched from the Netflix
+`upstream` remote; those tags do not necessarily exist in `VMAFx/vmafx` and can
+make a local preview select the wrong previous release instead of the configured
+bootstrap SHA. The preview clone must expose only the fork's advertised tags
+and the candidate `master` tree. Supply credentials through a protected file
+descriptor or token-file path so the CLI never echoes a literal token in its
+argument list.
 
 See the [session orientation](../../CLAUDE.md#11-release) for the one-line
 summary and the `/prep-release` skill definition for the full checklist.
@@ -263,8 +390,8 @@ If a CVE requires an out-of-band release that bypasses the release-please PR:
 
 1. Branch off `master` into `hotfix/CVE-YYYY-NNNN`.
 2. Land the fix with a `fix:` commit and a signed-off-by line.
-3. Manually tag `vX.Y.Z-lusoris.N+1` — release-please will reconcile on the
-   next regular push.
+3. Manually tag the next ordinary patch version, `vX.Y.(Z+1)`;
+   release-please will reconcile on the next regular push.
 4. Backport the CVE fix to any active stacked release branches.
 
 ## Upstream parallel

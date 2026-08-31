@@ -45,6 +45,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"runtime"
 
 	"github.com/go-chi/chi/v5"
@@ -65,14 +66,18 @@ import (
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
+	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
 
-// buildVersion is a build-time version string, populated by ldflags:
-// -ldflags "-X main.buildVersion=v1.2.3". Falls back to "dev".
-var buildVersion = "dev"
+// version returns the shared build-time version string, falling back to "dev".
+func version() string { return buildversion.Version() }
 
-// version returns the build-time version string, falling back to "dev".
-func version() string { return buildVersion }
+// isVersionRequest keeps the release-image smoke path independent of network
+// listeners and the server's long-running fx lifecycle. The ELF loader still
+// resolves the dynamically linked libvmaf before main runs.
+func isVersionRequest(args []string) bool {
+	return len(args) == 2 && args[1] == "--version"
+}
 
 // serverEnvOptions pins the VMAFX_ env contract for this binary. golusoris'
 // grpc.Module reads four underscore-bearing leaf keys (grpc.cert_file,
@@ -97,6 +102,11 @@ func serverEnvOptions(watch bool) config.Options {
 }
 
 func main() {
+	if isVersionRequest(os.Args) {
+		fmt.Println(version())
+		return
+	}
+
 	fx.New(
 		// golusoris foundation: config + log + clock + id + validate + crypto,
 		// the OTel module, and the build-version supply (ADR-1119).

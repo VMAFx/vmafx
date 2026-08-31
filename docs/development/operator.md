@@ -1,7 +1,7 @@
 # vmafx-operator
 
 The vmafx-operator is a Kubernetes Operator built with kubebuilder v4 /
-controller-runtime v0.19+ that manages the three VMAFX custom resource types:
+controller-runtime v0.24+ that manages the three VMAFX custom resource types:
 
 | CRD | Short name | Purpose |
 | --- | --- | --- |
@@ -32,6 +32,19 @@ helm upgrade --install vmafx deploy/helm/vmafx \
 
 CRDs are installed automatically from `deploy/helm/vmafx/crds/` on first
 `helm install`.
+
+### Verify the operator image version
+
+The release image exposes a non-blocking version check that does not need
+Kubernetes credentials or start the manager:
+
+```bash
+docker run --rm ghcr.io/vmafx/vmafx-operator:v3.2.1 --version
+# v3.2.1
+```
+
+Release builds inject the published tag into `pkg/version.version`; an output
+of `dev` means the image was not built by the release workflow.
 
 ### Submit a scoring job
 
@@ -138,7 +151,7 @@ respective CRDs.
 │  │  │  • Emits CheckpointWritten event│  │  │
 │  │  └─────────────────────────────────┘  │  │
 │  └───────────────────────────────────────┘  │
-│  Prometheus metrics :8081  │  Healthz :8082  │
+│  Prometheus metrics :8080  │  Healthz :8081  │
 └─────────────────────────────────────────────┘
 ```
 
@@ -151,7 +164,7 @@ respective CRDs.
 | `operator.enabled` | `false` | Deploy the operator Deployment + RBAC |
 | `operator.replicaCount` | `1` | Number of operator Pods |
 | `operator.image.repository` | `ghcr.io/vmafx/vmafx-operator` | Image repository |
-| `operator.image.tag` | `""` (→ Chart.AppVersion) | Image tag |
+| `operator.image.tag` | `""` (→ `v<Chart.AppVersion>`) | Image tag |
 | `operator.image.pullPolicy` | `IfNotPresent` | Pull policy |
 | `operator.logLevel` | `info` | Log level: debug \| info \| warn \| error |
 | `operator.leaderElect` | `false` | Enable leader election (requires ≥2 replicas) |
@@ -168,8 +181,8 @@ the `operator.*` koanf subtree under the `VMAFX_` prefix.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `VMAFX_OPERATOR_METRICS_ADDR` | `:8081` | Prometheus metrics endpoint (`0` disables) |
-| `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` | `:8082` | Health probe endpoint |
+| `VMAFX_OPERATOR_METRICS_ADDR` | `:8080` | Prometheus metrics endpoint (`0` disables) |
+| `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` | `:8081` | Health probe endpoint |
 | `VMAFX_OPERATOR_LEADER_ELECTION` | `false` | Enable leader election |
 | `VMAFX_OPERATOR_LEADER_ELECTION_ID` | `vmafx-operator.vmafx.dev` | Lease name used when leader election is enabled |
 | `VMAFX_OPERATOR_WEBHOOK_PORT` | `0` | Admission-webhook port; `0` disables webhooks |

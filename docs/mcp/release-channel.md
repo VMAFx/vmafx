@@ -14,7 +14,7 @@ The fork ships **three** MCP server flavours:
 [ADR-0166](../adr/0166-mcp-server-release-channel.md) governs the
 standalone Python server release channel. The `vmaf-mcp`
 distribution is published to PyPI from the same release flow as the
-libvmaf fork, uses the fork's `v3.x.y-lusoris.N` version line, and
+libvmaf fork, uses the coordinated VMAFx `vX.Y.Z` version line, and
 is signed through the same keyless Sigstore/OIDC pipeline.
 
 Operators should install the standalone server from PyPI when an
@@ -69,6 +69,23 @@ For a `vmaf-mcp` Python package release:
   `mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`.
 - Publish and sign through the same release workflow used for the
   rest of the fork.
+
+The Pending Trusted Publisher for the first PyPI publication was configured on
+2026-08-31. Its binding uses these exact current repository identities:
+
+| PyPI field   | Value              |
+|--------------|--------------------|
+| Project name | `vmaf-mcp`         |
+| GitHub owner | `VMAFx`            |
+| Repository   | `vmafx`            |
+| Workflow     | `supply-chain.yml` |
+| Environment  | `pypi-publish`     |
+
+PyPI returns 404 for the project until that first trusted publication
+completes. Before publishing the GitHub draft, confirm the pending row still
+matches this table. Do not reuse the historical `lusoris/vmaf` identity from
+ADR-0166; the repository was transferred and renamed after that accepted
+decision.
 
 For the `vmafx-mcp` Go binary release:
 

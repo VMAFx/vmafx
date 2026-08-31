@@ -19,26 +19,30 @@ docker buildx build --target node-cpu \
   -t vmafx-node:dev .
 
 # Verify ffmpeg version
-docker run --rm vmafx-node:dev ffmpeg -version | head -1
+docker run --rm --entrypoint /usr/local/bin/ffmpeg \
+  vmafx-node:dev -version | head -1
 # → ffmpeg version n9.0.1 ...
 
 # Verify codec inventory
-docker run --rm vmafx-node:dev ffmpeg -encoders \
+docker run --rm --entrypoint /usr/local/bin/ffmpeg \
+  vmafx-node:dev -encoders \
   | grep -E 'libx264|libx265|libsvtav1|libvpx'
 ```
 
 ## Image variants
 
-| Target | GPU | ffmpeg HW encoder | Use case |
+| Target | GPU scoring runtime | FFmpeg encoders | Use case |
 |---|---|---|---|
 | `node-cpu` | none | software only | Development, CI, low-volume workloads |
-| `node-cuda` | NVIDIA (CUDA 12) | `h264_nvenc`, `hevc_nvenc`, `av1_nvenc` | High-throughput on NVIDIA pools |
-| `node-rocm` | AMD (ROCm 6) | `h264_amf`, `hevc_amf`, `av1_amf` | AMD Radeon pools |
-| `node-sycl` | Intel (oneAPI 2026) | `h264_qsv`, `hevc_qsv`, `av1_qsv` | Intel Arc / Xe pools |
+| `node-cuda` | NVIDIA (CUDA 13.3.1) | software only | GPU-accelerated VMAF scoring on NVIDIA pools |
+| `node-rocm` | AMD (ROCm 7.2.4) | software only | GPU-accelerated VMAF scoring on AMD pools |
+| `node-sycl` | Intel (oneAPI 2025.3.1) | software only | GPU-accelerated VMAF scoring on Intel Arc / Xe pools |
 
 All four variants carry **the same ffmpeg binary** (built in the shared
 `ffmpeg-builder-cpu` stage). The CUDA / ROCm / SYCL variants differ only in
-the additional GPU runtime libraries copied into the final stage.
+the additional GPU runtime libraries copied into the final stage. That shared
+FFmpeg build does not enable NVENC, AMF, or QSV encoders; the GPU runtimes
+accelerate VMAF scoring, not video encoding.
 
 ## ffmpeg version policy
 
@@ -48,9 +52,9 @@ The node image pins ffmpeg to the **latest stable tagged release**
 ```bash
 # Override to test against a specific release
 docker buildx build --target node-cpu \
-  --build-arg FFMPEG_TAG=n8.3 \
+  --build-arg FFMPEG_TAG=n9.0.1 \
   -f docker/Dockerfile.node \
-  -t vmafx-node:n8.3-test .
+  -t vmafx-node:n9.0.1-test .
 ```
 
 **Update cadence**: `FFMPEG_TAG` is updated in the same PR that bumps
@@ -63,11 +67,11 @@ behind pinning to a tag rather than a rolling release branch.
 
 ## ffmpeg-patches
 
-The node image applies the fork's full 15-patch series from `ffmpeg-patches/`
+The node image applies the fork's full 17-patch series from `ffmpeg-patches/`
 during the `ffmpeg-builder-cpu` stage. The patches:
 
-- Enable `libvmaf`, `libvmaf_sycl`, `libvmaf_vulkan`, `libvmaf_cuda`,
-  `libvmaf_hip`, `vmaf_pre`, and `libvmaf_tune` FFmpeg filters.
+- Carry the fork's libvmaf selector/filter integrations plus `vmaf_pre` and
+  `libvmaf_tune`; the node's shared FFmpeg build enables only CPU libvmaf.
 - Add the vmaf-tune `qpfile` AVOption to libx264 / libsvtav1.
 - Wire the `-pass-autotune` and `-vmaf-profile` CLI glue.
 
@@ -93,10 +97,6 @@ verification gate and invariants.
 | VP9 | encode | libvpx | Google VP9 SW encoder |
 | AV1 | encode | libsvtav1 | Intel/Netflix SVT-AV1 (production AV1 lane) |
 | AV1 | decode | libdav1d | Fast AV1 decoder |
-| H.264 NVENC | encode (cuda) | host driver | NVIDIA GPU; requires nvidia-container-toolkit |
-| HEVC NVENC | encode (cuda) | host driver | NVIDIA GPU |
-| H.264 AMF | encode (rocm) | host driver | AMD GPU; requires amdgpu-pro userspace |
-| H.264 QSV | encode (sycl) | host + libvpl | Intel GPU; requires iHD VA-API driver |
 
 **libaom is excluded**: `ffmpeg-patches/0007` references `aom_roi_map_t`
 fields not present in any released libaom. SVT-AV1 covers the AV1 production
@@ -126,10 +126,10 @@ clear error message.
 | Variable | Default | Description |
 |---|---|---|
 | `VMAFX_FFMPEG_BIN` | `ffmpeg` (PATH) | Path to the ffmpeg binary. The Docker image sets this to `/usr/local/bin/ffmpeg`. |
-| `VMAFX_NODE_ADDR` | `:50052` | gRPC listen address. |
+| `VMAFX_GRPC_LISTEN` | `:50052` | gRPC listen address. |
 | `VMAFX_LOG_LEVEL` | `INFO` | Log level: DEBUG, INFO, WARN, ERROR. |
 | `VMAFX_BACKEND` | unset (cpu) | GPU backend hint passed to libvmaf scoring. Set automatically in node-cuda/rocm/sycl variants. |
-| `VMAF_MODEL_PATH` | `/usr/local/share/vmafx/model` | Directory of VMAF model JSON/ONNX files. |
+| `VMAFX_MODEL_DIR` | `/usr/local/share/vmafx/model` | Directory of VMAF model JSON/ONNX files. |
 
 ## Building locally
 
@@ -139,7 +139,7 @@ docker buildx build --target node-cpu \
   -f docker/Dockerfile.node \
   -t vmafx-node:local .
 
-# CUDA variant (references nvidia/cuda:12.0 base image — no local CUDA SDK needed)
+# CUDA variant (references the pinned CUDA 13.3.1 runtime image)
 docker buildx build --target node-cuda \
   -f docker/Dockerfile.node \
   -t vmafx-node:local-cuda .
@@ -154,17 +154,31 @@ to speed up subsequent builds.
 After building:
 
 ```bash
+# Confirm the node binary carries the release/build version without starting
+# its long-running gRPC service
+docker run --rm vmafx-node:local --version
+
 # Confirm ffmpeg version
-docker run --rm vmafx-node:local ffmpeg -version | head -1
+docker run --rm --entrypoint /usr/local/bin/ffmpeg \
+  vmafx-node:local -version | head -1
 
 # Confirm codec inventory includes expected software encoders
-docker run --rm vmafx-node:local \
-  ffmpeg -hide_banner -encoders 2>/dev/null \
+docker run --rm --entrypoint /usr/local/bin/ffmpeg \
+  vmafx-node:local -hide_banner -encoders 2>/dev/null \
   | grep -E 'libx264|libx265|libsvtav1|libvpx'
 
-# Confirm node starts and logs the encoder inventory
-docker run --rm vmafx-node:local /usr/local/bin/vmafx-node --help 2>&1 | head -5
+# Confirm libvmaf and all node runtime libraries resolve
+docker run --rm --entrypoint /usr/local/bin/vmaf \
+  vmafx-node:local --version
 ```
+
+The image build derives FFmpeg's non-glibc shared-library closure from `ldd`
+inside the native build stage. This avoids architecture-specific
+`/usr/lib/x86_64-linux-gnu` copies: an arm64 build resolves and stages its
+`aarch64-linux-gnu` libraries automatically. The release workflow runs both
+the node's `--version`, `vmaf --version`, and `ffmpeg -version` in the
+published image without a success-masking fallback. Release builds inject the
+published tag into `pkg/version.version`; `dev` identifies a non-release build.
 
 The full smoke-test sequence from the task brief (including Netflix golden
 scoring) requires the `python/test/resource/yuv/` fixtures to be mounted:
@@ -172,8 +186,8 @@ scoring) requires the `python/test/resource/yuv/` fixtures to be mounted:
 ```bash
 docker run --rm \
   -v "$PWD/python/test/resource:/data:ro" \
+  --entrypoint /usr/local/bin/vmaf \
   vmafx-node:local \
-  /usr/local/bin/vmaf \
     --reference /data/yuv/src01_hrc00_576x324.yuv \
     --distorted  /data/yuv/src01_hrc01_576x324.yuv \
     --width 576 --height 324 \
@@ -188,7 +202,7 @@ The two builds are intentionally separate:
 
 - Dev container: full workbench with CUDA toolchain, oneAPI, MCP server, Python
   environment. Not a delivery artifact.
-- Node image: lean production runtime based on distroless cc-debian12. Ships
+- Node image: lean production runtime based on distroless cc-debian13. Ships
   the `vmafx-node` binary + ffmpeg + libvmaf only.
 
 When the patch series base is bumped, both the dev

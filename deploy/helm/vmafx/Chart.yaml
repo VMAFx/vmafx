@@ -2,12 +2,12 @@ apiVersion: v2
 name: vmafx
 description: >
   VMAFX — perceptual video quality assessment engine with multi-vendor GPU
-  support (CUDA / HIP / SYCL / Vulkan).  Provides an HTTP scoring server
+  support (CUDA / HIP / SYCL / Metal).  Provides an HTTP scoring server
   (Deployment), one-shot batch scoring (Job), and an optional stateful MCP
   server (StatefulSet).
 type: application
 version: 0.1.0
-appVersion: "3.0.0"
+appVersion: "3.2.1" # x-release-please-version
 home: https://github.com/VMAFx/vmafx
 sources:
   - https://github.com/VMAFx/vmafx
@@ -23,7 +23,7 @@ maintainers:
   - name: Lusoris
     url: https://github.com/lusoris
 annotations:
-  artifacthub.io/license: BSD-3-Clause-Plus-Patent
+  artifacthub.io/license: BSD-2-Clause-Patent
 
 dependencies:
   # Optional Prometheus Pushgateway — needed when Jobs push metrics to

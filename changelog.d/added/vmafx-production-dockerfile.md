@@ -10,5 +10,5 @@ tag (`v*`) and builds amd64 + arm64 for the CPU, Vulkan, and server variants; am
 for GPU SDK variants. All images are signed via Sigstore keyless cosign and carry a
 CycloneDX SBOM attached as a cosign attestation.
 
-Tag matrix: `latest` / `vX.Y.Z-lusoris.N` (CPU CLI), `-server`, `-cuda12`, `-rocm6`,
+Tag matrix: `latest` / `vX.Y.Z` (CPU CLI), `-server`, `-cuda12`, `-rocm6`,
 `-oneapi2026`, `-vulkan`. See `docs/development/docker-production.md` and ADR-0698.

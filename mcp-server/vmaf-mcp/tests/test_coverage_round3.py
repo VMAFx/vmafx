@@ -122,6 +122,7 @@ def _make_feature_parquet(path: Path, n: int = 30, with_mos: bool = True) -> Non
 def _has_eval_deps() -> bool:
     try:
         import numpy  # noqa: F401
+        import onnx  # noqa: F401
         import onnxruntime  # noqa: F401
         import pandas  # noqa: F401
         import scipy  # noqa: F401

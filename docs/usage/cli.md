@@ -408,7 +408,7 @@ Run VMAF plus PSNR:
 Expected stderr (CPU path):
 
 ```text
-VMAF version 3.x.y-lusoris.N
+VMAF version 3.2.1
 48 frames  44.72 FPS
 vmaf_v0.6.1: 76.6689050197
 ```
@@ -416,7 +416,7 @@ vmaf_v0.6.1: 76.6689050197
 Expected `scores.xml` head:
 
 ```xml
-<VMAF version="3.x.y-lusoris.N">
+<VMAF version="3.2.1">
   <params qualityWidth="576" qualityHeight="324" />
   <fyi fps="41.98" />
   <frames>

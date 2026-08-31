@@ -55,6 +55,8 @@ env:
   KIND_VERSION: "v0.33.0"
   KUBECTL_VERSION: "v1.37.0"
   HELM_VERSION: "v4.2.4"
+  # Official get.helm.sh digest for helm-v4.2.4-linux-amd64.tar.gz.
+  HELM_SHA256: "c306b46f719b0a4da32d0f78ee21bf90ce8d602f15b22ab753f0674d1670a7f3"
   KUTTL_VERSION: "v0.26.0"
   # Image tags built by this workflow's "build-images" job.
   E2E_IMAGE_TAG: "e2e-${{ github.sha }}"
@@ -209,8 +211,19 @@ jobs:
 
       - name: Install helm ${{ env.HELM_VERSION }}
         run: |
-          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | \
-            DESIRED_VERSION="${HELM_VERSION}" bash
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          install_dir="${RUNNER_TEMP}/helm-${HELM_VERSION}/bin"
+          curl --fail --location --show-error --silent \
+            --retry 5 --retry-all-errors \
+            --output "${archive}" \
+            "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          printf '%s  %s\n' "${HELM_SHA256}" "${archive}" | sha256sum --check --strict
+          mkdir -p "${install_dir}"
+          tar --extract --gzip --file "${archive}" --directory "${RUNNER_TEMP}"
+          install -m 0755 "${RUNNER_TEMP}/linux-amd64/helm" "${install_dir}/helm"
+          printf '%s\n' "${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/helm" version --short
 
       - name: Install kuttl ${{ env.KUTTL_VERSION }}
         run: |
@@ -250,6 +263,7 @@ jobs:
 
       # ---- Run kuttl tests ----
       - name: Run kuttl e2e test suite
+        id: kuttl
         run: |
           kubectl kuttl test test/e2e/kuttl-tests/ \
             --namespace vmafx-e2e-test \
@@ -302,10 +316,13 @@ jobs:
 
       # Fail the step now that diagnostics are collected.
       - name: Assert kuttl exit code
+        env:
+          KUTTL_OUTCOME: ${{ steps.kuttl.outcome }}
         run: |
-          rc=$(cat test/e2e/.kuttl-exit-code 2>/dev/null || echo 0)
-          # kuttl exit code is surfaced via continue-on-error above;
-          # re-check via XML presence of failures.
+          if [[ "${KUTTL_OUTCOME}" != "success" ]]; then
+            echo "kuttl command outcome was ${KUTTL_OUTCOME}." >&2
+            exit 1
+          fi
           if grep -rq 'failures="[1-9]' test/e2e/results/ 2>/dev/null; then
             echo "One or more kuttl test cases FAILED." >&2
             exit 1

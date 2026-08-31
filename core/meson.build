@@ -1,5 +1,5 @@
 project('libvmaf', ['c', 'cpp'],
-    version : '3.2.0', # x-release-please-version
+    version : '3.2.1', # x-release-please-version
     # c_std is deliberately NOT set here — see the compiler-aware block
     # below. MSVC advertises only ['none','c89','c99','c11'], so any
     # value this project actually wants aborts configure before that
@@ -10,10 +10,10 @@ project('libvmaf', ['c', 'cpp'],
                        'default_library=both',
                        'b_lto=true',
                       ],
-    # >= 1.4.0: `c_std=c23` above is only recognised from meson 1.4.0 on
-    # (1.3.2, which Ubuntu 24.04 ships, fails with "Unknown C std ['c23']").
-    # Declaring it here turns that cryptic configure error into a clear
-    # "meson version too old" message. See ADR-0692.
+    # >= 1.4.0: the explicit `-Dc_std=c23` override is only recognised from
+    # meson 1.4.0 on (1.3.2 fails with "Unknown C std ['c23']"). Declaring the
+    # floor here turns that cryptic configure error into a clear version error.
+    # See ADR-0692.
     meson_version: '>= 1.4.0')
 
 vmaf_soname_version       = '3.0.0'

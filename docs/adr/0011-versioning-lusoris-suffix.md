@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0011: Version scheme v3.x.y-lusoris.N
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-1127](1127-single-semver-release-stream.md)
 - **Date**: 2026-04-17
 - **Deciders**: Lusoris, Claude (Anthropic)
 - **Tags**: release, framework

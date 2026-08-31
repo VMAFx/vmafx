@@ -8,6 +8,7 @@ VMAF Development Kit (VDK) is a software package that contains the VMAF algorith
 as well as a set of tools that allows a user to train and test a custom VMAF model.
 """
 
+import ast
 import os
 
 from setuptools import setup
@@ -30,10 +31,14 @@ COMPAT_VMAF = os.path.normpath(os.path.join(PYTHON_PROJECT, COMPAT_VMAF_REL))
 def get_version():
     """Version from vmaf __init__ (reads from the real package location)."""
     try:
-        with open(os.path.join(COMPAT_VMAF, "__init__.py")) as fh:
+        with open(os.path.join(COMPAT_VMAF, "__init__.py"), encoding="utf-8") as fh:
             for line in fh:
                 if line.startswith("__version__"):
-                    return line.strip().rpartition(" ")[2].replace('"', "")
+                    _, separator, value = line.partition("=")
+                    if separator:
+                        version = ast.literal_eval(value.split("#", 1)[0].strip())
+                        if isinstance(version, str):
+                            return version
 
     except Exception:
         pass

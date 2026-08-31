@@ -152,10 +152,16 @@ listed env var maps to the dotted koanf key shown in the third column.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `VMAFX_OPERATOR_LEADER_ELECT` | `true`/`false` | `false` | Enable leader election for high-availability deployments.  Set to `true` when running multiple operator replicas. |
-| `VMAFX_OPERATOR_LOG_LEVEL` | string | `info` | Log level for the zap logger: `debug`, `info`, `warn`, `error`. |
-| `VMAFX_OPERATOR_METRICS_ADDR` | `host:port` | `:8081` | Bind address for the Prometheus metrics endpoint. |
-| `VMAFX_OPERATOR_PROBE_ADDR` | `host:port` | `:8082` | Bind address for `/healthz` and `/readyz` health-probe endpoints. |
+| `VMAFX_OPERATOR_LEADER_ELECTION` | `true`/`false` | `false` | Enable leader election for high-availability deployments. Set to `true` when running multiple operator replicas. |
+| `VMAFX_OPERATOR_LEADER_ELECTION_ID` | string | `vmafx-operator.vmafx.dev` | Lease name used when leader election is enabled. |
+| `VMAFX_OPERATOR_METRICS_ADDR` | `host:port` | `:8080` | Bind address for the Prometheus metrics endpoint. |
+| `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` | `host:port` | `:8081` | Bind address for `/healthz` and `/readyz` health-probe endpoints. |
+| `VMAFX_OPERATOR_GRACEFUL_SHUTDOWN` | duration | `30s` | Manager graceful-shutdown timeout. |
+| `VMAFX_OPERATOR_WEBHOOK_PORT` | integer | `0` | Admission-webhook port; `0` disables webhooks. |
+| `VMAFX_OPERATOR_WEBHOOK_HOST` | host | _(all interfaces)_ | Admission-webhook bind host. |
+| `VMAFX_LOG_LEVEL` | string | `info` | Shared structured log level: `debug`, `info`, `warn`, or `error`. |
+| `VMAFX_CONTROLLER_GRPC_ADDR` | `host:port` | `vmafx-controller.<ns>.svc.cluster.local:9090` | gRPC address of the vmafx-controller used by job reconciliation. |
+| `VMAFX_CONTROLLER_HTTP_ADDR` | URL | `http://vmafx-controller.<ns>.svc.cluster.local:8080` | HTTP address of the vmafx-controller used by health reconciliation. |
 
 ---
 

@@ -1,0 +1,1 @@
+| [ADR-1129](1129-release-container-runtime-alignment.md) | Bind all release containers to the authenticated published tag, matching nonroot CPU/Python/vendor runtime families, typed MCP 2.x registration, and mandatory per-digest signing, provenance, SBOM, and post-push smoke verification. | Accepted | 2026-08-31 | release, container, supply-chain, security, mcp, go, gpu, ci |

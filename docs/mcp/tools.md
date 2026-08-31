@@ -101,7 +101,7 @@ Response body (abridged):
 
 ```json
 {
-  "version": "3.x.y-lusoris.N",
+  "version": "3.2.1",
   "pooled_metrics": { "vmaf": { "mean": 76.668905, "...": "..." } },
   "frames": [ { "frameNum": 0, "metrics": { "vmaf": 78.8263, "...": "..." } } ]
 }
@@ -566,7 +566,7 @@ confirming which fork build is running before scoring. Added in
 ```json
 {
   "binary_path": "/usr/local/bin/vmaf",
-  "version":     "3.0.0-lusoris.5",
+  "version":     "3.2.1",
   "build_flags": {
     "cpu":    true,
     "cuda":   true,
@@ -637,7 +637,7 @@ Same shape as `vmaf_score`, plus two extra keys:
 
 ```json
 {
-  "version": "3.x.y-lusoris.N",
+  "version": "3.2.1",
   "pooled_metrics": { "vmaf": { "mean": 76.668905, "...": "..." } },
   "frames": [ "..." ],
   "backend_requested": "auto",

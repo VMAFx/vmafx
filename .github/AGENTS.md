@@ -11,6 +11,55 @@ broken `.c` file).
 
 ## Invariants a reviewer or sync must preserve
 
+### Single SemVer release fan-out (ADR-1127)
+
+`release-please.yml` owns one root package and creates a draft GitHub release.
+Publishing that draft is the authenticated operation that creates the `vX.Y.Z`
+tag and starts `supply-chain.yml` plus both Docker publication workflows. Do not
+split release-please back into unqualified component tags or make the release
+non-draft without first providing and validating an explicit downstream
+workflow trigger. The workflow pauses both release-please phases while one
+ordinary-SemVer draft exists; later master pushes must not move or duplicate a
+release waiting at the human publication gate. The initial 3.2.1 cut is selected
+by a one-time `release-as` config field; release-PR rollover must remove that
+field and `bootstrap-sha` before the release PR merges so neither override can
+affect 3.2.2.
+
+Every job that publishes to GHCR, uploads GitHub Release assets, or mints a
+release-artifact Sigstore identity is bound to the protected
+`release-publish` environment. PyPI stays bound to `pypi-publish` because that
+exact environment name is part of its Trusted Publisher identity. Both
+environments accept ordinary release tags only and require the configured
+release reviewer; read-only validation stays outside them. The SLSA reusable
+workflow caller cannot declare an environment, so it has `contents: read` and
+`upload-assets: false`; the environment-gated attachment job is the sole
+release-asset writer. Do not restore direct SLSA release upload.
+
+`supply-chain.yml` runs `scripts/release/verify-release-version.sh` before any
+write or OIDC job. It keeps native and `vmaf-mcp` hashes in distinct SLSA jobs
+with distinct provenance asset names. Its native SBOMs contain and hash every
+staged artifact; its Python SBOMs inventory the installed `vmaf-mcp` dependency
+graph plus the wheel and sdist. The workflow fails if either inventory becomes
+empty or mislabeled. Anchore's implicit artifact/release uploads stay disabled:
+the explicit SBOM artifact feeds keyless signing before the final strict
+attachment job. Do not bypass that DAG or restore permissive unmatched-file
+uploads; a green workflow must mean every promised asset exists.
+
+The native payload is Linux ELF and materializes the complete Meson
+`libvmaf.so` / SONAME / real-name chain as regular files. Before any native
+write or OIDC job, the artifact round-trip verifier must prove that the
+downloaded `vmaf` resolves its declared SONAME from that directory and reports
+the release version under `env -i`. Hashing, SBOM generation, signing, SLSA
+provenance, and strict attachment cover every materialized chain name.
+
+Manual supply-chain recovery must use the published tag as both the workflow ref
+and input (`gh workflow run supply-chain.yml --ref "$tag" -f tag="$tag"`). The
+validation job rejects branch-ref dispatches, missing/draft/prerelease releases,
+or an event SHA different from the checked-out tag. This binding is required so
+SLSA provenance describes the source that produced the artifacts. Container
+signature verification requires the exact `@refs/tags/${PUBLISH_TAG}` workflow
+identity; a wildcard ref would accept signatures minted by branch workflows.
+
 ### Rule-enforcement split (ADR-0124)
 
 [`rule-enforcement.yml`](workflows/rule-enforcement.yml) has three
@@ -182,6 +231,20 @@ updated together from the official GitHub release asset metadata. Do not pipe a
 retrying `curl` transfer directly into `tar`: retries require a file-backed
 output, and privileged extraction must not see unverified bytes.
 
+### Helm workflow version and digest stay coupled
+
+[`workflows/helm-chart.yml`](workflows/helm-chart.yml) and
+[`workflows/e2e-k8s.yml`](workflows/e2e-k8s.yml) install the same pinned Helm
+archive from `get.helm.sh`. Keep `HELM_VERSION`, `HELM_SHA256`, and the verified
+file-backed extraction sequence identical in both workflows. Never restore the
+moving `helm/helm@main` installer or pipe network bytes into a shell; update the
+digest from Helm's official checksum whenever the version changes.
+
+The E2E workflow deliberately gives the kuttl step `continue-on-error` so
+diagnostics and XML can still upload. Its final assertion must inspect
+`steps.kuttl.outcome` (not `conclusion`) and fail unless it is `success`;
+otherwise command failures are converted into a green workflow.
+
 ## Sanitizer matrix test-set scope (ADR-0347)
 
 The `sanitizers` job in
@@ -244,37 +307,58 @@ collisions are rare because the fork-added workflow names
 ## Signing + attestation chain invariants (ADR-0902)
 
 Container builds in `.github/workflows/docker-publish-production.yml` and
-release-blob signing in `.github/workflows/supply-chain.yml` carry a
-multi-layer signing chain that is load-bearing for the
+`.github/workflows/docker-publish-operator-node.yml`, plus release-blob signing
+in `.github/workflows/supply-chain.yml`, carry a multi-layer signing chain that
+is load-bearing for the
 [release.md](../docs/development/release.md) consumer verification recipes.
 
-- Every container build job (CPU, CUDA, ROCm, oneAPI, server) must run
+- Every container build job (CPU, CUDA, ROCm, oneAPI, Python MCP server, Go
+  scoring server, operator, node)
+  must run
   **both** `cosign sign --yes` **and** `actions/attest-build-provenance@<v4>`
   against the same `${{ steps.push.outputs.digest }}`. The two
   attestations cover different consumer toolchains (cosign for
   Sigstore-native consumers, `gh attestation verify` for GitHub-native
   consumers); neither replaces the other. Removing either side is a
   policy change and needs a superseding ADR.
+- Both Docker workflows start with a tag-bound validation job. A release or
+  manual recovery must identify the same published, non-prerelease ordinary
+  SemVer tag through the input, `GITHUB_REF`, `GITHUB_SHA`, checkout, and
+  coordinated version files. Every image build needs that validation job and
+  checks out its tag output; never restore branch-ref checkout with an
+  independently supplied publish tag.
 - Every job that runs `actions/attest-build-provenance@*` needs
   `attestations: write` in its `permissions:` block. Adding a new GPU
   variant without this permission silently disables the GitHub-native
   attestation for that variant.
-- The `smoke-test` job must run `cosign verify` against the freshly-pushed
-  CPU image before pulling and running it. Skipping this verification
+- Every container build job must generate a CycloneDX SBOM with syft, attach
+  it to the same digest with `cosign attest`, and upload the JSON artifact.
+  These steps are release gates: never add `continue-on-error` or other
+  best-effort handling. The workflow summary must require every build job to
+  finish with `success`; a skipped GPU or server build is not an accepted
+  release result.
+- Each Docker workflow's smoke job must run `cosign verify` against every
+  freshly-pushed image it consumes before pulling and running it. Skipping
+  this verification
   would re-open the gap that ADR-0902 §G3 closed (compromised CI token
   pushes an unsigned image; smoke test passes).
+- The production GPU smoke consumes the digest output from all three vendor
+  build jobs, verifies each signature, then runs the driver-independent
+  `--version` entrypoint. Keep it in the summary gate; GPU hardware is not
+  required to catch a broken runtime dependency closure.
 - The certificate-identity regex in
   [`release.md`](../docs/development/release.md) §"Consumer verification
   recipes" assumes the workflow file path
   `.github/workflows/docker-publish-production.yml` and
+  `.github/workflows/docker-publish-operator-node.yml` and
   `.github/workflows/supply-chain.yml`. Renaming or splitting these
   workflows requires updating both the docs AND any cached consumer
   scripts (deprecated regex stays valid for old image digests in Rekor).
-- `cosign-installer` SHA-pin: every install step uses the same pinned
-  v4 SHA. When Renovate or a manual bump updates it, all five Docker
-  build jobs + the smoke-test job + both supply-chain.yml jobs must
-  move together — a mixed-version chain produces signature-format
-  mismatches that only surface at consumer-verify time.
+- `cosign-installer` SHA-pin: every install step uses the same pinned v4 SHA.
+  When Renovate or a manual bump updates it, every build/smoke job in both
+  Docker workflows and both `supply-chain.yml` jobs must move together — a
+  mixed-version chain produces signature-format mismatches that only surface
+  at consumer-verify time.
 
 ## OSSF Scorecard pin invariant
 

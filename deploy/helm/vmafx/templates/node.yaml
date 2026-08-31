@@ -95,9 +95,9 @@ spec:
           env:
             - name: VMAFX_CONTROLLER_ADDR
               value: {{ include "vmafx.controllerAddr" . | quote }}
-            # golusoris grpc.Module defaults grpc.listen to :9090 (ADR-1119, no
-            # backwards-compat code default); pin the node's gRPC listen to the
-            # deploy's grpcPort so the ClusterIP Service + tcpSocket probes reach it.
+            # The binary defaults grpc.listen to :50052 for standalone use.
+            # Pin it explicitly to deploy's configurable grpcPort so the
+            # ClusterIP Service and tcpSocket probes always follow chart values.
             - name: VMAFX_GRPC_LISTEN
               value: ":{{ .Values.node.grpcPort | default 50052 }}"
             - name: VMAFX_NODE_ID

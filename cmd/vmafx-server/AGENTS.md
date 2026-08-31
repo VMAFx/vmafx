@@ -95,3 +95,14 @@ Go gRPC + HTTP scoring service. See [ADR-0703](../../docs/adr/0703-vmafx-server-
    EnvPrefix: "VMAFX_", ...})` line is load-bearing — without it the
    graph reads the framework default `APP_` prefix and ignores every
    `VMAFX_*` var.
+
+9. **Release identity and runtime ABI** (`main.go`, `../../Dockerfile.go-server`,
+   ADR-1129): release builds inject the published `vX.Y.Z` tag into
+   `github.com/VMAFx/vmafx/pkg/version.version`. The exact two-argument
+   `--version` path must return before constructing the fx graph or binding
+   listeners; normal startup remains environment-only. The Dockerfile must
+   build the fork's libvmaf, the CGO server, and the distroless runtime on the
+   same Debian major ABI for both amd64 and arm64. Do not restore the distro
+   `libvmaf-dev` builder or an architecture-specific library path: either can
+   compile one binary against a different libvmaf from the one shipped at
+   runtime.

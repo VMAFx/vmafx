@@ -1,13 +1,15 @@
-# docker-publish-operator-node — build, push, sign, and SBOM the vmafx-operator
-# and vmafx-node images on every release tag.
+# docker-publish-operator-node — build, push, sign, and SBOM the VMAFX Go
+# service images when a release-please draft is published.
 #
 # Triggers:
-#   - push of a release tag (v*) from release-please
-#   - workflow_dispatch for manual runs
+#   - publication of a release-please draft (`release.published`)
+#   - workflow_dispatch at an existing published tag for recovery
 #
 # Produces:
 #   ghcr.io/vmafx/vmafx-operator:<tag>   (amd64 + arm64)
 #   ghcr.io/vmafx/vmafx-operator:latest  (same)
+#   ghcr.io/vmafx/vmafx-server:<tag>     (amd64 + arm64, Go HTTP/gRPC server)
+#   ghcr.io/vmafx/vmafx-server:latest    (same)
 #   ghcr.io/vmafx/vmafx-node:<tag>       (amd64 + arm64, CPU variant)
 #   ghcr.io/vmafx/vmafx-node:latest      (same)
 #
@@ -20,26 +22,76 @@
 name: docker-publish-operator-node
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types:
+      - published
   workflow_dispatch:
     inputs:
       tag:
-        description: "Image tag to build (defaults to 'dev')"
-        required: false
-        default: "dev"
+        description: "Existing published vX.Y.Z tag to recover idempotently"
+        required: true
 
 # Workflow-level least-privilege; jobs that push/sign/attest opt in below.
 permissions:
   contents: read
 
+# A release tag must fan out only once; never cancel a partially-published set.
+concurrency:
+  group: docker-publish-operator-node-${{ github.event.release.tag_name || github.ref }}
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
   OPERATOR_IMAGE: vmafx/vmafx-operator
+  SERVER_IMAGE: vmafx/vmafx-server
   NODE_IMAGE: vmafx/vmafx-node
+  PUBLISH_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
 
 jobs:
+  validate-release:
+    name: Validate published ordinary tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ env.PUBLISH_TAG }}
+          persist-credentials: false
+      - name: Reject source/tag mismatches
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease || false }}
+        run: |
+          if [[ "$RELEASE_IS_PRERELEASE" == "true" ]]; then
+            echo "ERROR: prerelease publication is not supported: $PUBLISH_TAG" >&2
+            exit 1
+          fi
+          expected_ref="refs/tags/$PUBLISH_TAG"
+          if [[ "$GITHUB_REF" != "$expected_ref" ]]; then
+            echo "ERROR: run this workflow at $expected_ref, not $GITHUB_REF" >&2
+            exit 1
+          fi
+          scripts/release/verify-release-version.sh "$PUBLISH_TAG"
+          if [[ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]]; then
+            echo "ERROR: workflow source SHA $GITHUB_SHA does not match checked-out tag" >&2
+            exit 1
+          fi
+          release_json="$RUNNER_TEMP/github-release.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PUBLISH_TAG" > "$release_json"
+          if [[ "$(jq -r '.tag_name' "$release_json")" != "$PUBLISH_TAG" || \
+                "$(jq -r '.draft' "$release_json")" != "false" || \
+                "$(jq -r '.prerelease' "$release_json")" != "false" || \
+                "$(jq -r '.published_at != null' "$release_json")" != "true" ]]; then
+            echo "ERROR: $PUBLISH_TAG must name a published, non-prerelease release" >&2
+            exit 1
+          fi
+          echo "tag=$PUBLISH_TAG" >> "$GITHUB_OUTPUT"
+
   # -------------------------------------------------------------------------
   # Build + push vmafx-operator (amd64 + arm64)
   # Pure-Go / CGO_ENABLED=0 — uses BuildKit TARGETARCH build-arg for native
@@ -47,8 +99,10 @@ jobs:
   # -------------------------------------------------------------------------
   build-operator:
     name: Build + push vmafx-operator (amd64 + arm64)
+    needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment: release-publish
     permissions:
       contents: read
       packages: write    # push to GHCR
@@ -61,6 +115,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          ref: ${{ needs.validate-release.outputs.tag }}
           submodules: recursive
           persist-credentials: false  # ADR-1086: drop GITHUB_TOKEN from .git/config
 
@@ -80,9 +135,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}
           tags: |
-            type=ref,event=tag
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=${{ github.event.inputs.tag || 'dev' }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=${{ env.PUBLISH_TAG }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
 
       - name: Build and push (amd64 + arm64)
         id: push
@@ -95,6 +149,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VMAFX_VERSION=${{ env.PUBLISH_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -107,6 +163,13 @@ jobs:
         run: |
           cosign sign --yes \
             "${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}@${{ steps.push.outputs.digest }}"
+
+      - name: Attest build provenance (GitHub native)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
       - name: Install syft (SBOM generator)
         uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26  # v0.24.2
@@ -133,13 +196,15 @@ jobs:
           retention-days: 90
 
   # -------------------------------------------------------------------------
-  # Build + push vmafx-node CPU variant (amd64 + arm64)
-  # CGO + ffmpeg stages require QEMU for arm64 emulation.
+  # Build + push vmafx-server (amd64 + arm64)
+  # CGO + libvmaf stages execute natively for each target under QEMU.
   # -------------------------------------------------------------------------
-  build-node:
-    name: Build + push vmafx-node CPU (amd64 + arm64)
+  build-server:
+    name: Build + push vmafx-server (amd64 + arm64)
+    needs: validate-release
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
+    environment: release-publish
     permissions:
       contents: read
       packages: write
@@ -152,6 +217,113 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          ref: ${{ needs.validate-release.outputs.tag }}
+          submodules: recursive
+          persist-credentials: false  # ADR-1086: drop GITHUB_TOKEN from .git/config
+
+      - name: Set up QEMU (arm64 cross-emulation for CGO + libvmaf stages)
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8  # v4.2.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4.3.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}
+          tags: |
+            type=raw,value=${{ env.PUBLISH_TAG }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+
+      - name: Build and push (amd64 + arm64)
+        id: push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        with:
+          context: .
+          file: Dockerfile.go-server
+          target: go-server
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VMAFX_VERSION=${{ env.PUBLISH_TAG }}
+            VMAF_BUILD_JOBS=4
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+        with:
+          cosign-release: "v3.1.3"
+
+      - name: Sign image (keyless OIDC via Sigstore)
+        run: |
+          cosign sign --yes \
+            "${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}@${{ steps.push.outputs.digest }}"
+
+      - name: Attest build provenance (GitHub native)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Install syft (SBOM generator)
+        uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26  # v0.24.2
+
+      - name: Generate SBOM (CycloneDX JSON)
+        run: |
+          syft \
+            "${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}@${{ steps.push.outputs.digest }}" \
+            --output cyclonedx-json \
+            --file sbom-server.cdx.json
+
+      - name: Attach SBOM via cosign attest
+        run: |
+          cosign attest --yes \
+            --predicate sbom-server.cdx.json \
+            --type cyclonedx \
+            "${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}@${{ steps.push.outputs.digest }}"
+
+      - name: Upload SBOM as workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: sbom-server
+          path: sbom-server.cdx.json
+          retention-days: 90
+
+  # -------------------------------------------------------------------------
+  # Build + push vmafx-node CPU variant (amd64 + arm64)
+  # CGO + ffmpeg stages require QEMU for arm64 emulation.
+  # -------------------------------------------------------------------------
+  build-node:
+    name: Build + push vmafx-node CPU (amd64 + arm64)
+    needs: validate-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: release-publish
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ needs.validate-release.outputs.tag }}
           submodules: recursive
           persist-credentials: false  # ADR-1086: drop GITHUB_TOKEN from .git/config
 
@@ -174,9 +346,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}
           tags: |
-            type=ref,event=tag
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=${{ github.event.inputs.tag || 'dev' }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=${{ env.PUBLISH_TAG }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
 
       - name: Build and push (amd64 + arm64, CPU target)
         id: push
@@ -192,6 +363,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
+            VMAFX_VERSION=${{ env.PUBLISH_TAG }}
             VMAF_BUILD_JOBS=4
             FFMPEG_TAG=n9.0.1
 
@@ -204,6 +376,13 @@ jobs:
         run: |
           cosign sign --yes \
             "${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ steps.push.outputs.digest }}"
+
+      - name: Attest build provenance (GitHub native)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
       - name: Install syft (SBOM generator)
         uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26  # v0.24.2
@@ -230,12 +409,13 @@ jobs:
           retention-days: 90
 
   # -------------------------------------------------------------------------
-  # Smoke-test: pull both images and verify the binaries respond
+  # Smoke-test: verify signatures, then pull and exercise all three images
   # -------------------------------------------------------------------------
   smoke-test:
-    name: Smoke-test operator + node images
+    name: Smoke-test operator + server + node images
     needs:
       - build-operator
+      - build-server
       - build-node
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -251,32 +431,115 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Smoke-test vmafx-operator (--help exits 0)
-        run: |
-          docker pull \
-            "${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}@${{ needs.build-operator.outputs.digest }}"
-          docker run --rm \
-            "${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}@${{ needs.build-operator.outputs.digest }}" \
-            --help || true
-          echo "Smoke test passed: vmafx-operator --help exited"
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+        with:
+          cosign-release: "v3.1.3"
 
-      - name: Smoke-test vmafx-node (--help exits 0)
+      - name: Verify signatures before pull
         run: |
-          docker pull \
+          cosign verify \
+            --certificate-identity \
+              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@refs/tags/${PUBLISH_TAG}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}@${{ needs.build-operator.outputs.digest }}"
+          cosign verify \
+            --certificate-identity \
+              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@refs/tags/${PUBLISH_TAG}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}@${{ needs.build-server.outputs.digest }}"
+          cosign verify \
+            --certificate-identity \
+              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@refs/tags/${PUBLISH_TAG}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ needs.build-node.outputs.digest }}"
-          docker run --rm \
-            "${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ needs.build-node.outputs.digest }}" \
-            --help || true
-          echo "Smoke test passed: vmafx-node --help exited"
+
+      - name: Verify vmafx-server multi-architecture manifest
+        run: |
+          image="${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}@${{ needs.build-server.outputs.digest }}"
+          docker buildx imagetools inspect --raw "${image}" \
+            | jq -e '
+                [.manifests[]?.platform
+                  | select(.os == "linux")
+                  | .architecture]
+                | sort
+                | unique == ["amd64", "arm64"]
+              '
+
+      - name: Smoke-test vmafx-operator runtime
+        run: |
+          image="${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}@${{ needs.build-operator.outputs.digest }}"
+          docker pull "${image}"
+          test "$(docker image inspect --format '{{json .Config.Entrypoint}}' "${image}")" = \
+            '["/usr/local/bin/vmafx-operator"]'
+          version="$(docker run --rm "${image}" --version)"
+          test "${version}" = "${{ env.PUBLISH_TAG }}"
+
+      - name: Smoke-test vmafx-server runtime
+        run: |
+          image="${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}@${{ needs.build-server.outputs.digest }}"
+          docker pull "${image}"
+          test "$(docker image inspect --format '{{json .Config.Entrypoint}}' "${image}")" = \
+            '["/usr/local/bin/vmafx-server"]'
+          test "$(docker image inspect --format '{{.Config.User}}' "${image}")" = \
+            '65532:65532'
+          version="$(docker run --rm "${image}" --version)"
+          test "${version}" = "${{ env.PUBLISH_TAG }}"
+          docker run --rm --entrypoint /usr/local/bin/vmaf "${image}" --version
+
+      - name: Smoke-test vmafx-server HTTP startup
+        run: |
+          image="${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}@${{ needs.build-server.outputs.digest }}"
+          name="vmafx-server-release-smoke"
+          cleanup() {
+            status=$?
+            if [[ "${status}" -ne 0 ]]; then
+              docker logs "${name}" 2>&1 || true
+            fi
+            docker rm --force "${name}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run --detach --name "${name}" \
+            --publish 127.0.0.1::8080 \
+            "${image}"
+          http_address="$(docker port "${name}" 8080/tcp)"
+
+          ready=false
+          for _ in $(seq 1 30); do
+            if [[ "$(docker inspect --format '{{.State.Running}}' "${name}")" != "true" ]]; then
+              echo "vmafx-server exited before becoming ready" >&2
+              exit 1
+            fi
+            if curl --fail --silent --show-error "http://${http_address}/healthz" >/dev/null \
+              && curl --fail --silent --show-error "http://${http_address}/readyz" >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          test "${ready}" = "true"
+
+      - name: Smoke-test vmafx-node runtime
+        run: |
+          image="${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ needs.build-node.outputs.digest }}"
+          docker pull "${image}"
+          test "$(docker image inspect --format '{{json .Config.Entrypoint}}' "${image}")" = \
+            '["/usr/local/bin/vmafx-node"]'
+          version="$(docker run --rm "${image}" --version)"
+          test "${version}" = "${{ env.PUBLISH_TAG }}"
+          docker run --rm --entrypoint /usr/local/bin/vmaf "${image}" --version
+          docker run --rm --entrypoint /usr/local/bin/ffmpeg "${image}" -version
 
   # -------------------------------------------------------------------------
   # Summary gate — CI shows a single green/red status
   # -------------------------------------------------------------------------
   all-images:
-    name: All operator+node images published
+    name: All Go service images published
     if: always()
     needs:
       - build-operator
+      - build-server
       - build-node
       - smoke-test
     runs-on: ubuntu-latest
@@ -285,6 +548,10 @@ jobs:
         run: |
           if [[ "${{ needs.build-operator.result }}" != "success" ]]; then
             echo "build-operator failed"
+            exit 1
+          fi
+          if [[ "${{ needs.build-server.result }}" != "success" ]]; then
+            echo "build-server failed"
             exit 1
           fi
           if [[ "${{ needs.build-node.result }}" != "success" ]]; then

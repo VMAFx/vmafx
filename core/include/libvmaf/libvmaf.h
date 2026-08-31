@@ -625,7 +625,7 @@ VMAF_EXPORT int vmaf_write_output_with_format(VmafContext *vmaf, const char *out
 VMAF_EXPORT int vmaf_context_get_backend(VmafContext *vmaf, enum VmafBackend *out);
 
 /**
- * @brief Return the libvmaf version string (e.g. "3.0.0-lusoris.12").
+ * @brief Return the libvmaf version string (e.g. "3.2.1").
  *
  * @return NUL-terminated string owned by the library. Valid for the
  *         lifetime of the process; do not free.

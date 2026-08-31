@@ -10345,10 +10345,10 @@ inline.*
     `_wait_for_workfiles` overrides; drop unused
     `from time import sleep`.
 - **Fork carve-outs** (load-bearing on rebase):
-  1. **`python/vmaf/__init__.py:__version__`** stays `"3.0.0"` —
-     do NOT port upstream's bump to `"4.0.0"`. The fork tracks
-     its own versioning (`v3.x.y-lusoris.N`) per
-     [ADR-0025](adr/0025-copyright-handling-dual-notice.md).
+  1. **`compat/python-vmaf/__init__.py:__version__`** follows the root
+     `x-release-please-version` marker — do NOT port upstream's bump to
+     `"4.0.0"` independently. The fork uses one release stream per
+     [ADR-1127](adr/1127-single-semver-release-stream.md).
   2. **`from time import sleep` is dropped from both files** —
      upstream leaves the import in place (unused after their
      patch); the fork removes it because ADR-0141 touched-file
@@ -20963,10 +20963,10 @@ inline.*
     `_wait_for_workfiles` overrides; drop unused
     `from time import sleep`.
 - **Fork carve-outs** (load-bearing on rebase):
-  1. **`python/vmaf/__init__.py:__version__`** stays `"3.0.0"` —
-     do NOT port upstream's bump to `"4.0.0"`. The fork tracks
-     its own versioning (`v3.x.y-lusoris.N`) per
-     [ADR-0025](adr/0025-copyright-handling-dual-notice.md).
+  1. **`compat/python-vmaf/__init__.py:__version__`** follows the root
+     `x-release-please-version` marker — do NOT port upstream's bump to
+     `"4.0.0"` independently. The fork uses one release stream per
+     [ADR-1127](adr/1127-single-semver-release-stream.md).
   2. **`from time import sleep` is dropped from both files** —
      upstream leaves the import in place (unused after their
      patch); the fork removes it because ADR-0141 touched-file
@@ -31409,10 +31409,10 @@ inline.*
     `_wait_for_workfiles` overrides; drop unused
     `from time import sleep`.
 - **Fork carve-outs** (load-bearing on rebase):
-  1. **`python/vmaf/__init__.py:__version__`** stays `"3.0.0"` —
-     do NOT port upstream's bump to `"4.0.0"`. The fork tracks
-     its own versioning (`v3.x.y-lusoris.N`) per
-     [ADR-0025](adr/0025-copyright-handling-dual-notice.md).
+  1. **`compat/python-vmaf/__init__.py:__version__`** follows the root
+     `x-release-please-version` marker — do NOT port upstream's bump to
+     `"4.0.0"` independently. The fork uses one release stream per
+     [ADR-1127](adr/1127-single-semver-release-stream.md).
   2. **`from time import sleep` is dropped from both files** —
      upstream leaves the import in place (unused after their
      patch); the fork removes it because ADR-0141 touched-file
@@ -47059,3 +47059,96 @@ here covers the gap. If the vector loop is ever widened, the tail's start index
 `(w / 16) * 16` has to widen with it, or widths that are a multiple of the
 dispatch granularity but not the vector width will again read `buf->tmp_ref`
 entries that were never written in that iteration.
+## 2026-08-31 — ADR-1127 single SemVer release stream
+
+No upstream rebase impact: preserve VMAFx's one independent `vX.Y.Z` root
+release stream, coordinated version-file list, and draft-publication fan-out
+when importing upstream release metadata. Do not restore the historical
+`-lusoris.N` suffix or component release-please packages.
+
+The release fan-out is fail-closed: every write/OIDC job follows the exact-tag
+version preflight; native and `vmaf-mcp` hashes use distinct SLSA jobs and asset
+names; Anchore's implicit uploads stay disabled so SBOMs pass through signing;
+and attachment refuses missing globs. Manual recovery may overwrite GitHub
+release assets, but an existing PyPI filename must have the exact reproducible
+SHA-256 before `skip-existing` is allowed.
+
+The Linux native release stage must preserve every Meson shared-library chain
+name (`libvmaf.so`, its SONAME, and its real name) as identical regular-file
+assets. The pre-signing artifact round trip must keep proving that the exact
+downloaded CLI resolves the staged SONAME under `env -i` and reports the
+release version; filename-only checks do not protect runtime linkage.
+
+## 2026-08-31 — ADR-1128 fragment-owned release cuts
+
+No upstream code impact: preserve `skip-changelog: true` and the pre-merge
+fragment rollover when rebasing release automation. Re-enabling
+release-please's changelog updater without also replacing the fragment renderer
+would republish every consumed release entry under Unreleased.
+
+## 2026-08-31 — ADR-1129 release container runtime alignment
+
+The production Dockerfiles and their two publication workflows are fork-local;
+an upstream sync has no direct file counterpart to prefer. Preserve these
+coupled invariants:
+
+1. Debian 13-compiled CPU, Go-server, and node binaries must not return to a
+   Debian 12 runtime. `Dockerfile.go-server` must build the fork's libvmaf, its
+   CGO server, and the distroless runtime on that same ABI for both amd64 and
+   arm64. The Python MCP server must keep a real Python 3.14 interpreter
+   matching the venv builder.
+2. CUDA 13.3.1, ROCm 7.2.4, and oneAPI 2025.3.1 builders come from their
+   digest-pinned vendor devel images; their final stages use the matching
+   vendor runtime/application families.
+3. Node FFmpeg dependencies are collected from the native `ldd` closure. Do
+   not restore `/usr/lib/x86_64-linux-gnu` copies; they break the arm64 publish
+   leg.
+4. Both Docker workflows trigger on `release.published` and gate every image
+   build behind `validate-release`. Release events and manual recovery must
+   identify the same existing published ordinary tag through the input,
+   `GITHUB_REF`, `GITHUB_SHA`, checkout, and coordinated version files; manual
+   recovery runs with `--ref vX.Y.Z -f tag=vX.Y.Z`. Each build keeps cosign
+   signing, CycloneDX SBOM handling, and GitHub-native provenance; smoke jobs
+   verify signatures before pulling and contain no success-masking fallback.
+5. The Python server uses MCP 2.x constructor handlers, not the removed
+   decorator/request-context API. Its production image installs `[eval,http]`,
+   keeps the documented HTTP CLI dispatch, and explicitly opts the container
+   into `VMAFX_MCP_HTTP_BIND=0.0.0.0` without weakening fail-closed auth.
+6. Go server, operator, and node container builds inject the published tag into
+   `github.com/VMAFx/vmafx/pkg/version.version`; all three binaries handle
+   `--version` before starting their long-running fx graphs, and release smokes
+   assert the exact tag. The Go-server lane must keep the exact amd64+arm64
+   manifest assertion and digest-addressed `/healthz` plus `/readyz` probes.
+   Do not restore the removed `main.buildVersion` ldflag target or
+   success-masked `--help` probes.
+7. The node's hand-written `libvmaf.pc` must expose both `${includedir}` and
+   `${includedir}/libvmaf`: FFmpeg includes the legacy `<libvmaf.h>` spelling
+   while fork patches also include namespaced `<libvmaf/...>` headers.
+8. Ubuntu 24.04 vendor builders spell the C23 Meson option `c2x`, and GPU
+   custom targets require an in-source-tree `core/build` directory for their
+   relative include paths. CUDA also installs the exact minimum compatible
+   `nv-codec-headers` commit declared in `Dockerfile.production-gpu`; distro
+   headers are older than libvmaf's loader API. Preserve all three mechanics.
+9. The operator's post-ADR-1119 runtime contract is env-only: the Helm template
+   exports `VMAFX_OPERATOR_METRICS_ADDR=:8080`,
+   `VMAFX_OPERATOR_HEALTH_PROBE_ADDR=:8081`,
+   `VMAFX_OPERATOR_LEADER_ELECTION`, and `VMAFX_LOG_LEVEL`. Its named ports and
+   probes use `8080`/`8081`. Do not restore the ignored pre-fx CLI arguments or
+   the stale `8082` probe. The Go server, operator, and node helpers default to
+   the repositories and canonical `v<Chart.AppVersion>` image tag published by
+   the release workflows; explicit user-supplied image tags remain verbatim.
+10. The node decorates golusoris's shared `grpc.Config` only when
+    `grpc.listen` is empty, preserving the historical standalone `:50052`
+    default without clobbering an explicit `:9090` file or environment value.
+    Its runtime image exports `VMAFX_MODEL_DIR`, not the unused
+    `VMAF_MODEL_PATH`; keep that name coupled to the Go config contract.
+11. Helm validation keeps `HELM_VERSION` and the official archive
+    `HELM_SHA256` identical in `helm-chart.yml` and `e2e-k8s.yml`. Download to a
+    file, verify, then extract; never restore a moving remote installer piped
+    into a shell. Keep kuttl's raw `steps.kuttl.outcome` final assertion when
+    retaining `continue-on-error` for diagnostic uploads.
+12. GHCR, GitHub Release, and Sigstore publication jobs use the protected
+    `release-publish` environment; PyPI uses `pypi-publish`. Reusable SLSA jobs
+    keep `contents: read` plus `upload-assets: false`, and the protected attach
+    job publishes both provenance artifacts. Container signature checks require
+    the exact `@refs/tags/${PUBLISH_TAG}` certificate identity, never `@.*`.

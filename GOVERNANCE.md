@@ -9,7 +9,7 @@ For the upstream Netflix project, see
 
 VMAFX is a fork of Netflix/vmaf that adds:
 
-- GPU backends — SYCL, CUDA, Vulkan (HIP planned).
+- GPU backends — SYCL, CUDA, HIP, and Metal.
 - SIMD paths — AVX2, AVX-512, NEON.
 - Tiny-AI ONNX Runtime integration.
 - Embedded and standalone MCP servers.
@@ -32,9 +32,8 @@ final say on:
 - Architectural decisions captured as ADRs under
   [`docs/adr/`](docs/adr/).
 - Acceptance of code into `master`.
-- Release cadence and version-suffix semantics
-  (`vN.x.y-lusoris.M` — see
-  [ADR-0011](docs/adr/0011-versioning-lusoris-suffix.md)).
+- Release cadence and independent SemVer policy (`vX.Y.Z` — see
+  [ADR-1127](docs/adr/1127-single-semver-release-stream.md)).
 - Security advisories and coordinated disclosure.
 
 The current BDFL is listed in [`MAINTAINERS.md`](MAINTAINERS.md).
@@ -133,8 +132,10 @@ gate.
 ## 5. Releases
 
 Releases are automated by `release-please` on pushes to `master`.
-The version scheme is `vN.x.y-lusoris.M` — tracking upstream
-Netflix/vmaf's semantic version with a fork-suffix counter.
+The version scheme is ordinary `vX.Y.Z` SemVer. VMAFx advances that stream
+independently; upstream Netflix/vmaf provenance is recorded in release notes
+and Git history rather than encoded in the tag. See
+[ADR-1127](docs/adr/1127-single-semver-release-stream.md).
 
 Every tagged release ships:
 

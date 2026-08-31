@@ -11,6 +11,6 @@ imported lazily via their dotted paths — see ADR-0911 for the package-
 surface convention.
 """
 
-__version__ = "0.1.0"
+__version__ = "3.2.1"  # x-release-please-version
 
 __all__ = ["__version__"]

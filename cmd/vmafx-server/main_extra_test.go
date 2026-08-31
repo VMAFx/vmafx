@@ -5,7 +5,7 @@
 // that extend main_test.go's happy-path coverage.
 //
 // Coverage additions (vs. main_test.go):
-//   - version() returns the buildVersion ldflag (or "dev")
+//   - version() returns the shared pkg/version ldflag (or "dev")
 //   - 405 method-not-allowed on /healthz, /readyz, /v1/score
 //   - 400 invalid-JSON body on /v1/score
 //   - 500 scorer-error mapping on /v1/score (stub vmaf that exits non-zero)
@@ -41,6 +41,19 @@ func TestVersion(t *testing.T) {
 	t.Parallel()
 	if v := version(); v == "" {
 		t.Error("version() returned empty string")
+	}
+}
+
+func TestVersionRequest(t *testing.T) {
+	t.Parallel()
+	if !isVersionRequest([]string{"vmafx-server", "--version"}) {
+		t.Fatal("--version must select the non-blocking version path")
+	}
+	if isVersionRequest([]string{"vmafx-server"}) {
+		t.Fatal("normal startup must not select the version path")
+	}
+	if isVersionRequest([]string{"vmafx-server", "--version", "extra"}) {
+		t.Fatal("version path must reject extra arguments")
 	}
 }
 

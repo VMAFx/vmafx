@@ -174,8 +174,9 @@ Use `/port-upstream-commit <sha>` for single-commit cherry-picks.
 
 ## 11. Release
 
-Automated by `release-please` on pushes to `master`. Version scheme: `v3.x.y-lusoris.N`
-(tracks Netflix upstream version + fork suffix). Signing is keyless via Sigstore.
+Automated by `release-please` on pushes to `master`. Version scheme: ordinary
+`vMAJOR.MINOR.PATCH`, independent of upstream Netflix releases (ADR-1127
+supersedes ADR-0011). Signing is keyless via Sigstore.
 Use `/prep-release` to dry-run locally before merging a release PR.
 
 ## 12. Hard rules for every session

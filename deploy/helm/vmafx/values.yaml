@@ -27,7 +27,7 @@ operator:
   replicaCount: 1
   image:
     repository: ghcr.io/vmafx/vmafx-operator
-    tag: ""       # Defaults to .Chart.AppVersion when empty.
+    tag: ""       # Defaults to v<Chart.AppVersion> when empty.
     pullPolicy: IfNotPresent
   logLevel: info
   # Enable leader election for HA (≥2 replicas).
@@ -48,7 +48,7 @@ image:
   # The Python vmaf-mcp server image (ghcr.io/vmafx/vmafx) remains available
   # for MCP/stdio IDE deployments; see docs/server/grpc.md for the migration guide.
   repository: ghcr.io/vmafx/vmafx-server
-  tag: ""           # Defaults to .Chart.AppVersion when empty.
+  tag: ""           # Defaults to v<Chart.AppVersion> when empty.
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -458,11 +458,11 @@ node:
   # the node binary exposes.
   grpcPort: 50052
 
-  # image overrides for the node binary.
-  # Defaults to <image.repository>-node:<Chart.AppVersion>.
+  # Image overrides for the node binary. The defaults match the canonical
+  # repository and v-prefixed tag emitted by docker-publish-operator-node.yml.
   image:
-    repository: ""   # e.g. ghcr.io/vmafx/vmafx-node
-    tag: ""
+    repository: ghcr.io/vmafx/vmafx-node
+    tag: ""          # Defaults to v<Chart.AppVersion> when empty.
 
   # controllerAddr overrides the VMAFX_CONTROLLER_ADDR env var.
   # Defaults to the in-cluster controller Service at <release>-controller:8080.

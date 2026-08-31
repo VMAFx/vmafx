@@ -98,6 +98,7 @@ func productionGraph() fx.Option {
 		bootstrap.Base,
 		fx.Replace(nodeEnvOptions(false)),
 		grpcmod.Module,
+		fx.Decorate(withNodeGRPCDefault),
 		fx.Provide(
 			provideEncoderInventory,
 			provideScorer,

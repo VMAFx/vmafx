@@ -5,9 +5,9 @@
 #
 # Multi-stage build producing four targets:
 #   --target node-cpu    : CPU-only node worker (default; smallest image)
-#   --target node-cuda   : CUDA 12 node worker (NVENC + GPU scoring)
-#   --target node-rocm   : ROCm 6 node worker  (AMF + HIP scoring)
-#   --target node-sycl   : Intel oneAPI 2026 node worker (QSV + SYCL scoring)
+#   --target node-cuda   : CUDA 13 node worker (NVENC + GPU scoring)
+#   --target node-rocm   : ROCm 7 node worker  (AMF + HIP scoring)
+#   --target node-sycl   : Intel oneAPI 2025 node worker (QSV + SYCL scoring)
 #
 # Every target includes:
 #   - vmafx-node Go binary (cmd/vmafx-node)
@@ -25,10 +25,13 @@
 # Build args (all optional):
 #   VMAF_BUILD_JOBS  — ninja / make parallelism (default: 4)
 #   FFMPEG_TAG       — FFmpeg release tag to pin (default: n9.0.1)
-#   SVTAV1_VERSION   — SVT-AV1 release tag (default: 4.1.0)
+#   SVTAV1_VERSION   — SVT-AV1 release tag (default: 4.2.0)
 #
 # ADR-0709: vmafx-phase4b-distributed-platform (Phase 4b umbrella)
 # ADR-0717: vmafx-node-ffmpeg-latest (this Dockerfile + version policy)
+# ADR-1129: release-container-runtime-alignment
+
+ARG VMAFX_VERSION=3.2.1 # x-release-please-version
 
 # ---------------------------------------------------------------------------
 # Stage 1 — vmaf-builder: compile libvmaf + vmaf CLI from core/
@@ -56,7 +59,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
-COPY . .
+# Keep the expensive C/C++ layer independent of Go, workflow, and docs edits.
+COPY core/ core/
+COPY model/ model/
 
 RUN meson setup /build core \
         --buildtype=release \
@@ -120,7 +125,13 @@ COPY --from=vmaf-builder /dist/lib/ /usr/local/lib/
 # Copy public headers from source tree (pkg-config needs them)
 COPY core/include/libvmaf/ /usr/local/include/libvmaf/
 # Write a minimal libvmaf.pc so ffmpeg's pkg-config probe succeeds
-RUN printf 'prefix=/usr/local\nexec_prefix=${prefix}\nlibdir=${exec_prefix}/lib\nincludedir=${prefix}/include\n\nName: libvmaf\nDescription: VMAF library\nVersion: 3.0.0\nLibs: -L${libdir} -lvmaf\nCflags: -I${includedir}\n' \
+ARG VMAFX_VERSION
+# The single-quoted pkg-config template must preserve literal `${prefix}` for
+# pkg-config expansion at runtime.
+# hadolint ignore=SC2016
+RUN mkdir -p /usr/local/lib/pkgconfig \
+    && pkg_version="${VMAFX_VERSION#v}" \
+    && printf 'prefix=/usr/local\nexec_prefix=${prefix}\nlibdir=${exec_prefix}/lib\nincludedir=${prefix}/include\n\nName: libvmaf\nDescription: VMAF library\nVersion: %s\nLibs: -L${libdir} -lvmaf\nCflags: -I${includedir} -I${includedir}/libvmaf\n' "${pkg_version}" \
         > /usr/local/lib/pkgconfig/libvmaf.pc \
     && ldconfig
 
@@ -148,6 +159,10 @@ FROM ffmpeg-deps-base AS ffmpeg-builder-cpu
 
 ARG FFMPEG_TAG=n9.0.1
 
+# Restate the shell in this named stage so static Dockerfile linters can prove
+# that the dependency-closure pipeline below fails on any producer error.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 COPY ffmpeg-patches/ /src/ffmpeg-patches/
 
 RUN git clone --depth=1 --branch "${FFMPEG_TAG}" \
@@ -168,7 +183,8 @@ RUN git config user.email "vmafx-node-builder@localhost" \
             || (echo "FATAL: patch ${patch_name} did not apply against ${FFMPEG_TAG}" && exit 1) ; \
     done < /src/ffmpeg-patches/series.txt
 
-RUN PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig \
+RUN multiarch="$(gcc -print-multiarch)" \
+    && PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/local/lib/${multiarch}/pkgconfig:/usr/lib/${multiarch}/pkgconfig:/usr/lib/pkgconfig" \
     ./configure \
         --prefix=/ffmpeg-install \
         --enable-gpl --enable-version3 --enable-nonfree \
@@ -183,10 +199,34 @@ RUN PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkg
     && make -j"$(nproc)" \
     && make install
 
+# Stage the complete non-glibc dependency closure for ffmpeg/ffprobe. `ldd`
+# resolves the native Debian multiarch directory on both amd64 and arm64, so
+# the final image never hard-codes `/usr/lib/x86_64-linux-gnu`. The distroless
+# Debian 13 base supplies the excluded core C/C++ runtime libraries.
+RUN mkdir -p /ffmpeg-install/runtime-libs \
+    && LD_LIBRARY_PATH=/ffmpeg-install/lib:/usr/local/lib \
+        ldd /ffmpeg-install/bin/ffmpeg /ffmpeg-install/bin/ffprobe > /tmp/ffmpeg-ldd.txt \
+    && if grep -q 'not found' /tmp/ffmpeg-ldd.txt; then \
+        cat /tmp/ffmpeg-ldd.txt >&2; \
+        exit 1; \
+    fi \
+    && awk '/=> \// { print $3 } /^\// && $1 !~ /:$/ { print $1 }' /tmp/ffmpeg-ldd.txt \
+        | sort -u \
+        | while IFS= read -r library; do \
+            case "$(basename "${library}")" in \
+                ld-linux-*|libc.so.*|libdl.so.*|libgcc_s.so.*|libm.so.*|libpthread.so.*|librt.so.*|libstdc++.so.*) \
+                    continue \
+                    ;; \
+            esac; \
+            cp -L "${library}" /ffmpeg-install/runtime-libs/ || exit 1; \
+        done \
+    && test -n "$(find /ffmpeg-install/runtime-libs -maxdepth 1 -type f -print -quit)" \
+    && rm /tmp/ffmpeg-ldd.txt
+
 # ---------------------------------------------------------------------------
 # Stage 4 — go-builder: compile the vmafx-node Go binary
 # ---------------------------------------------------------------------------
-FROM golang:1.27-bookworm@sha256:ded31c68586d2e49e760acc2e65a884b23d032e9bbbed0ae0c55abd3fcaf4452 AS go-builder
+FROM golang:1.27-trixie@sha256:df98008ecd2b0ecc9f0a94d1b07e3564a9c92b555369b33d9b5f60d0765b2db7 AS go-builder
 
 ARG CGO_ENABLED=1
 ARG DEBIAN_FRONTEND=noninteractive
@@ -201,7 +241,12 @@ RUN apt-get update \
 # Copy libvmaf headers + library for cgo build
 COPY --from=vmaf-builder /dist/lib/ /usr/local/lib/
 COPY core/include/libvmaf/ /usr/local/include/libvmaf/
-RUN printf 'prefix=/usr/local\nexec_prefix=${prefix}\nlibdir=${exec_prefix}/lib\nincludedir=${prefix}/include\n\nName: libvmaf\nDescription: VMAF library\nVersion: 3.0.0\nLibs: -L${libdir} -lvmaf\nCflags: -I${includedir}\n' \
+ARG VMAFX_VERSION
+# Preserve literal pkg-config variables; see the matching builder template.
+# hadolint ignore=SC2016
+RUN mkdir -p /usr/local/lib/pkgconfig \
+    && pkg_version="${VMAFX_VERSION#v}" \
+    && printf 'prefix=/usr/local\nexec_prefix=${prefix}\nlibdir=${exec_prefix}/lib\nincludedir=${prefix}/include\n\nName: libvmaf\nDescription: VMAF library\nVersion: %s\nLibs: -L${libdir} -lvmaf\nCflags: -I${includedir} -I${includedir}/libvmaf\n' "${pkg_version}" \
         > /usr/local/lib/pkgconfig/libvmaf.pc \
     && ldconfig
 
@@ -210,18 +255,20 @@ COPY . .
 
 RUN go mod download
 
+# Keep module download independently cacheable from source compilation.
+# hadolint ignore=DL3059
 RUN CGO_ENABLED=${CGO_ENABLED} \
     CGO_LDFLAGS="-L/usr/local/lib -lvmaf" \
     go build \
         -trimpath \
-        -ldflags "-s -w -X main.buildVersion=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+        -ldflags "-s -w -X github.com/VMAFx/vmafx/pkg/version.version=${VMAFX_VERSION}" \
         -o /out/vmafx-node \
         ./cmd/vmafx-node
 
 # ---------------------------------------------------------------------------
-# Stage 5 — runtime-base: glibc runtime foundation
+# Stage 5 — runtime-base: Debian 13 glibc runtime foundation
 # ---------------------------------------------------------------------------
-FROM gcr.io/distroless/cc-debian12@sha256:e5d81ddde149641e2a9ba55be4545bc125c67de07508b03ba4c22e6eb0ded5aa AS runtime-base
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:c31ff9abcb1910f3ab25c7957bdaf0bfe12a01eb546e8df2282f1c8f682b606c AS runtime-base
 
 LABEL org.opencontainers.image.title="vmafx-node"
 LABEL org.opencontainers.image.description="VMAFX worker node — ffmpeg n9.0.1 + libvmaf + vmafx-node gRPC service"
@@ -230,7 +277,7 @@ LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
 
 ENV LD_LIBRARY_PATH="/usr/local/lib"
-ENV VMAF_MODEL_PATH="/usr/local/share/vmafx/model"
+ENV VMAFX_MODEL_DIR="/usr/local/share/vmafx/model"
 # Canonical ffmpeg path consumed by the node binary and its encoder probe.
 ENV VMAFX_FFMPEG_BIN="/usr/local/bin/ffmpeg"
 
@@ -250,24 +297,19 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/bin/ffprobe  /usr/local/bin/ffpro
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libav*.so*  /usr/local/lib/
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libsw*.so*  /usr/local/lib/
 
-# SVT-AV1 shared library (used by ffmpeg at runtime)
-COPY --from=ffmpeg-builder-cpu /usr/local/lib/libSvtAv1Enc.so* /usr/local/lib/
-# codec shared libs pulled by ffmpeg at runtime
-COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libx264.so*   /usr/local/lib/
-COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libx265.so*   /usr/local/lib/
-COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libvpx.so*    /usr/local/lib/
-COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libdav1d.so*  /usr/local/lib/
+# Architecture-native codec/font/VA dependency closure collected by ldd.
+COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 
 EXPOSE 50052
 
+USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmafx-node"]
 
 # ---------------------------------------------------------------------------
-# Stage 7 (target: node-cuda) — CUDA 12 node worker
-# Same ffmpeg binary as node-cpu (software encode path); NVENC requires
-# runtime driver / nv-codec-headers which are host-provided.
+# Stage 7 (target: node-cuda) — CUDA 13 node worker
+# Same software-only ffmpeg binary as node-cpu; CUDA accelerates VMAF scoring.
 # ---------------------------------------------------------------------------
 FROM runtime-base AS node-cuda
 
@@ -275,16 +317,12 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/bin/ffmpeg   /usr/local/bin/ffmpe
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/bin/ffprobe  /usr/local/bin/ffprobe
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libav*.so*  /usr/local/lib/
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libsw*.so*  /usr/local/lib/
-COPY --from=ffmpeg-builder-cpu /usr/local/lib/libSvtAv1Enc.so* /usr/local/lib/
-COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libx264.so*   /usr/local/lib/
-COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libx265.so*   /usr/local/lib/
-COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libvpx.so*    /usr/local/lib/
-COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libdav1d.so*  /usr/local/lib/
+COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
 
 # CUDA runtime libs — provided by host via nvidia-container-toolkit
-# CUDA 13.3.0 runtime image matches the build stage; bumped from 13.2.1 (ubuntu24.04 → ubuntu26.04).
+# CUDA 13.3.1 runtime is sourced from the official Ubuntu 24.04 image.
 # Mismatching major versions (12.x runtime vs 13.x build) causes symbol-resolution failures.
-COPY --from=nvidia/cuda:13.3.1-runtime-ubuntu26.04@sha256:71b55b93449973f2ee6d8024d6dd34853d338a1f007fe07adaaf9a35fd591794 /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
+COPY --from=nvidia/cuda:13.3.1-runtime-ubuntu24.04@sha256:63da350831208559df18c7b8f3e0d5d1c984eaa815cdde690aacd6606cd0cb11 /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 
@@ -292,10 +330,11 @@ ENV VMAFX_BACKEND=cuda
 
 EXPOSE 50052
 
+USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmafx-node"]
 
 # ---------------------------------------------------------------------------
-# Stage 8 (target: node-rocm) — ROCm 6 node worker
+# Stage 8 (target: node-rocm) — ROCm 7 node worker
 # ---------------------------------------------------------------------------
 FROM runtime-base AS node-rocm
 
@@ -303,11 +342,7 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/bin/ffmpeg   /usr/local/bin/ffmpe
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/bin/ffprobe  /usr/local/bin/ffprobe
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libav*.so*  /usr/local/lib/
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libsw*.so*  /usr/local/lib/
-COPY --from=ffmpeg-builder-cpu /usr/local/lib/libSvtAv1Enc.so* /usr/local/lib/
-COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libx264.so*   /usr/local/lib/
-COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libx265.so*   /usr/local/lib/
-COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libvpx.so*    /usr/local/lib/
-COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libdav1d.so*  /usr/local/lib/
+COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
 
 # ROCm HIP runtime libs
 COPY --from=rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054 /opt/rocm/lib/libamdhip64.so*      /usr/local/lib/
@@ -319,10 +354,11 @@ ENV VMAFX_BACKEND=hip
 
 EXPOSE 50052
 
+USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmafx-node"]
 
 # ---------------------------------------------------------------------------
-# Stage 9 (target: node-sycl) — Intel oneAPI 2026 node worker (QSV + SYCL)
+# Stage 9 (target: node-sycl) — Intel oneAPI 2025 node worker (SYCL scoring)
 # ---------------------------------------------------------------------------
 FROM runtime-base AS node-sycl
 
@@ -330,15 +366,11 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/bin/ffmpeg   /usr/local/bin/ffmpe
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/bin/ffprobe  /usr/local/bin/ffprobe
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libav*.so*  /usr/local/lib/
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libsw*.so*  /usr/local/lib/
-COPY --from=ffmpeg-builder-cpu /usr/local/lib/libSvtAv1Enc.so* /usr/local/lib/
-COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libx264.so*   /usr/local/lib/
-COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libx265.so*   /usr/local/lib/
-COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libvpx.so*    /usr/local/lib/
-COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libdav1d.so*  /usr/local/lib/
+COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
 
 # Intel oneAPI SYCL + Level Zero runtime
-COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04@sha256:79a5e333ff6f773793d124b78047001c51cbcd53035e5100313abf2f771af95a /opt/intel/oneapi/compiler/latest/lib/libsycl.so*   /usr/local/lib/
-COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04@sha256:79a5e333ff6f773793d124b78047001c51cbcd53035e5100313abf2f771af95a /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
+COPY --from=intel/oneapi-runtime:2025.3.1-0-devel-ubuntu24.04@sha256:8942e89b6e6e0cd9a4ca26f12fd4b32a2f0dd1de7e631ea59101a183878d660f /opt/intel/oneapi/compiler/latest/lib/libsycl.so*   /usr/local/lib/
+COPY --from=intel/oneapi-runtime:2025.3.1-0-devel-ubuntu24.04@sha256:8942e89b6e6e0cd9a4ca26f12fd4b32a2f0dd1de7e631ea59101a183878d660f /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 
@@ -346,4 +378,5 @@ ENV VMAFX_BACKEND=sycl
 
 EXPOSE 50052
 
+USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmafx-node"]

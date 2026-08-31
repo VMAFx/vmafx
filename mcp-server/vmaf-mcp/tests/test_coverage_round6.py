@@ -50,6 +50,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from vmaf_mcp import server as srv
 
 # ---------------------------------------------------------------------------
@@ -373,28 +374,23 @@ def test_describe_model_direct_path_outside_allowlist_raises(tmp_path: Path) -> 
 # ---------------------------------------------------------------------------
 
 
-def test_send_progress_swallows_unexpected_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_send_progress_swallows_unexpected_exception() -> None:
     """When send_progress_notification raises an unexpected exception it must
     be swallowed and logged as a warning — never propagated.
     """
-    import mcp.server
+    class _BoomSession:
+        async def send_progress_notification(self, *_a: Any, **_kw: Any) -> None:
+            raise OSError("unexpected transport failure")
 
-    class _BoomContext:
-        class request:
-            class params:
-                class meta:
-                    progressToken = "tok"
-
-    # Make the request context return a value so we reach send_progress_notification.
-    monkeypatch.setattr(mcp.server.Server, "request_context", _BoomContext, raising=False)
-
-    async def _boom(*_a: Any, **_kw: Any) -> None:
-        raise OSError("unexpected transport failure")
-
-    monkeypatch.setattr(srv.server, "send_progress_notification", _boom, raising=False)
+    async def _run() -> None:
+        token = srv._REQUEST_SESSION.set(_BoomSession())
+        try:
+            await srv._send_progress("tok", 0.5, 1.0, "test")
+        finally:
+            srv._REQUEST_SESSION.reset(token)
 
     # Must complete without raising.
-    asyncio.run(srv._send_progress("tok", 0.5, 1.0, "test"))
+    asyncio.run(_run())
 
 
 # ---------------------------------------------------------------------------

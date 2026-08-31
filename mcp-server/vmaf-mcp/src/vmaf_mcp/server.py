@@ -55,11 +55,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from mcp.server import Server
+from mcp.server.context import ServerRequestContext
 from mcp.server.stdio import stdio_server
 from mcp.types import (
     CallToolRequestParams,
@@ -73,7 +75,13 @@ from mcp.types import (
 from pydantic import TypeAdapter
 
 _logger = logging.getLogger(__name__)
-_JSONRPC_MESSAGE_ADAPTER = TypeAdapter(JSONRPCMessage)
+
+# MCP 2.x passes request state directly to constructor-registered handlers.
+# Keep the active session in a task-local context so the existing progress
+# helper can remain transport-agnostic and unit calls outside a request remain
+# safe no-ops.
+_REQUEST_SESSION: ContextVar[Any | None] = ContextVar("vmaf_mcp_request_session", default=None)
+_JSONRPC_MESSAGE_ADAPTER: TypeAdapter[JSONRPCMessage] = TypeAdapter(JSONRPCMessage)
 
 # Concurrency cap for vmaf subprocess spawning.  Unbounded concurrent requests
 # exhaust memory (each vmaf process loads the model + allocates frame buffers).
@@ -1484,23 +1492,23 @@ async def _send_progress(
     ``params._meta`` object of the ``tools/call`` request.  The server MUST
     NOT send progress if no token was provided (the client has no handler).
 
-    Implementation note: ``server.request_context.session`` is a
-    ``ServerSession`` with ``send_progress_notification`` available in
-    mcp>=1.0.  We guard against ``LookupError`` so callers outside a
-    request context (tests) do not fail.
+    MCP 2.x supplies the ``ServerSession`` to the constructor-registered tool
+    handler. The adapter stores it in a task-local context for the duration of
+    one call. Calls outside a real request (including unit tests) have no
+    session and remain no-ops.
     """
     if progress_token is None:
         return
+    session = _REQUEST_SESSION.get()
+    if session is None:
+        return
     try:
-        await server.request_context.session.send_progress_notification(
+        await session.send_progress_notification(
             progress_token=progress_token,
             progress=progress,
             total=total,
             message=message,
         )
-    except LookupError:
-        # Called outside a request context (e.g. unit tests) — silently skip.
-        pass
     except Exception:
         # Progress notifications are best-effort; a failure here must NEVER
         # propagate and abort the tool call. Log the cause so operators can
@@ -2274,9 +2282,8 @@ async def _run_vmaf_score_encoded(
 # ---------------------------------------------------------------------------
 
 
-# MCP server wiring
+# MCP tool schemas
 # ---------------------------------------------------------------------------
-
 
 def _scoring_extra_properties() -> dict[str, Any]:
     """Return the optional pass-through scoring parameters shared by
@@ -2785,29 +2792,16 @@ async def _list_tools() -> list[Tool]:
     ]
 
 
-async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    # Extract MCP progress token from the request context's meta field.
-    # The client opts in by passing {"_meta": {"progressToken": <token>}} in the
-    # tools/call params object (MCP spec §notifications/progress).
-    progress_token: str | int | None = None
-    try:
-        # request is typed Any | None by the mcp lib; defensively guarded by
-        # the (LookupError, AttributeError) except below.
-        meta = server.request_context.request.params.meta  # type: ignore[union-attr]
-        if meta is not None:
-            progress_token = getattr(meta, "progressToken", None)
-    except (LookupError, AttributeError):
-        # No active request context (e.g. unit tests) or params.meta is absent;
-        # progress notifications will simply be skipped for this call.
-        pass
-    # ADR-0608 / E-1 (spec-correctness fix): do NOT catch exceptions here.
-    # Raising from this handler lets the mcp library's outer try/except
-    # (mcp/server/lowlevel/server.py _make_error_result) set isError=True on
-    # the CallToolResult.  The previous pattern caught everything and returned
-    # TextContent({"error": ...}) with isError implicitly False — which caused
-    # conformant MCP clients (mcp/client/session.py:L394) to treat tool errors
-    # as successful responses, then fail later when trying to parse the error
-    # JSON as a score result.
+async def _call_tool(
+    name: str,
+    arguments: dict[str, Any],
+    *,
+    progress_token: str | int | None = None,
+) -> list[TextContent]:
+    # ADR-0608 / E-1 (spec-correctness fix): do NOT catch broad exceptions
+    # here. The MCP 2.x registration adapter below converts them into an
+    # explicit CallToolResult(isError=True). Keeping this dispatcher raising
+    # also preserves the direct-call contract used by focused unit tests.
     #
     # KeyError conversion: a missing required argument raises a raw KeyError
     # which is opaque to the caller ("KeyError: 'ref'" gives no tool context).
@@ -2819,6 +2813,47 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         return await _call_tool_dispatch(name, arguments, progress_token)
     except KeyError as _ke:
         raise ValueError(f"tool {name!r} missing required argument: {_ke.args[0]!r}") from _ke
+
+
+async def _mcp_list_tools(
+    _context: ServerRequestContext[Any, Any],
+    _params: PaginatedRequestParams | None,
+) -> ListToolsResult:
+    """Adapt the project tool catalogue to MCP 2.x constructor registration."""
+    return ListToolsResult(tools=await _list_tools())
+
+
+async def _mcp_call_tool(
+    context: ServerRequestContext[Any, Any],
+    params: CallToolRequestParams,
+) -> CallToolResult:
+    """Adapt one MCP 2.x request while preserving ``isError`` semantics."""
+    meta = params.meta or {}
+    progress_token = meta.get("progress_token")
+    session_token = _REQUEST_SESSION.set(context.session)
+    try:
+        content = await _call_tool(
+            params.name,
+            params.arguments or {},
+            progress_token=progress_token,
+        )
+    except Exception as exc:
+        return CallToolResult(
+            content=[TextContent(type="text", text=str(exc))],
+            isError=True,
+        )
+    finally:
+        _REQUEST_SESSION.reset(session_token)
+    return CallToolResult(content=content)
+
+
+# MCP 2.1 removed the decorator registration surface. Its documented low-level
+# API accepts typed handlers through the constructor instead.
+server: Server[Any] = Server(
+    "vmaf-mcp",
+    on_list_tools=_mcp_list_tools,
+    on_call_tool=_mcp_call_tool,
+)
 
 
 async def _call_tool_dispatch(
@@ -2976,25 +3011,6 @@ async def _call_tool_dispatch(
     return [TextContent(type="text", text=_dumps_strict(result))]
 
 
-async def _handle_list_tools(
-    _context: Any, _params: PaginatedRequestParams | None
-) -> ListToolsResult:
-    """Adapt the local catalogue to the MCP SDK 2.x low-level handler API."""
-    return ListToolsResult(tools=await _list_tools())
-
-
-async def _handle_call_tool(_context: Any, params: CallToolRequestParams) -> CallToolResult:
-    """Adapt validated MCP request parameters to the local dispatcher."""
-    return CallToolResult(content=await _call_tool(params.name, params.arguments or {}))
-
-
-server: Server = Server(
-    "vmaf-mcp",
-    on_list_tools=_handle_list_tools,
-    on_call_tool=_handle_call_tool,
-)
-
-
 def _check_depth(obj: Any, max_depth: int = 50, depth: int = 0) -> None:
     """Validate that a JSON-deserialised object does not exceed *max_depth* levels.
 
@@ -3090,9 +3106,9 @@ class _ParseErrorFilteredStdin:
     """Async-iterable stdin wrapper that intercepts JSON-RPC parse errors.
 
     The mcp library's ``stdio_server`` iterates over the supplied *stdin*
-    object with ``async for line in stdin`` and validates each line as a
-    ``types.JSONRPCMessage``. When that validation
-    raises, the library forwards the bare ``Exception`` onto the read stream;
+    object with ``async for line in stdin`` and passes each line to
+    a Pydantic ``TypeAdapter`` for the MCP 2.x ``JSONRPCMessage`` union. When
+    validation raises, the library forwards the bare ``Exception`` onto the read stream;
     the low-level server then emits a ``notifications/message`` notification
     instead of the spec-required JSON-RPC error response (JSON-RPC 2.0 §5).
 
@@ -3153,6 +3169,44 @@ async def _run() -> None:
 
 
 def main() -> None:
+    """Run the stdio MCP transport or the optional HTTP operator surface."""
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="vmaf-mcp")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default="stdio",
+        help="Transport mode: stdio (default) or http.",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="HTTP listen port (default: VMAFX_PORT or 8080).",
+    )
+    parser.add_argument(
+        "--log-level",
+        default=None,
+        help="HTTP log level (default: VMAFX_LOG_LEVEL or INFO).",
+    )
+    args, _unknown = parser.parse_known_args()
+
+    if args.transport == "http":
+        from vmaf_mcp.http_transport import (
+            _apply_env_overrides,
+            _resolve_log_level,
+            _resolve_port,
+            run_http_server,
+        )
+
+        _apply_env_overrides()
+        run_http_server(
+            port=_resolve_port(args.port),
+            log_level=_resolve_log_level(args.log_level),
+        )
+        return
+
     # ADR-1023: VMAF_MCP_ASYNC truthy-string guard.
     # Accept only the well-defined anyio backend names ("asyncio", "trio")
     # or the canonical truthy tokens ("1", "true", "yes", case-insensitive)

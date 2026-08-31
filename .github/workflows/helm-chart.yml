@@ -27,6 +27,8 @@ permissions:
 # Keep in lockstep with .github/workflows/e2e-k8s.yml.
 env:
   HELM_VERSION: "v4.2.4"
+  # Official get.helm.sh digest for helm-v4.2.4-linux-amd64.tar.gz.
+  HELM_SHA256: "c306b46f719b0a4da32d0f78ee21bf90ce8d602f15b22ab753f0674d1670a7f3"
 
 jobs:
   helm-chart:
@@ -37,13 +39,22 @@ jobs:
         with:
           persist-credentials: false
 
-      # Same install path e2e-k8s uses, so both workflows exercise the exact
-      # helm the project pins. The script name says "helm-3" but it installs
-      # whatever DESIRED_VERSION names, including the v4 line.
+      # Keep this verified install path in lockstep with e2e-k8s.yml.
       - name: Install helm ${{ env.HELM_VERSION }}
         run: |
-          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | \
-            DESIRED_VERSION="${HELM_VERSION}" bash
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          install_dir="${RUNNER_TEMP}/helm-${HELM_VERSION}/bin"
+          curl --fail --location --show-error --silent \
+            --retry 5 --retry-all-errors \
+            --output "${archive}" \
+            "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          printf '%s  %s\n' "${HELM_SHA256}" "${archive}" | sha256sum --check --strict
+          mkdir -p "${install_dir}"
+          tar --extract --gzip --file "${archive}" --directory "${RUNNER_TEMP}"
+          install -m 0755 "${RUNNER_TEMP}/linux-amd64/helm" "${install_dir}/helm"
+          printf '%s\n' "${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/helm" version --short
 
       # The vendored charts/*.tgz must match Chart.lock. They drifted once
       # (a 3.6.1 tarball under a ">=3.8.0" constraint with a 3.8.0 lock), which
@@ -58,7 +69,7 @@ jobs:
             [ -z "$name" ] && continue
             if [ ! -f "charts/${name}-${version}.tgz" ]; then
               echo "::error::Chart.lock pins ${name} ${version} but charts/${name}-${version}.tgz is absent."
-              echo "  charts/ currently holds: $(ls charts/ 2>/dev/null | tr '\n' ' ')"
+              echo "  charts/ currently holds: $(find charts -maxdepth 1 -type f -printf '%f ' 2>/dev/null)"
               echo "  Fix with: helm dependency build deploy/helm/vmafx"
               fail=1
             fi
@@ -82,3 +93,83 @@ jobs:
         run: |
           helm template vmafx deploy/helm/vmafx \
             --set pushgateway.enabled=true > /dev/null
+
+      # ADR-1119 removed the pre-fx operator flags. A plain Helm render stayed
+      # syntactically valid while Kubernetes probed the now-unused :8082 port,
+      # so pin the semantic env/port contract as well as YAML validity.
+      - name: Operator env-only contract
+        run: |
+          for leader in false true; do
+            rendered="$RUNNER_TEMP/operator-${leader}.yaml"
+            helm template vmafx deploy/helm/vmafx \
+              --set operator.enabled=true \
+              --set "operator.leaderElect=${leader}" \
+              --show-only templates/operator-deployment.yaml > "$rendered"
+            python3 - "$rendered" "$leader" <<'PY'
+          import sys
+
+          import yaml
+
+          manifest = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
+          expected_leader = sys.argv[2]
+          container = manifest["spec"]["template"]["spec"]["containers"][0]
+          chart = yaml.safe_load(
+              open("deploy/helm/vmafx/Chart.yaml", encoding="utf-8")
+          )
+          expected_image = (
+              "ghcr.io/vmafx/vmafx-operator:v"
+              + str(chart["appVersion"]).removeprefix("v")
+          )
+          if container["image"] != expected_image:
+              raise SystemExit(
+                  f"operator image tag drifted: {container['image']!r} != {expected_image!r}"
+              )
+          if "args" in container:
+              raise SystemExit("operator must not receive removed pre-fx CLI arguments")
+          env = {item["name"]: item["value"] for item in container["env"]}
+          expected_env = {
+              "VMAFX_OPERATOR_METRICS_ADDR": ":8080",
+              "VMAFX_OPERATOR_HEALTH_PROBE_ADDR": ":8081",
+              "VMAFX_OPERATOR_LEADER_ELECTION": expected_leader,
+              "VMAFX_LOG_LEVEL": "info",
+          }
+          if env != expected_env:
+              raise SystemExit(f"operator env contract drifted: {env!r}")
+          ports = {item["name"]: item["containerPort"] for item in container["ports"]}
+          if ports != {"metrics": 8080, "healthz": 8081}:
+              raise SystemExit(f"operator port contract drifted: {ports!r}")
+          for probe in ("livenessProbe", "readinessProbe"):
+              if container[probe]["httpGet"]["port"] != "healthz":
+                  raise SystemExit(f"{probe} no longer targets the healthz port")
+          PY
+          done
+
+          helm template vmafx deploy/helm/vmafx \
+            --show-only templates/deployment.yaml \
+            > "$RUNNER_TEMP/server.yaml"
+          helm template vmafx deploy/helm/vmafx \
+            --set node.enabled=true \
+            --show-only templates/node.yaml \
+            > "$RUNNER_TEMP/node.yaml"
+          python3 - "$RUNNER_TEMP/server.yaml" "$RUNNER_TEMP/node.yaml" <<'PY'
+          import sys
+
+          import yaml
+
+          chart = yaml.safe_load(
+              open("deploy/helm/vmafx/Chart.yaml", encoding="utf-8")
+          )
+          tag = "v" + str(chart["appVersion"]).removeprefix("v")
+          expected = (
+              "ghcr.io/vmafx/vmafx-server:" + tag,
+              "ghcr.io/vmafx/vmafx-node:" + tag,
+          )
+          for path, expected_image in zip(sys.argv[1:], expected, strict=True):
+              manifests = yaml.safe_load_all(open(path, encoding="utf-8"))
+              manifest = next(item for item in manifests if item["kind"] == "Deployment")
+              container = manifest["spec"]["template"]["spec"]["containers"][0]
+              if container["image"] != expected_image:
+                  raise SystemExit(
+                      f"release image drifted: {container['image']!r} != {expected_image!r}"
+                  )
+          PY

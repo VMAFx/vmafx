@@ -45,6 +45,9 @@
 package main
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/golusoris/golusoris/config"
 	"github.com/golusoris/golusoris/k8s/operator"
 	"go.uber.org/fx"
@@ -54,12 +57,19 @@ import (
 	"github.com/VMAFx/vmafx/cmd/vmafx-operator/internal/controller"
 	"github.com/VMAFx/vmafx/cmd/vmafx-operator/internal/webhook"
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
+	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
 
 // defaultLeaderElectionID is the controller-runtime lease name used when leader
 // election is enabled and no explicit ID is configured — a stable
 // vmafx-specific lease (golusoris does not default LeaderElectionID).
 const defaultLeaderElectionID = "vmafx-operator.vmafx.dev"
+
+// isVersionRequest keeps the release-image smoke path independent of cluster
+// credentials and the operator's long-running fx lifecycle.
+func isVersionRequest(args []string) bool {
+	return len(args) == 2 && args[1] == "--version"
+}
 
 // operatorEnvOptions returns the config.Options that pin the VMAFX_ env
 // contract for this binary.
@@ -164,5 +174,10 @@ func options() []fx.Option {
 }
 
 func main() {
+	if isVersionRequest(os.Args) {
+		fmt.Println(buildversion.Version())
+		return
+	}
+
 	app().Run()
 }

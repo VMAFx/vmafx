@@ -1,30 +1,26 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # vmafx-node — Worker Binary
 
-`vmafx-node` is the data-plane worker in the VMAFX distributed platform
-(Phase 4b, ADR-0709).  It connects to `vmafx-controller`, pulls scoring jobs,
-executes them against `libvmaf`, and reports results back.
+`vmafx-node` is the data-plane scoring worker in the VMAFX distributed
+platform (Phase 4b, ADR-0709). It serves the `VmafxScoring` gRPC API and
+executes score requests against `libvmaf`.
 
 ## Quick start (local)
 
 ```bash
-# 1. Start a controller (Phase 4b.1).
-./vmafx-controller &
-
-# 2. Start a node (listens on :50052 by default).
+# Start a node (listens on :50052 by default).
 export VMAFX_LOG_LEVEL=debug
 ./vmafx-node
 ```
 
-The node auto-detects the available GPU backend.  Full controller-to-node
-registration (pull-based job dispatch) is tracked in ADR-0713 Stage 2 —
-see the planned env vars table below.
+The node defaults to CPU scoring. Set `VMAFX_BACKEND` explicitly, or use a
+GPU-specific container target, to select another compiled backend.
 
 ## gRPC service the node serves
 
 The node hosts the **`VmafxScoring`** service (the same contract as
-`vmafx-server`) on `VMAFX_NODE_ADDR`, so a controller — or any gRPC client — can
-dispatch scoring directly to a node (push model). See
+`vmafx-server`) on `VMAFX_GRPC_LISTEN`, so any gRPC client can dispatch scoring
+directly to a node. See
 [ADR-1109](../adr/1109-vmafx-node-serve-scoring-grpc.md).
 
 | RPC | Shape | Notes |
@@ -50,64 +46,32 @@ grpcurl -plaintext localhost:50052 vmafx.v1.VmafxScoring/Health
 
 | Variable | Default | Description |
 |---|---|---|
+| `VMAFX_GRPC_LISTEN` | `:50052` | gRPC listen address for the node's worker service. |
 | `VMAFX_FFMPEG_BIN` | `ffmpeg` (PATH) | Path to the `ffmpeg` binary.  The node Docker image sets this to `/usr/local/bin/ffmpeg` (ADR-0717). |
+| `VMAFX_VMAF_BINARY` | automatic lookup | Path to the `vmaf` CLI binary used for scoring. |
+| `VMAFX_MODEL_DIR` | binary default | Directory containing VMAF model files. The node image sets `/usr/local/share/vmafx/model`. |
+| `VMAFX_BACKEND` | `cpu` | Scoring backend label, such as `cpu`, `cuda`, `hip`, or `sycl`. |
+| `VMAFX_SIDECAR_SOCKET` | `/tmp/vmafx-sidecar.sock` | Online-training sidecar Unix socket. |
 | `VMAFX_LOG_LEVEL` | `info` | Structured log level: `debug`, `info`, `warn`, `error` |
-| `VMAFX_NODE_ADDR` | `:50052` | gRPC listen address for the node's worker service. |
+| `VMAFX_LOG_FORMAT` | `auto` | Log handler: `auto`, `tint`, or `json`. |
 
 See also the [full environment variable reference](../usage/env-vars.md) for the complete table.
 
-### Planned env vars (ADR-0713 spec, not yet implemented)
+## Backend selection
 
-The following variables appeared in the original Phase 4b.1 design (ADR-0713)
-but are not currently read by the node binary.  They are reserved for a future
-implementation pass.
+`VMAFX_BACKEND` defaults to `cpu`; the binary does not probe the host and
+silently change backends. The published CPU image also defaults to `cpu`.
+Locally built `node-cuda`, `node-rocm`, and `node-sycl` targets set `cuda`,
+`hip`, and `sycl` respectively. A requested backend must be present in the
+libvmaf build and usable on the host.
 
-| Variable | Planned default | Planned behaviour |
-|---|---|---|
-| `VMAFX_CONTROLLER_ADDR` | _(required)_ | Controller gRPC address for job pull (node-to-controller registration flow) |
-| `VMAFX_NODE_ID` | hostname | Human-readable node name sent in `RegisterNode` |
-| `VMAFX_BACKEND` | auto-detected | Force a specific backend: `cpu`, `cuda`, `sycl`, `hip`, `metal` |
-| `VMAFX_GPU_DEVICE` | `0` | GPU device index (for multi-GPU hosts) |
+## Observability
 
-## GPU auto-detection
-
-On startup the node runs the following probes (in order):
-
-1. `nvidia-smi -L` — NVIDIA GPU list.
-2. `rocm-smi --showid` — AMD GPU list.
-3. `clinfo` — Intel GPU via OpenCL platform name.
-4. `system_profiler SPDisplaysDataType` — Apple Metal (macOS only).
-5. CPU fallback — always succeeds.
-
-The detected vendor maps to a backend preference:
-
-| Vendor | Preferred backends |
-|---|---|
-| NVIDIA | `cuda`, `vulkan`, `cpu` |
-| AMD    | `hip`, `vulkan`, `cpu` |
-| Intel  | `sycl`, `vulkan`, `cpu` |
-| Apple  | `metal`, `cpu` |
-| CPU    | `cpu` |
-
-Set `VMAFX_BACKEND` to override the auto-selected backend.
-
-## Supported job types (Stage 1)
-
-| Job type | Status | Description |
-|---|---|---|
-| `SCORING` | Supported | Encode (optional) → `libvmaf.Score` → return result |
-| `AI`      | Unsupported (Stage 2) | ONNX inference; blocked on input transport in proto |
-| `COMPARE` | Unsupported (Stage 2) | Multi-encode + score comparison ladder |
-
-## Prometheus metrics
-
-The node exposes metrics on `:9090/metrics`:
-
-| Metric | Type | Description |
-|---|---|---|
-| `vmafx_node_jobs_total{outcome}` | Counter | Total jobs by outcome (`success`, `failure`) |
-| `vmafx_node_job_duration_seconds` | Histogram | Job wall-clock duration |
-| `vmafx_node_heartbeat_errors_total` | Counter | Heartbeat RPC failures |
+The node emits structured logs and OpenTelemetry data through the shared
+golusoris runtime. It is gRPC-only and does not expose a Prometheus HTTP
+listener. The Helm chart probes the TCP listener on the configured gRPC port;
+gRPC clients can use the `VmafxScoring/Health` RPC for an application-level
+health check.
 
 ## Kubernetes deployment
 
@@ -136,37 +100,34 @@ gpu:
 helm upgrade --install vmafx deploy/helm/vmafx/ -f values.yaml
 ```
 
-The node Deployment sets `VMAFX_CONTROLLER_ADDR` automatically from the
-in-cluster controller Service name (`<release>-controller:8080`).
-
 ## Container images
 
-| Variant | `GPU_RUNTIME` ARG | Base |
+| Docker target | Published tag | Runtime |
 |---|---|---|
-| `vmafx-node:cpu` | `cpu` (default) | ubuntu:26.04 |
-| `vmafx-node:cuda12` | `cuda12` | ubuntu:26.04 + CUDA 12 runtime |
-| `vmafx-node:rocm6` | `rocm6` | ubuntu:26.04 + ROCm 6 runtime |
-| `vmafx-node:sycl-oneapi2026` | `sycl-oneapi2026` | ubuntu:26.04 + Intel oneAPI 2026 |
+| `node-cpu` | `vX.Y.Z` (amd64 + arm64) | distroless Debian 13 |
+| `node-cuda` | not yet published | Debian 13 + CUDA 13.3.1 libraries |
+| `node-rocm` | not yet published | Debian 13 + ROCm 7.2.4 libraries |
+| `node-sycl` | not yet published | Debian 13 + oneAPI 2025.3.1 libraries |
+
+The release workflow currently publishes only `node-cpu`. All targets use the
+same native-architecture FFmpeg dependency collector, so arm64 stages resolve
+`aarch64-linux-gnu` libraries rather than copying an amd64-only path.
 
 Build example:
 
 ```bash
 docker build -f docker/Dockerfile.node \
-  --build-arg GPU_RUNTIME=cuda12 \
-  -t vmafx-node:cuda12 .
+  --target node-cuda \
+  -t vmafx-node:cuda13 .
 ```
 
 ## Graceful shutdown
 
 On `SIGTERM` the node:
 
-1. Cancels the work loop and heartbeat goroutine.
-2. Finishes the current job (up to 30 s).
-3. Shuts down the Prometheus HTTP server.
-4. Exits with code 0.
-
-If the current job does not finish within 30 s the node logs a warning and
-forces exit.
+1. Gracefully stops the gRPC server and drains in-flight scoring RPCs.
+2. Stops and joins the online-feedback sidecar drainer.
+3. Closes the scorer after the gRPC drain completes.
 
 ## Development
 
@@ -174,11 +135,8 @@ forces exit.
 # Run unit tests.
 go test ./pkg/gpu/ ./pkg/ai/ ./cmd/vmafx-node/ -v
 
-# Run with a local controller.
-VMAFX_CONTROLLER_ADDR=localhost:8080 go run ./cmd/vmafx-node/
-
-# Integration lifecycle test (requires a live controller).
-VMAFX_INTEGRATION=1 go test ./cmd/vmafx-node/ -run TestNodeLifecycle -v
+# Run the node locally on its default gRPC port.
+go run ./cmd/vmafx-node/
 ```
 
 See also: [ADR-0713](../adr/0713-vmafx-node-impl.md),

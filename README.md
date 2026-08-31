@@ -193,8 +193,9 @@ through a single ONNX Runtime-backed inference path inside libvmaf.
 
 ## Release & signing
 
-Tagged releases use `vX.Y.Z-lusoris.N`, tracking upstream Netflix version +
-fork suffix. Every release asset is:
+Tagged releases use one ordinary SemVer stream (`vMAJOR.MINOR.PATCH`), owned
+by VMAFx and independent of upstream Netflix's release cadence. Every release
+asset is:
 
 - Signed with [Sigstore](https://sigstore.dev) keyless OIDC — verify with
   `cosign verify-blob --bundle <asset>.bundle <asset>`.
@@ -203,7 +204,8 @@ fork suffix. Every release asset is:
   `slsa-github-generator` — verify with `slsa-verifier`.
 
 Release automation: [release-please](https://github.com/googleapis/release-please)
-opens a PR on every push to `master`; merging it tags and fires signing.
+opens a PR on pushes to `master`. Merging it creates a draft release; publishing
+that draft creates the tag and starts signing and container publication.
 
 ## License
 

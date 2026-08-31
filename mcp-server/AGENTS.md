@@ -91,11 +91,18 @@ unset in the calling context; `set -u` aborts on those references and bypasses `
   `pyproject.toml` edit. The `--transport http` flag in
   `src/vmaf_mcp/server.py::main()` dispatches to
   `src/vmaf_mcp/http_transport.py`. The transport dispatch block
-  (`if args.transport == "http":`) must remain after the stdio-MCP
-  setup block — reordering them causes the stdio transport to be
-  registered even when HTTP mode is requested. Netflix upstream has no
-  MCP server; this entire subtree is fork-local and will never merge
-  upstream.
+  (`if args.transport == "http":`) must return before starting the stdio
+  event loop. The production server image installs both `[eval]` and `[http]`;
+  omitting the latter makes its HTTP entrypoint fail at runtime. Netflix
+  upstream has no MCP server; this entire subtree is fork-local and will
+  never merge upstream.
+- **MCP 2.x uses constructor-registered low-level handlers (ADR-1129).**
+  `Server.list_tools()` / `Server.call_tool()` decorators and
+  `Server.request_context` were removed in mcp 2.1. Keep `_mcp_list_tools`
+  and `_mcp_call_tool` registered through `Server(..., on_list_tools=...,
+  on_call_tool=...)`; the call adapter must continue translating dispatcher
+  exceptions into `CallToolResult(isError=True)` and exposing the request
+  session through the task-local context only while a call is active.
 - **HTTP transport requires explicit env opt-in for 0.0.0.0 bind; auth
   defaults on (ADR-0967).** The default bind host for `--transport http`
   is `127.0.0.1` (loopback-only). To listen on all interfaces (required

@@ -53,7 +53,7 @@ body:
     attributes:
       label: Version / commit SHA
       description: Output of `vmaf --version` or `git rev-parse HEAD`.
-      placeholder: "v3.0.0-lusoris.0 / abc1234"
+      placeholder: "v3.2.1 / abc1234"
     validations:
       required: true
 

@@ -6,6 +6,12 @@
 - **Deciders**: Lusoris, Claude (Anthropic)
 - **Tags**: release, mcp, supply-chain, sigstore, pypi
 
+> **2026-08-31 operational amendment:** the repository was transferred to
+> `VMAFx/vmafx`, and [ADR-1127](1127-single-semver-release-stream.md)
+> superseded the suffixed tag scheme with one ordinary `vX.Y.Z` stream. The
+> exact current Trusted Publisher identity below replaces the historical
+> `lusoris/vmaf` values.
+
 ## Context
 
 The fork ships an MCP (Model Context Protocol) server at
@@ -34,8 +40,7 @@ release.yml wiring.
 
 1. **PyPI** via Trusted Publishing (OIDC, no token in CI).
    - Distribution name: `vmaf-mcp`
-   - Trigger: `release: published` events for any tag matching
-     `v*-lusoris.*` (the fork's release-please scheme).
+   - Trigger: `release: published` events for ordinary `vX.Y.Z` tags.
    - Builds wheel + sdist via `python -m build`.
    - Publishes via `pypa/gh-action-pypi-publish` with attestations
      (PEP 740 — `--attestations` flag emits Sigstore-signed
@@ -63,7 +68,7 @@ User-facing install paths after this ships:
 pip install vmaf-mcp
 
 # Pinnable to a libvmaf release (signature-verifiable)
-gh release download v3.x.y-lusoris.N --pattern 'vmaf_mcp-*.whl'
+gh release download vX.Y.Z --pattern 'vmaf_mcp-*.whl'
 cosign verify-blob \
   --bundle vmaf_mcp-X.Y.Z-py3-none-any.whl.bundle \
   vmaf_mcp-X.Y.Z-py3-none-any.whl
@@ -106,35 +111,30 @@ pip install vmaf_mcp-X.Y.Z-py3-none-any.whl
 
 **Negative:**
 
-- One-time setup: a Trusted Publisher entry must be configured on
-  PyPI (organisation `lusoris`, repository `vmaf`, workflow
+- One-time setup: a Pending Trusted Publisher entry must be configured on
+  PyPI (organisation `VMAFx`, repository `vmafx`, workflow
   `supply-chain.yml`, environment `pypi-publish`). This is a
   user-driven UI step — see "Operational notes" below.
 - Initial namespace reservation: until the first release, PyPI's
-  `vmaf-mcp` name is unreserved and could be squatted. Reserve by
-  uploading the first build manually to PyPI under the
-  `lusoris` account before the next release tag, OR rely on
-  Trusted Publishing's "first-publish" flow which auto-reserves.
+  `vmaf-mcp` name is unreserved and could be squatted. The Pending Trusted
+  Publisher first-publish flow reserves it without a token or manual upload.
 - SBOM growth: covering the Python dependency tree adds ~40 kB of
   metadata per release; insignificant compared to libvmaf.
 
 ## Operational notes
 
-One-time setup (user, before the first release after this PR
-merges):
+One-time setup (completed on 2026-08-31 before the first release):
 
 1. Log in to <https://pypi.org/manage/account/publishing/> as the
    project owner.
 2. Add a Pending Trusted Publisher with:
    - PyPI Project Name: `vmaf-mcp`
-   - Owner: `lusoris`
-   - Repository: `vmaf`
+   - Owner: `VMAFx`
+   - Repository: `vmafx`
    - Workflow: `supply-chain.yml`
    - Environment: `pypi-publish`
-3. (Optional) Reserve the `vmaf-mcp` name by manually uploading
-   `vmaf_mcp-0.0.1.dev0` once before the next tagged release.
 
-The first `release: published` event after step 2 completes the
+The first `release: published` event after the publisher is configured completes the
 publisher binding automatically; subsequent releases require no
 further user interaction.
 
