@@ -4,7 +4,7 @@
 # docker/Dockerfile.node — vmafx-node worker image
 #
 # Multi-stage build producing four targets:
-#   --target node-cpu    : CPU-only node worker (default; smallest image)
+#   --target node-cpu    : CPU-only node worker (explicit target; smallest image)
 #   --target node-cuda   : CUDA 13 node worker (NVENC + GPU scoring)
 #   --target node-rocm   : ROCm 7 node worker  (AMF + HIP scoring)
 #   --target node-sycl   : Intel oneAPI 2025 node worker (QSV + SYCL scoring)
@@ -75,7 +75,8 @@ RUN meson setup /build core \
 RUN mkdir -p /dist/lib /dist/bin /dist/model \
     && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
     && cp /build/tools/vmaf /dist/bin/ \
-    && cp -r model/ /dist/model/
+    && cp -r model/. /dist/model/ \
+    && test -f /dist/model/vmaf_v0.6.1.json
 
 # ---------------------------------------------------------------------------
 # Stage 2 — ffmpeg-builder: build ffmpeg n9.0.1 with ffmpeg-patches/ applied
