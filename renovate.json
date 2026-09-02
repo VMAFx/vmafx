@@ -35,6 +35,25 @@
   ],
   "packageRules": [
     {
+      "description": "slsa-github-generator MUST be referenced by an exact @vX.Y.Z tag, never a digest: its README states the generators 'MUST be referenced by tag in order for the slsa-verifier to be able to verify the ref of the trusted builder' (hash-pinned reusable workflows are unsupported, slsa-verifier#12). ADR-1128's Release Script Contract enforces the tag form, so a digest-pin PR (#1183) can never pass it. Keep tag updates, forbid digest pinning.",
+      "matchPackageNames": [
+        "slsa-framework/slsa-github-generator"
+      ],
+      "pinDigests": false,
+      "automerge": false
+    },
+    {
+      "description": "Intel NEO stack moves as a matched set: dev/Containerfile downloads intel-igdgmm12_${GMMLIB_VER} and the IGC debs from the intel/compute-runtime release page for NEO_VER, so a lone gmmlib/IGC bump yields a 404 (PR #1184). Group all four into ONE PR; still manual review (ADR-0605).",
+      "matchPackageNames": [
+        "intel/compute-runtime",
+        "intel/intel-graphics-compiler",
+        "intel/gmmlib",
+        "oneapi-src/level-zero"
+      ],
+      "groupName": "Intel NEO compute stack (matched set)",
+      "automerge": false
+    },
+    {
       "description": "Group GitHub Actions minor+patch+digest bumps; auto-merge \u2014 digest-only is mechanical and CI catches drift.",
       "matchManagers": [
         "github-actions"
