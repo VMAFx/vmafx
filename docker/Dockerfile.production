@@ -68,7 +68,7 @@ RUN mkdir -p /dist/lib /dist/bin /dist/model \
 # ---------------------------------------------------------------------------
 # Stage 2 — python-deps: install vmaf-mcp + vmaf-tune into a virtualenv
 # ---------------------------------------------------------------------------
-FROM python:3.14-slim@sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5 AS python-deps
+FROM python:3.14-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS python-deps
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -133,7 +133,7 @@ ENTRYPOINT ["/usr/local/bin/vmaf"]
 # A CPython virtualenv is not self-contained: its `python` entry is a symlink
 # to the base interpreter. Use the exact same pinned Python 3.14 image as the
 # dependency stage so the interpreter, stdlib, native wheels, and OS ABI match.
-FROM python:3.14-slim@sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5 AS server
+FROM python:3.14-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS server
 
 LABEL org.opencontainers.image.title="vmafx-server"
 LABEL org.opencontainers.image.description="VMAFX MCP server — libvmaf + vmaf CLI + Python 3.14"
