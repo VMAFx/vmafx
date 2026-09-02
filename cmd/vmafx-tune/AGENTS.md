@@ -247,8 +247,9 @@ during the migration; see Stage roadmap in
     they match, and must not be swapped back for a `bufio.Scanner` (it caps
     line length and cannot split on a lone `\r`).
 27. **`vmafx-ort-runner` is a repository artefact, not an environment
-    assumption** (`cmd/vmafx-ort-runner`, ADR-1134): `ortPredictorSession`
-    and `pkg/tune/predictor` exec it through `pkg/ai.Registry.Infer`, and the
+    assumption** (`cmd/vmafx-ort-runner`, ADR-1134): `pkg/predictor.ORTSession`
+    (the one ORT-session adapter since ADR-1137; `pkg/tune/predictor` is its
+    transitional alias) execs it through `pkg/ai.Registry.Infer`, and the
     dev container plus the Go CI job build it from `./cmd/...` and smoke-run
     it against `model/predictor_libx264.onnx`. When `predict --model`
     degrades to the analytical curve the log line carries the runner's

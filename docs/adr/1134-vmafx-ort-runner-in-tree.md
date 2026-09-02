@@ -27,7 +27,7 @@ The reference list, which is the evidence for the decision below:
 | Role | Files |
 | --- | --- |
 | Consumer (execs it) | `pkg/ai/infer.go` (`exec.LookPath("vmafx-ort-runner")`) |
-| Callers through `pkg/ai` | `cmd/vmafx-tune/cmd/ortsession.go`, `cmd/vmafx-tune/cmd/predict.go`, `pkg/fast/fast.go`, `pkg/fast/proxy.go` |
+| Callers through `pkg/ai` | `pkg/predictor/ortsession.go` (`ORTSession`, moved from `cmd/vmafx-tune/cmd/ortsession.go` by ADR-1137), `cmd/vmafx-tune/cmd/predict.go`, `pkg/fast/fast.go`, `pkg/fast/proxy.go` |
 | Documented blockers that name it | `cmd/vmafx-tune/cmd/saliencysession.go`, `cmd/vmafx-tune/cmd/recommend_saliency.go`, `cmd/vmafx-tune/AGENTS.md`, `pkg/codecadapter/AGENTS.md` |
 | Tests | `pkg/ai/infer_test.go` (PATH="" → not found), `pkg/fast/proxy_test.go`, `pkg/predictor/session_fallback_test.go` |
 | User docs / research | `docs/usage/vmafx-tune-go.md`, `docs/research/vmafx-tune-go-fast-2026-08-30.md`, `docs/research/gosec-findings-fix-sweep-2026-06-01.md`, `docs/adr/0713-vmafx-node-impl.md`, `docs/state.md` |
