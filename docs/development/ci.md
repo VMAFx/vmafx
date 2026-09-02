@@ -180,20 +180,30 @@ instead of a touched-files rule:
 - `scripts/ci/tidy-ratchet.py` runs clang-tidy over **every** translation
   unit in a `compile_commands.json`, deduplicates diagnostics by
   `(path, line, column, check)`, counts `NOLINT` markers with no inline
-  `ADR-NNNN` citation on the same or previous line, and compares the per-file
-  numbers with the committed baseline `scripts/ci/tidy-baseline-<lane>.json`.
+  `ADR-NNNN` citation (a citation counts on the previous, the same or the
+  next line, or anywhere in the `/* ... */` block comment that holds the
+  marker), and compares the per-file numbers with the committed baseline
+  `scripts/ci/tidy-baseline-<lane>.json`.
 - The rule is *baseline equals measurement*. Exit codes: `0` match, `2` a file
   is above its baseline (fix the code, never raise the baseline), `3` a file is
   below its baseline (tighten it: `make tidy-ratchet-write`, commit the JSON
   in the same PR), `4` clang-tidy could not compile a TU (fail closed), `5`
   usage/IO error.
 - **`cpu` lane** — the required context `Clang-Tidy Ratchet (Whole Tree)` in
-  `lint-and-format.yml` (aggregator list, ADR-0313). It skips only when no
-  source, header, `meson.build`, `.clang-tidy`, ratchet script or baseline
-  changed. It uploads `tidy-ratchet-cpu` (the measurement JSON): when the job
-  fails with exit 3 after a cleanup, download that artifact and commit it as
-  `scripts/ci/tidy-baseline-cpu.json`. The nightly workflow runs the same lane
-  and fails on drift (it used to swallow the full scan with `|| true`).
+  `lint-and-format.yml` (aggregator list, ADR-0313). Like every required job
+  it always starts and first runs the [ADR-1140](../adr/1140-ci-impact-planner.md)
+  impact planner (`scripts/ci/plan-ci-impact.py`, step id `impact`); the
+  install / build / ratchet steps run only when the planner's `c_core`
+  selector is `true`, otherwise a `Not impacted` notice satisfies the context.
+  `.clang-tidy`, `scripts/ci/**` (the ratchet and its baselines) and the
+  workflow file are CI-authority inputs that force `mode=full`, so a ratchet
+  or baseline edit always runs the lane. It uploads `tidy-ratchet-cpu` (the
+  measurement JSON): when the job fails with exit 3 after a cleanup, download
+  that artifact and commit it as `scripts/ci/tidy-baseline-cpu.json` — the
+  committed `cpu` baseline is always CI's own measurement (the hosted build
+  lacks optional dependencies, so its TU set differs from a workstation
+  build). The nightly workflow runs the same lane and fails on drift (it used
+  to swallow the full scan with `|| true`).
 - **`cuda`, `sycl`, `hip` lanes** — baselines committed from the 2026-09-02
   workstation measurement (clang-tidy 22.1.8 against a `-Denable_cuda=true
   -Denable_sycl=true -Denable_hip=true` build; CUDA TUs analysed with

@@ -85,6 +85,7 @@ class UncitedNolints(unittest.TestCase):
         text = "\n".join(
             [
                 "int a; // NOLINT",
+                "int z;",
                 "// ADR-0138 bit-exact per-lane reduction",
                 "int b; // NOLINTNEXTLINE(readability-function-size)",
                 "int c; // NOLINT(cert-dcl37-c) ADR-0278",
@@ -92,6 +93,43 @@ class UncitedNolints(unittest.TestCase):
                 "// NOLINTBEGIN(bugprone-macro-parentheses)",
                 "int d;",
                 "// NOLINTEND",
+            ]
+        )
+        self.assertEqual(ratchet.count_uncited_nolints(text), 2)
+
+    def test_citation_on_next_line_counts(self) -> None:
+        text = "int a; // NOLINT(cert-dcl37-c)\n// ADR-0278: reserved identifier kept for parity\n"
+        self.assertEqual(ratchet.count_uncited_nolints(text), 0)
+
+    def test_citation_anywhere_in_marker_block_comment_counts(self) -> None:
+        # The ADR-1138 shape: a NOLINTBEGIN that explains itself over several
+        # lines and cites the ADR on the last line of the same block comment.
+        text = "\n".join(
+            [
+                "/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork",
+                " * builds C as C23, but this is an upstream-mirror file whose source",
+                " * spells the null pointer constant `NULL`.",
+                " * MSVC's C23 feature set has no `nullptr`. ADR-1138. */",
+                "int a;",
+                "/* NOLINTEND(modernize-use-nullptr) */",
+                "/* intro",
+                " * NOLINT(x)",
+                " * still the same comment",
+                " * ADR-0002 */",
+            ]
+        )
+        self.assertEqual(ratchet.count_uncited_nolints(text), 0)
+
+    def test_citation_in_the_following_comment_does_not_count(self) -> None:
+        text = "\n".join(
+            [
+                "/* NOLINTBEGIN(x): no citation here",
+                " */",
+                "/* ADR-0001 belongs to the next comment */",
+                "int z;",
+                "/* NOLINT(y) */",
+                "int a;",
+                "/* ADR-9999 two lines later, not the marker's comment */",
             ]
         )
         self.assertEqual(ratchet.count_uncited_nolints(text), 2)

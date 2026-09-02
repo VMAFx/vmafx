@@ -129,21 +129,62 @@ def parse_diagnostics(
     return diags, compile_failed
 
 
-def count_uncited_nolints(text: str) -> int:
-    """Count NOLINT markers whose line or previous line has no ADR citation.
+def _cited_in_block_comment(lines: list[str], index: int, in_block: bool) -> bool:
+    """Return True when the block comment holding line *index* cites an ADR.
 
-    ``NOLINTEND`` is a closing bracket, never a suppression of its own.
+    *in_block* says whether line *index* is already inside a ``/* ... */``
+    comment opened on an earlier line. The forward scan stops at the closing
+    ``*/`` so a citation belonging to the next comment never counts.
+    """
+    line = lines[index]
+    opened = line.rfind("/*")
+    if not in_block:
+        if opened < 0 or "*/" in line[opened:]:
+            return False
+    elif "*/" in line:
+        return False
+    for follow in lines[index + 1 :]:
+        if ADR_CITE_RE.search(follow):
+            return True
+        if "*/" in follow:
+            break
+    return False
+
+
+def count_uncited_nolints(text: str) -> int:
+    """Count NOLINT markers that carry no inline ``ADR-NNNN`` citation.
+
+    A marker is cited when ``ADR-NNNN`` appears on the previous, the same or
+    the next line, or anywhere in the ``/* ... */`` block comment that holds
+    the marker (the ADR-1138 ``NOLINTBEGIN`` brackets explain themselves in a
+    multi-line comment and cite the ADR on its last line). ``NOLINTEND`` is a
+    closing bracket, never a suppression of its own.
     """
     lines = text.splitlines()
     uncited = 0
+    in_block = False
     for index, line in enumerate(lines):
         markers = len(NOLINT_RE.findall(line))
-        if markers == 0:
-            continue
-        previous = lines[index - 1] if index > 0 else ""
-        if ADR_CITE_RE.search(line) or ADR_CITE_RE.search(previous):
-            continue
-        uncited += markers
+        if markers:
+            window = (
+                lines[index - 1] if index > 0 else "",
+                line,
+                lines[index + 1] if index + 1 < len(lines) else "",
+            )
+            cited = any(ADR_CITE_RE.search(item) for item in window)
+            if not cited and not _cited_in_block_comment(lines, index, in_block):
+                uncited += markers
+        # Track block-comment state for the next line. Markers live in
+        # comments, so string literals holding comment tokens are not modelled.
+        rest = line
+        if in_block:
+            if "*/" not in rest:
+                continue
+            in_block = False
+            rest = rest[rest.index("*/") + 2 :]
+        opened = rest.rfind("/*")
+        if opened >= 0 and "*/" not in rest[opened:]:
+            in_block = True
     return uncited
 
 

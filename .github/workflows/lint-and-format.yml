@@ -311,6 +311,8 @@ jobs:
     # cannot compile fails closed. Aggregator-required (ADR-0313 list).
     # GPU lanes (cuda/sycl/hip) run in nightly.yml until hosted toolchains
     # exist — see docs/development/ci.md "Whole-tree lint ratchet".
+    # Always starts (required context); real work is gated on the ADR-1140
+    # impact planner's `c_core` selector like every other required job.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Clang-Tidy Ratchet (Whole Tree)
     runs-on: ubuntu-24.04
@@ -320,36 +322,26 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Detect C/C++ or lint-configuration changes (early skip)
-        id: delta
+      - name: Plan CI impact (ADR-1140)
+        id: impact
         env:
-          PR_BASE_REF: ${{ github.base_ref }}
-          GH_EVENT_NAME: ${{ github.event_name }}
-          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          # Files whose change can move a clang-tidy count: sources, headers,
-          # build definitions, the tidy profile, the ratchet and its baselines.
-          pats=('*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' '*.hip' 'meson.build'                 'meson_options.txt' '.clang-tidy' 'scripts/ci/tidy-ratchet.py'                 'scripts/ci/tidy-baseline-*.json' '.github/workflows/lint-and-format.yml')
-          if [ "$GH_EVENT_NAME" = "pull_request" ]; then
-            files=$(git diff --name-only "origin/${PR_BASE_REF}...HEAD" -- "${pats[@]}" || true)
-          elif [ "$GH_EVENT_NAME" = "push" ]; then
-            zero="0000000000000000000000000000000000000000"
-            if [ -z "$PUSH_BEFORE_SHA" ] || [ "$PUSH_BEFORE_SHA" = "$zero" ]; then
-              files=$(git diff --name-only HEAD~1..HEAD -- "${pats[@]}" 2>/dev/null || echo full)
-            else
-              files=$(git diff --name-only "$PUSH_BEFORE_SHA"..HEAD -- "${pats[@]}" || echo full)
-            fi
-          else
-            files="full-tree-scan"
-          fi
-          if [ -z "$files" ]; then
-            echo "any=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No C/C++ or lint-configuration deltas — ratchet cannot have moved; skipping"
-          else
-            echo "any=true" >> "$GITHUB_OUTPUT"
-          fi
+          # The planner is fail-closed: .clang-tidy, scripts/ci/** (ratchet +
+          # baselines) and this workflow are CI-authority inputs that force
+          # mode=full, so a ratchet or baseline edit always runs the lane.
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — Clang-Tidy Ratchet (Whole Tree) skipped by plan
+        if: steps.impact.outputs.c_core != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — Clang-Tidy Ratchet (Whole Tree) satisfied without running (ADR-1140)"
       - name: Install deps
-        if: steps.delta.outputs.any == 'true'
+        if: steps.impact.outputs.c_core == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-14 g++-14 ninja-build nasm jq
@@ -360,19 +352,19 @@ jobs:
           sudo pip3 install --break-system-packages --quiet meson
           /usr/bin/clang-tidy-22 --version | grep -F 'LLVM version 22.'
       - name: Build (compile_commands.json + generated headers)
-        if: steps.delta.outputs.any == 'true'
+        if: steps.impact.outputs.c_core == 'true'
         run: |
           CC=gcc-14 CXX=g++-14 meson setup build core \
             -Denable_cuda=false -Denable_sycl=false
           meson compile -C build
       - name: Ratchet — whole-tree clang-tidy vs committed baseline
-        if: steps.delta.outputs.any == 'true'
+        if: steps.impact.outputs.c_core == 'true'
         run: |
           python3 scripts/ci/tidy-ratchet.py --lane cpu --build-dir build \
             --clang-tidy /usr/bin/clang-tidy-22 --jobs "$(nproc)" \
             --report tidy-ratchet-cpu.json
       - name: Upload measurement (commit it as the new baseline when the ratchet asks)
-        if: always() && steps.delta.outputs.any == 'true'
+        if: ${{ (always()) && steps.impact.outputs.c_core == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: tidy-ratchet-cpu
