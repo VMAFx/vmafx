@@ -20783,6 +20783,9 @@ is addressed.
   SIGTERM (ADR-1009).
 
 
+- `vmafx-tune-go sidecar {status,record,batch-record,predict}`: exit statuses now match the Python `vmaf-tune sidecar` contract. Every validation failure — an unknown or unparseable flag, a missing required flag, an unknown `--codec`, an unresolvable `--model`, an unreadable / non-object / incomplete `--features-json`, an unreadable `--captures-jsonl` — exits `2` (it exited `1`); cache-directory and `state.json` write failures keep exit `1`, the status Python's uncaught `OSError` produces. `batch-record` reads its capture log with CPython's universal-newline rule and no line-length ceiling (the 1 MiB `bufio.Scanner` cap aborted the whole batch on one long row), and a string `crf` must spell an integer, as `int()` requires. A `state.json` whose `weights` / `a_inv` carry `null` (the residue of a NaN capture) cold-starts as it does in Python instead of loading as zeroed weights. `TestSidecarPythonParity` now replays a 23-step operator sequence against fixtures dumped from the Python CLI (`cmd/vmafx-tune/cmd/testdata/sidecar/regen.sh`) and requires byte-identical stdout, byte-identical `state.json` snapshots and identical exit statuses. `docs/usage/vmafx-tune-go.md` drops the stale claims in the sidecar section (a `fast` payload shown as the `status` output, `--model` "rejected outright", a warning that is not logged when `vmafx-ort-runner` is absent, "**This PR**" stage rows, wrong ADR citations).
+
+
 - Restored twelve golden fixtures that the pre-commit whitespace hooks rewrote
   during the ruff bump, which left `pkg/benchmark` and `pkg/tune/auto` failing on
   master: four benchmark CSV goldens lost the CRLF line endings Python's `csv`

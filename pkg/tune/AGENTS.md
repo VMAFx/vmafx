@@ -83,7 +83,10 @@ counterpart that it must not drift from.**
    correction trained against the old predictor can never be replayed against a
    refreshed one. `Load` returns cold start rather than an error for a version,
    schema, or shape mismatch, and for corrupt JSON — and it leaves the corrupt
-   file in place so an operator can inspect it.
+   file in place so an operator can inspect it. `stateDoc` decodes `weights`
+   and `a_inv` through `*float64` so a JSON `null` — what `Save` writes for a
+   NaN weight — is a load failure (cold start) exactly as CPython's
+   `float(None)` is, never a silent zero.
 
 8. **The host UUID is random, never machine-derived** (`sidecar/sidecar.go`
    `GetOrCreateHostUUID`). 128 bits from `crypto/rand`, persisted at the

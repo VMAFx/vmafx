@@ -4,16 +4,17 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/golusoris/golusoris/clikit"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/VMAFx/vmafx/pkg/tune/codec"
 	"github.com/VMAFx/vmafx/pkg/tune/predictor"
@@ -29,6 +30,28 @@ type sidecarCommonFlags struct {
 	predictorVersion string
 	model            string
 	jsonOut          bool
+
+	// flagSet is the command's own flag set, recorded so run functions can
+	// ask which flags were actually passed (see requireFlags).
+	flagSet *pflag.FlagSet
+}
+
+// requireFlags mirrors argparse's required=True: every named flag must have
+// been passed on the command line. The check lives here rather than in
+// cobra's MarkFlagRequired so a missing flag exits 2 like the Python CLI
+// (see useUsageExitCode); the message follows argparse's wording.
+func (f *sidecarCommonFlags) requireFlags(names ...string) error {
+	var missing []string
+	for _, name := range names {
+		if f.flagSet == nil || !f.flagSet.Changed(name) {
+			missing = append(missing, "--"+name)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return asUsageError(fmt.Errorf(
+		"the following arguments are required: %s", strings.Join(missing, ", ")))
 }
 
 // sidecarRequiredFeatureKeys are the feature-JSON keys with no default. The
@@ -64,7 +87,11 @@ Subcommands:
   status        print sidecar state metadata
   predict       predict VMAF with the sidecar correction folded in
   record        record one observed encode result into the fit
-  batch-record  record a JSONL capture file, one observation per row`
+  batch-record  record a JSONL capture file, one observation per row
+
+Exit status follows the Python vmaf-tune sidecar: 0 on success, 2 for a usage
+or validation failure (bad flag, unknown codec, unreadable or malformed input),
+1 when the cache directory or state file cannot be written.`
 
 	cmd.AddCommand(newSidecarStatusCmd())
 	cmd.AddCommand(newSidecarPredictCmd())
@@ -74,7 +101,8 @@ Subcommands:
 	return cmd
 }
 
-// addSidecarCommonFlags wires the shared configuration flags onto cmd.
+// addSidecarCommonFlags wires the shared configuration flags onto cmd and
+// installs the Python exit-status convention for flag-layer failures.
 func addSidecarCommonFlags(cmd *cobra.Command, flags *sidecarCommonFlags) {
 	cmd.Flags().StringVar(&flags.codec, "codec", "libx264",
 		"codec bucket for the sidecar state (default libx264)")
@@ -87,16 +115,27 @@ func addSidecarCommonFlags(cmd *cobra.Command, flags *sidecarCommonFlags) {
 		"optional predictor_<codec>.onnx path; default uses the analytical fallback")
 	cmd.Flags().BoolVar(&flags.jsonOut, "json", false,
 		"emit machine-readable JSON")
+	flags.flagSet = cmd.Flags()
+
+	// Required-flag enforcement lives in each run function (requireFlags),
+	// not MarkFlagRequired, so a missing flag exits 2 like the Python CLI.
+	useUsageExitCode(cmd)
 }
 
 // buildSidecarPredictor constructs the configured sidecar for a CLI handler.
+//
+// Exit-status mapping mirrors _run_sidecar in the Python CLI: argparse rejects
+// an unknown --codec and Predictor() raises on an unresolvable --model, both
+// exit 2, so those errors carry the usage status. A cache-directory I/O
+// failure while creating the host UUID is an uncaught OSError in Python — a
+// plain exit 1 — so ForCodec's error is returned untagged.
 func buildSidecarPredictor(flags *sidecarCommonFlags, d deps) (*sidecar.Predictor, error) {
 	if _, err := codec.Get(flags.codec); err != nil {
-		return nil, fmt.Errorf("--codec: %w", err)
+		return nil, asUsageError(fmt.Errorf("--codec: %w", err))
 	}
 	base, err := predictor.New(flags.model, d.Log)
 	if err != nil {
-		return nil, err
+		return nil, asUsageError(err)
 	}
 	cfg := sidecar.Config{
 		PredictorVersion: flags.predictorVersion,
@@ -183,23 +222,20 @@ func newSidecarPredictCmd() *cobra.Command {
 	)
 	addSidecarCommonFlags(cmd, &flags.sidecarCommonFlags)
 	cmd.Flags().StringVar(&flags.featuresJSON, "features-json", "",
-		"path to a JSON object of ShotFeatures (or a {\"features\": {...}} wrapper)")
-	cmd.Flags().IntVar(&flags.crf, "crf", 0, "CRF the prediction is for")
-	_ = cmd.MarkFlagRequired("features-json")
-	_ = cmd.MarkFlagRequired("crf")
+		"path to a JSON object of ShotFeatures (or a {\"features\": {...}} wrapper) (required)")
+	cmd.Flags().IntVar(&flags.crf, "crf", 0, "CRF the prediction is for (required)")
 	return cmd
 }
 
 func runSidecarPredict(_ context.Context, d deps, flags *sidecarPredictFlags) error {
+	if err := flags.requireFlags("features-json", "crf"); err != nil {
+		return err
+	}
 	sp, err := buildSidecarPredictor(&flags.sidecarCommonFlags, d)
 	if err != nil {
 		return err
 	}
-	row, err := readJSONObject(flags.featuresJSON)
-	if err != nil {
-		return err
-	}
-	features, err := sidecarFeaturesFromMapping(row)
+	features, err := loadSidecarFeatures(flags.featuresJSON)
 	if err != nil {
 		return err
 	}
@@ -246,33 +282,31 @@ func newSidecarRecordCmd() *cobra.Command {
 	)
 	addSidecarCommonFlags(cmd, &flags.sidecarCommonFlags)
 	cmd.Flags().StringVar(&flags.featuresJSON, "features-json", "",
-		"path to a JSON object of ShotFeatures (or a {\"features\": {...}} wrapper)")
-	cmd.Flags().IntVar(&flags.crf, "crf", 0, "CRF the observation was encoded at")
+		"path to a JSON object of ShotFeatures (or a {\"features\": {...}} wrapper) (required)")
+	cmd.Flags().IntVar(&flags.crf, "crf", 0, "CRF the observation was encoded at (required)")
 	cmd.Flags().Float64Var(&flags.observedVMAF, "observed-vmaf", 0,
-		"the pooled-mean VMAF libvmaf actually measured")
+		"the pooled-mean VMAF libvmaf actually measured (required)")
 	cmd.Flags().BoolVar(&flags.noPersist, "no-persist", false,
 		"update in memory only; mainly useful for tests")
-	_ = cmd.MarkFlagRequired("features-json")
-	_ = cmd.MarkFlagRequired("crf")
-	_ = cmd.MarkFlagRequired("observed-vmaf")
 	return cmd
 }
 
 func runSidecarRecord(_ context.Context, d deps, flags *sidecarRecordFlags) error {
+	if err := flags.requireFlags("features-json", "crf", "observed-vmaf"); err != nil {
+		return err
+	}
 	sp, err := buildSidecarPredictor(&flags.sidecarCommonFlags, d)
 	if err != nil {
 		return err
 	}
-	row, err := readJSONObject(flags.featuresJSON)
-	if err != nil {
-		return err
-	}
-	features, err := sidecarFeaturesFromMapping(row)
+	features, err := loadSidecarFeatures(flags.featuresJSON)
 	if err != nil {
 		return err
 	}
 
 	base := sp.Base.PredictVMAF(features, flags.crf, flags.codec)
+	// A persistence failure here is an uncaught OSError in Python (exit 1),
+	// so the error stays untagged.
 	if err := sp.RecordCapture(
 		features, flags.crf, flags.observedVMAF, flags.codec, !flags.noPersist,
 	); err != nil {
@@ -314,8 +348,7 @@ func newSidecarBatchRecordCmd() *cobra.Command {
 	addSidecarCommonFlags(cmd, &flags.sidecarCommonFlags)
 	cmd.Flags().StringVar(&flags.capturesJSONL, "captures-jsonl", "",
 		"JSONL file: one object per line carrying the feature keys plus "+
-			"\"crf\" and \"observed_vmaf\"")
-	_ = cmd.MarkFlagRequired("captures-jsonl")
+			"\"crf\" and \"observed_vmaf\" (required)")
 	return cmd
 }
 
@@ -324,29 +357,28 @@ func newSidecarBatchRecordCmd() *cobra.Command {
 // aborting the batch — an operator's capture log is often partially corrupt
 // after an interrupted run, and losing the good rows to one bad line is worse
 // than the noise.
+//
+// The file is read whole and split with CPython's universal-newline rule, so
+// line numbers in the skip diagnostics match the Python CLI's and there is no
+// line-length ceiling (Python has none either).
 func runSidecarBatchRecord(_ context.Context, d deps, flags *sidecarBatchFlags) error {
+	if err := flags.requireFlags("captures-jsonl"); err != nil {
+		return err
+	}
 	sp, err := buildSidecarPredictor(&flags.sidecarCommonFlags, d)
 	if err != nil {
 		return err
 	}
-	fh, err := os.Open(flags.capturesJSONL) // #nosec G304 -- operator-supplied CLI flag
+	data, err := os.ReadFile(flags.capturesJSONL) // #nosec G304 -- operator-supplied CLI flag
 	if err != nil {
-		return fmt.Errorf("cannot read input: %w", err)
+		// Python: `except OSError` around the read → exit 2.
+		return asUsageError(fmt.Errorf("cannot read input: %w", err))
 	}
-	defer func() {
-		if closeErr := fh.Close(); closeErr != nil {
-			d.Log.Warn("sidecar batch-record: close input", "error", closeErr)
-		}
-	}()
 
 	rows, skipped := 0, 0
-	scanner := bufio.NewScanner(fh)
-	// Capture rows are single-line JSON objects; the default 64 KiB token
-	// limit is comfortable, but a wide feature row with long string fields
-	// can exceed it, so raise the ceiling to 1 MiB.
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for lineNo := 1; scanner.Scan(); lineNo++ {
-		line := strings.TrimSpace(scanner.Text())
+	for index, raw := range splitLinesUniversal(string(data)) {
+		lineNo := index + 1
+		line := strings.TrimSpace(raw)
 		if line == "" {
 			continue
 		}
@@ -365,10 +397,8 @@ func runSidecarBatchRecord(_ context.Context, d deps, flags *sidecarBatchFlags) 
 		}
 		rows++
 	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("cannot read input: %w", err)
-	}
 	if rows > 0 {
+		// Python: sp.save() outside the try block → an uncaught OSError, exit 1.
 		if err := sp.Save(); err != nil {
 			return err
 		}
@@ -388,6 +418,34 @@ func runSidecarBatchRecord(_ context.Context, d deps, flags *sidecarBatchFlags) 
 	return err
 }
 
+// splitLinesUniversal splits text the way CPython's text-mode file iteration
+// does with newline=None: "\n", "\r\n" and a lone "\r" each terminate a line,
+// and a final line without a terminator is still yielded. Every physical line
+// is returned, blank ones included, so callers can number them like
+// enumerate(fh, start=1).
+func splitLinesUniversal(text string) []string {
+	var lines []string
+	start := 0
+	for i := 0; i < len(text); i++ {
+		switch text[i] {
+		case '\n':
+			lines = append(lines, text[start:i])
+			start = i + 1
+		case '\r':
+			lines = append(lines, text[start:i])
+			if i+1 < len(text) && text[i+1] == '\n' {
+				i++
+			}
+			start = i + 1
+		default:
+		}
+	}
+	if start < len(text) {
+		lines = append(lines, text[start:])
+	}
+	return lines
+}
+
 // parseCaptureRow decodes one batch-record JSONL line.
 func parseCaptureRow(line string) (predictor.ShotFeatures, int, float64, error) {
 	var row map[string]any
@@ -398,20 +456,34 @@ func parseCaptureRow(line string) (predictor.ShotFeatures, int, float64, error) 
 	if err != nil {
 		return predictor.ShotFeatures{}, 0, 0, err
 	}
-	crf, ok := numericField(row, "crf")
-	if !ok {
-		return predictor.ShotFeatures{}, 0, 0, errors.New("missing required key: crf")
+	crf, err := intField(row, "crf")
+	if err != nil {
+		return predictor.ShotFeatures{}, 0, 0, err
 	}
 	observed, ok := numericField(row, "observed_vmaf")
 	if !ok {
 		return predictor.ShotFeatures{}, 0, 0, errors.New("missing required key: observed_vmaf")
 	}
-	return features, int(crf), observed, nil
+	return features, crf, observed, nil
 }
 
 // ---------------------------------------------------------------------------
 // Feature-JSON parsing.
 // ---------------------------------------------------------------------------
+
+// loadSidecarFeatures reads a --features-json file into ShotFeatures. Every
+// failure is a usage error: the Python CLI reports it and returns 2.
+func loadSidecarFeatures(path string) (predictor.ShotFeatures, error) {
+	row, err := readJSONObject(path)
+	if err != nil {
+		return predictor.ShotFeatures{}, asUsageError(err)
+	}
+	features, err := sidecarFeaturesFromMapping(row)
+	if err != nil {
+		return predictor.ShotFeatures{}, asUsageError(err)
+	}
+	return features, nil
+}
 
 // readJSONObject reads a JSON object from path.
 func readJSONObject(path string) (map[string]any, error) {
@@ -492,6 +564,34 @@ func numericField(row map[string]any, key string) (float64, bool) {
 		return 0, false
 	default:
 		return 0, false
+	}
+}
+
+// intField mirrors CPython's int(row[key]) on a decoded JSON value: a JSON
+// number truncates toward zero (int(28.7) == 28), a string must spell an
+// integer literal (int("28.5") raises), and a missing key is an error.
+func intField(row map[string]any, key string) (int, error) {
+	value, ok := row[key]
+	if !ok {
+		return 0, fmt.Errorf("missing required key: %s", key)
+	}
+	switch v := value.(type) {
+	case float64:
+		return int(v), nil
+	case json.Number:
+		f, err := v.Float64()
+		if err != nil {
+			return 0, fmt.Errorf("invalid %s: %v", key, err)
+		}
+		return int(f), nil
+	case string:
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil {
+			return 0, fmt.Errorf("invalid %s: %q is not an integer", key, v)
+		}
+		return n, nil
+	default:
+		return 0, fmt.Errorf("invalid %s: not numeric", key)
 	}
 }
 

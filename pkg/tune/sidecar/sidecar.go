@@ -360,15 +360,33 @@ func (m *Model) ToMap() map[string]any {
 }
 
 // stateDoc is the on-disk state, used for loading.
+//
+// weights and a_inv decode through pointers so a JSON null — what Save writes
+// for a NaN weight after MarshalStrict's NaN-to-null mapping — is told apart
+// from 0.0. CPython's from_dict fails float(None) on such a file and
+// cold-starts; decoding null as 0 would instead load a zeroed fit that still
+// claims its old n_updates.
 type stateDoc struct {
 	SchemaVersion    int          `json:"schema_version"`
 	PredictorVersion string       `json:"predictor_version"`
 	FeatureDim       int          `json:"feature_dim"`
 	LambdaL2         float64      `json:"lambda_l2"`
-	Weights          []float64    `json:"weights"`
-	AInv             [][]float64  `json:"a_inv"`
+	Weights          []*float64   `json:"weights"`
+	AInv             [][]*float64 `json:"a_inv"`
 	History          []HistoryRow `json:"history"`
 	NUpdates         int          `json:"n_updates"`
+}
+
+// derefAll copies vals into a plain slice, reporting false on any null entry.
+func derefAll(vals []*float64) ([]float64, bool) {
+	out := make([]float64, len(vals))
+	for i, v := range vals {
+		if v == nil {
+			return nil, false
+		}
+		out[i] = *v
+	}
+	return out, true
 }
 
 // ModelFromMap reconstructs a Model from a decoded state document. It returns
@@ -390,10 +408,22 @@ func ModelFromMap(doc stateDoc, cfg Config) (*Model, error) {
 	if len(doc.Weights) != FeatureDim || len(doc.AInv) != FeatureDim {
 		return nil, errors.New("sidecar state has wrong shape")
 	}
+	weights, ok := derefAll(doc.Weights)
+	if !ok {
+		return nil, errors.New("sidecar state has a null weight")
+	}
+	aInv := make([][]float64, len(doc.AInv))
+	for i, row := range doc.AInv {
+		vals, ok := derefAll(row)
+		if !ok {
+			return nil, errors.New("sidecar state has a null a_inv entry")
+		}
+		aInv[i] = vals
+	}
 	return &Model{
 		Config:   cfg,
-		Weights:  doc.Weights,
-		AInv:     doc.AInv,
+		Weights:  weights,
+		AInv:     aInv,
 		History:  doc.History,
 		NUpdates: doc.NUpdates,
 	}, nil

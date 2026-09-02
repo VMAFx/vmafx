@@ -226,3 +226,20 @@ during the migration; see Stage roadmap in
     last-wins so the duplicate is inert, but it IS in the argv Python prints
     under `--dry-run` and records in corpus rows. The Go port reproduces it on
     purpose; de-duplicating it is a parity break, not a cleanup.
+
+26. **The `sidecar` group's exit statuses and fixtures are the Python
+    contract** (`cmd/vmafx-tune/cmd/sidecar.go`, `sidecar_parity_test.go`,
+    `testdata/sidecar/`): every validation failure exits 2 — `useUsageExitCode`
+    for flag-layer errors, `requireFlags` instead of `MarkFlagRequired` for
+    missing flags, `asUsageError` on the codec / model / feature-file /
+    capture-file paths — while cache-dir and `state.json` write failures stay
+    exit 1, because the Python `OSError` there is uncaught. Do not wrap the
+    whole run function in `asUsageError`; the split is the contract.
+    `TestSidecarPythonParity` diffs every stdout payload and every `state.json`
+    snapshot byte-for-byte against fixtures dumped from the Python CLI by
+    `testdata/sidecar/regen.sh` (pinned host UUID, relative `--cache-dir`);
+    regenerate them only with a coordinated change on both sides. Stderr
+    wording is not pinned, but the `batch-record` skip-line numbers are:
+    `splitLinesUniversal` reproduces CPython's `newline=None` iteration so
+    they match, and must not be swapped back for a `bufio.Scanner` (it caps
+    line length and cannot split on a lone `\r`).

@@ -1,0 +1,7 @@
+{"probe_bitrate_kbps": 4200.5, "probe_i_frame_avg_bytes": 51234.0, "probe_p_frame_avg_bytes": 8123.25, "probe_b_frame_avg_bytes": 2011.75, "saliency_mean": 0.42, "saliency_var": 0.031, "frame_diff_mean": 7.5, "y_avg": 112.25, "y_var": 1830.5, "shot_length_frames": 240, "fps": 24.0, "width": 1920, "height": 1080, "crf": 24, "observed_vmaf": 94.25}
+
+{"features": {"probe_bitrate_kbps": 1800.0, "probe_i_frame_avg_bytes": 22000.0, "probe_p_frame_avg_bytes": 3900.0, "probe_b_frame_avg_bytes": 1100.0, "fps": 30.0, "width": 1280, "height": 720, "shot_length_frames": 90}, "crf": 30, "observed_vmaf": 82.0}
+{"probe_bitrate_kbps": 900.0, "crf": 35, "observed_vmaf": 71.5}
+{"missing": "everything"}
+not json at all
+{"probe_bitrate_kbps": "2400", "probe_i_frame_avg_bytes": 30000, "probe_p_frame_avg_bytes": 5000, "probe_b_frame_avg_bytes": 1500, "crf": "28", "observed_vmaf": "90"}
