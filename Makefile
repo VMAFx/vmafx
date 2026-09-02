@@ -116,7 +116,8 @@ cythonize-deps: $(VENV_PIP)
 # Fork-specific targets (lusoris). The upstream targets above are preserved as-is.
 # ============================================================================
 
-.PHONY: lint lint-c lint-py lint-sh lint-md lint-go format format-check sec sbom \
+.PHONY: lint lint-c lint-py lint-sh lint-md lint-go tidy-ratchet tidy-ratchet-write \
+	format format-check sec sbom \
         test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
         coverage coverage-html coverage-check assertion-density pr-check
 
@@ -161,6 +162,30 @@ lint-c: $(BUILD_DIR) $(NINJA)
 	         --suppressions-list=.cppcheck-suppressions.txt \
 	         --project=$(BUILD_DIR)/compile_commands.json \
 	         --error-exitcode=1
+
+# ADR-1142 — whole-tree clang-tidy debt ratchet. LANE=cpu|cuda|sycl|hip
+# (default cpu). The build dir must be configured for the lane
+# (TIDY_RATCHET_BUILD_DIR, default $(BUILD_DIR)); the GPU lanes pass the
+# extra clang-tidy arguments the 2026-09-02 measurement used and the SYCL
+# lane goes through scripts/ci/clang-tidy-sycl.sh. `tidy-ratchet-write`
+# regenerates scripts/ci/tidy-baseline-$(LANE).json after a cleanup —
+# commit it in the same PR; never hand-edit a baseline.
+LANE ?= cpu
+TIDY_RATCHET_BUILD_DIR ?= $(BUILD_DIR)
+TIDY_RATCHET_EXTRA_cpu :=
+TIDY_RATCHET_EXTRA_cuda := --extra-arg=--cuda-host-only --extra-arg=-nocudalib
+TIDY_RATCHET_EXTRA_hip := --extra-arg=-x --extra-arg=hip \
+	--extra-arg=-D__HIP_PLATFORM_AMD__=1 --extra-arg=-I/opt/rocm/include
+TIDY_RATCHET_EXTRA_sycl := --clang-tidy scripts/ci/clang-tidy-sycl.sh
+tidy-ratchet:
+	$(call require-tool,clang-tidy,install clang-tools)
+	python3 scripts/ci/tidy-ratchet.py --lane $(LANE) \
+	    --build-dir $(TIDY_RATCHET_BUILD_DIR) $(TIDY_RATCHET_EXTRA_$(LANE)) $(TIDY_RATCHET_ARGS)
+
+tidy-ratchet-write:
+	$(call require-tool,clang-tidy,install clang-tools)
+	python3 scripts/ci/tidy-ratchet.py --lane $(LANE) --write \
+	    --build-dir $(TIDY_RATCHET_BUILD_DIR) $(TIDY_RATCHET_EXTRA_$(LANE)) $(TIDY_RATCHET_ARGS)
 
 lint-py:
 	$(call require-tool,ruff,pip install ruff==0.15.17)

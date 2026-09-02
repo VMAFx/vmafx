@@ -18,7 +18,7 @@ or renamed turns into a phantom-required gate that blocks every PR
 until master is fixed.
 
 | Script | Workflow lane(s) that invoke it | What couples them |
-|---|---|---|
+| --- | --- | --- |
 | `cross_backend_vif_diff.py` | `tests-and-quality-gates.yml` — every `*-cross-backend-diff` step | The `--feature`, `--backend`, `--places` flag names; the `FEATURE_METRICS` dict (workflow steps reference feature names verbatim). |
 | `cross_backend_parity_gate.py` | `tests-and-quality-gates.yml` — `Run GPU-parity matrix gate` step | The `--gpu-id`, `--calibration-table`, `--backends`, `--features`, `--fp16-features`, `--json-out`, `--md-out` flag names. The matrix-gate step name (`gpu-parity-matrix-gate`) is itself a required-status check on PRs. |
 | `cross_backend_calibration.py` | (loader, not invoked directly by workflow) | Imported by the two gate scripts via `sys.path.insert(0, …)`; lives next to them on purpose. Don't move it without updating the import sites. |
@@ -231,3 +231,22 @@ Alpha pre-releases (`X.Y.Za<N>`) are never an acceptable pin.
 - `tests/test_ci_impact.py` (stdlib `unittest`) pins the map ↔ tree contract and
   the no-path-filter invariant on required-context workflows. Run it after
   adding a top-level directory or a required check.
+
+## tidy-ratchet.py invariants (ADR-1142)
+
+- `scripts/ci/tidy-baseline-<lane>.json` is generated only by `tidy-ratchet.py --write`
+  (or `make tidy-ratchet-write`); never hand-edit a count. A baseline may only
+  decrease; raising a number to make CI green is a policy violation, not a fix.
+- The dedup key `(path, line, column, check)` and the NOLINT rule ("cited" =
+  `ADR-NNNN` on the previous, the same or the next line, or anywhere in the
+  `/* ... */` block comment that holds the marker; `NOLINTEND` never counts) are
+  load-bearing: the baselines were measured with exactly these rules, so
+  changing either requires re-measuring every lane in the same PR (the `cpu`
+  baseline is CI's own `tidy-ratchet-cpu` artifact, never a workstation run).
+- The `Clang-Tidy Ratchet (Whole Tree)` job starts unconditionally and gates its
+  work on the ADR-1140 planner's `c_core` selector; `.clang-tidy`, this
+  directory (ratchet + baselines) and the workflow are CI-authority inputs, so
+  editing any of them forces `mode=full` and the lane runs. Never add a
+  `paths:` filter or a custom early-skip probe to the job.
+- A `clang-diagnostic-error` in any TU is a measurement failure (exit 4), never a
+  zero. Build (generated headers) before measuring.

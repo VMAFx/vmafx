@@ -14,7 +14,7 @@ The fork ships eight `pull_request`-triggered workflows:
 | --- | --- |
 | [`docker-image.yml`](../../.github/workflows/docker-image.yml) | Docker image build (advisory). |
 | [`security-scans.yml`](../../.github/workflows/security-scans.yml) | Semgrep / CodeQL / Gitleaks / Dependency Review. |
-| [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy, cppcheck, mypy, registry validate, twin-drift gate (ADR-1135). |
+| [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy (changed files + whole-tree ratchet, ADR-1142), cppcheck, mypy, registry validate, twin-drift gate (ADR-1135). |
 | [`required-aggregator.yml`](../../.github/workflows/required-aggregator.yml) | Single required-check aggregator (ADR-0313). |
 | [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) | FFmpeg + libvmaf build (gcc / clang / SYCL / Vulkan). |
 | [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform / cross-backend libvmaf build matrix. |
@@ -171,6 +171,78 @@ bash scripts/ci/twin-drift-check.sh
 bash scripts/ci/tests/test-twin-drift-check.sh   # 24 fixture cases
 ```
 
+## Whole-tree lint ratchet (ADR-1142)
+
+Since [ADR-1142](../adr/1142-whole-codebase-standards.md) the coding standards
+apply to every file in the tree, and CI enforces that with a **ratchet**
+instead of a touched-files rule:
+
+- `scripts/ci/tidy-ratchet.py` runs clang-tidy over **every** translation
+  unit in a `compile_commands.json`, deduplicates diagnostics by
+  `(path, line, column, check)`, counts `NOLINT` markers with no inline
+  `ADR-NNNN` citation (a citation counts on the previous, the same or the
+  next line, or anywhere in the `/* ... */` block comment that holds the
+  marker), and compares the per-file numbers with the committed baseline
+  `scripts/ci/tidy-baseline-<lane>.json`.
+- The rule is *baseline equals measurement*. Exit codes: `0` match, `2` a file
+  is above its baseline (fix the code, never raise the baseline), `3` a file is
+  below its baseline (tighten it: `make tidy-ratchet-write`, commit the JSON
+  in the same PR), `4` clang-tidy could not compile a TU (fail closed), `5`
+  usage/IO error.
+- **`cpu` lane** — the required context `Clang-Tidy Ratchet (Whole Tree)` in
+  `lint-and-format.yml` (aggregator list, ADR-0313). Like every required job
+  it always starts and first runs the [ADR-1140](../adr/1140-ci-impact-planner.md)
+  impact planner (`scripts/ci/plan-ci-impact.py`, step id `impact`); the
+  install / build / ratchet steps run only when the planner's `c_core`
+  selector is `true`, otherwise a `Not impacted` notice satisfies the context.
+  `.clang-tidy`, `scripts/ci/**` (the ratchet and its baselines) and the
+  workflow file are CI-authority inputs that force `mode=full`, so a ratchet
+  or baseline edit always runs the lane. It uploads `tidy-ratchet-cpu` (the
+  measurement JSON): when the job fails with exit 3 after a cleanup, download
+  that artifact and commit it as `scripts/ci/tidy-baseline-cpu.json` — the
+  committed `cpu` baseline is always CI's own measurement (the hosted build
+  lacks optional dependencies, so its TU set differs from a workstation
+  build). The compile database also lists the model-JSON → C translation
+  units meson generates under `build/src/` (`vmaf_v0.6.1.json.c`, …); they are
+  measured like every other TU and appear in the baseline under that path, so
+  the `cpu` lane is always measured with `--build-dir build` at the repository
+  root, as CI does. The nightly workflow runs the same lane and fails on drift
+  (it used to swallow the full scan with `|| true`).
+- **`cuda`, `sycl`, `hip` lanes** — baselines committed from the 2026-09-02
+  workstation measurement (clang-tidy 22.1.8 against a `-Denable_cuda=true
+  -Denable_sycl=true -Denable_hip=true` build; CUDA TUs analysed with
+  `--cuda-host-only -nocudalib`, HIP with `-x hip -D__HIP_PLATFORM_AMD__=1`,
+  SYCL through `scripts/ci/clang-tidy-sycl.sh`). Run locally with
+  `make tidy-ratchet LANE=cuda TIDY_RATCHET_BUILD_DIR=build-gpu` (same for
+  `sycl`, `hip`). They become PR-required contexts as soon as a hosted
+  toolchain exists for the lane; until then a lane that cannot run is reported
+  as *not run*, never as clean. Metal (`.mm` / `.metal`) has no Linux
+  toolchain and is tracked by structural proxy only.
+- The changed-files job `Clang-Tidy (Changed C/C++ Files)` stays as fast
+  feedback and keeps the `WarningsAsErrors` hard stop; ADR-0141's "a touched
+  file ends the PR at zero" is unchanged. The ratchet adds the bound on
+  untouched files.
+
+Baselines at the time this landed (2026-09-02): cpu 5,241 warnings / 281 TUs /
+83 uncited NOLINTs; cuda 1,650; sycl 716; hip 1,173 (whole tree ≈ 8,780).
+
+### Carve-outs still open after ADR-1142
+
+The 2026-09-02 inventory ([research digest](../research/2027-lint-carveout-inventory-2026-09-02.md))
+found 218 scope restrictions across the lint/CI configuration. This ADR's PR
+retires the nightly `|| true` and bounds the whole CPU tree; the remaining
+rows are owned by the wave that brings the blocking toolchain or build option
+to CI:
+
+| Carve-out | Blocker | Owner / plan |
+| --- | --- | --- |
+| Changed-files clang-tidy job excludes `core/src/cuda/`, `core/src/feature/cuda/`, `core/test/test_cuda_*`, `core/test/test_gpu_picture_pool.c` | CUDA toolkit headers on the hosted runner (`--cuda-host-only` needs them) | cuda lane → PR-required; retire the `grep -v` lines in the same PR |
+| … excludes `core/src/sycl/`, `core/src/feature/sycl/`, `core/test/test_sycl*`; `Clang-Tidy SYCL` job is `continue-on-error` | oneAPI on the runner (the advisory job already installs it) | sycl lane → PR-required first; drop `continue-on-error` |
+| … excludes `core/src/hip/`, `core/src/feature/hip/`, `core/test/test_hip*` | ROCm headers on the hosted runner | hip lane → PR-required |
+| … excludes `core/src/feature/arm64/` | no aarch64 compile DB on x86 runners | measure on the ARM build leg (cross `-target aarch64`) |
+| … excludes `core/src/mcp/`, `core/test/test_mcp*`, `core/test/fuzz/`, `core/src/compat/win32/`, `core/tools/vmaf_vpl.c` | needs `-Denable_mcp=true` / fuzz / libva / MinGW compile DBs | add those TUs to the cpu-lane build in CI |
+| `.cppcheck-suppressions.txt` per-file suppressions, `.clang-tidy` disabled checks, `.semgrep.yml` path excludes, `pyproject.toml` per-file ignores | none — each is a fix-the-code item | rework waves; each removal is a ratchet decrease |
+
 ## Bug-status hygiene gate (ADR-0165 / ADR-0334)
 
 Per [CLAUDE.md §12 rule 13](../../CLAUDE.md) and
@@ -215,13 +287,13 @@ placeholder, the merge happens, the placeholder never gets rewritten
 to the merged numeric refs. The gate therefore additionally rejects
 any inserted line in `docs/state.md` containing:
 
-| Placeholder   | Why                                         |
-| ------------- | ------------------------------------------- |
-| `this PR`     | post-merge backfill drift (most common)     |
-| `this commit` | same drift mode for SHA-shaped refs         |
-| `TBD`         | obvious fill-it-in-later marker             |
-| `<PR>`        | template placeholder                        |
-| `#NNN`        | template placeholder (real refs are digits) |
+| Placeholder | Why |
+| --- | --- |
+| `this PR` | post-merge backfill drift (most common) |
+| `this commit` | same drift mode for SHA-shaped refs |
+| `TBD` | obvious fill-it-in-later marker |
+| `<PR>` | template placeholder |
+| `#NNN` | template placeholder (real refs are digits) |
 
 Canonical accept forms — explicitly NOT matched — are `PR #N` (any
 positive integer) and ``commit `<sha>` `` (the SHA wrapped in

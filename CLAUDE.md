@@ -267,7 +267,16 @@ Use `/prep-release` to dry-run locally before merging a release PR.
 12. **Every** PR leaves every file it touches **lint-clean** to the
     fork's strictest profile (clang-tidy + cppcheck + the linters in
     `make lint`), regardless of whether the file is fork-local or
-    upstream-mirror. "Touches" = any hunk in the PR's diff against its
+    upstream-mirror.
+    **Since ADR-1142 the standards apply to the whole tree** —
+    upstream-mirror, vendored, GPU kernels (CUDA/HIP/SYCL/Metal), SIMD,
+    tests, tools — and the whole tree is bounded by the clang-tidy ratchet
+    (`scripts/ci/tidy-ratchet.py` vs
+    `scripts/ci/tidy-baseline-<lane>.json`, required CI context
+    `Clang-Tidy Ratchet (Whole Tree)`): no file may exceed its baseline
+    count, a cleaned file must tighten the baseline in the same PR
+    (`make tidy-ratchet-write`), and baselines are never hand-edited.
+    "Touches" = any hunk in the PR's diff against its
     merge base. Refactor first (extract helpers, split oversized
     functions, rename reserved identifiers, `(void)`-cast discarded
     return values, ...). `// NOLINT` / `// NOLINTNEXTLINE` is reserved

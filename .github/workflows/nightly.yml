@@ -57,11 +57,12 @@ jobs:
         run: |
           cd core
           meson setup ../build -Denable_cuda=false -Denable_sycl=false
-      - name: Run clang-tidy on full tree
+      - name: Build (generated headers for clang-tidy)
+        run: meson compile -C build
+      - name: Whole-tree clang-tidy ratchet (ADR-1142, cpu lane, fails on drift)
         run: |
-          find core/src core/tools -name '*.c' -o -name '*.cpp' | \
-            parallel -j"$(nproc)" --joblog tidy.log \
-              'clang-tidy -p build {} 2>&1 || true' | tee clang-tidy-full.log
+          python3 scripts/ci/tidy-ratchet.py --lane cpu --build-dir build \
+            --jobs "$(nproc)" --report clang-tidy-full.log
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         if: always()
         with:
