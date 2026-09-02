@@ -18,7 +18,8 @@ documentation in the same PR as the code — this page is that doc.
 | [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md) | Docs ship with every user-discoverable surface change | Advisory CI comment | Same workflow, job `doc-substance-check` |
 | [ADR-0106](../adr/0106-adr-maintenance-rule.md) | One ADR per non-trivial decision, written first | Advisory CI comment | Same workflow, job `adr-backfill-check` |
 | [ADR-0105](../adr/0105-copyright-handling-dual-notice.md) | Every C / C++ / CUDA source ships a copyright header | Pre-commit hook | `scripts/ci/check-copyright.sh` via `.pre-commit-config.yaml` |
-| [ADR-0356](../adr/0356-ffmpeg-patches-surface-gate.md) | Public libvmaf surface consumed by `ffmpeg-patches/` carries a patch update in the same PR (CLAUDE.md §12 r14) | **Blocking** CI check | Same workflow, job `ffmpeg-patches-surface-check` |
+| [ADR-0409](../adr/0409-ffmpeg-patches-surface-gate.md) | Public libvmaf surface consumed by `ffmpeg-patches/` carries a patch update in the same PR (CLAUDE.md §12 r14) | **Blocking** CI check | Same workflow, job `ffmpeg-patches-surface-check` |
+| [ADR-1135](../adr/1135-ci-twin-drift-gate.md) | Every side of a same-directory `.c`/`.cpp` twin pair is compiled by some build file (or allowlisted with a reason); every source path a `meson.build` / `setup.py` / `*.pyx` names exists | **Blocking**, required CI check | `.github/workflows/lint-and-format.yml` job `twin-drift-check`, backed by `scripts/ci/twin-drift-check.sh` — see [ci.md](ci.md#twin-drift-gate) |
 
 Blocking vs advisory is deliberate. ADR-0108 is the only rule whose
 full predicate is mechanically decidable (a checkbox is either ticked
@@ -26,7 +27,7 @@ or it isn't, referenced files either appear in the diff or they
 don't). The other rules involve human judgement — "is this a pure
 refactor?", "is this decision non-trivial enough to warrant an ADR?"
 — so their checks post comments instead of blocking the merge queue.
-ADR-0350 joins the blocking tier because the predicate is similarly
+ADR-0409 joins the blocking tier because the predicate is similarly
 mechanical: either a public-header / `meson_options.txt` symbol that
 patches consume changed and a patch is in the diff (or an opt-out
 line is in the body), or it didn't.
@@ -170,7 +171,7 @@ Don't. The global rule (`/home/kilian/.claude/CLAUDE.md`) forbids
 add an explicit exclude to [`.pre-commit-config.yaml`](../../.pre-commit-config.yaml)
 in the same PR and cite the reason.
 
-## ADR-0350: ffmpeg-patches surface sync (blocking)
+## ADR-0409: ffmpeg-patches surface sync (blocking)
 
 Enforces CLAUDE.md §12 r14: every PR that changes a libvmaf
 public-surface symbol consumed by `ffmpeg-patches/*.patch` must
@@ -234,7 +235,7 @@ point, because `VmafPicture` is in the consumed set. The cost of a
 false positive is one extra opt-out line in the PR body; the cost of
 a false negative — a real surface change slipping through — is
 unbounded archaeology at the next sync. See
-[ADR-0356](../adr/0356-ffmpeg-patches-surface-gate.md) §Alternatives
+[ADR-0409](../adr/0409-ffmpeg-patches-surface-gate.md) §Alternatives
 considered for why we picked bash + grep over libclang AST or
 ctags-based extraction.
 
@@ -267,17 +268,18 @@ pre-commit run --from-ref origin/master --to-ref HEAD
 
 ### CI-parity hooks (pre-push)
 
-The `.pre-commit-config.yaml` `local` block carries four hooks that
+The `.pre-commit-config.yaml` `local` block carries hooks that
 mirror CI lint gates so contributors catch cheap mistakes before a
 CI round-trip:
 
 | Hook | Stage | What it checks |
 | --- | --- | --- |
 | `assertion-density` | pre-push | NASA Power-of-10 §5 — every fork-added C function ≥20 lines has ≥1 `assert()`. Backed by `scripts/ci/assertion-density.sh`. |
+| `twin-drift-check` | pre-push | [ADR-1135](../adr/1135-ci-twin-drift-gate.md) — every `.c`/`.cpp` twin side is compiled by some build file (or allowlisted with a reason in `scripts/ci/twin-drift-allowlist.txt`); every source path a `meson.build` / `setup.py` / `*.pyx` names exists. Backed by `scripts/ci/twin-drift-check.sh`; same predicate as the required CI check. |
 | `mypy-local` | pre-push | `mypy ai/ scripts/` — same invocation as the `Python Lint` CI job. Requires `pip install mypy` (system tool, not in `pyproject.toml`). |
 | `semgrep-local` | pre-commit | Project-local rules from `.semgrep.yml` (`--error` exit code on match). Standard rule packs (`p/cert-c-strict`, `p/cwe-top-25`) still run in CI only. |
 | `ffmpeg-patches-apply-check` | pre-push | Replay every patch in `ffmpeg-patches/series.txt` cumulatively with `git am --3way` against a cached FFmpeg `n9.0.1` checkout. Backed by `scripts/ci/ffmpeg-patches-check.sh`. |
-| `ffmpeg-patches-surface-check` | (CI + local) | CLAUDE.md §12 r14 — public-libvmaf-surface change without a matching `ffmpeg-patches/*.patch` update fails the build. Runnable locally via `BASE_SHA=… HEAD_SHA=… PR_BODY=… bash scripts/ci/ffmpeg-patches-surface-check.sh`. Backed by [ADR-0356](../adr/0356-ffmpeg-patches-surface-gate.md). |
+| `ffmpeg-patches-surface-check` | (CI + local) | CLAUDE.md §12 r14 — public-libvmaf-surface change without a matching `ffmpeg-patches/*.patch` update fails the build. Runnable locally via `BASE_SHA=… HEAD_SHA=… PR_BODY=… bash scripts/ci/ffmpeg-patches-surface-check.sh`. Backed by [ADR-0409](../adr/0409-ffmpeg-patches-surface-gate.md). |
 
 Install the pre-push hook (one-time, fresh clones):
 

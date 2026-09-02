@@ -1,0 +1,19 @@
+# Twin-drift gate allowlist — ADR-1135 (scripts/ci/twin-drift-check.sh).
+#
+# One row per KNOWN dead .c/.cpp twin side: a file that is one half of a
+# same-directory .c/.cpp pair and that NO build file (meson.build /
+# setup.py / *.pyx) compiles today.
+#
+# Format:   <repo-relative path>  <reason — mandatory, free text>
+# A row without a reason fails the gate. A row that goes stale — the file is
+# gone, the side is compiled again, or the pair no longer exists — also fails
+# the gate, so remove the row in the same PR that resolves it.
+#
+# Stale *references* (a build file naming a path that does not exist) have
+# no allowlist by design: fix the reference.
+#
+# Tracked as docs/state.md T-TWIN-DEAD-SIDES-2026-09-02.
+
+core/src/model.cpp  ADR-0729 Wave 3 C++23 twin of model.c that #1133 did not wire in: core/src/meson.build still compiles model.c and no test names model.cpp. Wire it in (as a *_cpp23_lib like read_json_model.cpp) or delete it; until then fixes to model.c must be mirrored by hand.
+core/test/test_dict.c  Pre-ADR-0729 C twin of test_dict.cpp (the compiled one, core/test/meson.build). Text-includes "dict.c", which became dict.cpp in the C++23 rewrite, so this file cannot compile at all. Delete in a follow-up.
+core/test/test_feature.c  Pre-ADR-0729 C twin of test_feature.cpp (the compiled one, core/test/meson.build). Text-includes "feature/feature_name.c", which became feature_name.cpp in the C++23 rewrite, so this file cannot compile at all. Delete in a follow-up.

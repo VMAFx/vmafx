@@ -14,7 +14,7 @@ The fork ships eight `pull_request`-triggered workflows:
 | --- | --- |
 | [`docker-image.yml`](../../.github/workflows/docker-image.yml) | Docker image build (advisory). |
 | [`security-scans.yml`](../../.github/workflows/security-scans.yml) | Semgrep / CodeQL / Gitleaks / Dependency Review. |
-| [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy, cppcheck, mypy, registry validate. |
+| [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy, cppcheck, mypy, registry validate, twin-drift gate (ADR-1135). |
 | [`required-aggregator.yml`](../../.github/workflows/required-aggregator.yml) | Single required-check aggregator (ADR-0313). |
 | [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) | FFmpeg + libvmaf build (gcc / clang / SYCL / Vulkan). |
 | [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform / cross-backend libvmaf build matrix. |
@@ -61,6 +61,64 @@ terminal state, and accepts `success`, `skipped`, or `neutral` per
 check. Because the aggregator itself skips on drafts, draft PRs
 display "missing required check" — same situation as item 1 above
 and unmergeable for the same reason.
+
+## Twin-drift gate
+
+`core/` carries same-directory `.c`/`.cpp` twin pairs left by the C++23
+migration ([ADR-0729](../adr/0729-cpp23-wave3-bundle.md)). Twice a fix
+landed on one twin and never reached the other, and twice a rename
+(`mem.c` → `mem.cpp`, `dict.c` → `dict.cpp`) left a stale path in a build
+file that only nightly or opt-in lanes configure.
+[ADR-1135](../adr/1135-ci-twin-drift-gate.md) turns both into a blocking,
+required check — `Twin Drift + Stale Source Refs (ADR-1135)` in
+[`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml),
+backed by
+[`scripts/ci/twin-drift-check.sh`](../../scripts/ci/twin-drift-check.sh).
+
+**The gate fails when either holds:**
+
+1. A same-directory `.c`/`.cpp` pair exists and one side is compiled by
+   **no** build file (`meson.build`, `setup.py`, `*.pyx`) — unless that
+   side is listed in
+   [`scripts/ci/twin-drift-allowlist.txt`](../../scripts/ci/twin-drift-allowlist.txt)
+   **with a reason**.
+2. Any build file names a source path (`.c .cpp .cc .cxx .cu .hip .m .mm
+   .metal .pyx`) that does not exist in the tree.
+
+**How references are resolved:**
+
+| Build-file form | Resolution |
+| --- | --- |
+| `'../src/x.c'`, `'x.c'` | relative to the build file's directory |
+| `src_dir + 'x.c'` | through the `src_dir = './…/'` assignment in the same file |
+| `_m + '_parity.c'` (prefix is not a literal directory) | suffix search over `git ls-files`; reported as `NOTE` |
+| `os.path.join("..", "core", "x.c")` | joined; identifiers resolve through assignments |
+| `output: 'gen.c'`, `'@PLAINNAME@.c'` | skipped — generated files |
+| `/abs/path.c` | skipped — toolchain-provided |
+| `# …` comments | ignored (quote-aware) |
+
+**Clearing a failure:**
+
+- *Stale source reference* — fix the path in the build file. There is no
+  allowlist for this class. If the parser genuinely cannot model a
+  construct, append `# twin-drift-ignore: <reason>` to that line; the
+  reason is mandatory and the line is reported as `NOTE`.
+- *Dead twin side* — wire the side into a build file, delete it, or add a
+  row `path  reason` to the allowlist. Rows without a reason, rows whose
+  file is gone, whose side is compiled again, or whose pair no longer
+  exists fail the gate, so the allowlist cannot rot.
+
+Sides compiled only by test / fuzz build files are printed as `INFO`
+(non-failing): that is the drift-risk shape to keep an eye on when
+touching one of them.
+
+**Local run** (identical to CI, about two seconds, no build needed; also
+wired as a `pre-push` hook):
+
+```bash
+bash scripts/ci/twin-drift-check.sh
+bash scripts/ci/tests/test-twin-drift-check.sh   # 24 fixture cases
+```
 
 ## Bug-status hygiene gate (ADR-0165 / ADR-0334)
 
@@ -160,6 +218,7 @@ formatter / lint / fast-test failures:
 make format-check   # clang-format + black + isort, no writes
 make lint           # clang-tidy + cppcheck + iwyu + ruff + semgrep
 meson test -C build --suite=fast
+bash scripts/ci/twin-drift-check.sh  # .c/.cpp twin drift + stale source refs (ADR-1135)
 pre-commit run --all-files  # if .pre-commit-config.yaml hooks are installed
 ```
 
