@@ -527,3 +527,34 @@ jobs:
           bash scripts/release/tests/test-docker-publish-source-binding.sh
           bash scripts/release/tests/test-publication-environment-binding.sh
           scripts/release/concat-changelog-fragments.sh --check
+
+      - name: One-shot release-please fields must not outlive the first release
+        run: |
+          # ADR-1151. `release-as` and `bootstrap-sha` are one-shot cutover
+          # fields that force the fork's FIRST release onto the 1.0.0 number
+          # line. release-as is a persistent, deprecated override applied AFTER
+          # commit analysis: left in place it pins every subsequent release to
+          # the same version and silently swallows feat/BREAKING bumps.
+          # rollover-changelog-fragments.sh deletes both in the release-merge
+          # PR; this gate makes sure neither comes back afterwards. It is inert
+          # until the manifest reaches 1.0.0, which is exactly when the first
+          # release has landed. Force a later version with a `Release-As:
+          # X.Y.Z` commit footer instead - that form is inherently one-shot.
+          manifest_version="$(jq -er '.["."]' .release-please-manifest.json)"
+          echo "root manifest version: $manifest_version"
+          lowest="$(printf '1.0.0\n%s\n' "$manifest_version" | sort -V | head -n1)"
+          if [[ "$lowest" != "1.0.0" ]]; then
+            echo "::notice::manifest $manifest_version predates the first 1.0.0 release - one-shot fields still allowed"
+            exit 0
+          fi
+          survivors="$(jq -r '[
+            (if has("bootstrap-sha") then "bootstrap-sha" else empty end),
+            (if (.packages["."] | has("release-as")) then "release-as" else empty end)
+          ] | join(", ")' release-please-config.json)"
+          if [[ -n "$survivors" ]]; then
+            echo "::error::one-shot release-please field(s) survive at manifest $manifest_version: $survivors"
+            echo "Remove them from release-please-config.json (see ADR-1151);"
+            echo "use a 'Release-As: X.Y.Z' commit footer to force a version instead."
+            exit 1
+          fi
+          echo "No one-shot release-please cutover fields remain."

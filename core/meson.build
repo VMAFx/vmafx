@@ -16,6 +16,11 @@ project('libvmaf', ['c', 'cpp'],
     # See ADR-0692.
     meson_version: '>= 1.4.0')
 
+# ABI SONAME - deliberately INDEPENDENT of the release-please-owned product
+# version on line 2. libvmaf.so keeps its own 3.x line (libvmaf.so.3) and is
+# hand-bumped only on an ABI break; the fork's first product release resets
+# the tag / pkg-config / Python / Helm / image version to 1.0.0 and does NOT
+# touch this. Do not 'align' the two - see ADR-1151.
 vmaf_soname_version       = '3.0.0'
 vmaf_api_version_array    = vmaf_soname_version.split('.')
 vmaf_api_version_major    = vmaf_api_version_array[0]

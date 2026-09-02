@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1127: Use one independent SemVer release stream
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-1151](1151-vmafx-first-release-1-0-0.md)
 - **Date**: 2026-08-31
 - **Deciders**: Lusoris, Codex (OpenAI)
 - **Tags**: release, semver, automation, docs

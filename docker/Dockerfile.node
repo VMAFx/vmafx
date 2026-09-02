@@ -31,7 +31,11 @@
 # ADR-0717: vmafx-node-ffmpeg-latest (this Dockerfile + version policy)
 # ADR-1129: release-container-runtime-alignment
 
-ARG VMAFX_VERSION=3.2.1 # x-release-please-version
+# Overridden at build time by the publish workflows (--build-arg
+# VMAFX_VERSION=<PUBLISH_TAG>). Kept at `dev` like Dockerfile.operator and
+# Dockerfile.go-server: a baked release number here would be a coordinated
+# version marker nothing in the release path ever reads. See ADR-1151.
+ARG VMAFX_VERSION=dev
 
 # ---------------------------------------------------------------------------
 # Stage 1 — vmaf-builder: compile libvmaf + vmaf CLI from core/

@@ -58,6 +58,39 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Detect a hand-finished release PR frozen for merge
+        id: cut
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # release-please force-recreates `release-please--branches--...` on
+          # every push to master: the branch always carries exactly one commit,
+          # authored fresh by the bot. The documented cut procedure
+          # (docs/development/release.md) has the operator hand-add two commits
+          # to that same branch — `concat --write` and the fragment rollover,
+          # which is also what deletes the one-shot `release-as` /
+          # `bootstrap-sha` fields. Any later merge to master would silently
+          # destroy both. The `autorelease: cut` label freezes the branch: while
+          # it is present the PR-update invocation below is skipped, so the
+          # finished cut survives until the operator merges it. See ADR-1151.
+          prs="$RUNNER_TEMP/open-prs.json"
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" > "$prs"
+          frozen="$(jq -r '
+            [ .[][]
+              | select(.head.ref | startswith("release-please--"))
+              | select([.labels[].name] | index("autorelease: cut"))
+              | .number
+            ] | join(",")
+          ' "$prs")"
+          if [[ -n "$frozen" ]]; then
+            echo "frozen=true" >> "$GITHUB_OUTPUT"
+            echo "numbers=$frozen" >> "$GITHUB_OUTPUT"
+          else
+            echo "frozen=false" >> "$GITHUB_OUTPUT"
+            echo "numbers=" >> "$GITHUB_OUTPUT"
+          fi
+
       # release-please 17.6.0 otherwise tries release creation and next-PR
       # creation in one process. With draft releases (and therefore no tag yet),
       # that second phase can fail on an invalid previous_tag. Split the phases:
@@ -75,6 +108,7 @@ jobs:
       - name: Open or update the release PR
         if: >-
           steps.draft.outputs.exists != 'true' &&
+          steps.cut.outputs.frozen != 'true' &&
           steps.release.outputs.release_created != 'true'
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5.0.0
         with:
@@ -88,6 +122,14 @@ jobs:
         run: |
           echo "Tag: ${{ steps.release.outputs.tag_name }}"
           echo "Version: ${{ steps.release.outputs.version }}"
+
+      - name: Preserve a frozen release PR
+        if: steps.cut.outputs.frozen == 'true'
+        run: |
+          echo "Release PR(s) ${{ steps.cut.outputs.numbers }} carry 'autorelease: cut'."
+          echo "The release branch is frozen so the hand-added changelog-rollover"
+          echo "commits are not force-destroyed. Merge the PR, or drop the label to"
+          echo "let release-please regenerate the branch from scratch."
 
       - name: Preserve the authenticated publication gate
         if: steps.draft.outputs.exists == 'true'

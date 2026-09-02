@@ -2,16 +2,20 @@
 // SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 
 // Package version exposes the VMAFX module version string.
-// The value is set to the contents of the repo-root VERSION file at build
-// time via -ldflags; if that mechanism is not used the fallback "dev" string
-// is returned so that `go test ./...` and `go vet ./...` work without any
-// special build flags.
+//
+// There is no repo-root VERSION file. The release-owned product version lives
+// in .release-please-manifest.json and the coordinated x-release-please-version
+// markers (ADR-1151); the publish workflows pass the published tag down as the
+// VMAFX_VERSION build argument, and the Go image stages turn it into
+// -ldflags "-X github.com/VMAFx/vmafx/pkg/version.version=${VMAFX_VERSION}".
+// Without that override the fallback "dev" string is returned, so
+// `go test ./...` and `go vet ./...` work with no special build flags.
 package version
 
 import "runtime/debug"
 
 // version is the build-time injected version string.
-// Override with: go build -ldflags "-X github.com/VMAFx/vmafx/pkg/version.version=v3.x.y"
+// Override with: go build -ldflags "-X github.com/VMAFx/vmafx/pkg/version.version=v1.x.y"
 var version = "dev"
 
 // Version returns the VMAFX release version string.

@@ -195,10 +195,18 @@ if [[ "$(grep -Ec "^## \\[${escaped_version}\\] - ${release_date}$" "$tmp_change
   exit 1
 fi
 
-jq 'del(."bootstrap-sha", .packages["."]."release-as")' "$CONFIG" >"$tmp_config"
+# The two `_comment_*` keys document the one-shot fields (ADR-1151); they go
+# with them, otherwise the config keeps an explanation of a field it no longer
+# has. release-please ignores unknown top-level keys, so their presence before
+# the cut is inert.
+jq 'del(."bootstrap-sha", ."_comment_bootstrap_sha",
+        .packages["."]."release-as", .packages["."]."_comment_release_as")' \
+  "$CONFIG" >"$tmp_config"
 if ! jq -e '
   (has("bootstrap-sha") | not) and
-  (.packages["."] | has("release-as") | not)
+  (has("_comment_bootstrap_sha") | not) and
+  (.packages["."] | has("release-as") | not) and
+  (.packages["."] | has("_comment_release_as") | not)
 ' "$tmp_config" >/dev/null; then
   printf 'ERROR: failed to retire one-time release-please fields\n' >&2
   exit 1

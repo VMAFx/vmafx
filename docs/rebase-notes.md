@@ -47601,3 +47601,27 @@ Rebase-sensitive points:
   constants and therefore no bracket. The registry symbols keep the cited
   `NOLINTNEXTLINE(misc-use-internal-linkage)`. `flush()` carries a cited
   `cppcheck-suppress constParameterCallback`.
+
+## fix/release-please-setup — 1.0.0 release line + pipeline repair (2026-09-03)
+
+- `core/meson.build` — **rebase-sensitive**, one comment block. Five comment
+  lines were added directly above `vmaf_soname_version = '3.0.0'` recording
+  that the ABI SONAME is deliberately independent of the release-please-owned
+  product version on line 2, is hand-bumped only on an ABI break, and is NOT
+  reset by the fork's 1.0.0 first release (ADR-1151). Upstream has no such
+  comment, so a sync that rewrites the region around `vmaf_soname_version`
+  will conflict here. Keep the comment; the value itself (`'3.0.0'`) is
+  upstream's and should follow upstream on a bump.
+- `core/meson.build` line 2 — `version : '3.2.1', # x-release-please-version`
+  is a coordinated release marker owned by release-please, not by upstream.
+  Whatever an upstream sync brings, the fork's value wins and the trailing
+  `# x-release-please-version` marker must survive verbatim: it is the anchor
+  the generic updater rewrites, and `scripts/release/verify-release-version.sh`
+  requires exactly one such marker per listed file.
+- Everything else in this change is fork-only release tooling with no upstream
+  counterpart: `release-please-config.json`, `.release-please-manifest.json`,
+  `.github/workflows/{release-please,supply-chain,docker-publish-*,
+  required-aggregator,rule-enforcement}.yml`, `.github/ci-impact.json`,
+  `scripts/release/`, `docker/Dockerfile.node`, `deploy/helm/`,
+  `bindings/rust/*/Cargo.toml`, `core/src/feature/rust/tad/Cargo.toml`,
+  `pkg/version/version.go`, and the docs. No rebase impact.
