@@ -22,12 +22,6 @@ on:
     # `testdata/**`, `model/**` (binaries), and `.github/workflows/`
     # all still fire the gates because the corresponding test jobs
     # consume them as inputs.
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - 'changelog.d/**'
-      - 'CHANGELOG.md'
-      - '.workingdir2/**'
   workflow_dispatch:
 
 permissions:
@@ -52,9 +46,26 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          fetch-depth: 0
           submodules: recursive
 
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — Netflix CPU Golden Tests skipped by plan
+        if: steps.impact.outputs.golden_harness != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::golden_harness not impacted (mode=$MODE reason=$REASON) — Netflix CPU Golden Tests satisfied without running (ADR-1140)"
       - name: Install build deps
+        if: steps.impact.outputs.golden_harness == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build nasm pkg-config \
@@ -66,6 +77,7 @@ jobs:
           python3 -m pip install --user -r python/requirements.txt pytest pytest-timeout
 
       - name: Build (CPU, release)
+        if: steps.impact.outputs.golden_harness == 'true'
         # Build inside core/ so the CLI lands at core/build/tools/vmaf
         # — python/vmaf/__init__.py hardcodes that relative path when no
         # external vmaf binary is configured via vmaf_path() / vmafexec_path().
@@ -76,6 +88,7 @@ jobs:
           meson compile -C build
 
       - name: Cache Netflix vmaf_resource fixtures
+        if: steps.impact.outputs.golden_harness == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           # Cache the entire python/test/resource tree — pytest's
@@ -91,6 +104,7 @@ jobs:
             vmaf-fixtures-resource-
 
       - name: Run Netflix golden normal pair
+        if: steps.impact.outputs.golden_harness == 'true'
         env:
           PYTHONPATH: ${{ github.workspace }}/python
         timeout-minutes: 22
@@ -106,6 +120,7 @@ jobs:
             -v --tb=short --timeout=1260 --timeout-method=signal
 
       - name: Run Netflix golden checkerboard pairs
+        if: steps.impact.outputs.golden_harness == 'true'
         env:
           PYTHONPATH: ${{ github.workspace }}/python
         timeout-minutes: 20
@@ -166,7 +181,25 @@ jobs:
         sanitizer: [address, undefined, thread]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — Sanitizers skipped by plan
+        if: steps.impact.outputs.c_core != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — Sanitizers satisfied without running (ADR-1140)"
       - name: Install deps
+        if: steps.impact.outputs.c_core == 'true'
         run: |
           sudo apt-get update
           # lld-22 keeps the linker in the same LLVM major as the
@@ -191,6 +224,7 @@ jobs:
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --quiet meson
       - name: Build with ${{ matrix.sanitizer }} sanitizer
+        if: steps.impact.outputs.c_core == 'true'
         # ADR-0347: under UBSan, suppress the `function` check via
         # `-fno-sanitize=function`. The pre-existing K&R-prototype
         # `static char *test_X()` pattern across ~50 minunit-style
@@ -216,6 +250,7 @@ jobs:
             -Db_lto=false -Db_lundef=false "${EXTRA_ARGS[@]}"
           meson compile -C build
       - name: Run unit tests under sanitizer
+        if: steps.impact.outputs.c_core == 'true'
         # ADR-0347: replace the previous `--suite=unit` invocation
         # (which matched zero tests because no `test()` call in
         # `core/test/meson.build` carries a `suite: 'unit'` tag).
@@ -312,7 +347,25 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — Tiny AI skipped by plan
+        if: steps.impact.outputs.tiny_ai != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::tiny_ai not impacted (mode=$MODE reason=$REASON) — Tiny AI satisfied without running (ADR-1140)"
       - name: Install build deps
+        if: steps.impact.outputs.tiny_ai == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build nasm pkg-config \
@@ -321,6 +374,7 @@ jobs:
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --quiet meson
       - name: Install ONNX Runtime (CPU)
+        if: steps.impact.outputs.tiny_ai == 'true'
         env:
           # Pinned to 1.22.0. MS stopped publishing Linux tgz artifacts
           # for patch releases (1.22.1, 1.22.2 are NuGet-only on the
@@ -353,15 +407,18 @@ jobs:
           echo "/opt/onnxruntime/lib" | sudo tee /etc/ld.so.conf.d/onnxruntime.conf
           sudo ldconfig
       - name: Build libvmaf (dnn enabled)
+        if: steps.impact.outputs.tiny_ai == 'true'
         working-directory: core
         run: |
           meson setup build -Denable_cuda=false -Denable_sycl=false \
             -Denable_dnn=enabled --buildtype=release
           meson compile -C build
       - name: Run meson dnn suite
+        if: steps.impact.outputs.tiny_ai == 'true'
         working-directory: core
         run: meson test -C build --suite=dnn --print-errorlogs
       - name: Set up Python + install vmaf-train
+        if: steps.impact.outputs.tiny_ai == 'true'
         run: |
           python3 -m venv /tmp/vmaf-train-venv
           /tmp/vmaf-train-venv/bin/pip install --upgrade pip
@@ -370,12 +427,14 @@ jobs:
           /tmp/vmaf-train-venv/bin/pip install pytest pytest-timeout
           /tmp/vmaf-train-venv/bin/pip install -e ai
       - name: Run ai/ pytests
+        if: steps.impact.outputs.tiny_ai == 'true'
         run: /tmp/vmaf-train-venv/bin/pytest ai/tests/ -v --timeout=60 --timeout-method=signal
 
       # ADR-0174 / T5-3b: enforce that every quantised model in the
       # registry stays inside its per-model PLCC drop budget. Skips
       # entries whose `quant_mode == "fp32"` (nothing to gate).
       - name: Run ai-quant-accuracy gate
+        if: steps.impact.outputs.tiny_ai == 'true'
         run: |
           /tmp/vmaf-train-venv/bin/pip install onnx onnxruntime numpy
           /tmp/vmaf-train-venv/bin/python ai/scripts/measure_quant_drop.py --all
@@ -490,7 +549,25 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — Coverage Gate skipped by plan
+        if: steps.impact.outputs.golden_harness != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::golden_harness not impacted (mode=$MODE reason=$REASON) — Coverage Gate satisfied without running (ADR-1140)"
       - name: Install deps
+        if: steps.impact.outputs.golden_harness == 'true'
         run: |
           # The hosted runner ships pre-provisioned Microsoft/Azure apt
           # sources (packages.microsoft.com) that intermittently 403 /
@@ -521,12 +598,14 @@ jobs:
       # Gate p50 = 13.32 min, the ORT download contributes ~30–60 s of
       # that on a cold runner).
       - name: Cache ONNX Runtime tarball
+        if: steps.impact.outputs.golden_harness == 'true'
         id: cache-ort
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: /tmp/ort-cache
           key: ort-tarball-linux-x64-gpu-1.22.0
       - name: Install ONNX Runtime (GPU build, CPU + CUDA EPs)
+        if: steps.impact.outputs.golden_harness == 'true'
         # The GPU .tgz bundles CPU + CUDA + TensorRT execution providers in
         # one package. We install it (instead of the smaller CPU-only build)
         # so the coverage gate can also exercise the CUDA EP-attach success
@@ -571,6 +650,7 @@ jobs:
           echo "/opt/onnxruntime/lib" | sudo tee /etc/ld.so.conf.d/onnxruntime.conf
           sudo ldconfig
       - name: Build with gcov instrumentation
+        if: steps.impact.outputs.golden_harness == 'true'
         # Build inside core/ so python/vmaf/__init__.py finds the CLI at
         # core/build-coverage/tools/vmaf (it hardcodes that relative path).
         working-directory: core
@@ -597,9 +677,11 @@ jobs:
             -Dcpp_args=-fprofile-update=atomic
           ninja -C build-coverage
       - name: Run meson unit suite (with gcov counters)
+        if: steps.impact.outputs.golden_harness == 'true'
         working-directory: core
         run: meson test -C build-coverage --print-errorlogs --num-processes 1
       - name: Run full Python test suite (instrumented libvmaf.so + vmaf CLI)
+        if: steps.impact.outputs.golden_harness == 'true'
         env:
           PYTHONPATH: ${{ github.workspace }}/python
           LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage/src
@@ -639,6 +721,7 @@ jobs:
             --ignore=python/test/cambi_test.py \
             --deselect python/test/command_line_test.py::CommandLineTest || true
       - name: Gather coverage report (gcovr)
+        if: steps.impact.outputs.golden_harness == 'true'
         working-directory: core
         run: |
           # gcovr deduplicates .gcno files belonging to the same source
@@ -669,6 +752,7 @@ jobs:
           echo "----- Per-file summary -----"
           cat build-coverage/coverage.txt
       - name: Enforce coverage thresholds
+        if: steps.impact.outputs.golden_harness == 'true'
         run: |
           # docs/principles.md §3 targets: 70% overall, 85% critical (dnn/,
           # opt.c, read_json_model.c). Applies to upstream + fork-added code:
@@ -686,7 +770,7 @@ jobs:
           #          targeted tests land for those paths.
           scripts/ci/coverage-check.sh core/build-coverage/coverage.json 37 85
       - name: Upload coverage artifact
-        if: always()
+        if: ${{ (always()) && steps.impact.outputs.golden_harness == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: coverage-cpu
@@ -835,5 +919,23 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — Assertion Density skipped by plan
+        if: steps.impact.outputs.c_core != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — Assertion Density satisfied without running (ADR-1140)"
       - name: Run assertion density scanner
+        if: steps.impact.outputs.c_core == 'true'
         run: bash scripts/ci/assertion-density.sh

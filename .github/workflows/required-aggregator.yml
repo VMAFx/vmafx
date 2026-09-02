@@ -1,5 +1,7 @@
 name: CI
 
+# ADR-1140 — required contexts now ALWAYS start and route their own work through
+# scripts/ci/plan-ci-impact.py; the absent-means-pass rule below is only a backstop.
 # ADR-0313 — Permanent fix for the doc/Python-only-PR vs C-build-required-checks
 # structural deadlock. This single workflow runs on every PR (no path filter)
 # and verifies that each named required check on the head SHA reported either

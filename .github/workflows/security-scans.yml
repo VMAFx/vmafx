@@ -105,12 +105,31 @@ jobs:
       security-events: write   # codeql-action/analyze uploads SARIF
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — CodeQL (C/C++) skipped by plan
+        if: steps.impact.outputs.c_core != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — CodeQL (C/C++) satisfied without running (ADR-1140)"
       - uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
+        if: steps.impact.outputs.c_core == 'true'
         with:
           languages: cpp
           queries: security-and-quality
           config-file: ./.github/codeql-config.yml
       - name: Build
+        if: steps.impact.outputs.c_core == 'true'
         working-directory: core
         run: |
           sudo apt-get update
@@ -121,6 +140,7 @@ jobs:
           meson setup build -Denable_cuda=false -Denable_sycl=false
           meson compile -C build
       - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
+        if: steps.impact.outputs.c_core == 'true'
         with:
           category: "/language:cpp"
 
@@ -134,12 +154,31 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — CodeQL (Python) skipped by plan
+        if: steps.impact.outputs.python_lint != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::python_lint not impacted (mode=$MODE reason=$REASON) — CodeQL (Python) satisfied without running (ADR-1140)"
       - uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
+        if: steps.impact.outputs.python_lint == 'true'
         with:
           languages: python
           queries: security-and-quality
           config-file: ./.github/codeql-config.yml
       - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
+        if: steps.impact.outputs.python_lint == 'true'
         with:
           category: "/language:python"
 
@@ -157,12 +196,31 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — CodeQL (Actions) skipped by plan
+        if: steps.impact.outputs.actions != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::actions not impacted (mode=$MODE reason=$REASON) — CodeQL (Actions) satisfied without running (ADR-1140)"
       - uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
+        if: steps.impact.outputs.actions == 'true'
         with:
           languages: actions
           queries: security-and-quality
           config-file: ./.github/codeql-config.yml
       - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
+        if: steps.impact.outputs.actions == 'true'
         with:
           category: "/language:actions"
 

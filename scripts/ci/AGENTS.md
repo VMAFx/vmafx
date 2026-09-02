@@ -217,3 +217,17 @@ the autoupdate heuristic has a known sort-order bug on repos that
 land point releases out of branch order (it suggested a
 `gitleaks v8.30.1 → v8.30.0` downgrade during the ADR-0893 audit).
 Alpha pre-releases (`X.Y.Za<N>`) are never an acceptable pin.
+
+## CI impact planner (ADR-1140)
+
+- `plan-ci-impact.py` + `.github/ci-impact.json` decide which surfaces a change
+  touches; every required job runs it first and gates heavy steps on the
+  selectors. It is **fail-closed**: unknown top-level paths, non-additive
+  statuses (delete/rename/copy), CI-authority files (this directory included),
+  missing merge-base, non-linear pushes and over-large diffs all yield
+  `mode=full`.
+- Any file under `scripts/ci/` is a CI-authority input: changing one forces
+  `full` mode for that PR by design.
+- `tests/test_ci_impact.py` (stdlib `unittest`) pins the map ↔ tree contract and
+  the no-path-filter invariant on required-context workflows. Run it after
+  adding a top-level directory or a required check.

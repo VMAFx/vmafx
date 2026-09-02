@@ -1413,3 +1413,5 @@ void adm_buffer_copy(const void *src, void *dst, int linewidth, int h, int src_s
         dst_p += dst_stride;
     }
 }
+
+/* planner probe */

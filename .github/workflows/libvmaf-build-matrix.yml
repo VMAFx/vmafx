@@ -17,12 +17,6 @@ on:
     # listed here (core/, meson.build, meson_options.txt,
     # subprojects/, python/, ai/, mcp-server/, model/, testdata/,
     # .github/workflows/, ...) still fires the matrix.
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - 'changelog.d/**'
-      - 'CHANGELOG.md'
-      - '.workingdir2/**'
   workflow_dispatch:
 
 permissions:
@@ -211,6 +205,8 @@ jobs:
       CXX: ${{ matrix.CXX }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
 
       # ---------- ccache persistence (Research-0089 §3.1) ----------
       # Linux + macOS build legs all wrap their host compiler in `ccache`
@@ -229,8 +225,23 @@ jobs:
       # https://github.com/actions/cache (accessed 2026-05-09) and
       # https://github.com/actions/cache/blob/main/examples.md (same date)
       # — "C++ - ccache" example.
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — libvmaf build leg skipped by plan
+        if: steps.impact.outputs.c_core != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — libvmaf build leg satisfied without running (ADR-1140)"
       - name: Restore ccache (Linux + macOS)
-        if: startsWith(matrix.CC, 'ccache ')
+        if: ${{ (startsWith(matrix.CC, 'ccache ')) && steps.impact.outputs.c_core == 'true' }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ~/.ccache
@@ -244,17 +255,19 @@ jobs:
             ccache-v2-${{ matrix.os }}-
 
       - name: Setup python
+        if: steps.impact.outputs.c_core == 'true'
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: 3.14.7
 
       - name: Install meson and ninja
+        if: steps.impact.outputs.c_core == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install meson
 
       - name: Install dependencies (ubuntu)
-        if: startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.i686 && !matrix.hip
+        if: ${{ (startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.i686 && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install ccache ninja-build nasm libomp-dev pkg-config
@@ -279,7 +292,7 @@ jobs:
           esac
 
       - name: Install dependencies (ubuntu i686)
-        if: matrix.i686
+        if: ${{ (matrix.i686) && steps.impact.outputs.c_core == 'true' }}
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
@@ -287,12 +300,12 @@ jobs:
             gcc g++ gcc-multilib g++-multilib
 
       - name: Install dependencies (mac)
-        if: matrix.os == 'macos-latest'
+        if: ${{ (matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
         run: |
           brew install -q ninja nasm ccache llvm pkg-config
 
       - name: Install Metal compiler toolchain
-        if: contains(matrix.meson_extra, 'enable_metal=enabled')
+        if: ${{ (contains(matrix.meson_extra, 'enable_metal=enabled')) && steps.impact.outputs.c_core == 'true' }}
         run: xcodebuild -downloadComponent MetalToolchain
 
       # ---------- ONNX Runtime (DNN legs only) ----------
@@ -300,7 +313,7 @@ jobs:
       # tests-and-quality-gates.yml so DNN-on builds across compilers /
       # OSes share the same pinned ORT version. See ADR-0120.
       - name: Install ONNX Runtime (linux, DNN leg)
-        if: matrix.dnn && startsWith(matrix.os, 'ubuntu')
+        if: ${{ (matrix.dnn && startsWith(matrix.os, 'ubuntu')) && steps.impact.outputs.c_core == 'true' }}
         env:
           ORT_VERSION: "1.22.0"
         run: |
@@ -326,7 +339,7 @@ jobs:
           sudo ldconfig
 
       - name: Install ONNX Runtime (macos, DNN leg)
-        if: matrix.dnn && matrix.os == 'macos-latest'
+        if: ${{ (matrix.dnn && matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
         run: |
           # Homebrew ships onnxruntime as a keg-only formula with its own
           # libonnxruntime.pc. Make pkg-config see it. Note: neither the
@@ -346,7 +359,7 @@ jobs:
       # 2025.0 was an ABI-breaking release, so pin to the 2025.3 minor meta
       # package rather than the unversioned 'latest' to avoid silent bumps.
       - name: Install Intel oneAPI
-        if: matrix.sycl
+        if: ${{ (matrix.sycl) && steps.impact.outputs.c_core == 'true' }}
         # Override the matrix-level CC=icx / CXX=icpx for *this* step only:
         # the Level Zero loader is plain C and we don't have icx on PATH yet
         # at this point in the same step (apt installs it below, then the
@@ -389,7 +402,7 @@ jobs:
       # (Maxwell/Pascal/Volta); meson.build guards the sm_50 gencode with a
       # `<13` version check. Minimum driver for 13.x is >= 580.
       - name: Install CUDA toolkit
-        if: matrix.cuda
+        if: ${{ (matrix.cuda) && steps.impact.outputs.c_core == 'true' }}
         uses: Jimver/cuda-toolkit@b8bf9c6c28f8a92fbb04dcfcaee872e60c57462d  # v0.2.36
         with:
           cuda: '13.2.0'
@@ -397,13 +410,13 @@ jobs:
           sub-packages: '["nvcc", "cudart-dev"]'
 
       - name: Install nv-codec-headers
-        if: matrix.cuda
+        if: ${{ (matrix.cuda) && steps.impact.outputs.c_core == 'true' }}
         run: |
           git clone --depth=1 https://code.ffmpeg.org/FFmpeg/nv-codec-headers
           cd nv-codec-headers && sudo make install && cd .. && rm -rf nv-codec-headers
 
       - name: Install base deps for CUDA-only builds
-        if: matrix.cuda && !matrix.sycl
+        if: ${{ (matrix.cuda && !matrix.sycl) && steps.impact.outputs.c_core == 'true' }}
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install ccache ninja-build nasm gcc g++
@@ -423,7 +436,7 @@ jobs:
       # Acceptable because HIP is opt-in (`-Denable_hip=true`) and the
       # lane runs only when its matrix row is selected.
       - name: Install ROCm / HIP runtime
-        if: matrix.hip
+        if: ${{ (matrix.hip) && steps.impact.outputs.c_core == 'true' }}
         env:
           ROCM_VERSION: "7.2.3"
         run: |
@@ -461,7 +474,7 @@ jobs:
       # https://ccache.dev/manual/latest.html#_configuration (accessed
       # 2026-05-09) for `max_size` semantics.
       - name: Configure ccache
-        if: startsWith(matrix.CC, 'ccache ')
+        if: ${{ (startsWith(matrix.CC, 'ccache ')) && steps.impact.outputs.c_core == 'true' }}
         run: |
           mkdir -p ~/.ccache
           ccache --max-size=400M
@@ -469,6 +482,7 @@ jobs:
 
       # ---------- Build ----------
       - name: Configure libvmaf
+        if: steps.impact.outputs.c_core == 'true'
         run: |
           # SYCL build needs setvars.sh on PATH/LD_LIBRARY_PATH so meson
           # can probe libsycl + level-zero headers via icpx -fsycl. CPU
@@ -482,6 +496,7 @@ jobs:
             ${{ matrix.meson_extra }}
 
       - name: Build libvmaf
+        if: steps.impact.outputs.c_core == 'true'
         run: |
           if [ "${{ matrix.sycl }}" = "true" ]; then
             source /opt/intel/oneapi/setvars.sh
@@ -494,12 +509,12 @@ jobs:
       # whether the build succeeds or fails (always()) so a failed
       # build still reports whether ccache was warming up.
       - name: Report ccache statistics
-        if: always() && startsWith(matrix.CC, 'ccache ')
+        if: ${{ (always() && startsWith(matrix.CC, 'ccache ')) && steps.impact.outputs.c_core == 'true' }}
         run: ccache -s
 
       # Verify pkgconfig for static linking
       - name: Verify static pkgconfig
-        if: contains(matrix.meson_extra, 'static')
+        if: ${{ (contains(matrix.meson_extra, 'static')) && steps.impact.outputs.c_core == 'true' }}
         run: |
           export PKG_CONFIG_PATH=$PWD/install/lib/pkgconfig:$PWD/install/lib/x86_64-linux-gnu/pkgconfig
           echo "=== libvmaf.pc ==="
@@ -516,7 +531,7 @@ jobs:
       # run below also exercises dnn via `ninja test`; this step exists
       # for log isolation only.
       - name: Run meson dnn suite (DNN leg)
-        if: matrix.dnn
+        if: ${{ (matrix.dnn) && steps.impact.outputs.c_core == 'true' }}
         # `sudo $(which meson)` resolves the meson absolute path before
         # sudo strips PATH — pip-installed meson lives under the runner
         # user's $HOME so a bare `sudo meson` reports "command not found".
@@ -529,7 +544,7 @@ jobs:
       # whether the host can actually run them; the build itself is
       # what Netflix#1481 needs to pin).
       - name: Run tests
-        if: "!matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686"
+        if: ${{ (!matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) && steps.impact.outputs.c_core == 'true' }}
         run: sudo ninja -vC core/build test
 
       # ---------- SSH debug session (macOS × workflow_dispatch only) ----------
@@ -548,7 +563,7 @@ jobs:
       # SHA corresponds to mxschmitt/action-tmate v3.24.
       # See docs/development/ci-tmate-debug.md for usage.
       - name: SSH debug session on test failure
-        if: ${{ failure() && runner.os == 'macOS' && github.event_name == 'workflow_dispatch' }}
+        if: ${{ (failure() && runner.os == 'macOS' && github.event_name == 'workflow_dispatch') && steps.impact.outputs.c_core == 'true' }}
         uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113  # v3.24
         with:
           limit-access-to-actor: true
@@ -562,7 +577,7 @@ jobs:
         # Insulates the tox lanes from the recurring HTTP-502s on
         # raw.githubusercontent.com when fetching python/test/resource/
         # fixtures via download_reactively (compat/python-vmaf/config.py).
-        if: "(startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) || matrix.os == 'macos-latest'"
+        if: ${{ ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: python/test/resource
@@ -572,14 +587,14 @@ jobs:
             vmaf-fixtures-resource-
 
       - name: Run tox tests (ubuntu)
-        if: "startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686"
+        if: ${{ (startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) && steps.impact.outputs.c_core == 'true' }}
         run: |
           mkdir -p ~/.ccache && sudo chown -R $(whoami) ~/.ccache
           pip install tox
           tox -c python
 
       - name: Run tox tests (mac)
-        if: matrix.os == 'macos-latest'
+        if: ${{ (matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
         run: |
           mkdir -p ~/.ccache && sudo chown -R $(whoami) ~/.ccache
           pip install tox
@@ -590,7 +605,7 @@ jobs:
 
       # GPU builds: run tests that don't need hardware
       - name: Run CPU-only tests (GPU build)
-        if: matrix.sycl || matrix.cuda
+        if: ${{ (matrix.sycl || matrix.cuda) && steps.impact.outputs.c_core == 'true' }}
         run: |
           cd core/build
           for t in test_dict test_ref test_log test_thread_pool test_cpu \
@@ -606,14 +621,14 @@ jobs:
       # per ADR-0212). Skips kernel-launch tests entirely; the GHA
       # runner has no AMD GPU.
       - name: Run HIP smoke test (no GPU)
-        if: matrix.hip
+        if: ${{ (matrix.hip) && steps.impact.outputs.c_core == 'true' }}
         run: |
           cd core/build
           ./test/test_hip_smoke
 
       # ---------- Artifacts ----------
       - name: Upload vmaf binary
-        if: "!contains(matrix.meson_extra, 'static')"
+        if: ${{ (!contains(matrix.meson_extra, 'static')) && steps.impact.outputs.c_core == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: ${{ matrix.name }}-vmaf

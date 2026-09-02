@@ -1,0 +1,249 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "max_diff_bytes": 524288,
+    "max_paths": 2048
+  },
+  "known_prefixes": [
+    ".claude/",
+    ".devcontainer/",
+    ".github/",
+    ".vscode/",
+    ".workingdir2/",
+    ".zed/",
+    "LICENSES/",
+    "ai/",
+    "api/",
+    "bindings/",
+    "build-aux/",
+    "build_artifacts/",
+    "changelog.d/",
+    "cmd/",
+    "compat/",
+    "config/",
+    "core/",
+    "deploy/",
+    "dev-llm/",
+    "dev/",
+    "docker/",
+    "docs/",
+    "ffmpeg-patches/",
+    "gen/",
+    "internal/",
+    "mcp-server/",
+    "model/",
+    "pkg/",
+    "proto/",
+    "python/",
+    "resource/",
+    "scripts/",
+    "test/",
+    "testdata/",
+    "tools/"
+  ],
+  "known_files": [
+    ".clang-format",
+    ".clang-tidy",
+    ".codespellrc",
+    ".cppcheck-suppressions.txt",
+    ".dockerignore",
+    ".editorconfig",
+    ".git-blame-ignore-revs",
+    ".gitattributes",
+    ".gitignore",
+    ".gitleaks.toml",
+    ".iwyu.imp",
+    ".markdownlint.json",
+    ".pre-commit-config.yaml",
+    ".release-please-manifest.json",
+    ".semgrep.yml",
+    ".semgrepignore",
+    "AGENTS.md",
+    "CHANGELOG.md",
+    "CLAUDE.md",
+    "CODE_OF_CONDUCT.md",
+    "CONTRIBUTING.md",
+    "Cargo.lock",
+    "Cargo.toml",
+    "Dockerfile",
+    "Dockerfile.ffmpeg",
+    "Dockerfile.go-server",
+    "GOVERNANCE.md",
+    "LICENSE",
+    "LICENSE-MIT",
+    "MAINTAINERS.md",
+    "Makefile",
+    "OSSMETADATA",
+    "README.md",
+    "SECURITY.md",
+    "SUPPORT.md",
+    "buf.gen.yaml",
+    "deny.toml",
+    "go.mod",
+    "go.sum",
+    "mkdocs.yml",
+    "noxfile.py",
+    "pyproject.toml",
+    "release-please-config.json",
+    "renovate.json"
+  ],
+  "full_patterns": [
+    ".github/ci-impact.json",
+    ".github/workflows/required-aggregator.yml",
+    ".github/workflows/lint-and-format.yml",
+    ".github/workflows/security-scans.yml",
+    ".github/workflows/tests-and-quality-gates.yml",
+    ".github/workflows/libvmaf-build-matrix.yml",
+    ".github/workflows/sanitizers.yml",
+    ".github/workflows/docs.yml",
+    ".pre-commit-config.yaml",
+    ".clang-tidy",
+    ".cppcheck-suppressions.txt",
+    ".semgrep.yml",
+    "Makefile",
+    "scripts/ci/*",
+    "scripts/ci/**",
+    "build-aux/*",
+    "build-aux/**"
+  ],
+  "selectors": {
+    "c_core": {
+      "patterns": [
+        "core/*",
+        "core/**",
+        "ffmpeg-patches/*",
+        "ffmpeg-patches/**",
+        "model/*",
+        "model/**",
+        "testdata/*",
+        "testdata/**",
+        "python/test/resource/*",
+        "python/test/resource/**",
+        ".clang-format",
+        ".iwyu.imp"
+      ]
+    },
+    "python": {
+      "patterns": [
+        "python/*",
+        "python/**",
+        "compat/*",
+        "compat/**",
+        "mcp-server/*",
+        "mcp-server/**",
+        "tools/*",
+        "tools/**",
+        "dev-llm/*",
+        "dev-llm/**",
+        "scripts/*.py",
+        "scripts/**/*.py",
+        "pyproject.toml",
+        "noxfile.py"
+      ]
+    },
+    "ai": {
+      "patterns": [
+        "ai/*",
+        "ai/**",
+        "model/*",
+        "model/**"
+      ]
+    },
+    "go": {
+      "patterns": [
+        "cmd/*",
+        "cmd/**",
+        "pkg/*",
+        "pkg/**",
+        "internal/*",
+        "internal/**",
+        "api/*",
+        "api/**",
+        "proto/*",
+        "proto/**",
+        "gen/*",
+        "gen/**",
+        "go.mod",
+        "go.sum",
+        "buf.gen.yaml",
+        "*.go",
+        "**/*.go"
+      ]
+    },
+    "rust": {
+      "patterns": [
+        "bindings/*",
+        "bindings/**",
+        "core/src/feature/rust/*",
+        "core/src/feature/rust/**",
+        "Cargo.toml",
+        "Cargo.lock",
+        "deny.toml"
+      ]
+    },
+    "docs": {
+      "patterns": [
+        "docs/*",
+        "docs/**",
+        "mkdocs.yml",
+        "*.md",
+        "**/*.md",
+        "changelog.d/*",
+        "changelog.d/**",
+        "LICENSES/*",
+        "LICENSES/**",
+        ".markdownlint.json",
+        ".codespellrc"
+      ]
+    },
+    "shell": {
+      "patterns": [
+        "*.sh",
+        "**/*.sh"
+      ]
+    },
+    "actions": {
+      "patterns": [
+        ".github/*",
+        ".github/**"
+      ]
+    },
+    "container": {
+      "patterns": [
+        "Dockerfile",
+        "Dockerfile.*",
+        ".dockerignore",
+        "dev/*",
+        "dev/**",
+        "docker/*",
+        "docker/**",
+        "deploy/*",
+        "deploy/**",
+        ".devcontainer/*",
+        ".devcontainer/**"
+      ]
+    },
+    "golden_harness": {
+      "inherits": [
+        "c_core",
+        "python"
+      ],
+      "patterns": []
+    },
+    "tiny_ai": {
+      "inherits": [
+        "c_core",
+        "ai",
+        "python"
+      ],
+      "patterns": []
+    },
+    "python_lint": {
+      "inherits": [
+        "python",
+        "ai"
+      ],
+      "patterns": []
+    }
+  }
+}
