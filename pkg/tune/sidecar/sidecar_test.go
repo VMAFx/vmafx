@@ -365,6 +365,37 @@ func TestLoadFallsBackToColdStart(t *testing.T) {
 			"truncated weights",
 			mutate(func(s map[string]any) { s["weights"] = []float64{1, 2, 3} }), true,
 		},
+		// A NaN capture leaves null entries behind (Save maps NaN to null);
+		// CPython's from_dict fails float(None) on them and cold-starts, so
+		// Load must not read them as 0.0.
+		{
+			"null weight entry",
+			mutate(func(s map[string]any) {
+				weights := make([]any, FeatureDim)
+				for i := range weights {
+					weights[i] = 0.5
+				}
+				weights[3] = nil
+				s["weights"] = weights
+			}), true,
+		},
+		{
+			"null a_inv entry",
+			mutate(func(s map[string]any) {
+				rows := make([]any, FeatureDim)
+				for i := range rows {
+					row := make([]any, FeatureDim)
+					for j := range row {
+						row[j] = 0.0
+					}
+					if i == 2 {
+						row[5] = nil
+					}
+					rows[i] = row
+				}
+				s["a_inv"] = rows
+			}), true,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

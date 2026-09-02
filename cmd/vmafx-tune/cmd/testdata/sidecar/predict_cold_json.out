@@ -1,0 +1,9 @@
+{
+  "base_vmaf": 96.72695148356705,
+  "codec": "libx264",
+  "correction": 0.0,
+  "crf": 26,
+  "n_updates": 0,
+  "schema": "vmaf-tune-sidecar-predict/v1",
+  "sidecar_vmaf": 96.72695148356705
+}

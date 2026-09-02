@@ -1,0 +1,14 @@
+{
+  "base_vmaf": 96.72695148356705,
+  "codec": "libx264",
+  "crf": 26,
+  "host_uuid": "0123456789abcdef0123456789abcdef",
+  "n_updates": 1,
+  "observed_vmaf": 91.75,
+  "predictor_version": "predictor_v1",
+  "recent_residual_rms": 4.976951483567049,
+  "residual": -4.976951483567049,
+  "schema": "vmaf-tune-sidecar-record/v1",
+  "schema_version": 1,
+  "state_path": "cache/predictor_v1/libx264/state.json"
+}

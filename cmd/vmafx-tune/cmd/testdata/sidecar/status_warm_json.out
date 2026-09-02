@@ -1,0 +1,10 @@
+{
+  "codec": "libx264",
+  "host_uuid": "0123456789abcdef0123456789abcdef",
+  "n_updates": 9,
+  "predictor_version": "predictor_v1",
+  "recent_residual_rms": 5.6330812974628905,
+  "schema": "vmaf-tune-sidecar-status/v1",
+  "schema_version": 1,
+  "state_path": "cache/predictor_v1/libx264/state.json"
+}

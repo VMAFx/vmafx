@@ -74,12 +74,14 @@ func useUsageExitCode(cmd *cobra.Command) {
 // asUsageError tags a validation failure with the exit status the Python CLI
 // would have used, leaving an error that already carries one alone.
 //
-// Scope note: only the subcommands ported with this helper honour it. The
-// earlier ports (compare, ladder, report) still surface every failure as exit
-// 1, so a script that branches on the status sees 2 from `benchmark` /
-// `encode-profile` and 1 from the other three. That inconsistency is
-// pre-existing and deliberately not widened here — making the older commands
-// match Python changes their published contract and belongs in its own change.
+// Scope note: only the subcommands ported with this helper honour it —
+// `benchmark`, `encode-profile`, and the `sidecar` group (whose Python
+// original returns 2 from every validation path; see sidecar.go). The earlier
+// ports (compare, ladder, report) still surface every failure as exit 1, so a
+// script that branches on the status sees 2 from the former and 1 from the
+// latter. That inconsistency is pre-existing and deliberately not widened
+// here — making the older commands match Python changes their published
+// contract and belongs in its own change.
 func asUsageError(err error) error {
 	if err == nil {
 		return nil

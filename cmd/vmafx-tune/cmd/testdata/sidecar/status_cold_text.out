@@ -1,0 +1,1 @@
+codec=libx264 predictor_version=predictor_v1 updates=0 residual_rms=0.000000 state=cache/predictor_v1/libx264/state.json

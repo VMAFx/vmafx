@@ -380,6 +380,10 @@ func TestSidecarRejectsBadInput(t *testing.T) {
 			if !strings.Contains(err.Error(), tc.wantErr) {
 				t.Errorf("error %q should mention %q", err, tc.wantErr)
 			}
+			// Every one of these is a `return 2` in the Python CLI.
+			if got := exitCodeOf(err); got != usageExitCode {
+				t.Errorf("exit status = %d, want %d", got, usageExitCode)
+			}
 		})
 	}
 }

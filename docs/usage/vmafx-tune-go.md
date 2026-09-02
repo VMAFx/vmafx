@@ -832,13 +832,14 @@ read `exit_status` and `stderr_tail` regardless.
 
 ### Exit codes
 
-`benchmark` and `encode-profile` use the same exit-status convention as the
-Python CLI they replace:
+`benchmark`, `encode-profile` and the `sidecar` group use the same exit-status
+convention as the Python CLI they replace:
 
 | Status | Meaning |
 |--------|---------|
 | `0` | Success. |
-| `2` | A usage or validation failure — a missing/unknown flag, an unparseable flag value, a missing input file, a filter that matches no recommendation, a baseline encoder absent from the corpus. |
+| `2` | A usage or validation failure — a missing/unknown flag, an unparseable flag value, a missing input file, a filter that matches no recommendation, a baseline encoder absent from the corpus, an unknown `--codec` or unreadable feature / capture file on `sidecar`. |
+| `1` | `sidecar` only: the cache directory, host UUID or `state.json` could not be written (an uncaught `OSError` in Python). See [Exit codes and diagnostics](#exit-codes-and-diagnostics). |
 | other | `encode-profile` only: FFmpeg's own exit status from a failed encode. |
 
 Note that the earlier ports (`compare`, `ladder`, `report`) still report every
@@ -993,10 +994,10 @@ vmafx-tune-go sidecar <status|predict|record|batch-record> [flags]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--codec` | `libx264` | Codec bucket for the sidecar state. |
-| `--cache-dir` | `${XDG_CACHE_HOME:-~/.cache}/vmaf-tune/sidecar` | Sidecar cache root. |
+| `--codec` | `libx264` | Codec bucket for the sidecar state. Must be one of the 19 registered codec names; an unknown name is a usage error whose message lists them. |
+| `--cache-dir` | `${XDG_CACHE_HOME:-~/.cache}/vmaf-tune/sidecar` | Sidecar cache root. A relative path stays relative in `state_path`. |
 | `--predictor-version` | `predictor_v1` | Predictor-version namespace. |
-| `--model` | *(unset)* | Optional `predictor_<codec>.onnx` path; default uses the analytical fallback. |
+| `--model` | *(unset)* | Optional ONNX predictor — see the [ONNX note](#onnx-predictor-models). Unset uses the analytical fallback. |
 | `--json` | `false` | Emit machine-readable JSON instead of the one-line text form. |
 
 **Nested subcommands:**
@@ -1028,81 +1029,6 @@ vmafx-tune-go sidecar status --codec libx264 --json
 
 ```json
 {
-  "encoder": "libx264",
-  "n_trials": 50,
-  "notes": "smoke mode — synthetic predictor; no ffmpeg / ONNX / GPU. See ADR-0276 + ADR-0304 + Research-0076 for the production path.",
-  "predicted_kbps": 3486.832605990455,
-  "predicted_vmaf": 90.3551546220283,
-  "proxy_verify_gap": null,
-  "recommended_crf": 20,
-  "smoke": true,
-  "target_vmaf": 90.0,
-  "verify_vmaf": null
-}
-```
-
-The payload is byte-compatible with the Python `vmaf-tune fast` output: keys are
-sorted, floats are rendered with CPython's `repr` formatting (so an integral
-`target_vmaf` prints as `90.0`, not `90`), and `verify_vmaf` /
-`proxy_verify_gap` are `null` in smoke mode. Production mode adds one key,
-`score_backend`, naming the selected libvmaf backend.
-
-**Example — production run (once the ONNX blocker is lifted):**
-
-```bash
-vmafx-tune-go fast \
-  --src ref_1920x1080.yuv --width 1920 --height 1080 --framerate 24 \
-  --target-vmaf 93 --encoder libx264 --preset medium \
-  --score-backend cuda \
-  --output fast.json
-```
-
-#### Feature JSON
-
-`--features-json` takes an object of shot features, or a `{"features": {...}}`
-wrapper so a capture row can carry `crf` and `observed_vmaf` alongside. Four keys
-are required; every other field defaults to `0`.
-
-| Key | Required | Meaning |
-|-----|----------|---------|
-| `probe_bitrate_kbps` | yes | Average bitrate over the probe encode. |
-| `probe_i_frame_avg_bytes` | yes | Mean I-frame size. |
-| `probe_p_frame_avg_bytes` | yes | Mean P-frame size. |
-| `probe_b_frame_avg_bytes` | yes | Mean B-frame size (0 for codecs without B-frames). |
-| `saliency_mean`, `saliency_var` | no | Saliency signals; 0 when unavailable. |
-| `frame_diff_mean`, `y_avg`, `y_var` | no | FFmpeg `signalstats` aggregates. |
-| `shot_length_frames`, `fps`, `width`, `height` | no | Structural metadata. |
-
-`batch-record` reads the same object per line, plus `crf` and `observed_vmaf`. A
-malformed row is reported on `stderr` and skipped; the rest of the file still
-lands. That is deliberate — a capture log is often partially corrupt after an
-interrupted run, and losing the good rows to one bad line would be worse.
-
-#### State and privacy
-
-State lives at:
-
-```text
-${XDG_CACHE_HOME:-~/.cache}/vmaf-tune/sidecar/
-  host-uuid                                    # random 128-bit token
-  <predictor-version>/<codec>/state.json       # ridge weights + inverse Gram
-```
-
-The host UUID is drawn from a CSPRNG on first use. It is **never** derived from a
-MAC address, hostname, `/etc/machine-id`, CPUID, or any other
-machine-identifying signal.
-
-A predictor-version or schema mismatch on load discards the fit and resets to
-cold start, keeping only the host UUID. That is what makes a shipped-model
-upgrade safe: a stale correction can never be replayed against a refreshed
-predictor. At cold start the weights are zero, so the correction is exactly `0.0`
-and the sidecar returns the bare predictor's value untouched.
-
-A corrupt `state.json` also cold-starts, and the corrupt file is left in place so
-you can inspect it.
-
-```json
-{
   "codec": "libx264",
   "host_uuid": "0123456789abcdef0123456789abcdef",
   "n_updates": 0,
@@ -1112,6 +1038,12 @@ you can inspect it.
   "schema_version": 1,
   "state_path": "/home/u/.cache/vmaf-tune/sidecar/predictor_v1/libx264/state.json"
 }
+```
+
+Without `--json` the same fields print as one line:
+
+```text
+codec=libx264 predictor_version=predictor_v1 updates=0 residual_rms=0.000000 state=/home/u/.cache/vmaf-tune/sidecar/predictor_v1/libx264/state.json
 ```
 
 #### `sidecar predict`
@@ -1127,8 +1059,10 @@ Predicts VMAF for one shot at one CRF with the correction applied.
 vmafx-tune-go sidecar predict --features-json shot.json --crf 26 --json
 ```
 
-The payload carries `base_vmaf` (the bare predictor), `correction`, and
-`sidecar_vmaf` (the sum, clamped to `[0, 100]`).
+The payload (schema `vmaf-tune-sidecar-predict/v1`) carries `base_vmaf` (the
+bare predictor), `correction`, and `sidecar_vmaf` (the sum, clamped to
+`[0, 100]`), plus `codec`, `crf` and `n_updates`. The text form is
+`base=<b> correction=<c> sidecar=<s> updates=<n>` with six decimals.
 
 #### `sidecar record`
 
@@ -1151,6 +1085,10 @@ vmafx-tune-go sidecar record \
 
 The residual is computed against the **bare** predictor, never against the
 sidecar-corrected value, so repeated captures converge rather than compounding.
+The payload (schema `vmaf-tune-sidecar-record/v1`) is the `status` payload
+plus `crf`, `observed_vmaf`, `base_vmaf` and `residual`
+(`observed_vmaf - base_vmaf`); the text form is
+`recorded updates=<n> residual=<r> state=<path>`.
 
 #### `sidecar batch-record`
 
@@ -1165,17 +1103,38 @@ vmafx-tune-go sidecar batch-record --captures-jsonl captures.jsonl --json
 ```
 
 Each line is a JSON object carrying the feature fields (either at the top level
-or nested under a `features` key) plus `crf` and `observed_vmaf`. Malformed rows
-are skipped with a one-line diagnostic on `stderr` and counted in
-`rows_skipped`; the run still succeeds, so one truncated line does not discard a
-long capture session. State is written once at the end rather than per row.
+or nested under a `features` key) plus `crf` and `observed_vmaf`. Lines are
+split on `\n`, `\r\n` or a lone `\r` (CPython's universal-newline rule) with no
+length limit; blank lines are ignored but still numbered. A malformed row — not
+a JSON object, a missing or non-numeric required field, a `crf` string that is
+not an integer literal — is reported as
+`vmafx-tune sidecar batch-record: skip line <n>: <reason>` on `stderr`, counted
+in `rows_skipped`, and the run still succeeds. That is deliberate: a capture log
+is often partially corrupt after an interrupted run, and losing the good rows to
+one bad line would be worse. State is written once at the end, and only when at
+least one row was recorded. The payload (schema
+`vmaf-tune-sidecar-batch-record/v1`) is the `status` payload plus
+`rows_recorded` and `rows_skipped`; the text form is
+`recorded=<rows> skipped=<rows> updates=<n> state=<path>`.
 
-#### Feature-JSON shape
+#### Feature JSON
 
-Both `--features-json` and each `--captures-jsonl` row accept the same object.
-The four `probe_*` fields are **required** — a zero probe bitrate would train
-the fit on a fabricated complexity barometer — and everything else defaults to
-zero:
+`--features-json` takes an object of shot features, or a `{"features": {...}}`
+wrapper so a capture row can carry `crf` and `observed_vmaf` alongside. The four
+`probe_*` fields are **required** — a zero probe bitrate would train the fit on
+a fabricated complexity barometer — and everything else defaults to `0`. Values
+may be JSON numbers or numeric strings (`"2400"`), as CPython's `float()`
+accepts.
+
+| Key | Required | Meaning |
+|-----|----------|---------|
+| `probe_bitrate_kbps` | yes | Average bitrate over the probe encode. |
+| `probe_i_frame_avg_bytes` | yes | Mean I-frame size. |
+| `probe_p_frame_avg_bytes` | yes | Mean P-frame size. |
+| `probe_b_frame_avg_bytes` | yes | Mean B-frame size (0 for codecs without B-frames). |
+| `saliency_mean`, `saliency_var` | no | Saliency signals; 0 when unavailable. |
+| `frame_diff_mean`, `y_avg`, `y_var` | no | FFmpeg `signalstats` aggregates. |
+| `shot_length_frames`, `fps`, `width`, `height` | no | Structural metadata. |
 
 ```json
 {
@@ -1195,19 +1154,90 @@ zero:
 }
 ```
 
-#### ONNX note (`--model`)
+#### State and privacy
 
-The Python `Predictor` loads a learned `predictor_<codec>.onnx` through
-`onnxruntime` when `--model` is set, and silently falls back to the analytical
-curve when `onnxruntime` is not importable. The Go binary has **no in-process
-ONNX runtime**, so `--model` is rejected outright rather than silently scored
-against a different model than you asked for: a wrong-but-plausible VMAF number
-is worse than a clear refusal.
+State lives at:
 
-Omit `--model` to use the analytical fallback — the default, and the path the
-sidecar operator surface exercises in practice — or run `vmaf-tune sidecar` for
-the ONNX path. Every other behaviour, including the persisted state format, is
-identical between the two binaries.
+```text
+${XDG_CACHE_HOME:-~/.cache}/vmaf-tune/sidecar/
+  host-uuid                                    # random 128-bit token
+  <predictor-version>/<codec>/state.json       # ridge weights + inverse Gram
+```
+
+The host UUID is drawn from a CSPRNG on first use. It is **never** derived from a
+MAC address, hostname, `/etc/machine-id`, CPUID, or any other
+machine-identifying signal.
+
+A predictor-version or schema mismatch on load discards the fit and resets to
+cold start, keeping only the host UUID. That is what makes a shipped-model
+upgrade safe: a stale correction can never be replayed against a refreshed
+predictor. At cold start the weights are zero, so the correction is exactly `0.0`
+and the sidecar returns the bare predictor's value untouched.
+
+A corrupt `state.json` also cold-starts — including one whose `weights` or
+`a_inv` carry `null`, the residue of a NaN capture — and the corrupt file is
+left in place so you can inspect it.
+
+#### Exit codes and diagnostics
+
+The four subcommands follow the Python `vmaf-tune sidecar` exit contract:
+
+| Status | Meaning |
+|--------|---------|
+| `0` | Success — including a `batch-record` run in which every row was skipped. |
+| `1` | An I/O failure the Python CLI does not catch either: the cache directory cannot be created, the host UUID or `state.json` cannot be written, or stdout cannot be written. |
+| `2` | A usage or validation failure: an unknown or unparseable flag, a missing required flag, an unknown `--codec`, an unresolvable `--model`, a `--features-json` that cannot be read / is not a JSON object / lacks a required key, or a `--captures-jsonl` that cannot be read. |
+
+Diagnostics go to `stderr` and are **not** byte-identical to Python's: cobra
+prefixes them with `Error:` where Python prints `vmaf-tune sidecar <cmd>:`, the
+`batch-record` skip lines carry the `vmafx-tune` prefix, and the reason text is
+Go's rather than CPython's exception message. Nothing is written to `stdout` on
+failure.
+
+#### Byte compatibility with `vmaf-tune sidecar`
+
+For the same inputs, every `stdout` payload (JSON and text form) and every byte
+of `state.json` written by the Go binary is identical to the Python CLI's: the
+analytical predictor, the Sherman–Morrison update, and the
+`json.dumps(..., indent=2, sort_keys=True)` rendering are reproduced to the last
+bit, and the atomic write leaves the same single `state.json` behind (no `.tmp`
+residue). `cmd/vmafx-tune/cmd/testdata/sidecar/` holds fixtures dumped from the
+Python CLI by `regen.sh` (pinned host UUID, relative `--cache-dir`), and
+`TestSidecarPythonParity` replays the same 23-step operator sequence — cold
+`status`, three `record`s, two `batch-record` loads, warm `status` and
+`predict`, a `--no-persist` record, a second codec bucket, and nine error
+paths — requiring identical `stdout`, identical `state.json` snapshots and
+identical exit statuses. Known, deliberate differences:
+
+- A capture row containing the non-standard JSON tokens `NaN` / `Infinity` is
+  skipped by the Go binary and counted in `rows_skipped`. CPython's `json.loads`
+  accepts the tokens: a `NaN` feature then silently skips the update while still
+  counting the row as recorded, and a `NaN` `observed_vmaf` poisons the ridge
+  weights (they persist as `null` and the next load cold-starts).
+- Hand-edited state files outside the shape either writer produces are not
+  guaranteed to load identically (for example a numeric string where CPython's
+  `float()` would coerce and Go's decoder will not).
+- `--model` is resolved differently — see the ONNX note.
+
+#### ONNX predictor models
+
+The two binaries interpret `--model` differently, and the Python behaviour
+itself depends on the host:
+
+- **Python** takes a filesystem path to `predictor_<codec>.onnx`. With
+  `onnxruntime` importable, a missing file raises and the CLI exits `2`; without
+  it, the flag is silently ignored and the analytical curve is used (exit `0`).
+- **Go** resolves the value through the model registry (`pkg/ai`): an absolute
+  path that exists, else `<model-dir>/<name>.onnx`, else `<model-dir>/<name>`,
+  where the model dir is `$VMAFX_MODEL_DIR` or `/usr/local/share/vmafx/model`.
+  An unresolvable name exits `2`. Inference then goes through the
+  `vmafx-ort-runner` subprocess, which this repository does not build; when the
+  runner is absent from `PATH` the predictor falls back to the analytical curve
+  **silently** — a warning is logged only when the runner is present and
+  inference fails.
+
+Omit `--model` to use the analytical fallback — the default, and the only path
+the parity fixtures exercise — and the two binaries agree byte for byte.
 
 ## Ported subcommands (per-shot tuning)
 
@@ -1381,9 +1411,12 @@ rather than what was asked for.
 
 `--model` (on `predict`, `sidecar`, `auto`) is accepted and resolves the model,
 but inference is routed through a `vmafx-ort-runner` subprocess this repository
-does not yet build. When the runner is absent the predictor logs a warning and
-falls back to the analytical curve — the same fallback the Python takes without
-`onnxruntime`, but reported rather than silent.
+does not yet build. When the runner is absent from `PATH` the predictor falls
+back to the analytical curve **silently** — the same fallback the Python takes
+without `onnxruntime`; a warning is logged only when the runner is present and
+inference fails. On `sidecar` an unresolvable model name is a usage error (exit
+`2`); see the [ONNX note](#onnx-predictor-models) for how the two binaries resolve
+the flag differently.
 
 `recommend`'s encode-driven path writes the same schema-v3 corpus JSONL the
 `corpus` subcommand does, and every key is present. Five corpus features are
@@ -1440,7 +1473,7 @@ VMAFX_LOG_FORMAT=json vmafx-tune-go compare --reference src.mp4 --targets 90
 | Stage 5 | `tune-per-shot` subcommand, conformal CLI wiring | Planned | — |
 
 | golusoris | Migrate the CLI root + subcommands onto the golusoris `clikit` (cobra + fx) framework; `VMAFX_`-prefixed config + injected `slog` | ADR-1119 | **This PR** |
-| Stage 5 (corpus/sidecar) | `corpus` + `sidecar` subcommands; `pkg/codecadapter`, `pkg/corpus`, `pkg/predictor`, `pkg/tune/sidecar`, `pkg/pyjson` | ADR-0703 / ADR-0704 | **This PR** |
+| Stage 5 (corpus/sidecar) | `corpus` + `sidecar` subcommands; `pkg/codecadapter`, `pkg/corpus`, `pkg/pyjson` (corpus); `pkg/tune/predictor`, `pkg/tune/sidecar`, `pkg/tune/pyjson` (sidecar) | ADR-1125 | Merged ([#1153](https://github.com/VMAFx/vmafx/pull/1153)) |
 | Stage 5 (per-shot) | `tune-per-shot` subcommand, conformal CLI wiring | Planned | — |
 | Stage 6 | `fast` subcommand (requires ONNX Go binding) | Planned | — |
 
@@ -1453,7 +1486,7 @@ VMAFX_LOG_FORMAT=json vmafx-tune-go compare --reference src.mp4 --targets 90
 | Stage 6b | `fast` production mode (needs a named-input ONNX seam — see [Production-mode blocker](#production-mode-blocker-onnx-named-inputs)) | Planned | — |
 
 | golusoris | Migrate the CLI root + subcommands onto the golusoris `clikit` (cobra + fx) framework; `VMAFX_`-prefixed config + injected `slog` | ADR-1119 | **This PR** |
-| Stage 5 | `auto` (Phase F planner + execute mode) and `sidecar` subcommands | ADR-0705 / ADR-0730 | **This PR** |
+| Stage 5 | `auto` (Phase F planner + execute mode) and `sidecar` subcommands | ADR-1125 | Merged ([#1153](https://github.com/VMAFx/vmafx/pull/1153)) |
 | Stage 6 | `tune-per-shot` subcommand, conformal CLI wiring | Planned | — |
 | Stage 7 | `fast` subcommand (requires ONNX Go binding) | Planned | — |
 | Stage N | Feature parity; rename binary to `vmafx-tune` | Planned | — |
@@ -1548,7 +1581,11 @@ The `corpus` and `sidecar` subcommands add five more:
 - **`pkg/tune/sidecar/`** — the online-ridge bias-correction model
   (Sherman-Morrison rank-1 updates) and its cache-dir persistence. The port
   produced two implementations of this; the other (`pkg/sidecar/`) was removed
-  because nothing imported it.
+  because nothing imported it. The `sidecar` subcommand pairs it with
+  `pkg/tune/predictor/` (the analytical curve, with `log10` routed through
+  `pkg/tune/pymath` for libm parity) and `pkg/tune/pyjson/` — not the
+  `pkg/predictor` copy that `predict` uses or the `pkg/pyjson` copy that
+  `corpus` uses; ADR-1125 records which consumer owns which copy.
 - **`pkg/pyjson/`** — a CPython-compatible JSON encoder. The corpus JSONL and the
   sidecar `--json` payloads are cross-implementation artefacts, so the writer
   reproduces `json.dumps` byte-for-byte: bare `NaN` / `Infinity` tokens,
