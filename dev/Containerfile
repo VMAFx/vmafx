@@ -988,7 +988,7 @@ FROM libvmaf-build AS go-build
 
 USER root
 # Toolchain only — no base-image swap, so libvmaf and its pkg-config stay put.
-COPY --from=golang:1.27-bookworm@sha256:ded31c68586d2e49e760acc2e65a884b23d032e9bbbed0ae0c55abd3fcaf4452 /usr/local/go /usr/local/go
+COPY --from=golang:1.27-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:${PATH}
 ENV GOTOOLCHAIN=local
 
