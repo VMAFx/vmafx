@@ -43,11 +43,9 @@
       "automerge": false
     },
     {
-      "description": "Intel NEO stack moves as a matched set: dev/Containerfile downloads intel-igdgmm12_${GMMLIB_VER} and the IGC debs from the intel/compute-runtime release page for NEO_VER, so a lone gmmlib/IGC bump yields a 404 (PR #1184). Group all four into ONE PR; still manual review (ADR-0605).",
+      "description": "Intel NEO compute stack: dev/Containerfile derives the matched set of gmmlib and IGC deb packages dynamically from the pinned intel/compute-runtime release at build time (ADR-1145). Only compute-runtime and level-zero are tracked; manual review (ADR-0605).",
       "matchPackageNames": [
         "intel/compute-runtime",
-        "intel/intel-graphics-compiler",
-        "intel/gmmlib",
         "oneapi-src/level-zero"
       ],
       "groupName": "Intel NEO compute stack (matched set)",
@@ -237,11 +235,9 @@
       ]
     },
     {
-      "description": "dev-image deps (CUDA-adjacent, Intel NEO/IGC/gmmlib/LZ0, ONNX Runtime, SVT-AV1, VVenC, AMF) \u2014 manual review required. Container rebuild has large blast radius; validate GPU compatibility before merging. See ADR-0605.",
+      "description": "dev-image deps (CUDA-adjacent, Intel NEO/LZ0, ONNX Runtime, SVT-AV1, VVenC, AMF) \u2014 manual review required. Container rebuild has large blast radius; validate GPU compatibility before merging. See ADR-0605, ADR-1145.",
       "matchPackageNames": [
         "intel/compute-runtime",
-        "intel/intel-graphics-compiler",
-        "intel/gmmlib",
         "oneapi-src/level-zero",
         "microsoft/onnxruntime",
         "AOMediaCodec/SVT-AV1",
@@ -260,7 +256,7 @@
     {
       "customType": "regex",
       "description": "FFmpeg release tag pinned in the patch-stack test script + the CI gate + the Containerfile ARG.",
-      "managerFilePatterns": [
+      "fileMatch": [
         "/^ffmpeg-patches/test/build-and-run\\.sh$/",
         "/^scripts/ci/ffmpeg-patches-check\\.sh$/",
         "/^dev/Containerfile$/",
@@ -279,7 +275,7 @@
     {
       "customType": "regex",
       "description": "ROCm pin in dev/Containerfile. Matches both the ARG ROCM_VER line and the repo URL path so both stay in sync on bumps. Queries the AMD apt directory listing via the html datasource. See ADR-0604.",
-      "managerFilePatterns": [
+      "fileMatch": [
         "/^dev/Containerfile$/",
         "/^docker/Dockerfile\\.node$/",
         "/^Dockerfile$/",
@@ -295,7 +291,7 @@
     {
       "customType": "regex",
       "description": "Intel compute-runtime (NEO) version in dev/Containerfile. Tracks github.com/intel/compute-runtime releases. See ADR-0605.",
-      "managerFilePatterns": [
+      "fileMatch": [
         "/^dev/Containerfile$/",
         "/^docker/Dockerfile\\.node$/",
         "/^Dockerfile$/",
@@ -310,39 +306,8 @@
     },
     {
       "customType": "regex",
-      "description": "Intel Graphics Compiler (IGC) version in dev/Containerfile. Extracts the semver portion before the '+<build-id>' suffix (e.g. 2.34.4 from 2.34.4+21428). The +build suffix is Intel's internal build counter \u2014 it stays in the ARG line after Renovate bumps the semver part; a reviewer should update it to match the new release's counter. Tracks github.com/intel/intel-graphics-compiler releases. See ADR-0605.",
-      "managerFilePatterns": [
-        "/^dev/Containerfile$/",
-        "/^docker/Dockerfile\\.node$/",
-        "/^Dockerfile$/",
-        "/^Dockerfile\\.ffmpeg$/"
-      ],
-      "matchStrings": [
-        "ARG IGC_VER=(?<currentValue>[0-9.]+)\\+[0-9]+"
-      ],
-      "datasourceTemplate": "github-releases",
-      "depNameTemplate": "intel/intel-graphics-compiler"
-    },
-    {
-      "customType": "regex",
-      "description": "Intel gmmlib (Graphics Memory Management) version in dev/Containerfile. Tracks github.com/intel/gmmlib releases. See ADR-0605.",
-      "managerFilePatterns": [
-        "/^dev/Containerfile$/",
-        "/^docker/Dockerfile\\.node$/",
-        "/^Dockerfile$/",
-        "/^Dockerfile\\.ffmpeg$/"
-      ],
-      "matchStrings": [
-        "ARG GMMLIB_VER=(?<currentValue>[0-9.]+)"
-      ],
-      "datasourceTemplate": "github-tags",
-      "depNameTemplate": "intel/gmmlib",
-      "extractVersionTemplate": "^intel-gmmlib-(?<version>.+)$"
-    },
-    {
-      "customType": "regex",
       "description": "Level Zero loader version in dev/Containerfile. Tracks github.com/oneapi-src/level-zero releases. See ADR-0605.",
-      "managerFilePatterns": [
+      "fileMatch": [
         "/^dev/Containerfile$/",
         "/^docker/Dockerfile\\.node$/",
         "/^Dockerfile$/",
@@ -357,7 +322,7 @@
     {
       "customType": "regex",
       "description": "ONNX Runtime C++ library version in dev/Containerfile. Installed via tarball from GitHub releases (not apt). Tracks github.com/microsoft/onnxruntime releases. See ADR-0605.",
-      "managerFilePatterns": [
+      "fileMatch": [
         "/^dev/Containerfile$/",
         "/^docker/Dockerfile\\.node$/",
         "/^Dockerfile$/",
@@ -372,7 +337,7 @@
     {
       "customType": "regex",
       "description": "SVT-AV1 encoder version in dev/Containerfile. Built from source via git clone of gitlab.com/AOMediaCodec/SVT-AV1 at a tagged release. See ADR-0605.",
-      "managerFilePatterns": [
+      "fileMatch": [
         "/^dev/Containerfile$/",
         "/^docker/Dockerfile\\.node$/",
         "/^Dockerfile$/",
@@ -388,7 +353,7 @@
     {
       "customType": "regex",
       "description": "VVenC (Fraunhofer VVC reference encoder) version in dev/Containerfile. Built from source via git clone of github.com/fraunhoferhhi/vvenc at a tagged release. See ADR-0605.",
-      "managerFilePatterns": [
+      "fileMatch": [
         "/^dev/Containerfile$/",
         "/^docker/Dockerfile\\.node$/",
         "/^Dockerfile$/",
@@ -403,7 +368,7 @@
     {
       "customType": "regex",
       "description": "AMD AMF (Advanced Media Framework) headers version in dev/Containerfile. Built from source via git clone of github.com/GPUOpen-LibrariesAndSDKs/AMF at a tagged release. See ADR-0605.",
-      "managerFilePatterns": [
+      "fileMatch": [
         "/^dev/Containerfile$/",
         "/^docker/Dockerfile\\.node$/",
         "/^Dockerfile$/",
@@ -440,7 +405,7 @@
     "enabled": true
   },
   "kubernetes": {
-    "managerFilePatterns": [
+    "fileMatch": [
       "/deploy/helm/.*/templates/.*\\.ya?ml$/"
     ]
   }

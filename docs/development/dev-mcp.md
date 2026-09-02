@@ -354,8 +354,7 @@ A mismatch silently degrades `vmaf --backend sycl|hip` to CPU.
 
 | Pin | Current value | Why pinned |
 |---|---|---|
-| `ARG NEO_VER` | `26.31.39395.13` | Intel's `noble/unified` APT repo's newest as of 2026-05-18 is `25.18.x`, too old for kernel ≥ 7.0. NEO 25.18 returns `ZE_RESULT_ERROR_UNINITIALIZED` from `zeInit()` against kernel-7.x i915/xe. Pulled from `github.com/intel/compute-runtime/releases`. |
-| `ARG IGC_VER` + `ARG GMMLIB_VER` | `2.40.13+22418` + `22.10.0` | NEO 26.31's release notes mandate IGC v2.40.13 + gmmlib 22.10.0. Pinned together. |
+| `ARG NEO_VER` | `26.31.39395.13` | Intel's `noble/unified` APT repo's newest as of 2026-05-18 is `25.18.x`, too old for kernel ≥ 7.0. NEO 25.18 returns `ZE_RESULT_ERROR_UNINITIALIZED` from `zeInit()` against kernel-7.x i915/xe. Pulled from `github.com/intel/compute-runtime/releases`. The matching `gmmlib` and `IGC` deb packages and checksums are dynamically derived at build time by `dev/scripts/fetch-intel-neo.py` (ADR-1145). |
 | `ARG ROCM_VER` | `7.2.4` | Matches Arch host `hsa-rocr 7.2.4`. ROCm 6.x KFD userspace returns `Unable to open /dev/kfd read-write: Invalid argument` against kernel-7.x KFD ioctls. |
 
 `dev-mcp-entrypoint.sh` emits a runtime visibility probe on container

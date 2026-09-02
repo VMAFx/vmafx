@@ -245,27 +245,20 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 #
 # clinfo is installed in the same layer as the NEO .debs to avoid a
 # separate apt-get update/install round (saves one image layer). ADR-0790.
+# The matched set of Intel NEO runtime, gmmlib, and IGC packages is derived
+# dynamically from the pinned NEO_VER release metadata at build time. ADR-1145.
 ARG NEO_VER=26.31.39395.13
-ARG GMMLIB_VER=22.10.0
-ARG IGC_VER=2.40.13+22418
+ARG GITHUB_TOKEN=""
+COPY dev/scripts/fetch-intel-neo.py /tmp/fetch-intel-neo.py
 # hadolint ignore=DL3003,DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends clinfo \
     && mkdir -p /tmp/neo && cd /tmp/neo \
-    && curl -fsSL -O "https://github.com/intel/intel-graphics-compiler/releases/download/v${IGC_VER%+*}/intel-igc-core-2_${IGC_VER}_amd64.deb" \
-    && curl -fsSL -O "https://github.com/intel/intel-graphics-compiler/releases/download/v${IGC_VER%+*}/intel-igc-opencl-2_${IGC_VER}_amd64.deb" \
-    && curl -fsSL -O "https://github.com/intel/compute-runtime/releases/download/${NEO_VER}/intel-opencl-icd_${NEO_VER}-0_amd64.deb" \
-    && curl -fsSL -O "https://github.com/intel/compute-runtime/releases/download/${NEO_VER}/libze-intel-gpu1_${NEO_VER}-0_amd64.deb" \
-    && curl -fsSL -O "https://github.com/intel/compute-runtime/releases/download/${NEO_VER}/libigdgmm12_${GMMLIB_VER}_amd64.deb" \
+    && python3 /tmp/fetch-intel-neo.py --neo-ver "${NEO_VER}" ${GITHUB_TOKEN:+--github-token "${GITHUB_TOKEN}"} \
     && apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ./intel-igc-core-2_${IGC_VER}_amd64.deb \
-        ./intel-igc-opencl-2_${IGC_VER}_amd64.deb \
-        ./libigdgmm12_${GMMLIB_VER}_amd64.deb \
-        ./intel-opencl-icd_${NEO_VER}-0_amd64.deb \
-        ./libze-intel-gpu1_${NEO_VER}-0_amd64.deb \
-    && cd / && rm -rf /tmp/neo
+    && apt-get install -y --no-install-recommends ./*.deb \
+    && cd / && rm -rf /tmp/neo /tmp/fetch-intel-neo.py
 
 # Verify NEO compute-runtime packages were actually installed.
 RUN for pkg in intel-opencl-icd libze-intel-gpu1; do \

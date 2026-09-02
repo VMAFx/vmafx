@@ -16,6 +16,15 @@
   table helper `vmaf_ort_internal_auto_ep_order(int is_apple)` and unit tests.
 - `core/include/libvmaf/libvmaf_metal.h`, `docs/backends/metal/index.md`, `docs/metrics/features.md`,
   `docs/ai/inference.md`: aligned documentation and doc comments with runtime truth.
+## fix/neo-derive-matched-set — derive Intel NEO matched set at build time (ADR-1145) (2026-09-02)
+
+no rebase impact: fork-only container and Renovate configuration.
+
+- `dev/scripts/fetch-intel-neo.py` dynamically resolves the matched set of
+  gmmlib and IGC deb packages from the pinned `NEO_VER` release assets and
+  verifies their sha256 checksums at container build time.
+- `dev/Containerfile` removes `GMMLIB_VER` and `IGC_VER` ARGs; Renovate regex
+  managers for gmmlib and IGC removed from `renovate.json`.
 
 ## gap/cpu-ci-bucket — retire dead orphan motion_v2 x86 SIMD duplicate files (GAP-BUILD-ORPHAN-DEAD-SIMD-MOTION-V2)
 
