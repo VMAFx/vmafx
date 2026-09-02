@@ -20722,6 +20722,16 @@ later one. Re-enable ASan leak detection (`detect_leaks=1`) now that the root ca
 is addressed.
 
 
+- CPU/CI bucket gap closure:
+  - `scripts/ci/check-dispatch-registry.sh`: ported parser from deleted `feature_extractor.c` to `feature_extractor.cpp`, constrained to `feature_extractor_list[]`, added hermetic CI test suite `scripts/ci/tests/test-check-dispatch-registry.sh` (8/8 pass), and wired local pre-commit hook in `.pre-commit-config.yaml` (`GAP-CI-DISPATCH-REGISTRY-TARGETS-DELETED-FILE`).
+  - `core/src/feature/x86/`: removed orphaned duplicate SIMD files `motion_v2_avx2.{c,h}` and `motion_v2_avx512.{c,h}`; library and test binaries already linked against `motion_avx2.c` and `motion_avx512.c` (`GAP-BUILD-ORPHAN-DEAD-SIMD-MOTION-V2`).
+  - `docs/metrics/features.md`: rebuilt Extractor Overview table from registration ground truth in `core/src/feature/feature_extractor.cpp` and Meson build sources, accurately reflecting SIMD and GPU twin availability across all 32 extractors (`GAP-DOCS-METRICS-FEATURES-OUT-OF-DATE`).
+  - `core/src/feature/tad_rust.c` & `core/src/hip/stubs.c`: added explicit error logging naming `-Denable_rust_features=true` and `-Denable_hip=true` on disabled-build fallback paths (`GAP-RUST-TAD-EXTRACTOR-STUB`, `GAP-STUBS-FALLBACK-ENOSYS-WHEN-DISABLED`).
+  - `core/src/feature/feature_mobilesal.c` & `docs/ai/models/mobilesal.md`: added prominent warning logging on load of placeholder model and marked model card as placeholder/not for production meeting ADR-0042 (`GAP-TINYAI-MOBILESAL-PLACEHOLDER-WEIGHTS`).
+  - `docs/mcp/index.md`: documented execution mechanics clarifying that 13 of 15 tools in the Go MCP server shell out to CLI while 2 tools support direct Cgo, and the embedded C MCP server serves 2 tools (`GAP-MCP-SUBPROCESS-VS-CGO-DIRECT`, `GAP-MCP-C-EMBEDDED-ONLY-2-TOOLS`).
+  - `docs/state.md`: documented all gap resolutions with Closed, Confirmed not-affected, and Deferred entries with exact blockers (`GAP-BUILD-FEATURE-COLLECTOR-CPP-TEST-ONLY`, `GAP-TINYAI-TRANSNET-V2-PLACEHOLDER-GRAPH`).
+
+
 - **The Netflix golden YUV fixtures are no longer reachable by `git clean -xfd`.**
   `python/test/resource/yuv/` (160 MB, 26 files) and
   `python/test/resource/test_image_yuv/` were neither tracked nor ignored, so a

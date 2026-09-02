@@ -16,10 +16,16 @@
 set -euo pipefail
 
 ROOT="${1:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-FEX="$ROOT/core/src/feature/feature_extractor.c"
+FEX="$ROOT/core/src/feature/feature_extractor.cpp"
 
 if [[ ! -f "$FEX" ]]; then
-  echo "ERROR: feature_extractor.c not found at $FEX" >&2
+  echo "ERROR: feature_extractor.cpp not found at $FEX" >&2
+  exit 1
+fi
+
+list_block=$(sed -n '/static VmafFeatureExtractor \*feature_extractor_list\[\]/,/};/p' "$FEX")
+if [[ -z "$list_block" ]]; then
+  echo "ERROR: feature_extractor_list[] not found in $FEX" >&2
   exit 1
 fi
 
@@ -40,7 +46,7 @@ check_backend() {
   while IFS= read -r sym; do
     found_any=1
     local count
-    count=$(grep -cF "&${sym}" "$FEX" 2>/dev/null || echo 0)
+    count=$(grep -cF "&${sym}" <<<"$list_block" || true)
     if [[ "$count" -eq 0 ]]; then
       echo "  MISSING: $sym not in feature_extractor_list[]"
       rc=1

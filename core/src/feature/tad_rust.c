@@ -29,6 +29,7 @@
 
 #include "feature_collector.h"
 #include "feature_extractor.h"
+#include "log.h"
 #include "picture.h"
 
 /* ---------------------------------------------------------------------------
@@ -92,6 +93,8 @@ static int tad_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, uns
     (void)bpc;
     (void)w;
     (void)h;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "tad: feature extractor disabled; rebuild libvmaf with -Denable_rust_features=true\n");
     return -ENOSYS;
 }
 

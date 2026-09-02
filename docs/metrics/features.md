@@ -32,74 +32,73 @@ limitations in the same PR as the code.
 
 | Feature name       | Invocation name | Core feature? | Output metrics                                                                                 | SIMD                      | GPU                |
 |--------------------|-----------------|---------------|------------------------------------------------------------------------------------------------|---------------------------|--------------------|
-| VIF (fixed-point)  | `vif`           | Yes           | `vif_scale0`, `vif_scale1`, `vif_scale2`, `vif_scale3`                                         | AVX2, AVX-512, NEON       | CUDA, SYCL |
-| VIF (float)        | `float_vif`     | Yes           | `float_vif_scale0..3`                                                                          | —                         | CUDA, SYCL |
-| Motion2 (fixed)    | `motion`        | Yes           | `motion2` (+ `motion` if `debug=true`)                                                         | AVX2, AVX-512, NEON       | CUDA       |
-| Motion v2 (fixed)  | `motion_v2`     | No            | `VMAF_integer_feature_motion_v2_sad_score`, `VMAF_integer_feature_motion2_v2_score`            | AVX2, AVX-512, NEON       | CUDA, SYCL |
-| Motion2 (float)    | `float_motion`  | Yes           | `float_motion2` (+ `float_motion` if `debug=true`)                                             | AVX2, AVX-512, NEON       | CUDA, SYCL |
+| VIF (fixed-point)  | `vif`           | Yes           | `vif_scale0`, `vif_scale1`, `vif_scale2`, `vif_scale3`                                         | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
+| VIF (float)        | `float_vif`     | Yes           | `float_vif_scale0..3`                                                                          | —                         | CUDA, SYCL, HIP, Metal |
+| Motion2 (fixed)    | `motion`        | Yes           | `motion2` (+ `motion` if `debug=true`)                                                         | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
+| Motion v2 (fixed)  | `motion_v2`     | No            | `VMAF_integer_feature_motion_v2_sad_score`, `VMAF_integer_feature_motion2_v2_score`            | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
+| Motion2 (float)    | `float_motion`  | Yes           | `float_motion2` (+ `float_motion` if `debug=true`)                                             | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
 | ADM (fixed-point)  | `adm`           | Yes           | `adm2`, `adm_scale0`, `adm_scale1`, `adm_scale2`, `adm_scale3`                                 | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
-| ADM (float)        | `float_adm`     | Yes           | `float_adm2`, `adm_scale0..3`, `aim_score`⁶, `adm3_score`⁶                                    | AVX2, AVX-512, NEON       | CUDA⁶, SYCL, Metal |
-| [CAMBI](cambi.md)  | `cambi`         | No            | `cambi`                                                                                        | —                         | HIP, Metal (hybrid)⁴ |
+| ADM (float)        | `float_adm`     | Yes           | `float_adm2`, `adm_scale0..3`, `aim_score`⁶, `adm3_score`⁶                                    | AVX2, AVX-512, NEON       | CUDA⁶, SYCL, HIP, Metal |
+| [CAMBI](cambi.md)  | `cambi`         | No            | `cambi`                                                                                        | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal⁴ |
 | CIEDE2000          | `ciede`         | No            | `ciede2000`                                                                                    | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
-| PSNR (fixed)       | `psnr`          | No            | `psnr_y`, `psnr_cb`, `psnr_cr` (+ MSE / APSNR optional)                                        | AVX2, AVX-512, NEON       | CUDA, SYCL|
-| PSNR (float)       | `float_psnr`    | No            | `float_psnr` (luma only — the CPU extractor emits a single luma score)                         | AVX2, AVX-512, NEON       | CUDA, SYCL |
-| PSNR-HVS           | `psnr_hvs`      | No            | `psnr_hvs`, `psnr_hvs_y`, `psnr_hvs_cb`, `psnr_hvs_cr`                                         | AVX2, NEON                | CUDA, SYCL, Metal |
-| SSIM (fixed)       | `ssim`          | No            | `ssim`                                                                                         | —                         | —                  |
-| SSIM (float)       | `float_ssim`    | No            | `float_ssim` (+ L/C/S if enabled)                                                              | AVX2, AVX-512, NEON       | CUDA, SYCL |
-| MS-SSIM            | `float_ms_ssim` | No            | `float_ms_ssim` (+ per-scale L/C/S if enabled)                                                 | AVX2, AVX-512, NEON       | CUDA, SYCL |
+| PSNR (fixed)       | `psnr`          | No            | `psnr_y`, `psnr_cb`, `psnr_cr` (+ MSE / APSNR optional)                                        | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal¹ |
+| PSNR (float)       | `float_psnr`    | No            | `float_psnr` (luma only — the CPU extractor emits a single luma score)                         | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
+| PSNR-HVS           | `psnr_hvs`      | No            | `psnr_hvs`, `psnr_hvs_y`, `psnr_hvs_cb`, `psnr_hvs_cr`                                         | AVX2, NEON                | CUDA, SYCL, HIP, Metal |
+| SSIM (fixed)       | `ssim`          | No            | `ssim`                                                                                         | AVX2, NEON²               | CUDA, SYCL, HIP, Metal |
+| SSIM (float)       | `float_ssim`    | No            | `float_ssim` (+ L/C/S if enabled)                                                              | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
+| MS-SSIM            | `float_ms_ssim` | No            | `float_ms_ssim` (+ per-scale L/C/S if enabled)                                                 | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
 | ANSNR              | `float_ansnr`   | No            | removed — `float_ansnr` / `float_anpsnr` no longer emitted                                     | —                         | — (extractor removed PR #38 / ADR-0865) |
-| SSIMULACRA 2       | `ssimulacra2`   | No            | `ssimulacra2`                                                                                  | AVX2, AVX-512, NEON, SVE2 | CUDA, SYCL, Metal |
-| [NIQE](niqe.md)    | `niqe`          | No            | `niqe` (no-reference; scores the distorted frame only)                                         | —                         | — |
-| [Y-FUNQUE+ atoms](y-funque-plus.md) | `y_funque_plus` | No | `y_funque_plus_ms_ssim`, `y_funque_plus_dlm`, `y_funque_plus_mad` (atoms only; fused SVR deferred) | —                         | — |
-| Float moment       | `float_moment`  | No            | `float_moment_ref1st`, `float_moment_dis1st`, `float_moment_ref2nd`, `float_moment_dis2nd`     | AVX2, NEON                | CUDA, SYCL |
+| SSIMULACRA 2       | `ssimulacra2`   | No            | `ssimulacra2`                                                                                  | AVX2, AVX-512, NEON, SVE2 | CUDA, SYCL, HIP, Metal |
+| [NIQE](niqe.md)    | `niqe`          | No            | `niqe` (no-reference; scores the distorted frame only)                                         | —                         | —                  |
+| [Y-FUNQUE+ atoms](y-funque-plus.md) | `y_funque_plus` | No | `y_funque_plus_ms_ssim`, `y_funque_plus_dlm`, `y_funque_plus_mad` (atoms only; fused SVR deferred) | —                         | —                  |
+| Float moment       | `float_moment`  | No            | `float_moment_ref1st`, `float_moment_dis1st`, `float_moment_ref2nd`, `float_moment_dis2nd`     | AVX2, AVX-512, NEON, SVE2 | CUDA, SYCL, HIP, Metal |
 | LPIPS (tiny-AI)    | `lpips`         | No            | `lpips`                                                                                        | —                         | via ORT EP³        |
 | DISTS-Sq (tiny-AI) | `dists_sq`      | No            | `dists_sq`                                                                                     | —                         | via ORT EP³        |
-| FastDVDnet pre     | `fastdvdnet_pre`| No            | `fastdvdnet_pre_l1_residual`                                                                   | —                         | —                  |
-| TransNet V2        | `transnet_v2`   | No            | `shot_boundary_probability`, `shot_boundary`                                                   | —                         | —                  |
-| Speed (chroma)     | `speed_chroma`  | No            | `speed_chroma_y/u/v_score`, `speed_chroma_uv_score` (only when `VMAF_FLOAT_FEATURES` enabled)  | —                         | —                  |
-| Speed (temporal)   | `speed_temporal`| No            | `speed_temporal_score` family (only when `VMAF_FLOAT_FEATURES` enabled)                        | —                         | —                  |
+| FastDVDnet pre     | `fastdvdnet_pre`| No            | `fastdvdnet_pre_l1_residual`                                                                   | —                         | via ORT EP³        |
+| TransNet V2        | `transnet_v2`   | No            | `shot_boundary_probability`, `shot_boundary`                                                   | —                         | via ORT EP³        |
+| MobileSal          | `mobilesal`     | No            | `saliency_mean`                                                                                | —                         | via ORT EP³        |
+| Speed (chroma)     | `speed_chroma`  | No            | `speed_chroma_y/u/v_score`, `speed_chroma_uv_score` (only when `VMAF_FLOAT_FEATURES` enabled)  | AVX2, AVX-512             | CUDA, SYCL, HIP    |
+| Speed (temporal)   | `speed_temporal`| No            | `speed_temporal_score` family (only when `VMAF_FLOAT_FEATURES` enabled)                        | AVX2, AVX-512             | CUDA, SYCL, HIP    |
+| BRISQUE            | `brisque`       | No            | `brisque_score` (no-reference)                                                                 | —                         | —                  |
+| Delta E ITP        | `delta_e_itp`   | No            | `delta_e_itp`                                                                                  | —                         | —                  |
+| PU21               | `pu21`          | No            | `pu21_psnr`, `pu21_ssim`                                                                       | —                         | —                  |
+| TAD (Rust pilot)   | `tad`           | No            | `tad` (requires `-Denable_rust_features=true`)                                                 | —                         | —                  |
 
 **Core** extractors are required inputs for the shipped VMAF models (see
 [models/overview.md](../models/overview.md)); non-core extractors are
 standalone.
 
-¹ The GPU PSNR extractors (`psnr_cuda`, `psnr_sycl`) honour
-`enable_chroma` (default `true`) and emit `psnr_cb` / `psnr_cr` alongside
-`psnr_y` when the option is set. When `enable_chroma=false`, only `psnr_y`
-is emitted — matching the CPU extractor's luma-only path. YUV400 sources
-always produce luma-only output regardless of the option. GPU chroma parity
-was added for CUDA + SYCL by ADR-0453. (The Vulkan backend was removed in
-ADR-0726.)
+¹ The GPU PSNR extractors (`psnr_cuda`, `psnr_sycl`, `psnr_hip`,
+`integer_psnr_metal`) honour `enable_chroma` (default `true`) and emit
+`psnr_cb` / `psnr_cr` alongside `psnr_y` when the option is set. When
+`enable_chroma=false`, only `psnr_y` is emitted — matching the CPU
+extractor's luma-only path. YUV400 sources always produce luma-only output
+regardless of the option. GPU chroma parity was added for CUDA + SYCL by
+ADR-0453. (The Vulkan backend was removed in ADR-0726.)
 
-² SSIM (fixed-point): the CPU integer path is scalar-only by design.
-The `float_ssim` / `float_ms_ssim` paths cover the CUDA and SYCL GPU
-backends. (The Vulkan backend was removed in ADR-0726.) The
-`ssim_accumulate_avx512` reduction is vectorised (per
+² SSIM (fixed-point): `integer_ssim` has AVX2 and NEON SIMD acceleration, and
+CUDA, SYCL, HIP, and Metal GPU twins (`integer_ssim_{cuda,sycl,hip,metal}`).
+The `ssim_accumulate_avx512` reduction is vectorised (per
 [ADR-0139](../adr/0139-ssim-simd-bitexact-double.md), PR #342) —
 bit-exact vs scalar, ~7-11% wall-clock reduction on the SSIM/MS-SSIM
 hot path.
 
-³ LPIPS dispatches the underlying ONNX graph through the ORT
+³ Tiny-AI extractors dispatch their underlying ONNX graphs through the ORT
 execution provider selected via `--tiny-device` (CPU / CUDA /
 OpenVINO / ROCm); libvmaf itself does not own a SIMD or GPU
 specialisation of the pre-/post-processing today. See
 [`docs/ai/inference.md`](../ai/inference.md).
 
-⁴ CAMBI ships a HIP kernel (`cambi_hip`). CUDA / SYCL CAMBI ports
-remain optional follow-ups under
-[ADR-0205](../adr/0205-cambi-gpu-feasibility.md). (The original Vulkan
+⁴ CAMBI ships AVX2, AVX-512, and NEON SIMD implementations, and CUDA,
+SYCL, HIP, and Metal GPU kernels. (The original Vulkan
 kernel, T7-36 / ADR-0210, was removed with the backend in ADR-0726.)
 
 Depending on your build configuration not every backend is available — see
 [`backends/`](../backends/index.md) for the runtime dispatch rules.
 
-⁵ HIP backend (T7-10b) — `psnr_hip` (ADR-0241), `ciede_hip` /
-`float_moment_hip` (ADR-0257 / ADR-0258), `motion_v2_hip`
-(ADR-0267), and `float_motion_hip` / `float_ssim_hip` (ADR-0273 / ADR-0274)
-all register at the extractor level under
-`#if HAVE_HIP`. `float_ansnr_hip` (formerly ADR-0266 fifth consumer) was
-removed in commit 70ed8b3ce3 (PR #38). See
-[`backends/hip/overview.md`](../backends/hip/overview.md).
+⁵ HIP backend (T7-10b) — 19 feature extractors are registered in
+`feature_extractor_list[]` and resolve via `vmaf_get_feature_extractor_by_name`.
+See [`backends/hip/overview.md`](../backends/hip/overview.md).
 
 ⁶ `aim_score` and `adm3_score` are emitted by the `float_adm`
 extractor only (not the fixed-point `adm` extractor). The CUDA twin

@@ -227,6 +227,10 @@ static int transnet_v2_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_
     if (!path) {
         return -EINVAL;
     }
+    if (strstr(path, "placeholder") != NULL) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "transnet_v2: loading placeholder model '%s' (not for production use)\n", path);
+    }
     rc = vmaf_tiny_ai_open_session("transnet_v2", path, &s->sess);
     if (rc < 0) {
         return rc;

@@ -44,23 +44,31 @@ under an allowlisted root. See [security](#security-model) below.
 
 ## Tool catalogue
 
-| Tool | Purpose | Detail |
-|---|---|---|
-| `vmaf_score` | Score one `(ref, dis)` YUV pair; return the full JSON report | [tools.md#vmaf_score](tools.md#vmaf_score) |
-| `vmaf_score_encoded` | Score a `(ref, dis)` encoded video pair via ffmpeg decode | [tools.md#vmaf_score_encoded](tools.md#vmaf_score_encoded) |
-| `list_models` | Enumerate `.json` / `.pkl` / `.onnx` under `model/` | [tools.md#list_models](tools.md#list_models) |
-| `list_backends` | Report which backends the local `vmaf` binary was built with | [tools.md#list_backends](tools.md#list_backends) |
-| `probe_backend` | Check whether a specific backend is runtime-healthy on this host | [tools.md#probe_backend](tools.md#probe_backend) |
-| `vmaf_version` | Return the version string reported by the local `vmaf` binary | [tools.md#vmaf_version](tools.md#vmaf_version) |
-| `run_benchmark` | Run `testdata/bench_all.sh` on a pair | [tools.md#run_benchmark](tools.md#run_benchmark) |
-| `run_compare` | Wrap `vmaf-tune compare`: compare codec adapters at target VMAF scores | [tools.md#run_compare](tools.md#run_compare) |
-| `run_ladder` | Wrap `vmaf-tune ladder`: generate a quality-ladder bitrate report | [tools.md#run_ladder](tools.md#run_ladder) |
-| `run_tune_per_shot` | Wrap `vmaf-tune per-shot`: per-shot CRF/QP tuning | [tools.md#run_tune_per_shot](tools.md#run_tune_per_shot) |
-| `eval_model_on_split` | Evaluate a tiny-AI ONNX model on a parquet feature cache | [tools.md#eval_model_on_split](tools.md#eval_model_on_split) |
-| `compare_models` | Rank several ONNX models on the same split by descending PLCC | [tools.md#compare_models](tools.md#compare_models) |
-| `list_extractors` | Enumerate all `VmafFeatureExtractor` implementations in `core/src/feature/` | [tools.md#list_extractors](tools.md#list_extractors) |
-| `describe_model` | Return metadata for a VMAF model by name or path | [tools.md#describe_model](tools.md#describe_model) |
-| `describe_worst_frames` | Score a pair, extract the N worst-VMAF frames as PNGs, and describe visible artefacts via a local VLM | [tools.md#describe_worst_frames](tools.md#describe_worst_frames) |
+| Tool | Execution | Purpose | Detail |
+|---|---|---|---|
+| `vmaf_score` | Subprocess (CLI) / Direct Cgo (`VMAFX_MCP_DIRECT=1`) | Score one `(ref, dis)` YUV pair; return the full JSON report | [tools.md#vmaf_score](tools.md#vmaf_score) |
+| `vmaf_score_encoded` | Subprocess (`ffmpeg` + CLI) | Score a `(ref, dis)` encoded video pair via ffmpeg decode | [tools.md#vmaf_score_encoded](tools.md#vmaf_score_encoded) |
+| `list_models` | Subprocess / filesystem probe | Enumerate `.json` / `.pkl` / `.onnx` under `model/` | [tools.md#list_models](tools.md#list_models) |
+| `list_backends` | Subprocess (`vmaf` probe) | Report which backends the local `vmaf` binary was built with | [tools.md#list_backends](tools.md#list_backends) |
+| `probe_backend` | Subprocess (`vmaf` probe) | Check whether a specific backend is runtime-healthy on this host | [tools.md#probe_backend](tools.md#probe_backend) |
+| `vmaf_version` | Subprocess (`vmaf -v`) | Return the version string reported by the local `vmaf` binary | [tools.md#vmaf_version](tools.md#vmaf_version) |
+| `run_benchmark` | Subprocess (`bench_all.sh`) | Run `testdata/bench_all.sh` on a pair | [tools.md#run_benchmark](tools.md#run_benchmark) |
+| `run_compare` | Subprocess (`vmaf-tune compare`) | Wrap `vmaf-tune compare`: compare codec adapters at target VMAF scores | [tools.md#run_compare](tools.md#run_compare) |
+| `run_ladder` | Subprocess (`vmaf-tune ladder`) | Wrap `vmaf-tune ladder`: generate a quality-ladder bitrate report | [tools.md#run_ladder](tools.md#run_ladder) |
+| `run_tune_per_shot` | Subprocess (`vmaf-tune per-shot`) | Wrap `vmaf-tune per-shot`: per-shot CRF/QP tuning | [tools.md#run_tune_per_shot](tools.md#run_tune_per_shot) |
+| `eval_model_on_split` | Subprocess / Native Go ORT | Evaluate a tiny-AI ONNX model on a parquet feature cache | [tools.md#eval_model_on_split](tools.md#eval_model_on_split) |
+| `compare_models` | Subprocess / Native Go ORT | Rank several ONNX models on the same split by descending PLCC | [tools.md#compare_models](tools.md#compare_models) |
+| `list_extractors` | Subprocess (`vmaf` probe) | Enumerate all `VmafFeatureExtractor` implementations in `core/src/feature/` | [tools.md#list_extractors](tools.md#list_extractors) |
+| `describe_model` | Subprocess / Direct Cgo (`VMAFX_MCP_DIRECT=1`) | Return metadata for a VMAF model by name or path | [tools.md#describe_model](tools.md#describe_model) |
+| `describe_worst_frames` | Subprocess (CLI + VLM) | Score a pair, extract the N worst-VMAF frames as PNGs, and describe visible artefacts via a local VLM | [tools.md#describe_worst_frames](tools.md#describe_worst_frames) |
+
+> **Execution mechanics (GAP-MCP-SUBPROCESS-VS-CGO-DIRECT).** 13 of the 15 tools in the Go server (`cmd/vmafx-mcp`)
+> currently shell out to the `vmaf` / `vmaf-tune` CLI or external processes. Only `vmaf_score` and `describe_model`
+> offer a direct in-process Cgo path when `VMAFX_MCP_DIRECT=1` is set. Full migration of the remaining 13 tools to direct
+> Cgo/in-process library calls is tracked under the Go migration plan (ADR-0704 / ADR-0931).
+>
+> In contrast, the embedded C MCP server inside `libvmaf` (`core/src/mcp/dispatcher.c`, ADR-0209) executes entirely
+> in-process without any child subprocesses, currently serving exactly 2 tools: `list_features` and `compute_vmaf` (GAP-MCP-C-EMBEDDED-ONLY-2-TOOLS).
 
 All tools return a single `TextContent` message whose body is a JSON
 document. On error the body is `{"error": "<message>"}` with the same

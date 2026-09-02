@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## gap/cpu-ci-bucket — retire dead orphan motion_v2 x86 SIMD duplicate files (GAP-BUILD-ORPHAN-DEAD-SIMD-MOTION-V2)
+
+- `core/src/feature/x86/motion_v2_avx2.{c,h}` and `motion_v2_avx512.{c,h}` were removed.
+  These files were orphaned duplicates of `core/src/feature/x86/motion_avx2.{c,h}` and
+  `motion_avx512.{c,h}` (which were added when upstream pipelined integer motion in `a4a1492d3`).
+  The library build and tests already linked against `motion_avx2.c` and `motion_avx512.c`.
+  Consumers (`core/src/feature/integer_motion_v2.c`, `core/test/test_motion_v2_simd.c`,
+  `core/test/test_motion_avx512_parity.c`) now uniformly `#include "x86/motion_avx2.h"` and
+  `#include "x86/motion_avx512.h"`.
+
 ## chore/intel-neo-matched-set-bump (2026-09-02)
 
 no rebase impact: dev/Containerfile is fork-local.

@@ -23,7 +23,7 @@
 #include <stdint.h>
 
 /* motion_v2 NEON fast paths for 8-bit and 10/12-bit inputs. Signatures
- * mirror the AVX2 variants in [`../x86/motion_v2_avx2.h`](../x86/motion_v2_avx2.h).
+ * mirror the AVX2 variants in [`../x86/motion_avx2.h`](../x86/motion_avx2.h).
  * Bit-exact vs the scalar references `motion_score_pipeline_{8,16}` in
  * `integer_motion_v2.c`. See ADR-0145. */
 uint64_t motion_score_pipeline_8_neon(const uint8_t *prev, ptrdiff_t prev_stride,

@@ -48,9 +48,9 @@
 #define DEFAULT_MOTION_MAX_VAL (10000.0)
 
 #if ARCH_X86
-#include "x86/motion_v2_avx2.h"
+#include "x86/motion_avx2.h"
 #if HAVE_AVX512
-#include "x86/motion_v2_avx512.h"
+#include "x86/motion_avx512.h"
 #endif
 #endif
 #if ARCH_AARCH64
