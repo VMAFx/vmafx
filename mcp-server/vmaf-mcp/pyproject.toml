@@ -38,7 +38,7 @@ eval = [
 # (ADR-0172 / T6-6).
 vlm = [
   "transformers>=5.16.1",
-  "torch>=2.13.0",
+  "torch>=2.14.0",
   "Pillow>=12.3.0",
   "accelerate>=1.14.0",
 ]
