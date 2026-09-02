@@ -1,0 +1,1 @@
+| [ADR-0786](0786-vmafx-operator-stage2-reconcilers.md) | vmafx-operator Stage 2 — reconciler loops, webhook validation, per-controller RBAC | Accepted | `go`, `k8s`, `operator`, `crd`, `controller-runtime`, `phase4b`, `fork-local` |

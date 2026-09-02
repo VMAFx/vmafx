@@ -1,0 +1,1 @@
+| [ADR-0891](0891-simd-bit-exact-round2-fmaf-libvmaf-feature-icx.md) | SIMD bit-exactness round-2 — unify SSIMULACRA 2 colour-matrix on FMA, extend `-fp-model=precise` to `libvmaf_feature_static_lib` | Accepted | `simd`, `build`, `bit-exact`, `icx` |

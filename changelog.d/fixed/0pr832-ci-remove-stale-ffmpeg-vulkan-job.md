@@ -1,0 +1,1 @@
+- Fixed: removed the stale `ffmpeg-vulkan` CI job from `ffmpeg-integration.yml`; the Vulkan backend was removed in ADR-0726 and the leftover job caused spurious required-check failures. (PR #832)

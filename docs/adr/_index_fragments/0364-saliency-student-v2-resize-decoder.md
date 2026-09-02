@@ -1,0 +1,1 @@
+| [ADR-0364](0364-saliency-student-v2-resize-decoder.md) | `saliency_student_v2` — Resize-decoder ablation on the v1 recipe | Accepted (gate passed: v2 IoU 0.7105 ≥ v1 0.6558) | ai, dnn, mobilesal, saliency, training, fork-local, docs |

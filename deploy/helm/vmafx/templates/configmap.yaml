@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vmafx.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+data:
+  {{- range $k, $v := .Values.config }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

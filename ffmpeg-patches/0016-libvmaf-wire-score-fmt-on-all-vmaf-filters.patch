@@ -1,0 +1,129 @@
+From a73d169d1252cd3d5faf973936eb92952b763330 Mon Sep 17 00:00:00 2001
+From: Lusoris <lusoris@pm.me>
+Date: Sat, 6 Jun 2026 11:42:32 +0200
+Subject: [PATCH] libvmaf: wire score_fmt option on all vmaf filters
+
+The fork added vmaf_write_output_with_format() to expose the
+--precision flag semantics via the C API (ADR-0119 / commit 695d29626).
+The FFmpeg filter side never adopted it: all four vmaf filters
+(libvmaf, libvmaf_sycl, libvmaf_vulkan, libvmaf_metal) still call
+the old vmaf_write_output() which always formats scores as %.6f.
+
+This patch closes that gap:
+
+  1. Adds char *score_fmt to LIBVMAFContext (next to cpumask/gpumask).
+  2. Exposes score_fmt as an AVOption (string, default NULL = %.6f)
+     on all four filters, symmetric with cpumask/gpumask from ADR-0576.
+  3. Replaces every vmaf_write_output() call with
+     vmaf_write_output_with_format(..., s->score_fmt), passing NULL
+     for the default %.6f behaviour.
+
+Covers:
+  - main libvmaf filter (uninit, libvmaf_options)
+  - libvmaf_sycl filter (uninit_sycl, libvmaf_sycl_options)
+  - libvmaf_vulkan filter (uninit_vulkan, libvmaf_vulkan_options)
+  - libvmaf_metal filter (uninit_metal, libvmaf_metal_options)
+---
+ libavfilter/vf_libvmaf.c | 30 ++++++++++++++++++++++++++----
+ 1 file changed, 26 insertions(+), 4 deletions(-)
+
+diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
+index 1bc430dcaa..b654eb7aae 100644
+--- a/libavfilter/vf_libvmaf.c
++++ b/libavfilter/vf_libvmaf.c
+@@ -122,6 +122,13 @@ typedef struct LIBVMAFContext {
+ #if CONFIG_LIBVMAF_METAL
+     VmafMetalState *metal_state;        /* owned by the libvmaf filter when metal_device >= -1 + !default-disabled */
+ #endif
++    /* ADR-0119: printf format string for vmaf_write_output_with_format().
++     * NULL (default) produces "%.6f" matching upstream Netflix/vmaf behaviour.
++     * Pass "%.17g" to get IEEE-754 round-trip lossless output (equivalent to
++     * --precision=max on the libvmaf CLI). Any valid double printf format
++     * string is accepted; invalid formats produce undefined output per the
++     * vmaf_write_output_with_format() API contract. */
++    char *score_fmt;
+     /* ADR-0576: VmafConfiguration.cpumask / gpumask exposed as AVOptions.
+      * cpumask bits selectively disable SIMD ISAs (SSE2/NEON=1, SSE3=2,
+      * SSE4.1=4, AVX2=8, AVX512=16, AVX512ICL=32).  gpumask bit 0 (value 1)
+@@ -162,6 +169,7 @@ static const AVOption libvmaf_options[] = {
+     {"metal_device", "Metal device index (-2 = disabled, -1 = system default, 0+ = MTLCopyAllDevices ordinal).", OFFSET(metal_device), AV_OPT_TYPE_INT, {.i64=-2}, -2, INT_MAX, FLAGS},
+     {"cpumask",      "Bitmask to disable SIMD ISAs (1=SSE2/NEON 2=SSE3 4=SSE4.1 8=AVX2 16=AVX512 32=AVX512ICL; 0=all enabled).", OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, FLAGS},
+     {"gpumask",      "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).", OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, FLAGS},
++    {"score_fmt",    "printf format for score values in log file (NULL=%.6f default; use %.17g for lossless).", OFFSET(score_fmt), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS},
+     { NULL }
+ };
+ 
+@@ -933,7 +941,9 @@ static av_cold void uninit(AVFilterContext *ctx)
+ 
+     if (s->vmaf) {
+         if (s->log_path && !err)
+-            vmaf_write_output(s->vmaf, s->log_path, log_fmt_map(s->log_fmt));
++            vmaf_write_output_with_format(s->vmaf, s->log_path,
++                                          log_fmt_map(s->log_fmt),
++                                          s->score_fmt);
+     }
+ 
+ clean_up:
+@@ -1239,6 +1249,8 @@ static const AVOption libvmaf_sycl_options[] = {
+                   OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, SYCL_FLAGS},
+     {"gpumask",   "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).",
+                   OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, SYCL_FLAGS},
++    {"score_fmt", "printf format for score values in log file (NULL=%.6f default; use %.17g for lossless).",
++                  OFFSET(score_fmt), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, SYCL_FLAGS},
+     { NULL }
+ };
+ #undef SYCL_FLAGS
+@@ -1344,7 +1356,9 @@ static av_cold void uninit_sycl(AVFilterContext *ctx)
+ 
+     if (s->vmaf) {
+         if (s->log_path && !err)
+-            vmaf_write_output(s->vmaf, s->log_path, log_fmt_map(s->log_fmt));
++            vmaf_write_output_with_format(s->vmaf, s->log_path,
++                                          log_fmt_map(s->log_fmt),
++                                          s->score_fmt);
+     }
+ 
+     if (s->sycl_profile && s->sycl_state) {
+@@ -1520,6 +1534,8 @@ static const AVOption libvmaf_vulkan_options[] = {
+                   OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, VK_FLAGS},
+     {"gpumask",   "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).",
+                   OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, VK_FLAGS},
++    {"score_fmt", "printf format for score values in log file (NULL=%.6f default; use %.17g for lossless).",
++                  OFFSET(score_fmt), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, VK_FLAGS},
+     { NULL }
+ };
+ #undef VK_FLAGS
+@@ -1628,7 +1644,9 @@ static av_cold void uninit_vulkan(AVFilterContext *ctx)
+     }
+ 
+     if (s->vmaf && s->log_path && !err)
+-        vmaf_write_output(s->vmaf, s->log_path, log_fmt_map(s->log_fmt));
++        vmaf_write_output_with_format(s->vmaf, s->log_path,
++                                      log_fmt_map(s->log_fmt),
++                                      s->score_fmt);
+ 
+ clean_up:
+     if (s->model) {
+@@ -1805,6 +1823,8 @@ static const AVOption libvmaf_metal_options[] = {
+                   OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, MTL_FLAGS},
+     {"gpumask",   "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).",
+                   OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, MTL_FLAGS},
++    {"score_fmt", "printf format for score values in log file (NULL=%.6f default; use %.17g for lossless).",
++                  OFFSET(score_fmt), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, MTL_FLAGS},
+     { NULL }
+ };
+ #undef MTL_FLAGS
+@@ -1923,7 +1943,9 @@ static av_cold void uninit_metal(AVFilterContext *ctx)
+     }
+ 
+     if (s->vmaf && s->log_path && !err)
+-        vmaf_write_output(s->vmaf, s->log_path, log_fmt_map(s->log_fmt));
++        vmaf_write_output_with_format(s->vmaf, s->log_path,
++                                      log_fmt_map(s->log_fmt),
++                                      s->score_fmt);
+ 
+ clean_up:
+     if (s->model) {
+-- 
+2.54.0
+

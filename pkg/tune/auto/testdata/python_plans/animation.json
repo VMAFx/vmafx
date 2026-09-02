@@ -1,0 +1,79 @@
+{
+  "cells": [
+    {
+      "codec": "libx265",
+      "confidence_decision": "recommend-escalation",
+      "crf": 34,
+      "effective_predictor_target_vmaf": 95.0,
+      "estimated_bitrate_kbps": 4608.0,
+      "estimated_vmaf": 95.38326794572663,
+      "hdr_args": [],
+      "interval_width": NaN,
+      "prediction_source": "predictor",
+      "rung": 2160,
+      "saliency_intensity": "aggressive",
+      "sample_clip_seconds": 0.0,
+      "selected": true,
+      "verdict": "UNKNOWN"
+    }
+  ],
+  "metadata": {
+    "allow_codecs": [
+      "libx265"
+    ],
+    "confidence_aware_escalations": [
+      {
+        "codec": "libx265",
+        "decision": "recommend-escalation",
+        "interval_width": NaN,
+        "rung": 2160,
+        "verdict": "UNKNOWN"
+      }
+    ],
+    "confidence_thresholds": {
+      "source": "recipe:animation/default",
+      "tight_interval_max_width": 1.75,
+      "wide_interval_min_width": 5.0
+    },
+    "effective_predictor_target_vmaf": 95.0,
+    "max_budget_kbps": 8000.0,
+    "recipe_applied": "animation",
+    "recipe_overrides": {
+      "force_single_rung": true,
+      "saliency_intensity": "aggressive",
+      "target_vmaf_offset": 2.0,
+      "tight_interval_max_width": 1.75
+    },
+    "short_circuits": [
+      "ladder-single-rung",
+      "codec-pinned",
+      "sdr-skip"
+    ],
+    "smoke": false,
+    "source_meta": {
+      "baseline_vmaf": 0.0,
+      "complexity_score": 0.0,
+      "content_class": "animation",
+      "duration_s": 1200.0,
+      "height": 2160,
+      "is_hdr": false,
+      "sample_clip_seconds": 0.0,
+      "shot_variance": 0.0,
+      "width": 3840
+    },
+    "src": "/tmp/anim.mkv",
+    "target_vmaf": 93.0,
+    "user_pinned_codec": null,
+    "winner": {
+      "budget_margin_kbps": 3392.0,
+      "cell_index": 0,
+      "codec": "libx265",
+      "crf": 34,
+      "estimated_bitrate_kbps": 4608.0,
+      "estimated_vmaf": 95.38326794572663,
+      "quality_margin": 2.3832679457266295,
+      "rung": 2160,
+      "status": "budget_and_quality_met"
+    }
+  }
+}

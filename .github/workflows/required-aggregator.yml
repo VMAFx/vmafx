@@ -1,0 +1,188 @@
+name: CI
+
+# ADR-1140 — required contexts now ALWAYS start and route their own work through
+# scripts/ci/plan-ci-impact.py; the absent-means-pass rule below is only a backstop.
+# ADR-0313 — Permanent fix for the doc/Python-only-PR vs C-build-required-checks
+# structural deadlock. This single workflow runs on every PR (no path filter)
+# and verifies that each named required check on the head SHA reported either
+# success, skipped (path-filter short-circuit), or neutral. It becomes the
+# single required-status-check that branch protection enforces; the individual
+# build/lint workflows can keep their path filters.
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  checks: read
+  pull-requests: read
+
+concurrency:
+  group: required-aggregator-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  aggregator:
+    name: Required Checks Aggregator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 250
+    steps:
+      - name: Block draft PRs from satisfying the required check
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft == true
+        run: |
+          echo "::error::Draft PRs must not satisfy Required Checks Aggregator."
+          echo "Mark the PR ready for review so this workflow reruns and waits for the real gates."
+          exit 1
+
+      - name: Wait for sibling workflows + verify required-check outcomes
+        if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          retries: 3
+          script: |
+            // Ordered by historical reliability; no Build matrix entries here
+            // because they path-filter-skip on doc/Python-only diffs and that
+            // is the explicit semantics ADR-0313 codifies as acceptable.
+            const required = [
+              'Build — Ubuntu gcc (CPU) + DNN',
+              'Build — Ubuntu clang (CPU) + DNN',
+              'Build — Windows MinGW64 (CPU) (MINGW64, mingw-w64-x86_64)',
+              'Build — Windows MSVC + CUDA (build only)',
+              'Build — Windows MSVC + oneAPI SYCL (build only)',
+              'CodeQL',
+              'CodeQL (Actions)',
+              'CodeQL (C/C++)',
+              'CodeQL (Python)',
+              'Pre-Commit (Formatters + Basic Checks)',
+              'Python Lint (Ruff + Black + mypy)',
+              'Semgrep (CWE Top 25 + CERT-C + Custom)',
+              'Clang-Tidy (Changed C/C++ Files)',
+              'Clang-Tidy Ratchet (Whole Tree)',
+              'Cppcheck (Whole Project)',
+              'Dependency Review (PR Diff)',
+              'Gitleaks (Secret Scan)',
+              'Docs',
+              'ShellCheck + shfmt (All *.sh)',
+              'Netflix CPU Golden Tests (D24)',
+              'Sanitizers — ASan + UBSan + MSan (address)',
+              'Sanitizers — ASan + UBSan + MSan (thread)',
+              'Sanitizers — ASan + UBSan + MSan (undefined)',
+              'Assertion Density (Power of 10 §5)',
+              'Twin Drift + Stale Source Refs (ADR-1135)',
+              'Tiny AI (DNN Suite + ai/ Pytests)',
+              'Build — Ubuntu HIP (T7-10b runtime)',
+              'SYCL float_ssim Parity (Arc DG2-G10)',
+            ];
+            const sha = context.eventName === 'pull_request'
+              ? context.payload.pull_request.head.sha
+              : context.sha;
+            core.info(`Aggregating required checks for SHA ${sha}`);
+            const currentRun = await github.rest.actions.getWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: Number(process.env.GITHUB_RUN_ID || context.runId),
+            });
+            const runCreatedMs = Date.parse(currentRun.data.created_at);
+            const minCreatedMs = runCreatedMs - 2 * 60 * 1000;
+            const registrationGraceDeadline = Date.now() + 2 * 60 * 1000;
+
+            function runTimestampMs(run) {
+              return Date.parse(run.started_at || run.created_at || run.completed_at || 0);
+            }
+
+            function newestByName(checkRuns) {
+              const byName = {};
+              for (const run of checkRuns) {
+                if (runTimestampMs(run) < minCreatedMs) continue;
+                const previous = byName[run.name];
+                if (!previous || runTimestampMs(run) > runTimestampMs(previous)) {
+                  byName[run.name] = run;
+                }
+              }
+              return byName;
+            }
+
+            // Poll up to 90 minutes for sibling workflows to register their
+            // check_runs and reach a terminal state. A run that has never
+            // appeared after a short registration grace period is treated as
+            // path-filter-not-applicable (acceptable). Older draft-era
+            // check_runs on the same SHA are ignored so a ready PR cannot
+            // merge on skipped draft gates. A run still IN_PROGRESS at
+            // deadline is treated as failure — extend `deadline` if your
+            // matrix is slower. The Ubuntu gcc/clang DNN + Windows MSVC
+            // builds can take 12+ minutes each; the deadline must also
+            // account for GitHub Actions runner queue depth on free-tier
+            // projects, where a job can wait 30+ minutes before starting on
+            // a heavy queue (observed 2026-05-09 when ~80 CI jobs were
+            // queued across the ~40 in-flight PRs and the previous
+            // 30-minute deadline failed every PR with `queued` for two hours
+            // straight). Bumped to 90 minutes; corresponding
+            // `timeout-minutes` lifted to 100 to allow the polling job itself
+            // to finish.
+            //
+            // 2026-08-30: the same starvation recurred at 90 minutes. A
+            // two-month Renovate backlog opened ~44 concurrent dependency
+            // PRs; every aggregator on that wave died on the deadline with
+            // siblings still `queued`/`in_progress` and NO real check failure
+            // (verified on #1083/#1087/#1089: e.g. job 89636653774 ran
+            // 03:24:39 -> 04:54:53Z = 90m14s and expired on
+            // `Build - Ubuntu gcc (CPU) + DNN: in_progress; CodeQL: queued;
+            // ShellCheck + shfmt: queued`). Because the aggregator is a
+            // required check, a timeout blocks the merge, which keeps the
+            // queue deep, which causes the next timeout. Raised to 240
+            // minutes with `timeout-minutes` at 250. This job only polls the
+            // checks API, so a longer ceiling costs a runner slot rather
+            // than compute; the hosted-runner hard cap is 360 minutes.
+            const deadline = Date.now() + 240 * 60 * 1000;
+            let byName = {};
+            while (Date.now() < deadline) {
+              const { data: { check_runs } } = await github.rest.checks.listForRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: sha,
+                per_page: 100,
+              });
+              byName = newestByName(check_runs);
+              const missing = required.filter(n => !byName[n]);
+              const stillRunning = required.filter(n => {
+                const run = byName[n];
+                return run && (run.status === 'queued' || run.status === 'in_progress');
+              });
+              if (stillRunning.length === 0 && (missing.length === 0 || Date.now() > registrationGraceDeadline)) {
+                break;
+              }
+              core.info(`Waiting on: ${stillRunning.slice(0, 3).join(', ')}` +
+                        (stillRunning.length > 3 ? ` (+${stillRunning.length - 3} more)` : ''));
+              if (missing.length > 0 && Date.now() <= registrationGraceDeadline) {
+                core.info(`Waiting for check registration: ${missing.slice(0, 3).join(', ')}` +
+                          (missing.length > 3 ? ` (+${missing.length - 3} more)` : ''));
+              }
+              await new Promise(r => setTimeout(r, 30000));
+            }
+
+            const failed = [];
+            const accepted = ['success', 'skipped', 'neutral'];
+            for (const name of required) {
+              const run = byName[name];
+              if (!run) {
+                core.info(`OK (not reported, treated as path-filter-skip): ${name}`);
+                continue;
+              }
+              if (!accepted.includes(run.conclusion)) {
+                failed.push(`${name}: ${run.conclusion ?? run.status}`);
+              } else {
+                core.info(`OK (${run.conclusion}): ${name}`);
+              }
+            }
+
+            if (failed.length > 0) {
+              core.setFailed(`Required checks did not pass:\n  - ${failed.join('\n  - ')}`);
+            } else {
+              core.info('All required checks reported success/skipped/neutral.');
+            }

@@ -1,0 +1,1 @@
+{"kind":"fr","name":"codec_aware","input_name":"x","output_name":"y","encoder_vocab":["libx264","libx265","libsvtav1","unknown"],"feature_order":["adm2"],"feature_mean":[0.5],"feature_std":[0.1],"output_names":["score","conf"]}

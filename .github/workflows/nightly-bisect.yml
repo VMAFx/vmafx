@@ -1,0 +1,99 @@
+name: nightly-bisect
+
+# Nightly bisect-model-quality smoke.
+# Runs the binary-search regression detector against the committed
+# fixture timeline. A red run means the bisect wiring broke or — once
+# real models replace the synthetic placeholder — a real model quality
+# regression was localised. Latest verdict + per-step table are mirrored
+# to the sticky comment on issue #827 (tracking: nightly bisect-model-quality results).
+
+on:
+  schedule:
+    - cron: "37 4 * * *"  # 04:37 UTC, after nightly.yml's 03:17 jobs settle
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write  # for sticky-comment editing on #827
+
+concurrency:
+  group: nightly-bisect-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BISECT_TRACKER_ISSUE: "827"
+  BISECT_GATE_PLCC: "0.85"
+
+jobs:
+  bisect:
+    name: Bisect synthetic timeline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14.7"
+
+      - name: Install ai/ + onnxruntime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ai
+
+      - name: Verify committed cache regenerates (logical content)
+        id: cache_check
+        run: |
+          mkdir -p bisect-out
+          # Don't fail the job here — the wiring step below posts a
+          # "wiring broke" sticky-comment update to the tracking issue when
+          # --check fails, then exits non-zero so the run is still red.
+          # See ADR-0262.
+          if python ai/scripts/build_bisect_cache.py --check 2>bisect-out/cache-check.err; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            cat bisect-out/cache-check.err
+          fi
+
+      - name: Run bisect-model-quality
+        id: bisect
+        if: steps.cache_check.outputs.ok == 'true'
+        run: |
+          set -euo pipefail
+          vmaf-train bisect-model-quality \
+            ai/testdata/bisect/models/model_*.onnx \
+            --features ai/testdata/bisect/features.parquet \
+            --min-plcc "${BISECT_GATE_PLCC}" \
+            --input-name input \
+            --json bisect-out/result.json \
+            --fail-on-first-bad
+
+      - name: Upload bisect report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: bisect-report
+          path: bisect-out/
+
+      - name: Update sticky tracker comment (success / quality verdict)
+        if: always() && hashFiles('bisect-out/result.json') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/ci/post-bisect-comment.py \
+            --issue "${BISECT_TRACKER_ISSUE}" \
+            --report bisect-out/result.json
+
+      - name: Update sticky tracker comment (wiring broke)
+        if: always() && steps.cache_check.outputs.ok == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/ci/post-bisect-comment.py \
+            --issue "${BISECT_TRACKER_ISSUE}" \
+            --wiring-broke \
+            --error-log bisect-out/cache-check.err
+          # Re-fail the job so branch view + Actions tab stay red.
+          exit 1

@@ -1,0 +1,17 @@
+{
+  "_comment": "Fork-added BRISQUE CPU score snapshot (NOT Netflix golden data). The C extractor core/src/feature/brisque.c scores frame 0 of testdata/ref_576x324_48f.yuv (natural uncompressed content, cross-platform stable). The fixture was changed from dis_576x324_48f.yuv frame 12 (heavily compressed) because BRISQUE's AGGD strict-sign paired-product bucketing is FP-summation-order-sensitive on near-flat MSCN fields; the original dis frame's score differed by ~0.1 units between x86 gcc and macOS/ARM clang. On natural uncompressed content the MSCN field is richly textured and the score is deterministic to places=4 across platforms. Correctness is established independently by the brisque_math.h unit oracles and by a cross-check against the MATLAB-faithful reference (gregfreeman estimateggdparam/estimateaggdparam + imresize predicting the bundled LIVE allmodel via libsvm) on a stable natural image (cameraman: C=-13.70844 vs oracle=-13.70840, ~5e-5). See docs/metrics/brisque.md and ADR-1115. Regenerate via the one-liner in docs/metrics/brisque.md.",
+  "model": "model/other_models/brisque_live.model",
+  "model_sha256": "19526fb799c4c7992ccc109fcfecddb25976ba024b194cd3ee275d27e8909c8d",
+  "fixture": "testdata/ref_576x324_48f.yuv",
+  "fixture_width": 576,
+  "fixture_height": 324,
+  "fixture_frame": 0,
+  "feature": "brisque",
+  "score": 97.428309192418,
+  "cross_check_natural_image": {
+    "image": "skimage.data.camera (512x512, 8-bit grayscale)",
+    "c_extractor": -13.708443649208,
+    "matlab_faithful_oracle": -13.708399,
+    "abs_diff": 4.5e-05
+  }
+}

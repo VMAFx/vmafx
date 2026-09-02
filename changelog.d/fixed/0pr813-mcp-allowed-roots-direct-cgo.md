@@ -1,0 +1,1 @@
+- Fixed: `resolveModelArgToPath` in the direct-CGo MCP path now enforces `AllowedRoots`; absolute paths outside the configured roots are rejected, closing a security regression. (PR #813)

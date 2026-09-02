@@ -1,0 +1,367 @@
+import os
+import shutil
+import unittest
+from test.testutil import (
+    set_default_576_324_videos_for_testing,
+    set_default_576_324_videos_for_testing_scaled,
+    set_default_cambi_notyuv_asset_for_validation_testing,
+    set_default_cambi_video_for_testing_10b,
+    set_default_cambi_video_for_testing_b,
+)
+from unittest.mock import patch
+
+from vmaf.core.cambi_feature_extractor import (
+    CambiFeatureExtractor,
+    CambiFullReferenceFeatureExtractor,
+)
+from vmaf.core.cambi_quality_runner import CambiFullReferenceQualityRunner, CambiQualityRunner
+from vmaf.core.result_store import FileSystemResultStore
+from vmaf.tools.misc import MyTestCase
+
+
+class CambiFeatureExtractorTest(MyTestCase):
+
+    def tearDown(self):
+        if hasattr(self, "fextractor"):
+            self.fextractor.remove_results()
+        super().tearDown()
+
+    def test_run_cambi_fextractor(self):
+        _, _, asset, asset_original = set_default_576_324_videos_for_testing()
+        self.fextractor = CambiFeatureExtractor(
+            [asset, asset_original], None, fifo_mode=False, result_store=None
+        )
+        self.fextractor.run(parallelize=True)
+        results = self.fextractor.results
+
+        # score: arithmetic mean score over all frames
+        self.assertAlmostEqual(
+            results[0]["Cambi_feature_cambi_encbd_8_score"], 0.25968416666666666, places=4
+        )
+        self.assertAlmostEqual(
+            results[1]["Cambi_feature_cambi_encbd_8_score"], 0.00020847916666666663, places=4
+        )
+
+    def test_run_cambi_fextractor_scaled(self):
+        _, _, asset, asset_original = set_default_576_324_videos_for_testing_scaled()
+        self.fextractor = CambiFeatureExtractor(
+            [asset, asset_original], None, fifo_mode=False, result_store=None, optional_dict={}
+        )
+        self.fextractor.run(parallelize=True)
+        results = self.fextractor.results
+
+        # score: arithmetic mean score over all frames
+        self.assertAlmostEqual(
+            results[0]["Cambi_feature_cambi_encbd_8_ench_270_encw_480_score"],
+            0.17871631249999997,
+            places=4,
+        )
+        self.assertAlmostEqual(
+            results[1]["Cambi_feature_cambi_encbd_8_ench_270_encw_480_score"],
+            0.00022027083333333336,
+            places=4,
+        )
+
+    def test_run_cambi_fextractor_scaled_b(self):
+        _, _, asset, asset_original = set_default_cambi_video_for_testing_b()
+        self.fextractor = CambiFeatureExtractor(
+            [asset, asset_original], None, fifo_mode=False, result_store=None, optional_dict={}
+        )
+        self.fextractor.run(parallelize=True)
+        results = self.fextractor.results
+
+        # score: arithmetic mean score over all frames
+        self.assertAlmostEqual(
+            results[0]["Cambi_feature_cambi_encbd_8_ench_540_encw_960_score"], 0.773078, places=4
+        )
+
+    def test_run_cambi_fextractor_10b(self):
+        _, _, asset, asset_original = set_default_cambi_video_for_testing_10b()
+        self.fextractor = CambiFeatureExtractor(
+            [asset, asset_original], None, fifo_mode=False, result_store=None, optional_dict={}
+        )
+        self.fextractor.run(parallelize=True)
+        results = self.fextractor.results
+
+        # score: arithmetic mean score over all frames
+        self.assertAlmostEqual(
+            results[0]["Cambi_feature_cambi_encbd_10_score"], 0.0013863333333333334, places=4
+        )
+
+    def test_run_cambi_fextractor_incorrect_enc_bitdepth(self):
+        _, _, asset, asset_original = set_default_cambi_video_for_testing_10b()
+        asset.asset_dict["dis_enc_bitdepth"] = 10
+        self.fextractor = CambiFeatureExtractor(
+            [asset, asset_original], None, fifo_mode=False, result_store=None, optional_dict={}
+        )
+        self.fextractor.run(parallelize=False)
+        results = self.fextractor.results
+
+        # score: arithmetic mean score over all frames
+        self.assertAlmostEqual(
+            results[0]["Cambi_feature_cambi_encbd_10_score"], 0.0013863333333333334, places=4
+        )
+
+    def test_run_cambi_fextractor_correct_enc_bitdepth(self):
+        _, _, asset, asset_original = set_default_cambi_video_for_testing_10b()
+        asset.asset_dict["dis_enc_bitdepth"] = 8
+        self.fextractor = CambiFeatureExtractor(
+            [asset, asset_original], None, fifo_mode=False, result_store=None, optional_dict={}
+        )
+        self.fextractor.run(parallelize=False)
+        results = self.fextractor.results
+
+        # score: arithmetic mean score over all frames
+        self.assertAlmostEqual(
+            results[0]["Cambi_feature_cambi_encbd_8_score"], 0.00020733333333333332, places=4
+        )
+
+    def test_run_cambi_fextractor_notyuv_correct_enc_bitdepth_8(self):
+        _, _, asset, asset_original = set_default_576_324_videos_for_testing()
+        self.fextractor = CambiFeatureExtractor(
+            [asset, asset_original], None, fifo_mode=False, result_store=None, optional_dict={}
+        )
+        self.fextractor.run(parallelize=False)
+        results = self.fextractor.results
+
+        # score: arithmetic mean score over all frames
+        self.assertAlmostEqual(
+            results[1]["Cambi_feature_cambi_encbd_8_score"], 0.00020733333333333332, places=4
+        )
+
+    def test_run_cambi_fextractor_enc_bitdepth_none(self):
+        _, _, asset, asset_original = set_default_cambi_video_for_testing_10b()
+        asset.asset_dict["dis_enc_bitdepth"] = None
+        self.fextractor = CambiFeatureExtractor(
+            [asset, asset_original], None, fifo_mode=False, result_store=None, optional_dict={}
+        )
+        with self.assertRaises(AssertionError):
+            self.fextractor.run(parallelize=False)
+
+    def test_run_cambi_fextractor_notyuv_unspecified_enc_bitdepth(self):
+        # Ported from upstream v0.8: _validate_asset rejects notyuv assets with
+        # no dis_enc_bitdepth set (assertion fires before any I/O).
+        asset = set_default_cambi_notyuv_asset_for_validation_testing()
+        with patch("vmaf.config.VmafExternalConfig.get_and_assert_ffmpeg"):
+            self.fextractor = CambiFeatureExtractor(
+                [asset],
+                None,
+                fifo_mode=False,
+                result_store=None,
+                optional_dict={},
+            )
+            with self.assertRaises(AssertionError):
+                self.fextractor.run(parallelize=False)
+
+    def test_run_cambi_fextractor_notyuv_10bit_without_workfile_yuv_type(self):
+        # Ported from upstream v0.8: _validate_asset rejects a 10-bit notyuv
+        # asset whose workfile_yuv_type is still an 8-bit format, because that
+        # would silently downconvert the encode to 8 bit before scoring.
+        asset = set_default_cambi_notyuv_asset_for_validation_testing()
+        asset.asset_dict["dis_enc_bitdepth"] = 10
+        del asset.asset_dict["workfile_yuv_type"]
+        with patch("vmaf.config.VmafExternalConfig.get_and_assert_ffmpeg"):
+            self.fextractor = CambiFeatureExtractor(
+                [asset],
+                None,
+                fifo_mode=False,
+                result_store=None,
+                optional_dict={},
+            )
+            with self.assertRaises(AssertionError):
+                self.fextractor.run(parallelize=False)
+
+    def test_run_cambi_fextractor_max_log_contrast(self):
+        _, _, asset, asset_original = set_default_576_324_videos_for_testing()
+        self.fextractor = CambiFeatureExtractor(
+            [asset, asset_original],
+            None,
+            fifo_mode=False,
+            result_store=None,
+            optional_dict={"max_log_contrast": 4},
+        )
+        self.fextractor.run(parallelize=True)
+        results = self.fextractor.results
+
+        # score: arithmetic mean score over all frames
+        self.assertAlmostEqual(
+            results[0]["Cambi_feature_cambi_encbd_8_mlc_4_score"], 0.32247770833333333, places=4
+        )
+        self.assertAlmostEqual(
+            results[1]["Cambi_feature_cambi_encbd_8_mlc_4_score"], 0.0002582708333333333, places=4
+        )
+
+        self.fextractor = CambiFeatureExtractor(
+            [asset, asset_original],
+            None,
+            fifo_mode=False,
+            result_store=None,
+            optional_dict={"max_log_contrast": 0},
+        )
+        self.fextractor.run(parallelize=True)
+        results = self.fextractor.results
+
+        # score: arithmetic mean score over all frames
+        self.assertAlmostEqual(
+            results[0]["Cambi_feature_cambi_encbd_8_mlc_0_score"], 0.0024372291666666665, places=4
+        )
+        self.assertAlmostEqual(
+            results[1]["Cambi_feature_cambi_encbd_8_mlc_0_score"], 0.00019045833333333336, places=4
+        )
+
+    def test_run_cambi_fextractor_full_reference(self):
+        _, _, asset, asset_original = set_default_576_324_videos_for_testing()
+        self.fextractor = CambiFullReferenceFeatureExtractor(
+            [asset, asset_original],
+            None,
+            fifo_mode=False,
+            result_store=None,
+        )
+        self.fextractor.run(parallelize=True)
+        results = self.fextractor.results
+
+        # score: arithmetic mean score over all frames
+        self.assertAlmostEqual(
+            results[0]["Cambi_FR_feature_cambi_encbd_8_score"], 0.25968416666666666, places=4
+        )
+        self.assertAlmostEqual(
+            results[0]["Cambi_FR_feature_cambi_source_score"], 0.00020847916666666663, places=4
+        )
+        self.assertAlmostEqual(
+            results[0]["Cambi_FR_feature_cambi_full_reference_score"], 0.2594353333333333, places=4
+        )
+
+    def test_run_cambi_fextractor_full_reference_scaled_ref(self):
+        _, _, asset, asset_original = set_default_576_324_videos_for_testing()
+        self.fextractor = CambiFullReferenceFeatureExtractor(
+            [asset, asset_original],
+            None,
+            fifo_mode=False,
+            result_store=None,
+            optional_dict={"src_width": 480, "src_height": 270},
+        )
+        self.fextractor.run(parallelize=True)
+        results = self.fextractor.results
+
+        # score: arithmetic mean score over all frames
+        self.assertAlmostEqual(
+            results[0]["Cambi_FR_feature_cambi_encbd_8_srch_270_srcw_480_score"],
+            0.25968416666666666,
+            places=4,
+        )
+        self.assertAlmostEqual(
+            results[0]["Cambi_FR_feature_cambi_source_score"], 0.00022027083333333336, places=4
+        )
+        self.assertAlmostEqual(
+            results[0]["Cambi_FR_feature_cambi_full_reference_score"], 0.25944045833333335, places=4
+        )
+
+
+class CambiQualityRunnerTest(MyTestCase):
+
+    def test_run_cambi_runner(self):
+        _, _, asset, asset_original = set_default_576_324_videos_for_testing()
+        self.qrunner = CambiQualityRunner(
+            [asset, asset_original], None, fifo_mode=False, result_store=None
+        )
+        self.qrunner.run(parallelize=True)
+        results = self.qrunner.results
+
+        # score: arithmetic mean score over all frames
+        self.assertAlmostEqual(results[0]["Cambi_score"], 0.25968416666666666, places=4)
+        self.assertAlmostEqual(results[1]["Cambi_score"], 0.00020847916666666663, places=4)
+
+    def test_run_cambi_runner_scale(self):
+        _, _, asset, asset_original = set_default_576_324_videos_for_testing_scaled()
+        self.qrunner = CambiQualityRunner(
+            [asset, asset_original], None, fifo_mode=False, result_store=None, optional_dict={}
+        )
+        self.qrunner.run(parallelize=True)
+        results = self.qrunner.results
+
+        # score: arithmetic mean score over all frames
+        self.assertAlmostEqual(results[0]["Cambi_score"], 0.17871631249999997, places=4)
+        self.assertAlmostEqual(results[1]["Cambi_score"], 0.00022027083333333336, places=4)
+
+    def test_run_cambi_runner_scale_b(self):
+        _, _, asset, asset_original = set_default_cambi_video_for_testing_b()
+        self.qrunner = CambiQualityRunner(
+            [asset, asset_original], None, fifo_mode=False, result_store=None, optional_dict={}
+        )
+        self.qrunner.run(parallelize=True)
+        results = self.qrunner.results
+
+        # score: arithmetic mean score over all frames
+        self.assertAlmostEqual(results[0]["Cambi_score"], 0.773078, places=4)
+
+    def test_run_cambi_runner_10b(self):
+        _, _, asset, asset_original = set_default_cambi_video_for_testing_10b()
+        self.qrunner = CambiQualityRunner(
+            [asset, asset_original], None, fifo_mode=False, result_store=None, optional_dict={}
+        )
+        self.qrunner.run(parallelize=True)
+        results = self.qrunner.results
+
+        # score: arithmetic mean score over all frames
+        self.assertAlmostEqual(results[0]["Cambi_score"], 0.0013863333333333334, places=4)
+
+    def test_run_cambi_runner_fullref(self):
+        _, _, asset, asset_original = set_default_576_324_videos_for_testing()
+        self.qrunner = CambiFullReferenceQualityRunner(
+            [asset, asset_original],
+            None,
+            fifo_mode=False,
+            result_store=None,
+        )
+        self.qrunner.run(parallelize=True)
+        results = self.qrunner.results
+
+        # score: arithmetic mean score over all frames
+        self.assertAlmostEqual(results[0]["Cambi_FR_score"], 0.2594353333333333, places=4)
+        self.assertAlmostEqual(
+            results[0]["Cambi_FR_feature_cambi_encbd_score"], 0.25968416666666666, places=4
+        )
+
+
+class CambiResultsCachingTest(MyTestCase):
+
+    def setUp(self):
+        self.results_store_dir = FileSystemResultStore()
+
+    def tearDown(self):
+        if os.path.exists(self.store_dir):
+            shutil.rmtree(self.store_dir)
+
+    def test_run_cambi_runner(self):
+        _, _, asset, asset_original = set_default_576_324_videos_for_testing_scaled()
+        self.qrunner = CambiQualityRunner(
+            [asset, asset_original],
+            None,
+            fifo_mode=False,
+            result_store=self.results_store_dir,
+            optional_dict={},
+        )
+
+        # make sure the caching directory needs to be created by running the feature extractor
+        fextractor = self.qrunner._get_feature_extractor_class()
+        self.store_dir = os.path.join(
+            self.results_store_dir.result_store_dir,
+            f"{fextractor.TYPE}_V{fextractor.VERSION}",
+            "test",
+        )
+        if os.path.exists(self.store_dir):
+            shutil.rmtree(self.store_dir)
+
+        self.qrunner.run(parallelize=False)
+        results = self.qrunner.results
+
+        # check if the correct directory was created
+        self.assertTrue(os.path.exists(self.store_dir))
+
+        # score: arithmetic mean score over all frames
+        self.assertAlmostEqual(results[0]["Cambi_score"], 0.17871631249999997, places=4)
+        self.assertAlmostEqual(results[1]["Cambi_score"], 0.00022027083333333336, places=4)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

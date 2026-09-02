@@ -1,0 +1,111 @@
+---
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# config/crd/bases/vmafx.dev_vmafxjobs.yaml
+# CRD for VmafxJob — one video-quality scoring job (reference ↔ distorted pair).
+#
+# ADR-0714: vmafx-operator kubebuilder skeleton + CRDs.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: vmafxjobs.vmafx.dev
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.1
+spec:
+  group: vmafx.dev
+  names:
+    kind: VmafxJob
+    listKind: VmafxJobList
+    plural: vmafxjobs
+    singular: vmafxjob
+    shortNames:
+      - vmjob
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Score
+          type: number
+          jsonPath: .status.score
+        - name: Node
+          type: string
+          jsonPath: .status.assignedNode
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          description: VmafxJob is the Schema for the vmafxjobs API.
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: VmafxJobSpec defines the desired state of a VmafxJob.
+              type: object
+              required:
+                - reference
+                - distorted
+              properties:
+                reference:
+                  description: URI of the reference video. Supported schemes — file://, s3://, rclone://.
+                  type: string
+                  minLength: 1
+                distorted:
+                  description: URI of the distorted video to compare against reference.
+                  type: string
+                  minLength: 1
+                model:
+                  description: VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to node default when omitted.
+                  type: string
+                backend:
+                  description: Compute backend. One of cpu | cuda | sycl | hip | metal. Defaults to cpu.
+                  type: string
+                  enum: [cpu, cuda, sycl, hip, metal]
+                  default: cpu
+                priority:
+                  description: Non-negative scheduling priority; higher values are dispatched first. Defaults to 0.
+                  type: integer
+                  format: int32
+                  minimum: 0
+                  default: 0
+            status:
+              description: VmafxJobStatus defines the observed state of a VmafxJob.
+              type: object
+              properties:
+                phase:
+                  description: Lifecycle phase — Pending | Running | Succeeded | Failed.
+                  type: string
+                  enum: [Pending, Running, Succeeded, Failed]
+                score:
+                  description: VMAF score. Populated when phase == Succeeded.
+                  type: number
+                assignedNode:
+                  description: Name of the VmafxNode executing this job.
+                  type: string
+                controllerJobID:
+                  description: UUID assigned by the vmafx-controller when the job is dispatched. Used by the reconciler to poll GetJob on the controller gRPC API. Empty until the job is accepted.
+                  type: string
+                startedAt:
+                  description: Time the job Pod began running.
+                  type: string
+                  format: date-time
+                finishedAt:
+                  description: Time the job reached a terminal phase.
+                  type: string
+                  format: date-time
+                message:
+                  description: Human-readable explanation of current phase; populated on failure.
+                  type: string

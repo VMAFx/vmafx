@@ -1,0 +1,1 @@
+| [ADR-0890](0890-ci-concurrency-cost-audit.md) | CI concurrency + cost audit follow-up to PR #301: concurrency block + ccache on `ffmpeg-integration.yml`, ccache on `sanitizers.yml`, `paths-ignore` on `security-scans.yml`, early file-delta skip on `lint-and-format.yml::clang-tidy` | Accepted | 2026-05-30 | ci, cost, fork-local |

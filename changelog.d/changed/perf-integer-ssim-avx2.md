@@ -1,0 +1,1 @@
+- **perf(simd): Add AVX2 SIMD path for integer SSIM horizontal moment accumulation** (`integer_ssim_avx2`). The 8bpc path processes 8 output pixels per AVX2 iteration; the 16bpc path processes 4. Bit-exact with the scalar reference (int64 accumulation, no float). Projected 4–6x hot-path speedup on AVX2 hosts. Runtime-dispatched; scalar hosts are unaffected. (ADR-0784)

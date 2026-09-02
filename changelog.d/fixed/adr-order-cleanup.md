@@ -1,0 +1,1 @@
+Remove stale `_order.txt` slug entries left over from ADR renumbering (0452→0578, 0460-ms-ssim→0582). Duplicate fragment files deleted; 0578 fragment link corrected; 0582 fragment created; README regenerated.

@@ -1,0 +1,1 @@
+| [ADR-0686](0686-vmafx-rebrand-aggressive-modernization.md) | VMAFX rebrand and aggressive modernization — umbrella ADR covering rename, Phase 1–4 plan, and multi-language strategy | Proposed | meta, vmafx, rebrand, modernization |

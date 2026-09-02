@@ -1,0 +1,1 @@
+| [ADR-1033](1033-cpu-scoring-nan-ub-guards.md) | CPU-side scoring NaN/UB guards across PSNR/SSIM/MS-SSIM/ADM/CAMBI/MOTION | Accepted | `correctness`, `cpu`, `psnr`, `ssim`, `adm`, `cambi`, `motion` |

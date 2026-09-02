@@ -1,0 +1,3 @@
+- **#370 coverage-overrides audit (ADR-0881)**: tighten `tiny_extractor_template.h` coverage gate 10 → 75; codify quarterly audit rule; add `coverage-check.sh` row to `scripts/ci/AGENTS.md`.
+- **#396 kubebuilder envtest (operator suite)**: install `setup-envtest` + `KUBEBUILDER_ASSETS` in `go-ci.yml`; add skip-safe guard in `suite_test.go`; add invariant #7 to `cmd/vmafx-operator/AGENTS.md`.
+- **#446 SYCL parity round 3 + round 4 (ADR-0946 + ADR-0957)**: nine new CPU-vs-SYCL parity tests (`float_psnr`, `float_adm`, `float_vif`, `float_motion`, `psnr_hvs`, `float_moment`, `speed_chroma`, `speed_temporal`, `ssimulacra2`) at ADR-0214 places=4 tolerance; SYCL extractor coverage rises from 50% → 100% (18/18).

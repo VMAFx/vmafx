@@ -1,0 +1,1 @@
+{"model_dict":{"chroma_correction_parameter":0.5,"feature_names":["VMAF_feature_adm2_score"],"slopes":[0.0,1.0],"intercepts":[0.0,0.0],"model":"svm_type nu_svr\nkernel_type rbf\ngamma 0.04\nnr_class 2\ntotal_sv 1\nrho 0.0\nSV\n1.0 1:0.5 \n"}}

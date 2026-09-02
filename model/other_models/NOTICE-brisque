@@ -1,0 +1,51 @@
+NOTICE — BRISQUE model redistribution (model/other_models/brisque_live.model)
+============================================================================
+
+This directory ships `brisque_live.model`, the trained libsvm EPSILON_SVR model
+used by the fork's BRISQUE no-reference image-quality extractor
+(core/src/feature/brisque.c, feature name "brisque"). The model and its
+companion feature range-normalization arrays originate from the LIVE laboratory
+at The University of Texas at Austin and the BRISQUE authors' reference
+implementations. The fork redistributes the model under a documented
+research-use attribution exception (see docs/adr/1115-brisque-nr-metric.md).
+
+Required citation
+-----------------
+Any use of this model must cite the originating publication:
+
+  A. Mittal, A. K. Moorthy and A. C. Bovik, "No-Reference Image Quality
+  Assessment in the Spatial Domain," IEEE Transactions on Image Processing,
+  vol. 21, no. 12, pp. 4695-4708, Dec. 2012. doi:10.1109/TIP.2012.2214050.
+  https://live.ece.utexas.edu/publications/2012/TIP%20BRISQUE.pdf
+
+Provenance
+----------
+- Trained model (allmodel, native libsvm text format):
+    svm_type epsilon_svr, kernel_type rbf, gamma 0.05, nr_class 2,
+    total_sv 770, rho -155.845, probA 6.34795.
+  Obtained from the BRISQUE reference C++ implementation mirror:
+    https://github.com/krshrimali/No-Reference-Image-Quality-Assessment-using-BRISQUE-Model
+    (path C++/allmodel) — a verbatim copy of the original LIVE-lab model also
+    distributed via gregfreeman/image_quality_toolbox (+brisque/allmodel), the
+    MATLAB pipeline that trained it.
+  sha256 = 19526fb799c4c7992ccc109fcfecddb25976ba024b194cd3ee275d27e8909c8d
+  bytes  = 351414
+
+- Feature range arrays (min_[36] / max_[36], libsvm svm-scale [-1, 1]):
+    Baked directly into core/src/feature/brisque.c. These are the INLINE arrays
+    from the reference computescore.cpp prediction path (the array the trained
+    model expects), NOT the separate C++/allrange file — which is a different,
+    prediction-inconsistent set the reference code never reads (ADR-1115,
+    docs/metrics/brisque.md "Range arrays").
+
+License / terms
+---------------
+The BRISQUE model weights were released by the LIVE lab for research and
+educational use, conditioned on citing the TIP 2012 paper above. This is NOT a
+standard OSI license. The redistribution wrapper code (the reference C++) is
+MIT-licensed (Copyright (c) 2018 Kushashwa Ravi Shrimali), but the trained
+weights carry the LIVE research-use terms. The fork accepts this as a documented
+redistribution exception, mirroring the precedent that model/ already ships
+Netflix-trained .pkl/.json artifacts under their own (non-fork) terms.
+
+This NOTICE must accompany any redistribution of brisque_live.model.

@@ -1,0 +1,1 @@
+| [ADR-1128](1128-fragment-owned-release-cuts.md) | Make changelog fragments the sole release-note source. Release-please skips changelog mutation; a validated pre-merge rollover versions the rendered body, consumes active sources, and records a content-hash receipt. | Accepted | 2026-08-31 | release, changelog, automation, ci, docs |

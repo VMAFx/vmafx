@@ -1,0 +1,132 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# docker/Dockerfile.controller — multi-stage build for the vmafx-controller Go binary.
+#
+# Stages:
+#   go-builder  : compiles cmd/vmafx-controller using golang:1.27-bookworm@sha256:ded31c68586d2e49e760acc2e65a884b23d032e9bbbed0ae0c55abd3fcaf4452
+#   vmaf-builder: compiles libvmaf + vmaf CLI (mirrors docker/Dockerfile.production)
+#   controller  : distroless runtime carrying both the Go binary and libvmaf.so
+#
+# Build:
+#   docker build -f docker/Dockerfile.controller -t ghcr.io/vmafx/vmafx-controller:dev .
+#
+# Run:
+#   docker run --rm \
+#     -e VMAFX_VMAF_BINARY=/usr/local/bin/vmaf \
+#     -e VMAFX_MODEL_DIR=/usr/local/share/vmafx/model \
+#     -e VMAFX_DB_PATH=/data/vmafx-controller.db \
+#     -p 8080:8080 -p 9090:9090 \
+#     ghcr.io/vmafx/vmafx-controller:dev
+#
+# Environment variables:
+#   VMAFX_HTTP_ADDR      HTTP listen address (default :8080)
+#   VMAFX_GRPC_LISTEN    gRPC listen address (default :9090)
+#   VMAFX_LOG_LEVEL      slog level (default INFO)
+#   VMAFX_VMAF_BINARY    path to vmaf CLI binary
+#   VMAFX_MODEL_DIR      directory containing VMAF .json model files
+#   VMAFX_DB_PATH        path to the SQLite database (default vmafx-controller.db)
+#
+# ADR-0703: vmafx-server Go gRPC + HTTP service (origin).
+# ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
+
+# ---------------------------------------------------------------------------
+# Stage 1 — go-builder: compile the controller binary
+# ---------------------------------------------------------------------------
+FROM golang:1.27-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b AS go-builder
+
+ARG CGO_ENABLED=1
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install libvmaf headers + library for cgo linking.
+# modernc.org/sqlite is pure-Go so no additional C deps are needed for SQLite.
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        pkg-config \
+        libvmaf-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY . .
+
+# Download module dependencies.
+RUN go mod download
+
+# Build the controller binary.  CGO_ENABLED=1 is required for libvmaf linkage.
+# modernc.org/sqlite uses CGO_ENABLED=0-compatible pure-Go compilation.
+RUN CGO_ENABLED=${CGO_ENABLED} \
+    CGO_LDFLAGS="-L/usr/lib/x86_64-linux-gnu -lvmaf" \
+    go build \
+        -trimpath \
+        -ldflags "-s -w -X main.buildVersion=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+        -o /out/vmafx-controller \
+        ./cmd/vmafx-controller
+
+# ---------------------------------------------------------------------------
+# Stage 2 — vmaf-builder: compile libvmaf + vmaf CLI
+# ---------------------------------------------------------------------------
+# Reuses the same setup as docker/Dockerfile.production stage 1.
+FROM debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS vmaf-builder
+
+ARG VMAF_BUILD_JOBS=4
+ARG DEBIAN_FRONTEND=noninteractive
+
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        g++ \
+        meson \
+        ninja-build \
+        nasm \
+        pkg-config \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY . .
+
+RUN meson setup /build core \
+        --buildtype=release \
+        --strip \
+        -Denable_cuda=false \
+        -Denable_sycl=false \
+        -Denable_dnn=disabled \
+        -Denable_avx512=true \
+    && ninja -C /build -j"${VMAF_BUILD_JOBS}"
+
+RUN mkdir -p /dist/lib /dist/bin /dist/model \
+    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
+    && cp /build/tools/vmaf /dist/bin/ \
+    && cp -r model/ /dist/model/
+
+# ---------------------------------------------------------------------------
+# Stage 3 — controller: distroless runtime (glibc, no shell)
+# ---------------------------------------------------------------------------
+FROM gcr.io/distroless/cc-debian12@sha256:e5d81ddde149641e2a9ba55be4545bc125c67de07508b03ba4c22e6eb0ded5aa AS controller
+
+LABEL org.opencontainers.image.title="vmafx-controller"
+LABEL org.opencontainers.image.description="VMAFX controller — distributed job queue + node registry, gRPC + HTTP, backed by libvmaf"
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.vendor="Lusoris"
+
+# Copy libvmaf.so* and the vmaf CLI from the vmaf-builder stage.
+COPY --from=vmaf-builder /dist/lib/      /usr/local/lib/
+COPY --from=vmaf-builder /dist/bin/vmaf  /usr/local/bin/vmaf
+COPY --from=vmaf-builder /dist/model/    /usr/local/share/vmafx/model/
+
+# Copy the controller binary.
+COPY --from=go-builder /out/vmafx-controller /usr/local/bin/vmafx-controller
+
+ENV LD_LIBRARY_PATH="/usr/local/lib"
+ENV VMAFX_VMAF_BINARY="/usr/local/bin/vmaf"
+ENV VMAFX_MODEL_DIR="/usr/local/share/vmafx/model"
+ENV VMAFX_DB_PATH="/data/vmafx-controller.db"
+
+EXPOSE 8080
+EXPOSE 9090
+
+ENTRYPOINT ["/usr/local/bin/vmafx-controller"]

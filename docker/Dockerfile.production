@@ -1,0 +1,166 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# docker/Dockerfile.production — VMAFX production runtime image
+#
+# Multi-stage build producing two targets:
+#   --target cli     : vmaf CLI + libvmaf.so  (ENTRYPOINT = vmaf binary)
+#   --target server  : vmaf-mcp JSON-RPC server (ENTRYPOINT = vmaf-mcp --transport http)
+#
+# Base: gcr.io/distroless/cc-debian13 for the CLI; python:3.14-slim for the
+# server so its interpreter and native wheels stay on one Debian 13 ABI.
+# ADR-0698: vmafx-production-dockerfile
+# ADR-1129: release-container-runtime-alignment
+#
+# Build args (all optional):
+#   VMAF_BUILD_JOBS   — ninja parallelism (default: 4)
+
+# ---------------------------------------------------------------------------
+# Stage 1 — builder: compile libvmaf + vmaf CLI
+# ---------------------------------------------------------------------------
+# Debian 13 is the oldest supported production build ABI. The CLI runtime below
+# is the matching distroless Debian 13 image; do not move it back to Debian 12.
+FROM debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS builder
+
+ARG VMAF_BUILD_JOBS=4
+ARG DEBIAN_FRONTEND=noninteractive
+
+LABEL org.opencontainers.image.title="vmafx-builder"
+LABEL org.opencontainers.image.description="Build stage: libvmaf + vmaf CLI (release/stripped)"
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+
+# Install only build-time deps; nothing carried into the runtime stage
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        g++ \
+        meson \
+        ninja-build \
+        nasm \
+        pkg-config \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY . .
+
+# Build release + strip; CPU-only (no CUDA/SYCL/HIP in production
+# default image). ONNX Runtime DNN is disabled to remove the onnxruntime.so
+# dependency from the runtime image — users who need tiny-AI scoring should
+# run the server variant where the Python venv carries onnxruntime.
+RUN meson setup /build core \
+        --buildtype=release \
+        --strip \
+        -Denable_cuda=false \
+        -Denable_sycl=false \
+        -Denable_dnn=disabled \
+        -Denable_avx512=true \
+    && ninja -C /build -j"${VMAF_BUILD_JOBS}"
+
+# Collect outputs under /dist so the COPY step in the runtime stage is simple
+RUN mkdir -p /dist/lib /dist/bin /dist/model \
+    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
+    && cp /build/tools/vmaf /dist/bin/ \
+    && cp -r model/. /dist/model/
+
+# ---------------------------------------------------------------------------
+# Stage 2 — python-deps: install vmaf-mcp + vmaf-tune into a virtualenv
+# ---------------------------------------------------------------------------
+FROM python:3.14-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS python-deps
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a relocatable venv at /venv
+RUN python3 -m venv /venv
+ENV PATH="/venv/bin:${PATH}"
+
+COPY mcp-server/vmaf-mcp /build/vmaf-mcp
+COPY tools/vmaf-tune      /build/vmaf-tune
+
+# Install server deps; eval extras pull in onnxruntime for tiny-AI scoring
+RUN pip install --no-cache-dir \
+        '/build/vmaf-mcp[eval,http]' \
+        /build/vmaf-tune
+
+# ---------------------------------------------------------------------------
+# Stage 3 — runtime-base: CLI runtime layer (no shell, distroless)
+# ---------------------------------------------------------------------------
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:c31ff9abcb1910f3ab25c7957bdaf0bfe12a01eb546e8df2282f1c8f682b606c AS runtime-base
+
+# OCI image labels — version baked in at build time via CI; left as
+# placeholders here so local builds still produce labelled images.
+LABEL org.opencontainers.image.title="vmafx"
+LABEL org.opencontainers.image.description="VMAFX production runtime — libvmaf + vmaf CLI / MCP server"
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.vendor="Lusoris"
+
+# Copy libvmaf.so* into /usr/local/lib and set up symlinks
+COPY --from=builder /dist/lib/ /usr/local/lib/
+COPY --from=builder /dist/model/ /usr/local/share/vmafx/model/
+
+ENV LD_LIBRARY_PATH="/usr/local/lib"
+ENV VMAF_MODEL_PATH="/usr/local/share/vmafx/model"
+
+# ---------------------------------------------------------------------------
+# Stage 4 (target: cli) — CLI-only image
+# Entrypoint: vmaf binary
+# ---------------------------------------------------------------------------
+FROM runtime-base AS cli
+
+COPY --from=builder /dist/bin/vmaf /usr/local/bin/vmaf
+
+# Drop privileges — distroless cc-debian13 ships a `nonroot` user at
+# UID:GID 65532:65532. Trivy DS-0002 / CIS-Docker 4.1.
+USER nonroot:nonroot
+
+ENTRYPOINT ["/usr/local/bin/vmaf"]
+
+# ---------------------------------------------------------------------------
+# Stage 5 (target: server) — MCP server image
+# Entrypoint: vmaf-mcp --transport http
+# The vmaf binary is also present so the MCP server can shell out to it.
+# ---------------------------------------------------------------------------
+# A CPython virtualenv is not self-contained: its `python` entry is a symlink
+# to the base interpreter. Use the exact same pinned Python 3.14 image as the
+# dependency stage so the interpreter, stdlib, native wheels, and OS ABI match.
+FROM python:3.14-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS server
+
+LABEL org.opencontainers.image.title="vmafx-server"
+LABEL org.opencontainers.image.description="VMAFX MCP server — libvmaf + vmaf CLI + Python 3.14"
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.vendor="Lusoris"
+
+COPY --from=builder /dist/lib/ /usr/local/lib/
+COPY --from=builder /dist/model/ /usr/local/share/vmafx/model/
+COPY --from=builder /dist/bin/vmaf /usr/local/bin/vmaf
+
+# Virtualenv with vmaf-mcp + vmaf-tune installed
+COPY --from=python-deps /venv /venv
+
+ENV PATH="/venv/bin:/usr/local/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/lib"
+ENV VMAF_MODEL_PATH="/usr/local/share/vmafx/model"
+ENV VMAF_BINARY="/usr/local/bin/vmaf"
+# The Python HTTP transport defaults to loopback for host installs. A container
+# port is unreachable unless the image explicitly opts into all-interface bind.
+ENV VMAFX_MCP_HTTP_BIND="0.0.0.0"
+
+EXPOSE 8080
+
+# Drop privileges with the same UID:GID as the distroless CLI image. The MCP
+# server binds 8080 (>1024, unprivileged); a passwd entry is not required.
+# Trivy DS-0002 / CIS-Docker 4.1.
+USER 65532:65532
+
+ENTRYPOINT ["/venv/bin/vmaf-mcp", "--transport", "http"]

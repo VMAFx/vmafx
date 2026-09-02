@@ -1,0 +1,1 @@
+| [ADR-0107](0107-tinyai-wave1-scope-expansion.md) | Tiny-AI Wave 1 scope expanded beyond ADR-0020 through ADR-0023 (paraphrased re-statement) | Supersedes [ADR-0036](0036-tinyai-wave1-scope-expansion.md) | ai, dnn, cli, framework, mcp |

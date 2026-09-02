@@ -1,0 +1,1 @@
+- Fixed: resolved five lingering CI Build+Rust failures: ADR-1100 dead-file removal, `integer_motion` alias registration, CUDA-absent GPU-skip guard, ARM64 `float_moment` precision, and `score.rs` doc-test skip. (PR #837)

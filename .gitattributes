@@ -1,0 +1,31 @@
+# Set the default behavior, in case people don't have core.autocrlf set.
+* text=auto
+
+# The model file parser requires LF line endings
+*.pkl text eol=lf
+*.model text eol=lf
+
+# Tiny-AI model artefacts — stored as inline binary blobs.
+#
+# 2026-05-15 — the previous `filter=lfs diff=lfs merge=lfs -text` line was
+# load-bearing on intent only: the .onnx blobs were never actually pushed
+# to LFS storage, so smudge in fresh worktrees produced 130-byte pointer
+# text instead of the real binaries, breaking every agent worktree we
+# created. Real LFS migration requires `git lfs migrate import` plus a
+# master force-push (blocked by branch protection — ADR-0037), so we drop
+# the attribute and keep the blobs inline. Future LFS adoption is a
+# separate planned operation; see docs/adr/0451 (proposed).
+model/tiny/*.onnx binary -filter -diff -merge
+model/tiny/*.onnx.sig binary
+model/tiny/*.onnx.cert binary
+
+# Ffmpeg patch series — diff-friendly text.
+ffmpeg-patches/*.patch text eol=lf
+
+# CSV golden fixtures are byte-for-byte expectations, and Python's csv module
+# writes CRLF (its default lineterminator). `* text=auto` above would normalise
+# those CRs away on commit, so the committed blob stopped matching what the
+# renderer emits — the tests still passed in the authoring worktree, which held
+# the pre-normalisation bytes, and failed on any fresh checkout. -text disables
+# normalisation so the fixture keeps the bytes it asserts.
+pkg/benchmark/testdata/*.csv -text

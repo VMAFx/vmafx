@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "lane": "sycl",
+  "generator": "scripts/ci/tidy-ratchet.py",
+  "clang_tidy_version": "22.1.8",
+  "tus": 23,
+  "total_warnings": 716,
+  "total_nolint_uncited": 25,
+  "warnings": {
+    "core/src/feature/sycl/float_adm_sycl.cpp": 57,
+    "core/src/feature/sycl/float_motion_sycl.cpp": 20,
+    "core/src/feature/sycl/float_psnr_sycl.cpp": 15,
+    "core/src/feature/sycl/float_vif_sycl.cpp": 47,
+    "core/src/feature/sycl/integer_adm_sycl.cpp": 9,
+    "core/src/feature/sycl/integer_cambi_sycl.cpp": 22,
+    "core/src/feature/sycl/integer_ciede_sycl.cpp": 62,
+    "core/src/feature/sycl/integer_moment_sycl.cpp": 15,
+    "core/src/feature/sycl/integer_motion_sycl.cpp": 6,
+    "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 15,
+    "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 26,
+    "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 26,
+    "core/src/feature/sycl/integer_psnr_sycl.cpp": 11,
+    "core/src/feature/sycl/integer_ssim_sycl.cpp": 43,
+    "core/src/feature/sycl/integer_vif_sycl.cpp": 36,
+    "core/src/feature/sycl/speed_chroma_sycl.cpp": 38,
+    "core/src/feature/sycl/speed_temporal_sycl.cpp": 30,
+    "core/src/feature/sycl/ssimulacra2_sycl.cpp": 49,
+    "core/src/sycl/common.cpp": 102,
+    "core/src/sycl/common.h": 5,
+    "core/src/sycl/dispatch_strategy.cpp": 5,
+    "core/src/sycl/dmabuf_import.cpp": 71,
+    "core/src/sycl/picture_sycl.cpp": 6
+  },
+  "nolint_uncited": {
+    "core/src/feature/sycl/integer_adm_sycl.cpp": 9,
+    "core/src/feature/sycl/integer_motion_sycl.cpp": 2,
+    "core/src/feature/sycl/integer_vif_sycl.cpp": 14
+  },
+  "source": "converted 2026-09-02 from the agy gpu-debt measurement (clang-tidy 22.1.8, -p build-gpu, same (path,line,column,check) dedup); see docs/research/2027-lint-carveout-inventory-2026-09-02.md"
+}

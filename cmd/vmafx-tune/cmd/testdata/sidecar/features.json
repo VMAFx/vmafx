@@ -1,0 +1,15 @@
+{
+  "probe_bitrate_kbps": 4200.5,
+  "probe_i_frame_avg_bytes": 51234.0,
+  "probe_p_frame_avg_bytes": 8123.25,
+  "probe_b_frame_avg_bytes": 2011.75,
+  "saliency_mean": 0.42,
+  "saliency_var": 0.031,
+  "frame_diff_mean": 7.5,
+  "y_avg": 112.25,
+  "y_var": 1830.5,
+  "shot_length_frames": 240,
+  "fps": 24.0,
+  "width": 1920,
+  "height": 1080
+}

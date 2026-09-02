@@ -1,0 +1,1 @@
+| [ADR-0261](0261-transnet-v2-real-weights.md) | TransNet V2 shot-boundary detector — real upstream weights via NTCHW adapter (T6-3a-followup) | Accepted | `ai`, `dnn`, `feature-extractor`, `wave-1`, `weights-drop`, `shot-detection`, `fork-local` |

@@ -1,0 +1,277 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# dev/docker-compose.yml — VMAF fork dev-MCP stack
+#
+# Services:
+#   dev-mcp          — libvmaf + MCP stdio runtime (primary container)
+#   smoke-probe-cron — periodic golden-pair + MCP probe loop (every 15 min)
+#
+# Usage:
+#   docker compose build
+#   docker compose up -d
+#   docker compose down
+#
+# See docs/development/dev-mcp.md for full operator guide.
+
+name: vmaf-dev-mcp
+
+# ---------------------------------------------------------------------------
+# Shared extension anchor
+# ---------------------------------------------------------------------------
+x-common-env: &common-env
+  VMAF_MODEL_PATH: /workspace/model
+  VMAF_TESTDATA_PATH: /workspace/testdata
+  # Kept for callers that deliberately start the UDS transport inside the
+  # container; the default entrypoint uses stdio and does not create the socket.
+  VMAF_MCP_UDS_PATH: /sockets/vmaf-mcp.sock
+  # NVIDIA GPU passthrough — NVIDIA Container Toolkit must be installed on host.
+  # All NVIDIA devices are exposed; capabilities cover compute, graphics, utility,
+  # and video (required for NVDEC/NVENC in FFmpeg). `graphics` is also what
+  # makes the Container Toolkit bind-mount `nvidia_icd.json` into
+  # `/etc/vulkan/icd.d/` at runtime (kept for CUDA/NVTX; Vulkan backend
+  # removed per ADR-0726). ADR-0509 / ADR-0541.
+  NVIDIA_VISIBLE_DEVICES: all
+  NVIDIA_DRIVER_CAPABILITIES: compute,graphics,utility,video
+
+  # ROCm / HSA dispatch knobs (ADR-0541). The host's AMD iGPU (Raphael
+  # `gfx1036`, RDNA2 IP rev 10.3.6) is **not** on the ROCm 6.x supported-GPU
+  # allowlist that `libhsa-runtime64.so` consults at `hsa_init()`. Without
+  # the override, `rocminfo` returns "Unable to open /dev/kfd read-write:
+  # Invalid argument" / `hsa_init() = HSA_STATUS_ERROR_OUT_OF_RESOURCES`
+  # even though `/dev/kfd` is bind-mounted and the `video` + `render`
+  # groups are joined. Setting `HSA_OVERRIDE_GFX_VERSION=10.3.0` lies to
+  # the runtime: "treat this device as gfx1030 (RDNA2 desktop, on the
+  # allowlist)" — gfx1036 is binary-compatible enough with gfx1030 for the
+  # libvmaf HIP feature kernels (verified with the integer-VIF / motion
+  # extractors in ADR-0530 / ADR-0538). `HSA_ENABLE_SDMA=0` disables the
+  # SDMA copy engine; on RDNA2 iGPUs the SDMA path triggers VM faults on
+  # small device→host transfers (the libvmaf collect path is dominated by
+  # such transfers). `ROCR_VISIBLE_DEVICES=0` pins HIP to the single AMD
+  # adapter so multi-iGPU + dGPU hosts cannot accidentally dispatch onto a
+  # non-RDNA2 device that needs a different override.
+  HSA_OVERRIDE_GFX_VERSION: "10.3.0"
+  HSA_ENABLE_SDMA: "0"
+  ROCR_VISIBLE_DEVICES: "0"
+
+# ---------------------------------------------------------------------------
+# Volumes
+# ---------------------------------------------------------------------------
+volumes:
+  vmaf-sockets:
+    driver: local
+  vmaf-probe-results:
+    driver: local
+
+# ---------------------------------------------------------------------------
+# Services
+# ---------------------------------------------------------------------------
+services:
+
+  # -------------------------------------------------------------------------
+  # dev-mcp — primary MCP server container
+  # -------------------------------------------------------------------------
+  dev-mcp:
+    build:
+      # context is the repo root. Always invoke via dev-mcp-up.sh (which passes
+      # --project-directory) or with:
+      #   docker compose --project-directory <repo-root> -f dev/docker-compose.yml build
+      # Without --project-directory, Docker Compose v2 defaults the project dir to
+      # the compose-file's parent (dev/), which makes context: . resolve to dev/ and
+      # bypasses the root .dockerignore — leaking .corpus/ (781 GB) into the build
+      # context. The Containerfile now uses explicit COPY directives for each needed
+      # subtree, so the build is safe even if context resolution is wrong.
+      context: .
+      dockerfile: dev/Containerfile
+      target: dev-mcp
+    image: vmaf-dev-mcp:local
+    container_name: vmaf-dev-mcp
+    restart: unless-stopped
+
+    environment:
+      <<: *common-env
+
+    volumes:
+      # Repo source tree — read-only at runtime (built into image)
+      - type: bind
+        source: .
+        target: /workspace
+        read_only: true
+      # UDS socket directory — shared with smoke-probe-cron
+      - type: volume
+        source: vmaf-sockets
+        target: /sockets
+      # Probe results — read-write (dev-mcp writes logs here too)
+      - type: bind
+        source: ./.workingdir/dev-mcp-probes
+        target: /probes
+        read_only: false
+      # Whole /dev/dri bind-mount — mounts the entire DRI subsystem directory,
+      # including both the leaf device nodes (card*, renderD*) AND the
+      # udev-managed `by-path/` and `by-id/` symlink directories that the
+      # Intel level-zero runtime uses to discover Arc GPUs. This supersedes
+      # the former `/dev/dri/by-path`-only bind (ADR-0514) which was
+      # vulnerable to PCI re-enumeration: after a reboot, suspend/resume, or
+      # GPU hotplug the by-path symlink names change on the host, causing
+      # Docker's stored config to reference a no-longer-existing path and
+      # preventing container start. Mounting the whole directory avoids any
+      # hard-coded path dependency. ADR-0528.
+      # NOTE: must be writable (not read_only) — NVIDIA Container Toolkit's
+      # OCI hook creates pci-bus-address symlinks inside /dev/dri/by-path at
+      # container init. read_only:true caused createContainer hook #5 to fail
+      # with "read-only file system" on every start. Container OS isolation
+      # prevents writes from inside the container from leaking to the host.
+      - type: bind
+        source: /dev/dri
+        target: /dev/dri
+        read_only: false
+
+    # NVIDIA Container Toolkit runtime — requires nvidia runtime configured on host.
+    # See: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+    # Hosts without the NVIDIA Container Toolkit can override: CONTAINER_RUNTIME=runc docker compose up -d
+    runtime: ${CONTAINER_RUNTIME:-nvidia}
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility, video, graphics]
+
+    # Intel Arc (SYCL via DRI) + AMD ROCm (HIP via /dev/kfd).
+    #
+    # We need BOTH the `devices:` entry AND the `/dev/dri` bind-mount in
+    # `volumes:` above — they do different things:
+    #   - `devices:` adds entries to the container's cgroup device whitelist
+    #     so the kernel allows read/write syscalls on the major:minor pair.
+    #     Without it, even a 0666 device file returns EACCES from the
+    #     cgroup-device controller (which NEO 26.x surfaces as
+    #     INSUFFICIENT_PERMISSIONS from zeInit and rocminfo surfaces as
+    #     `Unable to open /dev/kfd … Invalid argument`).
+    #   - the `/dev/dri` whole-directory bind-mount in `volumes:` carries
+    #     the udev-managed `by-path/` symlinks that NEO uses to enumerate
+    #     PCI<->render mappings (ADR-0528) — Docker's `devices:` form
+    #     drops subdirectory entries.
+    # ADR-0541 supersedes the partial fix that dropped the `devices:`
+    # entry for /dev/dri (older NEO 25.x tolerated this; 26.x does not).
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+
+    # ADR-0541: Intel NEO compute-runtime 26.x and ROCm 7.x both use
+    # syscalls that Docker's default seccomp profile blocks (notably
+    # io_uring + userfaultfd interactions used for command-buffer
+    # submission and GPU page-fault handling). On the dev host kernel
+    # ≥ 7.0 this manifests as `zeInit() →
+    # ZE_RESULT_ERROR_INSUFFICIENT_PERMISSIONS` from level-zero and
+    # `Unable to open /dev/kfd read-write: Invalid argument` from
+    # rocminfo, even when /dev/dri + /dev/kfd are correctly passed
+    # through. `seccomp=unconfined` drops the syscall filter so the
+    # newer userspace can perform the GPU init handshake. This is the
+    # standard ROCm container recommendation (rocm/dev-ubuntu base
+    # images set it by default); NEO 26.x picked up the same
+    # requirement.
+    security_opt:
+      - seccomp=unconfined
+
+    # video + render groups give the HIP runtime access to /dev/kfd and
+    # the DRI render nodes without running as root.
+    # GIDs are read at compose-up time from environment variables so the
+    # numeric IDs match the host's actual video/render groups (which differ
+    # across distributions). Defaults are common Ubuntu values (44=video,
+    # 109=render). Override via:
+    #   HOST_GID_VIDEO=$(getent group video | cut -d: -f3) \
+    #   HOST_GID_RENDER=$(getent group render | cut -d: -f3) \
+    #   docker compose ... up -d
+    group_add:
+      - "${HOST_GID_VIDEO:-44}"
+      - "${HOST_GID_RENDER:-109}"
+
+    networks:
+      - vmaf-net
+
+    healthcheck:
+      # The entrypoint exposes MCP over stdio (`docker exec -i ... vmaf-mcp`)
+      # rather than a persistent UDS listener, so health must check the CLI
+      # that the probe service actually depends on.
+      test: ["CMD", "vmaf", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # -------------------------------------------------------------------------
+  # smoke-probe-cron — periodic backend + MCP probe
+  # -------------------------------------------------------------------------
+  smoke-probe-cron:
+    image: vmaf-dev-mcp:local
+    container_name: vmaf-smoke-probe-cron
+    restart: unless-stopped
+    depends_on:
+      dev-mcp:
+        condition: service_healthy
+
+    command: ["/workspace/dev/scripts/smoke-probe-loop.sh"]
+
+    environment:
+      <<: *common-env
+      PROBE_INTERVAL_SECONDS: "900"  # 15 minutes
+      PROBE_OUTPUT_DIR: /probes
+
+    volumes:
+      - type: bind
+        source: .
+        target: /workspace
+        read_only: true
+      - type: volume
+        source: vmaf-sockets
+        target: /sockets
+      - type: bind
+        source: ./.workingdir/dev-mcp-probes
+        target: /probes
+        read_only: false
+      # Whole /dev/dri bind-mount — see dev-mcp service above. ADR-0529.
+      # NOTE: must be writable (not read_only) — the NVIDIA Container Toolkit
+      # OCI hook writes PCI-bus-address symlinks into /dev/dri/by-path at
+      # container init; read_only:true causes the hook to fail with
+      # "read-only file system" on any NVIDIA host.
+      - type: bind
+        source: /dev/dri
+        target: /dev/dri
+        read_only: false
+
+    # Hosts without the NVIDIA Container Toolkit can override: CONTAINER_RUNTIME=runc docker compose up -d
+    runtime: ${CONTAINER_RUNTIME:-nvidia}
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility, video, graphics]
+
+    # See dev-mcp service above (ADR-0541) for the /dev/dri cgroup +
+    # /dev/kfd rationale.
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+
+    # See dev-mcp service above (ADR-0541) for the seccomp rationale.
+    security_opt:
+      - seccomp=unconfined
+
+    group_add:
+      - "${HOST_GID_VIDEO:-44}"
+      - "${HOST_GID_RENDER:-109}"
+
+    networks:
+      - vmaf-net
+
+# ---------------------------------------------------------------------------
+# Networks
+# ---------------------------------------------------------------------------
+networks:
+  vmaf-net:
+    driver: bridge

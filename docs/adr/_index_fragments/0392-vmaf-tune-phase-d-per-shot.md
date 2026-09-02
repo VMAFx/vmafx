@@ -1,0 +1,1 @@
+| [ADR-0392](0392-vmaf-tune-phase-d-per-shot.md) | `vmaf-tune` Phase D — per-shot CRF tuning scaffold | Accepted (scaffold only; native per-codec emission and | tooling, ai, ffmpeg, codec, automation, fork-local |

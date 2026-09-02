@@ -1,0 +1,98 @@
+# Active monitoring for FFmpeg adding a ROCm/HIP hwdec context type
+# (the unblock for shipping a dedicated libvmaf_hip FFmpeg filter).
+# Per ADR-0448. The fork's docs/state.md
+# T-FFMPEG-HIP-FILTER-DEFERRED row is deferred behind FFmpeg
+# acquiring AV_HWDEVICE_TYPE_HIP (or AV_HWDEVICE_TYPE_ROCM, etc.).
+# Polls weekly: searches FFmpeg's GitHub mirror for any commit on
+# master that introduces an AV_HWDEVICE_TYPE_HIP / _ROCM enum
+# variant, or new hwcontext_hip.{c,h} files.
+name: Upstream watcher — FFmpeg HIP hwdec (closes T-FFMPEG-HIP-FILTER-DEFERRED)
+
+on:
+  schedule:
+    # Sundays 06:30 UTC. 15-minute offset from the prior watcher.
+    - cron: "30 6 * * 0"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-ffmpeg-hip-hwdec-watcher-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  poll:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Search FFmpeg for HIP / ROCm hwcontext additions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Two signals:
+          # (1) hwcontext_hip.{c,h} appears under libavutil/.
+          # (2) AV_HWDEVICE_TYPE_HIP enum variant appears in libavutil/hwcontext.h.
+          # Use the GitHub code-search API on the FFmpeg/FFmpeg mirror.
+
+          FILES_HIT=$(gh api -X GET search/code \
+            -f q='filename:hwcontext_hip.h repo:FFmpeg/FFmpeg' \
+            --jq '.total_count' 2>/dev/null || echo 0)
+
+          ENUM_HIT=$(gh api -X GET search/code \
+            -f q='AV_HWDEVICE_TYPE_HIP repo:FFmpeg/FFmpeg path:libavutil/hwcontext.h' \
+            --jq '.total_count' 2>/dev/null || echo 0)
+
+          echo "FFmpeg HIP hwdec signals: hwcontext_hip files=${FILES_HIT} enum_hits=${ENUM_HIT}"
+
+          if [ "${FILES_HIT}" -lt 1 ] && [ "${ENUM_HIT}" -lt 1 ]; then
+            echo "No HIP-hwdec signal upstream this week."
+            exit 0
+          fi
+
+          EXISTING=$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --state open \
+            --label upstream-merged \
+            --search "FFmpeg HIP hwdec in:title" \
+            --json number -q '.[0].number // empty')
+          if [ -n "${EXISTING}" ]; then
+            echo "Already tracking via issue #${EXISTING}; nothing to do."
+            exit 0
+          fi
+
+          gh issue create \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "FFmpeg HIP hwdec landed upstream — ship libvmaf_hip filter (closes T-FFMPEG-HIP-FILTER-DEFERRED)" \
+            --label upstream-merged \
+            --body "$(cat <<'EOF'
+          FFmpeg has acquired a HIP / ROCm hwdec context (search-API
+          surfaced the enum or files). The fork's
+          T-FFMPEG-HIP-FILTER-DEFERRED row in docs/state.md can now
+          actively close.
+
+          Action items:
+
+          1. Confirm the upstream landing: `gh search code
+             AV_HWDEVICE_TYPE_HIP --repo FFmpeg/FFmpeg`. Note the
+             commit SHA + author + date.
+          2. Bump the fork's `ffmpeg-patches/series.txt` baseline if
+             needed (current pin: n9.0.1).
+          3. Write `ffmpeg-patches/0014-libvmaf-add-libvmaf-hip-filter.patch`
+             mirroring `0006-libvmaf-add-libvmaf-vulkan-filter.patch`
+             with HIP-native AVFrame consumption via the new hwcontext.
+          4. Wire the configure flag (`--enable-libvmaf-hip-filter`)
+             and update `docs/usage/ffmpeg.md`.
+          5. Update `docs/state.md` T-FFMPEG-HIP-FILTER-DEFERRED row
+             from Deferred to Recently-closed.
+          6. Disable this watcher (rename with .disabled suffix or
+             delete the workflow).
+
+          See ADR-0448 for the watcher governance rule and ADR-0380
+          for the existing HIP backend selector that this filter
+          completes.
+          EOF
+          )"

@@ -1,0 +1,1 @@
+| [ADR-0922](0922-coverage-ratchet-aggressive.md) | Aggressive coverage ratchet: overall 37 → 60, critical 85 → 90, +5pp on every `PER_FILE_MIN` override; new per-PR coverage-delta gate (max 0.5pp drop on overall or any touched file); 30-day grace for in-flight PRs; exception process gated on new ADR superseding this one | Accepted | 2026-05-31 | ci, coverage, gate, fork-local |

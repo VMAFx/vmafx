@@ -1,0 +1,1 @@
+| [ADR-0126](0126-ssimulacra2-extractor.md) | SSIMULACRA 2 perceptual metric as a fork-local feature extractor — port libjxl C++ reference to `core/src/feature/ssimulacra2.c`, scalar-first, float-tolerance bit-closeness | Proposed | metrics, feature-extractor, docs, agents |

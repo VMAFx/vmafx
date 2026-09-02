@@ -1,0 +1,3 @@
+## Cross-backend parity baseline documented (Research-0744)
+
+Measured CPU vs CUDA (SYCL/HIP/Metal skipped: no device available in one-off container) on the three Netflix golden YUV pairs using `vmaf_v0.6.1.json` inside `vmaf-dev-mcp:cuda13.3`. Baseline wall times and score deltas are committed to `docs/research/0744-cuda-cross-backend-baseline-pre-ncu-perf.md` for comparison against future optimization PRs. Key findings: CPU outperforms CUDA at ≤48 frames on all workloads tested; CUDA crossover requires batches comparable to the BBB 48-frame snapshot. All CUDA scores are within established GPU tolerance (max pooled delta −4×10⁻⁶). `integer_adm3` and `integer_aim` absent from CUDA `pooled_metrics` — open investigation item.

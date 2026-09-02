@@ -1,0 +1,1 @@
+| [ADR-0993](0993-konvid-ugc-bvi-saliency-batch-launch.md) | KoNViD / UGC / BVI-DVC saliency batch manifests: in-tree `ai/batch-manifests/saliency/` with runnable KoNViD-150K manifest and scaffolded UGC/BVI stubs documenting path-column blocking gaps | Accepted | 2026-06-03 | ai, saliency, materializer, konvid, ugc, bvi-dvc, batch, fork-local |

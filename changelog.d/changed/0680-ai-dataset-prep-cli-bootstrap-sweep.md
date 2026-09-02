@@ -1,0 +1,1 @@
+- Reused the shared AI script bootstrap and CLI helpers in dataset fetch/prep scripts so their replay manifests capture normalized argv and entrypoint metadata.

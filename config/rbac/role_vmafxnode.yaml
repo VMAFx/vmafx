@@ -1,0 +1,35 @@
+---
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# config/rbac/role_vmafxnode.yaml — minimum ClusterRole for the VmafxNode reconciler.
+#
+# The VmafxNode reconciler reads VmafxNode objects and patches their status
+# subresource (Healthy + LastHeartbeat).  It does not create or delete
+# VmafxNode objects (nodes self-register).
+#
+# ADR-0786: vmafx-operator Stage 2 — per-controller RBAC minimum permissions.
+# ADR-0714: vmafx-operator kubebuilder skeleton + CRDs (parent).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vmafx-operator-vmafxnode-role
+rules:
+  # VmafxNode: read + status patch (no create/delete — nodes self-register)
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxnodes]
+    verbs: [get, list, watch, update, patch]
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxnodes/status]
+    verbs: [get, update, patch]
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxnodes/finalizers]
+    verbs: [update]
+  # Events — for future staleness events
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  # Leader election
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, list, watch, create, update, patch, delete]

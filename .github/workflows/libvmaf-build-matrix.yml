@@ -1,0 +1,988 @@
+name: libvmaf Build Matrix — Linux/macOS/Windows/ARM × CPU/SYCL/CUDA
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+    # ADR-0331 — `ready_for_review` lets the per-job draft gate fire
+    # CI when a draft PR is promoted to ready-for-review.
+    types: [opened, synchronize, reopened, ready_for_review]
+    # ADR-0341 / Research-0089 §3.2: skip the full 18-cell build matrix
+    # when only documentation paths change. The Required Checks
+    # Aggregator (ADR-0313) treats "workflow not reported" as
+    # path-filter-skipped/acceptable, so paths-ignore at the trigger
+    # level does NOT break branch protection. Mirrors the path-filter
+    # structure introduced in ADR-0317 on docker-image.yml and
+    # ffmpeg-integration.yml. Conservative deny-list — anything not
+    # listed here (core/, meson.build, meson_options.txt,
+    # subprojects/, python/, ai/, mcp-server/, model/, testdata/,
+    # .github/workflows/, ...) still fires the matrix.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Ported from the now-deleted windows.yml (ADR-0115). Cancels superseded
+# runs on the same ref so a force-push doesn't queue duplicate matrix runs.
+concurrency:
+  group: libvmaf-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  # ===== Linux / macOS / ARM builds =====
+  libvmaf-build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # --- CPU-only builds ---
+          - os: ubuntu-latest
+            CC: ccache gcc-14
+            CXX: ccache g++-14
+            name: Build — Ubuntu gcc (CPU)
+          - os: ubuntu-latest
+            CC: ccache clang-22
+            CXX: ccache clang++-22
+            name: Build — Ubuntu clang (CPU)
+          - os: macos-latest
+            CC: ccache clang
+            CXX: ccache clang++
+            meson_extra: -Denable_metal=disabled
+            name: Build — macOS clang (CPU)
+            experimental: true
+          - os: ubuntu-24.04-arm
+            CC: ccache clang-22
+            CXX: ccache clang++-22
+            name: Build — Ubuntu ARM clang (CPU)
+
+          # --- i686 (32-bit x86) build — reproduces Netflix#1481 ---
+          # Verifies libvmaf still compiles on 32-bit x86 with
+          # -Denable_asm=false. The documented workaround for the
+          # `_mm256_extract_epi64` implicit-declaration failure on
+          # 32-bit x86 is to disable the asm path; this job pins
+          # that contract so any future 32-bit-only regression trips
+          # the matrix. Tests are skipped (meson cross-build marks
+          # them SKIP 77 — host can run i686 binaries natively but
+          # meson doesn't know that). See ADR-0151.
+          - os: ubuntu-latest
+            CC: ccache gcc-14
+            CXX: ccache g++-14
+            i686: true
+            meson_extra: --cross-file=build-aux/i686-linux-gnu.ini -Denable_asm=false
+            name: Build — Ubuntu i686 gcc (CPU, no-asm)
+
+          # --- DNN-enabled builds (ADR-0120) ---
+          # Build with -Denable_dnn=enabled across compiler/OS combinations
+          # to ensure the ORT C-API surface compiles on every CPU leg, not
+          # only the dedicated `Tiny AI` job. Each leg installs ONNX Runtime
+          # (Linux: MS tarball pinned to 1.22.0; macOS: Homebrew) and runs
+          # the meson dnn suite. macOS leg stays `experimental: true` so a
+          # Homebrew ORT bump that breaks ABI doesn't block merge.
+          - os: ubuntu-latest
+            CC: ccache gcc-14
+            CXX: ccache g++-14
+            dnn: true
+            meson_extra: -Denable_dnn=enabled
+            name: Build — Ubuntu gcc (CPU) + DNN
+          - os: ubuntu-latest
+            CC: ccache clang-22
+            CXX: ccache clang++-22
+            dnn: true
+            meson_extra: -Denable_dnn=enabled
+            name: Build — Ubuntu clang (CPU) + DNN
+          - os: macos-latest
+            CC: ccache clang
+            CXX: ccache clang++
+            dnn: true
+            meson_extra: -Denable_dnn=enabled -Denable_metal=disabled
+            name: Build — macOS clang (CPU) + DNN
+            experimental: true
+
+          # --- Vulkan backend removed (ADR-0726) ---
+          # The Vulkan backend was removed in ADR-0726; the Ubuntu Vulkan
+          # (T5-1b runtime) and macOS MoltenVK (advisory) matrix rows that
+          # passed -Denable_vulkan=enabled have been dropped.  meson.build
+          # no longer exports that option and configure would fail with
+          # "Unknown option: enable_vulkan".
+
+          # --- HIP T7-10b runtime (ADR-0212) ---
+          # Real HIP runtime build — compiles + links against
+          # `amdhip64` from `rocm-hip-runtime-dev`. The package is
+          # apt-installed from the official AMD repo at
+          # `repo.radeon.com/rocm/apt/<ver>` (~200 MB, +3-5 min per
+          # run). No AMD GPU on the runner, so kernel-launch tests are
+          # skipped (`vmaf_hip_device_count() == 0` short-circuits the
+          # device-resident smoke assertions, mirroring the
+          # Vulkan-on-lavapipe-less-CI pattern from ADR-0175). See
+          # ADR-0212 §"Status update 2026-05-09: CI lane enabled".
+          - os: ubuntu-latest
+            CC: ccache gcc-14
+            CXX: ccache g++-14
+            hip: true
+            meson_extra: -Denable_hip=true
+            name: Build — Ubuntu HIP (T7-10b runtime)
+
+          # --- Metal T8-1 scaffold (ADR-0361) ---
+          # Stub-only build — every Metal entry point returns -ENOSYS
+          # until the runtime PR (T8-1b) lands. macos-latest ships the
+          # Metal SDK as part of the system framework set
+          # (`/System/Library/Frameworks/Metal.framework` is guaranteed
+          # to exist), so the scaffold's
+          # `dependency('Metal', required: false)` /
+          # `dependency('MetalKit', required: false)` probes resolve
+          # cleanly. The smoke test runs (no real GPU work needed —
+          # every assertion checks the -ENOSYS / -EINVAL contract).
+          # Apple Silicon (M1+ / GPU Family Apple 7+) is the runtime
+          # target; the scaffold lane builds on whichever macos-latest
+          # arch GitHub provides today (Apple Silicon as of 2026).
+          - os: macos-latest
+            CC: ccache clang
+            CXX: ccache clang++
+            meson_extra: -Denable_metal=enabled
+            name: Build — macOS Metal (T8-1 scaffold)
+
+          # --- Static library builds ---
+          - os: ubuntu-latest
+            CC: ccache gcc-14
+            CXX: ccache g++-14
+            meson_extra: --default-library static
+            name: Build — Ubuntu gcc Static (CPU)
+          # T7-CI-DEDUP — `Build — Ubuntu SYCL Static` removed. The
+          # dynamic-link `Build — Ubuntu SYCL` lane below already
+          # proves the icx / icpx + meson contract for the SYCL
+          # device-image link path; the static lane was a packaging
+          # exercise (no new bug class — every regression class it
+          # could catch shows up first on the dynamic lane). The
+          # CUDA Static lane stays because it exercises a distinct
+          # NVCC-static interaction not covered by the dynamic build.
+          - os: ubuntu-latest
+            CC: ccache gcc-14
+            CXX: ccache g++-14
+            cuda: true
+            meson_extra: --default-library static -Denable_cuda=true -Denable_nvcc=true
+            name: Build — Ubuntu CUDA Static
+
+          # --- SYCL build (icpx for both host + SYCL sources so the device
+          #     image is registered at the .so link step; see post-T7-8
+          #     SYCL revival in core/src/meson.build) ---
+          - os: ubuntu-latest
+            CC: icx
+            CXX: icpx
+            sycl: true
+            meson_extra: -Denable_sycl=true -Db_lto=false
+            name: Build — Ubuntu SYCL
+
+          # --- CUDA build (gcc + nvcc) ---
+          - os: ubuntu-latest
+            CC: ccache gcc-14
+            CXX: ccache g++-14
+            cuda: true
+            meson_extra: -Denable_cuda=true -Denable_nvcc=true
+            name: Build — Ubuntu CUDA
+
+          # --- SYCL + CUDA combined (icpx host so SYCL link works; nvcc
+          #     handles the CUDA TUs separately via -Denable_nvcc=true) ---
+          - os: ubuntu-latest
+            CC: icx
+            CXX: icpx
+            sycl: true
+            cuda: true
+            meson_extra: -Denable_sycl=true -Denable_cuda=true -Denable_nvcc=true -Db_lto=false
+            name: Build — Ubuntu SYCL + CUDA
+
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    # ADR-0726: Vulkan backend removed. continue-on-error now depends only on
+    # matrix.experimental (no matrix row has moltenvk:true).
+    continue-on-error: ${{ matrix.experimental == true }}
+    env:
+      CC: ${{ matrix.CC }}
+      CXX: ${{ matrix.CXX }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # ---------- ccache persistence (Research-0089 §3.1) ----------
+      # Linux + macOS build legs all wrap their host compiler in `ccache`
+      # (matrix.CC = "ccache gcc" / "ccache clang"). Without a persisted
+      # `~/.ccache` directory every PR cold-rebuilds; per Research-0089
+      # the typical hit rate after warm-up is 60–85% and the wall-clock
+      # saving is ~3–5 min/cell. Only the SYCL legs run a bare icx/icpx
+      # without the ccache wrapper, so skip those; matrix.CC starts with
+      # "ccache" on every other lane.
+      #
+      # Cache key + path shape follows the official GitHub Actions
+      # `actions/cache` cross-platform recipe — `~/.ccache` is ccache's
+      # default cache dir on Linux + macOS, and per-OS / per-compiler
+      # keying with restore-key fall-through is the documented pattern
+      # for build caches that vary by toolchain. See
+      # https://github.com/actions/cache (accessed 2026-05-09) and
+      # https://github.com/actions/cache/blob/main/examples.md (same date)
+      # — "C++ - ccache" example.
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — libvmaf build leg skipped by plan
+        if: steps.impact.outputs.c_core != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — libvmaf build leg satisfied without running (ADR-1140)"
+      - name: Restore ccache (Linux + macOS)
+        if: ${{ (startsWith(matrix.CC, 'ccache ')) && steps.impact.outputs.c_core == 'true' }}
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.ccache
+          # v2 prefix: forces fresh entries after actions/cache v4→v5
+          # upgrade (old v4-format entries cause deserialization failures
+          # on macOS Vulkan lane — ADR-0635).
+          key: ccache-v2-${{ matrix.os }}-${{ matrix.CC }}-${{ matrix.meson_extra }}-${{ github.sha }}
+          restore-keys: |
+            ccache-v2-${{ matrix.os }}-${{ matrix.CC }}-${{ matrix.meson_extra }}-
+            ccache-v2-${{ matrix.os }}-${{ matrix.CC }}-
+            ccache-v2-${{ matrix.os }}-
+
+      - name: Setup python
+        if: steps.impact.outputs.c_core == 'true'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: 3.14.7
+
+      - name: Install meson and ninja
+        if: steps.impact.outputs.c_core == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install meson
+
+      - name: Install dependencies (ubuntu)
+        if: ${{ (startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.i686 && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
+        run: |
+          sudo apt-get update
+          sudo -E apt-get -yq install ccache ninja-build nasm libomp-dev pkg-config
+          # gcc-14 is preinstalled on ubuntu-24.04; clang tops out at 18.1.3
+          # there, which accepts -std=c++26 but ships a libstdc++ with no
+          # std::expected, so core/src/dict.cpp cannot build (ADR-0692 moved
+          # the tree to C23 + C++26). Pull clang from apt.llvm.org rather than
+          # degrading the language standard to suit the distro's compiler.
+          case "$CC" in
+          *gcc-14)   sudo -E apt-get -yq install gcc-14 g++-14 ;;
+          *clang-22) wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+                     chmod +x /tmp/llvm.sh
+                     sudo /tmp/llvm.sh 22
+                     # libomp-22-dev, not the unversioned libomp-dev: the
+                     # latter matches the *system* clang (18). The tox leg
+                     # builds libsvm-official from source with $CXX, and its
+                     # svm.cpp needs <omp.h> from the same LLVM major, else
+                     # "fatal error: 'omp.h' file not found".
+                     sudo -E apt-get -yq install libclang-rt-22-dev libomp-22-dev ;;
+          *gcc)      sudo -E apt-get -yq install gcc g++ ;;
+          *clang)    sudo -E apt-get -yq install clang ;;
+          esac
+
+      - name: Install dependencies (ubuntu i686)
+        if: ${{ (matrix.i686) && steps.impact.outputs.c_core == 'true' }}
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo -E apt-get -yq install ccache ninja-build pkg-config \
+            gcc g++ gcc-multilib g++-multilib
+
+      - name: Install dependencies (mac)
+        if: ${{ (matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
+        run: |
+          brew install -q ninja nasm ccache llvm pkg-config
+
+      - name: Install Metal compiler toolchain
+        if: ${{ (contains(matrix.meson_extra, 'enable_metal=enabled')) && steps.impact.outputs.c_core == 'true' }}
+        run: xcodebuild -downloadComponent MetalToolchain
+
+      # ---------- ONNX Runtime (DNN legs only) ----------
+      # Mirrors the install pattern from the dedicated Tiny AI job in
+      # tests-and-quality-gates.yml so DNN-on builds across compilers /
+      # OSes share the same pinned ORT version. See ADR-0120.
+      - name: Install ONNX Runtime (linux, DNN leg)
+        if: ${{ (matrix.dnn && startsWith(matrix.os, 'ubuntu')) && steps.impact.outputs.c_core == 'true' }}
+        env:
+          ORT_VERSION: "1.22.0"
+        run: |
+          curl -sSL \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
+            | sudo tar -xz -C /opt/
+          sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
+          sudo install -d /usr/local/lib/pkgconfig
+          cat <<EOF | sudo tee /usr/local/lib/pkgconfig/libonnxruntime.pc >/dev/null
+          prefix=/opt/onnxruntime
+          exec_prefix=\${prefix}
+          libdir=\${exec_prefix}/lib
+          includedir=\${prefix}/include
+
+          Name: libonnxruntime
+          Description: ONNX Runtime C API
+          Version: ${ORT_VERSION}
+          Libs: -L\${libdir} -lonnxruntime
+          Cflags: -I\${includedir}
+          EOF
+          sudo sed -i 's/^          //' /usr/local/lib/pkgconfig/libonnxruntime.pc
+          echo "/opt/onnxruntime/lib" | sudo tee /etc/ld.so.conf.d/onnxruntime.conf
+          sudo ldconfig
+
+      - name: Install ONNX Runtime (macos, DNN leg)
+        if: ${{ (matrix.dnn && matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
+        run: |
+          # Homebrew ships onnxruntime as a keg-only formula with its own
+          # libonnxruntime.pc. Make pkg-config see it. Note: neither the
+          # brew keg nor Microsoft's official `onnxruntime-osx-arm64-*.tgz`
+          # ship `libonnxruntime_providers_shared.dylib` (they statically
+          # link providers into the main lib). The DNN test
+          # `test_ep_fp16::test_auto_falls_through_to_cpu` triggers a
+          # provider-bridge dlopen of that dylib and fails on macOS as a
+          # result; the test is skipped at compile time on `__APPLE__`
+          # to preserve the rest of the DNN suite for macOS coverage.
+          brew install -q onnxruntime
+          ORT_PREFIX=$(brew --prefix onnxruntime)
+          echo "PKG_CONFIG_PATH=${ORT_PREFIX}/lib/pkgconfig" >> $GITHUB_ENV
+
+      # ---------- Intel oneAPI (SYCL) ----------
+      # Pinned to oneAPI 2025.3 (icpx 2025.3.x) and Level Zero v1.28.0.
+      # 2025.0 was an ABI-breaking release, so pin to the 2025.3 minor meta
+      # package rather than the unversioned 'latest' to avoid silent bumps.
+      - name: Install Intel oneAPI
+        if: ${{ (matrix.sycl) && steps.impact.outputs.c_core == 'true' }}
+        # Override the matrix-level CC=icx / CXX=icpx for *this* step only:
+        # the Level Zero loader is plain C and we don't have icx on PATH yet
+        # at this point in the same step (apt installs it below, then the
+        # cmake invocation runs before the next step picks up GITHUB_PATH).
+        # Force gcc here; the meson setup step further down picks up icpx
+        # via the matrix env once setvars.sh adds /opt/intel/oneapi/compiler
+        # to PATH.
+        env:
+          CC: gcc
+          CXX: g++
+        run: |
+          sudo apt-get update
+          sudo -E apt-get -yq install ccache ninja-build nasm gcc g++ gpg-agent
+          wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+            | sudo gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
+            | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update
+          sudo -E apt-get -yq install intel-oneapi-compiler-dpcpp-cpp-2025.3 cmake
+          # Level Zero headers + loader library, pinned to stable tag.
+          git clone --depth=1 --branch v1.28.0 \
+            https://github.com/oneapi-src/level-zero.git /tmp/level-zero
+          cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr
+          cmake --build /tmp/level-zero/build -j$(nproc)
+          sudo cmake --install /tmp/level-zero/build
+          rm -rf /tmp/level-zero
+          echo "/opt/intel/oneapi/compiler/latest/bin" >> $GITHUB_PATH
+          echo "/opt/intel/oneapi/compiler/latest/lib" | sudo tee /etc/ld.so.conf.d/oneapi.conf
+          sudo ldconfig
+
+      # ---------- CUDA toolkit ----------
+      # Pinned to CUDA 13.2.0. Two constraints: (1) ADR-0603 — Ubuntu 26.04
+      # (glibc 2.43) needs CUDA >= 13.2 to avoid the rsqrt(double) noexcept
+      # C2059/C2085 NVCC cascade; (2) the CI installer (Jimver/cuda-toolkit)
+      # does NOT yet publish a 13.3.0 build — bumping the CI legs to 13.3.0
+      # fails the "Install CUDA toolkit" step (T-CI-JIMVER-CUDA-133-NOT-
+      # AVAILABLE). The Docker / dev-container images DO use 13.3.0 (the
+      # nvidia/cuda:13.3.0 image exists); this Docker-13.3-vs-CI-13.2 split is
+      # intentional and stays until Jimver ships 13.3.0. 13.x drops sm_50/60/70
+      # (Maxwell/Pascal/Volta); meson.build guards the sm_50 gencode with a
+      # `<13` version check. Minimum driver for 13.x is >= 580.
+      - name: Install CUDA toolkit
+        if: ${{ (matrix.cuda) && steps.impact.outputs.c_core == 'true' }}
+        uses: Jimver/cuda-toolkit@b8bf9c6c28f8a92fbb04dcfcaee872e60c57462d  # v0.2.36
+        with:
+          cuda: '13.2.0'
+          method: network
+          sub-packages: '["nvcc", "cudart-dev"]'
+
+      - name: Install nv-codec-headers
+        if: ${{ (matrix.cuda) && steps.impact.outputs.c_core == 'true' }}
+        run: |
+          git clone --depth=1 https://code.ffmpeg.org/FFmpeg/nv-codec-headers
+          cd nv-codec-headers && sudo make install && cd .. && rm -rf nv-codec-headers
+
+      - name: Install base deps for CUDA-only builds
+        if: ${{ (matrix.cuda && !matrix.sycl) && steps.impact.outputs.c_core == 'true' }}
+        run: |
+          sudo apt-get update
+          sudo -E apt-get -yq install ccache ninja-build nasm gcc g++
+
+      # ---------- ROCm / HIP runtime (T7-10b) ----------
+      # Installs `rocm-hip-runtime-dev` from the official AMD apt repo
+      # at `repo.radeon.com/rocm/apt/<ver>`. ROCm 7.2.3 matches the
+      # version under test on the maintainer's local box; the apt URL
+      # carries the version path component, so bumping ROCm here is a
+      # one-line change. The ROCm install uses `lsb_release -cs` to
+      # detect the codename dynamically (plucky for ubuntu-26.04).
+      # Pin priority 600
+      # keeps Ubuntu base packages preferred where versions overlap so
+      # the HIP install doesn't drag in a parallel toolchain.
+      #
+      # Cost: ~200 MB download + ~3-5 min wall-clock per HIP-lane run.
+      # Acceptable because HIP is opt-in (`-Denable_hip=true`) and the
+      # lane runs only when its matrix row is selected.
+      - name: Install ROCm / HIP runtime
+        if: ${{ (matrix.hip) && steps.impact.outputs.c_core == 'true' }}
+        env:
+          ROCM_VERSION: "7.2.3"
+        run: |
+          sudo apt-get update
+          sudo -E apt-get -yq install ccache ninja-build nasm libomp-dev \
+            pkg-config gcc g++ wget gnupg lsb-release
+          sudo install -d -m 0755 /etc/apt/keyrings
+          wget -qO- https://repo.radeon.com/rocm/rocm.gpg.key \
+            | gpg --dearmor \
+            | sudo tee /etc/apt/keyrings/rocm.gpg > /dev/null
+          UBUNTU_CODENAME="$(lsb_release -cs)"
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/${ROCM_VERSION} ${UBUNTU_CODENAME} main" \
+            | sudo tee /etc/apt/sources.list.d/rocm.list
+          printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' \
+            | sudo tee /etc/apt/preferences.d/rocm-pin-600
+          sudo apt-get update
+          sudo -E apt-get -yq install --no-install-recommends rocm-hip-runtime-dev
+          # Surface the ROCm tooling on PATH / pkg-config / ld so
+          # meson's `dependency('hip-lang')` and the link of
+          # `amdhip64` resolve without per-step exports.
+          echo "/opt/rocm/bin"                          | sudo tee -a "$GITHUB_PATH"
+          echo "/opt/rocm/lib"                          | sudo tee /etc/ld.so.conf.d/rocm.conf
+          echo "PKG_CONFIG_PATH=/opt/rocm/lib/pkgconfig:${PKG_CONFIG_PATH:-}" \
+            | sudo tee -a "$GITHUB_ENV"
+          sudo ldconfig
+          /opt/rocm/bin/hipconfig --version || true
+
+      # ---------- Configure ccache cap + stats reset ----------
+      # ccache dir is restored above by `actions/cache`; size-cap it so
+      # stale objects evict in LRU order rather than the cache growing
+      # without bound across runs (the hosted runner has a hard 10 GB
+      # cache budget per repo; we want headroom for fixture caches too).
+      # `ccache -z` zeroes the stats so the post-build `ccache -s` shows
+      # only this run's hit/miss counts. See
+      # https://ccache.dev/manual/latest.html#_configuration (accessed
+      # 2026-05-09) for `max_size` semantics.
+      - name: Configure ccache
+        if: ${{ (startsWith(matrix.CC, 'ccache ')) && steps.impact.outputs.c_core == 'true' }}
+        run: |
+          mkdir -p ~/.ccache
+          ccache --max-size=400M
+          ccache -z
+
+      # ---------- Build ----------
+      - name: Configure libvmaf
+        if: steps.impact.outputs.c_core == 'true'
+        run: |
+          # SYCL build needs setvars.sh on PATH/LD_LIBRARY_PATH so meson
+          # can probe libsycl + level-zero headers via icpx -fsycl. CPU
+          # / CUDA matrix entries skip this — they don't have setvars.sh.
+          if [ "${{ matrix.sycl }}" = "true" ]; then
+            source /opt/intel/oneapi/setvars.sh
+          fi
+          meson setup core core/build --buildtype release \
+            --prefix $PWD/install \
+            -Denable_float=true \
+            ${{ matrix.meson_extra }}
+
+      - name: Build libvmaf
+        if: steps.impact.outputs.c_core == 'true'
+        run: |
+          if [ "${{ matrix.sycl }}" = "true" ]; then
+            source /opt/intel/oneapi/setvars.sh
+          fi
+          sudo -E PATH="$PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
+            ninja -vC core/build install
+
+      # Surface ccache hit/miss counters in the CI log so the savings
+      # claim from Research-0089 §3.1 can be verified per-run. Runs
+      # whether the build succeeds or fails (always()) so a failed
+      # build still reports whether ccache was warming up.
+      - name: Report ccache statistics
+        if: ${{ (always() && startsWith(matrix.CC, 'ccache ')) && steps.impact.outputs.c_core == 'true' }}
+        run: ccache -s
+
+      # Verify pkgconfig for static linking
+      - name: Verify static pkgconfig
+        if: ${{ (contains(matrix.meson_extra, 'static')) && steps.impact.outputs.c_core == 'true' }}
+        run: |
+          export PKG_CONFIG_PATH=$PWD/install/lib/pkgconfig:$PWD/install/lib/x86_64-linux-gnu/pkgconfig
+          echo "=== libvmaf.pc ==="
+          cat $PWD/install/lib/pkgconfig/libvmaf.pc || cat $PWD/install/lib/x86_64-linux-gnu/pkgconfig/libvmaf.pc
+          echo ""
+          echo "=== pkg-config --static --libs libvmaf ==="
+          pkg-config --static --libs libvmaf
+          # Static libs must include -lpthread and -lm
+          pkg-config --static --libs libvmaf | grep -q '\-lpthread\|\-pthread'
+          pkg-config --static --libs libvmaf | grep -q '\-lm'
+
+      # DNN legs: run the dedicated dnn suite first so its logs are easy
+      # to find if the build regresses ORT compatibility. The full test
+      # run below also exercises dnn via `ninja test`; this step exists
+      # for log isolation only.
+      - name: Run meson dnn suite (DNN leg)
+        if: ${{ (matrix.dnn) && steps.impact.outputs.c_core == 'true' }}
+        # `sudo $(which meson)` resolves the meson absolute path before
+        # sudo strips PATH — pip-installed meson lives under the runner
+        # user's $HOME so a bare `sudo meson` reports "command not found".
+        # Sudo is needed because the preceding `sudo ninja install` step
+        # left build artifacts owned by root.
+        run: sudo $(which meson) test -C core/build --suite=dnn --print-errorlogs
+
+      # CPU-only: full test suite + tox (skipped for i686 cross-build
+      # because meson marks cross-compiled tests SKIP 77 regardless of
+      # whether the host can actually run them; the build itself is
+      # what Netflix#1481 needs to pin).
+      - name: Run tests
+        if: ${{ (!matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) && steps.impact.outputs.c_core == 'true' }}
+        run: sudo ninja -vC core/build test
+
+      # ---------- SSH debug session (macOS × workflow_dispatch only) ----------
+      # Fires ONLY when:
+      #   (a) the job is running on macOS (any macOS matrix leg), AND
+      #   (b) a preceding step has failed (failure()), AND
+      #   (c) the workflow was triggered by a manual workflow_dispatch event.
+      #
+      # The workflow_dispatch gate is critical: it prevents the session from
+      # opening on every failing PR push, which would strand a runner for up
+      # to 30 minutes per failure. Manual dispatch is deliberate — the operator
+      # signals intent to debug interactively.
+      #
+      # Action pinned to commit SHA (not just tag) per the fork's
+      # `helpers:pinGitHubActionDigests` Renovate policy.
+      # SHA corresponds to mxschmitt/action-tmate v3.24.
+      # See docs/development/ci-tmate-debug.md for usage.
+      - name: SSH debug session on test failure
+        if: ${{ (failure() && runner.os == 'macOS' && github.event_name == 'workflow_dispatch') && steps.impact.outputs.c_core == 'true' }}
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113  # v3.24
+        with:
+          limit-access-to-actor: true
+          # Wait up to 30 min for the operator to connect; if nobody connects
+          # within that window the step unblocks and the job completes.
+          connect-timeout-seconds: 1800
+
+      # (ADR-0726: Vulkan removed — MoltenVK install + smoke test steps deleted)
+
+      - name: Cache Netflix vmaf_resource fixtures
+        # Insulates the tox lanes from the recurring HTTP-502s on
+        # raw.githubusercontent.com when fetching python/test/resource/
+        # fixtures via download_reactively (compat/python-vmaf/config.py).
+        if: ${{ ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: python/test/resource
+          key: vmaf-fixtures-resource-v1-${{ hashFiles('python/test/*_test.py', 'python/test/resource/test_*.py') }}
+          restore-keys: |
+            vmaf-fixtures-resource-v1-
+            vmaf-fixtures-resource-
+
+      - name: Run tox tests (ubuntu)
+        if: ${{ (startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) && steps.impact.outputs.c_core == 'true' }}
+        run: |
+          mkdir -p ~/.ccache && sudo chown -R $(whoami) ~/.ccache
+          pip install tox
+          tox -c python
+
+      - name: Run tox tests (mac)
+        if: ${{ (matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
+        run: |
+          mkdir -p ~/.ccache && sudo chown -R $(whoami) ~/.ccache
+          pip install tox
+          PATH=$(brew --prefix)/opt/llvm/bin:$PATH \
+          CC=$(brew --prefix)/opt/llvm/bin/clang \
+          CXX=$(brew --prefix)/opt/llvm/bin/clang++ \
+          tox -c python
+
+      # GPU builds: run tests that don't need hardware
+      - name: Run CPU-only tests (GPU build)
+        if: ${{ (matrix.sycl || matrix.cuda) && steps.impact.outputs.c_core == 'true' }}
+        run: |
+          cd core/build
+          for t in test_dict test_ref test_log test_thread_pool test_cpu \
+                   test_feature test_cli_parse test_model test_predict \
+                   test_ciede test_cambi test_psnr test_luminance_tools \
+                   test_feature_collector test_framesync; do
+            echo "=== $t ==="
+            ./test/$t
+          done
+
+      # HIP runtime build: runs the HIP smoke test (no GPU needed —
+      # the smoke harness short-circuits on `vmaf_hip_device_count() == 0`
+      # per ADR-0212). Skips kernel-launch tests entirely; the GHA
+      # runner has no AMD GPU.
+      - name: Run HIP smoke test (no GPU)
+        if: ${{ (matrix.hip) && steps.impact.outputs.c_core == 'true' }}
+        run: |
+          cd core/build
+          ./test/test_hip_smoke
+
+      # ---------- Artifacts ----------
+      - name: Upload vmaf binary
+        if: ${{ (!contains(matrix.meson_extra, 'static')) && steps.impact.outputs.c_core == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ${{ matrix.name }}-vmaf
+          path: ./install/bin/vmaf
+
+  # ===== Windows (MSYS2 / MinGW-w64) =====
+  # Folded in from the now-deleted .github/workflows/windows.yml so the
+  # full build matrix lives in one workflow file. See ADR-0115.
+  # MINGW32 is intentionally disabled (vmaf score mismatch — upstream note);
+  # 32-bit support would need a SIMD audit before re-enabling.
+  #
+  # Job key renamed `build` → `windows` and display name set to Title Case
+  # per ADR-0116. The matrix-expanded required status check on master is
+  # re-pinned to `Build — Windows MinGW64 (CPU)` immediately after this
+  # workflow lands (see ADR-0116 §Consequences).
+  windows:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Build — Windows MinGW64 (CPU)
+    runs-on: windows-2025
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # - msystem: MINGW32
+          #   MINGW_PACKAGE_PREFIX: mingw-w64-i686
+          #   CFLAGS: -msse2 -mfpmath=sse -mstackrealign
+          - msystem: MINGW64
+            MINGW_PACKAGE_PREFIX: mingw-w64-x86_64
+    env:
+      CC: ccache gcc
+      CXX: ccache g++
+      CFLAGS: -pipe -static -O3 -mtune=generic -D_FILE_OFFSET_BITS=64 -mthreads
+      CXXFLAGS: -pipe -static -O3 -mtune=generic -D_FILE_OFFSET_BITS=64 -mthreads
+      LDFLAGS: -pipe -static -static-libgcc -static-libstdc++
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Cache ccache files
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: .ccache
+          key: ${{ runner.os }}-${{ matrix.msystem }}-0-${{ hashFiles('**/*.c') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.msystem }}-0-
+            ${{ runner.os }}-${{ matrix.msystem }}-
+
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884  # v2.32.0
+        with:
+          msystem: ${{ matrix.msystem }}
+          install: >-
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-ccache
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-nasm
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-pkg-config
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-gcc
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-meson
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-ninja
+            vim make diffutils
+          update: true
+          path-type: inherit
+
+      - name: Set ccache dir
+        run: echo "CCACHE_DIR=$PWD/.ccache" >> $GITHUB_ENV
+
+      - name: Configure vmaf
+        run: |
+          meson setup core core/build --buildtype release \
+            --default-library static --prefix "$MINGW_PREFIX" \
+            -Denable_cuda=false -Denable_sycl=false -Denable_float=true
+
+      - name: Build vmaf
+        run: meson install -C core/build
+
+      - name: Test vmaf
+        # --print-errorlogs surfaces the failing test's stdout/stderr
+        # inline in the CI log instead of only writing it to
+        # meson-logs/testlog.txt, so cross-platform debugging (e.g.
+        # MinGW64-specific locale assertions) does not require an
+        # artifact round-trip.
+        run: meson test -C core/build --num-processes $(nproc) --print-errorlogs
+
+      - name: Show binary info and stage artifact
+        id: stage
+        run: |
+          ldd "$MINGW_PREFIX/bin/vmaf.exe" || true
+          mkdir -p artifact
+          cp "$MINGW_PREFIX/bin/vmaf.exe" artifact/vmaf.exe
+          echo "path=$(cygpath -m "$PWD/artifact/vmaf.exe")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload vmaf.exe artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ${{ matrix.msystem }}-vmaf
+          path: ${{ steps.stage.outputs.path }}
+          if-no-files-found: error
+
+  # ===== Windows GPU build-only (MSVC + CUDA, MSVC + oneAPI SYCL) =====
+  # Build-only legs — no GPU on the windows-2025 runner, so the test
+  # step is intentionally omitted. The point is verifying that the
+  # CUDA / SYCL backend code compiles & links on the MSVC toolchain,
+  # closing the platform-coverage hole left by the Linux-only GPU
+  # matrix entries above. See ADR-0121.
+  #
+  # MSVC env is set up via TheMrMilchmann/setup-msvc-dev@v4 (Node 24
+  # replacement for ilammy/msvc-dev-cmd@v1.13.0, which was deprecated
+  # on Node.js 20 — see ADR-0635). Functionally identical: runs
+  # vcvarsall.bat and exports PATH/INCLUDE/LIB for cl.exe.
+  # CUDA toolkit is installed directly from NVIDIA's Windows network
+  # installer, pinned to the same 13.2.0 release as the Linux CUDA
+  # legs. The Linux legs still use Jimver/cuda-toolkit; the Windows
+  # leg avoids that action because v0.2.35 can exit before setup on
+  # current windows-2025 images (ADR-0664).
+  # oneAPI is installed via the official `oneapi-src/oneapi-ci`
+  # offline-installer pattern (`curl` the Base Toolkit installer +
+  # extract + run bootstrapper). We tried `rscohn2/setup-oneapi@v0`
+  # first (Linux-only — all install URLs `.sh`) and Chocolatey's
+  # `intel-oneapi-basekit` (not on the community feed); neither
+  # works on `windows-2025`. Pinned to oneAPI 2025.3.0.372 to
+  # match the Linux SYCL leg's `intel-oneapi-compiler-dpcpp-cpp-2025.3`.
+  # Both legs additionally inject `/experimental:c11atomics` into
+  # `CFLAGS` / `CXXFLAGS` because libvmaf uses C11 atomics that
+  # MSVC's `<stdatomic.h>` refuses without that flag.
+  #
+  # The two job names are pinned to required status checks on master
+  # immediately after merge (see ADR-0121 §Consequences).
+  windows-gpu-build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: ${{ matrix.name }}
+    runs-on: windows-2025
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # --default-library=static: libvmaf has no __declspec(dllexport)
+          # on its public API (upstream is POSIX-shaped), so a vanilla MSVC
+          # shared build produces an empty import lib and the tool targets
+          # fail with LNK1181. Mirrors the MinGW leg's `--default-library
+          # static` at line 387. Also lets the vmaf CLI pick the static
+          # archive via core/tools/meson.build:26 without the
+          # get_shared_lib() branch.
+          - backend: cuda
+            meson_extra: --default-library=static -Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false
+            name: Build — Windows MSVC + CUDA (build only)
+          - backend: sycl
+            meson_extra: --default-library=static -Denable_cuda=false -Denable_sycl=true
+            name: Build — Windows MSVC + oneAPI SYCL (build only)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Setup python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.14.7'
+
+      - name: Install meson and ninja
+        run: |
+          python -m pip install --upgrade pip
+          pip install meson ninja
+
+      # ---------- MSVC dev environment ----------
+      # Exports cl.exe + the rest of the MSVC toolchain into PATH /
+      # INCLUDE / LIB. Required by both backends (CUDA's nvcc shells
+      # out to cl.exe; oneAPI's icx-cl wraps cl.exe).
+      # Switched from ilammy/msvc-dev-cmd@v1.13.0 (Node.js 20,
+      # deprecated 2026-06-02) to TheMrMilchmann/setup-msvc-dev@v4
+      # (Node.js 24) per ADR-0635. Same vcvarsall.bat semantics;
+      # no inputs required — defaults to amd64.
+      - name: Setup MSVC dev environment
+        uses: TheMrMilchmann/setup-msvc-dev@368ef7d1ee4d1171b31d4a7f67f4d954f903f5a9  # v4.1.0
+        with:
+          arch: x64
+
+      # ---------- CUDA toolkit (CUDA leg only) ----------
+      # Same pin as the Linux CUDA legs: CUDA 13.2.0, Maxwell/Pascal/Volta
+      # gencodes dropped (meson.build already guards the sm_50 emit on
+      # `version < 13`). Bumped from 13.0.0 per ADR-0603.
+      - name: Install CUDA toolkit (windows)
+        if: matrix.backend == 'cuda'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+
+          $cudaVersion = '13.2.0'
+          $cudaMajorMinor = '13.2'
+          $url = "https://developer.download.nvidia.com/compute/cuda/$cudaVersion/network_installers/cuda_${cudaVersion}_windows_network.exe"
+          $installer = Join-Path $env:RUNNER_TEMP "cuda_${cudaVersion}_windows_network.exe"
+
+          curl.exe --fail --location --retry 5 --retry-delay 10 --output $installer $url
+
+          # Windows sub-package names per
+          # https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html#install-cuda-software
+          # The network installer expects the `_<major>.<minor>` suffix.
+          # `cudart` carries runtime headers on Windows. `crt` provides
+          # `crt/host_config.h`; `nvvm` provides `cicc.exe` and libdevice.
+          $packages = @(
+            "nvcc_$cudaMajorMinor",
+            "cudart_$cudaMajorMinor",
+            "crt_$cudaMajorMinor",
+            "nvvm_$cudaMajorMinor",
+            "visual_studio_integration_$cudaMajorMinor"
+          )
+
+          $process = Start-Process -FilePath $installer -ArgumentList (@('-s') + $packages) -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            Write-Error "CUDA installer failed with exit code $($process.ExitCode)"
+          }
+
+          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$cudaMajorMinor"
+          if (-not (Test-Path (Join-Path $cudaPath 'bin\nvcc.exe'))) {
+            Write-Error "nvcc.exe was not installed under $cudaPath"
+          }
+
+          "CUDA_PATH=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CUDA_PATH_V13_2=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          (Join-Path $cudaPath 'bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & (Join-Path $cudaPath 'bin\nvcc.exe') --version
+
+      # ---------- Intel oneAPI (SYCL leg only) ----------
+      # Mirrors the official `oneapi-src/oneapi-ci` install pattern
+      # (`scripts/install_windows.bat`): curl the offline Base
+      # Toolkit installer, extract its bootstrapper, run with
+      # `--components=intel.oneapi.win.cpp-dpcpp-common --eula=accept`
+      # plus `NEED_VS*_INTEGRATION=0` so we skip the (very slow) VS
+      # IDE plug-in steps. Pinned to oneAPI 2025.3 to match the
+      # Linux SYCL leg's `intel-oneapi-compiler-dpcpp-cpp-2025.3`.
+      # Chocolatey was tried first but `intel-oneapi-basekit` is
+      # not on the community feed (verified 2026-04-19).
+      - name: Install Intel oneAPI (windows)
+        if: matrix.backend == 'sycl'
+        shell: cmd
+        env:
+          WINDOWS_BASEKIT_URL: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/1f18901e-877d-469d-a41a-a10f11b39336/intel-oneapi-base-toolkit-2025.3.0.372_offline.exe
+          WINDOWS_DPCPP_COMPONENTS: intel.oneapi.win.cpp-dpcpp-common
+        run: |
+          curl.exe --output %TEMP%\webimage.exe --url %WINDOWS_BASEKIT_URL% --retry 5 --retry-delay 5
+          start /b /wait %TEMP%\webimage.exe -s -x -f webimage_extracted --log extract.log
+          del %TEMP%\webimage.exe
+          webimage_extracted\bootstrapper.exe -s --action install --components=%WINDOWS_DPCPP_COMPONENTS% --eula=accept -p=NEED_VS2017_INTEGRATION=0 -p=NEED_VS2019_INTEGRATION=0 -p=NEED_VS2022_INTEGRATION=0 --log-dir=.
+          set installer_exit_code=%ERRORLEVEL%
+          rd /s/q "webimage_extracted"
+          exit /b %installer_exit_code%
+
+      # ---------- nv-codec-headers (CUDA leg only) ----------
+      # libvmaf's CUDA path includes `<ffnvcodec/dynlink_cuda.h>`
+      # (see core/src/meson.build §324). The Linux CUDA leg
+      # installs this via `git clone … && make install`. On
+      # Windows there's no `make install` story, but the package
+      # is header-only — clone, copy the `include/ffnvcodec/`
+      # tree into a known prefix, and append that prefix to the
+      # `INCLUDE` env so `cl.exe` picks it up.
+      - name: Install nv-codec-headers (windows)
+        if: matrix.backend == 'cuda'
+        shell: cmd
+        run: |
+          git clone --depth=1 https://code.ffmpeg.org/FFmpeg/nv-codec-headers nv-codec-headers
+          mkdir nvcodec-prefix\include\ffnvcodec
+          copy nv-codec-headers\include\ffnvcodec\*.h nvcodec-prefix\include\ffnvcodec\
+          echo INCLUDE=%CD%\nvcodec-prefix\include;%INCLUDE%>>%GITHUB_ENV%
+
+      # ---------- Strip ccache from PATH (Windows) ----------
+      # `windows-2025` ships `C:\Strawberry\c\bin\ccache.exe` on
+      # PATH. Meson's compiler-detection wraps nvcc with it
+      # unconditionally → "Compiler ... ccache nvcc cannot compile
+      # programs" (the wrap happens at meson configure time;
+      # `CCACHE_DISABLE=1` only affects ccache at runtime, not
+      # meson's wrap decision). Rename the binary so meson can't
+      # find it.
+      - name: Disable ccache wrap (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $p = 'C:\Strawberry\c\bin\ccache.exe'
+          if (Test-Path $p) { Rename-Item -Path $p -NewName 'ccache.exe.disabled' }
+          Write-Host "ccache binary disabled"
+
+      # ---------- Build ----------
+      # CFLAGS/CXXFLAGS carry `/experimental:c11atomics` — without
+      # that flag MSVC's `<stdatomic.h>` errors with "C atomic
+      # support is not enabled" (libvmaf uses C11 atomics; meson's
+      # compiler check rejects the toolchain otherwise).
+      - name: Configure libvmaf (CUDA)
+        if: matrix.backend == 'cuda'
+        shell: cmd
+        env:
+          CFLAGS: /experimental:c11atomics
+          CXXFLAGS: /experimental:c11atomics
+        run: |
+          meson setup core core\build --buildtype release ^
+            --prefix %CD%\install ^
+            -Denable_float=true ^
+            ${{ matrix.meson_extra }}
+
+      # ---------- Level Zero loader (SYCL leg only) ----------
+      # core/src/meson.build:492 calls
+      # `cc.find_library('ze_loader', required : true)` and
+      # `core/src/sycl/common.cpp:26` includes
+      # `<level_zero/ze_api.h>`. The Linux SYCL leg picks both up
+      # from `intel-level-zero-gpu` / `level-zero-dev` apt packages.
+      # Windows oneAPI BaseKit does NOT ship `ze_loader.lib`, so
+      # build the loader from source (cmake build, header-only +
+      # one .lib output). Mirror the `oneapi-src/level-zero` README
+      # quick-build recipe; pin to v1.18.5 to match the version the
+      # Linux Ubuntu 26.04 runners install via apt.
+      - name: Install Level Zero loader (windows)
+        if: matrix.backend == 'sycl'
+        shell: cmd
+        run: |
+          git clone --depth=1 --branch v1.18.5 https://github.com/oneapi-src/level-zero level-zero-src
+          cmake -S level-zero-src -B level-zero-src\build -DCMAKE_INSTALL_PREFIX=%CD%\level-zero-prefix -DCMAKE_BUILD_TYPE=Release
+          cmake --build level-zero-src\build --config Release --target install
+          echo INCLUDE=%CD%\level-zero-prefix\include;%INCLUDE%>>%GITHUB_ENV%
+          echo LIB=%CD%\level-zero-prefix\lib;%LIB%>>%GITHUB_ENV%
+
+      # Pin `c++latest` because the fork's C++ sources require C++23
+      # `std::expected`, while icx-cl under MSVC ABI mode advertises the
+      # Microsoft-style c++14/c++17/c++20/c++latest option set.
+      - name: Configure libvmaf (SYCL)
+        if: matrix.backend == 'sycl'
+        shell: cmd
+        env:
+          CFLAGS: /experimental:c11atomics
+          CXXFLAGS: /experimental:c11atomics
+        run: |
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+          set CC=icx-cl
+          set CXX=icx-cl
+          meson setup core core\build --buildtype release ^
+            --prefix %CD%\install ^
+            -Denable_float=true ^
+            -Dcpp_std=c++latest ^
+            ${{ matrix.meson_extra }}
+
+      - name: Build libvmaf (CUDA)
+        if: matrix.backend == 'cuda'
+        shell: cmd
+        run: |
+          ninja -v -C core\build install
+
+      - name: Build libvmaf (SYCL)
+        if: matrix.backend == 'sycl'
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+          ninja -v -C core\build install
+
+      # No test step — windows-2025 has no GPU. The whole point of
+      # this job is exercising the MSVC + CUDA / MSVC + oneAPI link
+      # paths to catch portability regressions at compile time.

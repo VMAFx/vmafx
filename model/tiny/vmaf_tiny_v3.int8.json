@@ -1,0 +1,43 @@
+{
+  "id": "vmaf_tiny_v3_int8",
+  "kind": "fr",
+  "onnx": "vmaf_tiny_v3.int8.onnx",
+  "opset": 17,
+  "sha256": "b4bdbb353b1b395adb22b77e890117228de1cfd12b94cb46fd0173c2fd12a343",
+  "input_name": "features",
+  "input_shape": [
+    -1,
+    6
+  ],
+  "output_name": "vmaf",
+  "output_shape": [
+    -1
+  ],
+  "features": [
+    "adm2",
+    "vif_scale0",
+    "vif_scale1",
+    "vif_scale2",
+    "vif_scale3",
+    "motion2"
+  ],
+  "input_mean": [
+    0.9154358735163397,
+    0.5044673305940499,
+    0.756364188222672,
+    0.8398883767464267,
+    0.89199739393249,
+    6.417078245524368
+  ],
+  "input_std": [
+    0.03473643563995937,
+    0.15760624188237923,
+    0.09289338872033201,
+    0.069510538567901,
+    0.05259210477314612,
+    7.320738307667759
+  ],
+  "arch": "mlp_medium",
+  "n_params": 769,
+  "notes": "Dynamic-PTQ int8 sidecar of vmaf_tiny_v3. Directly addressable by ID vmaf_tiny_v3_int8. Measured PLCC drop=0.000120 vs fp32 baseline; within 0.01 budget. Produced via ai/scripts/ptq_dynamic.py (ADR-0275). See docs/ai/models/vmaf_tiny_v3.md."
+}

@@ -1,0 +1,170 @@
+{
+  "codec_aware": true,
+  "codec_block_layout": [
+    "encoder_onehot[libx264]",
+    "encoder_onehot[libaom-av1]",
+    "encoder_onehot[libx265]",
+    "encoder_onehot[h264_nvenc]",
+    "encoder_onehot[hevc_nvenc]",
+    "encoder_onehot[av1_nvenc]",
+    "encoder_onehot[h264_amf]",
+    "encoder_onehot[hevc_amf]",
+    "encoder_onehot[av1_amf]",
+    "encoder_onehot[h264_qsv]",
+    "encoder_onehot[hevc_qsv]",
+    "encoder_onehot[av1_qsv]",
+    "encoder_onehot[libvvenc]",
+    "encoder_onehot[libsvtav1]",
+    "encoder_onehot[h264_videotoolbox]",
+    "encoder_onehot[hevc_videotoolbox]",
+    "preset_norm",
+    "crf_norm"
+  ],
+  "corpus": "runs/phase_a/full_grid/per_frame_canonical6.jsonl",
+  "corpus_sha256": "58512e6c2400a8c7962d29f6a16fa090e6742f5746f2897128c381fb00808e3f",
+  "encoder_vocab": [
+    "libx264",
+    "libaom-av1",
+    "libx265",
+    "h264_nvenc",
+    "hevc_nvenc",
+    "av1_nvenc",
+    "h264_amf",
+    "hevc_amf",
+    "av1_amf",
+    "h264_qsv",
+    "hevc_qsv",
+    "av1_qsv",
+    "libvvenc",
+    "libsvtav1",
+    "h264_videotoolbox",
+    "hevc_videotoolbox"
+  ],
+  "encoder_vocab_version": 3,
+  "feature_mean": [
+    0.9488429659574469,
+    0.48863492748226944,
+    0.8324482487588651,
+    0.8906773783687942,
+    0.924247489893617,
+    8.916842046099292
+  ],
+  "feature_order": [
+    "adm2",
+    "vif_scale0",
+    "vif_scale1",
+    "vif_scale2",
+    "vif_scale3",
+    "motion2"
+  ],
+  "feature_std": [
+    0.04836998478470506,
+    0.175385340029403,
+    0.15623573778256045,
+    0.12199218152247363,
+    0.09415006541030543,
+    6.211059477666515
+  ],
+  "gate_passed": true,
+  "id": "fr_regressor_v3",
+  "input_names": [
+    "features",
+    "codec_block"
+  ],
+  "kind": "fr",
+  "loso_mean_plcc": 0.9974702012216462,
+  "notes": "Tiny FR regressor v3 (codec-aware, ENCODER_VOCAB v3 16-slot) - 6 canonical libvmaf features (adm2, vif_scale0..3, motion2) + 18-D codec block (16 encoder one-hot + preset_norm + crf_norm) -> VMAF teacher score. LOSO mean PLCC=0.9975 (gate >= 0.95). Production checkpoint. See docs/ai/models/fr_regressor_v3.md + ADR-0323 + ADR-0302 + ADR-0291 + ADR-0235.",
+  "onnx": "fr_regressor_v3.onnx",
+  "opset": 17,
+  "output_names": [
+    "vmaf"
+  ],
+  "sha256": "eaa16d23461eda74940b2ed590edfcaf13428aade294e47792a5a15f4d3b999c",
+  "training": {
+    "dataset": "phase-a-canonical6",
+    "gate_passed": true,
+    "loso_folds": [
+      {
+        "held_out": "BigBuckBunny_25fps",
+        "n_train": 5040,
+        "n_val": 600,
+        "plcc": 0.9973075320766857,
+        "rmse": 0.7865127338658922,
+        "srocc": 0.9878127439242886
+      },
+      {
+        "held_out": "BirdsInCage_30fps",
+        "n_train": 4920,
+        "n_val": 720,
+        "plcc": 0.9988475000231712,
+        "rmse": 0.43226240183104947,
+        "srocc": 0.9988689535795143
+      },
+      {
+        "held_out": "CrowdRun_25fps",
+        "n_train": 5040,
+        "n_val": 600,
+        "plcc": 0.9996205477635024,
+        "rmse": 0.677250388111024,
+        "srocc": 0.9971567143242064
+      },
+      {
+        "held_out": "ElFuente1_30fps",
+        "n_train": 4920,
+        "n_val": 720,
+        "plcc": 0.9986909943829809,
+        "rmse": 0.822242326660271,
+        "srocc": 0.8805494094960316
+      },
+      {
+        "held_out": "ElFuente2_30fps",
+        "n_train": 4920,
+        "n_val": 720,
+        "plcc": 0.9950473838477225,
+        "rmse": 3.2875920526076867,
+        "srocc": 0.9984138665390943
+      },
+      {
+        "held_out": "FoxBird_25fps",
+        "n_train": 5040,
+        "n_val": 600,
+        "plcc": 0.9945480217393395,
+        "rmse": 0.9042738066480425,
+        "srocc": 0.9329237025658403
+      },
+      {
+        "held_out": "OldTownCross_25fps",
+        "n_train": 5040,
+        "n_val": 600,
+        "plcc": 0.9980518864677471,
+        "rmse": 0.8096987719664845,
+        "srocc": 0.9951299309164746
+      },
+      {
+        "held_out": "Seeking_25fps",
+        "n_train": 5040,
+        "n_val": 600,
+        "plcc": 0.998945086056526,
+        "rmse": 1.0134513738222957,
+        "srocc": 0.987692465812405
+      },
+      {
+        "held_out": "Tennis_24fps",
+        "n_train": 5160,
+        "n_val": 480,
+        "plcc": 0.9961728586371412,
+        "rmse": 1.061110297017385,
+        "srocc": 0.9436312657607021
+      }
+    ],
+    "loso_max_plcc": 0.9996205477635024,
+    "loso_mean_plcc": 0.9974702012216462,
+    "loso_mean_rmse": 1.0882660169477925,
+    "loso_mean_srocc": 0.9691310058798397,
+    "loso_min_plcc": 0.9945480217393395,
+    "loso_std_plcc": 0.0018249540120815195,
+    "n_rows": 5640,
+    "ship_gate_mean_plcc": 0.95,
+    "smoke": false
+  }
+}

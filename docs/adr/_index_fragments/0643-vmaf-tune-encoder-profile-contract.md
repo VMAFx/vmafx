@@ -1,0 +1,1 @@
+| [ADR-0643](0643-vmaf-tune-encoder-profile-contract.md) | vmaf-tune reports embed a versioned encoder profile that humans can inspect and `vmaf-tune encode-profile` can consume to run one selected FFmpeg encode; FFmpeg patch 0015 adds the advisory `-vmaf-profile` hand-off. | Accepted | vmaf-tune, ffmpeg, reports, cli, encoder-profile |

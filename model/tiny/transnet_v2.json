@@ -1,0 +1,20 @@
+{
+  "boundary_threshold": 0.5,
+  "channels": 3,
+  "frame_window": 100,
+  "id": "transnet_v2",
+  "input_name": "frames",
+  "kind": "shot_detector",
+  "license": "MIT",
+  "license_url": "https://github.com/soCzech/TransNetV2/blob/77498b8e4a6d61ed7c3d9bd56f4de2b29ab7f4db/LICENSE",
+  "name": "vmaf_tiny_transnet_v2_v1",
+  "notes": "TransNet V2 shot-boundary detector (T6-3a-followup). 100-frame window of 27x48 RGB thumbnails -> per-frame shot-boundary logits. Real upstream weights from Soucek & Lokoc 2020 (MIT). Wrapper transposes NTCHW->NTHWC and selects only the single-frame logits output; ColorHistograms's rank-2 UnsortedSegmentSum rewritten to ScatterND for ONNX opset-17 compatibility. See ADR-0261 + docs/ai/models/transnet_v2.md.",
+  "onnx": "transnet_v2.onnx",
+  "opset": 17,
+  "output_name": "boundary_logits",
+  "smoke": false,
+  "thumbnail_h": 27,
+  "thumbnail_w": 48,
+  "upstream_commit": "77498b8e4a6d61ed7c3d9bd56f4de2b29ab7f4db",
+  "upstream_repo": "https://github.com/soCzech/TransNetV2"
+}

@@ -1,0 +1,15 @@
+{"encoder": "libx264", "src": "a.mkv", "preset": "medium", "crf": 23, "vmaf_score": 93.5, "bitrate_kbps": 4200.25, "exit_status": 0, "duration_s": 10.0, "encode_time_ms": 5000.0, "score_time_ms": 2500.0, "framerate": 30.0, "vmaf_model": "vmaf_v0.6.1"}
+{"encoder": "libx264", "src": "a.mkv", "preset": "medium", "crf": 26, "vmaf_score": 92.1, "bitrate_kbps": 3100.5, "exit_status": 0, "duration_s": 10.0, "encode_time_ms": 4800.0, "score_time_ms": 2400.0, "framerate": 30.0, "vmaf_model": "vmaf_v0.6.1"}
+{"encoder": "libx264", "src": "b.mkv", "preset": "slow", "crf": 28, "vmaf_score": 90.0, "bitrate_kbps": 2000.0, "exit_status": 0, "duration_s": 10.0, "encode_time_ms": 9000.0, "score_time_ms": 2600.0, "framerate": 30.0, "vmaf_model": "vmaf_v0.6.1"}
+{"encoder": "libx265", "src": "a.mkv", "preset": "medium", "crf": 28, "vmaf_score": 92.0, "bitrate_kbps": 2500.0, "exit_status": 0, "duration_s": 10.0, "encode_time_ms": 15000.0, "score_time_ms": 2500.0, "framerate": 30.0, "vmaf_model": "vmaf_v0.6.1"}
+{"encoder": "libx265", "src": "b.mkv", "preset": "medium", "crf": 30, "vmaf_score": 92.0, "bitrate_kbps": 2500.0, "exit_status": 0, "duration_s": 10.0, "encode_time_ms": 16000.0, "score_time_ms": 2500.0, "framerate": 30.0, "vmaf_model": "vmaf_v0.6.1"}
+{"encoder": "libsvtav1", "src": "a.mkv", "preset": "medium", "crf": 35, "vmaf_score": 88.4, "bitrate_kbps": 1500.0, "exit_status": 0, "duration_s": 10.0, "encode_time_ms": 7000.0, "score_time_ms": 2500.0, "framerate": 30.0, "vmaf_model": "vmaf_v0.6.1"}
+{"encoder": "libsvtav1", "src": "a.mkv", "preset": "medium", "crf": 30, "vmaf_score": 91.9, "bitrate_kbps": 2600.0, "exit_status": 0, "duration_s": 10.0, "encode_time_ms": 7200.0, "score_time_ms": 2500.0, "framerate": 30.0, "vmaf_model": "vmaf_v0.6.1"}
+{"encoder": "h264_nvenc", "src": "a.mkv", "preset": "p4", "crf": 23.0, "vmaf_score": 92.5, "bitrate_kbps": 5000.0, "exit_status": 0, "duration_s": 10.0, "encode_time_ms": 500.0, "score_time_ms": 2500.0, "framerate": 30.0}
+{"encoder": "h264_nvenc", "src": "a.mkv", "preset": "p4", "vmaf_score": 92.5, "bitrate_kbps": 5000.0, "exit_status": 0, "duration_s": 0.0, "encode_time_ms": 0.0, "score_time_ms": 0.0, "framerate": 30.0}
+{"encoder": "libvpx-vp9", "src": "a.mkv", "preset": "medium", "crf": 31, "vmaf_score": 85.0, "bitrate_kbps": 1800.0, "exit_status": 0, "duration_s": 10.0, "encode_time_ms": 30000.0}
+{"encoder": "libvpx-vp9", "src": "a.mkv", "preset": "medium", "crf": null, "vmaf_score": 84.0, "bitrate_kbps": 1200.0, "exit_status": 0}
+{"encoder": "libx264", "src": "c.mkv", "preset": "fast", "crf": 20, "vmaf_score": 99.0, "bitrate_kbps": 8000.0, "exit_status": 1}
+{"encoder": "libaom-av1", "src": "a.mkv", "preset": "medium", "crf": 30, "vmaf_score": null, "bitrate_kbps": 1000.0, "exit_status": 0}
+{"encoder": "", "src": "a.mkv", "preset": "medium", "crf": 30, "vmaf_score": 95.0, "bitrate_kbps": 900.0, "exit_status": 0}
+{"encoder": "libvvenc", "src": "a.mkv", "preset": "medium", "crf": 32, "vmaf_score": 93.0, "bitrate_kbps": 2500.0, "exit_status": "0", "duration_s": 10.0, "encode_time_ms": 60000.0, "score_time_ms": 2500.0, "framerate": 30.0}

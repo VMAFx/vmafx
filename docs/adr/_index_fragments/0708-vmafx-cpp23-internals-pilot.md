@@ -1,0 +1,1 @@
+| [ADR-0708](0708-vmafx-cpp23-internals-pilot.md) | C++20 internals pilot: convert `metadata_handler.c` to `.cpp` with RAII `unique_ptr` linked-list teardown; establish per-file C++20 migration recipe for Wave 1–3 | Accepted | build, c++, cpp23, refactor, internals, fork-local, vmafx-rebrand |

@@ -1,0 +1,1 @@
+| [ADR-1083](1083-yuv-input-edge-cases.md) | y4m_input_fetch_frame signed-integer overflow + fread(NULL) UB fixes | Accepted | `core`, `security`, `correctness`, `tools`, `c`, `fork-local`, `bugfix` |

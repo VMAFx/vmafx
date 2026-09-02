@@ -1,0 +1,1 @@
+| [ADR-0872](0872-io-error-and-eintr-audit.md) | POSIX I/O EINTR-retry + return-value audit on fork-added C: two MCP drain loops now retry on `EINTR` (silent stream desync under signal pressure); seven discarded `close(2)` returns marked `(void)`-cast for Power-of-10 rule 7 hygiene. | Accepted | 2026-05-30 | correctness, mcp, posix, nasa-power-of-10, fork-local |

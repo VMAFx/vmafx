@@ -1,0 +1,291 @@
+{{- /*
+  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+  Copyright 2026 Lusoris
+
+  deploy/helm/vmafx/templates/networkpolicy.yaml
+  Default-deny NetworkPolicies for the VMAFX release, plus the explicit
+  allow-rules that the documented controller/node/operator/DNS flows need.
+
+  Disabled by default (`networkPolicy.enabled=false`) — opt in with
+  `--set networkPolicy.enabled=true` once you have a NetworkPolicy-aware
+  CNI (Cilium, Calico, kube-router, etc.) installed in the cluster.
+
+  ADR-0930: Helm NetworkPolicy + Pod Security Standards baseline.
+  See docs/development/k8s-deployment.md#networkpolicy for the egress/ingress
+  matrix and the override knobs in values.yaml.
+*/ -}}
+{{- if .Values.networkPolicy.enabled }}
+{{- $fullName := include "vmafx.fullname" . }}
+{{- $selector := include "vmafx.selectorLabels" . }}
+{{- $ns := .Release.Namespace }}
+---
+# ----------------------------------------------------------------------------
+# Default-deny: drop every ingress and egress flow for VMAFX pods unless an
+# explicit allow-rule below opens it.  This is the safety net — even if a new
+# workload is added to the chart without an accompanying allow-rule, it stays
+# isolated by default.
+# ----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-default-deny
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+{{- if .Values.operator.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-operator-default-deny
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: operator
+  policyTypes:
+    - Ingress
+    - Egress
+{{- end }}
+{{- if .Values.node.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-node-default-deny
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: node
+  policyTypes:
+    - Ingress
+    - Egress
+{{- end }}
+
+# ----------------------------------------------------------------------------
+# Ingress for the scoring server (Deployment / StatefulSet workloads).  All
+# in-namespace clients may reach the HTTP scoring port; cross-namespace
+# clients are out of scope (set up your own NetworkPolicy in their namespace).
+# ----------------------------------------------------------------------------
+{{- if or (eq .Values.workload "Deployment") (eq .Values.workload "StatefulSet") }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-http-ingress
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: server
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+{{- end }}
+
+# ----------------------------------------------------------------------------
+# Allow rule: controller -> node (gRPC dispatch).  Matches vmafx-controller
+# pods (component=controller / selector match) reaching vmafx-node pods on
+# the configured gRPC port.
+# ----------------------------------------------------------------------------
+{{- if and .Values.node.enabled .Values.networkPolicy.allow.controllerToNode.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-controller-to-node
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: node
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- $selector | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.allow.controllerToNode.nodePort }}
+{{- end }}
+
+# ----------------------------------------------------------------------------
+# Allow rule: node -> object store (rclone egress).  Rendered as a single
+# egress policy with the CIDR/port matrix from values.yaml.  Defaults to
+# 0.0.0.0/0 minus RFC1918 — tighten to your bucket VPC CIDR in production.
+# ----------------------------------------------------------------------------
+{{- if and .Values.node.enabled .Values.networkPolicy.allow.nodeEgressObjectStore.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-node-egress-object-store
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: node
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        {{- range .Values.networkPolicy.allow.nodeEgressObjectStore.cidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+            {{- with $.Values.networkPolicy.allow.nodeEgressObjectStore.except }}
+            except:
+              {{- range . }}
+              - {{ . | quote }}
+              {{- end }}
+            {{- end }}
+        {{- end }}
+      ports:
+        {{- range .Values.networkPolicy.allow.nodeEgressObjectStore.ports }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
+{{- end }}
+
+# ----------------------------------------------------------------------------
+# Allow rule: operator -> kube-apiserver (controller-runtime list/watch).
+# The egress is namespace-anchored (kube-system / default Service IP) rather
+# than CIDR-anchored, because the kube-apiserver Service IP is cluster-local.
+# ----------------------------------------------------------------------------
+{{- if and .Values.operator.enabled .Values.networkPolicy.allow.operatorToApiserver.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-operator-to-apiserver
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: operator
+  policyTypes:
+    - Egress
+  egress:
+    # Egress to kube-apiserver — most clusters expose it as a ClusterIP at
+    # `kubernetes.default.svc`; emit ipBlock 0.0.0.0/0 on the api-server
+    # ports because the Service IP isn't selectable by a NetworkPolicy peer.
+    # Operators can tighten this to their masters' CIDR when known.
+    - to:
+        - ipBlock:
+            cidr: "0.0.0.0/0"
+      ports:
+        {{- range .Values.networkPolicy.allow.operatorToApiserver.ports }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
+{{- end }}
+
+# ----------------------------------------------------------------------------
+# Allow rule: Prometheus scraping on the node metrics port (9090).  When the
+# ServiceMonitor is enabled, the Prometheus operator scrapes vmafx-node pods
+# on port 9090.  The default-deny policy blocks this unless we add an explicit
+# ingress allow-rule.  The podSelector {} matches any pod in the namespace
+# (typically the Prometheus server pod); tighten via
+# networkPolicy.allow.nodeMetrics.fromPodSelector if needed (ADR-1058).
+# ----------------------------------------------------------------------------
+{{- if and .Values.node.enabled .Values.networkPolicy.allow.nodeMetrics.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-node-metrics-ingress
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: node
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- if .Values.networkPolicy.allow.nodeMetrics.fromPodSelector }}
+        - podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.allow.nodeMetrics.fromPodSelector | nindent 14 }}
+        {{- else }}
+        - podSelector: {}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.node.metricsPort | default 9090 }}
+{{- end }}
+
+# ----------------------------------------------------------------------------
+# Allow rule: DNS egress.  Every VMAFX pod must be able to resolve names
+# via the cluster DNS service (CoreDNS / kube-dns in `kube-system`).
+# ----------------------------------------------------------------------------
+{{- if .Values.networkPolicy.allow.dns.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-dns-egress
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.allow.dns.namespaceSelector | nindent 12 }}
+          podSelector:
+            {{- toYaml .Values.networkPolicy.allow.dns.podSelector | nindent 12 }}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}
+{{- end }}

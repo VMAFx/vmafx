@@ -1,0 +1,37 @@
+[package]
+name = "vmafx-tad"
+version = "0.1.0"
+description = "Temporal Absolute Difference (TAD) feature extractor for VMAFX — cbindgen pilot (ADR-0707)"
+# Inherits edition / license / authors / repository / homepage /
+# documentation / readme from [workspace.package] in the root Cargo.toml
+# so URL metadata stays consistent across the Rust workspace.
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+# Not published to crates.io — internal pilot crate consumed by the libvmaf
+# build via Meson + cbindgen (ADR-0707). `publish = false` opts the crate out
+# of crates.io publish AND makes `cargo-deny` treat it as private under
+# `[licenses.private] ignore = true` (so the non-SPDX-recognised
+# `BSD-3-Clause-Plus-Patent` short-id does not flag as `unlicensed`).
+publish = false
+
+[lib]
+name = "vmafx_tad"
+# staticlib: consumed by Meson as a link_with archive.
+# rlib: consumed by Rust unit tests and future intra-workspace dependencies.
+crate-type = ["staticlib", "rlib"]
+
+[build-dependencies]
+cbindgen = "0.29.4"
+
+[package.metadata.cargo-machete]
+# cbindgen is consumed by build.rs to generate the C header that the
+# Meson custom_target copies into the build tree (see core/src/meson.build).
+# cargo-machete's --with-metadata mode does not introspect build.rs
+# symbol usage and flags it as unused; pin the ignore so future audits
+# stay clean. See ADR-0707 (TAD Rust pilot, cbindgen integration).
+ignored = ["cbindgen"]

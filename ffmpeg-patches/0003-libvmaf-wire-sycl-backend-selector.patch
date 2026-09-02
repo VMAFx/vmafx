@@ -1,0 +1,112 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lusoris <lusoris@pm.me>
+Date: Fri, 24 Apr 2026 22:23:38 +0200
+Subject: [PATCH] libvmaf: wire sycl backend selector (sycl_device /
+ sycl_profile options)
+
+---
+ configure                |  1 +
+ libavfilter/vf_libvmaf.c | 48 ++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 49 insertions(+)
+
+diff --git a/configure b/configure
+index 87a9d35..c1666a9 100755
+--- a/configure
++++ b/configure
+@@ -7391,6 +7391,7 @@ enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_i
+ enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid.stab/libvidstab.h vsMotionDetectInit
+ enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init
+ enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf_cuda.h vmaf_cuda_state_init
++enabled libvmaf           && check_pkg_config libvmaf_sycl "libvmaf >= 3.0.0" libvmaf/libvmaf_sycl.h vmaf_sycl_state_init
+ enabled vmaf_pre_filter   && require_pkg_config libvmaf_dnn "libvmaf >= 3.0.0" libvmaf/dnn.h vmaf_dnn_session_open
+ enabled libvo_amrwbenc    && { check_pkg_config libvo_amrwbenc vo-amrwbenc vo-amrwbenc/enc_if.h E_IF_init ||
+                                require libvo_amrwbenc vo-amrwbenc/enc_if.h E_IF_init -lvo-amrwbenc; }
+diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
+index 552743f..e3cf572 100644
+--- a/libavfilter/vf_libvmaf.c
++++ b/libavfilter/vf_libvmaf.c
+@@ -47,6 +47,10 @@
+ #include "libavutil/hwcontext_cuda_internal.h"
+ #endif
+ 
++#if CONFIG_LIBVMAF_SYCL
++#include <libvmaf/libvmaf_sycl.h>
++#endif
++
+ typedef struct LIBVMAFContext {
+     const AVClass *class;
+     FFFrameSync fs;
+@@ -61,6 +65,12 @@ typedef struct LIBVMAFContext {
+     char *tiny_device;
+     int   tiny_threads;
+     int   tiny_fp16;
++    int   sycl_device;
++    int   sycl_profile;
++#if CONFIG_LIBVMAF_SYCL
++    VmafSyclState *sycl_state;
++#endif
++
+     VmafContext *vmaf;
+     VmafModel **model;
+     unsigned model_cnt;
+@@ -86,6 +96,8 @@ static const AVOption libvmaf_options[] = {
+     {"tiny_device",  "tiny-model device: auto|cpu|cuda|openvino|openvino-npu|openvino-cpu|openvino-gpu|coreml|coreml-ane|coreml-gpu|coreml-cpu|rocm.", OFFSET(tiny_device), AV_OPT_TYPE_STRING, {.str="auto"}, 0, 0, FLAGS},
+     {"tiny_threads", "tiny-model CPU EP intra-op threads (0 = ORT default).",           OFFSET(tiny_threads),    AV_OPT_TYPE_INT,    {.i64=0},      0, INT_MAX,  FLAGS},
+     {"tiny_fp16",    "Request fp16 I/O when the device supports it.",                   OFFSET(tiny_fp16),       AV_OPT_TYPE_BOOL,   {.i64=0},      0, 1,        FLAGS},
++    {"sycl_device",  "SYCL device index (-1 = disabled).",                              OFFSET(sycl_device),     AV_OPT_TYPE_INT,    {.i64=-1},    -1, INT_MAX,  FLAGS},
++    {"sycl_profile", "Enable SYCL queue profiling.",                                    OFFSET(sycl_profile),    AV_OPT_TYPE_BOOL,   {.i64=0},      0, 1,        FLAGS},
+     { NULL }
+ };
+ 
+@@ -450,6 +462,35 @@ static av_cold int init(AVFilterContext *ctx)
+     if (err)
+         return AVERROR(EINVAL);
+ 
++    if (s->sycl_device >= 0) {
++#if CONFIG_LIBVMAF_SYCL
++        VmafSyclConfiguration sycl_cfg = {
++            .device_index     = s->sycl_device,
++            .enable_profiling = !!s->sycl_profile,
++        };
++        err = vmaf_sycl_state_init(&s->sycl_state, sycl_cfg);
++        if (err) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "vmaf_sycl_state_init(%d) failed: %d.\n",
++                   s->sycl_device, err);
++            return AVERROR(EINVAL);
++        }
++        err = vmaf_sycl_import_state(s->vmaf, s->sycl_state);
++        if (err) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "vmaf_sycl_import_state failed: %d.\n", err);
++            return AVERROR(EINVAL);
++        }
++        av_log(ctx, AV_LOG_INFO,
++               "SYCL backend active (device=%d profile=%d)\n",
++               s->sycl_device, s->sycl_profile);
++#else
++        av_log(ctx, AV_LOG_ERROR,
++               "sycl_device set but libvmaf was built without SYCL support.\n");
++        return AVERROR(ENOSYS);
++#endif
++    }
++
+     err = parse_models(ctx);
+     if (err)
+         return err;
+@@ -646,6 +687,13 @@ clean_up:
+ 
+     if (s->vmaf)
+         vmaf_close(s->vmaf);
++
++#if CONFIG_LIBVMAF_SYCL
++    if (s->sycl_state) {
++        vmaf_sycl_state_free(&s->sycl_state);
++        s->sycl_state = NULL;
++    }
++#endif
+ }
+ 
+ static const AVFilterPad libvmaf_inputs[] = {
+-- 
+2.54.0

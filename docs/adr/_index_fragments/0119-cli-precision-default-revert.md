@@ -1,0 +1,1 @@
+| [ADR-0119](0119-cli-precision-default-revert.md) | Revert CLI precision default from `%.17g` to `%.6f` so the Netflix CPU golden gate (CLAUDE.md §8) passes without per-call-site flags; `--precision=max` keeps the round-trip-lossless opt-in | Supersedes [ADR-0006](0006-cli-precision-17g-default.md) | cli, testing, python, golden-gate |

@@ -1,0 +1,281 @@
+{
+  "cells": [
+    {
+      "codec": "libx264",
+      "confidence_decision": "recommend-escalation",
+      "crf": 27,
+      "effective_predictor_target_vmaf": 95.0,
+      "estimated_bitrate_kbps": 10344.610237219182,
+      "estimated_vmaf": 95.95481369911872,
+      "hdr_args": [],
+      "interval_width": NaN,
+      "prediction_source": "predictor",
+      "rung": 2160,
+      "saliency_intensity": "default",
+      "sample_clip_seconds": 0.0,
+      "selected": false,
+      "verdict": "UNKNOWN"
+    },
+    {
+      "codec": "libsvtav1",
+      "confidence_decision": "recommend-escalation",
+      "crf": 39,
+      "effective_predictor_target_vmaf": 95.0,
+      "estimated_bitrate_kbps": 5805.716197915575,
+      "estimated_vmaf": 95.60635945251079,
+      "hdr_args": [],
+      "interval_width": NaN,
+      "prediction_source": "predictor",
+      "rung": 2160,
+      "saliency_intensity": "default",
+      "sample_clip_seconds": 0.0,
+      "selected": true,
+      "verdict": "UNKNOWN"
+    },
+    {
+      "codec": "libx264",
+      "confidence_decision": "recommend-escalation",
+      "crf": 27,
+      "effective_predictor_target_vmaf": 95.0,
+      "estimated_bitrate_kbps": 10344.610237219182,
+      "estimated_vmaf": 95.95481369911872,
+      "hdr_args": [],
+      "interval_width": NaN,
+      "prediction_source": "predictor",
+      "rung": 1440,
+      "saliency_intensity": "default",
+      "sample_clip_seconds": 0.0,
+      "selected": false,
+      "verdict": "UNKNOWN"
+    },
+    {
+      "codec": "libsvtav1",
+      "confidence_decision": "recommend-escalation",
+      "crf": 39,
+      "effective_predictor_target_vmaf": 95.0,
+      "estimated_bitrate_kbps": 5805.716197915575,
+      "estimated_vmaf": 95.60635945251079,
+      "hdr_args": [],
+      "interval_width": NaN,
+      "prediction_source": "predictor",
+      "rung": 1440,
+      "saliency_intensity": "default",
+      "sample_clip_seconds": 0.0,
+      "selected": false,
+      "verdict": "UNKNOWN"
+    },
+    {
+      "codec": "libx264",
+      "confidence_decision": "recommend-escalation",
+      "crf": 27,
+      "effective_predictor_target_vmaf": 95.0,
+      "estimated_bitrate_kbps": 10344.610237219182,
+      "estimated_vmaf": 95.95481369911872,
+      "hdr_args": [],
+      "interval_width": NaN,
+      "prediction_source": "predictor",
+      "rung": 1080,
+      "saliency_intensity": "default",
+      "sample_clip_seconds": 0.0,
+      "selected": false,
+      "verdict": "UNKNOWN"
+    },
+    {
+      "codec": "libsvtav1",
+      "confidence_decision": "recommend-escalation",
+      "crf": 39,
+      "effective_predictor_target_vmaf": 95.0,
+      "estimated_bitrate_kbps": 5805.716197915575,
+      "estimated_vmaf": 95.60635945251079,
+      "hdr_args": [],
+      "interval_width": NaN,
+      "prediction_source": "predictor",
+      "rung": 1080,
+      "saliency_intensity": "default",
+      "sample_clip_seconds": 0.0,
+      "selected": false,
+      "verdict": "UNKNOWN"
+    },
+    {
+      "codec": "libx264",
+      "confidence_decision": "recommend-escalation",
+      "crf": 27,
+      "effective_predictor_target_vmaf": 95.0,
+      "estimated_bitrate_kbps": 10344.610237219182,
+      "estimated_vmaf": 95.95481369911872,
+      "hdr_args": [],
+      "interval_width": NaN,
+      "prediction_source": "predictor",
+      "rung": 720,
+      "saliency_intensity": "default",
+      "sample_clip_seconds": 0.0,
+      "selected": false,
+      "verdict": "UNKNOWN"
+    },
+    {
+      "codec": "libsvtav1",
+      "confidence_decision": "recommend-escalation",
+      "crf": 39,
+      "effective_predictor_target_vmaf": 95.0,
+      "estimated_bitrate_kbps": 5805.716197915575,
+      "estimated_vmaf": 95.60635945251079,
+      "hdr_args": [],
+      "interval_width": NaN,
+      "prediction_source": "predictor",
+      "rung": 720,
+      "saliency_intensity": "default",
+      "sample_clip_seconds": 0.0,
+      "selected": false,
+      "verdict": "UNKNOWN"
+    },
+    {
+      "codec": "libx264",
+      "confidence_decision": "recommend-escalation",
+      "crf": 27,
+      "effective_predictor_target_vmaf": 95.0,
+      "estimated_bitrate_kbps": 10344.610237219182,
+      "estimated_vmaf": 95.95481369911872,
+      "hdr_args": [],
+      "interval_width": NaN,
+      "prediction_source": "predictor",
+      "rung": 540,
+      "saliency_intensity": "default",
+      "sample_clip_seconds": 0.0,
+      "selected": false,
+      "verdict": "UNKNOWN"
+    },
+    {
+      "codec": "libsvtav1",
+      "confidence_decision": "recommend-escalation",
+      "crf": 39,
+      "effective_predictor_target_vmaf": 95.0,
+      "estimated_bitrate_kbps": 5805.716197915575,
+      "estimated_vmaf": 95.60635945251079,
+      "hdr_args": [],
+      "interval_width": NaN,
+      "prediction_source": "predictor",
+      "rung": 540,
+      "saliency_intensity": "default",
+      "sample_clip_seconds": 0.0,
+      "selected": false,
+      "verdict": "UNKNOWN"
+    }
+  ],
+  "metadata": {
+    "allow_codecs": [
+      "libx264",
+      "libsvtav1"
+    ],
+    "confidence_aware_escalations": [
+      {
+        "codec": "libx264",
+        "decision": "recommend-escalation",
+        "interval_width": NaN,
+        "rung": 2160,
+        "verdict": "UNKNOWN"
+      },
+      {
+        "codec": "libsvtav1",
+        "decision": "recommend-escalation",
+        "interval_width": NaN,
+        "rung": 2160,
+        "verdict": "UNKNOWN"
+      },
+      {
+        "codec": "libx264",
+        "decision": "recommend-escalation",
+        "interval_width": NaN,
+        "rung": 1440,
+        "verdict": "UNKNOWN"
+      },
+      {
+        "codec": "libsvtav1",
+        "decision": "recommend-escalation",
+        "interval_width": NaN,
+        "rung": 1440,
+        "verdict": "UNKNOWN"
+      },
+      {
+        "codec": "libx264",
+        "decision": "recommend-escalation",
+        "interval_width": NaN,
+        "rung": 1080,
+        "verdict": "UNKNOWN"
+      },
+      {
+        "codec": "libsvtav1",
+        "decision": "recommend-escalation",
+        "interval_width": NaN,
+        "rung": 1080,
+        "verdict": "UNKNOWN"
+      },
+      {
+        "codec": "libx264",
+        "decision": "recommend-escalation",
+        "interval_width": NaN,
+        "rung": 720,
+        "verdict": "UNKNOWN"
+      },
+      {
+        "codec": "libsvtav1",
+        "decision": "recommend-escalation",
+        "interval_width": NaN,
+        "rung": 720,
+        "verdict": "UNKNOWN"
+      },
+      {
+        "codec": "libx264",
+        "decision": "recommend-escalation",
+        "interval_width": NaN,
+        "rung": 540,
+        "verdict": "UNKNOWN"
+      },
+      {
+        "codec": "libsvtav1",
+        "decision": "recommend-escalation",
+        "interval_width": NaN,
+        "rung": 540,
+        "verdict": "UNKNOWN"
+      }
+    ],
+    "confidence_thresholds": {
+      "source": "default",
+      "tight_interval_max_width": 2.0,
+      "wide_interval_min_width": 5.0
+    },
+    "effective_predictor_target_vmaf": 95.0,
+    "max_budget_kbps": 12000.0,
+    "recipe_applied": "default",
+    "recipe_overrides": {},
+    "short_circuits": [
+      "sdr-skip",
+      "skip-saliency"
+    ],
+    "smoke": false,
+    "source_meta": {
+      "baseline_vmaf": 0.0,
+      "complexity_score": 0.0,
+      "content_class": "live_action",
+      "duration_s": 600.0,
+      "height": 2160,
+      "is_hdr": false,
+      "sample_clip_seconds": 0.0,
+      "shot_variance": 0.4,
+      "width": 3840
+    },
+    "src": "/tmp/uhd.mp4",
+    "target_vmaf": 95.0,
+    "user_pinned_codec": null,
+    "winner": {
+      "budget_margin_kbps": 6194.283802084425,
+      "cell_index": 1,
+      "codec": "libsvtav1",
+      "crf": 39,
+      "estimated_bitrate_kbps": 5805.716197915575,
+      "estimated_vmaf": 95.60635945251079,
+      "quality_margin": 0.6063594525107874,
+      "rung": 2160,
+      "status": "budget_and_quality_met"
+    }
+  }
+}

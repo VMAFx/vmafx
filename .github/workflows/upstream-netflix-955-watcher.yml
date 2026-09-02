@@ -1,0 +1,84 @@
+# Active monitoring for Netflix#1494 (the upstream PR that closes
+# Netflix#955 i4_adm_cm rounding overflow). Per ADR-0448: every
+# `docs/state.md` "Deferred (waiting on external trigger)" row that
+# names a specific upstream artefact gets a matching watcher workflow.
+#
+# When Netflix/vmaf#1494 merges, this workflow opens a fork-side
+# tracking issue with the `upstream-merged` label so the deferral
+# row in `docs/state.md` can be actively closed instead of silently
+# aging.
+name: Upstream watcher — Netflix#1494 (closes Netflix#955 deferral)
+
+on:
+  schedule:
+    # Sundays 06:00 UTC. Cheap (~5 s per run); audit trail in Actions tab.
+    - cron: "0 6 * * 0"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-netflix-955-watcher-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  poll:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check Netflix/vmaf#1494 status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          STATE=$(gh pr view 1494 --repo Netflix/vmaf --json state -q .state)
+          MERGED_AT=$(gh pr view 1494 --repo Netflix/vmaf --json mergedAt -q .mergedAt)
+          echo "Netflix/vmaf#1494: state=${STATE} mergedAt=${MERGED_AT:-null}"
+
+          if [ "${STATE}" != "MERGED" ]; then
+            echo "Upstream PR still ${STATE}; nothing to do this week."
+            exit 0
+          fi
+
+          # Idempotency: if we already opened a tracking issue (matched
+          # by title), do not open another one. The label
+          # `upstream-merged` lets us search.
+          EXISTING=$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --state open \
+            --label upstream-merged \
+            --search "Netflix#1494 in:title" \
+            --json number -q '.[0].number // empty')
+          if [ -n "${EXISTING}" ]; then
+            echo "Already tracking via issue #${EXISTING}; nothing to do."
+            exit 0
+          fi
+
+          gh issue create \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "Netflix#1494 merged — re-enable i4_adm_cm fix (closes Netflix#955 deferral)" \
+            --label upstream-merged \
+            --body "$(cat <<'EOF'
+          Netflix/vmaf PR #1494 has merged upstream as of ${MERGED_AT}.
+
+          Action items:
+
+          1. Sync the upstream change into the fork via
+             \`/port-upstream-commit\` or \`/sync-upstream\`.
+          2. Update the Netflix-golden assertions if upstream's golden
+             values changed (the fix in #1494 is a rounding correction
+             that may shift VMAF in the 6th decimal — coordinate with
+             CLAUDE.md §8 / ADR-0024).
+          3. Close the \`Netflix#955\` row in
+             \`docs/state.md\` Deferred section.
+          4. Close the corresponding \`ADR-0155\` deferral by adding a
+             status update note pointing at the resolution PR.
+          5. Disable this watcher (delete the workflow file or rename
+             with \`.disabled\` suffix).
+
+          See ADR-0448 for the watcher governance rule.
+          EOF
+          )"

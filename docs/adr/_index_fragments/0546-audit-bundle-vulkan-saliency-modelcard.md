@@ -1,0 +1,1 @@
+| [ADR-0546](0546-audit-bundle-vulkan-saliency-modelcard.md) | Audit bundle — Vulkan motion dispatch wiring, saliency hard-fail, model-card placeholder | Accepted | vulkan, vmaf-tune, ai, build, docs |

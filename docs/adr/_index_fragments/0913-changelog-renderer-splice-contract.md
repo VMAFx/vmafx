@@ -1,0 +1,1 @@
+| [ADR-0913](0913-changelog-renderer-splice-contract.md) | Changelog fragment renderer — splice contract is `^## \[`, not `^## `: fixes 23 k+ line drift from PR #332 / #383 / #401 root cause (fragment-internal `## ` headers tripping the sentinel); regenerated CHANGELOG.md from 59 757 → 15 030 lines | Accepted | 2026-05-31 | release, docs, tooling, fork-local |

@@ -1,0 +1,1 @@
+- `model/tiny/registry.json`: refresh `vmaf_tiny_v1_medium` sha256 to match the inlined-external-data file shipped by [#1226](https://github.com/VMAFx/vmafx/pull/1226). The repack changed the file's bytes (and therefore its sha) but the registry entry was not updated in the same PR, so `meson test --suite=dnn` failed locally and would fail in CI on `test_registry`.

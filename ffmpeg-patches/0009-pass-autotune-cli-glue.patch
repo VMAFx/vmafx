@@ -1,0 +1,71 @@
+From 1cbbd382223fbcd58a104c0d174ca1652817f28b Mon Sep 17 00:00:00 2001
+From: Lusoris <lusoris@pm.me>
+Date: Tue, 5 May 2026 23:18:19 +0200
+Subject: [PATCH 9/9] fftools: add -pass-autotune CLI glue (vmaf-tune helper)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Adds a new -pass-autotune flag to ffmpeg's CLI parser as scaffolding
+for vmaf-tune-orchestrated 2-pass encoding. The flag is purely
+advisory in this PR — when set, it logs:
+
+    [ffmpeg] -pass autotune: drive vmaf-tune externally; pass 1
+    frames will be available for analysis. See
+    docs/usage/vmaf-tune-ffmpeg.md.
+
+Real orchestration (probe pass, score collection, recommended-CRF
+synthesis) stays in vmaf-tune (tools/vmaf-tune/src/vmaftune/recommend.py).
+
+The option is named -pass-autotune rather than overloading -pass with
+a string value because -pass is OPT_TYPE_INT in n8.1 and changing its
+type is ABI-invasive; a sibling flag is a smaller, reversible glue
+surface. ADR-0312 §Alternatives covers the trade-off.
+
+ADR: docs/adr/0312-ffmpeg-patches-vmaf-tune-integration.md
+---
+ fftools/ffmpeg_opt.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/fftools/ffmpeg_opt.c b/fftools/ffmpeg_opt.c
+index a0664e2964..7db30ac72b 100644
+--- a/fftools/ffmpeg_opt.c
++++ b/fftools/ffmpeg_opt.c
+@@ -1049,6 +1049,24 @@ static int opt_vstats_file(void *optctx, const char *opt, const char *arg)
+     return 0;
+ }
+ 
++static int opt_pass_autotune(void *optctx, const char *opt, const char *arg)
++{
++    /* CLI glue per ADR-0312: vmaf-tune-orchestrated 2-pass encode helper.
++     *
++     * `-pass autotune` is purely advisory in this scaffold — it tells
++     * the user that the pass-1 frames are available for analysis and
++     * points at the docs. The actual recommend / 2-pass orchestration
++     * stays in tools/vmaf-tune (see vmaftune/recommend.py). */
++    (void)optctx;
++    (void)opt;
++    (void)arg;
++    av_log(NULL, AV_LOG_INFO,
++           "[ffmpeg] -pass autotune: drive vmaf-tune externally; "
++           "pass 1 frames will be available for analysis. See "
++           "docs/usage/vmaf-tune-ffmpeg.md.\n");
++    return 0;
++}
++
+ static int opt_vstats(void *optctx, const char *opt, const char *arg)
+ {
+     char filename[40];
+@@ -1956,6 +1974,9 @@ const OptionDef options[] = {
+     { "pass",                       OPT_TYPE_INT,    OPT_VIDEO | OPT_PERSTREAM | OPT_OUTPUT | OPT_EXPERT,
+         { .off = OFFSET(pass) },
+         "select the pass number (1 to 3)", "n" },
++    { "pass-autotune",              OPT_TYPE_FUNC,   OPT_VIDEO | OPT_EXPERT,
++        { .func_arg = opt_pass_autotune },
++        "vmaf-tune 2-pass orchestration helper (ADR-0312, advisory only)" },
+     { "passlogfile",                OPT_TYPE_STRING, OPT_VIDEO | OPT_EXPERT | OPT_PERSTREAM | OPT_OUTPUT,
+         { .off = OFFSET(passlogfiles) },
+         "select two pass log file name prefix", "prefix" },
+-- 
+2.54.0
+

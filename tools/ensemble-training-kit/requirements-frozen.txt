@@ -1,0 +1,21 @@
+# Frozen Python dependency set for the ensemble training kit (ADR-0324).
+#
+# Versions pinned against the upper bounds in pyproject.toml, mirroring
+# the ai/ tree's verified-working set. The kit's runtime path does NOT
+# touch optuna / ray / lightning / matplotlib, so those are absent.
+#
+# Install with: pip install -r requirements-frozen.txt
+#
+# Note: torch is intentionally NOT pinned here. The wheel index varies
+# by CUDA runtime version — install torch separately first matching
+# your driver, e.g.:
+#   pip install --index-url https://download.pytorch.org/whl/cu124 torch
+# then `pip install -r requirements-frozen.txt` for the rest.
+
+numpy==2.5.2
+pandas==3.0.5
+scipy==1.18.1
+scikit-learn==1.9.0
+onnx==1.22.0
+onnxruntime==1.29.0
+pyyaml==6.0.3

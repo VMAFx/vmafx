@@ -1,0 +1,59 @@
+{{- if .Values.persistence.enabled }}
+{{- if .Values.persistence.corpus.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "vmafx.fullname" . }}-corpus
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.accessMode }}
+  {{- if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.corpus.size }}
+{{- end }}
+{{- if .Values.persistence.output.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "vmafx.fullname" . }}-output
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.accessMode }}
+  {{- if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.output.size }}
+{{- end }}
+{{- if .Values.persistence.models.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "vmafx.fullname" . }}-models
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.accessMode }}
+  {{- if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.models.size }}
+{{- end }}
+{{- end }}

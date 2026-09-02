@@ -1,0 +1,61 @@
+# OpenSSF Scorecard — weekly supply-chain health scan.
+#
+# Publishes results to the OpenSSF public dashboard (Sigstore-signed attestation)
+# and uploads SARIF into the GitHub Security tab so maintainers can see delta
+# regressions on pinning, branch-protection, and dependency-review postures.
+#
+# Badge: README "OpenSSF Scorecard" links here.
+
+name: scorecard
+on:
+  branch_protection_rule:
+  schedule:
+    - cron: "19 4 * * 1"
+  push:
+    branches: [master]
+
+permissions: read-all
+
+# Prevent duplicate scorecard uploads for the same push/schedule fire.
+# cancel-in-progress: false preserves the in-flight attestation publish step.
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      security-events: write     # upload SARIF to the Security tab
+      id-token: write             # Sigstore attestation for the public dashboard
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run Scorecard
+        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc  # v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - name: Upload artifact (debug / replay)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: scorecard-sarif
+          path: results.sarif
+          retention-days: 14
+      - name: Upload to GitHub Security tab
+        # SHA pinned to the head commit of github/codeql-action's v4 tag
+        # (resolved 2026-05-03). The previous pin (b25d0ebf...) was an
+        # "imposter commit" — a SHA that no longer exists in the action
+        # repository — which made Scorecard's webapp publish step fail
+        # with a workflow-verification 400 error. See
+        # docs/research/0053-ossf-scorecard-investigation.md and
+        # docs/adr/0253-ossf-scorecard-policy.md.
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
+        with:
+          sarif_file: results.sarif

@@ -1,0 +1,41 @@
+# QAT config for learned_filter_v1 (ADR-0207, T5-4).
+#
+# Mirrors ai/configs/filter_residual_v1.yaml so the QAT warm-start
+# matches the original training recipe; adds a `qat:` block with the
+# QAT-specific knobs locked in ADR-0207. The output `.int8.onnx`
+# replaces the dynamic-PTQ artefact landed in ADR-0174 once the QAT
+# pass clears the 0.002 PLCC budget on measure_quant_drop.py.
+model: learned_filter
+model_args:
+  channels: 1
+  width: 16
+  num_blocks: 4
+  lr: 1.0e-4
+
+# Same parquet feature cache as the fp32 baseline. When the file is
+# missing locally (e.g. a CI container without the corpus) the driver
+# falls back to smoke mode so the wiring still exercises end-to-end.
+cache: ai/data/bvi_dvc_pairs.parquet
+output: runs/learned_filter_v1_qat
+
+epochs: 200
+batch_size: 32
+val_frac: 0.1
+test_frac: 0.1
+seed: 0
+precision: "32-true"
+
+qat:
+  # ADR-0207 §Decision: 20 fp32 + 10 QAT epochs is the default for
+  # tiny models per Research-0006 §4.
+  epochs_fp32: 20
+  epochs_qat: 10
+  # Default lr_qat = fp32 lr / 10 when omitted; explicit pin here so
+  # the per-model recipe is self-contained.
+  lr_qat: 1.0e-5
+  # The shipped learned_filter_v1 sidecar pins (1, 1, 224, 224) but the
+  # FX trace + ONNX export tolerate the dynamic-batch shape; 32x32 is
+  # sufficient for FX symbolic tracing and keeps the smoke path fast.
+  input_shape: [1, 1, 32, 32]
+  input_name: degraded
+  output_name: filtered

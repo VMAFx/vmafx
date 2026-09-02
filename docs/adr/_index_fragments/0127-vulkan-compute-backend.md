@@ -1,0 +1,1 @@
+| [ADR-0127](0127-vulkan-compute-backend.md) | Vulkan compute backend — vendor-neutral GPU path alongside CUDA/SYCL/HIP; volk loader, GLSL→SPIR-V via glslc, VMA allocator, VIF as pathfinder | Proposed | gpu, vulkan, backend, build, agents |

@@ -1,0 +1,1 @@
+| [ADR-0970](0970-test-gpu-picture-pool-cleanup.md) | test_gpu_picture_pool.c: remove unused malloc + dead code (Round 27 audit D.3 + D.4) | Accepted | `testing`, `cuda`, `memory`, `cleanup`, `fork-local` |

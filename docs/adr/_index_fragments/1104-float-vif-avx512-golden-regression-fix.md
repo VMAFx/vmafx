@@ -1,0 +1,1 @@
+| [ADR-1104](1104-float-vif-avx512-golden-regression-fix.md) | Remove AVX-512 dispatch from float VIF convolution to restore Netflix golden scores | Accepted | `simd`, `correctness`, `float-vif`, `bug-fix` |

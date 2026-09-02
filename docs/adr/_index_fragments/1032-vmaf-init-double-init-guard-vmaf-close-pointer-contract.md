@@ -1,0 +1,1 @@
+| [ADR-1032](1032-vmaf-init-double-init-guard-vmaf-close-pointer-contract.md) | vmaf_init double-init guard and vmaf_close pointer-contract documentation | Accepted | `api`, `correctness`, `memory-safety` |

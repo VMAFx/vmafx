@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# test/e2e/kuttl-tests/kuttl-test.yaml
+#
+# Top-level kuttl TestSuite configuration.
+# ADR-0783: k8s e2e integration test harness.
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestSuite
+metadata:
+  name: vmafx-e2e
+testDirs:
+  - test/e2e/kuttl-tests/
+namespace: vmafx-e2e-test
+# Each test case gets its own timeout; the suite timeout is a hard ceiling.
+timeout: 300
+# Preserve resources for workflow diagnostics; the isolated kind cluster is
+# deleted by the explicit exact-name teardown after results are collected.
+skipDelete: true
+# Keep one executable runtime case serial and deterministic.
+parallel: 1
+# Collect kubectl describe + logs for failed steps automatically.
+reportFormat: XML
+reportName: vmafx-e2e-results

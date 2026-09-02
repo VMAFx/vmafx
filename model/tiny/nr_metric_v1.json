@@ -1,0 +1,11 @@
+{
+  "id": "nr_metric_v1",
+  "kind": "nr",
+  "onnx": "nr_metric_v1.onnx",
+  "opset": 17,
+  "sha256": "75eff676bff0f0f911fd59ac72c90240e95caff67302b37f6e35bfbeac2b680b",
+  "quant_mode": "dynamic",
+  "int8_sha256": "e5ba2086f53c74539902883b12b01d83f06806f084b692b1d5ad325f9300cab2",
+  "quant_accuracy_budget_plcc": 0.01,
+  "notes": "Tiny NR MobileNet (C2) \u2014 single luma frame \u2192 MOS scalar. Trained on KoNViD-1k middle-frames (1200 clips, ~973 train / ~106 val) at 224\u00d7224 grayscale. Exported via ai/scripts/export_tiny_models.py; dynamic-PTQ int8 sidecar produced via ai/scripts/ptq_dynamic.py (T5-3d)."
+}

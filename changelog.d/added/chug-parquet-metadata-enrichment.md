@@ -1,0 +1,1 @@
+`ai/scripts/enrich_k150k_parquet_metadata.py` can now enrich an existing CHUG/K150K FULL_FEATURES parquet with JSONL side metadata, preserving long-running feature jobs that started without `--metadata-jsonl`.

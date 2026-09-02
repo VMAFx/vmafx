@@ -1,0 +1,112 @@
+{
+  "codec_aware": true,
+  "codec_block_layout": [
+    "encoder_onehot[libx264]",
+    "encoder_onehot[libx265]",
+    "encoder_onehot[libsvtav1]",
+    "encoder_onehot[libvvenc]",
+    "encoder_onehot[libvpx-vp9]",
+    "encoder_onehot[h264_nvenc]",
+    "encoder_onehot[hevc_nvenc]",
+    "encoder_onehot[av1_nvenc]",
+    "encoder_onehot[h264_qsv]",
+    "encoder_onehot[hevc_qsv]",
+    "encoder_onehot[av1_qsv]",
+    "encoder_onehot[unknown]",
+    "preset_norm",
+    "crf_norm"
+  ],
+  "corpus": {
+    "cq_max": 37.0,
+    "cq_min": 19.0,
+    "n_rows": 5640,
+    "path": "runs/phase_a/full_grid/per_frame_canonical6.jsonl",
+    "sha256": "58512e6c2400a8c7962d29f6a16fa090e6742f5746f2897128c381fb00808e3f"
+  },
+  "encoder_vocab": [
+    "libx264",
+    "libx265",
+    "libsvtav1",
+    "libvvenc",
+    "libvpx-vp9",
+    "h264_nvenc",
+    "hevc_nvenc",
+    "av1_nvenc",
+    "h264_qsv",
+    "hevc_qsv",
+    "av1_qsv",
+    "unknown"
+  ],
+  "encoder_vocab_version": 2,
+  "ensemble_id": "fr_regressor_v2_ensemble_v1",
+  "feature_mean": [
+    0.9488429659574469,
+    0.48863492748226944,
+    0.8324482487588651,
+    0.8906773783687942,
+    0.924247489893617,
+    8.916842046099292
+  ],
+  "feature_order": [
+    "adm2",
+    "vif_scale0",
+    "vif_scale1",
+    "vif_scale2",
+    "vif_scale3",
+    "motion2"
+  ],
+  "feature_std": [
+    0.04836998478470506,
+    0.175385340029403,
+    0.15623573778256045,
+    0.12199218152247363,
+    0.09415006541030543,
+    6.211059477666515
+  ],
+  "gate": {
+    "mean_plcc": 0.9972533887602454,
+    "mean_plcc_threshold": 0.95,
+    "passed": true,
+    "per_seed_min_threshold": 0.95,
+    "plcc_spread": 0.0009510602756565012,
+    "plcc_spread_max": 0.005,
+    "this_seed_loso_plcc": 0.9971592269106849,
+    "verdict": "PROMOTE"
+  },
+  "id": "fr_regressor_v2_ensemble_v1_seed1",
+  "input_names": [
+    "features",
+    "codec_onehot"
+  ],
+  "kind": "fr",
+  "loso_mean_plcc": 0.9972533887602454,
+  "notes": "Production ensemble member of fr_regressor_v2_ensemble_v1 (seed=1). Fit on full Phase A canonical-6 corpus (5640 rows) after the 9-fold LOSO gate passed per PROMOTE.json (verdict=PROMOTE, mean_plcc=0.9973). 6 canonical libvmaf features (adm2, vif_scale0..3, motion2) + 14-D codec block (12-slot encoder one-hot v2 + preset_norm + crf_norm) -> VMAF teacher score. See docs/ai/models/fr_regressor_v2_probabilistic.md, fr_regressor_v2_ensemble_v1.json (ensemble manifest), ADR-0303, ADR-0309, ADR-0319, ADR-0321.",
+  "onnx": "fr_regressor_v2_ensemble_v1_seed1.onnx",
+  "opset": 17,
+  "output_names": [
+    "score"
+  ],
+  "parent_adrs": [
+    "ADR-0303",
+    "ADR-0309",
+    "ADR-0319",
+    "ADR-0321"
+  ],
+  "seed": 1,
+  "sha256": "42d86249d41aaff5d93547a744bb251d89085475e6e10197815a612c44894f5a",
+  "training_recipe": {
+    "batch_size": 32,
+    "depth": 2,
+    "dropout": 0.1,
+    "epochs": 200,
+    "fit_set": "full_corpus",
+    "hidden": 64,
+    "in_features": 6,
+    "loss": "MSE",
+    "lr": 0.0005,
+    "num_codecs": 14,
+    "optimizer": "Adam",
+    "scaler": "fit_on_full_corpus",
+    "weight_decay": 1e-05
+  }
+}

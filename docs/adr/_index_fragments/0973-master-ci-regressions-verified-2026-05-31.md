@@ -1,0 +1,1 @@
+| [ADR-0973](0973-master-ci-regressions-verified-2026-05-31.md) | Master CI fixes — Metal MS-SSIM fixture dim + ssimulacra2 icpx XYB bit-exactness | Accepted | ci, simd, metal, ssimulacra2, icpx, bit-exactness, tests |

@@ -1,0 +1,1 @@
+| [ADR-0594](0594-hip-ssimulacra2-blur-fp-contract-off.md) | Per-kernel `hip_cu_extra_flags` dispatch — disable FMA contraction for `ssimulacra2_blur` HIP HSACO | Accepted | hip, build, ssimulacra2, numerics |

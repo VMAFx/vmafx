@@ -1,0 +1,722 @@
+ffmpeg version n8.1.1-17-g922a438 Copyright (c) 2000-2026 the FFmpeg developers
+  built with gcc 13 (Ubuntu 13.3.0-6ubuntu2~24.04.1)
+  configuration: --enable-gpl --enable-version3 --enable-libvmaf --enable-libdav1d --enable-vaapi --enable-libvpl --enable-libvmaf-sycl --disable-filter=vmaf_pre --disable-doc --disable-debug
+  libavutil      60. 26.101 / 60. 26.101
+  libavcodec     62. 28.101 / 62. 28.101
+  libavformat    62. 12.101 / 62. 12.101
+  libavdevice    62.  3.101 / 62.  3.101
+  libavfilter    11. 14.101 / 11. 14.101
+  libswscale      9.  5.101 /  9.  5.101
+  libswresample   6.  3.101 /  6.  3.101
+[libdav1d @ 0x561803407b40] obu_forbidden_bit out of range: 1, but must be in [0,0].
+[libdav1d @ 0x561803407b40] Failed to parse temporal unit.
+[in#0/matroska,webm @ 0x5618033ea440] could not find codec parameters
+[aist#0:1/opus @ 0x561803724040] Guessed Channel Layout: 5.1
+[aist#0:2/opus @ 0x56180374adc0] Guessed Channel Layout: 5.1
+[aist#0:3/opus @ 0x56180340c600] Guessed Channel Layout: 5.1
+[aist#0:4/opus @ 0x56180341e780] Guessed Channel Layout: 5.1
+Input #0, matroska,webm, from '/data/media/movies/Shadow's Edge/The Shadows.Edge. 2025.2160p.UHD.BluRay.Remux.DV.P7.HDR. TORRNADO.av1.mkv':
+  Metadata:
+    title           : Охота за тенью / Bu feng zhui ying / The Shadow's Edge (2025) TORRNADO
+    ENCODER         : Lavf62.3.100
+  Duration: 02:22:11.91, bitrate: N/A
+  Chapters:
+    Chapter #0:0: start 0.000000, end 1154.737000
+      Metadata:
+        title           : Chapter 01
+    Chapter #0:1: start 1154.737000, end 1885.634000
+      Metadata:
+        title           : Chapter 02
+    Chapter #0:2: start 1885.634000, end 2500.164000
+      Metadata:
+        title           : Chapter 03
+    Chapter #0:3: start 2500.164000, end 3236.066000
+      Metadata:
+        title           : Chapter 04
+    Chapter #0:4: start 3236.066000, end 3908.863000
+      Metadata:
+        title           : Chapter 05
+    Chapter #0:5: start 3908.863000, end 4753.207000
+      Metadata:
+        title           : Chapter 06
+    Chapter #0:6: start 4753.207000, end 5427.589000
+      Metadata:
+        title           : Chapter 07
+    Chapter #0:7: start 5427.589000, end 6146.223000
+      Metadata:
+        title           : Chapter 08
+    Chapter #0:8: start 6146.223000, end 6838.874000
+      Metadata:
+        title           : Chapter 09
+    Chapter #0:9: start 6838.874000, end 7745.863000
+      Metadata:
+        title           : Chapter 10
+    Chapter #0:10: start 7745.863000, end 8184.051000
+      Metadata:
+        title           : Chapter 11
+    Chapter #0:11: start 8184.051000, end 8531.905000
+      Metadata:
+        title           : Chapter 12
+  Stream #0:0(zxx): Video: av1 (libdav1d), none(bt2020nc/bt2020/smpte2084, progressive), 3840x2160, SAR 1:1 DAR 16:9, 23.98 fps, 23.98 tbr, 1k tbn (default)
+    Metadata:
+      BPS-eng         : 47674654
+      DURATION-eng    : 02:22:11.857000000
+      NUMBER_OF_FRAMES-eng: 204560
+      NUMBER_OF_BYTES-eng: 50844166332
+      SOURCE_ID-eng   : 001011
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES SOURCE_ID
+      DURATION        : 02:22:11.857000000
+    Side data:
+      DOVI configuration record: version: 1.0, profile: 10, level: 10, rpu flag: 1, el flag: 0, bl flag: 1, compatibility id: 1, compression: 0
+  Stream #0:1(rus): Audio: opus, 48000 Hz, 5.1 (default)
+    Metadata:
+      title           : DUB | Нарышкин
+      BPS-eng         : 640000
+      DURATION-eng    : 02:22:11.904000000
+      NUMBER_OF_FRAMES-eng: 266622
+      NUMBER_OF_BYTES-eng: 682552320
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+      DURATION        : 02:22:11.908000000
+  Stream #0:2(rus): Audio: opus, 48000 Hz, 5.1 (default)
+    Metadata:
+      title           : MVO | ВПОДПОЛЬЕ
+      BPS-eng         : 384000
+      DURATION-eng    : 02:22:11.904000000
+      NUMBER_OF_FRAMES-eng: 266622
+      NUMBER_OF_BYTES-eng: 409531392
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+      DURATION        : 02:22:11.908000000
+  Stream #0:3(rus): Audio: opus, 48000 Hz, 5.1 (default)
+    Metadata:
+      title           : AVO | Михаил Яроцкий
+      BPS-eng         : 448000
+      DURATION-eng    : 02:22:11.904000000
+      NUMBER_OF_FRAMES-eng: 266622
+      NUMBER_OF_BYTES-eng: 477786624
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+      DURATION        : 02:22:11.908000000
+  Stream #0:4(chi): Audio: opus, 48000 Hz, 5.1 (default)
+    Metadata:
+      BPS-eng         : 3623185
+      DURATION-eng    : 02:22:11.905000000
+      NUMBER_OF_FRAMES-eng: 799866
+      NUMBER_OF_BYTES-eng: 3864084228
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+      DURATION        : 02:22:11.907000000
+  Stream #0:5(rus): Subtitle: subrip (srt) (default)
+    Metadata:
+      title           : Forced
+      BPS-eng         : 1
+      DURATION-eng    : 02:18:49.140000000
+      NUMBER_OF_FRAMES-eng: 32
+      NUMBER_OF_BYTES-eng: 1509
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+      DURATION        : 02:21:30.262000000
+  Stream #0:6(rus): Subtitle: subrip (srt) (default)
+    Metadata:
+      title           : Full
+      BPS-eng         : 79
+      DURATION-eng    : 02:20:22.646000000
+      NUMBER_OF_FRAMES-eng: 1900
+      NUMBER_OF_BYTES-eng: 83234
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+      DURATION        : 02:21:39.156000000
+  Stream #0:7(chi): Subtitle: subrip (srt) (default)
+    Metadata:
+      title           : Full
+      BPS-eng         : 36
+      DURATION-eng    : 02:19:45.510000000
+      NUMBER_OF_FRAMES-eng: 2067
+      NUMBER_OF_BYTES-eng: 38046
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+      DURATION        : 02:21:39.415000000
+  Stream #0:8(eng): Subtitle: subrip (srt) (default)
+    Metadata:
+      title           : Full
+      BPS-eng         : 42
+      DURATION-eng    : 02:19:45.510000000
+      NUMBER_OF_FRAMES-eng: 2067
+      NUMBER_OF_BYTES-eng: 44575
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+      DURATION        : 02:21:39.415000000
+  Stream #0:9: Video: av1 (libdav1d), none(pc, bt470bg/unknown/unknown), 550x785, 1k tbn
+    Metadata:
+      FILENAME        : cover.jpg
+      MIMETYPE        : image/jpeg
+      DURATION        : 00:00:00.000000000
+  Stream #0:10: Video: av1 (libdav1d), none(pc, bt470bg/unknown/unknown), 150x214, 1k tbn
+    Metadata:
+      FILENAME        : small_cover.jpg
+      MIMETYPE        : image/jpeg
+      DURATION        : 00:00:00.000000000
+  Stream #0:11: Video: av1 (libdav1d), none(pc, bt470bg/unknown/unknown), 640x360, 1k tbn
+    Metadata:
+      FILENAME        : cover.jpg
+      MIMETYPE        : image/jpeg
+      DURATION        : 00:00:00.000000000
+[in#1 @ 0x561803722940] Invalid Block Addition value 0x0 for unknown Block Addition Mapping type 68766345, name "Dolby Vision enhancement-layer HEVC configuration"
+[extract_extradata @ 0x561803748c00] Failed to parse header of NALU (type 29): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x561803748c00] Failed to parse header of NALU (type 6): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x561803748c00] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[extract_extradata @ 0x561803748c00] Failed to parse header of NALU (type 40): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x561803748c00] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x56180341b480] Failed to parse header of NALU (type 29): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x56180341b480] Failed to parse header of NALU (type 6): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x56180341b480] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x56180341b480] Failed to parse header of NALU (type 40): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x56180341b480] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x56180341b480] PPS id out of range: 156
+[hevc @ 0x56180341b480] Skipping invalid undecodable NALU: 0
+[hevc @ 0x56180341b480] PPS id out of range: 15
+[hevc @ 0x56180341b480] Skipping invalid undecodable NALU: 1
+[hevc @ 0x56180341b480] PPS id out of range: 15
+[hevc @ 0x56180341b480] Skipping invalid undecodable NALU: 1
+[extract_extradata @ 0x56180347e900] Failed to parse header of NALU (type 29): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x56180347e900] Failed to parse header of NALU (type 6): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x56180347e900] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[extract_extradata @ 0x56180347e900] Failed to parse header of NALU (type 40): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x56180347e900] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x56180341be80] Failed to parse header of NALU (type 29): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x56180341be80] Failed to parse header of NALU (type 6): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x56180341be80] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x56180341be80] Failed to parse header of NALU (type 40): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x56180341be80] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x56180341be80] PPS id out of range: 156
+[hevc @ 0x56180341be80] Skipping invalid undecodable NALU: 0
+[hevc @ 0x56180341be80] PPS id out of range: 15
+[hevc @ 0x56180341be80] Skipping invalid undecodable NALU: 1
+[hevc @ 0x56180341be80] PPS id out of range: 15
+[hevc @ 0x56180341be80] Skipping invalid undecodable NALU: 1
+[extract_extradata @ 0x5618034a4c40] Failed to parse header of NALU (type 40): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x5618034a4c40] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[extract_extradata @ 0x5618034a4c40] Failed to parse header of NALU (type 1): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x5618034a4c40] Failed to parse header of NALU (type 3): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x5618034a4c40] Failed to parse header of NALU (type 32): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x56180341c880] Failed to parse header of NALU (type 40): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x56180341c880] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x56180341c880] Failed to parse header of NALU (type 1): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x56180341c880] Failed to parse header of NALU (type 3): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x56180341c880] Failed to parse header of NALU (type 32): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x56180341c880] PPS id out of range: 19
+[hevc @ 0x56180341c880] Skipping invalid undecodable NALU: 1
+[in#1/matroska,webm @ 0x561803722940] Stream #9: not enough frames to estimate rate; consider increasing probesize
+[in#1/matroska,webm @ 0x561803722940] Stream #10: not enough frames to estimate rate; consider increasing probesize
+[in#1/matroska,webm @ 0x561803722940] Stream #11: not enough frames to estimate rate; consider increasing probesize
+[in#1/matroska,webm @ 0x561803722940] Could not find codec parameters for stream 9 (Video: hevc, none): unspecified size
+Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (5000000) options
+[in#1/matroska,webm @ 0x561803722940] Could not find codec parameters for stream 10 (Video: hevc, none): unspecified size
+Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (5000000) options
+[in#1/matroska,webm @ 0x561803722940] Could not find codec parameters for stream 11 (Video: hevc, none): unspecified size
+Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (5000000) options
+Input #1, matroska,webm, from '/data/downloads/The Shadows.Edge. 2025.2160p.UHD.BluRay.Remux.DV.P7.HDR. TORRNADO.mkv':
+  Metadata:
+    title           : Охота за тенью / Bu feng zhui ying / The Shadow's Edge (2025) TORRNADO
+    encoder         : libebml v1.4.0 + libmatroska v1.6.2
+    creation_time   : 2026-03-30T16:18:18.000000Z
+  Duration: 02:22:11.91, start: 0.000000, bitrate: 52775 kb/s
+  Chapters:
+    Chapter #1:0: start 0.000000, end 1154.737000
+      Metadata:
+        title           : Chapter 01
+    Chapter #1:1: start 1154.737000, end 1885.634000
+      Metadata:
+        title           : Chapter 02
+    Chapter #1:2: start 1885.634000, end 2500.164000
+      Metadata:
+        title           : Chapter 03
+    Chapter #1:3: start 2500.164000, end 3236.066000
+      Metadata:
+        title           : Chapter 04
+    Chapter #1:4: start 3236.066000, end 3908.863000
+      Metadata:
+        title           : Chapter 05
+    Chapter #1:5: start 3908.863000, end 4753.207000
+      Metadata:
+        title           : Chapter 06
+    Chapter #1:6: start 4753.207000, end 5427.589000
+      Metadata:
+        title           : Chapter 07
+    Chapter #1:7: start 5427.589000, end 6146.223000
+      Metadata:
+        title           : Chapter 08
+    Chapter #1:8: start 6146.223000, end 6838.874000
+      Metadata:
+        title           : Chapter 09
+    Chapter #1:9: start 6838.874000, end 7745.863000
+      Metadata:
+        title           : Chapter 10
+    Chapter #1:10: start 7745.863000, end 8184.051000
+      Metadata:
+        title           : Chapter 11
+    Chapter #1:11: start 8184.051000, end 8531.905000
+      Metadata:
+        title           : Chapter 12
+  Stream #1:0(rus): Audio: ac3, 48000 Hz, 5.1(side), fltp, 640 kb/s (default)
+    Metadata:
+      title           : DUB | Нарышкин
+      BPS-eng         : 640000
+      DURATION-eng    : 02:22:11.904000000
+      NUMBER_OF_FRAMES-eng: 266622
+      NUMBER_OF_BYTES-eng: 682552320
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+  Stream #1:1(rus): Audio: ac3, 48000 Hz, 5.1(side), fltp, 384 kb/s
+    Metadata:
+      title           : MVO | ВПОДПОЛЬЕ
+      BPS-eng         : 384000
+      DURATION-eng    : 02:22:11.904000000
+      NUMBER_OF_FRAMES-eng: 266622
+      NUMBER_OF_BYTES-eng: 409531392
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+  Stream #1:2(rus): Audio: ac3, 48000 Hz, 5.1(side), fltp, 448 kb/s
+    Metadata:
+      title           : AVO | Михаил Яроцкий
+      BPS-eng         : 448000
+      DURATION-eng    : 02:22:11.904000000
+      NUMBER_OF_FRAMES-eng: 266622
+      NUMBER_OF_BYTES-eng: 477786624
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+  Stream #1:3(rus): Subtitle: subrip (srt) (default)
+    Metadata:
+      title           : Forced
+      BPS-eng         : 1
+      DURATION-eng    : 02:18:49.140000000
+      NUMBER_OF_FRAMES-eng: 32
+      NUMBER_OF_BYTES-eng: 1509
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+  Stream #1:4(rus): Subtitle: subrip (srt)
+    Metadata:
+      title           : Full
+      BPS-eng         : 79
+      DURATION-eng    : 02:20:22.646000000
+      NUMBER_OF_FRAMES-eng: 1900
+      NUMBER_OF_BYTES-eng: 83234
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+  Stream #1:5(chi): Subtitle: subrip (srt)
+    Metadata:
+      title           : Full
+      BPS-eng         : 36
+      DURATION-eng    : 02:19:45.510000000
+      NUMBER_OF_FRAMES-eng: 2067
+      NUMBER_OF_BYTES-eng: 38046
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+  Stream #1:6(eng): Subtitle: subrip (srt)
+    Metadata:
+      title           : Full
+      BPS-eng         : 42
+      DURATION-eng    : 02:19:45.510000000
+      NUMBER_OF_FRAMES-eng: 2067
+      NUMBER_OF_BYTES-eng: 44575
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+  Stream #1:7(zxx): Video: hevc (Main 10), yuv420p10le(tv, bt2020nc/bt2020/smpte2084), 3840x2160 [SAR 1:1 DAR 16:9], 23.98 fps, 23.98 tbr, 1k tbn (default)
+    Metadata:
+      BPS-eng         : 47674654
+      DURATION-eng    : 02:22:11.857000000
+      NUMBER_OF_FRAMES-eng: 204560
+      NUMBER_OF_BYTES-eng: 50844166332
+      SOURCE_ID-eng   : 001011
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES SOURCE_ID
+    Side data:
+      DOVI configuration record: version: 1.0, profile: 7, level: 6, rpu flag: 1, el flag: 1, bl flag: 1, compatibility id: 6, compression: 0
+  Stream #1:8(chi): Audio: dts (dca) (DTS-HD MA), 48000 Hz, 5.1(side), s32p (24 bit)
+    Metadata:
+      BPS-eng         : 3623185
+      DURATION-eng    : 02:22:11.905000000
+      NUMBER_OF_FRAMES-eng: 799866
+      NUMBER_OF_BYTES-eng: 3864084228
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+  Stream #1:9: Video: hevc, none, 90k tbr, 90k tbn (attached pic)
+    Metadata:
+      filename        : cover.jpg
+      mimetype        : image/jpeg
+  Stream #1:10: Video: hevc, none, 90k tbr, 90k tbn (attached pic)
+    Metadata:
+      filename        : small_cover.jpg
+      mimetype        : image/jpeg
+  Stream #1:11: Video: hevc, none, 90k tbr, 90k tbn (attached pic)
+    Metadata:
+      filename        : cover.jpg
+      mimetype        : image/jpeg
+libva info: VA-API version 1.23.0
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_23
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.23.0
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_23
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.23.0
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_23
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.23.0
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_23
+libva info: va_openDriver() returns 0
+Stream mapping:
+  Stream #0:0 (av1_qsv) -> libvmaf_sycl
+  Stream #1:7 (hevc_qsv) -> libvmaf_sycl
+  libvmaf_sycl:default -> Stream #0:0 (wrapped_avframe)
+  Stream #1:0 -> #0:1 (ac3 (native) -> pcm_s16le (native))
+Press [q] to stop, [?] for help
+There are 2 hardware devices. device qsv1 of type qsv is picked for filters by default. Set hardware device explicitly with the filter_hw_device option if device qsv1 is not usable for filters.
+    Last message repeated 1 times
+[Parsed_libvmaf_sycl_0 @ 0x7fabbc003000] libvmaf_sycl: QSV zero-copy path, sw_format=p010le bpc=10 3840x2160
+libvmaf INFO SYCL: using device: Intel(R) Arc(TM) A380 Graphics
+libvmaf INFO SYCL: device lacks native fp64 — kernels already use fp32 + int64 paths, no emulation overhead
+libvmaf INFO VA surface zero-copy: DMA-BUF → Level Zero → Tile4 de-tile (3840x2160 @ 2 bpp, pitch=7808)
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=0 slot=0 ref crc=0xa3471dc5
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=0 slot=0 dis crc=0xa3471dc5
+Output #0, null, to 'pipe:':
+  Metadata:
+    title           : Охота за тенью / Bu feng zhui ying / The Shadow's Edge (2025) TORRNADO
+    encoder         : Lavf62.12.101
+  Chapters:
+    Chapter #0:0: start 0.000000, end 1154.737000
+      Metadata:
+        title           : Chapter 01
+    Chapter #0:1: start 1154.737000, end 1885.634000
+      Metadata:
+        title           : Chapter 02
+    Chapter #0:2: start 1885.634000, end 2500.164000
+      Metadata:
+        title           : Chapter 03
+    Chapter #0:3: start 2500.164000, end 3236.066000
+      Metadata:
+        title           : Chapter 04
+    Chapter #0:4: start 3236.066000, end 3908.863000
+      Metadata:
+        title           : Chapter 05
+    Chapter #0:5: start 3908.863000, end 4753.207000
+      Metadata:
+        title           : Chapter 06
+    Chapter #0:6: start 4753.207000, end 5427.589000
+      Metadata:
+        title           : Chapter 07
+    Chapter #0:7: start 5427.589000, end 6146.223000
+      Metadata:
+        title           : Chapter 08
+    Chapter #0:8: start 6146.223000, end 6838.874000
+      Metadata:
+        title           : Chapter 09
+    Chapter #0:9: start 6838.874000, end 7745.863000
+      Metadata:
+        title           : Chapter 10
+    Chapter #0:10: start 7745.863000, end 8184.051000
+      Metadata:
+        title           : Chapter 11
+    Chapter #0:11: start 8184.051000, end 8531.905000
+      Metadata:
+        title           : Chapter 12
+  Stream #0:0: Video: wrapped_avframe, qsv(tv, bt2020nc/bt2020/smpte2084, progressive), 3840x2160 [SAR 1:1 DAR 16:9], q=2-31, 200 kb/s, 23.98 fps, 23.98 tbn
+    Metadata:
+      encoder         : Lavc62.28.101 wrapped_avframe
+  Stream #0:1(rus): Audio: pcm_s16le, 48000 Hz, 5.1(side), s16, 4608 kb/s (default)
+    Metadata:
+      encoder         : Lavc62.28.101 pcm_s16le
+      title           : DUB | Нарышкин
+      BPS-eng         : 640000
+      DURATION-eng    : 02:22:11.904000000
+      NUMBER_OF_FRAMES-eng: 266622
+      NUMBER_OF_BYTES-eng: 682552320
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=1 slot=0 ref crc=0xa3471dc5
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=1 slot=0 dis crc=0xa3471dc5
+libvmaf INFO [vmaf-sycl] combined graphs recorded (3 extractors)libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=2 slot=0 ref crc=0xa3471dc5
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=2 slot=0 dis crc=0xa3471dc5
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=3 slot=0 ref crc=0xa3471dc5
+frame=    3 fps=0.6 q=-0.0 size=N/A time=00:00:00.09 bitrate=N/A speed=0.0192x elapsed=0:00:05.00
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=3 slot=0 dis crc=0xa3471dc5
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=4 slot=0 ref crc=0xa3471dc5
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=4 slot=0 dis crc=0xa3471dc5
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=5 slot=0 ref crc=0xa3471dc5
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=5 slot=0 dis crc=0xa3471dc5
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=6 slot=0 ref crc=0xa3471dc5
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=6 slot=0 dis crc=0xa3471dc5
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=7 slot=0 ref crc=0xa3471dc5
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=7 slot=0 dis crc=0xa3471dc5
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=8 slot=0 ref crc=0xbcf83fca
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=8 slot=0 dis crc=0xa3471dc5
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=9 slot=0 ref crc=0x6800c257
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=9 slot=0 dis crc=0xa3471dc5
+frame=   10 fps=1.8 q=-0.0 size=N/A time=00:00:00.41 bitrate=N/A speed=0.0756x elapsed=0:00:05.50
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=10 slot=0 ref crc=0xb92ea64f
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=10 slot=0 dis crc=0x6800c257
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=11 slot=0 ref crc=0x1d955aa7
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=11 slot=0 dis crc=0xbcf83fca
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=12 slot=0 ref crc=0x92638727
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=12 slot=0 dis crc=0xb92ea64f
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=13 slot=0 ref crc=0xa3471dc5
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=13 slot=0 dis crc=0x238d61af
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=14 slot=0 ref crc=0x238d61af
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=14 slot=0 dis crc=0x8cc570d9
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=15 slot=0 ref crc=0x8cc570d9
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=15 slot=0 dis crc=0x229c1d4a
+frame=   16 fps=2.7 q=-0.0 size=N/A time=00:00:00.64 bitrate=N/A speed=0.107x elapsed=0:00:06.00
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=16 slot=0 ref crc=0x633850f8
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=16 slot=0 dis crc=0x1d955aa7
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=17 slot=0 ref crc=0x97a065b1
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=17 slot=0 dis crc=0x633850f8
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=18 slot=0 ref crc=0xbcf83fca
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=18 slot=0 dis crc=0x92638727
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=19 slot=0 ref crc=0x54bfb932
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=19 slot=0 dis crc=0x60e49bc7
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=20 slot=0 ref crc=0x2e5e1cae
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=20 slot=0 dis crc=0x54bfb932
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+[Parsed_libvmaf_sycl_0 @ 0x7fabbc003000] vmaf_sycl_import_va_surface (ref) failed: -5 (VA surface may have been freed by decoder) — skipping frame
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=21 slot=0 ref crc=0x1d955aa7
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=21 slot=0 dis crc=0xcfdad97e
+frame=   23 fps=3.5 q=-0.0 size=N/A time=00:00:00.92 bitrate=N/A speed=0.143x elapsed=0:00:06.50
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=22 slot=0 ref crc=0x5d93168a
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=22 slot=0 dis crc=0x2e5e1cae
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=23 slot=0 ref crc=0x4c7bc48e
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=23 slot=0 dis crc=0x97a065b1
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=24 slot=0 ref crc=0xb43400b7
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=24 slot=0 dis crc=0x4a1f4d85
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=25 slot=0 ref crc=0x286021fc
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=25 slot=0 dis crc=0x2e2c210b
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=26 slot=0 ref crc=0x282e5eb6
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=26 slot=0 dis crc=0x5d93168a
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=27 slot=0 ref crc=0x538fbd53
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=27 slot=0 dis crc=0x282e5eb6
+frame=   29 fps=4.1 q=-0.0 size=N/A time=00:00:01.18 bitrate=N/A speed=0.169x elapsed=0:00:07.00
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=28 slot=0 ref crc=0x4eec2e37
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=28 slot=0 dis crc=0x6fd97bb2
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=29 slot=0 ref crc=0x3b8c6f46
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=29 slot=0 dis crc=0xb43400b7
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=30 slot=0 ref crc=0x6fd97bb2
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=30 slot=0 dis crc=0x286021fc
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=31 slot=0 ref crc=0x97a065b1
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=31 slot=0 dis crc=0x4c7bc48e
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=32 slot=0 ref crc=0x4c7bc48e
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=32 slot=0 dis crc=0x4eec2e37
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=33 slot=0 ref crc=0x5d93168a
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=33 slot=0 dis crc=0x9c05a68a
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+[Parsed_libvmaf_sycl_0 @ 0x7fabbc003000] vmaf_sycl_import_va_surface (ref) failed: -5 (VA surface may have been freed by decoder) — skipping frame
+frame=   36 fps=4.8 q=-0.0 size=N/A time=00:00:01.47 bitrate=N/A speed=0.196x elapsed=0:00:07.50
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=34 slot=0 ref crc=0x9c05a68a
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=34 slot=0 dis crc=0x3b8c6f46
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=35 slot=0 ref crc=0x3161868a
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=35 slot=0 dis crc=0x040559ce
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+[Parsed_libvmaf_sycl_0 @ 0x7fabbc003000] vmaf_sycl_import_va_surface (ref) failed: -5 (VA surface may have been freed by decoder) — skipping frame
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=36 slot=0 ref crc=0xe7c9ba5f
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=36 slot=0 dis crc=0x3161868a
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=37 slot=0 ref crc=0x30f05a9c
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=37 slot=0 dis crc=0x538fbd53
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=38 slot=0 ref crc=0x4576c326
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=38 slot=0 dis crc=0xe7c9ba5f
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=39 slot=0 ref crc=0x7d651e83
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=39 slot=0 dis crc=0xfbfe9ecb
+    Last message repeated 2 times
+frame=   45 fps=5.6 q=-0.0 size=N/A time=00:00:01.85 bitrate=N/A speed=0.232x elapsed=0:00:08.00
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=40 slot=0 ref crc=0x538fbd53
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=40 slot=0 dis crc=0x7d651e83
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=41 slot=0 ref crc=0x3bab9397
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=41 slot=0 dis crc=0x30f05a9c
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=42 slot=0 ref crc=0x7f347dbb
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=42 slot=0 dis crc=0xe767c4f2
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=43 slot=0 ref crc=0xe0d13b75
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=43 slot=0 dis crc=0x4576c326
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+[Parsed_libvmaf_sycl_0 @ 0x7fabbc003000] vmaf_sycl_import_va_surface (ref) failed: -5 (VA surface may have been freed by decoder) — skipping frame
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=44 slot=0 ref crc=0xe767c4f2
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=44 slot=0 dis crc=0x3bab9397
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=45 slot=0 ref crc=0x4ddd2424
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=45 slot=0 dis crc=0x4ddd2424
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+    Last message repeated 1 times
+frame=   53 fps=6.2 q=-0.0 size=N/A time=00:00:02.20 bitrate=N/A speed=0.26x elapsed=0:00:08.50
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=46 slot=0 ref crc=0x4576c326
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=46 slot=0 dis crc=0x500a529c
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+[Parsed_libvmaf_sycl_0 @ 0x7fabbc003000] vmaf_sycl_import_va_surface (ref) failed: -5 (VA surface may have been freed by decoder) — skipping frame
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=47 slot=0 ref crc=0x7a93b98c
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=47 slot=0 dis crc=0xe4ae9a4e
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=48 slot=0 ref crc=0xe0d13b75
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=48 slot=0 dis crc=0x2e212c65
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=49 slot=0 ref crc=0x1496a2d7
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=49 slot=0 dis crc=0xe6e5f619
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=50 slot=0 ref crc=0xe6e5f619
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=50 slot=0 dis crc=0x1496a2d7
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=51 slot=0 ref crc=0xf721ed9b
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=51 slot=0 dis crc=0x3bf031ef
+    Last message repeated 1 times
+frame=   61 fps=6.8 q=-0.0 size=N/A time=00:00:02.52 bitrate=N/A speed=0.281x elapsed=0:00:09.00
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=52 slot=0 ref crc=0x6c3596c3
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=52 slot=0 dis crc=0x269b5ef0
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=53 slot=0 ref crc=0x3c40b37c
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=53 slot=0 dis crc=0x763eb21c
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+[Parsed_libvmaf_sycl_0 @ 0x7fabbc003000] vmaf_sycl_import_va_surface (ref) failed: -5 (VA surface may have been freed by decoder) — skipping frame
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=54 slot=0 ref crc=0x300ebd75
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=54 slot=0 dis crc=0x6c3596c3
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=55 slot=0 ref crc=0x772e9a6f
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=55 slot=0 dis crc=0x300ebd75
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=56 slot=0 ref crc=0x4fcd1b6f
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=56 slot=0 dis crc=0xa75d7c6b
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=57 slot=0 ref crc=0xf8b7b786
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=57 slot=0 dis crc=0x2dda8ff8
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=58 slot=0 ref crc=0x2dda8ff8
+    Last message repeated 2 times
+frame=   70 fps=7.4 q=-0.0 size=N/A time=00:00:02.91 bitrate=N/A speed=0.306x elapsed=0:00:09.50
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=58 slot=0 dis crc=0x3321bf44
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=59 slot=0 ref crc=0x3321bf44
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=59 slot=0 dis crc=0x94ed7146
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=60 slot=0 ref crc=0x94ed7146
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=60 slot=0 dis crc=0x772e9a6f
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+[Parsed_libvmaf_sycl_0 @ 0x7fabbc003000] vmaf_sycl_import_va_surface (ref) failed: -5 (VA surface may have been freed by decoder) — skipping frame
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=61 slot=0 ref crc=0x8cf72cbe
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=61 slot=0 dis crc=0xf8b7b786
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=62 slot=0 ref crc=0x8eb6914a
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=62 slot=0 dis crc=0xa9dd5fb0
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=63 slot=0 ref crc=0x761d1b74
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=63 slot=0 dis crc=0x8eb6914a
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=64 slot=0 ref crc=0x1a171390
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=64 slot=0 dis crc=0xc07c6e8a
+frame=   77 fps=7.7 q=-0.0 size=N/A time=00:00:03.20 bitrate=N/A speed=0.32x elapsed=0:00:10.00
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=65 slot=0 ref crc=0x772e9a6f
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=65 slot=0 dis crc=0x771ef316
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+[Parsed_libvmaf_sycl_0 @ 0x7fabbc003000] vmaf_sycl_import_va_surface (ref) failed: -5 (VA surface may have been freed by decoder) — skipping frame
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=66 slot=0 ref crc=0x732df83a
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=66 slot=0 dis crc=0x8897581a
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=67 slot=0 ref crc=0x73d595b5
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=67 slot=0 dis crc=0x761d1b74
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=68 slot=0 ref crc=0x8897581a
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=68 slot=0 dis crc=0x1a171390
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=69 slot=0 ref crc=0x1a171390
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=69 slot=0 dis crc=0x73d595b5
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=70 slot=0 ref crc=0x43f7f701
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=70 slot=0 dis crc=0x732df83a
+    Last message repeated 2 times
+frame=   87 fps=8.3 q=-0.0 size=N/A time=00:00:03.61 bitrate=N/A speed=0.344x elapsed=0:00:10.50
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=71 slot=0 ref crc=0x833a9c77
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=71 slot=0 dis crc=0x7e35357b
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=72 slot=0 ref crc=0x573ba119
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=72 slot=0 dis crc=0x573ba119
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+[Parsed_libvmaf_sycl_0 @ 0x7fabbc003000] vmaf_sycl_import_va_surface (ref) failed: -5 (VA surface may have been freed by decoder) — skipping frame
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=73 slot=0 ref crc=0x4f204a63
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=73 slot=0 dis crc=0x833a9c77
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=74 slot=0 ref crc=0x1555b69e
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=74 slot=0 dis crc=0xde036679
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=75 slot=0 ref crc=0x7127c32f
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=75 slot=0 dis crc=0x1555b69e
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=76 slot=0 ref crc=0x57247ef0
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=76 slot=0 dis crc=0x3697daf6
+    Last message repeated 2 times
+frame=   96 fps=8.7 q=-0.0 size=N/A time=00:00:04.00 bitrate=N/A speed=0.364x elapsed=0:00:11.00
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=77 slot=0 ref crc=0xaaf1074b
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=77 slot=0 dis crc=0x57247ef0
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=78 slot=0 ref crc=0x5aea6c17
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=78 slot=0 dis crc=0xe8377f75
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=79 slot=0 ref crc=0x4f204a63
+libvmaf INFO VMAF_SYCL_CHECKSUM path=sycl frame=79 slot=0 dis crc=0x0cf86c66
+libvmaf WARNING vaSyncSurface failed: invalid VAContextID
+libvmaf INFO vaExportSurfaceHandle failed: invalid VASurfaceID — using readback path
+libvmaf ERROR vaGetImage failed: invalid VASurfaceID
+[Parsed_libvmaf_sycl_0 @ 0x7fabbc003000] vmaf_sycl_import_va_surface (ref) failed: -5 (VA surface may have been freed by decoder) — skipping frame
+[vmaf-sycl] timing: 79 frames, avg cpu=0.44ms gpu=124.02ms total=124.45ms (8.0 fps), gpu%=100%
+[Parsed_libvmaf_sycl_0 @ 0x7fabbc003000] VMAF score: nan
+[out#0/null @ 0x561803458ec0] video:41KiB audio:2340KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+frame=  100 fps=8.9 q=-0.0 Lsize=N/A time=00:00:04.16 bitrate=N/A speed=0.369x elapsed=0:00:11.27

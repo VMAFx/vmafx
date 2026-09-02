@@ -1,0 +1,163 @@
+// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// Copyright 2026 Lusoris
+//
+// proto/vmafx.proto — VMAFX gRPC service definition.
+//
+// Generated Go stubs live under gen/go/vmafx/ and are vendored in-tree.
+// Regenerate with:  buf generate   (requires buf ≥ v1.30)
+//
+// ADR-0703: vmafx-server Go gRPC + HTTP service.
+// ADR-0933: bidirectional ScoreStream RPC for multi-frame scoring.
+
+syntax = "proto3";
+
+package vmafx.v1;
+
+option go_package = "github.com/VMAFx/vmafx/gen/go/vmafx/v1;vmafxv1";
+
+// VmafxScoring is the primary scoring service.
+//
+// The service exposes two complementary surfaces:
+//
+//   * Unary RPCs (Score, Health) — v1 API, frozen for compatibility.
+//   * Bidirectional streaming (ScoreStream) — v2 surface added in ADR-0933.
+//     Phase 1 ships the schema + server stub returning Unimplemented; later
+//     phases will wire it to the libvmaf engine. The unary Score RPC will be
+//     deprecated in the next major release once ScoreStream is GA.
+service VmafxScoring {
+  // Score computes VMAF and per-feature scores for a reference/distorted pair.
+  //
+  // Unary; one RPC per (ref, dist) clip. Suitable for batch / file-path inputs.
+  rpc Score(ScoreRequest) returns (ScoreResponse);
+
+  // ScoreStream computes per-frame VMAF and per-feature scores over a live
+  // pair of frame streams.
+  //
+  // The client opens a single bidirectional stream and pushes a StreamConfig
+  // followed by FramePair messages (one reference + one distorted plane set
+  // per FramePair, matched by frame_index). The server emits a FrameScore
+  // per processed frame, plus a terminal AggregateScore at EOF, all
+  // multiplexed on the ScoreStreamResponse oneof. Backpressure is handled
+  // by gRPC flow control.
+  //
+  // ADR-0933.
+  rpc ScoreStream(stream ScoreStreamRequest) returns (stream ScoreStreamResponse);
+
+  // Health returns server liveness status.
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+// ScoreRequest carries the paths to the reference and distorted video files.
+message ScoreRequest {
+  // Absolute path to the reference YUV / Y4M / video file.
+  string reference = 1;
+  // Absolute path to the distorted YUV / Y4M / video file.
+  string distorted = 2;
+  // Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v0.6.1.
+  string model = 3;
+}
+
+// ScoreResponse carries the aggregate VMAF score and per-feature values.
+message ScoreResponse {
+  // Aggregate VMAF score (e.g. 76.6683).
+  double score = 1;
+  // Per-feature scores keyed by feature name.
+  map<string, double> features = 2;
+}
+
+// PixelFormat enumerates the supported planar pixel layouts for raw frames
+// pushed over ScoreStream. Mirrors a subset of FFmpeg's AVPixelFormat values
+// that libvmaf already accepts on its picture-import path.
+enum PixelFormat {
+  PIXEL_FORMAT_UNSPECIFIED = 0;
+  PIXEL_FORMAT_YUV420P = 1;       // 8-bit 4:2:0 planar (most common SDR input).
+  PIXEL_FORMAT_YUV422P = 2;       // 8-bit 4:2:2 planar.
+  PIXEL_FORMAT_YUV444P = 3;       // 8-bit 4:4:4 planar.
+  PIXEL_FORMAT_YUV420P10LE = 4;   // 10-bit 4:2:0 planar little-endian (HDR).
+  PIXEL_FORMAT_YUV422P10LE = 5;
+  PIXEL_FORMAT_YUV444P10LE = 6;
+}
+
+// StreamConfig is sent exactly once as the first message on a ScoreStream.
+// All FramePair messages that follow MUST agree with these dimensions.
+message StreamConfig {
+  // Luma width in pixels.
+  uint32 width = 1;
+  // Luma height in pixels.
+  uint32 height = 2;
+  // Pixel layout for both reference and distorted streams (they must match).
+  PixelFormat pixel_format = 3;
+  // Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v0.6.1.
+  string model = 4;
+  // Optional declared frame count; 0 means unknown / open-ended stream.
+  // When non-zero the server may pre-size internal buffers.
+  uint32 frame_count_hint = 5;
+}
+
+// FramePair carries a matched (reference, distorted) frame pair.
+//
+// frame_index is monotonically increasing from 0; gaps are an error. The
+// raw_reference / raw_distorted byte buffers are planar pixel data in the
+// pixel format declared by StreamConfig, planes concatenated in canonical
+// Y-U-V order with no padding between planes.
+message FramePair {
+  // Zero-based monotonically increasing frame index.
+  uint32 frame_index = 1;
+  // Raw planar reference pixels (Y, then U, then V).
+  bytes raw_reference = 2;
+  // Raw planar distorted pixels (Y, then U, then V).
+  bytes raw_distorted = 3;
+}
+
+// ScoreStreamRequest is the client-to-server message on the bidirectional
+// ScoreStream RPC. The first message MUST set `config`; every subsequent
+// message MUST set `frame_pair`.
+message ScoreStreamRequest {
+  oneof payload {
+    StreamConfig config = 1;
+    FramePair frame_pair = 2;
+  }
+}
+
+// FrameScore is emitted by the server once per processed frame.
+message FrameScore {
+  // Zero-based frame index matching the request FramePair.frame_index.
+  uint32 frame_index = 1;
+  // Per-frame VMAF score.
+  double score = 2;
+  // Per-feature per-frame scores (e.g. "vif_scale0", "motion2", "adm2").
+  map<string, double> features = 3;
+}
+
+// AggregateScore is emitted by the server exactly once as the terminal
+// message on the stream, after the client half-closes (EOF).
+message AggregateScore {
+  // Number of frames the server actually processed.
+  uint32 frames_processed = 1;
+  // Pooled VMAF score (default: arithmetic mean).
+  double score = 2;
+  // Pooled per-feature scores.
+  map<string, double> features = 3;
+  // Aggregate wall-clock processing time in milliseconds.
+  uint64 elapsed_ms = 4;
+}
+
+// ScoreStreamResponse is the server-to-client message. Exactly one of
+// `frame_score` or `aggregate` is set per response.
+message ScoreStreamResponse {
+  oneof payload {
+    FrameScore frame_score = 1;
+    AggregateScore aggregate = 2;
+  }
+}
+
+// HealthRequest is intentionally empty — reserved for future extensions.
+message HealthRequest {}
+
+// HealthResponse indicates liveness and readiness.
+message HealthResponse {
+  // ok is true when the service is live and ready to accept requests.
+  bool ok = 1;
+  // message provides a human-readable status note.
+  string message = 2;
+}

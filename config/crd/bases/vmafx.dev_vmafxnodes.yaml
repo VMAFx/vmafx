@@ -1,0 +1,94 @@
+---
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# config/crd/bases/vmafx.dev_vmafxnodes.yaml
+# CRD for VmafxNode — a compute node that executes VmafxJobs.
+#
+# ADR-0714: vmafx-operator kubebuilder skeleton + CRDs.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: vmafxnodes.vmafx.dev
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.1
+spec:
+  group: vmafx.dev
+  names:
+    kind: VmafxNode
+    listKind: VmafxNodeList
+    plural: vmafxnodes
+    singular: vmafxnode
+    shortNames:
+      - vmnode
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Vendor
+          type: string
+          jsonPath: .spec.gpuVendor
+        - name: Healthy
+          type: boolean
+          jsonPath: .status.healthy
+        - name: Jobs
+          type: integer
+          jsonPath: .status.assignedJobs
+        - name: Device
+          type: string
+          jsonPath: .status.detectedDevice
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          description: VmafxNode is the Schema for the vmafxnodes API.
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: VmafxNodeSpec defines the desired state of a VmafxNode.
+              type: object
+              required:
+                - gpuVendor
+              properties:
+                gpuVendor:
+                  description: GPU vendor on this node. One of nvidia | amd | intel | cpu.
+                  type: string
+                  enum: [nvidia, amd, intel, cpu]
+                capacity:
+                  description: Maximum concurrent VmafxJobs. Defaults to 1.
+                  type: integer
+                  format: int32
+                  minimum: 1
+                  default: 1
+                image:
+                  description: Container image used when the operator creates worker Pods for this node.
+                  type: string
+            status:
+              description: VmafxNodeStatus defines the observed state of a VmafxNode.
+              type: object
+              properties:
+                healthy:
+                  description: True when the node's /healthz last returned HTTP 200.
+                  type: boolean
+                lastHeartbeat:
+                  description: Last time node health was confirmed.
+                  type: string
+                  format: date-time
+                assignedJobs:
+                  description: Number of VmafxJobs currently in Running phase on this node.
+                  type: integer
+                  format: int32
+                detectedDevice:
+                  description: Device identifier reported by the node's /healthz probe.
+                  type: string

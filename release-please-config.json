@@ -1,0 +1,51 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "98dc0b2b830ab39a9fe724def9e8cd7a7f73fa29",
+  "release-type": "simple",
+  "include-component-in-tag": false,
+  "include-v-in-tag": true,
+  "packages": {
+    ".": {
+      "package-name": "vmafx",
+      "release-type": "simple",
+      "release-as": "3.2.1",
+      "skip-changelog": true,
+      "versioning": "default",
+      "prerelease": false,
+      "bump-minor-pre-major": false,
+      "bump-patch-for-minor-pre-major": false,
+      "draft": true,
+      "changelog-sections": [
+        { "type": "feat", "section": "Features" },
+        { "type": "fix", "section": "Bug Fixes" },
+        { "type": "perf", "section": "Performance" },
+        { "type": "refactor", "section": "Refactors" },
+        { "type": "docs", "section": "Documentation" },
+        { "type": "test", "section": "Tests" },
+        { "type": "build", "section": "Build System" },
+        { "type": "ci", "section": "CI / Infrastructure" },
+        { "type": "chore", "section": "Miscellaneous", "hidden": false },
+        { "type": "revert", "section": "Reverts" },
+        { "type": "security", "section": "Security" },
+        { "type": "style", "section": "Style" },
+        { "type": "port", "section": "Ports from upstream Netflix/vmaf" },
+        { "type": "sycl", "section": "SYCL Backend" },
+        { "type": "cuda", "section": "CUDA Backend" },
+        { "type": "simd", "section": "SIMD" }
+      ],
+      "extra-files": [
+        { "type": "generic", "path": "core/meson.build" },
+        { "type": "generic", "path": "compat/python-vmaf/__init__.py" },
+        { "type": "generic", "path": "ai/pyproject.toml" },
+        { "type": "generic", "path": "ai/src/vmaf_train/__init__.py" },
+        { "type": "generic", "path": "dev-llm/pyproject.toml" },
+        { "type": "generic", "path": "dev-llm/src/vmaf_dev_llm/__init__.py" },
+        { "type": "generic", "path": "mcp-server/vmaf-mcp/pyproject.toml" },
+        { "type": "generic", "path": "mcp-server/vmaf-mcp/src/vmaf_mcp/__init__.py" },
+        { "type": "generic", "path": "deploy/helm/vmafx/Chart.yaml" },
+        { "type": "generic", "path": "docker/Dockerfile.node" }
+      ]
+    }
+  },
+  "plugins": ["sentence-case"]
+}

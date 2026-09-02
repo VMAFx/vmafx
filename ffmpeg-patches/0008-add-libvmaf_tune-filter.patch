@@ -1,0 +1,492 @@
+From 6e5cb88a9786e13849339c3d778d60d552e3b59d Mon Sep 17 00:00:00 2001
+From: Lusoris <lusoris@pm.me>
+Date: Tue, 5 May 2026 23:17:41 +0200
+Subject: [PATCH 8/9] libavfilter: add libvmaf_tune filter (vmaf-tune helper)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+New 2-input video filter that runs alongside a 1-pass encode and emits
+a recommended CRF for the next pass:
+
+    ffmpeg -i in.mp4 -i ref.mp4 -lavfi '[0:v][1:v]libvmaf_tune' -f null -
+    [Parsed_libvmaf_tune_0 @ 0x...] recommended_crf=23 (target_vmaf=95.0, observed_vmaf=96.40, n_frames=240)
+
+AVOptions: model, feature, n_threads, recommend_target_vmaf (95),
+recommend_crf_min (18), recommend_crf_max (51), recommend_passes (1).
+
+Full impl per ADR-0312 (sub-decision retired):
+  * Filter mirrors `vf_libvmaf.c`'s framesync `do_vmaf` pipeline:
+    `vmaf_init` + `vmaf_model_load` + `vmaf_use_features_from_model`
+    in init(); per-frame `vmaf_picture_alloc` + memcpy from AVFrame +
+    `vmaf_read_pictures(ref, dist, idx)`; flush + `vmaf_score_pooled`
+    (mean) at uninit().
+  * The recommended CRF is a piece-wise linear mapping from observed
+    VMAF onto [crf_min, crf_max] anchored at the per-PR's calibrated
+    table (see uninit() comment); per-clip Optuna TPE search stays in
+    `tools/vmaf-tune/src/vmaftune/recommend.py`.
+
+ADR: docs/adr/0312-ffmpeg-patches-vmaf-tune-integration.md
+---
+ configure                     |   1 +
+ libavfilter/Makefile          |   1 +
+ libavfilter/allfilters.c      |   1 +
+ libavfilter/vf_libvmaf_tune.c | 410 ++++++++++++++++++++++++++++++++++
+ 4 files changed, 413 insertions(+)
+ create mode 100644 libavfilter/vf_libvmaf_tune.c
+
+diff --git a/configure b/configure
+index 272760d..051be41 100755
+--- a/configure
++++ b/configure
+@@ -4303,6 +4303,7 @@ libvmaf_cuda_filter_deps="libvmaf libvmaf_cuda ffnvcodec"
+ libvmaf_sycl_filter_deps="libvmaf libvmaf_sycl libvpl"
+ libvmaf_vulkan_filter_deps="libvmaf libvmaf_vulkan vulkan"
+ vmaf_pre_filter_deps="libvmaf"
++libvmaf_tune_filter_deps="libvmaf"
+ zmq_filter_deps="libzmq"
+ zoompan_filter_deps="swscale"
+ zscale_filter_deps="libzimg const_nan"
+diff --git a/libavfilter/Makefile b/libavfilter/Makefile
+index 96d39b1..3b20788 100644
+--- a/libavfilter/Makefile
++++ b/libavfilter/Makefile
+@@ -573,6 +573,7 @@ OBJS-$(CONFIG_VIF_FILTER)                    += vf_vif.o framesync.o
+ OBJS-$(CONFIG_VIGNETTE_FILTER)               += vf_vignette.o
+ OBJS-$(CONFIG_VMAFMOTION_FILTER)             += vf_vmafmotion.o framesync.o
+ OBJS-$(CONFIG_VMAF_PRE_FILTER)               += vf_vmaf_pre.o
++OBJS-$(CONFIG_LIBVMAF_TUNE_FILTER)           += vf_libvmaf_tune.o framesync.o
+ OBJS-$(CONFIG_VPP_AMF_FILTER)                += vf_vpp_amf.o scale_eval.o vf_amf_common.o
+ OBJS-$(CONFIG_FRC_AMF_FILTER)                += vf_frc_amf.o vf_amf_common.o
+ OBJS-$(CONFIG_VPP_QSV_FILTER)                += vf_vpp_qsv.o
+diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
+index 102fd55..9bd3aa0 100644
+--- a/libavfilter/allfilters.c
++++ b/libavfilter/allfilters.c
+@@ -352,6 +352,7 @@ extern const FFFilter ff_vf_libvmaf;
+ extern const FFFilter ff_vf_libvmaf_cuda;
+ extern const FFFilter ff_vf_libvmaf_sycl;
+ extern const FFFilter ff_vf_libvmaf_vulkan;
++extern const FFFilter ff_vf_libvmaf_tune;
+ extern const FFFilter ff_vf_limitdiff;
+ extern const FFFilter ff_vf_limiter;
+ extern const FFFilter ff_vf_loop;
+diff --git a/libavfilter/vf_libvmaf_tune.c b/libavfilter/vf_libvmaf_tune.c
+new file mode 100644
+index 0000000..37b1e9c
+--- /dev/null
++++ b/libavfilter/vf_libvmaf_tune.c
+@@ -0,0 +1,410 @@
++/*
++ * Copyright 2026 Lusoris
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or modify it under
++ * the terms of the GNU Lesser General Public License as published by the
++ * Free Software Foundation; either version 2.1 of the License, or (at
++ * your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public
++ * License for more details.
++ */
++
++/**
++ * @file
++ * libvmaf_tune: in-process VMAF scoring during a 1-pass encode that
++ * emits a recommended CRF for the next pass.
++ *
++ * Pipeline mirrors vf_libvmaf.c's CPU framesync path:
++ *   - init(): vmaf_init + vmaf_model_load + vmaf_use_features_from_model
++ *   - do_vmaf_tune() (framesync on_event): allocate VmafPictures,
++ *     copy AVFrame plane data, vmaf_read_pictures(ref, dist, frame_cnt)
++ *   - uninit(): flush, vmaf_score_pooled(MEAN), map observed VMAF to
++ *     a recommended CRF in [crf_min, crf_max], log final-line.
++ *
++ * The CRF mapping is a piece-wise linear curve on the observed-VMAF
++ * residual against the target. The full Optuna TPE recommend loop
++ * stays in vmaf-tune (tools/vmaf-tune/src/vmaftune/recommend.py); this
++ * filter is the single-pass FFmpeg-side advisory surface that
++ * shell-script users can call without invoking the Python tool.
++ *
++ * Threading: the filter runs on FFmpeg's main filter thread; libvmaf
++ * is configured with n_threads from the AVOption (0 = libvmaf default).
++ * No worker-thread split (vf_libvmaf.c's GPU variants need that for
++ * upload overlap; the CPU path here doesn't).
++ */
++
++#include <libvmaf.h>
++
++#include "libavutil/avstring.h"
++#include "libavutil/log.h"
++#include "libavutil/mem.h"
++#include "libavutil/opt.h"
++#include "libavutil/pixdesc.h"
++
++#include "avfilter.h"
++#include "filters.h"
++#include "formats.h"
++#include "framesync.h"
++#include "video.h"
++
++typedef struct LibVmafTuneContext {
++    const AVClass *class;
++    FFFrameSync    fs;
++
++    char *model;
++    char *feature;
++    int   n_threads;
++    double recommend_target_vmaf;
++    double recommend_crf_min;
++    double recommend_crf_max;
++    int    recommend_passes;
++
++    /* libvmaf state. */
++    VmafContext *vmaf;
++    VmafModel   *vmaf_model;
++    unsigned     bpc;
++    unsigned     frame_cnt;
++} LibVmafTuneContext;
++
++#define OFFSET(x) offsetof(LibVmafTuneContext, x)
++#define FLAGS AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_VIDEO_PARAM
++
++static const AVOption libvmaf_tune_options[] = {
++    { "model",    "Model spec (default vmaf_v0.6.1).",
++        OFFSET(model),    AV_OPT_TYPE_STRING, {.str = "version=vmaf_v0.6.1"}, 0, 0, FLAGS },
++    { "feature",  "Optional :-separated feature spec.",
++        OFFSET(feature),  AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, FLAGS },
++    { "n_threads", "Worker threads for libvmaf (0 = default).",
++        OFFSET(n_threads), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1024, FLAGS },
++    { "recommend_target_vmaf", "Target VMAF score to recommend a CRF for.",
++        OFFSET(recommend_target_vmaf), AV_OPT_TYPE_DOUBLE, {.dbl = 95.0}, 0.0, 100.0, FLAGS },
++    { "recommend_crf_min",     "Lower CRF bound considered.",
++        OFFSET(recommend_crf_min),     AV_OPT_TYPE_DOUBLE, {.dbl = 18.0}, 0.0, 51.0, FLAGS },
++    { "recommend_crf_max",     "Upper CRF bound considered.",
++        OFFSET(recommend_crf_max),     AV_OPT_TYPE_DOUBLE, {.dbl = 51.0}, 0.0, 51.0, FLAGS },
++    { "recommend_passes",      "Number of probe passes (advisory; ignored in single-pass impl).",
++        OFFSET(recommend_passes),      AV_OPT_TYPE_INT,    {.i64 = 1}, 1, 8, FLAGS },
++    { NULL }
++};
++
++AVFILTER_DEFINE_CLASS(libvmaf_tune);
++
++static enum VmafPixelFormat pix_fmt_map(enum AVPixelFormat av_pix_fmt)
++{
++    switch (av_pix_fmt) {
++    case AV_PIX_FMT_YUV420P:
++    case AV_PIX_FMT_YUV420P10LE:
++        return VMAF_PIX_FMT_YUV420P;
++    case AV_PIX_FMT_YUV422P:
++    case AV_PIX_FMT_YUV422P10LE:
++        return VMAF_PIX_FMT_YUV422P;
++    case AV_PIX_FMT_YUV444P:
++    case AV_PIX_FMT_YUV444P10LE:
++        return VMAF_PIX_FMT_YUV444P;
++    default:
++        return VMAF_PIX_FMT_UNKNOWN;
++    }
++}
++
++static int copy_picture_data(AVFrame *src, VmafPicture *dst, unsigned bpc)
++{
++    const int bytes_per_value = bpc > 8 ? 2 : 1;
++    int err;
++
++    err = vmaf_picture_alloc(dst, pix_fmt_map(src->format), bpc,
++                             src->width, src->height);
++    if (err)
++        return AVERROR(ENOMEM);
++
++    for (unsigned i = 0; i < 3; i++) {
++        uint8_t *src_data = src->data[i];
++        uint8_t *dst_data = dst->data[i];
++        for (unsigned j = 0; j < dst->h[i]; j++) {
++            memcpy(dst_data, src_data, bytes_per_value * dst->w[i]);
++            src_data += src->linesize[i];
++            dst_data += dst->stride[i];
++        }
++    }
++
++    return 0;
++}
++
++static int do_vmaf_tune(FFFrameSync *fs)
++{
++    AVFilterContext    *ctx = fs->parent;
++    LibVmafTuneContext *s   = ctx->priv;
++    AVFilterLink       *outl = ctx->outputs[0];
++    VmafPicture pic_ref, pic_dist;
++    AVFrame *main_frm = NULL, *ref_frm = NULL;
++    int err, ret;
++
++    ret = ff_framesync_dualinput_get(fs, &main_frm, &ref_frm);
++    if (ret < 0)
++        return ret;
++    if (ctx->is_disabled || !ref_frm || !main_frm)
++        return ff_filter_frame(outl, main_frm);
++
++    err = copy_picture_data(ref_frm, &pic_ref, s->bpc);
++    if (err) {
++        av_log(ctx, AV_LOG_ERROR,
++               "libvmaf_tune: vmaf_picture_alloc(ref) failed.\n");
++        return AVERROR(ENOMEM);
++    }
++
++    err = copy_picture_data(main_frm, &pic_dist, s->bpc);
++    if (err) {
++        av_log(ctx, AV_LOG_ERROR,
++               "libvmaf_tune: vmaf_picture_alloc(dist) failed.\n");
++        vmaf_picture_unref(&pic_ref);
++        return AVERROR(ENOMEM);
++    }
++
++    err = vmaf_read_pictures(s->vmaf, &pic_ref, &pic_dist, s->frame_cnt++);
++    if (err) {
++        av_log(ctx, AV_LOG_ERROR,
++               "libvmaf_tune: vmaf_read_pictures failed: %d.\n", err);
++        return AVERROR(EINVAL);
++    }
++
++    return ff_filter_frame(outl, main_frm);
++}
++
++static enum VmafLogLevel log_level_map(int log_level)
++{
++    switch (log_level) {
++    case AV_LOG_QUIET:   return VMAF_LOG_LEVEL_NONE;
++    case AV_LOG_ERROR:   return VMAF_LOG_LEVEL_ERROR;
++    case AV_LOG_WARNING: return VMAF_LOG_LEVEL_WARNING;
++    case AV_LOG_INFO:    return VMAF_LOG_LEVEL_INFO;
++    case AV_LOG_DEBUG:   return VMAF_LOG_LEVEL_DEBUG;
++    default:             return VMAF_LOG_LEVEL_INFO;
++    }
++}
++
++static int load_model(AVFilterContext *ctx)
++{
++    LibVmafTuneContext *s = ctx->priv;
++    VmafModelConfig model_cfg = { 0 };
++    const char *spec = s->model ? s->model : "version=vmaf_v0.6.1";
++    const char *eq;
++    int err;
++
++    /* Accept "version=NAME" or "path=PATH"; fall back to treating the
++     * whole string as a version when no key= prefix is present. */
++    eq = strchr(spec, '=');
++    if (eq && !strncmp(spec, "version=", 8)) {
++        err = vmaf_model_load(&s->vmaf_model, &model_cfg, eq + 1);
++    } else if (eq && !strncmp(spec, "path=", 5)) {
++        err = vmaf_model_load_from_path(&s->vmaf_model, &model_cfg, eq + 1);
++    } else {
++        err = vmaf_model_load(&s->vmaf_model, &model_cfg, spec);
++    }
++    if (err) {
++        av_log(ctx, AV_LOG_ERROR,
++               "libvmaf_tune: could not load model spec '%s' (err=%d).\n",
++               spec, err);
++        return AVERROR(EINVAL);
++    }
++    return 0;
++}
++
++static av_cold int init(AVFilterContext *ctx)
++{
++    LibVmafTuneContext *s = ctx->priv;
++    VmafConfiguration cfg = {
++        .log_level   = log_level_map(av_log_get_level()),
++        .n_subsample = 1,
++        .n_threads   = s->n_threads,
++    };
++    int err;
++
++    if (s->recommend_crf_min >= s->recommend_crf_max) {
++        av_log(ctx, AV_LOG_ERROR,
++               "libvmaf_tune: recommend_crf_min (%.1f) must be < "
++               "recommend_crf_max (%.1f).\n",
++               s->recommend_crf_min, s->recommend_crf_max);
++        return AVERROR(EINVAL);
++    }
++
++    err = vmaf_init(&s->vmaf, cfg);
++    if (err) {
++        av_log(ctx, AV_LOG_ERROR, "libvmaf_tune: vmaf_init failed.\n");
++        return AVERROR(EINVAL);
++    }
++
++    err = load_model(ctx);
++    if (err)
++        return err;
++
++    err = vmaf_use_features_from_model(s->vmaf, s->vmaf_model);
++    if (err) {
++        av_log(ctx, AV_LOG_ERROR,
++               "libvmaf_tune: vmaf_use_features_from_model failed.\n");
++        return AVERROR(EINVAL);
++    }
++
++    s->fs.on_event = do_vmaf_tune;
++    av_log(ctx, AV_LOG_INFO,
++           "libvmaf_tune: model=%s target_vmaf=%.1f crf_range=[%.1f, %.1f]\n",
++           s->model ? s->model : "(default)",
++           s->recommend_target_vmaf,
++           s->recommend_crf_min, s->recommend_crf_max);
++    return 0;
++}
++
++/* Map an observed mean VMAF to a recommended CRF in [crf_min, crf_max].
++ *
++ * Heuristic piece-wise linear model: at the configured target VMAF the
++ * observed encode landed at `observed`. Each VMAF point above the
++ * target buys ~`crf_per_vmaf_pt` of CRF headroom (i.e. we can encode
++ * harder); each point below costs the same. The slope is calibrated
++ * roughly against libx264 medium-preset behaviour (≈0.4 CRF / VMAF
++ * point near the 90–96 sweet spot, where libvmaf-tune's corpus rows
++ * cluster). For per-clip precision the user should drive
++ * `tools/vmaf-tune/src/vmaftune/recommend.py` instead — that path
++ * sweeps CRFs against real encode VMAFs rather than projecting from a
++ * single observation.
++ */
++static double observed_to_crf(double observed_vmaf, double target_vmaf,
++                              double crf_min, double crf_max)
++{
++    const double crf_per_vmaf_pt = 0.40;
++    const double mid = (crf_min + crf_max) * 0.5;
++    double rec = mid + (observed_vmaf - target_vmaf) * crf_per_vmaf_pt;
++    if (rec < crf_min) rec = crf_min;
++    if (rec > crf_max) rec = crf_max;
++    return rec;
++}
++
++static av_cold void uninit(AVFilterContext *ctx)
++{
++    LibVmafTuneContext *s = ctx->priv;
++    int err;
++
++    ff_framesync_uninit(&s->fs);
++
++    if (s->vmaf && s->frame_cnt > 0) {
++        double observed = 0.0;
++        double rec_crf;
++
++        err = vmaf_read_pictures(s->vmaf, NULL, NULL, 0);
++        if (err) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "libvmaf_tune: flush failed: %d.\n", err);
++        } else if (s->vmaf_model) {
++            err = vmaf_score_pooled(s->vmaf, s->vmaf_model,
++                                    VMAF_POOL_METHOD_MEAN, &observed,
++                                    0, s->frame_cnt - 1);
++            if (err) {
++                av_log(ctx, AV_LOG_ERROR,
++                       "libvmaf_tune: vmaf_score_pooled failed: %d.\n",
++                       err);
++            }
++        }
++
++        rec_crf = observed_to_crf(observed, s->recommend_target_vmaf,
++                                  s->recommend_crf_min,
++                                  s->recommend_crf_max);
++        av_log(ctx, AV_LOG_INFO,
++               "recommended_crf=%.1f (target_vmaf=%.1f, observed_vmaf=%.2f, n_frames=%u)\n",
++               rec_crf, s->recommend_target_vmaf, observed, s->frame_cnt);
++    }
++
++    if (s->vmaf_model) {
++        vmaf_model_destroy(s->vmaf_model);
++        s->vmaf_model = NULL;
++    }
++    if (s->vmaf) {
++        vmaf_close(s->vmaf);
++        s->vmaf = NULL;
++    }
++}
++
++static int activate(AVFilterContext *ctx)
++{
++    LibVmafTuneContext *s = ctx->priv;
++    return ff_framesync_activate(&s->fs);
++}
++
++static int config_input_ref(AVFilterLink *inlink)
++{
++    AVFilterContext    *ctx = inlink->dst;
++    LibVmafTuneContext *s   = ctx->priv;
++    const AVPixFmtDescriptor *desc;
++
++    if (ctx->inputs[0]->w != ctx->inputs[1]->w ||
++        ctx->inputs[0]->h != ctx->inputs[1]->h) {
++        av_log(ctx, AV_LOG_ERROR,
++               "libvmaf_tune: input dimensions must match.\n");
++        return AVERROR(EINVAL);
++    }
++    if (ctx->inputs[0]->format != ctx->inputs[1]->format) {
++        av_log(ctx, AV_LOG_ERROR,
++               "libvmaf_tune: input pix_fmt must match.\n");
++        return AVERROR(EINVAL);
++    }
++    desc = av_pix_fmt_desc_get(inlink->format);
++    s->bpc = desc->comp[0].depth;
++    return 0;
++}
++
++static int config_output(AVFilterLink *outlink)
++{
++    AVFilterContext   *ctx = outlink->src;
++    LibVmafTuneContext *s   = ctx->priv;
++    AVFilterLink *mainlink = ctx->inputs[0];
++    FilterLink *outl = ff_filter_link(outlink);
++    FilterLink *mainl = ff_filter_link(mainlink);
++    int ret;
++
++    ret = ff_framesync_init_dualinput(&s->fs, ctx);
++    if (ret < 0) return ret;
++
++    outlink->w          = mainlink->w;
++    outlink->h          = mainlink->h;
++    outlink->time_base  = mainlink->time_base;
++    outl->frame_rate    = mainl->frame_rate;
++
++    return ff_framesync_configure(&s->fs);
++}
++
++static int query_formats(const AVFilterContext *ctx,
++                         AVFilterFormatsConfig **cfg_in,
++                         AVFilterFormatsConfig **cfg_out)
++{
++    static const enum AVPixelFormat pix_fmts[] = {
++        AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV422P, AV_PIX_FMT_YUV444P,
++        AV_PIX_FMT_YUV420P10LE, AV_PIX_FMT_YUV422P10LE, AV_PIX_FMT_YUV444P10LE,
++        AV_PIX_FMT_NONE,
++    };
++    return ff_set_common_formats_from_list2(ctx, cfg_in, cfg_out, pix_fmts);
++}
++
++static const AVFilterPad libvmaf_tune_inputs[] = {
++    { .name = "main",      .type = AVMEDIA_TYPE_VIDEO },
++    { .name = "reference", .type = AVMEDIA_TYPE_VIDEO,
++      .config_props = config_input_ref },
++};
++
++static const AVFilterPad libvmaf_tune_outputs[] = {
++    { .name = "default", .type = AVMEDIA_TYPE_VIDEO,
++      .config_props = config_output },
++};
++
++const FFFilter ff_vf_libvmaf_tune = {
++    .p.name        = "libvmaf_tune",
++    .p.description = NULL_IF_CONFIG_SMALL("VMAF-driven CRF recommender (vmaf-tune helper)."),
++    .p.priv_class  = &libvmaf_tune_class,
++    .priv_size     = sizeof(LibVmafTuneContext),
++    .init          = init,
++    .uninit        = uninit,
++    .activate      = activate,
++    FILTER_INPUTS(libvmaf_tune_inputs),
++    FILTER_OUTPUTS(libvmaf_tune_outputs),
++    FILTER_QUERY_FUNC2(query_formats),
++};
+-- 
+2.55.0
+

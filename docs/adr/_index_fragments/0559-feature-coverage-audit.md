@@ -1,0 +1,1 @@
+| [ADR-0559](0559-feature-coverage-audit.md) | Feature Coverage Audit — Add speed_chroma + speed_temporal to Extraction Scripts (HDR-model prep) | Accepted | ai, feature-extraction, speed, hdr, corpus, fork-local |

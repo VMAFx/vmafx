@@ -1,0 +1,1 @@
+| [ADR-0962](0962-controller-streamjobs-and-reaper-stop.md) | Controller fixes — implement StreamJobs snapshot and add reaper stop signal (round-25 audit B.3 + B.4) | Accepted | controller, grpc, go, correctness, goroutine, phase4b, fork-local |

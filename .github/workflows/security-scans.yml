@@ -1,0 +1,277 @@
+# Security scans: SAST (semgrep + CodeQL), secret scanning, dependency review.
+
+name: Security Scans — Semgrep / CodeQL / Gitleaks / Dependency Review
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+    # ADR-0331 — `ready_for_review` lets the per-job draft gate fire
+    # CI when a draft PR is promoted to ready-for-review.
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    - cron: "0 6 * * 1"   # weekly Mon 06:00 UTC
+  workflow_dispatch:
+
+# Default to least-privilege; jobs that push SARIF to the Security tab
+# (semgrep, codeql-*, gitleaks) opt into `security-events: write` per-job.
+# dependency-review only needs `contents: read`. Addresses Scorecard
+# TokenPermissionsID alert on the previously top-level write scope.
+permissions:
+  contents: read
+
+concurrency:
+  # A weekly schedule and a master push share github.ref. Keep cancellation for
+  # superseded runs of the same trigger, but never let one event class cancel
+  # CodeQL coverage for the other.
+  group: security-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semgrep:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Semgrep (CWE Top 25 + CERT-C + Custom)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write   # upload-sarif to Security tab
+    container:
+      # returntocorp/semgrep was renamed to semgrep/semgrep upstream. The old
+      # image still resolves but ships an EOL semgrep-core that exits 7 when it
+      # cannot load current `p/cwe-top-25` / `p/cert-c-strict` rulesets, which
+      # uploads an empty SARIF and lights up a "Semgrep OSS is reporting errors"
+      # banner on the repo Security tab.
+      image: semgrep/semgrep:latest@sha256:b94b53d02fd4a022f9eac4e2af1380f5c3c4c21400e79d3336bdff1d1db5e796
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Run semgrep (local rules — gate on ERRORs)
+        run: |
+          # Local .semgrep.yml only: our custom rules for VMAF-specific
+          # patterns (no-system-rand, no-strcpy-strcat-sprintf, etc.). They
+          # run without the Semgrep Registry and can't be flaky from an
+          # unreachable rule pack.
+          # --error exits non-zero on ANY finding from these rules; they are
+          # all real defect patterns we've already committed to avoiding.
+          semgrep scan \
+            --config=.semgrep.yml \
+            --error \
+            --sarif --output=semgrep-local.sarif
+      - name: Run semgrep (registry rule packs — advisory)
+        continue-on-error: true
+        run: |
+          # Registry packs we keep (validated 2026-05-09, Research-0090):
+          #   p/cwe-top-25 — CWE Top 25 cross-language coverage.
+          #   p/c          — surviving CERT-C consolidation pack (the
+          #                  separate `p/cert-c-strict` and `p/cert-cpp-strict`
+          #                  packs were retired by Semgrep in 2025; both
+          #                  return HTTP 404 from semgrep.dev/c/. The strict
+          #                  rules were rolled into `p/c`.)
+          #   p/python     — Python security pack (replaces what `cert-cpp-strict`
+          #                  used to half-cover for our Python harness).
+          # Note: there is no `p/cpp` either — also rolled into `p/c`.
+          # We don't gate merges on registry findings; CodeQL's security-and-
+          # quality suite is the merge gate (separate job). continue-on-error
+          # because the Semgrep Registry occasionally rate-limits
+          # unauthenticated fetches, which exits 7 with an empty SARIF.
+          semgrep scan \
+            --config=p/cwe-top-25 \
+            --config=p/c \
+            --config=p/python \
+            --sarif --output=semgrep-registry.sarif || true
+      - name: Upload local-rules SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
+        with:
+          sarif_file: semgrep-local.sarif
+          category: semgrep-local
+      - name: Upload registry-rules SARIF
+        if: always() && hashFiles('semgrep-registry.sarif') != ''
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
+        with:
+          sarif_file: semgrep-registry.sarif
+          category: semgrep-registry
+
+  # security-and-quality is a superset of security-extended, so specifying
+  # both duplicates queries and trips the CodeQL setup UI's "ambiguous
+  # configuration" detector. Pick one suite per job.
+  codeql-cpp:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: CodeQL (C/C++)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      security-events: write   # codeql-action/analyze uploads SARIF
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — CodeQL (C/C++) skipped by plan
+        if: steps.impact.outputs.c_core != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — CodeQL (C/C++) satisfied without running (ADR-1140)"
+      - uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
+        if: steps.impact.outputs.c_core == 'true'
+        with:
+          languages: cpp
+          queries: security-and-quality
+          config-file: ./.github/codeql-config.yml
+      - name: Build
+        if: steps.impact.outputs.c_core == 'true'
+        working-directory: core
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build nasm
+          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
+          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          sudo pip3 install --break-system-packages --quiet meson
+          meson setup build -Denable_cuda=false -Denable_sycl=false
+          meson compile -C build
+      - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
+        if: steps.impact.outputs.c_core == 'true'
+        with:
+          category: "/language:cpp"
+
+  codeql-python:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: CodeQL (Python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — CodeQL (Python) skipped by plan
+        if: steps.impact.outputs.python_lint != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::python_lint not impacted (mode=$MODE reason=$REASON) — CodeQL (Python) satisfied without running (ADR-1140)"
+      - uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
+        if: steps.impact.outputs.python_lint == 'true'
+        with:
+          languages: python
+          queries: security-and-quality
+          config-file: ./.github/codeql-config.yml
+      - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
+        if: steps.impact.outputs.python_lint == 'true'
+        with:
+          category: "/language:python"
+
+  # CodeQL's Actions-language support landed GA in late 2025. It scans
+  # .github/workflows/*.yml for token-permission, injection, and pinning
+  # issues. GitHub's default setup was auto-enabling this on the side; make
+  # it explicit here so the job history is versioned with the repo.
+  codeql-actions:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: CodeQL (Actions)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — CodeQL (Actions) skipped by plan
+        if: steps.impact.outputs.actions != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::actions not impacted (mode=$MODE reason=$REASON) — CodeQL (Actions) satisfied without running (ADR-1140)"
+      - uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
+        if: steps.impact.outputs.actions == 'true'
+        with:
+          languages: actions
+          queries: security-and-quality
+          config-file: ./.github/codeql-config.yml
+      - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
+        if: steps.impact.outputs.actions == 'true'
+        with:
+          category: "/language:actions"
+
+  secret-scan:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Gitleaks (Secret Scan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      security-events: write   # upload-sarif to Security tab
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      # Run gitleaks CLI directly to avoid the GITLEAKS_LICENSE org-repo
+      # requirement introduced in gitleaks-action v2. The CLI itself is
+      # Apache-2.0 and free for all use; only the action wrapper charges
+      # per-org. SARIF output is uploaded to the Security tab so findings
+      # appear there as before.
+      - name: Install gitleaks
+        run: |
+          GITLEAKS_VERSION=8.24.3
+          curl -sSfL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+      - name: Run gitleaks (detect secrets)
+        run: |
+          gitleaks detect \
+            --source . \
+            --config .gitleaks.toml \
+            --redact \
+            --report-format sarif \
+            --report-path gitleaks.sarif \
+            --exit-code 1
+      - name: Upload SARIF to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
+
+  dependency-review:
+    name: Dependency Review (PR Diff)
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (github.event_name == 'pull_request')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
+        with:
+          fail-on-severity: high
+          deny-licenses: GPL-3.0, AGPL-3.0

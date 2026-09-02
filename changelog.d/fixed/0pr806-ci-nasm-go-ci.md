@@ -1,0 +1,1 @@
+- Fixed: `go-ci` workflow now installs `nasm` in the apt-get step, unblocking x86 SIMD assembly compilation for CGo packages. (PR #806)

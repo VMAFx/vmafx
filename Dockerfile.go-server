@@ -1,0 +1,152 @@
+# syntax=docker/dockerfile:1.27@sha256:bde3983e9c939224420ddaf6b784cc30e09b035a4dea01f581230c50809f372e
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# Dockerfile.go-server — multi-stage build for the vmafx-server Go binary.
+#
+# Stages:
+#   vmaf-builder: compiles libvmaf + vmaf CLI on Debian 13
+#   go-builder  : compiles cmd/vmafx-server against that exact libvmaf build
+#   go-server   : distroless Debian 13 runtime carrying both binaries
+#
+# Build:
+#   docker build -f Dockerfile.go-server -t ghcr.io/vmafx/vmafx-server:dev .
+#
+# Run:
+#   docker run --rm \
+#     -e VMAFX_VMAF_BINARY=/usr/local/bin/vmaf \
+#     -e VMAFX_MODEL_DIR=/usr/local/share/vmafx/model \
+#     -p 8080:8080 -p 9090:9090 \
+#     ghcr.io/vmafx/vmafx-server:dev
+#
+# The release workflow passes VMAFX_VERSION=vX.Y.Z. The image's non-blocking
+# `--version` path prints that exact value without starting fx or binding ports.
+#
+# Environment variables (golusoris fx framework config, ADR-1119; full listen
+# addresses, not bare ports):
+#   VMAFX_HTTP_ADDR    HTTP listen address (default :8080; golusoris http.addr)
+#   VMAFX_GRPC_LISTEN  gRPC listen address (default :9090; golusoris grpc.listen)
+#   VMAFX_LOG_LEVEL    slog level (default INFO)
+#   VMAFX_VMAF_BINARY  path to vmaf CLI binary
+#   VMAFX_MODEL_DIR    directory containing VMAF .json model files
+#
+# Note: replaces the pre-fx VMAFX_PORT / VMAFX_GRPC_PORT (bare ports). The gRPC
+# default address moved from :50051 to golusoris' :9090.
+#
+# ADR-0703: vmafx-server Go gRPC + HTTP service.
+# ADR-1119: golusoris fx framework adoption.
+# ADR-1129: release container runtime alignment.
+
+ARG VMAFX_VERSION=dev
+
+# ---------------------------------------------------------------------------
+# Stage 1 — vmaf-builder: compile libvmaf + vmaf CLI from core/
+# ---------------------------------------------------------------------------
+FROM debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS vmaf-builder
+
+ARG VMAF_BUILD_JOBS=4
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Keep the build and runtime on one Debian 13 ABI. The release workflow builds
+# this stage natively for each target platform (QEMU supplies arm64 execution).
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        g++ \
+        meson \
+        ninja-build \
+        nasm \
+        pkg-config \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY core/ core/
+COPY model/ model/
+
+RUN meson setup /build core \
+        --buildtype=release \
+        --strip \
+        -Denable_cuda=false \
+        -Denable_sycl=false \
+        -Denable_dnn=disabled \
+        -Denable_avx512=true \
+    && ninja -C /build -j"${VMAF_BUILD_JOBS}" tools/vmaf
+
+RUN mkdir -p /dist/lib /dist/bin /dist/model \
+    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
+    && cp /build/tools/vmaf /dist/bin/ \
+    && cp -r model/. /dist/model/
+
+# ---------------------------------------------------------------------------
+# Stage 2 — go-builder: compile the Go server against the staged libvmaf
+# ---------------------------------------------------------------------------
+FROM golang:1.27-trixie@sha256:9baa6b4187bbb98d240372a8a235ac0bb6b5ddd52bba1431dc2f7c0705862728 AS go-builder
+
+ARG CGO_ENABLED=1
+ARG DEBIAN_FRONTEND=noninteractive
+ARG VMAFX_VERSION
+
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=vmaf-builder /dist/lib/ /usr/local/lib/
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+
+# CGO is required by pkg/libvmaf. Link to the exact fork build staged above;
+# never use a distro libvmaf-dev package or an architecture-specific lib path.
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+    CGO_ENABLED=${CGO_ENABLED} \
+    CGO_LDFLAGS="-L/usr/local/lib -lvmaf" \
+    go build \
+        -trimpath \
+        -ldflags "-s -w -X github.com/VMAFx/vmafx/pkg/version.version=${VMAFX_VERSION}" \
+        -o /out/vmafx-server \
+        ./cmd/vmafx-server \
+    && LD_LIBRARY_PATH=/usr/local/lib ldd /out/vmafx-server > /tmp/vmafx-server-ldd.txt \
+    && if grep -q 'not found' /tmp/vmafx-server-ldd.txt; then \
+        cat /tmp/vmafx-server-ldd.txt >&2; \
+        exit 1; \
+    fi
+
+# ---------------------------------------------------------------------------
+# Stage 3 — go-server: distroless runtime (glibc, no shell)
+# ---------------------------------------------------------------------------
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:c31ff9abcb1910f3ab25c7957bdaf0bfe12a01eb546e8df2282f1c8f682b606c AS go-server
+
+LABEL org.opencontainers.image.title="vmafx-server"
+LABEL org.opencontainers.image.description="VMAFX scoring server — Go gRPC + HTTP, backed by libvmaf"
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.vendor="Lusoris"
+
+# Copy libvmaf.so* and the vmaf CLI from the vmaf-builder stage.
+COPY --from=vmaf-builder /dist/lib/   /usr/local/lib/
+COPY --from=vmaf-builder /dist/bin/vmaf /usr/local/bin/vmaf
+COPY --from=vmaf-builder /dist/model/   /usr/local/share/vmafx/model/
+
+# Copy the Go server binary.
+COPY --from=go-builder /out/vmafx-server /usr/local/bin/vmafx-server
+
+ENV LD_LIBRARY_PATH="/usr/local/lib"
+ENV VMAFX_VMAF_BINARY="/usr/local/bin/vmaf"
+ENV VMAFX_MODEL_DIR="/usr/local/share/vmafx/model"
+
+EXPOSE 8080
+EXPOSE 9090
+
+# Distroless nonroot is UID:GID 65532:65532. Keep the numeric identity stable
+# for Kubernetes securityContext and image-inspection release smokes.
+USER 65532:65532
+
+ENTRYPOINT ["/usr/local/bin/vmafx-server"]

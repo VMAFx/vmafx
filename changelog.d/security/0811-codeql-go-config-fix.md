@@ -1,0 +1,2 @@
+- **CodeQL Go coverage added**: `cmd/`, `pkg/`, and `api/` (vmafx-controller, vmafx-mcp, vmafx-node, pkg/ai/infer.go) are now scanned by CodeQL with the `security-and-quality` suite on every PR and weekly schedule (ADR-0811).
+- **CodeQL config conflict resolved**: `.github/codeql-config.yml` had an unresolved Git merge conflict (leftover from the `libvmaf/ → core/` rename) causing undefined scan scope for all CodeQL jobs; config is now conflict-free with correct `core/` paths and Go surface entries.

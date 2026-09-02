@@ -1,0 +1,22 @@
+{
+  "_comment": "MOS-label batch manifest for CHUG UGC-HDR corpora (ADR-0992).",
+  "_comment2": "Relative paths resolve from the manifest directory (ai/configs/).",
+  "_comment3": "Override with --base-dir for non-default layouts.",
+  "_comment4": "Corpus JSONL drops are local-only under .workingdir2/; they are never committed.",
+  "defaults": {
+    "min_match_rate": 0.95,
+    "key_normalize": "basename"
+  },
+  "tables": [
+    {
+      "id": "chug-hdr",
+      "features": "../../.corpus/chug/chug_features.parquet",
+      "labels": ["../../.corpus/chug/chug.jsonl"],
+      "feature_key_column": "chug_video_id",
+      "label_key_column": "chug_video_id",
+      "key_normalize": "raw",
+      "out": "../../.workingdir2/chug/runs/chug_features_with_mos.parquet",
+      "audit_json": "../../.workingdir2/chug/runs/chug_features_with_mos.audit.json"
+    }
+  ]
+}

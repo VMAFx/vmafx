@@ -1,0 +1,167 @@
+{
+  "codec_block_dim": 6,
+  "codec_block_layout": [
+    "encoder_onehot[x264]",
+    "encoder_onehot[x265]",
+    "encoder_onehot[libsvtav1]",
+    "encoder_onehot[libvvenc]",
+    "encoder_onehot[libvpx-vp9]",
+    "encoder_onehot[unknown]"
+  ],
+  "codec_vocab": [
+    "x264",
+    "x265",
+    "libsvtav1",
+    "libvvenc",
+    "libvpx-vp9",
+    "unknown"
+  ],
+  "codec_vocab_version": 1,
+  "confidence": {
+    "conformal_q_residual": null,
+    "gaussian_z": 1.959963984540054,
+    "method": "ensemble",
+    "nominal_coverage": 0.95
+  },
+  "ensemble_size": 5,
+  "eval": {
+    "in_sample_plcc": -0.19678804078671105,
+    "in_sample_rmse": 78.7864990234375,
+    "mean_sigma_train": 0.04273277893662453
+  },
+  "feature_mean": [
+    0.7032142877578735,
+    0.5660693049430847,
+    0.600159227848053,
+    0.6904767751693726,
+    0.7392338514328003,
+    14.969714164733887
+  ],
+  "feature_order": [
+    "adm2",
+    "vif_scale0",
+    "vif_scale1",
+    "vif_scale2",
+    "vif_scale3",
+    "motion2"
+  ],
+  "feature_std": [
+    0.18295080959796906,
+    0.22868846356868744,
+    0.1891641765832901,
+    0.162204772233963,
+    0.13887861371040344,
+    8.37546443939209
+  ],
+  "id": "fr_regressor_v2_ensemble_v1",
+  "kind": "fr_ensemble",
+  "members": [
+    {
+      "id": "fr_regressor_v2_ensemble_v1_seed0",
+      "onnx": "fr_regressor_v2_ensemble_v1_seed0.onnx",
+      "seed": 0,
+      "sha256": "98e4b08cc23e4941d4c839a5c734bd33efbb083f3cf7923a04c0d22351185444"
+    },
+    {
+      "id": "fr_regressor_v2_ensemble_v1_seed1",
+      "onnx": "fr_regressor_v2_ensemble_v1_seed1.onnx",
+      "seed": 1,
+      "sha256": "4d6824fafceb6e3f1fdb6b2306167e0951b5eac8f54318c7cb4eb82284c3025b"
+    },
+    {
+      "id": "fr_regressor_v2_ensemble_v1_seed2",
+      "onnx": "fr_regressor_v2_ensemble_v1_seed2.onnx",
+      "seed": 2,
+      "sha256": "1a0d0561fba4955b986d623446edd38d4eb0d1bd6e079fb6a2142a6033aa9f13"
+    },
+    {
+      "id": "fr_regressor_v2_ensemble_v1_seed3",
+      "onnx": "fr_regressor_v2_ensemble_v1_seed3.onnx",
+      "seed": 3,
+      "sha256": "ba623fa4cbaff325aa3f3bb50ecc1b7edffd288e2c463cd2bcceb87f33894ec5"
+    },
+    {
+      "id": "fr_regressor_v2_ensemble_v1_seed4",
+      "onnx": "fr_regressor_v2_ensemble_v1_seed4.onnx",
+      "seed": 4,
+      "sha256": "af727669a6dec5a36906ab7dd06f2a83e9a00c2706d6e0b2f3200c4af4409a43"
+    }
+  ],
+  "run_provenance": {
+    "args": {
+      "base_seed": 0,
+      "batch_size": 256,
+      "conformal_calibration_frac": 0.0,
+      "corpus": null,
+      "ensemble_id": "fr_regressor_v2_ensemble_v1",
+      "ensemble_size": 5,
+      "epochs": 30,
+      "lr": 0.001,
+      "no_export": false,
+      "nominal_coverage": 0.95,
+      "out_dir": "/tmp/vmaf_run/model/tiny",
+      "registry": "/tmp/vmaf_run/model/tiny/registry.json",
+      "smoke": true,
+      "weight_decay": 1e-05
+    },
+    "argv": [
+      "--smoke"
+    ],
+    "entrypoint": {
+      "exists": true,
+      "kind": "file",
+      "path": "ai/scripts/train_fr_regressor_v2_ensemble.py",
+      "sha256": "3193ac3b07bac78edaf397b411d01e55045c08041248979f3f316add09ccf9d3"
+    },
+    "inputs": {
+      "corpus": null
+    },
+    "outputs": {
+      "manifest": {
+        "exists": false,
+        "kind": "missing",
+        "path": "model/tiny/fr_regressor_v2_ensemble_v1.json"
+      },
+      "member_onnx": [
+        {
+          "exists": true,
+          "kind": "file",
+          "path": "model/tiny/fr_regressor_v2_ensemble_v1_seed0.onnx",
+          "sha256": "98e4b08cc23e4941d4c839a5c734bd33efbb083f3cf7923a04c0d22351185444"
+        },
+        {
+          "exists": true,
+          "kind": "file",
+          "path": "model/tiny/fr_regressor_v2_ensemble_v1_seed1.onnx",
+          "sha256": "4d6824fafceb6e3f1fdb6b2306167e0951b5eac8f54318c7cb4eb82284c3025b"
+        },
+        {
+          "exists": true,
+          "kind": "file",
+          "path": "model/tiny/fr_regressor_v2_ensemble_v1_seed2.onnx",
+          "sha256": "1a0d0561fba4955b986d623446edd38d4eb0d1bd6e079fb6a2142a6033aa9f13"
+        },
+        {
+          "exists": true,
+          "kind": "file",
+          "path": "model/tiny/fr_regressor_v2_ensemble_v1_seed3.onnx",
+          "sha256": "ba623fa4cbaff325aa3f3bb50ecc1b7edffd288e2c463cd2bcceb87f33894ec5"
+        },
+        {
+          "exists": true,
+          "kind": "file",
+          "path": "model/tiny/fr_regressor_v2_ensemble_v1_seed4.onnx",
+          "sha256": "af727669a6dec5a36906ab7dd06f2a83e9a00c2706d6e0b2f3200c4af4409a43"
+        }
+      ],
+      "registry": {
+        "exists": true,
+        "kind": "file",
+        "path": "model/tiny/registry.json",
+        "sha256": "d59d23b241b9ec445f0e3d9c815bd9cab0f269cda549b78affcade5d973e2bc9"
+      }
+    },
+    "schema": "ai-run-provenance-v1"
+  },
+  "smoke": true
+}

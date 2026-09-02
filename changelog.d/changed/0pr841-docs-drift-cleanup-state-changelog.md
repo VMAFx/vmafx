@@ -1,0 +1,1 @@
+- Updated: `docs/state.md`, `changelog.d`, `docs/rebase-notes.md`, and ADR-0789 stub brought up to date with merged PRs; no functional code changes. (PR #841)

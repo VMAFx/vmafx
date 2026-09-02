@@ -1,0 +1,94 @@
+# Active monitoring for the upstream HDR-VMAF model.  Per ADR-0448.
+# Closes the HDR-VMAF-MODEL-PORT deferral (path A: source from
+# Netflix upstream) when either trigger fires:
+#   (1) Netflix/vmaf#645 transitions away from "no timeline" — any
+#       new comment from a Netflix maintainer surfaces as activity.
+#   (2) A vmaf_hdr_*.json file appears under Netflix/vmaf:model/.
+name: Upstream watcher — Netflix HDR-VMAF model (path A)
+
+on:
+  schedule:
+    # Sundays 06:15 UTC (offset from the prior watcher).
+    - cron: "15 6 * * 0"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-netflix-645-hdr-model-watcher-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  poll:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check Netflix/vmaf#645 + scan upstream model/ for vmaf_hdr_*.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Signal 1: search the upstream model/ tree for vmaf_hdr_*.json.
+          MODEL_HIT=$(gh api repos/Netflix/vmaf/contents/model \
+            --jq '[.[] | select(.name | test("^vmaf_hdr_.*\\.json$"))] | length' \
+            2>/dev/null || echo 0)
+
+          # Signal 2: latest comment on issue #645.
+          LAST_COMMENT_AT=$(gh issue view 645 --repo Netflix/vmaf \
+            --json comments \
+            --jq '.comments | sort_by(.createdAt) | last | .createdAt // empty' \
+            2>/dev/null || echo "")
+
+          echo "Netflix HDR signals: model_files=${MODEL_HIT} last_645_comment=${LAST_COMMENT_AT:-none}"
+
+          if [ "${MODEL_HIT}" -lt 1 ]; then
+            # No upstream HDR model yet.  We still log Netflix#645
+            # activity for the audit trail but do not open an issue
+            # for comments alone (would be too chatty).
+            echo "No upstream HDR model file yet; nothing to do."
+            exit 0
+          fi
+
+          # Idempotency.
+          EXISTING=$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --state open \
+            --label upstream-merged \
+            --search "Netflix HDR model in:title" \
+            --json number -q '.[0].number // empty')
+          if [ -n "${EXISTING}" ]; then
+            echo "Already tracking via issue #${EXISTING}; nothing to do."
+            exit 0
+          fi
+
+          gh issue create \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "Netflix HDR model landed upstream — port to fork (closes HDR-VMAF-MODEL-PORT path A)" \
+            --label upstream-merged \
+            --body "$(cat <<'EOF'
+          A `vmaf_hdr_*.json` file has appeared under
+          Netflix/vmaf:model/.  The fork's HDR-VMAF-MODEL-PORT
+          deferral path A is now actively closeable.
+
+          Action items:
+
+          1. Confirm the upstream landing: `gh api
+             repos/Netflix/vmaf/contents/model | jq '.[] | select(.name |
+             test("^vmaf_hdr"))'` — note the file name + commit SHA.
+          2. Port the model JSON via `/port-upstream-commit`; ship as
+             `model/vmaf_hdr_<release>.json` plus a model card under
+             `model/vmaf_hdr_<release>_card.md`.
+          3. Verify against the fork's HDR sources (CHUG ingest +
+             test fixtures) before promoting to default.
+          4. Update `docs/state.md` HDR-VMAF-MODEL-PORT row from
+             Deferred to Recently-closed; cite the resolution PR.
+          5. Update [ADR-0300](docs/adr/0300-vmaf-tune-hdr-aware.md)
+             status note ("HDR model status").
+          6. Disable this watcher (rename `.disabled` or delete).
+
+          See ADR-0448 for the watcher governance rule.
+          EOF
+          )"

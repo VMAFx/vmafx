@@ -1,0 +1,758 @@
+# Supply-chain provenance: SLSA L3 build, Sigstore keyless signing, SBOM.
+# Triggered when an operator publishes release-please's draft
+# `vMAJOR.MINOR.PATCH` release. The authenticated publication emits the
+# `release:published` event. Manual dispatch is an idempotent recovery path for
+# an existing tag: release assets are overwritten, while PyPI skips files that
+# the immutable index already accepted.
+
+name: supply-chain
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing vX.Y.Z tag to recover and republish idempotently"
+        required: true
+
+# Default to least-privilege at the workflow level; individual jobs that
+# need `id-token: write` (Sigstore OIDC) or `contents: write` (upload release
+# assets) opt in per-job so a newly added step can't silently inherit write
+# scope. Addresses Scorecard
+# TokenPermissionsID alerts on `contents` and `packages`.
+permissions:
+  contents: read
+
+# Prevent duplicate signing runs for the same tag.
+# cancel-in-progress: false — a partial sign/SBOM run is worse than queuing.
+concurrency:
+  group: supply-chain-${{ github.event.release.tag_name || github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-release:
+    name: Validate ordinary tag and coordinated versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+          persist-credentials: false
+      - name: Reject prereleases and verify every coordinated version
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+          RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease || false }}
+        run: |
+          if [[ "$RELEASE_IS_PRERELEASE" == "true" ]]; then
+            echo "ERROR: prerelease publication is not supported: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          expected_ref="refs/tags/$RELEASE_TAG"
+          if [[ "$GITHUB_REF" != "$expected_ref" ]]; then
+            echo "ERROR: run this workflow at $expected_ref, not $GITHUB_REF" >&2
+            exit 1
+          fi
+          scripts/release/verify-release-version.sh "$RELEASE_TAG"
+          if [[ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]]; then
+            echo "ERROR: workflow source SHA $GITHUB_SHA does not match checked-out tag" >&2
+            exit 1
+          fi
+          release_json="$RUNNER_TEMP/github-release.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$release_json"
+          if [[ "$(jq -r '.tag_name' "$release_json")" != "$RELEASE_TAG" || \
+                "$(jq -r '.draft' "$release_json")" != "false" || \
+                "$(jq -r '.prerelease' "$release_json")" != "false" || \
+                "$(jq -r '.published_at != null' "$release_json")" != "true" ]]; then
+            echo "ERROR: $RELEASE_TAG must name a published, non-prerelease GitHub release" >&2
+            exit 1
+          fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+
+  build-artifacts:
+    name: Build Linux release artifacts (libvmaf.so chain, vmaf CLI, models)
+    needs: validate-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ needs.validate-release.outputs.tag }}
+          submodules: recursive
+          persist-credentials: false
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build nasm pkg-config
+          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
+          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          sudo pip3 install --break-system-packages --quiet meson
+      - name: Build (release, optimized)
+        run: |
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          export SOURCE_DATE_EPOCH
+          meson setup build core --buildtype=release -Denable_avx512=true \
+            -Denable_cuda=false -Denable_sycl=false
+          meson compile -C build
+      - name: Stage artifacts
+        run: |
+          mkdir -p artifacts
+          # actions/upload-artifact does not preserve symlinks. Materialize
+          # every Meson link-chain name so the downloaded CLI's DT_NEEDED
+          # entry (libvmaf.so.MAJOR) exists as a regular release asset.
+          mapfile -d '' libvmaf_chain < <(
+            find build/src -maxdepth 1 \( -type f -o -type l \) \
+              -name 'libvmaf.so*' -print0 | LC_ALL=C sort -z
+          )
+          if [[ ${#libvmaf_chain[@]} -lt 3 ]]; then
+            echo "ERROR: incomplete Meson libvmaf SONAME chain" >&2
+            exit 1
+          fi
+          for library in "${libvmaf_chain[@]}"; do
+            cp -L -- "$library" "artifacts/$(basename -- "$library")"
+          done
+          cp build/tools/vmaf artifacts/
+          archive_epoch="$(git show -s --format=%ct HEAD)"
+          tar --sort=name --mtime="@$archive_epoch" --owner=0 --group=0 \
+            --numeric-owner -cf - model/ | gzip -n > artifacts/models.tar.gz
+
+          # u2netp_mirror — fork-local mirror of the upstream
+          # `xuebinqin/U-2-Net` `u2netp` checkpoint, redistributed
+          # under Apache-2.0 §4 NOTICE compliance per ADR-0325. The
+          # binary is gitignored (lives at model/u2netp_mirror.onnx
+          # or model/u2netp_mirror.pth, dropped manually by the
+          # binary-upload PR). This step is **idempotent**: missing
+          # files are a fast-exit no-op so a release without the
+          # mirror still succeeds. When the binary lands, it gets
+          # copied into the artifacts/ tree alongside the canonical
+          # libvmaf.so / vmaf / models.tar.gz, picked up by the
+          # SHA256 hashing step (so SLSA provenance covers it), and
+          # signed by the existing cosign sign-blob loop. The
+          # license text + attribution receipt rides along.
+          if [ -f model/u2netp_mirror.onnx ]; then
+            cp model/u2netp_mirror.onnx artifacts/
+            echo "u2netp_mirror: ONNX rewrap staged"
+          fi
+          if [ -f model/u2netp_mirror.pth ]; then
+            cp model/u2netp_mirror.pth artifacts/
+            echo "u2netp_mirror: verbatim .pth staged"
+          fi
+          if [ -f model/u2netp_mirror.onnx ] || [ -f model/u2netp_mirror.pth ]; then
+            cp LICENSES/Apache-2.0-u2netp.txt artifacts/
+            echo "u2netp_mirror: license text staged"
+          else
+            echo "u2netp_mirror: binary not present, skipping (scaffold-only state per ADR-0325)"
+          fi
+      - name: Verify staged Linux runtime in a clean environment
+        env:
+          VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          scripts/release/verify-native-release-artifacts.sh \
+            artifacts "$VMAFX_VERSION"
+      - name: Compute SHA256 hashes (SLSA input)
+        id: hash
+        run: |
+          cd artifacts
+          echo "hashes=$(sha256sum -- * | base64 -w0)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: release-artifacts
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: error
+
+  verify-native-artifacts:
+    name: Verify downloaded Linux release runtime
+    needs: [validate-release, build-artifacts]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ needs.validate-release.outputs.tag }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { name: release-artifacts, path: artifacts/ }
+      - name: Prove the downloaded CLI resolves its staged SONAME library
+        env:
+          VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          # Raw GitHub artifact/release downloads do not encode POSIX mode
+          # bits. Restore the documented consumer-side executable bit before
+          # exercising the exact downloaded bytes.
+          chmod +x artifacts/vmaf
+          scripts/release/verify-native-release-artifacts.sh \
+            artifacts "$VMAFX_VERSION"
+
+  sbom:
+    name: Generate libvmaf + vmaf-mcp SBOMs (SPDX + CycloneDX)
+    needs: [validate-release, build-artifacts, verify-native-artifacts, mcp-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { name: release-artifacts, path: artifacts/ }
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { name: mcp-dist, path: mcp-dist/ }
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14.7"
+      - name: Prepare native and Python SBOM roots
+        env:
+          VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(mcp-dist/vmaf_mcp-"$VMAFX_VERSION"-*.whl)
+          sdists=(mcp-dist/vmaf_mcp-"$VMAFX_VERSION".tar.gz)
+          distributions=(mcp-dist/*)
+          if [[ ${#wheels[@]} -ne 1 || ${#sdists[@]} -ne 1 ||
+                ${#distributions[@]} -ne 2 ]]; then
+            echo "ERROR: expected one version-matched wheel and sdist" >&2
+            exit 1
+          fi
+          mkdir -p sbom mcp-sbom-root/distributions
+          python -m pip install --disable-pip-version-check --no-compile \
+            --ignore-installed --only-binary=:all: --target mcp-sbom-root \
+            "${wheels[0]}"
+          cp -- "${wheels[0]}" "${sdists[0]}" mcp-sbom-root/distributions/
+      - uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26  # v0.24.2
+        env:
+          SYFT_SOURCE_NAME: vmafx
+          SYFT_SOURCE_VERSION: ${{ needs.validate-release.outputs.version }}
+          SYFT_FILE_METADATA_SELECTION: all
+        with:
+          syft-version: v1.51.1
+          format: spdx-json
+          output-file: sbom/vmafx.spdx.json
+          path: artifacts/
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26  # v0.24.2
+        env:
+          SYFT_SOURCE_NAME: vmafx
+          SYFT_SOURCE_VERSION: ${{ needs.validate-release.outputs.version }}
+          SYFT_FILE_METADATA_SELECTION: all
+        with:
+          syft-version: v1.51.1
+          format: cyclonedx-json
+          output-file: sbom/vmafx.cdx.json
+          path: artifacts/
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26  # v0.24.2
+        env:
+          SYFT_SOURCE_NAME: vmaf-mcp
+          SYFT_SOURCE_VERSION: ${{ needs.validate-release.outputs.version }}
+          SYFT_FILE_METADATA_SELECTION: all
+        with:
+          syft-version: v1.51.1
+          format: spdx-json
+          output-file: sbom/vmaf-mcp.spdx.json
+          path: mcp-sbom-root/
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26  # v0.24.2
+        env:
+          SYFT_SOURCE_NAME: vmaf-mcp
+          SYFT_SOURCE_VERSION: ${{ needs.validate-release.outputs.version }}
+          SYFT_FILE_METADATA_SELECTION: all
+        with:
+          syft-version: v1.51.1
+          format: cyclonedx-json
+          output-file: sbom/vmaf-mcp.cdx.json
+          path: mcp-sbom-root/
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Verify SBOM identity, dependency graph, and artifact hashes
+        env:
+          VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          jq -e --arg version "$VMAFX_VERSION" '
+            .name == "vmafx"
+            and any(.packages[]?; .name == "vmafx" and .versionInfo == $version)
+          ' sbom/vmafx.spdx.json >/dev/null
+          jq -e --arg version "$VMAFX_VERSION" '
+            .metadata.component.name == "vmafx"
+            and .metadata.component.version == $version
+          ' sbom/vmafx.cdx.json >/dev/null
+          for f in artifacts/*; do
+            [[ -f "$f" ]] || continue
+            name="$(basename "$f")"
+            sha="$(sha256sum -- "$f" | cut -d" " -f1)"
+            jq -e --arg name "$name" --arg sha "$sha" '
+              any(.files[]?;
+                (((.fileName // "") == $name) or ((.fileName // "") | endswith("/" + $name)))
+                and any(.checksums[]?;
+                  .algorithm == "SHA256" and .checksumValue == $sha))
+            ' sbom/vmafx.spdx.json >/dev/null
+            jq -e --arg name "$name" --arg sha "$sha" '
+              any(.components[]?;
+                .type == "file"
+                and (((.name // "") == $name) or ((.name // "") | endswith("/" + $name)))
+                and any(.hashes[]?;
+                  .alg == "SHA-256" and .content == $sha))
+            ' sbom/vmafx.cdx.json >/dev/null
+          done
+          jq -e --arg version "$VMAFX_VERSION" '
+            . as $doc
+            | first(
+                $doc.packages[]?
+                | select(
+                    .name == "vmaf-mcp"
+                    and .versionInfo == $version
+                    and any(.externalRefs[]?;
+                      .referenceType == "purl"
+                      and .referenceLocator == ("pkg:pypi/vmaf-mcp@" + $version)))
+                | .SPDXID
+              ) as $root
+            | ((["anyio", "mcp", "pydantic"] - [$doc.packages[]?.name]) == [])
+              and any($doc.relationships[]?;
+                .relationshipType == "DEPENDENCY_OF"
+                and .relatedSpdxElement == $root)
+          ' sbom/vmaf-mcp.spdx.json >/dev/null
+          jq -e --arg version "$VMAFX_VERSION" '
+            . as $doc
+            | ("pkg:pypi/vmaf-mcp@" + $version) as $purl
+            | ($doc.metadata.component.name == "vmaf-mcp")
+              and ($doc.metadata.component.version == $version)
+              and ((["anyio", "mcp", "pydantic"] - [$doc.components[]?.name]) == [])
+              and any($doc.components[]?; .purl == $purl)
+              and any($doc.dependencies[]?;
+                (((.ref // "") == $purl) or ((.ref // "") | startswith($purl + "?")))
+                and ((.dependsOn // []) | length) >= 3)
+          ' sbom/vmaf-mcp.cdx.json >/dev/null
+          for f in mcp-dist/*; do
+            [[ -f "$f" ]] || continue
+            name="$(basename "$f")"
+            sha="$(sha256sum -- "$f" | cut -d" " -f1)"
+            jq -e --arg name "$name" --arg sha "$sha" '
+              any(.files[]?;
+                ((.fileName // "") | endswith("/" + $name))
+                and any(.checksums[]?;
+                  .algorithm == "SHA256" and .checksumValue == $sha))
+            ' sbom/vmaf-mcp.spdx.json >/dev/null
+            jq -e --arg name "$name" --arg sha "$sha" '
+              any(.components[]?;
+                .type == "file"
+                and ((.name // "") | endswith("/" + $name))
+                and any(.hashes[]?;
+                  .alg == "SHA-256" and .content == $sha))
+            ' sbom/vmaf-mcp.cdx.json >/dev/null
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: sbom
+          path: sbom/*.json
+          if-no-files-found: error
+
+  sign:
+    name: Sigstore keyless sign (release artifacts + SBOMs)
+    needs: [build-artifacts, sbom]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release-publish
+    permissions:
+      id-token: write   # Sigstore keyless OIDC
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { name: release-artifacts, path: artifacts/ }
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { name: sbom, path: artifacts/ }
+      # cosign-installer v4 + cosign v3: sign-blob now emits a Sigstore
+      # bundle (single .bundle file containing signature + certificate
+      # + Rekor entry) instead of the legacy split .sig/.pem pair.
+      # Verify later with: cosign verify-blob --bundle <f>.bundle <f>
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+        with: { cosign-release: "v3.1.3" }
+      - name: Sign every artifact (keyless OIDC)
+        run: |
+          cd artifacts
+          mapfile -d '' files < <(find . -maxdepth 1 -type f ! -name '*.bundle' -print0)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "ERROR: no release artifacts or SBOMs to sign" >&2
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            cosign sign-blob --yes \
+              --bundle "$f.bundle" \
+              "$f"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: signatures
+          path: artifacts/*.bundle
+          if-no-files-found: error
+
+  slsa-provenance:
+    name: SLSA L3 provenance — libvmaf artifacts
+    needs: [validate-release, build-artifacts, verify-native-artifacts]
+    permissions:
+      id-token: write
+      contents: read
+      actions: read
+    # Sole tag-pin exception: the SLSA generator rejects SHA-pinned reusable
+    # workflow refs because its builder identity must be refs/tags/vX.Y.Z.
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: ${{ needs.build-artifacts.outputs.hashes }}
+      provenance-name: vmafx-build-provenance.intoto.jsonl
+      # The reusable caller cannot reference an environment. Keep provenance
+      # as a workflow artifact; the environment-gated attachment job below is
+      # the sole GitHub Release writer.
+      upload-assets: false
+
+  # ===== MCP server (vmaf-mcp Python package) =====
+  # ADR-0166: ship to PyPI (Trusted Publishing) + GitHub release attachment
+  # with the same Sigstore + SLSA story as the libvmaf artifacts.
+
+  mcp-build:
+    name: Build vmaf-mcp wheel + sdist
+    needs: validate-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ needs.validate-release.outputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14.7"
+      - name: Install build deps
+        run: python -m pip install --disable-pip-version-check build==1.6.0
+      - name: Build wheel + sdist
+        working-directory: mcp-server/vmaf-mcp
+        run: |
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          export SOURCE_DATE_EPOCH
+          export PYTHONHASHSEED=0
+          python -m build --wheel --sdist --outdir ../../mcp-dist
+      - name: Compute SHA256 hashes (SLSA input)
+        id: hash
+        env:
+          VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          shopt -s nullglob
+          wheels=(mcp-dist/vmaf_mcp-"$VMAFX_VERSION"-*.whl)
+          sdists=(mcp-dist/vmaf_mcp-"$VMAFX_VERSION".tar.gz)
+          distributions=(mcp-dist/*)
+          if [[ ${#wheels[@]} -ne 1 || ${#sdists[@]} -ne 1 ||
+                ${#distributions[@]} -ne 2 ]]; then
+            echo "ERROR: expected exactly one version-matched wheel and sdist" >&2
+            exit 1
+          fi
+          cd mcp-dist
+          echo "hashes=$(sha256sum -- * | base64 -w0)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: mcp-dist
+          path: mcp-dist/
+          retention-days: 7
+          if-no-files-found: error
+
+  mcp-sign:
+    name: Sigstore keyless sign — vmaf-mcp
+    needs: mcp-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release-publish
+    permissions:
+      id-token: write   # Sigstore keyless OIDC
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { name: mcp-dist, path: mcp-dist/ }
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+        with: { cosign-release: "v3.1.3" }
+      - name: Sign every artifact (keyless OIDC)
+        run: |
+          cd mcp-dist
+          mapfile -d '' files < <(find . -maxdepth 1 -type f ! -name '*.bundle' -print0)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "ERROR: no vmaf-mcp distributions to sign" >&2
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            cosign sign-blob --yes \
+              --bundle "$f.bundle" \
+              "$f"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: mcp-signatures
+          path: mcp-dist/*.bundle
+          if-no-files-found: error
+
+  mcp-slsa-provenance:
+    name: SLSA L3 provenance — vmaf-mcp distributions
+    needs: [validate-release, mcp-build]
+    permissions:
+      id-token: write
+      contents: read
+      actions: read
+    # See the documented SLSA reusable-workflow tag-pin exception above.
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: ${{ needs.mcp-build.outputs.hashes }}
+      provenance-name: vmaf-mcp-provenance.intoto.jsonl
+      # See the native provenance job: release upload is environment-gated.
+      upload-assets: false
+
+  mcp-publish-pypi:
+    name: Publish vmaf-mcp to PyPI (Trusted Publishing)
+    needs: [validate-release, mcp-build, mcp-sign, mcp-slsa-provenance, sbom]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi-publish    # user binds this to PyPI Trusted Publisher
+    permissions:
+      id-token: write             # OIDC token for Trusted Publishing
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { name: mcp-dist, path: dist/ }
+      - name: Refuse immutable PyPI filename/hash divergence
+        id: pypi-state
+        env:
+          VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/vmaf_mcp-"$VMAFX_VERSION"-*.whl)
+          sdists=(dist/vmaf_mcp-"$VMAFX_VERSION".tar.gz)
+          distributions=(dist/*)
+          if [[ ${#wheels[@]} -ne 1 || ${#sdists[@]} -ne 1 ||
+                ${#distributions[@]} -ne 2 ]]; then
+            echo "ERROR: expected one version-matched wheel and sdist" >&2
+            exit 1
+          fi
+          local_files=("${wheels[0]}" "${sdists[0]}")
+          response="$RUNNER_TEMP/pypi-release.json"
+          http_code="$(curl --retry 3 --silent --show-error \
+            --output "$response" --write-out '%{http_code}' \
+            "https://pypi.org/pypi/vmaf-mcp/$VMAFX_VERSION/json")"
+          publish=false
+          case "$http_code" in
+            200)
+              while IFS= read -r filename; do
+                if [[ ! -f "dist/$filename" ]]; then
+                  echo "ERROR: PyPI has unexpected file for $VMAFX_VERSION: $filename" >&2
+                  exit 1
+                fi
+              done < <(jq -r '.urls[].filename' "$response")
+              for f in "${local_files[@]}"; do
+                filename="$(basename "$f")"
+                local_digest="$(sha256sum -- "$f" | cut -d' ' -f1)"
+                remote_count="$(jq --arg filename "$filename" \
+                  '[.urls[] | select(.filename == $filename)] | length' \
+                  "$response")"
+                case "$remote_count" in
+                  0)
+                    publish=true
+                    ;;
+                  1)
+                    remote_digest="$(jq -r --arg filename "$filename" \
+                      '.urls[] | select(.filename == $filename) | .digests.sha256' \
+                      "$response")"
+                    if [[ "$remote_digest" != "$local_digest" ]]; then
+                      echo "ERROR: PyPI already has $filename with a different SHA-256" >&2
+                      exit 1
+                    fi
+                    ;;
+                  *)
+                    echo "ERROR: PyPI returned duplicate records for $filename" >&2
+                    exit 1
+                    ;;
+                esac
+              done
+              ;;
+            404)
+              publish=true
+              ;;
+            *)
+              echo "ERROR: PyPI release query returned HTTP $http_code" >&2
+              exit 1
+              ;;
+          esac
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+      # PEP 740 attestations: emit Sigstore-signed provenance the index
+      # stores alongside the artifact.
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2
+        if: steps.pypi-state.outputs.publish == 'true'
+        with:
+          attestations: true
+          skip-existing: true
+      - name: Verify exact immutable PyPI file set after publication
+        env:
+          PUBLISH_PERFORMED: ${{ steps.pypi-state.outputs.publish }}
+          VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/vmaf_mcp-"$VMAFX_VERSION"-*.whl)
+          sdists=(dist/vmaf_mcp-"$VMAFX_VERSION".tar.gz)
+          distribution_files=(dist/*.whl dist/*.tar.gz)
+          all_files=(dist/*)
+          if [[ ${#wheels[@]} -ne 1 || ${#sdists[@]} -ne 1 ||
+                ${#distribution_files[@]} -ne 2 ]]; then
+            echo "ERROR: expected one version-matched wheel and sdist" >&2
+            exit 1
+          fi
+          local_files=("${wheels[0]}" "${sdists[0]}")
+          if [[ "$PUBLISH_PERFORMED" == "true" ]]; then
+            attestations=(
+              "${wheels[0]}.publish.attestation"
+              "${sdists[0]}.publish.attestation"
+            )
+            if [[ ${#all_files[@]} -ne 4 ]]; then
+              echo "ERROR: trusted publication did not leave exactly two PEP 740 attestations" >&2
+              exit 1
+            fi
+            for attestation in "${attestations[@]}"; do
+              jq -e 'type == "object"' "$attestation" >/dev/null || {
+                echo "ERROR: missing or invalid PEP 740 attestation: $attestation" >&2
+                exit 1
+              }
+            done
+          elif [[ ${#all_files[@]} -ne 2 ]]; then
+            echo "ERROR: unexpected files appeared while publication was skipped" >&2
+            exit 1
+          fi
+          response="$RUNNER_TEMP/pypi-release-after.json"
+          http_code=000
+          for attempt in {1..12}; do
+            http_code="$(curl --retry 3 --silent --show-error --output "$response" \
+              --write-out '%{http_code}' \
+              "https://pypi.org/pypi/vmaf-mcp/$VMAFX_VERSION/json")"
+            if [[ "$http_code" == "200" &&
+                  "$(jq '.urls | length' "$response")" -eq 2 ]]; then
+              break
+            fi
+            if [[ "$attempt" -eq 12 ]]; then
+              echo "ERROR: PyPI release did not converge to two files (HTTP $http_code)" >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          if [[ "$(jq '.urls | length' "$response")" -ne 2 ]]; then
+            echo "ERROR: PyPI does not contain exactly the expected wheel and sdist" >&2
+            exit 1
+          fi
+          while IFS= read -r filename; do
+            if [[ ! -f "dist/$filename" ]]; then
+              echo "ERROR: PyPI has unexpected file for $VMAFX_VERSION: $filename" >&2
+              exit 1
+            fi
+          done < <(jq -r '.urls[].filename' "$response")
+          for f in "${local_files[@]}"; do
+            filename="$(basename "$f")"
+            local_digest="$(sha256sum -- "$f" | cut -d' ' -f1)"
+            remote_count="$(jq --arg filename "$filename" \
+              '[.urls[] | select(.filename == $filename)] | length' \
+              "$response")"
+            remote_digest="$(jq -r --arg filename "$filename" \
+              '.urls[] | select(.filename == $filename) | .digests.sha256' \
+              "$response")"
+            if [[ "$remote_count" -ne 1 || "$remote_digest" != "$local_digest" ]]; then
+              echo "ERROR: PyPI file set or SHA-256 diverged for $filename" >&2
+              exit 1
+            fi
+          done
+
+  attach-to-release:
+    name: Attach SBOM + signatures to GitHub Release
+    needs:
+      - validate-release
+      - build-artifacts
+      - verify-native-artifacts
+      - sbom
+      - sign
+      - slsa-provenance
+      - mcp-build
+      - mcp-sign
+      - mcp-slsa-provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release-publish
+    permissions:
+      contents: write   # upload files to the GitHub Release
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { path: dist/ }
+      - name: Require every release asset and matching signature
+        run: |
+          shopt -s nullglob
+          required=(
+            dist/release-artifacts/libvmaf.so
+            dist/release-artifacts/vmaf
+            dist/release-artifacts/models.tar.gz
+            dist/sbom/vmafx.spdx.json
+            dist/sbom/vmafx.cdx.json
+            dist/sbom/vmaf-mcp.spdx.json
+            dist/sbom/vmaf-mcp.cdx.json
+            dist/vmafx-build-provenance.intoto.jsonl/vmafx-build-provenance.intoto.jsonl
+            dist/vmaf-mcp-provenance.intoto.jsonl/vmaf-mcp-provenance.intoto.jsonl
+          )
+          wheels=(dist/mcp-dist/vmaf_mcp-*.whl)
+          sdists=(dist/mcp-dist/vmaf_mcp-*.tar.gz)
+          mcp_distributions=(dist/mcp-dist/*)
+          if [[ ${#wheels[@]} -ne 1 || ${#sdists[@]} -ne 1 ||
+                ${#mcp_distributions[@]} -ne 2 ]]; then
+            echo "ERROR: expected exactly one vmaf-mcp wheel and one sdist" >&2
+            exit 1
+          fi
+          for f in "${required[@]}" "${wheels[@]}" "${sdists[@]}"; do
+            test -s "$f" || {
+              echo "ERROR: required release asset is missing or empty: $f" >&2
+              exit 1
+            }
+          done
+          for f in dist/release-artifacts/* dist/sbom/*; do
+            bundle="dist/signatures/$(basename "$f").bundle"
+            test -s "$bundle" || {
+              echo "ERROR: signature bundle missing for $f" >&2
+              exit 1
+            }
+          done
+          for f in "${wheels[@]}" "${sdists[@]}"; do
+            bundle="dist/mcp-signatures/$(basename "$f").bundle"
+            test -s "$bundle" || {
+              echo "ERROR: signature bundle missing for $f" >&2
+              exit 1
+            }
+          done
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
+        with:
+          tag_name: ${{ needs.validate-release.outputs.tag }}
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/release-artifacts/*
+            dist/sbom/*
+            dist/signatures/*
+            dist/mcp-dist/*
+            dist/mcp-signatures/*
+            dist/vmafx-build-provenance.intoto.jsonl/vmafx-build-provenance.intoto.jsonl
+            dist/vmaf-mcp-provenance.intoto.jsonl/vmaf-mcp-provenance.intoto.jsonl

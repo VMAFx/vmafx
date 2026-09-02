@@ -1,0 +1,220 @@
+{{- /*
+  templates/node.yaml — vmafx-node worker pool Deployment.
+
+  This template deploys the vmafx-node Go worker pool.  It is independent
+  of the main vmafx-controller Deployment (templates/deployment.yaml) and
+  is enabled via .Values.node.enabled.
+
+  GPU vendor → Kubernetes resource mapping:
+    nvidia  → nvidia.com/gpu          (requires nvidia-device-plugin DaemonSet)
+    amd     → amd.com/gpu             (requires amdgpu-device-plugin DaemonSet)
+    intel   → gpu.intel.com/i915      (requires intel-gpu-plugin DaemonSet)
+    cpu     → (no GPU resource requested)
+
+  ADR-0709: Phase 4b distributed platform umbrella.
+  ADR-0713: vmafx-node Go worker binary.
+  ADR-0719: rclone integration for remote asset resolution.
+
+  Note: this template superseded the legacy templates/node-deployment.yaml,
+  which rendered a duplicate Deployment under the same name and blocked
+  `helm install`.  The rclone Secret mount + storage-mode / model-dir env
+  vars from that template have been folded in here.  The legacy template
+  used VMAFX_NODE_NAME; this one uses VMAFX_NODE_ID per ADR-0713.
+
+  See: docs/development/node.md, docs/development/gpu-scheduling.md.
+*/}}
+{{- if .Values.node.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vmafx.fullname" . }}-node
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  replicas: {{ .Values.node.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "vmafx.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: node
+  # Explicit zero-disruption rolling-update strategy for GPU worker pods.
+  # maxUnavailable: 0 ensures no in-flight scoring job is SIGKILL'd before
+  # its replacement is healthy; maxSurge: 1 permits one extra pod during
+  # the rollout so capacity is never reduced.  Without this, Kubernetes
+  # defaults to 25%/25% which can evict pods that hold live GPU work.
+  strategy:
+    {{- toYaml .Values.node.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vmafx.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: node
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "vmafx.serviceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds | default 60 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.node.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.node.nodeSelector | nindent 8 }}
+      {{- else if .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.node.tolerations }}
+      tolerations:
+        {{- toYaml .Values.node.tolerations | nindent 8 }}
+      {{- else if .Values.tolerations }}
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: vmafx-node
+          image: {{ include "vmafx.nodeImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.node.grpcPort | default 50052 }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.node.metricsPort | default 9090 }}
+              protocol: TCP
+          env:
+            - name: VMAFX_CONTROLLER_ADDR
+              value: {{ include "vmafx.controllerAddr" . | quote }}
+            # The binary defaults grpc.listen to :50052 for standalone use.
+            # Pin it explicitly to deploy's configurable grpcPort so the
+            # ClusterIP Service and tcpSocket probes always follow chart values.
+            - name: VMAFX_GRPC_LISTEN
+              value: ":{{ .Values.node.grpcPort | default 50052 }}"
+            - name: VMAFX_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: VMAFX_BACKEND
+              value: {{ include "vmafx.backendEnvValue" . | quote }}
+            # Storage / scoring env vars folded in from the legacy
+            # templates/node-deployment.yaml (ADR-0719 rclone integration).
+            - name: VMAFX_STORAGE_MODE
+              value: {{ .Values.storage.mode | default "http-serve" | quote }}
+            - name: VMAFX_RCLONE_CONFIG
+              value: "/etc/vmafx/rclone.conf"
+            - name: VMAFX_VMAF_BINARY
+              value: "/usr/local/bin/vmaf"
+            - name: VMAFX_MODEL_DIR
+              value: {{ .Values.persistence.models.mountPath | default "/usr/local/share/vmafx/model" | quote }}
+            {{- range $k, $v := .Values.env }}
+            - name: {{ $k | quote }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- range .Values.envFrom }}
+            {{- end }}
+          {{- if .Values.envFrom }}
+          envFrom:
+            {{- toYaml .Values.envFrom | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- $nodeResources := .Values.node.resources | default .Values.resources }}
+            limits:
+              {{- toYaml $nodeResources.limits | nindent 14 }}
+              {{- if and .Values.gpu.enabled (ne .Values.gpu.vendor "cpu") }}
+              {{- include "vmafx.gpuResourceKey" . | nindent 14 }}: {{ .Values.gpu.count | default 1 }}
+              {{- end }}
+            requests:
+              {{- toYaml $nodeResources.requests | nindent 14 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          # tcpSocket probes verify the gRPC listener is accepting connections.
+          # The node binary exposes no HTTP endpoint; httpGet on the old
+          # "metrics" port (9090) always returned ECONNREFUSED, leaving the
+          # pod permanently unready.  A tcpSocket probe on the gRPC port is
+          # the correct readiness signal: the listener is up iff gRPC is up.
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+            successThreshold: 1
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.storage.rclone.config }}
+            - name: rclone-config
+              mountPath: /etc/vmafx
+              readOnly: true
+            {{- end }}
+            {{- if .Values.persistence.models.enabled }}
+            - name: models
+              mountPath: {{ .Values.persistence.models.mountPath }}
+              readOnly: true
+            {{- end }}
+            {{- with .Values.node.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.storage.rclone.config }}
+        - name: rclone-config
+          secret:
+            secretName: {{ include "vmafx.fullname" . }}-rclone-config
+            defaultMode: 0400
+        {{- end }}
+        {{- if .Values.persistence.models.enabled }}
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ include "vmafx.fullname" . }}-models
+            readOnly: true
+        {{- end }}
+        {{- with .Values.node.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+---
+# ClusterIP Service for controller → node gRPC dispatch (ADR-0713).
+# The node binary exposes no HTTP metrics endpoint; the former "metrics"
+# Service on 9090 was referencing a phantom port (ECONNREFUSED).
+# When a Prometheus metrics endpoint is added to the node binary, add a
+# second Service on the metrics port and wire up the ServiceMonitor there.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vmafx.fullname" . }}-node
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "vmafx.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+  ports:
+    - name: grpc
+      port: {{ .Values.node.grpcPort | default 50052 }}
+      targetPort: grpc
+      protocol: TCP
+    - name: metrics
+      port: {{ .Values.node.metricsPort | default 9090 }}
+      targetPort: metrics
+      protocol: TCP
+{{- end }}

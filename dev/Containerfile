@@ -1,0 +1,1060 @@
+# syntax=docker/dockerfile:1.27@sha256:bde3983e9c939224420ddaf6b784cc30e09b035a4dea01f581230c50809f372e
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# dev/Containerfile — VMAF fork dev-MCP container
+#
+# Multi-stage build:
+#   Stage 1 (build-deps)  — base tools: meson, ninja, nasm, gcc-13, clang-19,
+#                           python3.14, pkg-config, git, curl, ca-certificates
+#   Stage 2 (gpu-sdks)    — GPU SDK layer on top of Stage 1:
+#                           CUDA latest (`cuda-toolkit` meta-package, currently
+#                           13.x; tracks host driver), Intel oneAPI latest,
+#                           ROCm latest (HIP toolchain;
+#                           build-only on NVIDIA host)
+#   Stage 3 (libvmaf)     — source build of libvmaf with all backends enabled
+#                           against an in-tree FFmpeg n9.0.1 (or `FFMPEG_TAG`
+#                           build-arg override) with the fork's
+#                           `ffmpeg-patches/series.txt` applied
+#   Stage 4 (python-env)  — install vmaf-mcp + vmaf-train + vmaf-tune
+#
+# RUNTIME PREREQUISITES (host):
+#   - NVIDIA Container Toolkit for CUDA kernel execution
+#     https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+#   - For HIP kernel execution on AMD hardware: pass /dev/kfd and
+#     /dev/dri/renderD<N> (AMD node) into the container. rocm-hip-runtime-dev
+#     (installed in the image) provides libhsa-runtime64.so + libamdhip64.so;
+#     no additional host-side ROCm userspace install is needed beyond the
+#     kernel driver (amdgpu module) and device nodes being accessible.
+#   - For SYCL kernel execution on Intel Arc: pass /dev/dri/renderD<N> (Intel
+#     node) into the container. intel-opencl-icd + libze-intel-gpu1 (installed
+#     in the image) provide the compute-runtime GPU ICD; libumf.so.1 and the
+#     Level Zero loader (libze1) are also in the image. No additional host-side
+#     Intel driver install is needed beyond the i915/xe kernel module and the
+#     DRI device node being accessible.
+#
+# See docs/development/dev-mcp.md for full usage.
+
+# ---------------------------------------------------------------------------
+# Stage 1 — build-deps
+# ---------------------------------------------------------------------------
+FROM ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b AS build-deps
+
+LABEL org.opencontainers.image.title="vmaf-dev-mcp-build-deps"
+LABEL org.opencontainers.image.description="Base build tools for VMAF fork dev-MCP container"
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# BuildKit cache mounts on /var/cache/apt and /var/lib/apt let sequential
+# rebuilds reuse the downloaded .deb files and the package index. With the
+# cache mount in place we INTENTIONALLY drop the trailing
+# `rm -rf /var/lib/apt/lists/*` — the cache lives in a tmpfs-backed mount
+# that does not get baked into the resulting image layer.
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    # Toolchains
+    ccache \
+    gcc-13 \
+    g++-13 \
+    clang-19 \
+    clang++-19 \
+    libclang-rt-19-dev \
+    # Build system
+    meson \
+    ninja-build \
+    nasm \
+    pkg-config \
+    cmake \
+    # Python — Ubuntu 26.04 (Resolute Raccoon) ships Python 3.14 as the
+    # default interpreter; python3.12 is not available in the distro archive.
+    # ADR-0603.
+    python3.14 \
+    python3.14-venv \
+    python3.14-dev \
+    python3-pip \
+    # Source control + fetch
+    git \
+    git-lfs \
+    curl \
+    ca-certificates \
+    gnupg \
+    # Runtime libs needed by libvmaf and ONNX Runtime
+    libgomp1 \
+    libc6-dev \
+    libglvnd-dev \
+    libva-dev \
+    libva-drm2 \
+    libdrm-dev \
+    libvpl-dev \
+    vainfo \
+    ripgrep \
+    # VA-API user-space drivers (Intel + AMD). The libva-dev / libva-drm2
+    # pair above only provides the VA-API headers and DRM transport — the
+    # actual codec driver (`iHD_drv_video.so` for Intel, `radeonsi_drv_video.so`
+    # for AMD) lives in these two packages. Without them, the
+    # `*_qsv` / `*_vaapi` encoders fail with `vaInitialize ... unknown libva
+    # error`. ADR-0541.
+    # NOTE: `mesa-va-drivers` was renamed to `mesa-libgallium` in Ubuntu 26.04
+    # (Resolute Raccoon). The gallium package ships the same
+    # `radeonsi_drv_video.so` (AMD) and `iris_drv_video.so` (Intel) VA-API
+    # backends; only the package name changed. ADR-0603.
+    intel-media-va-driver-non-free \
+    mesa-libgallium \
+    xxd \
+    # Misc
+    jq
+
+# Verify critical GPU/VA-API packages were actually installed.
+# A misconfigured repo or network failure during apt-get produces a silently
+# broken image; this check surfaces the gap at build time instead of run time.
+RUN for pkg in intel-media-va-driver-non-free mesa-libgallium libvpl-dev; do \
+        # Use `dpkg -l` (installed-package DB), not `apt-mark showmanual`: the
+        # BuildKit cache mount at /var/lib/apt is shared across builds, so a
+        # package auto-installed in an earlier cached layer stays flagged
+        # Auto-Installed even after an explicit install (a false negative here).
+        dpkg -l "${pkg}" 2>/dev/null | grep -q "^ii" \
+            || (echo "FATAL: ${pkg} was not installed" && exit 1); \
+    done
+
+# Ensure gcc-13 / clang-19 are the default compilers
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 \
+    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100 \
+    && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-19 100 \
+    && update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-19 100
+
+# Create a non-root build user (CERT C ENV32 — do not run builds as root).
+# uid/gid 2000 are pinned so BuildKit `--mount=type=cache,uid=2000,gid=2000`
+# directives below resolve to the same identity that runs the build.
+# GID/UID 1000 are reserved by Ubuntu 26.04 (Resolute Raccoon) for the
+# built-in `ubuntu` group / user that ships in the base image; using 1000
+# causes `groupadd` to exit 4 (GID in use). GID/UID 2000 is safe on all
+# Ubuntu LTS releases up to and including 26.04. ADR-0603.
+RUN groupadd --gid 2000 vmaf \
+    && useradd --uid 2000 --gid 2000 --create-home --shell /bin/bash vmaf \
+    && mkdir -p /home/vmaf/.cache/ccache \
+    && chown -R vmaf:vmaf /home/vmaf/.cache
+
+# ---------------------------------------------------------------------------
+# Stage 2 — gpu-sdks
+# ---------------------------------------------------------------------------
+FROM build-deps AS gpu-sdks
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Use pipefail so piped curl/gpg commands fail fast on any segment failure
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# ---------- CUDA 13.3 -------------------------------------------------------
+# Ubuntu 26.04 (Resolute) + glibc 2.43 context (ADR-0603):
+#
+#   - The NVIDIA ubuntu2604 apt repo exists and carries the cuda-keyring
+#     and driver packages, but does NOT yet contain the full
+#     `cuda-toolkit` meta-package (only `cuda-compat-13-3` and driver
+#     debs are confirmed present).  We therefore use the
+#     ubuntu2404 repo for the toolkit packages — NVIDIA publishes the
+#     same .deb files cross-distro and they install correctly on Ubuntu
+#     26.04 (glibc 2.43 is backward-compatible with packages built for
+#     glibc 2.35/2.39).
+#
+#   - We pin to `cuda-toolkit-13-3` (13.3.0) instead of the
+#     unversioned `cuda-toolkit` meta-package.  Reason: Ubuntu 26.04
+#     ships glibc 2.43, whose `bits/mathcalls.h` declares
+#     `rsqrt(double)` with `noexcept(true)`.  CUDA 13.0 and 13.1's
+#     `crt/math_functions.h` redeclared the same symbol WITHOUT the
+#     noexcept spec, producing a C2059/C2143/C2085 cascade under NVCC.
+#     CUDA 13.2 fixed that; 13.3 retains the fix.
+#
+#   - Fix B (belt-and-suspenders): `-D__MATH_NO_INLINES` is also added
+#     to the nvcc flags in `core/src/meson.build`.  That flag tells
+#     glibc to suppress the inline math-function definitions that carry
+#     the noexcept annotation, eliminating the conflict even if a future
+#     CUDA patch version accidentally re-introduces the mismatch.
+#
+# Note: The NVIDIA Container Toolkit must be installed on the *host*
+# for GPU passthrough. See docs/development/dev-mcp.md §Prerequisites.
+RUN curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb \
+        -o /tmp/cuda-keyring.deb \
+    && dpkg -i /tmp/cuda-keyring.deb \
+    && rm /tmp/cuda-keyring.deb
+
+# `cuda-toolkit-13-3` pulls in nvcc 13.3 + headers + the user-mode
+# library stubs. Do NOT install `libcuda1` (the runtime driver) — that
+# comes from the host via nvidia-container-runtime at run-time;
+# installing it here would shadow the host driver.
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    cuda-toolkit-13-3
+
+# CUDA_HOME is the symlink the meta-package maintains pointing at the
+# latest installed major.minor (/usr/local/cuda → /usr/local/cuda-NN.M).
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64
+
+# ---------- Intel oneAPI latest (icpx / Level Zero) -------------------------
+# Intel apt repo. Use the unversioned `intel-basekit` meta-package — Intel
+# does not publish year-quarter-versioned meta-packages (e.g.,
+# `intel-basekit-2025.3` does not exist in the apt repo); the versioning is
+# tracked internally by the component packages the meta-package pulls in.
+RUN curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+        | gpg --dearmor \
+        | tee /usr/share/keyrings/intel-sw-products.gpg > /dev/null \
+    && printf 'deb [signed-by=/usr/share/keyrings/intel-sw-products.gpg] https://apt.repos.intel.com/oneapi all main\n' \
+        > /etc/apt/sources.list.d/intel-oneapi.list
+
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    intel-basekit
+
+# ---------- Intel GPU compute-runtime (Arc / Xe dispatch via Level Zero) ----
+# Intel's "compute-runtime" stack (NEO) is what makes Arc / Xe / Gen12 GPUs
+# visible to SYCL/OpenCL. It consists of three layers that must version-match
+# the host kernel's i915 / xe UAPI:
+#
+#   intel-opencl-icd       → /usr/lib/x86_64-linux-gnu/intel-opencl/libigdrcl.so
+#                            (OpenCL GPU ICD for Gen12/Xe/Arc hardware)
+#   libze-intel-gpu1       → /usr/lib/x86_64-linux-gnu/libze_intel_gpu.so.1
+#                            (Level Zero GPU ICD — what the Level Zero loader
+#                            probes to expose Arc hardware to SYCL programs)
+#   intel-igc-core-2 +
+#   intel-igc-opencl-2     → /usr/lib/x86_64-linux-gnu/libigc.so.2 +
+#                            libigdfcl.so.2 (graphics compiler the NEO runtime
+#                            calls to JIT-compile SPIR-V kernels for the GPU)
+#   libigdgmm12            → /usr/lib/x86_64-linux-gnu/libigdgmm.so.12 (Intel
+#                            Graphics Memory Management — managed by the GPU
+#                            ICD for surface/BO allocation)
+#
+# **Why NOT use Intel's noble/unified APT repo for these (ADR-0541).**
+# As of 2026-05-18 the Intel apt repo only carries up to
+# intel-opencl-icd 25.18.33578.15 (June 2025). NEO 25.18 does not understand
+# the i915 / KFD UAPI shipped by Linux kernel ≥ 7.0, so on hosts running
+# CachyOS 7.0.x (and any other distro tracking mainline post-7.x), zeInit()
+# returns ZE_RESULT_ERROR_UNINITIALIZED (0x78000001) and sycl-ls reports
+# `Platforms: 0` even though /dev/dri/renderD<N> for the Arc card is passed
+# through and accessible. Host-side the Arch packages (intel-compute-runtime
+# 26.31.39395.13) work; pinning the container to the matching 26.31 GitHub
+# release fixes the in-container fallback-to-CPU regression.
+#
+# clinfo is installed in the same layer as the NEO .debs to avoid a
+# separate apt-get update/install round (saves one image layer). ADR-0790.
+# The matched set of Intel NEO runtime, gmmlib, and IGC packages is derived
+# dynamically from the pinned NEO_VER release metadata at build time. ADR-1145.
+ARG NEO_VER=26.31.39395.13
+ARG GITHUB_TOKEN=""
+COPY dev/scripts/fetch-intel-neo.py /tmp/fetch-intel-neo.py
+# hadolint ignore=DL3003,DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends clinfo \
+    && mkdir -p /tmp/neo && cd /tmp/neo \
+    && python3 /tmp/fetch-intel-neo.py --neo-ver "${NEO_VER}" ${GITHUB_TOKEN:+--github-token "${GITHUB_TOKEN}"} \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ./*.deb \
+    && cd / && rm -rf /tmp/neo /tmp/fetch-intel-neo.py
+
+# Verify NEO compute-runtime packages were actually installed.
+RUN for pkg in intel-opencl-icd libze-intel-gpu1; do \
+        dpkg -l "${pkg}" 2>/dev/null | grep -q "^ii" \
+            || (echo "FATAL: ${pkg} was not installed" && exit 1); \
+    done
+
+# Level Zero loader (libze_loader) for SYCL
+ARG LEVEL_ZERO_VER=1.32.0
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VER}/libze1_${LEVEL_ZERO_VER}%2Bu24.04_amd64.deb" -o /tmp/libze1.deb \
+    && curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VER}/libze-dev_${LEVEL_ZERO_VER}%2Bu24.04_amd64.deb" -o /tmp/libze-dev.deb \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends /tmp/libze1.deb /tmp/libze-dev.deb \
+    && find /tmp -maxdepth 1 -name 'libze*.deb' -delete
+
+# ---------- Intel oneVPL GPU runtime (QSV encode dispatch) -----------------
+# `libvpl-dev` installs the dispatcher (`libvpl.so.2`) but not the Gen GPU
+# implementation (`libmfx-gen.so`). FFmpeg can compile `--enable-libvpl`
+# without it, but every `*_qsv` dummy encode fails at runtime with
+# "Error creating a MFX session: -9" on Arc. Build the pinned Intel GPU
+# runtime from source into the Debian multiarch library directory that the
+# distro oneVPL dispatcher searches by default, so QSV works without
+# per-command ONEVPL_SEARCH_PATH overrides.
+ARG VPL_GPU_RT_TAG=intel-onevpl-26.2.4
+# hadolint ignore=DL3003
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-dev-mcp \
+    CCACHE_DIR=/root/.cache/ccache \
+    git clone --depth=1 --branch "${VPL_GPU_RT_TAG}" https://github.com/intel/vpl-gpu-rt.git /tmp/vpl-gpu-rt \
+    && cd /tmp/vpl-gpu-rt \
+    && git lfs pull \
+    && cmake -S . -B build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_INSTALL_LIBDIR=lib/x86_64-linux-gnu \
+        -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+        -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+        -DBUILD_RUNTIME=ON \
+        -DBUILD_TESTS=OFF \
+        -DBUILD_TOOLS=OFF \
+        -DENABLE_ITT=OFF \
+    && cmake --build build -j"$(nproc)" \
+    && cmake --install build \
+    && ldconfig \
+    && test -e /usr/lib/x86_64-linux-gnu/libmfx-gen.so \
+    && rm -rf /tmp/vpl-gpu-rt
+
+# oneAPI env — source /opt/intel/oneapi/setvars.sh in interactive shells;
+# for CI/build steps we set the critical vars explicitly.
+#
+# ONEAPI_ROOT/umf/latest/lib must be in LD_LIBRARY_PATH so that the oneAPI
+# Unified Runtime Level Zero adapter (libur_adapter_level_zero.so.0) can
+# dlopen libumf.so.1 at startup.  Without it every UR adapter load fails with
+# "libumf.so.1: cannot open shared object file" and sycl-ls reports
+# "No platforms found" even though the Arc GPU is visible to the kernel.
+# Confirmed via LD_DEBUG=libs on the host before landing this fix.
+#
+# ONEAPI_ROOT/tcm/latest/lib supplies libhwloc.so.15 — the level-zero UR
+# adapter dlopen()s libhwloc at adapter load time to enumerate NUMA topology
+# even before it touches a device. Without tcm/latest/lib on LD_LIBRARY_PATH
+# both `libur_adapter_level_zero.so.0` and `libur_adapter_level_zero_v2.so.0`
+# fail to load with "libhwloc.so.15: cannot open shared object file" and the
+# loader skips straight to the OpenCL/CUDA/HIP adapters which can't drive an
+# Arc GPU. ADR-0509 / Research-0138; verified via strace + ZE_LOADER_DEBUG_TRACE
+# inside the container against host RTX 4090 + Intel Arc A380 + AMD gfx1036.
+#
+# ONEAPI_ROOT/tbb/latest/lib supplies libtbb.so.12 — the Intel CPU OpenCL ICD
+# (/opt/intel/oneapi/compiler/latest/lib/libintelocl.so) dlopen()s libtbb at
+# OpenCL platform-enumeration time. Without tbb/latest/lib on
+# LD_LIBRARY_PATH the Khronos ocl-icd loader logs
+# `Failed to load driver because libtbb.so.12: cannot open shared object file`
+# and clinfo reports zero platforms even with the Intel GPU stack working.
+# ADR-0541.
+ENV ONEAPI_ROOT=/opt/intel/oneapi
+ENV DPCPP_ROOT=${ONEAPI_ROOT}/compiler/latest
+ENV PATH=${DPCPP_ROOT}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${DPCPP_ROOT}/lib:${ONEAPI_ROOT}/umf/latest/lib:${ONEAPI_ROOT}/tcm/latest/lib:${ONEAPI_ROOT}/tbb/latest/lib:${LD_LIBRARY_PATH}
+ENV PKG_CONFIG_PATH=${ONEAPI_ROOT}/tbb/latest/lib/pkgconfig
+
+# ---------- ROCm 7.2.x (HIP toolchain + runtime) ---------------------------
+# AMD apt repo.
+# NOTE: HIP kernel dispatch on AMD hardware requires /dev/kfd and
+# /dev/dri/renderD<N> (AMD node) to be passed into the container at runtime.
+# rocm-hip-runtime-dev already brings libhsa-runtime64.so (via hsa-rocr) and
+# libamdhip64.so, so no additional host-side ROCm userspace install is needed.
+# On a host with no AMD GPU the HIP runtime returns an error for device ops;
+# the container is still useful for build-regression catching and static
+# analysis. See docs/development/dev-mcp.md §Known Limitations.
+#
+# **Why ROCm 7.2.3 (ADR-0541).** ROCm userspace (libhsa-runtime64 + libamdhip64)
+# uses the kernel's KFD ioctl ABI to enumerate AMD agents. The ABI revs across
+# ROCm major versions. Linux ≥ 7.0 ships the KFD ioctls aligned with ROCm 7.x;
+# ROCm 6.4 userspace running against a 7.x kernel returns
+# `Unable to open /dev/kfd read-write: Invalid argument` from rocminfo and
+# vmaf --backend hip silently falls back to CPU. Pinning to ROCm 7.2.3 (the
+# same release Arch packages on the dev host) restores agent visibility.
+ARG ROCM_VER=7.2.4
+# AMD's apt repo only publishes a `noble` (Ubuntu 24.04) channel as of
+# 2026-05-18; there is no `resolute` (Ubuntu 26.04) channel yet.  The
+# `noble` packages install correctly on Ubuntu 26.04 — ROCm userspace
+# .debs are glibc-backward-compatible and the KFD ioctl ABI they depend
+# on is determined by the host kernel version (7.x here), not the
+# container's libc version.  When AMD publishes a `resolute` channel,
+# replace `noble` with `resolute` in the URL below.  ADR-0603.
+RUN curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key \
+        | gpg --dearmor \
+        | tee /usr/share/keyrings/rocm-archive-keyring.gpg > /dev/null \
+    && printf 'deb [arch=amd64 signed-by=/usr/share/keyrings/rocm-archive-keyring.gpg] https://repo.radeon.com/rocm/apt/%s noble main\n' "${ROCM_VER}" \
+        > /etc/apt/sources.list.d/rocm.list \
+    && printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' \
+        > /etc/apt/preferences.d/rocm-pin-600
+
+# Package selection rationale:
+#   rocm-hip-runtime-dev — HIP runtime (libamdhip64.so) + HSA runtime
+#                          (libhsa-runtime64.so via hsa-rocr) + hipcc + dev
+#                          headers. Sufficient for dispatch: hipcc embeds .co
+#                          fat-binaries at compile time; libamdhip64 dispatches
+#                          them via the HSA agent (gfx1036 on the dev host).
+#   hipcc                — HIP compiler driver (explicit, in case
+#                          rocm-hip-runtime-dev dependency changes).
+#   rocm-cmake           — CMake helpers used by the meson HIP backend.
+#
+# Why NOT rocm-hip-sdk: it pulls rccl (multi-GPU collectives) which depends on
+# libdrm-amdgpu-amdgpu1 + libdrm2-amdgpu, packages absent from the ROCm noble
+# apt repo as of 2026-05-18. libvmaf HIP feature kernels use one GPU per
+# worker and need no multi-GPU collective stack.
+#
+# libxml2-16 + symlink: Ubuntu 26.04 (Resolute) renamed the libxml2 shared
+# library from libxml2.so.2 (Ubuntu 24.04, shipped by `libxml2` package) to
+# libxml2.so.16 (shipped by the new `libxml2-16` package). ROCm 7.2.3's
+# bundled LLD (/opt/rocm-7.2.3/lib/llvm/bin/lld) was linked against the old
+# soname (libxml2.so.2) and fails at .hsaco link time with:
+#   error while loading shared libraries: libxml2.so.2: cannot open shared
+#   object file: No such file or directory
+# The compat symlink `libxml2.so.2 -> libxml2.so.16.1.2` satisfies the
+# dynamic linker without installing any additional ROCm packages. The ABI is
+# backward-compatible (libxml2 major bumped only for packaging reasons, the
+# C API is the same). ADR-0603.
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    rocm-hip-runtime-dev \
+    hipcc \
+    rocm-cmake \
+    libxml2-16 \
+    && ln -sf /usr/lib/x86_64-linux-gnu/libxml2.so.16.1.2 \
+              /usr/lib/x86_64-linux-gnu/libxml2.so.2
+
+# Verify ROCm packages were actually installed.
+RUN for pkg in rocm-hip-runtime-dev hipcc; do \
+        dpkg -l "${pkg}" 2>/dev/null | grep -q "^ii" \
+            || (echo "FATAL: ${pkg} was not installed" && exit 1); \
+    done
+
+ENV ROCM_PATH=/opt/rocm
+ENV PATH=${ROCM_PATH}/bin:${ROCM_PATH}/llvm/bin:${PATH}
+ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib:${LD_LIBRARY_PATH}
+
+# ---------- Build-time GPU runtime visibility probes -----------------------
+# Emit sycl-ls / clinfo / rocminfo output during image build so that any
+# install gap surfaces in the build log rather than silently at container
+# startup. In a standard BuildKit sandbox these may show "No platforms found"
+# or CPU-only (no GPU device node passthrough during build) — expected and
+# non-fatal (|| true). The output is still captured for diagnosis.
+RUN echo "=== sycl-ls (SYCL device visibility) ===" \
+    && sycl-ls 2>&1 || true \
+    && echo "=== clinfo --list (OpenCL platform/device list) ===" \
+    && clinfo --list 2>&1 || true \
+    && echo "=== rocminfo agents ===" \
+    && rocminfo 2>&1 | grep -E "Agent|Name:|Device Type|gfx" || true
+
+# ---------------------------------------------------------------------------
+# Stage 3 — libvmaf source build
+# ---------------------------------------------------------------------------
+FROM gpu-sdks AS libvmaf-build
+
+WORKDIR /build/vmaf
+
+# Copy only the build-needed subtrees — NOT the full repo root.
+#
+# Root cause for this explicit list: when `docker compose -f dev/docker-compose.yml`
+# is invoked without --project-directory, Docker Compose v2 sets the project
+# directory to the compose-file's parent (dev/), making `context: .` resolve to
+# dev/ rather than the repo root. As a result the root .dockerignore is never
+# consulted, and the entire repo root (including .corpus/ at 781 GB) is sent to
+# the daemon on every build. The runtime bind-mount (source: ., target: /workspace)
+# already provides the full tree at run-time, so baking it in is unnecessary.
+#
+# Directories included:
+#   core/           — meson source (the actual library + feature extractors).
+#                     Renamed from libvmaf/ per ADR-0700; the meson source dir
+#                     is now `core/` and is passed to `meson setup` below.
+#   compat/         — Python harness package (was python/vmaf/); pip-installed
+#                     via the `python/` shim, but the compat/ tree itself must
+#                     be present in the build context for the editable install
+#                     to resolve. ADR-0700.
+#   ffmpeg-patches/ — patch series applied in stage 3.5
+#   mcp-server/     — MCP JSON-RPC server (pip install -e)
+#   ai/             — tiny-AI training harness (pip install -e)
+#   tools/          — vmaf-tune CLI (pip install -e)
+#   python/         — Python bindings shim added to PYTHONPATH
+#                     (re-exports from compat/python-vmaf/, ADR-0700)
+#   model/          — VMAF model JSON/ONNX files (VMAF_MODEL_PATH)
+#   testdata/       — YUV fixtures for smoke tests (VMAF_TESTDATA_PATH;
+#                     runtime bind-mount shadows this at run-time)
+#   dev/            — entrypoint + helper scripts (ENTRYPOINT reference)
+#   scripts/        — CI helper scripts (assertion-density, copyright check)
+#
+# COPY --chown transfers ownership of file *contents*, but the /build/vmaf
+# directory itself is owned by root because Docker's WORKDIR directive always
+# creates directories as root.  Without chown-ing the directory entry, the vmaf
+# user cannot create the meson build subdir (os.makedirs → EACCES → meson
+# reports as OSError).  chown /build too so that future sub-directories created
+# inside /build by vmaf (e.g., /build/ffmpeg) are not blocked either.
+COPY --chown=vmaf:vmaf core/           /build/vmaf/core/
+COPY --chown=vmaf:vmaf compat/         /build/vmaf/compat/
+COPY --chown=vmaf:vmaf ffmpeg-patches/ /build/vmaf/ffmpeg-patches/
+COPY --chown=vmaf:vmaf mcp-server/     /build/vmaf/mcp-server/
+COPY --chown=vmaf:vmaf ai/             /build/vmaf/ai/
+COPY --chown=vmaf:vmaf tools/          /build/vmaf/tools/
+COPY --chown=vmaf:vmaf python/         /build/vmaf/python/
+COPY --chown=vmaf:vmaf model/          /build/vmaf/model/
+COPY --chown=vmaf:vmaf testdata/       /build/vmaf/testdata/
+COPY --chown=vmaf:vmaf dev/            /build/vmaf/dev/
+COPY --chown=vmaf:vmaf scripts/        /build/vmaf/scripts/
+RUN chown vmaf:vmaf /build /build/vmaf
+
+# Install ONNX Runtime C++ shared library (provides pkg-config .pc file so
+# meson can find it for -Denable_dnn=enabled). ONNX Runtime is not in Ubuntu
+# apt; we pull the official Linux x86_64 tarball from GitHub releases.
+# Version must satisfy ai/pyproject.toml requirement (>=1.20,<2.0).
+# 1.26.0 adds ROCm 7.x EP + CUDA 13.x EP — matches the container GPU stack exactly.
+# Bumped from 1.20.1 per ADR-0568 (SDK audit 2026-05-18).
+ARG ORT_VERSION=1.29.0
+RUN curl -fsSL \
+        "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
+        -o /tmp/ort.tgz \
+    && tar -xzf /tmp/ort.tgz -C /tmp \
+    && cp -r /tmp/onnxruntime-linux-x64-${ORT_VERSION}/include/* /usr/local/include/ \
+    && cp -r /tmp/onnxruntime-linux-x64-${ORT_VERSION}/lib/* /usr/local/lib/ \
+    && rm -rf /tmp/ort.tgz /tmp/onnxruntime-linux-x64-${ORT_VERSION} \
+    && ldconfig \
+    && printf "prefix=/usr/local\nexec_prefix=\${prefix}\nlibdir=\${exec_prefix}/lib\nincludedir=\${prefix}/include\n\nName: libonnxruntime\nDescription: ONNX Runtime C++ API\nVersion: %s\nLibs: -L\${libdir} -lonnxruntime\nCflags: -I\${includedir}\n" "${ORT_VERSION}" \
+        > /usr/local/lib/pkgconfig/libonnxruntime.pc
+
+USER vmaf
+
+# Configure with all backends enabled.
+# meson.build lives in core/ (not the repo root); pass the source dir
+# explicitly as the first positional argument to `meson setup`. ADR-0700.
+# -Denable_metal=auto  → auto-disabled on Linux (no Metal SDK present).
+# -Denable_mcp_sse=auto → auto-disabled until POSIX socket impl is complete.
+USER root
+# Install nv-codec-headers (provides ffnvcodec/dynlink_cuda.h for CUDA backend)
+# Pinned to commit that has cuStreamCreateWithPriority; GitHub mirror lags so use code.ffmpeg.org.
+ARG NV_CODEC_HEADERS_REF=n13.1.15.0
+RUN cd /tmp \
+    && curl -fsSL "https://code.ffmpeg.org/FFmpeg/nv-codec-headers/archive/${NV_CODEC_HEADERS_REF}.tar.gz" -o nv-codec-headers.tgz \
+    && tar xzf nv-codec-headers.tgz \
+    && cd nv-codec-headers \
+    && make install PREFIX=/usr/local \
+    && cd / && find /tmp -maxdepth 1 -name 'nv-codec-headers*' -exec rm -rf {} +
+
+USER vmaf
+
+
+# SYCL is built with AOT compilation by default (ADR-0567).
+# The default sycl_icpx_aot_targets list covers Arc dGPU (dg2-g10/g11,
+# acm-g10/g11/g12) plus every common Intel iGPU from Tiger Lake through
+# Battlemage. The fat binary also embeds a SPIR-V JIT fallback for any
+# unlisted device. This eliminates the several-second cold-start compilation
+# that Level Zero / IGC would otherwise perform on the first kernel launch.
+#
+# To shrink the binary for a single-target fleet (e.g. Arc A380 = dg2-g11):
+#   -Dsycl_icpx_aot_targets='dg2-g11'
+#
+# To revert to SPIR-V JIT only (smallest binary, first-run penalty):
+#   -Dsycl_icpx_aot_targets=''
+# ccache cache mount: persists compilation cache across image rebuilds so a
+# touch-once-build-everywhere cycle doesn't pay the full nvcc/icpx/hipcc compile
+# cost again. Meson auto-detects ccache when it's on PATH; passing the
+# environment hint keeps the cache scoped to the dev-mcp image.
+RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,gid=2000,id=ccache-dev-mcp-vmaf \
+    CCACHE_DIR=/home/vmaf/.cache/ccache \
+    cd core && CC=icx CXX=icpx meson setup build \
+        -Denable_cuda=true \
+        -Denable_sycl=true \
+        -Denable_hip=true \
+        -Denable_hipcc=true \
+        -Denable_metal=auto \
+        -Denable_dnn=enabled \
+        -Denable_mcp=true \
+        -Denable_mcp_stdio=true \
+        -Denable_mcp_uds=true \
+        -Denable_mcp_sse=auto \
+        --buildtype=release \
+        -Db_lto=false \
+        --prefix=/usr/local \
+        -Dc_args="-march=native" \
+    && ninja -C build
+
+USER root
+# Install and remove the Meson build dir (CUDA PTX/SASS, SYCL AOT fat
+# binaries, HIP .co objects, C object files). Installed libvmaf.so and
+# headers live under /usr/local/; the build dir is not needed at runtime
+# (~1-3 GB with all GPU backends). ADR-0790.
+RUN cd core && ninja -C build install \
+    && ldconfig \
+    && find /build/vmaf/core/build -maxdepth 0 -exec rm -rf {} +
+
+# ---------- Build-time backend smoke probe ---------------------------------
+# Walk every GPU backend the meson configure step claims to have enabled and
+# run a tiny vmaf invocation against the Netflix golden CPU pair. The probe
+# is a soft-gate: backends that need device passthrough (CUDA/SYCL/HIP)
+# will report "no device" or "not available" inside BuildKit's no-GPU sandbox,
+# which is non-fatal (|| echo WARN). What we actually catch here is the
+# "built without X support" class of regression — i.e. if a future commit
+# silently flips `-Denable_hip=true` to false (the precise failure mode that
+# motivated ADR-0514 in the first place), the WARN line for backend=hip will
+# read "built without hip support" instead of "no device", and the image
+# build log will surface the regression on every rebuild.
+#
+# LD_LIBRARY_PATH must include `/usr/local/lib` for this RUN because libvmaf.so.3
+# is installed there by `ninja install` above and the prior gpu-sdks ENV layers
+# pinned LD_LIBRARY_PATH to CUDA/oneAPI/ROCm directories only — `ldconfig` runs
+# during install (root) but the dlopen()er here is the vmaf process, and bash
+# `LD_LIBRARY_PATH=…` makes the dependency explicit.
+#
+# After a working run-time `docker compose up -d` with GPU passthrough,
+# `docker exec vmaf-dev-mcp /build/vmaf/dev/scripts/dev-mcp-probe.sh`
+# repeats the same probe with real devices and writes results to /probes/.
+USER vmaf
+
+# ---------- Netflix golden-pair YUV fixtures ----------------------------------
+# Fetch the canonical src01 / checkerboard YUV pairs used by
+# python/test/quality_runner_test.py and feature_extractor_test.py so that
+# `pytest python/test/` passes inside the container without any host-side
+# manual provisioning.  Uses the same script and md5 pinning as CI
+# (scripts/test/fetch-test-yuvs.sh, ADR-0493).  Download failures are fatal
+# here to catch network-policy regressions at build time; if GitHub is
+# unreachable in a CI sandbox the build fails loudly rather than silently
+# producing a container whose Python test suite always errors.
+RUN bash /build/vmaf/scripts/test/fetch-test-yuvs.sh
+
+# Use the 48-frame `testdata/{ref,dis}_576x324_48f.yuv` fixtures (always
+# present in the build context per testdata/) rather than the Netflix
+# golden CPU pair under python/test/resource/yuv/ which is fetched
+# above, for the backend smoke probe.
+RUN for B in cpu cuda sycl hip; do \
+      echo "--- probe: backend=$B ---" ; \
+      LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH} \
+      vmaf --reference /build/vmaf/testdata/ref_576x324_48f.yuv \
+           --distorted /build/vmaf/testdata/dis_576x324_48f.yuv \
+           --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+           --backend $B --json --output /tmp/probe_$B.json 2>&1 | head -3 \
+        || echo "WARN: backend=$B failed at container-build time (expected for GPU backends without device passthrough; check 'built without X support' as a real regression signal)" ; \
+    done
+
+# ---------------------------------------------------------------------------
+# Stage 3.5 — FFmpeg n9.0.1 with our libvmaf integration patches
+# ---------------------------------------------------------------------------
+# Builds the same FFmpeg version the fork's `ffmpeg-patches/series.txt` is
+# pinned against. Applies every patch in series order, then configures with
+# every libvmaf-* hook our patches add (sycl / cuda / hip / metal-
+# build-only on Linux). Result: `ffmpeg -filters` lists `libvmaf`,
+# `libvmaf_sycl`, `vmaf_pre`, `libvmaf_tune` so the dev
+# MCP probe can shell out to a real FFmpeg toolchain end-to-end.
+USER root
+
+# Re-set pipefail shell for this stage. SHELL directives are NOT inherited
+# across FROM boundaries in multi-stage builds — each stage starts fresh
+# with /bin/sh. The gpu-sdks stage set pipefail, but libvmaf-build is a
+# new stage so we must repeat it here.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Codec dependencies for FFmpeg n9.0.1 build:
+#
+#   libx264-dev      H.264 software encoder
+#   libx265-dev      H.265 software encoder
+#   libvpx-dev       VP8/VP9 software encoder (libvpx-vp9)
+#   libdav1d-dev     AV1 software *decoder*
+#   libaom-dev       AV1 software encoder + decoder (alliance for open media)
+#   libfdk-aac-dev   AAC encoder (nonfree-gated)
+#   libmp3lame-dev   MP3 encoder
+#   libopus-dev      Opus encoder/decoder
+#   libvorbis-dev    Vorbis encoder/decoder
+#   libass-dev       Subtitle renderer
+#   libfreetype-dev  Font glyph rendering for drawtext
+#   libfontconfig-dev / libfribidi-dev  Font matching + bidi for subtitle layout
+#   libva-dev        VA-API (Intel/AMD video accel headers — used by qsv/vaapi)
+#   libvdpau-dev     VDPAU (NVIDIA video accel headers — legacy decode path)
+#   libvpl-dev       Intel oneVPL runtime (modern replacement for libmfx;
+#                    enables `h264_qsv` / `hevc_qsv` / `av1_qsv` via
+#                    `--enable-libvpl`). Already pulled in stage 1 but
+#                    re-listed for documentation.
+#
+# SVT-AV1 and libaom are intentionally NOT installed from apt:
+#
+#   * libsvtav1-dev (Ubuntu) ships the library and headers but omits
+#     the `SvtAv1Enc.pc` pkg-config file (a Debian packaging quirk
+#     verified 2026-05-18 against `ubuntu:24.04`: only `aom.pc` and
+#     `vpl.pc` land in `/usr/lib/x86_64-linux-gnu/pkgconfig/`).
+#     FFmpeg's `require_pkg_config libsvtav1 SvtAv1Enc ...` configure
+#     probe therefore fails with `ERROR: SvtAv1Enc >= 0.9.0 not found
+#     using pkg-config` even when the library is present on disk.
+#
+#   * libaom-dev (Ubuntu 24.04 → 3.8.2) is too old for the patched FFmpeg build:
+#     `libavcodec/libaomenc.c` uses `aom_roi_map_t` fields (`enabled`,
+#     `skip`, `ref_frame`, `delta_qp_enabled`) added in libaom 3.10+,
+#     so the in-image FFmpeg build fails with
+#     `'aom_roi_map_t' has no member named 'enabled'` etc. against
+#     Ubuntu's older struct layout.
+#
+# Both libraries are built from source in dedicated layers below
+# (analogous to libvvenc and AMF), which install pinned upstream
+# releases under `/usr/local/` with the correct headers + .pc files.
+#
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    libx264-dev libx265-dev libvpx-dev libdav1d-dev \
+    libfdk-aac-dev libmp3lame-dev libopus-dev libvorbis-dev \
+    libass-dev libfreetype-dev libfontconfig-dev libfribidi-dev \
+    libva-dev libvdpau-dev libvpl-dev
+
+# NOTE: libaom (Alliance for Open Media reference AV1 encoder) is
+# intentionally NOT built or enabled.
+#
+# The fork's `ffmpeg-patches/0007-libvmaf-tune-qpfile-unified.patch`
+# adds a `qpfile_aom_apply_roi` helper to `libavcodec/libaomenc.c`
+# that references `aom_roi_map_t` fields (`enabled`, `skip`,
+# `ref_frame`, `delta_qp_enabled`) that DO NOT EXIST in any released
+# libaom version including v3.11.0 (verified 2026-05-18 against
+# upstream `aom/aomcx.h:1609` — the public struct only has
+# `roi_map`, `rows`, `cols`, `delta_q`, `delta_lf`,
+# `static_threshold`). The patch was likely written against a
+# libaom development branch whose ROI API never shipped. Enabling
+# `--enable-libaom` therefore hard-errors at FFmpeg compile time
+# regardless of the libaom version installed.
+#
+# Disposition: SVT-AV1 (built above) is the production AV1 lane
+# anyway (Intel / Netflix maintain it as the fast software encoder);
+# libaom-av1 is the slow reference rarely used in production
+# pipelines. Dropping it from the in-image FFmpeg costs `libaom-av1`
+# in the compare-sweep matrix but keeps the fork's patch stack
+# rebase-stable. Re-enabling libaom requires first fixing
+# `ffmpeg-patches/0007-libvmaf-tune-qpfile-unified.patch` to either
+# (a) target a libaom version that actually ships the assumed ROI
+# fields, or (b) make the ROI bridge libaom-version-gated (mirror
+# the SVT-AV1 `>= 1.6.0` log-and-continue pattern already in the
+# patch). Tracked as a follow-up; out of ADR-0541's scope.
+
+# ---- SVT-AV1 (Scalable Video Tech for AV1) source build ---------------------
+# Built from upstream because Ubuntu's `libsvtav1-dev` package omits
+# `SvtAv1Enc.pc` (see comment above). Upstream's `cmake --install`
+# always writes `SvtAv1Enc.pc` under `${CMAKE_INSTALL_PREFIX}/lib/
+# pkgconfig/`, which the FFmpeg `--enable-libsvtav1` configure probe
+# resolves via PKG_CONFIG_PATH.
+#
+# Pin to a release tag that FFmpeg n9.0.1's configure accepts
+# (`SvtAv1Enc >= 0.9.0`) and that ships modern presets (`-preset 6` /
+# `-preset 8` are the rate-quality knobs vmaf-tune's compare sweep
+# exercises). Tags 2.x are current at time of writing; 2.1.0 is a
+# stable LTS-flavoured cut.
+ARG SVTAV1_VERSION=4.2.0
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-dev-mcp \
+    CCACHE_DIR=/root/.cache/ccache \
+    git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
+        https://gitlab.com/AOMediaCodec/SVT-AV1.git /tmp/SVT-AV1 \
+    && cmake -S /tmp/SVT-AV1 -B /tmp/SVT-AV1/build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+        -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+        -DBUILD_SHARED_LIBS=ON \
+        -DBUILD_APPS=OFF \
+        -DBUILD_TESTING=OFF \
+    && cmake --build /tmp/SVT-AV1/build -j"$(nproc)" \
+    && cmake --install /tmp/SVT-AV1/build \
+    && ldconfig \
+    && rm -rf /tmp/SVT-AV1
+
+# ---- libvvenc (Fraunhofer Versatile Video Coding reference encoder) ---------
+# Not in Ubuntu apt. Build the VVenC reference encoder from the upstream
+# tagged release; install the static libs + pkg-config file so FFmpeg's
+# `--enable-libvvenc` configure probe succeeds. Pin to a tag known to
+# compile against gcc-13 / cmake>=3.13 on Ubuntu 24.04.
+#
+# Build options:
+#   -DBUILD_SHARED_LIBS=ON   exposes libvvenc.so so we don't statically link
+#                            into ffmpeg (smaller binary; matches the other
+#                            codec deps' .so layout).
+#   -DVVENC_ENABLE_INSTALL=ON installs pkg-config (libvvenc.pc) so FFmpeg's
+#                            check_pkg_config probe matches.
+#   -DCMAKE_BUILD_TYPE=Release optimised encoder; debug builds are 5-10x slower.
+#
+# Threading: GitHub raw artifacts are subject to rate limiting; clone via
+# the upstream Fraunhofer mirror which has higher bandwidth caps.
+# 1.14.0 adds encoder quality improvements at medium presets and gcc-14
+# compatibility fixes. API-stable within the 1.x line.
+# Bumped from 1.12.0 per ADR-0568 (SDK audit 2026-05-18).
+ARG VVENC_VERSION=1.14.0
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-dev-mcp \
+    CCACHE_DIR=/root/.cache/ccache \
+    git clone --depth=1 --branch "v${VVENC_VERSION}" \
+        https://github.com/fraunhoferhhi/vvenc.git /tmp/vvenc \
+    && cmake -S /tmp/vvenc -B /tmp/vvenc/build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+        -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+        -DBUILD_SHARED_LIBS=ON \
+        -DVVENC_ENABLE_INSTALL=ON \
+    && cmake --build /tmp/vvenc/build -j"$(nproc)" \
+    && cmake --install /tmp/vvenc/build \
+    && ldconfig \
+    && rm -rf /tmp/vvenc
+
+# ---- AMD AMF headers (Advanced Media Framework, header-only) ---------------
+# AMF is a header-only API; the actual encoder runs inside the AMD GPU
+# user-space driver (amdgpu-pro). FFmpeg's `--enable-amf` only needs the
+# headers at build time. Vendored from the upstream GPUOpen repo.
+#
+# Runtime requirement (not covered by this layer):
+#   `libamfrt64.so` from amdgpu-pro userspace. On hosts without amdgpu-pro,
+#   `h264_amf` / `hevc_amf` / `av1_amf` will probe-fail at runtime ("encoder
+#   compiled in, dlopen libamfrt64.so failed"). vmaf-tune's probe handles
+#   that case as a per-encoder skip — see ADR-0541 §Consequences.
+# FFmpeg n9.0.1's configure probe is
+# `AMF_VERSION >= 0x0001000400240000` (= 1.4.36); older AMF tags hard-error
+# with `ERROR: amf requested but not found`. v1.4.36 is the minimum compatible
+# tag (verified 2026-08-31 against the n9.0.1 configure source).
+# 1.5.2 satisfies the >=1.4.36 probe. `--disable-filter=amf_capture` in the
+# FFmpeg configure already neutralises the DisplayCapture.h C++ header change
+# in 1.5.x. Bumped from 1.4.36 per ADR-0568 (SDK audit 2026-05-18).
+ARG AMF_VERSION=1.5.2
+RUN git clone --depth=1 --branch "v${AMF_VERSION}" \
+        https://github.com/GPUOpen-LibrariesAndSDKs/AMF.git /tmp/AMF \
+    && mkdir -p /usr/local/include/AMF \
+    && cp -r /tmp/AMF/amf/public/include/* /usr/local/include/AMF/ \
+    && rm -rf /tmp/AMF
+
+USER vmaf
+
+ARG FFMPEG_TAG=n9.0.1
+RUN git clone --depth=1 --branch ${FFMPEG_TAG} https://git.ffmpeg.org/ffmpeg.git /build/ffmpeg
+WORKDIR /build/ffmpeg
+
+# Apply every patch from ffmpeg-patches/series.txt in order.
+RUN git config user.email "vmaf-dev-mcp@localhost" && git config user.name "vmaf dev-mcp" && while IFS= read -r patch_name; do \
+        case "${patch_name}" in \
+            ""|"#"*) continue ;; \
+        esac ; \
+        echo "applying ffmpeg-patches/${patch_name}" ; \
+        git am --3way "/build/vmaf/ffmpeg-patches/${patch_name}" \
+            || { echo "FATAL: ffmpeg-patches/${patch_name} did not apply"; git am --abort 2>/dev/null || true; exit 1; } ; \
+    done < /build/vmaf/ffmpeg-patches/series.txt
+
+# FFmpeg configure with the fork's full encoder matrix.
+#
+# Codec-by-codec rationale (see ADR-0541):
+#
+#   Software AV1:
+#     --enable-libsvtav1   SVT-AV1 (Intel/Netflix, the production
+#                          software AV1 encoder).
+#     `--enable-libaom` is intentionally NOT passed — the fork's
+#     ffmpeg-patches/0007 carries a libaom-ROI helper that references
+#     `aom_roi_map_t` fields not present in any released libaom (the
+#     patch was written against an unreleased dev branch). Enabling
+#     libaom hard-errors at compile time. See the comment block on
+#     the libaom skip above for the follow-up plan.
+#
+#   Software VVC (H.266):
+#     --enable-libvvenc    Fraunhofer reference VVC encoder
+#
+#   NVIDIA hardware (RTX 4090):
+#     --enable-nvenc       h264_nvenc / hevc_nvenc / av1_nvenc
+#     --enable-cuda-nvcc   Lets FFmpeg compile its own CUDA kernels (used by
+#                          `scale_cuda`, `hwupload_cuda` etc. that the GPU
+#                          encode pipelines lean on). Requires CUDA_HOME.
+#
+#   `--enable-libnpp` is INTENTIONALLY OMITTED. FFmpeg n9.0.1's NPP
+#   compatibility ceiling is CUDA 12.x; passing the flag against
+#   CUDA 13.x (the version the dev image tracks via the unversioned
+#   `cuda-toolkit` apt meta-package) hard-errors at configure time with
+#   `ERROR: libnpp support is deprecated, version 13.0 and up are not
+#   supported`. `scale_cuda` (built via `--enable-cuda-nvcc`) covers
+#   the usual hwupload → scale → nvenc GPU pipeline without libnpp;
+#   `scale_npp` is the only filter we lose, and it has no consumer in
+#   the vmaf-tune / MCP / corpus scripts. Re-add `--enable-libnpp`
+#   only if the image is pinned to a CUDA <=12.x base.
+#
+#   Intel hardware (Arc / Xe / Gen11+):
+#     --enable-libvpl      Intel oneVPL — the modern unified API that
+#                          replaced legacy libmfx. Provides
+#                          `h264_qsv` / `hevc_qsv` / `av1_qsv` /
+#                          `vp9_qsv` / `mjpeg_qsv` encoders. The
+#                          legacy `--enable-libmfx` is intentionally
+#                          omitted (sunsetted by Intel for Arc;
+#                          oneVPL is the supported successor on
+#                          Gen11+ silicon including the host's A380).
+#
+#   AMD hardware (gfx1036 + future Radeon):
+#     --enable-amf         h264_amf / hevc_amf / av1_amf. AMF is a
+#                          header-only API at FFmpeg build time;
+#                          libamfrt64.so dlopen happens at runtime
+#                          and requires the amdgpu-pro userspace.
+#     --disable-filter=amf_capture
+#                          The `amf_capture` (`vsrc_amf.c`, AMF Display
+#                          Capture source filter) includes AMF's
+#                          `components/DisplayCapture.h` which contains
+#                          `extern "C"` blocks. FFmpeg compiles
+#                          `vsrc_amf.c` as plain C and chokes on the
+#                          C++ syntax (verified 2026-05-18 against AMF
+#                          v1.4.36 / FFmpeg n9.0.1). The filter is for
+#                          screen-capture sources we don't use; the
+#                          `*_amf` encoders live in separate
+#                          translation units (`libavcodec/amfenc*.c`)
+#                          and are unaffected. Filter name is taken
+#                          from `OBJS-$(CONFIG_AMF_CAPTURE_FILTER)`
+#                          in `libavfilter/Makefile`.
+#
+# vmaf integration patches (unchanged):
+#     --enable-libvmaf{,-cuda,-sycl,-hip} — fork patches.
+# PKG_CONFIG_PATH must explicitly include /usr/lib/x86_64-linux-gnu/pkgconfig
+# (the Ubuntu/Debian multiarch path) so FFmpeg's `check_pkg_config` probes
+# pick up the distro-installed `.pc` files — `SvtAv1Enc.pc` (from
+# `libsvtav1-dev`), `aom.pc` (from `libaom-dev`), `vpl.pc` (from `libvpl-dev`).
+# The default pkg-config search path varies by distro/version: on some
+# builds setting PKG_CONFIG_PATH only *prepends*, but ffmpeg's configure
+# also passes it through to its own pkg-config invocations which lose the
+# implicit defaults. Listing the multiarch path explicitly is the
+# robust fix (verified post-ADR-0541 SvtAv1Enc-not-found regression).
+RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,gid=2000,id=ccache-dev-mcp-vmaf \
+    CCACHE_DIR=/home/vmaf/.cache/ccache \
+    PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig \
+    ./configure \
+        --prefix=/usr/local \
+        --enable-gpl --enable-version3 --enable-nonfree \
+        --enable-libvmaf \
+        --enable-libvmaf-cuda \
+        --enable-libvmaf-sycl \
+        --enable-libvmaf-hip \
+        --enable-libx264 --enable-libx265 \
+        --enable-libvpx --enable-libdav1d \
+        --enable-libsvtav1 --enable-libvvenc \
+        --enable-libfdk-aac --enable-libmp3lame --enable-libopus --enable-libvorbis \
+        --enable-libass --enable-libfreetype --enable-libfontconfig --enable-libfribidi \
+        --enable-vaapi --enable-vdpau \
+        --enable-nvenc --enable-cuda-nvcc \
+        --enable-libvpl \
+        --enable-amf \
+        --disable-filter=amf_capture \
+        --cc='ccache gcc' \
+        --cxx='ccache g++' \
+        --extra-cflags="-I${CUDA_HOME}/include -I/usr/local/include" \
+        --extra-ldflags="-L${CUDA_HOME}/lib64 -L/usr/local/lib" \
+    && make -j"$(nproc)"
+
+USER root
+# Install and then remove the FFmpeg source tree (sources + build objects).
+# Installed binaries/libs live under /usr/local/; the source tree at
+# /build/ffmpeg is not needed at runtime (~2-5 GB). ADR-0790.
+RUN cd /build/ffmpeg \
+    && make install \
+    && /usr/local/bin/ffmpeg -version | head -3 \
+    && find /build/ffmpeg -maxdepth 0 -exec rm -rf {} +
+
+# ---- Build-time encoder probe (ADR-0541) ----------------------------------
+# Walk every encoder this stage promises and grep the actual `ffmpeg
+# -encoders` output for it. The probe is a soft-gate (`|| echo WARN`)
+# because hardware encoders need the matching userspace driver to *load*
+# but not to be *listed*. The compile-in promise is what we lock down
+# here — if a future configure-flag tweak silently drops `--enable-amf`
+# or `--enable-libvvenc`, the WARN line catches it on every rebuild
+# instead of waiting for a user to run a sweep.
+#
+# Mirrors the libvmaf backend probe at stage 3.
+RUN echo "=== ffmpeg encoder probe (ADR-0541) ===" \
+    && for enc in libx264 libx265 libvpx-vp9 libsvtav1 libvvenc \
+                  h264_nvenc hevc_nvenc av1_nvenc \
+                  h264_qsv hevc_qsv av1_qsv \
+                  h264_amf hevc_amf av1_amf ; do \
+         if /usr/local/bin/ffmpeg -hide_banner -encoders 2>/dev/null \
+             | awk -v e="$enc" '{ if ($2 == e) { print; found=1 } } END { exit !found }' ; then \
+           printf "  ok   %s\n" "$enc" ; \
+         else \
+           printf "  WARN %s missing from ffmpeg -encoders\n" "$enc" ; \
+         fi ; \
+       done
+USER vmaf
+
+WORKDIR /build/vmaf
+
+# ---------------------------------------------------------------------------
+# Stage 4 — Python environment
+# ---------------------------------------------------------------------------
+# =============================================================================
+# Go builder — compiles the six vmafx binaries (ADR-0702 Phase 4).
+#
+# Until now the image shipped ZERO Go binaries and had no Go toolchain at all,
+# so `vmafx-server`, `vmafx-mcp`, `vmafx-tune`, `vmafx-controller`, `vmafx-node`
+# and `vmafx-operator` existed only on a developer's host. That makes
+# CLAUDE.md §15 ("default to the container for vmaf / vmaf-tune / ai / MCP
+# work") impossible to satisfy for any Go surface, and it blocks the Python
+# sunset in ADR-0703 §Decision / ADR-0704 §Consequences — the Python cannot be
+# removed from the image before the Go replacements are in it.
+#
+# This stage derives from libvmaf-build rather than a bare `golang` image
+# because four of the six binaries link libvmaf through cgo (pkg/libvmaf):
+# vmafx-server, vmafx-mcp, vmafx-controller and vmafx-node all fail to build
+# under CGO_ENABLED=0 with "undefined: libvmaf.Scorer". Only vmafx-tune and
+# vmafx-operator are pure Go. So the toolchain is copied INTO the stage that
+# already has libvmaf.so and its headers, rather than the other way round.
+# =============================================================================
+FROM libvmaf-build AS go-build
+
+USER root
+# Toolchain only — no base-image swap, so libvmaf and its pkg-config stay put.
+COPY --from=golang:1.27-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b /usr/local/go /usr/local/go
+ENV PATH=/usr/local/go/bin:${PATH}
+ENV GOTOOLCHAIN=local
+
+WORKDIR /build/vmaf
+# The libvmaf-build stage intentionally copies only its C/Python build inputs.
+# Copy the Go module and every repository-local package imported by ./cmd/...
+# here so this stage remains cacheable without bloating the earlier image.
+COPY go.mod go.sum ./
+COPY cmd/ ./cmd/
+COPY pkg/ ./pkg/
+COPY api/ ./api/
+COPY gen/ ./gen/
+COPY internal/ ./internal/
+# cgo needs to find libvmaf.so and libvmaf.h from the libvmaf-build stage.
+ENV CGO_ENABLED=1
+RUN --mount=type=cache,target=/root/.cache/go-build,sharing=locked,id=gobuild-dev-mcp \
+    --mount=type=cache,target=/root/go/pkg/mod,sharing=locked,id=gomod-dev-mcp \
+    go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/... \
+    && ls -1 /out/ \
+    && test "$(ls -1 /out/ | wc -l)" -eq 6
+
+FROM libvmaf-build AS dev-mcp
+
+# Install in-tree Python packages (editable for dev convenience)
+# vmaf-mcp: embedded MCP JSON-RPC server
+# vmaf-train: tiny-AI training harness (ai/)
+# vmaf-tune: encode automation / VMAF-tune CLI
+USER root
+# matplotlib: vmaf-tune report renderer (charts in the markdown/html
+# bundles). ADR-0496 demands every user-discoverable surface work
+# inside the container; BBB e2e v2 Bug #v2-C surfaced when ``report``
+# crashed on ``ModuleNotFoundError: matplotlib`` because the package
+# wasn't baked in. ADR-0498 closes the gap.
+RUN python3.14 -m venv /opt/vmaf-venv \
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir matplotlib \
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir -e /build/vmaf/mcp-server/vmaf-mcp \
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir -e '/build/vmaf/ai[dev]' \
+    # Pin torchvision to the ABI-compatible wheel for torch 2.12.x.
+    # Without this pin, pip may resolve torchvision 0.26.0 (built against
+    # torch 2.11) which raises ``RuntimeError: operator torchvision::nms does
+    # not exist`` when pytorch-lightning → torchmetrics eagerly imports
+    # torchvision at import time (see ai/pyproject.toml and ai/AGENTS.md).
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir 'torchvision>=0.27.0,<0.28.0' \
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir -e '/build/vmaf/tools/vmaf-tune[fast]'
+
+# The six Go binaries from the go-build stage (ADR-0702), on PATH beside the C
+# `vmaf` CLI at /usr/local/bin/vmaf.
+COPY --from=go-build /out/ /usr/local/bin/
+
+ENV PATH=/opt/vmaf-venv/bin:${PATH}
+ENV PYTHONPATH=/build/vmaf/python:${PYTHONPATH}
+
+# Runtime environment
+ENV VMAF_MODEL_PATH=/build/vmaf/model
+ENV VMAF_TESTDATA_PATH=/build/vmaf/testdata
+# MCP UDS socket path (must match dev-mcp-entrypoint.sh and docker-compose.yml)
+ENV VMAF_MCP_UDS_PATH=/tmp/vmaf-mcp.sock
+# ADR-0546: route vmaf-tune temporary decode artefacts to the /probes
+# bind-mount (~435 GB free in production) instead of the 8 GB /tmp tmpfs.
+# The entrypoint creates /probes/vmaftune-work at startup.
+ENV VMAFTUNE_WORKDIR=/probes/vmaftune-work
+
+# Expose the SSE port (if SSE transport is enabled at build time)
+EXPOSE 8765
+
+# Health-check: verify libvmaf is installed and returns version
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD vmaf --version || exit 1
+
+# Drop back to vmaf user for runtime (USER root was needed only for
+# the pip-install RUN above).
+USER vmaf
+
+ENTRYPOINT ["/build/vmaf/dev/scripts/dev-mcp-entrypoint.sh"]
+CMD []

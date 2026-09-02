@@ -1,0 +1,390 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# .github/workflows/e2e-k8s.yml
+#
+# Kubernetes integration test harness for the supported VMAFx runtime.
+# Uses kind + kuttl to install the default Helm server workload and operator,
+# then performs a real CPU score through the server's REST API.
+#
+# Trigger policy (ADR-0783):
+#   - PRs:    SKIPPED by default (job requires label "run-e2e-k8s" OR manual dispatch).
+#             This keeps normal PR CI fast; the heavy cluster tests run nightly.
+#   - Nightly (03:47 UTC): always runs.
+#   - Manual: workflow_dispatch with optional inputs.
+#
+# References: ADR-0783, ADR-0709, ADR-0713, ADR-0714.
+
+name: "E2E — Kubernetes Integration (kind + kuttl)"
+
+on:
+  schedule:
+    # Nightly at 03:47 UTC (offset from other nightly jobs at 03:17 to avoid
+    # runner contention; see nightly.yml which runs at 03:17).
+    - cron: "47 3 * * *"
+
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, labeled]
+    # Only run on PRs that explicitly opt in — keeps normal CI fast.
+    # The required-aggregator treats "not reported due to label gate" as skipped/OK.
+
+  workflow_dispatch:
+    inputs:
+      cluster_name:
+        description: "kind cluster name"
+        required: false
+        default: "vmafx-e2e"
+      keep_cluster:
+        description: "Keep the kind cluster after the run (debug)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-k8s-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CLUSTER_NAME: ${{ inputs.cluster_name || 'vmafx-e2e' }}
+  # Tool versions — pin every external tool for reproducibility.
+  KIND_VERSION: "v0.33.0"
+  KUBECTL_VERSION: "v1.37.0"
+  HELM_VERSION: "v4.2.4"
+  # Official get.helm.sh digest for helm-v4.2.4-linux-amd64.tar.gz.
+  HELM_SHA256: "c306b46f719b0a4da32d0f78ee21bf90ce8d602f15b22ab753f0674d1670a7f3"
+  KUTTL_VERSION: "v0.26.0"
+  # Image tags built by this workflow's "build-images" job.
+  E2E_IMAGE_TAG: "e2e-${{ github.sha }}"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Gate: skip the job on PRs unless the "run-e2e-k8s" label is present.
+  # Nightly and manual dispatches bypass this gate.
+  # ---------------------------------------------------------------------------
+  gate:
+    name: "Gate — check label / trigger"
+    runs-on: ubuntu-24.04
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Determine whether to proceed
+        id: check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          if [ "$EVENT_NAME" = "schedule" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          elif echo "$PR_LABELS" | grep -q '"run-e2e-k8s"'; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "PR does not have 'run-e2e-k8s' label — skipping e2e." >&2
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Build the chart runtime images plus the explicit CPU node target.
+  # Uses Docker layer caching; only rebuilds when Go sources change.
+  # ---------------------------------------------------------------------------
+  build-images:
+    name: "Build e2e images"
+    needs: gate
+    if: needs.gate.outputs.should_run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: recursive
+
+      - name: Verify E2E runtime contract
+        run: python3 scripts/ci/test_e2e_runtime_contract.py
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4.3.0
+
+      - name: Cache Docker layers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: /tmp/.buildx-cache
+          key: buildx-e2e-${{ runner.os }}-${{ hashFiles('cmd/**', 'pkg/**', 'core/**', 'go.sum', 'Dockerfile.go-server', 'docker/Dockerfile.*') }}
+          restore-keys: buildx-e2e-${{ runner.os }}-
+
+      - name: Build vmafx-operator image (e2e tag)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        with:
+          context: .
+          file: docker/Dockerfile.operator
+          push: false
+          load: true
+          tags: ghcr.io/vmafx/vmafx-operator:${{ env.E2E_IMAGE_TAG }},ghcr.io/vmafx/vmafx-operator:e2e-test
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+            GIT_SHA=${{ github.sha }}
+
+      - name: Build vmafx-node image (cpu variant, e2e tag)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        with:
+          context: .
+          file: docker/Dockerfile.node
+          target: node-cpu
+          push: false
+          load: true
+          tags: ghcr.io/vmafx/vmafx-node:${{ env.E2E_IMAGE_TAG }},ghcr.io/vmafx/vmafx-node:e2e-test
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      - name: Build vmafx-server image (cpu variant, e2e tag)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        with:
+          context: .
+          file: Dockerfile.go-server
+          target: go-server
+          push: false
+          load: true
+          tags: ghcr.io/vmafx/vmafx-server:${{ env.E2E_IMAGE_TAG }},ghcr.io/vmafx/vmafx-server:e2e-test
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          build-args: |
+            VMAFX_VERSION=e2e-${{ github.sha }}
+
+      # Replace old cache with new (avoids ever-growing cache).
+      - name: Rotate build cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      - name: Export images as tar for transfer to e2e job
+        run: |
+          docker save \
+            ghcr.io/vmafx/vmafx-operator:e2e-test \
+            ghcr.io/vmafx/vmafx-node:e2e-test \
+            ghcr.io/vmafx/vmafx-server:e2e-test \
+            -o /tmp/vmafx-e2e-images.tar
+
+      - name: Upload image tar
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: vmafx-e2e-images
+          path: /tmp/vmafx-e2e-images.tar
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Prepare tiny Y4M fixtures (64x64 8-frame synthetic clip). The raw YUVs are
+  # committed; the generator validates them and adds geometry-bearing Y4M
+  # headers for the server's file-path scoring API.
+  # ---------------------------------------------------------------------------
+  prepare-fixtures:
+    name: "Prepare YUV fixtures"
+    needs: gate
+    if: needs.gate.outputs.should_run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Validate raw fixtures and generate Y4M wrappers
+        run: bash test/e2e/fixtures/gen-tiny-yuv.sh
+
+      - name: Upload fixtures
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: yuv-fixtures
+          path: test/e2e/fixtures/
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Main e2e job: spin up kind, load images, run kuttl.
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: "E2E — kind + kuttl"
+    needs: [gate, build-images, prepare-fixtures]
+    if: needs.gate.outputs.should_run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      KIND_CLUSTER_NAME: ${{ inputs.cluster_name || 'vmafx-e2e' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Configure isolated kind kubeconfig
+        run: |
+          set -euo pipefail
+          kubeconfig_dir="${RUNNER_TEMP}/vmafx-e2e"
+          kubeconfig="${kubeconfig_dir}/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.kubeconfig"
+          install -d -m 0700 "${kubeconfig_dir}"
+          if [[ -e "${kubeconfig}" ]]; then
+            echo "Refusing to reuse existing E2E kubeconfig: ${kubeconfig}" >&2
+            exit 1
+          fi
+          {
+            printf 'VMAFX_E2E_KUBECONFIG=%s\n' "${kubeconfig}"
+            printf 'KUBECONFIG=%s\n' "${kubeconfig}"
+          } >> "${GITHUB_ENV}"
+
+      # ---- Install tools ----
+      - name: Install kind ${{ env.KIND_VERSION }}
+        run: |
+          set -euo pipefail
+          install_dir="${RUNNER_TEMP}/vmafx-e2e-tools/bin"
+          install -d -m 0755 "${install_dir}"
+          curl --fail --location --show-error --silent \
+            --retry 5 --retry-all-errors \
+            --output "${install_dir}/kind" \
+            "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          chmod 0755 "${install_dir}/kind"
+          printf '%s\n' "${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/kind" version
+
+      - name: Install kubectl ${{ env.KUBECTL_VERSION }}
+        run: |
+          set -euo pipefail
+          install_dir="${RUNNER_TEMP}/vmafx-e2e-tools/bin"
+          install -d -m 0755 "${install_dir}"
+          curl --fail --location --show-error --silent \
+            --retry 5 --retry-all-errors \
+            --output "${install_dir}/kubectl" \
+            "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod 0755 "${install_dir}/kubectl"
+          printf '%s\n' "${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/kubectl" version --client
+
+      - name: Install helm ${{ env.HELM_VERSION }}
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          install_dir="${RUNNER_TEMP}/helm-${HELM_VERSION}/bin"
+          curl --fail --location --show-error --silent \
+            --retry 5 --retry-all-errors \
+            --output "${archive}" \
+            "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          printf '%s  %s\n' "${HELM_SHA256}" "${archive}" | sha256sum --check --strict
+          mkdir -p "${install_dir}"
+          tar --extract --gzip --file "${archive}" --directory "${RUNNER_TEMP}"
+          install -m 0755 "${RUNNER_TEMP}/linux-amd64/helm" "${install_dir}/helm"
+          printf '%s\n' "${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/helm" version --short
+
+      - name: Install kuttl ${{ env.KUTTL_VERSION }}
+        run: |
+          set -euo pipefail
+          install_dir="${RUNNER_TEMP}/vmafx-e2e-tools/bin"
+          install -d -m 0755 "${install_dir}"
+          curl --fail --location --show-error --silent \
+            --retry 5 --retry-all-errors \
+            --output "${install_dir}/kubectl-kuttl" \
+            "https://github.com/kudobuilder/kuttl/releases/download/${KUTTL_VERSION}/kubectl-kuttl_${KUTTL_VERSION#v}_linux_x86_64"
+          chmod 0755 "${install_dir}/kubectl-kuttl"
+          printf '%s\n' "${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/kubectl-kuttl" version
+
+      # ---- Restore artifacts ----
+      - name: Download e2e images
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: vmafx-e2e-images
+          path: /tmp/
+
+      - name: Load images into local Docker
+        run: docker load -i /tmp/vmafx-e2e-images.tar
+
+      - name: Download YUV fixtures
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: yuv-fixtures
+          path: test/e2e/fixtures/
+
+      # ---- Spin up cluster ----
+      - name: Create kind cluster + install CRDs
+        run: bash test/e2e/kind-cluster.sh
+
+      # ---- Pre-load VMAFx images into kind ----
+      - name: Load e2e images into kind cluster
+        run: |
+          bash test/e2e/assert-kind-context.sh
+          kind load docker-image \
+            ghcr.io/vmafx/vmafx-operator:e2e-test \
+            ghcr.io/vmafx/vmafx-node:e2e-test \
+            ghcr.io/vmafx/vmafx-server:e2e-test \
+            --name "${KIND_CLUSTER_NAME}"
+
+      # ---- Run kuttl tests ----
+      - name: Run kuttl e2e test suite
+        id: kuttl
+        run: |
+          bash test/e2e/assert-kind-context.sh
+          kubectl kuttl test \
+            --config test/e2e/kuttl-tests/kuttl-test.yaml \
+            --report xml \
+            --artifacts-dir test/e2e/results/
+        # Collect results even on failure.
+        continue-on-error: true
+
+      # ---- Collect diagnostics on failure ----
+      - name: Collect cluster diagnostics
+        if: always()
+        run: |
+          if ! bash test/e2e/assert-kind-context.sh; then
+            echo "Dedicated kind context is unavailable; skipping Kubernetes diagnostics." >&2
+            exit 0
+          fi
+          echo "=== VmafxJob status ===" && \
+            kubectl get vmafxjobs -A -o wide 2>/dev/null || true
+          echo "=== VmafxNode status ===" && \
+            kubectl get vmafxnodes -A -o wide 2>/dev/null || true
+          echo "=== VmafxModelTraining status ===" && \
+            kubectl get vmafxmodeltrainings -A -o wide 2>/dev/null || true
+          echo "=== Pod list ===" && \
+            kubectl get pods -A -o wide 2>/dev/null || true
+          echo "=== Operator logs ===" && \
+            kubectl logs -n vmafx-e2e-test deployment/vmafx-operator \
+              --tail=200 2>/dev/null || true
+          echo "=== Server logs ===" && \
+            kubectl logs -n vmafx-e2e-test deployment/vmafx \
+              --tail=200 2>/dev/null || true
+          echo "=== Events (all namespaces) ===" && \
+            kubectl get events -A --sort-by=.lastTimestamp 2>/dev/null || true
+
+      - name: Upload kuttl XML results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: kuttl-e2e-results
+          path: test/e2e/results/
+
+      - name: Publish test results
+        if: always() && hashFiles('test/e2e/results/**/*.xml') != ''
+        uses: EnricoMi/publish-unit-test-result-action@d0a4676d0e0b938bc201470d88276b7c74c712b3  # v2.24.0
+        with:
+          files: "test/e2e/results/**/*.xml"
+          check_name: "E2E k8s results"
+          comment_mode: off
+          check_run: false
+
+      # ---- Teardown ----
+      - name: Tear down kind cluster
+        if: always() && inputs.keep_cluster != 'true'
+        env:
+          TEARDOWN: "1"
+        run: bash test/e2e/kind-cluster.sh --teardown
+
+      # Fail the step now that diagnostics are collected.
+      - name: Assert kuttl exit code
+        env:
+          KUTTL_OUTCOME: ${{ steps.kuttl.outcome }}
+        run: |
+          if [[ "${KUTTL_OUTCOME}" != "success" ]]; then
+            echo "kuttl command outcome was ${KUTTL_OUTCOME}." >&2
+            exit 1
+          fi
+          if grep -rq 'failures="[1-9]' test/e2e/results/ 2>/dev/null; then
+            echo "One or more kuttl test cases FAILED." >&2
+            exit 1
+          fi

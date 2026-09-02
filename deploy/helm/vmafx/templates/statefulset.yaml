@@ -1,0 +1,169 @@
+{{- if eq .Values.workload "StatefulSet" }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "vmafx.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+  {{- with .Values.podAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  serviceName: {{ include "vmafx.fullname" . }}-headless
+  replicas: {{ .Values.statefulSet.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "vmafx.selectorLabels" . | nindent 6 }}
+  updateStrategy:
+    {{- toYaml .Values.statefulSet.updateStrategy | nindent 4 }}
+  # minReadySeconds: 0 by default; set via .Values.minReadySeconds if needed.
+  podManagementPolicy: {{ .Values.statefulSet.podManagementPolicy }}
+  template:
+    metadata:
+      labels:
+        {{- include "vmafx.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "vmafx.serviceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds | default 60 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ include "vmafx.name" . }}
+          image: {{ include "vmafx.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          env:
+            - name: VMAFX_BACKEND
+              value: {{ include "vmafx.backendEnvValue" . | quote }}
+          {{- range $k, $v := .Values.env }}
+            - name: {{ $k | quote }}
+              value: {{ $v | quote }}
+          {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "vmafx.fullname" . }}-config
+          {{- with .Values.envFrom }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            limits:
+              cpu: {{ .Values.resources.limits.cpu | quote }}
+              memory: {{ .Values.resources.limits.memory | quote }}
+            {{- $gpuKey := include "vmafx.gpuResource" . }}
+            {{- if and .Values.gpu.enabled $gpuKey }}
+              {{ $gpuKey }}: {{ .Values.gpu.count | quote }}
+            {{- end }}
+            requests:
+              cpu: {{ .Values.resources.requests.cpu | quote }}
+              memory: {{ .Values.resources.requests.memory | quote }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: state
+              mountPath: /var/lib/vmafx
+          {{- if .Values.persistence.corpus.enabled }}
+            - name: corpus
+              mountPath: {{ .Values.persistence.corpus.mountPath }}
+              readOnly: true
+          {{- end }}
+          {{- if .Values.persistence.output.enabled }}
+            - name: output
+              mountPath: {{ .Values.persistence.output.mountPath }}
+          {{- end }}
+          {{- if .Values.persistence.models.enabled }}
+            - name: models
+              mountPath: {{ .Values.persistence.models.mountPath }}
+              readOnly: true
+          {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- if .Values.persistence.corpus.enabled }}
+        - name: corpus
+          persistentVolumeClaim:
+            claimName: {{ include "vmafx.fullname" . }}-corpus
+            readOnly: true
+      {{- end }}
+      {{- if .Values.persistence.output.enabled }}
+        - name: output
+          persistentVolumeClaim:
+            claimName: {{ include "vmafx.fullname" . }}-output
+      {{- end }}
+      {{- if .Values.persistence.models.enabled }}
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ include "vmafx.fullname" . }}-models
+            readOnly: true
+      {{- end }}
+  # StatefulSet inline PVC for sticky session state.
+  volumeClaimTemplates:
+    - metadata:
+        name: state
+        labels:
+          {{- include "vmafx.labels" . | nindent 10 }}
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if .Values.persistence.storageClass }}
+        storageClassName: {{ .Values.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.statefulSet.statePVCSize | default "1Gi" }}
+---
+# Headless Service required for StatefulSet DNS.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vmafx.fullname" . }}-headless
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  clusterIP: None
+  selector:
+    {{- include "vmafx.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}
+{{- end }}
