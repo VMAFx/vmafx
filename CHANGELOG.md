@@ -23169,6 +23169,9 @@ ADR: [ADR-1021](docs/adr/1021-session-token-const-time-compare.md)
   r5-memory-ordering finding 3; ADR-1020).
 
 
+- **Whole-tree ratchet baseline resynced after the VIF/motion rework (ADR-1142).** PR #1199 landed its scalar VIF and float-motion cleanup after the ratchet gate itself merged, so the committed `scripts/ci/tidy-baseline-cpu.json` was stale-high by 36 warnings and 3 uncited NOLINTs and the gate failed `exit 3` on master and on every open PR. The baseline is now CI's own measurement of master (281 TUs, 5,205 warnings, 80 uncited NOLINTs), taken verbatim from the `tidy-ratchet-cpu` artifact of run 33685992032.
+
+
 - **CI green-up for RC.** Fixed two non-required CI lanes that were red and
   one Docker build break: (1) `rust-ci.yml` set `dtolnay/rust-toolchain` by
   commit SHA, so the action could not infer the toolchain from its git ref —
