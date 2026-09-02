@@ -658,8 +658,7 @@ static int append_65_feature_slopes_intercepts(char *json, size_t json_sz, size_
 {
     int err = append_str(json, json_sz, off, "],\"slopes\":[1.0");
     for (unsigned i = 0; i < 65u && !err; i++) {
-        if (!err)
-            err = append_str(json, json_sz, off, ",");
+        err = append_str(json, json_sz, off, ",");
         if (!err)
             err = append_uint(json, json_sz, off, i + 1u);
         if (!err)
@@ -668,8 +667,7 @@ static int append_65_feature_slopes_intercepts(char *json, size_t json_sz, size_
     if (!err)
         err = append_str(json, json_sz, off, "],\"intercepts\":[0.0");
     for (unsigned i = 0; i < 65u && !err; i++) {
-        if (!err)
-            err = append_str(json, json_sz, off, ",");
+        err = append_str(json, json_sz, off, ",");
         if (!err)
             err = append_uint(json, json_sz, off, i);
         if (!err)
