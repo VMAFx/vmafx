@@ -1,0 +1,1 @@
+| [ADR-1138](1138-c-translation-units-keep-null.md) | C translation units keep `NULL`; the `modernize-use-nullptr` ratchet stays scoped to C++ TUs via a cited file-scoped NOLINT bracket, because MSVC `/std:clatest` does not document C `nullptr` and upstream-mirror files would re-conflict on every sync. | Accepted | 2026-09-02 | lint, ci, c23, quality-gate, rebase |
