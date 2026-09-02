@@ -60,12 +60,12 @@ The Intel NEO compute-runtime and ROCm KFD userspace MUST match the host
 kernel's i915 / xe / KFD ioctl ABI, or `vmaf --backend sycl|hip` silently
 falls back to CPU. Two hard pins live in `dev/Containerfile`:
 
-- **`ARG NEO_VER=26.18.38308.1`** (+ `IGC_VER=2.34.4+21428` +
-  `GMMLIB_VER=22.10.0`). Pinned via GitHub releases because Intel's
-  `noble/unified` APT repo's newest as of 2026-05-18 is `25.18.x`, too old
-  for kernel ≥ 7.0. The IGC / gmmlib versions follow the NEO release-notes
-  manifest — bump them together when you bump NEO.
-- **`ARG ROCM_VER=7.2.3`** for `https://repo.radeon.com/rocm/apt/${ROCM_VER}`.
+- **`ARG NEO_VER=26.31.39395.13`** (+ `IGC_VER=2.40.13+22418` +
+  `GMMLIB_VER=22.10.0` + `LEVEL_ZERO_VER=1.32.0`). Pinned via GitHub releases
+  because Intel's `noble/unified` APT repo's newest as of 2026-05-18 is
+  `25.18.x`, too old for kernel ≥ 7.0. The IGC / gmmlib / Level-Zero versions
+  follow the NEO release-notes manifest — bump them together when you bump NEO.
+- **`ARG ROCM_VER=7.2.4`** for `https://repo.radeon.com/rocm/apt/${ROCM_VER}`.
   ROCm 6.x KFD ioctls do not match kernel ≥ 7.0.
 
 When CI / a maintainer's host runs a newer kernel that breaks these pins,

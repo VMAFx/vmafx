@@ -240,7 +240,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # returns ZE_RESULT_ERROR_UNINITIALIZED (0x78000001) and sycl-ls reports
 # `Platforms: 0` even though /dev/dri/renderD<N> for the Arc card is passed
 # through and accessible. Host-side the Arch packages (intel-compute-runtime
-# 26.18.38308.1) work; pinning the container to the matching 26.18 GitHub
+# 26.31.39395.13) work; pinning the container to the matching 26.31 GitHub
 # release fixes the in-container fallback-to-CPU regression.
 #
 # clinfo is installed in the same layer as the NEO .debs to avoid a
