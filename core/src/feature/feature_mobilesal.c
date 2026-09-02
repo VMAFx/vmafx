@@ -145,6 +145,12 @@ static int mobilesal_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (!path) {
         return -EINVAL;
     }
+    if (strstr(path, "mobilesal.onnx") != NULL || strstr(path, "placeholder") != NULL) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "mobilesal: loading placeholder model '%s' (synthetic smoke weights; placeholder "
+                 "/ not for production); use saliency_student_v1.onnx for production\n",
+                 path);
+    }
     rc = vmaf_tiny_ai_open_session("mobilesal", path, &s->sess);
     if (rc < 0) {
         return rc;

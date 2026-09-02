@@ -35,6 +35,7 @@
 
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_hip.h"
+#include "log.h"
 
 int vmaf_hip_available(void)
 {
@@ -47,6 +48,8 @@ int vmaf_hip_state_init(VmafHipState **out, VmafHipConfiguration cfg)
     if (out != NULL) {
         *out = NULL;
     }
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "vmaf_hip: HIP support disabled; rebuild libvmaf with -Denable_hip=true\n");
     return -ENOSYS;
 }
 
@@ -54,6 +57,8 @@ int vmaf_hip_import_state(VmafContext *ctx, VmafHipState *state)
 {
     (void)ctx;
     (void)state;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "vmaf_hip: HIP support disabled; rebuild libvmaf with -Denable_hip=true\n");
     return -ENOSYS;
 }
 
@@ -66,6 +71,8 @@ void vmaf_hip_state_free(VmafHipState **state)
 
 int vmaf_hip_list_devices(void)
 {
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "vmaf_hip: HIP support disabled; rebuild libvmaf with -Denable_hip=true\n");
     return -ENOSYS;
 }
 

@@ -9,9 +9,11 @@ of its per-pixel saliency map** as a scalar feature named
 backlog item T6-2 (T6-2a). Encoder-side ROI tooling (`tools/vmaf-roi`,
 per-CTU QP-offset sidecars) is shipped as T6-2b.
 
-> **Status — legacy smoke checkpoint.** The placeholder matches the
-> MobileSal I/O contract, but emits ~constant saliency. Production
-> saliency now uses the fork-trained
+> **Status — placeholder / not for production.**
+> `model/tiny/mobilesal.onnx` is a synthetic smoke placeholder (3→1
+> Conv+Sigmoid). It matches the MobileSal I/O contract to validate
+> pipeline wiring, but emits ~constant saliency (~0.5) and is
+> **not for production use**. Production saliency uses the fork-trained
 > [`saliency_student_v1`](saliency_student_v1.md) weights, which keep the
 > same `input` / `saliency_map` tensor names and run through the same
 > `feature_mobilesal.c` extractor. The original upstream MobileSal swap

@@ -71,7 +71,6 @@
 #include "feature/integer_motion.h"
 #include "picture.h"
 #include "feature/x86/motion_avx512.h"
-#include "feature/x86/motion_v2_avx512.h"
 #include "libvmaf/picture.h"
 #include "common/alignment.h"
 #endif

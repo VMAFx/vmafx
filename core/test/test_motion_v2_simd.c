@@ -103,7 +103,7 @@
 
 #if ARCH_X86
 #include "feature/integer_motion.h"
-#include "feature/x86/motion_v2_avx2.h"
+#include "feature/x86/motion_avx2.h"
 #endif
 #if ARCH_AARCH64
 #include "feature/integer_motion.h"

@@ -185,6 +185,13 @@ repos:
         # alongside the formatters. Bypass with `git commit --no-verify`
         # for legitimate main-checkout commits while an agent is active.
 
+      - id: check-dispatch-registry
+        name: Check backend feature extractor dispatch registry wiring
+        entry: scripts/ci/check-dispatch-registry.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+
       - id: check-copyright
         name: ADR-0105 copyright header present (C/C++/CUDA)
         entry: scripts/ci/check-copyright.sh
