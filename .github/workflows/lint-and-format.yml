@@ -300,6 +300,84 @@ jobs:
           echo "$files" | tr ' ' '\n' | grep -v '^$' \
             | parallel -j"$(nproc)" "/usr/bin/clang-tidy-22 -p build --quiet {} || touch /tmp/tidy.fail"
           [ -f /tmp/tidy.fail ] && exit 1 || exit 0
+  clang-tidy-ratchet:
+    # ADR-1142: whole-tree clang-tidy debt ratchet. Measures EVERY translation
+    # unit of the CPU build with scripts/ci/tidy-ratchet.py (diagnostics
+    # deduplicated by path/line/column/check, plus NOLINTs without an inline
+    # ADR citation) and compares per file against the committed baseline
+    # scripts/ci/tidy-baseline-cpu.json. Any file above its baseline fails;
+    # a file below it fails too until the baseline is tightened in the same
+    # PR (`python3 scripts/ci/tidy-ratchet.py --write`); a TU clang-tidy
+    # cannot compile fails closed. Aggregator-required (ADR-0313 list).
+    # GPU lanes (cuda/sycl/hip) run in nightly.yml until hosted toolchains
+    # exist — see docs/development/ci.md "Whole-tree lint ratchet".
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Clang-Tidy Ratchet (Whole Tree)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect C/C++ or lint-configuration changes (early skip)
+        id: delta
+        env:
+          PR_BASE_REF: ${{ github.base_ref }}
+          GH_EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          # Files whose change can move a clang-tidy count: sources, headers,
+          # build definitions, the tidy profile, the ratchet and its baselines.
+          pats=('*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' '*.hip' 'meson.build'                 'meson_options.txt' '.clang-tidy' 'scripts/ci/tidy-ratchet.py'                 'scripts/ci/tidy-baseline-*.json' '.github/workflows/lint-and-format.yml')
+          if [ "$GH_EVENT_NAME" = "pull_request" ]; then
+            files=$(git diff --name-only "origin/${PR_BASE_REF}...HEAD" -- "${pats[@]}" || true)
+          elif [ "$GH_EVENT_NAME" = "push" ]; then
+            zero="0000000000000000000000000000000000000000"
+            if [ -z "$PUSH_BEFORE_SHA" ] || [ "$PUSH_BEFORE_SHA" = "$zero" ]; then
+              files=$(git diff --name-only HEAD~1..HEAD -- "${pats[@]}" 2>/dev/null || echo full)
+            else
+              files=$(git diff --name-only "$PUSH_BEFORE_SHA"..HEAD -- "${pats[@]}" || echo full)
+            fi
+          else
+            files="full-tree-scan"
+          fi
+          if [ -z "$files" ]; then
+            echo "any=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No C/C++ or lint-configuration deltas — ratchet cannot have moved; skipping"
+          else
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install deps
+        if: steps.delta.outputs.any == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-14 g++-14 ninja-build nasm jq
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh 22
+          sudo apt-get install -y clang-tidy-22
+          sudo pip3 install --break-system-packages --quiet meson
+          /usr/bin/clang-tidy-22 --version | grep -F 'LLVM version 22.'
+      - name: Build (compile_commands.json + generated headers)
+        if: steps.delta.outputs.any == 'true'
+        run: |
+          CC=gcc-14 CXX=g++-14 meson setup build core \
+            -Denable_cuda=false -Denable_sycl=false
+          meson compile -C build
+      - name: Ratchet — whole-tree clang-tidy vs committed baseline
+        if: steps.delta.outputs.any == 'true'
+        run: |
+          python3 scripts/ci/tidy-ratchet.py --lane cpu --build-dir build \
+            --clang-tidy /usr/bin/clang-tidy-22 --jobs "$(nproc)" \
+            --report tidy-ratchet-cpu.json
+      - name: Upload measurement (commit it as the new baseline when the ratchet asks)
+        if: always() && steps.delta.outputs.any == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: tidy-ratchet-cpu
+          path: tidy-ratchet-cpu.json
+
 
   clang-tidy-sycl:
     # T7-13(b) / T-SYCL-CLANG-TIDY-DISABLED — icpx-aware clang-tidy lane for

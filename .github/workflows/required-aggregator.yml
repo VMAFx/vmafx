@@ -63,6 +63,7 @@ jobs:
               'Python Lint (Ruff + Black + mypy)',
               'Semgrep (CWE Top 25 + CERT-C + Custom)',
               'Clang-Tidy (Changed C/C++ Files)',
+              'Clang-Tidy Ratchet (Whole Tree)',
               'Cppcheck (Whole Project)',
               'Dependency Review (PR Diff)',
               'Gitleaks (Secret Scan)',

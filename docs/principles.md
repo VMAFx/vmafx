@@ -8,6 +8,15 @@ requirement here is codified in one of: `.clang-tidy`, `.cppcheck-suppressions.t
 If a rule here is not yet codified in tooling, it is tracked as an OPEN item in
 [.workingdir2/OPEN.md](../.workingdir2/OPEN.md).
 
+**Scope (ADR-1142).** Every principle and every gate below applies to the
+*whole* tree — upstream-mirror Netflix code, vendored libraries, fork-added
+code, CUDA / HIP / SYCL / Metal kernels, SIMD paths, tests, tools and
+scripts alike. There is no origin-, language- or backend-based tier. The
+one invariant that outranks the standards is numerical correctness as pinned
+by the Netflix golden assertions (`CLAUDE.md` §8). Whole-tree lint debt is
+measured and may only decrease (`make tidy-ratchet`, see
+[docs/development/ci.md](development/ci.md#whole-tree-lint-ratchet-adr-1142)).
+
 ## 1. Coding
 
 ### 1.1 NASA/JPL "Power of 10" rules (adapted for C)

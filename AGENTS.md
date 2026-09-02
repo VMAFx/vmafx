@@ -220,7 +220,16 @@ the root release aligns the release-owned Python packages and Helm
    carries the checklist.
 10. Every PR leaves every file it touches **lint-clean** to the fork's
     strictest profile (clang-tidy + cppcheck + `make lint`), whether the
-    file is fork-local or upstream-mirror. "Touches" = any hunk in the
+    file is fork-local or upstream-mirror.
+    **Since ADR-1142 the standards apply to the whole tree** —
+    upstream-mirror, vendored, GPU kernels (CUDA/HIP/SYCL/Metal), SIMD,
+    tests, tools — and the whole tree is bounded by the clang-tidy ratchet
+    (`scripts/ci/tidy-ratchet.py` vs
+    `scripts/ci/tidy-baseline-<lane>.json`, required CI context
+    `Clang-Tidy Ratchet (Whole Tree)`): no file may exceed its baseline
+    count, a cleaned file must tighten the baseline in the same PR
+    (`make tidy-ratchet-write`), and baselines are never hand-edited.
+    "Touches" = any hunk in the
     PR's diff against its merge base. Refactor first; `// NOLINT` is
     reserved for cases where refactoring would break a load-bearing
     invariant (ADR-0138 / ADR-0139 bit-exactness pattern,
