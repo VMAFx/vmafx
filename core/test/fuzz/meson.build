@@ -83,12 +83,16 @@ fuzz_json_model = executable('fuzz_json_model',
     ['fuzz_json_model.c',
      '../../src/read_json_model.c',
      '../../src/pdjson.c',
-     '../../src/dict.c',
+     # dict.c became dict.cpp in the C++23 rewrite (#1054). It stays listed
+     # here rather than relying on link_with so the parser under test is
+     # compiled with libFuzzer coverage instrumentation like its siblings.
+     '../../src/dict.cpp',
      '../../src/log.c',
      json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : fuzz_flags + compat_cflags,
+    cpp_args : fuzz_flags,
     link_args : fuzz_flags,
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
     objects : libsvm_static_lib.extract_all_objects(recursive: true),
