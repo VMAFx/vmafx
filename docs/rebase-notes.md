@@ -1,6 +1,10 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## chore/intel-neo-matched-set-bump (2026-09-02)
+
+no rebase impact: dev/Containerfile is fork-local.
+
 ## renovate/pypi-aiohttp-vulnerability — aiohttp security floor (2026-08-31)
 
 No rebase impact: `mcp-server/vmaf-mcp/`, `docs/mcp/`, and the changelog

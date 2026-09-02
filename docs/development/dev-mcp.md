@@ -354,9 +354,9 @@ A mismatch silently degrades `vmaf --backend sycl|hip` to CPU.
 
 | Pin | Current value | Why pinned |
 |---|---|---|
-| `ARG NEO_VER` | `26.18.38308.1` | Intel's `noble/unified` APT repo's newest as of 2026-05-18 is `25.18.x`, too old for kernel ≥ 7.0. NEO 25.18 returns `ZE_RESULT_ERROR_UNINITIALIZED` from `zeInit()` against kernel-7.x i915/xe. Pulled from `github.com/intel/compute-runtime/releases`. |
-| `ARG IGC_VER` + `ARG GMMLIB_VER` | `2.34.4+21428` + `22.10.0` | NEO 26.18's release notes mandate IGC v2.34.4 + gmmlib 22.10.0. Pinned together. |
-| `ARG ROCM_VER` | `7.2.3` | Matches Arch host `hsa-rocr 7.2.3`. ROCm 6.x KFD userspace returns `Unable to open /dev/kfd read-write: Invalid argument` against kernel-7.x KFD ioctls. |
+| `ARG NEO_VER` | `26.31.39395.13` | Intel's `noble/unified` APT repo's newest as of 2026-05-18 is `25.18.x`, too old for kernel ≥ 7.0. NEO 25.18 returns `ZE_RESULT_ERROR_UNINITIALIZED` from `zeInit()` against kernel-7.x i915/xe. Pulled from `github.com/intel/compute-runtime/releases`. |
+| `ARG IGC_VER` + `ARG GMMLIB_VER` | `2.40.13+22418` + `22.10.0` | NEO 26.31's release notes mandate IGC v2.40.13 + gmmlib 22.10.0. Pinned together. |
+| `ARG ROCM_VER` | `7.2.4` | Matches Arch host `hsa-rocr 7.2.4`. ROCm 6.x KFD userspace returns `Unable to open /dev/kfd read-write: Invalid argument` against kernel-7.x KFD ioctls. |
 
 `dev-mcp-entrypoint.sh` emits a runtime visibility probe on container
 start (ADR-0543): `WARN: SYCL level_zero:gpu NOT detected` or `WARN: HIP
