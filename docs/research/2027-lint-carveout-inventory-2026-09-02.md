@@ -296,8 +296,8 @@ ignore`,
 
 ## What ADR-1142's PR does with this
 
-- Bounds the whole CPU tree with the ratchet (every TU of the CPU build, 5,329
-  warnings / 91 uncited NOLINTs at landing) and commits cuda/sycl/hip baselines.
+- Bounds the whole CPU tree with the ratchet (every TU of the CPU build, 5,241
+  warnings / 83 uncited NOLINTs at landing) and commits cuda/sycl/hip baselines.
 - Retires the nightly `|| true` full scan (now the cpu-lane ratchet, fails on
   drift).
 - Lists every remaining `NEEDS-TOOLCHAIN` row with its owner in

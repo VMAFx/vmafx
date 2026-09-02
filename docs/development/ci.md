@@ -202,8 +202,12 @@ instead of a touched-files rule:
   that artifact and commit it as `scripts/ci/tidy-baseline-cpu.json` — the
   committed `cpu` baseline is always CI's own measurement (the hosted build
   lacks optional dependencies, so its TU set differs from a workstation
-  build). The nightly workflow runs the same lane and fails on drift (it used
-  to swallow the full scan with `|| true`).
+  build). The compile database also lists the model-JSON → C translation
+  units meson generates under `build/src/` (`vmaf_v0.6.1.json.c`, …); they are
+  measured like every other TU and appear in the baseline under that path, so
+  the `cpu` lane is always measured with `--build-dir build` at the repository
+  root, as CI does. The nightly workflow runs the same lane and fails on drift
+  (it used to swallow the full scan with `|| true`).
 - **`cuda`, `sycl`, `hip` lanes** — baselines committed from the 2026-09-02
   workstation measurement (clang-tidy 22.1.8 against a `-Denable_cuda=true
   -Denable_sycl=true -Denable_hip=true` build; CUDA TUs analysed with
@@ -219,8 +223,8 @@ instead of a touched-files rule:
   file ends the PR at zero" is unchanged. The ratchet adds the bound on
   untouched files.
 
-Baselines at the time this landed (2026-09-02): cpu 5,329 warnings / 263 TUs /
-91 uncited NOLINTs; cuda 1,650; sycl 716; hip 1,173 (whole tree ≈ 8,870).
+Baselines at the time this landed (2026-09-02): cpu 5,241 warnings / 281 TUs /
+83 uncited NOLINTs; cuda 1,650; sycl 716; hip 1,173 (whole tree ≈ 8,780).
 
 ### Carve-outs still open after ADR-1142
 
