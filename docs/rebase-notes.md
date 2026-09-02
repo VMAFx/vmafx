@@ -57,6 +57,17 @@
   `seed_duplicate_rho_row.json`: fork-added corpus seeds, no upstream
   counterpart. `core/test/fuzz/json_model_known_crashes/` holds the reproducer
   for the still-open third leak and is excluded from the nightly seed path.
+## fix/code-scanning-open-alerts — resolve open code-scanning alerts & re-audit security dismissals (2026-09-03)
+
+no rebase impact: fork-local fixes and cleanups.
+
+- `core/src/feature/feature_name.cpp`: replaced trivial single-case `switch` with `if`/`else`.
+- `core/src/feature/mkdirp.cpp`: converted `for` loop modifying loop variable to idiomatic `while`.
+- `core/src/pdjson.c`: removed redundant lower bound `0xC2 <= u` in `utf8_seq_length` (simplified to `u <= 0xDF`).
+- `compat/python-vmaf/tools/decorator.py`: added `usedforsecurity=False` to 3 SHA-1 memoization keys.
+- `ai/sidecar/online_trainer.py`: preserved server bind and documented 0o660 UNIX domain socket mode for group-peer IPC with `# nosemgrep`.
+- `mcp-server/vmaf-mcp`: removed unused import in `test_smoke_e2e.py` and converted `server.py` HTTP branch import to dynamic `importlib` to break static circular import.
+- `go.mod`, `go.sum`: upgraded `golang.org/x/crypto` to `v0.56.0`.
 
 ## fix/adm-cm-gpu-border-and-rounding — integer ADM GPU border indexing and row-level rounding (ADR-1167) (2026-09-03)
 

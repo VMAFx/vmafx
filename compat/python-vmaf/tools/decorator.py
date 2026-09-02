@@ -42,10 +42,12 @@ def persist(original_func):
     cache = {}
 
     def new_func(*args):
-        # SHA-1 used as a memoization cache key (not security). Input is
-        # the function name + repr(args). See Research-0090, F4–F12.
+        # SHA-1 used as a non-security memoization cache key (func name + repr(args)).
+        # usedforsecurity=False explicitly indicates non-cryptographic role (PEP 451 / FIPS compliance).
         # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
-        h = hashlib.sha1((str(original_func.__name__) + str(args)).encode()).hexdigest()
+        h = hashlib.sha1(
+            (str(original_func.__name__) + str(args)).encode(), usedforsecurity=False
+        ).hexdigest()
         if h not in cache:
             cache[h] = original_func(*args)
         return cache[h]
@@ -112,10 +114,12 @@ def persist_to_file(file_name):
                 sys.exit(1)
 
         def new_func(*args):
-            # SHA-1 used as a memoization cache key (not security). Input is
-            # the function name + repr(args). See Research-0090, F4–F12.
+            # SHA-1 used as a non-security memoization cache key (func name + repr(args)).
+            # usedforsecurity=False explicitly indicates non-cryptographic role (PEP 451 / FIPS compliance).
             # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
-            h = hashlib.sha1((str(original_func.__name__) + str(args)).encode()).hexdigest()
+            h = hashlib.sha1(
+                (str(original_func.__name__) + str(args)).encode(), usedforsecurity=False
+            ).hexdigest()
             if h not in cache:
                 cache[h] = original_func(*args)
                 file_dir = os.path.dirname(file_name)
@@ -137,10 +141,12 @@ def persist_to_dir(dir_name):
     def decorator(original_func):
 
         def new_func(*args):
-            # SHA-1 used as a memoization cache key (not security). Input is
-            # the function name + repr(args). See Research-0090, F4–F12.
+            # SHA-1 used as a non-security memoization cache key (func name + repr(args)).
+            # usedforsecurity=False explicitly indicates non-cryptographic role (PEP 451 / FIPS compliance).
             # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
-            h = hashlib.sha1((str(original_func.__name__) + str(args)).encode()).hexdigest()
+            h = hashlib.sha1(
+                (str(original_func.__name__) + str(args)).encode(), usedforsecurity=False
+            ).hexdigest()
             file_name = os.path.join(dir_name, h)
             if not os.path.exists(file_name):
                 os.makedirs(dir_name, exist_ok=True)

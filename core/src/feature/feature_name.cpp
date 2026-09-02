@@ -110,13 +110,10 @@ static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
                 const char *key = opt->alias ? opt->alias : opt->name;
                 const char *val = sorted->entry[i].val;
 
-                switch (opt->type) {
-                case VMAF_OPT_TYPE_BOOL:
+                if (opt->type == VMAF_OPT_TYPE_BOOL) {
                     snprintfcat(buf, buf_sz, "_%s", key);
-                    break;
-                default:
+                } else {
                     snprintfcat(buf, buf_sz, "_%s_%s", key, val);
-                    break;
                 }
             }
         }
