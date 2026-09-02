@@ -57,6 +57,7 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "feature/perceptual_weight.h"
 #include "metadata_handler.h"
 #include "fex_ctx_vector.h"
+#include "libvmaf_priv.h"
 #include "log.h"
 #include "model.h"
 #include "output.h"
@@ -91,6 +92,13 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #ifdef HAVE_HIP
 #include "libvmaf/libvmaf_hip.h"
 #endif
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
+ * upstream-mirror file whose Netflix source spells the null pointer constant
+ * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 typedef struct VmafContext {
     VmafConfiguration cfg;
@@ -225,12 +233,72 @@ static void batch_thread_data_free(void *data)
     BatchThreadData *td = data;
     for (unsigned i = 0; i < td->cnt; i++) {
         if (td->fex_ctx[i]) {
-            vmaf_feature_extractor_context_close(td->fex_ctx[i]);
-            vmaf_feature_extractor_context_destroy(td->fex_ctx[i]);
+            (void)vmaf_feature_extractor_context_close(td->fex_ctx[i]);
+            (void)vmaf_feature_extractor_context_destroy(td->fex_ctx[i]);
         }
     }
-    free(td->fex_ctx);
+    free((void *)td->fex_ctx);
     free(td);
+}
+
+/* Bring up the worker thread pool plus the per-thread extractor-context pool
+ * when the caller asked for worker threads. A failure of the second pool
+ * tears the first one down again so the caller has nothing to unwind. */
+static int vmaf_ctx_thread_pools_init(VmafContext *v)
+{
+    if (v->cfg.n_threads == 0)
+        return 0;
+
+    VmafThreadPoolConfig tpool_cfg = {
+        .n_threads = v->cfg.n_threads,
+        .thread_data_free = batch_thread_data_free,
+    };
+    int err = vmaf_thread_pool_create(&v->thread_pool, tpool_cfg);
+    if (err)
+        return err;
+    err = vmaf_fex_ctx_pool_create(&v->fex_ctx_pool, v->cfg.n_threads);
+    if (err) {
+        (void)vmaf_thread_pool_destroy(v->thread_pool);
+        v->thread_pool = NULL;
+    }
+    return err;
+}
+
+/* Bring up the per-context subsystems in dependency order. On failure every
+ * subsystem created so far is torn down again in reverse order and the
+ * originating error code is returned, so vmaf_init() only has to free `v`. */
+static int vmaf_ctx_subsystems_init(VmafContext *v)
+{
+    /* ADR-0544: catch accidental duplicate extractor registrations
+     * fast.  The static `feature_extractor_list[]` should hold each
+     * extractor exactly once; a duplicate doubles ctx-pool entries and
+     * runs init/extract/flush twice per pic.  Run the audit before any
+     * other state is touched. */
+    int err = vmaf_feature_extractor_list_audit();
+    if (err)
+        return err;
+
+    err = vmaf_framesync_init(&(v->framesync));
+    if (err)
+        return err;
+    err = vmaf_feature_collector_init(&(v->feature_collector));
+    if (err)
+        goto free_framesync;
+    err = feature_extractor_vector_init(&(v->registered_feature_extractors));
+    if (err)
+        goto free_feature_collector;
+    err = vmaf_ctx_thread_pools_init(v);
+    if (err)
+        goto free_feature_extractor_vector;
+    return 0;
+
+free_feature_extractor_vector:
+    feature_extractor_vector_destroy(&(v->registered_feature_extractors));
+free_feature_collector:
+    vmaf_feature_collector_destroy(v->feature_collector);
+free_framesync:
+    (void)vmaf_framesync_destroy(v->framesync);
+    return err;
 }
 
 int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg)
@@ -243,11 +311,10 @@ int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg)
      * subsequent initialisation path. */
     if (*vmaf)
         return -EINVAL;
-    int err = 0;
 
-    VmafContext *const v = *vmaf = malloc(sizeof(*v));
+    VmafContext *const v = malloc(sizeof(*v));
     if (!v)
-        goto fail;
+        return -ENOMEM;
     memset(v, 0, sizeof(*v));
     v->cfg = cfg;
 #ifdef HAVE_CUDA
@@ -262,62 +329,19 @@ int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg)
 
     vmaf_set_log_level(cfg.log_level);
 
-    /* ADR-0544: catch accidental duplicate extractor registrations
-     * fast.  The static `feature_extractor_list[]` should hold each
-     * extractor exactly once; a duplicate doubles ctx-pool entries and
-     * runs init/extract/flush twice per pic.  Run the audit before any
-     * other state is touched. */
-    err = vmaf_feature_extractor_list_audit();
-    if (err)
-        goto free_v;
-
-    err = vmaf_framesync_init(&(v->framesync));
-    if (err)
-        goto free_v;
-    err = vmaf_feature_collector_init(&(v->feature_collector));
-    if (err)
-        goto free_framesync;
-    err = feature_extractor_vector_init(&(v->registered_feature_extractors));
-    if (err)
-        goto free_feature_collector;
-
-    if (v->cfg.n_threads > 0) {
-        VmafThreadPoolConfig tpool_cfg = {
-            .n_threads = v->cfg.n_threads,
-            .thread_data_free = batch_thread_data_free,
-        };
-        err = vmaf_thread_pool_create(&v->thread_pool, tpool_cfg);
-        if (err)
-            goto free_feature_extractor_vector;
-        err = vmaf_fex_ctx_pool_create(&v->fex_ctx_pool, v->cfg.n_threads);
-        if (err)
-            goto free_thread_pool;
+    const int err = vmaf_ctx_subsystems_init(v);
+    if (err) {
+        /* The caller's handle stays NULL (checked above) so it cannot be
+         * passed to vmaf_close() or dereferenced after a failed vmaf_init()
+         * — CERT MEM30-C. Return the failing sub-init's own code rather than
+         * a hardcoded -ENOMEM so callers can distinguish OOM from a
+         * configuration error (CERT ERR33-C). */
+        free(v);
+        return err;
     }
 
+    *vmaf = v;
     return 0;
-
-free_thread_pool:
-    vmaf_thread_pool_destroy(v->thread_pool);
-free_feature_extractor_vector:
-    feature_extractor_vector_destroy(&(v->registered_feature_extractors));
-free_feature_collector:
-    vmaf_feature_collector_destroy(v->feature_collector);
-free_framesync:
-    vmaf_framesync_destroy(v->framesync);
-free_v:
-    free(v);
-    *vmaf = NULL; /* prevent dangling pointer — matches gpu_picture_pool.c:99 pattern */
-fail:
-    /* NULL the caller's handle so it cannot be passed to vmaf_close()
-     * or dereferenced after a failed vmaf_init(). ASan/LeakSan: avoids
-     * a dangling-pointer UAF if the caller checks the return code but
-     * still reads *vmaf. CERT MEM30-C. */
-    *vmaf = NULL;
-    /* Return the actual error code from the failing sub-init rather than
-     * a hardcoded -ENOMEM (which is only correct when the malloc fails).
-     * CERT ERR33-C: callers must be able to distinguish OOM from a
-     * configuration error returned by vmaf_framesync_init et al. */
-    return err ? err : -ENOMEM;
 }
 
 #ifdef HAVE_CUDA
@@ -446,11 +470,10 @@ int vmaf_cuda_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *pic)
     }
 }
 
-static int set_fex_cuda_state(VmafFeatureExtractorContext *fex_ctx, VmafContext *vmaf)
+static void set_fex_cuda_state(VmafFeatureExtractorContext *fex_ctx, VmafContext *vmaf)
 {
     if (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA)
         fex_ctx->fex->cu_state = &(vmaf->cuda.state);
-    return 0;
 }
 
 #endif
@@ -623,11 +646,10 @@ int vmaf_sycl_wait_compute(VmafContext *vmaf)
     return vmaf_sycl_combined_queue_wait(vmaf->sycl.state);
 }
 
-static int set_fex_sycl_state(VmafFeatureExtractorContext *fex_ctx, VmafContext *vmaf)
+static void set_fex_sycl_state(VmafFeatureExtractorContext *fex_ctx, VmafContext *vmaf)
 {
     if (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL)
         fex_ctx->fex->sycl_state = vmaf->sycl.state;
-    return 0;
 }
 #endif
 
@@ -693,11 +715,23 @@ int vmaf_hip_import_state(VmafContext *vmaf, VmafHipState *hip_state)
 }
 #endif
 
-static int set_fex_framesync(VmafFeatureExtractorContext *fex_ctx, VmafContext *vmaf)
+static void set_fex_framesync(VmafFeatureExtractorContext *fex_ctx, VmafContext *vmaf)
 {
     if (fex_ctx->fex->flags & VMAF_FEATURE_FRAME_SYNC)
         fex_ctx->fex->framesync = (vmaf->framesync);
-    return 0;
+}
+
+/* Hand a freshly created extractor context the context-owned backend state
+ * its flags ask for (CUDA / SYCL device state, frame-sync). Cannot fail. */
+static void fex_ctx_bind_backends(VmafFeatureExtractorContext *fex_ctx, VmafContext *vmaf)
+{
+#ifdef HAVE_CUDA
+    set_fex_cuda_state(fex_ctx, vmaf);
+#endif
+#ifdef HAVE_SYCL
+    set_fex_sycl_state(fex_ctx, vmaf);
+#endif
+    set_fex_framesync(fex_ctx, vmaf);
 }
 
 static void vmaf_ctx_dnn_free(VmafContext *vmaf)
@@ -994,8 +1028,7 @@ static int dnn_append_scalar_outputs(VmafContext *vmaf, const VmafOrtTensorOut *
  *     ("dynamic-resolution" exports) are rejected loudly because the
  *     scratch buffer size depends on them; the diagnostic distinguishes
  *     symbolic from "C != 1" so the failure mode is observable. */
-static int dnn_attach_nchw(VmafContext *ctx, VmafOrtSession *sess, const VmafModelSidecar *meta,
-                           const int64_t *in_shape, char *name)
+static int dnn_validate_nchw_shape(const int64_t *in_shape, int64_t *h_out, int64_t *w_out)
 {
     /* Fold a symbolic batch dim (-1) to 1 — the per-frame loop never
      * batches. Anything else outside {1, -1} is a fixed batch > 1 which
@@ -1005,7 +1038,6 @@ static int dnn_attach_nchw(VmafContext *ctx, VmafOrtSession *sess, const VmafMod
                  "tiny-model loader: rank-4 model has fixed batch %" PRId64 "; "
                  "only batch=1 or symbolic batch (-1) is supported\n",
                  in_shape[0]);
-        free(name);
         return -ENOTSUP;
     }
     if (in_shape[1] != 1) {
@@ -1013,7 +1045,6 @@ static int dnn_attach_nchw(VmafContext *ctx, VmafOrtSession *sess, const VmafMod
                  "tiny-model loader: rank-4 model has channels=%" PRId64 "; "
                  "only single-channel luma (C=1) is supported\n",
                  in_shape[1]);
-        free(name);
         return -ENOTSUP;
     }
     const int64_t h = in_shape[2];
@@ -1024,11 +1055,10 @@ static int dnn_attach_nchw(VmafContext *ctx, VmafOrtSession *sess, const VmafMod
                  "spatial dims (H=%" PRId64 ", W=%" PRId64 "); symbolic H/W is unsupported — "
                  "re-export with a fixed input resolution\n",
                  h, w);
-        free(name);
         return -ENOTSUP; /* dynamic dims unsupported */
     }
     /* Reject absurd spatial dims before the (int) narrowing of expected_w/h
-     * below: an untrusted ONNX export can carry H/W > INT_MAX, which
+     * in the caller: an untrusted ONNX export can carry H/W > INT_MAX, which
      * `(int)w`/`(int)h` would silently truncate into a wrong expected
      * geometry (and a giant calloc). 32768 mirrors the picture-dimension
      * cap (VMAF_PIC_DIM_MAX in picture.c); a model needing larger input is
@@ -1038,8 +1068,35 @@ static int dnn_attach_nchw(VmafContext *ctx, VmafOrtSession *sess, const VmafMod
                  "tiny-model loader: rank-4 model spatial dims out of range "
                  "(H=%" PRId64 ", W=%" PRId64 "; supported max is 32768)\n",
                  h, w);
-        free(name);
         return -ENOTSUP;
+    }
+    *h_out = h;
+    *w_out = w;
+    return 0;
+}
+
+/* Final, non-failing step shared by both attach paths: publish the session,
+ * the optional sidecar and the (owned) feature name on the context. */
+static void dnn_attach_commit(VmafContext *ctx, VmafOrtSession *sess, const VmafModelSidecar *meta,
+                              char *name)
+{
+    ctx->dnn.sess = sess;
+    if (meta) {
+        ctx->dnn.meta = *meta;
+        ctx->dnn.has_sidecar = true;
+    }
+    ctx->dnn.feature_name = name;
+}
+
+static int dnn_attach_nchw(VmafContext *ctx, VmafOrtSession *sess, const VmafModelSidecar *meta,
+                           const int64_t *in_shape, char *name)
+{
+    int64_t h = 0;
+    int64_t w = 0;
+    int rc = dnn_validate_nchw_shape(in_shape, &h, &w);
+    if (rc < 0) {
+        free(name);
+        return rc;
     }
     const size_t n = (size_t)w * (size_t)h;
     float *buf = (float *)calloc(n, sizeof(*buf));
@@ -1047,128 +1104,134 @@ static int dnn_attach_nchw(VmafContext *ctx, VmafOrtSession *sess, const VmafMod
         free(name);
         return -ENOMEM;
     }
-    int rc_names = dnn_prepare_output_feature_names(ctx, sess, meta, name);
-    if (rc_names < 0) {
+    rc = dnn_prepare_output_feature_names(ctx, sess, meta, name);
+    if (rc < 0) {
         free(buf);
         free(name);
-        return rc_names;
+        return rc;
     }
-    ctx->dnn.sess = sess;
-    if (meta) {
-        ctx->dnn.meta = *meta;
-        ctx->dnn.has_sidecar = true;
-    }
+    dnn_attach_commit(ctx, sess, meta, name);
     ctx->dnn.in_rank = 4u;
     ctx->dnn.expected_w = (int)w;
     ctx->dnn.expected_h = (int)h;
     ctx->dnn.in_buf = buf;
     ctx->dnn.in_elements = n;
-    ctx->dnn.feature_name = name;
     return 0;
 }
 
-/* Helper: rank-2 feature-vector path (ADR-0517). Discovers the optional
- * second-input width (e.g. fr_regressor_v2's 14-D `codec` block),
- * allocates both scratch buffers, and pre-seeds the codec block to the
- * conservative "unknown encoder" baseline so models that gate on the
- * one-hot still produce a finite score. */
-static int dnn_attach_feature_vector(VmafContext *ctx, VmafOrtSession *sess,
-                                     const VmafModelSidecar *meta, const int64_t *in_shape,
-                                     char *name)
+/* Symbolic-dim policy (ADR-0524) for the rank-2 input: batch may be -1
+ * (symbolic) or 1 — a fixed batch > 1 is rejected because the per-frame
+ * inference loop only feeds a single sample per Run() call — and the
+ * feature width must be a known positive value within the sidecar limit. */
+static int dnn_validate_feature_vector_shape(const int64_t *in_shape, size_t *n_features)
 {
-    /* Symbolic-dim policy (ADR-0524): batch may be -1 (symbolic) or 1.
-     * A fixed batch > 1 is rejected — the per-frame inference loop only
-     * feeds a single sample per Run() call. */
     if (in_shape[0] != 1 && in_shape[0] != -1) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "tiny-model loader: feature-vector model has fixed batch %" PRId64 "; "
                  "only batch=1 or symbolic batch (-1) is supported\n",
                  in_shape[0]);
-        free(name);
         return -ENOTSUP;
     }
     const int64_t f = in_shape[1];
     if (f <= 0 || (size_t)f > VMAF_DNN_MAX_FEATURE_NAMES) {
-        free(name);
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "tiny-model loader: feature-vector model has invalid "
                  "feature width %" PRId64 "\n",
                  f);
         return -ENOTSUP;
     }
-    const size_t n = (size_t)f;
+    *n_features = (size_t)f;
+    return 0;
+}
+
+/* Discover the optional second input (e.g. fr_regressor_v2's 14-D `codec`
+ * block), allocate its scratch buffer and pre-seed it to the conservative
+ * "unknown encoder" baseline so models that gate on the one-hot still
+ * produce a finite score. Single-input models leave *extra_buf NULL and
+ * *extra_w zero. */
+static int dnn_probe_extra_input(VmafOrtSession *sess, float **extra_buf, size_t *extra_w)
+{
+    size_t n_inputs = 0u;
+    size_t n_outputs = 0u;
+    const int rc_io = vmaf_ort_io_count(sess, &n_inputs, &n_outputs);
+    if (rc_io < 0)
+        return rc_io;
+    (void)n_outputs;
+    *extra_buf = NULL;
+    *extra_w = 0u;
+    if (n_inputs < 2u)
+        return 0;
+
+    int64_t extra_shape[4] = {0};
+    size_t extra_rank = 0u;
+    const int rc_sh = vmaf_ort_input_shape_at(sess, 1u, extra_shape, 4u, &extra_rank);
+    if (rc_sh < 0)
+        return rc_sh;
+    /* Second-input symbolic-batch policy mirrors the primary input
+     * (ADR-0524): batch may be -1 (symbolic) or 1; feature width
+     * (extra_shape[1]) must be a known positive value because it
+     * sizes the scratch buffer. */
+    if (extra_rank != 2 || (extra_shape[0] != 1 && extra_shape[0] != -1) || extra_shape[1] <= 0) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "tiny-model loader: second input has unsupported "
+                 "shape (rank %zu, batch %" PRId64 ", width %" PRId64 ")\n",
+                 extra_rank, extra_shape[0], extra_shape[1]);
+        return -ENOTSUP;
+    }
+    const size_t w = (size_t)extra_shape[1];
+    float *buf = (float *)calloc(w, sizeof(*buf));
+    if (!buf)
+        return -ENOMEM;
+    /* Best-effort default: when the codec block follows the v2 layout
+     * (N-2 one-hot slots followed by preset_norm/crf_norm), set the
+     * third-from-last slot — the "unknown" one-hot at vocab v2 index
+     * 11 lives there. This matches `_encoder_onehot(N_ENCODERS-1)`
+     * in train_fr_regressor_v2.py. Any consumer that needs the real
+     * encoder identity must wire a dedicated API. */
+    if (w >= 3u)
+        buf[w - 3u] = 1.0f; /* before preset, crf */
+    *extra_buf = buf;
+    *extra_w = w;
+    return 0;
+}
+
+/* Helper: rank-2 feature-vector path (ADR-0517). Allocates the feature
+ * scratch buffer plus the optional codec-block buffer discovered by
+ * dnn_probe_extra_input(). */
+static int dnn_attach_feature_vector(VmafContext *ctx, VmafOrtSession *sess,
+                                     const VmafModelSidecar *meta, const int64_t *in_shape,
+                                     char *name)
+{
+    size_t n = 0u;
+    int rc = dnn_validate_feature_vector_shape(in_shape, &n);
+    if (rc < 0) {
+        free(name);
+        return rc;
+    }
     float *buf = (float *)calloc(n, sizeof(*buf));
     if (!buf) {
         free(name);
         return -ENOMEM;
     }
 
-    size_t n_inputs = 0u;
-    size_t n_outputs = 0u;
-    int rc_io = vmaf_ort_io_count(sess, &n_inputs, &n_outputs);
-    if (rc_io < 0) {
-        free(buf);
-        free(name);
-        return rc_io;
-    }
-    (void)n_outputs;
     float *extra_buf = NULL;
     size_t extra_w = 0u;
-    if (n_inputs >= 2u) {
-        int64_t extra_shape[4] = {0};
-        size_t extra_rank = 0u;
-        const int rc_sh = vmaf_ort_input_shape_at(sess, 1u, extra_shape, 4u, &extra_rank);
-        if (rc_sh < 0) {
-            free(buf);
-            free(name);
-            return rc_sh;
-        }
-        /* Second-input symbolic-batch policy mirrors the primary input
-         * (ADR-0524): batch may be -1 (symbolic) or 1; feature width
-         * (extra_shape[1]) must be a known positive value because it
-         * sizes the scratch buffer. */
-        if (extra_rank != 2 || (extra_shape[0] != 1 && extra_shape[0] != -1) ||
-            extra_shape[1] <= 0) {
-            free(buf);
-            free(name);
-            vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                     "tiny-model loader: second input has unsupported "
-                     "shape (rank %zu, batch %" PRId64 ", width %" PRId64 ")\n",
-                     extra_rank, extra_shape[0], extra_shape[1]);
-            return -ENOTSUP;
-        }
-        extra_w = (size_t)extra_shape[1];
-        extra_buf = (float *)calloc(extra_w, sizeof(*extra_buf));
-        if (!extra_buf) {
-            free(buf);
-            free(name);
-            return -ENOMEM;
-        }
-        /* Best-effort default: when the codec block follows the v2 layout
-         * (N-2 one-hot slots followed by preset_norm/crf_norm), set the
-         * third-from-last slot — the "unknown" one-hot at vocab v2 index
-         * 11 lives there. This matches `_encoder_onehot(N_ENCODERS-1)`
-         * in train_fr_regressor_v2.py. Any consumer that needs the real
-         * encoder identity must wire a dedicated API. */
-        if (extra_w >= 3u) {
-            const size_t unknown_idx = extra_w - 3u; /* before preset, crf */
-            extra_buf[unknown_idx] = 1.0f;
-        }
+    rc = dnn_probe_extra_input(sess, &extra_buf, &extra_w);
+    if (rc < 0) {
+        free(buf);
+        free(name);
+        return rc;
     }
 
-    int rc_names = dnn_prepare_output_feature_names(ctx, sess, meta, name);
-    if (rc_names < 0) {
+    rc = dnn_prepare_output_feature_names(ctx, sess, meta, name);
+    if (rc < 0) {
         free(extra_buf);
         free(buf);
         free(name);
-        return rc_names;
+        return rc;
     }
 
-    ctx->dnn.sess = sess;
-    if (meta) {
-        ctx->dnn.meta = *meta;
-        ctx->dnn.has_sidecar = true;
-    }
+    dnn_attach_commit(ctx, sess, meta, name);
     ctx->dnn.in_rank = 2u;
     ctx->dnn.expected_w = 0;
     ctx->dnn.expected_h = 0;
@@ -1177,7 +1240,6 @@ static int dnn_attach_feature_vector(VmafContext *ctx, VmafOrtSession *sess,
     ctx->dnn.in_elements = n;
     ctx->dnn.extra_in_buf = extra_buf;
     ctx->dnn.extra_in_width = extra_w;
-    ctx->dnn.feature_name = name;
     return 0;
 }
 
@@ -1219,60 +1281,13 @@ int vmaf_ctx_dnn_attach(VmafContext *ctx, VmafOrtSession *sess, const VmafModelS
     return dnn_attach_feature_vector(ctx, sess, meta, in_shape, name);
 }
 
-static int vmaf_ctx_dnn_run_frame_nchw(VmafContext *vmaf, VmafPicture *ref, unsigned index)
+/* Bind one scalar output slot per model output, run inference on `inputs`,
+ * and publish the outputs to the feature collector under
+ * vmaf->dnn.output_feature_names. ORT's -ENOSPC (an output wider than one
+ * scalar) is reported as -ENOTSUP. */
+static int dnn_run_and_append(VmafContext *vmaf, const VmafOrtTensorIn *inputs, size_t n_inputs,
+                              unsigned index)
 {
-    if (!ref || !ref->data[0])
-        return -EINVAL;
-
-    /* The current tensor bridge operates on 8-bit luma only. 10/12-bit
-     * content and multi-channel inputs are rejected loudly rather than
-     * quietly truncated. */
-    if (ref->bpc != 8)
-        return -ENOTSUP;
-
-    /* ADR-0550 — when the source frame dims don't match the model's
-     * expected NCHW input shape, route through the selected resize
-     * filter. Default (DISABLED / zero-init) returns -ERANGE; the
-     * operator must explicitly pass --tiny-resize to enable auto-resize.
-     * The `disabled` mode preserves the pre-ADR-0550 behaviour for
-     * parity harnesses. */
-    const bool dim_mismatch =
-        ((int)ref->w[0] != vmaf->dnn.expected_w || (int)ref->h[0] != vmaf->dnn.expected_h);
-    const VmafTinyResize resize_mode = (VmafTinyResize)vmaf->dnn.resize_mode;
-    if (dim_mismatch && resize_mode == VMAF_TINY_RESIZE_DISABLED) {
-        return -ERANGE;
-    }
-
-    /* ADR-0976 — sidecar-driven luma normalisation was dead code: the
-     * `has_norm` / `norm_mean` / `norm_std` fields on VmafModelSidecar
-     * were never populated by `vmaf_dnn_sidecar_load`, so this branch
-     * always selected mean=NULL / std=NULL. The shipped tiny-AI
-     * pipeline bakes the affine into the ONNX graph at export time
-     * (canonical pattern); models that need a runtime scaler should
-     * use the generic `vmaf_dnn_session_run()` with caller-managed
-     * input tensors. */
-    int rc;
-    if (dim_mismatch) {
-        rc = vmaf_tensor_from_luma_resize(
-            (const uint8_t *)ref->data[0], (size_t)ref->stride[0], (int)ref->w[0], (int)ref->h[0],
-            vmaf->dnn.expected_w, vmaf->dnn.expected_h, VMAF_TENSOR_LAYOUT_NCHW,
-            VMAF_TENSOR_DTYPE_F32, NULL, NULL, resize_mode, vmaf->dnn.in_buf);
-    } else {
-        rc = vmaf_tensor_from_luma((const uint8_t *)ref->data[0], (size_t)ref->stride[0],
-                                   vmaf->dnn.expected_w, vmaf->dnn.expected_h,
-                                   VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, NULL, NULL,
-                                   vmaf->dnn.in_buf);
-    }
-    if (rc < 0)
-        return rc;
-
-    const int64_t shape[4] = {1, 1, vmaf->dnn.expected_h, vmaf->dnn.expected_w};
-    VmafOrtTensorIn input = {
-        .name = NULL,
-        .data = vmaf->dnn.in_buf,
-        .shape = shape,
-        .rank = 4u,
-    };
     float out_values[VMAF_ORT_MAX_IO] = {0.f};
     VmafOrtTensorOut outputs[VMAF_ORT_MAX_IO];
     memset(outputs, 0, sizeof(outputs));
@@ -1283,12 +1298,72 @@ static int vmaf_ctx_dnn_run_frame_nchw(VmafContext *vmaf, VmafPicture *ref, unsi
         outputs[i].written = 0u;
     }
 
-    rc = vmaf_ort_run(vmaf->dnn.sess, &input, 1u, outputs, vmaf->dnn.n_outputs);
+    const int rc = vmaf_ort_run(vmaf->dnn.sess, inputs, n_inputs, outputs, vmaf->dnn.n_outputs);
     if (rc == -ENOSPC)
         return -ENOTSUP;
     if (rc < 0)
         return rc;
     return dnn_append_scalar_outputs(vmaf, outputs, index);
+}
+
+/* Fill the NCHW scratch tensor from the picture's luma plane.
+ *
+ * ADR-0550 — when the source frame dims don't match the model's expected
+ * NCHW input shape, route through the selected resize filter. Default
+ * (DISABLED / zero-init) returns -ERANGE; the operator must explicitly pass
+ * --tiny-resize to enable auto-resize. The `disabled` mode preserves the
+ * pre-ADR-0550 behaviour for parity harnesses.
+ *
+ * ADR-0976 — sidecar-driven luma normalisation was dead code: the
+ * `has_norm` / `norm_mean` / `norm_std` fields on VmafModelSidecar were
+ * never populated by `vmaf_dnn_sidecar_load`, so this path always selected
+ * mean=NULL / std=NULL. The shipped tiny-AI pipeline bakes the affine into
+ * the ONNX graph at export time (canonical pattern); models that need a
+ * runtime scaler should use the generic `vmaf_dnn_session_run()` with
+ * caller-managed input tensors. */
+static int dnn_fill_nchw_input(VmafContext *vmaf, const VmafPicture *ref)
+{
+    const bool dim_mismatch =
+        ((int)ref->w[0] != vmaf->dnn.expected_w || (int)ref->h[0] != vmaf->dnn.expected_h);
+    const VmafTinyResize resize_mode = (VmafTinyResize)vmaf->dnn.resize_mode;
+    if (dim_mismatch && resize_mode == VMAF_TINY_RESIZE_DISABLED)
+        return -ERANGE;
+
+    if (dim_mismatch) {
+        return vmaf_tensor_from_luma_resize(
+            (const uint8_t *)ref->data[0], (size_t)ref->stride[0], (int)ref->w[0], (int)ref->h[0],
+            vmaf->dnn.expected_w, vmaf->dnn.expected_h, VMAF_TENSOR_LAYOUT_NCHW,
+            VMAF_TENSOR_DTYPE_F32, NULL, NULL, resize_mode, vmaf->dnn.in_buf);
+    }
+    return vmaf_tensor_from_luma((const uint8_t *)ref->data[0], (size_t)ref->stride[0],
+                                 vmaf->dnn.expected_w, vmaf->dnn.expected_h,
+                                 VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, NULL, NULL,
+                                 vmaf->dnn.in_buf);
+}
+
+static int vmaf_ctx_dnn_run_frame_nchw(VmafContext *vmaf, const VmafPicture *ref, unsigned index)
+{
+    if (!ref || !ref->data[0])
+        return -EINVAL;
+
+    /* The current tensor bridge operates on 8-bit luma only. 10/12-bit
+     * content and multi-channel inputs are rejected loudly rather than
+     * quietly truncated. */
+    if (ref->bpc != 8)
+        return -ENOTSUP;
+
+    const int rc = dnn_fill_nchw_input(vmaf, ref);
+    if (rc < 0)
+        return rc;
+
+    const int64_t shape[4] = {1, 1, vmaf->dnn.expected_h, vmaf->dnn.expected_w};
+    const VmafOrtTensorIn input = {
+        .name = NULL,
+        .data = vmaf->dnn.in_buf,
+        .shape = shape,
+        .rank = 4u,
+    };
+    return dnn_run_and_append(vmaf, &input, 1u, index);
 }
 
 /* Resolve a sidecar feature name (e.g. "adm2", "vif_scale0", "motion2")
@@ -1333,12 +1408,13 @@ static double dnn_lookup_feature(VmafFeatureCollector *fc, const char *short_nam
     return 0.0;
 }
 
-static int vmaf_ctx_dnn_run_frame_feature_vector(VmafContext *vmaf, unsigned index)
+/* Materialise the model's input feature vector from the classic feature
+ * collector into vmaf->dnn.in_buf. When the sidecar carries a feature_names
+ * list (v1 / v2 / vmaf_tiny_v4 trainers all do) it is honoured slot-by-slot;
+ * when it is absent the canonical-6 order is used and any slot beyond it is
+ * zero-filled. */
+static void dnn_materialise_feature_vector(VmafContext *vmaf, unsigned index)
 {
-    /* Materialise the feature vector from the classic feature
-     * collector. When the sidecar carries a feature_names list (v1 /
-     * v2 / vmaf_tiny_v4 trainers all do), we honour it slot-by-slot.
-     * When it's absent, we fall back to the canonical-6 order. */
     static const char *const CANON6[] = {
         "adm2", "vif_scale0", "vif_scale1", "vif_scale2", "vif_scale3", "motion2",
     };
@@ -1369,43 +1445,66 @@ static int vmaf_ctx_dnn_run_frame_feature_vector(VmafContext *vmaf, unsigned ind
         }
         vmaf->dnn.in_buf[i] = v;
     }
+}
 
-    const int64_t feat_shape[2] = {1, (int64_t)n};
+static int vmaf_ctx_dnn_run_frame_feature_vector(VmafContext *vmaf, unsigned index)
+{
+    dnn_materialise_feature_vector(vmaf, index);
+
+    const int64_t feat_shape[2] = {1, (int64_t)vmaf->dnn.n_features};
     const int64_t codec_shape[2] = {1, (int64_t)vmaf->dnn.extra_in_width};
-    VmafOrtTensorIn inputs[2] = {
+    const VmafOrtTensorIn inputs[2] = {
         {.name = NULL, .data = vmaf->dnn.in_buf, .shape = feat_shape, .rank = 2u},
         {.name = NULL, .data = vmaf->dnn.extra_in_buf, .shape = codec_shape, .rank = 2u},
     };
-    size_t n_inputs = 1u;
-    if (vmaf->dnn.extra_in_buf != NULL && vmaf->dnn.extra_in_width > 0u) {
-        n_inputs = 2u;
-    }
-
-    float out_values[VMAF_ORT_MAX_IO] = {0.f};
-    VmafOrtTensorOut outputs[VMAF_ORT_MAX_IO];
-    memset(outputs, 0, sizeof(outputs));
-    for (size_t i = 0; i < vmaf->dnn.n_outputs; ++i) {
-        outputs[i].name = NULL;
-        outputs[i].data = &out_values[i];
-        outputs[i].capacity = 1u;
-        outputs[i].written = 0u;
-    }
-
-    int rc = vmaf_ort_run(vmaf->dnn.sess, inputs, n_inputs, outputs, vmaf->dnn.n_outputs);
-    if (rc == -ENOSPC)
-        return -ENOTSUP;
-    if (rc < 0)
-        return rc;
-    return dnn_append_scalar_outputs(vmaf, outputs, index);
+    /* The codec block is the optional second input (ADR-0519). */
+    const bool has_codec = vmaf->dnn.extra_in_buf != NULL && vmaf->dnn.extra_in_width > 0u;
+    return dnn_run_and_append(vmaf, inputs, has_codec ? 2u : 1u, index);
 }
 
-static int vmaf_ctx_dnn_run_frame(VmafContext *vmaf, VmafPicture *ref, unsigned index)
+static int vmaf_ctx_dnn_run_frame(VmafContext *vmaf, const VmafPicture *ref, unsigned index)
 {
     if (!vmaf->dnn.sess)
         return 0;
     if (vmaf->dnn.in_rank == 2u)
         return vmaf_ctx_dnn_run_frame_feature_vector(vmaf, index);
     return vmaf_ctx_dnn_run_frame_nchw(vmaf, ref, index);
+}
+
+/* Release the GPU backend state held by the context. CUDA resources are
+ * context-owned (ring buffer, then the per-thread drain stream, then the
+ * context itself — the drain-stream destroy needs the still-live context to
+ * call cuStreamDestroy, T-GPU-OPT-1 / ADR-0242). SYCL / Metal / HIP state is
+ * caller-owned: vmaf_<backend>_import_state() does not transfer ownership,
+ * so only the SYCL picture pool is closed here and the state pointers are
+ * cleared — the caller calls vmaf_<backend>_state_free() after vmaf_close()
+ * (ADR-0519). */
+static void vmaf_close_backends(VmafContext *vmaf)
+{
+#ifdef HAVE_CUDA
+    if (vmaf->cuda.ring_buffer)
+        vmaf_gpu_picture_pool_close(vmaf->cuda.ring_buffer);
+    if (vmaf->cuda.state.ctx)
+        vmaf_cuda_drain_batch_thread_destroy(&vmaf->cuda.state);
+    if (vmaf->cuda.state.ctx)
+        vmaf_cuda_release(&vmaf->cuda.state);
+#endif
+#ifdef HAVE_SYCL
+    if (vmaf->sycl.pool) {
+        vmaf_sycl_picture_pool_close(vmaf->sycl.pool);
+        vmaf->sycl.pool = NULL;
+    }
+    vmaf->sycl.state = NULL;
+#endif
+#ifdef HAVE_METAL
+    vmaf->metal.state = NULL;
+#endif
+#ifdef HAVE_HIP
+    vmaf->hip.state = NULL;
+#endif
+#if !defined(HAVE_CUDA) && !defined(HAVE_SYCL) && !defined(HAVE_METAL) && !defined(HAVE_HIP)
+    (void)vmaf; /* CPU-only build: no backend state to release. */
+#endif
 }
 
 int vmaf_close(VmafContext *vmaf)
@@ -1421,52 +1520,23 @@ int vmaf_close(VmafContext *vmaf)
      * would be a false error here. */
     int close_err = vmaf->thread_pool ? vmaf_thread_pool_wait(vmaf->thread_pool) : 0;
     if (vmaf->prev_ref.ref)
-        vmaf_picture_unref(&vmaf->prev_ref);
+        (void)vmaf_picture_unref(&vmaf->prev_ref);
     const int framesync_err = vmaf_framesync_destroy(vmaf->framesync);
     if (!close_err)
         close_err = framesync_err;
     feature_extractor_vector_destroy(&(vmaf->registered_feature_extractors));
     vmaf_feature_collector_destroy(vmaf->feature_collector);
-    vmaf_thread_pool_destroy(vmaf->thread_pool);
-    vmaf_fex_ctx_pool_destroy(vmaf->fex_ctx_pool);
+    /* Both pool destroys return -EINVAL for a NULL pool (single-threaded
+     * mode) — not an error here, so their status is deliberately dropped. */
+    (void)vmaf_thread_pool_destroy(vmaf->thread_pool);
+    (void)vmaf_fex_ctx_pool_destroy(vmaf->fex_ctx_pool);
     vmaf_ctx_dnn_free(vmaf);
     /* Release the Pelorus perceptual-weight summary store (ADR-1118). Safe on a
      * zero-initialised store (no side-data ever registered) — it is a no-op. */
     vmaf_perceptual_weight_store_destroy(&vmaf->perceptual);
     if (vmaf->picture_pool)
         vmaf_picture_pool_close(vmaf->picture_pool);
-#ifdef HAVE_CUDA
-    if (vmaf->cuda.ring_buffer)
-        vmaf_gpu_picture_pool_close(vmaf->cuda.ring_buffer);
-    /* T-GPU-OPT-1 (ADR-0242): tear down the per-thread drain stream
-     * before releasing the CUDA context — the destroy needs the
-     * still-live context to call cuStreamDestroy. */
-    if (vmaf->cuda.state.ctx)
-        vmaf_cuda_drain_batch_thread_destroy(&vmaf->cuda.state);
-    if (vmaf->cuda.state.ctx)
-        vmaf_cuda_release(&vmaf->cuda.state);
-#endif
-#ifdef HAVE_SYCL
-    if (vmaf->sycl.pool) {
-        vmaf_sycl_picture_pool_close(vmaf->sycl.pool);
-        vmaf->sycl.pool = NULL;
-    }
-    /* Note: ownership of sycl.state is NOT transferred by
-     * vmaf_sycl_import_state(), so we do not free it here.
-     * The caller must call vmaf_sycl_state_free() after vmaf_close(). */
-    vmaf->sycl.state = NULL;
-#endif
-#ifdef HAVE_METAL
-    /* Caller owns metal.state and must call vmaf_metal_state_free()
-     * after vmaf_close(). */
-    vmaf->metal.state = NULL;
-#endif
-#ifdef HAVE_HIP
-    /* ADR-0519: same lifetime contract as SYCL / Metal —
-     * caller owns hip.state and must call vmaf_hip_state_free()
-     * after vmaf_close(). */
-    vmaf->hip.state = NULL;
-#endif
+    vmaf_close_backends(vmaf);
     free(vmaf);
 
     return close_err;
@@ -1563,17 +1633,7 @@ int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDic
     err = vmaf_feature_extractor_context_create(&fex_ctx, fex, d);
     if (err)
         return err;
-#ifdef HAVE_CUDA
-    err |= set_fex_cuda_state(fex_ctx, vmaf);
-#endif
-#ifdef HAVE_SYCL
-    err |= set_fex_sycl_state(fex_ctx, vmaf);
-#endif
-    err |= set_fex_framesync(fex_ctx, vmaf);
-    if (err) {
-        (void)vmaf_feature_extractor_context_destroy(fex_ctx);
-        return err;
-    }
+    fex_ctx_bind_backends(fex_ctx, vmaf);
 
     RegisteredFeatureExtractors *rfe = &(vmaf->registered_feature_extractors);
     err = feature_extractor_vector_append(rfe, fex_ctx, 0);
@@ -1647,17 +1707,7 @@ int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
         err = vmaf_feature_extractor_context_create(&fex_ctx, fex, d);
         if (err)
             return err;
-#ifdef HAVE_CUDA
-        err |= set_fex_cuda_state(fex_ctx, vmaf);
-#endif
-#ifdef HAVE_SYCL
-        err |= set_fex_sycl_state(fex_ctx, vmaf);
-#endif
-        err |= set_fex_framesync(fex_ctx, vmaf);
-        if (err) {
-            (void)vmaf_feature_extractor_context_destroy(fex_ctx);
-            return err;
-        }
+        fex_ctx_bind_backends(fex_ctx, vmaf);
         err = feature_extractor_vector_append(rfe, fex_ctx, 0);
         if (err) {
             err |= vmaf_feature_extractor_context_destroy(fex_ctx);
@@ -1687,6 +1737,46 @@ int vmaf_use_features_from_model_collection(VmafContext *vmaf,
     return err;
 }
 
+/* Drop the counted previous-frame reference an extractor holds (if any) and
+ * clear the field. Every PREV_REF dispatch path must balance the
+ * vmaf_picture_ref() it took with exactly one call here — a bare memset
+ * would leak the count and exhaust the picture pool after ~pool_size frames
+ * (ADR-1051). */
+static void fex_release_prev_ref(VmafFeatureExtractor *fex)
+{
+    if (fex->prev_ref.ref)
+        (void)vmaf_picture_unref(&fex->prev_ref);
+    memset(&fex->prev_ref, 0, sizeof(fex->prev_ref));
+}
+
+/* Advance the context's previous-frame reference to `ref`: drop the count on
+ * the frame before it and take one on the new frame. Tolerates a picture
+ * without a counted buffer: on the CUDA device-only path (every registered
+ * extractor carries VMAF_FEATURE_EXTRACTOR_CUDA, so rfe_hw_flags reports
+ * HW_FLAG_DEVICE only and translate_picture_device never downloads) the
+ * host-side picture is zero-initialised, and dereferencing its NULL `ref` in
+ * vmaf_ref_fetch_increment would crash. The only PREV_REF consumer is CPU
+ * integer_motion_v2, which is never registered alongside a pure CUDA
+ * extractor set — skipping the update there is safe. ADR-0123. */
+static void read_pictures_update_prev_ref(VmafContext *vmaf, VmafPicture *ref)
+{
+    if (vmaf->prev_ref.ref)
+        (void)vmaf_picture_unref(&vmaf->prev_ref);
+    if (ref && ref->ref)
+        (void)vmaf_picture_ref(&vmaf->prev_ref, ref);
+}
+
+/* n_subsample keeps every n-th frame for stateless extractors; TEMPORAL and
+ * PREV_REF extractors carry inter-frame state and must see every frame. */
+static bool fex_subsample_skip(uint64_t flags, unsigned index, unsigned n_subsample)
+{
+    const uint64_t no_subsample_flags =
+        VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_PREV_REF;
+    if (flags & no_subsample_flags)
+        return false;
+    return (n_subsample > 1) && ((index % n_subsample) != 0);
+}
+
 struct ThreadDataBatch {
     VmafPicture ref, dist, prev_ref;
     unsigned index;
@@ -1703,6 +1793,98 @@ struct ThreadDataBatch {
     _Atomic int err;
 };
 
+/* Lazily create this worker's private BatchThreadData on first use. The
+ * thread pool owns it afterwards and releases it via batch_thread_data_free. */
+static int batch_thread_data_ensure(void **thread_data, unsigned cnt, BatchThreadData **out)
+{
+    BatchThreadData *td = (BatchThreadData *)*thread_data;
+    if (!td) {
+        td = malloc(sizeof(*td));
+        if (!td)
+            return -ENOMEM;
+        td->cnt = cnt;
+        td->fex_ctx = (VmafFeatureExtractorContext **)calloc(td->cnt, sizeof(*td->fex_ctx));
+        if (!td->fex_ctx) {
+            free(td);
+            return -ENOMEM;
+        }
+        *thread_data = td;
+    }
+    *out = td;
+    return 0;
+}
+
+/* Extractors the CPU worker pool must not run for this frame. CUDA and SYCL
+ * extractors are dispatched by their backend paths in
+ * read_pictures_dispatch_one() — running them here as well would double-write
+ * the feature collector — and TEMPORAL extractors run on the serial path.
+ * Everything else honours n_subsample. Keep in sync with
+ * read_pictures_should_skip(). */
+static bool batch_extractor_skip(const VmafFeatureExtractor *shared_fex, unsigned index,
+                                 unsigned n_subsample)
+{
+    const uint64_t not_pooled =
+        VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL | VMAF_FEATURE_EXTRACTOR_TEMPORAL;
+    if (shared_fex->flags & not_pooled)
+        return true;
+    return fex_subsample_skip(shared_fex->flags, index, n_subsample);
+}
+
+/* Create (once) this worker's private context for extractor i.
+ * vmaf_feature_extractor_context_create deep-copies the shared extractor into
+ * a new VmafFeatureExtractor owned by td->fex_ctx[i]; from then on
+ * td->fex_ctx[i]->fex is a different heap object from the registered one, so
+ * per-frame writes to its prev_ref are thread-private (ADR-0795). The shared
+ * extractor is only ever read (flags / name / opts) from a worker. */
+static int batch_ensure_fex_ctx(BatchThreadData *td, const struct ThreadDataBatch *f, unsigned i)
+{
+    if (td->fex_ctx[i])
+        return 0;
+
+    VmafFeatureExtractorContext *shared_ctx = f->registered_fex->fex_ctx[i];
+    VmafDictionary *d = NULL;
+    if (shared_ctx->opts_dict) {
+        VmafDictionary *opts_dict = shared_ctx->opts_dict;
+        const int err = vmaf_dictionary_copy(&opts_dict, &d);
+        if (err)
+            return err;
+    }
+    return vmaf_feature_extractor_context_create(&td->fex_ctx[i], shared_ctx->fex, d);
+}
+
+/* Run extractor i for the frame carried by `f` on this worker's private
+ * context.
+ *
+ * PREV_REF extractors take an INDEPENDENT counted reference to the shared
+ * snapshot f->prev_ref: vmaf_feature_extractor_context_extract() runs the
+ * PREV_REF swap (feature_extractor.cpp) on success — it unrefs that count and
+ * bumps frame N into fex->prev_ref with one extra count — and leaves it
+ * untouched on error. Either way fex->prev_ref holds one counted reference
+ * afterwards, released via fex_release_prev_ref(). The snapshot itself is
+ * deliberately NOT touched here: the remaining PREV_REF extractors in the
+ * batch still need it, and it is released exactly once by the caller. (The
+ * old code struct-copied the snapshot and zeroed it after the first
+ * extractor, starving the second PREV_REF extractor — e.g. motion_v2, which
+ * always co-schedules motion — with -EINVAL on every frame.) */
+static int batch_extract_one(BatchThreadData *td, struct ThreadDataBatch *f, unsigned i)
+{
+    VmafFeatureExtractorContext *fex_ctx = td->fex_ctx[i];
+    const VmafFeatureExtractor *shared_fex = f->registered_fex->fex_ctx[i]->fex;
+    const bool prev_ref = (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) != 0;
+
+    /* Invariant (ADR-0795): fex_ctx->fex is this thread's private deep copy. */
+    assert(fex_ctx->fex != shared_fex);
+    if (prev_ref && f->prev_ref.ref)
+        (void)vmaf_picture_ref(&fex_ctx->fex->prev_ref, &f->prev_ref);
+
+    const int err = vmaf_feature_extractor_context_extract(fex_ctx, &f->ref, NULL, &f->dist, NULL,
+                                                           f->index, f->feature_collector);
+
+    if (prev_ref)
+        fex_release_prev_ref(fex_ctx->fex);
+    return err;
+}
+
 static int threaded_extract_batch_func(void *e, void **thread_data)
 {
     struct ThreadDataBatch *f = e;
@@ -1712,132 +1894,24 @@ static int threaded_extract_batch_func(void *e, void **thread_data)
      * (iter9-tsan-race-deep finding #2). */
     atomic_store(&f->err, 0);
 
-    BatchThreadData *td = *thread_data;
-    if (!td) {
-        td = malloc(sizeof(*td));
-        if (!td) {
-            atomic_store(&f->err, -ENOMEM);
-            goto unref;
-        }
-        td->cnt = f->registered_fex->cnt;
-        td->fex_ctx = calloc(td->cnt, sizeof(*td->fex_ctx));
-        if (!td->fex_ctx) {
-            free(td);
-            atomic_store(&f->err, -ENOMEM);
-            goto unref;
-        }
-        *thread_data = td;
+    BatchThreadData *td = NULL;
+    int err = batch_thread_data_ensure(thread_data, f->registered_fex->cnt, &td);
+    for (unsigned i = 0; !err && i < f->registered_fex->cnt; i++) {
+        const VmafFeatureExtractor *shared_fex = f->registered_fex->fex_ctx[i]->fex;
+        if (batch_extractor_skip(shared_fex, f->index, f->n_subsample))
+            continue;
+        err = batch_ensure_fex_ctx(td, f, i);
+        if (!err)
+            err = batch_extract_one(td, f, i);
     }
+    atomic_store(&f->err, err);
 
-    for (unsigned i = 0; i < f->registered_fex->cnt; i++) {
-        /* shared_fex: pointer to the registered extractor used only to read
-         * flags / name / opts.  Must never be written to from this thread —
-         * writes go exclusively to td->fex_ctx[i]->fex (per-thread deep copy).
-         * See ADR-0795. */
-        VmafFeatureExtractor *shared_fex = f->registered_fex->fex_ctx[i]->fex;
-
-        if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA)
-            continue;
-
-        /* SYCL extractors are dispatched via the SYCL command-graph path in
-         * read_pictures_dispatch_one(); the CPU thread pool must skip them
-         * symmetrically with CUDA to prevent double-dispatch.  Without this
-         * guard, every SYCL extractor runs once via the SYCL path and once
-         * via this pool, corrupting the feature-collector state. */
-        if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL)
-            continue;
-
-        if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL)
-            continue;
-
-        const uint64_t no_subsample_flags =
-            VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_PREV_REF;
-        if (!(shared_fex->flags & no_subsample_flags)) {
-            if ((f->n_subsample > 1) && (f->index % f->n_subsample))
-                continue;
-        }
-
-        if (!td->fex_ctx[i]) {
-            VmafDictionary *opts_dict = f->registered_fex->fex_ctx[i]->opts_dict;
-            VmafDictionary *d = NULL;
-            if (opts_dict) {
-                int err = vmaf_dictionary_copy(&opts_dict, &d);
-                if (err) {
-                    atomic_store(&f->err, err);
-                    break;
-                }
-            }
-            /* vmaf_feature_extractor_context_create deep-copies shared_fex into
-             * a new VmafFeatureExtractor owned by this thread's td->fex_ctx[i].
-             * From this point td->fex_ctx[i]->fex != shared_fex (different heap
-             * objects), so writes to td->fex_ctx[i]->fex->prev_ref below are
-             * thread-private (ADR-0795). */
-            int err = vmaf_feature_extractor_context_create(&td->fex_ctx[i], shared_fex, d);
-            if (err) {
-                atomic_store(&f->err, err);
-                break;
-            }
-        }
-
-        /* Invariant (ADR-0795): td->fex_ctx[i]->fex is this thread's private deep
-         * copy of shared_fex.  The prev_ref write below is safe because no other
-         * thread shares td — BatchThreadData lives in thread-local storage managed
-         * by the thread pool.  The write/extract/clear sequence is fully contained
-         * within this thread's execution of the extractor loop. */
-        assert(td->fex_ctx[i]->fex != shared_fex);
-        if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) {
-            /* Take an INDEPENDENT counted reference per PREV_REF extractor.
-             * The old code struct-copied the single snapshot (no extra count);
-             * the first extractor's PREV_REF swap then unref'd that one count
-             * and the shared f->prev_ref was zeroed below, so the 2nd+ PREV_REF
-             * extractor in the same batch saw prev_ref.ref == NULL and returned
-             * -EINVAL on every frame. This starved e.g. motion_v2, which always
-             * co-schedules motion (two PREV_REF extractors). Each extractor now
-             * owns its own count, balanced by its own swap; the snapshot is
-             * released exactly once at `unref:` below. */
-            if (f->prev_ref.ref)
-                vmaf_picture_ref(&td->fex_ctx[i]->fex->prev_ref, &f->prev_ref);
-        }
-
-        int err = vmaf_feature_extractor_context_extract(td->fex_ctx[i], &f->ref, NULL, &f->dist,
-                                                         NULL, f->index, f->feature_collector);
-
-        if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) {
-            /* vmaf_feature_extractor_context_extract() runs the PREV_REF SWAP
-             * (feature_extractor.cpp) on SUCCESS:
-             *   1. unrefs the old fex->prev_ref (this extractor's OWN counted
-             *      reference, taken via vmaf_picture_ref() above), and
-             *   2. bumps frame N into fex->prev_ref with one extra refcount.
-             * On ERROR fex->prev_ref is unchanged (still this extractor's
-             * frame N-1 reference).
-             *
-             * Either way fex->prev_ref holds a counted reference (frame N on
-             * success, frame N-1 on error) that must be released before the
-             * field is cleared — a bare memset would leak it and exhaust the
-             * picture pool after ~pool_size frames (ADR-1051).
-             *
-             * The shared snapshot f->prev_ref is deliberately NOT zeroed here:
-             * each PREV_REF extractor took its own count above, so the snapshot
-             * stays live for the remaining PREV_REF extractors in this batch
-             * and is released exactly once in the `unref:` block below. (The old
-             * code zeroed it after the first extractor, which is the multi-
-             * PREV_REF starvation bug fixed here.) */
-            if (td->fex_ctx[i]->fex->prev_ref.ref)
-                (void)vmaf_picture_unref(&td->fex_ctx[i]->fex->prev_ref);
-            memset(&td->fex_ctx[i]->fex->prev_ref, 0, sizeof(td->fex_ctx[i]->fex->prev_ref));
-        }
-
-        if (err) {
-            atomic_store(&f->err, err);
-            break;
-        }
-    }
-
-unref:
+    /* Release the shared prev_ref snapshot exactly once — every PREV_REF
+     * extractor took and balanced its own count in batch_extract_one(). */
     if (f->prev_ref.ref)
-        vmaf_picture_unref(&f->prev_ref);
-    vmaf_picture_unref(&f->ref);
-    vmaf_picture_unref(&f->dist);
+        (void)vmaf_picture_unref(&f->prev_ref);
+    (void)vmaf_picture_unref(&f->ref);
+    (void)vmaf_picture_unref(&f->dist);
     return atomic_load(&f->err);
 }
 
@@ -1851,26 +1925,23 @@ static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, Vma
     if (!dist)
         return -EINVAL;
 
-    int err = 0;
-
-    VmafPicture pic_a, pic_b, prev_ref = {0};
-    vmaf_picture_ref(&pic_a, ref);
-    vmaf_picture_ref(&pic_b, dist);
+    VmafPicture pic_a = {0};
+    VmafPicture pic_b = {0};
+    VmafPicture prev_ref = {0};
+    (void)vmaf_picture_ref(&pic_a, ref);
+    (void)vmaf_picture_ref(&pic_b, dist);
 
     /* Refcounted snapshot of prev_ref for the worker, stored in data.prev_ref
      * (struct copy) so the worker owns an independent ref. */
     if (vmaf->prev_ref.ref)
-        vmaf_picture_ref(&prev_ref, &vmaf->prev_ref);
+        (void)vmaf_picture_ref(&prev_ref, &vmaf->prev_ref);
 
     /* Advance vmaf->prev_ref to the current frame BEFORE enqueuing: no worker
      * runs for this frame yet, and the worker only reads data.prev_ref (the
      * snapshot above), so this races with nothing. Updating after enqueue (the
      * old order) created a TSAN race on the shared VmafRef* between the worker's
      * and the main thread's unref (iter6-tsan-race-deep finding #2). */
-    if (vmaf->prev_ref.ref)
-        vmaf_picture_unref(&vmaf->prev_ref);
-    if (ref && ref->ref)
-        vmaf_picture_ref(&vmaf->prev_ref, ref);
+    read_pictures_update_prev_ref(vmaf, ref);
 
     struct ThreadDataBatch data = {
         .ref = pic_a,
@@ -1883,13 +1954,13 @@ static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, Vma
         .err = 0,
     };
 
-    err = vmaf_thread_pool_enqueue(vmaf->thread_pool, threaded_extract_batch_func, &data,
-                                   sizeof(data));
+    const int err = vmaf_thread_pool_enqueue(vmaf->thread_pool, threaded_extract_batch_func, &data,
+                                             sizeof(data));
     if (err) {
-        vmaf_picture_unref(&pic_a);
-        vmaf_picture_unref(&pic_b);
+        (void)vmaf_picture_unref(&pic_a);
+        (void)vmaf_picture_unref(&pic_b);
         if (prev_ref.ref)
-            vmaf_picture_unref(&prev_ref);
+            (void)vmaf_picture_unref(&prev_ref);
         /* done=true means the caller skips its cleanup: unref, so we own ref/dist
          * here too (success path unrefs below). Else each failed enqueue leaks a
          * pool slot and the next pool_fetch deadlocks once the pool drains. */
@@ -1899,10 +1970,10 @@ static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, Vma
     return vmaf_picture_unref(ref) | vmaf_picture_unref(dist);
 }
 
-static int validate_pic_params(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist)
+static int validate_pic_params(VmafContext *vmaf, const VmafPicture *ref, const VmafPicture *dist)
 {
-    VmafPicturePrivate *ref_priv = ref->priv;
-    VmafPicturePrivate *dist_priv = dist->priv;
+    const VmafPicturePrivate *ref_priv = ref->priv;
+    const VmafPicturePrivate *dist_priv = dist->priv;
 
     if (!vmaf->pic_params.w) {
         vmaf->pic_params.w = ref->w[0];
@@ -2373,29 +2444,46 @@ static int read_pictures_sycl_prep(VmafContext *vmaf, VmafPicture *ref, VmafPict
 }
 #endif
 
-static bool read_pictures_should_skip(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx,
-                                      unsigned index)
+static bool read_pictures_should_skip(const VmafContext *vmaf,
+                                      const VmafFeatureExtractorContext *fex_ctx, unsigned index)
 {
-    {
-        const uint64_t no_subsample_flags =
-            VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_PREV_REF;
-        if (!(fex_ctx->fex->flags & no_subsample_flags)) {
-            if ((vmaf->cfg.n_subsample > 1) && (index % vmaf->cfg.n_subsample))
-                return true;
-        }
-    }
+    const uint64_t flags = fex_ctx->fex->flags;
+    if (fex_subsample_skip(flags, index, vmaf->cfg.n_subsample))
+        return true;
 
     /* CPU extractors with a thread pool go to the threaded batch path.
      * CUDA + SYCL extractors run serially via their respective dispatch loops.
      * Skipping them in the threaded batch and skipping them ALSO from the serial
-     * loop here would leak — be careful to keep these in sync with the changes
-     * to threaded_extract_batch_func. */
-    if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA) &&
-        !(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL) && vmaf->thread_pool) {
-        if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL))
-            return true;
+     * loop here would leak — be careful to keep these in sync with
+     * batch_extractor_skip(). */
+    const bool gpu = (flags & (VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL)) != 0;
+    return !gpu && vmaf->thread_pool && !(flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL);
+}
+
+/* GPU double-buffer dispatch for extractors that implement submit/collect:
+ * collect the previous frame's results, then submit the current frame so GPU
+ * compute of frame N-1 overlaps the CPU-side command recording of frame N.
+ * On failure the PREV_REF reference taken by the caller is released; on
+ * success its ownership transfers into the submitted work and the
+ * extractor's collect() path releases it on the next frame. */
+static int dispatch_gpu_double_buffer(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx,
+                                      VmafPicture *ref, VmafPicture *dist, unsigned index)
+{
+    int err = 0;
+    if (fex_ctx->gpu_pending) {
+        err = vmaf_feature_extractor_context_collect(fex_ctx, fex_ctx->gpu_pending_index,
+                                                     vmaf->feature_collector);
+        fex_ctx->gpu_pending = false;
     }
-    return false;
+    if (!err)
+        err = vmaf_feature_extractor_context_submit(fex_ctx, ref, NULL, dist, NULL, index);
+    if (err) {
+        fex_release_prev_ref(fex_ctx->fex);
+        return err;
+    }
+    fex_ctx->gpu_pending = true;
+    fex_ctx->gpu_pending_index = index;
+    return 0;
 }
 
 static int read_pictures_dispatch_one(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx,
@@ -2409,59 +2497,25 @@ static int read_pictures_dispatch_one(VmafContext *vmaf, VmafFeatureExtractorCon
      * read_pictures_update_prev_ref on the next frame while the extractor is
      * still reading its data, opening a use-after-free window when the
      * refcount hits zero and the pool reuses the buffer. */
-    if ((fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) && vmaf->prev_ref.ref) {
-        vmaf_picture_ref(&fex_ctx->fex->prev_ref, &vmaf->prev_ref);
-    }
+    if ((fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) && vmaf->prev_ref.ref)
+        (void)vmaf_picture_ref(&fex_ctx->fex->prev_ref, &vmaf->prev_ref);
 
-    // Double-buffer: collect previous frame, then submit current frame.
-    // This overlaps GPU compute of the previous frame with CPU-side
-    // command recording for the current frame.
-    // Works for both Vulkan and CUDA extractors that implement submit/collect.
-    if (fex_ctx->fex->submit && fex_ctx->fex->collect) {
-        int err = 0;
-        // Collect previous frame's results (if any)
-        if (fex_ctx->gpu_pending) {
-            err = vmaf_feature_extractor_context_collect(fex_ctx, fex_ctx->gpu_pending_index,
-                                                         vmaf->feature_collector);
-            fex_ctx->gpu_pending = false;
-            if (err) {
-                if (fex_ctx->fex->prev_ref.ref) {
-                    (void)vmaf_picture_unref(&fex_ctx->fex->prev_ref);
-                    memset(&fex_ctx->fex->prev_ref, 0, sizeof(fex_ctx->fex->prev_ref));
-                }
-                return err;
-            }
-        }
-        // Submit current frame (non-blocking GPU work)
-        err = vmaf_feature_extractor_context_submit(fex_ctx, ref, NULL, dist, NULL, index);
-        if (err) {
-            if (fex_ctx->fex->prev_ref.ref) {
-                (void)vmaf_picture_unref(&fex_ctx->fex->prev_ref);
-                memset(&fex_ctx->fex->prev_ref, 0, sizeof(fex_ctx->fex->prev_ref));
-            }
-            return err;
-        }
-        fex_ctx->gpu_pending = true;
-        fex_ctx->gpu_pending_index = index;
-        /* prev_ref ownership transferred into the submitted work; the
-         * extractor's collect() path is responsible for cleaning up.
-         * Leave the ref live until collect() returns on the next frame. */
-        return 0;
-    }
+    if (fex_ctx->fex->submit && fex_ctx->fex->collect)
+        return dispatch_gpu_double_buffer(vmaf, fex_ctx, ref, dist, index);
 
-    int err = vmaf_feature_extractor_context_extract(fex_ctx, ref, NULL, dist, NULL, index,
-                                                     vmaf->feature_collector);
-
-    if (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) {
-        if (fex_ctx->fex->prev_ref.ref)
-            (void)vmaf_picture_unref(&fex_ctx->fex->prev_ref);
-        memset(&fex_ctx->fex->prev_ref, 0, sizeof(fex_ctx->fex->prev_ref));
-    }
-
+    const int err = vmaf_feature_extractor_context_extract(fex_ctx, ref, NULL, dist, NULL, index,
+                                                           vmaf->feature_collector);
+    if (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF)
+        fex_release_prev_ref(fex_ctx->fex);
     return err;
 }
 
-/* Upstream dispatch function. Refactoring is tracked in .workingdir2/OPEN.md. */
+/* Upstream dispatch function. Refactoring is tracked in .workingdir2/OPEN.md.
+ * `ref` / `dist` are only read on the CPU configuration cppcheck analyses,
+ * but the SYCL build hands them to vmaf_sycl_shared_frame_upload(), whose
+ * prototype (src/sycl/common.h) takes mutable pictures, so they cannot be
+ * const-qualified for every backend. Suppression cited per ADR-0278. */
+/* cppcheck-suppress constParameterPointer ; SYCL upload takes mutable pictures, see above */
 static int read_pictures_validate_and_prep(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
                                            unsigned index)
 {
@@ -2493,6 +2547,23 @@ static int read_pictures_validate_and_prep(VmafContext *vmaf, VmafPicture *ref, 
     vmaf->have_last_index = true;
     return 0;
 }
+
+/* Per-call picture bookkeeping for vmaf_read_pictures(). `ref` / `dist`
+ * point at whichever pictures the host-side consumers (DNN inference, the
+ * worker pool, the prev_ref update) must see. The CUDA build additionally
+ * carries the host / device translations of the caller's pictures that the
+ * per-extractor dispatch selects from. */
+typedef struct ReadPicturesFrame {
+    VmafPicture *ref;
+    VmafPicture *dist;
+#ifdef HAVE_CUDA
+    unsigned hw_flags;
+    VmafPicture ref_host;
+    VmafPicture ref_device;
+    VmafPicture dist_host;
+    VmafPicture dist_device;
+#endif
+} ReadPicturesFrame;
 
 #ifdef HAVE_CUDA
 /* CUDA fence-batching pass for ``read_pictures_extractor_loop``
@@ -2539,10 +2610,7 @@ static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, VmafPicture *ref
         /* Release the prev_ref reference that was acquired in the Phase 2
          * submit loop (ADR-0778 Fix-B).  The GPU work has completed by the
          * time collect() returns, so it is safe to drop the ref now. */
-        if (fex_ctx->fex->prev_ref.ref) {
-            (void)vmaf_picture_unref(&fex_ctx->fex->prev_ref);
-            memset(&fex_ctx->fex->prev_ref, 0, sizeof(fex_ctx->fex->prev_ref));
-        }
+        fex_release_prev_ref(fex_ctx->fex);
         if (err) {
             vmaf_cuda_drain_batch_close();
             return err;
@@ -2585,10 +2653,7 @@ static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, VmafPicture *ref
         err = vmaf_feature_extractor_context_submit(fex_ctx, ref_device, NULL, dist_device, NULL,
                                                     index);
         if (err) {
-            if (fex_ctx->fex->prev_ref.ref) {
-                (void)vmaf_picture_unref(&fex_ctx->fex->prev_ref);
-                memset(&fex_ctx->fex->prev_ref, 0, sizeof(fex_ctx->fex->prev_ref));
-            }
+            fex_release_prev_ref(fex_ctx->fex);
             vmaf_cuda_drain_batch_close();
             return err;
         }
@@ -2601,12 +2666,7 @@ static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, VmafPicture *ref
 }
 #endif /* HAVE_CUDA */
 
-static int read_pictures_extractor_loop(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
-#ifdef HAVE_CUDA
-                                        VmafPicture *ref_host, VmafPicture *ref_device,
-                                        VmafPicture *dist_host, VmafPicture *dist_device,
-#endif
-                                        unsigned index)
+static int read_pictures_extractor_loop(VmafContext *vmaf, ReadPicturesFrame *fr, unsigned index)
 {
 #ifdef HAVE_CUDA
     /* T-GPU-OPT-1 (ADR-0242): CUDA extractors are dispatched together
@@ -2614,7 +2674,8 @@ static int read_pictures_extractor_loop(VmafContext *vmaf, VmafPicture *ref, Vma
      * host-side syscall. Vulkan / SYCL extractors fall through to the
      * legacy per-extractor loop below (their backends own their own
      * ordering). */
-    int err = read_pictures_extractor_loop_cuda(vmaf, ref_device, dist_device, index);
+    const int err =
+        read_pictures_extractor_loop_cuda(vmaf, &fr->ref_device, &fr->dist_device, index);
     if (err) {
         return err;
     }
@@ -2629,34 +2690,21 @@ static int read_pictures_extractor_loop(VmafContext *vmaf, VmafPicture *ref, Vma
          * double-submit. CUDA extractors WITHOUT async submit/collect
          * (none today, but possible for purely-synchronous kernels)
          * still need the legacy dispatch path. */
-        if ((fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA) && fex_ctx->fex->submit &&
-            fex_ctx->fex->collect) {
+        const bool cuda = (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA) != 0;
+        if (cuda && fex_ctx->fex->submit && fex_ctx->fex->collect) {
             continue;
         }
-        ref = fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA ? ref_device : ref_host;
-        dist = fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA ? dist_device : dist_host;
+        VmafPicture *ref = cuda ? &fr->ref_device : &fr->ref_host;
+        VmafPicture *dist = cuda ? &fr->dist_device : &fr->dist_host;
+#else
+        VmafPicture *ref = fr->ref;
+        VmafPicture *dist = fr->dist;
 #endif
-        int err_one = read_pictures_dispatch_one(vmaf, fex_ctx, ref, dist, index);
+        const int err_one = read_pictures_dispatch_one(vmaf, fex_ctx, ref, dist, index);
         if (err_one)
             return err_one;
     }
     return 0;
-}
-
-/* CUDA device-only path: HAVE_CUDA reassigns `ref = &ref_host` at caller,
- * but `ref_host` is zero-initialised whenever every extractor carries
- * VMAF_FEATURE_EXTRACTOR_CUDA (rfe_hw_flags returns HW_FLAG_DEVICE only,
- * so translate_picture_device early-returns and never downloads). Deref
- * of ref_host.ref == NULL crashes vmaf_ref_fetch_increment. The only
- * PREV_REF consumer is CPU integer_motion_v2, which is never registered
- * alongside a pure CUDA extractor set — skipping the prev_ref update here
- * is safe. ADR-0123. */
-static void read_pictures_update_prev_ref(VmafContext *vmaf, VmafPicture *ref)
-{
-    if (vmaf->prev_ref.ref)
-        vmaf_picture_unref(&vmaf->prev_ref);
-    if (ref && ref->ref)
-        vmaf_picture_ref(&vmaf->prev_ref, ref);
 }
 
 /* Post-extractor stage: per-frame DNN inference + optional thread-pool
@@ -2679,6 +2727,86 @@ static int read_pictures_post_extractor(VmafContext *vmaf, VmafPicture *ref, Vma
     return 0;
 }
 
+#ifdef HAVE_CUDA
+/* CUDA: translate the caller's pictures into the host / device copies the
+ * registered extractor set needs (the hw-flags bitmask is cached and only
+ * recomputed after vmaf_use_feature() registers a new extractor — F2-B,
+ * perf-audit-pipeline-2026-05-16). On failure the caller keeps ownership of
+ * its pictures, as on any other pre-dispatch validation failure. CPU builds
+ * have nothing to translate and skip the call entirely (a no-op stub would
+ * leave vmaf_read_pictures() with a provably-dead error branch). */
+static int read_pictures_frame_translate(VmafContext *vmaf, ReadPicturesFrame *fr)
+{
+    if (vmaf->rfe_hw_flags_dirty) {
+        vmaf->rfe_hw_flags_cache = rfe_hw_flags(&vmaf->registered_feature_extractors);
+        vmaf->rfe_hw_flags_dirty = false;
+    }
+    fr->hw_flags = vmaf->rfe_hw_flags_cache;
+    return read_pictures_cuda_translate(vmaf, fr->ref, fr->dist, fr->hw_flags, &fr->ref_host,
+                                        &fr->ref_device, &fr->dist_host, &fr->dist_device);
+}
+#endif /* HAVE_CUDA */
+
+/* CUDA: after the extractor loop, hand the host translations to the
+ * host-side consumers. When every registered extractor is CUDA-only
+ * (hw_flags == HW_FLAG_DEVICE, no HW_FLAG_HOST bit) translate_picture_host()
+ * early-returned without populating ref_host / dist_host, leaving them
+ * zero-initialised — passing those to threaded_read_pictures_batch →
+ * vmaf_picture_ref → vmaf_ref_fetch_increment would dereference NULL. On
+ * that device-only path fr->ref / fr->dist stay the hwupload-uploaded
+ * pictures provided by the caller (validated non-NULL on entry). */
+static void read_pictures_frame_select_host(ReadPicturesFrame *fr)
+{
+#ifdef HAVE_CUDA
+    if (fr->hw_flags & HW_FLAG_HOST) {
+        fr->ref = &fr->ref_host;
+        fr->dist = &fr->dist_host;
+    }
+#else
+    (void)fr;
+#endif
+}
+
+/* Release every picture this call still owns and fold the release status
+ * into `err`. Always unref the caller's ref/dist: with the always-on picture
+ * pool, leaking even one picture per frame holds a pool slot and the next
+ * vmaf_picture_pool_fetch deadlocks in pthread_cond_wait once the pool
+ * drains. */
+static int read_pictures_frame_cleanup(VmafContext *vmaf, ReadPicturesFrame *fr, int err)
+{
+#ifdef HAVE_CUDA
+    if (fr->hw_flags & HW_FLAG_HOST) {
+        return err | read_pictures_cuda_cleanup(vmaf, &fr->ref_host, &fr->ref_device,
+                                                &fr->dist_host, &fr->dist_device);
+    }
+#else
+    (void)vmaf;
+#endif
+    err |= vmaf_picture_unref(fr->ref);
+    err |= vmaf_picture_unref(fr->dist);
+    return err;
+}
+
+/* Cleanup after threaded_read_pictures_batch took ownership of (and
+ * released) the host pictures. CUDA: only the device translations are left,
+ * and only when they are fresh ring-buffer allocations (HW_FLAG_HOST set);
+ * on the device-only path ref_device is a struct copy of the caller's
+ * picture whose lifetime the caller owns. Running the full
+ * read_pictures_frame_cleanup here would double-unref the host pictures and
+ * corrupt the pool free-list (PR #838 regression). */
+static int read_pictures_frame_cleanup_after_batch(VmafContext *vmaf, ReadPicturesFrame *fr,
+                                                   int err)
+{
+#ifdef HAVE_CUDA
+    if (fr->hw_flags & HW_FLAG_HOST)
+        err |= read_pictures_cuda_cleanup_device_only(vmaf, &fr->ref_device, &fr->dist_device);
+#else
+    (void)vmaf;
+    (void)fr;
+#endif
+    return err;
+}
+
 int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, unsigned index)
 {
     if (!vmaf)
@@ -2697,84 +2825,28 @@ int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, u
      * -ENOMEM does not double-count the frame and corrupt FPS / end-index. */
     vmaf->pic_cnt++;
 
+    ReadPicturesFrame fr = {.ref = ref, .dist = dist};
 #ifdef HAVE_CUDA
-    if (vmaf->rfe_hw_flags_dirty) {
-        vmaf->rfe_hw_flags_cache = rfe_hw_flags(&vmaf->registered_feature_extractors);
-        vmaf->rfe_hw_flags_dirty = false;
-    }
-    const unsigned hw_flags = vmaf->rfe_hw_flags_cache;
-    VmafPicture ref_host = {0}, ref_device = {0};
-    VmafPicture dist_host = {0}, dist_device = {0};
-    err = read_pictures_cuda_translate(vmaf, ref, dist, hw_flags, &ref_host, &ref_device,
-                                       &dist_host, &dist_device);
+    err = read_pictures_frame_translate(vmaf, &fr);
     if (err)
         return err;
 #endif
 
-    err = read_pictures_extractor_loop(vmaf, ref, dist,
-#ifdef HAVE_CUDA
-                                       &ref_host, &ref_device, &dist_host, &dist_device,
-#endif
-                                       index);
+    err = read_pictures_extractor_loop(vmaf, &fr, index);
     if (err)
-        goto cleanup;
+        return read_pictures_frame_cleanup(vmaf, &fr, err);
 
-#ifdef HAVE_CUDA
-    /* When every registered extractor is CUDA-only (hw_flags == HW_FLAG_DEVICE,
-     * no HW_FLAG_HOST bit set), translate_picture_host() early-returns without
-     * populating ref_host/dist_host, leaving them zero-initialised.
-     * Reassigning ref/dist to point at the zeroed structs and then passing them
-     * to threaded_read_pictures_batch → vmaf_picture_ref → vmaf_ref_fetch_increment
-     * dereferences a NULL pointer.  Guard: only reassign when at least one
-     * host extractor is registered (HW_FLAG_HOST set). */
-    if (hw_flags & HW_FLAG_HOST) {
-        ref = &ref_host;
-        dist = &dist_host;
-    }
-    /* Device-only path: ref/dist remain the hwupload-uploaded pictures provided
-     * by the caller.  vmaf_read_pictures validates these are non-NULL above. */
-#endif
+    read_pictures_frame_select_host(&fr);
 
     bool done = false;
-    err = read_pictures_post_extractor(vmaf, ref, dist, index, &done);
-    if (done) {
-#ifdef HAVE_CUDA
-        /* done=true means threaded_read_pictures_batch already called
-         * vmaf_picture_unref on ref_host/dist_host at line 1858.  Calling
-         * the full read_pictures_cuda_cleanup here would double-unref those
-         * host pictures and corrupt the pool free-list (PR #838 regression).
-         * Use the device-only variant to release only ref_device/dist_device.
-         * Guard: device-only path (no HW_FLAG_HOST) means ref_device is a
-         * struct copy of the caller's picture, not a fresh ring-buffer
-         * allocation — the caller owns its lifetime, so no cleanup needed. */
-        if (hw_flags & HW_FLAG_HOST)
-            err |= read_pictures_cuda_cleanup_device_only(vmaf, &ref_device, &dist_device);
-#endif
-        return err;
-    }
+    err = read_pictures_post_extractor(vmaf, fr.ref, fr.dist, index, &done);
+    if (done)
+        return read_pictures_frame_cleanup_after_batch(vmaf, &fr, err);
     if (err)
-        goto cleanup;
+        return read_pictures_frame_cleanup(vmaf, &fr, err);
 
-    read_pictures_update_prev_ref(vmaf, ref);
-
-    /* Always unref the caller's ref/dist before returning. With the
-     * always-on picture pool, leaking even one picture per frame holds a
-     * pool slot, and the next vmaf_picture_pool_fetch deadlocks in
-     * pthread_cond_wait once the pool drains. */
-cleanup:
-#ifdef HAVE_CUDA
-    if (hw_flags & HW_FLAG_HOST) {
-        err |= read_pictures_cuda_cleanup(vmaf, &ref_host, &ref_device, &dist_host, &dist_device);
-    } else {
-        err |= vmaf_picture_unref(ref);
-        err |= vmaf_picture_unref(dist);
-    }
-#else
-    err |= vmaf_picture_unref(ref);
-    err |= vmaf_picture_unref(dist);
-#endif
-
-    return err;
+    read_pictures_update_prev_ref(vmaf, fr.ref);
+    return read_pictures_frame_cleanup(vmaf, &fr, 0);
 }
 
 #ifdef HAVE_SYCL
@@ -3152,6 +3224,12 @@ int vmaf_score_pooled_model_collection(VmafContext *vmaf, VmafModelCollection *m
     return err;
 }
 
+/* Read-only accessor, but the exported prototype in
+ * core/include/libvmaf/libvmaf.h takes a mutable context and the public C
+ * ABI is frozen (no signature changes to the exported API in this rework), so
+ * the parameter is deliberately not const-qualified here. Suppression cited
+ * per ADR-0278. */
+/* cppcheck-suppress constParameterPointer ; public ABI prototype is frozen, see above */
 int vmaf_context_get_backend(VmafContext *vmaf, enum VmafBackend *out)
 {
     if (!vmaf)
@@ -3166,6 +3244,81 @@ int vmaf_context_get_backend(VmafContext *vmaf, enum VmafBackend *out)
 const char *vmaf_version(void)
 {
     return VMAF_VERSION;
+}
+
+/* Open `output_path` for writing with mode 0644 so the output file is never
+ * world-writable: fopen(3) defaults to 0666 & ~umask, which CodeQL flags as
+ * cpp/world-writable-file-creation, so open(2) + fdopen(3) pin the
+ * permission bits up front. Returns -errno of the failing call. */
+static int output_file_open(const char *output_path, FILE **outfile)
+{
+#ifdef _WIN32
+    const int outfd = _open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+#else
+    const int outfd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+#endif
+    if (outfd < 0) {
+        /* Capture errno immediately — it is clobbered by fprintf(3). */
+        const int open_errno = errno;
+        (void)fprintf(stderr, "could not open file: %s\n", output_path);
+        return -open_errno;
+    }
+#ifdef _WIN32
+    *outfile = _fdopen(outfd, "w");
+#else
+    *outfile = fdopen(outfd, "w");
+#endif
+    if (!*outfile) {
+        /* Same: capture before fprintf clobbers errno. */
+        const int fdopen_errno = errno;
+        (void)fprintf(stderr, "could not open file: %s\n", output_path);
+#ifdef _WIN32
+        (void)_close(outfd);
+#else
+        (void)close(outfd);
+#endif
+        return -fdopen_errno;
+    }
+    return 0;
+}
+
+/* ADR-0606: Compute fps defensively to avoid 0.0/0.0 = NaN when either
+ * pic_cnt == 0 (no frames read, e.g. import-only callers) or the timer
+ * resolution is too coarse to distinguish begin and end.  NaN is handled
+ * correctly by the JSON fpclassify() switch, but Apple Clang with
+ * -ffast-math or a strict FP environment may generate a SIGFPE instead of
+ * the IEEE-754 quiet NaN on 0.0/0.0.  Emit 0.0 explicitly in those cases
+ * so the writers receive a well-defined, finite value. */
+static double output_fps(const VmafContext *vmaf)
+{
+    const clock_t timer_elapsed =
+        vmaf->feature_collector->timer.end - vmaf->feature_collector->timer.begin;
+    if (vmaf->pic_cnt == 0 || timer_elapsed == 0)
+        return 0.0;
+    return (double)vmaf->pic_cnt / ((double)timer_elapsed / (double)CLOCKS_PER_SEC);
+}
+
+/* Route to the writer for `fmt`; -EINVAL for an unknown format. */
+static int output_write(VmafContext *vmaf, enum VmafOutputFormat fmt, FILE *outfile, double fps,
+                        const char *score_format)
+{
+    switch (fmt) {
+    case VMAF_OUTPUT_FORMAT_XML:
+        return vmaf_write_output_xml(vmaf, vmaf->feature_collector, outfile, vmaf->cfg.n_subsample,
+                                     vmaf->pic_params.w, vmaf->pic_params.h, fps, vmaf->pic_cnt,
+                                     score_format);
+    case VMAF_OUTPUT_FORMAT_JSON:
+        return vmaf_write_output_json(vmaf, vmaf->feature_collector, outfile, vmaf->cfg.n_subsample,
+                                      fps, vmaf->pic_cnt, score_format);
+    case VMAF_OUTPUT_FORMAT_CSV:
+        return vmaf_write_output_csv(vmaf->feature_collector, outfile, vmaf->cfg.n_subsample,
+                                     score_format);
+    case VMAF_OUTPUT_FORMAT_SUB:
+        return vmaf_write_output_sub(vmaf->feature_collector, outfile, vmaf->cfg.n_subsample,
+                                     score_format);
+    default:
+        return -EINVAL;
+    }
 }
 
 int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
@@ -3189,77 +3342,13 @@ int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "vmaf_write_output: output_path must not be NULL\n");
         return -EINVAL;
     }
-    /* Open with mode 0644 so the output file is never world-writable.
-     * fopen(3) defaults to 0666 & ~umask, which CodeQL flags as
-     * cpp/world-writable-file-creation. open(2) + fdopen(3) pins the
-     * permission bits up front. */
-#ifdef _WIN32
-    int outfd = _open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-#else
-    int outfd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-#endif
-    if (outfd < 0) {
-        /* Capture errno immediately — it is clobbered by fprintf(3). */
-        const int open_errno = errno;
-        (void)fprintf(stderr, "could not open file: %s\n", output_path);
-        return -open_errno;
-    }
-#ifdef _WIN32
-    FILE *outfile = _fdopen(outfd, "w");
-#else
-    FILE *outfile = fdopen(outfd, "w");
-#endif
-    if (!outfile) {
-        /* Same: capture before fprintf clobbers errno. */
-        const int fdopen_errno = errno;
-        (void)fprintf(stderr, "could not open file: %s\n", output_path);
-#ifdef _WIN32
-        (void)_close(outfd);
-#else
-        (void)close(outfd);
-#endif
-        return -fdopen_errno;
-    }
 
-    /* ADR-0606: Compute fps defensively to avoid 0.0/0.0 = NaN when either
-     * pic_cnt == 0 (no frames read, e.g. import-only callers) or the timer
-     * resolution is too coarse to distinguish begin and end.  NaN is handled
-     * correctly by the JSON fpclassify() switch, but Apple Clang with
-     * -ffast-math or a strict FP environment may generate a SIGFPE instead of
-     * the IEEE-754 quiet NaN on 0.0/0.0.  Emit 0.0 explicitly in those cases
-     * so the writers receive a well-defined, finite value. */
-    clock_t timer_elapsed =
-        vmaf->feature_collector->timer.end - vmaf->feature_collector->timer.begin;
-    double fps;
-    if (vmaf->pic_cnt == 0 || timer_elapsed == 0) {
-        fps = 0.0;
-    } else {
-        fps = (double)vmaf->pic_cnt / ((double)timer_elapsed / (double)CLOCKS_PER_SEC);
-    }
+    FILE *outfile = NULL;
+    int ret = output_file_open(output_path, &outfile);
+    if (ret)
+        return ret;
 
-    int ret = 0;
-    switch (fmt) {
-    case VMAF_OUTPUT_FORMAT_XML:
-        ret = vmaf_write_output_xml(vmaf, vmaf->feature_collector, outfile, vmaf->cfg.n_subsample,
-                                    vmaf->pic_params.w, vmaf->pic_params.h, fps, vmaf->pic_cnt,
-                                    score_format);
-        break;
-    case VMAF_OUTPUT_FORMAT_JSON:
-        ret = vmaf_write_output_json(vmaf, vmaf->feature_collector, outfile, vmaf->cfg.n_subsample,
-                                     fps, vmaf->pic_cnt, score_format);
-        break;
-    case VMAF_OUTPUT_FORMAT_CSV:
-        ret = vmaf_write_output_csv(vmaf->feature_collector, outfile, vmaf->cfg.n_subsample,
-                                    score_format);
-        break;
-    case VMAF_OUTPUT_FORMAT_SUB:
-        ret = vmaf_write_output_sub(vmaf->feature_collector, outfile, vmaf->cfg.n_subsample,
-                                    score_format);
-        break;
-    default:
-        ret = -EINVAL;
-        break;
-    }
+    ret = output_write(vmaf, fmt, outfile, output_fps(vmaf), score_format);
 
     if (fclose(outfile) != 0 && ret == 0)
         ret = -EIO;
@@ -3279,9 +3368,11 @@ int vmaf_write_output(VmafContext *vmaf, const char *output_path, enum VmafOutpu
  * definition pattern incorrectly under allocator poisoning, crashing macOS CI
  * in writer tests. See libvmaf_priv.h for the declaration.
  */
-VmafFeatureCollector *vmaf_feature_collector_get(VmafContext *vmaf)
+VmafFeatureCollector *vmaf_feature_collector_get(const VmafContext *vmaf)
 {
     if (!vmaf)
         return NULL;
     return vmaf->feature_collector;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

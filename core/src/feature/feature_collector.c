@@ -16,10 +16,9 @@
  *
  */
 
-#include <errno.h>
 #include <assert.h>
+#include <errno.h>
 #include <pthread.h>
-#include <stdarg.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,6 +30,13 @@
 #include "libvmaf/libvmaf.h"
 #include "log.h"
 #include "predict.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
+ * upstream-mirror file whose Netflix source spells the null pointer constant
+ * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 static int aggregate_vector_init(AggregateVector *aggregate_vector)
 {
@@ -109,6 +115,19 @@ static void aggregate_vector_destroy(AggregateVector *aggregate_vector)
     free(aggregate_vector->metric);
 }
 
+/* Caller holds the collector lock. Returns the stored aggregate for
+ * `feature_name`, or NULL when no aggregate of that name was set. */
+static const double *aggregate_vector_find(const AggregateVector *aggregate_vector,
+                                           const char *feature_name)
+{
+    for (unsigned i = 0; i < aggregate_vector->cnt; i++) {
+        const char *f = aggregate_vector->metric[i].name;
+        if (!strcmp(f, feature_name))
+            return &(aggregate_vector->metric[i].value);
+    }
+    return NULL;
+}
+
 int vmaf_feature_collector_set_aggregate(VmafFeatureCollector *feature_collector,
                                          const char *feature_name, double score)
 {
@@ -142,25 +161,12 @@ int vmaf_feature_collector_get_aggregate(VmafFeatureCollector *feature_collector
         pthread_mutex_unlock(&(feature_collector->lock));
         return -ENODEV;
     }
-    int err = 0;
 
-    double *s = NULL;
-    for (unsigned i = 0; i < feature_collector->aggregate_vector.cnt; i++) {
-        const char *f = feature_collector->aggregate_vector.metric[i].name;
-        if (!strcmp(f, feature_name)) {
-            s = &(feature_collector->aggregate_vector.metric[i].value);
-            break;
-        }
-    }
+    const double *s = aggregate_vector_find(&feature_collector->aggregate_vector, feature_name);
+    const int err = s ? 0 : -EINVAL;
+    if (s)
+        *score = *s;
 
-    if (!s) {
-        err = -EINVAL;
-        goto unlock;
-    };
-
-    *score = *s;
-
-unlock:
     pthread_mutex_unlock(&(feature_collector->lock));
     return err;
 }
@@ -246,6 +252,26 @@ static int feature_vector_append(FeatureVector *feature_vector, unsigned index, 
     return 0;
 }
 
+/* Caller holds the collector lock. Reads the score stored at `index`.
+ *
+ * Netflix#755 / ADR-0154: distinguish "feature index is genuinely invalid"
+ * (-EINVAL) from "feature is valid but not yet written" (-EAGAIN). Several
+ * extractors (integer_motion motion2/motion3, five-frame-window variants)
+ * write their score for frame N retroactively when frame N+1 or N+2 is
+ * extracted — and on flush for the tail. A caller interleaving
+ * vmaf_read_pictures(i) with vmaf_score_pooled(i, i) would otherwise hit a
+ * false-fatal error; -EAGAIN tells the caller the request will succeed later
+ * (after more reads or after flush) rather than signalling programmer error. */
+static int feature_vector_read(const FeatureVector *feature_vector, unsigned index, double *score)
+{
+    if (index >= feature_vector->capacity)
+        return -EINVAL;
+    if (!feature_vector->score[index].written)
+        return -EAGAIN;
+    *score = feature_vector->score[index].value;
+    return 0;
+}
+
 int vmaf_feature_collector_init(VmafFeatureCollector **const feature_collector)
 {
     if (!feature_collector)
@@ -317,7 +343,7 @@ static int feature_collector_mount_model_unlocked(VmafFeatureCollector *feature_
 }
 
 static int feature_collector_unmount_model_unlocked(VmafFeatureCollector *feature_collector,
-                                                    VmafModel *model)
+                                                    const VmafModel *model)
 {
     VmafPredictModel *head = feature_collector->models;
     VmafPredictModel *prev = NULL;
@@ -356,6 +382,12 @@ int vmaf_feature_collector_mount_model(VmafFeatureCollector *feature_collector, 
     return err;
 }
 
+/* `model` is only compared by address here, but this prototype lives in
+ * feature_collector.h and is shared with the C++ twin feature_collector.cpp
+ * (compiled into test_predict and the collector coverage tests); the two
+ * TUs must keep an identical signature, so it stays mutable until the twins
+ * are reconciled. Suppression cited per ADR-0278. */
+/* cppcheck-suppress constParameterPointer ; prototype shared with the C++ twin, see above */
 int vmaf_feature_collector_unmount_model(VmafFeatureCollector *feature_collector, VmafModel *model)
 {
     if (!feature_collector)
@@ -543,23 +575,17 @@ int vmaf_feature_collector_append(VmafFeatureCollector *feature_collector, const
         pthread_mutex_unlock(&(feature_collector->lock));
         return -ENODEV;
     }
-    int err = 0;
 
     if (!feature_collector->timer.begin)
         feature_collector->timer.begin = clock();
 
     FeatureVector *feature_vector = NULL;
-    err = feature_collector_ensure_vector(feature_collector, feature_name, &feature_vector);
-    if (err)
-        goto unlock;
+    int err = feature_collector_ensure_vector(feature_collector, feature_name, &feature_vector);
+    if (!err)
+        err = feature_vector_append(feature_vector, picture_index, score);
+    if (!err)
+        feature_collector_dispatch_metadata(feature_collector, feature_name, picture_index, score);
 
-    err = feature_vector_append(feature_vector, picture_index, score);
-    if (err)
-        goto unlock;
-
-    feature_collector_dispatch_metadata(feature_collector, feature_name, picture_index, score);
-
-unlock:
     feature_collector->timer.end = clock();
     pthread_mutex_unlock(&(feature_collector->lock));
     return err;
@@ -593,33 +619,10 @@ int vmaf_feature_collector_get_score(VmafFeatureCollector *feature_collector,
         pthread_mutex_unlock(&(feature_collector->lock));
         return -ENODEV;
     }
-    int err = 0;
 
-    FeatureVector *feature_vector = find_feature_vector(feature_collector, feature_name);
+    const FeatureVector *feature_vector = find_feature_vector(feature_collector, feature_name);
+    const int err = feature_vector ? feature_vector_read(feature_vector, index, score) : -EINVAL;
 
-    if (!feature_vector || index >= feature_vector->capacity) {
-        err = -EINVAL;
-        goto unlock;
-    }
-
-    /* Netflix#755 / ADR-0154: distinguish "feature index is genuinely
-     * invalid" (-EINVAL above) from "feature is valid but not yet
-     * written" (-EAGAIN here). Several extractors (integer_motion
-     * motion2/motion3, five-frame-window variants) write their score
-     * for frame N retroactively when frame N+1 or N+2 is extracted —
-     * and on flush for the tail. A caller interleaving
-     * vmaf_read_pictures(i) with vmaf_score_pooled(i, i) then hits a
-     * false-fatal error; -EAGAIN tells the caller the request will
-     * succeed later (after more reads or after flush) rather than
-     * signalling programmer error. */
-    if (!feature_vector->score[index].written) {
-        err = -EAGAIN;
-        goto unlock;
-    }
-
-    *score = feature_vector->score[index].value;
-
-unlock:
     pthread_mutex_unlock(&(feature_collector->lock));
     return err;
 }
@@ -650,3 +653,5 @@ void vmaf_feature_collector_destroy(VmafFeatureCollector *feature_collector)
     pthread_mutex_destroy(&(feature_collector->lock));
     free(feature_collector);
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

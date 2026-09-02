@@ -33,7 +33,10 @@
 #define MODEL_FEATURE_INITIAL_CAP 8u
 #define MODEL_KNOT_INITIAL_CAP 4u
 
-static int grow_count(unsigned current, unsigned needed, unsigned *out)
+namespace
+{
+
+int grow_count(unsigned current, unsigned needed, unsigned *out)
 {
     unsigned next = current ? current : 1u;
     while (next < needed) {
@@ -45,14 +48,14 @@ static int grow_count(unsigned current, unsigned needed, unsigned *out)
     return 0;
 }
 
-static int ensure_feature_capacity(VmafModel *model, unsigned needed)
+int ensure_feature_capacity(VmafModel *model, unsigned needed)
 {
     if (needed <= model->feature_cap)
         return 0;
 
     unsigned next = 0;
     const unsigned current = model->feature_cap ? model->feature_cap : MODEL_FEATURE_INITIAL_CAP;
-    int err = grow_count(current, needed, &next);
+    const int err = grow_count(current, needed, &next);
     if (err)
         return err;
 
@@ -68,7 +71,7 @@ static int ensure_feature_capacity(VmafModel *model, unsigned needed)
     return 0;
 }
 
-static int ensure_knot_capacity(VmafModel *model, unsigned needed)
+int ensure_knot_capacity(VmafModel *model, unsigned needed)
 {
     if (needed <= model->score_transform.knots.cap)
         return 0;
@@ -76,7 +79,7 @@ static int ensure_knot_capacity(VmafModel *model, unsigned needed)
     unsigned next = 0;
     const unsigned current = model->score_transform.knots.cap ? model->score_transform.knots.cap :
                                                                 MODEL_KNOT_INITIAL_CAP;
-    int err = grow_count(current, needed, &next);
+    const int err = grow_count(current, needed, &next);
     if (err)
         return err;
 
@@ -92,7 +95,7 @@ static int ensure_knot_capacity(VmafModel *model, unsigned needed)
     return 0;
 }
 
-static int parse_feature_opts_entry(json_stream *s, VmafModel *model, unsigned i, char *key)
+int parse_feature_opts_entry(json_stream *s, VmafModel *model, unsigned i, char *key)
 {
     if (json_peek(s) == JSON_NUMBER) {
         const char *val = json_get_string(s, nullptr);
@@ -119,7 +122,7 @@ static int parse_feature_opts_entry(json_stream *s, VmafModel *model, unsigned i
     return -EINVAL;
 }
 
-static int parse_feature_opts_object(json_stream *s, VmafModel *model, unsigned i)
+int parse_feature_opts_object(json_stream *s, VmafModel *model, unsigned i)
 {
     while (json_peek(s) != JSON_OBJECT_END && !json_get_error(s)) {
         if (json_next(s) != JSON_STRING)
@@ -127,7 +130,7 @@ static int parse_feature_opts_object(json_stream *s, VmafModel *model, unsigned 
         char *key = strdup(json_get_string(s, nullptr));
         if (!key)
             return -ENOMEM;
-        int err = parse_feature_opts_entry(s, model, i, key);
+        const int err = parse_feature_opts_entry(s, model, i, key);
         free(key);
         if (err)
             return err;
@@ -136,7 +139,7 @@ static int parse_feature_opts_object(json_stream *s, VmafModel *model, unsigned 
     return 0;
 }
 
-static int parse_feature_opts_dicts(json_stream *s, VmafModel *model)
+int parse_feature_opts_dicts(json_stream *s, VmafModel *model)
 {
     unsigned i = 0;
     while (json_peek(s) != JSON_ARRAY_END && !json_get_error(s)) {
@@ -157,7 +160,7 @@ static int parse_feature_opts_dicts(json_stream *s, VmafModel *model)
     return 0;
 }
 
-static int parse_intercepts(json_stream *s, VmafModel *model)
+int parse_intercepts(json_stream *s, VmafModel *model)
 {
     if (json_next(s) != JSON_NUMBER)
         return -EINVAL;
@@ -167,7 +170,7 @@ static int parse_intercepts(json_stream *s, VmafModel *model)
     while (json_peek(s) != JSON_ARRAY_END && !json_get_error(s)) {
         if (json_next(s) != JSON_NUMBER)
             return -EINVAL;
-        int err = ensure_feature_capacity(model, i + 1u);
+        const int err = ensure_feature_capacity(model, i + 1u);
         if (err)
             return err;
         model->feature[i++].intercept = json_get_number(s);
@@ -176,7 +179,7 @@ static int parse_intercepts(json_stream *s, VmafModel *model)
     return 0;
 }
 
-static int parse_slopes(json_stream *s, VmafModel *model)
+int parse_slopes(json_stream *s, VmafModel *model)
 {
     if (json_next(s) != JSON_NUMBER)
         return -EINVAL;
@@ -186,7 +189,7 @@ static int parse_slopes(json_stream *s, VmafModel *model)
     while (json_peek(s) != JSON_ARRAY_END && !json_get_error(s)) {
         if (json_next(s) != JSON_NUMBER)
             return -EINVAL;
-        int err = ensure_feature_capacity(model, i + 1u);
+        const int err = ensure_feature_capacity(model, i + 1u);
         if (err)
             return err;
         model->feature[i++].slope = json_get_number(s);
@@ -195,7 +198,7 @@ static int parse_slopes(json_stream *s, VmafModel *model)
     return 0;
 }
 
-static int parse_knots_list(struct json_stream *s, struct VmafModel *model, unsigned idx)
+int parse_knots_list(struct json_stream *s, struct VmafModel *model, unsigned idx)
 {
     unsigned i = 0;
     while (json_peek(s) != JSON_ARRAY_END && !json_get_error(s)) {
@@ -214,7 +217,7 @@ static int parse_knots_list(struct json_stream *s, struct VmafModel *model, unsi
     return 0;
 }
 
-static int parse_knots(json_stream *s, struct VmafModel *model)
+int parse_knots(json_stream *s, struct VmafModel *model)
 {
     unsigned i = 0;
     while (json_peek(s) != JSON_ARRAY_END && !json_get_error(s)) {
@@ -234,9 +237,9 @@ static int parse_knots(json_stream *s, struct VmafModel *model)
     return 0;
 }
 
-static int append_feature_name(VmafModel *model, const char *name, unsigned index)
+int append_feature_name(VmafModel *model, const char *name, unsigned index)
 {
-    int err = ensure_feature_capacity(model, index + 1u);
+    const int err = ensure_feature_capacity(model, index + 1u);
     if (err)
         return err;
     /* Free any name already strdup'd into this slot before overwriting it.
@@ -255,16 +258,14 @@ static int append_feature_name(VmafModel *model, const char *name, unsigned inde
     return 0;
 }
 
-static int parse_feature_names(json_stream *s, VmafModel *model)
+int parse_feature_names(json_stream *s, VmafModel *model)
 {
-    int err = 0;
-
     unsigned i = 0;
     while (json_peek(s) != JSON_ARRAY_END && !json_get_error(s)) {
         if (json_next(s) != JSON_STRING)
             return -EINVAL;
         const char *name = json_get_string(s, nullptr);
-        err = append_feature_name(model, name, i++);
+        const int err = append_feature_name(model, name, i++);
         if (err)
             return err;
         model->n_features++;
@@ -274,7 +275,7 @@ static int parse_feature_names(json_stream *s, VmafModel *model)
     return 0;
 }
 
-static int parse_score_transform_poly(json_stream *s, bool *enabled, double *value)
+int parse_score_transform_poly(json_stream *s, bool *enabled, double *value)
 {
     if (json_peek(s) == JSON_NULL) {
         *enabled = false;
@@ -288,7 +289,7 @@ static int parse_score_transform_poly(json_stream *s, bool *enabled, double *val
     return -EINVAL;
 }
 
-static int parse_score_transform_knots_key(json_stream *s, VmafModel *model)
+int parse_score_transform_knots_key(json_stream *s, VmafModel *model)
 {
     if (json_peek(s) == JSON_NULL) {
         model->score_transform.knots.enabled = false;
@@ -296,7 +297,7 @@ static int parse_score_transform_knots_key(json_stream *s, VmafModel *model)
         return 0;
     }
     if (json_next(s) == JSON_ARRAY) {
-        int err = parse_knots(s, model);
+        const int err = parse_knots(s, model);
         if (err)
             return err;
         json_skip_until(s, JSON_ARRAY_END);
@@ -305,7 +306,7 @@ static int parse_score_transform_knots_key(json_stream *s, VmafModel *model)
     return -EINVAL;
 }
 
-static int parse_score_transform_bool_str(json_stream *s, bool *out)
+int parse_score_transform_bool_str(json_stream *s, bool *out)
 {
     if (json_next(s) != JSON_STRING)
         return -EINVAL;
@@ -315,7 +316,7 @@ static int parse_score_transform_bool_str(json_stream *s, bool *out)
     return 0;
 }
 
-static int parse_score_transform_entry(json_stream *s, VmafModel *model, const char *key)
+int parse_score_transform_entry(json_stream *s, VmafModel *model, const char *key)
 {
     if (!strcmp(key, "enabled")) {
         if (json_peek(s) != JSON_TRUE && json_peek(s) != JSON_FALSE)
@@ -346,7 +347,7 @@ static int parse_score_transform_entry(json_stream *s, VmafModel *model, const c
     return 0;
 }
 
-static int parse_score_transform(json_stream *s, VmafModel *model)
+int parse_score_transform(json_stream *s, VmafModel *model)
 {
     model->score_transform.enabled = false;
     while (json_peek(s) != JSON_OBJECT_END && !json_get_error(s)) {
@@ -354,7 +355,7 @@ static int parse_score_transform(json_stream *s, VmafModel *model)
             return -EINVAL;
 
         const char *key = json_get_string(s, nullptr);
-        int err = parse_score_transform_entry(s, model, key);
+        const int err = parse_score_transform_entry(s, model, key);
         if (err)
             return err;
     }
@@ -362,7 +363,7 @@ static int parse_score_transform(json_stream *s, VmafModel *model)
     return 0;
 }
 
-static int parse_libsvm_model(json_stream *s, VmafModel *model)
+int parse_libsvm_model(json_stream *s, VmafModel *model)
 {
     size_t sz;
     const char *libsvm_model = json_get_string(s, &sz);
@@ -373,13 +374,12 @@ static int parse_libsvm_model(json_stream *s, VmafModel *model)
     return 0;
 }
 
-static int parse_model_dict_score_transform(json_stream *s, VmafModel *model,
-                                            enum VmafModelFlags flags)
+int parse_model_dict_score_transform(json_stream *s, VmafModel *model, enum VmafModelFlags flags)
 {
     if (json_next(s) != JSON_OBJECT)
         return -EINVAL;
 
-    int err = parse_score_transform(s, model);
+    const int err = parse_score_transform(s, model);
     if (err)
         return err;
 
@@ -390,7 +390,7 @@ static int parse_model_dict_score_transform(json_stream *s, VmafModel *model,
     return 0;
 }
 
-static int parse_model_dict_model_type(json_stream *s, VmafModel *model)
+int parse_model_dict_model_type(json_stream *s, VmafModel *model)
 {
     if (json_next(s) != JSON_STRING)
         return -EINVAL;
@@ -407,7 +407,7 @@ static int parse_model_dict_model_type(json_stream *s, VmafModel *model)
     return 0;
 }
 
-static int parse_model_dict_norm_type(json_stream *s, VmafModel *model)
+int parse_model_dict_norm_type(json_stream *s, VmafModel *model)
 {
     if (json_next(s) != JSON_STRING)
         return -EINVAL;
@@ -422,7 +422,7 @@ static int parse_model_dict_norm_type(json_stream *s, VmafModel *model)
     return 0;
 }
 
-static int parse_model_dict_score_clip(json_stream *s, VmafModel *model, enum VmafModelFlags flags)
+int parse_model_dict_score_clip(json_stream *s, VmafModel *model, enum VmafModelFlags flags)
 {
     if (json_next(s) != JSON_ARRAY)
         return -EINVAL;
@@ -439,7 +439,7 @@ static int parse_model_dict_score_clip(json_stream *s, VmafModel *model, enum Vm
     return 0;
 }
 
-static int parse_model_dict_chroma_correction(json_stream *s, VmafModel *model)
+int parse_model_dict_chroma_correction(json_stream *s, VmafModel *model)
 {
     if (json_next(s) != JSON_NUMBER)
         return -EINVAL;
@@ -448,12 +448,12 @@ static int parse_model_dict_chroma_correction(json_stream *s, VmafModel *model)
     return 0;
 }
 
-static int parse_model_dict_array_key(json_stream *s, VmafModel *model, const char *key)
+int parse_model_dict_array_key(json_stream *s, VmafModel *model, const char *key)
 {
     if (!strcmp(key, "slopes")) {
         if (json_next(s) != JSON_ARRAY)
             return -EINVAL;
-        int err = parse_slopes(s, model);
+        const int err = parse_slopes(s, model);
         if (err)
             return err;
         json_skip_until(s, JSON_ARRAY_END);
@@ -462,7 +462,7 @@ static int parse_model_dict_array_key(json_stream *s, VmafModel *model, const ch
     if (!strcmp(key, "intercepts")) {
         if (json_next(s) != JSON_ARRAY)
             return -EINVAL;
-        int err = parse_intercepts(s, model);
+        const int err = parse_intercepts(s, model);
         if (err)
             return err;
         json_skip_until(s, JSON_ARRAY_END);
@@ -487,8 +487,8 @@ static int parse_model_dict_array_key(json_stream *s, VmafModel *model, const ch
     return 1;
 }
 
-static int parse_model_dict_entry(json_stream *s, VmafModel *model, enum VmafModelFlags flags,
-                                  const char *key)
+int parse_model_dict_entry(json_stream *s, VmafModel *model, enum VmafModelFlags flags,
+                           const char *key)
 {
     if (!strcmp(key, "score_transform"))
         return parse_model_dict_score_transform(s, model, flags);
@@ -501,7 +501,7 @@ static int parse_model_dict_entry(json_stream *s, VmafModel *model, enum VmafMod
     if (!strcmp(key, "chroma_correction_parameter"))
         return parse_model_dict_chroma_correction(s, model);
 
-    int r = parse_model_dict_array_key(s, model, key);
+    const int r = parse_model_dict_array_key(s, model, key);
     if (r <= 0)
         return r;
 
@@ -509,7 +509,7 @@ static int parse_model_dict_entry(json_stream *s, VmafModel *model, enum VmafMod
     return 0;
 }
 
-static int parse_model_dict(json_stream *s, VmafModel *model, enum VmafModelFlags flags)
+int parse_model_dict(json_stream *s, VmafModel *model, enum VmafModelFlags flags)
 {
     if (json_next(s) != JSON_OBJECT)
         return -EINVAL;
@@ -518,7 +518,7 @@ static int parse_model_dict(json_stream *s, VmafModel *model, enum VmafModelFlag
         if (json_next(s) != JSON_STRING)
             return -EINVAL;
         const char *key = json_get_string(s, nullptr);
-        int err = parse_model_dict_entry(s, model, flags, key);
+        const int err = parse_model_dict_entry(s, model, flags, key);
         if (err)
             return err;
     }
@@ -527,7 +527,7 @@ static int parse_model_dict(json_stream *s, VmafModel *model, enum VmafModelFlag
     return 0;
 }
 
-static int model_parse(json_stream *s, VmafModel *model, enum VmafModelFlags flags)
+int model_parse(json_stream *s, VmafModel *model, enum VmafModelFlags flags)
 {
     int err = -EINVAL;
 
@@ -559,22 +559,25 @@ static int model_parse(json_stream *s, VmafModel *model, enum VmafModelFlags fla
     return err;
 }
 
-static int vmaf_read_json_model(VmafModel **model, VmafModelConfig *cfg, json_stream *s)
+/* Run model_parse under the "C" numeric locale so JSON number parsing does
+ * not depend on the calling thread's locale (ADR-0137). */
+int model_parse_c_locale(json_stream *s, VmafModel *m, const VmafModelConfig *cfg)
+{
+    VmafThreadLocaleState *locale_state = vmaf_thread_locale_push_c();
+    const int err = model_parse(s, m, static_cast<enum VmafModelFlags>(cfg->flags));
+    vmaf_thread_locale_pop(locale_state);
+    return err;
+}
+
+int vmaf_read_json_model(VmafModel **model, VmafModelConfig *cfg, json_stream *s)
 {
     VmafModel *const m = *model = static_cast<VmafModel *>(malloc(sizeof(*m)));
     if (!m)
         return -ENOMEM;
     *m = VmafModel{};
 
-    int err = -EINVAL;
     m->name = vmaf_model_generate_name(cfg);
-    if (!m->name) {
-        err = -ENOMEM;
-    } else {
-        VmafThreadLocaleState *locale_state = vmaf_thread_locale_push_c();
-        err = model_parse(s, m, static_cast<enum VmafModelFlags>(cfg->flags));
-        vmaf_thread_locale_pop(locale_state);
-    }
+    const int err = m->name ? model_parse_c_locale(s, m, cfg) : -ENOMEM;
 
     if (err) {
         /* Leak-free teardown on parse failure. `vmaf_model_destroy`
@@ -588,6 +591,8 @@ static int vmaf_read_json_model(VmafModel **model, VmafModelConfig *cfg, json_st
     }
     return err;
 }
+
+} // namespace
 
 [[nodiscard]] int vmaf_read_json_model_from_buffer(VmafModel **model, VmafModelConfig *cfg,
                                                    const char *data, const int data_len)
@@ -616,9 +621,12 @@ static int vmaf_read_json_model(VmafModel **model, VmafModelConfig *cfg, json_st
     return err;
 }
 
-static int model_collection_read_one(json_stream *s, VmafModel **model,
-                                     VmafModelCollection **model_collection, VmafModelConfig *c,
-                                     unsigned i)
+namespace
+{
+
+int model_collection_read_one(json_stream *s, VmafModel **model,
+                              VmafModelCollection **model_collection, VmafModelConfig *c,
+                              unsigned i)
 {
     /* When i==0, ownership of m is transferred to *model below; when
      * i>=1, ownership is transferred to *model_collection via append.
@@ -642,9 +650,9 @@ static int model_collection_read_one(json_stream *s, VmafModel **model,
     return 0;
 }
 
-static int model_collection_parse_loop(json_stream *s, VmafModel **model,
-                                       VmafModelCollection **model_collection, VmafModelConfig *c,
-                                       const char *name, char *cfg_name, size_t cfg_name_sz)
+int model_collection_parse_loop(json_stream *s, VmafModel **model,
+                                VmafModelCollection **model_collection, VmafModelConfig *c,
+                                const char *name, char *cfg_name, size_t cfg_name_sz)
 {
     /* `generated_key_sz` = 4 + 1 = 5 is a true compile-time constant, but
      * `const size_t …` is not a constant-expression in C, so declaring a
@@ -693,8 +701,8 @@ static int model_collection_parse_loop(json_stream *s, VmafModel **model,
     return err;
 }
 
-static int model_collection_parse(json_stream *s, VmafModel **model,
-                                  VmafModelCollection **model_collection, VmafModelConfig *cfg)
+int model_collection_parse(json_stream *s, VmafModel **model,
+                           VmafModelCollection **model_collection, VmafModelConfig *cfg)
 {
     *model_collection = nullptr;
 
@@ -716,13 +724,15 @@ static int model_collection_parse(json_stream *s, VmafModel **model,
         return -ENOMEM;
     }
 
-    int err =
+    const int err =
         model_collection_parse_loop(s, model, model_collection, &c, name, cfg_name, cfg_name_sz);
 
     free(cfg_name);
     free(static_cast<void *>(const_cast<char *>(name)));
     return err;
 }
+
+} // namespace
 
 [[nodiscard]] int vmaf_read_json_model_collection_from_path(VmafModel **model,
                                                             VmafModelCollection **model_collection,

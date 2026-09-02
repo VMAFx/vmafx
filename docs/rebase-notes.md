@@ -47226,3 +47226,66 @@ the CUDA, ROCm, and oneAPI builders. Preserve `cp -r model/. /dist/model/` in
 the standard production builder and all four GPU-Dockerfile builders: copying
 `model/` itself creates a second `model/` directory and breaks the documented
 `VMAF_MODEL_PATH` layout.
+
+## refactor/c-rework-core — library-core plumbing split into helpers (2026-09-02)
+
+Upstream-mirror files reworked under ADR-0141: `core/src/libvmaf.c`,
+`core/src/predict.c`, `core/src/feature/feature_collector.c` (all keep the
+Netflix header) plus the fork's C++ twin `core/src/read_json_model.cpp`. The
+fuzz-only C twin `core/src/read_json_model.c` was deliberately not touched.
+Rebase-sensitive points:
+
+- `vmaf_init()` is now `vmaf_ctx_subsystems_init()` +
+  `vmaf_ctx_thread_pools_init()`. An upstream hunk that adds a subsystem to
+  `vmaf_init` belongs in `vmaf_ctx_subsystems_init` **with a matching label in
+  its reverse-order teardown chain**; `vmaf_init` itself only mallocs, seeds
+  the CPU/log state, and frees on failure. `*vmaf` is assigned on success
+  only.
+- `vmaf_read_pictures()` carries a single `#ifdef HAVE_CUDA` (around the
+  `read_pictures_frame_translate` call, which exists only in CUDA builds)
+  instead of the former six islands. The caller's pictures and their CUDA
+  host/device translations live in `ReadPicturesFrame`;
+  `read_pictures_frame_translate` / `_select_host` / `_cleanup` /
+  `_cleanup_after_batch` hold the backend branches. Upstream changes to the
+  picture-ownership rules (which unref runs on which path — the PR #838
+  double-unref regression) must be merged into those four helpers, not
+  re-inlined.
+- Three `cppcheck-suppress constParameterPointer` markers carry inline
+  citations (`vmaf_context_get_backend`: frozen public prototype;
+  `read_pictures_validate_and_prep`: SYCL upload takes mutable pictures;
+  `vmaf_feature_collector_unmount_model`: prototype shared with the C++ twin
+  `feature_collector.cpp`). An upstream hunk touching those signatures must
+  keep the marker on the line directly above the definition.
+  `vmaf_feature_collector_get()` in `libvmaf_priv.h` / `libvmaf.c` now takes
+  `const VmafContext *`.
+- `threaded_extract_batch_func()` is split into `batch_thread_data_ensure`,
+  `batch_extractor_skip`, `batch_ensure_fex_ctx`, `batch_extract_one`. The
+  ADR-0795 per-thread deep-copy assertion and the ADR-1051 PREV_REF balance
+  (one `vmaf_picture_ref` per PREV_REF extractor, released by
+  `fex_release_prev_ref`, snapshot released once at the end) are inside
+  `batch_extract_one` — keep them there on conflict. `batch_extractor_skip`
+  and `read_pictures_should_skip` must stay in sync (they share
+  `fex_subsample_skip`).
+- The six-site `if (fex->prev_ref.ref) { unref; memset }` idiom is
+  `fex_release_prev_ref()`; an upstream change to the PREV_REF swap in
+  `feature_extractor.cpp` needs exactly one review of that helper.
+- `set_fex_{cuda,sycl}_state` / `set_fex_framesync` are `void` and are
+  called through `fex_ctx_bind_backends()` from both `vmaf_use_feature` and
+  `vmaf_use_features_from_model`; they never failed upstream either, the
+  `err |=` chain was dead.
+- `vmaf_write_output_with_format()` delegates to `output_file_open`
+  (0644 + errno capture, ADR-0602), `output_fps` (ADR-0606) and
+  `output_write`; the `ferror`/`-EIO` tail contract from ADR-0119 lives in
+  `output.c` and is untouched.
+- `feature_collector.c`: the ADR-0154 `-EAGAIN` ("written yet?") contract
+  moved verbatim into `feature_vector_read()`; the public lock/`destroyed`
+  handshake in every entry point is unchanged. `predict.c`'s
+  `predict_load_feature_score` EAGAIN/EINVAL split (AGENTS.md invariant) is
+  untouched.
+- `read_json_model.cpp`: helpers are in two anonymous-namespace blocks that
+  bracket the four `extern "C"` entry points; `vmaf_read_json_model` runs the
+  parser through `model_parse_c_locale()` (ADR-0137 bracket). A future
+  twin-drift gate comparing it with `read_json_model.c` must tolerate the
+  namespace and `const` differences.
+- All three C files carry a file-scoped `NOLINTBEGIN/END(modernize-use-nullptr)`
+  bracket per ADR-1138 — keep the closing marker at EOF when appending.

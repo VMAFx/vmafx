@@ -33,6 +33,13 @@
 #include "predict.h"
 #include "svm.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
+ * upstream-mirror file whose Netflix source spells the null pointer constant
+ * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 static int normalize(const VmafModel *model, double slope, double intercept, double *feature_score)
 {
     switch (model->norm_type) {
@@ -128,7 +135,13 @@ static int piecewise_segment_apply(double x, VmafPoint *knots, unsigned idx, uns
 
     double slope = 0.0;
     double offset = 0.0;
-    find_linear_function_parameters(knots[idx], knots[idx + 1], &slope, &offset);
+    /* Unreachable failure for a well-ordered, non-horizontal segment (the
+     * guard above already enforces x strictly increasing and y
+     * non-decreasing), but propagate it rather than silently mapping onto
+     * the zero line. CERT ERR33-C / Power-of-10 rule 7. */
+    const int err = find_linear_function_parameters(knots[idx], knots[idx + 1], &slope, &offset);
+    if (err)
+        return err;
 
     if (cond0 && cond1)
         *y = slope * x + offset;
@@ -204,8 +217,6 @@ static int transform(const VmafModel *model, double *y_in, enum VmafModelFlags f
                                                  model->score_transform.knots.n_knots, &y_out);
         if (err)
             return err;
-    } else {
-        y_out = y_stage;
     }
 
     // rectification
@@ -218,85 +229,112 @@ static int transform(const VmafModel *model, double *y_in, enum VmafModelFlags f
     return 0;
 }
 
-static int clip(const VmafModel *model, double *prediction, enum VmafModelFlags flags)
+/* Clamp `prediction` into the model's score_clip range. Cannot fail: a
+ * disabled clip (by model or by flag) is a no-op. */
+static void clip(const VmafModel *model, double *prediction, enum VmafModelFlags flags)
 {
     if (!model->score_clip.enabled)
-        return 0;
+        return;
     if (flags & VMAF_MODEL_FLAG_DISABLE_CLIP)
-        return 0;
+        return;
 
     *prediction = (*prediction < model->score_clip.min) ? model->score_clip.min : *prediction;
     *prediction = (*prediction > model->score_clip.max) ? model->score_clip.max : *prediction;
+}
 
+/* Scan state for post_process_feature_from_another(): the *guiding* feature
+ * drives the correction, the *guided* feature receives it. */
+typedef struct GuidedFeatureScan {
+    const char *guiding_substr;
+    const char *guided_substr;
+    double sentinel; /* guided-feature value that triggers the correction */
+    double guiding_score;
+    double guided_score;
+    bool found_guiding;
+    bool found_guided;
+    unsigned guided_idx;
+} GuidedFeatureScan;
+
+/* Record feature `i` as the match for `substr`, denormalising its SVM node
+ * value into *score. A second match for the same substring means the model
+ * is ambiguous and is rejected with -EINVAL. */
+static int scan_match_feature(const VmafModel *model, const struct svm_node *node, unsigned i,
+                              const char *substr, bool *found, double *score)
+{
+    if (*found) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "post_process_feature_from_another(): Substring '%s' "
+                 "corresponds to more than one feature\n",
+                 substr);
+        return -EINVAL;
+    }
+    *score = node[i].value;
+    *found = true;
+    const int err =
+        denormalize_feature(model, model->feature[i].slope, model->feature[i].intercept, score);
+    return err ? -EINVAL : 0;
+}
+
+/* One step of the feature scan. Returns a negative errno on error, 1 when the
+ * guided feature does not carry the sentinel (no correction is needed and the
+ * caller returns 0 with `node` untouched), and 0 to keep scanning. */
+static int scan_feature(const VmafModel *model, const struct svm_node *node, unsigned i,
+                        GuidedFeatureScan *st)
+{
+    const char *name = model->feature[i].name;
+    if (strstr(name, st->guiding_substr) != NULL) {
+        const int err = scan_match_feature(model, node, i, st->guiding_substr, &st->found_guiding,
+                                           &st->guiding_score);
+        if (err)
+            return err;
+    }
+    if (strstr(name, st->guided_substr) != NULL) {
+        const int err = scan_match_feature(model, node, i, st->guided_substr, &st->found_guided,
+                                           &st->guided_score);
+        if (err)
+            return err;
+        /* Exact sentinel comparison: caller always passes value_to_be_corrected=0.0
+         * (see vmaf_predict_score_at_index). A normalised feature that is exactly
+         * zero is the only case that needs chroma correction; any other value
+         * exits early. An epsilon band here would incorrectly correct near-zero
+         * but non-zero features and change scores. */
+        if (st->guided_score != st->sentinel) /* sentinel, not computed equality */
+            return 1;
+        st->guided_idx = i;
+    }
     return 0;
 }
 
-static int post_process_feature_from_another(VmafModel *model, struct svm_node *node,
+static int post_process_feature_from_another(const VmafModel *model, struct svm_node *node,
                                              double correction_parameter,
                                              double value_to_be_corrected,
-                                             char *guiding_feature_substr,
-                                             char *guided_feature_substr)
+                                             const char *guiding_feature_substr,
+                                             const char *guided_feature_substr)
 {
-    int err = 0;
-
-    double guiding_score;
-    double guided_score;
-    bool found_guiding_score = false;
-    bool found_guided_score = false;
-    unsigned guided_idx = 0;
+    GuidedFeatureScan st = {
+        .guiding_substr = guiding_feature_substr,
+        .guided_substr = guided_feature_substr,
+        .sentinel = value_to_be_corrected,
+    };
 
     for (unsigned i = 0; i < model->n_features; i++) {
-        if (strstr(model->feature[i].name, guiding_feature_substr) != NULL) {
-            if (found_guiding_score) {
-                vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                         "post_process_feature_from_another(): Substring '%s' "
-                         "corresponds to more than one feature\n",
-                         guiding_feature_substr);
-                return -EINVAL;
-            }
-            guiding_score = node[i].value;
-            found_guiding_score = true;
-            err = denormalize_feature(model, model->feature[i].slope, model->feature[i].intercept,
-                                      &guiding_score);
-            if (err)
-                return -EINVAL;
-        }
-        if (strstr(model->feature[i].name, guided_feature_substr) != NULL) {
-            if (found_guided_score) {
-                vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                         "post_process_feature_from_another(): Substring '%s' "
-                         "corresponds to more than one feature\n",
-                         guided_feature_substr);
-                return -EINVAL;
-            }
-            guided_score = node[i].value;
-            found_guided_score = true;
-            err = denormalize_feature(model, model->feature[i].slope, model->feature[i].intercept,
-                                      &guided_score);
-            if (err)
-                return -EINVAL;
-            /* Exact sentinel comparison: caller always passes value_to_be_corrected=0.0
-             * (see vmaf_predict_score_at_index). A normalised feature that is exactly
-             * zero is the only case that needs chroma correction; any other value
-             * exits early. An epsilon band here would incorrectly correct near-zero
-             * but non-zero features and change scores. */
-            if (guided_score == value_to_be_corrected) { /* sentinel, not computed equality */
-                guided_idx = i;
-            } else {
-                return 0;
-            }
-        }
+        const int r = scan_feature(model, node, i, &st);
+        if (r < 0)
+            return r;
+        if (r > 0)
+            return 0;
     }
 
-    if (!found_guiding_score || !found_guided_score)
+    if (!st.found_guiding || !st.found_guided)
         return 0;
 
-    double corrected_guided_score = (-correction_parameter * guiding_score) + correction_parameter;
-    err = normalize(model, model->feature[guided_idx].slope, model->feature[guided_idx].intercept,
-                    &corrected_guided_score);
+    double corrected_guided_score =
+        (-correction_parameter * st.guiding_score) + correction_parameter;
+    const int err = normalize(model, model->feature[st.guided_idx].slope,
+                              model->feature[st.guided_idx].intercept, &corrected_guided_score);
     if (err)
         return -EINVAL;
-    node[guided_idx].value = corrected_guided_score;
+    node[st.guided_idx].value = corrected_guided_score;
     return 0;
 }
 
@@ -319,16 +357,16 @@ static int predict_resolve_feature_name(VmafModel *model, unsigned i)
             return err;
     }
 
-    VmafFeatureExtractorContext *fex_ctx;
+    VmafFeatureExtractorContext *fex_ctx = NULL;
     int err = vmaf_feature_extractor_context_create(&fex_ctx, fex, opts_dict);
     if (err) {
-        vmaf_dictionary_free(&opts_dict);
+        (void)vmaf_dictionary_free(&opts_dict);
         return err;
     }
 
     model->predict_feature_names[i] = vmaf_feature_name_from_options(
         model->feature[i].name, fex_ctx->fex->options, fex_ctx->fex->priv);
-    vmaf_feature_extractor_context_destroy(fex_ctx);
+    (void)vmaf_feature_extractor_context_destroy(fex_ctx);
 
     if (!model->predict_feature_names[i])
         return -ENOMEM;
@@ -340,12 +378,12 @@ static int predict_resolve_feature_name(VmafModel *model, unsigned i)
 static int predict_init_feature_names(VmafModel *model)
 {
     assert(model->n_features > 0);
-    char **names = calloc(model->n_features, sizeof(*names));
+    char **names = (char **)calloc(model->n_features, sizeof(*names));
     if (!names)
         return -ENOMEM;
     model->predict_feature_names = names;
     for (unsigned i = 0; i < model->n_features; i++) {
-        int err = predict_resolve_feature_name(model, i);
+        const int err = predict_resolve_feature_name(model, i);
         if (err) {
             /* Roll back partial table so next call can retry from scratch.
              * Without rollback, a non-NULL pointer with NULL holes bypasses the
@@ -353,7 +391,7 @@ static int predict_init_feature_names(VmafModel *model)
              * 2026-05-31. */
             for (unsigned k = 0; k < i; k++)
                 free(model->predict_feature_names[k]);
-            free(model->predict_feature_names);
+            free((void *)model->predict_feature_names);
             model->predict_feature_names = NULL;
             return err;
         }
@@ -513,9 +551,7 @@ int vmaf_predict_score_at_index(VmafModel *model, VmafFeatureCollector *feature_
     if (err)
         return err;
 
-    err = clip(model, &prediction, flags);
-    if (err)
-        return err;
+    clip(model, &prediction, flags);
 
     if (write_prediction) {
         err = vmaf_feature_collector_append(feature_collector, model->name, prediction, index);
@@ -525,7 +561,7 @@ int vmaf_predict_score_at_index(VmafModel *model, VmafFeatureCollector *feature_
 
     *vmaf_score = prediction;
 
-    return err;
+    return 0;
 }
 
 static int score_compare(const void *a, const void *b)
@@ -541,11 +577,11 @@ static int score_compare(const void *a, const void *b)
     return 0;
 }
 
-static double percentile(double *scores, unsigned n_scores, double perc)
+static double percentile(const double *scores, unsigned n_scores, double perc)
 {
     const double p = perc * (n_scores - 1) / 100.;
-    const int idx_l = floor(p);
-    const int idx_r = ceil(p);
+    const int idx_l = (int)floor(p);
+    const int idx_r = (int)ceil(p);
 
     return (idx_l == idx_r) ? scores[idx_l] :
                               scores[idx_l] * (idx_r - p) + scores[idx_r] * (p - idx_l);
@@ -581,9 +617,9 @@ static int bootstrap_gather_scores(VmafModelCollection *model_collection,
     return 0;
 }
 
-static void bootstrap_compute_statistics(VmafModelCollection *model_collection, double *scores,
-                                         VmafModelCollectionScore *score, double *score_plus_delta,
-                                         double *score_minus_delta)
+static void bootstrap_compute_statistics(const VmafModelCollection *model_collection,
+                                         double *scores, VmafModelCollectionScore *score,
+                                         double *score_plus_delta, double *score_minus_delta)
 {
     double sum = 0.;
     for (unsigned i = 0; i < model_collection->cnt; i++) {
@@ -607,24 +643,39 @@ static void bootstrap_compute_statistics(VmafModelCollection *model_collection, 
     score->bootstrap.ci.p95.hi = percentile(scores, model_collection->cnt, 97.5);
 }
 
-static void bootstrap_transform_and_clip(const VmafModel *model, VmafModelCollectionScore *score,
-                                         double *score_plus_delta, double *score_minus_delta)
+/* Apply the model's score transform, then its clip, to one value. Propagates
+ * the first failure (a malformed piecewise-linear knot list) instead of
+ * discarding it. CERT ERR33-C / Power-of-10 rule 7. */
+static int transform_and_clip(const VmafModel *model, double *value)
 {
-    transform(model, &score->bootstrap.bagging_score, 0);
-    clip(model, &score->bootstrap.bagging_score, 0);
-    transform(model, &score->bootstrap.ci.p95.lo, 0);
-    clip(model, &score->bootstrap.ci.p95.lo, 0);
-    transform(model, &score->bootstrap.ci.p95.hi, 0);
-    clip(model, &score->bootstrap.ci.p95.hi, 0);
-    transform(model, score_plus_delta, 0);
-    clip(model, score_plus_delta, 0);
-    transform(model, score_minus_delta, 0);
-    clip(model, score_minus_delta, 0);
+    const int err = transform(model, value, 0);
+    if (err)
+        return err;
+    clip(model, value, 0);
+    return 0;
 }
 
-static int bootstrap_append_named_scores(VmafModelCollection *model_collection,
+/* Transform-then-clip the bagging score, both CI bounds and the two
+ * finite-difference probes in the original upstream order; the first
+ * failure short-circuits the rest. */
+static int bootstrap_transform_and_clip(const VmafModel *model, VmafModelCollectionScore *score,
+                                        double *score_plus_delta, double *score_minus_delta)
+{
+    int err = transform_and_clip(model, &score->bootstrap.bagging_score);
+    if (!err)
+        err = transform_and_clip(model, &score->bootstrap.ci.p95.lo);
+    if (!err)
+        err = transform_and_clip(model, &score->bootstrap.ci.p95.hi);
+    if (!err)
+        err = transform_and_clip(model, score_plus_delta);
+    if (!err)
+        err = transform_and_clip(model, score_minus_delta);
+    return err;
+}
+
+static int bootstrap_append_named_scores(const VmafModelCollection *model_collection,
                                          VmafFeatureCollector *feature_collector, unsigned index,
-                                         VmafModelCollectionScore *score)
+                                         const VmafModelCollectionScore *score)
 {
     const char *suffix_lo = "_ci_p95_lo";
     const char *suffix_hi = "_ci_p95_hi";
@@ -680,7 +731,9 @@ static int vmaf_bootstrap_predict_score_at_index(VmafModelCollection *model_coll
                                  &score_minus_delta);
 
     const VmafModel *model = model_collection->model[0];
-    bootstrap_transform_and_clip(model, score, &score_plus_delta, &score_minus_delta);
+    err = bootstrap_transform_and_clip(model, score, &score_plus_delta, &score_minus_delta);
+    if (err)
+        goto out;
 
     const double delta = 0.01;
     const double slope = (score_plus_delta - score_minus_delta) / (2.0 * delta);
@@ -697,6 +750,13 @@ int vmaf_predict_score_at_index_model_collection(VmafModelCollection *model_coll
                                                  VmafFeatureCollector *feature_collector,
                                                  unsigned index, VmafModelCollectionScore *score)
 {
+    if (!model_collection)
+        return -EINVAL;
+    if (!feature_collector)
+        return -EINVAL;
+    if (!score)
+        return -EINVAL;
+
     switch (model_collection->type) {
     case VMAF_MODEL_BOOTSTRAP_SVM_NUSVR:
     case VMAF_MODEL_RESIDUE_BOOTSTRAP_SVM_NUSVR:
@@ -706,3 +766,5 @@ int vmaf_predict_score_at_index_model_collection(VmafModelCollection *model_coll
         return -EINVAL;
     }
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

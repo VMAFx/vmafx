@@ -34,6 +34,6 @@ typedef struct VmafContext VmafContext;
  * Test binaries use this instead of including libvmaf.c to reach the opaque
  * context layout.
  */
-VmafFeatureCollector *vmaf_feature_collector_get(VmafContext *vmaf);
+VmafFeatureCollector *vmaf_feature_collector_get(const VmafContext *vmaf);
 
 #endif /* LIBVMAF_PRIV_H */
