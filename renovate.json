@@ -52,7 +52,7 @@
       "automerge": false
     },
     {
-      "description": "Group GitHub Actions minor+patch+digest bumps; auto-merge \u2014 digest-only is mechanical and CI catches drift.",
+      "description": "Group GitHub Actions minor+patch+digest bumps; auto-merge — digest-only is mechanical and CI catches drift.",
       "matchManagers": [
         "github-actions"
       ],
@@ -69,7 +69,7 @@
       ]
     },
     {
-      "description": "Major Action upgrades require human review \u2014 breaking changes possible.",
+      "description": "Major Action upgrades require human review — breaking changes possible.",
       "matchManagers": [
         "github-actions"
       ],
@@ -80,7 +80,7 @@
       "automerge": false
     },
     {
-      "description": "Group pre-commit hook rev bumps; auto-merge \u2014 mechanical, lint catches drift.",
+      "description": "Group pre-commit hook rev bumps; auto-merge — mechanical, lint catches drift.",
       "matchManagers": [
         "pre-commit"
       ],
@@ -152,7 +152,7 @@
       ]
     },
     {
-      "description": "Go major upgrades travel individually and require human review \u2014 module path and API changes.",
+      "description": "Go major upgrades travel individually and require human review — module path and API changes.",
       "matchManagers": [
         "gomod"
       ],
@@ -163,7 +163,7 @@
       "automerge": false
     },
     {
-      "description": "Group all Cargo (Rust) minor + patch updates; auto-merge \u2014 Rust's semantic versioning is reliable and CI catches UB/breakage.",
+      "description": "Group all Cargo (Rust) minor + patch updates; auto-merge — Rust's semantic versioning is reliable and CI catches UB/breakage.",
       "matchManagers": [
         "cargo"
       ],
@@ -179,7 +179,7 @@
       ]
     },
     {
-      "description": "Cargo major upgrades require human review \u2014 breaking API changes, unsafe code review.",
+      "description": "Cargo major upgrades require human review — breaking API changes, unsafe code review.",
       "matchManagers": [
         "cargo"
       ],
@@ -202,7 +202,7 @@
       "automerge": true
     },
     {
-      "description": "Renovate's own action \u2014 manual review on bumps to retain auditability of the dep-bot itself.",
+      "description": "Renovate's own action — manual review on bumps to retain auditability of the dep-bot itself.",
       "matchPackageNames": [
         "renovatebot/github-action"
       ],
@@ -210,7 +210,7 @@
       "automerge": false
     },
     {
-      "description": "FFmpeg release tag \u2014 manual review; drives the ffmpeg-patches/ rebase story.",
+      "description": "FFmpeg release tag — manual review; drives the ffmpeg-patches/ rebase story.",
       "matchPackageNames": [
         "FFmpeg/FFmpeg"
       ],
@@ -222,7 +222,7 @@
       ]
     },
     {
-      "description": "ROCm apt-repo version bump \u2014 manual review required. ROCm major-version bumps carry KFD ioctl ABI risk; validate kernel compat before merging (ADR-0604, ADR-0603).",
+      "description": "ROCm apt-repo version bump — manual review required. ROCm major-version bumps carry KFD ioctl ABI risk; validate kernel compat before merging (ADR-0604, ADR-0603).",
       "matchPackageNames": [
         "rocm"
       ],
@@ -235,7 +235,7 @@
       ]
     },
     {
-      "description": "dev-image deps (CUDA-adjacent, Intel NEO/LZ0, ONNX Runtime, SVT-AV1, VVenC, AMF) \u2014 manual review required. Container rebuild has large blast radius; validate GPU compatibility before merging. See ADR-0605, ADR-1145.",
+      "description": "dev-image deps (CUDA-adjacent, Intel NEO/LZ0, ONNX Runtime, SVT-AV1, VVenC, AMF) — manual review required. Container rebuild has large blast radius; validate GPU compatibility before merging. See ADR-0605, ADR-1145.",
       "matchPackageNames": [
         "intel/compute-runtime",
         "oneapi-src/level-zero",
@@ -256,13 +256,13 @@
     {
       "customType": "regex",
       "description": "FFmpeg release tag pinned in the patch-stack test script + the CI gate + the Containerfile ARG.",
-      "fileMatch": [
-        "/^ffmpeg-patches/test/build-and-run\\.sh$/",
-        "/^scripts/ci/ffmpeg-patches-check\\.sh$/",
-        "/^dev/Containerfile$/",
-        "/^docker/Dockerfile\\.node$/",
-        "/^Dockerfile$/",
-        "/^Dockerfile\\.ffmpeg$/"
+      "managerFilePatterns": [
+        "//^ffmpeg-patches/test/build-and-run\\.sh$//",
+        "//^scripts/ci/ffmpeg-patches-check\\.sh$//",
+        "//^dev/Containerfile$//",
+        "//^docker/Dockerfile\\.node$//",
+        "//^Dockerfile$//",
+        "//^Dockerfile\\.ffmpeg$//"
       ],
       "matchStrings": [
         "FFMPEG_SHA:=(?<currentValue>n[0-9.]+)",
@@ -275,11 +275,11 @@
     {
       "customType": "regex",
       "description": "ROCm pin in dev/Containerfile. Matches both the ARG ROCM_VER line and the repo URL path so both stay in sync on bumps. Queries the AMD apt directory listing via the html datasource. See ADR-0604.",
-      "fileMatch": [
-        "/^dev/Containerfile$/",
-        "/^docker/Dockerfile\\.node$/",
-        "/^Dockerfile$/",
-        "/^Dockerfile\\.ffmpeg$/"
+      "managerFilePatterns": [
+        "//^dev/Containerfile$//",
+        "//^docker/Dockerfile\\.node$//",
+        "//^Dockerfile$//",
+        "//^Dockerfile\\.ffmpeg$//"
       ],
       "matchStrings": [
         "ARG ROCM_VER=(?<currentValue>[0-9.]+)",
@@ -291,11 +291,11 @@
     {
       "customType": "regex",
       "description": "Intel compute-runtime (NEO) version in dev/Containerfile. Tracks github.com/intel/compute-runtime releases. See ADR-0605.",
-      "fileMatch": [
-        "/^dev/Containerfile$/",
-        "/^docker/Dockerfile\\.node$/",
-        "/^Dockerfile$/",
-        "/^Dockerfile\\.ffmpeg$/"
+      "managerFilePatterns": [
+        "//^dev/Containerfile$//",
+        "//^docker/Dockerfile\\.node$//",
+        "//^Dockerfile$//",
+        "//^Dockerfile\\.ffmpeg$//"
       ],
       "matchStrings": [
         "ARG NEO_VER=(?<currentValue>[0-9.]+)"
@@ -307,11 +307,11 @@
     {
       "customType": "regex",
       "description": "Level Zero loader version in dev/Containerfile. Tracks github.com/oneapi-src/level-zero releases. See ADR-0605.",
-      "fileMatch": [
-        "/^dev/Containerfile$/",
-        "/^docker/Dockerfile\\.node$/",
-        "/^Dockerfile$/",
-        "/^Dockerfile\\.ffmpeg$/"
+      "managerFilePatterns": [
+        "//^dev/Containerfile$//",
+        "//^docker/Dockerfile\\.node$//",
+        "//^Dockerfile$//",
+        "//^Dockerfile\\.ffmpeg$//"
       ],
       "matchStrings": [
         "ARG LEVEL_ZERO_VER=(?<currentValue>[0-9.]+)"
@@ -322,11 +322,11 @@
     {
       "customType": "regex",
       "description": "ONNX Runtime C++ library version in dev/Containerfile. Installed via tarball from GitHub releases (not apt). Tracks github.com/microsoft/onnxruntime releases. See ADR-0605.",
-      "fileMatch": [
-        "/^dev/Containerfile$/",
-        "/^docker/Dockerfile\\.node$/",
-        "/^Dockerfile$/",
-        "/^Dockerfile\\.ffmpeg$/"
+      "managerFilePatterns": [
+        "//^dev/Containerfile$//",
+        "//^docker/Dockerfile\\.node$//",
+        "//^Dockerfile$//",
+        "//^Dockerfile\\.ffmpeg$//"
       ],
       "matchStrings": [
         "ARG ORT_VERSION=(?<currentValue>[0-9.]+)"
@@ -337,11 +337,11 @@
     {
       "customType": "regex",
       "description": "SVT-AV1 encoder version in dev/Containerfile. Built from source via git clone of gitlab.com/AOMediaCodec/SVT-AV1 at a tagged release. See ADR-0605.",
-      "fileMatch": [
-        "/^dev/Containerfile$/",
-        "/^docker/Dockerfile\\.node$/",
-        "/^Dockerfile$/",
-        "/^Dockerfile\\.ffmpeg$/"
+      "managerFilePatterns": [
+        "//^dev/Containerfile$//",
+        "//^docker/Dockerfile\\.node$//",
+        "//^Dockerfile$//",
+        "//^Dockerfile\\.ffmpeg$//"
       ],
       "matchStrings": [
         "ARG SVTAV1_VERSION=(?<currentValue>[0-9.]+)"
@@ -353,11 +353,11 @@
     {
       "customType": "regex",
       "description": "VVenC (Fraunhofer VVC reference encoder) version in dev/Containerfile. Built from source via git clone of github.com/fraunhoferhhi/vvenc at a tagged release. See ADR-0605.",
-      "fileMatch": [
-        "/^dev/Containerfile$/",
-        "/^docker/Dockerfile\\.node$/",
-        "/^Dockerfile$/",
-        "/^Dockerfile\\.ffmpeg$/"
+      "managerFilePatterns": [
+        "//^dev/Containerfile$//",
+        "//^docker/Dockerfile\\.node$//",
+        "//^Dockerfile$//",
+        "//^Dockerfile\\.ffmpeg$//"
       ],
       "matchStrings": [
         "ARG VVENC_VERSION=(?<currentValue>[0-9.]+)"
@@ -368,11 +368,11 @@
     {
       "customType": "regex",
       "description": "AMD AMF (Advanced Media Framework) headers version in dev/Containerfile. Built from source via git clone of github.com/GPUOpen-LibrariesAndSDKs/AMF at a tagged release. See ADR-0605.",
-      "fileMatch": [
-        "/^dev/Containerfile$/",
-        "/^docker/Dockerfile\\.node$/",
-        "/^Dockerfile$/",
-        "/^Dockerfile\\.ffmpeg$/"
+      "managerFilePatterns": [
+        "//^dev/Containerfile$//",
+        "//^docker/Dockerfile\\.node$//",
+        "//^Dockerfile$//",
+        "//^Dockerfile\\.ffmpeg$//"
       ],
       "matchStrings": [
         "ARG AMF_VERSION=(?<currentValue>[0-9.]+)"
@@ -405,8 +405,8 @@
     "enabled": true
   },
   "kubernetes": {
-    "fileMatch": [
-      "/deploy/helm/.*/templates/.*\\.ya?ml$/"
+    "managerFilePatterns": [
+      "//deploy/helm/.*/templates/.*\\.ya?ml$//"
     ]
   }
 }
