@@ -20,6 +20,8 @@
 #include <immintrin.h>
 #include <stddef.h>
 
+#include "speed_avx2.h"
+
 // AVX2 4-wide-double accumulator with two parallel chains to hide FMA latency.
 // Per-element math (mul + add) is fused via vfmadd231pd; the per-row sub is
 // kept separate to mirror scalar's two-rounding sub more closely.

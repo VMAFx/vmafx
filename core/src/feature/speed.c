@@ -16,13 +16,16 @@
  *
  */
 
-#ifndef _USE_MATH_DEFINES
-#define _USE_MATH_DEFINES
-#endif
-
 #include <assert.h>
 #include <errno.h>
 #include <math.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
+ * upstream-mirror file whose Netflix source spells the null pointer constant
+ * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
@@ -198,16 +201,13 @@ static void matrix_minor(Matrix *mat, int d)
     for (int i = 0; i < size; i++) {
         for (int j = 0; j < size; j++) {
             if (i < d || j < d) {
-                if (i == j)
-                    mat->data[i * size + j] = 1;
-                else
-                    mat->data[i * size + j] = 0;
+                mat->data[i * size + j] = (i == j) ? 1.0f : 0.0f;
             }
         }
     }
 }
 
-static void matrix_identity_minus_v_vt(Matrix *dst, float *v)
+static void matrix_identity_minus_v_vt(Matrix *dst, const float *v)
 {
     // dst = I - v v^T
     // only works for square matrices
@@ -228,7 +228,7 @@ static float vector_norm(const float *x, int n)
     float sum = 0;
     for (int i = 0; i < n; i++)
         sum += x[i] * x[i];
-    return sqrt(sum);
+    return sqrtf(sum);
 }
 
 static void vector_div(const float *x, float d, float *y, int n)
@@ -252,16 +252,16 @@ static int get_sign(float x)
 static float pythagoras(float x, float y)
 {
     //hypotenuse length of the right triangle with sides x and y
-    return sqrt(x * x + y * y);
+    return sqrtf(x * x + y * y);
 }
 
-static float compute_column_norm(float *A, int col, int start_row, int size)
+static float compute_column_norm(const float *A, int col, int start_row, int size)
 {
     // euclidean norm of the column vector A[start_row:size, col]
     float norm = 0;
     for (int i = start_row; i < size; i++)
         norm += A[i * size + col] * A[i * size + col];
-    return sqrt(norm);
+    return sqrtf(norm);
 }
 
 // Compute a householder transformation (tau,v) of a vector
@@ -294,7 +294,8 @@ static float compute_householder_transform(float *A, int col, int start_row, int
 // x = tau_i + A * v
 // NOTE: only the rows and columns [start:size] of the involved matrices and
 // vectors are used
-static void tridiagonal_multiply(float *A, float *v, float *x, float tau_i, int start, int size)
+static void tridiagonal_multiply(const float *A, const float *v, float *x, float tau_i, int start,
+                                 int size)
 {
     for (int i = start; i < size; i++) {
         x[i] = 0.0f;
@@ -306,7 +307,7 @@ static void tridiagonal_multiply(float *A, float *v, float *x, float tau_i, int 
 // returns dot(x, v)
 // NOTE: only the rows and columns [start:size] of the involved matrices and
 // vectors are used
-static float tridiagonal_dot_product(float *x, float *v, int start, int size)
+static float tridiagonal_dot_product(const float *x, const float *v, int start, int size)
 {
     float res = 0;
     for (int i = start; i < size; i++)
@@ -317,7 +318,7 @@ static float tridiagonal_dot_product(float *x, float *v, int start, int size)
 // x += alpha * v
 // NOTE: only the rows and columns [start:size] of the involved matrices and
 // vectors are used
-static void tridiagonal_axpy(float *x, float *v, float alpha, int start, int size)
+static void tridiagonal_axpy(float *x, const float *v, float alpha, int start, int size)
 {
     for (int i = start; i < size; i++)
         x[i] += alpha * v[i];
@@ -326,7 +327,7 @@ static void tridiagonal_axpy(float *x, float *v, float alpha, int start, int siz
 // A -= x * v' + v * x'
 // NOTE: only the rows and columns [start:size] of the involved matrices and
 // vectors are used
-static void tridiagonal_syr2(float *A, float *x, float *v, int start, int size)
+static void tridiagonal_syr2(float *A, const float *x, const float *v, int start, int size)
 {
     for (int i = start; i < size; i++) {
         for (int j = start; j < size; j++) {
@@ -389,19 +390,20 @@ static void chop_small_elements(float *d, float *sd, int size)
     }
 }
 
-static float trailing_eigenvalue(float *d, float *sd, int n)
+static float trailing_eigenvalue(const float *d, const float *sd, int n)
 {
     float ta = d[n - 2];
     float tb = d[n - 1];
     float tab = sd[n - 2];
-    float dt = (ta - tb) / 2.0;
+    float dt = (ta - tb) / 2.0f;
 
-    if (dt > 0)
+    if (dt > 0) {
         return tb - tab * (tab / (dt + pythagoras(dt, tab)));
-    else if (dt == 0)
+    } else if (dt == 0) {
         return tb - fabsf(tab);
-    else
+    } else {
         return tb + tab * (tab / (-dt + pythagoras(dt, tab)));
+    }
 }
 
 static void create_givens(const float a, const float b, float *c, float *s)
@@ -821,11 +823,9 @@ static bool is_matrix_regular(const SpeedDimensions *dim, const float *eigenvalu
     return true;
 }
 
-static int est_params(SpeedState *s, const float *data, float sigma_nn, SpeedResultBuffers *output)
+static bool solve_covariance_system(SpeedState *s, const float *data, const SpeedDimensions *dim,
+                                    size_t stride_px)
 {
-    SpeedDimensions dim = s->dimensions;
-    size_t stride_px = s->float_stride / sizeof(float);
-
     // Step 1: Compute the covariance matrix K
     // We use the eigenvalues array as a temporary array to store the means
     // needed for the covariance.
@@ -833,23 +833,23 @@ static int est_params(SpeedState *s, const float *data, float sigma_nn, SpeedRes
     // tests that construct SpeedState via struct literal).
     compute_cov_kernel_fn kernel =
         s->compute_cov_kernel ? s->compute_cov_kernel : compute_cov_kernel_scalar;
-    compute_covariance_matrix(&dim, data, s->buffers.cov_mat, s->buffers.eigenvalues, stride_px,
+    compute_covariance_matrix(dim, data, s->buffers.cov_mat, s->buffers.eigenvalues, stride_px,
                               kernel);
 
     // Step 2: Compute the eigenvalues of the covariance matrix
-    compute_eigenvalues(s->buffers.cov_mat, s->buffers.eigenvalues, dim.elements_in_block,
+    compute_eigenvalues(s->buffers.cov_mat, s->buffers.eigenvalues, dim->elements_in_block,
                         s->buffers.tmp_buffer);
 
     // Step 3: Compute independent term for the linear system
-    compute_independent_term(&dim, data, s->buffers.independent_term, stride_px);
+    compute_independent_term(dim, data, s->buffers.independent_term, stride_px);
 
     // Step 4: Solve the linear equation KX = Y, where K is the covariance
     // matrix and Y is the independent term matrix above
     int err = 0;
-    bool regular = is_matrix_regular(&dim, s->buffers.eigenvalues);
+    bool regular = is_matrix_regular(dim, s->buffers.eigenvalues);
     if (regular) {
-        err = solve_linear_system(s->buffers.cov_mat, dim.elements_in_block,
-                                  s->buffers.independent_term, dim.num_blocks,
+        err = solve_linear_system(s->buffers.cov_mat, dim->elements_in_block,
+                                  s->buffers.independent_term, dim->num_blocks,
                                   s->buffers.linear_system_sol, s->buffers.tmp_buffer);
     }
 
@@ -857,8 +857,17 @@ static int est_params(SpeedState *s, const float *data, float sigma_nn, SpeedRes
     if (cannot_invert) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING, "est_params: covariance matrix is singular\n");
         memset(s->buffers.linear_system_sol, 0,
-               dim.elements_in_block * dim.num_blocks * sizeof(float));
+               dim->elements_in_block * dim->num_blocks * sizeof(float));
     }
+    return cannot_invert;
+}
+
+static int est_params(SpeedState *s, const float *data, float sigma_nn, SpeedResultBuffers *output)
+{
+    SpeedDimensions dim = s->dimensions;
+    size_t stride_px = s->float_stride / sizeof(float);
+
+    bool cannot_invert = solve_covariance_system(s, data, &dim, stride_px);
 
     // Step 5: Compute the pointwise product Z = (X * Y)/B^2, where X and Y are
     // from the linear system above, and B is the block size.
@@ -1000,7 +1009,8 @@ static void filter_and_downscale(const SpeedDimensions *dim, SpeedOptions *opt, 
     subtract_image(frame_buffer, curr_scale, downscaled_w, downscaled_h, float_stride);
 }
 
-int speed_extract_score(SpeedState *s, SpeedOptions *opt, float *ref, float *dis, float *score)
+static int speed_extract_score(SpeedState *s, SpeedOptions *opt, float *ref, float *dis,
+                               float *score)
 {
     filter_and_downscale(&s->dimensions, opt, ref, s->buffers.tmp_buffer, s->float_stride);
     int err_ref = est_params(s, ref, opt->speed_sigma_nn, &(s->ref_results));
@@ -1058,27 +1068,8 @@ static int speed_init_dimensions(SpeedDimensions *dim, int w, int h, double spee
     return 0;
 }
 
-int speed_init(SpeedState *s, SpeedOptions *opt, int w, int h)
+static int speed_alloc_buffers(SpeedState *s, const SpeedDimensions *dim, size_t stride_px)
 {
-    SpeedDimensions *dim = &s->dimensions;
-    int dim_err = speed_init_dimensions(dim, w, h, opt->speed_prescale);
-    if (dim_err)
-        return dim_err;
-
-    // Check that the kernelscale is valid
-    if (!vif_validate_kernelscale(opt->speed_kernelscale)) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "invalid speed_kernelscale");
-        return -EINVAL;
-    }
-
-    enum vif_scaling_method scaling_method;
-    if (vif_get_scaling_method(opt->speed_prescale_method, &scaling_method)) {
-        return -EINVAL;
-    }
-
-    s->float_stride = ALIGN_CEIL(dim->alloc_width * sizeof(float));
-    size_t stride_px = s->float_stride / sizeof(float);
-
     size_t tmp_buffer_size =
         sizeof(float) * (NUM_SQUARE_BUFFERS * dim->elements_in_block * dim->elements_in_block +
                          NUM_RECT_BUFFERS * dim->elements_in_block * dim->num_blocks +
@@ -1116,6 +1107,11 @@ int speed_init(SpeedState *s, SpeedOptions *opt, int w, int h)
     if (!s->dis_results.variances)
         return -ENOMEM;
 
+    return 0;
+}
+
+static void speed_dispatch_cpu_kernel(SpeedState *s)
+{
     s->compute_cov_kernel = compute_cov_kernel_scalar;
 #if ARCH_X86
     unsigned flags = vmaf_get_cpu_flags();
@@ -1128,11 +1124,39 @@ int speed_init(SpeedState *s, SpeedOptions *opt, int w, int h)
     }
 #endif
 #endif
+}
+
+static int speed_init(SpeedState *s, SpeedOptions *opt, int w, int h)
+{
+    SpeedDimensions *dim = &s->dimensions;
+    int dim_err = speed_init_dimensions(dim, w, h, opt->speed_prescale);
+    if (dim_err)
+        return dim_err;
+
+    // Check that the kernelscale is valid
+    if (!vif_validate_kernelscale(opt->speed_kernelscale)) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "invalid speed_kernelscale");
+        return -EINVAL;
+    }
+
+    enum vif_scaling_method scaling_method;
+    if (vif_get_scaling_method(opt->speed_prescale_method, &scaling_method)) {
+        return -EINVAL;
+    }
+
+    s->float_stride = ALIGN_CEIL(dim->alloc_width * sizeof(float));
+    size_t stride_px = s->float_stride / sizeof(float);
+
+    int alloc_err = speed_alloc_buffers(s, dim, stride_px);
+    if (alloc_err)
+        return alloc_err;
+
+    speed_dispatch_cpu_kernel(s);
 
     return 0;
 }
 
-int speed_close(SpeedState *s)
+static int speed_close(SpeedState *s)
 {
     if (s->buffers.independent_term)
         aligned_free(s->buffers.independent_term);
@@ -1387,6 +1411,7 @@ static const char *provided_features_chroma[] = {
     "Speed_chroma_feature_speed_chroma_u_score", "Speed_chroma_feature_speed_chroma_v_score",
     "Speed_chroma_feature_speed_chroma_uv_score", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_speed_chroma = {
     .name = "speed_chroma",
     .init = init_chroma,
@@ -1613,6 +1638,7 @@ static int close(VmafFeatureExtractor *fex)
 
 static const char *provided_features[] = {"Speed_temporal_feature_speed_temporal_score", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_speed_temporal = {
     .name = "speed_temporal",
     .init = init,
@@ -1623,3 +1649,5 @@ VmafFeatureExtractor vmaf_fex_speed_temporal = {
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL,
 };
+
+/* NOLINTEND(modernize-use-nullptr) */
