@@ -2230,7 +2230,8 @@ endif
 test_gpu_dispatch_runtime = executable('test_gpu_dispatch_runtime',
     ['test.c', 'test_gpu_dispatch_runtime.c',
      '../src/cuda/dispatch_strategy.c',
-     '../src/hip/dispatch_strategy.c'],
+     '../src/hip/dispatch_strategy.c',
+     '../src/sycl/dispatch_strategy.cpp'],
     include_directories : [libvmaf_inc, test_inc,
                            include_directories('../src/'),
                            include_directories('../src/feature/')],
@@ -2238,7 +2239,8 @@ test_gpu_dispatch_runtime = executable('test_gpu_dispatch_runtime',
     # ADR-0858 Wave: gpu_dispatch_env converted .c → .cpp; link via the
     # isolated C++23 static lib instead of direct-compiling the source.
     # (The orphaned legacy .c was removed once the .cpp became canonical.)
-    objects : [gpu_dispatch_env_cpp23_lib.extract_all_objects(recursive: true)],
+    objects : [gpu_dispatch_env_cpp23_lib.extract_all_objects(recursive: true),
+               log_cpp23_test_objects],
 )
 test('test_gpu_dispatch_runtime', test_gpu_dispatch_runtime, suite : ['fast'])
 

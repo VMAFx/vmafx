@@ -303,6 +303,20 @@ for the complete table.
   H-pass non-coalesced reads and V-pass L1 pressure remain known
   architectural ceilings (require a shared-memory tile-transpose
   rewrite).
+- **CUDA graph capture dispatch fallback** — While `VMAF_CUDA_DISPATCH` parses
+  the `graph` strategy token, CUDA graph capture (`cuGraphCreate`, `cuGraphLaunch`)
+  is not implemented for the CUDA feature extractors. Setting `VMAF_CUDA_DISPATCH=graph`
+  (or `feature=graph`) logs a warning (`libvmaf: CUDA graph dispatch requested for '%s'
+  but graph capture is not implemented; falling back to direct`) and safely falls
+  back to `VMAF_CUDA_DISPATCH_DIRECT`. Graph capture requires static pitch allocation
+  and graph instance lifecycle management across frames (deferred; see `docs/state.md`).
+- **Zero-copy picture import** — `core/src/cuda/picture_cuda.c` stages picture data via
+  host-staged pinned memory transfers (`cuMemcpyHtoDAsync` / `cuMemcpyDtoHAsync`).
+  Linux `dmabuf` / external memory zero-copy import (via `cuImportExternalMemory` /
+  `cuExternalMemoryGetMappedBuffer`) is not implemented on CUDA. Unlike the SYCL
+  backend which supports VA-API / Linux dmabuf zero-copy import (`dmabuf_import.cpp`),
+  CUDA driver API dmabuf import requires Vulkan/EGL external handle negotiation and
+  is currently deferred (see `docs/state.md`).
 - **HIP / AMD** — separate backend; 19 registered feature extractors +
   3 unregistered legacy stubs. See
   [backends/hip/overview.md](../hip/overview.md) for details.

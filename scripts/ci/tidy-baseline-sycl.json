@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 23,
-  "total_warnings": 716,
+  "total_warnings": 711,
   "total_nolint_uncited": 25,
   "warnings": {
     "core/src/feature/sycl/float_adm_sycl.cpp": 57,
@@ -27,7 +27,6 @@
     "core/src/feature/sycl/ssimulacra2_sycl.cpp": 49,
     "core/src/sycl/common.cpp": 102,
     "core/src/sycl/common.h": 5,
-    "core/src/sycl/dispatch_strategy.cpp": 5,
     "core/src/sycl/dmabuf_import.cpp": 71,
     "core/src/sycl/picture_sycl.cpp": 6
   },

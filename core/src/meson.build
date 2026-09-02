@@ -1271,7 +1271,7 @@ if is_cuda_enabled
     # their own -I list — so add the shim path explicitly here too.
     cuda_extra_includes = []
     if host_machine.system() == 'windows'
-        cuda_extra_includes += ['-I', '../src/compat/win32']
+        cuda_extra_includes += ['-I', meson.current_source_dir() / 'compat' / 'win32']
     endif
     ptx_files = {}
     foreach name, _cu : cuda_cu_sources
@@ -1284,11 +1284,11 @@ if is_cuda_enabled
                 gencode,
                 '@INPUT@',
                 '-o', '@OUTPUT@' ,
-                '-I', './src',
-                '-I', '../src',
-                '-I', '../include',
-                '-I', '../src/feature',
-                '-I', '../src/' + cuda_dir,
+                '-I', meson.current_build_dir(),
+                '-I', meson.current_source_dir(),
+                '-I', libvmaf_src_root / 'include',
+                '-I', meson.current_source_dir() / 'feature',
+                '-I', meson.current_source_dir() / 'cuda',
                 cuda_extra_includes,
                 '-DDEVICE_CODE',
             ] + cuda_flags + nvcc_ccbin_flags + nvcc_host_includes + per_kernel_flags
@@ -1866,6 +1866,21 @@ libvmaf_y_funque_plus_static_lib = static_library(
     c_args: vmaf_cflags_common + ['-ffp-contract=off'] + _libvmaf_feature_icx_args,
 )
 
+# ADR-0858: gpu_dispatch_env.cpp is compiled as an isolated C++23 static lib
+# so its cpp_std override (c++23) does not propagate to any other TU — same
+# isolation pattern as metadata_handler_cpp20_lib (ADR-0708).  The public C
+# symbol vmaf_gpu_dispatch_env_get retains its extern "C" linkage; callers
+# in C translation units link without modification.
+gpu_dispatch_env_cpp23_lib = static_library(
+    'gpu_dispatch_env_cpp23',
+    src_dir + 'gpu_dispatch_env.cpp',
+    include_directories : [vmaf_base_include, libvmaf_include],
+    # libvmaf_cpu_cpp_std: compiler-aware token (ADR-0860 follow-up, PR #692 fix).
+    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
+    pic : true,
+    install : false,
+)
+
 libvmaf_feature_static_lib = static_library(
     'libvmaf_feature',
     # The BRISQUE allmodel embed (ADR-1115) lives here so that every consumer
@@ -1878,7 +1893,8 @@ libvmaf_feature_static_lib = static_library(
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency, hip_deps, metal_deps],
     objects: [common_cuda_objects, common_sycl_objects, sycl_feature_objects,
               libvmaf_ssimulacra2_static_lib.extract_all_objects(recursive: false),
-              libvmaf_y_funque_plus_static_lib.extract_all_objects(recursive: false)]
+              libvmaf_y_funque_plus_static_lib.extract_all_objects(recursive: false),
+              gpu_dispatch_env_cpp23_lib.extract_all_objects(recursive: true)]
 )
 
 libsvm_cpp_args = vmaf_cflags_common
@@ -1980,21 +1996,6 @@ gpu_picture_pool_cpp23_lib = static_library(
                (is_nvtx_enabled ? ['-DHAVE_NVTX'] : []) +
                (is_sycl_enabled ? ['-DHAVE_SYCL'] : []),
     dependencies : [pthread_dependency],
-    pic : true,
-    install : false,
-)
-
-# ADR-0858: gpu_dispatch_env.cpp is compiled as an isolated C++23 static lib
-# so its cpp_std override (c++23) does not propagate to any other TU — same
-# isolation pattern as metadata_handler_cpp20_lib (ADR-0708).  The public C
-# symbol vmaf_gpu_dispatch_env_get retains its extern "C" linkage; callers
-# in C translation units link without modification.
-gpu_dispatch_env_cpp23_lib = static_library(
-    'gpu_dispatch_env_cpp23',
-    src_dir + 'gpu_dispatch_env.cpp',
-    include_directories : [vmaf_base_include, libvmaf_include],
-    # libvmaf_cpu_cpp_std: compiler-aware token (ADR-0860 follow-up, PR #692 fix).
-    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     pic : true,
     install : false,
 )
@@ -2114,8 +2115,6 @@ libvmaf = library(
         # ADR-0708 Wave 1: log.cpp C++23 pilot TU compiled as isolated
         # static lib. Same isolation rationale as metadata_handler_cpp20_lib.
         log_cpp23_lib.extract_all_objects(recursive: true),
-        # ADR-0858: C++23 gpu_dispatch_env TU compiled as isolated static lib.
-        gpu_dispatch_env_cpp23_lib.extract_all_objects(recursive: true),
         # ADR-0768: C++23 Wave 9 isolated static libs.
         picture_pool_cpp23_lib.extract_all_objects(recursive: true),
         gpu_picture_pool_cpp23_lib.extract_all_objects(recursive: true),

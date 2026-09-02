@@ -17,16 +17,17 @@ assessment. Backends are **opt-in at build time** via meson options and
 
 ## Runtime selection
 
-Backend selection is **not** controlled by environment variables in this fork.
-Backends are selected via CLI flags on `vmaf` (see
+Backend selection in the C engine is controlled via CLI flags on `vmaf`
+(e.g. `--backend <name>`, `--no_cuda`, `--no_sycl`; see
 [../usage/cli.md](../usage/cli.md) — "Backend selection") or programmatically
 through `VmafConfiguration` fields in the C API (`gpu_enable`, `cuda_state`,
 `sycl_state`).
 
-> `VMAF_FORCE_BACKEND` is **not** read by `libvmaf` — it appeared in earlier
-> drafts of this page as a planned selection mechanism, but the implemented
-> surface is CLI-flag-based. If you are scripting alternate backends, set
-> `--no_cuda` / `--no_sycl` / `--sycl_device <N>` on the `vmaf` command line.
+In Python tooling and test suites (`compat/python-vmaf`, `ExternalProgramCaller`),
+setting the environment variable `VMAF_FORCE_BACKEND=<backend>` (or `VMAF_BACKEND`)
+automatically injects `--backend <backend>` into all child `vmaf` invocations.
+Note that GPU results are subject to ULP tolerances (ADR-0214) and should not be
+run against CPU-golden equality assertions.
 
 Dispatch precedence inside `libvmaf` (highest first):
 

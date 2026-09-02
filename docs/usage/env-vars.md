@@ -174,6 +174,8 @@ are not read by production code paths.
 |---|---|---|---|
 | `VMAF_BIN_FOR_TESTS` | path | _(auto-detect)_ | Explicit path to the `vmaf` binary for integration tests (`test_chug_extract_features_smoke.py`, ADR-0543 backend-enforcement tests).  When unset the tests probe the canonical build paths and `PATH`. |
 | `VMAF_TEST_DATA` | path | _(repo-relative)_ | Override for the test-data root in Python-harness tests. |
+| `VMAF_FORCE_BACKEND` | string | _(none)_ | Scoring backend override (`cuda`, `sycl`, `cpu`, etc.) for Python-harness `ExternalProgramCaller` invocations; appends `--backend <val>`. |
+| `VMAF_BACKEND` | string | _(none)_ | Fallback alias for `VMAF_FORCE_BACKEND` in Python-harness CLI invocations. |
 
 ---
 

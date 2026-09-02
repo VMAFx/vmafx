@@ -89,7 +89,7 @@ GPU / SIMD backend notes under [backends/](backends/index.md):
 
 - [Tiny-AI docs](ai/index.md) – overview, training, inference, benchmarks, security
 - [Training](ai/training.md) + [training data](ai/training-data.md) + [MOS corpora](ai/mos-corpora.md)
-- [Inference](ai/inference.md) – ONNX Runtime EPs: CPU, CUDA, TensorRT, CoreML, OpenVINO (CPU / GPU / NPU)
+- [Inference](ai/inference.md) – ONNX Runtime EPs: CPU, CUDA, CoreML, OpenVINO (CPU / GPU / NPU); TensorRT on [roadmap](ai/roadmap.md)
 - [LOSO evaluation](ai/loso-eval.md) + [predictor](ai/predictor.md) + [conformal VQA](ai/conformal-vqa.md)
 - [Ensemble training kit](ai/ensemble-training-kit.md) + [ensemble v2 runbook](ai/ensemble-v2-real-corpus-retrain-runbook.md)
 - [Quantization](ai/quantization.md) + [quant epsilon](ai/quant-eps.md)
