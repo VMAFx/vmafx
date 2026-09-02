@@ -377,6 +377,32 @@ Invariants preserved:
   widening warnings on integer products.
 - Dead `print_*` debug macros in `adm_avx512.c` removed; `#include "adm_avx2.h"` added
   to `adm_avx2.c` for internal linkage consistency with public declarations.
+## refactor/test-model-tidy-clean — clang-tidy clean test_model.c and test_output.c (2026-09-02)
+Upstream-mirror files touched: `core/test/test_model.c` and `core/test/test_output.c`.
+Both files were brought to 0 clang-tidy warnings without altering, deleting, or skipping any Netflix test assertion. When rebasing against upstream changes to these tests, note the following structural reorganizations:
+- `core/test/test_output.c`:
+  - Assertion groups split into static check helpers:
+    - `check_csv_basic_output`, `check_csv_subsample_output` (from `test_csv_basic`, `test_csv_subsample_and_custom_format`)
+    - `check_sub_basic_output` (from `test_sub_basic`)
+    - `check_xml_basic_structure`, `check_xml_basic_metrics`, `check_xml_basic_output` (from `test_xml_basic`)
+    - `check_json_basic_structure`, `check_json_basic_pooled`, `check_json_basic_aggregates`, `check_json_basic_output` (from `test_json_basic_and_format`)
+    - `check_json_nan_inf_output` (from `test_json_nan_and_inf`)
+    - `check_json_empty_collector_output` (from `test_json_empty_collector`)
+    - `check_write_output_json` (from `test_write_output_json_path`)
+    - `check_write_output_format` (from `test_write_output_with_format_custom`)
+    - `check_pic_cnt_zero_json`, `check_pic_cnt_zero_xml` (from `test_write_output_pic_cnt_zero`)
+  - Concurrency/portability: replaced `getenv("TMPDIR")` with `P_tmpdir` fallback in `make_temp_path()`.
+  - Memory leak fixes: ensured allocated file buffers (`out`) are freed on every return path.
+  - Test runner: split `run_tests` into `run_output_tests_part1` and `run_output_tests_part2`.
+- `core/test/test_model.c`:
+  - `NULL` modernized to `nullptr` (C23 standard across fork).
+  - `#include "model.c"` annotated with ADR-0278 / ADR-0141 NOLINT comment for white-box static model testing.
+  - `test_model_feature` split into `test_model_feature_step1`, `test_model_feature_step2`, and `check_model_feature_entry`.
+  - `test_model_set_flags` decomposed into `test_model_set_flags_transform_and_clip`, `test_model_set_flags_default_opts`, `check_model_neg_feature_opts`, and `test_model_set_flags_neg_opts`.
+  - Buffer allocation lifetime: `free(buf)` placed immediately after `vmaf_read_json_model_from_buffer` and `vmaf_read_json_model_collection_from_buffer` parses.
+  - String formatting: replaced variadic `append_fmt` with bounded `append_str` and `append_uint`, removing `<stdarg.h>` and avoiding `VAList` analyzer false positives.
+  - JSON builder complexity: extracted `append_65_feature_names`, `append_65_feature_slopes_intercepts`, and `check_65_feature_model` for `test_json_model_allows_more_than_64_features`; extracted `build_11_knot_json` and `check_11_knot_model` for `test_json_model_allows_more_than_10_knots`.
+  - Test runner: replaced linear macro expansion in `run_tests` with table-driven `test_cases[]` array and `run_tests` iterator.
 
 ## feat/go-ort-runner — `vmafx-ort-runner` built in-tree (2026-09-02, ADR-1134)
 

@@ -14685,6 +14685,12 @@ selection, `--list-tests`, and `--dry-run` so the FFmpeg lavfi performance
 harness is usable outside one local workstation.
 
 
+- **test**: bring `core/test/test_model.c` and `core/test/test_output.c` to 0 clang-tidy warnings (ADR-0141).
+  - Modernized `NULL` to `nullptr` (C23 standard across fork).
+  - Decomposed assertion-heavy tests and test runners into modular static helper functions to satisfy `readability-function-size` thresholds without removing, modifying, or weakening any Netflix assertions.
+  - Addressed memory lifetime tracking and replaced `append_fmt` with safe bounded string/integer append helpers.
+
+
 - **docs/tiny-ai**: Refresh FastDVDnet and TransNet V2 roadmap / feature
   limitation text so the user-facing docs reflect shipped real upstream
   weights instead of the old smoke-placeholder status.
