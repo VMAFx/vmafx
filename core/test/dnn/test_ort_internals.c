@@ -26,6 +26,12 @@
 #include "ort_backend.h"
 #include "ort_backend_internal.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #define SMOKE_FP32_MODEL "model/tiny/smoke_v0.onnx"
 #define SMOKE_FP16_MODEL "model/tiny/smoke_fp16_v0.onnx"
 #define SMOKE_MULTI_OUTPUT_MODEL "model/tiny/smoke_multi_output_v0.onnx"
@@ -261,7 +267,21 @@ static char *test_ort_io_count_null_args(void)
     mu_assert("io_count: open succeeds", rc == 0);
     mu_assert("io_count NULL n_inputs", vmaf_ort_io_count(sess, NULL, &b) == -EINVAL);
     mu_assert("io_count NULL n_outputs", vmaf_ort_io_count(sess, &a, NULL) == -EINVAL);
-    /* Valid call to cover the success path */
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_io_count_valid(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("io_count valid: open succeeds", rc == 0);
+    size_t a = 0;
+    size_t b = 0;
     rc = vmaf_ort_io_count(sess, &a, &b);
     mu_assert("io_count valid", rc == 0);
     mu_assert("io_count: at least 1 input", a >= 1u);
@@ -291,6 +311,30 @@ static char *test_ort_input_shape_null_args(void)
     return NULL;
 }
 
+static char *test_ort_input_shape_at_null_guards(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    int64_t shape[4] = {0};
+    size_t rank = 0;
+    VmafOrtSession *sess = NULL;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("input_shape_at null guards: open succeeds", rc == 0);
+
+    mu_assert("input_shape_at NULL sess",
+              vmaf_ort_input_shape_at(NULL, 0u, shape, 4u, &rank) == -EINVAL);
+    mu_assert("input_shape_at NULL out_shape",
+              vmaf_ort_input_shape_at(sess, 0u, NULL, 4u, &rank) == -EINVAL);
+    mu_assert("input_shape_at NULL out_rank",
+              vmaf_ort_input_shape_at(sess, 0u, shape, 4u, NULL) == -EINVAL);
+    mu_assert("input_shape_at max_rank=0",
+              vmaf_ort_input_shape_at(sess, 0u, shape, 0u, &rank) == -EINVAL);
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
 static char *test_ort_input_shape_at_bounds_and_success(void)
 {
     if (!vmaf_dnn_available())
@@ -303,14 +347,6 @@ static char *test_ort_input_shape_at_bounds_and_success(void)
         return NULL;
     mu_assert("input_shape_at: open succeeds", rc == 0);
 
-    mu_assert("input_shape_at NULL sess",
-              vmaf_ort_input_shape_at(NULL, 0u, shape, 4u, &rank) == -EINVAL);
-    mu_assert("input_shape_at NULL out_shape",
-              vmaf_ort_input_shape_at(sess, 0u, NULL, 4u, &rank) == -EINVAL);
-    mu_assert("input_shape_at NULL out_rank",
-              vmaf_ort_input_shape_at(sess, 0u, shape, 4u, NULL) == -EINVAL);
-    mu_assert("input_shape_at max_rank=0",
-              vmaf_ort_input_shape_at(sess, 0u, shape, 0u, &rank) == -EINVAL);
     mu_assert("input_shape_at slot out of range",
               vmaf_ort_input_shape_at(sess, 99u, shape, 4u, &rank) == -ERANGE);
     mu_assert("input_shape_at max_rank too small",
@@ -322,8 +358,22 @@ static char *test_ort_input_shape_at_bounds_and_success(void)
     mu_assert("input_shape_at dims match smoke model",
               shape[0] == 1 && shape[1] == 1 && shape[2] == 4 && shape[3] == 4);
 
-    rank = 0;
-    memset(shape, 0, sizeof(shape));
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_input_shape_success(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    int64_t shape[4] = {0};
+    size_t rank = 0;
+    VmafOrtSession *sess = NULL;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("input_shape: open succeeds", rc == 0);
+
     rc = vmaf_ort_input_shape(sess, shape, 4u, &rank);
     mu_assert("input_shape success", rc == 0);
     mu_assert("input_shape rank 4", rank == 4u);
@@ -334,7 +384,7 @@ static char *test_ort_input_shape_at_bounds_and_success(void)
     return NULL;
 }
 
-static char *test_ort_infer_guards_and_smoke_paths(void)
+static char *test_ort_infer_null_guards(void)
 {
     if (!vmaf_dnn_available())
         return NULL;
@@ -350,13 +400,32 @@ static char *test_ort_infer_guards_and_smoke_paths(void)
     int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
     if (rc == -ENOENT)
         return NULL;
-    mu_assert("infer: open succeeds", rc == 0);
+    mu_assert("infer null guards: open succeeds", rc == 0);
     mu_assert("infer NULL input",
               vmaf_ort_infer(sess, NULL, shape, 4u, output, 16u, &written) == -EINVAL);
     mu_assert("infer NULL shape",
               vmaf_ort_infer(sess, input, NULL, 4u, output, 16u, &written) == -EINVAL);
     mu_assert("infer NULL output",
               vmaf_ort_infer(sess, input, shape, 4u, NULL, 16u, &written) == -EINVAL);
+
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_infer_guards_and_smoke_paths(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    float input[16] = {0.0f};
+    float output[16] = {0.0f};
+    int64_t shape[4] = {1, 1, 4, 4};
+    size_t written = 0;
+
+    VmafOrtSession *sess = NULL;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("infer smoke: open succeeds", rc == 0);
 
     rc = vmaf_ort_infer(sess, input, shape, 4u, output, 16u, &written);
     mu_assert("infer fp32 smoke succeeds", rc == 0);
@@ -489,6 +558,19 @@ static char *test_ort_open_elem_types_populated(void)
               vmaf_ort_internal_output_elem_type(sess, 0) != ELEM_TYPE_UNDEFINED);
     mu_assert("elem_types: output[0] == FLOAT",
               vmaf_ort_internal_output_elem_type(sess, 0) == ELEM_TYPE_FLOAT);
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_open_elem_types_oob(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("elem_types oob: fp32 smoke open succeeds", rc == 0);
     /* Out-of-range slot must return UNDEFINED, not crash. */
     mu_assert("elem_types: input OOB -> UNDEFINED",
               vmaf_ort_internal_input_elem_type(sess, 99) == ELEM_TYPE_UNDEFINED);
@@ -517,6 +599,27 @@ static char *test_ort_open_elem_types_fp16_model(void)
     return NULL;
 }
 
+static char *test_ort_multi_output_io_count(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    int rc = vmaf_ort_open(&sess, SMOKE_MULTI_OUTPUT_MODEL, NULL);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("multi-output open ok", rc == 0);
+
+    size_t n_in = 0;
+    size_t n_out = 0;
+    rc = vmaf_ort_io_count(sess, &n_in, &n_out);
+    mu_assert("io_count succeeds on multi-output session", rc == 0);
+    mu_assert("multi-output session reports n_inputs >= 1", n_in >= 1u);
+    mu_assert("multi-output session reports n_outputs >= 2", n_out >= 2u);
+
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
 /* Drives vmaf_ort_run() against the multi-output smoke model so the
  * `for (i = 0; i < n_outputs; ++i) copy_output_tensor()` loop body
  * (ort_backend.c:897-901) and the `for (i = 0; i < n_outputs; ++i)
@@ -534,11 +637,10 @@ static char *test_ort_run_multi_output_smoke(void)
         return NULL;
     mu_assert("multi-output smoke open ok", rc == 0);
 
-    size_t n_in = 0, n_out = 0;
+    size_t n_in = 0;
+    size_t n_out = 0;
     rc = vmaf_ort_io_count(sess, &n_in, &n_out);
-    mu_assert("io_count succeeds on multi-output session", rc == 0);
-    mu_assert("multi-output session reports n_inputs >= 1", n_in >= 1u);
-    mu_assert("multi-output session reports n_outputs >= 2", n_out >= 2u);
+    mu_assert("io_count succeeds", rc == 0);
 
     /* Build per-output buffers. Cap at 8 to stay within VMAF_ORT_MAX_IO. */
     if (n_out > 8u) {
@@ -848,50 +950,66 @@ static char *test_ort_open_auto_device(void)
     return NULL;
 }
 
+typedef char *(*test_fn)(void);
+
+static const test_fn k_test_table[] = {
+    test_fp32_to_fp16_normal,
+    test_fp32_to_fp16_inf_nan,
+    test_fp32_to_fp16_overflow,
+    test_fp32_to_fp16_underflow,
+    test_fp32_to_fp16_subnormal,
+    test_fp16_to_fp32_normal,
+    test_fp16_to_fp32_zero,
+    test_fp16_to_fp32_subnormal,
+    test_fp16_to_fp32_inf_nan,
+    test_resolve_name_hit,
+    test_resolve_name_miss,
+    test_resolve_name_positional,
+    test_resolve_name_positional_out_of_range,
+    test_convert_non_float_output_types,
+    test_ort_attached_ep_null_session,
+    test_ort_close_null_session,
+    test_ort_io_count_null_args,
+    test_ort_io_count_valid,
+    test_ort_input_shape_null_args,
+    test_ort_input_shape_at_null_guards,
+    test_ort_input_shape_at_bounds_and_success,
+    test_ort_input_shape_success,
+    test_ort_infer_null_guards,
+    test_ort_infer_guards_and_smoke_paths,
+    test_ort_infer_rejects_bad_shape,
+    test_ort_infer_fp16_input_output_path,
+    test_ort_run_null_guards,
+    test_ort_open_null_args,
+    test_ort_open_elem_types_populated,
+    test_ort_open_elem_types_oob,
+    test_ort_open_elem_types_fp16_model,
+    test_ort_multi_output_io_count,
+    test_ort_run_multi_output_smoke,
+    test_ort_public_accessor_coverage,
+    /* EP-device fallback tests (ADR-0113 two-stage path). */
+    test_ort_open_cuda_device_falls_back_to_cpu,
+    test_ort_open_openvino_device_falls_back_to_cpu,
+    test_ort_open_openvino_cpu_device,
+    test_ort_open_openvino_gpu_device,
+    test_ort_open_openvino_npu_device,
+    test_ort_open_rocm_device_falls_back_to_cpu,
+    test_ort_open_coreml_device_falls_back_to_cpu,
+    test_ort_open_coreml_ane_device,
+    test_ort_open_coreml_gpu_device,
+    test_ort_open_coreml_cpu_device,
+    test_ort_open_threads_config,
+    test_ort_open_cuda_device_with_threads_hits_retry_path,
+    test_auto_ep_selection_order_table,
+    test_ort_open_auto_device,
+};
+
 char *run_tests(void)
 {
-    mu_run_test(test_fp32_to_fp16_normal);
-    mu_run_test(test_fp32_to_fp16_inf_nan);
-    mu_run_test(test_fp32_to_fp16_overflow);
-    mu_run_test(test_fp32_to_fp16_underflow);
-    mu_run_test(test_fp32_to_fp16_subnormal);
-    mu_run_test(test_fp16_to_fp32_normal);
-    mu_run_test(test_fp16_to_fp32_zero);
-    mu_run_test(test_fp16_to_fp32_subnormal);
-    mu_run_test(test_fp16_to_fp32_inf_nan);
-    mu_run_test(test_resolve_name_hit);
-    mu_run_test(test_resolve_name_miss);
-    mu_run_test(test_resolve_name_positional);
-    mu_run_test(test_resolve_name_positional_out_of_range);
-    mu_run_test(test_convert_non_float_output_types);
-    mu_run_test(test_ort_attached_ep_null_session);
-    mu_run_test(test_ort_close_null_session);
-    mu_run_test(test_ort_io_count_null_args);
-    mu_run_test(test_ort_input_shape_null_args);
-    mu_run_test(test_ort_input_shape_at_bounds_and_success);
-    mu_run_test(test_ort_infer_guards_and_smoke_paths);
-    mu_run_test(test_ort_infer_rejects_bad_shape);
-    mu_run_test(test_ort_infer_fp16_input_output_path);
-    mu_run_test(test_ort_run_null_guards);
-    mu_run_test(test_ort_open_null_args);
-    mu_run_test(test_ort_open_elem_types_populated);
-    mu_run_test(test_ort_open_elem_types_fp16_model);
-    mu_run_test(test_ort_run_multi_output_smoke);
-    mu_run_test(test_ort_public_accessor_coverage);
-    /* EP-device fallback tests (ADR-0113 two-stage path). */
-    mu_run_test(test_ort_open_cuda_device_falls_back_to_cpu);
-    mu_run_test(test_ort_open_openvino_device_falls_back_to_cpu);
-    mu_run_test(test_ort_open_openvino_cpu_device);
-    mu_run_test(test_ort_open_openvino_gpu_device);
-    mu_run_test(test_ort_open_openvino_npu_device);
-    mu_run_test(test_ort_open_rocm_device_falls_back_to_cpu);
-    mu_run_test(test_ort_open_coreml_device_falls_back_to_cpu);
-    mu_run_test(test_ort_open_coreml_ane_device);
-    mu_run_test(test_ort_open_coreml_gpu_device);
-    mu_run_test(test_ort_open_coreml_cpu_device);
-    mu_run_test(test_ort_open_threads_config);
-    mu_run_test(test_ort_open_cuda_device_with_threads_hits_retry_path);
-    mu_run_test(test_auto_ep_selection_order_table);
-    mu_run_test(test_ort_open_auto_device);
+    for (size_t i = 0u; i < sizeof(k_test_table) / sizeof(k_test_table[0]); ++i) {
+        mu_run_test(k_test_table[i]);
+    }
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
