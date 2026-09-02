@@ -701,3 +701,8 @@ the corrected methodology.
   `NOLINTBEGIN/END(modernize-use-nullptr)` bracket. Do not rewrite `NULL` to
   `nullptr` in C sources (MSVC `/std:clatest` does not document it; upstream
   parity), and keep the `NOLINTEND` line at end of file when appending code.
+- **Authoritative twin sides for model and unit tests (ADR-1153)**:
+  `core/src/model.c` is the sole authoritative implementation of the model-loading
+  and collection APIs; `model.cpp` was deleted as dead and stale. In `core/test/`,
+  `test_dict.cpp` and `test_feature.cpp` are the sole authoritative tests;
+  the uncompiled legacy C twins `test_dict.c` and `test_feature.c` were deleted.
