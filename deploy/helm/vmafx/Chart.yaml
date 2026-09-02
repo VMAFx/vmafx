@@ -7,10 +7,10 @@ description: >
   server (StatefulSet).
 type: application
 # Chart packaging version - independently versioned on purpose (ADR-1127,
-# reaffirmed by ADR-1151) and NOT a release-please marker. Only appVersion
-# below carries x-release-please-version; verify-release-version.sh and
-# rollover-changelog-fragments.sh both require exactly one marker per file,
-# so annotating this line too would hard-fail every release preflight.
+# reaffirmed by ADR-1151) and deliberately NOT annotated: only the appVersion
+# line below carries the release-please marker. verify-release-version.sh and
+# rollover-changelog-fragments.sh both require exactly one marker per file, so
+# annotating this line too would hard-fail every release preflight.
 version: 0.1.0
 appVersion: "3.2.1" # x-release-please-version
 home: https://github.com/VMAFx/vmafx
