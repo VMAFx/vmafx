@@ -16,11 +16,15 @@ echo "=== Ubuntu/Debian setup for vmaf fork ==="
 $SUDO apt-get update
 $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   build-essential clang clang-tidy clang-format cppcheck \
-  meson ninja-build nasm pkg-config xxd \
+  ninja-build nasm pkg-config xxd \
   python3 python3-pip python3-venv \
   git curl wget ca-certificates gnupg2 \
   doxygen \
   libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavfilter-dev
+# meson from PyPI, not apt: Ubuntu 24.04 ships meson 1.3.2, which predates
+# `c23` in c_std (added in 1.4.0); core/meson.build declares >= 1.4.0 since
+# ADR-0692. User-site keeps this sudo-free; ~/.local/bin is on PATH on CI.
+python3 -m pip install --user --upgrade meson
 
 if [[ "$INSTALL_LINTERS" == "true" ]]; then
   $SUDO apt-get install -y --no-install-recommends shellcheck
@@ -34,9 +38,10 @@ if [[ "$INSTALL_LINTERS" == "true" ]]; then
       "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64"
     $SUDO chmod +x /usr/local/bin/shfmt
   fi
-  # Python linters in user-site (no sudo pip).
+  # Python linters in user-site (no sudo pip). isort was retired in ADR-1126;
+  # ruff's `I` ruleset is the only import sorter now.
   python3 -m pip install --user --upgrade \
-    pre-commit ruff black isort mypy semgrep
+    pre-commit ruff black mypy semgrep
 fi
 
 if [[ "$ENABLE_CUDA" == "true" ]]; then

@@ -4,6 +4,11 @@
 ## chore/intel-neo-matched-set-bump (2026-09-02)
 
 no rebase impact: dev/Containerfile is fork-local.
+## fix/fuzz-dict-cpp-and-setup-meson — fuzz dict.cpp + setup script meson (2026-08-31)
+
+- `core/test/fuzz/meson.build`, `scripts/setup/ubuntu.sh` — both fork-added
+  (ADR-0270 fuzz harnesses; setup script has no upstream counterpart).
+  no rebase impact: neither file exists upstream.
 
 ## renovate/pypi-aiohttp-vulnerability — aiohttp security floor (2026-08-31)
 
