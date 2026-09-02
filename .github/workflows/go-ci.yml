@@ -71,8 +71,10 @@ jobs:
           sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
           # The tarball ships no pkg-config file; meson's enable_dnn needs one.
           sudo install -d /usr/local/lib/pkgconfig
-          # shellcheck disable=SC2016 -- ${prefix}/${libdir}/... are pkg-config
-          # template variables that must land in the .pc file literally.
+          # The single-quoted printf below is deliberate: prefix/exec_prefix/libdir/
+          # includedir are pkg-config template variables that must reach the .pc
+          # file literally, so SC2016 is a false positive here.
+          # shellcheck disable=SC2016
           printf 'prefix=/opt/onnxruntime\nexec_prefix=${prefix}\nlibdir=${exec_prefix}/lib\nincludedir=${prefix}/include\n\nName: libonnxruntime\nDescription: ONNX Runtime C API\nVersion: %s\nLibs: -L${libdir} -lonnxruntime\nCflags: -I${includedir}\n' "${ORT_VERSION}" \
             | sudo tee /usr/local/lib/pkgconfig/libonnxruntime.pc >/dev/null
           echo "/opt/onnxruntime/lib" | sudo tee /etc/ld.so.conf.d/onnxruntime.conf
