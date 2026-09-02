@@ -20769,6 +20769,16 @@ is addressed.
   - `docs/state.md`: documented all gap resolutions with Closed, Confirmed not-affected, and Deferred entries with exact blockers (`GAP-BUILD-FEATURE-COLLECTOR-CPP-TEST-ONLY`, `GAP-TINYAI-TRANSNET-V2-PLACEHOLDER-GRAPH`).
 
 
+- Metal bucket gap closure:
+  - `core/src/feature/metal/*.mm`: set `.flags = VMAF_FEATURE_EXTRACTOR_METAL` on all 9 previously unflagged Metal feature descriptors (`float_adm_metal`, `float_vif_metal`, `integer_adm_metal`, `integer_cambi_metal`, `integer_ciede_metal`, `integer_psnr_hvs_metal`, `integer_ssim_metal`, `integer_vif_metal`, `ssimulacra2_metal`), matching the other 8 extractors and enabling model-driven selection and proper end-of-stream drain (`GAP-METAL-DISPATCH-FLAGS-ZERO-MODEL-FALLBACK`).
+  - `core/src/feature/feature_extractor.cpp`: included `VMAF_FEATURE_EXTRACTOR_METAL` in `gpu_mask` to prevent CPU-only requests (`flags == 0`) from incorrectly matching Metal extractors.
+  - `core/src/libvmaf.c`: added `HAVE_METAL` check in `compute_fex_flags` to include `VMAF_FEATURE_EXTRACTOR_METAL` when an imported Metal state context is active.
+  - `core/src/dnn/ort_backend.c`: prioritized CoreML probe first under `#ifdef __APPLE__` in `VMAF_DNN_DEVICE_AUTO`, implemented selection order table `vmaf_ort_internal_auto_ep_order` with Linux-compilable unit tests in `core/test/dnn/test_ort_internals.c`, and updated documentation in `docs/ai/inference.md` (`GAP-DNN-COREML-MISSING-FROM-AUTO`).
+  - `core/include/libvmaf/libvmaf_metal.h` & `docs/backends/metal/index.md`: documented real synchronous CPU `memcpy` behavior for `vmaf_metal_picture_import` and recorded Deferred row for true zero-copy GPU texture binding (`GAP-METAL-IOSURFACE-NOT-TRUE-ZERO-COPY`).
+  - `docs/backends/metal/index.md` & `docs/metrics/features.md`: truthfully recorded SpEED family (`speed_chroma`, `speed_temporal`) as missing on Metal with CUDA porting reference and LOC estimate, and cleaned up stale path and Vulkan references in Metal docs (`GAP-METAL-MISSING-SPEED-TWINS`).
+  - `docs/state.md`: tracked all 4 gaps in the Metal bucket across Closed and Deferred sections.
+
+
 - **The Netflix golden YUV fixtures are no longer reachable by `git clean -xfd`.**
   `python/test/resource/yuv/` (160 MB, 26 files) and
   `python/test/resource/test_image_yuv/` were neither tracked nor ignored, so a

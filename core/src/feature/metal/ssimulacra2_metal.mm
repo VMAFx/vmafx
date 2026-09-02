@@ -999,7 +999,7 @@ VmafFeatureExtractor vmaf_fex_ssimulacra2_metal = {
     .options           = options,
     .priv_size         = sizeof(Ssimu2StateMetal),
     .provided_features = provided_features,
-    .flags             = 0,
+    .flags             = VMAF_FEATURE_EXTRACTOR_METAL,
     .chars = {
         /* Per scale: 3 mul + 5 blur*(H+V) = 3 + 10 = 13 dispatches;
          * worst-case 6 scales = 78. */

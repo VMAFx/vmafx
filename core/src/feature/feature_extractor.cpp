@@ -518,8 +518,8 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_by_feature_name(const char *nam
      * Fix (ADR-1100): when flags == 0, skip any GPU-flagged extractor so
      * the CPU twin is selected instead.  When flags != 0, preserve the
      * existing exact-match semantics. */
-    const unsigned gpu_mask =
-        VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL | VMAF_FEATURE_EXTRACTOR_HIP;
+    const unsigned gpu_mask = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
+                              VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL;
     for (unsigned i = 0; (fex = feature_extractor_list[i]); i++) {
         if (!fex->provided_features)
             continue;

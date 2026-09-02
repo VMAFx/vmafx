@@ -57,8 +57,8 @@ limitations in the same PR as the code.
 | FastDVDnet pre     | `fastdvdnet_pre`| No            | `fastdvdnet_pre_l1_residual`                                                                   | —                         | via ORT EP³        |
 | TransNet V2        | `transnet_v2`   | No            | `shot_boundary_probability`, `shot_boundary`                                                   | —                         | via ORT EP³        |
 | MobileSal          | `mobilesal`     | No            | `saliency_mean`                                                                                | —                         | via ORT EP³        |
-| Speed (chroma)     | `speed_chroma`  | No            | `speed_chroma_y/u/v_score`, `speed_chroma_uv_score` (only when `VMAF_FLOAT_FEATURES` enabled)  | AVX2, AVX-512             | CUDA, SYCL, HIP    |
-| Speed (temporal)   | `speed_temporal`| No            | `speed_temporal_score` family (only when `VMAF_FLOAT_FEATURES` enabled)                        | AVX2, AVX-512             | CUDA, SYCL, HIP    |
+| Speed (chroma)     | `speed_chroma`  | No            | `speed_chroma_y/u/v_score`, `speed_chroma_uv_score` (only when `VMAF_FLOAT_FEATURES` enabled)  | AVX2, AVX-512             | CUDA, SYCL, HIP (Metal missing — deferred) |
+| Speed (temporal)   | `speed_temporal`| No            | `speed_temporal_score` family (only when `VMAF_FLOAT_FEATURES` enabled)                        | AVX2, AVX-512             | CUDA, SYCL, HIP (Metal missing — deferred) |
 | BRISQUE            | `brisque`       | No            | `brisque_score` (no-reference)                                                                 | —                         | —                  |
 | Delta E ITP        | `delta_e_itp`   | No            | `delta_e_itp`                                                                                  | —                         | —                  |
 | PU21               | `pu21`          | No            | `pu21_psnr`, `pu21_ssim`                                                                       | —                         | —                  |
@@ -997,7 +997,8 @@ plus a combined U+V score.
 - **Output metrics** — `Speed_chroma_feature_speed_chroma_y_score`,
   `..._u_score`, `..._v_score`, `..._uv_score`.
 - **Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc.
-- **Backends** — scalar only.
+- **Backends** — CPU (scalar, AVX2, AVX-512), GPU (CUDA, SYCL, HIP;
+  Metal missing — deferred under `GAP-METAL-MISSING-SPEED-TWINS`).
 
 #### `speed_temporal`
 
@@ -1010,7 +1011,8 @@ considered (flicker, judder).
 - **Output metrics** — `Speed_temporal_*_score` family (see the
   registered `provided_features[]` in `core/src/feature/speed.c`).
 - **Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc.
-- **Backends** — scalar only.
+- **Backends** — CPU (scalar, AVX2, AVX-512), GPU (CUDA, SYCL, HIP;
+  Metal missing — deferred under `GAP-METAL-MISSING-SPEED-TWINS`).
 
 #### Options (shared)
 

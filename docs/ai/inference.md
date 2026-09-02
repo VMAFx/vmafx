@@ -348,7 +348,7 @@ corresponding `VmafDnnDevice` enum values (ADR-0482).
 | `--tiny-device coreml-gpu` | CoreMLExecutionProvider, `MLComputeUnits=CPUAndGPU` | Pins CoreML to Metal-backed GPU + CPU. Useful when a graph hits ANE op-coverage gaps and falls back to CPU more aggressively than expected. |
 | `--tiny-device coreml-cpu` | CoreMLExecutionProvider, `MLComputeUnits=CPUOnly` | Universal CoreML CPU path. Functionally similar to the plain CPU EP but exercises the same dispatch shape as the other coreml-* variants — useful for diff-style debugging on macOS. |
 | `--tiny-device rocm` | ROCmExecutionProvider | Requires ROCm-enabled ORT. |
-| `--tiny-device auto` | best available | Ordered try-chain: CUDA → OpenVINO (GPU then CPU) → ROCm → CoreML (auto-route) → CPU. NPU is **not** in the AUTO chain — opt-in only via `--tiny-device openvino-npu` because of NPU power-state latency floor on small graphs. CoreML is last because the recommended Apple-silicon entry point is `--tiny-device=coreml-ane`; AUTO picks CoreML only when no discrete-GPU EP is available. |
+| `--tiny-device auto` | best available | Ordered try-chain depends on platform: on macOS (`__APPLE__`), CoreML (auto-route across ANE/GPU/CPU) is probed first: CoreML → CUDA → OpenVINO:GPU → ROCm → CPU, targeting Apple Silicon immediately. On other platforms: CUDA → OpenVINO:GPU → ROCm → CoreML → CPU. NPU is **not** in the AUTO chain — opt-in only via `--tiny-device openvino-npu` because of NPU power-state latency floor on small graphs. |
 
 ### Graceful EP fallback
 
@@ -367,7 +367,7 @@ VmafDnnSession *sess;
 vmaf_dnn_session_open(&sess, "/models/m.onnx",
                       &(VmafDnnConfig){.device = VMAF_DNN_DEVICE_AUTO});
 printf("bound EP: %s\n", vmaf_dnn_session_attached_ep(sess));
-/* One of: "CPU", "CUDA", "OpenVINO:GPU", "OpenVINO:CPU", "OpenVINO:NPU", "ROCm" */
+/* One of: "CPU", "CUDA", "OpenVINO:GPU", "OpenVINO:CPU", "OpenVINO:NPU", "ROCm", "CoreML", "CoreML:ANE", "CoreML:GPU", "CoreML:CPU" */
 ```
 
 Consumers that need a hard failure on missing EP should assert on the

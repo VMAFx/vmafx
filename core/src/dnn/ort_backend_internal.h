@@ -82,6 +82,12 @@ VmafOrtElemType vmaf_ort_internal_input_elem_type(const VmafOrtSession *sess, si
  */
 VmafOrtElemType vmaf_ort_internal_output_elem_type(const VmafOrtSession *sess, size_t slot);
 
+/**
+ * Return a NULL-terminated array of EP names tested by VMAF_DNN_DEVICE_AUTO in order.
+ * @param is_apple  non-zero for macOS (__APPLE__) probe order, zero for default.
+ */
+const char *const *vmaf_ort_internal_auto_ep_order(int is_apple);
+
 #ifdef __cplusplus
 }
 #endif

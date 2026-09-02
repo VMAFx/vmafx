@@ -17,10 +17,13 @@
 >
 > The dispatch support predicate recognises both those extractor names
 > and every key in their provided-features arrays (`psnr_y`, `psnr_cb`,
-> `psnr_cr`, `float_ms_ssim`, `vif`, `adm_num`, `ciede2000`,
-> `Cambi_feature_cambi_score`, `ssimulacra2`, etc.). The one remaining
-> Metal-twin gap is the SpEED family (`speed_chroma` / `speed_temporal`),
-> which has CUDA/SYCL/HIP twins but no Metal kernel yet.
+> The one remaining Metal-twin gap is the SpEED family (`speed_chroma` /
+> `speed_temporal`), which has CUDA/SYCL/HIP twins but no Metal kernel yet
+> (missing, deferred under `GAP-METAL-MISSING-SPEED-TWINS`). The CUDA twin
+> (`core/src/feature/cuda/speed/speed_score.cu`, `speed_chroma_cuda.c`,
+> `speed_temporal_cuda.c`) serves as the porting reference (~2,000 LOC total
+> estimate: ~350 LOC MSL kernels, ~900 LOC `speed_chroma_metal.mm`, ~750 LOC
+> `speed_temporal_metal.mm`).
 >
 > Governing ADRs:
 > [ADR-0361](../../adr/0361-metal-compute-backend.md),
@@ -39,7 +42,7 @@ Three properties make a native Metal backend worth shipping:
 
 1. **Unified memory.** `MTLBuffer` allocations created with
    `MTLResourceStorageModeShared` are zero-copy across CPU↔GPU; the
-   submit-side H2D / D2H staging the CUDA / HIP / Vulkan backends
+   submit-side H2D / D2H staging the CUDA and HIP backends
    spend the bulk of their complexity on collapses to host stores
    and direct `[buffer contents]` reads.
 2. **First-party Apple compute API.** OpenCL is deprecated since
@@ -105,9 +108,23 @@ Kernel sources are Metal Shading Language (`.metal`) compiled to
 `__TEXT,__metallib` section and loaded by the Obj-C++ host dispatch
 files.
 
+## Picture storage and IOSurface import
+
+`picture_metal.mm` allocates shared-storage `MTLBuffer` objects
+(`MTLResourceStorageModeShared`), enabling zero-copy memory access between
+CPU and Apple Silicon GPU without PCIe staging.
+
+External frames imported via `vmaf_metal_picture_import` (e.g. from VideoToolbox
+hardware decoding) are currently handled via `IOSurfaceLock` followed by a
+synchronous CPU `memcpy` into the shared-storage `VmafPicture` buffer (ADR-0423).
+True zero-copy GPU texture or buffer binding without CPU memcpy
+(`[MTLDevice newTextureWithDescriptor:iosurface:plane:]` or direct buffer pointer
+mapping with GPU completion/fence tracking) is deferred under
+`GAP-METAL-IOSURFACE-NOT-TRUE-ZERO-COPY`.
+
 ## Rollout sequence
 
-1. **T8-1 (scaffold PR + batch-1)** — public header, `src/metal`
+1. **T8-1 (scaffold PR + batch-1)** — public header, `core/src/metal`
    tree, first consumer registrations, `enable_metal` Meson option,
    smoke test, and macOS CI lane.
 2. **T8-1b (runtime PR)** — `MTLCreateSystemDefaultDevice` /
@@ -115,20 +132,18 @@ files.
    points return `0` on a real Apple Silicon device and `-ENODEV` on
    Intel Mac or non-Apple-Family-7 GPUs.
 3. **T8-1c…T8-1j (first kernel batch)** — `motion_v2`, float/integer
-   PSNR, float moment, float ANSNR, float/integer motion, and float SSIM
+   PSNR, float moment, float/integer motion, and float SSIM
    host dispatch + MSL kernels.
-4. **T8-1k** — `integer_moment_metal` (uint32 hi/lo reduction).
-5. **T8-2b** — `float_ms_ssim_metal` (ADR-0490): float-precision 5-scale
+4. **T8-2b** — `float_ms_ssim_metal` (ADR-0490): float-precision 5-scale
    MS-SSIM on Metal. Three MSL kernels (`ms_ssim_decimate`, `ms_ssim_horiz`,
    `ms_ssim_vert_lcs`); Wang (2003) weights applied host-side in double
    precision.
-6. **T8-2c+** — remaining kernels (VIF, ADM, CIEDE, CAMBI, SSIMULACRA2,
+5. **T8-2c+** — remaining kernels (VIF, ADM, CIEDE, CAMBI, SSIMULACRA2,
    etc.) follow as their own PRs gated by the `places=4`
    cross-backend-diff lane (per [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md)).
-5. **`enable_metal` default flip** from `auto` to `enabled`: only
+6. **`enable_metal` default flip** from `auto` to `enabled`: only
    after the kernel matrix proves bit-exactness via the `places=4`
-   cross-backend gate (mirrors the `enable_vulkan` and `enable_hip`
-   roadmaps).
+   cross-backend gate (mirrors the `enable_hip` roadmap).
 
 ## Feature extractor options
 

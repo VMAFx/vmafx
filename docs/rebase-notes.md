@@ -1,6 +1,22 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## gap/metal-bucket — Metal gap bucket closure & dispatch alignment (2026-09-02)
+
+- `core/src/feature/metal/*.mm`: set `.flags = VMAF_FEATURE_EXTRACTOR_METAL` across all 9
+  previously-unflagged Metal feature descriptors (`float_adm_metal`, `float_vif_metal`,
+  `integer_adm_metal`, `integer_cambi_metal`, `integer_ciede_metal`, `integer_psnr_hvs_metal`,
+  `integer_ssim_metal`, `integer_vif_metal`, `ssimulacra2_metal`).
+- `core/src/feature/feature_extractor.cpp`: included `VMAF_FEATURE_EXTRACTOR_METAL` in `gpu_mask`
+  so that CPU-only requests (`flags == 0`) filter out Metal extractors identically to CUDA/SYCL/HIP.
+- `core/src/libvmaf.c`: added `HAVE_METAL` check in `compute_fex_flags` to OR
+  `VMAF_FEATURE_EXTRACTOR_METAL` when a Metal context is active (`vmaf->metal.state != NULL`).
+- `core/src/dnn/ort_backend.c`, `core/src/dnn/ort_backend_internal.h`, `core/test/dnn/test_ort_internals.c`:
+  probed CoreML under `#ifdef __APPLE__` first in `VMAF_DNN_DEVICE_AUTO`, implemented selection order
+  table helper `vmaf_ort_internal_auto_ep_order(int is_apple)` and unit tests.
+- `core/include/libvmaf/libvmaf_metal.h`, `docs/backends/metal/index.md`, `docs/metrics/features.md`,
+  `docs/ai/inference.md`: aligned documentation and doc comments with runtime truth.
+
 ## gap/cpu-ci-bucket — retire dead orphan motion_v2 x86 SIMD duplicate files (GAP-BUILD-ORPHAN-DEAD-SIMD-MOTION-V2)
 
 - `core/src/feature/x86/motion_v2_avx2.{c,h}` and `motion_v2_avx512.{c,h}` were removed.

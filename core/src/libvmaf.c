@@ -1651,11 +1651,11 @@ int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDic
 
 /* Compose the extractor-selection flag mask from the active backends.
  * HIP is host-pic only (no gpumask gate, no device-picture pool)
- * per ADR-0530. */
+ * per ADR-0530. Metal uses caller-imported state per ADR-0423. */
 static unsigned compute_fex_flags(const VmafContext *vmaf)
 {
     unsigned fex_flags = 0;
-#if !defined(HAVE_CUDA) && !defined(HAVE_SYCL) && !defined(HAVE_HIP)
+#if !defined(HAVE_CUDA) && !defined(HAVE_SYCL) && !defined(HAVE_HIP) && !defined(HAVE_METAL)
     (void)vmaf; /* CPU-only build: no backend slots to inspect. */
 #endif
 #ifdef HAVE_CUDA
@@ -1672,6 +1672,12 @@ static unsigned compute_fex_flags(const VmafContext *vmaf)
      * backend is host-pic (no gpumask gate). */
     if (vmaf->hip.state)
         fex_flags |= VMAF_FEATURE_EXTRACTOR_HIP;
+#endif
+#ifdef HAVE_METAL
+    /* Metal-flagged extractors are selected when a Metal state
+     * pointer has been imported via vmaf_metal_import_state(). */
+    if (vmaf->metal.state)
+        fex_flags |= VMAF_FEATURE_EXTRACTOR_METAL;
 #endif
     return fex_flags;
 }
