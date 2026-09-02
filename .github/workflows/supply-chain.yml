@@ -411,7 +411,7 @@ jobs:
       actions: read
     # Sole tag-pin exception: the SLSA generator rejects SHA-pinned reusable
     # workflow refs because its builder identity must be refs/tags/vX.Y.Z.
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
     with:
       base64-subjects: ${{ needs.build-artifacts.outputs.hashes }}
       provenance-name: vmafx-build-provenance.intoto.jsonl
@@ -514,7 +514,7 @@ jobs:
       contents: read
       actions: read
     # See the documented SLSA reusable-workflow tag-pin exception above.
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
     with:
       base64-subjects: ${{ needs.mcp-build.outputs.hashes }}
       provenance-name: vmaf-mcp-provenance.intoto.jsonl
