@@ -15245,6 +15245,18 @@ See [ADR-0356](docs/adr/0356-vulkan-two-level-gpu-reduction.md) and
 - **Whole-codebase standards + clang-tidy ratchet (ADR-1142).** Every coding standard and lint gate now applies to the entire tree (upstream-mirror, vendored, GPU kernels, SIMD, tests, tools). New `scripts/ci/tidy-ratchet.py` measures every translation unit and compares per file against committed baselines (`scripts/ci/tidy-baseline-{cpu,cuda,sycl,hip}.json`); the required CI context `Clang-Tidy Ratchet (Whole Tree)` fails on any file above its baseline and on any cleaned file whose baseline was not tightened (`make tidy-ratchet-write`). The nightly full scan no longer swallows failures. Baselines at landing: cpu 5,241 warnings / 281 TUs / 83 uncited NOLINTs, cuda 1,650, sycl 716, hip 1,173.
 
 
+- **x86 ADM SIMD macro hygiene and clang-tidy zero-warning gate**:
+  Cleaned macro definitions and pointer arithmetic in `core/src/feature/x86/adm_avx2.c`
+  (reduced from 570 to 0 warnings) and `core/src/feature/x86/adm_avx512.c` (reduced
+  from 561 to 0 warnings). Parenthesized all macro parameters and expansions in
+  thresholding and accumulation macros (`ADM_CM_THRESH_*`, `I4_ADM_CM_THRESH_*`,
+  `ADM_CM_ACCUM_ROUND*`), cast pointer arithmetic products to `(ptrdiff_t)` to prevent
+  implicit widening, removed dead `print_*` debug macros in `adm_avx512.c`, included
+  `adm_avx2.h` in `adm_avx2.c` for internal linkage consistency, and added inline
+  ADR-0138/0139 and ADR-0141 citations to preserve bit-exact register allocation and
+  reduction order across all 11 AVX2 and AVX-512 kernels.
+
+
 - Replace `go.uber.org/zap` with the standard-library `log/slog` package in
   `cmd/vmafx-operator/main.go` and its envtest suite. The operator was the
   last of 25 Go importers still using the kubebuilder-template-default zap
