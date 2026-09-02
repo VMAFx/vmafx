@@ -96,7 +96,10 @@
  * for typical errno but never exactly -100 in practice). */
 #define VMAF_INIT_GPU_EXPLICIT_FAIL (-100)
 
-static enum VmafPixelFormat pix_fmt_map(int pf)
+namespace
+{
+
+enum VmafPixelFormat pix_fmt_map(int pf)
 {
     switch (pf) {
     case PF_420:
@@ -132,8 +135,8 @@ static enum VmafPixelFormat pix_fmt_map(int pf)
  * errno-style) or 0 when the failure is structural (e.g. backend not
  * compiled in).
  */
-static void write_backend_error_json(const char *output_path, enum VmafOutputFormat fmt,
-                                     const char *backend_requested, const char *reason, int err_no)
+void write_backend_error_json(const char *output_path, enum VmafOutputFormat fmt,
+                              const char *backend_requested, const char *reason, int err_no)
 {
     if (!output_path || !backend_requested || !reason)
         return;
@@ -145,7 +148,7 @@ static void write_backend_error_json(const char *output_path, enum VmafOutputFor
 #ifdef _WIN32
     FILE *fp = fopen(output_path, "wb");
 #else
-    int raw_fd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    const int raw_fd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     FILE *fp = (raw_fd >= 0) ? fdopen(raw_fd, "wb") : nullptr;
     if (!fp && raw_fd >= 0)
         (void)close(raw_fd);
@@ -164,7 +167,7 @@ static void write_backend_error_json(const char *output_path, enum VmafOutputFor
 
 /* Validate per-video constraints that do not require comparing the two streams:
  * supported bitdepth range and positive (non-zero) frame dimensions. */
-[[nodiscard]] static int validate_video_info(const video_input_info *info)
+[[nodiscard]] int validate_video_info(const video_input_info *info)
 {
     int err_cnt = 0;
 
@@ -186,7 +189,7 @@ static void write_backend_error_json(const char *output_path, enum VmafOutputFor
 /* Chroma-subsampled formats require even dimensions on the subsampled axes so
  * that the chroma planes contain whole pixels.  PF_420 subsamples both X and
  * Y; PF_422 subsamples X only. */
-[[nodiscard]] static int validate_chroma_alignment(const video_input_info *info)
+[[nodiscard]] int validate_chroma_alignment(const video_input_info *info)
 {
     int err_cnt = 0;
 
@@ -207,7 +210,7 @@ static void write_backend_error_json(const char *output_path, enum VmafOutputFor
     return err_cnt;
 }
 
-[[nodiscard]] static int validate_videos(video_input *vid1, video_input *vid2, bool common_bitdepth)
+[[nodiscard]] int validate_videos(video_input *vid1, video_input *vid2, bool common_bitdepth)
 {
     int err_cnt = 0;
 
@@ -254,18 +257,17 @@ static void write_backend_error_json(const char *output_path, enum VmafOutputFor
  * (ADR-0141 §2 load-bearing invariant: per-frame indirect-call cost;
  * T7-5 sweep closeout — ADR-0278).
  */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size)
-static void copy_picture_data(VmafPicture *pic, video_input_ycbcr ycbcr, video_input_info *info,
-                              int depth)
+// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-1155: per-frame pixel unpacking loop
+void copy_picture_data(VmafPicture *pic, video_input_ycbcr ycbcr, video_input_info *info, int depth)
 {
     if (info->depth == depth) {
         if (info->depth == 8) {
             for (unsigned i = 0; i < 3; i++) {
-                int xdec = i && !(info->pixel_fmt & 1);
-                int ydec = i && !(info->pixel_fmt & 2);
-                uint8_t *ycbcr_data = ycbcr[i].data +
-                                      static_cast<size_t>(info->pic_y >> ydec) * ycbcr[i].stride +
-                                      (info->pic_x >> xdec);
+                const int xdec = i && !(info->pixel_fmt & 1);
+                const int ydec = i && !(info->pixel_fmt & 2);
+                const uint8_t *ycbcr_data =
+                    ycbcr[i].data + static_cast<size_t>(info->pic_y >> ydec) * ycbcr[i].stride +
+                    (info->pic_x >> xdec);
                 uint8_t *pic_data = static_cast<uint8_t *>(pic->data[i]);
 
                 for (unsigned j = 0; j < pic->h[i]; j++) {
@@ -276,10 +278,10 @@ static void copy_picture_data(VmafPicture *pic, video_input_ycbcr ycbcr, video_i
             }
         } else {
             for (unsigned i = 0; i < 3; i++) {
-                int xdec = i && !(info->pixel_fmt & 1);
-                int ydec = i && !(info->pixel_fmt & 2);
-                uint16_t *ycbcr_data =
-                    static_cast<uint16_t *>(static_cast<void *>(ycbcr[i].data)) +
+                const int xdec = i && !(info->pixel_fmt & 1);
+                const int ydec = i && !(info->pixel_fmt & 2);
+                const uint16_t *ycbcr_data =
+                    reinterpret_cast<const uint16_t *>(ycbcr[i].data) +
                     static_cast<size_t>(info->pic_y >> ydec) * (ycbcr[i].stride / 2) +
                     (info->pic_x >> xdec);
                 uint16_t *pic_data = static_cast<uint16_t *>(pic->data[i]);
@@ -294,14 +296,14 @@ static void copy_picture_data(VmafPicture *pic, video_input_ycbcr ycbcr, video_i
     } else if (depth > 8) {
         // unequal bit-depth
         // therefore depth must be > 8 since we do not support depth < 8
-        int left_shift = depth - info->depth;
+        const int left_shift = depth - info->depth;
         if (info->depth == 8) {
             for (unsigned i = 0; i < 3; i++) {
-                int xdec = i && !(info->pixel_fmt & 1);
-                int ydec = i && !(info->pixel_fmt & 2);
-                uint8_t *ycbcr_data = ycbcr[i].data +
-                                      static_cast<size_t>(info->pic_y >> ydec) * ycbcr[i].stride +
-                                      (info->pic_x >> xdec);
+                const int xdec = i && !(info->pixel_fmt & 1);
+                const int ydec = i && !(info->pixel_fmt & 2);
+                const uint8_t *ycbcr_data =
+                    ycbcr[i].data + static_cast<size_t>(info->pic_y >> ydec) * ycbcr[i].stride +
+                    (info->pic_x >> xdec);
                 uint16_t *pic_data = static_cast<uint16_t *>(pic->data[i]);
 
                 for (unsigned j = 0; j < pic->h[i]; j++) {
@@ -314,10 +316,10 @@ static void copy_picture_data(VmafPicture *pic, video_input_ycbcr ycbcr, video_i
             }
         } else {
             for (unsigned i = 0; i < 3; i++) {
-                int xdec = i && !(info->pixel_fmt & 1);
-                int ydec = i && !(info->pixel_fmt & 2);
-                uint16_t *ycbcr_data =
-                    static_cast<uint16_t *>(static_cast<void *>(ycbcr[i].data)) +
+                const int xdec = i && !(info->pixel_fmt & 1);
+                const int ydec = i && !(info->pixel_fmt & 2);
+                const uint16_t *ycbcr_data =
+                    reinterpret_cast<const uint16_t *>(ycbcr[i].data) +
                     static_cast<size_t>(info->pic_y >> ydec) * (ycbcr[i].stride / 2) +
                     (info->pic_x >> xdec);
                 uint16_t *pic_data = static_cast<uint16_t *>(pic->data[i]);
@@ -334,7 +336,7 @@ static void copy_picture_data(VmafPicture *pic, video_input_ycbcr ycbcr, video_i
     }
 }
 
-[[nodiscard]] static int finish_unread_picture(VmafPicture *pic, int fetch_ret)
+[[nodiscard]] int finish_unread_picture(VmafPicture *pic, int fetch_ret)
 {
     const int err_unref = vmaf_picture_unref(pic);
     if (err_unref)
@@ -342,8 +344,7 @@ static void copy_picture_data(VmafPicture *pic, video_input_ycbcr ycbcr, video_i
     return fetch_ret == 0 ? 1 : -1;
 }
 
-[[nodiscard]] static int fetch_picture(VmafContext *vmaf, video_input *vid, VmafPicture *pic,
-                                       int depth)
+[[nodiscard]] int fetch_picture(VmafContext *vmaf, video_input *vid, VmafPicture *pic, int depth)
 {
     int ret;
     video_input_info info;
@@ -379,63 +380,109 @@ static void copy_picture_data(VmafPicture *pic, video_input_ycbcr ycbcr, video_i
  *
  * ADR-0809: replaces the manual free()/vmaf_model*_destroy() calls that
  * were previously duplicated across three locations in main(). */
-struct ModelArrays {
-    VmafModel **model{nullptr};
-    VmafModelCollection **collection{nullptr};
-    const char **collection_label{nullptr};
-    unsigned model_cnt{0};
-    unsigned collection_cnt{0};
+class ModelArrays
+{
+  private:
+    VmafModel **m_model{nullptr};
+    VmafModelCollection **m_collection{nullptr};
+    const char **m_collection_label{nullptr};
+    unsigned m_model_cnt{0};
+    unsigned m_collection_cnt{0};
 
+  public:
     ModelArrays() = default;
 
-    /* Non-copyable, moveable */
+    /* Non-copyable, non-moveable */
     ModelArrays(const ModelArrays &) = delete;
     ModelArrays &operator=(const ModelArrays &) = delete;
+    ModelArrays(ModelArrays &&) = delete;
+    ModelArrays &operator=(ModelArrays &&) = delete;
+
+    [[nodiscard]] VmafModel **model() noexcept
+    {
+        return m_model;
+    }
+    [[nodiscard]] VmafModel *const *model() const noexcept
+    {
+        return m_model;
+    }
+    [[nodiscard]] VmafModelCollection **collection() noexcept
+    {
+        return m_collection;
+    }
+    [[nodiscard]] VmafModelCollection *const *collection() const noexcept
+    {
+        return m_collection;
+    }
+    [[nodiscard]] const char **collection_label() noexcept
+    {
+        return m_collection_label;
+    }
+    [[nodiscard]] const char *const *collection_label() const noexcept
+    {
+        return m_collection_label;
+    }
+    [[nodiscard]] unsigned &model_cnt() noexcept
+    {
+        return m_model_cnt;
+    }
+    [[nodiscard]] unsigned model_cnt() const noexcept
+    {
+        return m_model_cnt;
+    }
+    [[nodiscard]] unsigned &collection_cnt() noexcept
+    {
+        return m_collection_cnt;
+    }
+    [[nodiscard]] unsigned collection_cnt() const noexcept
+    {
+        return m_collection_cnt;
+    }
 
     [[nodiscard]] int allocate(unsigned cnt)
     {
-        model_cnt = cnt;
+        m_model_cnt = cnt;
         if (cnt == 0)
             return 0;
 
-        model = static_cast<VmafModel **>(malloc(sizeof(*model) * cnt));
-        if (!model)
+        m_model = static_cast<VmafModel **>(malloc(sizeof(*m_model) * cnt));
+        if (!m_model)
             return -1;
-        memset(static_cast<void *>(model), 0, sizeof(*model) * cnt);
+        (void)memset(static_cast<void *>(m_model), 0, sizeof(*m_model) * cnt);
 
-        collection = static_cast<VmafModelCollection **>(malloc(sizeof(*collection) * cnt));
-        if (!collection)
+        m_collection = static_cast<VmafModelCollection **>(malloc(sizeof(*m_collection) * cnt));
+        if (!m_collection)
             return -1;
-        memset(static_cast<void *>(collection), 0, sizeof(*collection) * cnt);
+        (void)memset(static_cast<void *>(m_collection), 0, sizeof(*m_collection) * cnt);
 
-        collection_label = static_cast<const char **>(malloc(sizeof(*collection_label) * cnt));
-        if (!collection_label)
+        m_collection_label = static_cast<const char **>(malloc(sizeof(*m_collection_label) * cnt));
+        if (!m_collection_label)
             return -1;
-        memset(static_cast<void *>(collection_label), 0, sizeof(*collection_label) * cnt);
+        (void)memset(static_cast<void *>(m_collection_label), 0, sizeof(*m_collection_label) * cnt);
 
         return 0;
     }
 
     ~ModelArrays()
     {
-        if (model) {
-            for (unsigned i = 0; i < model_cnt; i++)
-                vmaf_model_destroy(model[i]);
-            free(static_cast<void *>(model));
+        if (m_model) {
+            for (unsigned i = 0; i < m_model_cnt; i++)
+                vmaf_model_destroy(m_model[i]);
+            free(static_cast<void *>(m_model));
         }
-        if (collection) {
-            for (unsigned i = 0; i < collection_cnt; i++)
-                vmaf_model_collection_destroy(collection[i]);
-            free(static_cast<void *>(collection));
+        if (m_collection) {
+            for (unsigned i = 0; i < m_collection_cnt; i++)
+                vmaf_model_collection_destroy(m_collection[i]);
+            free(static_cast<void *>(m_collection));
         }
-        free(static_cast<void *>(collection_label));
+        free(static_cast<void *>(m_collection_label));
     }
 };
 
 /* Helper: pick the human-readable label (version preferred over path) for
  * the given model-config entry, used in error messages.
  */
-static const char *model_label(const CLISettings *c, unsigned i)
+const char *model_label(const CLISettings *c, unsigned i)
 {
     return c->model_config[i].version ? c->model_config[i].version : c->model_config[i].path;
 }
@@ -445,18 +492,18 @@ static const char *model_label(const CLISettings *c, unsigned i)
  * before returning so the caller's cleanup loop unwinds the partially
  * initialised entry. Returns 0 on success.
  */
-[[nodiscard]] static int load_model_collection_entry(VmafContext *vmaf, CLISettings *c, unsigned i,
-                                                     ModelArrays &arrays)
+[[nodiscard]] int load_model_collection_entry(VmafContext *vmaf, CLISettings *c, unsigned i,
+                                              ModelArrays &arrays)
 {
-    unsigned *slot = &arrays.collection_cnt;
+    unsigned *slot = &arrays.collection_cnt();
     int err;
 
     if (c->model_config[i].version) {
-        err = vmaf_model_collection_load(&arrays.model[i], &arrays.collection[*slot],
+        err = vmaf_model_collection_load(&arrays.model()[i], &arrays.collection()[*slot],
                                          &c->model_config[i].cfg, c->model_config[i].version);
     } else {
         err =
-            vmaf_model_collection_load_from_path(&arrays.model[i], &arrays.collection[*slot],
+            vmaf_model_collection_load_from_path(&arrays.model()[i], &arrays.collection()[*slot],
                                                  &c->model_config[i].cfg, c->model_config[i].path);
     }
 
@@ -465,11 +512,12 @@ static const char *model_label(const CLISettings *c, unsigned i)
         return -1;
     }
 
-    arrays.collection_label[*slot] = model_label(c, i);
+    arrays.collection_label()[*slot] = model_label(c, i);
 
     for (unsigned j = 0; j < c->model_config[i].overload_cnt; j++) {
         err = vmaf_model_collection_feature_overload(
-            arrays.model[i], &arrays.collection[*slot], c->model_config[i].feature_overload[j].name,
+            arrays.model()[i], &arrays.collection()[*slot],
+            c->model_config[i].feature_overload[j].name,
             c->model_config[i].feature_overload[j].opts_dict);
         if (err) {
             (void)fprintf(stderr,
@@ -480,7 +528,7 @@ static const char *model_label(const CLISettings *c, unsigned i)
         }
     }
 
-    err = vmaf_use_features_from_model_collection(vmaf, arrays.collection[*slot]);
+    err = vmaf_use_features_from_model_collection(vmaf, arrays.collection()[*slot]);
     if (err) {
         (void)fprintf(stderr, "problem loading feature extractors from model collection: %s\n",
                       model_label(c, i));
@@ -496,16 +544,16 @@ static const char *model_label(const CLISettings *c, unsigned i)
  * vs model-collection fallback that the `--model` option's overloaded
  * semantics require.
  */
-[[nodiscard]] static int load_one_model_entry(VmafContext *vmaf, CLISettings *c, unsigned i,
-                                              ModelArrays &arrays)
+[[nodiscard]] int load_one_model_entry(VmafContext *vmaf, CLISettings *c, unsigned i,
+                                       ModelArrays &arrays)
 {
     int err;
 
     if (c->model_config[i].version) {
-        err =
-            vmaf_model_load(&arrays.model[i], &c->model_config[i].cfg, c->model_config[i].version);
+        err = vmaf_model_load(&arrays.model()[i], &c->model_config[i].cfg,
+                              c->model_config[i].version);
     } else {
-        err = vmaf_model_load_from_path(&arrays.model[i], &c->model_config[i].cfg,
+        err = vmaf_model_load_from_path(&arrays.model()[i], &c->model_config[i].cfg,
                                         c->model_config[i].path);
     }
 
@@ -517,7 +565,7 @@ static const char *model_label(const CLISettings *c, unsigned i)
     }
 
     for (unsigned j = 0; j < c->model_config[i].overload_cnt; j++) {
-        err = vmaf_model_feature_overload(arrays.model[i],
+        err = vmaf_model_feature_overload(arrays.model()[i],
                                           c->model_config[i].feature_overload[j].name,
                                           c->model_config[i].feature_overload[j].opts_dict);
         if (err) {
@@ -527,7 +575,7 @@ static const char *model_label(const CLISettings *c, unsigned i)
         }
     }
 
-    err = vmaf_use_features_from_model(vmaf, arrays.model[i]);
+    err = vmaf_use_features_from_model(vmaf, arrays.model()[i]);
     if (err) {
         (void)fprintf(stderr, "problem loading feature extractors from model: %s\n",
                       model_label(c, i));
@@ -545,9 +593,9 @@ static const char *model_label(const CLISettings *c, unsigned i)
  * for cleanup unwinding. Returns 0 on success, -1 on any failure (caller
  * should treat as fatal and `goto cleanup`).
  */
-[[nodiscard]] static int open_input_videos(const CLISettings *c, FILE **file_ref, FILE **file_dist,
-                                           video_input *vid_ref, video_input *vid_dist,
-                                           bool *vid_ref_open, bool *vid_dist_open)
+[[nodiscard]] int open_input_videos(const CLISettings *c, FILE **file_ref, FILE **file_dist,
+                                    video_input *vid_ref, video_input *vid_dist, bool *vid_ref_open,
+                                    bool *vid_dist_open)
 {
     int err;
 
@@ -605,23 +653,23 @@ static const char *model_label(const CLISettings *c, unsigned i)
  * (ADR-0141 §2 load-bearing invariant: backend-priority chain
  * readability + #ifdef discipline; T7-5 sweep closeout — ADR-0278).
  */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size)
-[[nodiscard]] static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
+// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-1155: backend priority chain and context init
+[[nodiscard]] int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
 #ifdef HAVE_SYCL
-                                           ,
-                                           VmafSyclState **sycl_state, bool *sycl_active
+                                    ,
+                                    VmafSyclState **sycl_state, bool *sycl_active
 #endif
 #ifdef HAVE_CUDA
-                                           ,
-                                           bool *cuda_active_out
+                                    ,
+                                    bool *cuda_active_out
 #endif
 #ifdef HAVE_HIP
-                                           ,
-                                           VmafHipState **hip_state, bool *hip_active
+                                    ,
+                                    VmafHipState **hip_state, bool *hip_active
 #endif
 #ifdef HAVE_METAL
-                                           ,
-                                           VmafMetalState **metal_state, bool *metal_active
+                                    ,
+                                    VmafMetalState **metal_state, bool *metal_active
 #endif
 )
 {
@@ -645,7 +693,7 @@ static const char *model_label(const CLISettings *c, unsigned i)
      * surface that as a hard error too — otherwise the CLI silently
      * runs on CPU and the user has no signal beyond stderr. */
     if (explicit_backend) {
-        bool compiled_in = false;
+        const bool compiled_in = false;
 #ifdef HAVE_SYCL
         if (strcmp(c->backend, "sycl") == 0)
             compiled_in = true;
@@ -817,7 +865,7 @@ static const char *model_label(const CLISettings *c, unsigned i)
  * Returns the backend keyword via *requested_backend_out (caller-
  * owned; points into a static string table) so the caller can include
  * the keyword in the error JSON. */
-[[nodiscard]] static int feature_backend_suffix(const char *feature_name, const char **backend_out)
+[[nodiscard]] int feature_backend_suffix(const char *feature_name, const char **backend_out)
 {
     if (!feature_name || !backend_out)
         return 0;
@@ -825,16 +873,16 @@ static const char *model_label(const CLISettings *c, unsigned i)
         const char *suffix;
         const char *backend;
     } table[] = {
-        {"_cuda", "cuda"},
-        {"_sycl", "sycl"},
-        {"_hip", "hip"},
-        {"_metal", "metal"},
+        {.suffix = "_cuda", .backend = "cuda"},
+        {.suffix = "_sycl", .backend = "sycl"},
+        {.suffix = "_hip", .backend = "hip"},
+        {.suffix = "_metal", .backend = "metal"},
     };
     const size_t nlen = strlen(feature_name);
-    for (size_t i = 0; i < sizeof(table) / sizeof(table[0]); i++) {
-        const size_t slen = strlen(table[i].suffix);
-        if (nlen > slen && strcmp(feature_name + nlen - slen, table[i].suffix) == 0) {
-            *backend_out = table[i].backend;
+    for (const auto &item : table) {
+        const size_t slen = strlen(item.suffix);
+        if (nlen > slen && strcmp(feature_name + nlen - slen, item.suffix) == 0) {
+            *backend_out = item.backend;
             return 1;
         }
     }
@@ -845,8 +893,8 @@ static const char *model_label(const CLISettings *c, unsigned i)
  * succeeded and the matching ``--<backend>_device`` was requested),
  * 0 otherwise. The active flags live in main() so this helper accepts
  * each as a parameter. */
-[[nodiscard]] static int backend_active(const char *backend, bool sycl_act, bool cuda_act,
-                                        bool hip_act, bool metal_act)
+[[nodiscard]] int backend_active(const char *backend, bool sycl_act, bool cuda_act, bool hip_act,
+                                 bool metal_act)
 {
     if (!strcmp(backend, "sycl"))
         return sycl_act ? 1 : 0;
@@ -870,7 +918,7 @@ static const char *model_label(const CLISettings *c, unsigned i)
  * Unknown values fall back to VMAF_DNN_DEVICE_AUTO so the runtime
  * picks a default.
  */
-[[nodiscard]] static VmafDnnDevice resolve_tiny_device(const char *name)
+[[nodiscard]] VmafDnnDevice resolve_tiny_device(const char *name)
 {
     if (!name)
         return VMAF_DNN_DEVICE_AUTO;
@@ -907,7 +955,57 @@ static const char *model_label(const CLISettings *c, unsigned i)
  * load and never touches ORT. Returns 0 on success, -1 on any failure
  * (caller should treat as fatal and `goto cleanup`).
  */
-[[nodiscard]] static int configure_tiny_model(VmafContext *vmaf, const CLISettings *c)
+[[nodiscard]] int apply_tiny_resize(VmafContext *const vmaf, const char *const tiny_resize)
+{
+    if (!tiny_resize)
+        return 0;
+    VmafDnnResizeMode mode = VMAF_DNN_RESIZE_DISABLED;
+    using sv = std::string_view;
+    const sv rsz{tiny_resize};
+    if (rsz == "bilinear") {
+        mode = VMAF_DNN_RESIZE_BILINEAR;
+    } else if (rsz == "nearest") {
+        mode = VMAF_DNN_RESIZE_NEAREST;
+    } else if (rsz == "bicubic") {
+        mode = VMAF_DNN_RESIZE_BICUBIC;
+    } else if (rsz == "disabled") {
+        mode = VMAF_DNN_RESIZE_DISABLED;
+    }
+    const int rerr = vmaf_dnn_set_resize_mode(vmaf, mode);
+    if (rerr != 0) {
+        (void)fprintf(stderr, "--tiny-resize: vmaf_dnn_set_resize_mode failed (errno %d)\n", -rerr);
+        return -1;
+    }
+    return 0;
+}
+
+[[nodiscard]] int apply_tiny_codec(VmafContext *const vmaf, const char *const codec,
+                                   const char *const preset, const int crf_setting)
+{
+    if (!codec && !preset && crf_setting < 0)
+        return 0;
+    const int crf = crf_setting >= 0 ? crf_setting : 0;
+    const int cerr = vmaf_dnn_set_codec_context(vmaf, codec, preset, crf);
+    if (cerr == -ENOENT) {
+        (void)fprintf(stderr,
+                      "--tiny-codec '%s' not found in model encoder_vocab; "
+                      "use one of the names listed by --help.\n",
+                      codec ? codec : "(null)");
+        return -1;
+    }
+    if (cerr == -ENOTSUP) {
+        (void)fprintf(stderr, "--tiny-codec / --tiny-preset / --tiny-crf require a "
+                              "codec-aware tiny model (loaded model has no codec block).\n");
+        return -1;
+    }
+    if (cerr != 0) {
+        (void)fprintf(stderr, "vmaf_dnn_set_codec_context failed (errno %d)\n", -cerr);
+        return -1;
+    }
+    return 0;
+}
+
+[[nodiscard]] int configure_tiny_model(VmafContext *const vmaf, const CLISettings *const c)
 {
     if (!c->tiny_model_path)
         return 0;
@@ -919,11 +1017,6 @@ static const char *model_label(const CLISettings *c, unsigned i)
                       c->tiny_model_path);
         return -1;
     }
-    /* T6-9 / ADR-0211 — Sigstore-bundle verification. Runs *before*
-     * the model is opened so a verification failure short-circuits
-     * load and never touches ORT. Fails closed: missing registry,
-     * missing bundle, missing cosign, or any non-zero cosign exit
-     * all refuse to proceed. */
     if (c->tiny_model_verify) {
         const int verr = vmaf_dnn_verify_signature(c->tiny_model_path, nullptr);
         if (verr != 0) {
@@ -934,72 +1027,22 @@ static const char *model_label(const CLISettings *c, unsigned i)
             return -1;
         }
     }
-    VmafDnnConfig dnn_cfg = {
+    const VmafDnnConfig dnn_cfg = {
         .device = resolve_tiny_device(c->tiny_device),
         .device_index = 0,
         .threads = c->tiny_threads,
         .fp16_io = c->tiny_fp16,
     };
-    int err = vmaf_use_tiny_model(vmaf, c->tiny_model_path, &dnn_cfg);
+    const int err = vmaf_use_tiny_model(vmaf, c->tiny_model_path, &dnn_cfg);
     if (err) {
         (void)fprintf(stderr, "problem loading tiny model %s: %d\n", c->tiny_model_path, err);
         return -1;
     }
 
-    /* ADR-0550: apply the user-selected NCHW auto-resize filter. NULL
-     * (no --tiny-resize) leaves the libvmaf default (DISABLED) in place:
-     * a size mismatch returns -ERANGE so the operator must explicitly opt
-     * in to auto-resize. The ~2% score spread across filters means filter
-     * choice is a model hyperparameter that should be documented. */
-    if (c->tiny_resize) {
-        VmafDnnResizeMode mode = VMAF_DNN_RESIZE_DISABLED;
-        using sv = std::string_view;
-        const sv rsz{c->tiny_resize};
-        if (rsz == "bilinear") {
-            mode = VMAF_DNN_RESIZE_BILINEAR;
-        } else if (rsz == "nearest") {
-            mode = VMAF_DNN_RESIZE_NEAREST;
-        } else if (rsz == "bicubic") {
-            mode = VMAF_DNN_RESIZE_BICUBIC;
-        } else if (rsz == "disabled") {
-            mode = VMAF_DNN_RESIZE_DISABLED;
-        }
-        const int rerr = vmaf_dnn_set_resize_mode(vmaf, mode);
-        if (rerr != 0) {
-            (void)fprintf(stderr, "--tiny-resize: vmaf_dnn_set_resize_mode failed (errno %d)\n",
-                          -rerr);
-            return -1;
-        }
-    }
+    if (apply_tiny_resize(vmaf, c->tiny_resize) != 0)
+        return -1;
 
-    /* ADR-0519: populate the codec one-hot block for codec-aware
-     * models (e.g. fr_regressor_v2). Only fires when the user supplied
-     * at least one of --tiny-codec / --tiny-preset / --tiny-crf —
-     * otherwise the loader's pre-seeded "unknown" baseline from
-     * ADR-0518 stays in place so legacy invocations are byte-for-byte
-     * unchanged. */
-    if (c->tiny_codec || c->tiny_preset || c->tiny_crf >= 0) {
-        const int crf = c->tiny_crf >= 0 ? c->tiny_crf : 0;
-        const int cerr = vmaf_dnn_set_codec_context(vmaf, c->tiny_codec, c->tiny_preset, crf);
-        if (cerr == -ENOENT) {
-            (void)fprintf(stderr,
-                          "--tiny-codec '%s' not found in model encoder_vocab; "
-                          "use one of the names listed by --help.\n",
-                          c->tiny_codec ? c->tiny_codec : "(null)");
-            return -1;
-        }
-        if (cerr == -ENOTSUP) {
-            (void)fprintf(stderr, "--tiny-codec / --tiny-preset / --tiny-crf require a "
-                                  "codec-aware tiny model (loaded model has no codec block).\n");
-            return -1;
-        }
-        if (cerr != 0) {
-            (void)fprintf(stderr, "vmaf_dnn_set_codec_context failed (errno %d)\n", -cerr);
-            return -1;
-        }
-    }
-
-    return 0;
+    return apply_tiny_codec(vmaf, c->tiny_codec, c->tiny_preset, c->tiny_crf);
 }
 
 /* Skip the first `c->frame_skip_ref` ref frames and `c->frame_skip_dist` dist
@@ -1008,8 +1051,8 @@ static const char *model_label(const CLISettings *c, unsigned i)
  * vmaf_read_pictures() to release them; without unref the pool is exhausted
  * after N skips and the next fetch blocks indefinitely.
  */
-static void skip_initial_frames(VmafContext *vmaf, video_input *vid_ref, video_input *vid_dist,
-                                const CLISettings *c, int common_bitdepth)
+void skip_initial_frames(VmafContext *vmaf, video_input *vid_ref, video_input *vid_dist,
+                         const CLISettings *c, int common_bitdepth)
 {
     VmafPicture pic_ref_skip;
     VmafPicture pic_dist_skip;
@@ -1034,7 +1077,7 @@ static void skip_initial_frames(VmafContext *vmaf, video_input *vid_ref, video_i
  * run every worker thread contributes, so the FPS reading over-counts by up to
  * n_threads. CLOCK_MONOTONIC / QueryPerformanceCounter give true wall time. */
 #ifdef _WIN32
-static double wall_time_s(void)
+double wall_time_s()
 {
     /* The performance-counter frequency is fixed at boot, so query it once and
      * cache it (static, zero-initialised) instead of every FPS update. */
@@ -1047,9 +1090,9 @@ static double wall_time_s(void)
                            0.0;
 }
 #else
-static double wall_time_s(void)
+double wall_time_s()
 {
-    struct timespec ts = {0, 0};
+    struct timespec ts = {.tv_sec = 0, .tv_nsec = 0};
     (void)clock_gettime(CLOCK_MONOTONIC, &ts);
     return static_cast<double>(ts.tv_sec) + static_cast<double>(ts.tv_nsec) * 1e-9;
 }
@@ -1060,8 +1103,8 @@ static double wall_time_s(void)
  * inline loop used to compute `picture_index - 1` in pooling). Stops at EOF
  * on either side, on read errors, or when c->frame_cnt is reached.
  */
-static unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_input *vid_dist,
-                               const CLISettings *c, int common_bitdepth, int istty)
+unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_input *vid_dist,
+                        const CLISettings *c, int common_bitdepth, int istty)
 {
     float fps = 0.;
     const double t0 = wall_time_s();
@@ -1073,17 +1116,17 @@ static unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
 
         VmafPicture pic_ref;
         VmafPicture pic_dist;
-        int ret1 = fetch_picture(vmaf, vid_ref, &pic_ref, common_bitdepth);
-        int ret2 = fetch_picture(vmaf, vid_dist, &pic_dist, common_bitdepth);
+        const int ret1 = fetch_picture(vmaf, vid_ref, &pic_ref, common_bitdepth);
+        const int ret2 = fetch_picture(vmaf, vid_dist, &pic_dist, common_bitdepth);
 
         if (ret1 || ret2) {
             if (!ret1) {
-                int err_unref = vmaf_picture_unref(&pic_ref);
+                const int err_unref = vmaf_picture_unref(&pic_ref);
                 if (err_unref)
                     (void)fprintf(stderr, "\nproblem during vmaf_picture_unref\n");
             }
             if (!ret2) {
-                int err_unref = vmaf_picture_unref(&pic_dist);
+                const int err_unref = vmaf_picture_unref(&pic_dist);
                 if (err_unref)
                     (void)fprintf(stderr, "\nproblem during vmaf_picture_unref\n");
             }
@@ -1112,7 +1155,7 @@ static unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
             (void)fflush(stderr);
         }
 
-        int err = vmaf_read_pictures(vmaf, &pic_ref, &pic_dist, picture_index);
+        const int err = vmaf_read_pictures(vmaf, &pic_ref, &pic_dist, picture_index);
         if (err) {
             (void)fprintf(stderr, "\nproblem reading pictures\n");
             break;
@@ -1129,15 +1172,14 @@ static unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
  * success, non-zero on the first per-model scoring failure (caller should
  * treat as fatal and `goto cleanup`).
  */
-[[nodiscard]] static int report_pooled_scores(VmafContext *vmaf, const CLISettings *c,
-                                              const ModelArrays &arrays, unsigned picture_index,
-                                              int istty)
+[[nodiscard]] int report_pooled_scores(VmafContext *vmaf, const CLISettings *c,
+                                       const ModelArrays &arrays, unsigned picture_index, int istty)
 {
     int err = 0;
 
     for (unsigned i = 0; i < c->model_cnt; i++) {
         double vmaf_score;
-        err = vmaf_score_pooled(vmaf, arrays.model[i], VMAF_POOL_METHOD_MEAN, &vmaf_score, 0,
+        err = vmaf_score_pooled(vmaf, arrays.model()[i], VMAF_POOL_METHOD_MEAN, &vmaf_score, 0,
                                 picture_index - 1);
         if (err) {
             (void)fprintf(stderr, "problem generating pooled VMAF score\n");
@@ -1153,10 +1195,11 @@ static unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
         }
     }
 
-    for (unsigned i = 0; i < arrays.collection_cnt; i++) {
-        VmafModelCollectionScore score = {static_cast<VmafModelCollectionScoreType>(0)};
-        err = vmaf_score_pooled_model_collection(vmaf, arrays.collection[i], VMAF_POOL_METHOD_MEAN,
-                                                 &score, 0, picture_index - 1);
+    for (unsigned i = 0; i < arrays.collection_cnt(); i++) {
+        VmafModelCollectionScore score = {.type = static_cast<VmafModelCollectionScoreType>(0),
+                                          .bootstrap = {}};
+        err = vmaf_score_pooled_model_collection(
+            vmaf, arrays.collection()[i], VMAF_POOL_METHOD_MEAN, &score, 0, picture_index - 1);
         if (err) {
             (void)fprintf(stderr, "problem generating pooled VMAF score\n");
             return -1;
@@ -1167,7 +1210,7 @@ static unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
          * two-label switch. */
         if (score.type == VMAF_MODEL_COLLECTION_SCORE_BOOTSTRAP && istty &&
             (!c->quiet || !c->output_path)) {
-            (void)fprintf(stderr, "%s: ", arrays.collection_label[i]);
+            (void)fprintf(stderr, "%s: ", arrays.collection_label()[i]);
             (void)fprintf(stderr, c->precision_fmt, score.bootstrap.bagging_score);
             (void)fprintf(stderr, ", ci.p95: [");
             (void)fprintf(stderr, c->precision_fmt, score.bootstrap.ci.p95.lo);
@@ -1191,8 +1234,8 @@ static unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
  *
  * No-op when output_path is NULL or format isn't JSON.
  */
-static void amend_json_with_backend_used(const char *output_path, enum VmafOutputFormat fmt,
-                                         const char *backend_used)
+void amend_json_with_backend_used(const char *output_path, enum VmafOutputFormat fmt,
+                                  const char *backend_used)
 {
     if (!output_path || !backend_used)
         return;
@@ -1206,7 +1249,7 @@ static void amend_json_with_backend_used(const char *output_path, enum VmafOutpu
         (void)fclose(fp);
         return;
     }
-    long size = ftell(fp);
+    const long size = ftell(fp);
     if (size <= 1) {
         (void)fclose(fp);
         return;
@@ -1218,7 +1261,7 @@ static void amend_json_with_backend_used(const char *output_path, enum VmafOutpu
             (void)fclose(fp);
             return;
         }
-        int ch = fgetc(fp);
+        const int ch = fgetc(fp);
         if (ch == EOF) {
             (void)fclose(fp);
             return;
@@ -1254,7 +1297,9 @@ static void amend_json_with_backend_used(const char *output_path, enum VmafOutpu
  * locals through helper signatures and obscure the unwind chain
  * (ADR-0141 §2; T7-5 sweep closeout — ADR-0278; ADR-0146 prior precedent).
  */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size)
+} // namespace
+
+// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-1155: top-level CLI main entry point
 int main(int argc, char *argv[])
 {
     int err = 0;
@@ -1268,8 +1313,8 @@ int main(int argc, char *argv[])
     FILE *file_dist = nullptr;
     bool vid_ref_open = false;
     bool vid_dist_open = false;
-    video_input vid_ref = {0};
-    video_input vid_dist = {0};
+    video_input vid_ref = {.vtbl = nullptr, .ctx = nullptr, .fin = nullptr};
+    video_input vid_dist = {.vtbl = nullptr, .ctx = nullptr, .fin = nullptr};
     VmafContext *vmaf = nullptr;
 
     /* ModelArrays is trivially default-constructible (all pointers null,
@@ -1347,7 +1392,7 @@ int main(int argc, char *argv[])
             common_bitdepth = info1.depth > info2.depth ? info1.depth : info2.depth;
         }
 
-        VmafConfiguration cfg = {
+        const VmafConfiguration cfg = {
             .log_level = VMAF_LOG_LEVEL_INFO,
             .n_threads = c.thread_cnt,
             .n_subsample = c.subsample,
@@ -1399,7 +1444,7 @@ int main(int argc, char *argv[])
         video_input_info info;
         video_input_get_info(&vid_ref, &info);
 
-        VmafPictureConfiguration pic_cfg = {
+        const VmafPictureConfiguration pic_cfg = {
             .pic_params =
                 {
                     .w = static_cast<unsigned>(info.pic_w),

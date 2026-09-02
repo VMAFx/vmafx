@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_CLI_PARSE_H__
-#define __VMAF_CLI_PARSE_H__
+#ifndef VMAF_CLI_PARSE_H
+#define VMAF_CLI_PARSE_H
 
 /* ADR-0809: extern "C" guards so cli_parse.cpp and vmaf.cpp (C++23 TUs)
  * can include this header without name-mangling the C-linkage functions. */
@@ -130,4 +130,4 @@ void cli_free(CLISettings *settings);
 } /* extern "C" */
 #endif
 
-#endif /* __VMAF_CLI_PARSE_H__ */
+#endif /* VMAF_CLI_PARSE_H */

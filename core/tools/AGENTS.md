@@ -199,3 +199,20 @@ tools/
   reads picture data exclusively from the `ref` argument and is the
   *only* downstream consumer that legitimately observes that slot in
   NR mode.
+- [ADR-1155](../../docs/adr/1155-tools-upstream-mirror-rework.md) —
+  **Upstream-mirror tool TUs lint rework (0 clang-tidy warnings)**.
+  `cli_parse.cpp`, `cli_parse.h`, `y4m_input.c`, `vmaf.cpp`,
+  and `vmaf_bench.c` are reworked to the fork lint profile.
+  **Rebase invariant**:
+  - `cli_parse.c` was resolved as a dead twin under ADR-1153 precedent
+    (zero unique behavior vs `cli_parse.cpp`) and deleted; `test_cli_parse`,
+    `test_cli_parse_long_only_args`, and `fuzz_cli_parse` compile `cli_parse.cpp`.
+    Do not reintroduce `cli_parse.c`.
+  - C translation units (`y4m_input.c`, `vmaf_bench.c`) MUST keep `NULL`
+    (ADR-1138) and suppress `modernize-use-nullptr` using file-scoped
+    NOLINTBEGIN/NOLINTEND brackets to preserve MSVC `/std:clatest` Windows portability.
+  - In `y4m_input.c`, all plane dimensions, strides, and buffer index
+    calculations use `ptrdiff_t` / `size_t` precision to avoid 32-bit
+    multiplication overflow.
+  - In `vmaf.cpp`, `ModelArrays` is encapsulated with private members and RAII
+    accessors; all internal helpers reside in an anonymous namespace.

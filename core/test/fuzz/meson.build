@@ -61,11 +61,13 @@ fuzz_cli_parse_link_target = (get_option('default_library') == 'both'
     : libvmaf)
 
 fuzz_cli_parse = executable('fuzz_cli_parse',
-    ['fuzz_cli_parse.c', '../../tools/cli_parse.c'],
+    ['fuzz_cli_parse.c', '../../tools/cli_parse.cpp'],
     include_directories : [libvmaf_inc, test_inc, vmaf_include,
                            include_directories('../../tools/')],
     dependencies : [getopt_dependency],
     c_args : fuzz_flags + compat_cflags,
+    cpp_args : fuzz_flags + compat_cflags,
+    override_options : ['cpp_std=c++23'],
     link_args : fuzz_flags + ['-Wl,--wrap=exit'],
     link_with : fuzz_cli_parse_link_target,
 )
