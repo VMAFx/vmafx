@@ -688,7 +688,7 @@ void dwt2_src_indices_filt_s(int **src_ind_y, int **src_ind_x, int w, int h)
 #if defined(__GNUC__) && !defined(__clang__)
 __attribute__((optimize("-ffp-contract=off")))
 #endif
-// NOLINTNEXTLINE(readability-function-size)
+// NOLINTNEXTLINE(readability-function-size) — ADR-1057 / ADR-1141
 int adm_dwt2_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x, int w,
                int h, int src_stride, int dst_stride)
 {
@@ -907,4 +907,3 @@ int adm_dwt2_d(const double *src, const adm_dwt_band_t_d *dst, int **ind_y, int 
 }
 
 /* planner probe */
-

@@ -510,7 +510,7 @@ static inline int16_t adm_decouple_band(const int32_t *lut, double gain, int ang
  * ill-typed. ADR-0141 §2 load-bearing invariant (shared SIMD dispatch
  * signature); see ADR-1141. */
 // cppcheck-suppress constParameterCallback
-// NOLINTNEXTLINE(readability-non-const-parameter)
+// NOLINTNEXTLINE(readability-non-const-parameter) — ADR-0141 / ADR-1141
 static void adm_decouple(AdmBuffer *buf, int w, int h, int stride, double gain, int32_t *lut)
 {
     const float cos_1deg_sq = cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0);
@@ -614,7 +614,7 @@ static inline int32_t adm_decouple_band_s123(const int32_t *lut, double gain, in
  * dispatch signature (`adm_decouple_s123_avx2` / `_avx512`). ADR-0141 §2
  * load-bearing invariant; see ADR-1141. */
 // cppcheck-suppress constParameterCallback
-// NOLINTNEXTLINE(readability-non-const-parameter)
+// NOLINTNEXTLINE(readability-non-const-parameter) — ADR-0141 / ADR-1141
 static void adm_decouple_s123(AdmBuffer *buf, int w, int h, int stride, double gain, int32_t *lut)
 {
     const float cos_1deg_sq = cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0);
