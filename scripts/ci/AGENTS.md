@@ -250,3 +250,24 @@ Alpha pre-releases (`X.Y.Za<N>`) are never an acceptable pin.
   `paths:` filter or a custom early-skip probe to the job.
 - A `clang-diagnostic-error` in any TU is a measurement failure (exit 4), never a
   zero. Build (generated headers) before measuring.
+
+## release-pr-exempt.sh invariants (ADR-1151)
+
+- The predicate is `release-please--` head ref **AND** bot author. Never relax
+  it to head-ref-only: the four gates it disarms are required contexts, so a
+  head-ref-only test would let anyone skip them by naming a branch
+  `release-please--anything`.
+- It always exits 0 and communicates through `exempt=true|false`. A gate that
+  consumes it must use a step-level `if:` so the job still **reports** —
+  skipping the whole job makes the check *absent*, which the aggregator's
+  absent-means-pass rule (ADR-0313) cannot tell apart from a path-filter skip,
+  and that is exactly the ambiguity the `mustReport` list exists to close.
+- Only the four authoring-discipline gates may consult it: Deep-Dive
+  Deliverables, Doc-Substance, `docs/state.md` Touch, FFmpeg-Patches Surface
+  Sync. `Release Script Contract` and `ADR Number Collision Guard` stay armed on
+  release PRs — the former is the gate that proves the cut ran, and it also runs
+  `tests/test-release-pr-exempt.sh`, so the exemption's own test can never be
+  skipped by the exemption.
+- A new gate added to the aggregator's `required` array must be checked against
+  a release PR's shape (a `.release-please-manifest.json` + coordinated
+  version-marker diff, and a rendered-changelog body) before it is promoted.

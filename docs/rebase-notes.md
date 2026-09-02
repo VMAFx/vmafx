@@ -47624,4 +47624,6 @@ Rebase-sensitive points:
   required-aggregator,rule-enforcement}.yml`, `.github/ci-impact.json`,
   `scripts/release/`, `docker/Dockerfile.node`, `deploy/helm/`,
   `bindings/rust/*/Cargo.toml`, `core/src/feature/rust/tad/Cargo.toml`,
-  `pkg/version/version.go`, and the docs. No rebase impact.
+  `pkg/version/version.go`, `scripts/ci/release-pr-exempt.sh`,
+  `scripts/ci/tests/test-release-pr-exempt.sh`, and the docs. No rebase
+  impact.

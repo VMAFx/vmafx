@@ -85,6 +85,13 @@ jobs:
               // block a merge and needed no admin bypass. All six trigger on
               // `pull_request` and carry the same draft gate as the jobs
               // above, so they genuinely report on every non-draft PR.
+              // The four authoring-discipline gates among them disarm
+              // themselves on a machine-generated release PR via
+              // scripts/ci/release-pr-exempt.sh — release-please writes no
+              // ADR-0108 checklist and its version-marker diff is path-mapped
+              // to docs/ trees a bot never touches, so without that they would
+              // be red on every release PR. `Release Script Contract` and
+              // `ADR Number Collision Guard` stay armed there on purpose.
               'Deep-Dive Deliverables Checklist (ADR-0108)',
               'Doc-Substance Gate (ADR-0100 / 0167)',
               'docs/state.md Touch Gate (ADR-0165)',

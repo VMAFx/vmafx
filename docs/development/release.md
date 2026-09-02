@@ -83,8 +83,8 @@ carries an inline comment saying so.
    create the public release tag.
 4. **An authenticated operator publishes the draft.** Publication creates the
    `vX.Y.Z` tag and emits the `release.published` event. This explicit gate is
-   required because GitHub suppresses most follow-on workflow events created
-   by the repository `GITHUB_TOKEN`.
+   deliberate: publication is the irreversible step, and a human is the only
+   actor allowed to take it.
 5. **The publication workflows** check out the published release's immutable
    tag rather than the default branch. The Docker workflows derive their image
    tags from the same `github.event.release.tag_name`; the other release jobs
@@ -109,13 +109,72 @@ things now prevent that:
   DNN` — that fails instead of passing when a check is *absent* on a
   `release-please--` head ref.
 
-**Prerequisite — a release-bot identity.** `release-please.yml` currently
-authenticates with `secrets.GITHUB_TOKEN`, and GitHub suppresses follow-on
-workflow events created by that token. Runs on the release branch land as
-`action_required` with zero jobs, so the sole required context can never report
-and the release PR sits `BLOCKED`. Until a bot identity with Contents +
-Pull-requests write is installed and wired into that workflow, **no release PR
-is mergeable without an admin bypass**. See ADR-1151 for the open decision.
+### Release-bot identity
+
+PRs and pushes made with `secrets.GITHUB_TOKEN` do not trigger further workflow
+runs. That is a GitHub loop-breaker, not a configuration mistake, and it is why
+release PRs used to land as `action_required` with zero jobs: the sole required
+context could never report and the PR sat `BLOCKED` behind an admin bypass.
+
+`release-please.yml` therefore authenticates as a GitHub App installation, not
+as `GITHUB_TOKEN`. Every step in the job — both release-please invocations and
+both read-only `gh api` probes — uses the token minted by
+`actions/create-github-app-token`, so the job's own `GITHUB_TOKEN` keeps the
+workflow default `contents: read` and holds no write scope at all.
+
+**One-time maintainer setup.** The workflow fails on its first step until this
+exists — deliberately, so it can never silently fall back to `GITHUB_TOKEN` and
+recreate an unmergeable release PR:
+
+1. Create a GitHub App owned by the `VMAFx` org (name it e.g.
+   `vmafx-release-bot`). Repository permissions: **Contents: read & write**
+   and **Pull requests: read & write**. Nothing else.
+2. Install it on `VMAFx/vmafx` only.
+3. Generate a private key and add two repository secrets:
+   - `RELEASE_BOT_APP_ID` — the App's numeric ID.
+   - `RELEASE_BOT_PRIVATE_KEY` — the full PEM, including the
+     `-----BEGIN…`/`-----END…` lines.
+
+The installation token is minted per run and revoked when the job ends; there
+is no long-lived credential and nothing to rotate on a schedule. A personal
+access token would also work mechanically but ties the release stream to one
+human's account and expires — see ADR-1151's alternatives.
+
+### Process gates on the release PR
+
+Six process gates in `rule-enforcement.yml` are required contexts (see the
+branch-protection inventory below). Four of them encode *authoring discipline*
+and cannot be satisfied by a PR nobody writes by hand:
+
+| Gate | Why a release PR cannot pass it unaided |
+| --- | --- |
+| Deep-Dive Deliverables Checklist (ADR-0108) | release-please's body is the rendered changelog: no six-item checklist, no opt-out sentinel. |
+| Doc-Substance Gate (ADR-0100 / 0167) | the coordinated version markers include `mcp-server/vmaf-mcp/pyproject.toml`, which the gate path-maps to a mandatory `docs/mcp/` edit. |
+| docs/state.md Touch Gate (ADR-0165) | the changelog body can carry a `closes #N` line inherited from a commit subject, which trips the bug-shaped heuristic. |
+| FFmpeg-Patches Surface Sync (ADR-0356) | diff-driven, and a version-marker bump is not a patch-stack change. |
+
+Each of those four jobs therefore runs `scripts/ci/release-pr-exempt.sh` first
+and skips its work step when the predicate says the PR is machine-generated.
+The predicate requires **both** a `release-please--` head ref **and** a bot
+author, so pushing a branch named `release-please--anything` does not disarm a
+required gate. The jobs still report — they report green, not absent, which
+keeps them distinguishable from a path-filter skip.
+
+The remaining two stay armed on release PRs on purpose: `Release Script
+Contract (ADR-1128)` is the gate that proves the cut ran and that the one-shot
+`release-as` / `bootstrap-sha` fields are gone, and `ADR Number Collision
+Guard` is diff-driven and trivially green when no ADR is added. The Release
+Script Contract job also runs
+`scripts/ci/tests/test-release-pr-exempt.sh`, so the predicate that disarms the
+other four is itself proven on every PR, release PR included.
+
+To dry-run the predicate locally:
+
+```bash
+HEAD_REF=release-please--branches--master--components--vmafx \
+  PR_AUTHOR='vmafx-release-bot[bot]' PR_AUTHOR_TYPE=Bot \
+  bash scripts/ci/release-pr-exempt.sh
+```
 
 ### Publication environments
 
@@ -491,6 +550,8 @@ is enforced at the host, not just honored by convention.
     ADR-0628), Release Script Contract (ADR-1128). These reported on every
     non-draft PR but were not in the required set, so a red release-script
     contract did not block a merge and needed no admin bypass to get past.
+    Four of the six auto-exempt the machine-generated release PR — see
+    "Process gates on the release PR" above; the other two stay armed there.
 
   When adding, renaming, or removing a gate, update the aggregator's `required`
   array **and this list** in the same PR — branch protection's `contexts` list

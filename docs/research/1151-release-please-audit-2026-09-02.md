@@ -299,3 +299,53 @@ tag policy, and any tag/release/publish action.
    an eleventh coordinated marker that must be covered by
    `verify-release-version.sh`), or leave it absent and document the warning as
    expected output?
+
+## Addendum — 2026-09-03, review round
+
+Two corrections to the plan above, both found while verifying the
+implementation against this digest.
+
+**Finding 1 was described but not implemented in the first push.** The prose in
+`docs/development/release.md` explained the `GITHUB_TOKEN` suppression, but
+`release-please.yml` still carried `token: ${{ secrets.GITHUB_TOKEN }}` at both
+release-please steps and `contents: write` on the job. Step 3 of the plan is now
+actually applied: a SHA-pinned
+`actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1`
+(v3.2.0) step mints the installation token, both release-please invocations and
+both read-only `gh api` probes consume `steps.app-token.outputs.token`, the job
+permission block drops to `contents: read`, and a preflight step fails the job
+with a remediation message when either `RELEASE_BOT_APP_ID` or
+`RELEASE_BOT_PRIVATE_KEY` is empty — the plan's "fail loudly rather than fall
+back" requirement.
+
+**Step 5 of the plan, taken literally, breaks the release PR it is meant to
+unblock.** Promoting all six `rule-enforcement.yml` gates into the aggregator's
+`required` array makes two of them permanently red on a machine-generated
+release PR, which is the same unmergeable-without-admin-bypass outcome finding 1
+exists to remove. Reproduced, not inferred:
+
+- `PR_BODY=<release-please-shaped body> BASE_SHA=… HEAD_SHA=… bash
+  scripts/ci/deliverables-check.sh` → exit 1, six
+  `::error title=ADR-0108 missing deliverable` lines. release-please writes the
+  rendered changelog as the PR body; it contains neither the six-item checklist
+  nor any `no <item> needed:` sentinel, and the job's only exemption was a
+  `port:` title / `port/` branch.
+- The release PR updates `mcp-server/vmaf-mcp/pyproject.toml` (an
+  `extra-files` version marker), and the doc-substance gate path-maps
+  `^mcp-server/vmaf-mcp/(src/|pyproject\.toml)` to a mandatory `^docs/mcp/`
+  edit that a release PR structurally never has → exit 1.
+
+Two more of the six are latent rather than certain: the `docs/state.md` touch
+gate trips on a `closes #N` anywhere in the PR body, which a changelog entry can
+inherit from a commit subject, and the FFmpeg-patch surface gate is diff-driven
+over a public-surface list that a future coordinated marker could intersect.
+
+Resolution: all four *authoring-discipline* gates now call
+`scripts/ci/release-pr-exempt.sh` as their first step and skip their work step
+when it reports `exempt=true`. The predicate requires a `release-please--` head
+ref **and** a bot author, so a human cannot disarm a required gate by branch
+name; it is covered by `scripts/ci/tests/test-release-pr-exempt.sh`, which the
+deliberately-non-exempt `Release Script Contract` job runs on every PR. The two
+correctness gates — Release Script Contract and ADR Number Collision Guard —
+stay armed on release PRs. Documented in
+`docs/development/release.md`, section "Process gates on the release PR".

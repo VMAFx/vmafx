@@ -63,6 +63,30 @@ its 3.x line while the product goes to 1.0.0. The one visible consequence is tha
 `libvmaf.pc` moves from an advertised 3.2.1 to 1.0.0; since no release ever
 shipped that 3.2.1, no consumer can be pinned to it.
 
+**release-please authenticates as a GitHub App, and the six process gates
+become required with a machine-generated-PR exemption.** `GITHUB_TOKEN` cannot
+be the release identity: GitHub suppresses follow-on workflow events for
+anything that token creates, so release PRs received zero check runs and the
+sole required context could never report. `release-please.yml` now mints an
+installation token with `actions/create-github-app-token` and routes both
+release-please invocations and both read-only `gh api` probes through it; the
+job's own `GITHUB_TOKEN` drops to `contents: read`. The App and its two secrets
+(`RELEASE_BOT_APP_ID`, `RELEASE_BOT_PRIVATE_KEY`) are a repo-admin action, and
+until they exist the workflow fails on its first step rather than falling back
+to `GITHUB_TOKEN` and quietly recreating an unmergeable release PR.
+
+Promoting the six `rule-enforcement.yml` gates into the aggregator's `required`
+array would, on its own, make every release PR permanently red: four of them
+grade *authoring discipline* that a generated PR structurally cannot supply —
+no ADR-0108 checklist in a rendered-changelog body, and a version-marker diff
+that path-maps `mcp-server/vmaf-mcp/pyproject.toml` to a mandatory `docs/mcp/`
+edit. Those four therefore consult `scripts/ci/release-pr-exempt.sh` and skip
+their work step on a machine-generated release PR, reporting green rather than
+absent. The predicate requires a bot author *and* a `release-please--` head ref,
+so branch naming alone cannot disarm a required gate. `Release Script Contract`
+and `ADR Number Collision Guard` stay armed on release PRs, and the former also
+runs the predicate's own test suite, so the exemption cannot rot unnoticed.
+
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
@@ -71,6 +95,13 @@ shipped that 3.2.1, no consumer can be pinned to it.
 | Continue at v3.2.1 (ADR-1127 as written) | No apparent version regression; matches the current in-tree markers. | Mints the fork's first tag one patch above a Netflix tag the fork never released and does not contain; permanently entangles the fork's number line with upstream's; every future release must dodge upstream's tags. | Rests on a false premise — there is no v3.2.0 fork release to patch. |
 | Start at v4.0.0 | Monotone above every inherited tag, so no ordering surprise for anyone who fetched upstream tags into the same namespace. | Claims three major versions of fork release history that never happened; still shares Netflix's namespace and will collide again when upstream reaches 4.x. | Buys only cosmetic monotonicity and keeps the collision problem. |
 | Keep `vX.Y.Z-lusoris.N` | Encodes the upstream baseline in the tag. | Already rejected by ADR-1127 for non-standard ordering and coupling to upstream. | Out of scope; ADR-1127's reasoning still holds. |
+| **Release identity: GitHub App installation token** | Non-expiring, scoped to two permissions on one repo, minted and revoked per run, not tied to a person. PRs it opens trigger CI. | Requires a one-time App creation the workflow cannot perform itself. | **Chosen.** The one-time setup is bounded; the alternatives are either unusable or permanent debt. |
+| Release identity: personal access token | No App to create. | Ties the release stream to one human's account, expires and needs rotation, and carries that human's full scope. | Rejected — a release pipeline that dies when one person's token lapses is not a pipeline. |
+| Release identity: keep `GITHUB_TOKEN`, admin-merge every release PR | Zero setup. | Contradicts the no-`--admin`-by-default rule and defeats the whole point of making the release-critical checks required. | Rejected — it is the failure this ADR exists to remove. |
+| **Release-PR gate exemption: shared bot+head-ref predicate** | One script, one behaviour, testable and locally runnable; jobs report green rather than absent, so a genuine path-filter skip stays distinguishable. | A fifth gate added later must remember to consult it. | **Chosen.** The predicate ships with a test the always-armed Release Script Contract job runs. |
+| Head-ref-only exemption | Simpler — no author plumbing. | Any contributor could name a branch `release-please--x` and skip four required gates. | Rejected — an exemption a stranger can claim is not a gate. |
+| Skip the whole job on a release PR (`if:` at job level) | Fewer moving parts. | The check reports *absent*, which the aggregator's absent-means-pass rule then cannot distinguish from a path-filter skip. | Rejected — it re-introduces the ambiguity `mustReport` exists to close. |
+| Teach release-please to emit a compliant PR body | No exemption at all. | The body is a release-please template; the doc-substance failure is diff-driven and no body text fixes it. | Rejected — solves at most half the problem. |
 
 ## Consequences
 
@@ -83,13 +114,16 @@ shipped that 3.2.1, no consumer can be pinned to it.
   SONAME, which reads as odd until the split is explained; the explanation now
   lives here, in `docs/development/release.md`, and in a comment at
   `core/meson.build:19`. Making the six rule-enforcement gates required means a
-  red process gate now blocks merge where it previously did not.
+  red process gate now blocks merge where it previously did not, and four of
+  them carry a machine-generated-PR exemption that a future gate author has
+  to remember to wire up. `release-please.yml` is hard-down until the
+  release-bot App exists — intentional, but it does mean the release PR
+  stops being refreshed in the interim.
 - **Neutral / follow-ups**: three items remain **repo-admin actions outside any
   code PR** and each is a hard blocker for an actual release —
-  (1) create a release-bot identity so release PRs receive check runs at all
-  (release-please currently authenticates with `GITHUB_TOKEN`, and GitHub
-  suppresses follow-on workflow events from that token, so the sole required
-  context can never report and no release PR is mergeable);
+  (1) create the release-bot GitHub App and its `RELEASE_BOT_APP_ID` /
+  `RELEASE_BOT_PRIVATE_KEY` secrets — the workflow half is done here and
+  `release-please.yml` fails loudly on its first step until they exist;
   (2) create the `release-publish` and `pypi-publish` environments with a
   required reviewer and a `v*` tag deployment policy — `supply-chain.yml` now
   fails closed until they exist;
@@ -104,6 +138,7 @@ shipped that 3.2.1, no consumer can be pinned to it.
 - [release-please manifest-releaser docs — `release-as` is persistent and must be removed after the release PR merges](https://github.com/googleapis/release-please/blob/main/docs/manifest-releaser.md)
 - [release-please config schema — `release-as` is marked DEPRECATED in favour of a `Release-As` commit footer](https://github.com/googleapis/release-please/blob/main/schemas/config.json)
 - [GitHub Actions — events from `GITHUB_TOKEN` do not trigger further workflow runs](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
+- [`actions/create-github-app-token` — mint a scoped installation token per run](https://github.com/actions/create-github-app-token)
 - [Research-1151](../research/1151-release-please-audit-2026-09-02.md)
 - [ADR-1127](1127-single-semver-release-stream.md) — superseded by this ADR
 - [ADR-1128](1128-fragment-owned-release-cuts.md) — fragment-owned CHANGELOG

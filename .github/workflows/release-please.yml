@@ -25,17 +25,57 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Scoped to the one job that creates release PRs / tags; the workflow
-    # default stays `contents: read` so any step added later starts from
-    # least-privilege (Scorecard TokenPermissionsID).
+    # ADR-1151 — every write is made with the release-bot App installation
+    # token minted below, so the job's own `GITHUB_TOKEN` never needs write
+    # scope and stays at the workflow's least-privilege default (Scorecard
+    # TokenPermissionsID).
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     steps:
+      # ADR-1151 finding 1. release-please used to authenticate with
+      # `secrets.GITHUB_TOKEN`; GitHub suppresses follow-on workflow events
+      # for anything that token creates, so the release PR received zero
+      # check runs, the sole required context could never report, and the PR
+      # sat `BLOCKED` behind an admin bypass. An App installation token is a
+      # distinct actor, so pushes and PRs it makes trigger CI normally.
+      #
+      # The App and its two secrets are a maintainer action (see
+      # docs/development/release.md). Until they exist this job fails loudly
+      # here rather than silently falling back to `GITHUB_TOKEN` and
+      # recreating the un-runnable release PR.
+      - name: Require release-bot App credentials
+        env:
+          RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
+          RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "${RELEASE_BOT_APP_ID}" ]] || missing+=("RELEASE_BOT_APP_ID")
+          [[ -n "${RELEASE_BOT_PRIVATE_KEY}" ]] || missing+=("RELEASE_BOT_PRIVATE_KEY")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "::error title=ADR-1151 release-bot credentials missing::${missing[*]}"
+            echo "release-please must run as the release-bot GitHub App, not as" >&2
+            echo "GITHUB_TOKEN: PRs opened by GITHUB_TOKEN never receive check" >&2
+            echo "runs, so the release PR can never satisfy branch protection." >&2
+            echo "" >&2
+            echo "Create the App (Contents + Pull requests: read/write, installed" >&2
+            echo "on VMAFx/vmafx) and add the repository secrets:" >&2
+            printf '  - %s\n' "${missing[@]}" >&2
+            echo "See docs/development/release.md, section 'Release-bot identity'." >&2
+            exit 1
+          fi
+          echo "release-bot App credentials present."
+
+      - name: Mint the release-bot installation token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
       - name: Detect an unpublished ordinary-SemVer draft
         id: draft
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           releases="$RUNNER_TEMP/releases.json"
           gh api --paginate --slurp \
@@ -61,7 +101,7 @@ jobs:
       - name: Detect a hand-finished release PR frozen for merge
         id: cut
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           # release-please force-recreates `release-please--branches--...` on
           # every push to master: the branch always carries exactly one commit,
@@ -102,7 +142,7 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           skip-github-pull-request: true
 
       - name: Open or update the release PR
@@ -114,7 +154,7 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           skip-github-release: true
 
       - name: Dump outputs
