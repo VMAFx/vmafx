@@ -91,6 +91,23 @@ when:
 
 If neither applies, the gate runs.
 
+### Dependency-only PR exemption (ADR-1152)
+
+Automated dependency-bump pull requests opened by bots (`renovate[bot]`
+or `dependabot[bot]`, or branches matching `renovate/*` / `dependabot/*`)
+cannot satisfy the deliverables checklist. When every changed file in the
+PR is an allowed dependency manifest or lockfile (e.g. `package.json`,
+`go.mod`, `Cargo.toml`, `pyproject.toml`, `requirements*.txt`, `Dockerfile*`,
+`dev/Containerfile`, `.pre-commit-config.yaml`, `.github/workflows/**`,
+`changelog.d/**`), the PR is classified as dependency-only via
+`scripts/ci/classify-dependency-pr.sh`. The job emits a GitHub Actions
+notice and succeeds without running the deliverables body checks.
+
+If ANY other path is touched — especially source code under `core/`, `ai/`,
+`python/`, `compat/`, `cmd/`, `pkg/`, `internal/`, `bindings/`, `tools/`,
+`scripts/`, `docs/`, or `model/` — the PR is NOT exempt and the full
+deliverables gate executes.
+
 ### Fixing a failing check
 
 1. Open the PR description in the GitHub UI.
@@ -123,6 +140,13 @@ the same PR, the job logs a ADR-0100 advisory note with the offending
 paths. The rule has a first-class exemption for pure internal
 refactors and bug fixes with no user-visible delta — those don't need
 docs and the advisory can be ignored with a one-line reviewer ack.
+
+### Dependency-only PR exemption (ADR-1152)
+
+Similarly, strictly dependency-only bot PRs classified by
+`scripts/ci/classify-dependency-pr.sh` skip the path-mapped doc-substance
+coverage check. Bot PRs that modify source code outside the manifest
+allowlist remain subject to the full doc-substance check.
 
 ## ADR-0106: ADR backfill (advisory)
 
