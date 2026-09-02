@@ -1,328 +1,341 @@
 // Copyright 2026 Lusoris
 // SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+
+// Package pyjson renders Go values byte-identically to CPython's json module.
 //
-// Package pyjson renders JSON exactly as CPython's json module does.
+// Every JSON surface the vmafx-tune Go port shares with the Python original —
+// the corpus JSONL, the auto plan, the sidecar state and status payloads, the
+// predict / prefilter / recommend reports, the benchmark and encode-profile
+// summaries — is parsed by tooling that does not care which binary wrote it.
+// That only works if the Go writer reproduces json.dumps to the byte, and
+// encoding/json cannot, for four reasons:
 //
-// vmaf-tune's on-disk artefacts (the corpus JSONL, the sidecar --json payloads)
-// are written by Python today and read by the Phase B/C trainers and by
-// operator tooling, so a Go writer has to reproduce json.dumps byte-for-byte.
-// Three CPython behaviours that encoding/json does not share:
+//  1. Non-finite floats. json.dumps defaults to allow_nan=True and writes the
+//     bare tokens NaN / Infinity / -Infinity (invalid RFC 8259, but what every
+//     corpus row carries in an unmeasured feature column, ADR-0366).
+//     encoding/json refuses to marshal them at all.
+//  2. Float spelling. CPython uses repr(): the shortest round-tripping digits,
+//     a mandatory ".0" on integral values, and the fixed/exponential switch at
+//     decpt <= -4 || decpt > 16. Go's %g drops the ".0" and switches
+//     elsewhere, so 93.0 renders as "93" and 1e15 as "1e+15".
+//  3. Escaping. json.dumps defaults to ensure_ascii=True (every rune past
+//     U+007E becomes a \uXXXX escape, surrogate-paired above the BMP) and
+//     never escapes <, > or &; encoding/json does the opposite on both counts.
+//  4. Layout. CPython's indent=N uses "," (no trailing space) between items
+//     and ": " after keys, renders empty containers as "{}" / "[]", and with
+//     sort_keys=True sorts by code point.
 //
-//  1. Non-finite floats serialise as the bare tokens NaN / Infinity /
-//     -Infinity. That is invalid RFC-8259 JSON, but json.loads accepts it and
-//     every corpus row carries NaN in at least the canonical-6 columns when
-//     libvmaf does not expose a pooled feature (ADR-0366). encoding/json
-//     refuses to marshal them at all.
-//  2. Floats render via repr(), which is the shortest round-tripping decimal
-//     with a mandatory ".0" on integral values and a decimal-point / exponent
-//     switch at decpt <= -4 or decpt > 16. Go's 'g' verb switches at different
-//     thresholds and drops the trailing ".0".
-//  3. json.dumps defaults to ensure_ascii=True, so every non-ASCII rune is
-//     escaped as \uXXXX (surrogate pairs above the BMP). Go escapes <, > and &
-//     instead and passes non-ASCII through as UTF-8.
+// # Value model
 //
-// The encoder is deliberately narrow: it handles the scalar / string / bool /
-// nil / []string / []any / map[string]any shapes these payloads hold. Anything
-// else is an error rather than a silent mis-encode.
+// Marshal walks any Go value reflectively: nil, bool, string, every integer
+// kind, float32 / float64, json.Number, pointers and interfaces (nil renders
+// as null), string-keyed maps (always sorted — a Go map has no insertion
+// order to preserve), slices and arrays, and structs (honouring the
+// encoding/json tag vocabulary: rename, "-", omitempty; declaration order
+// unless Options.SortKeys). A nil slice or map renders as the empty
+// container, not null: an empty Python list or dict is [] / {}, and callers
+// model "absent" with a pointer or a nil interface. json.Number is re-emitted
+// the way CPython would after parsing the same literal — an integral literal
+// as an int, anything else through the float repr — so a payload that
+// round-trips through json.Decoder.UseNumber() stays stable. Channels,
+// functions, complex numbers and non-string map keys are errors rather than
+// silent mis-encodes.
+//
+// # Non-finite policy
+//
+// Two Python entry points disagree on NaN: json.dumps writes the bare tokens,
+// while vmaftune.jsonio.dumps_strict rewrites non-finite floats to null first
+// so the payload stays valid RFC 8259 (the sidecar state file and the
+// --execute JSONL rows). Options.NonFinite selects between them; the default
+// is the json.dumps behaviour.
+//
+// This package is the single implementation of that contract (ADR-1137). The
+// four independent encoders the parallel Go port produced were measured
+// redundant — 200,000 random float64 bit patterns and 10,000 rendered
+// payloads with zero disagreements — before being folded into this one.
 package pyjson
 
 import (
+	"encoding/json"
 	"fmt"
-	"math"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
-	"unicode/utf16"
-	"unicode/utf8"
 )
 
-// PyFloatRepr renders v the way CPython's repr(float) does.
-//
-// CPython uses the shortest decimal string that round-trips, then chooses
-// between fixed and exponential notation on the decimal-point position:
-// exponential when decpt <= -4 or decpt > 16, fixed otherwise. Integral values
-// in fixed notation get a trailing ".0" so the token stays a float literal.
-func FloatRepr(v float64) string {
-	switch {
-	case math.IsNaN(v):
-		return "nan"
-	case math.IsInf(v, 1):
-		return "inf"
-	case math.IsInf(v, -1):
-		return "-inf"
-	}
-	// Shortest round-trip form in scientific notation, e.g. "-1.234e+05".
-	sci := strconv.FormatFloat(v, 'e', -1, 64)
+// NaNPolicy selects how a non-finite float is rendered.
+type NaNPolicy int
 
-	neg := false
-	if strings.HasPrefix(sci, "-") {
-		neg = true
-		sci = sci[1:]
-	}
-	ePos := strings.IndexByte(sci, 'e')
-	mantissa := sci[:ePos]
-	exp, err := strconv.Atoi(sci[ePos+1:])
-	if err != nil {
-		// Unreachable for FormatFloat output; degrade to Go's own shortest
-		// form rather than panicking on a malformed token.
-		return strconv.FormatFloat(v, 'g', -1, 64)
-	}
-	digits := strings.Replace(mantissa, ".", "", 1)
-	decpt := exp + 1
-
-	var b strings.Builder
-	if neg {
-		b.WriteByte('-')
-	}
-	if decpt <= -4 || decpt > 16 {
-		// Exponential: d[0](.d[1:])e{+,-}NN with at least two exponent digits.
-		b.WriteByte(digits[0])
-		if len(digits) > 1 {
-			b.WriteByte('.')
-			b.WriteString(digits[1:])
-		}
-		b.WriteByte('e')
-		e := decpt - 1
-		if e < 0 {
-			b.WriteByte('-')
-			e = -e
-		} else {
-			b.WriteByte('+')
-		}
-		es := strconv.Itoa(e)
-		if len(es) < 2 {
-			b.WriteByte('0')
-		}
-		b.WriteString(es)
-		return b.String()
-	}
-	switch {
-	case decpt <= 0:
-		b.WriteString("0.")
-		b.WriteString(strings.Repeat("0", -decpt))
-		b.WriteString(digits)
-	case decpt >= len(digits):
-		b.WriteString(digits)
-		b.WriteString(strings.Repeat("0", decpt-len(digits)))
-		b.WriteString(".0")
-	default:
-		b.WriteString(digits[:decpt])
-		b.WriteByte('.')
-		b.WriteString(digits[decpt:])
-	}
-	return b.String()
-}
-
-// pyJSONFloat renders a float as CPython's json encoder would: the bare
-// non-finite tokens, otherwise repr().
-func jsonFloat(v float64) string {
-	switch {
-	case math.IsNaN(v):
-		return "NaN"
-	case math.IsInf(v, 1):
-		return "Infinity"
-	case math.IsInf(v, -1):
-		return "-Infinity"
-	}
-	return FloatRepr(v)
-}
-
-// pyJSONString renders s the way json.dumps(ensure_ascii=True) does.
-func jsonString(s string) string {
-	var b strings.Builder
-	b.WriteByte('"')
-	for _, r := range s {
-		switch r {
-		case '"':
-			b.WriteString(`\"`)
-			continue
-		case '\\':
-			b.WriteString(`\\`)
-			continue
-		case '\n':
-			b.WriteString(`\n`)
-			continue
-		case '\r':
-			b.WriteString(`\r`)
-			continue
-		case '\t':
-			b.WriteString(`\t`)
-			continue
-		case '\b':
-			b.WriteString(`\b`)
-			continue
-		case '\f':
-			b.WriteString(`\f`)
-			continue
-		}
-		switch {
-		case r < 0x20:
-			fmt.Fprintf(&b, `\u%04x`, r)
-		case r < 0x7f:
-			b.WriteRune(r)
-		case r == utf8.RuneError:
-			// Invalid UTF-8 byte; CPython would have raised on decode.
-			// Emit the replacement character escape so the line stays
-			// parseable rather than propagating raw garbage.
-			b.WriteString(`�`)
-		case r <= 0xffff:
-			fmt.Fprintf(&b, `\u%04x`, r)
-		default:
-			hi, lo := utf16.EncodeRune(r)
-			fmt.Fprintf(&b, `\u%04x\u%04x`, hi, lo)
-		}
-	}
-	b.WriteByte('"')
-	return b.String()
-}
-
-// pyJSONValue renders one JSON value in CPython's compact-with-separators
-// default form (", " between items, ": " between key and value).
-func jsonValue(v any) (string, error) {
-	switch t := v.(type) {
-	case nil:
-		return "null", nil
-	case bool:
-		if t {
-			return "true", nil
-		}
-		return "false", nil
-	case string:
-		return jsonString(t), nil
-	case int:
-		return strconv.Itoa(t), nil
-	case int64:
-		return strconv.FormatInt(t, 10), nil
-	case float64:
-		return jsonFloat(t), nil
-	case []string:
-		parts := make([]string, len(t))
-		for i, s := range t {
-			parts[i] = jsonString(s)
-		}
-		return "[" + strings.Join(parts, ", ") + "]", nil
-	case []any:
-		parts := make([]string, len(t))
-		for i, e := range t {
-			s, err := jsonValue(e)
-			if err != nil {
-				return "", err
-			}
-			parts[i] = s
-		}
-		return "[" + strings.Join(parts, ", ") + "]", nil
-	case map[string]any:
-		return objectSorted(t)
-	default:
-		return "", fmt.Errorf("pyjson: unsupported value type %T", v)
-	}
-}
-
-// pyJSONObjectSorted renders a map as json.dumps(obj, sort_keys=True) does.
-func objectSorted(m map[string]any) (string, error) {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		val, err := jsonValue(m[k])
-		if err != nil {
-			return "", fmt.Errorf("key %q: %w", k, err)
-		}
-		parts = append(parts, jsonString(k)+": "+val)
-	}
-	return "{" + strings.Join(parts, ", ") + "}", nil
-}
-
-// MarshalSorted renders an object exactly as json.dumps(obj, sort_keys=True)
-// would: keys sorted, ", " between items, ": " between key and value.
-func MarshalSorted(obj map[string]any) (string, error) {
-	return objectSorted(obj)
-}
-
-// Sentinel strings substituted for the bare non-finite tokens before handing a
-// CPython-written JSON line to encoding/json. Each starts with a NUL, which
-// json.dumps would have escaped as a six-character backslash-u escape in
-// any genuine corpus string, so the substitution can never collide with real
-// data.
 const (
-	sentinelNaN    = "\x00vmafx-nan"
-	sentinelPosInf = "\x00vmafx-inf"
-	sentinelNegInf = "\x00vmafx-neg-inf"
+	// NaNAsToken mirrors json.dumps with its default allow_nan=True: NaN,
+	// Infinity and -Infinity are emitted as bare tokens.
+	NaNAsToken NaNPolicy = iota
+	// NaNAsNull mirrors vmaftune.jsonio.dumps_strict: non-finite floats
+	// become null, so the payload stays valid RFC 8259.
+	NaNAsNull
 )
 
-// sanitizeNonFinite rewrites the bare NaN / Infinity / -Infinity tokens a
-// CPython-written JSON line can carry into quoted sentinel strings, so
-// encoding/json can parse the line. Tokens inside string literals are left
-// alone; resolveSentinels converts them back to float64 after unmarshalling.
-func SanitizeNonFinite(line string) string {
-	var b strings.Builder
-	b.Grow(len(line))
-	inString := false
-	escaped := false
-	for i := 0; i < len(line); i++ {
-		c := line[i]
-		if inString {
-			b.WriteByte(c)
-			switch {
-			case escaped:
-				escaped = false
-			case c == '\\':
-				escaped = true
-			case c == '"':
-				inString = false
-			}
-			continue
-		}
-		if c == '"' {
-			inString = true
-			b.WriteByte(c)
-			continue
-		}
-		switch {
-		case strings.HasPrefix(line[i:], "NaN"):
-			b.WriteString(jsonString(sentinelNaN))
-			i += 2
-		case strings.HasPrefix(line[i:], "-Infinity"):
-			b.WriteString(jsonString(sentinelNegInf))
-			i += 8
-		case strings.HasPrefix(line[i:], "Infinity"):
-			b.WriteString(jsonString(sentinelPosInf))
-			i += 7
-		default:
-			b.WriteByte(c)
-		}
-	}
-	return b.String()
+// Options controls the rendering. The zero value is json.dumps(v) with its
+// defaults: compact ", " / ": " separators, declaration-ordered struct
+// fields, and the bare non-finite tokens.
+type Options struct {
+	// SortKeys sorts struct fields by key, matching sort_keys=True. Map keys
+	// are always sorted.
+	SortKeys bool
+	// Indent is the per-level indent string; "" is the compact form and
+	// "  " matches indent=2.
+	Indent string
+	// NonFinite selects the NaN / Infinity rendering.
+	NonFinite NaNPolicy
 }
 
-// resolveSentinels walks a decoded JSON value and swaps every non-finite
-// sentinel string back for the float64 it stands in for.
-func ResolveSentinels(v any) any {
-	switch t := v.(type) {
-	case string:
-		switch t {
-		case sentinelNaN:
-			return math.NaN()
-		case sentinelPosInf:
-			return math.Inf(1)
-		case sentinelNegInf:
-			return math.Inf(-1)
+// Marshal renders v under opts.
+func Marshal(v any, opts Options) ([]byte, error) {
+	e := encoder{opts: opts}
+	if err := e.value(reflect.ValueOf(v), 0); err != nil {
+		return nil, err
+	}
+	return []byte(e.sb.String()), nil
+}
+
+// MarshalIndent renders v as json.dumps(v, indent=2, sort_keys=sortKeys).
+func MarshalIndent(v any, sortKeys bool) ([]byte, error) {
+	return Marshal(v, Options{SortKeys: sortKeys, Indent: "  "})
+}
+
+// MarshalSorted renders obj as json.dumps(obj, sort_keys=True): compact, with
+// ", " between members and ": " after keys.
+func MarshalSorted(obj map[string]any) (string, error) {
+	out, err := Marshal(obj, Options{SortKeys: true})
+	return string(out), err
+}
+
+// MarshalIndentSorted renders obj as json.dumps(obj, indent=indent,
+// sort_keys=True). indent <= 0 selects the compact form.
+func MarshalIndentSorted(obj map[string]any, indent int) (string, error) {
+	out, err := Marshal(obj, Options{SortKeys: true, Indent: indentString(indent)})
+	return string(out), err
+}
+
+// MarshalStrict renders v as vmaftune.jsonio.dumps_strict does: sorted keys,
+// the given indent (<= 0 for compact), and non-finite floats as null.
+func MarshalStrict(v any, indent int) (string, error) {
+	out, err := Marshal(v, Options{
+		SortKeys: true, Indent: indentString(indent), NonFinite: NaNAsNull,
+	})
+	return string(out), err
+}
+
+// indentString converts CPython's integer indent into the per-level string.
+func indentString(indent int) string {
+	if indent <= 0 {
+		return ""
+	}
+	return strings.Repeat(" ", indent)
+}
+
+// jsonNumberType is matched before the kind switch: json.Number is a string
+// kind that must render as a number.
+var jsonNumberType = reflect.TypeOf(json.Number(""))
+
+// encoder accumulates one rendering.
+type encoder struct {
+	sb   strings.Builder
+	opts Options
+}
+
+// member is one object entry awaiting emission.
+type member struct {
+	key   string
+	value reflect.Value
+}
+
+// value writes v at the given nesting depth.
+func (e *encoder) value(v reflect.Value, depth int) error {
+	if !v.IsValid() {
+		e.sb.WriteString("null")
+		return nil
+	}
+	if v.Type() == jsonNumberType {
+		return e.number(json.Number(v.String()))
+	}
+	switch v.Kind() {
+	case reflect.Interface, reflect.Pointer:
+		if v.IsNil() {
+			e.sb.WriteString("null")
+			return nil
 		}
-		return t
-	case []any:
-		for i := range t {
-			t[i] = ResolveSentinels(t[i])
+		return e.value(v.Elem(), depth)
+	case reflect.Bool:
+		e.sb.WriteString(strconv.FormatBool(v.Bool()))
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		e.sb.WriteString(strconv.FormatInt(v.Int(), 10))
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		e.sb.WriteString(strconv.FormatUint(v.Uint(), 10))
+	case reflect.Float32, reflect.Float64:
+		e.sb.WriteString(floatToken(v.Float(), e.opts.NonFinite))
+	case reflect.String:
+		e.sb.WriteString(EncodeString(v.String()))
+	case reflect.Struct:
+		return e.object(structMembers(v, e.opts.SortKeys), depth)
+	case reflect.Map:
+		members, err := mapMembers(v)
+		if err != nil {
+			return err
 		}
-		return t
-	case map[string]any:
-		for k := range t {
-			t[k] = ResolveSentinels(t[k])
-		}
-		return t
+		return e.object(members, depth)
+	case reflect.Slice, reflect.Array:
+		return e.array(v, depth)
 	default:
-		return v
+		return fmt.Errorf("pyjson: unsupported type %s", v.Type())
+	}
+	return nil
+}
+
+// number re-emits a json.Number the way CPython would after parsing the same
+// literal: an integral literal round-trips as an int, anything else goes
+// through the float repr.
+func (e *encoder) number(n json.Number) error {
+	if i, err := n.Int64(); err == nil {
+		e.sb.WriteString(strconv.FormatInt(i, 10))
+		return nil
+	}
+	f, err := n.Float64()
+	if err != nil {
+		return fmt.Errorf("pyjson: uninterpretable number %q: %w", n.String(), err)
+	}
+	e.sb.WriteString(floatToken(f, e.opts.NonFinite))
+	return nil
+}
+
+// structMembers collects a struct's JSON-visible fields in declaration order,
+// honouring the json tag's name, "-" and omitempty. Embedded structs are not
+// flattened; none of the ported payloads embed.
+func structMembers(v reflect.Value, sortKeys bool) []member {
+	t := v.Type()
+	out := make([]member, 0, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+		tag := field.Tag.Get("json")
+		if tag == "-" {
+			continue
+		}
+		name, rest, _ := strings.Cut(tag, ",")
+		if name == "" {
+			name = field.Name
+		}
+		value := v.Field(i)
+		if strings.Contains(rest, "omitempty") && isEmpty(value) {
+			continue
+		}
+		out = append(out, member{key: name, value: value})
+	}
+	if sortKeys {
+		sort.Slice(out, func(i, j int) bool { return out[i].key < out[j].key })
+	}
+	return out
+}
+
+// mapMembers collects a map's entries, sorted by key. Only string-keyed maps
+// are supported, which is all the payloads use. CPython's sort_keys sorts by
+// code point, which is Go's byte-wise string comparison over valid UTF-8.
+func mapMembers(v reflect.Value) ([]member, error) {
+	if v.Type().Key().Kind() != reflect.String {
+		return nil, fmt.Errorf("pyjson: unsupported map key type %s", v.Type().Key())
+	}
+	out := make([]member, 0, v.Len())
+	iter := v.MapRange()
+	for iter.Next() {
+		out = append(out, member{key: iter.Key().String(), value: iter.Value()})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].key < out[j].key })
+	return out, nil
+}
+
+// isEmpty implements encoding/json's omitempty predicate.
+func isEmpty(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.Array, reflect.Map, reflect.Slice, reflect.String:
+		return v.Len() == 0
+	case reflect.Bool:
+		return !v.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return v.Int() == 0
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return v.Uint() == 0
+	case reflect.Float32, reflect.Float64:
+		return v.Float() == 0
+	case reflect.Interface, reflect.Pointer:
+		return v.IsNil()
+	default:
+		return false
+	}
+}
+
+// object writes members with CPython's separators for the configured layout.
+func (e *encoder) object(members []member, depth int) error {
+	if len(members) == 0 {
+		e.sb.WriteString("{}")
+		return nil
+	}
+	e.sb.WriteByte('{')
+	for i, m := range members {
+		e.separator(i)
+		e.newlineIndent(depth + 1)
+		e.sb.WriteString(EncodeString(m.key))
+		e.sb.WriteString(": ")
+		if err := e.value(m.value, depth+1); err != nil {
+			return fmt.Errorf("key %q: %w", m.key, err)
+		}
+	}
+	e.newlineIndent(depth)
+	e.sb.WriteByte('}')
+	return nil
+}
+
+// array writes a slice or array with CPython's separators.
+func (e *encoder) array(v reflect.Value, depth int) error {
+	if v.Len() == 0 {
+		e.sb.WriteString("[]")
+		return nil
+	}
+	e.sb.WriteByte('[')
+	for i := 0; i < v.Len(); i++ {
+		e.separator(i)
+		e.newlineIndent(depth + 1)
+		if err := e.value(v.Index(i), depth+1); err != nil {
+			return err
+		}
+	}
+	e.newlineIndent(depth)
+	e.sb.WriteByte(']')
+	return nil
+}
+
+// separator writes the item separator before item i: ", " in the compact
+// form, "," (the newline and indent follow) in the indented form.
+func (e *encoder) separator(i int) {
+	if i == 0 {
+		return
+	}
+	e.sb.WriteByte(',')
+	if e.opts.Indent == "" {
+		e.sb.WriteByte(' ')
+	}
+}
+
+// newlineIndent emits the newline plus indent for one nesting level, or
+// nothing in the compact form.
+func (e *encoder) newlineIndent(depth int) {
+	if e.opts.Indent == "" {
+		return
+	}
+	e.sb.WriteByte('\n')
+	for i := 0; i < depth; i++ {
+		e.sb.WriteString(e.opts.Indent)
 	}
 }

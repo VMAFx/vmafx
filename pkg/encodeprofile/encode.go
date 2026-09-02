@@ -2,8 +2,13 @@
 // SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 //
 // pkg/encodeprofile/encode.go — the single-pass slice of vmaftune.encode:
-// argv composition, the ffmpeg/encoder version parsers, and the subprocess
+// argv composition, the ffmpeg/encoder version parser, and the subprocess
 // driver.
+//
+// The argv builder and the version parser are pkg/ffencode's — the one Go
+// port of vmaftune.encode (ADR-1137). This file keeps the encode-profile
+// contract on top of them: the strict preset / quality check on a registered
+// codec, and the argv-only Runner seam the profile tests stub.
 
 package encodeprofile
 
@@ -11,31 +16,25 @@ import (
 	"context"
 	"os"
 	"os/exec"
-	"regexp"
-	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	pyjson "github.com/VMAFx/vmafx/internal/pyjsonstrict"
-
 	"github.com/VMAFx/vmafx/pkg/codecadapter"
+	"github.com/VMAFx/vmafx/pkg/ffencode"
 )
 
 // BuildFFmpegCommand composes the ffmpeg argv for a single encode.
 //
-// Pure function — no I/O — so tests can pin the exact command line.
-//
-// When SampleClipSeconds > 0, `-ss <start> -t <N>` are inserted as INPUT-side
-// options (before -i) so FFmpeg fast-seeks the source by skipping whole
-// frame-sized byte chunks. Output-side seeking would still decode (and the
-// rawvideo demuxer would still read) the entire source, defeating the speedup.
-//
-// When the caller did not opt into sample-clip mode but the profile bound a
-// duration, that duration becomes an input-side `-t` so the encode is bounded
-// to the analysed window (ADR-0506) — otherwise a 9-minute source bound to a
-// 10-second analysis window would encode all 9 minutes.
+// Pure function — no I/O — so tests can pin the exact command line. The argv
+// itself is ffencode.BuildFFmpegCommand's: input-side `-ss <start> -t <N>`
+// so FFmpeg fast-seeks the source, the bound-duration fallback of ADR-0506,
+// and the codec-adapter slice. What this wrapper adds is the encode-profile
+// contract that an out-of-vocabulary preset or an out-of-window quality on a
+// registered codec is an error rather than something spliced into the
+// command line — the values come from a profile document an operator may
+// have edited by hand. An unregistered encoder still falls back to the legacy
+// libx264-shaped argv, as CPython does.
 //
 // Hardware-encoder caveat, inherited verbatim from Python: this argv carries
 // NO `-init_hw_device` chain. FFmpeg's QSV bridge on Linux needs
@@ -49,150 +48,23 @@ import (
 // documented rather than silently fixed. See the package docs and the
 // subcommand's --help.
 func BuildFFmpegCommand(req EncodeRequest, ffmpegBin string) ([]string, error) {
-	if ffmpegBin == "" {
-		ffmpegBin = "ffmpeg"
+	if adapter, err := codecadapter.Get(req.Encoder); err == nil {
+		if err := adapter.Validate(req.Preset, req.CRF); err != nil {
+			return nil, err
+		}
 	}
-	cmd := []string{ffmpegBin, "-y", "-hide_banner", "-loglevel", "info"}
-
-	fallbackDuration := 0.0
-	if req.SampleClipSeconds <= 0 && req.DurationS > 0 {
-		fallbackDuration = req.DurationS
-	}
-
-	if !req.SourceIsContainer {
-		// Raw source: FFmpeg must be told the format explicitly.
-		cmd = append(cmd,
-			"-f", "rawvideo",
-			"-pix_fmt", req.PixFmt,
-			"-s", strconv.Itoa(req.Width)+"x"+strconv.Itoa(req.Height),
-			"-r", pyjson.Repr(req.Framerate),
-		)
-	}
-	switch {
-	case req.SampleClipSeconds > 0:
-		cmd = append(cmd,
-			"-ss", pyjson.Repr(req.SampleClipStartS),
-			"-t", pyjson.Repr(req.SampleClipSeconds),
-		)
-	case fallbackDuration > 0:
-		cmd = append(cmd, "-t", pyjson.Repr(fallbackDuration))
-	}
-	cmd = append(cmd, "-i", req.Source)
-
-	codecArgs, err := codecadapter.ResolveCodecArgs(req.Encoder, req.Preset, req.CRF)
-	if err != nil {
-		return nil, err
-	}
-	cmd = append(cmd, codecArgs...)
-	cmd = append(cmd, req.ExtraParams...)
-	cmd = append(cmd, req.Output)
-	return cmd, nil
+	return ffencode.BuildFFmpegCommand(req, ffmpegBin)
 }
-
-// ---------------------------------------------------------------------------
-// Version parsing
-// ---------------------------------------------------------------------------
-
-var (
-	ffmpegVersionRe = regexp.MustCompile(`ffmpeg version (\S+)`)
-
-	// x264 banner formats: the canonical "x264 - core 164 r3094 bfc87b7"
-	// plus the defensive "x264-core 164" some downstream builds emit in their
-	// configure summary (ADR-0498 follow-up #7).
-	x264VersionRe = regexp.MustCompile(`x264\s*-?\s*core\s+(\d+)`)
-
-	x265VersionRe    = regexp.MustCompile(`x265 \[info\]: HEVC encoder version (\S+)`)
-	libvpxVP9Version = regexp.MustCompile(`\[libvpx-vp9 @ [^\]]+\]\s+v(\S+)`)
-
-	// SVT-AV1 banner formats across versions: "SVT-AV1 ENCODER v1.7.0",
-	// "Svt[info]:SVT-AV1 Encoder Lib v2.1.0", "SVT [info]: ... Lib v1.7.0".
-	svtAV1VersionRe = regexp.MustCompile(`(?i)SVT-AV1 Encoder(?:\s+Lib)?\s+v(\S+)`)
-
-	// libaom: FFmpeg emits "[libaom-av1 @ 0x...] libaom-av1 v3.x.y" or
-	// "[libaom @ 0x...] AOM version: 3.x.y" depending on FFmpeg vintage.
-	libaomVersionRe = regexp.MustCompile(
-		`(?i)\[libaom(?:-av1)?\s*@\s*[^\]]+\]\s+(?:libaom-av1\s+v|AOM version:\s*)(\S+)`)
-
-	// VVenC: "[libvvenc @ 0x...] VVenC v1.14.0", optionally prefixed with
-	// "Fraunhofer VVC/H.266 Encoder".
-	libvvencVersionRe = regexp.MustCompile(
-		`(?i)\[libvvenc\s*@\s*[^\]]+\]\s+(?:Fraunhofer\s+VVC/H\.266\s+Encoder\s+)?VVenC\s+v(\S+)`)
-)
-
-// hwEncoderTokens identify hardware encoders, which advertise no version in
-// stderr; the encoder token itself becomes the stable identifier.
-var hwEncoderTokens = []string{"_nvenc", "_amf", "_qsv", "_videotoolbox"}
 
 // ParseVersions returns (ffmpegVersion, encoderVersion) extracted from stderr.
 //
-// encoder selects the per-codec regex. Missing matches yield "unknown" rather
-// than an error — corpus rows record what can be detected and move on.
+// It is ffencode.ParseVersions — the one port of vmaftune.encode.parse_versions
+// — under this package's name; testdata/pv_expected.json pins the full
+// stderr x encoder matrix against the Python function through it. Missing
+// matches yield "unknown" rather than an error — corpus rows record what can
+// be detected and move on.
 func ParseVersions(stderr, encoder string) (string, string) {
-	ffmpegVersion := "unknown"
-	if m := ffmpegVersionRe.FindStringSubmatch(stderr); m != nil {
-		ffmpegVersion = m[1]
-	}
-
-	var encoderVersion string
-	switch {
-	case encoder == "libx264" || encoder == "":
-		// The caller did not pass an explicit encoder override (still at the
-		// "libx264" default), so auto-detect: x264's banner appears first in
-		// multi-codec logs, then x265, then SVT-AV1.
-		switch {
-		case x264VersionRe.MatchString(stderr):
-			encoderVersion = "libx264-" + x264VersionRe.FindStringSubmatch(stderr)[1]
-		case x265VersionRe.MatchString(stderr):
-			encoderVersion = "libx265-" + x265VersionRe.FindStringSubmatch(stderr)[1]
-		case svtAV1VersionRe.MatchString(stderr):
-			encoderVersion = "libsvtav1-" + svtAV1VersionRe.FindStringSubmatch(stderr)[1]
-		default:
-			encoderVersion = "unknown"
-		}
-	case encoder == "libx265":
-		encoderVersion = matchOr(x265VersionRe, stderr, "libx265-", "unknown")
-	case encoder == "libsvtav1" || encoder == "libsvtav1-vbr":
-		encoderVersion = matchOr(svtAV1VersionRe, stderr, "libsvtav1-", "unknown")
-	case encoder == "libvpx-vp9":
-		encoderVersion = matchOr(libvpxVP9Version, stderr, "libvpx-vp9-", "unknown")
-	case encoder == "libaom-av1":
-		// libaom emits a banner only on verbose builds; fall back to the
-		// stable adapter name rather than "unknown".
-		encoderVersion = matchOr(libaomVersionRe, stderr, "libaom-av1-", "libaom-av1")
-	case encoder == "libvvenc":
-		encoderVersion = matchOr(libvvencVersionRe, stderr, "libvvenc-", "libvvenc")
-	default:
-		// Hardware encoders advertise no version in stderr, so the encoder
-		// token itself becomes the stable identifier.
-		encoderVersion = "unknown"
-		if slices.ContainsFunc(hwEncoderTokens, func(tok string) bool {
-			return strings.Contains(encoder, tok)
-		}) {
-			encoderVersion = encoder
-		}
-	}
-
-	return ffmpegVersion, encoderVersion
-}
-
-// matchOr returns prefix+capture on a match, or fallback.
-func matchOr(re *regexp.Regexp, s, prefix, fallback string) string {
-	if m := re.FindStringSubmatch(s); m != nil {
-		return prefix + m[1]
-	}
-	return fallback
-}
-
-// versionProbePatterns maps an encoder onto the `ffmpeg -version` configure
-// flag that proves it was compiled in. The configure summary carries no
-// per-encoder version, so the probe settles for an "<encoder>-enabled" marker.
-var versionProbePatterns = map[string]*regexp.Regexp{
-	"libx264":    regexp.MustCompile(`--enable-libx264`),
-	"libsvtav1":  regexp.MustCompile(`--enable-libsvtav1`),
-	"libx265":    regexp.MustCompile(`--enable-libx265`),
-	"libvpx-vp9": regexp.MustCompile(`--enable-libvpx`),
-	"libaom-av1": regexp.MustCompile(`--enable-libaom`),
-	"libvvenc":   regexp.MustCompile(`--enable-libvvenc`),
+	return ffencode.ParseVersions(stderr, encoder)
 }
 
 // probeCache memoises the `ffmpeg -version` fallback, keyed by
@@ -202,20 +74,23 @@ var probeCache sync.Map
 // probeEncoderVersion returns a best-effort version label, or "" when nothing
 // is parseable (ADR-0498 follow-up #7). Modern FFmpeg builds suppress the
 // per-encoder banner under -hide_banner, which left corpus rows recording
-// "unknown" even with the encoder plainly running.
+// "unknown" even with the encoder plainly running. The configure-line marker
+// per encoder is ffencode.ProbePattern's table.
 func probeEncoderVersion(ffmpegBin, encoder string, run Runner) string {
-	pattern, ok := versionProbePatterns[encoder]
+	pattern, ok := ffencode.ProbePattern(encoder)
 	if !ok {
 		return ""
 	}
 	key := ffmpegBin + "\x00" + encoder
 	if cached, hit := probeCache.Load(key); hit {
-		return cached.(string)
+		if label, isString := cached.(string); isString {
+			return label
+		}
 	}
 
 	label := ""
 	res, err := run([]string{ffmpegBin, "-version"})
-	if err == nil && pattern.MatchString(res.Stdout+res.Stderr) {
+	if err == nil && strings.Contains(res.Stdout+res.Stderr, pattern) {
 		label = encoder + "-enabled"
 	}
 	probeCache.Store(key, label)

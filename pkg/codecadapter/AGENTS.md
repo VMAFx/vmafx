@@ -18,7 +18,7 @@ span them.
 | `pkg/saliency` | `vmaftune/saliency.py` |
 | `pkg/prefilter` | `vmaftune/prefilter.py`, `filter_adapters/pelorus_deband.py` |
 | `pkg/corpusrow` | the `recommend`-scoped part of `vmaftune/corpus.py` |
-| `internal/pyjson` | Python `json.dumps` output compatibility |
+| `pkg/pyjson` | Python `json.dumps` / `jsonio.dumps_strict` output compatibility (ADR-1137) |
 
 ## Rebase-sensitive invariants
 
@@ -43,9 +43,14 @@ span them.
    `extra_params(preset, qp)` on `h264_amf` / `hevc_amf` / `av1_amf` returns
    the same tokens `ffmpeg_codec_args` already produced, so the Python emits
    `-quality … -rc cqp -qp_i … -qp_p …` twice per AMF encode. The Go port
-   emits each token once. If a future change makes the Python's duplication
-   load-bearing (it is not today — FFmpeg takes the last occurrence), this
-   deviation has to be revisited, not silently inherited.
+   emits each token once, and since ADR-1137 that holds for every encode
+   driver (`pkg/ffencode`, `pkg/corpus`, `pkg/encodeprofile`,
+   `pkg/tune/executor`), because they all build argv through this registry.
+   `TestCodecArgsMatchPythonAtDefaultQuality` pins the exception precisely:
+   the Python fixture's `extra` must equal the codec-args tail, so a change
+   in what the Python duplicates is still caught. If a future change makes
+   the duplication load-bearing (it is not today — FFmpeg takes the last
+   occurrence), this deviation has to be revisited, not silently inherited.
 
 4. **`recommend`'s CRF window is 10–50, not the adapter's quality range**
    (`cmd/vmafx-tune/cmd/recommend.go`). The Python CLI never overrides
@@ -55,15 +60,15 @@ span them.
 
 5. **Corpus JSONL carries bare `NaN` / `Infinity` tokens.** An unmeasured
    feature aggregate is NaN by design (ADR-0366) and Python's `json.dumps`
-   writes the bare token. `pkg/corpusrow` writes them via `internal/pyjson`
+   writes the bare token. `pkg/corpusrow` writes them via `pkg/pyjson`
    and `pkg/recommend.SanitizeNonFiniteTokens` reads them back. Do NOT
    "fix" the writer to emit `null`: a Python reader would then get `None`
    where `float(None)` raises, instead of a NaN that propagates. The
    sanitiser is string-literal aware on purpose — a source path containing
    the text `NaN` must survive.
 
-6. **`internal/pyjson` is the single implementation of Python-output
-   compatibility.** It exists because `encoding/json` diverges in four
+6. **`pkg/pyjson` is the single implementation of Python-output
+   compatibility (ADR-1137).** It exists because `encoding/json` diverges in four
    places: it cannot marshal NaN at all, it renders `93.0` as `93`, it
    HTML-escapes `<`, `>` and `&`, and it emits non-ASCII raw where Python
    escapes to `\uXXXX`. Every payload the ML-driven subcommands emit goes

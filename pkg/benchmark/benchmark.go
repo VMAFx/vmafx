@@ -36,7 +36,7 @@ import (
 	"strconv"
 	"strings"
 
-	pyjson "github.com/VMAFx/vmafx/internal/pyjsonstrict"
+	"github.com/VMAFx/vmafx/pkg/pyjson"
 )
 
 // Row is one Phase-A corpus record. Values are whatever the JSONL carried,
@@ -178,7 +178,7 @@ func pyStr(v any) string {
 	case json.Number:
 		return numberStr(t)
 	case float64:
-		return pyjson.Repr(t)
+		return pyjson.FloatRepr(t)
 	default:
 		return fmt.Sprint(v)
 	}
@@ -192,7 +192,7 @@ func numberStr(n json.Number) string {
 		return strconv.FormatInt(i, 10)
 	}
 	if f, err := n.Float64(); err == nil {
-		return pyjson.Repr(f)
+		return pyjson.FloatRepr(f)
 	}
 	return n.String()
 }
@@ -585,7 +585,8 @@ func optFloat(v *float64) any {
 // RenderJSON renders the summaries as stable pretty RFC 8259 JSON (ADR-0988),
 // with the trailing newline the Python renderer appends.
 func RenderJSON(summaries []Summary) (string, error) {
-	s, err := pyjson.Marshal(ToPayload(summaries), pyjson.NaNAsNull)
+	// dumps_strict semantics: indent=2, sorted keys, non-finite -> null.
+	s, err := pyjson.MarshalStrict(ToPayload(summaries), 2)
 	if err != nil {
 		return "", err
 	}

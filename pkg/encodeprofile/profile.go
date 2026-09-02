@@ -30,6 +30,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/VMAFx/vmafx/pkg/ffencode"
 )
 
 // SchemaID is report.ENCODER_PROFILE_SCHEMA — the only profile schema this
@@ -270,38 +272,11 @@ func isClose(a, b float64) bool {
 // EncodeRequest construction
 // ---------------------------------------------------------------------------
 
-// EncodeRequest is one (preset, quality) encode against one source — the
-// single-pass subset of vmaftune.encode.EncodeRequest.
-type EncodeRequest struct {
-	Source    string
-	Width     int
-	Height    int
-	PixFmt    string
-	Framerate float64
-	Encoder   string
-	Preset    string
-	CRF       int
-	Output    string
-
-	// ExtraParams are raw FFmpeg tokens appended after the codec args.
-	ExtraParams []string
-
-	// SampleClipSeconds opts into sample-clip mode (ADR-0297): FFmpeg's input
-	// is sliced to an N-second window. Zero keeps the full-source encode.
-	SampleClipSeconds float64
-
-	// SampleClipStartS is the clip offset. The encode driver never recomputes
-	// it, so the score driver can mirror the same window.
-	SampleClipStartS float64
-
-	// SourceIsContainer suppresses the raw-video input flags so FFmpeg
-	// auto-detects the format.
-	SourceIsContainer bool
-
-	// DurationS bounds the encode to the analysed window when sample-clip
-	// mode is off (ADR-0506).
-	DurationS float64
-}
+// EncodeRequest is one (preset, quality) encode against one source. It is
+// ffencode.Request — the one Go mirror of vmaftune.encode.EncodeRequest
+// (ADR-1137) — under this package's name; encode-profile is single-pass and
+// never sets the 2-pass fields.
+type EncodeRequest = ffencode.Request
 
 // BuildOptions carries the CLI overrides that shape an EncodeRequest.
 type BuildOptions struct {

@@ -197,14 +197,17 @@ during the migration; see Stage roadmap in
     those tests reintroduces flakes; tests that never start a study may
     stay parallel.
 
-23. **Python-compatible JSON is not `encoding/json`** (`internal/pyjson`):
-    every payload that a ported subcommand also emits from Python goes through
-    `pyjson.Marshal`, never `json.Marshal`/`MarshalIndent`. Go and CPython
-    disagree on four visible things — struct-field order vs sorted keys, HTML
-    escaping, non-ASCII escaping, and float rendering (`float64(92)` is `92` in
-    Go and `92.0` in CPython, and the two switch to exponent notation at 1e6 vs
-    1e17). `pyjson.Repr` was validated against CPython `repr()` over 8025
-    values. Reaching for `encoding/json` in a ported emit path silently breaks
+23. **Python-compatible JSON is not `encoding/json`** (`pkg/pyjson`, the one
+    CPython-JSON encoder since ADR-1137): every payload that a ported
+    subcommand also emits from Python goes through `pyjson.Marshal` /
+    `MarshalIndentSorted` / `MarshalStrict`, never
+    `json.Marshal`/`MarshalIndent`. Go and CPython disagree on four visible
+    things — struct-field order vs sorted keys, HTML escaping, non-ASCII
+    escaping, and float rendering (`float64(92)` is `92` in Go and `92.0` in
+    CPython, and the two switch to exponent notation at 1e6 vs 1e16).
+    `pyjson.FloatRepr` is pinned against CPython `repr()` by the
+    `pkg/pyjson/testdata/float_repr.txt` corpus. Reaching for `encoding/json`
+    in a ported emit path silently breaks
     byte parity. (`compare`'s `emitSweepJSON` predates this package and still
     uses `MarshalIndent` with declaration-ordered struct fields; it is a known
     gap, not a pattern to copy.)

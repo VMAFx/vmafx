@@ -19,8 +19,8 @@ import (
 	"strconv"
 	"strings"
 
-	pyjson "github.com/VMAFx/vmafx/internal/pyjsonstrict"
 	"github.com/VMAFx/vmafx/pkg/codecadapter"
+	"github.com/VMAFx/vmafx/pkg/pyjson"
 )
 
 // toFloat is CPython's float() over the JSON value shapes a profile can hold.
@@ -118,7 +118,7 @@ func pyStrOr(v any, def string) string {
 			if f == 0 {
 				return def
 			}
-			return pyjson.Repr(f)
+			return pyjson.FloatRepr(f)
 		}
 		return t.String()
 	default:

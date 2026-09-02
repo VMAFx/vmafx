@@ -36,7 +36,13 @@ implementations must produce the same bytes for the same inputs.**
 
 4. **`BuildFFmpegCommand` and `BuildVMAFCommand` are pure and byte-pinned**
    (`encode.go`, `score.go`). They decide what the sweep actually encodes and
-   scores. The argv tables in `encode_test.go` / `score_test.go` were read off
+   scores. Since ADR-1137 `EncodeRequest`, `BuildFFmpegCommand` and
+   `ParseVersions` in `encode.go` are a type alias and one-line wrappers over
+   `pkg/ffencode` (the one port of `vmaftune.encode`), and `HdrInfo`,
+   `DetectHDR`, `ClassifyFFprobePayload` and `HDRCodecArgs` in `hdr.go` wrap
+   `pkg/hdr`; a fix belongs in the shared package, never in a re-grown local
+   copy, while the tables here keep pinning the contract under the corpus
+   names. The argv tables in `encode_test.go` / `score_test.go` were read off
    `vmaftune.encode.build_ffmpeg_command` and `vmaftune.score.build_vmaf_command`;
    changing a flag's position or spelling changes the produced bitstream. In
    particular:
