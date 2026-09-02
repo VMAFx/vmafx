@@ -47428,7 +47428,9 @@ Rebase-sensitive points:
   `motion_clip` / `motion_blend_clip`; every collector append goes through
   `motion_append`. The three `readability-function-size` NOLINTs from the
   b949cebf port are gone; do not bring them back with an upstream hunk.
-- All three C files carry a file-scoped `NOLINTBEGIN/END(modernize-use-nullptr)`
-  bracket per ADR-1138 — keep the closing marker at EOF when appending. The
-  registry symbols keep the cited `NOLINTNEXTLINE(misc-use-internal-linkage)`.
-  `flush()` carries a cited `cppcheck-suppress constParameterCallback`.
+- `integer_vif.c` and `float_motion.c` carry a file-scoped
+  `NOLINTBEGIN/END(modernize-use-nullptr)` bracket per ADR-1138 — keep the
+  closing marker at EOF when appending. `vif_tools.c` has no null-pointer
+  constants and therefore no bracket. The registry symbols keep the cited
+  `NOLINTNEXTLINE(misc-use-internal-linkage)`. `flush()` carries a cited
+  `cppcheck-suppress constParameterCallback`.

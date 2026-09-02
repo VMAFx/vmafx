@@ -126,7 +126,7 @@ matrix covers:
 | Cite-and-keep `NOLINT(readability-function-size)` on the nine oversized functions | Zero diff in the numeric code | ADR-0141 reserves NOLINT for load-bearing invariants; the sibling `_avx2` / `_avx512` kernels, not the scalar reference, are where an inline reduction is load-bearing; three copies of the statistic would keep drifting | Non-compliant with ADR-0141's "refactor first" |
 | Macro-ise the shared statistic (`#define VIF_PIXEL_STAT(...)`) | Guarantees textual identity | Power-of-10 rule 8 (preprocessor restraint); `bugprone-macro-parentheses` noise; no type checking of the accumulator | Worse for lint than the problem it solves |
 | `static FORCE_INLINE` helpers with verbatim expressions (chosen) | One scalar reference for three entry points and the SIMD tails; zero NOLINTs; provably bit-exact under the fork's compile flags | A future `-march`/`-ffp-contract=fast` change would need re-verification (the matrix in §4.2 is the recipe) | Only option satisfying ADR-0141 without new suppressions |
-| Rewrite `NULL` → `nullptr` in the three C TUs | No suppression bracket | MSVC `/std:clatest` does not document C `nullptr`; upstream-sync conflicts | Settled by ADR-1138 — file-scoped cited bracket |
+| Rewrite `NULL` → `nullptr` in the two C TUs that use it (`integer_vif.c`, `float_motion.c`) | No suppression bracket | MSVC `/std:clatest` does not document C `nullptr`; upstream-sync conflicts | Settled by ADR-1138 — file-scoped cited bracket in those two TUs; `vif_tools.c` has no null-pointer constants and carries none |
 | Flatten `MotionState` back to `ref_u` / `blur_v[3]` fields and only split `init` / `extract` | Smaller struct diff | Every plane operation stays triplicated and each of the three functions still exceeds the branch threshold | Plane array is the smallest change that discharges all three NOLINTs |
 
 ## 6. Residue / follow-ups
@@ -147,5 +147,5 @@ matrix covers:
 - [ADR-0278](../adr/0278-t7-5-nolint-sweep.md) — NOLINT citation form.
 - [ADR-0504](../adr/0504-float-convolution-avx512-port.md) — float VIF AVX2-only dispatch (comment preserved on `vif_use_avx2_convolution`).
 - [ADR-0500](../adr/0500-vif-perf-lut-shrink-and-filter-cache.md) — VIF log2 LUT layout that `log_generate` fills.
-- ADR-1138 (`docs/adr/1138-c-translation-units-keep-null.md`, lands with PR #1193) — C translation units keep `NULL`.
+- [ADR-1138](../adr/1138-c-translation-units-keep-null.md) — C translation units keep `NULL`; `integer_vif.c` and `float_motion.c` carry the file-scoped bracket, `vif_tools.c` has no null-pointer constants and carries none.
 - clang-tidy debt baseline of 2026-08-31 (wave-1 dispatch).

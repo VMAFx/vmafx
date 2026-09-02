@@ -912,11 +912,15 @@ after a port-upstream of any of these files.
   `motion_add_uv` parity with the CUDA / SYCL twins. `motion_clip` /
   `motion_blend_clip` are the only places the `motion_fps_weight` /
   `motion_max_val` clip is applied.
-- **C translation units keep `NULL`** (ADR-1138): the three files carry a
-  file-scoped `NOLINTBEGIN/END(modernize-use-nullptr)` bracket; keep the
-  `NOLINTEND` at end of file when appending. `flush()` in `float_motion.c`
-  carries a cited `cppcheck-suppress constParameterCallback` because the
-  `VmafFeatureExtractor.flush` callback type fixes its prototype.
+- **C translation units keep `NULL`** (ADR-1138): `integer_vif.c` and
+  `float_motion.c` carry a file-scoped
+  `NOLINTBEGIN/END(modernize-use-nullptr)` bracket; keep the `NOLINTEND` at
+  end of file when appending. `vif_tools.c` has no null-pointer constants
+  (`grep -c NULL core/src/feature/vif_tools.c` and `grep -c NOLINT` on the
+  same file both print `0`) and therefore carries no bracket — do not add
+  one unless an upstream hunk brings a `NULL` into that file. `flush()` in
+  `float_motion.c` carries a cited `cppcheck-suppress constParameterCallback`
+  because the `VmafFeatureExtractor.flush` callback type fixes its prototype.
 
 ## Governing ADRs
 
