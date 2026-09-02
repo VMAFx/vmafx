@@ -9,3 +9,8 @@
   `libigdgmm12_${GMMLIB_VER}` and the IGC debs from the compute-runtime release
   page for `NEO_VER`, so a lone gmmlib bump produced a 404 and a red
   `Dev Container Build` (#1184). Both stay manual-review per ADR-0605.
+- CI: every `setup-go` step now uses `go-version-file: go.mod` instead of a
+  hard-coded `go-version`. With `GOTOOLCHAIN=local`, the literal pin
+  (`1.27.0`) made any Renovate bump of the `go` directive fail
+  `go vet + go test` with `go.mod requires go >= 1.27.1 (running go 1.27.0)`
+  (#1139); the directive in `go.mod` is now the single source of truth.
