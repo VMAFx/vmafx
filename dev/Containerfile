@@ -246,7 +246,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # clinfo is installed in the same layer as the NEO .debs to avoid a
 # separate apt-get update/install round (saves one image layer). ADR-0790.
 ARG NEO_VER=26.31.39395.13
-ARG GMMLIB_VER=22.10.0
+ARG GMMLIB_VER=22.10.1
 ARG IGC_VER=2.40.13+22418
 # hadolint ignore=DL3003,DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
