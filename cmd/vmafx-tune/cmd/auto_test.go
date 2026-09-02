@@ -198,7 +198,7 @@ func TestAutoRejectsBadInput(t *testing.T) {
 // TestAutoNonSmokePlanCarriesNaNIntervalWidth pins the byte-level quirk the
 // Go emitter has to reproduce: without a calibration seam the conformal
 // interval is uncalibrated, and CPython's json.dumps spells that as the bare
-// NaN token. Go's encoding/json cannot, which is why pkg/tune/pyjson exists.
+// NaN token. Go's encoding/json cannot, which is why pkg/pyjson exists.
 func TestAutoNonSmokePlanCarriesNaNIntervalWidth(t *testing.T) {
 	t.Parallel()
 

@@ -41,8 +41,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/VMAFx/vmafx/internal/pyjson"
 	"github.com/VMAFx/vmafx/pkg/ffencode"
+	"github.com/VMAFx/vmafx/pkg/pyjson"
 	"github.com/VMAFx/vmafx/pkg/scorecli"
 )
 
@@ -469,8 +469,8 @@ func CoarseToFineSearch(ctx context.Context, run CellRunner, opts SearchOptions)
 //
 // So this writer reproduces Python's output exactly — the same non-finite
 // tokens, json.dumps's default ", " / ": " separators, and repr's float
-// rendering — via internal/pyjson, which is the one implementation of that
-// contract in the tree.
+// rendering — via pkg/pyjson, which is the one implementation of that
+// contract in the tree (ADR-1137).
 func MarshalRow(row Row) (string, error) {
 	blob, err := pyjson.Marshal(map[string]any(row), pyjson.Options{SortKeys: true})
 	if err != nil {

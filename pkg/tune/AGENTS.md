@@ -3,52 +3,63 @@
 Parent: [../../AGENTS.md](../../AGENTS.md). CLI wiring lives in
 [cmd/vmafx-tune/AGENTS.md](../../cmd/vmafx-tune/AGENTS.md).
 
-Go port of the `vmaf-tune auto` and `vmaf-tune sidecar` surfaces, plus the
-shared machinery both need. The Python originals stay in
-`tools/vmaf-tune/src/vmaftune/` until Go reaches parity (ADR-0703 §Decision,
-ADR-0704 §Consequences), so **every package here has a live Python
-counterpart that it must not drift from.**
+Go port of the `vmaf-tune auto` and `vmaf-tune sidecar` surfaces. The Python
+originals stay in `tools/vmaf-tune/src/vmaftune/` until Go reaches parity
+(ADR-0703 §Decision, ADR-0704 §Consequences), so **every package here has a
+live Python counterpart that it must not drift from.**
 
 | Package | Python counterpart |
 | --------- | -------------------- |
 | `auto/` | `vmaftune/auto.py` |
 | `sidecar/` | `vmaftune/sidecar.py` |
-| `predictor/` | `vmaftune/predictor.py` |
-| `codec/` | `vmaftune/codec_adapters/` |
-| `hdr/` | `vmaftune/hdr.py` |
 | `executor/` | `vmaftune/executor.py` (`run_plan`), `encode.py`, `score.py` |
-| `pyjson/` | CPython `json.dumps`, `vmaftune/jsonio.py` |
-| `pymath/` | CPython's `2.0 ** x` and `math.log10` on the platform libm |
+
+The shared layers these consume live **outside** `pkg/tune/` and have one
+implementation each (ADR-1137): `pkg/predictor` (`vmaftune/predictor.py`),
+`pkg/codecadapter` (`vmaftune/codec_adapters/`), `pkg/hdr` (`vmaftune/hdr.py`),
+`pkg/ffencode` (`vmaftune/encode.py`), `pkg/pyjson` (CPython `json.dumps` and
+`vmaftune/jsonio.py`), and `pkg/pymath` (CPython's `2.0 ** x` and
+`math.log10` on the platform libm). The `pkg/tune/{hdr,pymath}` shadows the
+parallel port produced are gone (moved to `pkg/hdr` / `pkg/pymath`), and
+`pkg/tune/{predictor,codec,pyjson}` are **transitional thin aliases** — one
+file each, type aliases and one-line wrappers over the survivor, no tests of
+their own — kept only because `sidecar/` and `cmd/vmafx-tune/cmd/sidecar.go`
+still import them and those files are owned by the in-flight sidecar parity
+fix (#1187). Once #1187 lands, repoint the sidecar imports and delete the
+three alias packages. Do not add to an alias, and do not re-grow a shadow on
+a rebase — repoint the import.
 
 ## Rebase-sensitive invariants
 
 1. **The plan JSON is byte-compatible with the Python emitter, NaN token
-   included** (`auto/auto.go` `EmitPlanJSON`, `pyjson/`). `vmaftune.auto`
+   included** (`auto/auto.go` `EmitPlanJSON`, `pkg/pyjson`). `vmaftune.auto`
    serialises with plain `json.dumps(payload, indent=2, sort_keys=True)`, whose
    default `allow_nan=True` writes the bare token `NaN` for an uncalibrated
    conformal `interval_width` — which every non-smoke run without a
    `CellIntervals` seam produces. The Go side therefore **cannot** use
-   `encoding/json`, and `pkg/tune/pyjson` exists to reproduce CPython's
-   spelling exactly: the `NaN` / `Infinity` tokens, `repr()`'s mandatory `.0`
-   on integral floats, its fixed/exponential switch at
-   `decpt <= -4 || decpt > 16`, and `ensure_ascii=True` escaping.
+   `encoding/json`; the plan goes through `pyjson.MarshalIndentSorted`, which
+   reproduces CPython's spelling exactly: the `NaN` / `Infinity` tokens,
+   `repr()`'s mandatory `.0` on integral floats, its fixed/exponential switch
+   at `decpt <= -4 || decpt > 16`, and `ensure_ascii=True` escaping.
    `TestEmitPlanJSONMatchesPython` diffs whole plans against fixtures generated
    from the Python module. Do not "fix" the NaN by switching to
-   `MarshalStrict` — that would silently break every downstream consumer
-   comparing the two emitters. The `--execute` JSONL rows *are* strict
-   (`dumps_strict` on both sides); that asymmetry is intentional.
+   `pyjson.MarshalStrict` — that would silently break every downstream
+   consumer comparing the two emitters. The `--execute` JSONL rows and the
+   sidecar state file *are* strict (`dumps_strict` on both sides, i.e.
+   `MarshalStrict`); that asymmetry is intentional.
 
-2. **`pymath` is not a micro-optimisation; it is the parity layer**
-   (`pymath/exp2.go`, `pymath/log10.go`). Go's `math.Pow` and `math.Log10` land
-   one ULP away from the platform libm CPython calls, and both results reach
-   user-visible JSON fields — `estimated_bitrate_kbps` via `2**((probe_quality −
-   crf)/6)`, and `estimated_vmaf` via the predictor curve's
-   `+ d·log10(bitrate)`. Swapping either back to the stdlib moves the last
-   mantissa digit and fails the parity fixtures. `Exp2` matches CPython exactly
-   across the whole `n/6` family the planner produces (12,606 vectors). `Log10`
-   is correctly rounded, which agrees with glibc on ~99.3% of random inputs
-   versus the stdlib's ~72%; the residual is glibc's own rounding error and is
-   documented in the package, not a defect to chase.
+2. **`pkg/pymath` is not a micro-optimisation; it is the parity layer**
+   (`pkg/pymath/exp2.go`, `pkg/pymath/log10.go`). Go's `math.Pow` and
+   `math.Log10` land one ULP away from the platform libm CPython calls, and
+   both results reach user-visible JSON fields — `estimated_bitrate_kbps` via
+   `2**((probe_quality − crf)/6)` in `auto/auto.go`, and `estimated_vmaf` via
+   the `pkg/predictor` curve's `+ d·log10(bitrate)`. Swapping either back to
+   the stdlib moves the last mantissa digit and fails the parity fixtures.
+   `Exp2` matches CPython exactly across the whole `n/6` family the planner
+   produces (12,606 vectors). `Log10` is correctly rounded, which agrees with
+   glibc on ~99.3% of random inputs versus the stdlib's ~72%; the residual is
+   glibc's own rounding error and is documented in the package, not a defect
+   to chase.
 
 3. **Short-circuit order is the output contract** (`auto/auto.go`
    `ShortCircuitPredicates`). `plan.metadata.short_circuits` records firing
@@ -100,7 +111,7 @@ counterpart that it must not drift from.**
    capture. A "small epsilon" initialisation would silently perturb every
    untrained host's scores.
 
-10. **The subprocess seam is load-bearing for testability** (`hdr.Runner`,
+10. **The subprocess seam is load-bearing for testability** (`pkg/hdr.Runner`,
     `executor.Runner`). Every ffprobe / ffmpeg / vmaf invocation goes through an
     injectable runner, and the whole test suite runs without those binaries
     installed. Never inline `exec.Command` into a driver. Note the convention:
@@ -109,22 +120,25 @@ counterpart that it must not drift from.**
     "the tool is not installed".
 
 11. **Probe failure degrades, it does not abort** (`auto/auto.go`
-    `ProbeSourceMeta`, `hdr/hdr.go` `Detect`). A missing ffprobe, a non-zero
-    exit, or unparseable output all land on the documented defaults
+    `ProbeSourceMeta`, `pkg/hdr/hdr.go` `Detect`). A missing ffprobe, a
+    non-zero exit, or unparseable output all land on the documented defaults
     (1920x1080, duration 0, SDR). HDR detection is deliberately permissive in
     one direction only: misclassifying SDR as HDR would inject PQ signalling
     into a gamma-2.4 encode, so a PQ transfer without BT.2020 primaries is
     treated as SDR.
 
-12. **`codec.FFmpegCodecArgs` is lenient; `codec.Validate` is strict**
-    (`codec/codec.go`). The argv builder tolerates an out-of-vocabulary preset
-    and an out-of-window quality, falling back to the adapter's documented
-    default, exactly as the Python adapters do. `Validate` is the gate that
-    rejects them. Do not collapse the two. The AMF family's argv repeats its
-    `-quality / -rc / -qp_i / -qp_p` tail because the Python adapter emits it
-    from both `ffmpeg_codec_args` and `extra_params`; ffmpeg takes the last
-    occurrence so the duplication is inert, and it is reproduced deliberately
-    to keep a Go-vs-Python argv diff empty.
+12. **The executor's argv is `pkg/ffencode`'s, and the AMF tail is emitted
+    once** (`executor/executor.go` `BuildFFmpegCommand`, a one-line wrapper).
+    `EncodeRequest` is a type alias of `ffencode.Request`; the input-side
+    `-ss` / `-t` placement, the `DurationS` fallback and the codec-adapter
+    slice are pinned by `executor_test.go` through the wrapper. The argv
+    builder is lenient — `(*codecadapter.Adapter).ResolveCodecArgs` passes an
+    out-of-vocabulary preset through verbatim — while the package-level
+    `codecadapter.ResolveCodecArgs` is the strict gate; the plan driver only
+    ever emits `medium`, so the lenient path is unreachable from a real plan.
+    The AMF family's inert duplicate `-quality / -rc / -qp_i / -qp_p` tail is
+    **not** reproduced (ADR-1125, pkg/codecadapter `AGENTS.md` invariant 3);
+    the pre-ADR-1137 executor was the only driver that still emitted it.
 
 13. **Plan cells carry no `cell_index` or `preset`** (`executor/executor.go`
     `cellToEncodeRequest`, `makeRow`). The planner does not emit those keys, so
@@ -135,8 +149,11 @@ counterpart that it must not drift from.**
 
 ## Regenerating the parity fixtures
 
-Every `testdata/python_*.json` file (and the `pymath` reference vectors) was
-dumped from the in-tree Python implementation. Regenerate them **only**
-alongside a deliberate, coordinated change on both sides — a silent
-regeneration turns the parity gate into a tautology. Each fixture's loader
-documents the shape it expects.
+Every `testdata/python_*.json` file here, and the fixtures that moved with the
+shared layers in ADR-1137 (`pkg/predictor/testdata/python_predictor.json`,
+`pkg/codecadapter/testdata/python_adapters.json`,
+`pkg/hdr/testdata/python_hdr.json`, `pkg/pyjson/testdata/float_repr.txt`, the
+`pkg/pymath` reference vectors), was dumped from the in-tree Python
+implementation. Regenerate them **only** alongside a deliberate, coordinated
+change on both sides — a silent regeneration turns the parity gate into a
+tautology. Each fixture's loader documents the shape it expects.

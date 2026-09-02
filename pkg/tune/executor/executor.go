@@ -34,9 +34,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/VMAFx/vmafx/pkg/ffencode"
+	"github.com/VMAFx/vmafx/pkg/pyjson"
 	"github.com/VMAFx/vmafx/pkg/tune/auto"
-	"github.com/VMAFx/vmafx/pkg/tune/codec"
-	"github.com/VMAFx/vmafx/pkg/tune/pyjson"
 )
 
 // ResultsFilename is the JSONL log RunPlan appends to inside the output dir.
@@ -105,23 +105,10 @@ func ExecRunner(ctx context.Context, argv []string) (CommandResult, error) {
 	return result, err
 }
 
-// EncodeRequest is one ffmpeg invocation.
-type EncodeRequest struct {
-	Source            string
-	Width             int
-	Height            int
-	PixFmt            string
-	Framerate         float64
-	Encoder           string
-	Preset            string
-	CRF               int
-	Output            string
-	ExtraParams       []string
-	SampleClipSeconds float64
-	SampleClipStartS  float64
-	SourceIsContainer bool
-	DurationS         float64
-}
+// EncodeRequest is one ffmpeg invocation. It is ffencode.Request — the one Go
+// mirror of vmaftune.encode.EncodeRequest (ADR-1137) — under the name this
+// package's callers use; the executor never sets its 2-pass fields.
+type EncodeRequest = ffencode.Request
 
 // EncodeResult is the outcome of one encode.
 type EncodeResult struct {
@@ -154,152 +141,33 @@ type ExecuteResult struct {
 	Row    map[string]any
 }
 
-// BuildFFmpegCommand composes the ffmpeg argv for a single encode. Pure — no
-// I/O — so tests can pin the exact command line.
+// BuildFFmpegCommand composes the ffmpeg argv for a single encode.
 //
-// When SampleClipSeconds > 0, -ss / -t are inserted as *input-side* options
-// (before -i) so ffmpeg fast-seeks. Output-side seeking would still decode
-// the full source, defeating the speedup. When the caller did not opt into
-// sample-clip mode but did bind DurationS, that becomes an input-side -t so
-// the encode is bounded to the analysed window rather than the full source.
-func BuildFFmpegCommand(req EncodeRequest, ffmpegBin string) []string {
-	if ffmpegBin == "" {
-		ffmpegBin = "ffmpeg"
-	}
-	cmd := []string{ffmpegBin, "-y", "-hide_banner", "-loglevel", "info"}
-
-	fallbackDuration := 0.0
-	if req.SampleClipSeconds <= 0.0 && req.DurationS > 0.0 {
-		fallbackDuration = req.DurationS
-	}
-
-	if !req.SourceIsContainer {
-		// Raw YUV: ffmpeg needs the format spelled out.
-		cmd = append(cmd,
-			"-f", "rawvideo",
-			"-pix_fmt", req.PixFmt,
-			"-s", fmt.Sprintf("%dx%d", req.Width, req.Height),
-			"-r", pyjson.FormatFloat(req.Framerate),
-		)
-	}
-	switch {
-	case req.SampleClipSeconds > 0.0:
-		cmd = append(cmd,
-			"-ss", pyjson.FormatFloat(req.SampleClipStartS),
-			"-t", pyjson.FormatFloat(req.SampleClipSeconds))
-	case fallbackDuration > 0.0:
-		cmd = append(cmd, "-t", pyjson.FormatFloat(fallbackDuration))
-	}
-	cmd = append(cmd, "-i", req.Source)
-	cmd = append(cmd, resolveCodecArgs(req)...)
-	cmd = append(cmd, req.ExtraParams...)
-	cmd = append(cmd, req.Output)
-	return cmd
-}
-
-// resolveCodecArgs routes through the codec-adapter registry (ADR-0237 /
-// ADR-0326): every adapter renders the -c:v slice in the codec-correct shape.
-// An unregistered encoder falls back to the historic libx264 shape so
-// existing callers keep working.
-//
-// The adapter's ExtraParams tail is appended after the codec slice, exactly
-// as the Python _resolve_codec_args does. For the AMF family that repeats the
-// -quality / -rc / -qp_i / -qp_p flags the codec slice already carries; ffmpeg
-// takes the last occurrence, so the duplication is inert. It is reproduced
-// here deliberately, so a Go-vs-Python argv diff stays empty.
-func resolveCodecArgs(req EncodeRequest) []string {
-	adapter, err := codec.Get(req.Encoder)
-	if err != nil {
-		return legacyCodecArgs(req.Encoder, req.Preset, req.CRF)
-	}
-	args, err := adapter.FFmpegCodecArgs(req.Preset, req.CRF)
-	if err != nil {
-		return legacyCodecArgs(req.Encoder, req.Preset, req.CRF)
-	}
-	return append(args, adapter.ExtraParams(req.Preset, req.CRF)...)
-}
-
-func legacyCodecArgs(encoder, preset string, crf int) []string {
-	return []string{"-c:v", encoder, "-preset", preset, "-crf", strconv.Itoa(crf)}
+// It is ffencode.BuildFFmpegCommand — the one Go port of
+// vmaftune.encode.build_ffmpeg_command (ADR-1137) — under the executor's
+// name. The input-side -ss / -t placement (output-side seeking would still
+// decode the full source), the DurationS fallback, the codec-adapter argv
+// and the legacy shape for an unregistered encoder all live there. The error
+// return is reachable only through the 2-pass fields, which the plan driver
+// never sets.
+func BuildFFmpegCommand(req EncodeRequest, ffmpegBin string) ([]string, error) {
+	return ffencode.BuildFFmpegCommand(req, ffmpegBin)
 }
 
 // ---------------------------------------------------------------------------
 // Version parsing.
 // ---------------------------------------------------------------------------
 
-var (
-	ffmpegVersionRE   = regexp.MustCompile(`ffmpeg version (\S+)`)
-	x264VersionRE     = regexp.MustCompile(`x264\s*-?\s*core\s+(\d+)`)
-	x265VersionRE     = regexp.MustCompile(`x265 \[info\]: HEVC encoder version (\S+)`)
-	libvpxVersionRE   = regexp.MustCompile(`\[libvpx-vp9 @ [^\]]+\]\s+v(\S+)`)
-	svtAV1VersionRE   = regexp.MustCompile(`(?i)SVT-AV1 Encoder(?:\s+Lib)?\s+v(\S+)`)
-	libaomVersionRE   = regexp.MustCompile(`(?i)\[libaom(?:-av1)?\s*@\s*[^\]]+\]\s+(?:libaom-av1\s+v|AOM version:\s*)(\S+)`)
-	libvvencVersionRE = regexp.MustCompile(`(?i)\[libvvenc\s*@\s*[^\]]+\]\s+(?:Fraunhofer\s+VVC/H\.266\s+Encoder\s+)?VVenC\s+v(\S+)`)
-	vmafVersionRE     = regexp.MustCompile(`VMAF version[: ]+(\S+)`)
-)
-
-var hardwareEncoderTokens = []string{"_nvenc", "_amf", "_qsv", "_videotoolbox"}
+var vmafVersionRE = regexp.MustCompile(`VMAF version[: ]+(\S+)`)
 
 // ParseVersions extracts (ffmpegVersion, encoderVersion) from an ffmpeg
-// stderr capture. Missing matches return "unknown" rather than an error — the
-// results row records what we can detect and moves on.
-//
-// Hardware encoders advertise no version in stderr, so the encoder token is
-// returned verbatim to keep the row identifier stable. libaom and libvvenc
-// fall back to their adapter name for quiet builds.
+// stderr capture. It is ffencode.ParseVersions — the one port of
+// vmaftune.encode.parse_versions — under the executor's name: missing matches
+// return "unknown" rather than an error, hardware encoders return their token
+// verbatim, and libaom / libvvenc fall back to their adapter name on quiet
+// builds.
 func ParseVersions(stderr, encoder string) (string, string) {
-	ffmpegVersion := "unknown"
-	if m := ffmpegVersionRE.FindStringSubmatch(stderr); m != nil {
-		ffmpegVersion = m[1]
-	}
-	return ffmpegVersion, parseEncoderVersion(stderr, encoder)
-}
-
-func parseEncoderVersion(stderr, encoder string) string {
-	switch encoder {
-	case "", "libx264":
-		// Auto-detect: the x264 banner appears first in multi-codec logs.
-		if m := x264VersionRE.FindStringSubmatch(stderr); m != nil {
-			return "libx264-" + m[1]
-		}
-		if m := x265VersionRE.FindStringSubmatch(stderr); m != nil {
-			return "libx265-" + m[1]
-		}
-		if m := svtAV1VersionRE.FindStringSubmatch(stderr); m != nil {
-			return "libsvtav1-" + m[1]
-		}
-		return "unknown"
-	case "libx265":
-		return prefixedOr(x265VersionRE, stderr, "libx265-", "unknown")
-	case "libsvtav1", "libsvtav1-vbr":
-		return prefixedOr(svtAV1VersionRE, stderr, "libsvtav1-", "unknown")
-	case "libvpx-vp9":
-		return prefixedOr(libvpxVersionRE, stderr, "libvpx-vp9-", "unknown")
-	case "libaom-av1":
-		return prefixedOr(libaomVersionRE, stderr, "libaom-av1-", "libaom-av1")
-	case "libvvenc":
-		return prefixedOr(libvvencVersionRE, stderr, "libvvenc-", "libvvenc")
-	}
-	for _, token := range hardwareEncoderTokens {
-		if strings.Contains(encoder, token) {
-			return encoder
-		}
-	}
-	return "unknown"
-}
-
-// versionProbePatterns maps an encoder onto the `--enable-<codec>` token its
-// presence shows up as in `ffmpeg -version`'s configure summary. That summary
-// carries no per-encoder version, so the best available answer is an
-// "<encoder>-enabled" marker confirming the codec was compiled in. Encoders
-// absent from this table have no fallback and stay "unknown".
-var versionProbePatterns = map[string]*regexp.Regexp{
-	"libx264":    regexp.MustCompile(`--enable-libx264`),
-	"libsvtav1":  regexp.MustCompile(`--enable-libsvtav1`),
-	"libx265":    regexp.MustCompile(`--enable-libx265`),
-	"libvpx-vp9": regexp.MustCompile(`--enable-libvpx`),
-	"libaom-av1": regexp.MustCompile(`--enable-libaom`),
-	"libvvenc":   regexp.MustCompile(`--enable-libvvenc`),
+	return ffencode.ParseVersions(stderr, encoder)
 }
 
 // probeCache memoises the `ffmpeg -version` probe. The answer cannot change
@@ -319,7 +187,7 @@ var (
 // "unknown" for its encoder. This probe recovers a stable identifier from the
 // configure summary instead.
 func ProbeEncoderVersion(ctx context.Context, ffmpegBin, encoder string, run Runner) string {
-	pattern, ok := versionProbePatterns[encoder]
+	pattern, ok := ffencode.ProbePattern(encoder)
 	if !ok {
 		return ""
 	}
@@ -342,7 +210,7 @@ func ProbeEncoderVersion(ctx context.Context, ffmpegBin, encoder string, run Run
 	// `ffmpeg -version` prints the configure line on stdout, but older builds
 	// use stderr; match against both, as the Python probe does.
 	if res, err := run(ctx, []string{ffmpegBin, "-version"}); err == nil {
-		if pattern.MatchString(res.Stdout) || pattern.MatchString(res.Stderr) {
+		if strings.Contains(res.Stdout, pattern) || strings.Contains(res.Stderr, pattern) {
 			label = encoder + "-enabled"
 		}
 	}
@@ -351,13 +219,6 @@ func ProbeEncoderVersion(ctx context.Context, ffmpegBin, encoder string, run Run
 	probeCache[key] = label
 	probeCacheMu.Unlock()
 	return label
-}
-
-func prefixedOr(re *regexp.Regexp, stderr, prefix, fallback string) string {
-	if m := re.FindStringSubmatch(stderr); m != nil {
-		return prefix + m[1]
-	}
-	return fallback
 }
 
 // ---------------------------------------------------------------------------
@@ -369,7 +230,16 @@ func RunEncode(ctx context.Context, req EncodeRequest, ffmpegBin string, run Run
 	if run == nil {
 		run = ExecRunner
 	}
-	argv := BuildFFmpegCommand(req, ffmpegBin)
+	argv, err := BuildFFmpegCommand(req, ffmpegBin)
+	if err != nil {
+		// Unreachable from the plan driver (it never sets the 2-pass fields),
+		// but a malformed request is recorded the way a spawn failure is —
+		// in the row, not as a crash.
+		return EncodeResult{
+			Request: req, EncoderVersion: "unknown", FFmpegVersion: "unknown",
+			ExitStatus: 1, StderrTail: err.Error(),
+		}
+	}
 	started := time.Now()
 	res, err := run(ctx, argv)
 	elapsed := float64(time.Since(started).Nanoseconds()) / 1e6

@@ -1,12 +1,14 @@
 // Copyright 2026 Lusoris
 // SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 //
-// pkg/corpus/encode.go — Go port of vmaftune.encode.
+// pkg/corpus/encode.go — the corpus sweep's encode drivers.
 //
-// Builds the ffmpeg argv for a single (preset, crf) cell and drives the
-// subprocess. BuildFFmpegCommand is a pure function so tests can pin the exact
-// command line, which is what keeps the Go and Python sweeps producing
-// identical encodes for the duration of the ADR-0703 / ADR-0704 migration.
+// The single-encode argv (BuildFFmpegCommand) and the version parser are
+// pkg/ffencode's — the one Go port of vmaftune.encode.build_ffmpeg_command /
+// parse_versions (ADR-1137) — re-exported here under the names the corpus
+// package has always used. What stays local is the corpus-specific driver
+// layer: the stats-capturing pass-1 command, the 2-pass orchestration, and the
+// RunResult-shaped Runner seam the rest of the package shares.
 
 package corpus
 
@@ -22,50 +24,13 @@ import (
 	"time"
 
 	"github.com/VMAFx/vmafx/pkg/codecadapter"
-	"github.com/VMAFx/vmafx/pkg/pyjson"
+	"github.com/VMAFx/vmafx/pkg/ffencode"
 )
 
-// EncodeRequest is a single (preset, crf) request against one source.
-type EncodeRequest struct {
-	Source    string
-	Width     int
-	Height    int
-	PixFmt    string
-	Framerate float64
-	Encoder   string
-	Preset    string
-	CRF       int
-	Output    string
-
-	// ExtraParams are appended verbatim after the codec argv slice.
-	ExtraParams []string
-
-	// SampleClipSeconds opts the request into sample-clip mode (ADR-0297):
-	// the ffmpeg input is sliced to the centre N-second window of the
-	// reference. SampleClipStartS is the start offset, computed by the
-	// caller so the score driver can mirror the same window via
-	// --frame_skip_ref / --frame_cnt.
-	SampleClipSeconds float64
-	SampleClipStartS  float64
-
-	// PassNumber is 0 (single-pass), 1 (analyse, write stats), or 2 (read
-	// stats, encode). StatsPath is the per-encode stats file and is
-	// required when PassNumber != 0 (ADR-0333).
-	PassNumber int
-	StatsPath  string
-
-	// SourceIsContainer marks the source as a container (mkv/mp4/...) not
-	// raw YUV: BuildFFmpegCommand then omits the -f rawvideo / -pix_fmt /
-	// -s / -r input flags so ffmpeg auto-detects the format.
-	SourceIsContainer bool
-
-	// DurationS is the analysed-window length plumbed through from
-	// Job.DurationS. When the caller did NOT opt into sample-clip mode but
-	// did bind a duration, the encode is still clipped to that window
-	// (ADR-0506 Bug #V6-1) — otherwise a 10-second smoke run would
-	// re-encode the whole source.
-	DurationS float64
-}
+// EncodeRequest is a single (preset, crf) request against one source. It is
+// ffencode.Request — the one Go mirror of vmaftune.encode.EncodeRequest —
+// under the name this package's callers and tests use.
+type EncodeRequest = ffencode.Request
 
 // EncodeResult is the outcome of one encode call.
 type EncodeResult struct {
@@ -83,122 +48,16 @@ type EncodeResult struct {
 	EncoderStats []PerFrameStats
 }
 
-// resolveCodecArgs resolves the codec-specific argv slice for req, routing
-// through the adapter registry per ADR-0237 / ADR-0326 and falling back to the
-// historic libx264 shape for unregistered encoders.
-func resolveCodecArgs(req EncodeRequest) ([]string, error) {
-	adapter, err := codecadapter.Get(req.Encoder)
-	if err != nil {
-		return codecadapter.LegacyCodecArgs(req.Encoder, req.Preset, req.CRF), nil
-	}
-	// ResolveCodecArgs is FFmpegCodecArgs followed by ExtraParams, which is
-	// exactly what this call site assembled by hand before the two
-	// codecadapter implementations were merged.
-	return adapter.ResolveCodecArgs(req.Preset, req.CRF)
-}
-
-// inputSideClipArgs returns the -ss / -t block for the request's clip mode.
-//
-// Precedence mirrors build_ffmpeg_command: sample-clip mode wins (with an -ss
-// start), otherwise a bound DurationS emits a plain -t, otherwise nothing.
-func inputSideClipArgs(req EncodeRequest) []string {
-	if req.SampleClipSeconds > 0.0 {
-		return []string{
-			"-ss", pyjson.FloatRepr(req.SampleClipStartS),
-			"-t", pyjson.FloatRepr(req.SampleClipSeconds),
-		}
-	}
-	if req.DurationS > 0.0 {
-		return []string{"-t", pyjson.FloatRepr(req.DurationS)}
-	}
-	return nil
-}
-
 // BuildFFmpegCommand composes the ffmpeg argv for a single encode.
 //
-// Pure function — no I/O — so tests can pin the exact command line.
-//
-// -ss / -t are input-side options (before -i) so ffmpeg fast-seeks the raw YUV
-// by skipping start*framerate frame-sized byte chunks; output-side seeking
-// would still decode the whole source and defeat the speedup.
-//
-// When PassNumber != 0 the adapter's two-pass argv is spliced in before
-// ExtraParams; pass 1 redirects the bitstream to "-f null -" while pass 2 keeps
-// the requested Output destination.
+// It is ffencode.BuildFFmpegCommand under the corpus package's name: the
+// input-side -ss / -t placement, the clip precedence (sample-clip, then a
+// bound DurationS, then nothing — ADR-0506 Bug #V6-1 / ADR-0508 Bug #V8-A),
+// the codec-adapter argv and the 2-pass splice all live there, and
+// encode_test.go's argv table pins them through this name.
 func BuildFFmpegCommand(req EncodeRequest, ffmpegBin string) ([]string, error) {
-	if ffmpegBin == "" {
-		ffmpegBin = "ffmpeg"
-	}
-	cmd := []string{ffmpegBin, "-y", "-hide_banner", "-loglevel", "info"}
-	if !req.SourceIsContainer {
-		// Raw YUV source: tell ffmpeg the format explicitly.
-		cmd = append(cmd,
-			"-f", "rawvideo",
-			"-pix_fmt", req.PixFmt,
-			"-s", fmt.Sprintf("%dx%d", req.Width, req.Height),
-			"-r", pyjson.FloatRepr(req.Framerate),
-		)
-	}
-	cmd = append(cmd, inputSideClipArgs(req)...)
-	cmd = append(cmd, "-i", req.Source)
-
-	codecArgs, err := resolveCodecArgs(req)
-	if err != nil {
-		return nil, err
-	}
-	cmd = append(cmd, codecArgs...)
-
-	if req.PassNumber != 0 {
-		if req.StatsPath == "" {
-			return nil, fmt.Errorf("BuildFFmpegCommand: pass_number != 0 requires stats_path")
-		}
-		adapter, aErr := codecadapter.Get(req.Encoder)
-		if aErr != nil {
-			return nil, aErr
-		}
-		if !adapter.SupportsTwoPass {
-			return nil, fmt.Errorf(
-				"BuildFFmpegCommand: encoder %q does not support 2-pass encoding "+
-					"(supports_two_pass = False)", req.Encoder)
-		}
-		twoPass, tErr := adapter.TwoPassArgs(req.PassNumber, req.StatsPath)
-		if tErr != nil {
-			return nil, tErr
-		}
-		cmd = append(cmd, twoPass...)
-	}
-
-	cmd = append(cmd, req.ExtraParams...)
-
-	if req.PassNumber == 1 {
-		// Pass 1 only writes the stats file; the bitstream is discarded
-		// via the null muxer.
-		cmd = append(cmd, "-f", "null", "-")
-	} else {
-		cmd = append(cmd, req.Output)
-	}
-	return cmd, nil
+	return ffencode.BuildFFmpegCommand(req, ffmpegBin)
 }
-
-// Version-banner patterns. Kept in lockstep with encode.py's regex table.
-var (
-	ffmpegVersionRe = regexp.MustCompile(`ffmpeg version (\S+)`)
-	// Accepts both "x264 - core 164" (the canonical libx264 banner) and the
-	// "x264-core 164" variant some downstream builds emit in their
-	// configure summary (ADR-0498 follow-up #7).
-	x264VersionRe      = regexp.MustCompile(`x264\s*-?\s*core\s+(\d+)`)
-	x265VersionRe      = regexp.MustCompile(`x265 \[info\]: HEVC encoder version (\S+)`)
-	libvpxVP9VersionRe = regexp.MustCompile(`\[libvpx-vp9 @ [^\]]+\]\s+v(\S+)`)
-	svtAV1VersionRe    = regexp.MustCompile(`(?i)SVT-AV1 Encoder(?:\s+Lib)?\s+v(\S+)`)
-	libaomVersionRe    = regexp.MustCompile(
-		`(?i)\[libaom(?:-av1)?\s*@\s*[^\]]+\]\s+(?:libaom-av1\s+v|AOM version:\s*)(\S+)`)
-	libvvencVersionRe = regexp.MustCompile(
-		`(?i)\[libvvenc\s*@\s*[^\]]+\]\s+(?:Fraunhofer\s+VVC/H\.266\s+Encoder\s+)?VVenC\s+v(\S+)`)
-)
-
-// hwEncoderTokens identify encoders that advertise no version in stderr; the
-// encoder token itself is returned as the stable identifier.
-var hwEncoderTokens = []string{"_nvenc", "_amf", "_qsv", "_videotoolbox"}
 
 // firstSubmatch returns the first capture group or "" when re does not match.
 func firstSubmatch(re *regexp.Regexp, s string) string {
@@ -211,79 +70,12 @@ func firstSubmatch(re *regexp.Regexp, s string) string {
 
 // ParseVersions extracts (ffmpegVersion, encoderVersion) from ffmpeg stderr.
 //
-// encoder selects the per-codec version regex. Hardware encoders do not
-// advertise a version, so the encoder token is returned verbatim. Missing
-// matches yield "unknown" rather than an error — corpus rows record what can be
-// detected and move on.
+// It is ffencode.ParseVersions — the one port of vmaftune.encode.parse_versions
+// — under the corpus package's name. Hardware encoders do not advertise a
+// version, so the encoder token is returned verbatim; missing matches yield
+// "unknown" rather than an error, and corpus rows record what can be detected.
 func ParseVersions(stderr, encoder string) (string, string) {
-	ffm := firstSubmatch(ffmpegVersionRe, stderr)
-	if ffm == "" {
-		ffm = "unknown"
-	}
-
-	const defaultEncoder = "libx264"
-	var enc string
-	switch {
-	case encoder == defaultEncoder || encoder == "":
-		// Auto-detect: the x264 banner takes priority (it appears first
-		// in multi-codec logs), then x265, then SVT-AV1.
-		if v := firstSubmatch(x264VersionRe, stderr); v != "" {
-			enc = "libx264-" + v
-		} else if v := firstSubmatch(x265VersionRe, stderr); v != "" {
-			enc = "libx265-" + v
-		} else if v := firstSubmatch(svtAV1VersionRe, stderr); v != "" {
-			enc = "libsvtav1-" + v
-		} else {
-			enc = "unknown"
-		}
-	case encoder == "libx265":
-		enc = suffixOrUnknown("libx265", firstSubmatch(x265VersionRe, stderr))
-	case encoder == "libsvtav1" || encoder == "libsvtav1-vbr":
-		enc = suffixOrUnknown("libsvtav1", firstSubmatch(svtAV1VersionRe, stderr))
-	case encoder == "libvpx-vp9":
-		enc = suffixOrUnknown("libvpx-vp9", firstSubmatch(libvpxVP9VersionRe, stderr))
-	case encoder == "libaom-av1":
-		enc = suffixOrFallback("libaom-av1", firstSubmatch(libaomVersionRe, stderr))
-	case encoder == "libvvenc":
-		enc = suffixOrFallback("libvvenc", firstSubmatch(libvvencVersionRe, stderr))
-	default:
-		enc = "unknown"
-		for _, tok := range hwEncoderTokens {
-			if strings.Contains(encoder, tok) {
-				enc = encoder
-				break
-			}
-		}
-	}
-	return ffm, enc
-}
-
-// suffixOrUnknown joins name and version, or returns "unknown".
-func suffixOrUnknown(name, version string) string {
-	if version == "" {
-		return "unknown"
-	}
-	return name + "-" + version
-}
-
-// suffixOrFallback joins name and version, or returns the stable adapter name
-// when the banner is absent (quiet builds).
-func suffixOrFallback(name, version string) string {
-	if version == "" {
-		return name
-	}
-	return name + "-" + version
-}
-
-// versionProbePatterns maps encoders to the configure-line marker that proves
-// the codec was compiled into the ffmpeg binary (ADR-0498 follow-up #7).
-var versionProbePatterns = map[string]*regexp.Regexp{
-	"libx264":    regexp.MustCompile(`--enable-libx264`),
-	"libsvtav1":  regexp.MustCompile(`--enable-libsvtav1`),
-	"libx265":    regexp.MustCompile(`--enable-libx265`),
-	"libvpx-vp9": regexp.MustCompile(`--enable-libvpx`),
-	"libaom-av1": regexp.MustCompile(`--enable-libaom`),
-	"libvvenc":   regexp.MustCompile(`--enable-libvvenc`),
+	return ffencode.ParseVersions(stderr, encoder)
 }
 
 // probeCacheKey keys the fallback encoder-version probe by (binary, encoder) so
@@ -313,7 +105,7 @@ func ResetEncoderVersionProbeCache() {
 func probeEncoderVersionFromFFmpeg(
 	ctx context.Context, ffmpegBin, encoder string, run Runner,
 ) string {
-	pattern, ok := versionProbePatterns[encoder]
+	pattern, ok := ffencode.ProbePattern(encoder)
 	if !ok {
 		return ""
 	}
@@ -326,7 +118,7 @@ func probeEncoderVersionFromFFmpeg(
 	}
 	res := run(ctx, []string{ffmpegBin, "-version"})
 	label := ""
-	if pattern.MatchString(res.Stdout + res.Stderr) {
+	if strings.Contains(res.Stdout+res.Stderr, pattern) {
 		label = encoder + "-enabled"
 	}
 	probeCacheMu.Lock()
@@ -409,15 +201,7 @@ func ffmpegBinOrDefault(bin string) string {
 // sweep over the whole source.
 func BuildPass1StatsCommand(req EncodeRequest, statsPrefix, ffmpegBin string) []string {
 	cmd := []string{ffmpegBinOrDefault(ffmpegBin), "-y", "-hide_banner", "-loglevel", "info"}
-	if !req.SourceIsContainer {
-		cmd = append(cmd,
-			"-f", "rawvideo",
-			"-pix_fmt", req.PixFmt,
-			"-s", fmt.Sprintf("%dx%d", req.Width, req.Height),
-			"-r", pyjson.FloatRepr(req.Framerate),
-		)
-	}
-	cmd = append(cmd, inputSideClipArgs(req)...)
+	cmd = append(cmd, ffencode.InputArgs(req)...)
 	cmd = append(cmd, "-i", req.Source)
 	cmd = append(cmd, "-c:v", req.Encoder, "-preset", req.Preset, "-crf", strconv.Itoa(req.CRF))
 	cmd = append(cmd, req.ExtraParams...)

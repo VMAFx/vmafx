@@ -14,9 +14,9 @@ import (
 	"github.com/golusoris/golusoris/clikit"
 	"github.com/spf13/cobra"
 
-	"github.com/VMAFx/vmafx/internal/pyjson"
 	"github.com/VMAFx/vmafx/pkg/codecadapter"
 	"github.com/VMAFx/vmafx/pkg/ffencode"
+	"github.com/VMAFx/vmafx/pkg/pyjson"
 	"github.com/VMAFx/vmafx/pkg/saliency"
 )
 

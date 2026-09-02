@@ -107,6 +107,16 @@ func TestBuildFFmpegCommand(t *testing.T) {
 				"-crf", "23", "out.mkv"),
 		},
 		{
+			// ADR-1125 / ADR-1137: the Python adapter emits the AMF quality tail
+			// from both ffmpeg_codec_args and extra_params; every Go encode
+			// driver, this one included, emits it once.
+			name:   "amf emits its quality tail once",
+			mutate: func(r *EncodeRequest) { r.Encoder = "h264_amf" },
+			want: append(append([]string{}, prefix...),
+				"-i", "src.mkv", "-c:v", "h264_amf", "-quality", "balanced",
+				"-rc", "cqp", "-qp_i", "23", "-qp_p", "23", "out.mkv"),
+		},
+		{
 			name:   "extra params land after the codec slice",
 			mutate: func(r *EncodeRequest) { r.ExtraParams = []string{"-threads", "4"} },
 			want: append(append([]string{}, prefix...),
@@ -119,7 +129,11 @@ func TestBuildFFmpegCommand(t *testing.T) {
 			t.Parallel()
 			req := base
 			tc.mutate(&req)
-			if got := BuildFFmpegCommand(req, ""); !reflect.DeepEqual(got, tc.want) {
+			got, err := BuildFFmpegCommand(req, "")
+			if err != nil {
+				t.Fatalf("BuildFFmpegCommand: %v", err)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("argv =\n %v\nwant\n %v", got, tc.want)
 			}
 		})

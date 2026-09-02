@@ -27,6 +27,44 @@ no rebase impact: dev/Containerfile is fork-local.
 - `core/test/fuzz/meson.build` (fork-added, ADR-0270): `fuzz_json_model`
   now lists `../../src/dict.cpp` with `cpp_args : fuzz_flags` — the same
   hunk as #1186; whichever lands second rebases onto an identical line.
+## refactor/go-dedup-tune-shadow — ADR-1137 shadow-package consolidation (2026-09-02)
+
+Go-only; no upstream Netflix/vmaf counterpart, so no rebase conflict surface.
+Supersedes item 1 of the "vmafx-tune Go port integration" note below:
+`internal/pyjson` and `internal/pyjsonstrict` are gone, and `pkg/pyjson` is
+the single CPython-JSON encoder — the two Python entry points they mirrored
+(`json.dumps` with bare `NaN` tokens, `jsonio.dumps_strict` with `null`) are
+one `Options.NonFinite` field. Invariants a future change must not undo:
+
+1. **Shared layers live outside `pkg/tune/`.** `pkg/pyjson`, `pkg/pymath`,
+   `pkg/hdr`, `pkg/codecadapter`, `pkg/predictor` (now also home to the one
+   ORT-session adapter, `ORTSession` / `NewWithModel`) and `pkg/ffencode`
+   are the one implementation each; `pkg/tune/{auto,sidecar,executor}`
+   consume them. `pkg/tune/{codec,predictor,pyjson}` exist only as one-file
+   transitional aliases because `pkg/tune/sidecar/` and
+   `cmd/vmafx-tune/cmd/sidecar.go` belong to the in-flight #1187; when that
+   lands, repoint those imports and delete the aliases. Do not re-create
+   `pkg/tune/{hdr,pymath}`, `internal/pyjson*` or
+   `cmd/vmafx-tune/cmd/ortsession.go` when rebasing a branch that still uses
+   them — repoint the import.
+2. **`EncodeRequest` / `BuildFFmpegCommand` / `ParseVersions` in
+   `pkg/corpus`, `pkg/encodeprofile` and `pkg/tune/executor` are aliases and
+   one-line wrappers over `pkg/ffencode`.** Their argv tables still pin the
+   contract under the local name; a fix belongs in `pkg/ffencode`, never in a
+   re-grown local copy. `pkg/encodeprofile`'s wrapper keeps the strict
+   preset / quality check on a registered codec; `pkg/corpus.DetectHDR` keeps
+   Python's missing-file check in front of `pkg/hdr.Detect`.
+3. **The Python is the tiebreaker where the duplicates disagreed**: content
+   light `int()` truncation, the libx264 fallback for a partial coefficient
+   table, `repr()` float thresholds in argv, and `[]` / `{}` for a nil Go slice
+   or map. The AMF argv de-duplication (ADR-1125, pkg/codecadapter `AGENTS.md`
+   invariant 3) now applies to `pkg/tune/executor` as well.
+4. **Every Python-derived fixture moved with its winner** —
+   `pkg/pyjson/testdata/float_repr.txt`,
+   `pkg/codecadapter/testdata/python_adapters.json`,
+   `pkg/predictor/testdata/python_predictor.json`, `pkg/hdr/testdata/`,
+   `pkg/pymath/testdata/`. Regenerate them only alongside a coordinated change
+   on both sides.
 
 ## renovate/pypi-aiohttp-vulnerability — aiohttp security floor (2026-08-31)
 
@@ -47009,7 +47047,9 @@ on both sides — a silent regeneration turns the gate into a tautology.
 Go-only; no upstream Netflix/vmaf counterpart, so no rebase conflict surface.
 Two invariants a future change must not undo, both recorded in ADR-1125:
 
-1. `internal/pyjson` and `internal/pyjsonstrict` are **deliberately** two
+1. *(Superseded by ADR-1137, 2026-09-02 — both packages are deleted and
+   `pkg/pyjson.Options.NonFinite` selects between the two spellings.)*
+   `internal/pyjson` and `internal/pyjsonstrict` are **deliberately** two
    packages, not an accident of the parallel port. They mirror two different
    Python entry points: `json.dumps` (bare `NaN` / `Infinity` tokens) and
    `vmaftune.jsonio.dumps_strict` (non-finite → `null`, valid RFC 8259).

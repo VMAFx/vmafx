@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/VMAFx/vmafx/pkg/codecadapter"
+	"github.com/VMAFx/vmafx/pkg/pyjson"
 )
 
 // DefaultEncodeTimeout bounds a single ffmpeg encode subprocess. Override via
@@ -108,31 +109,7 @@ func BuildFFmpegCommand(req Request, ffmpegBin string) ([]string, error) {
 		ffmpegBin = "ffmpeg"
 	}
 	cmd := []string{ffmpegBin, "-y", "-hide_banner", "-loglevel", "info"}
-
-	// Honour DurationS as an input-side -t when the caller did not opt into
-	// sample-clip mode, so a 10 s analysis window does not encode a 9-minute
-	// source (ADR-0506 / BBB e2e v6 bug V6-1).
-	fallbackDuration := 0.0
-	if req.SampleClipSeconds <= 0.0 && req.DurationS > 0.0 {
-		fallbackDuration = req.DurationS
-	}
-
-	if !req.SourceIsContainer {
-		cmd = append(cmd,
-			"-f", "rawvideo",
-			"-pix_fmt", req.PixFmt,
-			"-s", fmt.Sprintf("%dx%d", req.Width, req.Height),
-			"-r", formatFloat(req.Framerate),
-		)
-	}
-	switch {
-	case req.SampleClipSeconds > 0.0:
-		cmd = append(cmd,
-			"-ss", formatFloat(req.SampleClipStartS),
-			"-t", formatFloat(req.SampleClipSeconds))
-	case fallbackDuration > 0.0:
-		cmd = append(cmd, "-t", formatFloat(fallbackDuration))
-	}
+	cmd = append(cmd, InputArgs(req)...)
 	cmd = append(cmd, "-i", req.Source)
 
 	codecArgs, err := resolveCodecArgs(req)
@@ -166,15 +143,37 @@ func BuildFFmpegCommand(req Request, ffmpegBin string) ([]string, error) {
 	return cmd, nil
 }
 
-// formatFloat renders a float the way Python's str() does for the values this
-// driver emits, so the argv matches the Python original byte for byte
-// (24.0 -> "24.0", 0.5 -> "0.5", 10 -> "10.0").
-func formatFloat(v float64) string {
-	s := strconv.FormatFloat(v, 'g', -1, 64)
-	if !strings.ContainsAny(s, ".eE") {
-		s += ".0"
+// InputArgs returns the input-side argv that precedes "-i": the raw-video
+// geometry quartet when the source is not a container, then the clip window.
+//
+// The window precedence mirrors vmaftune.encode.build_ffmpeg_command:
+// sample-clip mode wins (an input-side -ss/-t pair so ffmpeg fast-seeks raw
+// YUV by skipping frame-sized byte chunks), otherwise a bound DurationS emits
+// a plain -t so a 10 s analysis window does not encode a 9-minute source
+// (ADR-0506 / BBB e2e v6 bug V6-1), otherwise nothing. Floats render through
+// pyjson.FloatRepr, so "24.0" stays "24.0" exactly as Python's f-string
+// spells it.
+//
+// Exported because pkg/corpus's pass-1 stats command shares this prefix.
+func InputArgs(req Request) []string {
+	var args []string
+	if !req.SourceIsContainer {
+		args = append(args,
+			"-f", "rawvideo",
+			"-pix_fmt", req.PixFmt,
+			"-s", fmt.Sprintf("%dx%d", req.Width, req.Height),
+			"-r", pyjson.FloatRepr(req.Framerate),
+		)
 	}
-	return s
+	switch {
+	case req.SampleClipSeconds > 0.0:
+		args = append(args,
+			"-ss", pyjson.FloatRepr(req.SampleClipStartS),
+			"-t", pyjson.FloatRepr(req.SampleClipSeconds))
+	case req.DurationS > 0.0:
+		args = append(args, "-t", pyjson.FloatRepr(req.DurationS))
+	}
+	return args
 }
 
 // resolveCodecArgs routes through the codec-adapter registry, falling back to
@@ -287,6 +286,16 @@ var versionProbePatterns = map[string]string{
 	"libvpx-vp9": "--enable-libvpx",
 	"libaom-av1": "--enable-libaom",
 	"libvvenc":   "--enable-libvvenc",
+}
+
+// ProbePattern returns the "--enable-<codec>" configure-line token that
+// proves encoder was compiled into an ffmpeg binary, and false for encoders
+// with no such marker (the hardware families, which stay "unknown"). It is
+// the single table every encode driver's `ffmpeg -version` fallback
+// consults, so a new software encoder is registered here once.
+func ProbePattern(encoder string) (string, bool) {
+	pattern, ok := versionProbePatterns[encoder]
+	return pattern, ok
 }
 
 // probeCache memoises the per-(binary, encoder) availability probe. The

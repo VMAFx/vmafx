@@ -43,11 +43,11 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/VMAFx/vmafx/pkg/tune/codec"
-	"github.com/VMAFx/vmafx/pkg/tune/hdr"
-	"github.com/VMAFx/vmafx/pkg/tune/predictor"
-	"github.com/VMAFx/vmafx/pkg/tune/pyjson"
-	"github.com/VMAFx/vmafx/pkg/tune/pymath"
+	"github.com/VMAFx/vmafx/pkg/codecadapter"
+	"github.com/VMAFx/vmafx/pkg/hdr"
+	"github.com/VMAFx/vmafx/pkg/predictor"
+	"github.com/VMAFx/vmafx/pkg/pyjson"
+	"github.com/VMAFx/vmafx/pkg/pymath"
 )
 
 // Phase D gate thresholds (short-circuit #7). The 5-minute / 0.15-shot-
@@ -466,12 +466,12 @@ func predictorFeaturesFromMeta(meta SourceMeta) predictor.ShotFeatures {
 // planners get a monotone estimate until the realise step lands.
 func estimateCellBitrateKbps(features predictor.ShotFeatures, codecName string, crf int) float64 {
 	probeQuality := crf
-	if adapter, err := codec.Get(codecName); err == nil {
+	if adapter, err := codecadapter.Get(codecName); err == nil {
 		probeQuality = adapter.ProbeQuality
 	}
 	// pymath.Exp2 rather than math.Pow: the result lands in a
 	// user-discoverable JSON field that must match the Python emitter to the
-	// last mantissa bit, and the stdlib kernel does not (see pkg/tune/pymath).
+	// last mantissa bit, and the stdlib kernel does not (see pkg/pymath).
 	scale := pymath.Exp2((float64(probeQuality) - float64(crf)) / 6.0)
 	return math.Max(1.0, features.ProbeBitrateKbps*scale)
 }
@@ -887,11 +887,9 @@ func RunAuto(ctx context.Context, opts Options) (Plan, error) {
 	if !opts.Smoke {
 		pred = opts.Predictor
 		if pred == nil {
-			built, err := predictor.New("", log)
-			if err != nil {
-				return Plan{}, err
-			}
-			pred = built
+			// The analytical fallback: what the Python auto driver builds
+			// with Predictor() and no model path.
+			pred = predictor.New()
 		}
 		features = predictorFeaturesFromMeta(*meta)
 	}
@@ -947,7 +945,7 @@ func RunAuto(ctx context.Context, opts Options) (Plan, error) {
 			estimatedBitrate := opts.MaxBudgetKbps
 			predictionSource := "smoke-placeholder"
 			if pred != nil {
-				picked, err := predictor.PickCRF(pred, features, effectivePredictorTarget, codecName)
+				picked, err := pred.PickCRF(features, effectivePredictorTarget, codecName)
 				if err != nil {
 					return Plan{}, err
 				}
@@ -1013,7 +1011,7 @@ func RunAuto(ctx context.Context, opts Options) (Plan, error) {
 	// ------------------------------------------------------------------
 	if len(codecs) > 0 {
 		supportsTwoPass := false
-		if adapter, err := codec.Get(codecs[0]); err == nil {
+		if adapter, err := codecadapter.Get(codecs[0]); err == nil {
 			supportsTwoPass = adapter.SupportsTwoPass
 		}
 		planState.AdapterSupportsTwoPass = &supportsTwoPass
@@ -1171,7 +1169,7 @@ func EmitPlanJSON(plan Plan) (string, error) {
 		"cells":    cells,
 		"metadata": plan.Metadata,
 	}
-	return pyjson.Marshal(payload, 2)
+	return pyjson.MarshalIndentSorted(payload, 2)
 }
 
 // SortedShortCircuitNames returns every declared short-circuit identifier,

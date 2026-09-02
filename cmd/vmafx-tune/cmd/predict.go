@@ -15,12 +15,12 @@ import (
 	"github.com/golusoris/golusoris/clikit"
 	"github.com/spf13/cobra"
 
-	"github.com/VMAFx/vmafx/internal/pyjson"
 	"github.com/VMAFx/vmafx/pkg/codecadapter"
 	"github.com/VMAFx/vmafx/pkg/conformal"
 	"github.com/VMAFx/vmafx/pkg/ffencode"
 	"github.com/VMAFx/vmafx/pkg/pershot"
 	"github.com/VMAFx/vmafx/pkg/predictor"
+	"github.com/VMAFx/vmafx/pkg/pyjson"
 	"github.com/VMAFx/vmafx/pkg/scorecli"
 )
 
@@ -244,7 +244,7 @@ func runPredict(ctx context.Context, d deps, flags *predictFlags) error {
 	}
 
 	pred := predictor.New()
-	if session := newORTPredictorSession(ctx, flags.model); session != nil {
+	if session := predictor.NewORTSession(ctx, flags.model); session != nil {
 		pred = predictor.WithSession(session)
 		pred.Log = d.Log
 		// Deliberately phrased as a request, not an accomplishment: the runner

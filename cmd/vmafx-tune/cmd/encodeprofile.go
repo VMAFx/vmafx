@@ -15,8 +15,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	pyjson "github.com/VMAFx/vmafx/internal/pyjsonstrict"
 	"github.com/VMAFx/vmafx/pkg/encodeprofile"
+	"github.com/VMAFx/vmafx/pkg/pyjson"
 )
 
 // encodeProfileFlags holds flags parsed by the encode-profile subcommand. The
@@ -263,11 +263,11 @@ var resultWriter io.Writer = os.Stdout
 // json.dumps(payload, indent=2, sort_keys=True) would, with the trailing
 // newline the Python CLI appends.
 func emitEncodeProfileJSON(payload map[string]any) error {
-	// NaNAsToken mirrors json.dumps' default allow_nan=True: the Python CLI
-	// calls json.dumps directly here, not jsonio.dumps_strict, so a non-finite
-	// value in a recommendation row would surface as a bare NaN token rather
-	// than null.
-	s, err := pyjson.Marshal(payload, pyjson.NaNAsToken)
+	// The sorted, indented json.dumps form with its default allow_nan=True:
+	// the Python CLI calls json.dumps directly here, not jsonio.dumps_strict,
+	// so a non-finite value in a recommendation row surfaces as a bare NaN
+	// token rather than null.
+	s, err := pyjson.MarshalIndentSorted(payload, 2)
 	if err != nil {
 		return fmt.Errorf("render result JSON: %w", err)
 	}

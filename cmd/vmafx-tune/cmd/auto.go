@@ -14,9 +14,9 @@ import (
 	"github.com/golusoris/golusoris/clikit"
 	"github.com/spf13/cobra"
 
+	"github.com/VMAFx/vmafx/pkg/predictor"
 	"github.com/VMAFx/vmafx/pkg/tune/auto"
 	"github.com/VMAFx/vmafx/pkg/tune/executor"
-	"github.com/VMAFx/vmafx/pkg/tune/predictor"
 )
 
 // autoFlags holds flags parsed by the auto subcommand. Names and defaults
@@ -140,7 +140,7 @@ func runAuto(ctx context.Context, d deps, flags *autoFlags) error {
 		return errors.New("--allow-codecs is empty")
 	}
 
-	pred, err := predictor.New(flags.model, d.Log)
+	pred, err := predictor.NewWithModel(ctx, flags.model, d.Log)
 	if err != nil {
 		return fmt.Errorf("predictor: %w", err)
 	}

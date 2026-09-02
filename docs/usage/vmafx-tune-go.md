@@ -1469,7 +1469,7 @@ VMAFX_LOG_FORMAT=json vmafx-tune-go compare --reference src.mp4 --targets 90
 | golusoris | Migrate the CLI root + subcommands onto the golusoris `clikit` (cobra + fx) framework; `VMAFX_`-prefixed config + injected `slog` | ADR-1119 | Merged |
 | ML-driven | `recommend`, `predict`, `recommend-saliency`, `prefilter`; codec-adapter registry, encode/score drivers, predictor, saliency pipeline, native TPE | — | **This PR** |
 
-| Encoder introspection | `benchmark` + `encode-profile` subcommands; `pkg/benchmark`, `pkg/codecadapter`, `pkg/encodeprofile`, `internal/pyjson` | ADR-0770 | **This PR** |
+| Encoder introspection | `benchmark` + `encode-profile` subcommands; `pkg/benchmark`, `pkg/codecadapter`, `pkg/encodeprofile`, `pkg/pyjson` | ADR-0770 | **This PR** |
 | Stage 5 | `tune-per-shot` subcommand, conformal CLI wiring | Planned | — |
 
 | golusoris | Migrate the CLI root + subcommands onto the golusoris `clikit` (cobra + fx) framework; `VMAFX_`-prefixed config + injected `slog` | ADR-1119 | **This PR** |
@@ -1564,8 +1564,12 @@ The ML-driven group adds:
 - **`pkg/recommend/`**, **`pkg/conformal/`**, **`pkg/uncertainty/`**,
   **`pkg/corpusrow/`** — the predicate pickers, split-conformal intervals,
   confidence bands and the schema-v3 corpus row.
-- **`internal/pyjson/`** — renders payloads the way Python's `json.dumps` does,
-  so the emitted JSON is byte-identical to the Python binary's.
+- **`pkg/pyjson/`** — renders payloads the way Python's `json.dumps` does, so
+  the emitted JSON is byte-identical to the Python binary's. It is the one
+  CPython-JSON encoder in the tree
+  ([ADR-1137](../adr/1137-go-dedup-tune-shadow.md)); the former
+  `internal/pyjson`, `internal/pyjsonstrict` and `pkg/tune/pyjson` copies were
+  folded into it.
 
 The `corpus` and `sidecar` subcommands add five more:
 
@@ -1604,11 +1608,12 @@ The encoder-introspection subcommands add four more:
   recommendation selection, `EncodeRequest` construction, FFmpeg argv
   composition and the encode driver (with an injectable `Runner` seam so tests
   never spawn ffmpeg).
-- **`internal/pyjson/`** — renders Go value trees byte-identically to CPython's
-  `json.dumps(..., indent=2, sort_keys=True)`. Go's `encoding/json` differs on
-  key ordering, HTML escaping, non-ASCII escaping and float formatting
-  (`float64(92)` renders `92` in Go and `92.0` in CPython), so a shared encoder
-  keeps the ported payloads diff-clean against the Python originals.
+- **`pkg/pyjson/`** — the same encoder, here rendering Go value trees
+  byte-identically to CPython's `json.dumps(..., indent=2, sort_keys=True)`
+  and `jsonio.dumps_strict`. Go's `encoding/json` differs on key ordering,
+  HTML escaping, non-ASCII escaping and float formatting (`float64(92)`
+  renders `92` in Go and `92.0` in CPython), so a shared encoder keeps the
+  ported payloads diff-clean against the Python originals.
 
 Stage 5 adds the `auto` / `sidecar` stack under `pkg/tune/`:
 
@@ -1617,21 +1622,25 @@ Stage 5 adds the `auto` / `sidecar` stack under `pkg/tune/`:
   selection, and the plan emitter.
 - **`pkg/tune/sidecar/`** — the online-ridge bias-correction model, its
   Sherman-Morrison rank-1 update, and the cache-dir persistence layout.
-- **`pkg/tune/predictor/`** — `ShotFeatures`, the per-codec analytical curve,
-  the optional ONNX path, and the `PickCRF` binary-search inversion.
-- **`pkg/tune/codec/`** — the codec-adapter registry: quality windows, probe
-  knobs, preset vocabularies, and per-encoder ffmpeg argv.
-- **`pkg/tune/hdr/`** — HDR detection from ffprobe colour metadata plus the
-  per-codec HDR flag dispatch.
-- **`pkg/tune/executor/`** — `--execute` mode: ffmpeg argv construction, the
-  libvmaf CLI driver, and the JSONL results log.
-- **`pkg/tune/pyjson/`** — a CPython-compatible JSON emitter. Reproduces
-  `json.dumps(obj, indent=N, sort_keys=True)` byte for byte, including the
-  `NaN` / `Infinity` tokens and CPython's `repr()` float spelling.
-- **`pkg/tune/pymath/`** — correctly-rounded `Exp2` and `Log10`. Go's
-  `math.Pow` and `math.Log10` land a ULP away from the platform libm CPython
-  uses, which is enough to move the last mantissa digit of a JSON field; these
-  kernels close that gap. The package docs record the measured residual.
+- **`pkg/tune/executor/`** — `--execute` mode: the libvmaf CLI driver and the
+  JSONL results log; its ffmpeg argv is `pkg/ffencode`'s under the executor's
+  name.
+- **`pkg/predictor/`**, **`pkg/codecadapter/`**, **`pkg/hdr/`**,
+  **`pkg/pyjson/`**, **`pkg/pymath/`** — the shared layers `auto` and `sidecar`
+  consume: `ShotFeatures` and the per-codec analytical curve with the optional
+  ONNX session and the `PickCRF` binary-search inversion; the codec-adapter
+  registry (quality windows, probe knobs, preset vocabularies, per-encoder
+  ffmpeg argv); HDR detection from ffprobe colour metadata plus the per-codec
+  HDR flag dispatch; the CPython-compatible JSON emitter; and the
+  correctly-rounded `Exp2` / `Log10` kernels that keep
+  `estimated_bitrate_kbps` and `estimated_vmaf` on the platform-libm value
+  CPython emits (Go's `math.Pow` / `math.Log10` land a ULP away; the package
+  docs record the measured residual). Each has exactly one implementation
+  ([ADR-1137](../adr/1137-go-dedup-tune-shadow.md)); the
+  `pkg/tune/{predictor,codec,pyjson}` paths survive only as thin aliases until
+  the in-flight sidecar parity fix
+  ([#1187](https://github.com/VMAFx/vmafx/pull/1187)) lands, after which the
+  sidecar imports move and the aliases are deleted.
 
 See [ADR-0705](../adr/0705-vmafx-tune-go-stage1.md) for the migration rationale,
 [ADR-0730](../adr/0730-vmafx-tune-go-stage2.md) for Stage-2,
