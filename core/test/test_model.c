@@ -28,6 +28,12 @@
 #include "model.c"
 #include "read_json_model.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 static int model_compare(VmafModel *model_a, VmafModel *model_b)
 {
     int err = 0;
@@ -72,28 +78,28 @@ static char *slurp(const char *path, size_t *len)
 {
     FILE *f = fopen(path, "rb");
     if (!f)
-        return nullptr;
+        return NULL;
     if (fseek(f, 0, SEEK_END) != 0) {
         (void)fclose(f);
-        return nullptr;
+        return NULL;
     }
     const long sz = ftell(f);
     const long max_slurp_size = 1L << 20;
     if (sz < 0 || sz > max_slurp_size || fseek(f, 0, SEEK_SET) != 0) {
         (void)fclose(f);
-        return nullptr;
+        return NULL;
     }
     const size_t file_sz = (size_t)sz;
     char *buf = calloc(file_sz + 1u, 1u);
     if (!buf) {
         (void)fclose(f);
-        return nullptr;
+        return NULL;
     }
     const size_t got = fread(buf, 1, file_sz, f);
     (void)fclose(f);
     if (got != file_sz) {
         free(buf);
-        return nullptr;
+        return NULL;
     }
     *len = file_sz;
     return buf;
@@ -125,14 +131,14 @@ static char *test_json_model(void)
     int err = 0;
 
     VmafModel *model_json;
-    VmafModelConfig cfg_json = {nullptr};
+    VmafModelConfig cfg_json = {NULL};
     const char *path_json = JSON_MODEL_PATH "vmaf_v0.6.1neg.json";
 
     err = vmaf_read_json_model_from_path(&model_json, &cfg_json, path_json);
     mu_assert("problem during vmaf_read_json_model", !err);
 
     VmafModel *model;
-    VmafModelConfig cfg = {nullptr};
+    VmafModelConfig cfg = {NULL};
     const char *version = "vmaf_v0.6.1neg";
 
     err = vmaf_model_load(&model, &cfg, version);
@@ -143,7 +149,7 @@ static char *test_json_model(void)
 
     vmaf_model_destroy(model_json);
     vmaf_model_destroy(model);
-    return nullptr;
+    return NULL;
 }
 
 #if VMAF_BUILT_IN_MODELS
@@ -152,13 +158,13 @@ static char *test_built_in_model(void)
     int err = 0;
 
     VmafModel *model;
-    VmafModelConfig cfg = {nullptr};
+    VmafModelConfig cfg = {NULL};
     const char *version = "vmaf_v0.6.1neg";
     err = vmaf_model_load(&model, &cfg, version);
     mu_assert("problem during vmaf_model_load", !err);
 
     VmafModel *model_file;
-    VmafModelConfig cfg_file = {nullptr};
+    VmafModelConfig cfg_file = {NULL};
     const char *path = JSON_MODEL_PATH "vmaf_v0.6.1neg.json";
     err = vmaf_model_load_from_path(&model_file, &cfg_file, path);
     mu_assert("problem during vmaf_model_load_from_path", !err);
@@ -168,7 +174,7 @@ static char *test_built_in_model(void)
 
     vmaf_model_destroy(model);
     vmaf_model_destroy(model_file);
-    return nullptr;
+    return NULL;
 }
 #endif
 
@@ -178,20 +184,20 @@ static char *test_built_in_model(void)
  * Both entry points must now reject NULL with -EINVAL. */
 static char *test_model_load_rejects_null_version(void)
 {
-    VmafModel *model = nullptr;
-    VmafModelConfig cfg = {nullptr};
-    int err = vmaf_model_load(&model, &cfg, nullptr);
+    VmafModel *model = NULL;
+    VmafModelConfig cfg = {NULL};
+    int err = vmaf_model_load(&model, &cfg, NULL);
     mu_assert("vmaf_model_load(NULL version) must return -EINVAL", err == -EINVAL);
     mu_assert("vmaf_model_load(NULL version) must not allocate model", model == NULL);
 
-    VmafModelCollection *collection = nullptr;
-    err = vmaf_model_collection_load(&model, &collection, &cfg, nullptr);
+    VmafModelCollection *collection = NULL;
+    err = vmaf_model_collection_load(&model, &collection, &cfg, NULL);
     mu_assert("vmaf_model_collection_load(NULL version) must return -EINVAL", err == -EINVAL);
     mu_assert("vmaf_model_collection_load(NULL version) must not allocate model", model == NULL);
     mu_assert("vmaf_model_collection_load(NULL version) must not allocate collection",
               collection == NULL);
 
-    return nullptr;
+    return NULL;
 }
 
 static char *test_model_load_and_destroy(void)
@@ -199,7 +205,7 @@ static char *test_model_load_and_destroy(void)
     int err;
 
     VmafModel *model;
-    VmafModelConfig cfg = {nullptr};
+    VmafModelConfig cfg = {NULL};
     const char *path = JSON_MODEL_PATH "vmaf_float_v0.6.1.json";
     err = vmaf_model_load_from_path(&model, &cfg, path);
     mu_assert("problem during vmaf_model_load_from_path", !err);
@@ -215,7 +221,7 @@ static char *test_model_load_and_destroy(void)
 
     vmaf_model_destroy(model);
 
-    return nullptr;
+    return NULL;
 }
 
 static char *check_model_feature_entry(const VmafModel *model, const char *expected_val, int step)
@@ -223,10 +229,10 @@ static char *check_model_feature_entry(const VmafModel *model, const char *expec
     mu_assert("feature 0 should be \"VMAF_integer_feature_adm2_score\"",
               !strcmp("VMAF_integer_feature_adm2_score", model->feature[0].name));
     mu_assert("feature 0 \"VMAF_integer_feature_adm2_score\" should have a non-NULL opts_dict",
-              model->feature[0].opts_dict != nullptr);
+              model->feature[0].opts_dict != NULL);
     const VmafDictionaryEntry *e =
         vmaf_dictionary_get(&model->feature[0].opts_dict, "adm_enhancement_gain_limit", 0);
-    mu_assert("dict lookup must return entry", e != nullptr);
+    mu_assert("dict lookup must return entry", e != NULL);
     if (step == 1) {
         mu_assert("dict should have a new key/val pair",
                   !strcmp(e->key, "adm_enhancement_gain_limit") && !strcmp(e->val, expected_val));
@@ -237,18 +243,18 @@ static char *check_model_feature_entry(const VmafModel *model, const char *expec
         mu_assert("dict should have an updated key/val pair",
                   !strcmp(e->key, "adm_enhancement_gain_limit") && !strcmp(e->val, expected_val));
     }
-    return nullptr;
+    return NULL;
 }
 
 static char *test_model_feature_step1(VmafModel **out_model)
 {
-    VmafModel *model = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *model = NULL;
+    VmafModelConfig cfg = {NULL};
     const char *version = "vmaf_v0.6.1";
     int err = vmaf_model_load(&model, &cfg, version);
     mu_assert("problem during vmaf_model_load", !err);
 
-    VmafFeatureDictionary *dict = nullptr;
+    VmafFeatureDictionary *dict = NULL;
     err = vmaf_feature_dictionary_set(&dict, "adm_enhancement_gain_limit", "1.1");
     mu_assert("problem during vmaf_feature_dictionary_set", !err);
 
@@ -266,13 +272,13 @@ static char *test_model_feature_step1(VmafModel **out_model)
         return msg;
     }
     *out_model = model;
-    return nullptr;
+    return NULL;
 }
 
 static char *test_model_feature_step2(VmafModel *model)
 {
-    VmafModel *model_neg = nullptr;
-    VmafModelConfig cfg_neg = {nullptr};
+    VmafModel *model_neg = NULL;
+    VmafModelConfig cfg_neg = {NULL};
     const char *version_neg = "vmaf_v0.6.1neg";
     int err = vmaf_model_load(&model_neg, &cfg_neg, version_neg);
     mu_assert("problem during vmaf_model_load", !err);
@@ -280,7 +286,7 @@ static char *test_model_feature_step2(VmafModel *model)
     err = model_compare(model, model_neg);
     mu_assert("overloaded model should match model_neg", err);
 
-    VmafFeatureDictionary *dict_neg = nullptr;
+    VmafFeatureDictionary *dict_neg = NULL;
     err = vmaf_feature_dictionary_set(&dict_neg, "adm_enhancement_gain_limit", "1.2");
     mu_assert("problem during vmaf_feature_dictionary_set", !err);
 
@@ -300,7 +306,7 @@ static char *test_model_feature_step2(VmafModel *model)
 
 static char *test_model_feature(void)
 {
-    VmafModel *model = nullptr;
+    VmafModel *model = NULL;
     char *msg = test_model_feature_step1(&model);
     if (msg)
         return msg;
@@ -332,7 +338,7 @@ static char *test_model_check_default_behavior_unset_flags(void)
 
     vmaf_model_destroy(model);
 
-    return nullptr;
+    return NULL;
 }
 
 static char *test_model_check_default_behavior_set_flags(void)
@@ -357,7 +363,7 @@ static char *test_model_check_default_behavior_set_flags(void)
 
     vmaf_model_destroy(model);
 
-    return nullptr;
+    return NULL;
 }
 
 static char *test_model_set_flags_transform_and_clip(void)
@@ -383,13 +389,13 @@ static char *test_model_set_flags_transform_and_clip(void)
     mu_assert("Score transform must be disabled.\n", !model2->score_transform.enabled);
     mu_assert("Clipping must be disabled.\n", !model2->score_clip.enabled);
     vmaf_model_destroy(model2);
-    return nullptr;
+    return NULL;
 }
 
 static char *test_model_set_flags_default_opts(void)
 {
     VmafModel *model3;
-    VmafModelConfig cfg3 = {nullptr};
+    VmafModelConfig cfg3 = {NULL};
     const char *path3 = JSON_MODEL_PATH "vmaf_float_v0.6.1.json";
     int err = vmaf_model_load_from_path(&model3, &cfg3, path3);
     mu_assert("problem during vmaf_model_load_from_path", !err);
@@ -400,14 +406,14 @@ static char *test_model_set_flags_default_opts(void)
     mu_assert("feature[4].opts_dict must be NULL.\n", !model3->feature[4].opts_dict);
     mu_assert("feature[5].opts_dict must be NULL.\n", !model3->feature[5].opts_dict);
     vmaf_model_destroy(model3);
-    return nullptr;
+    return NULL;
 }
 
 static char *check_model_neg_feature_opts(const VmafModel *model4)
 {
     const VmafDictionaryEntry *entry =
         vmaf_dictionary_get(&model4->feature[0].opts_dict, "adm_enhn_gain_limit", 0);
-    mu_assert("feature[0].opts_dict lookup must return entry.\n", entry != nullptr);
+    mu_assert("feature[0].opts_dict lookup must return entry.\n", entry != NULL);
     mu_assert("feature[0].opts_dict must have key adm_enhn_gain_limit.\n",
               strcmp(entry->key, "adm_enhn_gain_limit") == 0);
     mu_assert("feature[0].opts_dict[\"adm_enhn_gain_limit\"] must have value 1.\n",
@@ -415,19 +421,19 @@ static char *check_model_neg_feature_opts(const VmafModel *model4)
 
     for (unsigned f = 2; f <= 5; f++) {
         entry = vmaf_dictionary_get(&model4->feature[f].opts_dict, "vif_enhn_gain_limit", 0);
-        mu_assert("feature opts_dict lookup must return entry.\n", entry != nullptr);
+        mu_assert("feature opts_dict lookup must return entry.\n", entry != NULL);
         mu_assert("feature opts_dict must have key vif_enhn_gain_limit.\n",
                   strcmp(entry->key, "vif_enhn_gain_limit") == 0);
         mu_assert("feature opts_dict[\"vif_enhn_gain_limit\"] must have value 1.\n",
                   strcmp(entry->val, "1") == 0);
     }
-    return nullptr;
+    return NULL;
 }
 
 static char *test_model_set_flags_neg_opts(void)
 {
     VmafModel *model4;
-    VmafModelConfig cfg4 = {nullptr};
+    VmafModelConfig cfg4 = {NULL};
     const char *path4 = JSON_MODEL_PATH "vmaf_float_v0.6.1neg.json";
     int err = vmaf_model_load_from_path(&model4, &cfg4, path4);
     mu_assert("problem during vmaf_model_load_from_path", !err);
@@ -462,16 +468,16 @@ static char *test_json_model_from_buffer(void)
     const char *path = JSON_MODEL_PATH "vmaf_float_v0.6.1.json";
     size_t len = 0;
     char *buf = slurp(path, &len);
-    mu_assert("slurp failed", buf != nullptr);
+    mu_assert("slurp failed", buf != NULL);
 
-    VmafModel *m_buf = nullptr;
-    VmafModelConfig cfg_buf = {nullptr};
+    VmafModel *m_buf = NULL;
+    VmafModelConfig cfg_buf = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m_buf, &cfg_buf, buf, (int)len);
     free(buf);
     mu_assert("from_buffer failed", !err);
 
-    VmafModel *m_path = nullptr;
-    VmafModelConfig cfg_path = {nullptr};
+    VmafModel *m_path = NULL;
+    VmafModelConfig cfg_path = {NULL};
     err = vmaf_read_json_model_from_path(&m_path, &cfg_path, path);
     if (err) {
         vmaf_model_destroy(m_buf);
@@ -482,44 +488,44 @@ static char *test_json_model_from_buffer(void)
     vmaf_model_destroy(m_buf);
     vmaf_model_destroy(m_path);
     mu_assert("buffer/path models diverge", !cmp);
-    return nullptr;
+    return NULL;
 }
 
 /* Missing path → -EINVAL from the fopen guard in vmaf_read_json_model_from_path. */
 static char *test_json_model_missing_path(void)
 {
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err =
         vmaf_read_json_model_from_path(&m, &cfg, "/nonexistent/path/vmaf_does_not_exist.json");
     mu_assert("missing path should return -EINVAL", err == -EINVAL);
-    return nullptr;
+    return NULL;
 }
 
 /* Malformed JSON buffer → non-zero error from the parser. */
 static char *test_json_model_malformed_buffer(void)
 {
     const char garbage[] = "{this is definitely not valid json}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, garbage, (int)sizeof(garbage) - 1);
     mu_assert("malformed JSON should return non-zero", err != 0);
     /* On the error path the parser may still have allocated *m; free if so. */
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* Empty buffer → non-zero error. */
 static char *test_json_model_empty_buffer(void)
 {
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, "", 0);
     mu_assert("empty buffer should return non-zero", err != 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* Exercises vmaf_read_json_model_collection_from_path on the bootstrap
@@ -529,17 +535,17 @@ static char *test_json_model_empty_buffer(void)
 static char *test_json_model_collection_from_path(void)
 {
     const char *path = JSON_MODEL_PATH "vmaf_b_v0.6.3.json";
-    VmafModel *m = nullptr;
-    VmafModelCollection *mc = nullptr;
+    VmafModel *m = NULL;
+    VmafModelCollection *mc = NULL;
     VmafModelConfig cfg = {.name = "vmaf_b"};
     int err = vmaf_read_json_model_collection_from_path(&m, &mc, &cfg, path);
     mu_assert("collection_from_path failed", !err);
-    mu_assert("first model not populated", m != nullptr);
-    mu_assert("collection not populated", mc != nullptr);
+    mu_assert("first model not populated", m != NULL);
+    mu_assert("collection not populated", mc != NULL);
 
     vmaf_model_destroy(m);
     vmaf_model_collection_destroy(mc);
-    return nullptr;
+    return NULL;
 }
 
 /* Same ensemble model via the buffer entry point. */
@@ -548,32 +554,32 @@ static char *test_json_model_collection_from_buffer(void)
     const char *path = JSON_MODEL_PATH "vmaf_b_v0.6.3.json";
     size_t len = 0;
     char *buf = slurp(path, &len);
-    mu_assert("slurp failed", buf != nullptr);
+    mu_assert("slurp failed", buf != NULL);
 
-    VmafModel *m = nullptr;
-    VmafModelCollection *mc = nullptr;
+    VmafModel *m = NULL;
+    VmafModelCollection *mc = NULL;
     VmafModelConfig cfg = {.name = "vmaf_b_buf"};
     int err = vmaf_read_json_model_collection_from_buffer(&m, &mc, &cfg, buf, (int)len);
     free(buf);
     mu_assert("collection_from_buffer failed", !err);
-    mu_assert("first model not populated", m != nullptr);
-    mu_assert("collection not populated", mc != nullptr);
+    mu_assert("first model not populated", m != NULL);
+    mu_assert("collection not populated", mc != NULL);
 
     vmaf_model_destroy(m);
     vmaf_model_collection_destroy(mc);
-    return nullptr;
+    return NULL;
 }
 
 /* Missing path for the collection API → -EINVAL. */
 static char *test_json_model_collection_missing_path(void)
 {
-    VmafModel *m = nullptr;
-    VmafModelCollection *mc = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelCollection *mc = NULL;
+    VmafModelConfig cfg = {NULL};
     int err =
         vmaf_read_json_model_collection_from_path(&m, &mc, &cfg, "/nonexistent/path/vmaf_b.json");
     mu_assert("missing collection path should return -EINVAL", err == -EINVAL);
-    return nullptr;
+    return NULL;
 }
 
 /* Collection buffer that is not an object → model_collection_parse early
@@ -581,13 +587,13 @@ static char *test_json_model_collection_missing_path(void)
 static char *test_json_model_collection_malformed_buffer(void)
 {
     const char garbage[] = "[1, 2, 3]";
-    VmafModel *m = nullptr;
-    VmafModelCollection *mc = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelCollection *mc = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_collection_from_buffer(&m, &mc, &cfg, garbage,
                                                           (int)sizeof(garbage) - 1);
     mu_assert("non-object collection should return non-zero", err != 0);
-    return nullptr;
+    return NULL;
 }
 
 /* Hits parser branches that upstream model JSONs don't exercise:
@@ -625,8 +631,8 @@ static char *test_json_model_synthetic_branches(void)
         "\"model\": \"not-a-real-libsvm-payload\""
         "}"
         "}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     /* libsvm's string parser is permissive and may accept arbitrary bytes,
      * so don't assert on err — the point is that parse_model_dict /
@@ -635,7 +641,7 @@ static char *test_json_model_synthetic_branches(void)
     (void)err;
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 static int append_65_feature_names(char *json, size_t json_sz, size_t *off)
@@ -695,7 +701,7 @@ static char *check_65_feature_model(const VmafModel *m)
     mu_assert("last feature name must parse", strcmp(m->feature[64].name, "feature_64") == 0);
     mu_assert("last feature slope must parse", m->feature[64].slope == 65.0);
     mu_assert("last feature intercept must parse", m->feature[64].intercept == 64.0);
-    return nullptr;
+    return NULL;
 }
 
 static char *test_json_model_allows_more_than_64_features(void)
@@ -705,8 +711,8 @@ static char *test_json_model_allows_more_than_64_features(void)
     int err = build_65_feature_json(json, sizeof(json), &off);
     mu_assert("synthetic model JSON builder overflowed", !err);
 
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)off);
     mu_assert("65-feature JSON model must parse", !err);
     char *msg = check_65_feature_model(m);
@@ -746,7 +752,7 @@ static char *check_11_knot_model(const VmafModel *m)
               m->score_transform.knots.cap >= 11u);
     mu_assert("last knot x must parse", m->score_transform.knots.list[10].x == 10.0);
     mu_assert("last knot y must parse", m->score_transform.knots.list[10].y == 11.0);
-    return nullptr;
+    return NULL;
 }
 
 static char *test_json_model_allows_more_than_10_knots(void)
@@ -756,8 +762,8 @@ static char *test_json_model_allows_more_than_10_knots(void)
     int err = build_11_knot_json(json, sizeof(json), &off);
     mu_assert("synthetic knot JSON builder overflowed", !err);
 
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)off);
     mu_assert("11-knot JSON model must parse", !err);
     char *msg = check_11_knot_model(m);
@@ -769,169 +775,169 @@ static char *test_json_model_allows_more_than_10_knots(void)
 static char *test_json_model_unknown_model_type(void)
 {
     const char json[] = "{\"model_dict\": {\"model_type\": \"NOT_A_REAL_TYPE\"}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("unknown model_type must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_model_dict: unknown norm_type value → -EINVAL (line 347). */
 static char *test_json_model_unknown_norm_type(void)
 {
     const char json[] = "{\"model_dict\": {\"norm_type\": \"weird-norm\"}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("unknown norm_type must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_model_dict: model_type not a string → -EINVAL (line 324). */
 static char *test_json_model_model_type_not_string(void)
 {
     const char json[] = "{\"model_dict\": {\"model_type\": 42}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-string model_type must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_model_dict: norm_type not a string → -EINVAL (line 340). */
 static char *test_json_model_norm_type_not_string(void)
 {
     const char json[] = "{\"model_dict\": {\"norm_type\": 7}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-string norm_type must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_model_dict: score_transform not an object → -EINVAL (line 308). */
 static char *test_json_model_score_transform_not_object(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": [1,2,3]}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-object score_transform must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_score_transform: p0 neither null nor number → -EINVAL (line 216). */
 static char *test_json_model_score_transform_p0_bad_type(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"p0\": \"oops\"}}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("string p0 must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_score_transform: p1 bad type → -EINVAL (line 228). */
 static char *test_json_model_score_transform_p1_bad_type(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"p1\": true}}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("bool p1 must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_score_transform: p2 bad type → -EINVAL (line 240). */
 static char *test_json_model_score_transform_p2_bad_type(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"p2\": false}}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("bool p2 must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_score_transform: knots neither null nor array → -EINVAL (line 255). */
 static char *test_json_model_score_transform_knots_bad_type(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"knots\": 99}}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("number knots must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_score_transform: out_lte_in not a string → -EINVAL (line 262). */
 static char *test_json_model_score_transform_out_lte_in_not_string(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"out_lte_in\": 1}}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-string out_lte_in must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_score_transform: out_gte_in not a string → -EINVAL (line 271). */
 static char *test_json_model_score_transform_out_gte_in_not_string(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"out_gte_in\": 1}}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-string out_gte_in must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_score_transform: enabled neither true nor false → -EINVAL (line 204). */
 static char *test_json_model_score_transform_enabled_bad_type(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"enabled\": 7}}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-bool enabled must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_feature_names: non-string element → -EINVAL (line 180). */
 static char *test_json_model_feature_names_non_string(void)
 {
     const char json[] = "{\"model_dict\": {\"feature_names\": [\"ok\", 42]}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-string feature name must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* Regression for the append_feature_name memory leak found by the nightly
@@ -954,8 +960,8 @@ static char *test_json_model_feature_names_duplicate_key_no_leak(void)
                         "\"slopes\": [1.0, 2.0, 3.0],"
                         "\"feature_names\": [\"replacement\"]"
                         "}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     /* Contract: on non-zero return *model is left NULL (no caller destroy); on
      * success it is heap-owned and the caller must release it. Honour both so
@@ -966,59 +972,59 @@ static char *test_json_model_feature_names_duplicate_key_no_leak(void)
     } else {
         mu_assert("rejected parse must leave *model untouched (NULL)", m == NULL);
     }
-    return nullptr;
+    return NULL;
 }
 
 /* parse_slopes: non-number element → -EINVAL (line 116). */
 static char *test_json_model_slopes_non_number(void)
 {
     const char json[] = "{\"model_dict\": {\"slopes\": [1.0, \"x\"]}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-number slope must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_intercepts: first element not a number → -EINVAL (line 92). */
 static char *test_json_model_intercepts_first_not_number(void)
 {
     const char json[] = "{\"model_dict\": {\"intercepts\": [\"nope\"]}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-number first intercept must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_knots: outer element not an array → -EINVAL (line 149). */
 static char *test_json_model_knots_outer_not_array(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"knots\": [42]}}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-array knot must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_knots_list: knot pair holds >2 numbers → -EINVAL (line 132). */
 static char *test_json_model_knots_too_many_values(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"knots\": [[0.0, 1.0, 2.0]]}}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("knot triple must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_feature_opts_dicts: value type other than number/bool/string
@@ -1026,39 +1032,39 @@ static char *test_json_model_knots_too_many_values(void)
 static char *test_json_model_feature_opts_dict_bad_value_type(void)
 {
     const char json[] = "{\"model_dict\": {\"feature_opts_dicts\": [{\"k\": null}]}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("null opts value must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_model_dict: score_clip not an array → -EINVAL (line 354). */
 static char *test_json_model_score_clip_not_array(void)
 {
     const char json[] = "{\"model_dict\": {\"score_clip\": 0}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-array score_clip must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_model_dict: top-level model_dict value not an object → -EINVAL (line 299). */
 static char *test_json_model_model_dict_not_object(void)
 {
     const char json[] = "{\"model_dict\": [1,2]}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-object model_dict must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* Collection parser hits json_skip() for keys that don't match the
@@ -1070,8 +1076,8 @@ static char *test_json_model_collection_skips_unknown_keys(void)
                         "\"extra_meta\": \"ignored\","
                         "\"0\": \"not an object — will fail inner parse\""
                         "}";
-    VmafModel *m = nullptr;
-    VmafModelCollection *mc = nullptr;
+    VmafModel *m = NULL;
+    VmafModelCollection *mc = NULL;
     VmafModelConfig cfg = {.name = "synth"};
     int err =
         vmaf_read_json_model_collection_from_buffer(&m, &mc, &cfg, json, (int)sizeof(json) - 1);
@@ -1080,7 +1086,7 @@ static char *test_json_model_collection_skips_unknown_keys(void)
         vmaf_model_destroy(m);
     if (mc)
         vmaf_model_collection_destroy(mc);
-    return nullptr;
+    return NULL;
 }
 
 /* Exercises the score_transform parser branches (p0, p1, p2, out_gte_in)
@@ -1101,7 +1107,7 @@ static char *test_json_model_score_transform(void)
     mu_assert("p2 should be enabled", m->score_transform.p2.enabled);
     mu_assert("out_gte_in should be set", m->score_transform.out_gte_in);
     vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* Verifies that vmaf_b_v0.6.3.json (bootstrap ensemble) parses as a
@@ -1112,8 +1118,8 @@ static char *test_json_model_score_transform(void)
 static char *test_model_collection_bootstrap_type(void)
 {
     const char *path = JSON_MODEL_PATH "vmaf_b_v0.6.3.json";
-    VmafModel *m = nullptr;
-    VmafModelCollection *mc = nullptr;
+    VmafModel *m = NULL;
+    VmafModelCollection *mc = NULL;
     VmafModelConfig cfg = {.name = "vmaf_b_ci"};
     int err = vmaf_read_json_model_collection_from_path(&m, &mc, &cfg, path);
     mu_assert("vmaf_b collection load failed", !err);
@@ -1125,13 +1131,13 @@ static char *test_model_collection_bootstrap_type(void)
                   mc->type == VMAF_MODEL_RESIDUE_BOOTSTRAP_SVM_NUSVR);
     vmaf_model_destroy(m);
     vmaf_model_collection_destroy(mc);
-    return nullptr;
+    return NULL;
 }
 
 static char *test_version_next(void)
 {
-    const void *next = nullptr;
-    const char *version = nullptr;
+    const void *next = NULL;
+    const char *version = NULL;
     unsigned count = 0;
     while ((next = vmaf_model_version_next(next, &version)) != NULL) {
         const VmafBuiltInModel *m = next;
@@ -1141,7 +1147,7 @@ static char *test_version_next(void)
     }
     mu_assert("vmaf_model_version_next must iterate every built-in model exactly once",
               count == BUILT_IN_MODEL_CNT);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_model_dict_array_key: "slopes" value not an array → -EINVAL
@@ -1151,13 +1157,13 @@ static char *test_version_next(void)
 static char *test_json_model_slopes_not_array(void)
 {
     const char json[] = "{\"model_dict\": {\"slopes\": \"not an array\"}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-array slopes must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_model_dict_array_key: "intercepts" value not an array → -EINVAL
@@ -1166,13 +1172,13 @@ static char *test_json_model_slopes_not_array(void)
 static char *test_json_model_intercepts_not_array(void)
 {
     const char json[] = "{\"model_dict\": {\"intercepts\": 42}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-array intercepts must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_model_dict_array_key: "feature_names" value not an array → -EINVAL
@@ -1181,13 +1187,13 @@ static char *test_json_model_feature_names_not_array(void)
 {
     const char json[] =
         "{\"model_dict\": {\"feature_names\": \"VMAF_feature_integer_motion2_score\"}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-array feature_names must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_model_dict_array_key: "feature_opts_dicts" value not an array → -EINVAL
@@ -1195,13 +1201,13 @@ static char *test_json_model_feature_names_not_array(void)
 static char *test_json_model_feature_opts_dicts_not_array(void)
 {
     const char json[] = "{\"model_dict\": {\"feature_opts_dicts\": {\"a\": 1}}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-array feature_opts_dicts must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_model_dict_array_key: "model" value not a string → -EINVAL
@@ -1210,13 +1216,13 @@ static char *test_json_model_feature_opts_dicts_not_array(void)
 static char *test_json_model_model_payload_not_string(void)
 {
     const char json[] = "{\"model_dict\": {\"model\": 12345}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-string model payload must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_model_dict_chroma_correction: value not a number → -EINVAL
@@ -1225,13 +1231,13 @@ static char *test_json_model_chroma_correction_not_number(void)
 {
     const char json[] =
         "{\"model_dict\": {\"chroma_correction_parameter\": \"definitely-not-a-number\"}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-number chroma_correction_parameter must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_model_dict_score_clip: first element (min) not a number → -EINVAL
@@ -1241,13 +1247,13 @@ static char *test_json_model_chroma_correction_not_number(void)
 static char *test_json_model_score_clip_min_not_number(void)
 {
     const char json[] = "{\"model_dict\": {\"score_clip\": [\"x\", 100.0]}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-number score_clip min must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_model_dict_score_clip: second element (max) not a number → -EINVAL
@@ -1255,13 +1261,13 @@ static char *test_json_model_score_clip_min_not_number(void)
 static char *test_json_model_score_clip_max_not_number(void)
 {
     const char json[] = "{\"model_dict\": {\"score_clip\": [0.0, \"y\"]}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-number score_clip max must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_score_transform_poly: value is JSON_NULL → enabled=false, returns 0
@@ -1272,7 +1278,7 @@ static char *test_json_model_score_transform_poly_null_disables(void)
 {
     const char json[] =
         "{\"model_dict\": {\"score_transform\": {\"enabled\": true, \"p0\": null}}}";
-    VmafModel *m = nullptr;
+    VmafModel *m = NULL;
     VmafModelConfig cfg = {.flags = VMAF_MODEL_FLAG_ENABLE_TRANSFORM};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     /* The model has no libsvm payload, so vmaf_read_json_model will surface
@@ -1282,7 +1288,7 @@ static char *test_json_model_score_transform_poly_null_disables(void)
     (void)err;
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_score_transform_knots_key: knots value is JSON_NULL → enabled=false
@@ -1291,13 +1297,13 @@ static char *test_json_model_score_transform_knots_null_disables(void)
 {
     const char json[] =
         "{\"model_dict\": {\"score_transform\": {\"enabled\": true, \"knots\": null}}}";
-    VmafModel *m = nullptr;
+    VmafModel *m = NULL;
     VmafModelConfig cfg = {.flags = VMAF_MODEL_FLAG_ENABLE_TRANSFORM};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     (void)err;
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_score_transform_bool_str: value is not a string → -EINVAL
@@ -1307,13 +1313,13 @@ static char *test_json_model_score_transform_knots_null_disables(void)
 static char *test_json_model_score_transform_bool_str_not_string(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"out_lte_in\": 1.5}}}";
-    VmafModel *m = nullptr;
+    VmafModel *m = NULL;
     VmafModelConfig cfg = {.flags = VMAF_MODEL_FLAG_ENABLE_TRANSFORM};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-string bool field must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_model_dict_entry: an unrecognised key triggers the
@@ -1324,8 +1330,8 @@ static char *test_json_model_score_transform_bool_str_not_string(void)
 static char *test_json_model_unrecognised_model_dict_key(void)
 {
     const char json[] = "{\"model_dict\": {\"this_key_is_not_recognised\": 42}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     /* parse_model_dict_array_key returns 1 → parse_model_dict_entry skips
      * the value and continues. The outer model_parse still surfaces an
@@ -1334,7 +1340,7 @@ static char *test_json_model_unrecognised_model_dict_key(void)
     (void)err;
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_intercepts: subsequent (not first) intercept not a number → -EINVAL
@@ -1345,13 +1351,13 @@ static char *test_json_model_unrecognised_model_dict_key(void)
 static char *test_json_model_intercepts_mid_not_number(void)
 {
     const char json[] = "{\"model_dict\": {\"intercepts\": [1.0, \"bad\"]}}";
-    VmafModel *m = nullptr;
-    VmafModelConfig cfg = {nullptr};
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("non-number mid intercept must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_score_transform_poly: numeric branch surfaces a non-zero
@@ -1363,7 +1369,7 @@ static char *test_json_model_score_transform_poly_number_sets_value(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"enabled\": true, "
                         "\"p1\": 0.75}}}";
-    VmafModel *m = nullptr;
+    VmafModel *m = NULL;
     VmafModelConfig cfg = {.flags = VMAF_MODEL_FLAG_ENABLE_TRANSFORM};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     /* No libsvm payload → vmaf_read_json_model surfaces an error
@@ -1372,7 +1378,7 @@ static char *test_json_model_score_transform_poly_number_sets_value(void)
     (void)err;
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_score_transform_poly: token is neither NULL nor NUMBER → -EINVAL
@@ -1383,13 +1389,13 @@ static char *test_json_model_score_transform_poly_string_rejects(void)
 {
     const char json[] =
         "{\"model_dict\": {\"score_transform\": {\"enabled\": true, \"p1\": \"oops\"}}}";
-    VmafModel *m = nullptr;
+    VmafModel *m = NULL;
     VmafModelConfig cfg = {.flags = VMAF_MODEL_FLAG_ENABLE_TRANSFORM};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     mu_assert("string-valued polynomial constant must reject", err < 0);
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 /* parse_score_transform_knots_key: knots is an array → walks parse_knots
@@ -1400,7 +1406,7 @@ static char *test_json_model_score_transform_knots_array_walks(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"enabled\": true, "
                         "\"knots\": [[0.0, 0.0], [50.0, 50.0], [100.0, 100.0]]}}}";
-    VmafModel *m = nullptr;
+    VmafModel *m = NULL;
     VmafModelConfig cfg = {.flags = VMAF_MODEL_FLAG_ENABLE_TRANSFORM};
     int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
     /* No libsvm payload → downstream error, but the knots walk runs
@@ -1408,7 +1414,7 @@ static char *test_json_model_score_transform_knots_array_walks(void)
     (void)err;
     if (m)
         vmaf_model_destroy(m);
-    return nullptr;
+    return NULL;
 }
 
 typedef struct {
@@ -1503,5 +1509,7 @@ char *run_tests(void)
         if (msg)
             return msg;
     }
-    return nullptr;
+    return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
