@@ -1,6 +1,6 @@
 module github.com/VMAFx/vmafx
 
-go 1.27.0
+go 1.27.1
 
 require (
 	github.com/c-bata/goptuna v0.9.0
