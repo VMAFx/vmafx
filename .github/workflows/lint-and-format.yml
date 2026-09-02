@@ -591,6 +591,27 @@ jobs:
           fi
           echo "No conflict markers found."
 
+  twin-drift-check:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # ADR-1135 — .c/.cpp twin-drift + stale-source-reference gate. Fails
+    # when (a) either side of a same-directory .c/.cpp twin pair is compiled
+    # by NO build file (dead twins drift: output.c vs output.cpp diverged
+    # for three months), or (b) any meson.build / setup.py / *.pyx names a
+    # source path that does not exist (the mem.c -> mem.cpp and dict.c ->
+    # dict.cpp renames broke the Cython + libFuzzer builds for two months
+    # because only nightly / opt-in lanes configure those files). Known
+    # dead twins are listed WITH a reason each in
+    # scripts/ci/twin-drift-allowlist.txt; the gate fails on stale rows.
+    # Pure git + awk, no build. The job `name:` is a required check in
+    # required-aggregator.yml — rename both in the same commit.
+    name: "Twin Drift + Stale Source Refs (ADR-1135)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Run twin-drift gate
+        run: bash scripts/ci/twin-drift-check.sh
+
   shellcheck:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # T7-CI-DEDUP — body collapsed to a no-op proxy that depends on the

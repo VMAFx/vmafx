@@ -9,6 +9,24 @@ no rebase impact: dev/Containerfile is fork-local.
 - `core/test/fuzz/meson.build`, `scripts/setup/ubuntu.sh` — both fork-added
   (ADR-0270 fuzz harnesses; setup script has no upstream counterpart).
   no rebase impact: neither file exists upstream.
+## ci/twin-drift-gate — .c/.cpp twin-drift + stale-source-reference gate (2026-09-02)
+
+- `scripts/ci/twin-drift-check.sh`, `scripts/ci/twin-drift-allowlist.txt`,
+  `scripts/ci/tests/test-twin-drift-check.sh`, the `twin-drift-check` job in
+  `.github/workflows/lint-and-format.yml`, its row in
+  `required-aggregator.yml` and the `twin-drift-check` pre-push hook are
+  fork-local (ADR-1135; no upstream counterpart). Keep the workflow `name:`
+  and the aggregator row identical — the aggregator matches names exactly.
+- The gate *reads* every tracked `meson.build`, `python/setup.py` and
+  `*.pyx`, most of which are upstream-mirror files. After an upstream sync
+  that adds, renames or removes a source, run
+  `bash scripts/ci/twin-drift-check.sh` before pushing: a stale path in an
+  upstream-mirror build file is fixed in the build file (never allowlisted),
+  and a new same-directory `.c`/`.cpp` pair must have both sides compiled or
+  the dead side listed in the allowlist with a reason.
+- `core/test/fuzz/meson.build` (fork-added, ADR-0270): `fuzz_json_model`
+  now lists `../../src/dict.cpp` with `cpp_args : fuzz_flags` — the same
+  hunk as #1186; whichever lands second rebases onto an identical line.
 
 ## renovate/pypi-aiohttp-vulnerability — aiohttp security floor (2026-08-31)
 

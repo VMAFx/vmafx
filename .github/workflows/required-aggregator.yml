@@ -71,6 +71,7 @@ jobs:
               'Sanitizers — ASan + UBSan + MSan (thread)',
               'Sanitizers — ASan + UBSan + MSan (undefined)',
               'Assertion Density (Power of 10 §5)',
+              'Twin Drift + Stale Source Refs (ADR-1135)',
               'Tiny AI (DNN Suite + ai/ Pytests)',
               'Build — Ubuntu HIP (T7-10b runtime)',
               'SYCL float_ssim Parity (Arc DG2-G10)',

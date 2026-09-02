@@ -229,6 +229,16 @@ repos:
         # pass per-file paths or the awk pass aborts mid-stream.
         pass_filenames: false
 
+      - id: twin-drift-check
+        name: .c/.cpp twin drift + stale source refs (ADR-1135)
+        entry: scripts/ci/twin-drift-check.sh
+        language: script
+        files: (^|/)(meson\.build|setup\.py)$|\.(pyx|c|cpp)$
+        stages: [pre-push]
+        # Whole-tree predicate (every twin pair, every build file); per-file
+        # paths would only narrow the scan and hide dead twins.
+        pass_filenames: false
+
       - id: mypy-local
         name: mypy (ai/ + scripts/, fork-added Python)
         entry: mypy
