@@ -24,12 +24,6 @@ on:
   pull_request:
     branches: [master]
     types: [opened, synchronize, reopened, ready_for_review]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - 'changelog.d/**'
-      - 'CHANGELOG.md'
-      - '.workingdir2/**'
   schedule:
     # Fuzz nightly at 04:30 UTC. TSan fires on push to master (above).
     - cron: "30 4 * * *"
@@ -62,8 +56,25 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — ASan+UBSan build skipped by plan
+        if: steps.impact.outputs.c_core != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — ASan+UBSan build satisfied without running (ADR-1140)"
       - name: Install deps
+        if: steps.impact.outputs.c_core == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build nasm ccache
@@ -84,6 +95,7 @@ jobs:
       # cycle drops re-runs to <2 min for unchanged TUs. Mirrors the
       # build.yml / libvmaf-build-matrix.yml pattern.
       - name: Restore ccache
+        if: steps.impact.outputs.c_core == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ~/.ccache
@@ -91,11 +103,13 @@ jobs:
           restore-keys: |
             ccache-v2-sanitizer-asan-ubsan-
       - name: Configure ccache
+        if: steps.impact.outputs.c_core == 'true'
         run: |
           mkdir -p ~/.ccache
           ccache --max-size=400M
           ccache -z
       - name: Build (ASan + UBSan)
+        if: steps.impact.outputs.c_core == 'true'
         working-directory: core
         env:
           CC: ccache clang-22
@@ -111,9 +125,10 @@ jobs:
             -Db_lto=false -Db_lundef=false
           meson compile -C build
       - name: Report ccache statistics
-        if: always()
+        if: ${{ (always()) && steps.impact.outputs.c_core == 'true' }}
         run: ccache -s
       - name: Run tests (ASan + UBSan)
+        if: steps.impact.outputs.c_core == 'true'
         working-directory: core
         env:
           ASAN_OPTIONS: halt_on_error=1:detect_leaks=1
@@ -167,8 +182,25 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+      - name: Not impacted — TSan build skipped by plan
+        if: steps.impact.outputs.c_core != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — TSan build satisfied without running (ADR-1140)"
       - name: Install deps
+        if: steps.impact.outputs.c_core == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build nasm ccache
@@ -185,6 +217,7 @@ jobs:
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --quiet meson
       - name: Restore ccache
+        if: steps.impact.outputs.c_core == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ~/.ccache
@@ -192,11 +225,13 @@ jobs:
           restore-keys: |
             ccache-v2-sanitizer-tsan-
       - name: Configure ccache
+        if: steps.impact.outputs.c_core == 'true'
         run: |
           mkdir -p ~/.ccache
           ccache --max-size=400M
           ccache -z
       - name: Build (TSan)
+        if: steps.impact.outputs.c_core == 'true'
         working-directory: core
         env:
           CC: ccache clang-22
@@ -210,9 +245,10 @@ jobs:
             -Db_lto=false -Db_lundef=false
           meson compile -C build
       - name: Report ccache statistics
-        if: always()
+        if: ${{ (always()) && steps.impact.outputs.c_core == 'true' }}
         run: ccache -s
       - name: Run tests (TSan)
+        if: steps.impact.outputs.c_core == 'true'
         working-directory: core
         run: |
           # Exclude test_y4m_alloc_failure: RLIMIT_AS incompatible with

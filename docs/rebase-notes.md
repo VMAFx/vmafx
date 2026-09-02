@@ -19,6 +19,16 @@ no rebase impact: dev/Containerfile is fork-local.
 - `core/test/fuzz/meson.build`, `scripts/setup/ubuntu.sh` — both fork-added
   (ADR-0270 fuzz harnesses; setup script has no upstream counterpart).
   no rebase impact: neither file exists upstream.
+## ci/impact-planner — required CI routed by measured impact (2026-09-02)
+- `.github/workflows/*.yml`, `.github/ci-impact.json`, `scripts/ci/plan-ci-impact.py`,
+  `scripts/ci/tests/test_ci_impact.py` — all fork-local CI. no rebase impact:
+  upstream Netflix/vmaf has none of these files.
+- **Edit-sensitive pair (not rebase-sensitive):** a workflow that hosts a check
+  named in `required-aggregator.yml` must never regain a workflow-level
+  `paths:` / `paths-ignore:` filter — the contract test
+  `WorkflowContract.test_required_contexts_workflows_have_no_path_filters`
+  fails if one does. Route inside the job via the planner instead.
+
 ## ci/twin-drift-gate — .c/.cpp twin-drift + stale-source-reference gate (2026-09-02)
 
 - `scripts/ci/twin-drift-check.sh`, `scripts/ci/twin-drift-allowlist.txt`,

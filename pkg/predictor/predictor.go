@@ -641,3 +641,5 @@ func clamp(v, lo, hi float64) float64 {
 func Clamp(v, lo, hi float64) float64 {
 	return math.Max(lo, math.Min(hi, v))
 }
+
+// planner probe

@@ -51,6 +51,57 @@ To preview CI status before merging, mark the PR ready-for-review.
 You can flip back to draft afterwards if more work is needed; the next
 `ready_for_review` will fire a fresh matrix.
 
+## CI impact routing (ADR-1140)
+
+Required checks no longer decide *whether they apply* from a workflow-level
+`paths:` / `paths-ignore:` filter. Every workflow that hosts a check named in
+`required-aggregator.yml` starts on every non-draft PR and every push to
+`master`; the first step of each required job runs the planner:
+
+```bash
+python3 scripts/ci/plan-ci-impact.py --event pull_request \
+  --base <base-sha> --head <head-sha> --github-output "$GITHUB_OUTPUT"
+```
+
+It diffs the event's exact revisions — the **merge-base** of head and base for
+a PR, the exact `before..head` for a push — and maps the changed paths onto
+the selectors declared in `.github/ci-impact.json`:
+
+| Selector | Owns | Gates |
+| --- | --- | --- |
+| `c_core` | `core/`, `ffmpeg-patches/`, `model/`, `testdata/`, golden fixtures | build legs, sanitizers, cppcheck, CodeQL C/C++, assertion density |
+| `golden_harness` | `c_core` ∪ `python` | Netflix golden tests, coverage gate |
+| `tiny_ai` | `c_core` ∪ `ai` ∪ `python` | Tiny AI (DNN suite + `ai/` pytests) |
+| `python_lint` | `python` ∪ `ai` | CodeQL Python |
+| `docs` | `docs/`, `mkdocs.yml`, `*.md`, `changelog.d/` | Docs build |
+| `actions` | `.github/` | CodeQL Actions |
+| `go`, `rust`, `shell`, `container` | their trees | (non-required workflows — still path-filtered, follow-up) |
+
+Steps gated on a selector that is **not** impacted are skipped and the job
+emits `::notice::<selector> not impacted (mode=… reason=…)` before reporting
+`success`, so the aggregator always sees a real conclusion with a real reason.
+
+The planner **fails closed**: an unknown top-level path, any status other
+than add/modify (delete, rename, copy, mode change), a change to a
+CI-authority file (the map, the planner, `scripts/ci/**`, the workflows
+hosting required contexts, `.pre-commit-config.yaml`, `Makefile`,
+`.clang-tidy`, …), a missing merge-base, a non-linear push or an over-large
+diff all produce `mode=full` — every selector true, i.e. the pre-ADR-1140
+behaviour.
+
+Local use:
+
+```bash
+python3 scripts/ci/plan-ci-impact.py --event pull_request \
+  --base "$(git merge-base origin/master HEAD)" --head HEAD --print
+python3 -m unittest scripts/ci/tests/test_ci_impact.py   # map ↔ tree contract
+```
+
+Adding a top-level directory or file? Add it to `known_prefixes` /
+`known_files` (and to a selector if a required check owns it); the contract
+test fails otherwise, because an unknown path would silently force `full`
+mode on every PR that touches it.
+
 ## Required-checks aggregator
 
 The single required check on `master` branch protection is the

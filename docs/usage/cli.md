@@ -477,3 +477,4 @@ CPU goldens preserved verbatim as a required CI gate — see
   [ADR-0023](../adr/0023-tinyai-user-surfaces.md),
   [ADR-0024](../adr/0024-netflix-golden-preserved.md),
   [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
+x
