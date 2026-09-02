@@ -877,6 +877,47 @@ after a port-upstream of any of these files.
      to a no-op fails the test). The section is grid-independent, so it also
      modulates the `grid==0` scalar path.
 
+### Scalar VIF statistic and float-motion plane helpers (2026-09-02, c-rework-vif-motion)
+
+- **`integer_vif.c` is the single scalar reference the SIMD tails run.**
+  `vif_statistic_8`, `vif_statistic_16` and `vif_compute_line_residuals`
+  (called by `x86/vif_avx2.c`, `x86/vif_avx512.c` and `arm64/vif_neon.c` for
+  the columns their 16-wide blocks do not cover) all go through
+  `vif_horizontal_pixel` → `vif_accumulate_pixel` → `vif_store_residuals`.
+  Those helpers hold the upstream arithmetic verbatim (operand types and
+  evaluation order included) and are `FORCE_INLINE`; change the statistic
+  there once and mirror it in the three kernels — never re-inline a private
+  copy into one entry point, or the SIMD block path and the scalar tail
+  diverge for widths that are not multiples of 16. Bit-exactness relies on
+  the fork's `-std=c23` (contraction off) and no `-march` (no FMA) flags; if
+  either changes, re-run the 31-case `--precision max` matrix in
+  [`docs/research/2026-09-02-c-rework-vif-motion-bit-exact.md`](../../../docs/research/2026-09-02-c-rework-vif-motion-bit-exact.md).
+- **`log_generate` uses `roundf`**, proven bit-identical to upstream's
+  `round` over all `VIF_LOG2_TABLE_SIZE` entries. The same LUT feeds the
+  AVX-512 gather path (ADR-0500); do not switch rounding modes.
+- **`write_scores` append order is an output contract**: four scale scores,
+  then `integer_vif` / `_num` / `_den`, then num / den per scale 0..3. The
+  `double` totals are explicit left-to-right sums — keep them out of loops.
+- **`vif_tools.c` float filters**: `vif_use_avx2_convolution` is the only
+  place the ADR-0504 AVX2-only decision lives (AVX-512 float convolution was
+  removed for golden parity — do not re-add it here); `vif_mirror_index` is
+  reflect-101 (`-idx` / `2n - idx - 2`) and is shared by all three vertical
+  passes and the horizontal pass. `vif_pixel_statistic_s` keeps `vif_sigma_nsq`
+  as `double` in the `log2f` arguments — narrowing it changes the promotion.
+- **`float_motion.c` planes**: `MotionState.plane[0..2]` are Y, U, V; U and V
+  exist only with `motion_add_uv`, so `motion_free_planes` (the only teardown)
+  must keep the `motion_add_uv` guard. `motion_chroma_heights` rejects
+  chroma-less formats **before** any allocation. `motion_score_pair` adds
+  Y, then U, then V — the `double` add order is load-bearing for
+  `motion_add_uv` parity with the CUDA / SYCL twins. `motion_clip` /
+  `motion_blend_clip` are the only places the `motion_fps_weight` /
+  `motion_max_val` clip is applied.
+- **C translation units keep `NULL`** (ADR-1138): the three files carry a
+  file-scoped `NOLINTBEGIN/END(modernize-use-nullptr)` bracket; keep the
+  `NOLINTEND` at end of file when appending. `flush()` in `float_motion.c`
+  carries a cited `cppcheck-suppress constParameterCallback` because the
+  `VmafFeatureExtractor.flush` callback type fixes its prototype.
+
 ## Governing ADRs
 
 - [ADR-0024](../../../docs/adr/0024-netflix-golden-preserved.md) —
