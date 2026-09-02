@@ -47388,3 +47388,65 @@ Rebase-sensitive points:
   namespace and `const` differences.
 - All three C files carry a file-scoped `NOLINTBEGIN/END(modernize-use-nullptr)`
   bracket per ADR-1138 — keep the closing marker at EOF when appending.
+
+## refactor/c-rework-vif-motion — scalar VIF and float-motion split into helpers (2026-09-02)
+
+Upstream-mirror files reworked under ADR-0141: `core/src/feature/integer_vif.c`,
+`core/src/feature/vif_tools.c`, `core/src/feature/float_motion.c` (all keep the
+Netflix header) plus a `const` on `vif_compute_line_residuals`'s state parameter
+in `core/src/feature/integer_vif.h`. Every numeric path is byte-identical to the
+pre-rework binary (31-case `--precision max` matrix across the scalar, AVX2 and
+AVX-512 lanes; see `docs/research/2026-09-02-c-rework-vif-motion-bit-exact.md`).
+Rebase-sensitive points:
+
+- **The integer VIF statistic lives once.** `vif_statistic_8`,
+  `vif_statistic_16` and `vif_compute_line_residuals` (the tail helper
+  `vif_avx2.c` / `vif_avx512.c` / `vif_neon.c` call for the columns their block
+  width does not cover) all run `vif_horizontal_pixel` → `vif_accumulate_pixel`
+  → `vif_store_residuals`. An upstream hunk that changes the horizontal pass, the
+  `sigma*` / `g` / `sv_sq` / `numer1` arithmetic or the final `num` / `den`
+  formula must be applied to those helpers **once**, verbatim (same operand
+  types and order), and then mirrored in the three SIMD kernels — do not
+  re-inline a per-function copy. The 8-bit and 16-bit vertical passes are
+  `vif_vertical_line_8` / `vif_vertical_line_16`; the 16-bit rounding / shift
+  constants are `vif_shift_for_scale` (member names unchanged:
+  `add_shift_round_VP`, `shift_VP`, `add_shift_round_VP_sq`, `shift_VP_sq`).
+- `vif_compute_line_residuals` takes `const VifPublicState *`; upstream's
+  non-const prototype converts implicitly at every SIMD call site.
+- `log_generate` uses `roundf` (proven bit-identical to `round` over all
+  32768 entries); do not "restore" `round` for parity — the LUT is the same.
+- `init` (integer VIF) is `vif_init_dispatch` + `vif_buffers_alloc`; the
+  byte-cursor layout of the single allocation (MSVC C2036 workaround) is inside
+  `vif_buffers_alloc` and its offsets are unchanged. There is no `fail:` label:
+  the dictionary-failure path frees `buf.data` and NULLs it.
+- `write_scores` is `write_scale_scores` + `write_debug_scores` over the
+  `vif_scale_{score,num,den}_names[4]` tables; the append order (four scale
+  scores, `integer_vif` / `_num` / `_den`, then num / den per scale) is
+  unchanged and the `double` sums stay explicit left-to-right expressions.
+- `decimate_and_pad` indexes with `(ptrdiff_t)i * 2` / `(ptrdiff_t)j * 2`
+  (`src_row` / `src_col`) instead of the implicitly widened `unsigned` products.
+- `vif_tools.c`: the AVX2-only dispatch (ADR-0504 rationale comment) is
+  `vif_use_avx2_convolution`; the reflect-101 index is `vif_mirror_index`; the
+  three public `vif_filter1d_*_s` fallbacks are `vif_filter1d_vertical_s` /
+  `_vertical_sq_s` / `_vertical_xy_s` + the shared `vif_filter1d_horizontal_s`.
+  The per-pixel float statistic is `vif_pixel_statistic_s`; the upstream
+  `matching_c` reference block is a file-scope comment above it. `ceil` /
+  `floor` on `float` operands are `ceilf` / `floorf`. A scratch-row
+  `aligned_malloc` failure now logs and returns instead of dereferencing NULL.
+- `float_motion.c`: `MotionState` holds `MotionPlane plane[3]` (Y, U, V —
+  `ref`, `tmp`, `blur[3]`) instead of the flat `ref` / `ref_u` / `ref_v` /
+  `tmp*` / `blur*` fields; U and V are allocated only with `motion_add_uv`, and
+  `motion_free_planes` is the only teardown (`init` failure and `close`).
+  `motion_chroma_heights` runs **before** any allocation and has a `default:`
+  (upstream leaked the Y buffers on the YUV400P `-EINVAL`). Blur / copy / score
+  are `motion_copy_and_blur` → `motion_blur_plane` and `motion_score_pair`
+  (Y, then U, then V — the `double` add order is load-bearing). Score clips are
+  `motion_clip` / `motion_blend_clip`; every collector append goes through
+  `motion_append`. The three `readability-function-size` NOLINTs from the
+  b949cebf port are gone; do not bring them back with an upstream hunk.
+- `integer_vif.c` and `float_motion.c` carry a file-scoped
+  `NOLINTBEGIN/END(modernize-use-nullptr)` bracket per ADR-1138 — keep the
+  closing marker at EOF when appending. `vif_tools.c` has no null-pointer
+  constants and therefore no bracket. The registry symbols keep the cited
+  `NOLINTNEXTLINE(misc-use-internal-linkage)`. `flush()` carries a cited
+  `cppcheck-suppress constParameterCallback`.

@@ -19,6 +19,7 @@
 #ifndef FEATURE_VIF_H_
 #define FEATURE_VIF_H_
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <assert.h>
@@ -137,7 +138,8 @@ void vif_statistic_16(struct VifPublicState *s, float *num, float *den, unsigned
  * This is a support method for block based vip_statistic_xxx method and is typically called
  * only when to is not a multiple of the block size, with from = (to / block_size) + block_size
  */
-VifResiduals vif_compute_line_residuals(VifPublicState *s, unsigned from, unsigned to, int scale);
+VifResiduals vif_compute_line_residuals(const VifPublicState *s, unsigned from, unsigned to,
+                                        int scale);
 
 #include "compat_builtin.h"
 

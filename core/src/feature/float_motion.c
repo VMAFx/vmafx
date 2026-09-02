@@ -46,10 +46,22 @@
 #include "arm64/float_motion_neon.h"
 #endif
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
+ * upstream-mirror file whose Netflix source spells the null pointer constant
+ * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* Default maximum value allowed for motion */
 #define DEFAULT_MOTION_MAX_VAL (10000.0)
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
+
+/* Blur ring depth: frames index, index + 1 and index + 2 are kept modulo 3. */
+#define MOTION_BLUR_RING 3
+
+typedef float (*MotionSadLineFn)(const float *, const float *, int);
 
 static float float_sad_line_c(const float *img1, const float *img2, int w)
 {
@@ -61,11 +73,17 @@ static float float_sad_line_c(const float *img1, const float *img2, int w)
     return accum;
 }
 
+/* Working set of one picture plane: the float copy of the source plane, the
+ * separable-convolution scratch row block and the three-slot blur ring. */
+typedef struct MotionPlane {
+    float *ref;
+    float *tmp;
+    float *blur[MOTION_BLUR_RING];
+} MotionPlane;
+
 typedef struct MotionState {
     size_t float_stride;
-    float *ref, *ref_u, *ref_v;
-    float *tmp, *tmp_u, *tmp_v;
-    float *blur[3], *blur_u[3], *blur_v[3];
+    MotionPlane plane[3]; /* Y, U, V; U and V are allocated only with motion_add_uv */
     unsigned index;
     double score;
     bool debug;
@@ -78,7 +96,7 @@ typedef struct MotionState {
     int motion_filter_size;
     double motion_max_val;
     VmafDictionary *feature_name_dict;
-    float (*sad_line)(const float *, const float *, int);
+    MotionSadLineFn sad_line;
 } MotionState;
 
 static const VmafOption options[] = {
@@ -179,35 +197,87 @@ static const VmafOption options[] = {
  * because float_sad_line accumulates sequentially.
  */
 static double compute_motion_simd(const float *ref, const float *dis, int w, int h, int ref_stride,
-                                  int dis_stride,
-                                  float (*sad_line)(const float *, const float *, int))
+                                  int dis_stride, MotionSadLineFn sad_line)
 {
     int ref_px_stride = ref_stride / sizeof(float);
     int dis_px_stride = dis_stride / sizeof(float);
     float accum = 0.0f;
 
-    for (int i = 0; i < h; i++)
+    for (int i = 0; i < h; i++) {
         accum +=
             sad_line(ref + (ptrdiff_t)i * ref_px_stride, dis + (ptrdiff_t)i * dis_px_stride, w);
+    }
 
     return (double)(accum / (w * h));
 }
 
-// Upstream-port from Netflix b949cebf adds UV/scale1 init paths inline (Research-0024 Strategy A).
-// NOLINTNEXTLINE(readability-function-size)
-static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
-                unsigned h)
+/* Chroma plane heights for the motion_add_uv buffers; -EINVAL when the pixel
+ * format carries no chroma planes. */
+static int motion_chroma_heights(enum VmafPixelFormat pix_fmt, unsigned h, unsigned *h_u,
+                                 unsigned *h_v)
 {
-    (void)bpc;
-    MotionState *s = fex->priv;
+    switch (pix_fmt) {
+    case VMAF_PIX_FMT_YUV420P:
+        *h_u = h / 2;
+        *h_v = h / 2;
+        return 0;
+    case VMAF_PIX_FMT_YUV422P:
+    case VMAF_PIX_FMT_YUV444P:
+        *h_u = h;
+        *h_v = h;
+        return 0;
+    case VMAF_PIX_FMT_UNKNOWN:
+    case VMAF_PIX_FMT_YUV400P:
+    default:
+        return -EINVAL;
+    }
+}
 
-    /* The separable Gaussian convolution uses reflect-101 mirror padding.
-     * For a filter of size N the bottom-edge formula requires
-     * dim >= N/2 + 1 in each axis.  For the default 5-tap filter that is
-     * 3; for the 3-tap option it is 2.  When motion_filter_size is 0 the
-     * option has not been applied yet (e.g. in unit tests that manually
-     * allocate priv) — treat it as the default.  Refuse smaller frames
-     * up front to prevent out-of-bounds reads in the convolution kernel. */
+static void motion_plane_free(MotionPlane *p)
+{
+    aligned_free(p->ref);
+    aligned_free(p->tmp);
+    for (unsigned k = 0; k < MOTION_BLUR_RING; k++) {
+        aligned_free(p->blur[k]);
+    }
+    memset(p, 0, sizeof(*p));
+}
+
+static int motion_plane_alloc(MotionPlane *p, size_t float_stride, unsigned h)
+{
+    const size_t plane_sz = float_stride * h;
+    p->ref = aligned_malloc(plane_sz, 32);
+    p->tmp = aligned_malloc(plane_sz, 32);
+    bool ok = p->ref != NULL && p->tmp != NULL;
+    for (unsigned k = 0; k < MOTION_BLUR_RING; k++) {
+        p->blur[k] = aligned_malloc(plane_sz, 32);
+        ok = ok && p->blur[k] != NULL;
+    }
+    if (!ok) {
+        motion_plane_free(p);
+        return -ENOMEM;
+    }
+    return 0;
+}
+
+static void motion_free_planes(MotionState *s)
+{
+    motion_plane_free(&s->plane[0]);
+    if (s->motion_add_uv) {
+        motion_plane_free(&s->plane[1]);
+        motion_plane_free(&s->plane[2]);
+    }
+}
+
+/* The separable Gaussian convolution uses reflect-101 mirror padding.
+ * For a filter of size N the bottom-edge formula requires
+ * dim >= N/2 + 1 in each axis.  For the default 5-tap filter that is
+ * 3; for the 3-tap option it is 2.  When motion_filter_size is 0 the
+ * option has not been applied yet (e.g. in unit tests that manually
+ * allocate priv) — treat it as the default.  Refuse smaller frames
+ * up front to prevent out-of-bounds reads in the convolution kernel. */
+static int motion_check_min_dim(const MotionState *s, unsigned w, unsigned h)
+{
     const int configured =
         s->motion_filter_size > 0 ? s->motion_filter_size : DEFAULT_MOTION_FILTER_SIZE;
     const unsigned effective_filter_size = (unsigned)configured;
@@ -221,347 +291,258 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
             return -EINVAL;
         }
     }
+    return 0;
+}
+
+static MotionSadLineFn motion_select_sad_line(void)
+{
+    MotionSadLineFn sad_line = float_sad_line_c;
+#if ARCH_X86
+    const unsigned flags = vmaf_get_cpu_flags();
+    if (flags & VMAF_X86_CPU_FLAG_AVX2) {
+        sad_line = float_sad_line_avx2;
+    }
+#if HAVE_AVX512
+    if (flags & VMAF_X86_CPU_FLAG_AVX512) {
+        sad_line = float_sad_line_avx512;
+    }
+#endif
+#elif ARCH_AARCH64
+    const unsigned flags = vmaf_get_cpu_flags();
+    if (flags & VMAF_ARM_CPU_FLAG_NEON) {
+        sad_line = float_sad_line_neon;
+    }
+#endif
+    return sad_line;
+}
+
+static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
+                unsigned h)
+{
+    (void)bpc;
+    MotionState *s = fex->priv;
+    unsigned h_u = 0;
+    unsigned h_v = 0;
+
+    int err = motion_check_min_dim(s, w, h);
+    if (err) {
+        return err;
+    }
+    if (s->motion_add_uv) {
+        err = motion_chroma_heights(pix_fmt, h, &h_u, &h_v);
+        if (err) {
+            return err;
+        }
+    }
 
     s->float_stride = ALIGN_CEIL(w * sizeof(float));
-    s->ref = aligned_malloc(s->float_stride * h, 32);
-    s->tmp = aligned_malloc(s->float_stride * h, 32);
-    s->blur[0] = aligned_malloc(s->float_stride * h, 32);
-    s->blur[1] = aligned_malloc(s->float_stride * h, 32);
-    s->blur[2] = aligned_malloc(s->float_stride * h, 32);
-    if (s->motion_add_uv) {
-        unsigned h_u;
-        unsigned h_v;
-        switch (pix_fmt) {
-        case VMAF_PIX_FMT_UNKNOWN:
-        case VMAF_PIX_FMT_YUV400P:
-            return -EINVAL;
-        case VMAF_PIX_FMT_YUV420P:
-            h_u = h / 2;
-            h_v = h / 2;
-            break;
-        case VMAF_PIX_FMT_YUV422P:
-        case VMAF_PIX_FMT_YUV444P:
-            h_u = h;
-            h_v = h;
-            break;
-        }
-        s->ref_u = aligned_malloc(s->float_stride * h_u, 32);
-        s->ref_v = aligned_malloc(s->float_stride * h_v, 32);
-        s->tmp_u = aligned_malloc(s->float_stride * h_u, 32);
-        s->tmp_v = aligned_malloc(s->float_stride * h_v, 32);
-        s->blur_u[0] = aligned_malloc(s->float_stride * h_u, 32);
-        s->blur_u[1] = aligned_malloc(s->float_stride * h_u, 32);
-        s->blur_u[2] = aligned_malloc(s->float_stride * h_u, 32);
-        s->blur_v[0] = aligned_malloc(s->float_stride * h_v, 32);
-        s->blur_v[1] = aligned_malloc(s->float_stride * h_v, 32);
-        s->blur_v[2] = aligned_malloc(s->float_stride * h_v, 32);
+    err = motion_plane_alloc(&s->plane[0], s->float_stride, h);
+    if (!err && s->motion_add_uv) {
+        err = motion_plane_alloc(&s->plane[1], s->float_stride, h_u);
     }
-    if (!s->ref || !s->tmp || !s->blur[0] || !s->blur[1] || !s->blur[2])
-        goto fail;
-    if (s->motion_add_uv) {
-        if (!s->ref_u || !s->ref_v || !s->tmp_u || !s->tmp_v || !s->blur_u[0] || !s->blur_u[1] ||
-            !s->blur_u[2] || !s->blur_v[0] || !s->blur_v[1] || !s->blur_v[2])
-            goto fail;
+    if (!err && s->motion_add_uv) {
+        err = motion_plane_alloc(&s->plane[2], s->float_stride, h_v);
     }
-    if (s->motion_force_zero)
+    if (err) {
+        motion_free_planes(s);
+        return err;
+    }
+
+    if (s->motion_force_zero) {
         fex->flush = NULL;
+    }
     s->score = 0;
-
-    s->sad_line = float_sad_line_c;
-
-#if ARCH_X86
-    {
-        unsigned flags = vmaf_get_cpu_flags();
-        if (flags & VMAF_X86_CPU_FLAG_AVX2)
-            s->sad_line = float_sad_line_avx2;
-#if HAVE_AVX512
-        if (flags & VMAF_X86_CPU_FLAG_AVX512)
-            s->sad_line = float_sad_line_avx512;
-#endif
-    }
-#elif ARCH_AARCH64
-    {
-        unsigned flags = vmaf_get_cpu_flags();
-        if (flags & VMAF_ARM_CPU_FLAG_NEON)
-            s->sad_line = float_sad_line_neon;
-    }
-#endif
+    s->sad_line = motion_select_sad_line();
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        goto fail;
+    if (!s->feature_name_dict) {
+        motion_free_planes(s);
+        return -ENOMEM;
+    }
 
     return 0;
-
-fail:
-    if (s->ref)
-        aligned_free(s->ref);
-    if (s->blur[0])
-        aligned_free(s->blur[0]);
-    if (s->blur[1])
-        aligned_free(s->blur[1]);
-    if (s->blur[2])
-        aligned_free(s->blur[2]);
-    if (s->tmp)
-        aligned_free(s->tmp);
-    if (s->motion_add_uv) {
-        if (s->ref_u)
-            aligned_free(s->ref_u);
-        if (s->ref_v)
-            aligned_free(s->ref_v);
-        if (s->tmp_u)
-            aligned_free(s->tmp_u);
-        if (s->tmp_v)
-            aligned_free(s->tmp_v);
-        if (s->blur_u[0])
-            aligned_free(s->blur_u[0]);
-        if (s->blur_u[1])
-            aligned_free(s->blur_u[1]);
-        if (s->blur_u[2])
-            aligned_free(s->blur_u[2]);
-        if (s->blur_v[0])
-            aligned_free(s->blur_v[0]);
-        if (s->blur_v[1])
-            aligned_free(s->blur_v[1]);
-        if (s->blur_v[2])
-            aligned_free(s->blur_v[2]);
-    }
-    vmaf_dictionary_free(&s->feature_name_dict);
-    return -ENOMEM;
 }
 
+static int motion_append(const MotionState *s, VmafFeatureCollector *feature_collector,
+                         const char *name, double score, unsigned index)
+{
+    return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, name,
+                                                   score, index);
+}
+
+/* motion_fps_weight scaling followed by the motion_max_val clip (motion / motion2). */
+static double motion_clip(const MotionState *s, double score)
+{
+    return MIN(score * s->motion_fps_weight, s->motion_max_val);
+}
+
+/* Blended score (motion3) followed by the motion_max_val clip. */
+static double motion_blend_clip(const MotionState *s, double score)
+{
+    return MIN(
+        motion_blend(score * s->motion_fps_weight, s->motion_blend_factor, s->motion_blend_offset),
+        s->motion_max_val);
+}
+
+/* cppcheck-suppress constParameterCallback ; prototype is fixed by the VmafFeatureExtractor.flush
+ * callback type in feature_extractor.h — only fex->priv is read here */
 static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
-    MotionState *s = fex->priv;
+    const MotionState *s = fex->priv;
     int ret = 0;
 
     if (s->index > 0) {
-        ret = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_feature_motion2_score",
-            MIN(s->score * s->motion_fps_weight, s->motion_max_val), s->index);
-        ret |= vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_feature_motion3_score",
-            MIN(motion_blend(s->score * s->motion_fps_weight, s->motion_blend_factor,
-                             s->motion_blend_offset),
-                s->motion_max_val),
-            s->index);
-    } else if (s->index == 0) {
-        ret |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_feature_motion3_score", 0, s->index);
+        ret = motion_append(s, feature_collector, "VMAF_feature_motion2_score",
+                            motion_clip(s, s->score), s->index);
+        ret |= motion_append(s, feature_collector, "VMAF_feature_motion3_score",
+                             motion_blend_clip(s, s->score), s->index);
+    } else {
+        ret |= motion_append(s, feature_collector, "VMAF_feature_motion3_score", 0, s->index);
     }
 
     return (ret < 0) ? ret : !ret;
 }
 
-// Upstream-port from Netflix b949cebf adds UV/scale1 extract paths inline (Research-0024 Strategy A).
-// NOLINTNEXTLINE(readability-function-size)
+static int motion_append_forced_zero(const MotionState *s, VmafFeatureCollector *feature_collector,
+                                     unsigned index)
+{
+    int err = motion_append(s, feature_collector, "VMAF_feature_motion2_score", 0., index);
+    err |= motion_append(s, feature_collector, "VMAF_feature_motion3_score", 0., index);
+    if (s->debug) {
+        err |= motion_append(s, feature_collector, "VMAF_feature_motion_score", 0., index);
+    }
+    return err;
+}
+
+/* Blur one plane of the current frame into blur ring slot blur_idx. */
+static void motion_blur_plane(const MotionState *s, const MotionPlane *p, unsigned w, unsigned h,
+                              unsigned blur_idx)
+{
+    const int px_stride = (int)(s->float_stride / sizeof(float));
+    const float *filter = FILTER_5_s;
+    int filter_size = 5;
+    if (s->motion_filter_size == 1) {
+        filter = FILTER_5_NO_OP_s;
+    } else if (s->motion_filter_size == 3) {
+        filter = FILTER_3_s;
+        filter_size = 3;
+    }
+    convolution_f32_c_s(filter, filter_size, p->ref, p->blur[blur_idx], p->tmp, (int)w, (int)h,
+                        px_stride, px_stride);
+}
+
+static void motion_copy_and_blur(MotionState *s, VmafPicture *ref_pic, unsigned blur_idx)
+{
+    const unsigned n_planes = s->motion_add_uv ? 3 : 1;
+    for (unsigned c = 0; c < n_planes; c++) {
+        picture_copy(s->plane[c].ref, (ptrdiff_t)s->float_stride, ref_pic, -128, ref_pic->bpc,
+                     (int)c);
+        motion_blur_plane(s, &s->plane[c], ref_pic->w[c], ref_pic->h[c], blur_idx);
+    }
+}
+
+/*
+ * Motion between blur ring slots idx_a and idx_b.  Y-plane: use the
+ * SIMD-dispatched path when scale1 is disabled (default).  Falls back to
+ * compute_motion() when motion_add_scale1=true since the vif_scale downscale
+ * logic lives there, and adds the U and V terms with motion_add_uv.
+ */
+static int motion_score_pair(const MotionState *s, const VmafPicture *ref_pic, unsigned idx_a,
+                             unsigned idx_b, double *score)
+{
+    const int stride = (int)s->float_stride;
+    if (!s->motion_add_scale1 && !s->motion_add_uv) {
+        *score = compute_motion_simd(s->plane[0].blur[idx_a], s->plane[0].blur[idx_b],
+                                     (int)ref_pic->w[0], (int)ref_pic->h[0], stride, stride,
+                                     s->sad_line);
+        return 0;
+    }
+    int err = compute_motion(s->plane[0].blur[idx_a], s->plane[0].blur[idx_b], (int)ref_pic->w[0],
+                             (int)ref_pic->h[0], stride, stride, score, s->motion_add_scale1);
+    if (err) {
+        return err;
+    }
+    if (s->motion_add_uv) {
+        for (unsigned c = 1; c < 3; c++) {
+            double score_c = 0.0;
+            err |=
+                compute_motion(s->plane[c].blur[idx_a], s->plane[c].blur[idx_b], (int)ref_pic->w[c],
+                               (int)ref_pic->h[c], stride, stride, &score_c, s->motion_add_scale1);
+            *score += score_c;
+        }
+    }
+    return err;
+}
+
 static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                    VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
     MotionState *s = fex->priv;
-    int err = 0;
 
     (void)dist_pic;
     (void)ref_pic_90;
     (void)dist_pic_90;
 
     if (s->motion_force_zero) {
-        int force_err = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_feature_motion2_score", 0., index);
-        force_err |= vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_feature_motion3_score", 0., index);
-        if (s->debug) {
-            force_err |= vmaf_feature_collector_append_with_dict(
-                feature_collector, s->feature_name_dict, "VMAF_feature_motion_score", 0., index);
-        }
-        return force_err;
+        return motion_append_forced_zero(s, feature_collector, index);
     }
 
     s->index = index;
-    unsigned blur_idx_0 = (index + 0) % 3;
-    unsigned blur_idx_1 = (index + 1) % 3;
-    unsigned blur_idx_2 = (index + 2) % 3;
+    const unsigned blur_idx_0 = (index + 0) % 3;
+    const unsigned blur_idx_1 = (index + 1) % 3;
+    const unsigned blur_idx_2 = (index + 2) % 3;
 
-    picture_copy(s->ref, s->float_stride, ref_pic, -128, ref_pic->bpc, 0);
-    if (s->motion_add_uv) {
-        picture_copy(s->ref_u, s->float_stride, ref_pic, -128, ref_pic->bpc, 1);
-        picture_copy(s->ref_v, s->float_stride, ref_pic, -128, ref_pic->bpc, 2);
-    }
+    motion_copy_and_blur(s, ref_pic, blur_idx_0);
 
-    if (s->motion_filter_size == 1) {
-        convolution_f32_c_s(FILTER_5_NO_OP_s, 5, s->ref, s->blur[blur_idx_0], s->tmp, ref_pic->w[0],
-                            ref_pic->h[0], s->float_stride / sizeof(float),
-                            s->float_stride / sizeof(float));
-        if (s->motion_add_uv) {
-            convolution_f32_c_s(FILTER_5_NO_OP_s, 5, s->ref_u, s->blur_u[blur_idx_0], s->tmp_u,
-                                ref_pic->w[1], ref_pic->h[1], s->float_stride / sizeof(float),
-                                s->float_stride / sizeof(float));
-            convolution_f32_c_s(FILTER_5_NO_OP_s, 5, s->ref_v, s->blur_v[blur_idx_0], s->tmp_v,
-                                ref_pic->w[2], ref_pic->h[2], s->float_stride / sizeof(float),
-                                s->float_stride / sizeof(float));
-        }
-    } else if (s->motion_filter_size == 3) {
-        convolution_f32_c_s(FILTER_3_s, 3, s->ref, s->blur[blur_idx_0], s->tmp, ref_pic->w[0],
-                            ref_pic->h[0], s->float_stride / sizeof(float),
-                            s->float_stride / sizeof(float));
-        if (s->motion_add_uv) {
-            convolution_f32_c_s(FILTER_3_s, 3, s->ref_u, s->blur_u[blur_idx_0], s->tmp_u,
-                                ref_pic->w[1], ref_pic->h[1], s->float_stride / sizeof(float),
-                                s->float_stride / sizeof(float));
-            convolution_f32_c_s(FILTER_3_s, 3, s->ref_v, s->blur_v[blur_idx_0], s->tmp_v,
-                                ref_pic->w[2], ref_pic->h[2], s->float_stride / sizeof(float),
-                                s->float_stride / sizeof(float));
-        }
-    } else {
-        convolution_f32_c_s(FILTER_5_s, 5, s->ref, s->blur[blur_idx_0], s->tmp, ref_pic->w[0],
-                            ref_pic->h[0], s->float_stride / sizeof(float),
-                            s->float_stride / sizeof(float));
-        if (s->motion_add_uv) {
-            convolution_f32_c_s(FILTER_5_s, 5, s->ref_u, s->blur_u[blur_idx_0], s->tmp_u,
-                                ref_pic->w[1], ref_pic->h[1], s->float_stride / sizeof(float),
-                                s->float_stride / sizeof(float));
-            convolution_f32_c_s(FILTER_5_s, 5, s->ref_v, s->blur_v[blur_idx_0], s->tmp_v,
-                                ref_pic->w[2], ref_pic->h[2], s->float_stride / sizeof(float),
-                                s->float_stride / sizeof(float));
-        }
-    }
-
+    int err = 0;
     if (index == 0) {
-        err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                      "VMAF_feature_motion2_score", 0., index);
+        err = motion_append(s, feature_collector, "VMAF_feature_motion2_score", 0., index);
         if (s->debug) {
-            err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                           "VMAF_feature_motion_score", 0., index);
+            err |= motion_append(s, feature_collector, "VMAF_feature_motion_score", 0., index);
         }
         return err;
     }
 
-    /*
-     * Y-plane: use SIMD-dispatched path when scale1 is disabled (default).
-     * Falls back to compute_motion() when motion_add_scale1=true since the
-     * vif_scale downscale logic lives there.
-     */
-    double score;
-    if (!s->motion_add_scale1 && !s->motion_add_uv) {
-        score = compute_motion_simd(s->blur[blur_idx_2], s->blur[blur_idx_0], ref_pic->w[0],
-                                    ref_pic->h[0], s->float_stride, s->float_stride, s->sad_line);
-    } else {
-        err = compute_motion(s->blur[blur_idx_2], s->blur[blur_idx_0], ref_pic->w[0], ref_pic->h[0],
-                             s->float_stride, s->float_stride, &score, s->motion_add_scale1);
-        if (s->motion_add_uv) {
-            double score_u;
-            double score_v;
-            err |= compute_motion(s->blur_u[blur_idx_2], s->blur_u[blur_idx_0], ref_pic->w[1],
-                                  ref_pic->h[1], s->float_stride, s->float_stride, &score_u,
-                                  s->motion_add_scale1);
-            err |= compute_motion(s->blur_v[blur_idx_2], s->blur_v[blur_idx_0], ref_pic->w[2],
-                                  ref_pic->h[2], s->float_stride, s->float_stride, &score_v,
-                                  s->motion_add_scale1);
-            score += score_u;
-            score += score_v;
-        }
-        if (err)
-            return err;
+    double score = 0.0;
+    err = motion_score_pair(s, ref_pic, blur_idx_2, blur_idx_0, &score);
+    if (err) {
+        return err;
     }
-
     if (s->debug) {
-        err |= vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_feature_motion_score",
-            MIN(score * s->motion_fps_weight, s->motion_max_val), index);
+        err |= motion_append(s, feature_collector, "VMAF_feature_motion_score",
+                             motion_clip(s, score), index);
     }
-    if (err)
+    if (err) {
         return err;
+    }
     s->score = score;
 
     if (index == 1) {
-        err |= vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_feature_motion3_score",
-            MIN(motion_blend(score * s->motion_fps_weight, s->motion_blend_factor,
-                             s->motion_blend_offset),
-                s->motion_max_val),
-            0);
+        err |= motion_append(s, feature_collector, "VMAF_feature_motion3_score",
+                             motion_blend_clip(s, score), 0);
         return err;
     }
 
-    double score2;
-    if (!s->motion_add_scale1 && !s->motion_add_uv) {
-        score2 = compute_motion_simd(s->blur[blur_idx_2], s->blur[blur_idx_1], ref_pic->w[0],
-                                     ref_pic->h[0], s->float_stride, s->float_stride, s->sad_line);
-    } else {
-        err = compute_motion(s->blur[blur_idx_2], s->blur[blur_idx_1], ref_pic->w[0], ref_pic->h[0],
-                             s->float_stride, s->float_stride, &score2, s->motion_add_scale1);
-        if (s->motion_add_uv) {
-            double score2_u;
-            double score2_v;
-            err |= compute_motion(s->blur_u[blur_idx_2], s->blur_u[blur_idx_1], ref_pic->w[1],
-                                  ref_pic->h[1], s->float_stride, s->float_stride, &score2_u,
-                                  s->motion_add_scale1);
-            err |= compute_motion(s->blur_v[blur_idx_2], s->blur_v[blur_idx_1], ref_pic->w[2],
-                                  ref_pic->h[2], s->float_stride, s->float_stride, &score2_v,
-                                  s->motion_add_scale1);
-            score2 += score2_u;
-            score2 += score2_v;
-        }
-        if (err)
-            return err;
+    double score2 = 0.0;
+    err = motion_score_pair(s, ref_pic, blur_idx_2, blur_idx_1, &score2);
+    if (err) {
+        return err;
     }
 
     score2 = score2 < score ? score2 : score;
-    err = vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_feature_motion2_score",
-        MIN(score2 * s->motion_fps_weight, s->motion_max_val), index - 1);
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_feature_motion3_score",
-        MIN(motion_blend(score2 * s->motion_fps_weight, s->motion_blend_factor,
-                         s->motion_blend_offset),
-            s->motion_max_val),
-        index - 1);
-    if (err)
-        return err;
-
-    return 0;
+    err = motion_append(s, feature_collector, "VMAF_feature_motion2_score", motion_clip(s, score2),
+                        index - 1);
+    err |= motion_append(s, feature_collector, "VMAF_feature_motion3_score",
+                         motion_blend_clip(s, score2), index - 1);
+    return err;
 }
 
-// Upstream-port from Netflix b949cebf adds UV/scale1 free paths inline (Research-0024 Strategy A).
-// NOLINTNEXTLINE(readability-function-size)
 static int close(VmafFeatureExtractor *fex)
 {
     MotionState *s = fex->priv;
-
-    if (s->ref)
-        aligned_free(s->ref);
-    if (s->blur[0])
-        aligned_free(s->blur[0]);
-    if (s->blur[1])
-        aligned_free(s->blur[1]);
-    if (s->blur[2])
-        aligned_free(s->blur[2]);
-    if (s->tmp)
-        aligned_free(s->tmp);
-    if (s->motion_add_uv) {
-        if (s->ref_u)
-            aligned_free(s->ref_u);
-        if (s->blur_u[0])
-            aligned_free(s->blur_u[0]);
-        if (s->blur_u[1])
-            aligned_free(s->blur_u[1]);
-        if (s->blur_u[2])
-            aligned_free(s->blur_u[2]);
-        if (s->tmp_u)
-            aligned_free(s->tmp_u);
-        if (s->ref_v)
-            aligned_free(s->ref_v);
-        if (s->blur_v[0])
-            aligned_free(s->blur_v[0]);
-        if (s->blur_v[1])
-            aligned_free(s->blur_v[1]);
-        if (s->blur_v[2])
-            aligned_free(s->blur_v[2]);
-        if (s->tmp_v)
-            aligned_free(s->tmp_v);
-    }
+    motion_free_planes(s);
     vmaf_dictionary_free(&s->feature_name_dict);
     return 0;
 }
@@ -569,6 +550,7 @@ static int close(VmafFeatureExtractor *fex)
 static const char *provided_features[] = {"VMAF_feature_motion_score", "VMAF_feature_motion2_score",
                                           "VMAF_feature_motion3_score", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_float_motion` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_motion = {
     .name = "float_motion",
     .init = init,
@@ -580,3 +562,5 @@ VmafFeatureExtractor vmaf_fex_float_motion = {
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL,
 };
+
+/* NOLINTEND(modernize-use-nullptr) */
