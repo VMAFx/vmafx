@@ -22,6 +22,100 @@
 - `core/test/test_feature.c`: deleted. Upstream `libvmaf/test/test_feature.c` changes should
   be ported to `core/test/test_feature.cpp` during future upstream syncs.
 
+## refactor/c-rework-adm — integer ADM upstream-mirror rework (2026-09-02)
+
+`core/src/feature/integer_adm.c` and `core/src/feature/adm_tools.c` (both keep
+the Netflix header) were restructured under ADR-0141 / ADR-1141 with every
+kernel expression, integer width, rounding term and float summation order
+kept verbatim. An upstream Netflix hunk to either file no longer applies
+textually; re-port it by hand into the function that now owns the code. On
+conflict keep the fork's version. Function map:
+
+`integer_adm.c`
+
+- The twenty `ADM_CM_THRESH_S_*` / `I4_ADM_CM_THRESH_S_*` / `ADM_CM_ACCUM_ROUND`
+  / `I4_ADM_CM_ACCUM_ROUND` macros are gone. The nine corner / edge /
+  interior threshold variants are `adm_cm_thresh()` / `i4_adm_cm_thresh()`:
+  the row / column before the first edge mirrors to index 1, the one past
+  the last edge clamps to the last index (`i_m1 = i == 0 ? 1 : i - 1`,
+  `i_p1 = i == h - 1 ? h - 1 : i + 1`, same for `j`), nine terms added in the
+  macro order with the `(int16_t)` / `(int32_t)` centre-term casts kept.
+  `adm_cm_accum_round()` / `i4_adm_cm_accum_round()` carry the cube
+  rounding over an `AdmCmBand` (shift_sub, add_shift_sq, shift_sq,
+  add_shift_cub, shift_cub). An upstream change to the neighbourhood or the
+  rounding lands there, once.
+- `adm_cm()` / `i4_adm_cm()`: prologue in `adm_cm_ctx_init()` /
+  `i4_adm_cm_ctx_init()` (`AdmCmCtx` / `I4AdmCmCtx`), per-sample
+  `adm_cm_accum_px()` / `i4_adm_cm_accum_px()` (`i4_adm_cm_scale()` for the
+  CSF weighting), per-row `adm_cm_row()` / `i4_adm_cm_row()`, shared
+  `adm_cm_fold()`, `adm_num_scale()`. The upstream four-way border branch is
+  the pair of predicates `left_edge = left <= 0` /
+  `right_edge = right > w - 1` passed to the row helper; do not reintroduce
+  the branch (its third arm indexed `rfactor[i * src_stride + w - 1]`, an
+  unreachable out-of-bounds read). Rounding terms go through
+  `adm_half_shift()` (guarded `pow(2, shift - 1)`).
+- `adm_decouple()` / `adm_decouple_s123()`: per-band
+  `adm_decouple_band()` / `adm_decouple_band_s123()`, shared
+  `adm_angle_flag()`; parameters renamed `gain` / `lut` (positions
+  unchanged — the `AdmState` prototypes and the SIMD twins are untouched).
+  The `int32_t tmp_k` narrowing and the `MIN` / `MAX` double-to-int
+  assignments are upstream semantics; keep them.
+- `adm_csf()` / `i4_adm_csf()` / `adm_csf_den_scale()` /
+  `adm_csf_den_s123()` share `adm_csf_factors()`,
+  `adm_csf_rfactor_scale0()`, `adm_border()` / `adm_border_filt()`,
+  `adm_den_scale_finalise()`, `i4_cube_term()`. The ADR-0155 rounding
+  terms (Netflix#955, `int32_t`, sign-negated for scales 1..3) live in
+  `i4_adm_round_terms()` with the file-scope `i4_shift_dst[]` /
+  `i4_shift_flt[]`; do not widen them.
+- DWT: `adm_dwt2_8()` / `_8_lo()` / `_16()` / `_16_lo()` are loops over
+  `adm_dwt2_vpass_8()` / `adm_dwt2_vpass_16()` and `adm_dwt2_hpass()` on
+  `adm_dwt2_tap4()` (`tmphi == NULL` selects the low-pass-only variant);
+  `adm_dwt2_s123_combined()` is `i4_dwt2_vpass()` + `i4_dwt2_hpass()` /
+  `i4_dwt2_hpass_bands()` on `i4_dwt2_tap4()` (ref and dis still
+  interleaved per row). `dwt2_src_indices_filt()` calls
+  `dwt2_src_indices_1d()` twice.
+- `integer_compute_adm(s, ref_pic, dis_pic, res)` takes the parameters
+  from `AdmState` and fills `AdmResult`; per scale it calls
+  `integer_adm_scale0()` (including the `adm_skip_scale0` low-pass path)
+  or `integer_adm_scale_s123()`; `adm_src_stride()` and
+  `adm_result_finalise()` hold the stride selection and the
+  `numden_limit` / `den == 0` finalisation.
+- `init()` is `init_dispatch_scalar()` + `init_dispatch_simd()` +
+  `init_buffers()`; failure runs `free_buffers()` (shared with `close()`,
+  no `goto`). `extract()` delegates the `debug=true` appends to
+  `extract_debug_features()` over `scale_feature_names[]` /
+  `debug_scale_feature_names[]` (append order unchanged).
+- Surviving suppressions, all cited: the file-scoped
+  `NOLINTBEGIN/END(modernize-use-nullptr)` bracket (ADR-1138; keep the
+  `NOLINTEND` line at EOF when appending), `readability-non-const-parameter`
+  + `cppcheck constParameterCallback` on the two decouple `lut` parameters
+  and `cppcheck constParameterCallback` on `extract()`'s pictures (frozen
+  dispatch / `VmafFeatureExtractor::extract` prototypes), the cross-TU
+  `misc-use-internal-linkage` marker on `vmaf_fex_integer_adm`.
+
+`adm_tools.c`
+
+- `adm_decouple_s()`: `adm_angle_flag_s()` (both `ADM_OPT_AVOID_ATAN`
+  arms), `adm_decouple_band_s()`, `adm_border_filt_s()`.
+- `adm_csf_s()` / `adm_csf_den_scale_s()` / `adm_cm_s()` share
+  `adm_csf_rfactor_s()` (+ `adm_csf_factor_overrides_s()` for the
+  `adm_f1sN` / `adm_f2sN` overrides), `adm_border_s()` and `adm_fold3_s()`.
+  `adm_cm_s()` mirrors the integer shape: `AdmCmCtxS`,
+  `adm_cm_thresh3x3_s()` (the nine `adm_tools.h` `ADM_CM_THRESH_S_*` float
+  macros, same summation order; the header macros are now unused),
+  `adm_cm_accum_px_s()`, `adm_cm_row_s()`. Inner / outer accumulators stay
+  `float` (golden-gated; ADR-0418 widened only `adm_sum_cube_s`).
+- `adm_dwt2_s()` is deliberately NOT split: it carries the ADR-1057
+  `optimize("-ffp-contract=off")` attribute / `#pragma clang fp contract(off)`
+  bracket, and helpers would each need the attribute; the
+  `readability-function-size` marker cites this. `adm_dwt2_lo_s()` keeps
+  its default contraction semantics — do not share helpers between the two.
+  `adm_dwt2_d()` uses `adm_dwt2_tap4_d()` / `adm_dwt2_hpass_d()`.
+- `dwt2_src_indices_filt_s()` calls `dwt2_src_indices_1d_s()` twice.
+- `get_noise_constant()` is `static`; `adm_dwt2_lo_d()` and
+  `adm_buffer_copy()` (no caller in the tree, never declared in the
+  header) are removed. `adm_dwt2_d()` stays: the Cython extension
+
 ## gap/metal-bucket — Metal gap bucket closure & dispatch alignment (2026-09-02)
 
 - `core/src/feature/metal/*.mm`: set `.flags = VMAF_FEATURE_EXTRACTOR_METAL` across all 9
@@ -60,6 +154,7 @@ no rebase impact: fork-only container and Renovate configuration.
 ## chore/intel-neo-matched-set-bump (2026-09-02)
 
 no rebase impact: dev/Containerfile is fork-local.
+
 ## fix/fuzz-dict-cpp-and-setup-meson — fuzz dict.cpp + setup script meson (2026-08-31)
 
 - `core/test/fuzz/meson.build`, `scripts/setup/ubuntu.sh` — both fork-added

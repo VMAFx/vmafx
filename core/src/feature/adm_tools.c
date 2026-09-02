@@ -17,8 +17,8 @@
  */
 
 #include <math.h>
+#include <stdbool.h>
 #include <stddef.h>
-#include <string.h>
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -70,215 +70,98 @@ static const double dwt2_db2_coeffs_hi_d[4] = {-0.129409522550921, -0.2241438680
 #define FLOAT_ONE_BY_15 0.0666666701
 #endif
 
-float get_noise_constant(int w, int h, double weight, double adm_p_norm)
+static float get_noise_constant(int w, int h, double weight, double adm_p_norm)
 {
     return powf(w * h * weight, 1.0f / adm_p_norm);
 }
 
-float adm_sum_cube_s(const float *x, int w, int h, int stride, double border_factor,
-                     double adm_p_norm)
+/* ------------------------------------------------------------------------- */
+/* Shared prologues                                                          */
+/* ------------------------------------------------------------------------- */
+
+typedef struct AdmBorderS {
+    int left;
+    int top;
+    int right;
+    int bottom;
+} AdmBorderS;
+
+/* Region that takes part in the reductions: `border_factor` of each frame
+ * edge is excluded. */
+static AdmBorderS adm_border_s(int w, int h, double border_factor)
 {
-    int px_stride = stride / sizeof(float);
-    int left = w * border_factor - 0.5;
-    int top = h * border_factor - 0.5;
-    int right = w - left;
-    int bottom = h - top;
-
-    int i, j;
-
-    float val;
-    /* ADR-0418: outer accumulator in `double` to satisfy fork semgrep
-     * rule `vmaf-no-double-precision-loss-in-reduction` (cubed-float
-     * reduction drifts between scalar / SIMD paths). Upstream Netflix
-     * ships these as `float`; bumping to `double` is fork-local and
-     * does not change the final `powf(accum, 1.0f / adm_p_norm)` cast
-     * back to float at places=4 precision. */
-    double accum = 0;
-
-    for (i = top; i < bottom; ++i) {
-        double accum_inner = 0;
-
-        for (j = left; j < right; ++j) {
-            val = fabsf(x[i * px_stride + j]);
-            if (adm_p_norm == 3.0) {
-                accum_inner += (double)val * val * val;
-            } else {
-                accum_inner += powf(val, adm_p_norm);
-            }
-        }
-
-        accum += accum_inner;
-    }
-
-    return powf((float)accum, 1.0f / adm_p_norm) +
-           powf((bottom - top) * (right - left) / 32.0f, 1.0f / adm_p_norm);
+    AdmBorderS b;
+    b.left = (int)(w * border_factor - 0.5);
+    b.top = (int)(h * border_factor - 0.5);
+    b.right = w - b.left;
+    b.bottom = h - b.top;
+    return b;
 }
 
-void adm_decouple_s(const adm_dwt_band_t_s *ref, const adm_dwt_band_t_s *dis,
-                    const adm_dwt_band_t_s *r, const adm_dwt_band_t_s *a, int w, int h,
-                    int ref_stride, int dis_stride, int r_stride, int a_stride,
-                    double border_factor, double adm_enhn_gain_limit)
+/* The same region widened by one filter tap on each side (-1 / +2) and
+ * clamped to the frame, for the decouple and CSF stages. */
+static AdmBorderS adm_border_filt_s(int w, int h, double border_factor)
 {
-#ifdef ADM_OPT_AVOID_ATAN
-    const float cos_1deg_sq = cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0);
-#endif
-    const float eps = 1e-30;
-
-    int ref_px_stride = ref_stride / sizeof(float);
-    int dis_px_stride = dis_stride / sizeof(float);
-    int r_px_stride = r_stride / sizeof(float);
-    int a_px_stride = a_stride / sizeof(float);
-
-    /* The computation of the score is not required for the regions which lie outside the frame borders */
-    int left = w * border_factor - 0.5 - 1; // -1 for filter tap
-    int top = h * border_factor - 0.5 - 1;
-    int right = w - left + 2; // +2 for filter tap
-    int bottom = h - top + 2;
-
-    if (left < 0) {
-        left = 0;
+    AdmBorderS b;
+    b.left = (int)(w * border_factor - 0.5 - 1); // -1 for filter tap
+    b.top = (int)(h * border_factor - 0.5 - 1);
+    b.right = w - b.left + 2; // +2 for filter tap
+    b.bottom = h - b.top + 2;
+    if (b.left < 0) {
+        b.left = 0;
     }
-    if (right > w) {
-        right = w;
+    if (b.right > w) {
+        b.right = w;
     }
-    if (top < 0) {
-        top = 0;
+    if (b.top < 0) {
+        b.top = 0;
     }
-    if (bottom > h) {
-        bottom = h;
+    if (b.bottom > h) {
+        b.bottom = h;
     }
+    return b;
+}
 
-    float oh, ov, od, th, tv, td;
-    float kh, kv, kd, rst_h, rst_v, rst_d;
-#ifdef ADM_OPT_AVOID_ATAN
-    float ot_dp, o_mag_sq, t_mag_sq;
-#else
-    float oa, ta, diff;
-#endif
-    int angle_flag;
-    int i, j;
-
-    for (i = top; i < bottom; ++i) {
-        for (j = left; j < right; ++j) {
-            oh = ref->band_h[i * ref_px_stride + j];
-            ov = ref->band_v[i * ref_px_stride + j];
-            od = ref->band_d[i * ref_px_stride + j];
-            th = dis->band_h[i * dis_px_stride + j];
-            tv = dis->band_v[i * dis_px_stride + j];
-            td = dis->band_d[i * dis_px_stride + j];
-
-            kh = DIVS(th, oh + eps);
-            kv = DIVS(tv, ov + eps);
-            kd = DIVS(td, od + eps);
-
-            kh = kh < 0.0f ? 0.0f : (kh > 1.0f ? 1.0f : kh);
-            kv = kv < 0.0f ? 0.0f : (kv > 1.0f ? 1.0f : kv);
-            kd = kd < 0.0f ? 0.0f : (kd > 1.0f ? 1.0f : kd);
-
-            rst_h = kh * oh;
-            rst_v = kv * ov;
-            rst_d = kd * od;
-#ifdef ADM_OPT_AVOID_ATAN
-            /* Determine if angle between (oh,ov) and (th,tv) is less than 1 degree.
-			 * Given that u is the angle (oh,ov) and v is the angle (th,tv), this can
-			 * be done by testing the inequvality.
-			 *
-			 * { (u.v.) >= 0 } AND { (u.v)^2 >= cos(1deg)^2 * ||u||^2 * ||v||^2 }
-			 *
-			 * Proof:
-			 *
-			 * cos(theta) = (u.v) / (||u|| * ||v||)
-			 *
-			 * IF u.v >= 0 THEN
-			 *   cos(theta)^2 = (u.v)^2 / (||u||^2 * ||v||^2)
-			 *   (u.v)^2 = cos(theta)^2 * ||u||^2 * ||v||^2
-			 *
-			 *   IF |theta| < 1deg THEN
-			 *     (u.v)^2 >= cos(1deg)^2 * ||u||^2 * ||v||^2
-			 *   END
-			 * ELSE
-			 *   |theta| > 90deg
-			 * END
-			 */
-            ot_dp = oh * th + ov * tv;
-            o_mag_sq = oh * oh + ov * ov;
-            t_mag_sq = th * th + tv * tv;
-
-            angle_flag = (ot_dp >= 0.0f) && (ot_dp * ot_dp >= cos_1deg_sq * o_mag_sq * t_mag_sq);
-#else
-            oa = atanf(DIVS(ov, oh + eps));
-            ta = atanf(DIVS(tv, th + eps));
-
-            if (oh < 0.0f)
-                oa += (float)M_PI;
-            if (th < 0.0f)
-                ta += (float)M_PI;
-
-            diff = fabsf(oa - ta) * 180.0f / M_PI;
-            angle_flag = diff < 1.0f;
-#endif
-            /* ==== original ==== */
-            // if (angle_flag) {
-            //     rst_h = th;
-            //     rst_v = tv;
-            //     rst_d = td;
-            // }
-
-            /* ==== modification ==== */
-
-            if (angle_flag && (rst_h > 0.0))
-                rst_h = MIN(rst_h * adm_enhn_gain_limit, th);
-            if (angle_flag && (rst_h < 0.0))
-                rst_h = MAX(rst_h * adm_enhn_gain_limit, th);
-
-            if (angle_flag && (rst_v > 0.0))
-                rst_v = MIN(rst_v * adm_enhn_gain_limit, tv);
-            if (angle_flag && (rst_v < 0.0))
-                rst_v = MAX(rst_v * adm_enhn_gain_limit, tv);
-
-            if (angle_flag && (rst_d > 0.0))
-                rst_d = MIN(rst_d * adm_enhn_gain_limit, td);
-            if (angle_flag && (rst_d < 0.0))
-                rst_d = MAX(rst_d * adm_enhn_gain_limit, td);
-
-            /* == end of modification == */
-
-            r->band_h[i * r_px_stride + j] = rst_h;
-            r->band_v[i * r_px_stride + j] = rst_v;
-            r->band_d[i * r_px_stride + j] = rst_d;
-
-            a->band_h[i * a_px_stride + j] = th - rst_h;
-            a->band_v[i * a_px_stride + j] = tv - rst_v;
-            a->band_d[i * a_px_stride + j] = td - rst_d;
-        }
+/* Per-scale user override of the CSF weights (`adm_f1sN` / `adm_f2sN`,
+ * negative = keep the model value). */
+static void adm_csf_factor_overrides_s(int scale, double f1s0, double f1s1, double f1s2,
+                                       double f1s3, double f2s0, double f2s1, double f2s2,
+                                       double f2s3, float *factor1, float *factor2)
+{
+    double f1 = -1.0;
+    double f2 = -1.0;
+    if (scale == 0) {
+        f1 = f1s0;
+        f2 = f2s0;
+    } else if (scale == 1) {
+        f1 = f1s1;
+        f2 = f2s1;
+    } else if (scale == 2) {
+        f1 = f1s2;
+        f2 = f2s2;
+    } else {
+        f1 = f1s3;
+        f2 = f2s3;
+    }
+    if (f1 >= 0) {
+        *factor1 = f1;
+    }
+    if (f2 >= 0) {
+        *factor2 = f2;
     }
 }
 
-void adm_csf_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *dst,
-               const adm_dwt_band_t_s *flt, int orig_h, int scale, int w, int h, int src_stride,
-               int dst_stride, double border_factor, double adm_norm_view_dist,
-               int adm_ref_display_height, int adm_csf_mode, double luminance_level,
-               double adm_csf_scale, double adm_csf_diag_scale, double adm_f1s0, double adm_f1s1,
-               double adm_f1s2, double adm_f1s3, double adm_f2s0, double adm_f2s1, double adm_f2s2,
-               double adm_f2s3)
+/* CSF weights of DWT scale `scale` for the (h, v) bands (rfactor[0..1]) and
+ * the (d) band (rfactor[2]). For ADM, scales go from 0 to 3 while the noise
+ * floor paper numbers them 1 to 4 (finest to coarsest). */
+static void adm_csf_rfactor_s(int scale, double adm_norm_view_dist, int adm_ref_display_height,
+                              int adm_csf_mode, double luminance_level, double adm_csf_scale,
+                              double adm_csf_diag_scale, double adm_f1s0, double adm_f1s1,
+                              double adm_f1s2, double adm_f1s3, double adm_f2s0, double adm_f2s1,
+                              double adm_f2s2, double adm_f2s3, float rfactor[3])
 {
-    (void)orig_h;
-    (void)adm_csf_mode;
-
-    const float *src_angles[3] = {src->band_h, src->band_v, src->band_d};
-    float *dst_angles[3] = {dst->band_h, dst->band_v, dst->band_d};
-    float *flt_angles[3] = {flt->band_h, flt->band_v, flt->band_d};
-
-    const float *src_ptr;
-    float *dst_ptr;
-    float *flt_ptr;
-
-    int src_px_stride = src_stride / sizeof(float);
-    int dst_px_stride = dst_stride / sizeof(float);
-
-    // for ADM: scales goes from 0 to 3 but in noise floor paper, it goes from
-    // 1 to 4 (from finest scale to coarsest scale).
-    float factor1, factor2;
+    float factor1;
+    float factor2;
     if (adm_csf_mode == ADM_CSF_MODE_BARTEN) {
         factor1 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height, luminance_level,
                              adm_csf_scale);
@@ -293,70 +176,220 @@ void adm_csf_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *dst,
         factor2 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 2, adm_norm_view_dist,
                                         adm_ref_display_height);
     }
-    if (scale == 0) {
-        if (adm_f1s0 >= 0) {
-            factor1 = adm_f1s0;
+    adm_csf_factor_overrides_s(scale, adm_f1s0, adm_f1s1, adm_f1s2, adm_f1s3, adm_f2s0, adm_f2s1,
+                               adm_f2s2, adm_f2s3, &factor1, &factor2);
+    rfactor[0] = factor1;
+    rfactor[1] = factor1;
+    rfactor[2] = factor2;
+}
+
+/* Fold a row accumulator (h, v, d) into the frame accumulator and reset it.
+ * Float accumulators are upstream's golden-gated arithmetic: widening them
+ * to double changes the Netflix scores (ADR-0418 widened only
+ * adm_sum_cube_s, whose result survives at places=4); ADR-1141 keeps every
+ * other ADM reduction bit-exact. */
+static inline void adm_fold3_s(float inner[3], float accum[3])
+{
+    for (int k = 0; k < 3; ++k) {
+        accum[k] += inner[k];
+        inner[k] = 0;
+    }
+}
+
+/* ------------------------------------------------------------------------- */
+/* Reductions                                                                */
+/* ------------------------------------------------------------------------- */
+
+float adm_sum_cube_s(const float *x, int w, int h, int stride, double border_factor,
+                     double adm_p_norm)
+{
+    const int px_stride = stride / sizeof(float);
+    const AdmBorderS b = adm_border_s(w, h, border_factor);
+
+    /* ADR-0418: outer accumulator in `double` to satisfy fork semgrep
+     * rule `vmaf-no-double-precision-loss-in-reduction` (cubed-float
+     * reduction drifts between scalar / SIMD paths). Upstream Netflix
+     * ships these as `float`; bumping to `double` is fork-local and
+     * does not change the final `powf(accum, 1.0f / adm_p_norm)` cast
+     * back to float at places=4 precision. */
+    double accum = 0;
+
+    for (int i = b.top; i < b.bottom; ++i) {
+        double accum_inner = 0;
+
+        for (int j = b.left; j < b.right; ++j) {
+            const float val = fabsf(x[i * px_stride + j]);
+            if (adm_p_norm == 3.0) {
+                accum_inner += (double)val * val * val;
+            } else {
+                accum_inner += powf(val, adm_p_norm);
+            }
         }
-        if (adm_f2s0 >= 0) {
-            factor2 = adm_f2s0;
-        }
-    } else if (scale == 1) {
-        if (adm_f1s1 >= 0) {
-            factor1 = adm_f1s1;
-        }
-        if (adm_f2s1 >= 0) {
-            factor2 = adm_f2s1;
-        }
-    } else if (scale == 2) {
-        if (adm_f1s2 >= 0) {
-            factor1 = adm_f1s2;
-        }
-        if (adm_f2s2 >= 0) {
-            factor2 = adm_f2s2;
-        }
-    } else {
-        if (adm_f1s3 >= 0) {
-            factor1 = adm_f1s3;
-        }
-        if (adm_f2s3 >= 0) {
-            factor2 = adm_f2s3;
+
+        accum += accum_inner;
+    }
+
+    return powf((float)accum, 1.0f / adm_p_norm) +
+           powf((b.bottom - b.top) * (b.right - b.left) / 32.0f, 1.0f / adm_p_norm);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Decouple                                                                  */
+/* ------------------------------------------------------------------------- */
+
+/* Determine if angle between (oh,ov) and (th,tv) is less than 1 degree. */
+static inline int adm_angle_flag_s(float oh, float ov, float th, float tv, float cos_1deg_sq,
+                                   float eps)
+{
+#ifdef ADM_OPT_AVOID_ATAN
+    /* Given that u is the angle (oh,ov) and v is the angle (th,tv), this can
+     * be done by testing the inequvality.
+     *
+     * { (u.v.) >= 0 } AND { (u.v)^2 >= cos(1deg)^2 * ||u||^2 * ||v||^2 }
+     *
+     * Proof:
+     *
+     * cos(theta) = (u.v) / (||u|| * ||v||)
+     *
+     * IF u.v >= 0 THEN
+     *   cos(theta)^2 = (u.v)^2 / (||u||^2 * ||v||^2)
+     *   (u.v)^2 = cos(theta)^2 * ||u||^2 * ||v||^2
+     *
+     *   IF |theta| < 1deg THEN
+     *     (u.v)^2 >= cos(1deg)^2 * ||u||^2 * ||v||^2
+     *   END
+     * ELSE
+     *   |theta| > 90deg
+     * END
+     */
+    (void)eps;
+    const float ot_dp = oh * th + ov * tv;
+    const float o_mag_sq = oh * oh + ov * ov;
+    const float t_mag_sq = th * th + tv * tv;
+
+    return (ot_dp >= 0.0f) && (ot_dp * ot_dp >= cos_1deg_sq * o_mag_sq * t_mag_sq);
+#else
+    (void)cos_1deg_sq;
+    float oa = atanf(DIVS(ov, oh + eps));
+    float ta = atanf(DIVS(tv, th + eps));
+
+    if (oh < 0.0f) {
+        oa += (float)M_PI;
+    }
+    if (th < 0.0f) {
+        ta += (float)M_PI;
+    }
+
+    const float diff = fabsf(oa - ta) * 180.0f / M_PI;
+    return diff < 1.0f;
+#endif
+}
+
+/* One band of the decouple: restore `o` toward `t` with the clipped ratio
+ * k = t / o, then bound the enhancement gain (the fork's modification of
+ * upstream's `if (angle_flag) rst = t;`). */
+static inline float adm_decouple_band_s(float o, float t, float eps, int angle_flag,
+                                        double adm_enhn_gain_limit)
+{
+    float k = DIVS(t, o + eps);
+    k = k < 0.0f ? 0.0f : (k > 1.0f ? 1.0f : k);
+    float rst = k * o;
+
+    if (angle_flag && (rst > 0.0)) {
+        rst = MIN(rst * adm_enhn_gain_limit, t);
+    }
+    if (angle_flag && (rst < 0.0)) {
+        rst = MAX(rst * adm_enhn_gain_limit, t);
+    }
+    return rst;
+}
+
+void adm_decouple_s(const adm_dwt_band_t_s *ref, const adm_dwt_band_t_s *dis,
+                    const adm_dwt_band_t_s *r, const adm_dwt_band_t_s *a, int w, int h,
+                    int ref_stride, int dis_stride, int r_stride, int a_stride,
+                    double border_factor, double adm_enhn_gain_limit)
+{
+    const float cos_1deg_sq = cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0);
+    const float eps = 1e-30;
+
+    const int ref_px_stride = ref_stride / sizeof(float);
+    const int dis_px_stride = dis_stride / sizeof(float);
+    const int r_px_stride = r_stride / sizeof(float);
+    const int a_px_stride = a_stride / sizeof(float);
+
+    /* The computation of the score is not required for the regions which lie outside the frame borders */
+    const AdmBorderS b = adm_border_filt_s(w, h, border_factor);
+
+    for (int i = b.top; i < b.bottom; ++i) {
+        for (int j = b.left; j < b.right; ++j) {
+            const ptrdiff_t ref_idx = (ptrdiff_t)i * ref_px_stride + j;
+            const ptrdiff_t dis_idx = (ptrdiff_t)i * dis_px_stride + j;
+            const float oh = ref->band_h[ref_idx];
+            const float ov = ref->band_v[ref_idx];
+            const float od = ref->band_d[ref_idx];
+            const float th = dis->band_h[dis_idx];
+            const float tv = dis->band_v[dis_idx];
+            const float td = dis->band_d[dis_idx];
+
+            const int angle_flag = adm_angle_flag_s(oh, ov, th, tv, cos_1deg_sq, eps);
+
+            const float rst_h = adm_decouple_band_s(oh, th, eps, angle_flag, adm_enhn_gain_limit);
+            const float rst_v = adm_decouple_band_s(ov, tv, eps, angle_flag, adm_enhn_gain_limit);
+            const float rst_d = adm_decouple_band_s(od, td, eps, angle_flag, adm_enhn_gain_limit);
+
+            const ptrdiff_t r_idx = (ptrdiff_t)i * r_px_stride + j;
+            const ptrdiff_t a_idx = (ptrdiff_t)i * a_px_stride + j;
+            r->band_h[r_idx] = rst_h;
+            r->band_v[r_idx] = rst_v;
+            r->band_d[r_idx] = rst_d;
+
+            a->band_h[a_idx] = th - rst_h;
+            a->band_v[a_idx] = tv - rst_v;
+            a->band_d[a_idx] = td - rst_d;
         }
     }
-    float rfactor[3] = {factor1, factor1, factor2};
+}
+
+/* ------------------------------------------------------------------------- */
+/* Contrast sensitivity filtering                                            */
+/* ------------------------------------------------------------------------- */
+
+void adm_csf_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *dst,
+               const adm_dwt_band_t_s *flt, int orig_h, int scale, int w, int h, int src_stride,
+               int dst_stride, double border_factor, double adm_norm_view_dist,
+               int adm_ref_display_height, int adm_csf_mode, double luminance_level,
+               double adm_csf_scale, double adm_csf_diag_scale, double adm_f1s0, double adm_f1s1,
+               double adm_f1s2, double adm_f1s3, double adm_f2s0, double adm_f2s1, double adm_f2s2,
+               double adm_f2s3)
+{
+    (void)orig_h;
+
+    const float *const src_angles[3] = {src->band_h, src->band_v, src->band_d};
+    float *const dst_angles[3] = {dst->band_h, dst->band_v, dst->band_d};
+    float *const flt_angles[3] = {flt->band_h, flt->band_v, flt->band_d};
+
+    const int src_px_stride = src_stride / sizeof(float);
+    const int dst_px_stride = dst_stride / sizeof(float);
+
+    float rfactor[3];
+    adm_csf_rfactor_s(scale, adm_norm_view_dist, adm_ref_display_height, adm_csf_mode,
+                      luminance_level, adm_csf_scale, adm_csf_diag_scale, adm_f1s0, adm_f1s1,
+                      adm_f1s2, adm_f1s3, adm_f2s0, adm_f2s1, adm_f2s2, adm_f2s3, rfactor);
 
     /* The computation of the csf values is not required for the regions which lie outside the frame borders */
-    int left = w * border_factor - 0.5 - 1; // -1 for filter tap
-    int top = h * border_factor - 0.5 - 1;
-    int right = w - left + 2; // +2 for filter tap
-    int bottom = h - top + 2;
+    const AdmBorderS b = adm_border_filt_s(w, h, border_factor);
 
-    if (left < 0) {
-        left = 0;
-    }
-    if (right > w) {
-        right = w;
-    }
-    if (top < 0) {
-        top = 0;
-    }
-    if (bottom > h) {
-        bottom = h;
-    }
+    for (int theta = 0; theta < 3; ++theta) {
+        const float *src_ptr = src_angles[theta];
+        float *dst_ptr = dst_angles[theta];
+        float *flt_ptr = flt_angles[theta];
 
-    int i, j, theta, src_offset, dst_offset;
-    float dst_val;
+        for (int i = b.top; i < b.bottom; ++i) {
+            const ptrdiff_t src_offset = (ptrdiff_t)i * src_px_stride;
+            const ptrdiff_t dst_offset = (ptrdiff_t)i * dst_px_stride;
 
-    for (theta = 0; theta < 3; ++theta) {
-        src_ptr = src_angles[theta];
-        dst_ptr = dst_angles[theta];
-        flt_ptr = flt_angles[theta];
-
-        for (i = top; i < bottom; ++i) {
-            src_offset = i * src_px_stride;
-            dst_offset = i * dst_px_stride;
-
-            for (j = left; j < right; ++j) {
-                dst_val = rfactor[theta] * src_ptr[src_offset + j];
+            for (int j = b.left; j < b.right; ++j) {
+                const float dst_val = rfactor[theta] * src_ptr[src_offset + j];
                 dst_ptr[dst_offset + j] = dst_val;
                 flt_ptr[dst_offset + j] = FLOAT_ONE_BY_30 * fabsf(dst_val);
             }
@@ -373,110 +406,160 @@ float adm_csf_den_scale_s(const adm_dwt_band_t_s *src, int orig_h, int scale, in
                           double adm_f1s3, double adm_f2s0, double adm_f2s1, double adm_f2s2,
                           double adm_f2s3)
 {
-    (void)adm_csf_mode;
     (void)orig_h;
 
-    // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores) — ADR-0418 upstream-parity (4dcc2f7c)
-    float *src_h = src->band_h, *src_v = src->band_v, *src_d = src->band_d;
+    const int src_px_stride = src_stride / sizeof(float);
 
-    int src_px_stride = src_stride / sizeof(float);
+    float rfactor[3];
+    adm_csf_rfactor_s(scale, adm_norm_view_dist, adm_ref_display_height, adm_csf_mode,
+                      luminance_level, adm_csf_scale, adm_csf_diag_scale, adm_f1s0, adm_f1s1,
+                      adm_f1s2, adm_f1s3, adm_f2s0, adm_f2s1, adm_f2s2, adm_f2s3, rfactor);
 
-    // for ADM: scales goes from 0 to 3 but in noise floor paper, it goes from
-    // 1 to 4 (from finest scale to coarsest scale).
-    float factor1, factor2;
-    if (adm_csf_mode == ADM_CSF_MODE_BARTEN) {
-        factor1 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height, luminance_level,
-                             adm_csf_scale);
-        factor2 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height, luminance_level,
-                             adm_csf_diag_scale);
-    } else if (adm_csf_mode == ADM_CSF_MODE_ADM) {
-        factor1 = adm_native_csf(scale, adm_norm_view_dist, adm_ref_display_height, 0);
-        factor2 = adm_native_csf(scale, adm_norm_view_dist, adm_ref_display_height, 45);
-    } else {
-        factor1 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 1, adm_norm_view_dist,
-                                        adm_ref_display_height);
-        factor2 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 2, adm_norm_view_dist,
-                                        adm_ref_display_height);
-    }
-    if (scale == 0) {
-        if (adm_f1s0 >= 0) {
-            factor1 = adm_f1s0;
-        }
-        if (adm_f2s0 >= 0) {
-            factor2 = adm_f2s0;
-        }
-    } else if (scale == 1) {
-        if (adm_f1s1 >= 0) {
-            factor1 = adm_f1s1;
-        }
-        if (adm_f2s1 >= 0) {
-            factor2 = adm_f2s1;
-        }
-    } else if (scale == 2) {
-        if (adm_f1s2 >= 0) {
-            factor1 = adm_f1s2;
-        }
-        if (adm_f2s2 >= 0) {
-            factor2 = adm_f2s2;
-        }
-    } else {
-        if (adm_f1s3 >= 0) {
-            factor1 = adm_f1s3;
-        }
-        if (adm_f2s3 >= 0) {
-            factor2 = adm_f2s3;
-        }
-    }
-    float rfactor[3] = {factor1, factor1, factor2};
-
-    float accum_h = 0, accum_v = 0, accum_d = 0;
-    float accum_inner_h, accum_inner_v, accum_inner_d;
-    float den_scale_h, den_scale_v, den_scale_d;
+    /* (h, v, d) frame and per-row accumulators; see adm_fold3_s. */
+    float accum[3] = {0, 0, 0};
+    float inner[3] = {0, 0, 0};
 
     /* The computation of the denominator scales is not required for the regions which lie outside the frame borders */
-    int left = w * border_factor - 0.5;
-    int top = h * border_factor - 0.5;
-    int right = w - left;
-    int bottom = h - top;
+    const AdmBorderS b = adm_border_s(w, h, border_factor);
 
-    int i, j;
-
-    for (i = top; i < bottom; ++i) {
-        accum_inner_h = 0;
-        accum_inner_v = 0;
-        accum_inner_d = 0;
-        src_h = src->band_h + i * src_px_stride;
-        src_v = src->band_v + i * src_px_stride;
-        src_d = src->band_d + i * src_px_stride;
-        for (j = left; j < right; ++j) {
-            float abs_csf_o_val_h = fabsf(rfactor[0] * src_h[j]);
-            float abs_csf_o_val_v = fabsf(rfactor[1] * src_v[j]);
-            float abs_csf_o_val_d = fabsf(rfactor[2] * src_d[j]);
+    for (int i = b.top; i < b.bottom; ++i) {
+        const float *src_h = src->band_h + (ptrdiff_t)i * src_px_stride;
+        const float *src_v = src->band_v + (ptrdiff_t)i * src_px_stride;
+        const float *src_d = src->band_d + (ptrdiff_t)i * src_px_stride;
+        for (int j = b.left; j < b.right; ++j) {
+            const float abs_csf_o_val_h = fabsf(rfactor[0] * src_h[j]);
+            const float abs_csf_o_val_v = fabsf(rfactor[1] * src_v[j]);
+            const float abs_csf_o_val_d = fabsf(rfactor[2] * src_d[j]);
 
             if (adm_p_norm == 3.0) {
-                accum_inner_h += abs_csf_o_val_h * abs_csf_o_val_h * abs_csf_o_val_h;
-                accum_inner_v += abs_csf_o_val_v * abs_csf_o_val_v * abs_csf_o_val_v;
-                accum_inner_d += abs_csf_o_val_d * abs_csf_o_val_d * abs_csf_o_val_d;
+                inner[0] += abs_csf_o_val_h * abs_csf_o_val_h * abs_csf_o_val_h;
+                inner[1] += abs_csf_o_val_v * abs_csf_o_val_v * abs_csf_o_val_v;
+                inner[2] += abs_csf_o_val_d * abs_csf_o_val_d * abs_csf_o_val_d;
             } else {
-                accum_inner_h += powf(abs_csf_o_val_h, adm_p_norm);
-                accum_inner_v += powf(abs_csf_o_val_v, adm_p_norm);
-                accum_inner_d += powf(abs_csf_o_val_d, adm_p_norm);
+                inner[0] += powf(abs_csf_o_val_h, adm_p_norm);
+                inner[1] += powf(abs_csf_o_val_v, adm_p_norm);
+                inner[2] += powf(abs_csf_o_val_d, adm_p_norm);
             }
         }
-
-        accum_h += accum_inner_h;
-        accum_v += accum_inner_v;
-        accum_d += accum_inner_d;
+        adm_fold3_s(inner, accum);
     }
 
-    den_scale_h = powf(accum_h, 1.0f / adm_p_norm) +
-                  get_noise_constant(right - left, bottom - top, adm_noise_weight, adm_p_norm);
-    den_scale_v = powf(accum_v, 1.0f / adm_p_norm) +
-                  get_noise_constant(right - left, bottom - top, adm_noise_weight, adm_p_norm);
-    den_scale_d = powf(accum_d, 1.0f / adm_p_norm) +
-                  get_noise_constant(right - left, bottom - top, adm_noise_weight, adm_p_norm);
+    const float den_scale_h =
+        powf(accum[0], 1.0f / adm_p_norm) +
+        get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, adm_p_norm);
+    const float den_scale_v =
+        powf(accum[1], 1.0f / adm_p_norm) +
+        get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, adm_p_norm);
+    const float den_scale_d =
+        powf(accum[2], 1.0f / adm_p_norm) +
+        get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, adm_p_norm);
 
     return (den_scale_h + den_scale_v + den_scale_d);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Contrast masking                                                          */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Masking threshold at (i, j): the 3x3 neighbourhood sum of the CSF-filtered
+ * bands, with the centre tap taken from the unfiltered band scaled by 1/15.
+ *
+ * The row / column before the first edge mirrors to index 1 and the row /
+ * column past the last edge clamps to the last index. This is the closed
+ * form of the nine ADM_CM_THRESH_S_{0_0, 0_J, 0_W_M_1, I_0, I_J, I_W_M_1,
+ * H_M_1_0, H_M_1_J, H_M_1_W_M_1} corner / edge / interior macro variants in
+ * adm_tools.h; the float summation order matches them one-to-one.
+ */
+static inline float adm_cm_thresh3x3_s(const float *const *angles, const float *const *flt_angles,
+                                       int src_px_stride, int w, int h, int i, int j)
+{
+    const int i_m1 = (i == 0) ? 1 : i - 1;
+    const int i_p1 = (i == h - 1) ? h - 1 : i + 1;
+    const int j_m1 = (j == 0) ? 1 : j - 1;
+    const int j_p1 = (j == w - 1) ? w - 1 : j + 1;
+    float accum = 0;
+
+    for (int theta = 0; theta < 3; ++theta) {
+        const float *src_ptr = angles[theta] + (ptrdiff_t)i * src_px_stride;
+        const float *flt_m1 = flt_angles[theta] + (ptrdiff_t)i_m1 * src_px_stride;
+        const float *flt_0 = flt_angles[theta] + (ptrdiff_t)i * src_px_stride;
+        const float *flt_p1 = flt_angles[theta] + (ptrdiff_t)i_p1 * src_px_stride;
+        float sum = 0;
+        sum += flt_m1[j_m1];
+        sum += flt_m1[j];
+        sum += flt_m1[j_p1];
+        sum += flt_0[j_m1];
+        sum += FLOAT_ONE_BY_15 * fabsf(src_ptr[j]);
+        sum += flt_0[j_p1];
+        sum += flt_p1[j_m1];
+        sum += flt_p1[j];
+        sum += flt_p1[j_p1];
+        accum += sum;
+    }
+    return accum;
+}
+
+/* Contrast-masking state of one scale. */
+typedef struct AdmCmCtxS {
+    const adm_dwt_band_t_s *src;
+    const float *angles[3];
+    const float *flt_angles[3];
+    int src_px_stride;
+    int csf_px_stride;
+    int w;
+    int h;
+    float rfactor[3];
+    int adm_bypass_cm;
+    double adm_p_norm;
+} AdmCmCtxS;
+
+/* Accumulate the three bands of one sample into the row accumulator. */
+static inline void adm_cm_accum_px_s(const AdmCmCtxS *c, int i, int j, float inner[3])
+{
+    const ptrdiff_t idx = (ptrdiff_t)i * c->src_px_stride + j;
+    float xh = c->src->band_h[idx] * c->rfactor[0];
+    float xv = c->src->band_v[idx] * c->rfactor[1];
+    float xd = c->src->band_d[idx] * c->rfactor[2];
+    float thr = 0.0;
+
+    if (c->adm_bypass_cm == 0) {
+        thr = adm_cm_thresh3x3_s(c->angles, c->flt_angles, c->csf_px_stride, c->w, c->h, i, j);
+    }
+
+    xh = fabsf(xh) - thr;
+    xv = fabsf(xv) - thr;
+    xd = fabsf(xd) - thr;
+
+    xh = xh < 0.0f ? 0.0f : xh;
+    xv = xv < 0.0f ? 0.0f : xv;
+    xd = xd < 0.0f ? 0.0f : xd;
+
+    if (c->adm_p_norm == 3.0) {
+        inner[0] += (xh * xh * xh);
+        inner[1] += (xv * xv * xv);
+        inner[2] += (xd * xd * xd);
+    } else {
+        inner[0] += powf(xh, c->adm_p_norm);
+        inner[1] += powf(xv, c->adm_p_norm);
+        inner[2] += powf(xd, c->adm_p_norm);
+    }
+}
+
+/* One row: the optional first / last column (when the border region reaches
+ * the frame edge) plus the interior columns. */
+static void adm_cm_row_s(const AdmCmCtxS *c, int i, bool left_edge, bool right_edge, int start_col,
+                         int end_col, float inner[3])
+{
+    if (left_edge) {
+        adm_cm_accum_px_s(c, i, 0, inner);
+    }
+    for (int j = start_col; j < end_col; ++j) {
+        adm_cm_accum_px_s(c, i, j, inner);
+    }
+    if (right_edge) {
+        adm_cm_accum_px_s(c, i, c->w - 1, inner);
+    }
 }
 
 float adm_cm_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *csf_f,
@@ -489,593 +572,104 @@ float adm_cm_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *csf_f,
                double adm_f2s3)
 {
     (void)flt_stride;
-    (void)adm_csf_mode;
 
-    // for ADM: scales goes from 0 to 3 but in noise floor paper, it goes from
-    // 1 to 4 (from finest scale to coarsest scale).
-    float factor1, factor2;
-    if (adm_csf_mode == ADM_CSF_MODE_BARTEN) {
-        factor1 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height, luminance_level,
-                             adm_csf_scale);
-        factor2 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height, luminance_level,
-                             adm_csf_diag_scale);
-    } else if (adm_csf_mode == ADM_CSF_MODE_ADM) {
-        factor1 = adm_native_csf(scale, adm_norm_view_dist, adm_ref_display_height, 0);
-        factor2 = adm_native_csf(scale, adm_norm_view_dist, adm_ref_display_height, 45);
-    } else {
-        factor1 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 1, adm_norm_view_dist,
-                                        adm_ref_display_height);
-        factor2 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 2, adm_norm_view_dist,
-                                        adm_ref_display_height);
-    }
-    if (scale == 0) {
-        if (adm_f1s0 >= 0) {
-            factor1 = adm_f1s0;
-        }
-        if (adm_f2s0 >= 0) {
-            factor2 = adm_f2s0;
-        }
-    } else if (scale == 1) {
-        if (adm_f1s1 >= 0) {
-            factor1 = adm_f1s1;
-        }
-        if (adm_f2s1 >= 0) {
-            factor2 = adm_f2s1;
-        }
-    } else if (scale == 2) {
-        if (adm_f1s2 >= 0) {
-            factor1 = adm_f1s2;
-        }
-        if (adm_f2s2 >= 0) {
-            factor2 = adm_f2s2;
-        }
-    } else {
-        if (adm_f1s3 >= 0) {
-            factor1 = adm_f1s3;
-        }
-        if (adm_f2s3 >= 0) {
-            factor2 = adm_f2s3;
-        }
-    }
-    float rfactor[3] = {factor1, factor1, factor2};
-
-    const float *angles[3] = {csf_a->band_h, csf_a->band_v, csf_a->band_d};
-    const float *flt_angles[3] = {csf_f->band_h, csf_f->band_v, csf_f->band_d};
-
-    int src_px_stride = src_stride / sizeof(float);
-    int csf_px_stride = csf_a_stride / sizeof(float);
-
-    float xh, xv, xd, thr = 0.0;
-
-    float accum_h = 0, accum_v = 0, accum_d = 0;
-    float accum_inner_h, accum_inner_v, accum_inner_d;
-    float num_scale_h, num_scale_v, num_scale_d;
+    AdmCmCtxS c;
+    c.src = src;
+    c.angles[0] = csf_a->band_h;
+    c.angles[1] = csf_a->band_v;
+    c.angles[2] = csf_a->band_d;
+    c.flt_angles[0] = csf_f->band_h;
+    c.flt_angles[1] = csf_f->band_v;
+    c.flt_angles[2] = csf_f->band_d;
+    c.src_px_stride = src_stride / sizeof(float);
+    c.csf_px_stride = csf_a_stride / sizeof(float);
+    c.w = w;
+    c.h = h;
+    c.adm_bypass_cm = adm_bypass_cm;
+    c.adm_p_norm = adm_p_norm;
+    adm_csf_rfactor_s(scale, adm_norm_view_dist, adm_ref_display_height, adm_csf_mode,
+                      luminance_level, adm_csf_scale, adm_csf_diag_scale, adm_f1s0, adm_f1s1,
+                      adm_f1s2, adm_f1s3, adm_f2s0, adm_f2s1, adm_f2s2, adm_f2s3, c.rfactor);
 
     /* The computation of the scales is not required for the regions which lie outside the frame borders */
-    int left = w * border_factor - 0.5;
-    int top = h * border_factor - 0.5;
-    int right = w - left;
-    int bottom = h - top;
+    const AdmBorderS b = adm_border_s(w, h, border_factor);
+    const bool left_edge = b.left <= 0;
+    const bool right_edge = b.right > (w - 1);
+    const int start_col = (b.left > 1) ? b.left : 1;
+    const int end_col = (b.right < (w - 1)) ? b.right : (w - 1);
+    const int start_row = (b.top > 1) ? b.top : 1;
+    const int end_row = (b.bottom < (h - 1)) ? b.bottom : (h - 1);
 
-    int start_col = (left > 1) ? left : 1;
-    int end_col = (right < (w - 1)) ? right : (w - 1);
-    int start_row = (top > 1) ? top : 1;
-    int end_row = (bottom < (h - 1)) ? bottom : (h - 1);
+    float accum[3] = {0, 0, 0};
+    float inner[3] = {0, 0, 0};
 
-    int i, j;
-
-    /* i=0,j=0 */
-    accum_inner_h = 0;
-    accum_inner_v = 0;
-    accum_inner_d = 0;
-    if ((top <= 0) && (left <= 0)) {
-        xh = src->band_h[0] * rfactor[0];
-        xv = src->band_v[0] * rfactor[1];
-        xd = src->band_d[0] * rfactor[2];
-
-        if (adm_bypass_cm == 0) {
-            ADM_CM_THRESH_S_0_0(angles, flt_angles, csf_px_stride, &thr, w, h, 0, 0);
-        }
-
-        xh = fabsf(xh) - thr;
-        xv = fabsf(xv) - thr;
-        xd = fabsf(xd) - thr;
-
-        xh = xh < 0.0f ? 0.0f : xh;
-        xv = xv < 0.0f ? 0.0f : xv;
-        xd = xd < 0.0f ? 0.0f : xd;
-
-        if (adm_p_norm == 3.0) {
-            accum_inner_h += (xh * xh * xh);
-            accum_inner_v += (xv * xv * xv);
-            accum_inner_d += (xd * xd * xd);
-        } else {
-            accum_inner_h += powf(xh, adm_p_norm);
-            accum_inner_v += powf(xv, adm_p_norm);
-            accum_inner_d += powf(xd, adm_p_norm);
-        }
+    /* i=0 */
+    if (b.top <= 0) {
+        adm_cm_row_s(&c, 0, left_edge, right_edge, start_col, end_col, inner);
     }
-
-    /* i=0, j */
-    if (top <= 0) {
-        for (j = start_col; j < end_col; ++j) {
-            xh = src->band_h[j] * rfactor[0];
-            xv = src->band_v[j] * rfactor[1];
-            xd = src->band_d[j] * rfactor[2];
-
-            if (adm_bypass_cm == 0) {
-                ADM_CM_THRESH_S_0_J(angles, flt_angles, csf_px_stride, &thr, w, h, 0, j);
-            }
-
-            xh = fabsf(xh) - thr;
-            xv = fabsf(xv) - thr;
-            xd = fabsf(xd) - thr;
-
-            xh = xh < 0.0f ? 0.0f : xh;
-            xv = xv < 0.0f ? 0.0f : xv;
-            xd = xd < 0.0f ? 0.0f : xd;
-
-            if (adm_p_norm == 3.0) {
-                accum_inner_h += (xh * xh * xh);
-                accum_inner_v += (xv * xv * xv);
-                accum_inner_d += (xd * xd * xd);
-            } else {
-                accum_inner_h += powf(xh, adm_p_norm);
-                accum_inner_v += powf(xv, adm_p_norm);
-                accum_inner_d += powf(xd, adm_p_norm);
-            }
-        }
+    adm_fold3_s(inner, accum);
+    /* 0 < i < h-1 */
+    for (int i = start_row; i < end_row; ++i) {
+        adm_cm_row_s(&c, i, left_edge, right_edge, start_col, end_col, inner);
+        adm_fold3_s(inner, accum);
     }
-
-    /* i=0,j=w-1 */
-    if ((top <= 0) && (right > (w - 1))) {
-        xh = src->band_h[w - 1] * rfactor[0];
-        xv = src->band_v[w - 1] * rfactor[1];
-        xd = src->band_d[w - 1] * rfactor[2];
-
-        if (adm_bypass_cm == 0) {
-            ADM_CM_THRESH_S_0_W_M_1(angles, flt_angles, csf_px_stride, &thr, w, h, 0, (w - 1));
-        }
-
-        xh = fabsf(xh) - thr;
-        xv = fabsf(xv) - thr;
-        xd = fabsf(xd) - thr;
-
-        xh = xh < 0.0f ? 0.0f : xh;
-        xv = xv < 0.0f ? 0.0f : xv;
-        xd = xd < 0.0f ? 0.0f : xd;
-
-        if (adm_p_norm == 3.0) {
-            accum_inner_h += (xh * xh * xh);
-            accum_inner_v += (xv * xv * xv);
-            accum_inner_d += (xd * xd * xd);
-        } else {
-            accum_inner_h += powf(xh, adm_p_norm);
-            accum_inner_v += powf(xv, adm_p_norm);
-            accum_inner_d += powf(xd, adm_p_norm);
-        }
+    /* i=h-1 */
+    if (b.bottom > (h - 1)) {
+        adm_cm_row_s(&c, h - 1, left_edge, right_edge, start_col, end_col, inner);
     }
+    adm_fold3_s(inner, accum);
 
-    accum_h += accum_inner_h;
-    accum_v += accum_inner_v;
-    accum_d += accum_inner_d;
-
-    if ((left > 0) && (right <= (w - 1))) /* Completely within frame */
-    {
-        for (i = start_row; i < end_row; ++i) {
-            accum_inner_h = 0;
-            accum_inner_v = 0;
-            accum_inner_d = 0;
-            for (j = start_col; j < end_col; ++j) {
-                xh = src->band_h[i * src_px_stride + j] * rfactor[0];
-                xv = src->band_v[i * src_px_stride + j] * rfactor[1];
-                xd = src->band_d[i * src_px_stride + j] * rfactor[2];
-
-                if (adm_bypass_cm == 0) {
-                    ADM_CM_THRESH_S_I_J(angles, flt_angles, csf_px_stride, &thr, w, h, i, j);
-                }
-
-                xh = fabsf(xh) - thr;
-                xv = fabsf(xv) - thr;
-                xd = fabsf(xd) - thr;
-
-                xh = xh < 0.0f ? 0.0f : xh;
-                xv = xv < 0.0f ? 0.0f : xv;
-                xd = xd < 0.0f ? 0.0f : xd;
-
-                if (adm_p_norm == 3.0) {
-                    accum_inner_h += (xh * xh * xh);
-                    accum_inner_v += (xv * xv * xv);
-                    accum_inner_d += (xd * xd * xd);
-                } else {
-                    accum_inner_h += powf(xh, adm_p_norm);
-                    accum_inner_v += powf(xv, adm_p_norm);
-                    accum_inner_d += powf(xd, adm_p_norm);
-                }
-            }
-            accum_h += accum_inner_h;
-            accum_v += accum_inner_v;
-            accum_d += accum_inner_d;
-        }
-    } else if ((left <= 0) && (right <= (w - 1))) /* Right border within frame, left outside */
-    {
-        for (i = start_row; i < end_row; ++i) {
-            accum_inner_h = 0;
-            accum_inner_v = 0;
-            accum_inner_d = 0;
-
-            /* j = 0 */
-            xh = src->band_h[i * src_px_stride] * rfactor[0];
-            xv = src->band_v[i * src_px_stride] * rfactor[1];
-            xd = src->band_d[i * src_px_stride] * rfactor[2];
-
-            if (adm_bypass_cm == 0) {
-                ADM_CM_THRESH_S_I_0(angles, flt_angles, csf_px_stride, &thr, w, h, i, 0);
-            }
-
-            xh = fabsf(xh) - thr;
-            xv = fabsf(xv) - thr;
-            xd = fabsf(xd) - thr;
-
-            xh = xh < 0.0f ? 0.0f : xh;
-            xv = xv < 0.0f ? 0.0f : xv;
-            xd = xd < 0.0f ? 0.0f : xd;
-
-            if (adm_p_norm == 3.0) {
-                accum_inner_h += (xh * xh * xh);
-                accum_inner_v += (xv * xv * xv);
-                accum_inner_d += (xd * xd * xd);
-            } else {
-                accum_inner_h += powf(xh, adm_p_norm);
-                accum_inner_v += powf(xv, adm_p_norm);
-                accum_inner_d += powf(xd, adm_p_norm);
-            }
-
-            /* j within frame */
-            for (j = start_col; j < end_col; ++j) {
-                xh = src->band_h[i * src_px_stride + j] * rfactor[0];
-                xv = src->band_v[i * src_px_stride + j] * rfactor[1];
-                xd = src->band_d[i * src_px_stride + j] * rfactor[2];
-
-                if (adm_bypass_cm == 0) {
-                    ADM_CM_THRESH_S_I_J(angles, flt_angles, csf_px_stride, &thr, w, h, i, j);
-                }
-
-                xh = fabsf(xh) - thr;
-                xv = fabsf(xv) - thr;
-                xd = fabsf(xd) - thr;
-
-                xh = xh < 0.0f ? 0.0f : xh;
-                xv = xv < 0.0f ? 0.0f : xv;
-                xd = xd < 0.0f ? 0.0f : xd;
-
-                if (adm_p_norm == 3.0) {
-                    accum_inner_h += (xh * xh * xh);
-                    accum_inner_v += (xv * xv * xv);
-                    accum_inner_d += (xd * xd * xd);
-                } else {
-                    accum_inner_h += powf(xh, adm_p_norm);
-                    accum_inner_v += powf(xv, adm_p_norm);
-                    accum_inner_d += powf(xd, adm_p_norm);
-                }
-            }
-            accum_h += accum_inner_h;
-            accum_v += accum_inner_v;
-            accum_d += accum_inner_d;
-        }
-    } else if ((left > 0) && (right > (w - 1))) /* Left border within frame, right outside */
-    {
-        for (i = start_row; i < end_row; ++i) {
-            accum_inner_h = 0;
-            accum_inner_v = 0;
-            accum_inner_d = 0;
-            /* j within frame */
-            for (j = start_col; j < end_col; ++j) {
-                xh = src->band_h[i * src_px_stride + j] * rfactor[0];
-                xv = src->band_v[i * src_px_stride + j] * rfactor[1];
-                xd = src->band_d[i * src_px_stride + j] * rfactor[2];
-
-                if (adm_bypass_cm == 0) {
-                    ADM_CM_THRESH_S_I_J(angles, flt_angles, csf_px_stride, &thr, w, h, i, j);
-                }
-
-                xh = fabsf(xh) - thr;
-                xv = fabsf(xv) - thr;
-                xd = fabsf(xd) - thr;
-
-                xh = xh < 0.0f ? 0.0f : xh;
-                xv = xv < 0.0f ? 0.0f : xv;
-                xd = xd < 0.0f ? 0.0f : xd;
-
-                if (adm_p_norm == 3.0) {
-                    accum_inner_h += (xh * xh * xh);
-                    accum_inner_v += (xv * xv * xv);
-                    accum_inner_d += (xd * xd * xd);
-                } else {
-                    accum_inner_h += powf(xh, adm_p_norm);
-                    accum_inner_v += powf(xv, adm_p_norm);
-                    accum_inner_d += powf(xd, adm_p_norm);
-                }
-            }
-            /* j = w-1 */
-            xh = src->band_h[i * src_px_stride + w - 1] * rfactor[0];
-            xv = src->band_v[i * src_px_stride + w - 1] * rfactor[1];
-            xd = src->band_d[i * src_px_stride + w - 1] * rfactor[2];
-
-            if (adm_bypass_cm == 0) {
-                ADM_CM_THRESH_S_I_W_M_1(angles, flt_angles, csf_px_stride, &thr, w, h, i, (w - 1));
-            }
-
-            xh = fabsf(xh) - thr;
-            xv = fabsf(xv) - thr;
-            xd = fabsf(xd) - thr;
-
-            xh = xh < 0.0f ? 0.0f : xh;
-            xv = xv < 0.0f ? 0.0f : xv;
-            xd = xd < 0.0f ? 0.0f : xd;
-
-            if (adm_p_norm == 3.0) {
-                accum_inner_h += (xh * xh * xh);
-                accum_inner_v += (xv * xv * xv);
-                accum_inner_d += (xd * xd * xd);
-            } else {
-                accum_inner_h += powf(xh, adm_p_norm);
-                accum_inner_v += powf(xv, adm_p_norm);
-                accum_inner_d += powf(xd, adm_p_norm);
-            }
-
-            accum_h += accum_inner_h;
-            accum_v += accum_inner_v;
-            accum_d += accum_inner_d;
-        }
-    } else /* Both borders outside frame */
-    {
-        for (i = start_row; i < end_row; ++i) {
-            accum_inner_h = 0;
-            accum_inner_v = 0;
-            accum_inner_d = 0;
-
-            /* j = 0 */
-            xh = src->band_h[i * src_px_stride] * rfactor[0];
-            xv = src->band_v[i * src_px_stride] * rfactor[1];
-            xd = src->band_d[i * src_px_stride] * rfactor[2];
-
-            if (adm_bypass_cm == 0) {
-                ADM_CM_THRESH_S_I_0(angles, flt_angles, csf_px_stride, &thr, w, h, i, 0);
-            }
-
-            xh = fabsf(xh) - thr;
-            xv = fabsf(xv) - thr;
-            xd = fabsf(xd) - thr;
-
-            xh = xh < 0.0f ? 0.0f : xh;
-            xv = xv < 0.0f ? 0.0f : xv;
-            xd = xd < 0.0f ? 0.0f : xd;
-
-            if (adm_p_norm == 3.0) {
-                accum_inner_h += (xh * xh * xh);
-                accum_inner_v += (xv * xv * xv);
-                accum_inner_d += (xd * xd * xd);
-            } else {
-                accum_inner_h += powf(xh, adm_p_norm);
-                accum_inner_v += powf(xv, adm_p_norm);
-                accum_inner_d += powf(xd, adm_p_norm);
-            }
-
-            /* j within frame */
-            for (j = start_col; j < end_col; ++j) {
-                xh = src->band_h[i * src_px_stride + j] * rfactor[0];
-                xv = src->band_v[i * src_px_stride + j] * rfactor[1];
-                xd = src->band_d[i * src_px_stride + j] * rfactor[2];
-
-                if (adm_bypass_cm == 0) {
-                    ADM_CM_THRESH_S_I_J(angles, flt_angles, csf_px_stride, &thr, w, h, i, j);
-                }
-
-                xh = fabsf(xh) - thr;
-                xv = fabsf(xv) - thr;
-                xd = fabsf(xd) - thr;
-
-                xh = xh < 0.0f ? 0.0f : xh;
-                xv = xv < 0.0f ? 0.0f : xv;
-                xd = xd < 0.0f ? 0.0f : xd;
-
-                if (adm_p_norm == 3.0) {
-                    accum_inner_h += (xh * xh * xh);
-                    accum_inner_v += (xv * xv * xv);
-                    accum_inner_d += (xd * xd * xd);
-                } else {
-                    accum_inner_h += powf(xh, adm_p_norm);
-                    accum_inner_v += powf(xv, adm_p_norm);
-                    accum_inner_d += powf(xd, adm_p_norm);
-                }
-            }
-            /* j = w-1 */
-            xh = src->band_h[i * src_px_stride + w - 1] * rfactor[0];
-            xv = src->band_v[i * src_px_stride + w - 1] * rfactor[1];
-            xd = src->band_d[i * src_px_stride + w - 1] * rfactor[2];
-
-            if (adm_bypass_cm == 0) {
-                ADM_CM_THRESH_S_I_W_M_1(angles, flt_angles, csf_px_stride, &thr, w, h, i, (w - 1));
-            }
-
-            xh = fabsf(xh) - thr;
-            xv = fabsf(xv) - thr;
-            xd = fabsf(xd) - thr;
-
-            xh = xh < 0.0f ? 0.0f : xh;
-            xv = xv < 0.0f ? 0.0f : xv;
-            xd = xd < 0.0f ? 0.0f : xd;
-
-            if (adm_p_norm == 3.0) {
-                accum_inner_h += (xh * xh * xh);
-                accum_inner_v += (xv * xv * xv);
-                accum_inner_d += (xd * xd * xd);
-            } else {
-                accum_inner_h += powf(xh, adm_p_norm);
-                accum_inner_v += powf(xv, adm_p_norm);
-                accum_inner_d += powf(xd, adm_p_norm);
-            }
-
-            accum_h += accum_inner_h;
-            accum_v += accum_inner_v;
-            accum_d += accum_inner_d;
-        }
-    }
-    accum_inner_h = 0;
-    accum_inner_v = 0;
-    accum_inner_d = 0;
-
-    /* i=h-1,j=0 */
-    if ((bottom > (h - 1)) && (left <= 0)) {
-        xh = src->band_h[(h - 1) * src_px_stride] * rfactor[0];
-        xv = src->band_v[(h - 1) * src_px_stride] * rfactor[1];
-        xd = src->band_d[(h - 1) * src_px_stride] * rfactor[2];
-
-        if (adm_bypass_cm == 0) {
-            ADM_CM_THRESH_S_H_M_1_0(angles, flt_angles, csf_px_stride, &thr, w, h, (h - 1), 0);
-        }
-
-        xh = fabsf(xh) - thr;
-        xv = fabsf(xv) - thr;
-        xd = fabsf(xd) - thr;
-
-        xh = xh < 0.0f ? 0.0f : xh;
-        xv = xv < 0.0f ? 0.0f : xv;
-        xd = xd < 0.0f ? 0.0f : xd;
-
-        if (adm_p_norm == 3.0) {
-            accum_inner_h += (xh * xh * xh);
-            accum_inner_v += (xv * xv * xv);
-            accum_inner_d += (xd * xd * xd);
-        } else {
-            accum_inner_h += powf(xh, adm_p_norm);
-            accum_inner_v += powf(xv, adm_p_norm);
-            accum_inner_d += powf(xd, adm_p_norm);
-        }
-    }
-
-    /* i=h-1,j */
-    if (bottom > (h - 1)) {
-        for (j = start_col; j < end_col; ++j) {
-            xh = src->band_h[(h - 1) * src_px_stride + j] * rfactor[0];
-            xv = src->band_v[(h - 1) * src_px_stride + j] * rfactor[1];
-            xd = src->band_d[(h - 1) * src_px_stride + j] * rfactor[2];
-
-            if (adm_bypass_cm == 0) {
-                ADM_CM_THRESH_S_H_M_1_J(angles, flt_angles, csf_px_stride, &thr, w, h, (h - 1), j);
-            }
-
-            xh = fabsf(xh) - thr;
-            xv = fabsf(xv) - thr;
-            xd = fabsf(xd) - thr;
-
-            xh = xh < 0.0f ? 0.0f : xh;
-            xv = xv < 0.0f ? 0.0f : xv;
-            xd = xd < 0.0f ? 0.0f : xd;
-
-            if (adm_p_norm == 3.0) {
-                accum_inner_h += (xh * xh * xh);
-                accum_inner_v += (xv * xv * xv);
-                accum_inner_d += (xd * xd * xd);
-            } else {
-                accum_inner_h += powf(xh, adm_p_norm);
-                accum_inner_v += powf(xv, adm_p_norm);
-                accum_inner_d += powf(xd, adm_p_norm);
-            }
-        }
-    }
-
-    /* i-h-1,j=w-1 */
-    if ((bottom > (h - 1)) && (right > (w - 1))) {
-        xh = src->band_h[(h - 1) * src_px_stride + w - 1] * rfactor[0];
-        xv = src->band_v[(h - 1) * src_px_stride + w - 1] * rfactor[1];
-        xd = src->band_d[(h - 1) * src_px_stride + w - 1] * rfactor[2];
-
-        if (adm_bypass_cm == 0) {
-            ADM_CM_THRESH_S_H_M_1_W_M_1(angles, flt_angles, csf_px_stride, &thr, w, h, (h - 1),
-                                        (w - 1));
-        }
-
-        xh = fabsf(xh) - thr;
-        xv = fabsf(xv) - thr;
-        xd = fabsf(xd) - thr;
-
-        xh = xh < 0.0f ? 0.0f : xh;
-        xv = xv < 0.0f ? 0.0f : xv;
-        xd = xd < 0.0f ? 0.0f : xd;
-
-        if (adm_p_norm == 3.0) {
-            accum_inner_h += (xh * xh * xh);
-            accum_inner_v += (xv * xv * xv);
-            accum_inner_d += (xd * xd * xd);
-        } else {
-            accum_inner_h += powf(xh, adm_p_norm);
-            accum_inner_v += powf(xv, adm_p_norm);
-            accum_inner_d += powf(xd, adm_p_norm);
-        }
-    }
-    accum_h += accum_inner_h;
-    accum_v += accum_inner_v;
-    accum_d += accum_inner_d;
-
-    num_scale_h = powf(accum_h, 1.0f / adm_p_norm) +
-                  get_noise_constant(right - left, bottom - top, adm_noise_weight, adm_p_norm);
-    num_scale_v = powf(accum_v, 1.0f / adm_p_norm) +
-                  get_noise_constant(right - left, bottom - top, adm_noise_weight, adm_p_norm);
-    num_scale_d = powf(accum_d, 1.0f / adm_p_norm) +
-                  get_noise_constant(right - left, bottom - top, adm_noise_weight, adm_p_norm);
+    const float num_scale_h =
+        powf(accum[0], 1.0f / adm_p_norm) +
+        get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, adm_p_norm);
+    const float num_scale_v =
+        powf(accum[1], 1.0f / adm_p_norm) +
+        get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, adm_p_norm);
+    const float num_scale_d =
+        powf(accum[2], 1.0f / adm_p_norm) +
+        get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, adm_p_norm);
 
     return (num_scale_h + num_scale_v + num_scale_d);
+}
+
+/* ------------------------------------------------------------------------- */
+/* DWT                                                                       */
+/* ------------------------------------------------------------------------- */
+
+/* Symmetric-extension source indices of the four Daubechies-2 taps for every
+ * output sample of one dimension: `ind[k][i]` is the input index read by tap
+ * `k` when producing output `i` (Index = 2 * i - 1 + k). */
+static void dwt2_src_indices_1d_s(int *const *ind, int n)
+{
+    for (int i = 0; i < (n + 1) / 2; ++i) {
+        int ind0 = 2 * i - 1;
+        ind0 = (ind0 < 0) ? -ind0 : ((ind0 >= n) ? (2 * n - ind0 - 1) : ind0);
+        int ind1 = 2 * i;
+        if (ind1 >= n) {
+            ind1 = (2 * n - ind1 - 1);
+        }
+        int ind2 = 2 * i + 1;
+        if (ind2 >= n) {
+            ind2 = (2 * n - ind2 - 1);
+        }
+        int ind3 = 2 * i + 2;
+        if (ind3 >= n) {
+            ind3 = (2 * n - ind3 - 1);
+        }
+        ind[0][i] = ind0;
+        ind[1][i] = ind1;
+        ind[2][i] = ind2;
+        ind[3][i] = ind3;
+    }
 }
 
 // This function stores the imgcoeff values used in adm_dwt2_s in buffers, which reduces the control code cycles.
 void dwt2_src_indices_filt_s(int **src_ind_y, int **src_ind_x, int w, int h)
 {
-    int i, j;
-    int ind0, ind1, ind2, ind3;
     /* Vertical pass */
-    for (i = 0; i < (h + 1) / 2; ++i) { /* Index = 2 * i - 1 + fi */
-        ind0 = 2 * i - 1;
-        ind0 = (ind0 < 0) ? -ind0 : ((ind0 >= h) ? (2 * h - ind0 - 1) : ind0);
-        ind1 = 2 * i;
-        if (ind1 >= h) {
-            ind1 = (2 * h - ind1 - 1);
-        }
-        ind2 = 2 * i + 1;
-        if (ind2 >= h) {
-            ind2 = (2 * h - ind2 - 1);
-        }
-        ind3 = 2 * i + 2;
-        if (ind3 >= h) {
-            ind3 = (2 * h - ind3 - 1);
-        }
-        src_ind_y[0][i] = ind0;
-        src_ind_y[1][i] = ind1;
-        src_ind_y[2][i] = ind2;
-        src_ind_y[3][i] = ind3;
-    }
+    dwt2_src_indices_1d_s(src_ind_y, h);
     /* Horizontal pass */
-    for (j = 0; j < (w + 1) / 2; ++j) { /* Index = 2 * j - 1 + fj */
-        ind0 = 2 * j - 1;
-        ind0 = (ind0 < 0) ? -ind0 : ((ind0 >= w) ? (2 * w - ind0 - 1) : ind0);
-        ind1 = 2 * j;
-        if (ind1 >= w) {
-            ind1 = (2 * w - ind1 - 1);
-        }
-        ind2 = 2 * j + 1;
-        if (ind2 >= w) {
-            ind2 = (2 * w - ind2 - 1);
-        }
-        ind3 = 2 * j + 2;
-        if (ind3 >= w) {
-            ind3 = (2 * w - ind3 - 1);
-        }
-        src_ind_x[0][j] = ind0;
-        src_ind_x[1][j] = ind1;
-        src_ind_x[2][j] = ind2;
-        src_ind_x[3][j] = ind3;
-    }
+    dwt2_src_indices_1d_s(src_ind_x, w);
 }
 
 /* The float-ADM DWT2 feeds immutable Netflix golden scores.  Keep its four-tap
@@ -1083,10 +677,18 @@ void dwt2_src_indices_filt_s(int **src_ind_y, int **src_ind_x, int w, int h)
  * compiler without changing any other arithmetic in this translation unit.
  * The earlier file-scope Clang pragma changed unrelated ADM reductions; the
  * function-scoped pragma and GCC attribute deliberately constrain only DWT2.
- * See ADR-1057's 2026-08-31 correction. */
+ * See ADR-1057's 2026-08-31 correction.
+ *
+ * The body stays a single function on purpose: splitting the vertical and
+ * horizontal passes into helpers would require replicating the
+ * `optimize("-ffp-contract=off")` attribute on each of them and relying on
+ * GCC's cross-attribute inlining behaviour to keep the contraction contract
+ * — an ARM-only effect that the x86 golden gate cannot observe. ADR-0141 §2
+ * load-bearing invariant (ADR-1057 fp-contract bracket); see ADR-1141. */
 #if defined(__GNUC__) && !defined(__clang__)
 __attribute__((optimize("-ffp-contract=off")))
 #endif
+// NOLINTNEXTLINE(readability-function-size)
 int adm_dwt2_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x, int w,
                int h, int src_stride, int dst_stride)
 {
@@ -1096,32 +698,28 @@ int adm_dwt2_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int *
     const float *filter_lo = dwt2_db2_coeffs_lo_s;
     const float *filter_hi = dwt2_db2_coeffs_hi_s;
 
-    int src_px_stride = src_stride / sizeof(float);
-    int dst_px_stride = dst_stride / sizeof(float);
+    const int src_px_stride = src_stride / sizeof(float);
+    const int dst_px_stride = dst_stride / sizeof(float);
 
     float *tmplo = aligned_malloc(ALIGN_CEIL(sizeof(float) * w), MAX_ALIGN);
-    if (!tmplo)
+    if (!tmplo) {
         return -ENOMEM;
+    }
     float *tmphi = aligned_malloc(ALIGN_CEIL(sizeof(float) * w), MAX_ALIGN);
     if (!tmphi) {
         aligned_free(tmplo);
         return -ENOMEM;
     }
-    float s0, s1, s2, s3;
-    float accum;
 
-    int i, j;
-    int j0, j1, j2, j3;
-
-    for (i = 0; i < (h + 1) / 2; ++i) {
+    for (int i = 0; i < (h + 1) / 2; ++i) {
         /* Vertical pass. */
-        for (j = 0; j < w; ++j) {
-            s0 = src[ind_y[0][i] * src_px_stride + j];
-            s1 = src[ind_y[1][i] * src_px_stride + j];
-            s2 = src[ind_y[2][i] * src_px_stride + j];
-            s3 = src[ind_y[3][i] * src_px_stride + j];
+        for (int j = 0; j < w; ++j) {
+            const float s0 = src[ind_y[0][i] * src_px_stride + j];
+            const float s1 = src[ind_y[1][i] * src_px_stride + j];
+            const float s2 = src[ind_y[2][i] * src_px_stride + j];
+            const float s3 = src[ind_y[3][i] * src_px_stride + j];
 
-            accum = 0;
+            float accum = 0;
             accum += filter_lo[0] * s0;
             accum += filter_lo[1] * s1;
             accum += filter_lo[2] * s2;
@@ -1137,18 +735,17 @@ int adm_dwt2_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int *
         }
 
         /* Horizontal pass (lo and hi). */
-        for (j = 0; j < (w + 1) / 2; ++j) {
+        for (int j = 0; j < (w + 1) / 2; ++j) {
+            const int j0 = ind_x[0][j];
+            const int j1 = ind_x[1][j];
+            const int j2 = ind_x[2][j];
+            const int j3 = ind_x[3][j];
+            float s0 = tmplo[j0];
+            float s1 = tmplo[j1];
+            float s2 = tmplo[j2];
+            float s3 = tmplo[j3];
 
-            j0 = ind_x[0][j];
-            j1 = ind_x[1][j];
-            j2 = ind_x[2][j];
-            j3 = ind_x[3][j];
-            s0 = tmplo[j0];
-            s1 = tmplo[j1];
-            s2 = tmplo[j2];
-            s3 = tmplo[j3];
-
-            accum = 0;
+            float accum = 0;
             accum += filter_lo[0] * s0;
             accum += filter_lo[1] * s1;
             accum += filter_lo[2] * s2;
@@ -1192,27 +789,23 @@ int adm_dwt2_lo_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, in
 {
     const float *filter_lo = dwt2_db2_coeffs_lo_s;
 
-    int src_px_stride = src_stride / sizeof(float);
-    int dst_px_stride = dst_stride / sizeof(float);
+    const int src_px_stride = src_stride / sizeof(float);
+    const int dst_px_stride = dst_stride / sizeof(float);
 
     float *tmplo = aligned_malloc(ALIGN_CEIL(sizeof(float) * w), MAX_ALIGN);
-    if (!tmplo)
+    if (!tmplo) {
         return -ENOMEM;
-    float s0, s1, s2, s3;
-    float accum;
+    }
 
-    int i, j;
-    int j0, j1, j2, j3;
-
-    for (i = 0; i < (h + 1) / 2; ++i) {
+    for (int i = 0; i < (h + 1) / 2; ++i) {
         /* Vertical pass. */
-        for (j = 0; j < w; ++j) {
-            s0 = src[ind_y[0][i] * src_px_stride + j];
-            s1 = src[ind_y[1][i] * src_px_stride + j];
-            s2 = src[ind_y[2][i] * src_px_stride + j];
-            s3 = src[ind_y[3][i] * src_px_stride + j];
+        for (int j = 0; j < w; ++j) {
+            const float s0 = src[ind_y[0][i] * src_px_stride + j];
+            const float s1 = src[ind_y[1][i] * src_px_stride + j];
+            const float s2 = src[ind_y[2][i] * src_px_stride + j];
+            const float s3 = src[ind_y[3][i] * src_px_stride + j];
 
-            accum = 0;
+            float accum = 0;
             accum += filter_lo[0] * s0;
             accum += filter_lo[1] * s1;
             accum += filter_lo[2] * s2;
@@ -1221,18 +814,13 @@ int adm_dwt2_lo_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, in
         }
 
         /* Horizontal pass (lo). */
-        for (j = 0; j < (w + 1) / 2; ++j) {
+        for (int j = 0; j < (w + 1) / 2; ++j) {
+            const float s0 = tmplo[ind_x[0][j]];
+            const float s1 = tmplo[ind_x[1][j]];
+            const float s2 = tmplo[ind_x[2][j]];
+            const float s3 = tmplo[ind_x[3][j]];
 
-            j0 = ind_x[0][j];
-            j1 = ind_x[1][j];
-            j2 = ind_x[2][j];
-            j3 = ind_x[3][j];
-            s0 = tmplo[j0];
-            s1 = tmplo[j1];
-            s2 = tmplo[j2];
-            s3 = tmplo[j3];
-
-            accum = 0;
+            float accum = 0;
             accum += filter_lo[0] * s0;
             accum += filter_lo[1] * s1;
             accum += filter_lo[2] * s2;
@@ -1245,96 +833,72 @@ int adm_dwt2_lo_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, in
     return 0;
 }
 
+/* Four-tap double-precision filter response, accumulated tap by tap. */
+static inline double adm_dwt2_tap4_d(const double *filter, double s0, double s1, double s2,
+                                     double s3)
+{
+    double accum = 0;
+    accum += filter[0] * s0;
+    accum += filter[1] * s1;
+    accum += filter[2] * s2;
+    accum += filter[3] * s3;
+    return accum;
+}
+
+/* Horizontal pass of output row `i` of the double-precision DWT. */
+static inline void adm_dwt2_hpass_d(const double *tmplo, const double *tmphi,
+                                    const adm_dwt_band_t_d *dst, int *const *ind_x, int i, int w,
+                                    int dst_px_stride)
+{
+    const ptrdiff_t row = (ptrdiff_t)i * dst_px_stride;
+
+    for (int j = 0; j < (w + 1) / 2; ++j) {
+        const int j0 = ind_x[0][j];
+        const int j1 = ind_x[1][j];
+        const int j2 = ind_x[2][j];
+        const int j3 = ind_x[3][j];
+
+        dst->band_a[row + j] =
+            adm_dwt2_tap4_d(dwt2_db2_coeffs_lo_d, tmplo[j0], tmplo[j1], tmplo[j2], tmplo[j3]);
+        dst->band_v[row + j] =
+            adm_dwt2_tap4_d(dwt2_db2_coeffs_hi_d, tmplo[j0], tmplo[j1], tmplo[j2], tmplo[j3]);
+        dst->band_h[row + j] =
+            adm_dwt2_tap4_d(dwt2_db2_coeffs_lo_d, tmphi[j0], tmphi[j1], tmphi[j2], tmphi[j3]);
+        dst->band_d[row + j] =
+            adm_dwt2_tap4_d(dwt2_db2_coeffs_hi_d, tmphi[j0], tmphi[j1], tmphi[j2], tmphi[j3]);
+    }
+}
+
 int adm_dwt2_d(const double *src, const adm_dwt_band_t_d *dst, int **ind_y, int **ind_x, int w,
                int h, int src_stride, int dst_stride)
 {
-    const double *filter_lo = dwt2_db2_coeffs_lo_d;
-    const double *filter_hi = dwt2_db2_coeffs_hi_d;
-
-    int src_px_stride = src_stride / sizeof(double);
-    int dst_px_stride = dst_stride / sizeof(double);
+    const int src_px_stride = src_stride / sizeof(double);
+    const int dst_px_stride = dst_stride / sizeof(double);
 
     double *tmplo = aligned_malloc(ALIGN_CEIL(sizeof(double) * w), MAX_ALIGN);
-    if (!tmplo)
+    if (!tmplo) {
         return -ENOMEM;
+    }
     double *tmphi = aligned_malloc(ALIGN_CEIL(sizeof(double) * w), MAX_ALIGN);
     if (!tmphi) {
         aligned_free(tmplo);
         return -ENOMEM;
     }
-    double s0, s1, s2, s3;
-    double accum;
 
-    int i, j;
-    int j0, j1, j2, j3;
-
-    for (i = 0; i < (h + 1) / 2; ++i) {
+    for (int i = 0; i < (h + 1) / 2; ++i) {
         /* Vertical pass. */
-        for (j = 0; j < w; ++j) {
-            s0 = src[ind_y[0][i] * src_px_stride + j];
-            s1 = src[ind_y[1][i] * src_px_stride + j];
-            s2 = src[ind_y[2][i] * src_px_stride + j];
-            s3 = src[ind_y[3][i] * src_px_stride + j];
+        for (int j = 0; j < w; ++j) {
+            const double s0 = src[ind_y[0][i] * src_px_stride + j];
+            const double s1 = src[ind_y[1][i] * src_px_stride + j];
+            const double s2 = src[ind_y[2][i] * src_px_stride + j];
+            const double s3 = src[ind_y[3][i] * src_px_stride + j];
 
-            accum = 0;
-            accum += filter_lo[0] * s0;
-            accum += filter_lo[1] * s1;
-            accum += filter_lo[2] * s2;
-            accum += filter_lo[3] * s3;
-            tmplo[j] = accum;
-
-            accum = 0;
-            accum += filter_hi[0] * s0;
-            accum += filter_hi[1] * s1;
-            accum += filter_hi[2] * s2;
-            accum += filter_hi[3] * s3;
-            tmphi[j] = accum;
+            tmplo[j] = adm_dwt2_tap4_d(dwt2_db2_coeffs_lo_d, s0, s1, s2, s3);
+            tmphi[j] = adm_dwt2_tap4_d(dwt2_db2_coeffs_hi_d, s0, s1, s2, s3);
         }
 
         /* Horizontal pass (lo and hi). */
-        for (j = 0; j < (w + 1) / 2; ++j) {
-
-            j0 = ind_x[0][j];
-            j1 = ind_x[1][j];
-            j2 = ind_x[2][j];
-            j3 = ind_x[3][j];
-            s0 = tmplo[j0];
-            s1 = tmplo[j1];
-            s2 = tmplo[j2];
-            s3 = tmplo[j3];
-
-            accum = 0;
-            accum += filter_lo[0] * s0;
-            accum += filter_lo[1] * s1;
-            accum += filter_lo[2] * s2;
-            accum += filter_lo[3] * s3;
-            dst->band_a[i * dst_px_stride + j] = accum;
-
-            accum = 0;
-            accum += filter_hi[0] * s0;
-            accum += filter_hi[1] * s1;
-            accum += filter_hi[2] * s2;
-            accum += filter_hi[3] * s3;
-            dst->band_v[i * dst_px_stride + j] = accum;
-            s0 = tmphi[j0];
-            s1 = tmphi[j1];
-            s2 = tmphi[j2];
-            s3 = tmphi[j3];
-
-            accum = 0;
-            accum += filter_lo[0] * s0;
-            accum += filter_lo[1] * s1;
-            accum += filter_lo[2] * s2;
-            accum += filter_lo[3] * s3;
-            dst->band_h[i * dst_px_stride + j] = accum;
-
-            accum = 0;
-            accum += filter_hi[0] * s0;
-            accum += filter_hi[1] * s1;
-            accum += filter_hi[2] * s2;
-            accum += filter_hi[3] * s3;
-            dst->band_d[i * dst_px_stride + j] = accum;
-        }
+        adm_dwt2_hpass_d(tmplo, tmphi, dst, ind_x, i, w, dst_px_stride);
     }
 
     aligned_free(tmplo);
@@ -1342,76 +906,5 @@ int adm_dwt2_d(const double *src, const adm_dwt_band_t_d *dst, int **ind_y, int 
     return 0;
 }
 
-int adm_dwt2_lo_d(const double *src, const adm_dwt_band_t_d *dst, int **ind_y, int **ind_x, int w,
-                  int h, int src_stride, int dst_stride)
-{
-    const double *filter_lo = dwt2_db2_coeffs_lo_d;
-
-    int src_px_stride = src_stride / sizeof(double);
-    int dst_px_stride = dst_stride / sizeof(double);
-
-    double *tmplo = aligned_malloc(ALIGN_CEIL(sizeof(double) * w), MAX_ALIGN);
-    if (!tmplo)
-        return -ENOMEM;
-    double s0, s1, s2, s3;
-    double accum;
-
-    int i, j;
-    int j0, j1, j2, j3;
-
-    for (i = 0; i < (h + 1) / 2; ++i) {
-        /* Vertical pass. */
-        for (j = 0; j < w; ++j) {
-            s0 = src[ind_y[0][i] * src_px_stride + j];
-            s1 = src[ind_y[1][i] * src_px_stride + j];
-            s2 = src[ind_y[2][i] * src_px_stride + j];
-            s3 = src[ind_y[3][i] * src_px_stride + j];
-
-            accum = 0;
-            accum += filter_lo[0] * s0;
-            accum += filter_lo[1] * s1;
-            accum += filter_lo[2] * s2;
-            accum += filter_lo[3] * s3;
-            tmplo[j] = accum;
-        }
-
-        /* Horizontal pass (lo and hi). */
-        for (j = 0; j < (w + 1) / 2; ++j) {
-
-            j0 = ind_x[0][j];
-            j1 = ind_x[1][j];
-            j2 = ind_x[2][j];
-            j3 = ind_x[3][j];
-            s0 = tmplo[j0];
-            s1 = tmplo[j1];
-            s2 = tmplo[j2];
-            s3 = tmplo[j3];
-
-            accum = 0;
-            accum += filter_lo[0] * s0;
-            accum += filter_lo[1] * s1;
-            accum += filter_lo[2] * s2;
-            accum += filter_lo[3] * s3;
-            dst->band_a[i * dst_px_stride + j] = accum;
-        }
-    }
-
-    aligned_free(tmplo);
-    return 0;
-}
-
-void adm_buffer_copy(const void *src, void *dst, int linewidth, int h, int src_stride,
-                     int dst_stride)
-{
-    const char *src_p = src;
-    char *dst_p = dst;
-    int i;
-
-    for (i = 0; i < h; ++i) {
-        memcpy(dst_p, src_p, linewidth);
-        src_p += src_stride;
-        dst_p += dst_stride;
-    }
-}
-
 /* planner probe */
+

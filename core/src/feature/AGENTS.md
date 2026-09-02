@@ -343,6 +343,41 @@ feature/
   evaluate `csf_a` at row 0 center (`i * src_stride + j`), never walking running
   pointer offsets. See [ADR-1167](../../../docs/adr/1167-adm-cm-row-level-rounding.md).
 
+- **`integer_adm.c` / `adm_tools.c` are restructured upstream-mirror
+  files** (ADR-1141, 2026-09-02): every kernel expression is verbatim
+  but the code no longer lines up textually with Netflix/vmaf — re-port
+  upstream hunks by hand into the owning helper (function map in
+  [rebase-notes](../../../docs/rebase-notes.md)
+  "refactor/c-rework-adm"). Invariants a rebase or a follow-up must
+  keep: (1) `adm_cm_thresh()` / `i4_adm_cm_thresh()` /
+  `adm_cm_thresh3x3_s()` are the closed form of the nine upstream
+  `ADM_CM_THRESH_S_*` corner / edge / interior macros — mirror-to-1
+  before the first edge, clamp-to-last past the last edge, nine terms in
+  the macro order (the float twin's summation order is golden-gated);
+  the `(int16_t)` cast on the integer centre term truncates on purpose.
+  (2) The border branch is the predicate pair `left_edge = left <= 0` /
+  `right_edge = right > w - 1` — do not restore upstream's four-way
+  branch (its unreachable third arm read `rfactor[]` out of bounds).
+  (3) The ADR-0155 rounding terms live in `i4_adm_round_terms()`
+  (`int32_t`, sign-negated for scales 1..3); the `i4_shift_dst[]` /
+  `i4_shift_flt[]` tables are file-scope. (4) `adm_decouple()` /
+  `adm_decouple_s123()` keep the mutable `int32_t *lut` parameter of
+  the `AdmState` / SIMD-twin prototype behind a cited
+  `readability-non-const-parameter` + `cppcheck constParameterCallback`
+  pair; `extract()` keeps its frozen `VmafFeatureExtractor::extract`
+  prototype the same way. (5) `adm_dwt2_s()` in `adm_tools.c` stays one
+  function under the ADR-1057 `optimize("-ffp-contract=off")` /
+  `#pragma clang fp contract(off)` bracket; never share DWT helpers
+  between it and `adm_dwt2_lo_s()`. (6) Float accumulators in
+  `adm_csf_den_scale_s()` / `adm_cm_s()` stay `float` (`adm_fold3_s()`);
+  only `adm_sum_cube_s()` is `double` (ADR-0418). (7) Both C TUs keep
+  `NULL` under the file-scoped `NOLINTBEGIN/END(modernize-use-nullptr)`
+  bracket (ADR-1138); keep the `NOLINTEND` line at end of file.
+  Bit-exactness proof for any further change: rerun the 62-case
+  `--precision max` CLI matrix from the ADR-1141 research digest
+  against a baseline binary — the goldens alone do not reach the
+  small-scale border branches.
+
 - **`psnr_hvs` AVX2 DCT bit-exactness** (fork-local, ADR-0159):
   [`x86/psnr_hvs_avx2.c`](x86/psnr_hvs_avx2.c) vectorizes the
   Xiph/Daala 8×8 integer DCT across 8 rows in parallel
