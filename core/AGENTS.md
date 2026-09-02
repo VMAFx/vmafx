@@ -662,3 +662,42 @@ the corrected methodology.
   must demonstrate that the golden assertion still passes on AVX-512 hardware
   and must update ADR-1104.  The integer VIF AVX-512 path (`vif_avx512.c`) is
   unaffected and must remain enabled.
+
+## Rebase-sensitive invariants (2026-09-02, c-rework-core)
+
+- **`vmaf_read_pictures` picture ownership is centralised in the
+  `ReadPicturesFrame` helpers** (`src/libvmaf.c`):
+  `read_pictures_frame_translate` (CUDA host/device translation),
+  `read_pictures_frame_select_host` (hand host copies to the DNN / worker
+  pool only when `HW_FLAG_HOST` is set — the zeroed `ref_host` on the
+  device-only path must never be dereferenced), `read_pictures_frame_cleanup`
+  (every non-batched exit) and `read_pictures_frame_cleanup_after_batch`
+  (device-only release after `threaded_read_pictures_batch` already unref'd
+  the host pictures — PR #838). The only `#ifdef HAVE_CUDA` left inside
+  `vmaf_read_pictures` guards the `read_pictures_frame_translate` call: the
+  helper exists only in CUDA builds (a CPU no-op stub would leave a
+  provably-dead error branch that cppcheck flags). Do not re-inline further
+  backend blocks into `vmaf_read_pictures`; add branches to the matching
+  helper.
+- **Three cited `cppcheck-suppress constParameterPointer` markers** are
+  deliberate, not debt: `vmaf_context_get_backend` (public ABI prototype in
+  `include/libvmaf/libvmaf.h` is frozen), `read_pictures_validate_and_prep`
+  (`vmaf_sycl_shared_frame_upload()` takes mutable pictures on the SYCL
+  build cppcheck never analyses) and `vmaf_feature_collector_unmount_model`
+  (prototype shared with the C++ twin `feature/feature_collector.cpp`, which
+  `test_predict` compiles). Drop a marker only when its cited constraint is
+  gone. `vmaf_feature_collector_get()` (`libvmaf_priv.h`) takes a
+  `const VmafContext *` — keep the declaration and definition in step.
+- **PREV_REF references are released only through `fex_release_prev_ref()`**
+  and every CPU-pool skip decision goes through `batch_extractor_skip()` /
+  `read_pictures_should_skip()`, which share `fex_subsample_skip()`. The two
+  skip predicates must agree on which extractors the worker pool runs, or an
+  extractor is dispatched twice (collector double-write) or never.
+- **`vmaf_ctx_subsystems_init` owns the init/teardown chain** for framesync →
+  feature collector → extractor vector → thread pools; a new subsystem gets a
+  new label in that function, not in `vmaf_init`.
+- **C translation units keep `NULL`** (ADR-1138): `libvmaf.c`, `predict.c`
+  and `feature/feature_collector.c` carry a file-scoped
+  `NOLINTBEGIN/END(modernize-use-nullptr)` bracket. Do not rewrite `NULL` to
+  `nullptr` in C sources (MSVC `/std:clatest` does not document it; upstream
+  parity), and keep the `NOLINTEND` line at end of file when appending code.
