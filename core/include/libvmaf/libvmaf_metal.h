@@ -135,38 +135,31 @@ VMAF_EXPORT void vmaf_metal_state_free(VmafMetalState **state);
 VMAF_EXPORT int vmaf_metal_list_devices(void);
 
 /* -----------------------------------------------------------------
- * IOSurface zero-copy import — ADR-0423 scaffold (T8-IOS).
+ * IOSurface picture import — ADR-0423 scaffold (T8-IOS).
  *
- * Mirrors the Vulkan import surface (ADR-0184 / ADR-0186): caller
- * holds an external GPU-resident frame, hands its opaque handle to
- * libvmaf, and the Metal feature kernels read it without a host
- * round-trip. The Metal flavour consumes `IOSurfaceRef` because
- * Apple's VideoToolbox hwdec delivers frames as `CVPixelBufferRef`
- * whose backing store is always an `IOSurface` — the canonical
- * shared-GPU-memory primitive on macOS / iOS. FFmpeg surfaces it
- * as `AVFrame->data[3] -> CVPixelBufferRef` from
- * `AV_HWDEVICE_TYPE_VIDEOTOOLBOX`; the caller pulls the IOSurface
- * with `CVPixelBufferGetIOSurface` before handing it here.
+ * Caller holds an external GPU-resident frame (e.g. from VideoToolbox
+ * hardware decode where frames arrive as CVPixelBufferRef backed by
+ * an IOSurface) and hands its opaque handle to libvmaf. FFmpeg surfaces
+ * it as `AVFrame->data[3] -> CVPixelBufferRef` from
+ * `AV_HWDEVICE_TYPE_VIDEOTOOLBOX`; the caller extracts the IOSurface
+ * with `CVPixelBufferGetIOSurface` before passing it here.
  *
  * Same-device contract: source IOSurfaces are bound to whichever
  * MTLDevice rendered them. libvmaf compute must run on the same
- * device, hence @ref vmaf_metal_state_init_external — symmetric to
- * @ref vmaf_vulkan_state_init_external. On a single-GPU Apple
- * Silicon Mac (the common case) there is only one Apple-Family-7+
- * device and the constraint is trivially satisfied; the external-
- * init entry point still exists so multi-GPU Mac Pro hosts get a
- * deterministic device match.
+ * device, hence @ref vmaf_metal_state_init_external. On a single-GPU
+ * Apple Silicon Mac (the common case) there is only one
+ * Apple-Family-7+ device and the constraint is trivially satisfied;
+ * the external-init entry point exists so multi-GPU Mac Pro hosts get
+ * a deterministic device match.
  *
- * Status: T8-IOS shipped under ADR-0423 — every entry point in this
- * block is a working IOSurface → VmafPicture import on
- * Apple-Family-7+ hosts via `IOSurfaceLock` + memcpy into a
- * shared-storage VmafPicture buffer. The texture-direct path
- * (`[MTLDevice newTextureWithDescriptor:iosurface:plane:]` /
- * `CVMetalTextureCacheCreateTextureFromImage`) remains available as
- * a future optimisation when a Metal feature kernel needs per-sample
- * texture access patterns; v1 routes everything through the same
- * VmafPicture host-pointer pipeline the rest of the scoring
- * extractors consume.
+ * Real behaviour / deferred true zero-copy:
+ * The v1 implementation locks the source IOSurface via `IOSurfaceLock`
+ * and performs a synchronous CPU memcpy into a shared-storage
+ * `VmafPicture` buffer (shared CPU/GPU unified memory). True zero-copy
+ * direct GPU texture/buffer binding without CPU memcpy
+ * (`[MTLDevice newTextureWithDescriptor:iosurface:plane:]` or direct
+ * buffer pointer mapping with GPU completion/fence tracking) is
+ * deferred under GAP-METAL-IOSURFACE-NOT-TRUE-ZERO-COPY.
  * ----------------------------------------------------------------- */
 
 /**
@@ -260,8 +253,7 @@ VMAF_EXPORT int vmaf_metal_wait_compute(VmafMetalState *state);
 
 /**
  * Trigger a libvmaf score read for the imported reference +
- * distorted IOSurfaces at `index`. Mirrors
- * `vmaf_vulkan_read_imported_pictures`.
+ * distorted IOSurfaces at `index`.
  *
  * Requires all 3 planes (Y/U/V) to have been imported for both
  * ref and dis at the matching index.

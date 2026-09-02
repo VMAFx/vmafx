@@ -139,6 +139,8 @@ a real kernel lands; they are removed from `metal_sources` in
   `collect(N)` pending). When adding a new `<feature>_metal.mm`, OR the
   flag into `.flags` alongside any feature-class flag (e.g.
   `VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_METAL`).
+  All 17 registered Metal extractors set this flag (GAP-METAL-DISPATCH-FLAGS-ZERO-MODEL-FALLBACK
+  resolved 2026-09-02; all 9 round-3/4 extractors promoted).
 - **Frame-0 `motion2` emission contract.** Motion-family Metal
   extractors append `motion2 = 0.0` at index 0, a no-op at index 1, and
   `min(prev, cur)` at index − 1 for index ≥ 2 — byte-identical to

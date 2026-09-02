@@ -331,10 +331,12 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
 
     /* Execution-provider selection.
      *
-     * AUTO: try CUDA → OpenVINO (GPU then CPU) → ROCm → CPU. The first EP
-     * whose append call returns NULL OrtStatus wins; EPs absent from the
-     * ORT build return non-null and we fall through. The CPU EP is always
-     * linked, so the final fall-through never fails.
+     * AUTO: on macOS (__APPLE__), try CoreML (auto-route across ANE/GPU/CPU)
+     * first, then CUDA → OpenVINO:GPU → ROCm → CPU.
+     * On other platforms: try CUDA → OpenVINO:GPU → ROCm → CoreML → CPU.
+     * The first EP whose append call returns NULL OrtStatus wins; EPs absent
+     * from the ORT build return non-null and we fall through. The CPU EP is
+     * always linked, so the final fall-through never fails.
      *
      * Explicit device: try only the requested EP; on failure the session
      * silently downgrades to CPU. Callers that need to know which EP
@@ -400,6 +402,17 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
             sess->ep_name = "CoreML:CPU";
         break;
     case VMAF_DNN_DEVICE_AUTO:
+#ifdef __APPLE__
+        if (try_append_coreml(sess, NULL) == 0) {
+            sess->ep_name = "CoreML";
+        } else if (try_append_cuda(sess, idx) == 0) {
+            sess->ep_name = "CUDA";
+        } else if (try_append_openvino(sess, "GPU", sess->fp16_io) == 0) {
+            sess->ep_name = "OpenVINO:GPU";
+        } else if (try_append_rocm(sess) == 0) {
+            sess->ep_name = "ROCm";
+        }
+#else
         if (try_append_cuda(sess, idx) == 0) {
             sess->ep_name = "CUDA";
         } else if (try_append_openvino(sess, "GPU", sess->fp16_io) == 0) {
@@ -407,15 +420,9 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
         } else if (try_append_rocm(sess) == 0) {
             sess->ep_name = "ROCm";
         } else if (try_append_coreml(sess, NULL) == 0) {
-            /* CoreML is last in the AUTO chain because the explicit
-             * --tiny-device=coreml-ane selector is the recommended
-             * Apple-silicon entry point for highest perf-per-watt;
-             * AUTO picks CoreML only when no discrete-GPU EP is
-             * available (typical on M-series Macs). The unscoped
-             * variant lets CoreML pick any compute unit — see the
-             * ANE perf note in docs/ai/inference.md. */
             sess->ep_name = "CoreML";
         }
+#endif
         /* NPU is intentionally NOT in the AUTO chain. NPU has surprising
          * latency floors on small graphs (power-state-transition cost
          * dominates sub-ms inferences) and is opt-in only via the
@@ -1221,3 +1228,14 @@ VmafOrtElemType vmaf_ort_internal_output_elem_type(const VmafOrtSession *sess, s
 }
 
 #endif /* VMAF_HAVE_DNN */
+
+static const char *const s_auto_ep_order_apple[] = {"CoreML", "CUDA", "OpenVINO:GPU",
+                                                    "ROCm",   "CPU",  NULL};
+
+static const char *const s_auto_ep_order_default[] = {"CUDA",   "OpenVINO:GPU", "ROCm",
+                                                      "CoreML", "CPU",          NULL};
+
+const char *const *vmaf_ort_internal_auto_ep_order(int is_apple)
+{
+    return is_apple ? s_auto_ep_order_apple : s_auto_ep_order_default;
+}

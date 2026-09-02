@@ -809,6 +809,45 @@ static char *test_ort_public_accessor_coverage(void)
     return NULL;
 }
 
+static char *test_auto_ep_selection_order_table(void)
+{
+    static const char *const exp_apple[] = {"CoreML", "CUDA", "OpenVINO:GPU", "ROCm", "CPU", NULL};
+    static const char *const exp_default[] = {"CUDA",   "OpenVINO:GPU", "ROCm",
+                                              "CoreML", "CPU",          NULL};
+
+    const char *const *apple_order = vmaf_ort_internal_auto_ep_order(1);
+    mu_assert("auto ep apple: non-null", apple_order != NULL);
+    for (unsigned i = 0; exp_apple[i] != NULL; ++i) {
+        mu_assert("auto ep apple: element match", strcmp(apple_order[i], exp_apple[i]) == 0);
+    }
+    mu_assert("auto ep apple: null sentinel", apple_order[5] == NULL);
+
+    const char *const *default_order = vmaf_ort_internal_auto_ep_order(0);
+    mu_assert("auto ep default: non-null", default_order != NULL);
+    for (unsigned i = 0; exp_default[i] != NULL; ++i) {
+        mu_assert("auto ep default: element match", strcmp(default_order[i], exp_default[i]) == 0);
+    }
+    mu_assert("auto ep default: null sentinel", default_order[5] == NULL);
+
+    return NULL;
+}
+
+static char *test_ort_open_auto_device(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_AUTO};
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("auto device: open succeeds", rc == 0);
+    const char *ep = vmaf_ort_attached_ep(sess);
+    mu_assert("auto device: attached ep non-null", ep != NULL);
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_fp32_to_fp16_normal);
@@ -852,5 +891,7 @@ char *run_tests(void)
     mu_run_test(test_ort_open_coreml_cpu_device);
     mu_run_test(test_ort_open_threads_config);
     mu_run_test(test_ort_open_cuda_device_with_threads_hits_retry_path);
+    mu_run_test(test_auto_ep_selection_order_table);
+    mu_run_test(test_ort_open_auto_device);
     return NULL;
 }
