@@ -246,3 +246,16 @@ during the migration; see Stage roadmap in
     `splitLinesUniversal` reproduces CPython's `newline=None` iteration so
     they match, and must not be swapped back for a `bufio.Scanner` (it caps
     line length and cannot split on a lone `\r`).
+27. **`vmafx-ort-runner` is a repository artefact, not an environment
+    assumption** (`cmd/vmafx-ort-runner`, ADR-1134): `ortPredictorSession`
+    and `pkg/tune/predictor` exec it through `pkg/ai.Registry.Infer`, and the
+    dev container plus the Go CI job build it from `./cmd/...` and smoke-run
+    it against `model/predictor_libx264.onnx`. When `predict --model`
+    degrades to the analytical curve the log line carries the runner's
+    stderr — `exit status 3` means the linked libvmaf has no ONNX Runtime,
+    `not found on PATH` means it is not installed. Do not reintroduce
+    comments or docs describing the runner as external or "bundled by the
+    image": that claim is what hid the missing binary for three months.
+    The runner still takes one flat `[1, N]` vector (invariant 20 stands);
+    named inputs and a stdin transport are protocol extensions of the
+    in-tree runner, not new dependencies.

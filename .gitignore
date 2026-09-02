@@ -140,6 +140,7 @@ model/u2netp_mirror.pth
 /vmafx-controller
 /vmafx-node
 /vmafx-operator
+/vmafx-ort-runner
 # Per-package test binaries
 *.test
 # Go build cache is stored in $GOPATH/pkg, not the repo; go.sum is tracked.

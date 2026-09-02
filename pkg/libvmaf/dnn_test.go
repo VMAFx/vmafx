@@ -157,6 +157,55 @@ func TestDNNSessionCloseIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestDNNSessionPositionalBinding pins that an empty input name binds the
+// tensor positionally (dnn.h: NULL descriptor name), which is how
+// cmd/vmafx-ort-runner drives a graph whose input name it does not know
+// (ADR-1134). The shipped predictor names its input "input", so by-name and
+// positional runs must agree, and a wrong name must fail rather than fall
+// back to positional silently.
+func TestDNNSessionPositionalBinding(t *testing.T) {
+	if !DNNAvailable() {
+		t.Skip("libvmaf built without ONNX Runtime")
+	}
+	rel := "../../model/predictor_libx264.onnx"
+	if _, err := os.Stat(rel); err != nil {
+		t.Skipf("predictor model absent: %v", err)
+	}
+	model, err := filepath.Abs(rel)
+	if err != nil {
+		t.Fatalf("abs: %v", err)
+	}
+	sess, err := OpenDNNSession(model)
+	if err != nil {
+		t.Fatalf("OpenDNNSession(%s): %v", model, err)
+	}
+	defer sess.Close()
+
+	x := []float32{51, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 16, 16}
+	byPos, err := sess.Predict(context.Background(), "", x, 1, len(x))
+	if err != nil {
+		t.Fatalf("positional Predict: %v", err)
+	}
+	byName, err := sess.Predict(context.Background(), "input", x, 1, len(x))
+	if err != nil {
+		t.Fatalf("by-name Predict: %v", err)
+	}
+	if len(byPos) != 1 || len(byName) != 1 {
+		t.Fatalf("outputs positional=%v by-name=%v, want one element each", byPos, byName)
+	}
+	if byPos[0] != byName[0] {
+		t.Errorf("positional %v != by-name %v", byPos[0], byName[0])
+	}
+	// onnxruntime 1.29.0 CPU EP reference for this row (see
+	// cmd/vmafx-ort-runner/main_test.go predictorReference).
+	if got := float64(byPos[0]); got < 66.12 || got > 66.16 {
+		t.Errorf("predictor output %v, want ≈ 66.1396", got)
+	}
+	if _, err := sess.Predict(context.Background(), "no-such-input", x, 1, len(x)); err == nil {
+		t.Error("Predict with a wrong input name succeeded; expected an error, not a positional fallback")
+	}
+}
+
 // TestDNNSessionRunCgoPointerRules is a regression test for a real
 // panic: run() builds VmafDnnInput / VmafDnnOutput descriptors in Go
 // memory that hold Go pointers (into x, shape and out) and passes their

@@ -111,6 +111,32 @@ one `Options.NonFinite` field. Invariants a future change must not undo:
    `pkg/pymath/testdata/`. Regenerate them only alongside a coordinated change
    on both sides.
 
+## feat/go-ort-runner — `vmafx-ort-runner` built in-tree (2026-09-02, ADR-1134)
+
+No upstream code impact: `cmd/vmafx-ort-runner/`, `pkg/ai`, `pkg/libvmaf`,
+the Go stages of `dev/Containerfile` and `.github/workflows/go-ci.yml` are
+fork-local with no Netflix/vmaf counterpart. Rebase-sensitive contracts:
+
+1. The runner's wire format IS `pkg/ai.Registry.Infer`'s argv
+   (`--model <path> --inputs '<JSON array>'`) and its stdout (one JSON array
+   line). `cmd/vmafx-ort-runner/main_test.go` and
+   `pkg/ai/infer_runner_test.go` pin the two halves; change them together.
+   Exit codes 0/1/2/3 are part of the contract (`pkg/ai` and the usage page
+   both key on `exit status 3` = libvmaf without ONNX Runtime).
+2. `pkg/libvmaf.DNNSession.Predict` with an empty input name binds
+   positionally (NULL `VmafDnnInput.name`). Do not "simplify" it back to an
+   unconditional `C.CString(inputName)`: that binds to an input literally
+   named `""` and breaks the runner against every shipped predictor.
+3. `go-ci.yml` installs the ONNX Runtime tarball and builds libvmaf with
+   `-Denable_dnn=enabled` so the real-ORT branches of
+   `pkg/libvmaf/dnn_test.go`, `pkg/ai`'s `TestInfer_RealRunner` and the
+   runner smoke execute; dropping the install step turns them back into
+   silent skips. `dev/Containerfile`'s go-build stage asserts **seven**
+   binaries (`test -x /out/vmafx-ort-runner`) and the dev-mcp stage
+   smoke-runs the runner after `COPY --from=go-build`; keep both in step
+   when a `cmd/` is added or removed. `renovate.json` tracks `ORT_VERSION`
+   in `go-ci.yml` with the same regex manager as `dev/Containerfile`.
+
 ## renovate/pypi-aiohttp-vulnerability — aiohttp security floor (2026-08-31)
 
 No rebase impact: `mcp-server/vmaf-mcp/`, `docs/mcp/`, and the changelog

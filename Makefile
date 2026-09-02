@@ -45,7 +45,7 @@ BUILD_DIR := $(LIBVMAF_DIR)/build
 DEBUG_DIR := $(LIBVMAF_DIR)/debug
 
 .PHONY: default all debug build install cythonize clean distclean cythonize-deps \
-    go-build go-test rust-build rust-test setup-envtest setup-envtest-env
+    go-build go-test go-ort-runner rust-build rust-test setup-envtest setup-envtest-env
 
 default: build
 
@@ -441,6 +441,17 @@ go-test:
 	@command -v go >/dev/null || { echo "go not found — install Go ≥ 1.23 (https://go.dev/dl/)"; exit 1; }
 	go test ./...
 
+# go-ort-runner: build the ONNX Runtime subprocess that pkg/ai.Registry.Infer
+#                execs (cmd/vmafx-ort-runner, ADR-1134) to ./vmafx-ort-runner.
+#                It is a cgo binary over pkg/libvmaf, so core/build-cpu (or an
+#                installed libvmaf) must exist first; a *working* runner needs
+#                that libvmaf built with -Denable_dnn=enabled, otherwise every
+#                call exits 3. See docs/usage/vmafx-ort-runner.md.
+
+go-ort-runner:
+	@command -v go >/dev/null || { echo "go not found — install Go ≥ 1.23 (https://go.dev/dl/)"; exit 1; }
+	go build -o vmafx-ort-runner ./cmd/vmafx-ort-runner
+
 # setup-envtest: install the kubebuilder envtest control-plane binaries
 #                (etcd + kube-apiserver + kubectl) and print the export line
 #                needed to run `cmd/vmafx-operator/internal/controller` tests.
@@ -518,6 +529,7 @@ help:
 	@echo ""
 	@echo "  make go-build         — go build ./... (Go workspace, ADR-0702)"
 	@echo "  make go-test          — go test ./... (Go workspace, ADR-0702)"
+	@echo "  make go-ort-runner    — build ./vmafx-ort-runner, the ONNX subprocess behind pkg/ai (ADR-1134)"
 	@echo "  make rust-build       — cargo check --all (Rust workspace, ADR-0702)"
 	@echo "  make rust-test        — cargo test --all (Rust workspace, ADR-0702)"
 	@echo "  make setup-envtest    — install kubebuilder envtest binaries for vmafx-operator suite"

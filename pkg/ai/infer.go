@@ -28,6 +28,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 	"os"
@@ -96,13 +97,16 @@ func (r *Registry) ModelPath(modelName string) (string, error) {
 // session, which avoids CGO build-time coupling on libtensorrt /
 // libonnxruntime at the Go layer.
 //
-// NOTE: vmafx-ort-runner is NOT built or installed by this repository. There is
-// no cmd/vmafx-ort-runner target and nothing under dev/, docker/, .github/ or
-// the Makefile produces it, so on every currently-buildable configuration this
-// returns ErrORTRunnerNotFound and callers take their fallback path. An earlier
-// version of this comment claimed the binary was "bundled in the container
-// image"; it is not, and that claim made the whole --model surface look
-// functional. Supplying the runner is tracked as its own piece of work.
+// The runner is built from this repository: cmd/vmafx-ort-runner is a cgo
+// shim over pkg/libvmaf's ONNX session API, produced by `go build ./cmd/...`,
+// `make go-ort-runner`, the dev container's go-build stage and the Go CI job
+// (ADR-1134). Its wire format is exactly what this function sends —
+// `--model <path> --inputs '<JSON array>'` in, one JSON array of numbers on
+// stdout out — and the runner binds the array as a [1, N] float32 row vector
+// on the graph's single input. Two things still make a fallback necessary:
+// the runner is absent from PATH (ErrORTRunnerNotFound), or it is present but
+// its libvmaf was built without ONNX Runtime (exit status 3, reported with
+// the runner's stderr in the error).
 //
 // ctx bounds and cancels the subprocess: a cancelled context (job aborted,
 // parent shutdown) or an elapsed deadline tears down vmafx-ort-runner via
@@ -151,6 +155,15 @@ func (r *Registry) Infer(ctx context.Context, modelName string, inputs []float64
 	if runErr != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, fmt.Errorf("ai: vmafx-ort-runner cancelled: %w (run err: %v)", ctxErr, runErr)
+		}
+		// The runner explains itself on stderr ("libvmaf was built without
+		// DNN support", "model not found", ...); cmd.Output captured it, so
+		// surface it instead of a bare "exit status N".
+		var exitErr *exec.ExitError
+		if errors.As(runErr, &exitErr) {
+			if msg := strings.TrimSpace(string(exitErr.Stderr)); msg != "" {
+				return nil, fmt.Errorf("ai: vmafx-ort-runner failed: %w: %s", runErr, msg)
+			}
 		}
 		return nil, fmt.Errorf("ai: vmafx-ort-runner failed: %w", runErr)
 	}
