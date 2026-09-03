@@ -52,8 +52,13 @@ static int test_unsetenv(const char *name)
 #include "gpu_dispatch_env.h"
 #include "gpu_dispatch_parse.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit where NULL is the canonical null pointer constant. ADR-1138. */
+
 #include "cuda/dispatch_strategy.h"
 #include "hip/dispatch_strategy.h"
+#include "sycl/dispatch_strategy.h"
 
 /* ---- gpu_dispatch_parse.h — header-only static-inline parser ---- */
 
@@ -144,7 +149,7 @@ static char *test_env_get_snapshots_first_call(void)
      * so the FIRST call wins permanently — pre-set the env before the
      * first call. */
     const char *const var = "VMAFX_TEST_DISPATCH_RUNTIME_A";
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-thread test setup (ADR-1143). */
     (void)setenv(var, "vif:graph,adm:direct", 1);
 
     const char *snap = vmaf_gpu_dispatch_env_get(var);
@@ -152,7 +157,7 @@ static char *test_env_get_snapshots_first_call(void)
     mu_assert("snapshot value matches env", strcmp(snap, "vif:graph,adm:direct") == 0);
 
     /* Now mutate the env — the snapshot is immutable per contract. */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-thread test setup (ADR-1143). */
     (void)setenv(var, "psnr:direct", 1);
     const char *snap2 = vmaf_gpu_dispatch_env_get(var);
     mu_assert("snapshot is identity-stable on repeat get", snap2 == snap);
@@ -165,9 +170,9 @@ static char *test_env_get_distinct_keys_independent(void)
 {
     const char *const var_b = "VMAFX_TEST_DISPATCH_RUNTIME_B";
     const char *const var_c = "VMAFX_TEST_DISPATCH_RUNTIME_C";
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-thread test setup (ADR-1143). */
     (void)setenv(var_b, "alpha", 1);
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-thread test setup (ADR-1143). */
     (void)unsetenv(var_c);
 
     const char *snap_b = vmaf_gpu_dispatch_env_get(var_b);
@@ -196,14 +201,14 @@ static char *test_env_get_distinct_keys_independent(void)
 
 static char *test_cuda_dispatch_default_is_direct(void)
 {
-    /* Pre-set BEFORE first call so the pthread_once snapshot picks
-     * up our value. An empty value (or absent) yields DIRECT for
-     * every feature per ADR-0181. */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup. */
+    /* Pre-set BEFORE first call so the snapshot picks up our value.
+     * With graph-capture unimplemented on CUDA, vif:graph emits a warning
+     * and falls back to DIRECT. An unmentioned feature also defaults to DIRECT. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-thread test setup (ADR-1143). */
     (void)setenv("VMAF_CUDA_DISPATCH", "vif:graph,adm:direct", 1);
 
     const VmafCudaDispatchStrategy s_vif = vmaf_cuda_select_strategy("vif", NULL, 1920, 1080);
-    mu_assert("env override routes vif → GRAPH_CAPTURE", s_vif == VMAF_CUDA_DISPATCH_GRAPH_CAPTURE);
+    mu_assert("env override vif:graph falls back to DIRECT", s_vif == VMAF_CUDA_DISPATCH_DIRECT);
 
     const VmafCudaDispatchStrategy s_adm = vmaf_cuda_select_strategy("adm", NULL, 1920, 1080);
     mu_assert("env override routes adm → DIRECT", s_adm == VMAF_CUDA_DISPATCH_DIRECT);
@@ -223,6 +228,43 @@ static char *test_cuda_dispatch_null_feature_defaults_direct(void)
      * again is safe — the once-init is no-op after first call.) */
     const VmafCudaDispatchStrategy s = vmaf_cuda_select_strategy(NULL, NULL, 1920, 1080);
     mu_assert("NULL feature falls back to DIRECT", s == VMAF_CUDA_DISPATCH_DIRECT);
+    return NULL;
+}
+
+/* ---- sycl/dispatch_strategy.cpp — host-safe selector ---- */
+static char *test_sycl_dispatch_env_overrides(void)
+{
+    /* Pre-set BEFORE first call so vmaf_gpu_dispatch_env_get snapshot
+     * captures the test configuration. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-thread test setup (ADR-1143). */
+    (void)setenv("VMAF_SYCL_DISPATCH", "vif:direct,adm:graph", 1);
+
+    /* Feature override: vif -> DIRECT */
+    const VmafSyclDispatchStrategy s_vif =
+        vmaf_sycl_select_strategy("vif", NULL, 1920, 1080, false);
+    mu_assert("env override routes vif → DIRECT", s_vif == VMAF_SYCL_DISPATCH_DIRECT);
+
+    /* Feature override: adm -> GRAPH_REPLAY */
+    const VmafSyclDispatchStrategy s_adm =
+        vmaf_sycl_select_strategy("adm", NULL, 1920, 1080, false);
+    mu_assert("env override routes adm → GRAPH_REPLAY", s_adm == VMAF_SYCL_DISPATCH_GRAPH_REPLAY);
+
+    /* Unmentioned feature at 1080p (>= 720p) defaults to GRAPH_REPLAY */
+    const VmafSyclDispatchStrategy s_psnr_1080p =
+        vmaf_sycl_select_strategy("psnr", NULL, 1920, 1080, false);
+    mu_assert("unmentioned 1080p feature defaults to GRAPH_REPLAY",
+              s_psnr_1080p == VMAF_SYCL_DISPATCH_GRAPH_REPLAY);
+
+    /* Unmentioned feature at small resolution (< 720p) defaults to DIRECT */
+    const VmafSyclDispatchStrategy s_psnr_small =
+        vmaf_sycl_select_strategy("psnr", NULL, 320, 240, false);
+    mu_assert("unmentioned small feature defaults to DIRECT",
+              s_psnr_small == VMAF_SYCL_DISPATCH_DIRECT);
+
+    /* Zero-copy va_import_path defaults to DIRECT even at 1080p */
+    const VmafSyclDispatchStrategy s_va = vmaf_sycl_select_strategy("psnr", NULL, 1920, 1080, true);
+    mu_assert("va_import_path defaults to DIRECT", s_va == VMAF_SYCL_DISPATCH_DIRECT);
+
     return NULL;
 }
 
@@ -266,6 +308,8 @@ static const test_fn test_table[] = {
     /* cuda/dispatch_strategy.c */
     test_cuda_dispatch_default_is_direct,
     test_cuda_dispatch_null_feature_defaults_direct,
+    /* sycl/dispatch_strategy.cpp */
+    test_sycl_dispatch_env_overrides,
     /* hip/dispatch_strategy.c */
     test_hip_dispatch_supports_null_and_unknown,
 };
@@ -279,3 +323,5 @@ char *run_tests(void)
     }
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

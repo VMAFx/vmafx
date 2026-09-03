@@ -6,10 +6,11 @@
  *  and ADR-0181.
  */
 #include "dispatch_strategy.h"
+#include "../gpu_dispatch_env.h"
 #include "../gpu_dispatch_parse.h"
 
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdio>
+#include <cstdlib>
 
 #include "../log.h"
 
@@ -36,15 +37,15 @@ VmafSyclDispatchStrategy vmaf_sycl_select_strategy(const char *feature_name,
                                                    bool va_import_path)
 {
     /* Per-feature env override has highest precedence. */
-    const char *env_disp = getenv("VMAF_SYCL_DISPATCH");
+    const char *env_disp = vmaf_gpu_dispatch_env_get("VMAF_SYCL_DISPATCH");
     int idx = static_cast<int>(VMAF_SYCL_DISPATCH_DIRECT);
     if (vmaf_gpu_dispatch_parse_env(env_disp, feature_name, k_sycl_strategy_names, &idx))
         return static_cast<VmafSyclDispatchStrategy>(idx);
 
     /* Legacy global env knobs. USE wins over NO when both are set
      * (matches the existing libvmaf/src/sycl/common.cpp semantics). */
-    const char *env_use_graph = getenv("VMAF_SYCL_USE_GRAPH");
-    const char *env_no_graph = getenv("VMAF_SYCL_NO_GRAPH");
+    const char *env_use_graph = vmaf_gpu_dispatch_env_get("VMAF_SYCL_USE_GRAPH");
+    const char *env_no_graph = vmaf_gpu_dispatch_env_get("VMAF_SYCL_NO_GRAPH");
     if (env_use_graph && env_use_graph[0] == '1')
         return VMAF_SYCL_DISPATCH_GRAPH_REPLAY;
     if (env_no_graph) {

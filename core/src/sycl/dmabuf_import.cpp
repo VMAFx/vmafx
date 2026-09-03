@@ -696,6 +696,7 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
 
 extern "C" {
 #include "dmabuf_import.h"
+#include "log.h"
 }
 
 extern "C" int vmaf_sycl_dmabuf_import(VmafSyclState *state, int fd, size_t size, void **ptr)
@@ -704,6 +705,9 @@ extern "C" int vmaf_sycl_dmabuf_import(VmafSyclState *state, int fd, size_t size
     (void)fd;
     (void)size;
     (void)ptr;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "libvmaf: SYCL DMA-BUF import is not supported on Windows "
+             "(DMA-BUF is a Linux kernel primitive; Windows zero-copy requires DXGI NT handles)\n");
     return -ENOSYS;
 }
 
@@ -724,6 +728,9 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
     (void)w;
     (void)h;
     (void)bpc;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "libvmaf: SYCL VA surface import is not supported on Windows "
+             "(VA-API is a Linux primitive; Windows zero-copy requires DXGI NT handles)\n");
     return -ENOSYS;
 }
 

@@ -4,13 +4,12 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 47,
-  "total_warnings": 1650,
-  "total_nolint_uncited": 5,
+  "total_warnings": 1598,
+  "total_nolint_uncited": 3,
   "warnings": {
     "core/src/cuda/common.c": 65,
     "core/src/cuda/common.h": 3,
     "core/src/cuda/cuda_helper.cuh": 2,
-    "core/src/cuda/dispatch_strategy.c": 2,
     "core/src/cuda/drain_batch.c": 11,
     "core/src/cuda/kernel_template.h": 15,
     "core/src/cuda/picture_cuda.c": 40,
@@ -26,7 +25,6 @@
     "core/src/feature/cuda/integer_adm/adm_cm.cu": 174,
     "core/src/feature/cuda/integer_adm/adm_csf.cu": 38,
     "core/src/feature/cuda/integer_adm/adm_csf_den.cu": 25,
-    "core/src/feature/cuda/integer_adm/adm_decouple.cu": 50,
     "core/src/feature/cuda/integer_adm/adm_decouple_inline.cuh": 20,
     "core/src/feature/cuda/integer_adm/adm_dwt2.cu": 14,
     "core/src/feature/cuda/integer_adm_cuda.c": 136,
@@ -62,7 +60,6 @@
     "core/src/feature/cuda/ssimulacra2_cuda.c": 50
   },
   "nolint_uncited": {
-    "core/src/cuda/dispatch_strategy.c": 2,
     "core/src/feature/cuda/integer_adm_cuda.c": 1,
     "core/src/feature/cuda/integer_vif_cuda.c": 1,
     "core/src/feature/cuda/ssimulacra2_cuda.c": 1

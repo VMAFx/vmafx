@@ -115,6 +115,30 @@ conflict keep the fork's version. Function map:
 - `get_noise_constant()` is `static`; `adm_dwt2_lo_d()` and
   `adm_buffer_copy()` (no caller in the tree, never declared in the
   header) are removed. `adm_dwt2_d()` stays: the Cython extension
+## gap/cuda-intel-bucket — CUDA and Intel SYCL backend gap closure (2026-09-02)
+
+- **Dead CUDA source cleanup**: Removed `core/src/feature/cuda/integer_adm/adm_decouple.cu`
+  (superseded by inline decoupling in `adm_csf.cu` via `adm_decouple_inline.cuh`) and
+  uncompiled/orphaned `core/src/feature/cuda/resolution_dispatch.c` / `.h`. No rebase impact
+  as these files were dead in the fork tree.
+- **Unified GPU dispatch environment wiring**: `core/src/cuda/dispatch_strategy.c` and
+  `core/src/sycl/dispatch_strategy.cpp` now route through `vmaf_gpu_dispatch_env_get` (defined
+  in `gpu_dispatch_env.cpp`). Local Windows `INIT_ONCE` / POSIX `pthread_once` and raw `getenv`
+  calls with `NOLINT(concurrency-mt-unsafe)` were removed. `gpu_dispatch_env_cpp23_lib` is linked
+  into `libvmaf_feature_static_lib` so all backends, test binaries, and shared libraries inherit
+  it without duplicate definitions.
+- **CUDA graph dispatch honest fallback**: When `VMAF_CUDA_DISPATCH=graph` is requested,
+  `vmaf_cuda_select_strategy` emits a clear warning and falls back to `VMAF_CUDA_DISPATCH_DIRECT`
+  since static graph capture is not implemented for the driver API.
+- **Python harness backend selection**: `compat/python-vmaf/__init__.py`
+  (`ExternalProgramCaller.call_vmafexec` and `call_vmafexec_multi_features`) reads
+  `VMAF_FORCE_BACKEND` (and `VMAF_BACKEND`), mapping it to `--backend <name>`.
+- **CI GPU test scoping**: `.github/workflows/tests-and-quality-gates.yml` scopes pytest with
+  `VMAF_FORCE_BACKEND` away from the 5 Netflix CPU golden assertion files (`quality_runner_test.py`,
+  `feature_extractor_test.py`, `vmafexec_test.py`, `vmafexec_feature_extractor_test.py`, `result_test.py`)
+  to prevent false failures from ULP-relaxed GPU float differences.
+- **SYCL Win32 stub logging**: `core/src/sycl/dmabuf_import.cpp` emits an informative error log
+  explaining that DMA-BUF is a Linux kernel primitive before returning `-ENOSYS` on `_WIN32`.
 
 ## gap/metal-bucket — Metal gap bucket closure & dispatch alignment (2026-09-02)
 

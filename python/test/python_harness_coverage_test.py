@@ -357,6 +357,44 @@ class ExternalProgramCallerVmafexecTest(unittest.TestCase):
         self.assertNotIn("cambi.enc_height", cmd)
         self.assertNotIn("cambi.enc_bitdepth", cmd)
 
+    def test_backend_parameter_emits_flag(self):
+        kw = self._base_kwargs()
+        kw["backend"] = "cuda"
+        cmd = self._capture(**kw)
+        self.assertIn("--backend cuda", cmd)
+
+    def test_backend_env_var_emits_flag(self):
+        kw = self._base_kwargs()
+        with mock.patch.dict(os.environ, {"VMAF_FORCE_BACKEND": "cuda"}):
+            cmd = self._capture(**kw)
+        self.assertIn("--backend cuda", cmd)
+
+    def test_backend_multi_features_options(self):
+        captured = []
+        with mock.patch("vmaf.run_process", side_effect=lambda cmd, **_: captured.append(cmd)):
+            with mock.patch("vmaf.required", side_effect=lambda p: p or "/fake/vmaf"):
+                ExternalProgramCaller.call_vmafexec_multi_features(
+                    ["psnr"],
+                    "yuv420p",
+                    "ref.yuv",
+                    "dis.yuv",
+                    320,
+                    240,
+                    "out.xml",
+                    options={"backend": "sycl"},
+                )
+        self.assertIn("--backend sycl", captured[0])
+
+    def test_backend_multi_features_env_var(self):
+        captured = []
+        with mock.patch.dict(os.environ, {"VMAF_FORCE_BACKEND": "sycl"}):
+            with mock.patch("vmaf.run_process", side_effect=lambda cmd, **_: captured.append(cmd)):
+                with mock.patch("vmaf.required", side_effect=lambda p: p or "/fake/vmaf"):
+                    ExternalProgramCaller.call_vmafexec_multi_features(
+                        ["psnr"], "yuv420p", "ref.yuv", "dis.yuv", 320, 240, "out.xml"
+                    )
+        self.assertIn("--backend sycl", captured[0])
+
 
 class MiscPureFunctionsTest(unittest.TestCase):
     """`tools/misc.py` — pure-Python helpers exercised independently of the

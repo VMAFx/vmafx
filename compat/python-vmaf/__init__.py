@@ -182,6 +182,9 @@ class ExternalProgramCaller(object):
         if options2[feature] is not None and "_close_workfile_method" in options2[feature]:
             options2["_close_workfile_method"] = options2[feature]["_close_workfile_method"]
             del options2[feature]["_close_workfile_method"]
+        if options2[feature] is not None and "backend" in options2[feature]:
+            options2["backend"] = options2[feature]["backend"]
+            del options2[feature]["backend"]
         return ExternalProgramCaller.call_vmafexec_multi_features(
             [feature],
             yuv_type,
@@ -226,6 +229,14 @@ class ExternalProgramCaller(object):
             "--xml",
             "--no_prediction",
         ]
+
+        backend = None
+        if options is not None and "backend" in options:
+            backend = options["backend"]
+        if not backend:
+            backend = os.environ.get("VMAF_FORCE_BACKEND") or os.environ.get("VMAF_BACKEND")
+        if backend:
+            cmd += ["--backend", str(backend)]
 
         if options is not None and "disable_avx" in options:
             assert isinstance(options["disable_avx"], bool)
@@ -314,6 +325,7 @@ class ExternalProgramCaller(object):
         enc_width=None,
         enc_height=None,
         enc_bitdepth=None,
+        backend=None,
     ):
 
         if exe is None:
@@ -393,6 +405,11 @@ class ExternalProgramCaller(object):
             # 0xFFFFFFFF disables all CPU ISA extensions (all mask bits set).
             # parse_unsigned() rejects negative strings (ADR-1088).
             vmafexec_cmd += " --cpumask 4294967295"
+
+        if backend is None:
+            backend = os.environ.get("VMAF_FORCE_BACKEND") or os.environ.get("VMAF_BACKEND")
+        if backend:
+            vmafexec_cmd += f" --backend {backend}"
 
         if logger:
             logger.info(vmafexec_cmd)

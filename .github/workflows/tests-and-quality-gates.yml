@@ -834,12 +834,26 @@ jobs:
         run: |
           export PATH="${{ github.workspace }}/core/build-coverage-gpu/tools:$PATH"
           python3 -m pip install --user -r python/requirements.txt pytest pytest-timeout
+          # Scope GPU test runs with VMAF_FORCE_BACKEND away from the Netflix golden assertions
+          # (ADR-0024 / AGENTS.md §8) to avoid failing on ULP-relaxed GPU float differences.
           VMAF_FORCE_BACKEND=cuda python3 -m pytest python/test/ -v \
+            -c python/tox.ini \
             -m "not slow" --tb=short --ignore=python/test/resource \
-            --timeout=300 --timeout-method=signal || true
+            --ignore=python/test/quality_runner_test.py \
+            --ignore=python/test/feature_extractor_test.py \
+            --ignore=python/test/vmafexec_test.py \
+            --ignore=python/test/vmafexec_feature_extractor_test.py \
+            --ignore=python/test/result_test.py \
+            --timeout=300 --timeout-method=signal
           VMAF_FORCE_BACKEND=sycl python3 -m pytest python/test/ -v \
+            -c python/tox.ini \
             -m "not slow" --tb=short --ignore=python/test/resource \
-            --timeout=300 --timeout-method=signal || true
+            --ignore=python/test/quality_runner_test.py \
+            --ignore=python/test/feature_extractor_test.py \
+            --ignore=python/test/vmafexec_test.py \
+            --ignore=python/test/vmafexec_feature_extractor_test.py \
+            --ignore=python/test/result_test.py \
+            --timeout=300 --timeout-method=signal
       - name: Gather coverage report (gcovr)
         working-directory: core
         run: |

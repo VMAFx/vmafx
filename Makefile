@@ -282,7 +282,7 @@ sbom:
 # for VMAF numerical correctness.
 test-netflix-golden: build
 	@echo "=== Netflix CPU golden-data gate (D24) ==="
-	PYTHONPATH=$(CURDIR)/python python3 -m pytest \
+	VMAF_FORCE_BACKEND=cpu PYTHONPATH=$(CURDIR)/python python3 -m pytest \
 	    python/test/quality_runner_test.py \
 	    python/test/feature_extractor_test.py \
 	    python/test/vmafexec_test.py \
