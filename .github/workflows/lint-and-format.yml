@@ -503,8 +503,17 @@ jobs:
           # shellcheck disable=SC1091
           source /opt/intel/oneapi/setvars.sh --force
           set -u
+          # -Db_lto=false: core/meson.build sets b_lto=true as a project
+          # default_option, so the link step runs LTO through the stock
+          # ubuntu-24.04 binutils gold plugin (LLVM 17.0.6). That plugin
+          # cannot read bitcode emitted by oneAPI DPC++, and every test
+          # binary dies with "LLVM gold plugin has failed to create LTO
+          # module: Unknown attribute kind (102)". The SYCL legs of
+          # libvmaf-build-matrix.yml disable LTO for exactly this reason.
+          # This job only needs codegen outputs and compile_commands.json,
+          # so it has nothing to gain from LTO anyway.
           CC=icx CXX=icpx meson setup build-sycl core \
-            -Denable_sycl=true -Denable_cuda=false
+            -Denable_sycl=true -Denable_cuda=false -Db_lto=false
           # Build first so codegen outputs (vcs_version.h, model JSONs → .c)
           # exist on disk before clang-tidy parses TUs.
           meson compile -C build-sycl
