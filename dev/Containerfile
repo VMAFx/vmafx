@@ -960,7 +960,7 @@ WORKDIR /build/vmaf
 # Stage 4 — Python environment
 # ---------------------------------------------------------------------------
 # =============================================================================
-# Go builder — compiles the six vmafx binaries (ADR-0702 Phase 4).
+# Go builder — compiles the seven vmafx binaries (ADR-0702 Phase 4).
 #
 # Until now the image shipped ZERO Go binaries and had no Go toolchain at all,
 # so `vmafx-server`, `vmafx-mcp`, `vmafx-tune`, `vmafx-controller`, `vmafx-node`
@@ -971,9 +971,11 @@ WORKDIR /build/vmaf
 # removed from the image before the Go replacements are in it.
 #
 # This stage derives from libvmaf-build rather than a bare `golang` image
-# because four of the six binaries link libvmaf through cgo (pkg/libvmaf):
+# because five of the seven binaries link libvmaf through cgo (pkg/libvmaf):
 # vmafx-server, vmafx-mcp, vmafx-controller and vmafx-node all fail to build
-# under CGO_ENABLED=0 with "undefined: libvmaf.Scorer". Only vmafx-tune and
+# under CGO_ENABLED=0 with "undefined: libvmaf.Scorer", and vmafx-ort-runner
+# (ADR-1134) is a cgo shim over libvmaf's ONNX session API that the pure-Go
+# vmafx-tune execs for its `--model` predictors. Only vmafx-tune and
 # vmafx-operator are pure Go. So the toolchain is copied INTO the stage that
 # already has libvmaf.so and its headers, rather than the other way round.
 # =============================================================================
@@ -1001,7 +1003,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build,sharing=locked,id=gobuild-de
     --mount=type=cache,target=/root/go/pkg/mod,sharing=locked,id=gomod-dev-mcp \
     go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/... \
     && ls -1 /out/ \
-    && test "$(ls -1 /out/ | wc -l)" -eq 6
+    && test "$(ls -1 /out/ | wc -l)" -eq 7 \
+    && test -x /out/vmafx-ort-runner
 
 FROM libvmaf-build AS dev-mcp
 
@@ -1028,9 +1031,18 @@ RUN python3.14 -m venv /opt/vmaf-venv \
     && /opt/vmaf-venv/bin/pip install --no-cache-dir 'torchvision>=0.27.0,<0.28.0' \
     && /opt/vmaf-venv/bin/pip install --no-cache-dir -e '/build/vmaf/tools/vmaf-tune[fast]'
 
-# The six Go binaries from the go-build stage (ADR-0702), on PATH beside the C
-# `vmaf` CLI at /usr/local/bin/vmaf.
+# The seven Go binaries from the go-build stage (ADR-0702), on PATH beside the
+# C `vmaf` CLI at /usr/local/bin/vmaf.
 COPY --from=go-build /out/ /usr/local/bin/
+
+# ADR-1134: vmafx-ort-runner must run a real forward pass in this image. Its
+# libvmaf links ONNX Runtime (-Denable_dnn=enabled above), so a runner that
+# only reports "DNN unavailable" means go-build linked the wrong libvmaf. The
+# expected value is onnxruntime's CPU-EP answer for this row — see
+# cmd/vmafx-ort-runner/main_test.go (predictorReference).
+RUN vmafx-ort-runner --model /build/vmaf/model/predictor_libx264.onnx \
+        --inputs '[51,1,1,1,1,0,0,0,0,0,1,1,16,16]' \
+    | grep -Eq '^\[66\.1[0-9]+\]$'
 
 ENV PATH=/opt/vmaf-venv/bin:${PATH}
 ENV PYTHONPATH=/build/vmaf/python:${PYTHONPATH}

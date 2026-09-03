@@ -389,16 +389,19 @@ forward pass is missing, because:
   tensor as a JSON array in **argv**. That works for the per-shot predictor's
   14 floats; it cannot carry saliency's 3×H×W input, which is 6.2 million
   floats (about 75 MB of JSON) for a 1080p frame.
-- `vmafx-ort-runner` is not built from this repository; nothing under `cmd/`
-  produces it.
+- The runner itself is built here (`cmd/vmafx-ort-runner`, ADR-1134 — see
+  [vmafx-ort-runner.md](vmafx-ort-runner.md)) and serves the predictor path;
+  it has no transport for tensors that do not fit in argv.
 
 Either of two changes unblocks it: a cgo ONNX Runtime binding (an ADR-level
 decision, since the binary currently builds without cgo), or a runner protocol
-that streams tensors over stdin plus a `cmd/vmafx-ort-runner` target here.
+that streams tensors over stdin — a protocol extension of the in-tree runner
+and `pkg/ai`, not a new dependency.
 
 The per-shot **predictor** ONNX (`predict --model`) does route through
 `pkg/ai`, because its 14-float input fits argv comfortably; it degrades to the
-analytical curve when the runner is absent.
+analytical curve when the runner is absent from `PATH` or linked against a
+libvmaf built without ONNX Runtime (exit 3), and the log says which.
 
 ### TPE sampler trajectory
 
@@ -475,7 +478,9 @@ diagnostic naming both ports.
 Any one of these unblocks it:
 
 1. A `vmafx-ort-runner` protocol that accepts named input tensors, plus a
-   matching `pkg/ai.Registry.InferNamed`.
+   matching `pkg/ai.Registry.InferNamed`. The runner is in-tree since
+   ADR-1134 ([vmafx-ort-runner.md](vmafx-ort-runner.md)), so this is a
+   protocol extension rather than an external dependency.
 2. Promoting `pkg/ai.Registry.InferDirect` onto a CGO ONNX Runtime binding
    (e.g. `github.com/yalue/onnxruntime_go`), which `pkg/ai` defers to Stage 2
    precisely because it couples the build to `libonnxruntime`.
@@ -1409,14 +1414,17 @@ session cannot be built the encode proceeds without an ROI map; the report's
 `saliency_aware` field then reads `false`, reflecting what was actually done
 rather than what was asked for.
 
-`--model` (on `predict`, `sidecar`, `auto`) is accepted and resolves the model,
-but inference is routed through a `vmafx-ort-runner` subprocess this repository
-does not yet build. When the runner is absent from `PATH` the predictor falls
-back to the analytical curve **silently** — the same fallback the Python takes
-without `onnxruntime`; a warning is logged only when the runner is present and
-inference fails. On `sidecar` an unresolvable model name is a usage error (exit
-`2`); see the [ONNX note](#onnx-predictor-models) for how the two binaries resolve
-the flag differently.
+`--model` (on `predict`, `sidecar`, `auto`) routes inference through the
+`vmafx-ort-runner` subprocess ([vmafx-ort-runner.md](vmafx-ort-runner.md)),
+which the dev container and the Go CI job build from `cmd/vmafx-ort-runner`
+(ADR-1134). When the runner is absent from `PATH`, or present but linked
+against a libvmaf built without ONNX Runtime (exit 3), the predictor logs a
+warning carrying the runner's stderr and falls back to the analytical curve —
+the same fallback the Python takes without `onnxruntime`, but reported rather
+than silent.
+On `sidecar` an unresolvable model name is a usage error (exit `2`); see the
+[ONNX note](#onnx-predictor-models) for how the two binaries resolve the flag
+differently.
 
 `recommend`'s encode-driven path writes the same schema-v3 corpus JSONL the
 `corpus` subcommand does, and every key is present. Five corpus features are

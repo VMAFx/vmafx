@@ -186,6 +186,12 @@ func (s *DNNSession) Close() {
 // Predict binds x as a [rows, cols] float32 tensor on the graph input
 // named inputName and returns the single output tensor flattened.
 //
+// An empty inputName binds positionally to the graph's first input
+// instead (dnn.h: a NULL descriptor name means "bind at the descriptor's
+// array index"). That is the form a caller that does not know the graph's
+// input name needs — cmd/vmafx-ort-runner, which serves every predictor
+// model behind pkg/ai, uses it (ADR-1134).
+//
 // It implements modeleval.Predictor. One output value per row is the
 // expected shape for a regressor; a graph that produces a different
 // element count still returns successfully here so the caller can raise
@@ -209,8 +215,14 @@ func (s *DNNSession) run(inputName string, x []float32, rows, cols int) ([]float
 		return nil, ErrDNNSessionClosed
 	}
 
-	cName := C.CString(inputName)
-	defer C.free(unsafe.Pointer(cName))
+	// A nil name selects positional binding (see Predict). C.CString("")
+	// would instead bind to a graph input literally named "", which no
+	// exporter emits, so the empty string must not reach the C side.
+	var cName *C.char
+	if inputName != "" {
+		cName = C.CString(inputName)
+		defer C.free(unsafe.Pointer(cName))
+	}
 
 	shape := []C.int64_t{C.int64_t(rows), C.int64_t(cols)}
 	out := make([]float32, rows)

@@ -20,6 +20,12 @@
 #include "ort_backend.h"
 #include "ort_backend_internal.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #if defined(VMAF_HAVE_DNN) && VMAF_HAVE_DNN
 
 #include <onnxruntime_c_api.h>
@@ -489,7 +495,8 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
     }
     ORT_TRY(sess->api->GetAllocatorWithDefaultOptions(&sess->alloc));
 
-    size_t ni = 0, no = 0;
+    size_t ni = 0;
+    size_t no = 0;
     ORT_TRY(sess->api->SessionGetInputCount(sess->session, &ni));
     ORT_TRY(sess->api->SessionGetOutputCount(sess->session, &no));
     if (ni == 0 || no == 0) {
@@ -859,6 +866,18 @@ int vmaf_ort_input_shape(VmafOrtSession *sess, int64_t *out_shape, size_t max_ra
     return 0;
 }
 
+static void free_io_names(const OrtApi *api, OrtAllocator *alloc, char **names, size_t n)
+{
+    if (!alloc || !names) {
+        return;
+    }
+    for (size_t i = 0; i < n; ++i) {
+        if (names[i]) {
+            ort_discard_status(api, api->AllocatorFree(alloc, names[i]));
+        }
+    }
+}
+
 void vmaf_ort_close(VmafOrtSession *sess)
 {
     if (!sess)
@@ -866,32 +885,21 @@ void vmaf_ort_close(VmafOrtSession *sess)
     assert(sess != NULL);
     if (sess->api) {
         assert(sess->api != NULL);
-        if (sess->cpu_mem_info)
+        if (sess->cpu_mem_info) {
             sess->api->ReleaseMemoryInfo(sess->cpu_mem_info);
-        if (sess->alloc && sess->input_names) {
-            assert(sess->n_inputs > 0u);
-            for (size_t i = 0; i < sess->n_inputs; ++i) {
-                if (sess->input_names[i])
-                    ort_discard_status(sess->api,
-                                       sess->api->AllocatorFree(sess->alloc, sess->input_names[i]));
-            }
         }
-        if (sess->alloc && sess->output_names) {
-            assert(sess->n_outputs > 0u);
-            for (size_t i = 0; i < sess->n_outputs; ++i) {
-                if (sess->output_names[i])
-                    ort_discard_status(
-                        sess->api, sess->api->AllocatorFree(sess->alloc, sess->output_names[i]));
-            }
-        }
-        if (sess->session)
+        free_io_names(sess->api, sess->alloc, sess->input_names, sess->n_inputs);
+        free_io_names(sess->api, sess->alloc, sess->output_names, sess->n_outputs);
+        if (sess->session) {
             sess->api->ReleaseSession(sess->session);
-        if (sess->opts)
+        }
+        if (sess->opts) {
             sess->api->ReleaseSessionOptions(sess->opts);
+        }
         /* g_ort_env is a process-wide singleton; never released here. */
     }
-    free(sess->input_names);
-    free(sess->output_names);
+    free((void *)sess->input_names);
+    free((void *)sess->output_names);
     free(sess->input_elem_types);
     free(sess->output_elem_types);
     free(sess);
@@ -967,11 +975,11 @@ int vmaf_ort_run(VmafOrtSession *sess, const VmafOrtTensorIn *inputs, size_t n_i
     OrtValue *in_vals[VMAF_ORT_MAX_IO];
     OrtValue *out_vals[VMAF_ORT_MAX_IO];
     void *in_scratch[VMAF_ORT_MAX_IO];
-    memset(in_names, 0, n_inputs * sizeof(in_names[0]));
-    memset(out_names, 0, n_outputs * sizeof(out_names[0]));
-    memset(in_vals, 0, n_inputs * sizeof(in_vals[0]));
-    memset(out_vals, 0, n_outputs * sizeof(out_vals[0]));
-    memset(in_scratch, 0, n_inputs * sizeof(in_scratch[0]));
+    memset((void *)in_names, 0, n_inputs * sizeof(in_names[0]));
+    memset((void *)out_names, 0, n_outputs * sizeof(out_names[0]));
+    memset((void *)in_vals, 0, n_inputs * sizeof(in_vals[0]));
+    memset((void *)out_vals, 0, n_outputs * sizeof(out_vals[0]));
+    memset((void *)in_scratch, 0, n_inputs * sizeof(in_scratch[0]));
 
     int rc = 0;
     for (size_t i = 0; i < n_inputs; ++i) {
@@ -1201,8 +1209,8 @@ const char *vmaf_ort_internal_resolve_name(char **table, size_t count, const cha
     return NULL;
 }
 
-/* NOLINTNEXTLINE(readability-non-const-parameter)
- * Internal stub signature must match the real-ORT test seam (ADR-0112). */
+/* Internal stub signature must match the real-ORT test seam (ADR-0112). */
+/* NOLINTNEXTLINE(readability-non-const-parameter): ADR-0112 */
 int vmaf_ort_internal_convert_output_elems(VmafOrtElemType elem_type, const void *raw, float *dst,
                                            size_t count)
 {
@@ -1239,3 +1247,5 @@ const char *const *vmaf_ort_internal_auto_ep_order(int is_apple)
 {
     return is_apple ? s_auto_ep_order_apple : s_auto_ep_order_default;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

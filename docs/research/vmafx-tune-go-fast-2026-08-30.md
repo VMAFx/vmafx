@@ -270,6 +270,14 @@ it. Everything up to that point — backend selection, probe encode, decode,
 libvmaf score, canonical-6 extraction, TPE, verify pass, payload, exit codes —
 is ported and exercised.
 
+> **Addendum (2026-09-02, ADR-1134).** The runner's source is now in this
+> repository (`cmd/vmafx-ort-runner`, a cgo shim over `pkg/libvmaf`'s DNN
+> session API), so the "Preferred" row above is no longer blocked on an
+> external binary — it is a protocol extension of the in-tree runner plus a
+> `Registry.InferNamed`. Nothing about the two-port blocker itself changed:
+> the runner binds one array to a single input, and libvmaf rejects
+> `fr_regressor_v2`'s two-input graph with an arity error (exit 1).
+
 ## 5. Byte-compatibility of the payload
 
 The Python CLI emits `json.dumps(result, indent=2, sort_keys=True)`. Two things

@@ -27,9 +27,9 @@ import (
 //     VMAF predictor's 14 floats; it cannot carry saliency's 3xHxW input,
 //     which is 6.2 million floats (about 75 MB of JSON) for a 1080p frame,
 //     far past any platform's ARG_MAX.
-//   - vmafx-ort-runner is also not built from this repository: nothing under
-//     cmd/ produces it, so even the small-tensor path depends on a binary
-//     supplied by the container image.
+//   - The runner itself is in-tree (cmd/vmafx-ort-runner, ADR-1134) and does
+//     serve the small-tensor predictor path; what it lacks is a transport
+//     for tensors that do not fit in argv.
 //
 // Two things would unblock it, either alone:
 //
@@ -38,8 +38,9 @@ import (
 //     makes cmd/vmafx-tune a cgo build — an ADR-level decision, since the
 //     binary currently builds without cgo.
 //  2. A vmafx-ort-runner protocol that streams tensors over stdin or a file
-//     handle instead of argv, plus a cmd/vmafx-ort-runner target in this
-//     repository.
+//     handle instead of argv. The runner is in this repository, so that is
+//     a protocol extension of cmd/vmafx-ort-runner plus pkg/ai, not a new
+//     dependency.
 //
 // Until then the CLI degrades to a plain encode with a warning, which is
 // exactly what the Python does when onnxruntime is not installed.

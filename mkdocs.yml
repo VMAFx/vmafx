@@ -170,6 +170,7 @@ nav:
       - ROI score output: usage/vmaf-roi-score.md
       - Storage / rclone: usage/storage.md
       - vmafx CLI: usage/vmafx-cli.md
+      - vmafx-ort-runner: usage/vmafx-ort-runner.md
       - vmaf-train CLI: usage/vmaf-train.md
       - VPL pipeline: usage/vmaf-vpl.md
       - External resources: usage/external-resources.md

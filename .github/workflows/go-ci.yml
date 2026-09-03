@@ -6,11 +6,13 @@ on:
       - "**/*.go"
       - "go.mod"
       - "go.sum"
+      - ".github/workflows/go-ci.yml"
   pull_request:
     paths:
       - "**/*.go"
       - "go.mod"
       - "go.sum"
+      - ".github/workflows/go-ci.yml"
 
 concurrency:
   group: go-ci-${{ github.workflow }}-${{ github.ref }}
@@ -53,7 +55,33 @@ jobs:
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --quiet meson
 
-      - name: Build libvmaf (CPU only) for cgo link
+      # cmd/vmafx-ort-runner (ADR-1134) is a cgo shim over libvmaf's ONNX
+      # session API, so this job builds libvmaf WITH ONNX Runtime: the
+      # runner's smoke test and the real-ORT branches of pkg/libvmaf's
+      # dnn_test.go then run for real instead of only the -ENOSYS stub.
+      # Same tarball + pkg-config recipe as dev/Containerfile (ORT_VERSION
+      # is tracked by renovate in both places).
+      - name: Install ONNX Runtime (CPU)
+        env:
+          ORT_VERSION: "1.29.0"
+        run: |
+          curl -fsSL \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
+            | sudo tar -xz -C /opt/
+          sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
+          # The tarball ships no pkg-config file; meson's enable_dnn needs one.
+          sudo install -d /usr/local/lib/pkgconfig
+          # prefix/exec_prefix/libdir/includedir are pkg-config template
+          # variables that must reach the .pc file literally, so their dollars
+          # are escaped inside a double-quoted format (same recipe as
+          # dev/Containerfile) rather than hidden in single quotes.
+          printf "prefix=/opt/onnxruntime\nexec_prefix=\${prefix}\nlibdir=\${exec_prefix}/lib\nincludedir=\${prefix}/include\n\nName: libonnxruntime\nDescription: ONNX Runtime C API\nVersion: %s\nLibs: -L\${libdir} -lonnxruntime\nCflags: -I\${includedir}\n" "${ORT_VERSION}" \
+            | sudo tee /usr/local/lib/pkgconfig/libonnxruntime.pc >/dev/null
+          echo "/opt/onnxruntime/lib" | sudo tee /etc/ld.so.conf.d/onnxruntime.conf
+          sudo ldconfig
+          pkg-config --modversion libonnxruntime
+
+      - name: Build libvmaf (CPU + ONNX Runtime) for cgo link
         # Post-ADR-0700: meson.build lives at core/meson.build, so the
         # source dir must be passed explicitly (or run from core/). Pre-rename
         # `meson setup core/build-cpu` worked because root had meson.build.
@@ -63,11 +91,33 @@ jobs:
             -Denable_sycl=false \
             -Denable_hip=false \
             -Denable_metal=disabled \
-            -Denable_avx512=false
+            -Denable_avx512=false \
+            -Denable_dnn=enabled
           ninja -C core/build-cpu
 
       - name: go vet
         run: go vet ./...
+
+      # The runner is what pkg/ai.Registry.Infer execs; putting it on PATH
+      # lets pkg/ai's TestInfer_RealRunner drive the real subprocess path
+      # instead of skipping. Built once here, reused by the smoke below.
+      - name: Build vmafx-ort-runner and put it on PATH
+        run: |
+          install -d "${RUNNER_TEMP}/vmafx-bin"
+          go build -o "${RUNNER_TEMP}/vmafx-bin/vmafx-ort-runner" ./cmd/vmafx-ort-runner
+          echo "${RUNNER_TEMP}/vmafx-bin" >> "${GITHUB_PATH}"
+
+      - name: Smoke-test vmafx-ort-runner against the shipped predictor
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-cpu/src
+        run: |
+          # Expected value is onnxruntime 1.29.0's CPU-EP answer for this row;
+          # see cmd/vmafx-ort-runner/main_test.go (predictorReference) for
+          # how it was captured and why the row is deliberately unrealistic.
+          out="$(vmafx-ort-runner --model model/predictor_libx264.onnx \
+                   --inputs '[51,1,1,1,1,0,0,0,0,0,1,1,16,16]')"
+          echo "vmafx-ort-runner: ${out}"
+          python3 -c 'import json, sys; v = json.loads(sys.argv[1]); assert len(v) == 1 and abs(v[0] - 66.13961791992188) < 1e-2, v' "${out}"
 
       - name: Install gosec
         # v2.21.4 pulls x/tools@v0.25.0 which fails to compile under Go 1.26

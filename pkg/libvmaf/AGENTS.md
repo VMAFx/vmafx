@@ -94,3 +94,13 @@ Go wrapper around the libvmaf C ABI. Provides three scoring surfaces:
     is a syntactically invalid model option and makes every file-backed server
     score fail before libvmaf runs. Keep the argv regression test when changing
     the scorer or CLI parser.
+
+11. **An empty input name means positional binding** (`dnn.go::run`,
+    ADR-1134): `Predict(ctx, "", x, rows, cols)` passes a NULL
+    `VmafDnnInput.name`, which `dnn.h` binds at the descriptor's index.
+    `cmd/vmafx-ort-runner` relies on this to serve graphs whose input name it
+    does not know (every shipped `model/predictor_*.onnx` names its input
+    `input`; `modeleval` passes `features`). An unconditional
+    `C.CString(inputName)` would bind to a graph input literally named `""`
+    and fail every runner call. Pinned by `TestDNNSessionPositionalBinding`,
+    which only runs against an ORT-enabled libvmaf — the Go CI job builds one.

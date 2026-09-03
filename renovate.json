@@ -321,15 +321,17 @@
     },
     {
       "customType": "regex",
-      "description": "ONNX Runtime C++ library version in dev/Containerfile. Installed via tarball from GitHub releases (not apt). Tracks github.com/microsoft/onnxruntime releases. See ADR-0605.",
+      "description": "ONNX Runtime C++ library version in dev/Containerfile and the Go CI job (ADR-1134). Installed via tarball from GitHub releases (not apt). Tracks github.com/microsoft/onnxruntime releases. See ADR-0605.",
       "managerFilePatterns": [
         "//^dev/Containerfile$//",
         "//^docker/Dockerfile\\.node$//",
         "//^Dockerfile$//",
-        "//^Dockerfile\\.ffmpeg$//"
+        "//^Dockerfile\\.ffmpeg$//",
+        "//^\\.github/workflows/go-ci\\.yml$//"
       ],
       "matchStrings": [
-        "ARG ORT_VERSION=(?<currentValue>[0-9.]+)"
+        "ARG ORT_VERSION=(?<currentValue>[0-9.]+)",
+        "ORT_VERSION: \"(?<currentValue>[0-9.]+)\""
       ],
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "microsoft/onnxruntime"
