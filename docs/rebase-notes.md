@@ -126,6 +126,10 @@ no rebase impact: edits fork documentation (`README.md`, `CHANGELOG.md`, `change
   `/V:OFF`, so without it only the last executable's exit code reaches the step result).
 - `scripts/ci/check-vcs-version-not-bare-sha.sh`, `changelog.d/fixed/*`: wholly fork-added.
 
+## feat/mcp-score-gaps — MCP scoring surface completeness (epic #1240) (2026-09-03)
+
+no rebase impact: MCP servers (`cmd/vmafx-mcp` and `mcp-server/vmaf-mcp`) and `docs/mcp/` are wholly fork-added surfaces with no upstream Netflix/vmaf counterpart.
+
 ## gap/hip-bucket-v2 — AMD ROCm HIP backend gap closure (ADR-1154) (2026-09-03)
 
 - `core/src/feature/hip/` and `core/src/hip/`: all touched files (`ciede_hip.c`, `float_adm_hip.c`,

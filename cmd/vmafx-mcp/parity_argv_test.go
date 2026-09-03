@@ -190,6 +190,97 @@ except Exception:
 				"feature":   []any{"psnr"},
 			},
 		},
+		{
+			name: "output_format_csv",
+			args: map[string]any{
+				"ref":        "/data/ref.yuv",
+				"dis":        "/data/dis.yuv",
+				"width":      float64(1920),
+				"height":     float64(1080),
+				"pixfmt":     "420",
+				"bitdepth":   float64(8),
+				"model":      "version=vmaf_v0.6.1",
+				"backend":    "auto",
+				"precision":  "legacy",
+				"output_fmt": "csv",
+			},
+		},
+		{
+			name: "output_format_sub",
+			args: map[string]any{
+				"ref":        "/data/ref.yuv",
+				"dis":        "/data/dis.yuv",
+				"width":      float64(1920),
+				"height":     float64(1080),
+				"pixfmt":     "420",
+				"bitdepth":   float64(8),
+				"model":      "version=vmaf_v0.6.1",
+				"backend":    "auto",
+				"precision":  "legacy",
+				"output_fmt": "sub",
+			},
+		},
+		{
+			name: "output_format_xml",
+			args: map[string]any{
+				"ref":        "/data/ref.yuv",
+				"dis":        "/data/dis.yuv",
+				"width":      float64(1920),
+				"height":     float64(1080),
+				"pixfmt":     "420",
+				"bitdepth":   float64(8),
+				"model":      "version=vmaf_v0.6.1",
+				"backend":    "auto",
+				"precision":  "legacy",
+				"output_fmt": "xml",
+			},
+		},
+		{
+			name: "device_selectors",
+			args: map[string]any{
+				"ref":          "/data/ref.yuv",
+				"dis":          "/data/dis.yuv",
+				"width":        float64(1920),
+				"height":       float64(1080),
+				"pixfmt":       "420",
+				"bitdepth":     float64(8),
+				"model":        "version=vmaf_v0.6.1",
+				"backend":      "auto",
+				"precision":    "legacy",
+				"cpumask":      float64(7),
+				"gpumask":      float64(1),
+				"sycl_device":  float64(0),
+				"hip_device":   float64(2),
+				"metal_device": float64(0),
+			},
+		},
+		{
+			name: "combined_all_extras_and_selectors",
+			args: map[string]any{
+				"ref":             "/data/ref.yuv",
+				"dis":             "/data/dis.yuv",
+				"width":           float64(1920),
+				"height":          float64(1080),
+				"pixfmt":          "420",
+				"bitdepth":        float64(10),
+				"model":           "/models/custom.json",
+				"backend":         "cuda",
+				"precision":       "max",
+				"subsample":       float64(2),
+				"feature":         []any{"psnr"},
+				"threads":         float64(16),
+				"frame_cnt":       float64(500),
+				"frame_skip_ref":  float64(10),
+				"frame_skip_dist": float64(5),
+				"no_prediction":   false,
+				"cpumask":         float64(15),
+				"gpumask":         float64(2),
+				"sycl_device":     float64(1),
+				"hip_device":      float64(0),
+				"metal_device":    float64(1),
+				"output_fmt":      "csv",
+			},
+		},
 	}
 
 	pyRunnerScript := fmt.Sprintf(`
@@ -203,6 +294,7 @@ extras = _extras_from_args(args)
 
 ref_arg = args.get("ref")
 ref_path = Path(ref_arg) if ref_arg else None
+output_fmt = args.get("output_fmt") or args.get("format") or "json"
 
 req = ScoreRequest(
     ref=ref_path,
@@ -215,6 +307,7 @@ req = ScoreRequest(
     backend=str(args.get("backend", "auto")),
     precision=str(args.get("precision", "legacy")),
     subsample=int(args.get("subsample", 1)),
+    output_fmt=output_fmt,
     extras=extras,
 )
 argv = _build_vmaf_argv(req, vmaf="vmaf", output=args["out_path"])
@@ -224,14 +317,18 @@ print(json.dumps(argv))
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			outPath := "/tmp/vmaf-out.json"
-			tc.args["out_path"] = outPath
-
 			// 1. Build Go argv
 			ex, err := parseScoreExtras(tc.args)
 			if err != nil {
 				t.Fatalf("Go parseScoreExtras failed: %v", err)
 			}
+
+			outExt := ex.outputFmt
+			if outExt == "" {
+				outExt = "json"
+			}
+			outPath := "/tmp/vmaf-out." + outExt
+			tc.args["out_path"] = outPath
 
 			ref := strArg(tc.args, "ref", "")
 			dis := strArg(tc.args, "dis", "")

@@ -158,6 +158,60 @@ func hasArg(args map[string]any, key string) bool {
 // construction in `_run_vmaf_score` (server.py) — same flags, same values.
 // ---------------------------------------------------------------------------
 
+var (
+	validPixfmts = map[string]bool{
+		"420": true,
+		"422": true,
+		"444": true,
+	}
+	validBackends = map[string]bool{
+		"auto":  true,
+		"cpu":   true,
+		"cuda":  true,
+		"sycl":  true,
+		"hip":   true,
+		"metal": true,
+	}
+	validOutputFmts = map[string]bool{
+		"json": true,
+		"xml":  true,
+		"csv":  true,
+		"sub":  true,
+	}
+	validTinyDevices = map[string]bool{
+		"auto":         true,
+		"cpu":          true,
+		"cuda":         true,
+		"openvino":     true,
+		"openvino-npu": true,
+		"openvino-cpu": true,
+		"openvino-gpu": true,
+		"coreml":       true,
+		"coreml-ane":   true,
+		"coreml-gpu":   true,
+		"coreml-cpu":   true,
+		"rocm":         true,
+	}
+	validTinyResizes = map[string]bool{
+		"bilinear": true,
+		"nearest":  true,
+		"bicubic":  true,
+		"disabled": true,
+	}
+	validAOMCTCs = map[string]bool{
+		"v1.0": true,
+		"v2.0": true,
+		"v3.0": true,
+		"v4.0": true,
+		"v5.0": true,
+		"v6.0": true,
+		"v7.0": true,
+	}
+	validNFLXCTCs = map[string]bool{
+		"v1.0": true,
+	}
+)
+
 type scoreExtras struct {
 	features        []string // repeated --feature
 	aomCTC          string   // --aom_ctc
@@ -178,6 +232,12 @@ type scoreExtras struct {
 	frameSkipDist   *int     // --frame_skip_dist
 	noPrediction    bool     // --no_prediction
 	subsample       int      // --subsample (emitted only when > 1; vmaf_score_encoded)
+	cpumask         *int     // --cpumask
+	gpumask         *int     // --gpumask
+	syclDevice      *int     // --sycl_device
+	hipDevice       *int     // --hip_device
+	metalDevice     *int     // --metal_device
+	outputFmt       string   // --json | --xml | --csv | --sub
 }
 
 // isZero reports whether no scoring-extra flag is set, i.e. the request is a
@@ -189,7 +249,10 @@ func (ex scoreExtras) isZero() bool {
 		ex.tinyPreset == "" && ex.tinyCRF == nil && ex.tinyResize == "" &&
 		!ex.noReference && ex.threads == nil && ex.frameCnt == nil &&
 		ex.frameSkipRef == nil && ex.frameSkipDist == nil && !ex.noPrediction &&
-		ex.subsample <= 1
+		ex.subsample <= 1 &&
+		ex.cpumask == nil && ex.gpumask == nil && ex.syclDevice == nil &&
+		ex.hipDevice == nil && ex.metalDevice == nil &&
+		(ex.outputFmt == "" || ex.outputFmt == "json")
 }
 
 // optIntArg returns a pointer to the int value at key, or nil when the key is
@@ -203,27 +266,6 @@ func optIntArg(args map[string]any, key string) *int {
 	return &v
 }
 
-var (
-	validTinyDevices = map[string]bool{
-		"auto": true, "cpu": true, "cuda": true, "openvino": true,
-		"openvino-npu": true, "openvino-cpu": true, "openvino-gpu": true,
-		"coreml": true, "coreml-ane": true, "coreml-gpu": true, "coreml-cpu": true,
-		"rocm": true,
-	}
-	validTinyResizes = map[string]bool{
-		"bilinear": true, "nearest": true, "bicubic": true, "disabled": true,
-	}
-	validAOMCTC = map[string]bool{
-		"v1.0": true, "v2.0": true, "v3.0": true, "v4.0": true,
-		"v5.0": true, "v6.0": true, "v7.0": true,
-	}
-	validPixfmts = map[string]bool{
-		"420": true, "422": true, "444": true,
-	}
-	validBackends = map[string]bool{
-		"auto": true, "cpu": true, "cuda": true, "sycl": true, "hip": true, "metal": true,
-	}
-)
 
 // parseScoreExtras extracts and validates the optional scoring pass-through flags from args.
 func parseScoreExtras(args map[string]any) (scoreExtras, error) {
@@ -255,12 +297,12 @@ func parseScoreExtras(args map[string]any) (scoreExtras, error) {
 	}
 
 	aomCTC := strArg(args, "aom_ctc", "")
-	if aomCTC != "" && !validAOMCTC[aomCTC] {
+	if aomCTC != "" && !validAOMCTCs[aomCTC] {
 		return scoreExtras{}, fmt.Errorf("invalid aom_ctc %q: must be one of v1.0|v2.0|v3.0|v4.0|v5.0|v6.0|v7.0", aomCTC)
 	}
 
 	nflxCTC := strArg(args, "nflx_ctc", "")
-	if nflxCTC != "" && nflxCTC != "v1.0" {
+	if nflxCTC != "" && !validNFLXCTCs[nflxCTC] {
 		return scoreExtras{}, fmt.Errorf("invalid nflx_ctc %q: must be v1.0", nflxCTC)
 	}
 
@@ -276,17 +318,53 @@ func parseScoreExtras(args map[string]any) (scoreExtras, error) {
 
 	frameSkipRef := optIntArg(args, "frame_skip_ref")
 	if frameSkipRef != nil && *frameSkipRef < 0 {
-		return scoreExtras{}, fmt.Errorf("invalid frame_skip_ref %d: must be >= 0", *frameSkipRef)
+		return scoreExtras{}, fmt.Errorf("invalid frame_skip_ref %d: must be non-negative", *frameSkipRef)
 	}
 
 	frameSkipDist := optIntArg(args, "frame_skip_dist")
 	if frameSkipDist != nil && *frameSkipDist < 0 {
-		return scoreExtras{}, fmt.Errorf("invalid frame_skip_dist %d: must be >= 0", *frameSkipDist)
+		return scoreExtras{}, fmt.Errorf("invalid frame_skip_dist %d: must be non-negative", *frameSkipDist)
 	}
 
 	subsample := intArg(args, "subsample", 1)
 	if subsample < 1 {
 		return scoreExtras{}, fmt.Errorf("invalid subsample %d: must be >= 1", subsample)
+	}
+
+	cpumask := optIntArg(args, "cpumask")
+	if cpumask != nil && *cpumask < 0 {
+		return scoreExtras{}, fmt.Errorf("invalid cpumask %d: must be non-negative", *cpumask)
+	}
+
+	gpumask := optIntArg(args, "gpumask")
+	if gpumask != nil && *gpumask < 0 {
+		return scoreExtras{}, fmt.Errorf("invalid gpumask %d: must be non-negative", *gpumask)
+	}
+
+	syclDevice := optIntArg(args, "sycl_device")
+	if syclDevice != nil && *syclDevice < 0 {
+		return scoreExtras{}, fmt.Errorf("invalid sycl_device %d: must be non-negative", *syclDevice)
+	}
+
+	hipDevice := optIntArg(args, "hip_device")
+	if hipDevice != nil && *hipDevice < 0 {
+		return scoreExtras{}, fmt.Errorf("invalid hip_device %d: must be non-negative", *hipDevice)
+	}
+
+	metalDevice := optIntArg(args, "metal_device")
+	if metalDevice != nil && *metalDevice < 0 {
+		return scoreExtras{}, fmt.Errorf("invalid metal_device %d: must be non-negative", *metalDevice)
+	}
+
+	outputFmt := strArg(args, "output_fmt", "")
+	if outputFmt == "" {
+		outputFmt = strArg(args, "format", "")
+	}
+	if outputFmt == "" {
+		outputFmt = "json"
+	}
+	if !validOutputFmts[outputFmt] {
+		return scoreExtras{}, fmt.Errorf("invalid output_fmt %q: must be one of json|xml|csv|sub", outputFmt)
 	}
 
 	ex := scoreExtras{
@@ -308,7 +386,14 @@ func parseScoreExtras(args map[string]any) (scoreExtras, error) {
 		frameSkipDist:   frameSkipDist,
 		noPrediction:    boolArg(args, "no_prediction", false),
 		subsample:       subsample,
+		cpumask:         cpumask,
+		gpumask:         gpumask,
+		syclDevice:      syclDevice,
+		hipDevice:       hipDevice,
+		metalDevice:     metalDevice,
+		outputFmt:       outputFmt,
 	}
+
 	if raw, ok := args["feature"].([]any); ok {
 		for _, f := range raw {
 			if s, isStr := f.(string); isStr && s != "" {
@@ -382,6 +467,21 @@ func (ex scoreExtras) appendArgs(argv []string) []string {
 	}
 	if ex.noPrediction {
 		argv = append(argv, "--no_prediction")
+	}
+	if ex.cpumask != nil {
+		argv = append(argv, "--cpumask", strconv.Itoa(*ex.cpumask))
+	}
+	if ex.gpumask != nil {
+		argv = append(argv, "--gpumask", strconv.Itoa(*ex.gpumask))
+	}
+	if ex.syclDevice != nil {
+		argv = append(argv, "--sycl_device", strconv.Itoa(*ex.syclDevice))
+	}
+	if ex.hipDevice != nil {
+		argv = append(argv, "--hip_device", strconv.Itoa(*ex.hipDevice))
+	}
+	if ex.metalDevice != nil {
+		argv = append(argv, "--metal_device", strconv.Itoa(*ex.metalDevice))
 	}
 	return argv
 }
@@ -474,8 +574,17 @@ func buildVmafArgv(vmafBin, ref, dis string, width, height int, pixfmt string, b
 		"--precision", precision,
 		"-q",
 		"-o", outPath,
-		"--json",
 	)
+	switch extras.outputFmt {
+	case "xml":
+		argv = append(argv, "--xml")
+	case "csv":
+		argv = append(argv, "--csv")
+	case "sub":
+		argv = append(argv, "--sub")
+	default:
+		argv = append(argv, "--json")
+	}
 	argv = extras.appendArgs(argv)
 	if siblings, ok := backendDisable[backend]; ok {
 		for _, s := range siblings {
@@ -502,7 +611,8 @@ func runVmafScore(ctx context.Context, ref, dis string, width, height int, pixfm
 		}
 	}
 
-	outFile, err := os.CreateTemp("", "vmaf-mcp-*.json")
+	tempPattern := fmt.Sprintf("vmaf-mcp-*.%s", extras.outputFmt)
+	outFile, err := os.CreateTemp("", tempPattern)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp output file: %w", err)
 	}
@@ -517,7 +627,7 @@ func runVmafScore(ctx context.Context, ref, dis string, width, height int, pixfm
 		}
 	}()
 
-	argv := buildVmafArgv("", ref, dis, width, height, pixfmt, bitdepth, model, backend, precision, outPath, extras)
+	argv := buildVmafArgv(vmafBin, ref, dis, width, height, pixfmt, bitdepth, model, backend, precision, outPath, extras)
 
 	// #nosec G204 -- vmafBin resolved via libvmaf.FindBinary (env-overridable to
 	// a fixed allowlist of paths) and `ref`/`dis` are already libvmaf.ValidatePath-
@@ -525,7 +635,7 @@ func runVmafScore(ctx context.Context, ref, dis string, width, height int, pixfm
 	// CommandContext propagates client-disconnect cancellation so that the vmaf
 	// subprocess is killed when the MCP client disconnects mid-run rather than
 	// running to completion as an orphan (ADR-1085).
-	cmd := exec.CommandContext(ctx, vmafBin, argv...)
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -537,6 +647,14 @@ func runVmafScore(ctx context.Context, ref, dis string, width, height int, pixfm
 	data, err := os.ReadFile(outPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read vmaf output: %w", err)
+	}
+	if extras.outputFmt != "" && extras.outputFmt != "json" {
+		return map[string]any{
+			"format":            extras.outputFmt,
+			"output":            string(data),
+			"backend_requested": backend,
+			"backend_used":      backend,
+		}, nil
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(data, &payload); err != nil {

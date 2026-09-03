@@ -142,6 +142,39 @@ func scoringExtraProperties() schemaObj {
 			"type":        "boolean",
 			"description": "Extract features only, skip VMAF prediction (--no_prediction).",
 		},
+		// --- Device selectors ---
+		"cpumask": schemaObj{
+			"type":        "integer",
+			"minimum":     0,
+			"description": "Bitmask restricting permitted CPU SIMD instruction sets (--cpumask).",
+		},
+		"gpumask": schemaObj{
+			"type":        "integer",
+			"minimum":     0,
+			"description": "Bitmask restricting permitted GPU operations (--gpumask).",
+		},
+		"sycl_device": schemaObj{
+			"type":        "integer",
+			"minimum":     0,
+			"description": "Select SYCL GPU device by index (--sycl_device).",
+		},
+		"hip_device": schemaObj{
+			"type":        "integer",
+			"minimum":     0,
+			"description": "Select HIP GPU device by index (--hip_device).",
+		},
+		"metal_device": schemaObj{
+			"type":        "integer",
+			"minimum":     0,
+			"description": "Select Metal GPU device by index (--metal_device).",
+		},
+		// --- Output format ---
+		"output_fmt": schemaObj{
+			"type":        "string",
+			"enum":        []string{"json", "xml", "csv", "sub"},
+			"default":     "json",
+			"description": "Score output format (--json, --xml, --csv, --sub). Default: json.",
+		},
 	}
 }
 
@@ -170,6 +203,12 @@ func registerTools(srv *mcp.Server) {
 					"type":    "string",
 					"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
 					"default": "auto",
+				},
+				"subsample": schemaObj{
+					"type":        "integer",
+					"minimum":     1,
+					"default":     1,
+					"description": "Score every Nth frame (1 = every frame).",
 				},
 				// "legacy" = %.6f, matching C CLI default per ADR-0119; use "max" for lossless.
 				"precision": schemaObj{"type": "string", "default": "legacy"},

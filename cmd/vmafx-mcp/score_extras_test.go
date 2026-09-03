@@ -60,7 +60,7 @@ func scoreToolProperties(t *testing.T, toolName string) map[string]any {
 	return nil
 }
 
-// TestScoreExtraPropertiesPresent asserts the new ADR-1117 parameters are
+// TestScoreExtraPropertiesPresent asserts the new ADR-1117 and #1240 parameters are
 // advertised on both score tools and that existing required fields are intact.
 func TestScoreExtraPropertiesPresent(t *testing.T) {
 	t.Parallel()
@@ -70,13 +70,19 @@ func TestScoreExtraPropertiesPresent(t *testing.T) {
 		"tiny_model_verify", "tiny_codec", "tiny_preset", "tiny_crf",
 		"tiny_resize", "no_reference",
 		"threads", "frame_cnt", "frame_skip_ref", "frame_skip_dist", "no_prediction",
+		"cpumask", "gpumask", "sycl_device", "hip_device", "metal_device",
+		"output_fmt",
 	}
 	for _, tool := range []string{"vmaf_score", "vmaf_score_encoded"} {
 		props := scoreToolProperties(t, tool)
 		for _, key := range want {
 			if _, ok := props[key]; !ok {
-				t.Errorf("tool %q: missing ADR-1117 property %q", tool, key)
+				t.Errorf("tool %q: missing property %q", tool, key)
 			}
+		}
+		// Subsample is on both tools.
+		if _, ok := props["subsample"]; !ok {
+			t.Errorf("tool %q: missing subsample property", tool)
 		}
 		// Backward-compat: the original required-by-default fields still present.
 		for _, key := range []string{"model", "backend", "precision"} {
@@ -97,6 +103,7 @@ func TestScoreExtraEnums(t *testing.T) {
 		"tiny_device": {"auto", "cpu", "cuda", "openvino", "openvino-npu", "openvino-cpu", "openvino-gpu", "coreml", "coreml-ane", "coreml-gpu", "coreml-cpu", "rocm"},
 		"dnn_ep":      {"auto", "cpu", "cuda", "openvino", "openvino-npu", "openvino-cpu", "openvino-gpu", "coreml", "coreml-ane", "coreml-gpu", "coreml-cpu", "rocm"},
 		"tiny_resize": {"bilinear", "nearest", "bicubic", "disabled"},
+		"output_fmt":  {"json", "xml", "csv", "sub"},
 	}
 	for key, wantEnum := range cases {
 		prop, _ := props[key].(map[string]any)
@@ -133,6 +140,12 @@ func TestParseScoreExtrasMapsFlags(t *testing.T) {
 		"frame_skip_ref":    float64(2),
 		"frame_skip_dist":   float64(0),
 		"no_prediction":     true,
+		"cpumask":           float64(3),
+		"gpumask":           float64(1),
+		"sycl_device":       float64(0),
+		"hip_device":        float64(2),
+		"metal_device":      float64(0),
+		"output_fmt":        "csv",
 	}
 	ex, err := parseScoreExtras(args)
 	if err != nil {
@@ -159,11 +172,19 @@ func TestParseScoreExtrasMapsFlags(t *testing.T) {
 		"--frame_skip_ref 2",
 		"--frame_skip_dist 0", // explicit 0 must be emitted (not omitted)
 		"--no_prediction",
+		"--cpumask 3",
+		"--gpumask 1",
+		"--sycl_device 0",
+		"--hip_device 2",
+		"--metal_device 0",
 	}
 	for _, sub := range wantSubstrings {
 		if !strings.Contains(joined, sub) {
 			t.Errorf("argv %q missing %q", joined, sub)
 		}
+	}
+	if ex.outputFmt != "csv" {
+		t.Errorf("outputFmt = %q, want 'csv'", ex.outputFmt)
 	}
 }
 
@@ -217,6 +238,36 @@ func TestParseScoreExtrasEmpty(t *testing.T) {
 	}
 	if argv := ex.appendArgs(nil); len(argv) != 0 {
 		t.Errorf("empty extras appended %d flags: %v", len(argv), argv)
+	}
+}
+
+// TestParseScoreExtrasValidation asserts that bad enums and negative values are rejected.
+func TestParseScoreExtrasValidation(t *testing.T) {
+	t.Parallel()
+	badCases := []map[string]any{
+		{"output_fmt": "yaml"},
+		{"aom_ctc": "v99.0"},
+		{"nflx_ctc": "v2.0"},
+		{"tiny_device": "nonexistent"},
+		{"tiny_resize": "lanczos"},
+		{"subsample": float64(0)},
+		{"threads": float64(0)},
+		{"frame_cnt": float64(0)},
+		{"frame_skip_ref": float64(-1)},
+		{"frame_skip_dist": float64(-1)},
+		{"tiny_threads": float64(-1)},
+		{"tiny_crf": float64(-1)},
+		{"tiny_crf": float64(64)},
+		{"cpumask": float64(-1)},
+		{"gpumask": float64(-1)},
+		{"sycl_device": float64(-1)},
+		{"hip_device": float64(-1)},
+		{"metal_device": float64(-1)},
+	}
+	for _, tc := range badCases {
+		if _, err := parseScoreExtras(tc); err == nil {
+			t.Errorf("parseScoreExtras(%v) expected error, got nil", tc)
+		}
 	}
 }
 

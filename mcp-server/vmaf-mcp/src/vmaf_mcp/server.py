@@ -369,6 +369,28 @@ def _validate_media_path(p: str) -> str:
 # Tool implementations
 # ---------------------------------------------------------------------------
 
+_VALID_AOM_CTCS = {"v1.0", "v2.0", "v3.0", "v4.0", "v5.0", "v6.0", "v7.0"}
+_VALID_NFLX_CTCS = {"v1.0"}
+_VALID_TINY_DEVICES = {
+    "auto",
+    "cpu",
+    "cuda",
+    "openvino",
+    "openvino-npu",
+    "openvino-cpu",
+    "openvino-gpu",
+    "coreml",
+    "coreml-ane",
+    "coreml-gpu",
+    "coreml-cpu",
+    "rocm",
+}
+_VALID_TINY_RESIZES = {"bilinear", "nearest", "bicubic", "disabled"}
+_VALID_OUTPUT_FMTS = {"json", "xml", "csv", "sub"}
+_VALID_BACKENDS = {"auto", "cpu", "cuda", "sycl", "hip", "metal"}
+_VALID_PIXFMTS = {"420", "422", "444"}
+_VALID_BITDEPTHS = {8, 10, 12, 16}
+
 
 @dataclass(frozen=True)
 class ScoreExtras:
@@ -376,7 +398,7 @@ class ScoreExtras:
     vmaf_score_encoded (ADR-1117).
 
     Each field maps onto a ``vmaf`` CLI flag verified against
-    ``core/tools/cli_parse.c``. A default-constructed ``ScoreExtras`` adds no
+    ``core/tools/cli_parse.cpp``. A default-constructed ``ScoreExtras`` adds no
     flags (backward-compatible). MUST stay byte-compatible with the Go
     server's ``scoreExtras`` argv construction (cmd/vmafx-mcp/impl.go).
     """
@@ -399,6 +421,12 @@ class ScoreExtras:
     frame_skip_ref: int | None = None  # --frame_skip_ref
     frame_skip_dist: int | None = None  # --frame_skip_dist
     no_prediction: bool = False  # --no_prediction
+    cpumask: int | None = None  # --cpumask
+    gpumask: int | None = None  # --gpumask
+    sycl_device: int | None = None  # --sycl_device
+    hip_device: int | None = None  # --hip_device
+    metal_device: int | None = None  # --metal_device
+    output_fmt: str = "json"  # --json | --xml | --csv | --sub
 
     def is_empty(self) -> bool:
         """Return True when no extra flag is set."""
@@ -443,6 +471,16 @@ class ScoreExtras:
             argv += ["--frame_skip_dist", str(self.frame_skip_dist)]
         if self.no_prediction:
             argv += ["--no_prediction"]
+        if self.cpumask is not None:
+            argv += ["--cpumask", str(self.cpumask)]
+        if self.gpumask is not None:
+            argv += ["--gpumask", str(self.gpumask)]
+        if self.sycl_device is not None:
+            argv += ["--sycl_device", str(self.sycl_device)]
+        if self.hip_device is not None:
+            argv += ["--hip_device", str(self.hip_device)]
+        if self.metal_device is not None:
+            argv += ["--metal_device", str(self.metal_device)]
         return argv
 
 
@@ -455,9 +493,10 @@ class ScoreRequest:
     pixfmt: str  # "420" | "422" | "444"
     bitdepth: int
     model: str = "version=vmaf_v0.6.1"
-    backend: str = "auto"  # "cpu" | "cuda" | "sycl" | "auto"
+    backend: str = "auto"  # "cpu" | "cuda" | "sycl" | "hip" | "metal" | "auto"
     precision: str = "legacy"  # "legacy" = %.6f; matches C CLI default per ADR-0119
     subsample: int = 1  # score every Nth frame; passed as --subsample to the CLI
+    output_fmt: str = "json"  # "json" | "xml" | "csv" | "sub"
     extras: ScoreExtras = ScoreExtras()  # optional pass-through flags (ADR-1117)
 
 
@@ -496,10 +535,10 @@ def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
         features = tuple(str(f) for f in raw_features if isinstance(f, str) and f)
 
     def _opt_int(key: str) -> int | None:
-        return int(arguments[key]) if key in arguments else None
+        return int(arguments[key]) if key in arguments and arguments[key] is not None else None
 
     def _opt_str(key: str) -> str | None:
-        return str(arguments[key]) if key in arguments else None
+        return str(arguments[key]) if key in arguments and arguments[key] is not None else None
 
     tiny_dev = _opt_str("tiny_device")
     dnn_ep = _opt_str("dnn_ep")
@@ -527,7 +566,7 @@ def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
 
     tiny_threads = _opt_int("tiny_threads")
     if tiny_threads is not None and tiny_threads < 0:
-        raise ValueError(f"invalid tiny_threads {tiny_threads}: must be >= 0")
+        raise ValueError(f"invalid tiny_threads {tiny_threads}: must be non-negative")
 
     aom_ctc = _opt_str("aom_ctc")
     if aom_ctc is not None and aom_ctc not in _VALID_AOM_CTC:
@@ -549,15 +588,37 @@ def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
 
     frame_skip_ref = _opt_int("frame_skip_ref")
     if frame_skip_ref is not None and frame_skip_ref < 0:
-        raise ValueError(f"invalid frame_skip_ref {frame_skip_ref}: must be >= 0")
+        raise ValueError(f"invalid frame_skip_ref {frame_skip_ref}: must be non-negative")
 
     frame_skip_dist = _opt_int("frame_skip_dist")
     if frame_skip_dist is not None and frame_skip_dist < 0:
-        raise ValueError(f"invalid frame_skip_dist {frame_skip_dist}: must be >= 0")
+        raise ValueError(f"invalid frame_skip_dist {frame_skip_dist}: must be non-negative")
 
     subsample = int(arguments.get("subsample", 1))
     if subsample < 1:
         raise ValueError(f"invalid subsample {subsample}: must be >= 1")
+
+    cpumask = _opt_int("cpumask")
+    if cpumask is not None and cpumask < 0:
+        raise ValueError(f"invalid cpumask {cpumask}: must be non-negative")
+    gpumask = _opt_int("gpumask")
+    if gpumask is not None and gpumask < 0:
+        raise ValueError(f"invalid gpumask {gpumask}: must be non-negative")
+    sycl_device = _opt_int("sycl_device")
+    if sycl_device is not None and sycl_device < 0:
+        raise ValueError(f"invalid sycl_device {sycl_device}: must be non-negative")
+    hip_device = _opt_int("hip_device")
+    if hip_device is not None and hip_device < 0:
+        raise ValueError(f"invalid hip_device {hip_device}: must be non-negative")
+    metal_device = _opt_int("metal_device")
+    if metal_device is not None and metal_device < 0:
+        raise ValueError(f"invalid metal_device {metal_device}: must be non-negative")
+
+    output_fmt = _opt_str("output_fmt") or _opt_str("format") or "json"
+    if output_fmt not in _VALID_OUTPUT_FMTS:
+        raise ValueError(
+            f"invalid output_fmt '{output_fmt}': must be one of json|xml|csv|sub"
+        )
 
     return ScoreExtras(
         features=features,
@@ -578,6 +639,12 @@ def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
         frame_skip_ref=frame_skip_ref,
         frame_skip_dist=frame_skip_dist,
         no_prediction=bool(arguments.get("no_prediction", False)),
+        cpumask=cpumask,
+        gpumask=gpumask,
+        sycl_device=sycl_device,
+        hip_device=hip_device,
+        metal_device=metal_device,
+        output_fmt=output_fmt,
     )
 
 
@@ -816,8 +883,17 @@ def _build_vmaf_argv(
         "-q",
         "-o",
         str(output),
-        "--json",
     ]
+    fmt = req.output_fmt or req.extras.output_fmt or "json"
+    if fmt == "xml":
+        argv.append("--xml")
+    elif fmt == "csv":
+        argv.append("--csv")
+    elif fmt == "sub":
+        argv.append("--sub")
+    else:
+        argv.append("--json")
+
     if req.subsample > 1:
         argv += ["--subsample", str(req.subsample)]
     # Optional pass-through scoring flags (ADR-1117). Appended before
@@ -860,9 +936,10 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
         # high concurrency.  delete=False hands ownership to the finally block so
         # the vmaf subprocess can reopen the path by name; the try/finally below
         # unlinks unconditionally.
+        fmt = req.output_fmt or req.extras.output_fmt or "json"
         with tempfile.NamedTemporaryFile(
             prefix="vmaf-mcp-",
-            suffix=".json",
+            suffix=f".{fmt}",
             delete=False,
         ) as _tmp:
             output = Path(_tmp.name)
@@ -876,6 +953,13 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
                 raise RuntimeError(
                     f"vmaf exited {proc.returncode}: {stderr.decode(errors='replace')}"
                 )
+            if fmt != "json":
+                return {
+                    "format": fmt,
+                    "output": output.read_text(encoding="utf-8"),
+                    "backend_requested": req.backend,
+                    "backend_used": req.backend,
+                }
             # Pin UTF-8 explicitly so the parse does not pick up the server
             # process's locale (LC_ALL may differ between MCP-stdio launches
             # and CI runners, and a non-UTF-8 default decoder would crash on
@@ -2307,6 +2391,7 @@ async def _run_vmaf_score_encoded(
     model: str = "version=vmaf_v0.6.1",
     backend: str = "auto",
     subsample: int = 1,
+    output_fmt: str = "json",
     precision: str = "legacy",  # "legacy" = %.6f; matches C CLI default per ADR-0119,
     extras: ScoreExtras | None = None,  # optional pass-through flags (ADR-1117)
 ) -> dict[str, Any]:
@@ -2359,6 +2444,7 @@ async def _run_vmaf_score_encoded(
             backend=backend,
             precision=precision,
             subsample=subsample,
+            output_fmt=output_fmt,
             extras=extras if extras is not None else ScoreExtras(),
         )
         result = await _run_vmaf_score(req)
@@ -2373,6 +2459,7 @@ async def _run_vmaf_score_encoded(
 
 # MCP tool schemas
 # ---------------------------------------------------------------------------
+
 
 def _scoring_extra_properties() -> dict[str, Any]:
     """Return the optional pass-through scoring parameters shared by
@@ -2514,6 +2601,39 @@ def _scoring_extra_properties() -> dict[str, Any]:
             "type": "boolean",
             "description": "Extract features only, skip VMAF prediction (--no_prediction).",
         },
+        # --- Device selectors ---
+        "cpumask": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Bitmask restricting permitted CPU SIMD instruction sets (--cpumask).",
+        },
+        "gpumask": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Bitmask restricting permitted GPU operations (--gpumask).",
+        },
+        "sycl_device": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Select SYCL GPU device by index (--sycl_device).",
+        },
+        "hip_device": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Select HIP GPU device by index (--hip_device).",
+        },
+        "metal_device": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Select Metal GPU device by index (--metal_device).",
+        },
+        # --- Output format ---
+        "output_fmt": {
+            "type": "string",
+            "enum": ["json", "xml", "csv", "sub"],
+            "default": "json",
+            "description": "Score output format (--json, --xml, --csv, --sub). Default: json.",
+        },
     }
 
 
@@ -2539,6 +2659,12 @@ async def _list_tools() -> list[Tool]:
                         "type": "string",
                         "enum": ["auto", "cpu", "cuda", "sycl", "hip", "metal"],
                         "default": "auto",
+                    },
+                    "subsample": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "default": 1,
+                        "description": "Score every Nth frame (1 = every frame).",
                     },
                     "precision": {"type": "string", "default": "legacy"},
                     **_scoring_extra_properties(),
@@ -3011,6 +3137,9 @@ async def _call_tool_dispatch(
                 f"invalid backend '{backend}': must be one of auto|cpu|cuda|sycl|hip|metal"
             )
         subsample = int(arguments.get("subsample", 1))
+        if subsample < 1:
+            raise ValueError(f"invalid subsample {subsample}: must be >= 1")
+        output_fmt = extras.output_fmt
         req = ScoreRequest(
             ref=ref_path,
             dis=_validate_path(arguments["dis"]),
@@ -3022,6 +3151,7 @@ async def _call_tool_dispatch(
             backend=backend,
             precision=str(arguments.get("precision", "legacy")),
             subsample=subsample,
+            output_fmt=output_fmt,
             extras=extras,
         )
         result = await _run_vmaf_score(req)
@@ -3081,12 +3211,17 @@ async def _call_tool_dispatch(
             raise ValueError(
                 f"invalid backend '{backend}': must be one of auto|cpu|cuda|sycl|hip|metal"
             )
+        subsample = int(arguments.get("subsample", 1))
+        if subsample < 1:
+            raise ValueError(f"invalid subsample {subsample}: must be >= 1")
+        output_fmt = encoded_extras.output_fmt
         result = await _run_vmaf_score_encoded(
             ref_path=_validate_path(arguments["reference_encoded"]),
             dis_path=_validate_path(arguments["distorted_encoded"]),
             model=str(arguments.get("model", "version=vmaf_v0.6.1")),
             backend=backend,
-            subsample=int(arguments.get("subsample", 1)),
+            subsample=subsample,
+            output_fmt=output_fmt,
             precision=str(arguments.get("precision", "legacy")),
             extras=encoded_extras,
         )

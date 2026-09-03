@@ -26,6 +26,7 @@ Score one `(ref, dis)` YUV pair and return the full VMAF JSON report.
 | `bitdepth`  | `8 \| 10 \| 12 \| 16`                  | yes      | —                       | Bit depth of both YUV files                    |
 | `model`     | string                                 | no       | `"version=vmaf_v0.6.1"` | Any `--model` grammar from the CLI             |
 | `backend`   | `"auto" \| "cpu" \| "cuda" \| "sycl" \| "hip" \| "metal"` | no       | `"auto"`                | Backend selection; `auto` lets vmaf pick. Requesting a backend the local binary does not advertise raises (no silent fallback — ADR-0495). |
+| `subsample` | integer `≥ 1`                          | no       | `1`                     | Score every Nth frame (passed as `--subsample`) |
 | `precision` | string                                 | no       | `"legacy"`              | Passed straight to `--precision` (see below)   |
 
 All [optional scoring parameters](#optional-scoring-parameters) below
@@ -190,6 +191,27 @@ you want).
 | `frame_skip_ref`  | integer `≥ 0` | `--frame_skip_ref`  | Skip the first N reference frames.                     |
 | `frame_skip_dist` | integer `≥ 0` | `--frame_skip_dist` | Skip the first N distorted frames.                     |
 | `no_prediction`   | boolean       | `--no_prediction`   | Extract features only; skip VMAF prediction.           |
+
+#### Device selectors
+
+Control hardware device selection and hardware capability masks on
+heterogeneous systems (#1240).
+
+| Field          | Type          | CLI flag         | Notes                                                        |
+|----------------|---------------|------------------|--------------------------------------------------------------|
+| `cpumask`      | integer `≥ 0` | `--cpumask`      | Bitmask restricting permitted CPU SIMD instruction sets.     |
+| `gpumask`      | integer `≥ 0` | `--gpumask`      | Bitmask restricting permitted GPU operations.                |
+| `sycl_device`  | integer `≥ 0` | `--sycl_device`  | Select SYCL GPU device by index.                             |
+| `hip_device`   | integer `≥ 0` | `--hip_device`   | Select HIP GPU device by index.                              |
+| `metal_device` | integer `≥ 0` | `--metal_device` | Select Metal GPU device by index.                            |
+
+#### Output format
+
+Select the serialization format emitted by the underlying `vmaf` engine (#1240).
+
+| Field        | Type / values                       | CLI flag                           | Notes                                                              |
+|--------------|-------------------------------------|------------------------------------|--------------------------------------------------------------------|
+| `output_fmt` | `json \| xml \| csv \| sub`         | `--json \| --xml \| --csv \| --sub`| Output format. Default `json`. Non-JSON formats return a structured text payload (`{"format": ..., "output": ...}`). |
 
 ## `list_models`
 

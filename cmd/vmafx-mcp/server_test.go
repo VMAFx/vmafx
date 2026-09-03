@@ -281,8 +281,6 @@ func TestVmafScoreTool(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGoVsPythonOutputParity(t *testing.T) {
-	t.Parallel()
-
 	repoRoot := findRepoRoot(t)
 	refYUV := repoRoot + "/python/test/resource/yuv/src01_hrc00_576x324.yuv"
 	disYUV := repoRoot + "/python/test/resource/yuv/src01_hrc01_576x324.yuv"
