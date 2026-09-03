@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 282,
-  "total_warnings": 3353,
+  "total_warnings": 3352,
   "total_nolint_uncited": 58,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
@@ -113,7 +113,6 @@
     "core/test/dnn/test_tensor_io.c": 116,
     "core/test/dnn/test_tiny_model_verify.c": 31,
     "core/test/dnn/test_vmaf_use_tiny_model.c": 51,
-    "core/test/test.c": 1,
     "core/test/test_adm_coverage.c": 36,
     "core/test/test_adm_csf.c": 2,
     "core/test/test_adm_csf_tools_coverage.c": 7,
