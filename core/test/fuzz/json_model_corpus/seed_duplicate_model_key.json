@@ -1,0 +1,1 @@
+{"model_dict": {"model": "svm_type nu_svr\nkernel_type linear\nnr_class 2\ntotal_sv 1\nrho 0.5\nSV\n1.0 1:1.0\n","model": "svm_type nu_svr\nkernel_type linear\nnr_class 2\ntotal_sv 1\nrho 0.25\nSV\n1.0 1:2.0\n"}}

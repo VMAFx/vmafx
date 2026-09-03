@@ -874,6 +874,46 @@ static char *test_json_model_feature_names_duplicate_key_no_leak(void)
     return NULL;
 }
 
+/* Regression for the parse_libsvm_model memory leak found by the nightly
+ * fuzz_json_model LeakSanitizer lane (master 042c48adc7 reported
+ * "248 byte(s) leaked in 6 allocation(s)", a direct leak of the
+ * Malloc(svm_model, 1) inside SVMModelParser::parse() plus the sv_coef array
+ * and rows as indirect leaks).
+ *
+ * A duplicate `model` key re-enters parse_libsvm_model, and the
+ * unconditional `model->svm = svm_parse_model_from_buffer(...)` orphaned the
+ * first svm_model: nothing holds a pointer to it any more, so neither
+ * vmaf_model_destroy nor svm_free_and_destroy_model can reach it. Exactly the
+ * shape of the duplicate `feature_names` leak above.
+ *
+ * Both payloads below are minimal well-formed libsvm models, so the FIRST one
+ * really is parsed and allocated before the second overwrites it — a malformed
+ * first payload would return NULL and never leak, and the test would pass
+ * vacuously. Under ASan (-Db_sanitize=address) this reports a direct leak
+ * pre-fix and is clean post-fix. As with the feature_names case the return code
+ * is deliberately not asserted; the regression signal is the absence of a leak. */
+static char *test_json_model_libsvm_duplicate_key_no_leak(void)
+{
+    const char json[] = "{\"model_dict\": {"
+                        "\"model\": \"svm_type nu_svr\\nkernel_type linear\\nnr_class 2\\n"
+                        "total_sv 1\\nrho 0.5\\nSV\\n1.0 1:1.0\\n\","
+                        "\"model\": \"svm_type nu_svr\\nkernel_type linear\\nnr_class 2\\n"
+                        "total_sv 1\\nrho 0.25\\nSV\\n1.0 1:2.0\\n\""
+                        "}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {0};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    /* Same ownership contract as the feature_names regression: on a non-zero
+     * return *model is left NULL, on success the caller owns it. */
+    if (err == 0) {
+        mu_assert("successful parse must yield a model", m != NULL);
+        vmaf_model_destroy(m);
+    } else {
+        mu_assert("rejected parse must leave *model untouched (NULL)", m == NULL);
+    }
+    return NULL;
+}
+
 /* parse_slopes: non-number element → -EINVAL (line 116). */
 static char *test_json_model_slopes_non_number(void)
 {
@@ -1356,6 +1396,7 @@ char *run_tests(void)
     mu_run_test(test_json_model_score_transform_enabled_bad_type);
     mu_run_test(test_json_model_feature_names_non_string);
     mu_run_test(test_json_model_feature_names_duplicate_key_no_leak);
+    mu_run_test(test_json_model_libsvm_duplicate_key_no_leak);
     mu_run_test(test_json_model_slopes_non_number);
     mu_run_test(test_json_model_intercepts_first_not_number);
     mu_run_test(test_json_model_knots_outer_not_array);
