@@ -44,6 +44,36 @@ until master is fixed.
 | `classify-dependency-pr.sh` | `rule-enforcement.yml` — `deep-dive-checklist` and `doc-substance-check` jobs ([ADR-1152](../../docs/adr/1152-dependency-pr-gate-exemption.md)) | Reads `$PR_AUTHOR`, `$HEAD_REF`, `$BASE_SHA`, `$HEAD_SHA` from workflow env. The exemption is author-AND-path-gated and must never be widened to a path glob alone. Bot identity requires `renovate[bot]` / `dependabot[bot]` (or `app/renovate` / `app/dependabot`), or a `renovate/*` / `dependabot/*` branch, AND all changed paths must be in the explicit manifest/lockfile allowlist. Bot PRs touching source code must still satisfy both documentation gates. Test suite: `scripts/ci/test-classify-dependency-pr.sh`. |
 | `test-classify-dependency-pr.sh` | (local-only fixture driver, not invoked by CI) | Run before pushing changes to `classify-dependency-pr.sh`; exercises the predicate space across dependency-only diffs, mixed source diffs, non-bot authors, and real PR fixtures (#1206, #1207, #1212, #1214). |
 
+## `check-vcs-version-not-bare-sha.sh` invariants
+
+`core/include/meson.build` builds `VMAF_VERSION` from `git describe`, and
+upstream Netflix/vmaf spells that call with `--always`. The fork deliberately
+does not. With `--always`, git exits 0 even with no reachable `v*.*.*` tag and
+prints a bare abbreviated object name, which meson writes into
+`vcs_version.h` verbatim — so `vmaf --version`, the JSON/XML `version` field
+and `vmaf_version()` all report a commit instead of a version on any shallow
+checkout, tarball export, or worktree whose `.git` is a file.
+
+Three properties are load-bearing, and this gate enforces each:
+
+| Property | Why it matters |
+| --- | --- |
+| No `--always` in the `vcs_tag` command | It is what suppresses the non-zero exit that the fallback path depends on. |
+| An explicit `fallback:` | Meson would default it to `meson.project_version()`, but the fallback *is* the tagless path here; spelling it out keeps the intent across meson upgrades. |
+| `--match 'v*.*.*'` retained | Without it any tag in the repository can supply the version. |
+
+Two things make the defect easy to reintroduce and hard to notice. It conflicts
+with upstream on every sync, so a mechanical "take theirs" resolution restores
+`--always`; and it is invisible until the seven-character abbreviation happens
+to contain no ASCII digit — about one commit in a thousand — which is the only
+condition `core/test/test_output.c::test_vmaf_version` can detect. Assume any
+version-string failure on one leg is environmental until you have checked
+whether the checkout could reach a tag.
+
+`.github/workflows/build.yml` must therefore keep `fetch-depth: 0` on its
+checkout: `git describe --long` needs both the tag objects and the commit
+distance to them, and the `actions/checkout` default of 1 supplies neither.
+
 ## Calibration table contract (ADR-0234)
 
 `gpu_ulp_calibration.yaml` is the single source of truth for
