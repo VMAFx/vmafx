@@ -24342,6 +24342,19 @@ backtick code spans.
   substitute: `cc.find_library` emits a literal `-lze_loader`, which the
   linker resolves against the unversioned `libze_loader.so` symlink only —
   `libze_loader.so.1` is invisible to `-l`.
+- **`Clang-Tidy SYCL (Changed Files, Advisory)` then failed to link its build
+  tree, because LTO was left on under a mismatched linker plugin.** With the
+  loader in place `meson setup` succeeds and the job reaches `meson compile`
+  for the first time, where every test binary dies with
+  `bfd plugin: LLVM gold plugin has failed to create LTO module: Unknown
+  attribute kind (102) (Producer: 'Intel.oneAPI.DPCPP.Compiler_2026.1.1'
+  Reader: 'LLVM 17.0.6')`. `core/meson.build` sets `b_lto=true` as a project
+  `default_option`, so linking runs LTO through the stock `ubuntu-24.04`
+  binutils gold plugin — LLVM 17.0.6 — which cannot read bitcode emitted by
+  the oneAPI DPC++ compiler. The SYCL legs of `libvmaf-build-matrix.yml`
+  already pass `-Db_lto=false` for exactly this reason. The job now does the
+  same; it only needs codegen outputs and a `compile_commands.json`, so it has
+  nothing to gain from LTO.
 
 
 - **SYCL float_ssim `enable_db` / `clip_db` option parity** (`integer_ssim_sycl.cpp`):

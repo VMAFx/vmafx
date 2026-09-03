@@ -558,3 +558,22 @@ differently — it builds `oneapi-src/level-zero` from source at a pinned tag,
 because it links a shipping artifact and wants a known loader version. A
 static-analysis lane that only needs the probe to resolve should prefer the
 distro package.
+
+## SYCL build trees on hosted runners must disable LTO
+
+`core/meson.build` sets `b_lto=true` in the project's `default_options`, so any
+`meson setup` that does not override it links with `-flto`. On a
+GitHub-hosted `ubuntu-24.04` runner that routes LTO through the stock binutils
+LLVM gold plugin, which is **LLVM 17.0.6**. It cannot read bitcode emitted by
+the oneAPI DPC++ compiler, and every binary fails to link:
+
+```text
+bfd plugin: LLVM gold plugin has failed to create LTO module:
+Unknown attribute kind (102)
+(Producer: 'Intel.oneAPI.DPCPP.Compiler_2026.1.1' Reader: 'LLVM 17.0.6')
+```
+
+Pass `-Db_lto=false` on every icpx/SYCL `meson setup` in CI. Both SYCL legs of
+`libvmaf-build-matrix.yml` already do, and `Clang-Tidy SYCL (Changed Files,
+Advisory)` now does too. Pinning an older oneAPI does not help — the mismatch
+is against the *system* linker plugin, not a specific compiler release.
