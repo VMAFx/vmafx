@@ -693,23 +693,25 @@ const char *model_label(const CLISettings *c, unsigned i)
      * surface that as a hard error too — otherwise the CLI silently
      * runs on CPU and the user has no signal beyond stderr. */
     if (explicit_backend) {
-        const bool compiled_in = false;
+        /* Folded into a single initialiser rather than a sequence of guarded
+         * assignments: the assignments only exist in configurations where the
+         * matching HAVE_* macro is defined, so a `const` declaration compiled
+         * clean on the CPU-only build and broke every CUDA / SYCL / Windows
+         * leg. One expression is const-correct in every configuration. */
+        const bool compiled_in =
 #ifdef HAVE_SYCL
-        if (strcmp(c->backend, "sycl") == 0)
-            compiled_in = true;
+            strcmp(c->backend, "sycl") == 0 ||
 #endif
 #ifdef HAVE_CUDA
-        if (strcmp(c->backend, "cuda") == 0)
-            compiled_in = true;
+            strcmp(c->backend, "cuda") == 0 ||
 #endif
 #ifdef HAVE_HIP
-        if (strcmp(c->backend, "hip") == 0)
-            compiled_in = true;
+            strcmp(c->backend, "hip") == 0 ||
 #endif
 #ifdef HAVE_METAL
-        if (strcmp(c->backend, "metal") == 0)
-            compiled_in = true;
+            strcmp(c->backend, "metal") == 0 ||
 #endif
+            false;
         if (!compiled_in) {
             (void)fprintf(stderr,
                           "vmaf: --backend %s requested but this libvmaf was built "
