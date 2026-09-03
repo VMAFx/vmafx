@@ -21685,6 +21685,19 @@ close) and adds the missing `<math.h>` / `<stdbool.h>` includes.
   session over the seeded corpus: **10,703,871 runs, zero leaks or crashes** —
   longer than the 60-second CI lane. Netflix golden gate unchanged.
 
+  Tooling note: the pre-commit fuzz-corpus exemption. `check-json` rejected
+  the two new duplicate-key seeds for carrying duplicate keys — which is the
+  entire reason they exist — and `end-of-file-fixer` wanted to append a
+  newline to them. A fuzz input is only a reproducer while it stays
+  byte-exact, so appending a byte would have silently retargeted the seed.
+  The four byte-mutating / JSON-validating hooks now exempt
+  `core/test/fuzz/*_corpus/` and `core/test/fuzz/*_known_crashes/` — all
+  seven existing corpus directories and any future one. Harness sources,
+  `meson.build` and `README.md` under `core/test/fuzz/` stay fully checked;
+  only the corpora are exempt. The `.bin` seeds were already passing because
+  `\.bin$` sat in the shared binary exclusion, which is why this only
+  surfaced once a corpus seed carried a `.json` extension.
+
 
 External JSON model loading now grows feature and score-transform knot arrays
 from the payload instead of rejecting otherwise valid models at the old fixed
