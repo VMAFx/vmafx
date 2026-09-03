@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/twin-dead-sides — resolve dead twin sides (T-TWIN-DEAD-SIDES-2026-09-02) (2026-09-03)
+
+- `core/src/model.cpp`: fork-added twin deleted. `core/src/model.c` is the sole
+  authoritative model TU and tracks upstream Netflix `libvmaf/src/model.c` directly.
+  No rebase conflict on `model.c`.
+- `core/test/test_dict.c`: deleted. Upstream `libvmaf/test/test_dict.c` changes should
+  be ported to `core/test/test_dict.cpp` during future upstream syncs.
+- `core/test/test_feature.c`: deleted. Upstream `libvmaf/test/test_feature.c` changes should
+  be ported to `core/test/test_feature.cpp` during future upstream syncs.
+
 ## gap/metal-bucket — Metal gap bucket closure & dispatch alignment (2026-09-02)
 
 - `core/src/feature/metal/*.mm`: set `.flags = VMAF_FEATURE_EXTRACTOR_METAL` across all 9

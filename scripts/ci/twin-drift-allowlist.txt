@@ -13,7 +13,3 @@
 # no allowlist by design: fix the reference.
 #
 # Tracked as docs/state.md T-TWIN-DEAD-SIDES-2026-09-02.
-
-core/src/model.cpp  ADR-0729 Wave 3 C++23 twin of model.c that #1133 did not wire in: core/src/meson.build still compiles model.c and no test names model.cpp. Wire it in (as a *_cpp23_lib like read_json_model.cpp) or delete it; until then fixes to model.c must be mirrored by hand.
-core/test/test_dict.c  Pre-ADR-0729 C twin of test_dict.cpp (the compiled one, core/test/meson.build). Text-includes "dict.c", which became dict.cpp in the C++23 rewrite, so this file cannot compile at all. Delete in a follow-up.
-core/test/test_feature.c  Pre-ADR-0729 C twin of test_feature.cpp (the compiled one, core/test/meson.build). Text-includes "feature/feature_name.c", which became feature_name.cpp in the C++23 rewrite, so this file cannot compile at all. Delete in a follow-up.
