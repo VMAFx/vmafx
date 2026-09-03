@@ -178,6 +178,7 @@ def test_build_ffmpeg_command_x264_pass1_uses_native_passlogfile(tmp_path: Path)
         stats_path=stats,
     )
     cmd = build_ffmpeg_command(req)
+    assert "-crf" not in cmd
     assert "-pass" in cmd
     assert cmd[cmd.index("-pass") + 1] == "1"
     assert "-passlogfile" in cmd
@@ -201,6 +202,32 @@ def test_build_ffmpeg_command_x264_pass2_writes_real_output(tmp_path: Path):
         stats_path=stats,
     )
     cmd = build_ffmpeg_command(req)
+    assert "-crf" not in cmd
+    assert cmd[cmd.index("-pass") + 1] == "2"
+    assert cmd[cmd.index("-passlogfile") + 1] == str(stats)
+    assert cmd[-1] == str(req.output)
+
+
+def test_build_ffmpeg_command_x264_pass2_with_bitrate_extra_params(tmp_path: Path):
+    stats = tmp_path / "encode.stats"
+    req = EncodeRequest(
+        source=tmp_path / "ref.yuv",
+        width=64,
+        height=64,
+        pix_fmt="yuv420p",
+        framerate=24.0,
+        encoder="libx264",
+        preset="medium",
+        crf=23,
+        output=tmp_path / "out.mp4",
+        pass_number=2,
+        stats_path=stats,
+        extra_params=("-b:v", "2000k"),
+    )
+    cmd = build_ffmpeg_command(req)
+    assert "-crf" not in cmd
+    assert "-b:v" in cmd
+    assert cmd[cmd.index("-b:v") + 1] == "2000k"
     assert cmd[cmd.index("-pass") + 1] == "2"
     assert cmd[cmd.index("-passlogfile") + 1] == str(stats)
     assert cmd[-1] == str(req.output)
@@ -324,6 +351,8 @@ def test_run_two_pass_encode_x264_drives_both_passes_in_order(tmp_path: Path):
     assert res.exit_status == 0
     assert res.encode_size_bytes == 4096
     assert len(invocations) == 2
+    assert "-crf" not in invocations[0]
+    assert "-crf" not in invocations[1]
     assert invocations[0][invocations[0].index("-pass") + 1] == "1"
     assert invocations[1][invocations[1].index("-pass") + 1] == "2"
     pass1_log = invocations[0][invocations[0].index("-passlogfile") + 1]

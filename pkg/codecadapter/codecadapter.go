@@ -443,6 +443,27 @@ func (a *Adapter) FFmpegCodecArgs(preset string, quality int) ([]string, error) 
 	return out, nil
 }
 
+// FFmpegCodecArgsForPass returns the FFmpeg argv slice for the codec, optionally
+// taking passNumber into account. In two-pass mode (passNumber != 0), libx264
+// omits -crf because FFmpeg's libx264 two-pass rate control is incompatible
+// with CRF mode (T-VMAFTUNE-TWOPASS-CRF-INVALID-2026-08-30).
+func (a *Adapter) FFmpegCodecArgsForPass(preset string, quality int, passNumber int) ([]string, error) {
+	if a.unavailable != "" && !(a.availableFn != nil && a.availableFn()) {
+		if a.Name == "av1_videotoolbox" {
+			return nil, ErrAv1VideoToolboxUnavailable
+		}
+		return nil, fmt.Errorf("%s", a.unavailable)
+	}
+	out := []string{"-c:v", a.Encoder}
+	out = append(out, a.presetTokens(preset)...)
+	if passNumber != 0 && a.Name == "libx264" {
+		return out, nil
+	}
+	out = append(out, a.qualityTokens(quality)...)
+	out = append(out, a.qualityTail...)
+	return out, nil
+}
+
 // ExtraParams returns codec-level flags orthogonal to quality and preset
 // (libvpx-vp9's "-row-mt 1"; empty for every other shipped codec).
 func (a *Adapter) ExtraParams() []string {
@@ -466,7 +487,12 @@ func (a *Adapter) ExtraParams() []string {
 // duplicate. The Go port emits each AMF token once; every other codec's argv
 // is byte-identical to the Python original.
 func (a *Adapter) ResolveCodecArgs(preset string, quality int) ([]string, error) {
-	args, err := a.FFmpegCodecArgs(preset, quality)
+	return a.ResolveCodecArgsForPass(preset, quality, 0)
+}
+
+// ResolveCodecArgsForPass returns FFmpegCodecArgsForPass followed by ExtraParams.
+func (a *Adapter) ResolveCodecArgsForPass(preset string, quality int, passNumber int) ([]string, error) {
+	args, err := a.FFmpegCodecArgsForPass(preset, quality, passNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -530,8 +556,17 @@ func LegacyCodecArgs(encoder, preset string, quality int) []string {
 // callers that only hold an encoder string would otherwise repeat the
 // Get-then-fall-back dance at every call site.
 func ResolveCodecArgs(encoder, preset string, quality int) ([]string, error) {
+	return ResolveCodecArgsForPass(encoder, preset, quality, 0)
+}
+
+// ResolveCodecArgsForPass resolves by encoder name and passNumber, falling back
+// to LegacyCodecArgs for an unregistered encoder.
+func ResolveCodecArgsForPass(encoder, preset string, quality int, passNumber int) ([]string, error) {
 	a, err := Get(encoder)
 	if err != nil {
+		if passNumber != 0 && encoder == "libx264" {
+			return []string{"-c:v", encoder, "-preset", preset}, nil
+		}
 		return LegacyCodecArgs(encoder, preset, quality), nil
 	}
 	// Validate before building. The (*Adapter) method deliberately does not
@@ -541,7 +576,7 @@ func ResolveCodecArgs(encoder, preset string, quality int) ([]string, error) {
 	if err := a.Validate(preset, quality); err != nil {
 		return nil, err
 	}
-	return a.ResolveCodecArgs(preset, quality)
+	return a.ResolveCodecArgsForPass(preset, quality, passNumber)
 }
 
 // DefaultPreset is encoder_profile._default_preset: "medium" when the codec

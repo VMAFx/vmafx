@@ -71,13 +71,17 @@ class X264Adapter:
         if not lo <= crf <= hi:
             raise ValueError(f"crf {crf} outside Phase A range [{lo}, {hi}]")
 
-    def ffmpeg_codec_args(self, preset: str, quality: int) -> list[str]:
-        """FFmpeg argv slice for libx264 single-pass CRF.
+    def ffmpeg_codec_args(self, preset: str, quality: int, pass_number: int = 0) -> list[str]:
+        """FFmpeg argv slice for libx264.
 
         Adapter-contract entry point used by the codec-agnostic
         dispatcher (ADR-0294). Identical to the legacy hard-coded
-        x264 path: ``-c:v libx264 -preset <p> -crf <q>``.
+        x264 path: ``-c:v libx264 -preset <p> -crf <q>`` on single-pass
+        (pass_number == 0). In 2-pass mode (pass_number in (1, 2)), omits
+        -crf to avoid conflicting rate-control flags (T-VMAFTUNE-TWOPASS-CRF-INVALID-2026-08-30).
         """
+        if pass_number != 0:
+            return ["-c:v", self.encoder, "-preset", preset]
         return ["-c:v", self.encoder, "-preset", preset, "-crf", str(quality)]
 
     def extra_params(self) -> tuple[str, ...]:

@@ -2,6 +2,9 @@
 # Rebase notes
 
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
+## fix/vmaftune-state-bugs — libx264 two-pass CRF conflict fix (2026-09-03)
+
+No rebase impact: all touched files (`pkg/codecadapter/`, `pkg/ffencode/`, `pkg/corpus/`, `tools/vmaf-tune/`) are fork-added Go and Python tuning tooling with no upstream Netflix/vmaf counterpart. No public C API, header, Meson option, or golden assertion is touched.
 ## feat/default-model-v1-0-16 — loud model-dimension validation in the CLI (2026-09-04)
 
 - `core/src/feature/feature_dimensions.h`: wholly fork-added. Single point that turns the
