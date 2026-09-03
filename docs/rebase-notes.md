@@ -169,6 +169,27 @@ conflict keep the fork's version. Function map:
 - **SYCL Win32 stub logging**: `core/src/sycl/dmabuf_import.cpp` emits an informative error log
   explaining that DMA-BUF is a Linux kernel primitive before returning `-ENOSYS` on `_WIN32`.
 
+## refactor/c-rework-tools-v2 — Upstream-mirror CLI and tool translation units lint rework (ADR-1155) (2026-09-02)
+
+- `core/tools/vmaf.cpp`: Reworked in place to C++23. Implemented RAII resource guards
+  (`VmafResourceGuard`), encapsulated `ModelArrays` accessors, decomposed monolithic
+  functions into modular helpers. Upstream syncs to `vmaf.c`/`vmaf.cpp` will need
+  manual conflict resolution; keep the RAII cleanup and helper structure.
+- `core/tools/cli_parse.cpp`: Reworked to C++23. Modernized argument parsing with
+  typed helpers, `std::string_view` comparisons, explicit bounds checks (`--width > 0`,
+  `--height > 0`).
+- `core/tools/cli_parse.c`: DELETED. Resolved as dead twin under ADR-1153 precedent
+  after verifying 0 unique behaviors or assertions vs `cli_parse.cpp`. Test targets
+  (`test_cli_parse`, `test_cli_parse_long_only_args`, `fuzz_cli_parse`) now compile
+  `cli_parse.cpp`. If upstream touches `cli_parse.c`, port changes directly to
+  `cli_parse.cpp`; do NOT resurrect `cli_parse.c`.
+- `core/tools/y4m_input.c` and `core/tools/vmaf_bench.c`: Retain `NULL` as the null
+  pointer constant (ADR-1138) to maintain MSVC `/std:clatest` compatibility on
+  Windows CI legs. NOLINTBEGIN/NOLINTEND brackets suppress `modernize-use-nullptr`.
+  Fixed arithmetic types (`size_t` / `ptrdiff_t`) to eliminate overflow warnings.
+- `core/tools/cli_parse.h`: Header guard renamed from reserved `__VMAF_CLI_PARSE_H__`
+  to `VMAF_CLI_PARSE_H`.
+
 ## gap/metal-bucket — Metal gap bucket closure & dispatch alignment (2026-09-02)
 
 - `core/src/feature/metal/*.mm`: set `.flags = VMAF_FEATURE_EXTRACTOR_METAL` across all 9

@@ -579,10 +579,17 @@ test_luminance_tools = executable('test_luminance_tools',
 )
 
 test_cli_parse = executable('test_cli_parse',
-    ['test.c', 'test_cli_parse.c', '../tools/cli_parse.c'],
+    ['test.c', 'test_cli_parse.c', '../tools/cli_parse.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), include_directories('../tools/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : [compat_cflags],
+    cpp_args : [compat_cflags],
+    # libvmaf_cpu_cpp_std (core/src/meson.build): 'vc++latest' on MSVC,
+    # 'c++latest' on clang-cl / icx-cl, 'c++23' elsewhere. The plain 'c++23'
+    # spelling is REJECTED by MSVC's meson and fails configure on all three
+    # Windows MSVC legs with "None of values ['c++23'] are supported by the
+    # CPP compiler" — the same trap ADR-0755 / ADR-0860 documents for cpu.cpp.
+    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     dependencies: [pthread_dependency, getopt_dependency, sycl_dependency],
 )
 
@@ -607,10 +614,17 @@ if host_machine.system() != 'windows'
     # `error()` assertion would raise. POSIX fork()/waitpid()
     # required; gated off Windows alongside test_y4m_411_oob.
     test_cli_parse_long_only_args = executable('test_cli_parse_long_only_args',
-        ['test.c', 'test_cli_parse_long_only_args.c', '../tools/cli_parse.c'],
+        ['test.c', 'test_cli_parse_long_only_args.c', '../tools/cli_parse.cpp'],
         include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), include_directories('../tools/')],
         link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
         c_args : [compat_cflags],
+        cpp_args : [compat_cflags],
+        # libvmaf_cpu_cpp_std (core/src/meson.build): 'vc++latest' on MSVC,
+    # 'c++latest' on clang-cl / icx-cl, 'c++23' elsewhere. The plain 'c++23'
+    # spelling is REJECTED by MSVC's meson and fails configure on all three
+    # Windows MSVC legs with "None of values ['c++23'] are supported by the
+    # CPP compiler" — the same trap ADR-0755 / ADR-0860 documents for cpu.cpp.
+    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
         dependencies: [pthread_dependency, getopt_dependency, sycl_dependency],
     )
 
