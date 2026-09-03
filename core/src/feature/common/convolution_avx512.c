@@ -191,7 +191,14 @@ void convolution_f32_avx512_s(const float *RESTRICT filter, int filter_width,
     int width_floor_step = vmaf_floorn(width, AVX512_STEP);
     int tmp_stride = vmaf_ceiln(width, AVX512_STEP);
 
+    /* Clamp the vertical border split to the plane. For a plane shorter than
+     * the filter radius, `height - radius` is negative, so the trailing border
+     * loop below would start at a negative row and the leading one would run
+     * past the end -- both heap WRITES. Mirrors the scalar path; identical for
+     * every in-contract size, so no score moves. */
+    int i_border_top = radius;
     int i_vec_end = height - radius;
+    convolution_clamp_borders(height, &i_border_top, &i_vec_end);
     int j_vec_end = vmaf_floorn(width - radius, AVX512_STEP);
 
     const ptrdiff_t src_pdt = (ptrdiff_t)src_stride;
@@ -199,7 +206,7 @@ void convolution_f32_avx512_s(const float *RESTRICT filter, int filter_width,
     const ptrdiff_t tmp_pdt = (ptrdiff_t)tmp_stride;
 
     /* Vertical pass. */
-    for (int i = 0; i < radius; ++i) {
+    for (int i = 0; i < i_border_top; ++i) {
         for (int j = 0; j < width; ++j) {
             tmp[(ptrdiff_t)i * tmp_pdt + j] = convolution_edge_s(false, filter, filter_width, src,
                                                                  width, height, src_stride, i, j);
@@ -248,7 +255,14 @@ void convolution_f32_avx512_sq_s(const float *RESTRICT filter, int filter_width,
     int width_floor_step = vmaf_floorn(width, AVX512_STEP);
     int tmp_stride = vmaf_ceiln(width, AVX512_STEP);
 
+    /* Clamp the vertical border split to the plane. For a plane shorter than
+     * the filter radius, `height - radius` is negative, so the trailing border
+     * loop below would start at a negative row and the leading one would run
+     * past the end -- both heap WRITES. Mirrors the scalar path; identical for
+     * every in-contract size, so no score moves. */
+    int i_border_top = radius;
     int i_vec_end = height - radius;
+    convolution_clamp_borders(height, &i_border_top, &i_vec_end);
     int j_vec_end = vmaf_floorn(width - radius, AVX512_STEP);
 
     const ptrdiff_t src_pdt = (ptrdiff_t)src_stride;
@@ -256,7 +270,7 @@ void convolution_f32_avx512_sq_s(const float *RESTRICT filter, int filter_width,
     const ptrdiff_t tmp_pdt = (ptrdiff_t)tmp_stride;
 
     /* Vertical pass. */
-    for (int i = 0; i < radius; ++i) {
+    for (int i = 0; i < i_border_top; ++i) {
         for (int j = 0; j < width; ++j) {
             tmp[(ptrdiff_t)i * tmp_pdt + j] = convolution_edge_sq_s(
                 false, filter, filter_width, src, width, height, src_stride, i, j);
@@ -305,7 +319,14 @@ void convolution_f32_avx512_xy_s(const float *RESTRICT filter, int filter_width,
     int width_floor_step = vmaf_floorn(width, AVX512_STEP);
     int tmp_stride = vmaf_ceiln(width, AVX512_STEP);
 
+    /* Clamp the vertical border split to the plane. For a plane shorter than
+     * the filter radius, `height - radius` is negative, so the trailing border
+     * loop below would start at a negative row and the leading one would run
+     * past the end -- both heap WRITES. Mirrors the scalar path; identical for
+     * every in-contract size, so no score moves. */
+    int i_border_top = radius;
     int i_vec_end = height - radius;
+    convolution_clamp_borders(height, &i_border_top, &i_vec_end);
     int j_vec_end = vmaf_floorn(width - radius, AVX512_STEP);
 
     const ptrdiff_t src1_pdt = (ptrdiff_t)src1_stride;
@@ -314,7 +335,7 @@ void convolution_f32_avx512_xy_s(const float *RESTRICT filter, int filter_width,
     const ptrdiff_t tmp_pdt = (ptrdiff_t)tmp_stride;
 
     /* Vertical pass. */
-    for (int i = 0; i < radius; ++i) {
+    for (int i = 0; i < i_border_top; ++i) {
         for (int j = 0; j < width; ++j) {
             tmp[(ptrdiff_t)i * tmp_pdt + j] =
                 convolution_edge_xy_s(false, filter, filter_width, src1, src2, width, height,

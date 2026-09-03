@@ -1271,3 +1271,36 @@ leading-zero count — silently wrong VIF and ADM shifts, with no fault and no C
 signal (every hosted Windows runner has LZCNT). Netflix/vmaf#1422 proposes the
 `__lzcnt` form; Netflix/vmaf#1551 is upstream's own retraction of it.
 `scripts/ci/check-msvc-clz-shim.sh` fails the `fast` suite if it comes back.
+
+## `convolution_f32_c_s` dispatches to SIMD — fix the twins, not just the scalar
+
+`core/src/feature/common/convolution.c::convolution_f32_c_s` returns straight
+into `convolution_f32_avx_s` whenever `VMAF_X86_CPU_FLAG_AVX2` is set. That is
+every CI runner and the dev workstation. **A fix applied only to the scalar
+body in `convolution.c` is dead code on x86.**
+
+The AVX2 (`convolution_avx.c`) and AVX-512 (`convolution_avx512.c`) twins each
+derive the same vertical border split — `radius` and `height - radius` — at
+three sites apiece, once per kernel variant (`_s`, `_sq_s`, `_xy_s`). Six sites
+total. All of them must stay clamped via `convolution_clamp_borders` in
+`convolution_internal.h`: for a plane shorter than the radius, `height - radius`
+is negative, so the trailing border loop starts at a negative row and the
+leading one runs past the end. Both are heap **writes**, not reads.
+
+**Testing the scalar kernel does not test this.**
+`core/test/test_convolution_edge_small.c` calls `convolution_y_c_s` /
+`convolution_x_c_s` directly and so never reaches the dispatch;
+`test_motion_min_dim.c` only calls `init()`. Anything asserting the convolution
+is safe at small sizes must go through the public API — see
+`core/test/test_motion_convolution_oob.c`.
+
+**A guard must mirror the kernel it protects, not the option that named it.**
+`motion_blur_plane` keeps `filter_size = 5` for `motion_filter_size == 1` and
+merely swaps in `FILTER_5_NO_OP_s`, so the radius is 2 regardless. A guard that
+reads the option value instead of the filter width the kernel actually uses
+will let the defective sizes through.
+
+**Chroma plane geometry is the ceiling, `(dim + ss) >> ss`, matching
+`picture.c`.** Using `h / 2` under-allocates by one row for every odd luma
+height, and even-height fixtures — including both Netflix golden resolutions —
+never catch it.

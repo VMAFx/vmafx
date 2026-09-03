@@ -2101,6 +2101,18 @@ test_motion_min_dim = executable('test_motion_min_dim',
 )
 test('test_motion_min_dim', test_motion_min_dim, suite : ['fast'])
 
+# Drives float_motion through the PUBLIC API so the AVX2/AVX-512 convolution is
+# actually reached. test_motion_min_dim only calls init(), and
+# test_convolution_edge_small calls the scalar kernels directly, so neither can
+# observe the dispatched SIMD path where the out-of-bounds writes lived.
+test_motion_convolution_oob = executable('test_motion_convolution_oob',
+    ['test.c', 'test_motion_convolution_oob.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, math_lib],
+)
+test('test_motion_convolution_oob', test_motion_convolution_oob, suite : ['fast'])
+
 # Netflix/vmaf#1582 + #1581 regression: the float convolution border helpers
 # must stay inside the plane for every size, including planes smaller than the
 # filter (reachable through float_motion's motion_add_uv chroma planes and the

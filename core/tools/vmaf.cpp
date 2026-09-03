@@ -1158,7 +1158,6 @@ class WindowsConsoleGuard
     bool mode_changed_ = false;
 };
 
-} // namespace
 #endif /* _WIN32 */
 
 namespace

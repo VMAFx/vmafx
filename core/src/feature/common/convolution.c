@@ -38,14 +38,6 @@
  * recomputation that happens when the two border bands would otherwise
  * overlap.
  */
-static void convolution_clamp_borders(int dim, int *borders_lo, int *borders_hi)
-{
-    if (*borders_lo > dim)
-        *borders_lo = dim;
-    if (*borders_hi < *borders_lo)
-        *borders_hi = *borders_lo;
-}
-
 void convolution_x_c_s(const float *filter, int filter_width, const float *src, float *dst,
                        int width, int height, int src_stride, int dst_stride, int step)
 {

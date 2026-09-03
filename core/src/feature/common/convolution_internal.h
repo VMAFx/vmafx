@@ -130,4 +130,22 @@ FORCE_INLINE float convolution_edge_xy_s(bool horizontal, const float *filter, i
     return accum;
 }
 
+/*
+ * convolution_clamp_borders — bound a vertical/horizontal border split to the
+ * plane so the border loops cannot run past, or before, the buffer.
+ *
+ * Shared by the scalar path and by every AVX2 / AVX-512 twin. The SIMD kernels
+ * derive the same `radius` / `dim - radius` split and had the identical defect:
+ * for a plane shorter than the filter radius, `dim - radius` goes negative, so
+ * the trailing border loop starts at a negative row and the leading one runs
+ * past the end. Both are heap writes, not just reads.
+ */
+static inline void convolution_clamp_borders(int dim, int *borders_lo, int *borders_hi)
+{
+    if (*borders_lo > dim)
+        *borders_lo = dim;
+    if (*borders_hi < *borders_lo)
+        *borders_hi = *borders_lo;
+}
+
 #endif // CONVOLUTION_INTERNAL_H_

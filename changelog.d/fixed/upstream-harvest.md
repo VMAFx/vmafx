@@ -110,3 +110,38 @@
   scale 3), and `float_motion` with `motion_add_uv` now rejects frames whose
   chroma planes fall below the filter minimum. Both convert previously
   undefined behaviour into a documented `-EINVAL`.
+
+    Post-review corrections (three defects an independent adversarial review
+    found in the harvest itself, all reproduced before fixing):
+
+    - **The #1582 border clamp landed only on the scalar path.**
+      `convolution_f32_c_s` dispatches to `convolution_f32_avx_s` whenever
+      AVX2 is present — every CI runner and the dev workstation — so the
+      clamp was dead code on x86. The AVX2 and AVX-512 twins derive the same
+      `height - radius` split at three sites each and kept it unclamped: for a
+      plane shorter than the radius that is negative, so the trailing border
+      loop starts at a negative row and the leading one runs past the end.
+      Both are heap **writes**. All six sites now share the scalar clamp,
+      which moved into `convolution_internal.h`.
+    - **`motion_filter_size=1` bypassed the minimum-dimension guard.**
+      `motion_check_min_dim` gated the whole check on
+      `effective_filter_size > 1`, but `motion_blur_plane` keeps
+      `filter_size = 5` for that value and only swaps in the no-op
+      coefficients, so radius stays 2. A 1-row plane therefore reached the
+      convolution above through a documented public option (range 0..9). The
+      guard now mirrors `motion_blur_plane` exactly.
+    - **Odd-height 4:2:0 chroma planes were under-allocated by one row.**
+      `motion_chroma_heights` used `h / 2` while `picture.c` and the guard
+      both use the ceiling `(h + 1) >> 1`, so `motion_copy_and_blur` overran
+      `ref`, `tmp` and every blur-ring buffer for both U and V. Even heights
+      were unaffected, which is why the golden fixtures never caught it.
+
+    Regression test `core/test/test_motion_convolution_oob.c` drives
+    `float_motion` through the public `vmaf_read_pictures` entry point,
+    because neither existing test could reach the dispatched SIMD path:
+    `test_motion_min_dim` only calls `init()`, and
+    `test_convolution_edge_small` calls the scalar kernels directly. Verified
+    both ways — the new test fails on the pre-fix tree, and under
+    `-Db_sanitize=address` the pre-fix tree reports
+    `heap-buffer-overflow ... WRITE of size 4 in convolution_f32_avx_s`
+    reached from `vmaf_read_pictures`.

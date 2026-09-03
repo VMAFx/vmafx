@@ -212,14 +212,23 @@ static double compute_motion_simd(const float *ref, const float *dis, int w, int
 }
 
 /* Chroma plane heights for the motion_add_uv buffers; -EINVAL when the pixel
- * format carries no chroma planes. */
+ * format carries no chroma planes.
+ *
+ * Must use picture.c's CEILING geometry, (h + ss_ver) >> ss_ver, not h / 2.
+ * The floor form under-allocated by one row for every odd luma height: a 4:2:0
+ * frame of height 5 has 3 chroma rows in the VmafPicture but only 2 were
+ * allocated here, so motion_copy_and_blur overran ref, tmp and all
+ * MOTION_BLUR_RING blur buffers for both U and V. It agreed with neither
+ * picture.c nor motion_check_min_dim_all_planes, which is what let the guard
+ * pass a frame the allocation could not hold. Even heights were unaffected,
+ * which is why the golden fixtures never caught it. */
 static int motion_chroma_heights(enum VmafPixelFormat pix_fmt, unsigned h, unsigned *h_u,
                                  unsigned *h_v)
 {
     switch (pix_fmt) {
     case VMAF_PIX_FMT_YUV420P:
-        *h_u = h / 2;
-        *h_v = h / 2;
+        *h_u = (h + 1u) >> 1u;
+        *h_v = (h + 1u) >> 1u;
         return 0;
     case VMAF_PIX_FMT_YUV422P:
     case VMAF_PIX_FMT_YUV444P:
@@ -278,18 +287,24 @@ static void motion_free_planes(MotionState *s)
  * up front to prevent out-of-bounds reads in the convolution kernel. */
 static int motion_check_min_dim(const MotionState *s, unsigned w, unsigned h, const char *plane)
 {
-    const int configured =
-        s->motion_filter_size > 0 ? s->motion_filter_size : DEFAULT_MOTION_FILTER_SIZE;
-    const unsigned effective_filter_size = (unsigned)configured;
-    if (effective_filter_size > 1u) {
-        const unsigned min_dim = effective_filter_size / 2u + 1u;
-        if (h < min_dim || w < min_dim) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                     "float_motion: %s plane %ux%u is below the %u-tap filter minimum %ux%u; "
-                     "refusing to avoid out-of-bounds mirror reads\n",
-                     plane, w, h, effective_filter_size, min_dim, min_dim);
-            return -EINVAL;
-        }
+    /* Mirror motion_blur_plane exactly. motion_filter_size == 1 selects the
+     * FILTER_5_NO_OP_s coefficients but keeps filter_size at 5, so the kernel
+     * still convolves with radius 2; only the 3-tap option narrows the filter,
+     * and every other value (including 0, "option not applied yet") uses 5.
+     *
+     * The previous `effective_filter_size > 1` gate skipped the check outright
+     * for motion_filter_size == 1, which let a plane as small as 1 row reach
+     * the convolution. That is a heap WRITE out of bounds in the AVX2/AVX-512
+     * kernels, not merely a mirror read, and motion_filter_size is a
+     * documented public option (0..9), so the path was reachable. */
+    const unsigned effective_filter_size = (s->motion_filter_size == 3) ? 3u : 5u;
+    const unsigned min_dim = effective_filter_size / 2u + 1u;
+    if (h < min_dim || w < min_dim) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "float_motion: %s plane %ux%u is below the %u-tap filter minimum %ux%u; "
+                 "refusing to avoid out-of-bounds convolution accesses\n",
+                 plane, w, h, effective_filter_size, min_dim, min_dim);
+        return -EINVAL;
     }
     return 0;
 }
