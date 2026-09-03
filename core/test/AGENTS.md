@@ -322,3 +322,26 @@ json_model + dnn_sidecar additions). Conventions:
   harness pulls libvmaf-internal sources (ASan + LTO discards
   module-dtor sections at link time on the larger source sets).
   See the build recipe at the top of `fuzz/README.md`.
+  - **A ported assertion is measured against the merge base, never against
+    a baseline you regenerated afterwards.** When ADR-1153 makes you port a
+    dead twin's unique coverage into the live side before deleting it, the
+    twin's idioms come with it — and if the twin was C and the live side is
+    C++, every `NULL`, `typedef struct`, `{0}` sentinel and file-scope
+    `static` is a fresh clang-tidy warning. Run
+    `python3 scripts/ci/tidy-ratchet.py --lane cpu --build-dir build`
+    against the branch's **merge base** and again after the port, and
+    compare the two. Regenerating the baseline after the port makes any
+    increase invisible: that is how PR #1219 took
+    `core/test/test_feature.cpp` from 9 warnings to 34 without the gate
+    firing. Translate the idioms as you port — C++ TUs use `nullptr`
+    (ADR-1138's `NULL` rule is scoped to **C** TUs, for MSVC
+    `/std:clatest`), plain `struct`, `{}` sentinels, and an anonymous
+    namespace instead of file-scope `static`.
+  - **Free before you assert.** `mu_assert` expands to an early
+    `return message`, so any assertion evaluated while a heap pointer is
+    live leaks that pointer on the failure path. Compute the comparison
+    into a `const bool`, free, then assert on the bool — and null-guard the
+    comparison so a `nullptr` return fails the assertion instead of
+    faulting inside `strcmp`. `clang-analyzer-unix.Malloc` only reports
+    this once a function is small enough for it to analyse fully, so an
+    oversized test function hides the leak rather than avoiding it.
