@@ -25,7 +25,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_asyncio  # noqa: F401 — needed for asyncio mode auto-detection
 
 from vmaf_mcp import server as srv
 

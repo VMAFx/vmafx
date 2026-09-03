@@ -426,7 +426,10 @@ static int utf8_seq_length(char byte)
     } else if (u == 0xC0 || u == 0xC1) {
         // overlong encoding of an ASCII byte
         return 0;
-    } else if (0xC2 <= u && u <= 0xDF) {
+    } else if (u <= 0xDF) {
+        /* u >= 0xC2 is guaranteed by the preceding branches (u < 0x80, u <= 0xBF,
+         * u == 0xC0 || u == 0xC1); redundant lower bound removed for
+         * CodeQL cpp/constant-comparison. */
         // 2-byte sequence
         return 2;
     } else if (0xE0 <= u && u <= 0xEF) {

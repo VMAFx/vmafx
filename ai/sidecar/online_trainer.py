@@ -424,7 +424,10 @@ def run_server(
 
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     srv.bind(socket_path)
-    os.chmod(socket_path, 0o660)  # group-writable; Go node runs as same group
+    # Mode 0o660 grants user+group read/write with 0 world permissions;
+    # required for Unix-domain socket IPC with the Go node peer running in the same group.
+    # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
+    os.chmod(socket_path, 0o660)
     srv.listen(16)
     srv.settimeout(1.0)  # allows the signal check below to fire promptly
 

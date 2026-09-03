@@ -73,7 +73,8 @@ constexpr char kPathSep = '/';
     std::string out;
     out.reserve(path.size());
 
-    for (std::size_t i = 0; i < path.size(); ++i) {
+    std::size_t i = 0;
+    while (i < path.size()) {
         const bool separator = is_path_separator(path[i]);
         out += separator ? kPathSep : path[i];
         if (separator) {
@@ -82,12 +83,15 @@ constexpr char kPathSep = '/';
              * (\\\\?\\...). Preserve the pair while still collapsing any
              * additional leading separators and all later redundant runs. */
 #ifdef _WIN32
-            if (starts_unc_prefix(path, i))
+            if (starts_unc_prefix(path, i)) {
+                ++i;
                 continue;
+            }
 #endif
             while (i + 1 < path.size() && is_path_separator(path[i + 1]))
                 ++i;
         }
+        ++i;
     }
     return out;
 }
