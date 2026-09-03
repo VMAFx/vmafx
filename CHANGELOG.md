@@ -24897,6 +24897,14 @@ legs. (ADR-0603, triggered by Renovate PR #1402)
   ([ADR-0562](docs/adr/0562-local-explainer-hang-fix.md))
 
 
+- Fixed `vmaf --version`, the JSON/XML `version` field and `vmaf_version()`
+  reporting a bare commit abbreviation (e.g. `abafdfc`) instead of a version
+  whenever the build tree could not reach a `v*.*.*` tag — a shallow CI
+  checkout, a tarball export, or a worktree whose `.git` is a file. The
+  version is now always a real version string: `v3.1.0-2417-gabcdef0` when a
+  tag is reachable, and the project version otherwise.
+
+
 Fix three CERT MEM04-C realloc OOM defects in vendored libsvm (core/src/svm.cpp):
 Cache::get_data, svm_group_classes, and svm_check_parameter all overwrote the source
 pointer with the realloc return value; replaced with save-temp/check-NULL/abort idiom
@@ -25685,6 +25693,12 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   `PTHREAD_ONCE_INIT` macro, and `pthread_once()` definition that caused
   `error: redefinition of pthread_once` on Windows MSVC + CUDA and
   Windows MSVC + oneAPI SYCL builds.
+
+
+- Fixed the Windows CI test step silently passing when any test other than the
+  last one in its list failed. GitHub runs `shell: cmd` with `/V:OFF`, so the
+  step reported only the final executable's exit code; each test is now
+  checked with `|| exit /b 1`. `test_output` was also added to that list.
 
 
 - **`y4m_convert_411_422jpeg` 1-byte heap-buffer-overflow on
