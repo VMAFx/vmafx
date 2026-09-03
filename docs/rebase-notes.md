@@ -30,6 +30,33 @@
 - `scripts/ci/tidy-baseline-cpu.json`: fork-local ratchet state (ADR-1142), no upstream
   counterpart. Only this file's entry was removed; every other file keeps CI's measured
   number. No rebase impact.
+## fix/json-model-libsvm-dup-key-leak — duplicate-key leaks in the model parser (2026-09-03)
+
+- `core/src/svm.cpp`: **vendored libsvm.** The fork adds five
+  `exceptAssert(!model-><field>, "duplicate <field> row in model file")` guards
+  in `SVMModelParser::parse_header()` for `rho`, `label`, `probA`, `probB` and
+  `nSV`. Upstream libsvm has no such guard and will happily `Malloc` over the
+  previous pointer. A re-vendor must re-apply them or the 8-byte-per-field leak
+  returns.
+- `core/src/read_json_model.c` **and** `core/src/read_json_model.cpp`: the same
+  `svm_free_and_destroy_model(&model->svm)` call must exist in
+  `parse_libsvm_model` in **both** files. They are a twin pair that is *not* in
+  `scripts/ci/twin-drift-allowlist.txt`: the library builds the `.cpp`, while
+  `core/test/fuzz/meson.build` compiles the `.c` directly into the fuzz harness.
+  Fixing only one leaves the other leaking, and the symptom depends on which
+  binary you test — the library-side reproducer looks fixed while the fuzz lane
+  stays red, or vice versa. `scripts/ci/twin-drift-check.sh` reports the `.c`
+  as a "test-only twin side".
+- `core/src/model.c`: **upstream-mirror.** `vmaf_model_destroy` walks
+  `model->feature_cap`, where upstream walks `model->n_features`. The fork's
+  form frees feature slots that `parse_feature_opts_dicts` populated without
+  bumping `n_features`; reverting it to `n_features` reintroduces the leak. It
+  is safe because `feature_cap` is the allocated element count and
+  `ensure_feature_capacity` zeroes newly grown slots.
+- `core/test/fuzz/json_model_corpus/seed_duplicate_model_key.json` and
+  `seed_duplicate_rho_row.json`: fork-added corpus seeds, no upstream
+  counterpart. `core/test/fuzz/json_model_known_crashes/` holds the reproducer
+  for the still-open third leak and is excluded from the nightly seed path.
 
 ## fix/adm-cm-gpu-border-and-rounding — integer ADM GPU border indexing and row-level rounding (ADR-1167) (2026-09-03)
 

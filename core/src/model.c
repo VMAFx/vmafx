@@ -273,16 +273,26 @@ void vmaf_model_destroy(VmafModel *model)
     free(model->path);
     free(model->name);
     svm_free_and_destroy_model(&(model->svm));
-    /* Walk min(feature_cap, n_features) — never past the malloc'd buffer.
-     * Belt-and-suspenders to the parse-time validation added by ADR-0887:
-     * validate_feature_arrays() in read_json_model.c rejects models whose
-     * per-feature arrays disagree on length; in steady state
-     * n_features <= feature_cap for every slot we touched. Bounding by the
-     * smaller of the two means a future regression that drifts n_features
-     * past feature_cap cannot turn into a heap-buffer-overflow read here. */
-    const unsigned feature_count =
-        model->feature_cap < model->n_features ? model->feature_cap : model->n_features;
-    for (unsigned i = 0; i < feature_count; i++) {
+    /* Walk the full feature_cap, not min(feature_cap, n_features).
+     *
+     * feature_cap IS the allocated element count, so this cannot read past the
+     * buffer — it preserves the overflow safety the previous min() was written
+     * for, while also freeing slots n_features does not cover.
+     *
+     * That gap was a real leak. n_features is only incremented by
+     * parse_feature_names, but ensure_feature_capacity() is also called by
+     * parse_feature_opts_dicts / parse_slopes / parse_intercepts, and
+     * parse_feature_opts_dicts stores an owned VmafDictionary in the slot. A
+     * model carrying `feature_opts_dicts` with no (or fewer) `feature_names`
+     * therefore left dictionaries above n_features that nothing could free —
+     * a 16-byte-per-entry leak found by the fuzz_json_model LeakSanitizer lane.
+     * Inflating n_features instead would be wrong: it is the semantic count of
+     * model features and feeds prediction, not a memory-management counter.
+     *
+     * Walking the tail is safe because ensure_feature_capacity() memsets every
+     * newly grown slot to zero, so an untouched slot holds NULL and both
+     * free(NULL) and vmaf_dictionary_free(&NULL) are no-ops. */
+    for (unsigned i = 0; i < model->feature_cap; i++) {
         free(model->feature[i].name);
         vmaf_dictionary_free(&model->feature[i].opts_dict);
     }

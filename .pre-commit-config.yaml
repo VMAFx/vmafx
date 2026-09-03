@@ -20,9 +20,9 @@ repos:
       # .onnx.data (ONNX external-data sidecar) is intentionally listed
       # alongside .onnx — they are raw float tensors, never text.
       - id: trailing-whitespace
-        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|(^|/)testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$'
+        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|(^|/)testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$|^core/test/fuzz/[^/]*(_corpus|_known_crashes)/'
       - id: end-of-file-fixer
-        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|(^|/)testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$'
+        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|(^|/)testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$|^core/test/fuzz/[^/]*(_corpus|_known_crashes)/'
       - id: check-merge-conflict
       - id: check-yaml
         # mkdocs.yml uses `!!python/name:...` tags (Material extensions, pymdownx
@@ -34,6 +34,14 @@ repos:
         # does not apply. Exclude the entire kuttl-tests/ directory.
         exclude: '\.clang-format$|^mkdocs\.yml$|^deploy/helm/.*/templates/|^test/e2e/kuttl-tests/'
       - id: check-json
+        # A fuzz corpus is deliberately full of malformed inputs:
+        # seed_duplicate_model_key.json and seed_duplicate_rho_row.json exist
+        # precisely to carry the duplicate keys this hook rejects, and the
+        # whitespace/EOF fixers above must not append a byte to any corpus
+        # file either — a fuzz input is only a reproducer while it stays
+        # byte-exact. Harness sources and meson.build under core/test/fuzz/
+        # are deliberately still checked; only the corpus dirs are exempt.
+        exclude: '^core/test/fuzz/[^/]*(_corpus|_known_crashes)/'
       - id: check-toml
       - id: check-added-large-files
         args: ["--maxkb=1024"]
@@ -44,7 +52,7 @@ repos:
         # some ONNX / .bin payloads and rewrites bytes inside the serialized
         # model, which then fails sha256 pinning in registry.json.
         # .onnx.data added alongside .onnx (external tensor sidecar; raw bytes).
-        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|(^|/)testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$'
+        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|(^|/)testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$|^core/test/fuzz/[^/]*(_corpus|_known_crashes)/'
       - id: detect-private-key
       # forbid-new-submodules: the fork pulls upstream Netflix code via
       # subprojects/ wraps (Meson dependency mechanism) and ffmpeg-patches/

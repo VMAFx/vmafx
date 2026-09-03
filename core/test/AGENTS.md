@@ -345,3 +345,12 @@ json_model + dnn_sidecar additions). Conventions:
     faulting inside `strcmp`. `clang-analyzer-unix.Malloc` only reports
     this once a function is small enough for it to analyse fully, so an
     oversized test function hides the leak rather than avoiding it.
+  - **`read_json_model` is a twin pair, and the fuzz harness uses the `.c`
+    side.** The library builds `core/src/read_json_model.cpp`; the libFuzzer
+    target compiles `core/src/read_json_model.c` directly
+    (`core/test/fuzz/meson.build`). The pair is not in
+    `scripts/ci/twin-drift-allowlist.txt`, so a parser fix must land in
+    **both** files. Fixing one and testing the other is a real trap: a
+    library-linked reproducer will report the bug fixed while the fuzz lane
+    stays red, because the two binaries do not share that translation unit.
+    `scripts/ci/twin-drift-check.sh` labels the `.c` a "test-only twin side".

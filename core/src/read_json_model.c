@@ -389,6 +389,20 @@ static int parse_libsvm_model(json_stream *s, VmafModel *model)
 {
     size_t sz;
     const char *libsvm_model = json_get_string(s, &sz);
+    /* Free any model already parsed into this slot before overwriting it.
+     * A duplicate (or fuzzer-mangled) `libsvm_model` key re-enters this
+     * function, and an unconditional assignment orphaned the first
+     * svm_model: nothing else holds a pointer to it, so neither
+     * vmaf_model_destroy nor svm_free_and_destroy_model can reach it and
+     * the whole struct plus its sv_coef rows leak. Surfaced by the nightly
+     * fuzz_json_model LeakSanitizer lane as a direct leak of the
+     * `Malloc(svm_model, 1)` inside SVMModelParser::parse(), with the
+     * sv_coef array and rows as indirect leaks.
+     *
+     * Same shape, and the same fix, as the duplicate `feature_names` key
+     * handled in append_feature_name above (ADR-0887).
+     * svm_free_and_destroy_model is null-safe and clears the pointer. */
+    svm_free_and_destroy_model(&model->svm);
     model->svm = svm_parse_model_from_buffer(libsvm_model, sz);
     if (!model->svm)
         return -ENOMEM;
