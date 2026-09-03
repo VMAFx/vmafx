@@ -203,27 +203,111 @@ func optIntArg(args map[string]any, key string) *int {
 	return &v
 }
 
-// parseScoreExtras extracts the optional scoring pass-through flags from args.
-func parseScoreExtras(args map[string]any) scoreExtras {
+var (
+	validTinyDevices = map[string]bool{
+		"auto": true, "cpu": true, "cuda": true, "openvino": true,
+		"openvino-npu": true, "openvino-cpu": true, "openvino-gpu": true,
+		"coreml": true, "coreml-ane": true, "coreml-gpu": true, "coreml-cpu": true,
+		"rocm": true,
+	}
+	validTinyResizes = map[string]bool{
+		"bilinear": true, "nearest": true, "bicubic": true, "disabled": true,
+	}
+	validAOMCTC = map[string]bool{
+		"v1.0": true, "v2.0": true, "v3.0": true, "v4.0": true,
+		"v5.0": true, "v6.0": true, "v7.0": true,
+	}
+	validPixfmts = map[string]bool{
+		"420": true, "422": true, "444": true,
+	}
+	validBackends = map[string]bool{
+		"auto": true, "cpu": true, "cuda": true, "sycl": true, "hip": true, "metal": true,
+	}
+)
+
+// parseScoreExtras extracts and validates the optional scoring pass-through flags from args.
+func parseScoreExtras(args map[string]any) (scoreExtras, error) {
+	tinyDevice := strArg(args, "tiny_device", "")
+	dnnEP := strArg(args, "dnn_ep", "")
+	if tinyDevice != "" && dnnEP != "" && tinyDevice != dnnEP {
+		return scoreExtras{}, fmt.Errorf("conflicting tiny_device (%q) and dnn_ep (%q) values", tinyDevice, dnnEP)
+	}
+	if tinyDevice == "" {
+		tinyDevice = dnnEP
+	}
+	if tinyDevice != "" && !validTinyDevices[tinyDevice] {
+		return scoreExtras{}, fmt.Errorf("invalid tiny_device %q: must be one of auto|cpu|cuda|openvino|openvino-npu|openvino-cpu|openvino-gpu|coreml|coreml-ane|coreml-gpu|coreml-cpu|rocm", tinyDevice)
+	}
+
+	tinyResize := strArg(args, "tiny_resize", "")
+	if tinyResize != "" && !validTinyResizes[tinyResize] {
+		return scoreExtras{}, fmt.Errorf("invalid tiny_resize %q: must be one of bilinear|nearest|bicubic|disabled", tinyResize)
+	}
+
+	tinyCRF := optIntArg(args, "tiny_crf")
+	if tinyCRF != nil && (*tinyCRF < 0 || *tinyCRF > 63) {
+		return scoreExtras{}, fmt.Errorf("invalid tiny_crf %d: must be in range [0, 63]", *tinyCRF)
+	}
+
+	tinyThreads := optIntArg(args, "tiny_threads")
+	if tinyThreads != nil && *tinyThreads < 0 {
+		return scoreExtras{}, fmt.Errorf("invalid tiny_threads %d: must be >= 0", *tinyThreads)
+	}
+
+	aomCTC := strArg(args, "aom_ctc", "")
+	if aomCTC != "" && !validAOMCTC[aomCTC] {
+		return scoreExtras{}, fmt.Errorf("invalid aom_ctc %q: must be one of v1.0|v2.0|v3.0|v4.0|v5.0|v6.0|v7.0", aomCTC)
+	}
+
+	nflxCTC := strArg(args, "nflx_ctc", "")
+	if nflxCTC != "" && nflxCTC != "v1.0" {
+		return scoreExtras{}, fmt.Errorf("invalid nflx_ctc %q: must be v1.0", nflxCTC)
+	}
+
+	threads := optIntArg(args, "threads")
+	if threads != nil && *threads < 1 {
+		return scoreExtras{}, fmt.Errorf("invalid threads %d: must be >= 1", *threads)
+	}
+
+	frameCnt := optIntArg(args, "frame_cnt")
+	if frameCnt != nil && *frameCnt < 1 {
+		return scoreExtras{}, fmt.Errorf("invalid frame_cnt %d: must be >= 1", *frameCnt)
+	}
+
+	frameSkipRef := optIntArg(args, "frame_skip_ref")
+	if frameSkipRef != nil && *frameSkipRef < 0 {
+		return scoreExtras{}, fmt.Errorf("invalid frame_skip_ref %d: must be >= 0", *frameSkipRef)
+	}
+
+	frameSkipDist := optIntArg(args, "frame_skip_dist")
+	if frameSkipDist != nil && *frameSkipDist < 0 {
+		return scoreExtras{}, fmt.Errorf("invalid frame_skip_dist %d: must be >= 0", *frameSkipDist)
+	}
+
+	subsample := intArg(args, "subsample", 1)
+	if subsample < 1 {
+		return scoreExtras{}, fmt.Errorf("invalid subsample %d: must be >= 1", subsample)
+	}
+
 	ex := scoreExtras{
-		aomCTC:          strArg(args, "aom_ctc", ""),
-		nflxCTC:         strArg(args, "nflx_ctc", ""),
+		aomCTC:          aomCTC,
+		nflxCTC:         nflxCTC,
 		tinyModel:       strArg(args, "tiny_model", ""),
-		tinyDevice:      strArg(args, "tiny_device", ""),
-		tinyThreads:     optIntArg(args, "tiny_threads"),
+		tinyDevice:      tinyDevice,
+		tinyThreads:     tinyThreads,
 		tinyFP16:        boolArg(args, "tiny_fp16", false),
 		tinyModelVerify: boolArg(args, "tiny_model_verify", false),
 		tinyCodec:       strArg(args, "tiny_codec", ""),
 		tinyPreset:      strArg(args, "tiny_preset", ""),
-		tinyCRF:         optIntArg(args, "tiny_crf"),
-		tinyResize:      strArg(args, "tiny_resize", ""),
+		tinyCRF:         tinyCRF,
+		tinyResize:      tinyResize,
 		noReference:     boolArg(args, "no_reference", false),
-		threads:         optIntArg(args, "threads"),
-		frameCnt:        optIntArg(args, "frame_cnt"),
-		frameSkipRef:    optIntArg(args, "frame_skip_ref"),
-		frameSkipDist:   optIntArg(args, "frame_skip_dist"),
+		threads:         threads,
+		frameCnt:        frameCnt,
+		frameSkipRef:    frameSkipRef,
+		frameSkipDist:   frameSkipDist,
 		noPrediction:    boolArg(args, "no_prediction", false),
-		subsample:       intArg(args, "subsample", 1),
+		subsample:       subsample,
 	}
 	if raw, ok := args["feature"].([]any); ok {
 		for _, f := range raw {
@@ -232,7 +316,7 @@ func parseScoreExtras(args map[string]any) scoreExtras {
 			}
 		}
 	}
-	return ex
+	return ex, nil
 }
 
 // appendArgs appends every set scoring-extra flag to argv in a fixed,
@@ -307,7 +391,10 @@ func (ex scoreExtras) appendArgs(argv []string) []string {
 // ---------------------------------------------------------------------------
 
 func handleVmafScore(ctx context.Context, args map[string]any) (any, error) {
-	extras := parseScoreExtras(args)
+	extras, err := parseScoreExtras(args)
+	if err != nil {
+		return nil, err
+	}
 	// NR-mode flag/model consistency check (mirrors cli_parse.c:997): the only
 	// scorer that runs without a reference is an NR tiny ONNX model, so
 	// --no-reference requires --tiny-model. Surface the same error the CLI
@@ -321,7 +408,6 @@ func handleVmafScore(ctx context.Context, args map[string]any) (any, error) {
 	// We validate ref only when present (NR) or always (FR).
 	refRaw := strArg(args, "ref", "")
 	var ref string
-	var err error
 	if refRaw != "" {
 		ref, err = libvmaf.ValidatePath(refRaw)
 		if err != nil {
@@ -340,9 +426,18 @@ func handleVmafScore(ctx context.Context, args map[string]any) (any, error) {
 		return nil, fmt.Errorf("width and height must be positive integers")
 	}
 	pixfmt := strArg(args, "pixfmt", "420")
+	if !validPixfmts[pixfmt] {
+		return nil, fmt.Errorf("invalid pixfmt %q: must be one of 420|422|444", pixfmt)
+	}
 	bitdepth := intArg(args, "bitdepth", 8)
-	model := strArg(args, "model", "version=vmaf_v0.6.1")
+	if bitdepth != 8 && bitdepth != 10 && bitdepth != 12 && bitdepth != 16 {
+		return nil, fmt.Errorf("invalid bitdepth %d: must be one of 8|10|12|16", bitdepth)
+	}
 	backend := strArg(args, "backend", "auto")
+	if !validBackends[backend] {
+		return nil, fmt.Errorf("invalid backend %q: must be one of auto|cpu|cuda|sycl|hip|metal", backend)
+	}
+	model := strArg(args, "model", "version=vmaf_v0.6.1")
 	precision := strArg(args, "precision", "legacy") // "legacy"=%.6f matches C CLI default (ADR-0119)
 
 	// When VMAFX_MCP_DIRECT=1, attempt the direct cgo path first.  The cgo
@@ -354,6 +449,40 @@ func handleVmafScore(ctx context.Context, args map[string]any) (any, error) {
 		return runVmafScoreDirect(ctx, ref, dis, width, height, pixfmt, bitdepth, model, backend)
 	}
 	return runVmafScore(ctx, ref, dis, width, height, pixfmt, bitdepth, model, backend, precision, extras)
+}
+
+// buildVmafArgv constructs the complete argv list for invoking the vmaf CLI,
+// maintaining strict byte-parity with the Python vmaf-mcp server.
+func buildVmafArgv(vmafBin, ref, dis string, width, height int, pixfmt string, bitdepth int, model, backend, precision, outPath string, extras scoreExtras) []string {
+	argv := []string{}
+	if vmafBin != "" {
+		argv = append(argv, vmafBin)
+	}
+	// In no-reference mode the reference path may be omitted (only the
+	// distorted picture is scored by the NR tiny model). When a ref is still
+	// supplied — FR mode, or an NR caller passing one — emit -r as usual.
+	if ref != "" {
+		argv = append(argv, "-r", ref)
+	}
+	argv = append(argv,
+		"-d", dis,
+		"--width", strconv.Itoa(width),
+		"--height", strconv.Itoa(height),
+		"-p", pixfmt,
+		"-b", strconv.Itoa(bitdepth),
+		"-m", model,
+		"--precision", precision,
+		"-q",
+		"-o", outPath,
+		"--json",
+	)
+	argv = extras.appendArgs(argv)
+	if siblings, ok := backendDisable[backend]; ok {
+		for _, s := range siblings {
+			argv = append(argv, "--no_"+s)
+		}
+	}
+	return argv
 }
 
 func runVmafScore(ctx context.Context, ref, dis string, width, height int, pixfmt string, bitdepth int, model, backend, precision string, extras scoreExtras) (map[string]any, error) {
@@ -388,31 +517,7 @@ func runVmafScore(ctx context.Context, ref, dis string, width, height int, pixfm
 		}
 	}()
 
-	argv := []string{}
-	// In no-reference mode the reference path may be omitted (only the
-	// distorted picture is scored by the NR tiny model). When a ref is still
-	// supplied — FR mode, or an NR caller passing one — emit -r as usual.
-	if ref != "" {
-		argv = append(argv, "-r", ref)
-	}
-	argv = append(argv,
-		"-d", dis,
-		"--width", strconv.Itoa(width),
-		"--height", strconv.Itoa(height),
-		"-p", pixfmt,
-		"-b", strconv.Itoa(bitdepth),
-		"-m", model,
-		"--precision", precision,
-		"-q",
-		"-o", outPath,
-		"--json",
-	)
-	argv = extras.appendArgs(argv)
-	if siblings, ok := backendDisable[backend]; ok {
-		for _, s := range siblings {
-			argv = append(argv, "--no_"+s)
-		}
-	}
+	argv := buildVmafArgv("", ref, dis, width, height, pixfmt, bitdepth, model, backend, precision, outPath, extras)
 
 	// #nosec G204 -- vmafBin resolved via libvmaf.FindBinary (env-overridable to
 	// a fixed allowlist of paths) and `ref`/`dis` are already libvmaf.ValidatePath-
@@ -1126,8 +1231,14 @@ func handleVmafScoreEncoded(ctx context.Context, args map[string]any) (any, erro
 	}
 	model := strArg(args, "model", "version=vmaf_v0.6.1")
 	backend := strArg(args, "backend", "auto")
+	if !validBackends[backend] {
+		return nil, fmt.Errorf("invalid backend %q: must be one of auto|cpu|cuda|sycl|hip|metal", backend)
+	}
 	precision := strArg(args, "precision", "legacy") // "legacy"=%.6f matches C CLI default (ADR-0119)
-	extras := parseScoreExtras(args)
+	extras, err := parseScoreExtras(args)
+	if err != nil {
+		return nil, err
+	}
 	if extras.noReference && extras.tinyModel == "" {
 		return nil, fmt.Errorf("no_reference requires tiny_model; no classic NR scorer exists")
 	}

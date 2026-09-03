@@ -461,6 +461,28 @@ class ScoreRequest:
     extras: ScoreExtras = ScoreExtras()  # optional pass-through flags (ADR-1117)
 
 
+_VALID_TINY_DEVICES: set[str] = {
+    "auto",
+    "cpu",
+    "cuda",
+    "openvino",
+    "openvino-npu",
+    "openvino-cpu",
+    "openvino-gpu",
+    "coreml",
+    "coreml-ane",
+    "coreml-gpu",
+    "coreml-cpu",
+    "rocm",
+}
+_VALID_TINY_RESIZES: set[str] = {"bilinear", "nearest", "bicubic", "disabled"}
+_VALID_AOM_CTC: set[str] = {"v1.0", "v2.0", "v3.0", "v4.0", "v5.0", "v6.0", "v7.0"}
+_VALID_NFLX_CTC: set[str] = {"v1.0"}
+_VALID_PIXFMTS: set[str] = {"420", "422", "444"}
+_VALID_BITDEPTHS: set[int] = {8, 10, 12, 16}
+_VALID_BACKENDS: set[str] = {"auto", "cpu", "cuda", "sycl", "hip", "metal"}
+
+
 def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
     """Build a :class:`ScoreExtras` from a raw tool-call ``arguments`` dict.
 
@@ -479,24 +501,82 @@ def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
     def _opt_str(key: str) -> str | None:
         return str(arguments[key]) if key in arguments else None
 
+    tiny_dev = _opt_str("tiny_device")
+    dnn_ep = _opt_str("dnn_ep")
+    if tiny_dev is not None and dnn_ep is not None and tiny_dev != dnn_ep:
+        raise ValueError(f"conflicting tiny_device ('{tiny_dev}') and dnn_ep ('{dnn_ep}') values")
+    if tiny_dev is None:
+        tiny_dev = dnn_ep
+    if tiny_dev is not None and tiny_dev not in _VALID_TINY_DEVICES:
+        raise ValueError(
+            f"invalid tiny_device '{tiny_dev}': must be one of "
+            "auto|cpu|cuda|openvino|openvino-npu|openvino-cpu|openvino-gpu|"
+            "coreml|coreml-ane|coreml-gpu|coreml-cpu|rocm"
+        )
+
+    tiny_resize = _opt_str("tiny_resize")
+    if tiny_resize is not None and tiny_resize not in _VALID_TINY_RESIZES:
+        raise ValueError(
+            f"invalid tiny_resize '{tiny_resize}': must be one of "
+            "bilinear|nearest|bicubic|disabled"
+        )
+
+    tiny_crf = _opt_int("tiny_crf")
+    if tiny_crf is not None and not (0 <= tiny_crf <= 63):
+        raise ValueError(f"invalid tiny_crf {tiny_crf}: must be in range [0, 63]")
+
+    tiny_threads = _opt_int("tiny_threads")
+    if tiny_threads is not None and tiny_threads < 0:
+        raise ValueError(f"invalid tiny_threads {tiny_threads}: must be >= 0")
+
+    aom_ctc = _opt_str("aom_ctc")
+    if aom_ctc is not None and aom_ctc not in _VALID_AOM_CTC:
+        raise ValueError(
+            f"invalid aom_ctc '{aom_ctc}': must be one of v1.0|v2.0|v3.0|v4.0|v5.0|v6.0|v7.0"
+        )
+
+    nflx_ctc = _opt_str("nflx_ctc")
+    if nflx_ctc is not None and nflx_ctc not in _VALID_NFLX_CTC:
+        raise ValueError(f"invalid nflx_ctc '{nflx_ctc}': must be v1.0")
+
+    threads = _opt_int("threads")
+    if threads is not None and threads < 1:
+        raise ValueError(f"invalid threads {threads}: must be >= 1")
+
+    frame_cnt = _opt_int("frame_cnt")
+    if frame_cnt is not None and frame_cnt < 1:
+        raise ValueError(f"invalid frame_cnt {frame_cnt}: must be >= 1")
+
+    frame_skip_ref = _opt_int("frame_skip_ref")
+    if frame_skip_ref is not None and frame_skip_ref < 0:
+        raise ValueError(f"invalid frame_skip_ref {frame_skip_ref}: must be >= 0")
+
+    frame_skip_dist = _opt_int("frame_skip_dist")
+    if frame_skip_dist is not None and frame_skip_dist < 0:
+        raise ValueError(f"invalid frame_skip_dist {frame_skip_dist}: must be >= 0")
+
+    subsample = int(arguments.get("subsample", 1))
+    if subsample < 1:
+        raise ValueError(f"invalid subsample {subsample}: must be >= 1")
+
     return ScoreExtras(
         features=features,
-        aom_ctc=_opt_str("aom_ctc"),
-        nflx_ctc=_opt_str("nflx_ctc"),
+        aom_ctc=aom_ctc,
+        nflx_ctc=nflx_ctc,
         tiny_model=_opt_str("tiny_model"),
-        tiny_device=_opt_str("tiny_device"),
-        tiny_threads=_opt_int("tiny_threads"),
+        tiny_device=tiny_dev,
+        tiny_threads=tiny_threads,
         tiny_fp16=bool(arguments.get("tiny_fp16", False)),
         tiny_model_verify=bool(arguments.get("tiny_model_verify", False)),
         tiny_codec=_opt_str("tiny_codec"),
         tiny_preset=_opt_str("tiny_preset"),
-        tiny_crf=_opt_int("tiny_crf"),
-        tiny_resize=_opt_str("tiny_resize"),
+        tiny_crf=tiny_crf,
+        tiny_resize=tiny_resize,
         no_reference=bool(arguments.get("no_reference", False)),
-        threads=_opt_int("threads"),
-        frame_cnt=_opt_int("frame_cnt"),
-        frame_skip_ref=_opt_int("frame_skip_ref"),
-        frame_skip_dist=_opt_int("frame_skip_dist"),
+        threads=threads,
+        frame_cnt=frame_cnt,
+        frame_skip_ref=frame_skip_ref,
+        frame_skip_dist=frame_skip_dist,
         no_prediction=bool(arguments.get("no_prediction", False)),
     )
 
@@ -705,6 +785,50 @@ async def _probe_backends_async(vmaf: Path) -> frozenset[str]:
         return await asyncio.to_thread(_probe_backends, vmaf)
 
 
+def _build_vmaf_argv(
+    req: ScoreRequest, vmaf: str | Path = "", output: str | Path = ""
+) -> list[str]:
+    """Build the complete argv list for invoking the vmaf CLI, byte-compatible with Go."""
+    argv: list[str] = []
+    if vmaf:
+        argv.append(str(vmaf))
+    # In no-reference mode the reference path may be omitted (only the
+    # distorted picture is scored by the NR tiny model). Emit -r only
+    # when a reference is supplied — FR mode, or an NR caller passing
+    # one. Mirrors the Go server's conditional -r (ADR-1117).
+    if req.ref is not None:
+        argv += ["-r", str(req.ref)]
+    argv += [
+        "-d",
+        str(req.dis),
+        "--width",
+        str(req.width),
+        "--height",
+        str(req.height),
+        "-p",
+        req.pixfmt,
+        "-b",
+        str(req.bitdepth),
+        "-m",
+        req.model,
+        "--precision",
+        req.precision,
+        "-q",
+        "-o",
+        str(output),
+        "--json",
+    ]
+    if req.subsample > 1:
+        argv += ["--subsample", str(req.subsample)]
+    # Optional pass-through scoring flags (ADR-1117). Appended before
+    # the backend-disable flags so the argv order matches the Go server.
+    argv += req.extras.to_argv()
+    if req.backend in _BACKEND_DISABLE:
+        for sibling in _BACKEND_DISABLE[req.backend]:
+            argv.append(f"--no_{sibling}")
+    return argv
+
+
 async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
     vmaf = _vmaf_binary()
     if not vmaf.exists():
@@ -743,42 +867,7 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
         ) as _tmp:
             output = Path(_tmp.name)
         try:
-            argv = [str(vmaf)]
-            # In no-reference mode the reference path may be omitted (only the
-            # distorted picture is scored by the NR tiny model). Emit -r only
-            # when a reference is supplied — FR mode, or an NR caller passing
-            # one. Mirrors the Go server's conditional -r (ADR-1117).
-            if req.ref is not None:
-                argv += ["-r", str(req.ref)]
-            argv += [
-                "-d",
-                str(req.dis),
-                "--width",
-                str(req.width),
-                "--height",
-                str(req.height),
-                "-p",
-                req.pixfmt,
-                "-b",
-                str(req.bitdepth),
-                "-m",
-                req.model,
-                "--precision",
-                req.precision,
-                "-q",
-                "-o",
-                str(output),
-                "--json",
-            ]
-            if req.subsample > 1:
-                argv += ["--subsample", str(req.subsample)]
-            # Optional pass-through scoring flags (ADR-1117). Appended before
-            # the backend-disable flags so the argv order matches the Go server.
-            argv += req.extras.to_argv()
-            if req.backend in _BACKEND_DISABLE:
-                for sibling in _BACKEND_DISABLE[req.backend]:
-                    argv.append(f"--no_{sibling}")
-
+            argv = _build_vmaf_argv(req, vmaf=vmaf, output=output)
             proc = await asyncio.create_subprocess_exec(
                 *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
             )
@@ -2342,6 +2431,25 @@ def _scoring_extra_properties() -> dict[str, Any]:
             "description": "ONNX Runtime execution provider for the tiny model (--tiny-device / "
             "--dnn-ep). Default: auto.",
         },
+        "dnn_ep": {
+            "type": "string",
+            "enum": [
+                "auto",
+                "cpu",
+                "cuda",
+                "openvino",
+                "openvino-npu",
+                "openvino-cpu",
+                "openvino-gpu",
+                "coreml",
+                "coreml-ane",
+                "coreml-gpu",
+                "coreml-cpu",
+                "rocm",
+            ],
+            "description": "Alias for tiny_device: ONNX Runtime execution provider for the "
+            "tiny model (--dnn-ep / --tiny-device). Default: auto.",
+        },
         "tiny_threads": {
             "type": "integer",
             "minimum": 0,
@@ -2887,16 +2995,33 @@ async def _call_tool_dispatch(
             ref_path = None
         else:
             raise ValueError("missing required argument: 'ref' (omit only with no_reference=true)")
+        width = int(arguments["width"])
+        height = int(arguments["height"])
+        if width <= 0 or height <= 0:
+            raise ValueError("width and height must be positive integers")
+        pixfmt = str(arguments["pixfmt"])
+        if pixfmt not in _VALID_PIXFMTS:
+            raise ValueError(f"invalid pixfmt '{pixfmt}': must be one of 420|422|444")
+        bitdepth = int(arguments["bitdepth"])
+        if bitdepth not in _VALID_BITDEPTHS:
+            raise ValueError(f"invalid bitdepth {bitdepth}: must be one of 8|10|12|16")
+        backend = str(arguments.get("backend", "auto"))
+        if backend not in _VALID_BACKENDS:
+            raise ValueError(
+                f"invalid backend '{backend}': must be one of auto|cpu|cuda|sycl|hip|metal"
+            )
+        subsample = int(arguments.get("subsample", 1))
         req = ScoreRequest(
             ref=ref_path,
             dis=_validate_path(arguments["dis"]),
-            width=int(arguments["width"]),
-            height=int(arguments["height"]),
-            pixfmt=str(arguments["pixfmt"]),
-            bitdepth=int(arguments["bitdepth"]),
+            width=width,
+            height=height,
+            pixfmt=pixfmt,
+            bitdepth=bitdepth,
             model=str(arguments.get("model", "version=vmaf_v0.6.1")),
-            backend=str(arguments.get("backend", "auto")),
+            backend=backend,
             precision=str(arguments.get("precision", "legacy")),
+            subsample=subsample,
             extras=extras,
         )
         result = await _run_vmaf_score(req)
@@ -2939,9 +3064,8 @@ async def _call_tool_dispatch(
             raise ValueError(f"'n' must be between 1 and 32 (schema maximum); got {n_raw}")
         result = await _describe_worst_frames(req, n=n_raw)
     elif name == "probe_backend":
-        # Missing 'backend' raises KeyError, converted to a uniform
-        # "tool 'probe_backend' missing required argument: 'backend'"
-        # ValueError by the _call_tool wrapper (matching every other
+        # Argument validation: probe_backend requires 'backend'. If missing,
+        # _call_tool converts the KeyError to a clean ValueError (mirrors any
         # required-arg tool, e.g. describe_model's 'name'). The schema
         # marks 'backend' required; this keeps the error message
         # consistent instead of a bespoke "'backend' is required" string.
@@ -2952,11 +3076,16 @@ async def _call_tool_dispatch(
         encoded_extras = _extras_from_args(arguments)
         if encoded_extras.no_reference and not encoded_extras.tiny_model:
             raise ValueError("no_reference requires tiny_model; no classic NR scorer exists")
+        backend = str(arguments.get("backend", "auto"))
+        if backend not in _VALID_BACKENDS:
+            raise ValueError(
+                f"invalid backend '{backend}': must be one of auto|cpu|cuda|sycl|hip|metal"
+            )
         result = await _run_vmaf_score_encoded(
             ref_path=_validate_path(arguments["reference_encoded"]),
             dis_path=_validate_path(arguments["distorted_encoded"]),
             model=str(arguments.get("model", "version=vmaf_v0.6.1")),
-            backend=str(arguments.get("backend", "auto")),
+            backend=backend,
             subsample=int(arguments.get("subsample", 1)),
             precision=str(arguments.get("precision", "legacy")),
             extras=encoded_extras,

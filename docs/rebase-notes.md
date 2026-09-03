@@ -2,6 +2,9 @@
 # Rebase notes
 
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
+## feat/mcp-tinyai-flags — tiny-AI scoring flags and input validation (2026-09-03)
+
+- `no rebase impact: MCP servers (cmd/vmafx-mcp and mcp-server/vmaf-mcp) are wholly fork-added surfaces with no upstream Netflix/vmaf counterpart.`
 ## fix/untrack-venv-symlink — no virtualenv path may be tracked (2026-09-04)
 
 - `.gitignore`: the `.venv*` line (no trailing slash) is load-bearing next to `.venv*/`. The

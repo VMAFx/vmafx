@@ -10,7 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// buildServer constructs the MCP server and registers all 16 VMAFX tools.
+// buildServer constructs the MCP server and registers all 15 VMAFX tools.
 // The tool definitions match the Python vmaf-mcp server exactly so that
 // IDE clients (Claude Desktop, Cursor) work unchanged.
 func buildServer(logger *slog.Logger) *mcp.Server {

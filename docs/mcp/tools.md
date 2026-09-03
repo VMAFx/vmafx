@@ -138,6 +138,7 @@ MCP).
 |---------------------|----------------------------------------------------------------------------------------------------------------------------|-----------------------|----------------------------------------------------------------------------------------------------|
 | `tiny_model`        | string (path)                                                                                                              | `--tiny-model`        | Load a tiny ONNX model alongside the classic models.                                               |
 | `tiny_device`       | `auto \| cpu \| cuda \| openvino \| openvino-npu \| openvino-cpu \| openvino-gpu \| coreml \| coreml-ane \| coreml-gpu \| coreml-cpu \| rocm` | `--tiny-device` (= `--dnn-ep`) | ONNX Runtime execution provider. Default `auto`.                                       |
+| `dnn_ep`            | `auto \| cpu \| cuda \| openvino \| openvino-npu \| openvino-cpu \| openvino-gpu \| coreml \| coreml-ane \| coreml-gpu \| coreml-cpu \| rocm` | `--dnn-ep` (= `--tiny-device`) | Alias for `tiny_device` matching the `--dnn-ep` CLI flag.                                          |
 | `tiny_threads`      | integer `≥ 0`                                                                                                               | `--tiny-threads`      | CPU EP intra-op threads (`0` = ORT default).                                                        |
 | `tiny_fp16`         | boolean                                                                                                                     | `--tiny-fp16`         | Request fp16 IO where the EP supports it.                                                           |
 | `tiny_model_verify` | boolean                                                                                                                     | `--tiny-model-verify` | Require Sigstore-bundle verification before loading the model.                                      |
@@ -146,6 +147,16 @@ MCP).
 | `tiny_crf`          | integer `0..63`                                                                                                            | `--tiny-crf`          | CRF / QP for codec-aware tiny models (clamped to `0..63`).                                          |
 | `tiny_resize`       | `bilinear \| nearest \| bicubic \| disabled`                                                                                | `--tiny-resize`       | Auto-resize filter for NCHW tiny models on a dimension mismatch. Default `disabled` (hard-errors).  |
 | `no_reference`      | boolean                                                                                                                     | `--no-reference`      | No-reference (NR) mode — see below.                                                                 |
+
+**Input validation.** MCP inputs are untrusted and validated strictly before
+spawning the CLI:
+
+- Enums (`tiny_device`, `dnn_ep`, `tiny_resize`, `aom_ctc`, `nflx_ctc`,
+  `pixfmt`, `backend`) reject unknown values.
+- Conflicting `tiny_device` and `dnn_ep` values are rejected.
+- Numeric bounds are enforced (`tiny_crf` in `0..63`, `tiny_threads ≥ 0`,
+  `threads ≥ 1`, `frame_cnt ≥ 1`, `frame_skip_ref ≥ 0`, `frame_skip_dist ≥ 0`,
+  `subsample ≥ 1`, `bitdepth` in `{8, 10, 12, 16}`).
 
 **No-reference mode.** When `no_reference` is set, only the distorted
 picture is scored, so `no_reference` **requires** `tiny_model` (an NR
