@@ -64,6 +64,8 @@ if str(_AI_SRC) not in sys.path:
 from aiutils.file_utils import sha256 as _sha256_file
 from aiutils.time_utils import now_iso_8601 as _utc_now_iso
 
+from .defaultmodel import DEFAULT_MODEL
+
 _LOG = logging.getLogger(__name__)
 
 # Suffixes the vmaf CLI accepts as raw YUV without a prior ffmpeg decode
@@ -352,7 +354,7 @@ class CorpusOptions:
     encoder: str = "libx264"
     output: Path = Path("corpus.jsonl")
     encode_dir: Path = Path(".workingdir2/encodes")
-    vmaf_model: str = "vmaf_v0.6.1"
+    vmaf_model: str = DEFAULT_MODEL
     ffmpeg_bin: str = "ffmpeg"
     vmaf_bin: str = "vmaf"
     keep_encodes: bool = False

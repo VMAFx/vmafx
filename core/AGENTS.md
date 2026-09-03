@@ -706,3 +706,30 @@ the corrected methodology.
   and collection APIs; `model.cpp` was deleted as dead and stale. In `core/test/`,
   `test_dict.cpp` and `test_feature.cpp` are the sole authoritative tests;
   the uncompiled legacy C twins `test_dict.c` and `test_feature.c` were deleted.
+
+## The default model has exactly one definition
+
+`VMAF_DEFAULT_MODEL_VERSION` in `core/include/libvmaf/model.h` is the only
+place the fork decides which model to score with when the caller names none
+(ADR-1168). Do not write `"vmaf_v0.6.1"` as a fallback anywhere else:
+
+- C / C++ compiled against the headers use the macro.
+- Anything linking libvmaf at runtime calls `vmaf_default_model_version()`.
+- Go and the Python tools use their gate-checked mirrors
+  (`pkg/model.DefaultVersion`, `vmaftune.defaultmodel.DEFAULT_MODEL`,
+  `vmafroiscore.defaultmodel.DEFAULT_MODEL`).
+
+`scripts/ci/check-default-model-single-source.sh` fails the build on a drifted
+mirror or a new hardcoded fallback, so this is enforced rather than advisory.
+
+**Rebase-sensitive:** the macro and the accessor do not exist upstream, and the
+AOM CTC preset in `core/tools/cli_parse.cpp` deliberately keeps the literal
+`"vmaf_v0.6.1"` with a `vmaf-model-pin:` comment because the CTC specification
+mandates that exact model. An upstream sync that reverts either of those breaks
+the gate. See `docs/rebase-notes.md`.
+
+**Changing the value is not just an edit.** One Netflix golden assertion,
+`vmafexec_test.py::test_run_vmafexec_runner_use_default_built_in_model`, pins
+the default model's scores, so any change of default breaks it and ADR-0024
+forbids editing it. Read `docs/development/default-model.md` before touching
+the value.

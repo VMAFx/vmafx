@@ -76,6 +76,7 @@ from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import cast
 
+from .defaultmodel import DEFAULT_MODEL
 from .uncertainty import ConfidenceDecision, ConfidenceThresholds, classify_interval
 
 # ---------------------------------------------------------------------------
@@ -215,7 +216,7 @@ def make_default_sampler(
     src_height: int | None = None,
     cloud_sink: list[LadderPoint] | None = None,
     score_backend: str | None = None,
-    vmaf_model: str = "vmaf_v0.6.1",
+    vmaf_model: str = DEFAULT_MODEL,
 ) -> SamplerFn:
     """Return a :data:`SamplerFn` closed over real source-shape metadata.
 
@@ -292,7 +293,7 @@ def _default_sampler(
     src_height: int | None = None,
     cloud_sink: list[LadderPoint] | None = None,
     score_backend: str | None = None,
-    vmaf_model: str = "vmaf_v0.6.1",
+    vmaf_model: str = DEFAULT_MODEL,
 ) -> LadderPoint:
     """Production sampler — encode the configured CRF sweep, pick by VMAF.
 

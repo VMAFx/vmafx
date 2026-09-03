@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/VMAFx/vmafx/pkg/model"
 	"os"
 	"strings"
 
@@ -157,7 +158,7 @@ Example:
 		"Path to the ffmpeg binary")
 	cmd.Flags().StringVar(&flags.vmafBin, "vmaf-bin", "vmaf",
 		"Path to the libvmaf CLI binary")
-	cmd.Flags().StringVar(&flags.vmafModel, "vmaf-model", "vmaf_v0.6.1",
+	cmd.Flags().StringVar(&flags.vmafModel, "vmaf-model", model.DefaultVersion,
 		"vmaf model version string")
 	cmd.Flags().StringVar(&flags.encodeDir, "encode-dir", ".workingdir2/fast",
 		"Scratch dir for probe + verify encodes")

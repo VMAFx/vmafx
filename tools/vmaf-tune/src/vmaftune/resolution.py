@@ -39,6 +39,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .defaultmodel import DEFAULT_MODEL, DEFAULT_MODEL_NEG
+
 # -----------------------------------------------------------------------------
 # Decision thresholds
 # -----------------------------------------------------------------------------
@@ -55,13 +57,13 @@ _HEIGHT_1080P_FALLBACK = 0
 
 # Model identifiers mirror libvmaf's `--model version=` vocabulary so the
 # strings flow straight through `score.py`'s ScoreRequest.model field.
-MODEL_1080P = "vmaf_v0.6.1"
+MODEL_1080P = DEFAULT_MODEL
 MODEL_4K = "vmaf_4k_v0.6.1"
 
 # NEG (No Enhancement Gain) model variants — resist sharpening-based score
 # inflation. Use for codec A vs. B comparisons, not production monitoring.
 # See docs/metrics/vmaf-neg.md for when to use NEG and when not to.
-MODEL_1080P_NEG = "vmaf_v0.6.1neg"
+MODEL_1080P_NEG = DEFAULT_MODEL_NEG
 MODEL_4K_NEG = "vmaf_4k_v0.6.1neg"
 
 

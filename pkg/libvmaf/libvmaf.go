@@ -56,6 +56,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/VMAFx/vmafx/pkg/model"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -118,7 +119,7 @@ func (s *Scorer) Score(ctx context.Context, ref, dis, modelName string) (float64
 		ctx = context.Background()
 	}
 	if modelName == "" {
-		modelName = "vmaf_v0.6.1"
+		modelName = model.DefaultVersion
 	}
 
 	// Honour an already-cancelled context up-front so we don't allocate temp
@@ -202,7 +203,7 @@ func (s *Scorer) Close() {}
 // implements.
 func (s *Scorer) ResolveModel(name string) (string, error) {
 	if name == "" {
-		name = "vmaf_v0.6.1"
+		name = model.DefaultVersion
 	}
 	return s.resolveModel(name)
 }

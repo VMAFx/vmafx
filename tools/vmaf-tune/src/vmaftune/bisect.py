@@ -57,6 +57,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .codec_adapters import get_adapter
+from .defaultmodel import DEFAULT_MODEL
 from .encode import EncodeRequest, bitrate_kbps, run_encode
 from .score import VMAF_RAW_SUFFIXES, ScoreRequest, maybe_decode_distorted, run_score
 
@@ -507,7 +508,7 @@ def bisect_target_vmaf(
     preset: str | None = None,
     crf_range: tuple[int, int] | None = None,
     max_iterations: int = 8,
-    vmaf_model: str = "vmaf_v0.6.1",
+    vmaf_model: str = DEFAULT_MODEL,
     score_backend: str | None = None,
     encode_runner: object | None = None,
     score_runner: object | None = None,
@@ -1250,7 +1251,7 @@ def make_bisect_predicate(
     preset: str | None = None,
     crf_range: tuple[int, int] | None = None,
     max_iterations: int = 8,
-    vmaf_model: str = "vmaf_v0.6.1",
+    vmaf_model: str = DEFAULT_MODEL,
     score_backend: str | None = None,
     encode_runner: object | None = None,
     score_runner: object | None = None,

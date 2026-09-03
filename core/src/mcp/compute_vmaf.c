@@ -29,6 +29,7 @@
  */
 
 #include <assert.h>
+#include <libvmaf/model.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -421,7 +422,7 @@ static int parse_arguments(const cJSON *arguments, ComputeArgs *out, char **err_
         out->bitdepth != VMAF_MCP_BITDEPTH_12 && out->bitdepth != VMAF_MCP_BITDEPTH_16) {
         return set_err(err_owned, "bitdepth must be one of 8, 10, 12, 16") == 0 ? -EINVAL : -ENOMEM;
     }
-    out->model_version = (cJSON_IsString(mv) ? mv->valuestring : "vmaf_v0.6.1");
+    out->model_version = (cJSON_IsString(mv) ? mv->valuestring : VMAF_DEFAULT_MODEL_VERSION);
     return 0;
 }
 

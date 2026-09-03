@@ -32,6 +32,7 @@ from .corpus import (
     iter_rows,
     write_jsonl,
 )
+from .defaultmodel import DEFAULT_MODEL
 from .encode import iter_grid
 from .fast import (
     DEFAULT_CRF_HI,
@@ -118,7 +119,7 @@ def _resolve_vmaf_model(args: argparse.Namespace, attr: str = "vmaf_model") -> s
     Returns:
         The (possibly NEG-routed) model version string.
     """
-    model = getattr(args, attr, "vmaf_v0.6.1")
+    model = getattr(args, attr, DEFAULT_MODEL)
     if getattr(args, "neg", False):
         model = neg_model_for(model)
     return model
@@ -240,7 +241,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     corpus.add_argument(
         "--vmaf-model",
-        default="vmaf_v0.6.1",
+        default=DEFAULT_MODEL,
         help="vmaf model version string (default vmaf_v0.6.1)",
     )
     _add_neg_flag(corpus)
@@ -590,7 +591,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     per_shot.add_argument(
         "--vmaf-model",
-        default="vmaf_v0.6.1",
+        default=DEFAULT_MODEL,
         help="VMAF model name forwarded to the per-shot bisect scorer",
     )
     _add_neg_flag(per_shot)
@@ -1104,7 +1105,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     compare.add_argument(
         "--vmaf-model",
-        default="vmaf_v0.6.1",
+        default=DEFAULT_MODEL,
         help="VMAF model name forwarded to the bisect scorer",
     )
     _add_neg_flag(compare)
@@ -1671,7 +1672,7 @@ def _add_recommend_args(p: argparse.ArgumentParser) -> None:
         default=Path(".workingdir2/encodes"),
     )
     p.add_argument("--keep-encodes", action="store_true")
-    p.add_argument("--vmaf-model", default="vmaf_v0.6.1")
+    p.add_argument("--vmaf-model", default=DEFAULT_MODEL)
     _add_neg_flag(p)
     p.add_argument("--ffmpeg-bin", default="ffmpeg")
     p.add_argument("--vmaf-bin", default="vmaf")
@@ -4156,7 +4157,7 @@ def _add_fast_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument(
         "--vmaf-model",
-        default="vmaf_v0.6.1",
+        default=DEFAULT_MODEL,
         help="vmaf model version string (default vmaf_v0.6.1)",
     )
     p.add_argument(
@@ -4595,7 +4596,7 @@ def _add_prefilter_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--vmaf-bin", default="vmaf", help="libvmaf CLI binary (default vmaf on PATH)")
     p.add_argument(
         "--vmaf-model",
-        default="vmaf_v0.6.1",
+        default=DEFAULT_MODEL,
         help="vmaf model version string (default vmaf_v0.6.1)",
     )
     _add_neg_flag(p)

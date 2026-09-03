@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/VMAFx/vmafx/pkg/model"
 	"io"
 	"math"
 	"os"
@@ -124,7 +125,7 @@ Examples:
 		"Scratch directory for the probe encodes")
 	cmd.Flags().BoolVar(&flags.keepEncodes, "keep-encodes", false,
 		"Keep the encoded artefacts instead of deleting them after scoring")
-	cmd.Flags().StringVar(&flags.vmafModel, "vmaf-model", "vmaf_v0.6.1",
+	cmd.Flags().StringVar(&flags.vmafModel, "vmaf-model", model.DefaultVersion,
 		"libvmaf model version or path=... string")
 	cmd.Flags().StringVar(&flags.ffmpegBin, "ffmpeg-bin", "ffmpeg", "ffmpeg binary")
 	cmd.Flags().StringVar(&flags.vmafBin, "vmaf-bin", "vmaf", "libvmaf CLI binary")

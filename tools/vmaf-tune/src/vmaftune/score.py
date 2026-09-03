@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from . import CANONICAL6_FEATURES
+from .defaultmodel import DEFAULT_MODEL
 
 # Modern libvmaf wraps the integer-pipeline feature results under
 # ``pooled_metrics`` keys prefixed with ``integer_``.  The canonical-6
@@ -69,7 +70,7 @@ class ScoreRequest:
     width: int
     height: int
     pix_fmt: str
-    model: str = "vmaf_v0.6.1"
+    model: str = DEFAULT_MODEL
     frame_skip_ref: int = 0
     frame_cnt: int = 0
     duration_s: float = 0.0

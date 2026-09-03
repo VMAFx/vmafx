@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	vmafmodel "github.com/VMAFx/vmafx/pkg/model"
 	"log/slog"
 	"math"
 	"os"
@@ -114,7 +115,7 @@ func bitdepthFor(pixFmt string) int {
 // carrying "=" is a path/version override and passes through.
 func modelArg(model string) string {
 	if model == "" {
-		model = "vmaf_v0.6.1"
+		model = vmafmodel.DefaultVersion
 	}
 	if strings.Contains(model, "=") {
 		return model

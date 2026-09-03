@@ -307,6 +307,9 @@ void vmaf_model_destroy(VmafModel *model);
 
 /* Enumerate the built-in version strings compiled into this libvmaf. */
 const void *vmaf_model_version_next(const void *prev, const char **version);
+
+/* The version libvmaf scores with when no model is named. */
+const char *vmaf_default_model_version(void);
 ```
 
 Built-in version strings accepted by `vmaf_model_load`:
@@ -344,6 +347,37 @@ without any built-in models. See
 [ADR-0135](../adr/0135-port-netflix-1424-expose-builtin-model-versions.md)
 for the contract's correctness-relevant details (NULL-on-first-call,
 end-of-iteration semantics).
+
+### The default model
+
+When a caller names no model, libvmaf scores with a single default. Read it
+rather than assuming it:
+
+```c
+const char *dflt = vmaf_default_model_version();   /* e.g. "vmaf_v0.6.1" */
+
+VmafModel *model = NULL;
+VmafModelConfig cfg = { .name = "vmaf" };
+int err = vmaf_model_load(&model, &cfg, vmaf_default_model_version());
+```
+
+The returned string is owned by libvmaf. It is never `NULL`, must not be freed,
+and stays valid for the life of the process. The call is thread-safe and does
+no allocation.
+
+C and C++ code compiled against these headers may use the
+`VMAF_DEFAULT_MODEL_VERSION` macro instead, which expands to the same string at
+compile time. Prefer the function from anything that is *not* compiled against
+this header — language bindings especially — so the value comes from the
+library actually loaded rather than from a constant copied into another source
+tree and left to drift.
+
+This is the fork's single source of truth for the default: nothing else in the
+tree hardcodes a fallback model name, and
+`scripts/ci/check-default-model-single-source.sh` fails the build if anything
+starts to. See [ADR-1168](../adr/1168-default-model-single-source.md), and
+[docs/development/default-model.md](../development/default-model.md) for how to
+change the default.
 
 `vmaf_model_kind` — the fork added model-kind discrimination
 (`VMAF_MODEL_KIND_SVM`, `VMAF_MODEL_KIND_DNN_FR`, `VMAF_MODEL_KIND_DNN_NR`,

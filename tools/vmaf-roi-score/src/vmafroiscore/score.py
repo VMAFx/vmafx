@@ -29,6 +29,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from .defaultmodel import DEFAULT_MODEL
+
 
 @dataclasses.dataclass(frozen=True)
 class ScoreRequest:
@@ -39,7 +41,7 @@ class ScoreRequest:
     width: int
     height: int
     pix_fmt: str
-    model: str = "vmaf_v0.6.1"
+    model: str = DEFAULT_MODEL
 
 
 @dataclasses.dataclass(frozen=True)

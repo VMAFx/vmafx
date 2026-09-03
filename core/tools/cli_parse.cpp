@@ -599,7 +599,7 @@ void aom_ctc_v1_0(CLISettings *const settings, const char *const app)
 {
     const CLIModelConfig cfg = {
         .path = nullptr,
-        .version = "vmaf_v0.6.1",
+        .version = "vmaf_v0.6.1", /* vmaf-model-pin: AOM CTC v1.0 mandates this exact model */
         .cfg = {.name = "vmaf", .flags = VMAF_MODEL_FLAGS_DEFAULT},
         .feature_overload = {},
         .overload_cnt = 0,
@@ -609,7 +609,7 @@ void aom_ctc_v1_0(CLISettings *const settings, const char *const app)
 
     const CLIModelConfig cfg_neg = {
         .path = nullptr,
-        .version = "vmaf_v0.6.1neg",
+        .version = "vmaf_v0.6.1neg", /* vmaf-model-pin: AOM CTC v1.0 mandates this exact model */
         .cfg = {.name = "vmaf_neg", .flags = VMAF_MODEL_FLAGS_DEFAULT},
         .feature_overload = {},
         .overload_cnt = 0,
@@ -1011,7 +1011,7 @@ void validate_cli_settings(const char *const app, CLISettings *const settings)
 #if VMAF_BUILT_IN_MODELS
         const CLIModelConfig cfg = {
             .path = nullptr,
-            .version = "vmaf_v0.6.1",
+            .version = VMAF_DEFAULT_MODEL_VERSION,
             .cfg = {.name = "vmaf", .flags = VMAF_MODEL_FLAGS_DEFAULT},
             .feature_overload = {},
             .overload_cnt = 0,

@@ -16,6 +16,7 @@ package corpus
 
 import (
 	"fmt"
+	"github.com/VMAFx/vmafx/pkg/model"
 	"strings"
 )
 
@@ -26,13 +27,13 @@ const height4KThreshold = 2160
 // Model identifiers mirror libvmaf's "--model version=" vocabulary so the
 // strings flow straight through ScoreRequest.Model.
 const (
-	Model1080P = "vmaf_v0.6.1"
+	Model1080P = model.DefaultVersion
 	Model4K    = "vmaf_4k_v0.6.1"
 
 	// NEG (No Enhancement Gain) variants resist sharpening-based score
 	// inflation. Use for codec A-vs-B comparisons, not production
 	// monitoring. See docs/metrics/vmaf-neg.md.
-	Model1080PNEG = "vmaf_v0.6.1neg"
+	Model1080PNEG = model.DefaultNEGVersion
 	Model4KNEG    = "vmaf_4k_v0.6.1neg"
 )
 

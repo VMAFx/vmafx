@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/VMAFx/vmafx/pkg/model"
 	"math"
 	"os"
 	"os/exec"
@@ -147,7 +148,7 @@ Example:
 		"inclusive upper CRF bound for the bisect search window")
 	cmd.Flags().IntVar(&flags.maxIterations, "max-iterations", 8,
 		"maximum encode+score iterations per detected shot")
-	cmd.Flags().StringVar(&flags.vmafModel, "vmaf-model", "vmaf_v0.6.1",
+	cmd.Flags().StringVar(&flags.vmafModel, "vmaf-model", model.DefaultVersion,
 		"VMAF model name forwarded to the per-shot bisect scorer")
 	cmd.Flags().BoolVar(&flags.neg, "neg", false,
 		"use the VMAF NEG (No Enhancement Gain) model variant, which penalises "+
@@ -703,14 +704,11 @@ func resolveVMAFModel(model string, neg bool) string {
 	if strings.HasSuffix(model, "neg") {
 		return model
 	}
-	switch model {
-	case "vmaf_v0.6.1":
-		return "vmaf_v0.6.1neg"
-	case "vmaf_4k_v0.6.1":
-		return "vmaf_4k_v0.6.1neg"
-	default:
-		return model + "neg"
-	}
+	// Every NEG model in the tree is its base name with "neg" appended
+	// ("vmaf_v0.6.1" -> "vmaf_v0.6.1neg", "vmaf_4k_v0.6.1" ->
+	// "vmaf_4k_v0.6.1neg"), so no per-model table is needed. The two cases
+	// that used to be spelled out here produced exactly this string.
+	return model + "neg"
 }
 
 // trimFloat renders a float with the shortest round-trip representation, for

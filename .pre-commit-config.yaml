@@ -200,6 +200,13 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: check-default-model-single-source
+        name: Default VMAF model is defined in exactly one place
+        entry: scripts/ci/check-default-model-single-source.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+
       - id: check-copyright
         name: ADR-0105 copyright header present (C/C++/CUDA)
         entry: scripts/ci/check-copyright.sh
