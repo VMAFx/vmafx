@@ -64,10 +64,20 @@ class TestNegModelFor:
         assert result == "vmaf_custom_v1.0neg"
 
     def test_constants_have_expected_values(self):
-        assert MODEL_1080P == "vmaf_v0.6.1"
-        assert MODEL_4K == "vmaf_4k_v0.6.1"
+        # ADR-1169: the production models moved to the v1.0.16 generation
+        # while the NEG constants did NOT, because Netflix published no NEG
+        # counterpart to any vmaf_v1.0.16_* model. The two therefore name
+        # different generations on purpose -- asking for NEG changes generation.
+        assert MODEL_1080P == "vmaf_v1.0.16_3d0h"
+        assert MODEL_4K == "vmaf_v1.0.16_1d5h_2160"
         assert MODEL_1080P_NEG == "vmaf_v0.6.1neg"
         assert MODEL_4K_NEG == "vmaf_4k_v0.6.1neg"
+
+    def test_neg_is_not_derived_by_appending_to_the_default(self):
+        # Guards the specific bug the default flip would otherwise have
+        # introduced: DEFAULT_MODEL + "neg" is a model that does not exist.
+        assert MODEL_1080P_NEG != MODEL_1080P + "neg"
+        assert neg_model_for(MODEL_1080P) == MODEL_1080P_NEG
 
 
 # ---------------------------------------------------------------------------

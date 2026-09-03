@@ -28,6 +28,7 @@ from vmaftune.compare import (
     emit_report,
     supported_formats,
 )
+from vmaftune.defaultmodel import DEFAULT_MODEL
 
 # Synthetic per-codec results: x265 wins on bitrate, libaom slowest, x264
 # baseline, svtav1 mid-pack. Numbers are illustrative, not measured.
@@ -389,7 +390,7 @@ def test_cli_compare_binds_real_bisect_predicate(monkeypatch, capsys, tmp_path):
         "preset": "medium",  # ADR-1077: default changed from None to "medium"
         "crf_range": (15, 40),
         "max_iterations": 8,
-        "vmaf_model": "vmaf_v0.6.1",
+        "vmaf_model": DEFAULT_MODEL,  # ADR-1169: follows the fork default
         "score_backend": None,
         "ffmpeg_bin": "ffmpeg",
         "vmaf_bin": "vmaf",

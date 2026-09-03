@@ -55,6 +55,14 @@ Do not use NEG for:
 | Model string | File | Use case |
 |---|---|---|
 | `vmaf_v0.6.1neg` | `model/vmaf_v0.6.1neg.json` | HD (up to 1080p) content |
+
+> **NEG stays on the v0.6.1 model generation.** Netflix published NEG
+> variants for the v0.6.1 family only; there is no NEG counterpart to any
+> `vmaf_v1.0.16_*` model. Since [ADR-1169](../adr/1169-default-model-v1-0-16.md)
+> made `vmaf_v1.0.16_3d0h` the fork default, asking for NEG therefore also
+> changes model generation, and a NEG score is not directly comparable with a
+> default score. Until a v1 NEG model exists, compare NEG against NEG.
+
 | `vmaf_4k_v0.6.1neg` | `model/vmaf_4k_v0.6.1neg.json` | UHD / 4K content |
 
 Both files are in-tree in the `model/` directory. Float-precision variants
