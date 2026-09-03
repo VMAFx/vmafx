@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 281,
-  "total_warnings": 4478,
+  "total_warnings": 4481,
   "total_nolint_uncited": 58,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
@@ -169,7 +169,7 @@
     "core/test/test_luminance_tools.cpp": 11,
     "core/test/test_mkdirp.c": 7,
     "core/test/test_mobilesal.c": 3,
-    "core/test/test_model.c": 189,
+    "core/test/test_model.c": 192,
     "core/test/test_model_collection_api.c": 57,
     "core/test/test_moment_simd.c": 8,
     "core/test/test_motion_avx512_parity.c": 23,
