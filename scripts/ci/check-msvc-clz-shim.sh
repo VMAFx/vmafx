@@ -84,11 +84,16 @@ fi
 # and documentation legitimately discusses `__lzcnt` in prose
 # (core/src/feature/AGENTS.md explains why the shim must not use it). The rule
 # is about CODE reintroducing the instruction.
+# The audited shim is excluded by BASENAME, not by matching against "$HDR":
+# grep -rl prints whatever path form it walked, which on MSYS / Git-for-Windows
+# is not the same string as the absolute "$HDR" this script computes, so the
+# previous `grep -vF "$HDR"` filter silently failed to exclude the shim there
+# and the gate reported its own header (the Windows MinGW64 leg failed on
+# exactly that). Rule (1) above already audits the shim itself.
 others=$(grep -rlE '\b__lzcnt(64)?\b' "$ROOT/core/src" \
   --include='*.c' --include='*.h' --include='*.cpp' --include='*.hpp' \
   --include='*.cu' --include='*.cuh' --include='*.hip' --include='*.mm' \
-  --include='*.metal' 2>/dev/null |
-  grep -vF "$HDR" || true)
+  --include='*.metal' --exclude='compat_builtin.h' 2>/dev/null || true)
 if [[ -n "$others" ]]; then
   echo "FAIL: __lzcnt used outside the audited shim:" >&2
   echo "$others" >&2

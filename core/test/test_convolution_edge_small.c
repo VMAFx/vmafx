@@ -34,6 +34,7 @@
  *  in-contract score moves.
  */
 
+#include <float.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -43,6 +44,7 @@
 
 #include "cpu.h"
 #include "feature/common/convolution.h"
+#include "feature/common/convolution_internal.h" /* convolution_reflect101 */
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but the Windows
@@ -245,20 +247,27 @@ static void reference_convolve(const float *src, float *scratch, float *dst, int
 /* Bit-exact float comparison without memcmp on a float object representation
  * (clang-tidy bugprone-suspicious-memory-comparison): copy both operands into
  * an integer of the same width and compare those. */
-static int float_bits_equal(float a, float b)
-{
-    uint32_t ba = 0;
-    uint32_t bb = 0;
-    memcpy(&ba, &a, sizeof(ba));
-    memcpy(&bb, &b, sizeof(bb));
-    return ba == bb;
-}
-
-static int planes_bit_identical(const float *a, const float *b, int width, int height, int stride)
+/* The real content of the "no in-contract score moves" claim is an INTEGER
+ * one: for any plane at least `radius + 1` across, the iterative fold must
+ * return exactly what a single bounce returned. Assert that directly and
+ * exhaustively — it is platform-independent, unlike any float comparison
+ * between two separately-compiled accumulations (see
+ * test_large_plane_matches_single_bounce below for why that distinction
+ * matters). */
+/* Same-value-within-a-few-ULP comparison. See
+ * test_large_plane_matches_single_bounce for why bit-identity is not a
+ * portable assertion here. 8 ULP is far below any score-visible delta and
+ * still orders of magnitude tighter than a genuine fold divergence, which
+ * changes which SAMPLE is read and so moves results by O(1e-2). */
+static int planes_match_within_ulps(const float *a, const float *b, int width, int height,
+                                    int stride)
 {
     for (int i = 0; i < height; i++) {
         for (int j = 0; j < width; j++) {
-            if (!float_bits_equal(a[i * stride + j], b[i * stride + j])) {
+            const float x = a[i * stride + j];
+            const float y = b[i * stride + j];
+            const float scale = fmaxf(1.0f, fmaxf(fabsf(x), fabsf(y)));
+            if (!(fabsf(x - y) <= 8.0f * FLT_EPSILON * scale)) {
                 return 0;
             }
         }
@@ -266,9 +275,50 @@ static int planes_bit_identical(const float *a, const float *b, int width, int h
     return 1;
 }
 
-/* The fold must not perturb an in-contract plane: compare a 24x24 run against
- * the explicit single-bounce reference and assert bit-equality. */
-static char *test_large_plane_bit_identical(void)
+static char *test_fold_matches_single_bounce_exactly(void)
+{
+    for (int size = 2; size <= 64; size++) {
+        /* In-contract means the overshoot a single bounce has to absorb stays
+         * inside the plane, i.e. |idx| and idx - (size-1) are at most
+         * size - 1. Outside that the two deliberately disagree: the single
+         * bounce leaves the plane (that is the defect) and the fold does not. */
+        for (int idx = -(size - 1); idx <= 2 * (size - 1); idx++) {
+            const int folded = convolution_reflect101(idx, size);
+            const int bounced = single_bounce(idx, size);
+            if (folded != bounced) {
+                return "iterative fold disagrees with the single bounce in contract";
+            }
+            if (folded < 0 || folded >= size) {
+                return "iterative fold returned an out-of-range index in contract";
+            }
+        }
+        /* And out of contract the fold must still always land in the plane —
+         * that is the whole point of iterating. */
+        for (int idx = -4 * size; idx <= 4 * size; idx++) {
+            const int folded = convolution_reflect101(idx, size);
+            if (folded < 0 || folded >= size) {
+                return "iterative fold left the plane out of contract";
+            }
+        }
+    }
+    return NULL;
+}
+
+/* End-to-end cross-check at a size where the fold and a single bounce must
+ * agree. Compared within a few ULP rather than bit-for-bit ON PURPOSE.
+ *
+ * This assertion used to demand bit-identity and passed on x86-64 while
+ * failing on arm64 macOS. The fold was not the cause: it is integer-only
+ * (pinned exactly by test_fold_matches_single_bounce_exactly above). The
+ * difference is floating-point contraction. reference_convolve() below reads
+ * the file-scope `kFilter5`, which the compiler can constant-fold and
+ * vectorize, while the library kernel receives an opaque `const float
+ * *filter`. On a target with FMA in its baseline — every arm64 — clang
+ * contracts `accum += filter[k] * src[...]` to an fma in one and not
+ * necessarily the other, so the last bit legitimately differs. x86-64 only
+ * agreed because FMA is not in its baseline. Two separately-compiled float
+ * accumulations are simply not a portable bit-identity claim. */
+static char *test_large_plane_matches_single_bounce(void)
 {
     enum { WIDTH = 24, HEIGHT = 24, STRIDE = 32 };
     const size_t n = (size_t)STRIDE * (size_t)HEIGHT;
@@ -277,7 +327,7 @@ static char *test_large_plane_bit_identical(void)
     float *tmp = calloc(n, sizeof(float));
     float *ref = calloc(n, sizeof(float));
     float *rtmp = calloc(n, sizeof(float));
-    int identical = 0;
+    int matches = 0;
 
     if (src && dst && tmp && ref && rtmp) {
         for (int i = 0; i < HEIGHT; i++) {
@@ -290,7 +340,7 @@ static char *test_large_plane_bit_identical(void)
         convolution_x_c_s(kFilter5, 5, tmp, dst, WIDTH, HEIGHT, STRIDE, STRIDE, 1);
         reference_convolve(src, rtmp, ref, WIDTH, HEIGHT, STRIDE);
 
-        identical = planes_bit_identical(dst, ref, WIDTH, HEIGHT, STRIDE);
+        matches = planes_match_within_ulps(dst, ref, WIDTH, HEIGHT, STRIDE);
     }
 
     free(src);
@@ -298,7 +348,7 @@ static char *test_large_plane_bit_identical(void)
     free(tmp);
     free(ref);
     free(rtmp);
-    mu_assert("iterative fold moved an in-contract result", identical);
+    mu_assert("iterative fold moved an in-contract result", matches);
     return NULL;
 }
 
@@ -308,7 +358,8 @@ char *run_tests(void)
     mu_run_test(test_scalar_5tap_small_planes);
     mu_run_test(test_scalar_3tap_small_planes);
     mu_run_test(test_scalar_17tap_small_planes);
-    mu_run_test(test_large_plane_bit_identical);
+    mu_run_test(test_fold_matches_single_bounce_exactly);
+    mu_run_test(test_large_plane_matches_single_bounce);
     return NULL;
 }
 

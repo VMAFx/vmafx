@@ -2144,10 +2144,19 @@ test_compat_clz = executable('test_compat_clz',
 )
 test('test_compat_clz', test_compat_clz, suite : ['fast'])
 
-check_msvc_clz_shim = find_program(meson.project_source_root() / '..' / 'scripts' / 'ci' / 'check-msvc-clz-shim.sh')
-test('check_msvc_clz_shim', check_msvc_clz_shim,
-     args : [meson.project_source_root() / '..'],
-     suite : ['fast'])
+# Static source-content check, so one platform is enough — and on Windows it
+# cannot run at all. meson invokes the script through its shebang interpreter,
+# and on the MinGW64 runner `bash` resolves to Windows' own WSL bash.exe, which
+# has no installed distribution: the leg failed with "Windows Subsystem for
+# Linux has no installed distributions" before the script ever executed. Linux
+# and macOS both run it in the fast suite, and the lint lane runs it too, so
+# skipping the Windows hosts loses no coverage.
+if host_machine.system() != 'windows'
+    check_msvc_clz_shim = find_program(meson.project_source_root() / '..' / 'scripts' / 'ci' / 'check-msvc-clz-shim.sh')
+    test('check_msvc_clz_shim', check_msvc_clz_shim,
+         args : [meson.project_source_root() / '..'],
+         suite : ['fast'])
+endif
 
 # float_vif min-dimension guard — regression test for double-free / OOB-read
 # when min(w,h) <= 6 triggers the 17-tap Gaussian filter at scale 0.
