@@ -897,3 +897,4 @@
 1167-adm-cm-row-level-rounding
 1141-integer-adm-upstream-mirror-rework
 1151-vmafx-first-release-1-0-0
+1152-dependency-pr-gate-exemption
