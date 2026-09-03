@@ -202,6 +202,57 @@ static char *test_overload_merge_failure_consumes_dict(void)
     return NULL;
 }
 
+/* The asymmetry adversarial review found in the headers: a feature_name that
+ * matches nothing in THIS model is a successful no-op returning 0, and the
+ * dictionary is still consumed. feature.h and docs/api used to tell callers
+ * they still owned it in that case, which is a double free. Only
+ * vmaf_use_feature -- which resolves against the global extractor registry --
+ * rejects an unknown name and hands the dictionary back.
+ *
+ * Under ASan a regression here surfaces as a double free rather than a silent
+ * contract violation, because the test frees only what it is told it owns. */
+static char *test_overload_unknown_feature_name_returns_zero_and_consumes(void)
+{
+    VmafFeatureDictionary *dict = NULL;
+    mu_assert("dictionary_set failed",
+              vmaf_feature_dictionary_set(&dict, "some_key", "some_value") == 0);
+
+    VmafModel *model = NULL;
+    VmafModelConfig cfg = {0};
+    mu_assert("vmaf_model_load failed", vmaf_model_load(&model, &cfg, "vmaf_v0.6.1") == 0);
+
+    /* No model carries a feature named like this, so the match loop never fires. */
+    mu_assert("overload(unknown feature_name) must report success, not -EINVAL",
+              vmaf_model_feature_overload(model, "no_such_feature_xyz", dict) == 0);
+    /* Deliberately NOT freeing `dict` here: the call consumed it. Freeing would
+     * be the double free the old header wording invited. */
+
+    vmaf_model_destroy(model);
+    return NULL;
+}
+
+/* vmaf_use_feature is the one that does hand the dictionary back, because it
+ * resolves the name against the global registry before touching it. */
+static char *test_use_feature_unknown_name_does_not_consume(void)
+{
+    VmafFeatureDictionary *dict = NULL;
+    mu_assert("dictionary_set failed",
+              vmaf_feature_dictionary_set(&dict, "some_key", "some_value") == 0);
+
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *ctx = NULL;
+    mu_assert("vmaf_init failed", vmaf_init(&ctx, cfg) == 0);
+
+    mu_assert("use_feature(unknown name) must return -EINVAL",
+              vmaf_use_feature(ctx, "no_such_feature_xyz", dict) == -EINVAL);
+    /* The caller still owns it here -- releasing is required, not a double free. */
+    mu_assert("caller must be able to free after an unknown-name rejection",
+              vmaf_feature_dictionary_free(&dict) == 0);
+
+    (void)vmaf_close(ctx);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_overload_guards_do_not_consume);
@@ -209,6 +260,8 @@ char *run_tests(void)
     mu_run_test(test_collection_overload_rejects_null_collection_handle);
     mu_run_test(test_collection_overload_null_lead_model_guard);
     mu_run_test(test_overload_success_consumes_dict);
+    mu_run_test(test_overload_unknown_feature_name_returns_zero_and_consumes);
+    mu_run_test(test_use_feature_unknown_name_does_not_consume);
     mu_run_test(test_overload_merge_failure_consumes_dict);
     return NULL;
 }

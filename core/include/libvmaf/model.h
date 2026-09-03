@@ -179,10 +179,17 @@ VMAF_EXPORT int vmaf_model_load_from_path(VmafModel **model, VmafModelConfig *cf
  * the caller still owns the dictionary.  On any other return — success, or
  * `-ENOMEM` from the merge step — the function has released the dictionary
  * internally and the caller MUST NOT call
- * @ref vmaf_feature_dictionary_free on it.  This matches
- * @ref vmaf_use_feature and the contract documented in
- * <libvmaf/feature.h> (Netflix/vmaf#1242 reported the two headers
- * contradicting each other; the `-ENOMEM` leak they described is fixed).
+ * @ref vmaf_feature_dictionary_free on it.
+ *
+ * This is NOT quite the same rule as @ref vmaf_use_feature, and the difference
+ * is deliberate.  That function resolves @p feature_name against the global
+ * extractor registry, so it can reject an unknown name with `-EINVAL` before
+ * touching the dictionary and hand it back.  This one matches @p feature_name
+ * against the features of a *particular model*: a name that matches nothing is
+ * not an error but a successful no-op returning `0`, and the dictionary is
+ * still consumed.  See <libvmaf/feature.h> for the contract covering all three
+ * entry points (Netflix/vmaf#1242 reported the headers contradicting each
+ * other; the `-ENOMEM` leak it described is fixed).
  *
  * @param model        Loaded model from @ref vmaf_model_load or
  *                     @ref vmaf_model_load_from_path. Must not be NULL.

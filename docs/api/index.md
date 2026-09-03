@@ -278,20 +278,29 @@ err = vmaf_use_feature(ctx, "psnr", opts);
 
 ### Ownership: who frees the dictionary
 
-The three calls that accept a `VmafFeatureDictionary` —
-`vmaf_use_feature()`, `vmaf_model_feature_overload()` and
-`vmaf_model_collection_feature_overload()` — all follow **one** rule:
+Three calls accept a `VmafFeatureDictionary`: `vmaf_use_feature()`,
+`vmaf_model_feature_overload()` and
+`vmaf_model_collection_feature_overload()`. They share most of a rule, with
+one deliberate difference.
 
-> The dictionary is consumed on every path **except** the
-> argument-validation guards. If the call returns `-EINVAL` because a
-> required argument was `NULL`, or because `feature_name` names no
-> registered feature, nothing was taken and the caller still owns the
-> dictionary. On every other return — success, or `-ENOMEM` from the
-> internal merge/copy — the call has already released it and the caller
-> **must not** free it.
+> **All three:** a `-EINVAL` caused by a `NULL` argument takes nothing — the
+> caller still owns the dictionary. On every other return, success or failure
+> (including `-ENOMEM` from the internal merge/copy), the call has already
+> released it and the caller **must not** free it.
+>
+> **`vmaf_use_feature()` only:** it also takes nothing when `feature_name`
+> names no registered feature. It resolves the name against the global
+> extractor registry and returns `-EINVAL` before touching the dictionary.
 
-In practice: free the dictionary yourself only when you passed a `NULL`
-argument or an unknown feature name; otherwise never.
+The difference matters, and getting it wrong is a double free. The two model
+overloads match `feature_name` against the features of *one particular model*.
+A name that matches nothing there is **not** an error — it is a successful
+no-op that returns `0` — and the dictionary is consumed anyway. Only
+`vmaf_use_feature()` can report an unknown name and hand the dictionary back.
+
+In practice: free the dictionary yourself only when the call returned
+`-EINVAL` **and** you either passed a `NULL` argument or called
+`vmaf_use_feature()`. Otherwise never.
 
 ```c
 /* Consumed — success. Freeing here would be a double free. */
@@ -300,9 +309,15 @@ if (vmaf_use_feature(ctx, "psnr", opts) == 0)
 
 /* Consumed — the merge ran out of memory. Still do not free. */
 
-/* NOT consumed — argument rejected before anything was taken. */
+/* NOT consumed — vmaf_use_feature rejected the name before taking anything. */
 if (vmaf_use_feature(ctx, "no_such_feature", opts2) == -EINVAL)
     vmaf_feature_dictionary_free(&opts2);
+
+/* CONSUMED, and it returned 0. The model simply has no "psnr" feature to
+ * overload, which is a no-op, not an error. Freeing opts3 here is a double
+ * free — this is the case the old wording got wrong. */
+if (vmaf_model_feature_overload(model, "psnr", opts3) == 0)
+    opts3 = NULL;
 ```
 
 Until ADR-1166 this contract was documented two different ways —

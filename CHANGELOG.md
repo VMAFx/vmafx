@@ -25033,6 +25033,29 @@ legs. (ADR-0603, triggered by Renovate PR #1402)
     `heap-buffer-overflow ... WRITE of size 4 in convolution_f32_avx_s`
     reached from `vmaf_read_pictures`.
 
+    Second post-review round — the `VmafFeatureDictionary` ownership contract
+    (Netflix/vmaf#1242) was still stated three different ways, and one of them
+    was a double free:
+
+    - `<libvmaf/feature.h>` and `docs/api/index.md` claimed that an unknown
+      `feature_name` never consumes the dictionary. That is true of
+      `vmaf_use_feature`, which resolves the name against the global extractor
+      registry and returns `-EINVAL` before touching it — but **not** of
+      `vmaf_model_feature_overload`, which matches against the features of one
+      particular model. A name matching nothing there is a successful no-op
+      returning `0`, and the dictionary is consumed anyway. A caller following
+      the old wording would double-free. All three headers and the API page now
+      state the asymmetry explicitly, and `<libvmaf/model.h>` no longer claims
+      its rule "matches `vmaf_use_feature`".
+    - `vmaf_use_feature` leaked the caller's dictionary on two failure paths —
+      a failed `vmaf_dictionary_copy`, and a failed
+      `vmaf_feature_extractor_context_create`, which frees only what it
+      allocated. Both leaked exactly when the documented contract told the
+      caller not to free. Both now release it.
+
+    Two cases added to `core/test/test_model_feature_overload_ownership.c` pin
+    the asymmetry from both sides, and pass under `-Db_sanitize=address`.
+
 
 - **VCQ-223**: `VmafQualityRunnerWithLocalExplainer` no longer times out CI.
   The runner's fallback `LocalExplainer` now defaults to `neighbor_samples=100`
