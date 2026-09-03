@@ -3,9 +3,9 @@
   "lane": "cpu",
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
-  "tus": 282,
-  "total_warnings": 4903,
-  "total_nolint_uncited": 63,
+  "tus": 281,
+  "total_warnings": 4555,
+  "total_nolint_uncited": 58,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
     "build/src/vmaf_4k_v0.6.1.json.c": 2,
@@ -225,14 +225,9 @@
     "core/test/test_y4m_411_oob.c": 3,
     "core/test/test_y4m_alloc_failure.c": 3,
     "core/test/test_y_funque_plus.c": 22,
-    "core/tools/cli_parse.c": 84,
-    "core/tools/cli_parse.cpp": 107,
     "core/tools/vidinput.c": 2,
-    "core/tools/vmaf.cpp": 69,
-    "core/tools/vmaf_bench.c": 22,
     "core/tools/vmaf_per_shot.c": 20,
     "core/tools/vmaf_roi.c": 22,
-    "core/tools/y4m_input.c": 66,
     "core/tools/yuv_input.c": 7
   },
   "nolint_uncited": {
@@ -274,10 +269,8 @@
     "core/test/test_psnr_hvs_simd.c": 2,
     "core/test/test_ssimulacra2_simd.c": 1,
     "core/test/test_y4m_alloc_failure.c": 1,
-    "core/tools/vmaf.cpp": 3,
     "core/tools/vmaf_per_shot.c": 1,
     "core/tools/vmaf_roi.c": 1,
-    "core/tools/y4m_input.c": 2,
     "core/tools/yuv_input.c": 3
   }
 }
