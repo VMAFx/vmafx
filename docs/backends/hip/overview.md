@@ -30,63 +30,48 @@
 > launches per 48-frame clip confirm the HIP kernel is actually
 > dispatching.
 >
-> The other HIP-flagged extractors (`vif_hip`, `psnr_hip`, `ciede_hip`,
-> `float_moment_hip`, `motion_v2_hip`,
-> `float_motion_hip`, `float_ssim_hip`, `float_psnr_hip`,
-> `cambi_hip`, `float_adm_hip`, `ssimulacra2_hip`) remain unflagged
-> pending per-extractor end-to-end verification. Each will be
-> promoted by its own follow-up PR + ADR after a successful
-> reproducer + cross-backend numerical check.
+> **Status (2026-09-02):** 17 of 19 registered HIP extractors carry
+> active GPU flags (`VMAF_FEATURE_EXTRACTOR_HIP` / `VMAF_FEATURE_EXTRACTOR_TEMPORAL`)
+> and execute on AMD GPU hardware. Each has been validated via device parity tests
+> against the CPU reference implementation.
 >
-> **Status (2026-05-29):** 19 distinct HIP `VmafFeatureExtractor`
-> descriptors are registered in
-> `feature_extractor_list[]` and resolve via
-> `vmaf_get_feature_extractor_by_name(<name>)`. (The table below lists
-> 21 rows: two of them — `integer_ciede_hip` and `integer_moment_hip` —
-> are alias names that resolve to the canonical `ciede_hip` /
-> `float_moment_hip` descriptors, not separate registrations.) ADR-0523 wired the
-> first long-missing entry (`integer_motion_hip`); ADR-0533 swept in
-> the remaining six (`float_vif_hip`, `integer_adm_hip` →
-> `adm_hip`, `integer_ms_ssim_hip`, `psnr_hvs_hip`, `integer_ssim_hip`,
-> `ssimulacra2_hip`). The three legacy-API plumbing TUs (`adm_hip.c`,
-> `vif_hip.c`, `motion_hip.c`) carry no `VmafFeatureExtractor` struct —
-> they hold older `_init/_run/_destroy` helpers and are intentionally
-> not registered. Two stale rename-scaffold duplicates
-> (`integer_ciede_hip.c`, `integer_moment_hip.c`) are unwired in
-> `hip_sources` because the canonical TUs (`ciede_hip.c`,
-> `float_moment_hip.c`) already register the same extractor.
+> Two extractors legitimately retain `.flags = 0` (silently falling back to CPU):
 >
-> | Extractor | Feature name | Added in |
-> | --- | --- | --- |
-> | `integer_psnr_hip` | `psnr_hip` | ADR-0241 |
-> | `float_psnr_hip` | `float_psnr_hip` | ADR-0254 |
-> | `ciede_hip` (now `integer_ciede_hip`) | `ciede_hip` | ADR-0259 / PR #1016 |
-> | `float_moment_hip` | `float_moment_hip` | ADR-0260 |
-> | `integer_motion_v2_hip` | `motion_v2_hip` | ADR-0267 |
-> | `float_motion_hip` | `float_motion_hip` | ADR-0373 |
-> | `float_ssim_hip` | `float_ssim_hip` | ADR-0375 |
-> | `float_vif_hip` | `float_vif_hip` | ADR-0379 |
-> | `integer_psnr_hvs_hip` | `psnr_hvs_hip` | PR #995 |
-> | `integer_cambi_hip` | `cambi_hip` | PR #996 |
-> | `ssimulacra2_hip` | `ssimulacra2_hip` | PR #1000 |
-> | `integer_vif_hip` | `integer_vif_hip` | PR #1001 |
-> | `integer_motion_hip` | `integer_motion_hip` | PR #1004 |
-> | `integer_adm_hip` | `integer_adm_hip` | PR #1007 |
-> | `integer_ciede_hip` | `ciede_hip` (alias) | PR #1016 |
-> | `integer_moment_hip` | `integer_moment_hip` | PR #1017 |
-> | `integer_ms_ssim_hip` | `ms_ssim_hip` | ADR-0285 / PR #1013 |
-> | `integer_ssim_hip` | `integer_ssim_hip` | PR #999 |
-> | `float_adm_hip` | `float_adm_hip` | ADR-0468 / PR #1024 |
-> | `speed_chroma_hip` | `speed_chroma_hip` | ADR-0567 / ADR-0852 |
-> | `speed_temporal_hip` | `speed_temporal_hip` | ADR-0567 / ADR-0852 |
+> 1. `integer_ssim_hip`: `integer_ssim_score.hip` currently implements the 11-tap
+>    float Gaussian rather than the 9-tap int64 kernel (`integer_ssim_score.cu`),
+>    yielding a 4.5e-3 numeric divergence. Flags remain cleared to preserve golden
+>    CPU fallback per ADR-0564 until the int64 kernel port lands (~280 LOC).
+> 2. `integer_adm_hip`: Lacks internal HtoD picture staging buffers and passes host
+>    pointers directly into device kernels. Flags remain cleared until picture staging
+>    (~350 LOC) or the HIP device picture pool (T7-10c, ~600 LOC) lands.
 >
-> All 19 registered kernels require `enable_hip=true` + `enable_hipcc=true`.
-> (`float_ansnr_hip` was removed together with the CPU extractor in commit
-> 70ed8b3ce3 / PR #38; it no longer appears in this table.)
-> Without `enable_hipcc`, the scaffold `-ENOSYS` posture is preserved.
-> The three stubs (`adm_hip`, `vif_hip`, `motion_hip`) use an older
-> `_init/_run/_destroy` API shape that predates the HSACO kernel template;
-> they remain at `-ENOSYS` pending an API redesign.
+> | Extractor | Feature name | GPU Active | Added in |
+> | --- | --- | --- | --- |
+> | `integer_psnr_hip` | `psnr_hip` | Yes | ADR-0241 |
+> | `float_psnr_hip` | `float_psnr_hip` | Yes | ADR-0254 |
+> | `ciede_hip` | `ciede_hip` | Yes | ADR-0259 / PR #1016 |
+> | `float_moment_hip` | `float_moment_hip` | Yes | ADR-0260 |
+> | `integer_motion_v2_hip` | `motion_v2_hip` | Yes | ADR-0267 |
+> | `float_motion_hip` | `float_motion_hip` | Yes | ADR-0373 |
+> | `float_ssim_hip` | `float_ssim_hip` | Yes | ADR-0375 |
+> | `float_vif_hip` | `float_vif_hip` | Yes | ADR-0379 |
+> | `integer_psnr_hvs_hip` | `psnr_hvs_hip` | Yes | PR #995 |
+> | `integer_cambi_hip` | `cambi_hip` | Yes | PR #996 |
+> | `ssimulacra2_hip` | `ssimulacra2_hip` | Yes | PR #1000 |
+> | `integer_vif_hip` | `integer_vif_hip` | Yes | PR #1001 |
+> | `integer_motion_hip` | `integer_motion_hip` | Yes | PR #1004 |
+> | `integer_adm_hip` | `integer_adm_hip` | Deferred | PR #1007 |
+> | `integer_ms_ssim_hip` | `ms_ssim_hip` | Yes | ADR-0285 / PR #1013 |
+> | `integer_ssim_hip` | `integer_ssim_hip` | Deferred | PR #999 |
+> | `float_adm_hip` | `float_adm_hip` | Yes | ADR-0468 / PR #1024 |
+> | `speed_chroma_hip` | `speed_chroma_hip` | Yes | ADR-0567 / ADR-0852 |
+> | `speed_temporal_hip` | `speed_temporal_hip` | Yes | ADR-0567 / ADR-0852 |
+>
+> All registered kernels require `enable_hip=true` + `enable_hipcc=true`.
+> Without `enable_hipcc=true`, `float_ssim_hip`, `integer_ssim_hip`, and
+> `vmaf_hip_picture_alloc` log an informative error naming `-Denable_hipcc=true`
+> before returning `-ENOSYS`. Pre-compiled HSACO fat binaries are not bundled
+> without `hipcc` because AMD ROCm requires target-specific HSACO code objects.
 
 ## Building
 
@@ -463,8 +448,32 @@ The fix replaces `clamp_i` with `mirror2_i` in all six filter-loop reads in
 | scale2 | 0.0000010 | ~6.00 |
 | scale3 | 0.0000010 | ~6.00 |
 
-All 48 Netflix src01 frames meet places=4. Pooled VMAF delta: 0.000017 (places~4.7).
-The in-repo parity test tolerance is tightened from 1e-3 to 1e-4 per ADR-0214
-and ADR-0566.
-
 See [ADR-1103](../../adr/1103-hip-vif-mirror2-boundary.md).
+
+## Architectural limitations
+
+### Zero-copy DMA-BUF / external memory import
+
+Unlike the CUDA backend (which supports `cudaImportExternalMemory` via
+`vmaf_cuda_picture_alloc`) and hardware decoders with DMA-BUF zero-copy pipelines,
+the HIP backend currently does not provide zero-copy picture buffer import
+(`VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE`).
+
+Incoming frames arrive with `VMAF_PICTURE_BUFFER_TYPE_HOST` in system memory.
+Each HIP feature extractor allocates internal device staging buffers and executes
+an explicit host-to-device 2D memory copy via `hipMemcpy2DAsync`.
+Supporting direct DMA-BUF external memory import on AMD ROCm requires ROCm
+`hipImportExternalMemory` plumbing and device picture pool support (T7-10c),
+which is tracked as a deferred enhancement.
+
+### Dispatch strategy predicates and environment overrides
+
+Runtime feature dispatch support can be probed via
+`vmaf_hip_dispatch_supports(ctx, feature)`. Callers can customize feature
+dispatch or disable specific HIP kernels via the `VMAF_HIP_DISPATCH`
+environment variable:
+
+```bash
+# Disable specific HIP feature extractor, forcing CPU fallback
+export VMAF_HIP_DISPATCH="float_ssim:disable,ciede:none"
+```

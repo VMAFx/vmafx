@@ -70,12 +70,11 @@ static int fill_pic(VmafPicture *pic, unsigned salt)
     if (err)
         return err;
     uint8_t *y = (uint8_t *)pic->data[0];
-    /* A coarse step pattern produces a non-zero CAMBI score because the
-     * banding detector keys on low-amplitude steps in luma. */
+    /* 8-step quantised gradient — classic banding artefact pattern. */
     for (unsigned row = 0; row < pic->h[0]; row++) {
         for (unsigned col = 0; col < pic->w[0]; col++) {
-            unsigned step = (row >> 3) + (col >> 3) + salt;
-            y[row * pic->stride[0] + col] = (uint8_t)((step * 4u) & 0xFFu);
+            const unsigned base = (col / 32u) * 32u + salt * 4u;
+            y[row * pic->stride[0] + col] = (uint8_t)(base & 0xFFu);
         }
     }
     for (unsigned p = 1; p < 3; p++) {

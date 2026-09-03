@@ -288,11 +288,6 @@ if is_hipcc_enabled and is_hip_enabled
         # under `#ifdef HAVE_HIPCC` in their host TUs.
         'ms_ssim_score' : feature_src_dir + 'hip/integer_ms_ssim/ms_ssim_score.hip',
         'psnr_hvs_score' : feature_src_dir + 'hip/integer_psnr_hvs/psnr_hvs_score.hip',
-        # integer_moment HIP kernel — keyed `integer_moment_score` to emit
-        # `integer_moment_score_hsaco` (consumed by integer_moment_hip.c),
-        # distinct from the `moment_score` key above which serves
-        # float_moment via `hip/float_moment/moment_score.hip`.
-        'integer_moment_score' : feature_src_dir + 'hip/integer_moment/moment_score.hip',
         'integer_ssim_score' : feature_src_dir + 'hip/integer_ssim/integer_ssim_score.hip',
         'float_vif_score' : feature_src_dir + 'hip/float_vif/float_vif_score.hip',
         'ssimulacra2_blur' : feature_src_dir + 'hip/ssimulacra2/ssimulacra2_blur.hip',

@@ -514,6 +514,10 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 {
     (void)pix_fmt;
     CambiStateHip *s = fex->priv;
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict)
+        return -ENOMEM;
 
     /* Resolve enc geometry (matches cambi.c::init logic). */
     if (s->enc_bitdepth == 0)
@@ -529,6 +533,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (s->enc_width < CAMBI_MIN_WIDTH_HEIGHT && s->enc_height < CAMBI_MIN_WIDTH_HEIGHT) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi_hip: encoded resolution %dx%d below minimum %d×%d.\n",
                  s->enc_width, s->enc_height, CAMBI_MIN_WIDTH_HEIGHT, CAMBI_MIN_WIDTH_HEIGHT);
+        (void)vmaf_dictionary_free(&s->feature_name_dict);
         return -EINVAL;
     }
 
@@ -660,12 +665,6 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     vmaf_cambi_default_callbacks(&s->inc_range_callback, &s->dec_range_callback,
                                  &s->derivative_callback);
 
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        err = -ENOMEM;
-        goto fail_after_module;
-    }
     return 0;
 
 fail_after_module:
@@ -685,8 +684,6 @@ fail_after_module:
     free(s->buffers.mask_dp);
     free(s->buffers.filter_mode_buffer);
     free(s->buffers.derivative_buffer);
-    if (s->feature_name_dict)
-        (void)vmaf_dictionary_free(&s->feature_name_dict);
 fail_after_rb:
     (void)vmaf_hip_kernel_readback_free(&s->rb_score, s->ctx);
 fail_after_lc:
@@ -694,6 +691,8 @@ fail_after_lc:
 fail_after_ctx:
     vmaf_hip_context_destroy(s->ctx);
     s->ctx = NULL;
+    if (s->feature_name_dict)
+        (void)vmaf_dictionary_free(&s->feature_name_dict);
     return err;
 #endif /* HAVE_HIPCC */
 }
@@ -943,9 +942,7 @@ VmafFeatureExtractor vmaf_fex_cambi_hip = {
     .options = options,
     .priv_size = sizeof(CambiStateHip),
     .provided_features = provided_features,
-    /* VMAF_FEATURE_EXTRACTOR_HIP flag cleared: pictures arrive as CPU
-     * VmafPictures (same posture as all other HIP consumers; ADR-0254). */
-    .flags = 0,
+    .flags = VMAF_FEATURE_EXTRACTOR_HIP,
     .chars =
         {
             .n_dispatches_per_frame = 15, /* 5 scales × 3 kernels */

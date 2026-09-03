@@ -91,11 +91,15 @@ void vmaf_hip_picture_free(VmafHipContext *ctx, void *buf)
 #else /* !HAVE_HIPCC — compile without the HIP runtime */
 #include <errno.h>
 
+#include "log.h"
+
 int vmaf_hip_picture_alloc(VmafHipContext *ctx, void **out, size_t size)
 {
     (void)ctx;
     (void)out;
     (void)size;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "vmaf_hip_picture_alloc requires HIP support compiled with -Denable_hipcc=true\n");
     return -ENOSYS;
 }
 

@@ -112,6 +112,7 @@ static char *run_hip_ssim(double *score)
     int err = vmaf_hip_state_init(&hip_state, hip_cfg);
     if (err != 0 || hip_state == NULL) {
         (void)fprintf(stderr, "[skip: no HIP device] ");
+        mu_skipped = 1;
         return NULL;
     }
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};

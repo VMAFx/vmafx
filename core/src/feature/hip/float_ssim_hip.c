@@ -484,6 +484,9 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err != 0)
         goto fail_after_module;
 #else
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "feature '%s' requires HIP device kernels compiled with -Denable_hipcc=true\n",
+             fex->name);
     err = -ENOSYS;
     if (err != 0)
         goto fail_after_rb;
@@ -565,6 +568,9 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     (void)ref_pic;
     (void)dist_pic;
     (void)index;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "feature '%s' requires HIP device kernels compiled with -Denable_hipcc=true\n",
+             fex->name);
     return -ENOSYS;
 #else
     SsimStateHip *s = fex->priv;
@@ -608,6 +614,9 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     (void)fex;
     (void)index;
     (void)feature_collector;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "feature '%s' requires HIP device kernels compiled with -Denable_hipcc=true\n",
+             fex->name);
     return -ENOSYS;
 #else
     SsimStateHip *s = fex->priv;
@@ -654,12 +663,7 @@ VmafFeatureExtractor vmaf_fex_float_ssim_hip = {
     .options = options,
     .priv_size = sizeof(SsimStateHip),
     .provided_features = provided_features,
-    /* VMAF_FEATURE_EXTRACTOR_HIP flag cleared until picture buffer-type
-     * plumbing lands (T7-10c). Until then pictures arrive as CPU
-     * VmafPictures and submit() does explicit HtoD copies.
-     * Same posture as all other HIP consumers (ADR-0241 / ADR-0254 /
-     * ADR-0259 / ADR-0260 / ADR-0266 / ADR-0267 / ADR-0273). */
-    .flags = 0,
+    .flags = VMAF_FEATURE_EXTRACTOR_HIP,
     /* 2 dispatches/frame (horiz + vert+combine). The horiz intermediate
      * buffers are filled per-frame — not a pure reduction, so
      * is_reduction_only = false. */
