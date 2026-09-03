@@ -431,8 +431,15 @@ void error(const char *const app, const char *const optarg, const int option,
     return pix_fmt;
 }
 
+/* Renamed from `strsep`: MSVC's UCRT declares `strsep` as `extern "C"`, so an
+ * anonymous-namespace definition of that name does not hide the declaration and
+ * every call bound to the undecorated CRT symbol instead, failing the link with
+ * "unresolved external symbol strsep referenced in function main". The
+ * pre-rework code used a file-scope `static` redeclaration, which did hide it.
+ * A distinct name cannot collide on any platform. HAVE_STRSEP still selects the
+ * platform implementation where one exists. */
 #ifndef HAVE_STRSEP
-char *strsep(char **sp, const char *sep)
+char *vmaf_cli_strsep(char **sp, const char *sep)
 {
     char *p = nullptr;
     char *s = nullptr;
@@ -444,6 +451,12 @@ char *strsep(char **sp, const char *sep)
         *p++ = '\0';
     *sp = p;
     return s;
+}
+#else
+/* The platform provides strsep; forward to it so the call sites stay uniform. */
+char *vmaf_cli_strsep(char **sp, const char *sep)
+{
+    return strsep(sp, sep);
 }
 #endif
 
@@ -466,9 +479,9 @@ void apply_model_opt(CLIModelConfig &model_cfg, char *key, char *val, const char
                   " are supported\n",
                   CLI_SETTINGS_STATIC_ARRAY_LEN);
         }
-        char *name = strsep(&key, ".");
+        char *name = vmaf_cli_strsep(&key, ".");
         model_cfg.feature_overload[model_cfg.overload_cnt].name = name;
-        const char *const opt = strsep(&key, ".");
+        const char *const opt = vmaf_cli_strsep(&key, ".");
         const int err = vmaf_feature_dictionary_set(
             &model_cfg.feature_overload[model_cfg.overload_cnt].opts_dict, opt, val);
         if (err)
@@ -501,9 +514,9 @@ CLIModelConfig parse_model_config(const char *const optarg, const char *const ap
     };
 
     char *key_val = nullptr;
-    while ((key_val = strsep(&optarg_copy, ":")) != nullptr) {
-        char *key = strsep(&key_val, "=");
-        char *val = strsep(&key_val, "=");
+    while ((key_val = vmaf_cli_strsep(&optarg_copy, ":")) != nullptr) {
+        char *key = vmaf_cli_strsep(&key_val, "=");
+        char *val = vmaf_cli_strsep(&key_val, "=");
         if (!val) {
             if (!strcmp(key, "disable_clip") || !strcmp(key, "enable_transform")) {
                 val = const_cast<char *>("true");
@@ -549,7 +562,7 @@ CLIFeatureConfig parse_feature_config(const char *const optarg, const char *cons
     void *buf = optarg_copy;
 
     CLIFeatureConfig feature_cfg = {
-        .name = strsep(&optarg_copy, "="),
+        .name = vmaf_cli_strsep(&optarg_copy, "="),
         .opts_dict = nullptr,
         .buf = buf,
     };
@@ -565,9 +578,9 @@ CLIFeatureConfig parse_feature_config(const char *const optarg, const char *cons
     }
 
     char *key_val = nullptr;
-    while ((key_val = strsep(&optarg_copy, ":")) != nullptr) {
-        const char *const key = strsep(&key_val, "=");
-        const char *const val = strsep(&key_val, "=");
+    while ((key_val = vmaf_cli_strsep(&optarg_copy, ":")) != nullptr) {
+        const char *const key = vmaf_cli_strsep(&key_val, "=");
+        const char *const val = vmaf_cli_strsep(&key_val, "=");
         if (!val) {
             usage(app,
                   "Problem parsing feature \"%s\", "
