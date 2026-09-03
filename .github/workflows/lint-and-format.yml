@@ -466,8 +466,20 @@ jobs:
             https://apt.repos.intel.com/oneapi all main" \
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
           sudo apt-get update
+          # libze-dev is the Level Zero loader *development* package.
+          # core/src/meson.build calls cc.find_library('ze_loader'), which
+          # emits a literal `-lze_loader`; ld resolves that against the
+          # unversioned libze_loader.so symlink ONLY. The runtime SONAME
+          # libze_loader.so.1 shipped by libze1 is invisible to -l, so
+          # libze1 alone does NOT fix this — do not "simplify" it to libze1.
+          # oneAPI does not supply the loader either: this step installs
+          # intel-oneapi-compiler-dpcpp-cpp and sources setvars.sh before
+          # meson setup, and -lze_loader still fails without libze-dev.
+          # Package name is release-specific: `libze-dev` on 24.04 noble
+          # (universe, already enabled); `level-zero-dev` does NOT exist there.
           sudo apt-get install -y \
             intel-oneapi-compiler-dpcpp-cpp \
+            libze-dev \
             ninja-build nasm jq parallel
           # clang-tidy-22 is NOT in the Ubuntu 24.04 archive — the image tops
           # out at clang-tidy-18 — so it has to come from apt.llvm.org, exactly
