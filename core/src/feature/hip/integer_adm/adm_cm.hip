@@ -227,27 +227,35 @@ __global__ void i4_adm_cm_line_kernel(AdmBufferHip buf, int h, int w, int top, i
             offset_j[1] = 0;
         }
 
+        int row_top = i + offset_i[0];
+        int row_bot = i + offset_i[1];
+        int col_l = j + offset_j[0];
+        int col_r = j + offset_j[1];
+
         int32_t thr = 0;
         for (int theta = 0; theta < 3; ++theta) {
             int32_t sum = 0;
             int32_t csf_a_val = inline_i4_csf_a(ref, dis,
-                                                src_stride * (i + offset_i[0] + 1) + j, theta,
+                                                i * src_stride + j, theta,
                                                 rfactor, adm_enhn_gain_limit);
 
-            int32_t *flt_ptr_line = flt_angles[theta];
-            flt_ptr_line += (src_stride * (i + offset_i[0]));
-            sum += flt_ptr_line[j + offset_j[0]];
-            sum += flt_ptr_line[j];
-            sum += flt_ptr_line[j + offset_j[1]];
-            flt_ptr_line += src_stride;
-            sum += flt_ptr_line[j + offset_j[0]];
+            const int32_t *flt_top = flt_angles[theta] + row_top * src_stride;
+            const int32_t *flt_mid = flt_angles[theta] + i * src_stride;
+            const int32_t *flt_bot = flt_angles[theta] + row_bot * src_stride;
+
+            sum += flt_top[col_l];
+            sum += flt_top[j];
+            sum += flt_top[col_r];
+
+            sum += flt_mid[col_l];
             sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs(csf_a_val)) + add_bef_shift_flt) >>
                              shift_flt);
-            sum += flt_ptr_line[j + offset_j[1]];
-            flt_ptr_line += src_stride * offset_i[1];
-            sum += flt_ptr_line[j + offset_j[0]];
-            sum += flt_ptr_line[j];
-            sum += flt_ptr_line[j + offset_j[1]];
+            sum += flt_mid[col_r];
+
+            sum += flt_bot[col_l];
+            sum += flt_bot[j];
+            sum += flt_bot[col_r];
+
             thr += sum;
         }
         int32_t r_val =
@@ -297,25 +305,34 @@ adm_cm_line_kernel_body(AdmBufferHip buf, int h, int w, int top, int bottom, int
     const double adm_enhn_gain_limit = params.adm_enhn_gain_limit;
 
     int cta_y = (int)((blockDim.y * blockIdx.y + threadIdx.y) * rows_per_thread);
-    int cta_x = (int)(blockDim.x * blockIdx.x + threadIdx.x);
     int y     = start_row + cta_y;
-    int x     = start_col + cta_x;
 
     const int total_rows = (3 + rows_per_thread - 1);
-    int32_t thr[rows_per_thread] = {0};
+    const int band2 = blockIdx.z;
 
-    if (y < end_row && x < end_col) {
+    /* Load WarpShift fields into locals (matches CUDA twin). */
+    int32_t add_shift_cub = ws.add_shift_cub[band2];
+    int32_t shift_cub     = ws.shift_cub[band2];
+    int32_t add_shift_sq  = ws.add_shift_sq[band2];
+    int32_t shift_sq      = ws.shift_sq[band2];
+    int32_t shift_sub_block = cm_shift_sub_const[blockIdx.z];
+
+    int64_t accum_row[rows_per_thread] = {0};
+
+    for (int x = start_col + (int)threadIdx.x; x < end_col; x += (int)blockDim.x) {
         int pos_x[3] = {x - 1, x, x + 1};
-        pos_x[0] = abs(pos_x[0]);
-        pos_x[2] = pos_x[2] - max(0, 2 * (x - w) + 1);
+        pos_x[0]     = abs(pos_x[0]);
+        pos_x[2]     = pos_x[2] - max(0, 2 * (x - w) + 1);
+
+        int32_t thr[rows_per_thread] = {0};
 
 #pragma unroll
         for (int theta = 0; theta < 3; ++theta) {
 #pragma unroll
             for (int row = 0; row < total_rows; ++row) {
                 int pos_y = y - 1 + row;
-                pos_y = abs(pos_y);
-                pos_y = pos_y - max(0, 2 * (y - h) + 1);
+                pos_y     = abs(pos_y);
+                pos_y     = pos_y - max(0, 2 * (y - h) + 1);
 
                 int16_t csf_a_val =
                     inline_s0_csf_a(ref, dis, pos_y * src_stride + x, theta, i_rfactor,
@@ -338,45 +355,37 @@ adm_cm_line_kernel_body(AdmBufferHip buf, int h, int w, int top, int bottom, int
                 }
             }
         }
-    }
 
-    int32_t shift_sub_block = cm_shift_sub_const[blockIdx.z];
-    int32_t accum_thread_reg[rows_per_thread] = {0};
-    for (int row = 0; row < rows_per_thread; ++row) {
-        int16_t sb = 0;
-        if ((y + row) < end_row && x < end_col) {
-            sb = inline_s0_decouple_r(ref, dis, (y + row) * src_stride + x, band - 1,
-                                      adm_enhn_gain_limit);
+        for (int row = 0; row < rows_per_thread; ++row) {
+            int16_t sb = 0;
+            if ((y + row) < end_row) {
+                sb = inline_s0_decouple_r(ref, dis, (y + row) * src_stride + x, band - 1,
+                                          adm_enhn_gain_limit);
+            }
+            int32_t val = abs(int32_t(i_rfactor[blockIdx.z] * sb)) - (thr[row] << shift_sub_block);
+            int32_t accum_thread = max(0, val);
+            const int32_t x_sq =
+                (int32_t)((((int64_t)accum_thread * accum_thread) + add_shift_sq) >> shift_sq);
+            accum_row[row] += (((int64_t)x_sq * accum_thread) + add_shift_cub) >> shift_cub;
         }
-        int32_t val = abs(int32_t(i_rfactor[blockIdx.z] * sb)) - (thr[row] << shift_sub_block);
-        accum_thread_reg[row] = max(0, val);
     }
 
-    const int band2 = blockIdx.z;
-    int64_t accum   = 0;
-
-    /* Load WarpShift fields into locals (matches CUDA twin). */
-    int32_t add_shift_cub = ws.add_shift_cub[band2];
-    int32_t shift_cub     = ws.shift_cub[band2];
-    int32_t add_shift_sq  = ws.add_shift_sq[band2];
-    int32_t shift_sq      = ws.shift_sq[band2];
-
+    __shared__ int64_t s_row[4][32];
     for (int row = 0; row < rows_per_thread; ++row) {
-        int32_t accum_thread = accum_thread_reg[row];
-        /* NOTE: CUDA twin has `+ add_shift_sq >> shift_sq` precedence bug
-         * (no parens around the addition) — we mirror it bit-exactly to
-         * preserve cross-backend parity within the ADR-0214 places=4
-         * tolerance.  Do not "fix" without a coordinated CUDA + CPU
-         * regen-snapshots pass. */
-        const int32_t x_sq =
-            (int32_t)((((int64_t)accum_thread * accum_thread) + add_shift_sq >> shift_sq));
-        accum += (((int64_t)x_sq * accum_thread) + add_shift_cub) >> shift_cub;
+        s_row[threadIdx.y][threadIdx.x] = accum_row[row];
+        __syncthreads();
+        for (int s = 16; s > 0; s >>= 1) {
+            if (threadIdx.x < s) {
+                s_row[threadIdx.y][threadIdx.x] += s_row[threadIdx.y][threadIdx.x + s];
+            }
+            __syncthreads();
+        }
+        if (threadIdx.x == 0 && (y + row) < end_row) {
+            int64_t row_total = s_row[threadIdx.y][0];
+            int64_t shifted = (row_total + add_shift_inner_accum) >> shift_inner_accum;
+            atomicAdd((uint64_cu *)&accum_global[band2], (uint64_cu)shifted);
+        }
     }
-
-    /* Per-thread atomicAdd — replaces CUDA's warp_reduce + per-warp atomicAdd_int64.
-     * int64 addition is associative so the result is bit-exact w.r.t. the CUDA twin. */
-    int64_t shifted = (accum + add_shift_inner_accum) >> shift_inner_accum;
-    atomicAdd((uint64_cu *)&accum_global[band2], (uint64_cu)shifted);
 }
 
 extern "C" __global__ void adm_cm_line_kernel_8(AdmBufferHip buf, int h, int w, int top, int bottom, int left,
@@ -397,7 +406,8 @@ extern "C" __global__ void adm_cm_line_kernel_8(AdmBufferHip buf, int h, int w, 
 /* ----------------------------------------------------------------------
  * adm_cm_reduce_line_kernel_4 — consumes accum_per_thread scratch (written
  * by i4_adm_cm_line_kernel) and reduces into accum[band] via int64
- * atomicAdd. Same val_per_thread=4 launch shape as the CUDA twin.
+ * atomicAdd. Sums the full row in int64 and applies shift_inner_accum
+ * once per row.
  * -------------------------------------------------------------------- */
 
 template <int val_per_thread>
@@ -422,20 +432,28 @@ adm_cm_reduce_line_kernel_body(int h, int w, int scale, int buffer_h, int buffer
     }
 
     int64_t temp_value = 0;
-    const int buffer_col = (int)((blockDim.x * blockIdx.x + threadIdx.x) * val_per_thread);
-    const int32_t *buffer_loc = buffer + b_off + buffer_col;
-    for (int i = 0; i < val_per_thread; ++i) {
-        if ((buffer_col + i) < buffer_stride) {
-            const int32_t x = buffer_loc[i];
-            const int32_t x_sq = (int32_t)((((int64_t)x * x) + add_shift_sq) >> shift_sq);
-            temp_value += (((int64_t)x_sq * x) + add_shift_cub) >> shift_cub;
-        }
+    for (int col = (int)threadIdx.x; col < buffer_stride; col += (int)blockDim.x) {
+        const int32_t x = buffer[b_off + col];
+        const int32_t x_sq = (int32_t)((((int64_t)x * x) + add_shift_sq) >> shift_sq);
+        temp_value += (((int64_t)x_sq * x) + add_shift_cub) >> shift_cub;
     }
 
-    const uint32_t shift_inner_accum     = (uint32_t)ceilf(log2f((float)h));
-    const uint32_t add_shift_inner_accum = 1u << (shift_inner_accum - 1);
-    atomicAdd((uint64_cu *)&accum[band],
-              (uint64_cu)((temp_value + add_shift_inner_accum) >> shift_inner_accum));
+    __shared__ int64_t s_row[256];
+    s_row[threadIdx.x] = temp_value;
+    __syncthreads();
+    for (int s = (int)blockDim.x / 2; s > 0; s >>= 1) {
+        if ((int)threadIdx.x < s) {
+            s_row[threadIdx.x] += s_row[threadIdx.x + s];
+        }
+        __syncthreads();
+    }
+
+    if (threadIdx.x == 0) {
+        const uint32_t shift_inner_accum     = (uint32_t)ceilf(log2f((float)h));
+        const uint32_t add_shift_inner_accum = 1u << (shift_inner_accum - 1);
+        int64_t shifted = (s_row[0] + add_shift_inner_accum) >> shift_inner_accum;
+        atomicAdd((uint64_cu *)&accum[band], (uint64_cu)shifted);
+    }
 }
 
 extern "C" __global__ void adm_cm_reduce_line_kernel_4(int h, int w, int scale, int buffer_h,

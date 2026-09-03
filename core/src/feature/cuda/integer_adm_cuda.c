@@ -427,8 +427,7 @@ static int i4_adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, i
                         &scale,
                         &buf->adm_cm[scale],
                         &*p};
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_i4_adm_cm_line_kernel_fused,
-                                               DIV_ROUND_UP(buffer_stride, BLOCKX), buffer_h, 3,
+        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_i4_adm_cm_line_kernel_fused, 1, buffer_h, 3,
                                                BLOCKX, 1, 1, 0, c_stream, args, NULL));
     }
     return 0;
@@ -508,8 +507,7 @@ static int adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int 
                         &shift_inner_accum,
                         &add_shift_inner_accum};
 
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_adm_cm_line_kernel_8,
-                                               DIV_ROUND_UP(buffer_stride, BLOCKX),
+        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_adm_cm_line_kernel_8, 1,
                                                DIV_ROUND_UP(buffer_h, BLOCKY * rows_per_thread), 3,
                                                BLOCKX, BLOCKY, 1, 0, c_stream, args, NULL));
     }
@@ -549,9 +547,8 @@ static int i4_adm_cm_aim_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int 
                     &scale,
                     &buf->adm_aim_cm[scale],
                     &*p};
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_i4_adm_cm_aim_line_kernel_fused,
-                                           DIV_ROUND_UP(buffer_stride, BLOCKX), buffer_h, 3, BLOCKX,
-                                           1, 1, 0, c_stream, args, NULL));
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_i4_adm_cm_aim_line_kernel_fused, 1, buffer_h, 3,
+                                           BLOCKX, 1, 1, 0, c_stream, args, NULL));
     return 0;
 }
 
@@ -611,8 +608,7 @@ static int adm_cm_aim_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, 
                     &ws,
                     &shift_inner_accum,
                     &add_shift_inner_accum};
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_adm_cm_aim_line_kernel_8,
-                                           DIV_ROUND_UP(buffer_stride, BLOCKX),
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_adm_cm_aim_line_kernel_8, 1,
                                            DIV_ROUND_UP(buffer_h, BLOCKY * rows_per_thread), 3,
                                            BLOCKX, BLOCKY, 1, 0, c_stream, args, NULL));
     return 0;

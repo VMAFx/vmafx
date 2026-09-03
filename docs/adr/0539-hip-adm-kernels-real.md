@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0539: integer ADM HIP kernels — real implementation replacing weak HSACO stubs
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-1167](1167-adm-cm-row-level-rounding.md)
 - **Date**: 2026-05-18
 - **Deciders**: lusoris, Claude
 - **Tags**: hip, gpu, feature, integer-adm, port
