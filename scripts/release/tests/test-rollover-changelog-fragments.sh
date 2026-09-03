@@ -48,9 +48,11 @@ fixture() {
   printf '{".":"%s"}\n' "$manifest_version" >"$root/.release-please-manifest.json"
   printf '%s\n' \
     '{' \
+    '  "_comment_bootstrap_sha": "one-shot, ADR-1151",' \
     '  "bootstrap-sha": "0000000000000000000000000000000000000000",' \
     '  "packages": {' \
     '    ".": {' \
+    '      "_comment_release_as": "one-shot, ADR-1151",' \
     '      "release-as": "3.2.1",' \
     '      "skip-changelog": true,' \
     '      "extra-files": [{"type":"generic","path":"version-marker.txt"}]' \
@@ -106,7 +108,9 @@ fi
 if [[ ! -e "$happy/changelog.d/_pre_fragment_legacy.md" ]] &&
   [[ "$(find "$happy/changelog.d/added" "$happy/changelog.d/fixed" -type f | wc -l)" -eq 0 ]] &&
   jq -e '(has("bootstrap-sha") | not) and
-    (.packages["."] | has("release-as") | not)' \
+    (has("_comment_bootstrap_sha") | not) and
+    (.packages["."] | has("release-as") | not) and
+    (.packages["."] | has("_comment_release_as") | not)' \
     "$happy/release-please-config.json" >/dev/null &&
   jq -e '.version == "3.2.1" and .source_count == 3' \
     "$happy/changelog.d/releases/3.2.1.json" >/dev/null &&

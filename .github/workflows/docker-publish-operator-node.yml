@@ -56,6 +56,7 @@ jobs:
       contents: read
     outputs:
       tag: ${{ steps.release.outputs.tag }}
+      is-latest: ${{ steps.release.outputs.is_latest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -91,6 +92,21 @@ jobs:
             exit 1
           fi
           echo "tag=$PUBLISH_TAG" >> "$GITHUB_OUTPUT"
+          # ADR-1151 — the `latest` moving tag used to be gated on
+          # `github.event_name == 'release'`, so the documented recovery
+          # dispatch (docs/development/release.md) republished the versioned
+          # tag but left `latest` pointing at whatever digest the broken
+          # original run had pushed. Resolve it from the repository's actual
+          # newest published release instead, which makes the guard identical
+          # on both trigger paths.
+          latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" \
+            --jq '.tag_name' 2>/dev/null || true)"
+          if [[ "$latest_tag" == "$PUBLISH_TAG" ]]; then
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$PUBLISH_TAG is not the newest release (${latest_tag:-none}); skipping the 'latest' tag"
+          fi
 
   # -------------------------------------------------------------------------
   # Build + push vmafx-operator (amd64 + arm64)
@@ -136,7 +152,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}
           tags: |
             type=raw,value=${{ env.PUBLISH_TAG }}
-            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=raw,value=latest,enable=${{ needs.validate-release.outputs.is-latest == 'true' }}
 
       - name: Build and push (amd64 + arm64)
         id: push
@@ -241,7 +257,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}
           tags: |
             type=raw,value=${{ env.PUBLISH_TAG }}
-            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=raw,value=latest,enable=${{ needs.validate-release.outputs.is-latest == 'true' }}
 
       - name: Build and push (amd64 + arm64)
         id: push
@@ -347,7 +363,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}
           tags: |
             type=raw,value=${{ env.PUBLISH_TAG }}
-            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=raw,value=latest,enable=${{ needs.validate-release.outputs.is-latest == 'true' }}
 
       - name: Build and push (amd64 + arm64, CPU target)
         id: push

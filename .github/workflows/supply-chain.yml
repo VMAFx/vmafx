@@ -76,6 +76,46 @@ jobs:
           fi
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+      - name: Require the protected publication environments to exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # ADR-1151. Twelve write-bearing jobs across supply-chain.yml,
+          # docker-publish-production.yml and docker-publish-operator-node.yml
+          # declare `environment: release-publish` / `pypi-publish`. GitHub
+          # AUTO-CREATES a referenced environment that does not exist, with an
+          # empty rule set, so those jobs run straight through and the
+          # documented "requires the release reviewer" gate is silently absent.
+          # scripts/release/tests/test-publication-environment-binding.sh only
+          # greps the YAML and cannot see that server-side drift. This preflight
+          # is read-only, runs before any job holding write or OIDC scope, and
+          # fails closed.
+          rc=0
+          for environment in release-publish pypi-publish; do
+            response="$RUNNER_TEMP/env-$environment.json"
+            if ! gh api "repos/$GITHUB_REPOSITORY/environments/$environment" \
+                >"$response" 2>"$RUNNER_TEMP/env-$environment.err"; then
+              echo "::error::deployment environment '$environment' is missing or unreadable"
+              sed -n '1,5p' "$RUNNER_TEMP/env-$environment.err" >&2
+              rc=1
+              continue
+            fi
+            reviewers="$(jq -r \
+              '[.protection_rules[]? | select(.type == "required_reviewers")] | length' \
+              "$response")"
+            if [[ "$reviewers" -lt 1 ]]; then
+              echo "::error::deployment environment '$environment' has no required_reviewers rule"
+              rc=1
+              continue
+            fi
+            echo "OK: '$environment' carries a required_reviewers protection rule."
+          done
+          if [[ "$rc" -ne 0 ]]; then
+            echo "Create each environment with a required reviewer and a 'v*' tag" >&2
+            echo "deployment policy before publishing a release." >&2
+            echo "See docs/development/release.md (publication environments)." >&2
+            exit 1
+          fi
 
   build-artifacts:
     name: Build Linux release artifacts (libvmaf.so chain, vmaf CLI, models)

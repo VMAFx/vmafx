@@ -78,7 +78,52 @@ jobs:
               'Tiny AI (DNN Suite + ai/ Pytests)',
               'Build — Ubuntu HIP (T7-10b runtime)',
               'SYCL float_ssim Parity (Arc DG2-G10)',
+              // ADR-1151 — the process gates in rule-enforcement.yml were
+              // reporting but not required, so a red Release Script Contract
+              // (or a missing deliverables checklist / doc-substance /
+              // state.md touch / ffmpeg-patch sync / ADR collision) did not
+              // block a merge and needed no admin bypass. All six trigger on
+              // `pull_request` and carry the same draft gate as the jobs
+              // above, so they genuinely report on every non-draft PR.
+              // The four authoring-discipline gates among them disarm
+              // themselves on a machine-generated release PR via
+              // scripts/ci/release-pr-exempt.sh — release-please writes no
+              // ADR-0108 checklist and its version-marker diff is path-mapped
+              // to docs/ trees a bot never touches, so without that they would
+              // be red on every release PR. `Release Script Contract` and
+              // `ADR Number Collision Guard` stay armed there on purpose.
+              'Deep-Dive Deliverables Checklist (ADR-0108)',
+              'Doc-Substance Gate (ADR-0100 / 0167)',
+              'docs/state.md Touch Gate (ADR-0165)',
+              'FFmpeg-Patches Surface Sync (CLAUDE.md §12 r14, ADR-0356)',
+              'ADR Number Collision Guard (ADR-0386 / ADR-0628)',
+              'Release Script Contract (ADR-1128)',
             ];
+
+            // ADR-1151 — absent-means-pass (below) is correct ADR-0313
+            // semantics for a doc-only PR and wrong for the one PR whose merge
+            // creates a release: a release PR's diff is
+            // `.release-please-manifest.json` plus the coordinated version
+            // markers, so every path-routed gate can legitimately select
+            // nothing and the whole required set resolves absent-or-skipped.
+            // On a `release-please--` head ref these three must actually
+            // report. `.release-please-manifest.json` and
+            // `release-please-config.json` are in the `c_core` selector of
+            // .github/ci-impact.json so the two build/test entries do real
+            // work rather than reporting a no-op success.
+            const mustReport = [
+              'Release Script Contract (ADR-1128)',
+              'Netflix CPU Golden Tests (D24)',
+              'Build — Ubuntu gcc (CPU) + DNN',
+            ];
+            const headRef = context.eventName === 'pull_request'
+              ? context.payload.pull_request.head.ref
+              : '';
+            const enforceMustReport = headRef.startsWith('release-please--');
+            if (enforceMustReport) {
+              core.info(`Release branch ${headRef}: absence is not acceptable for ` +
+                        `${mustReport.join(', ')}`);
+            }
             const sha = context.eventName === 'pull_request'
               ? context.payload.pull_request.head.sha
               : context.sha;
@@ -171,6 +216,10 @@ jobs:
             for (const name of required) {
               const run = byName[name];
               if (!run) {
+                if (enforceMustReport && mustReport.includes(name)) {
+                  failed.push(`${name}: never reported on a release branch`);
+                  continue;
+                }
                 core.info(`OK (not reported, treated as path-filter-skip): ${name}`);
                 continue;
               }

@@ -4,6 +4,10 @@
 
 [project]
 name = "vmaf-fork-tooling"
+# Never-published tooling aggregate - independently versioned on purpose
+# (ADR-1127, reaffirmed by ADR-1151). It carries no x-release-please-version
+# marker; the three real Python distributions (ai/, dev-llm/,
+# mcp-server/vmaf-mcp/) are the release-owned ones.
 version = "0.0.0"
 description = "VMAFx — Python tooling and scripts"
 # Keep the tool-only root metadata at minor-series granularity. Dependabot's

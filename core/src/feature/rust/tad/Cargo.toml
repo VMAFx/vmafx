@@ -1,5 +1,9 @@
 [package]
 name = "vmafx-tad"
+# Crate version - independently versioned on purpose (ADR-1127, reaffirmed by
+# ADR-1151). The Rust crates are not published from the release pipeline and
+# carry no x-release-please-version marker; the fork's 1.0.0 product release
+# does not reset them.
 version = "0.1.0"
 description = "Temporal Absolute Difference (TAD) feature extractor for VMAFX — cbindgen pilot (ADR-0707)"
 # Inherits edition / license / authors / repository / homepage /

@@ -120,7 +120,9 @@
         "python/test/resource/*",
         "python/test/resource/**",
         ".clang-format",
-        ".iwyu.imp"
+        ".iwyu.imp",
+        ".release-please-manifest.json",
+        "release-please-config.json"
       ]
     },
     "python": {
