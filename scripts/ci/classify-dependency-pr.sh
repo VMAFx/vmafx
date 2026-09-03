@@ -175,7 +175,24 @@ else
       git fetch --no-tags origin "${base_sha}" 2>/dev/null || true
     git cat-file -e "${head_sha}^{commit}" 2>/dev/null ||
       git fetch --no-tags origin "${head_sha}" 2>/dev/null || true
-    diff_base="${base_sha}"
+    # Use the MERGE BASE of the two, not base_sha itself.
+    #
+    # GitHub's `pull_request.base.sha` is the base branch tip as it was when the
+    # PR was created (or last synchronised), not the current merge base. Once
+    # master moves — which on this repo is constantly — a plain two-dot
+    # `base_sha..head_sha` diff reports every file merged into master since the
+    # branch point ON TOP OF the PR's own change.
+    #
+    # For dependency PRs that is fatal: a Renovate PR touching only
+    # `deploy/helm/vmafx/values.yaml` was reported as touching 36 files
+    # including `core/src/feature/*.c`, so this script concluded "bot PR touches
+    # source code" and refused the exemption. Every dependency PR whose base had
+    # moved failed the documentation gates for that reason alone.
+    #
+    # `git merge-base` gives the real fork point, which is what three-dot diff
+    # syntax means. The fallback branch below already did this correctly; only
+    # this explicit-SHA path was wrong.
+    diff_base="$(git merge-base "${base_sha}" "${head_sha}" 2>/dev/null || printf '%s' "${base_sha}")"
     diff_head="${head_sha}"
   else
     if ! git rev-parse --verify origin/master >/dev/null 2>&1; then
