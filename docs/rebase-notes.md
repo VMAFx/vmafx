@@ -47849,3 +47849,145 @@ Rebase-sensitive points:
   `pkg/version/version.go`, `scripts/ci/release-pr-exempt.sh`,
   `scripts/ci/tests/test-release-pr-exempt.sh`, and the docs. No rebase
   impact.
+## Upstream-issue harvest 2026-09-03 (ADR-1166, branch `fix/upstream-harvest-2026-09-03`)
+
+Nine stale Netflix/vmaf reports were verified against this tree and the
+confirmed subset fixed. The entries below are the ones a future
+`/sync-upstream` needs, because each touches an upstream-mirrored file where
+the two trees now diverge. Full triage table, including the ALREADY-FIXED and
+NOT-APPLICABLE verdicts, in
+[`docs/research/1166-upstream-issue-harvest-2026-09-03.md`](research/1166-upstream-issue-harvest-2026-09-03.md).
+
+### `core/src/feature/common/convolution_internal.h` — Netflix/vmaf#1582 / #1581
+
+The three edge helpers no longer open-code the single-bounce reflect-101 fold.
+There is one `convolution_reflect101(idx, size)` `FORCE_INLINE` helper at the
+top of the header, and `convolution_edge_s` / `_sq_s` / `_xy_s` each call it
+once per tap. The fold is **iterative** (`while (idx < 0 || idx >= size)`) with
+a `size <= 1` short circuit, because a single bounce only lands in range for
+`size >= radius + 1`; below that it falls out the opposite side and the caller
+dereferences out of bounds.
+
+For every `size >= radius + 1` the loop exits on the first iteration and yields
+the identical index, so this is a pure safety change with no score movement —
+pinned by `core/test/test_convolution_edge_small.c::test_large_plane_bit_identical`,
+which compares a 24x24 run against an explicit single-bounce reference and
+asserts **bit** equality.
+
+An upstream hunk that re-introduces the open-coded
+`width - (j_tap - width + 2)` form at any of the three sites must be dropped,
+not merged. Upstream's own #1582 patch introduces a `convolution_mirror()`
+helper of the same shape; prefer keeping the fork's name and the header comment
+that cites both issue numbers.
+
+### `core/src/feature/common/convolution.c` — Netflix/vmaf#1582
+
+`convolution_x_c_s` and `convolution_y_c_s` now call
+`convolution_clamp_borders(dim, &borders_lo, &borders_hi)` immediately after
+deriving the two bounds. Upstream leaves `borders_right` / `borders_bottom`
+negative for a plane narrower/shorter than the filter, which makes the trailing
+loop start at a negative index and write `dst[i * dst_stride - 1]` /
+`dst[-dst_stride + j]` — a heap underflow write. The clamp is a no-op for every
+`dim >= filter_width`, so no in-contract behaviour changes; it also removes the
+duplicate recompute when the two border bands would otherwise overlap.
+
+The file also now `#include "alignment.h"` instead of re-declaring
+`vmaf_floorn` / `vmaf_ceiln` as local `extern`s. `core/src/feature/common/convolution.h`
+gained prototypes for `convolution_x_c_s` / `convolution_y_c_s`, which already
+had external linkage; this silences `-Wmissing-prototypes` and lets the
+regression test drive the scalar passes without going through the SIMD
+dispatch.
+
+### `core/src/feature/integer_motion.c`, `integer_motion_v2.c`, `x86/motion_avx2.c`, `x86/motion_avx512.c`, `arm64/motion_v2_neon.c` — deliberate divergence from Netflix/vmaf#1581
+
+These files keep their **single-bounce** `mirror()` bodies on purpose. They sit
+downstream of an `init()` guard that has rejected `w < 3 || h < 3` since
+Research-0094, so the defective sizes never reach them. Upstream #1581 goes the
+other way — it fixes `mirror()` so tiny frames can be *scored*; the fork errors
+out instead. A sync that pulls upstream's `mirror()` change here is a
+behaviour decision, not a mechanical merge: it would make the guards
+unnecessary and start producing scores for 1x1 and 2x2 frames, which the fork
+has deliberately refused since Research-0094.
+
+The same applies to the CUDA / HIP / Metal `mirror` twins.
+
+### `core/src/feature/float_vif.c` — Netflix/vmaf#1582
+
+The min-dimension guard is no longer a hard-coded 9. It is
+`vif_get_min_dim((float)s->vif_kernelscale)` — the largest
+`((filter_width_s / 2) + 1) << s` over the four-scale ladder, which is 16 at the
+default kernelscale. The old floor covered scale 0 only, so 9..15 px input
+reached the scale-3 convolution with a sub-minimum plane. `vif_get_min_dim` is
+new in `core/src/feature/vif_tools.{c,h}`; upstream has no counterpart, so an
+upstream hunk that touches the guard will conflict.
+
+### `core/src/feature/float_motion.c` — Netflix/vmaf#1582 / #1581
+
+`motion_check_min_dim` gained a `const char *plane` argument (for the log
+message) and is now driven by `motion_check_min_dim_all_planes`, which also
+validates the **chroma** dimensions when `motion_add_uv` is set, deriving them
+with `picture.c`'s own `(dim + ss) >> ss` geometry via the new
+`motion_chroma_shifts` helper. Upstream validates nothing here; the fork's own
+prior guard validated luma only, which is what left the live out-of-bounds read
+on the chroma blur.
+
+### `core/src/model.c` (and the unbuilt `core/src/model.cpp` twin) — Netflix/vmaf#1242
+
+`vmaf_model_feature_overload` no longer has an `exit:` label: the `-ENOMEM` and
+dictionary-free failure paths `break` out of the loop and fall through to the
+single unconditional `vmaf_dictionary_free(&opts_dict)`. That is exactly the
+shape the unbuilt C++ twin already had, so the two files are now convergent —
+keep them that way (T-TWIN-DEAD-SIDES-2026-09-02 tracks the twin's
+build wiring). `vmaf_model_collection_feature_overload` gained argument guards
+(`!model || !feature_name || !opts_dict`, plus `!*model_collection`) and now
+propagates and cleans up after a failed `vmaf_dictionary_copy`.
+
+Do **not** adopt upstream's proposed `VmafFeatureDictionary **` signature
+change: it is an API/ABI break that would need its own ADR and soname handling.
+
+### `core/include/libvmaf/feature.h`, `model.h`, `libvmaf.h` — Netflix/vmaf#1242
+
+The `VmafFeatureDictionary` ownership contract is now written **identically** in
+all three headers: consumed on every path except the argument-validation
+guards, where the caller still owns it. `feature.h` and `model.h` previously
+documented opposite rules. These are fork-authored doc comments (upstream's
+headers are much sparser), so an upstream sync will not conflict, but any edit
+must keep the three copies in step.
+
+### `core/src/feature/compat_builtin.h` — Netflix/vmaf#1551, retracting Netflix/vmaf#1422
+
+This file is fork-added (there is no upstream counterpart), but round-21 item
+(n) recorded the `__lzcnt` choice as settled, and it is not: `__lzcnt` emits
+LZCNT unconditionally, which silently decodes as BSR on any x86-64 without
+ABM/LZCNT and returns the MSB index instead of the leading-zero count. The shim
+now uses `_BitScanReverse` / `_BitScanReverse64` and carries a
+`_M_X64 || _M_IX86` architecture guard.
+
+**Do not adopt Netflix/vmaf#1422's `__lzcnt` form** — upstream's own #1551
+retracts it. `scripts/ci/check-msvc-clz-shim.sh` enforces this and fails the
+`fast` suite if the intrinsic returns anywhere under `core/src`.
+
+### `core/tools/spinner.h` and `core/tools/vmaf.cpp` — Netflix/vmaf#743
+
+`spinner.h` is upstream-mirrored and upstream still has the bug open. The
+braille table itself is byte-for-byte unchanged (56 entries, verified in
+`core/test/test_spinner.cpp`); what is new is the `spinner_ascii` fallback
+table, `spinner_table_for_codepage()`, `spinner_erase_eol()` and the
+`SPINNER_CODEPAGE_UTF8` constant, and the array is now
+`static const char *const`. `vmaf.cpp` gained an `#ifdef _WIN32`
+`WindowsConsoleGuard` RAII class plus `console_output_code_page()` /
+`console_vt_enabled()` / `console_progress_style()` / `emit_progress_line()` in
+an anonymous namespace; the progress `fprintf` moved into
+`emit_progress_line()`. On POSIX every selector returns the pre-existing value,
+so the emitted bytes are unchanged.
+
+### `core/src/meson.build`, `core/tools/test/meson.build` — Netflix/vmaf#1573
+
+The nvcc fatbin include list is now built from absolute
+`meson.current_source_dir()` / `meson.current_build_dir()` paths
+(`cuda_inc_flags`), matching what the SYCL block below it already did. The
+relative form only resolved when the build directory was a direct child of
+`core/`, which stopped being the documented layout at ADR-0700.
+`libvmaf_private_libs` gained the C++ runtime for Netflix/vmaf#1178, detected
+via `_LIBCPP_VERSION` rather than the compiler id. The three shell-driven tool
+tests now declare `depends` and `workdir`.

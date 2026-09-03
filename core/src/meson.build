@@ -1264,10 +1264,25 @@ if is_cuda_enabled
     # libvmaf/src/compat/win32/pthread.h is wired into the C/C++ builds
     # via pthread_dependency, but custom_target nvcc invocations build
     # their own -I list — so add the shim path explicitly here too.
+    # Netflix/vmaf#1573 hunk (b): these used to be RELATIVE paths ('./src',
+    # '../src', ...), which only resolve when the build directory happens to be
+    # a direct child of core/. Since ADR-0700 moved the project root to core/,
+    # the layout the docs actually use (`meson setup build core` from the repo
+    # root) put the build dir elsewhere and every .cu fatbin failed with
+    # "fatal error: cuda/integer_adm_cuda.h: No such file or directory".
+    # Absolute paths derived from meson.current_{source,build}_dir(), matching
+    # what the SYCL block below already does.
     cuda_extra_includes = []
     if host_machine.system() == 'windows'
         cuda_extra_includes += ['-I', meson.current_source_dir() / 'compat' / 'win32']
     endif
+    cuda_inc_flags = [
+        '-I', meson.current_build_dir(),
+        '-I', meson.current_source_dir(),
+        '-I', libvmaf_src_root / 'include',
+        '-I', meson.current_source_dir() / 'feature',
+        '-I', meson.current_source_dir() / cuda_dir,
+    ]
     ptx_files = {}
     foreach name, _cu : cuda_cu_sources
         per_kernel_flags = cuda_cu_extra_flags.get(name, [])
@@ -1279,11 +1294,7 @@ if is_cuda_enabled
                 gencode,
                 '@INPUT@',
                 '-o', '@OUTPUT@' ,
-                '-I', meson.current_build_dir(),
-                '-I', meson.current_source_dir(),
-                '-I', libvmaf_src_root / 'include',
-                '-I', meson.current_source_dir() / 'feature',
-                '-I', meson.current_source_dir() / 'cuda',
+                cuda_inc_flags,
                 cuda_extra_includes,
                 '-DDEVICE_CODE',
             ] + cuda_flags + nvcc_ccbin_flags + nvcc_host_includes + per_kernel_flags
@@ -2156,6 +2167,28 @@ if is_metal_enabled
     # pkg-config has no native "framework" syntax, but raw linker flags
     # in libraries_private get embedded verbatim into Libs.private.
     libvmaf_private_libs += ['-Wl,-framework,Foundation', '-Wl,-framework,Metal']
+endif
+
+# Netflix/vmaf#1178: libvmaf contains C++ translation units (the fork's own
+# feature_extractor.cpp / feature_collector.cpp / luminance_tools.cpp /
+# read_json_model.cpp / log.cpp / picture_pool ... plus vendored libsvm), so a
+# consumer linking the static archive through
+# `pkg-config --static --libs libvmaf` needs the C++ runtime. Without it the
+# link fails with ~670 undefined references (`operator new(unsigned long)`,
+# `std::ios_base::ios_base()`, ...) — which is why ADR-0198's fully-static
+# FFmpeg reproducer had to add `-lstdc++` by hand.
+#
+# Detect the STL actually in use rather than keying off the compiler id
+# (upstream's patch maps clang -> -lc++, which is wrong on Linux, where clang
+# defaults to libstdc++; -Dcpp_args=-stdlib=libc++ can flip either compiler).
+# _LIBCPP_VERSION is defined only by libc++. MSVC / clang-cl auto-link their
+# runtime via `#pragma comment(lib)`, so there is nothing to add there.
+if cxx.get_argument_syntax() != 'msvc'
+    if cxx.get_define('_LIBCPP_VERSION', prefix: '#include <ciso646>') != ''
+        libvmaf_private_libs += '-lc++'
+    else
+        libvmaf_private_libs += '-lstdc++'
+    endif
 endif
 
 pkg_mod.generate(libraries: libvmaf,

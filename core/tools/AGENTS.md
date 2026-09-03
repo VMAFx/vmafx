@@ -216,3 +216,27 @@ tools/
     multiplication overflow.
   - In `vmaf.cpp`, `ModelArrays` is encapsulated with private members and RAII
     accessors; all internal helpers reside in an anonymous namespace.
+
+## Progress-line rendering is console-capability-driven (ADR-1166)
+
+`spinner.h` now carries two glyph tables and two selectors, and `vmaf.cpp`
+resolves them from the console's **actual** capabilities:
+
+- `spinner[]` — the upstream UTF-8 braille table. Byte-for-byte unchanged;
+  `core/test/test_spinner.cpp` pins the first and last entries and asserts
+  every entry is exactly 6 bytes, so a well-meaning re-encode (universal
+  character names, a different braille range) fails the fast suite. Do not
+  rewrite these literals as `\uXXXX` escapes: MSVC's narrow execution charset
+  is the ANSI code page, where they would not round-trip.
+- `spinner_ascii[]` + `spinner_table_for_codepage()` + `spinner_erase_eol()` —
+  the fallback for a console that reports a non-UTF-8 code page or refuses VT
+  processing.
+
+On POSIX both selectors are called with `SPINNER_CODEPAGE_UTF8` and
+`vt_enabled = 1`, so the emitted bytes are identical to the pre-ADR-1166 form.
+Keep it that way — the golden-gate CLI invocations parse this stream.
+
+`WindowsConsoleGuard` in `vmaf.cpp` is declared in `main()` **before every
+`goto cleanup` target**, which is what makes the restore run on the error
+paths. Moving its declaration below a jump target is ill-formed C++ and would
+silently leave the user's console in UTF-8 + VT mode after an error exit.

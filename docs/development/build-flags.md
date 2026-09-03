@@ -200,3 +200,48 @@ the original 207-symbol audit and fix rationale.
 - [getting-started/building-on-windows.md](../getting-started/building-on-windows.md)
   — platform-specific toolchain setup.
 - [development/release.md](release.md) — release build + signing flow.
+
+## Static linking and `pkg-config`
+
+`core/meson.build` sets `default_library=both`, so a build produces
+`libvmaf.so` **and** `libvmaf.a`, and downstream projects (FFmpeg's
+`--enable-libvmaf`, the fork's own `ffmpeg-patches/` stack) discover it through
+`pkg-config`.
+
+libvmaf contains C++ translation units — the fork's own converted sources
+(`feature_extractor.cpp`, `feature_collector.cpp`, `luminance_tools.cpp`,
+`log.cpp`, `read_json_model.cpp`, the C++23 picture pools) plus vendored
+libsvm — so a consumer linking the **static** archive needs the C++ runtime on
+the link line. Since ADR-1166 `libvmaf.pc` carries it:
+
+```console
+$ pkg-config --static --libs libvmaf
+-L/usr/local/lib -lvmaf -pthread -lm -lstdc++
+```
+
+The runtime is chosen from the STL actually in use rather than from the
+compiler id: `_LIBCPP_VERSION` selects `-lc++`, otherwise `-lstdc++`. That
+matters because clang defaults to libstdc++ on Linux and to libc++ on
+macOS/FreeBSD, and `-Dcpp_args=-stdlib=libc++` can flip either. MSVC and
+clang-cl auto-link their runtime through `#pragma comment(lib)`, so nothing is
+added there.
+
+Before ADR-1166 `Libs.private` read only `-pthread -lm`, and a static consumer
+failed with several hundred undefined references to `operator new(unsigned
+long)` and `std::ios_base::ios_base()`
+([Netflix/vmaf#1178](https://github.com/Netflix/vmaf/issues/1178)); downstream
+fully-static FFmpeg builds had to add `-lstdc++` by hand (see
+[ADR-0198](../adr/0198-volk-priv-remap-static-archive.md)). To check your own
+build:
+
+```bash
+printf '#include <libvmaf/libvmaf.h>\nint main(void){VmafContext *c=0;VmafConfiguration f={0};return vmaf_init(&c,f);}\n' > /tmp/smoke.c
+cc /tmp/smoke.c $(pkg-config --cflags libvmaf) $(pkg-config --static --libs libvmaf) -o /tmp/smoke
+```
+
+The `libvmaf-build-matrix` workflow runs exactly that link on its static leg;
+grepping the flag list is not sufficient, because it is the *link* that
+reproduces the downstream failure.
+
+`-Denable_dnn` static builds additionally carry the ONNX Runtime shared object
+in `Libs.private`.

@@ -73,6 +73,12 @@ void vif_scale_frame_s(enum vif_scaling_method scale_method, const float *src, f
 
 int vif_get_filter_size(int scale, float kernelscale);
 
+/* Smallest frame dimension the four-scale VIF ladder can process without
+ * walking the reflect-101 mirror out of the plane, for a given kernelscale.
+ * 16 at the default kernelscale of 1.0.  See the definition for the
+ * derivation; Netflix/vmaf#1582. */
+int vif_get_min_dim(float kernelscale);
+
 void vif_get_filter(float *out, int scale, float kernelscale);
 
 void speed_get_antialias_filter(float *out, int scale, float kernelscale);

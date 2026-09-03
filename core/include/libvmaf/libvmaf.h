@@ -270,9 +270,15 @@ VMAF_EXPORT int vmaf_use_features_from_model_collection(VmafContext *vmaf,
  * Register specific feature extractor.
  * Useful when a specific/additional feature is required, usually one which
  * is not already provided by a model via `vmaf_use_features_from_model()`.
- * This may be called multiple times. `VmafContext` will take ownership of the
- * `VmafFeatureDictionary` (`opts_dict`). Use `vmaf_feature_dictionary_free()`
- * only in the case of failure.
+ * This may be called multiple times. `VmafContext` takes ownership of the
+ * `VmafFeatureDictionary` (`opts_dict`) on every path EXCEPT the
+ * argument-validation guards: if this returns `-EINVAL` because `vmaf` or
+ * `feature_name` was NULL, or because `feature_name` names no registered
+ * feature, nothing was consumed and the caller must release the dictionary
+ * with `vmaf_feature_dictionary_free()`. On any other return — success or
+ * failure — the dictionary has already been released internally and the
+ * caller MUST NOT free it. See <libvmaf/feature.h> for the shared contract
+ * (Netflix/vmaf#1242).
  *
  * @param vmaf         The VMAF context allocated with `vmaf_init()`.
  *

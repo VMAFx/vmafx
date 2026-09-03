@@ -259,7 +259,27 @@ All three extractors:
   than YUV 4:0:0.
 - Require a minimum frame size of 3x3 pixels (5-tap Gaussian minimum
   dimension = filter_radius + 1 = 3). Smaller frames are rejected with `-EINVAL`
-  at `init()`.
+  at `init()`. With `motion_filter_size=3` the minimum is 2x2.
+
+  **The minimum applies to every plane that is actually convolved, not only to
+  luma.** With `motion_add_uv=true` on `float_motion`, the U and V planes are
+  blurred at their *subsampled* dimensions, so a 4x4 YUV 4:2:0 frame — whose
+  luma clears the 3x3 floor — presents a 2x2 chroma plane and is rejected. In
+  practice this means `motion_add_uv=true` needs at least 5x5 for 4:2:0
+  (chroma 3x3), 5x3 for 4:2:2, and 3x3 for 4:4:4. The error message names the
+  plane that failed:
+
+  ```text
+  libvmaf ERROR float_motion: chroma plane 2x2 is below the 5-tap filter
+  minimum 3x3; refusing to avoid out-of-bounds mirror reads
+  ```
+
+  Before ADR-1166 the guard validated luma only, and a sub-minimum chroma plane
+  reached the convolution and read out of bounds
+  ([Netflix/vmaf#1582](https://github.com/Netflix/vmaf/issues/1582),
+  [Netflix/vmaf#1581](https://github.com/Netflix/vmaf/issues/1581)). The same
+  guard is now present on the three Metal twins, which had none at all
+  ([Netflix/vmaf#1580](https://github.com/Netflix/vmaf/issues/1580)).
 - Are temporal extractors: frame 0 always emits `0.0` for all motion scores.
 
 ## See also

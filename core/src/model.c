@@ -253,15 +253,23 @@ int vmaf_model_feature_overload(VmafModel *model, const char *feature_name,
             continue;
         VmafDictionary *d = vmaf_dictionary_merge((VmafDictionary **)&model->feature[i].opts_dict,
                                                   (VmafDictionary **)&opts_dict, 0);
-        if (!d)
-            return -ENOMEM;
+        if (!d) {
+            /* Netflix/vmaf#1242: this used to `return -ENOMEM` and skip the
+             * unconditional free below, leaking the caller's dictionary on
+             * every allocation failure.  The contract documented in
+             * <libvmaf/model.h> is that the dictionary is consumed once the
+             * argument guards above have passed, so break out and let the
+             * common exit release it.  core/src/model.cpp (the unbuilt C++
+             * twin) already had this shape. */
+            err = -ENOMEM;
+            break;
+        }
         err = vmaf_dictionary_free(&model->feature[i].opts_dict);
         if (err)
-            goto exit;
+            break;
         model->feature[i].opts_dict = d;
     }
 
-exit:
     err |= vmaf_dictionary_free((VmafDictionary **)&opts_dict);
     return err;
 }
@@ -432,19 +440,34 @@ int vmaf_model_collection_feature_overload(VmafModel *model, VmafModelCollection
                                            const char *feature_name,
                                            VmafFeatureDictionary *opts_dict)
 {
-    if (!model_collection)
+    /* Argument-validation guards consume nothing: the caller still owns
+     * `opts_dict` when any of them fires.  See the ownership contract in
+     * <libvmaf/model.h> and <libvmaf/feature.h>. */
+    if (!model_collection || !*model_collection)
+        return -EINVAL;
+    if (!model || !feature_name || !opts_dict)
         return -EINVAL;
     VmafModelCollection *mc = *model_collection;
 
     int err = 0;
     for (unsigned i = 0; i < mc->cnt; i++) {
         VmafFeatureDictionary *d = NULL;
-        if (vmaf_dictionary_copy((VmafDictionary **)&opts_dict, (VmafDictionary **)&d))
-            goto exit;
+        /* Netflix/vmaf#1242: the copy's return value used to be discarded and
+         * the partially-built copy leaked on failure, while the function could
+         * still report success from the lead-model call below.  Free the
+         * partial copy, fold the error into `err`, and stop iterating. */
+        const int copy_err =
+            vmaf_dictionary_copy((VmafDictionary **)&opts_dict, (VmafDictionary **)&d);
+        if (copy_err) {
+            err |= vmaf_dictionary_free((VmafDictionary **)&d);
+            err |= copy_err;
+            break;
+        }
         err |= vmaf_model_feature_overload(mc->model[i], feature_name, d);
     }
 
-exit:
+    /* Always run the lead-model overload so `opts_dict` is consumed on every
+     * path, matching the ownership contract in <libvmaf/model.h>. */
     err |= vmaf_model_feature_overload(model, feature_name, opts_dict);
     return err;
 }

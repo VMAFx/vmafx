@@ -34,13 +34,23 @@ extern "C" {
  * are detected at set-time and stored in a normalised form so that
  * `"1"` / `"1.0"` / `" 1 "` compare equal downstream.
  *
- * Ownership transfer rules:
- *   - On success of @ref vmaf_use_feature / @ref vmaf_model_feature_overload,
- *     ownership of the dictionary passes to the VmafContext / VmafModel and
- *     the caller MUST NOT free it.
- *   - On failure of those calls (non-zero return), the caller still owns the
- *     dictionary and is responsible for releasing it with
+ * Ownership transfer rules (identical for @ref vmaf_use_feature,
+ * @ref vmaf_model_feature_overload and
+ * @ref vmaf_model_collection_feature_overload; see Netflix/vmaf#1242, which
+ * reported the divergence these three headers used to carry):
+ *
+ *   - **Argument-validation failures do not consume the dictionary.** If the
+ *     call returns `-EINVAL` because a required argument was NULL or because
+ *     @p feature_name names no registered feature, nothing was taken: the
+ *     caller still owns the dictionary and must release it with
  *     @ref vmaf_feature_dictionary_free.
+ *   - **Every other path consumes it.** Once the argument guards have passed,
+ *     the call releases the dictionary internally — on success and on failure
+ *     alike (including `-ENOMEM` from the merge/copy step) — and the caller
+ *     MUST NOT free it.
+ *
+ * In practice: free the dictionary yourself only when you passed a NULL
+ * argument or an unknown feature name; otherwise never.
  */
 typedef struct VmafFeatureDictionary VmafFeatureDictionary;
 

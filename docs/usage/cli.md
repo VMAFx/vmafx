@@ -366,6 +366,34 @@ workflow.
 | `--no_prediction` | `-n` | Skip final model prediction; extract features only. Useful for feeding raw features into a custom pool. |
 | `--version` | `-v` | Print `libvmaf` version + git SHA and exit. |
 
+## Windows console output
+
+The interactive progress line (frame counter, spinner, FPS) is written to
+stderr whenever stderr is a TTY and `--quiet` is not set. The spinner uses
+Unicode braille glyphs and an ANSI erase-to-end-of-line sequence, neither of
+which a Windows console renders correctly by default: under the conhost default
+code page (cp437) each two-glyph frame decodes as six garbage characters, under
+cp936 it decodes as replacement boxes, and legacy conhost prints the erase
+sequence literally as `<-[K`.
+
+Since ADR-1166 the CLI handles this itself. On Windows it:
+
+1. records the current console output code page and stderr console mode,
+2. switches the console to UTF-8 (`CP_UTF8`) and enables
+   `ENABLE_VIRTUAL_TERMINAL_PROCESSING`,
+3. restores both on exit — including error exits — so your shell is left as it
+   was found,
+4. and, if the console refuses either change, falls back to a pure-ASCII
+   spinner (`|` `/` `-` `\\`) and pads with spaces instead of emitting the
+   erase sequence.
+
+There is no flag for this and nothing to configure; `--quiet` still suppresses
+the progress line entirely, and redirecting stderr to a file or pipe suppresses
+it as well (the CLI only draws it for a TTY). On Linux and macOS the emitted
+bytes are unchanged from previous releases.
+
+Reported upstream as [Netflix/vmaf#743](https://github.com/Netflix/vmaf/issues/743).
+
 ## Exit codes
 
 | Code | Meaning |

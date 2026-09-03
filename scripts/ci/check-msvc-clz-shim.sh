@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# check-msvc-clz-shim.sh — guard the MSVC __builtin_clz shim against the
+# Netflix/vmaf#1422 form that Netflix/vmaf#1551 retracts.
+#
+# MSVC's `__lzcnt` / `__lzcnt64` emit the LZCNT instruction (F3 0F BD)
+# unconditionally, with no runtime feature gate. On an x86-64 without
+# ABM/LZCNT the F3 prefix is ignored and the encoding retires as BSR, which
+# returns the INDEX of the most-significant set bit instead of the
+# leading-zero COUNT. Both scalar call sites of the shim
+# (integer_vif.h::log2_32, integer_adm.c::get_best15_from32) then compute
+# silently wrong VIF / ADM log2 shifts — no fault, no diagnostic, wrong VMAF.
+# CI cannot catch it because every hosted Windows runner has LZCNT.
+#
+# The shim must therefore be written with `_BitScanReverse` /
+# `_BitScanReverse64`, which are BSR by definition and present on every
+# x86-64 part, and must carry an architecture guard so an MSVC ARM64 leg
+# (where neither intrinsic exists) still compiles.
+#
+# Usage: scripts/ci/check-msvc-clz-shim.sh [repo-root]
+# Exit 0 when the shim is in the required shape, 1 otherwise.
+#
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+
+set -euo pipefail
+
+ROOT="${1:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+HDR="$ROOT/core/src/feature/compat_builtin.h"
+
+if [[ ! -f "$HDR" ]]; then
+  echo "ERROR: $HDR not found" >&2
+  exit 1
+fi
+
+rc=0
+
+# (1) The intrinsic must not be *used*. The explanatory comment names it, so
+#     only flag occurrences outside comment lines.
+if grep -vE '^[[:space:]]*(\*|/\*|//)' "$HDR" | grep -qE '\b__lzcnt(64)?[[:space:]]*\('; then
+  echo "FAIL: $HDR calls __lzcnt/__lzcnt64." >&2
+  echo "      LZCNT silently decodes as BSR on pre-Haswell x86-64 and yields" >&2
+  echo "      wrong VIF/ADM shifts. Use _BitScanReverse. Netflix/vmaf#1551." >&2
+  rc=1
+fi
+
+# (2) The BSR intrinsic must be present.
+if ! grep -q '_BitScanReverse' "$HDR"; then
+  echo "FAIL: $HDR does not use _BitScanReverse." >&2
+  rc=1
+fi
+
+# (3) The MSVC guard must carry an architecture test, otherwise an MSVC ARM64
+#     leg fails to compile (neither __lzcnt nor _BitScanReverse exists there).
+if ! grep -qE '^#if defined\(_MSC_VER\).*_M_(X64|IX86)' "$HDR"; then
+  echo "FAIL: the _MSC_VER guard in $HDR has no _M_X64 / _M_IX86 architecture test." >&2
+  rc=1
+fi
+
+# (4) Nothing else in the tree may reintroduce the intrinsic either.
+others=$(grep -rlE '\b__lzcnt(64)?[[:space:]]*\(' "$ROOT/core/src" 2>/dev/null || true)
+if [[ -n "$others" ]]; then
+  echo "FAIL: __lzcnt used outside the audited shim:" >&2
+  echo "$others" >&2
+  rc=1
+fi
+
+if [[ $rc -eq 0 ]]; then
+  echo "OK: MSVC clz shim uses _BitScanReverse and is architecture-guarded."
+fi
+exit $rc

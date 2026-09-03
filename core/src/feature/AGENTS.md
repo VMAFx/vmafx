@@ -1198,3 +1198,76 @@ after a port-upstream of any of these files.
      (`a=1/256`, `b_Y=-5.4715e-3`, `c_Y=1.91`) regenerate the official
      lookup table to 8 dp. Oracle values in `core/test/test_y_funque_plus.c`
      were re-derived against a `pywt` + OpenCV reference at places=4.
+
+## Reflect-101 mirror padding — invariants (ADR-1166)
+
+The separable float convolution in `common/convolution_internal.h` uses
+**reflect-101** mirror padding, and the fold is deliberately **iterative**:
+
+```c
+FORCE_INLINE int convolution_reflect101(int idx, int size)
+{
+    if (size <= 1) return 0;
+    while (idx < 0 || idx >= size)
+        idx = (idx < 0) ? -idx : (2 * size - idx - 2);
+    return idx;
+}
+```
+
+Load-bearing details a rebase or a "simplification" must not break:
+
+1. **The loop is not decoration.** Upstream (and this fork, before ADR-1166)
+   bounced once. One bounce only lands in range when `size >= radius + 1`;
+   at `size == 2` a tap of `-2` folds to `+2` and a tap of `+3` folds to `-1`,
+   and the caller dereferences out of bounds. Two live CPU paths reached those
+   sizes — `float_vif` on 9..15 px frames and `float_motion` with
+   `motion_add_uv` on 4x4 4:2:0 chroma. Do not collapse it back to an
+   `if/else if`.
+2. **The `size <= 1` short circuit is required for termination**, not just for
+   correctness: at `size == 1` the fold alternates between `-2` and `+2`
+   forever.
+3. **The fold is bit-identical to the single bounce for every in-contract
+   size** (the loop exits on the first iteration), which is what lets this be a
+   pure safety fix with no score movement.
+   `core/test/test_convolution_edge_small.c::test_large_plane_bit_identical`
+   pins that against an explicit single-bounce reference; if you change the
+   fold, that test must still pass unmodified.
+4. **`convolution.c`'s `convolution_clamp_borders()` is load-bearing too.**
+   `borders_right` / `borders_bottom` are derived as
+   `dim - (filter_width - radius)` and go **negative** for a plane narrower
+   than the filter, which makes the trailing border loop start at a negative
+   index and write before the destination. The clamp is a no-op for every
+   `dim >= filter_width`.
+
+The motion extractors' own `mirror()` bodies (`integer_motion.c`,
+`integer_motion_v2.c`, `x86/motion_avx2.c`, `x86/motion_avx512.c`,
+`arm64/motion_v2_neon.c`, and the CUDA / HIP / Metal twins) are **still
+single-bounce on purpose**: they sit behind an `init()` guard that rejects
+`w < 3 || h < 3`, so the defective sizes are unreachable. That is a deliberate
+divergence from Netflix/vmaf#1581, which instead fixes `mirror()` so tiny
+frames can be scored. Changing it is a behaviour decision, not a cleanup —
+see `docs/rebase-notes.md`.
+
+## Minimum-dimension guards cover every plane, not just luma (ADR-1166)
+
+`float_motion.c::motion_check_min_dim_all_planes` validates the **chroma**
+dimensions too when `motion_add_uv` is set, because `motion_blur_plane` is
+called per plane with `ref_pic->w[c]` / `ref_pic->h[c]`. The chroma geometry
+must stay in step with `core/src/picture.c` (`(dim + ss) >> ss`); a luma-only
+guard is exactly the bug Netflix/vmaf#1582 describes.
+
+`float_vif.c`'s guard is derived from `vif_get_min_dim(kernelscale)` — the
+largest `((filter_width_s / 2) + 1) << s` over the four-scale ladder, 16 at the
+default kernelscale — not from the scale-0 filter alone. Do not replace it with
+a constant.
+
+## `compat_builtin.h`: never `__lzcnt` (ADR-1166)
+
+The MSVC `__builtin_clz` / `__builtin_clzll` shim must use `_BitScanReverse` /
+`_BitScanReverse64`. `__lzcnt` emits the LZCNT instruction unconditionally with
+no runtime feature gate; on an x86-64 without ABM/LZCNT the `F3` prefix is
+ignored and it retires as BSR, returning the MSB index instead of the
+leading-zero count — silently wrong VIF and ADM shifts, with no fault and no CI
+signal (every hosted Windows runner has LZCNT). Netflix/vmaf#1422 proposes the
+`__lzcnt` form; Netflix/vmaf#1551 is upstream's own retraction of it.
+`scripts/ci/check-msvc-clz-shim.sh` fails the `fast` suite if it comes back.

@@ -276,7 +276,7 @@ static void motion_free_planes(MotionState *s)
  * option has not been applied yet (e.g. in unit tests that manually
  * allocate priv) — treat it as the default.  Refuse smaller frames
  * up front to prevent out-of-bounds reads in the convolution kernel. */
-static int motion_check_min_dim(const MotionState *s, unsigned w, unsigned h)
+static int motion_check_min_dim(const MotionState *s, unsigned w, unsigned h, const char *plane)
 {
     const int configured =
         s->motion_filter_size > 0 ? s->motion_filter_size : DEFAULT_MOTION_FILTER_SIZE;
@@ -285,13 +285,66 @@ static int motion_check_min_dim(const MotionState *s, unsigned w, unsigned h)
         const unsigned min_dim = effective_filter_size / 2u + 1u;
         if (h < min_dim || w < min_dim) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                     "float_motion: frame %ux%u is below the %u-tap filter minimum %ux%u; "
+                     "float_motion: %s plane %ux%u is below the %u-tap filter minimum %ux%u; "
                      "refusing to avoid out-of-bounds mirror reads\n",
-                     w, h, effective_filter_size, min_dim, min_dim);
+                     plane, w, h, effective_filter_size, min_dim, min_dim);
             return -EINVAL;
         }
     }
     return 0;
+}
+
+/* Chroma subsampling shifts, mirroring picture.c's plane geometry. */
+static int motion_chroma_shifts(enum VmafPixelFormat pix_fmt, unsigned *ss_hor, unsigned *ss_ver)
+{
+    switch (pix_fmt) {
+    case VMAF_PIX_FMT_YUV420P:
+        *ss_hor = 1u;
+        *ss_ver = 1u;
+        return 0;
+    case VMAF_PIX_FMT_YUV422P:
+        *ss_hor = 1u;
+        *ss_ver = 0u;
+        return 0;
+    case VMAF_PIX_FMT_YUV444P:
+        *ss_hor = 0u;
+        *ss_ver = 0u;
+        return 0;
+    case VMAF_PIX_FMT_UNKNOWN:
+    case VMAF_PIX_FMT_YUV400P:
+    default:
+        return -EINVAL;
+    }
+}
+
+/*
+ * `motion_add_uv` blurs the chroma planes with the same separable Gaussian as
+ * luma, but at the SUBSAMPLED dimensions (`motion_blur_plane` is called with
+ * `ref_pic->w[c]` / `ref_pic->h[c]`).  Validating only the luma dimensions let
+ * a 4x4 YUV420P frame through with a 2x2 chroma plane and read out of bounds
+ * in the mirror padding — the live CPU path behind Netflix/vmaf#1582 /
+ * Netflix/vmaf#1581, reproduced under ASan.  Validate every plane that will
+ * actually be convolved.
+ */
+static int motion_check_min_dim_all_planes(const MotionState *s, enum VmafPixelFormat pix_fmt,
+                                           unsigned w, unsigned h)
+{
+    int err = motion_check_min_dim(s, w, h, "luma");
+    if (err)
+        return err;
+    if (!s->motion_add_uv)
+        return 0;
+
+    unsigned ss_hor = 0;
+    unsigned ss_ver = 0;
+    err = motion_chroma_shifts(pix_fmt, &ss_hor, &ss_ver);
+    if (err)
+        return err;
+
+    /* picture.c:147-149 geometry: (dim + ss) >> ss. */
+    const unsigned cw = (w + ss_hor) >> ss_hor;
+    const unsigned ch = (h + ss_ver) >> ss_ver;
+    return motion_check_min_dim(s, cw, ch, "chroma");
 }
 
 static MotionSadLineFn motion_select_sad_line(void)
@@ -324,7 +377,7 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     unsigned h_u = 0;
     unsigned h_v = 0;
 
-    int err = motion_check_min_dim(s, w, h);
+    int err = motion_check_min_dim_all_planes(s, pix_fmt, w, h);
     if (err) {
         return err;
     }

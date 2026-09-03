@@ -273,12 +273,47 @@ if (err < 0) { /* -errno */ }
 err = vmaf_feature_dictionary_set(&opts, "enable_apsnr", "true");
 
 err = vmaf_use_feature(ctx, "psnr", opts);
-/* On success, `ctx` owns `opts`. Do NOT free on success. */
-/* On failure: */
-if (err < 0) {
-    vmaf_feature_dictionary_free(&opts);
-}
+/* The call consumed `opts` unless it rejected an argument — see below. */
 ```
+
+### Ownership: who frees the dictionary
+
+The three calls that accept a `VmafFeatureDictionary` —
+`vmaf_use_feature()`, `vmaf_model_feature_overload()` and
+`vmaf_model_collection_feature_overload()` — all follow **one** rule:
+
+> The dictionary is consumed on every path **except** the
+> argument-validation guards. If the call returns `-EINVAL` because a
+> required argument was `NULL`, or because `feature_name` names no
+> registered feature, nothing was taken and the caller still owns the
+> dictionary. On every other return — success, or `-ENOMEM` from the
+> internal merge/copy — the call has already released it and the caller
+> **must not** free it.
+
+In practice: free the dictionary yourself only when you passed a `NULL`
+argument or an unknown feature name; otherwise never.
+
+```c
+/* Consumed — success. Freeing here would be a double free. */
+if (vmaf_use_feature(ctx, "psnr", opts) == 0)
+    opts = NULL;
+
+/* Consumed — the merge ran out of memory. Still do not free. */
+
+/* NOT consumed — argument rejected before anything was taken. */
+if (vmaf_use_feature(ctx, "no_such_feature", opts2) == -EINVAL)
+    vmaf_feature_dictionary_free(&opts2);
+```
+
+Until ADR-1166 this contract was documented two different ways —
+`<libvmaf/feature.h>` said the caller kept ownership on any failure,
+`<libvmaf/model.h>` said ownership transferred unconditionally — so one of the
+two readings was a latent double free
+([Netflix/vmaf#1242](https://github.com/Netflix/vmaf/issues/1242)). All three
+headers now state the rule above, and it matches what the implementation has
+always done. The same report's `-ENOMEM` leak in
+`vmaf_model_feature_overload()` and the swallowed copy error in
+`vmaf_model_collection_feature_overload()` are fixed in the same change.
 
 Each feature extractor publishes its own option keys — see
 [../metrics/features.md](../metrics/features.md) for the full table of

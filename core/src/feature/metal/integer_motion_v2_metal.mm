@@ -46,6 +46,7 @@ extern "C" {
 #include "feature_collector.h"
 #include "feature_name.h"
 #include "libvmaf/picture.h"
+#include "log.h"
 #include "motion_blend_tools.h"
 
 #include "../../metal/common.h"
@@ -216,6 +217,21 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 {
     (void)pix_fmt;
     MotionV2StateMetal *s = (MotionV2StateMetal *)fex->priv;
+
+    /* The 5-tap separable Gaussian uses reflect-101 mirror padding; the
+     * `mv2_mirror` helper in integer_motion_v2.metal bounces an out-of-range
+     * index exactly once, which only lands in range for dim >= radius + 1 = 3.
+     * Below that the device kernel reads outside the blur buffers.  The CPU,
+     * CUDA, SYCL and HIP twins have carried this guard since Research-0094;
+     * the Metal extractors were written afterwards and missed it (found while
+     * triaging Netflix/vmaf#1580). */
+    if (w < 3u || h < 3u) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "motion_v2_metal: frame %ux%u is below the 5-tap filter minimum 3x3; "
+                 "refusing to avoid out-of-bounds mirror reads on device\n",
+                 w, h);
+        return -EINVAL;
+    }
 
     s->frame_w = w;
     s->frame_h = h;
