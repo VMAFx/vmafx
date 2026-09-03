@@ -1,6 +1,35 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/test-feature-tidy-clean — modernise the assertions ported by #1219 (2026-09-03)
+
+- `core/test/test_feature.cpp`: upstream-mirror test (Netflix `libvmaf/test/test_feature.c`),
+  and the sole surviving side since #1219 deleted the C twin. This change rewrites the
+  fork-local portions to C++ idiom, so a future upstream sync will conflict here in
+  predictable, mechanical ways. Resolve them as follows:
+  - Upstream spells `NULL`; the fork spells `nullptr`. This is a C++ TU, so the fork's
+    spelling wins. ADR-1138's `NULL` rule is scoped to **C** translation units (MSVC
+    `/std:clatest` has no C `nullptr`) and does not apply here.
+  - Upstream uses `typedef struct {...} Name;` inside the test bodies; the fork hoists
+    `TestState` to namespace scope as a plain `struct` because the shared option table
+    needs `offsetof(TestState, ...)` at namespace scope. Keep the fork's shape.
+  - Upstream's option tables end with a `{0}` sentinel; the fork uses `{}`. Equivalent
+    zero-initialisation, and `{}` is what `modernize-use-designated-initializers` accepts.
+  - Upstream has one large `test_feature_name_from_options()`; the fork splits it into
+    four named cases sharing a namespace-scope `g_options` table plus a `kAllDefaults`
+    baseline, because the single function exceeded the 60-line
+    `readability-function-size` threshold. Port new upstream assertions into whichever
+    split case matches, or add a new one and register it in `run_tests()`.
+  - The fork frees each heap result **before** asserting on it. `mu_assert` expands to an
+    early `return`, so asserting with a live pointer leaks it on failure. Preserve this
+    ordering when porting upstream assertions, which do not observe it.
+  - The `#include "feature/feature_name.cpp"` unity include is fork-local (ADR-0729) and
+    carries a cited `NOLINTNEXTLINE(bugprone-suspicious-include)`; upstream includes the
+    `.c`. Keep the fork's include and its citation.
+- `scripts/ci/tidy-baseline-cpu.json`: fork-local ratchet state (ADR-1142), no upstream
+  counterpart. Only this file's entry was removed; every other file keeps CI's measured
+  number. No rebase impact.
+
 ## fix/adm-cm-gpu-border-and-rounding — integer ADM GPU border indexing and row-level rounding (ADR-1167) (2026-09-03)
 
 - `core/src/feature/cuda/integer_adm/adm_cm.cu` & `core/src/feature/hip/integer_adm/adm_cm.hip`:
