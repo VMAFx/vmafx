@@ -38,12 +38,15 @@ from vmaftune.resolution import (
 
 def test_1080p_picks_1080p_model():
     assert select_vmaf_model_version(1920, 1080) == MODEL_1080P
-    assert MODEL_1080P == "vmaf_v0.6.1"
+    # ADR-1169: the fork default is the v1.0.16 standard 1080p model.
+    assert MODEL_1080P == "vmaf_v1.0.16_3d0h"
 
 
 def test_2160p_picks_4k_model():
     assert select_vmaf_model_version(3840, 2160) == MODEL_4K
-    assert MODEL_4K == "vmaf_4k_v0.6.1"
+    # ADR-1169: the 4K ladder moved with the default so scores stay
+    # comparable across the 2160p boundary.
+    assert MODEL_4K == "vmaf_v1.0.16_1d5h_2160"
 
 
 def test_720p_falls_back_to_1080p_model():
@@ -81,12 +84,16 @@ def test_invalid_resolution_raises():
 
 def test_select_vmaf_model_returns_existing_json():
     # Hard-locates the in-tree model/ dir; the JSON files must exist.
+    # The filenames derive from the module constants rather than being spelled
+    # literally: this test pins that the resolver finds a real file, not the
+    # identity of the default model, which ADR-1169 moved to the v1.0.16
+    # generation and which python/test/default_model_test.py asserts directly.
     p = select_vmaf_model(1920, 1080)
-    assert p.name == "vmaf_v0.6.1.json"
+    assert p.name == f"{MODEL_1080P}.json"
     assert p.exists(), f"expected in-tree model file at {p}"
 
     p4k = select_vmaf_model(3840, 2160)
-    assert p4k.name == "vmaf_4k_v0.6.1.json"
+    assert p4k.name == f"{MODEL_4K}.json"
     assert p4k.exists(), f"expected in-tree 4K model file at {p4k}"
 
 
@@ -228,3 +235,46 @@ def test_iter_rows_resolution_aware_1080p_keeps_1080p_model(tmp_path: Path):
     rows = list(iter_rows(job, opts, encode_runner=_fake_encode, score_runner=_fake_score))
     assert len(rows) == 1
     assert rows[0]["vmaf_model"] == MODEL_1080P
+
+
+class TestModelJSONPathResolvesNestedFamilies:
+    """ADR-1169: the v1.0.16 models are not flat in ``model/``.
+
+    They live in ``model/vmaf_v1.0.16/`` (and ``model/vmaf_v1.0.16_hfr/``).
+    ``select_vmaf_model`` used to build ``model/<version>.json``
+    unconditionally, which silently failed to resolve the fork's own default
+    once it became ``vmaf_v1.0.16_3d0h``.
+    """
+
+    def test_default_1080p_model_file_exists(self):
+        from vmaftune.resolution import select_vmaf_model
+
+        path = select_vmaf_model(1920, 1080)
+        assert path.exists(), f"{path} does not exist"
+        assert path.parent.name == "vmaf_v1.0.16"
+
+    def test_4k_model_file_exists(self):
+        from vmaftune.resolution import select_vmaf_model
+
+        path = select_vmaf_model(3840, 2160)
+        assert path.exists(), f"{path} does not exist"
+
+    def test_legacy_flat_models_still_resolve(self):
+        from vmaftune.resolution import model_json_path
+
+        for version in ("vmaf_v0.6.1", "vmaf_4k_v0.6.1", "vmaf_v0.6.1neg"):
+            assert model_json_path(version).exists(), version
+
+    def test_hfr_family_resolves(self):
+        from vmaftune.resolution import model_json_path
+
+        path = model_json_path("vmaf_v1.0.16_hfr_3d0h")
+        assert path.exists(), f"{path} does not exist"
+        assert path.parent.name == "vmaf_v1.0.16_hfr"
+
+    def test_unknown_model_returns_flat_path_for_a_sensible_error(self):
+        from vmaftune.resolution import model_json_path
+
+        path = model_json_path("vmaf_does_not_exist")
+        assert not path.exists()
+        assert path.name == "vmaf_does_not_exist.json"

@@ -22,11 +22,17 @@ from __future__ import annotations
 
 #: Model version used when the caller names none. Must equal
 #: ``VMAF_DEFAULT_MODEL_VERSION`` in ``core/include/libvmaf/model.h``.
-DEFAULT_MODEL = "vmaf_v0.6.1"
+DEFAULT_MODEL = "vmaf_v1.0.16_3d0h"
 
-#: No-Enhancement-Gain companion to :data:`DEFAULT_MODEL`, used when a caller
-#: asks for NEG scoring without naming a model. Every NEG model in the tree is
-#: its base name with ``neg`` appended.
-DEFAULT_MODEL_NEG = DEFAULT_MODEL + "neg"
+#: Model used when a caller asks for NEG scoring without naming a model.
+#:
+#: Deliberately NOT derived from :data:`DEFAULT_MODEL`. No-Enhancement-Gain is a
+#: v0.6.1-family concept: Netflix published NEG variants for ``vmaf_v0.6.1``,
+#: ``vmaf_float_v0.6.1`` and ``vmaf_4k_v0.6.1`` only, and there is no NEG
+#: counterpart to any ``vmaf_v1.0.16_*`` model. ``DEFAULT_MODEL + "neg"`` would
+#: synthesise ``vmaf_v1.0.16_3d0hneg``, which does not exist and which libvmaf
+#: rejects at load time. Until Netflix publishes a v1 NEG model, NEG scoring
+#: stays on the v0.6.1 family and the two constants name different generations.
+DEFAULT_MODEL_NEG = "vmaf_v0.6.1neg"
 
 __all__ = ["DEFAULT_MODEL", "DEFAULT_MODEL_NEG"]

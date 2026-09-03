@@ -18,6 +18,6 @@ from __future__ import annotations
 
 #: Model version used when the caller names none. Must equal
 #: ``VMAF_DEFAULT_MODEL_VERSION`` in ``core/include/libvmaf/model.h``.
-DEFAULT_MODEL = "vmaf_v0.6.1"
+DEFAULT_MODEL = "vmaf_v1.0.16_3d0h"
 
 __all__ = ["DEFAULT_MODEL"]

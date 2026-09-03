@@ -1295,6 +1295,22 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
     def test_run_vmafexec_runner_use_default_built_in_model(self):
 
+        # ADR-1169: the fork's built-in default model is vmaf_v1.0.16_3d0h,
+        # where upstream Netflix still defaults to vmaf_v0.6.1. The assertions
+        # below are Netflix golden values for the v0.6.1 feature family
+        # (vif_scale0..3, motion2), which the v1.0.16 family does not emit at
+        # all -- relying on the default here would fail with
+        # KeyError('VMAFEXEC_vif_scale0_score'), not a score mismatch.
+        #
+        # So the model is now named explicitly instead of being inherited from
+        # the default. NOT ONE assertAlmostEqual VALUE BELOW IS CHANGED: naming
+        # `version=vmaf_v0.6.1:name=vmaf` reproduces the previous no-`--model`
+        # invocation byte-for-byte -- identical metric-key set and identical
+        # pooled values, verified against a master build.
+        #
+        # Coverage of "what does the *default* produce" moved to the fork-added
+        # test python/test/default_model_test.py, per the rule that
+        # fork-added tests live in separate files.
         ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
         self.runner = VmafexecQualityRunner(
@@ -1303,7 +1319,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
             fifo_mode=True,
             delete_workdir=True,
             result_store=None,
-            optional_dict={"use_default_built_in_model": True},
+            optional_dict={"models": ["name=vmaf:version=vmaf_v0.6.1"]},
         )
         self.runner.run(parallelize=True)
 

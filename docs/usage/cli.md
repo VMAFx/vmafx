@@ -32,9 +32,16 @@ vmaf \
   --output scores.xml
 ```
 
-Default behaviour when no `--model` is passed: the built-in `vmaf_v0.6.1`
-model is loaded automatically. Default output format when no
-`--xml|--json|--csv|--sub` is passed: XML.
+Default behaviour when no `--model` is passed: the built-in
+`vmaf_v1.0.16_3d0h` model is loaded automatically. Default output format when
+no `--xml|--json|--csv|--sub` is passed: XML.
+
+> **The default changed in this fork.** It was `vmaf_v0.6.1`, and upstream
+> Netflix still defaults to that, so the same command produces different numbers
+> on upstream and here. Pin `--model version=vmaf_v0.6.1` to get the old values.
+> On the standard 576x324 test pair the pooled VMAF moves from `76.667831` to
+> `82.816059`. See [ADR-1169](../adr/1169-default-model-v1-0-16.md) for why, and
+> [models/v1.md](../models/v1.md) for the v1 model family.
 
 ## Required input flags
 
@@ -67,8 +74,12 @@ default `true`):
 
 | Version | Purpose |
 | --- | --- |
-| `vmaf_v0.6.1` | Default. 1080p training set, classic release. |
-| `vmaf_v0.6.1neg` | Negative-gain (NEG) — non-enhancing; recommended for encoder A/B where one encoder may artificially sharpen. |
+| `vmaf_v1.0.16_3d0h` | **Default.** v1.0.16 standard 1080p model, 3H viewing distance. |
+| `vmaf_v1.0.16_1d5h_2160` | v1.0.16 4K model, 2160p at 1.5H. Used by the fork's 4K resolution ladder. |
+| `vmaf_v1.0.16_5d0h` | v1.0.16 phone model (1080p at 5H). |
+| `vmaf_v1.0.16_3d0h_2160` | v1.0.16 consumer 4K (2160p at 3H); operates on a [0, 110] range. |
+| `vmaf_v0.6.1` | Previous default, and still upstream's. 1080p training set, classic release. |
+| `vmaf_v0.6.1neg` | Negative-gain (NEG) — non-enhancing; recommended for encoder A/B where one encoder may artificially sharpen. There is no NEG counterpart to any v1.0.16 model, so asking for NEG also selects the v0.6.1 generation. |
 | `vmaf_b_v0.6.3` | Banding-aware variant (used with CAMBI). |
 | `vmaf_4k_v0.6.1` | 4K training set. |
 | `vmaf_4k_v0.6.1neg` | 4K + NEG. |

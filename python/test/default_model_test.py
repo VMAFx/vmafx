@@ -1,0 +1,147 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-2-Clause-Patent
+"""Fork-added coverage for the built-in default model (ADR-1169).
+
+The fork scores with ``vmaf_v1.0.16_3d0h`` when the caller names no model,
+where upstream Netflix still defaults to ``vmaf_v0.6.1``. Upstream's own
+``test_run_vmafexec_runner_use_default_built_in_model`` used to cover the
+no-``--model`` path; it now names ``vmaf_v0.6.1`` explicitly, because its
+assertions are golden values for the v0.6.1 feature family and the v1.0.16
+family does not emit those features at all. This file picks up the coverage
+that test gave up.
+
+Deliberately **no hardcoded score values**. Inventing golden numbers for the
+new default would be asserting our own output back at ourselves. Instead these
+tests assert the property that actually matters and that actually broke: which
+model the default resolves to, established by comparing the default invocation
+against an explicitly-named one.
+"""
+
+from __future__ import absolute_import
+
+import os
+import re
+import subprocess
+import tempfile
+import unittest
+from test.testutil import set_default_576_324_videos_for_testing
+
+from vmaf import ExternalProgram
+
+#: Must equal ``VMAF_DEFAULT_MODEL_VERSION`` in ``core/include/libvmaf/model.h``.
+#: ``scripts/ci/check-default-model-single-source.sh`` does not police this file
+#: (tests are exempt by design), so a drift here shows up as a test failure
+#: rather than a gate failure -- which is the point of having it.
+EXPECTED_DEFAULT_MODEL = "vmaf_v1.0.16_3d0h"
+
+#: A feature only the v0.6.1 family emits. Its ABSENCE under the default is the
+#: exact condition that made the upstream golden test raise
+#: KeyError('VMAFEXEC_vif_scale0_score') once the default moved.
+V0_ONLY_FEATURE = "vif_scale0"
+
+#: Features characteristic of the v1.0.16 family.
+V1_FEATURES = ("integer_aim", "cambi", "speed_chroma")
+
+_METRIC_RE = re.compile(r'<metric name="([^"]+)"')
+
+
+def _score(extra_args):
+    """Score the standard 576x324 pair and return the set of metric names."""
+    ref_path, dis_path, _asset, _asset_original = set_default_576_324_videos_for_testing()
+    with tempfile.TemporaryDirectory() as tmp:
+        out = os.path.join(tmp, "out.xml")
+        cmd = [
+            ExternalProgram.vmafexec,
+            "-r",
+            ref_path,
+            "-d",
+            dis_path,
+            "-w",
+            "576",
+            "-h",
+            "324",
+            "-p",
+            "420",
+            "-b",
+            "8",
+            "-o",
+            out,
+        ] + list(extra_args)
+        subprocess.run(cmd, check=True, capture_output=True)
+        with open(out, encoding="utf-8") as fh:
+            return set(_METRIC_RE.findall(fh.read()))
+
+
+class DefaultBuiltInModelTest(unittest.TestCase):
+    """The no-``--model`` invocation resolves to the fork's declared default."""
+
+    def test_default_matches_explicitly_named_default_model(self):
+        # The strongest available statement that the default IS the model we
+        # say it is, without hardcoding a single score: the metric-key set the
+        # default produces must equal the set produced by naming it.
+        implicit = _score([])
+        explicit = _score(["-m", f"version={EXPECTED_DEFAULT_MODEL}"])
+        self.assertEqual(
+            implicit,
+            explicit,
+            f"the no---model invocation does not match {EXPECTED_DEFAULT_MODEL}; "
+            "either the default changed without this test being updated, or "
+            "core/include/libvmaf/model.h and this file disagree",
+        )
+
+    def test_default_emits_the_v1_feature_family(self):
+        keys = _score([])
+        for feature in V1_FEATURES:
+            self.assertTrue(
+                any(feature in k for k in keys),
+                f"default model emits no {feature!r} metric; the v1.0.16 family "
+                f"should. Emitted: {sorted(keys)}",
+            )
+
+    def test_default_does_not_emit_the_v0_only_feature(self):
+        # This is the condition that forced the upstream golden test to name
+        # its model. Pinning it here means a silent revert of the default would
+        # fail loudly with an explanation instead of resurfacing as a KeyError
+        # in an unrelated upstream test.
+        keys = _score([])
+        self.assertFalse(
+            any(V0_ONLY_FEATURE in k for k in keys),
+            f"default model emits {V0_ONLY_FEATURE!r}, which belongs to the "
+            "v0.6.1 family -- has the default been reverted?",
+        )
+
+    def test_v0_6_1_is_still_selectable_and_emits_its_own_family(self):
+        # Changing the default must not remove the old model. Downstream users
+        # pinning vmaf_v0.6.1 (and the AOM CTC preset, which the spec requires
+        # to use it) depend on this.
+        keys = _score(["-m", "version=vmaf_v0.6.1"])
+        self.assertTrue(
+            any(V0_ONLY_FEATURE in k for k in keys),
+            f"vmaf_v0.6.1 no longer emits {V0_ONLY_FEATURE!r}: {sorted(keys)}",
+        )
+
+
+class DefaultModelMirrorTest(unittest.TestCase):
+    """The Python mirrors agree with the C header (ADR-1168)."""
+
+    def test_vmaftune_mirror_matches_expected_default(self):
+        try:
+            from vmaftune.defaultmodel import DEFAULT_MODEL
+        except ImportError:
+            self.skipTest("vmaf-tune is not installed in this environment")
+        self.assertEqual(DEFAULT_MODEL, EXPECTED_DEFAULT_MODEL)
+
+    def test_neg_default_stays_on_the_v0_6_1_family(self):
+        # There is no NEG counterpart to any vmaf_v1.0.16_* model, so the NEG
+        # default deliberately names a different generation. Deriving it as
+        # DEFAULT_MODEL + "neg" would synthesise a model that does not exist.
+        try:
+            from vmaftune.defaultmodel import DEFAULT_MODEL_NEG
+        except ImportError:
+            self.skipTest("vmaf-tune is not installed in this environment")
+        self.assertEqual(DEFAULT_MODEL_NEG, "vmaf_v0.6.1neg")
+        self.assertNotEqual(DEFAULT_MODEL_NEG, EXPECTED_DEFAULT_MODEL + "neg")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

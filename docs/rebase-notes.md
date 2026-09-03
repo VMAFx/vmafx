@@ -178,6 +178,44 @@ no rebase impact: fork-local fixes and cleanups.
 - `ai/sidecar/online_trainer.py`: preserved server bind and documented 0o660 UNIX domain socket mode for group-peer IPC with `# nosemgrep`.
 - `mcp-server/vmaf-mcp`: removed unused import in `test_smoke_e2e.py` and converted `server.py` HTTP branch import to dynamic `importlib` to break static circular import.
 - `go.mod`, `go.sum`: upgraded `golang.org/x/crypto` to `v0.56.0`.
+## feat/default-model-v1-0-16 — the fork's default model is vmaf_v1.0.16_3d0h (ADR-1169) (2026-09-03)
+
+**Permanent, user-visible divergence from upstream. Read this before any sync.**
+
+- `core/include/libvmaf/model.h`: the fork defines `VMAF_DEFAULT_MODEL_VERSION`
+  as `"vmaf_v1.0.16_3d0h"`. Upstream has no such macro and still hardcodes
+  `"vmaf_v0.6.1"` in `libvmaf/tools/cli_parse.c`. An upstream sync will look
+  like it wants to revert the default. **It does not — keep the fork's value.**
+  Verified against upstream master on 2026-09-03.
+- `core/tools/cli_parse.cpp`: the `model_cnt == 0` fallback reads the macro. The
+  AOM CTC preset in the same file keeps the literal `"vmaf_v0.6.1"` with a
+  `vmaf-model-pin:` comment, because the CTC specification mandates that exact
+  model; that literal must survive a sync too, and the two must not be
+  "unified".
+- `python/test/vmafexec_test.py`: **upstream-mirror golden test.** The fork
+  changes exactly one line in
+  `test_run_vmafexec_runner_use_default_built_in_model` — its `optional_dict`
+  names `vmaf_v0.6.1` instead of setting `use_default_built_in_model: True`.
+  **No assertion value differs from upstream.** On a sync, upstream will restore
+  the `use_default_built_in_model` form; re-apply the fork's explicit model,
+  because with the fork's default that test raises
+  `KeyError('VMAFEXEC_vif_scale0_score')` (the v1.0.16 family does not emit
+  `vif_scale0..3` or `motion2`). Never resolve this by editing an
+  `assertAlmostEqual` value.
+- `python/test/default_model_test.py`: fork-added, no upstream counterpart.
+  Holds `EXPECTED_DEFAULT_MODEL`; update it if the default ever changes again.
+- `compat/python-vmaf/core/quality_runner.py`: `VmafQualityRunner.
+  DEFAULT_MODEL_FILEPATH` stays `vmaf_v0.6.1.json` on purpose — that harness
+  exists to reproduce Netflix's published numbers. Do not "fix" it to follow the
+  fork default.
+- Fork-only, no upstream counterpart: `pkg/model/`, `pkg/corpus/resolution.go`,
+  `tools/*/defaultmodel.py`, `tools/vmaf-tune/src/vmaftune/resolution.py`,
+  `scripts/ci/check-default-model-single-source.sh`, the ADR and the docs.
+- **NEG invariant:** `DefaultNEGVersion` / `DEFAULT_MODEL_NEG` must stay
+  independent constants naming the v0.6.1 family. Never re-derive them as
+  `DefaultVersion + "neg"` — with a v1 default that synthesises
+  `vmaf_v1.0.16_3d0hneg`, which does not exist.
+
 ## feat/default-model-single-source — one definition of the default model (ADR-1168) (2026-09-03)
 
 - `core/include/libvmaf/model.h`: **upstream-mirror header.** The fork adds

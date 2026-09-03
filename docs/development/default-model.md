@@ -14,7 +14,7 @@ One place:
 
 ```c
 /* core/include/libvmaf/model.h */
-#define VMAF_DEFAULT_MODEL_VERSION "vmaf_v0.6.1"
+#define VMAF_DEFAULT_MODEL_VERSION "vmaf_v1.0.16_3d0h"
 ```
 
 Everything else derives from it.
@@ -100,36 +100,42 @@ Common Test Conditions specification requires that exact model, so it must
 built-in model registry in `core/src/model.c` and the documentation tree are
 exempt by path.
 
-## The constraint on actually changing the value
+## Changing the value: what it costs, and the one test that notices
 
-Changing the default changes the score every user gets when they do not pass
-`--model`. One Netflix golden assertion pins that number directly:
+Changing the default changes the score every user gets without `--model`. That
+is the real cost, and it is why the value moved once, deliberately, before
+1.0.0 (see [ADR-1169](../adr/1169-default-model-v1-0-16.md)).
+
+Exactly one Netflix golden test notices, and **not** in the way you would
+expect:
 
 ```text
 python/test/vmafexec_test.py::VmafexecQualityRunnerTest
     ::test_run_vmafexec_runner_use_default_built_in_model
 ```
 
-It passes `use_default_built_in_model: True` and then asserts the resulting
-VMAF and per-feature scores. It exists precisely to pin the default model's
-output, so **any** change of default breaks it — and
-[ADR-0024](../adr/0024-netflix-golden-preserved.md) forbids editing Netflix
-golden assertions.
+It fails with `KeyError('VMAFEXEC_vif_scale0_score')`, not an
+`assertAlmostEqual` mismatch. Its assertions are values for the **v0.6.1
+feature family** (`vif_scale0..3`, `motion2`), and a different model family
+does not emit those features at all. So the failure is about which features
+exist, not about a number drifting — which is what made it resolvable without
+touching a golden value: the test now names `vmaf_v0.6.1` explicitly, which
+reproduces its previous invocation byte-for-byte.
+
+If you change the default again, expect the same shape of failure, and resolve
+it the same way. **Never** edit an `assertAlmostEqual` value
+([ADR-0024](../adr/0024-netflix-golden-preserved.md)).
+
+The fork-added `python/test/default_model_test.py` covers what the default
+actually resolves to. Update `EXPECTED_DEFAULT_MODEL` there when you change the
+header; it deliberately asserts no score values.
 
 Measured on the standard 576x324 golden pair:
 
 | Default model | VMAF (mean) |
 | --- | --- |
-| `vmaf_v0.6.1` | 76.667831 |
-| `vmaf_v1.0.16_3d0h` | 82.816059 |
-
-With the value left at `vmaf_v0.6.1`, all 271 golden tests pass. Switching to
-`vmaf_v1.0.16_3d0h` fails exactly that one test and no other.
-
-So the mechanism and the value are separate decisions. The mechanism is settled
-(ADR-1168). Moving the value to the v1.0.16 line requires first resolving how
-that single golden assertion is treated, which is a maintainer decision, not an
-implementation detail.
+| `vmaf_v0.6.1` (upstream, and this fork before ADR-1169) | 76.667831 |
+| `vmaf_v1.0.16_3d0h` (this fork now) | 82.816059 |
 
 Always run the golden gate after changing the value:
 
@@ -147,6 +153,16 @@ PYTHONPATH=$PWD/python CUDA_VISIBLE_DEVICES= python3 -m pytest \
     python/test/vmafexec_feature_extractor_test.py \
     python/test/result_test.py -q -m "not slow"
 ```
+
+## NEG does not follow the default
+
+There is no NEG counterpart to any `vmaf_v1.0.16_*` model — Netflix published
+NEG variants for the v0.6.1 family only. `DEFAULT_MODEL_NEG` /
+`DefaultNEGVersion` are therefore **independent constants** naming
+`vmaf_v0.6.1neg`, not derived from the default. Deriving them by appending
+`"neg"` would synthesise `vmaf_v1.0.16_3d0hneg`, which does not exist and which
+libvmaf rejects at load time. Asking for NEG consequently also changes model
+generation.
 
 ## Which model would be next
 

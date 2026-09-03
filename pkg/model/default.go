@@ -20,8 +20,17 @@ package model
 // DefaultVersion is the model version libvmaf scores with when no model is
 // named. It must equal VMAF_DEFAULT_MODEL_VERSION in
 // core/include/libvmaf/model.h; the CI gate above enforces that.
-const DefaultVersion = "vmaf_v0.6.1"
+const DefaultVersion = "vmaf_v1.0.16_3d0h"
 
-// DefaultNEGVersion is the no-enhancement-gain companion to DefaultVersion,
-// used where a caller asks for NEG scoring without naming a model.
+// DefaultNEGVersion is the model used when a caller asks for NEG scoring
+// without naming a model.
+//
+// It is deliberately NOT derived from DefaultVersion. No-Enhancement-Gain is a
+// v0.6.1-family concept: Netflix published NEG variants for vmaf_v0.6.1,
+// vmaf_float_v0.6.1 and vmaf_4k_v0.6.1 only, and there is no NEG counterpart to
+// any vmaf_v1.0.16_* model. Appending "neg" to DefaultVersion would synthesise
+// "vmaf_v1.0.16_3d0hneg", which does not exist and which libvmaf would reject
+// at load time. Until Netflix publishes a v1 NEG model, NEG scoring stays on
+// the v0.6.1 family and the two constants intentionally name different
+// generations.
 const DefaultNEGVersion = "vmaf_v0.6.1neg"

@@ -33,7 +33,7 @@ extern "C" {
  * model. Defined exactly once, here; every other component derives it from
  * this macro or from vmaf_default_model_version() rather than repeating it.
  */
-#define VMAF_DEFAULT_MODEL_VERSION "vmaf_v0.6.1"
+#define VMAF_DEFAULT_MODEL_VERSION "vmaf_v1.0.16_3d0h"
 
 typedef struct VmafModel VmafModel;
 
