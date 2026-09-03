@@ -62,6 +62,8 @@ extern "C" {
 #include "dict.h"
 #include "feature_collector.h"
 #include "feature_name.h"
+#include "log.h"
+#include "vif_tools.h"
 #include "libvmaf/picture.h"
 
 #include "../../metal/common.h"
@@ -259,9 +261,20 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
         s->scale_w[i] = s->scale_w[i - 1] / 2u;
         s->scale_h[i] = s->scale_h[i - 1] / 2u;
     }
-    /* A 4-scale pyramid needs scale 3 >= one workgroup tile. Reject too-small
-     * frames up front rather than emitting a degenerate score. */
-    if (s->scale_w[FVIF_SCALES - 1] == 0u || s->scale_h[FVIF_SCALES - 1] == 0u) {
+    /* Cross-backend parity with the CPU floor (ADR-0214 places=4). This check
+     * used to be `scale_w[FVIF_SCALES - 1] == 0`, i.e. `w >> 3 == 0`, an
+     * effective floor of 8 -- which admitted the 8..15px range that walks the
+     * reflect-101 mirror out of the plane at scale 3 (Netflix/vmaf#1582, the
+     * same defect fixed on the CPU path). The binding constraint is scale 3,
+     * so the real minimum at the default kernelscale is 16.
+     * vif_get_min_dim() is the single source of truth shared with
+     * float_vif.c; see its derivation in vif_tools.c. */
+    const int vif_min_dim = vif_get_min_dim((float)s->vif_kernelscale);
+    if (w < (unsigned)vif_min_dim || h < (unsigned)vif_min_dim) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "float_vif_metal: width and height must be >= %d for the "
+                 "four-scale VIF ladder (got %ux%u)\n",
+                 vif_min_dim, w, h);
         return -EINVAL;
     }
 

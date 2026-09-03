@@ -48,10 +48,34 @@ using namespace metal;
 
 constant int MV2_FILTER[5] = {3571, 16004, 26386, 16004, 3571};
 
+/* Reflect-101 index fold, iterated -- TWO defects fixed here.
+ *
+ * (1) CONVENTION. This helper used `2 * sup - idx - 1`, which reflects
+ *     idx == sup back to sup - 1 and therefore REPEATS the boundary row.
+ *     Reflect-101 skips it: `2 * (sup - 1) - idx`. Every other backend
+ *     already carries the corrected form -- CPU
+ *     (integer_motion_v2.c::mirror), CUDA (fixed in PR #120 / T7-15),
+ *     SYCL (integer_motion_sycl.cpp::dev_mirror_motion) and HIP
+ *     (integer_motion_v2/motion_v2_score.hip) -- and the SYCL fix records
+ *     the measured impact of the `- 1` form as a systematic ~2.6e-3 motion
+ *     drift vs CPU on every frame after the first. Metal was the last
+ *     backend still diverging (cross-backend parity, ADR-0214 places=4).
+ *
+ * (2) OUT OF BOUNDS. The kernels load a 20x20 tile at origin
+ *     `tile_origin - 2`, so this helper sees indices far outside the 5-tap
+ *     neighbourhood, and a single bounce only lands in range when
+ *     `idx <= 2 * (sup - 1)`. Enumerated over the real tile span the
+ *     single-bounce form read out of bounds for every dimension in 1..9 and
+ *     for exactly 17. Iterating is bit-identical wherever one bounce already
+ *     sufficed, so this costs no in-contract score movement -- only the
+ *     `- 1` -> `- 2` convention change in (1) moves borders, and it moves
+ *     them onto the CPU reference.
+ */
 inline int mv2_mirror(int idx, int sup)
 {
-    if (idx < 0)         return -idx;
-    if (idx >= sup)      return 2 * sup - idx - 1;
+    if (sup <= 1) return 0;
+    while (idx < 0 || idx >= sup)
+        idx = (idx < 0) ? -idx : 2 * (sup - 1) - idx;
     return idx;
 }
 

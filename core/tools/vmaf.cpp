@@ -1443,8 +1443,18 @@ int main(int argc, char *argv[])
 
 #ifdef _WIN32
     /* Netflix/vmaf#743: put the console into UTF-8 + VT mode for the run and
-     * restore it on every exit path, including the `goto cleanup` spine. */
-    const WindowsConsoleGuard console_guard;
+     * restore it on every exit path, including the `goto cleanup` spine.
+     *
+     * `static` here is load-bearing, not a style choice. cli_parse() below
+     * terminates the process directly for --help, --version and every
+     * argument error: usage_exit() is [[noreturn]] and calls exit(), which
+     * does NOT destroy objects with automatic storage duration. As a plain
+     * local, this guard therefore never ran its destructor on those paths and
+     * left the user's console in UTF-8 + VT mode after a bare `vmaf --help`.
+     * Objects with static storage duration ARE destroyed by exit()
+     * ([basic.start.term]), so the restore now runs on the exit() paths, on
+     * the `goto cleanup` spine and on a normal return alike. */
+    static const WindowsConsoleGuard console_guard;
 #endif
 
     CLISettings c;

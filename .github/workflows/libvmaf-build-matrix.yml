@@ -542,7 +542,16 @@ jobs:
               return vmaf_init(&ctx, cfg) == 0 ? 0 : 1;
           }
           SMOKE
-          cc /tmp/pc_static_smoke.c $(pkg-config --cflags libvmaf) \
+          # Use the leg's OWN compiler, not bare `cc`. The matrix builds with
+          # `ccache gcc-14` / `ccache clang-22`, while `cc` is the image
+          # default (a different gcc), so a bare `cc` link tests a toolchain
+          # the archive was not produced with. $CC is intentionally unquoted:
+          # its value is two words ("ccache gcc-14") and must word-split.
+          # (b_lto is meson-default false here, and explicitly false on the
+          # SYCL/CUDA legs, so the archive holds plain objects rather than LTO
+          # IR — a plugin mismatch is not in play, but matching the compiler
+          # still costs nothing.)
+          ${CC:-cc} /tmp/pc_static_smoke.c $(pkg-config --cflags libvmaf) \
              $(pkg-config --static --libs libvmaf) -o /tmp/pc_static_smoke
           echo "static link OK"
 

@@ -218,13 +218,19 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     (void)pix_fmt;
     MotionV2StateMetal *s = (MotionV2StateMetal *)fex->priv;
 
-    /* The 5-tap separable Gaussian uses reflect-101 mirror padding; the
-     * `mv2_mirror` helper in integer_motion_v2.metal bounces an out-of-range
-     * index exactly once, which only lands in range for dim >= radius + 1 = 3.
-     * Below that the device kernel reads outside the blur buffers.  The CPU,
-     * CUDA, SYCL and HIP twins have carried this guard since Research-0094;
-     * the Metal extractors were written afterwards and missed it (found while
-     * triaging Netflix/vmaf#1580). */
+    /* The 5-tap separable Gaussian needs at least radius + 1 = 3 samples per
+     * axis to produce meaningful output; this matches the floor carried by the
+     * CPU, CUDA, SYCL and HIP twins since Research-0094. The Metal extractors
+     * were written afterwards and had no guard at all (found while triaging
+     * Netflix/vmaf#1580).
+     *
+     * This guard is NOT what keeps the device kernel in bounds, and must not
+     * be read as such: integer_motion_v2.metal loads a 20x20 threadgroup tile, so its
+     * `mv2_mirror` helper is handed indices far outside the 5-tap
+     * neighbourhood. A single-bounce fold read out of bounds for every
+     * dimension in 1..9 AND for exactly 17 -- a hole a 3x3 floor does not
+     * close. That is fixed in the kernel, where `mv2_mirror` now folds
+     * iteratively; see the comment there. */
     if (w < 3u || h < 3u) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "motion_v2_metal: frame %ux%u is below the 5-tap filter minimum 3x3; "

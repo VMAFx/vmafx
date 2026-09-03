@@ -25076,6 +25076,94 @@ legs. (ADR-0603, triggered by Renovate PR #1402)
       be narrowed again. Both the narrowing and the `__lzcnt` reintroduction
       were negative-tested against the gate.
 
+    Fourth post-review round — the adversarial review's remaining findings,
+    each checked against the code before acting. Two were confirmed as
+    defects in this PR's own earlier rounds, two were pre-existing
+    cross-backend gaps, one was a real evasion hole in a gate this PR added,
+    and one did not hold up:
+
+    - **The Metal motion guard added in round 3 was insufficient, and the
+      real defect was in the kernel.** `integer_motion.metal`,
+      `float_motion.metal` and `integer_motion_v2.metal` load a
+      `TILE_W x TILE_H = 20x20` threadgroup tile at origin `bid * 16 - 2`,
+      so their mirror helper receives indices up to `16*bid + 17` -- far
+      outside the 5-tap neighbourhood it appears to serve. A single bounce
+      only lands in range when `idx <= 2 * (sup - 1)`. Enumerating the real
+      tile span, the single-bounce form read out of bounds for **every
+      dimension in 1..9 and for exactly 17** (at 17 the last workgroup
+      reaches idx 33 while `2 * (17 - 1) = 32`, folding to -1). The
+      `w < 3 || h < 3` guard closes neither the 4..9 range nor 17, so the
+      fix moved into the kernels: all three now fold iteratively, exactly as
+      the CPU scalar path does in `convolution_internal.h`. Verified by
+      exhaustive enumeration over dims 1..299 across the full tile span --
+      always in range, always terminating, and bit-identical to the single
+      bounce wherever one bounce already sufficed, so no in-contract score
+      moves. The host-side guard comments were rewritten: they had claimed
+      the 3x3 floor was what kept the kernel in bounds, which was wrong.
+    - **`integer_motion_v2.metal` was the last backend still using the
+      wrong reflection convention.** Its `mv2_mirror` used
+      `2 * sup - idx - 1`, which reflects `idx == sup` back to `sup - 1` and
+      so REPEATS the boundary row; reflect-101 skips it
+      (`2 * (sup - 1) - idx`). CPU (`integer_motion_v2.c::mirror`), CUDA
+      (fixed in PR #120 / T7-15), SYCL and HIP all carry the corrected
+      form, and the SYCL fix records the measured impact of the `- 1` form
+      as a systematic ~2.6e-3 motion drift vs CPU on every frame after the
+      first. Metal now matches (ADR-0214 places=4). The ADM kernels'
+      `2 * sup - idx - 1` was checked and deliberately left alone: ADM
+      legitimately uses whole-sample reflection, matching
+      `adm_tools.c::dwt2_src_indices_filt_s`, the CUDA
+      `calculate_indices()` and the SYCL twin.
+    - **All four GPU `float_vif` backends were missing the CPU's minimum
+      dimension.** The CPU floor became `vif_get_min_dim(kernelscale)` = 16
+      at the default kernelscale earlier in this PR (the binding constraint
+      is scale 3, `max(9, 10, 12, 16)`), but Metal's only check was
+      `scale_w[FVIF_SCALES - 1] == 0`, i.e. `w >> 3 == 0` -- an effective
+      floor of 8 -- and CUDA, HIP and SYCL had **no dimension floor at
+      all**, halving to scale 3 unchecked. All four now derive the floor
+      from `vif_get_min_dim()`, the same single source of truth the CPU
+      uses, so the 8..15px range that walks the reflect-101 mirror out of
+      the plane at scale 3 is rejected uniformly. `vif_tools.h` gained a
+      `extern "C"` guard, without which the C++ (SYCL) and Objective-C++
+      (Metal) translation units would demand mangled symbols and fail to
+      link against the C `vif_tools.c`; it was previously included only by
+      C translation units.
+    - **`--help` and `--version` left the Windows console in UTF-8 + VT
+      mode.** The `WindowsConsoleGuard` added for Netflix/vmaf#743 was an
+      automatic local in `main`, and its comment claimed it restored "on
+      every exit path". It did not: `cli_parse` terminates the process
+      directly for `--help`, `--version` and every argument error
+      (`usage_exit` is `[[noreturn]]` and calls `exit()`), and `exit()`
+      does not destroy objects with automatic storage duration. Objects
+      with static storage duration ARE destroyed by `exit()`
+      ([basic.start.term]), so the guard is now `static` -- the restore
+      runs on the `exit()` paths, on the `goto cleanup` spine and on a
+      normal return alike. POSIX behaviour is unchanged (the whole block is
+      `#ifdef _WIN32`).
+    - **`scripts/ci/check-msvc-clz-shim.sh` was evadable by macro
+      indirection.** Rules (1) and (4) keyed on the call syntax
+      `__lzcnt(`, so `#define LZ __lzcnt` followed by `LZ(x)` -- or token
+      pasting -- reintroduced the instruction while still passing the gate
+      that exists to prevent exactly that. Both rules now match the bare
+      identifier. Rule (4) is scoped to source extensions because
+      `core/src/feature/AGENTS.md` legitimately discusses `__lzcnt` in
+      prose. Negative-tested: macro indirection, a narrowed architecture
+      allowlist, and a direct `__lzcnt` reintroduction all fail the gate.
+    - **The static-link smoke test now links with the leg's own
+      compiler.** It used bare `cc` while the matrix builds with
+      `ccache gcc-14` / `ccache clang-22`, so it linked with a toolchain
+      the archive was not produced with. Now `${CC:-cc}`. The review's
+      accompanying LTO concern does not apply: `b_lto` is meson-default
+      false here and explicitly `false` on the SYCL/CUDA legs, so the
+      archive holds plain objects rather than LTO IR and no plugin
+      mismatch is in play.
+    - **Not a defect: the `Libs.private` libc++ detection.** The review
+      held that keying on `_LIBCPP_VERSION` ignores an explicit
+      `-stdlib=libc++`. Tested directly against the installed meson: a
+      probe project reading `cxx.get_define('FOO')` under
+      `-Dcpp_args=-DFOO=42` reports `42`, so compiler checks do observe
+      the project's `cpp_args` and the `_LIBCPP_VERSION` probe therefore
+      sees `-stdlib=libc++` exactly as its comment claims. No change made.
+
 
 - **VCQ-223**: `VmafQualityRunnerWithLocalExplainer` no longer times out CI.
   The runner's fallback `LocalExplainer` now defaults to `neighbor_samples=100`

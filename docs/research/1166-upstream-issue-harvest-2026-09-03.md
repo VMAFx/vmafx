@@ -426,6 +426,80 @@ adds no public C-API entry point, no configure flag, no `LIBVMAFContext` field,
 and renames no symbol the `check_pkg_config` probes look for — the existing
 probes simply start succeeding under `--pkg-config-flags=--static`.
 
+## Round-4 review findings — measurements
+
+### The Metal motion mirror: which dimensions actually break
+
+The round-3 guard (`w < 3 || h < 3`) was derived from the 5-tap radius, but the
+kernels do not index a 5-tap neighbourhood directly — they load a
+`TILE_W x TILE_H = 20x20` threadgroup tile at origin `bid * 16 - HALF_FW`, so
+the mirror helper is handed `idx` in `[-2, 16*bid + 17]`. A single bounce
+(`2 * (sup - 1) - idx`) only lands in range when `idx <= 2 * (sup - 1)`.
+
+Enumerated over the real tile span for every dimension (all workgroups, all
+400 tile elements):
+
+| Dimension | Single bounce | Why |
+| --- | --- | --- |
+| 1..9 | **out of bounds** | `idx` reaches 17, needs `sup >= 10` |
+| 10..16 | safe | one workgroup, `2*(sup-1) >= 17` |
+| **17** | **out of bounds** | last workgroup reaches `idx = 33`, `2*(17-1) = 32` -> folds to -1 |
+| 18+ | safe | — |
+
+The 17 case is the one no radius-derived guard would predict, and it is why the
+fix belongs in the kernel rather than in the host-side floor. Replacing the
+single bounce with an iterative fold was verified over dims 1..299:
+
+- never out of range, always terminating (`sup <= 1` short-circuits);
+- **bit-identical** to the single bounce for every index one bounce already
+  handled, so no in-contract score moves.
+
+### Reflection convention: Metal v2 was the last backend still diverging
+
+| Backend | Form | Status |
+| --- | --- | --- |
+| CPU `integer_motion_v2.c::mirror` | `2 * size - idx - 2` | reflect-101, reference |
+| CUDA | `2 * (sup - 1) - idx` | fixed in PR #120 / T7-15 |
+| SYCL `dev_mirror_motion` | `2 * sup - idx - 2` | fixed; records ~2.6e-3 drift from the old form |
+| HIP `motion_v2_score.hip` | `2 * size - idx - 2` | fixed |
+| **Metal `mv2_mirror`** | `2 * sup - idx - 1` | **still diverging — fixed here** |
+
+The ADM kernels' `2 * sup - idx - 1` is *correct* and deliberately untouched:
+ADM uses whole-sample reflection, matching
+`adm_tools.c::dwt2_src_indices_filt_s`, CUDA's `calculate_indices()` and the
+SYCL twin. Convention differs per metric; it must be checked per metric.
+
+### `float_vif` minimum dimension across backends
+
+| Backend | Floor before | Mechanism |
+| --- | --- | --- |
+| CPU `float_vif.c` | 16 | `vif_get_min_dim(kernelscale)` |
+| Metal | 8 | `scale_w[FVIF_SCALES - 1] == 0`, i.e. `w >> 3 == 0` |
+| CUDA | none | halves to scale 3 unchecked |
+| HIP | none | halves to scale 3 unchecked |
+| SYCL | none | halves to scale 3 unchecked |
+
+All four now call `vif_get_min_dim()`. This required an `extern "C"` guard on
+`vif_tools.h`, which had none — it was included only by C translation units, so
+the C++ (SYCL) and Objective-C++ (Metal) callers would otherwise have demanded
+mangled symbols.
+
+### Finding not upheld: the `Libs.private` libc++ detection
+
+The review held that `cxx.get_define('_LIBCPP_VERSION', ...)` ignores an
+explicit `-stdlib=libc++`. Tested against the installed meson with a probe
+project:
+
+```meson
+project('probe', 'cpp')
+cxx = meson.get_compiler('cpp')
+message('FOO=[' + cxx.get_define('FOO') + ']')
+```
+
+`meson setup b -Dcpp_args=-DFOO=42` reports `FOO=[42]`, so compiler checks do
+observe the project's `cpp_args`; the `_LIBCPP_VERSION` probe therefore sees
+`-stdlib=libc++` exactly as its comment claims. No change made.
+
 ## Confirmed but deferred
 
 Each of these is real and located; each has a `docs/state.md` row. None is in

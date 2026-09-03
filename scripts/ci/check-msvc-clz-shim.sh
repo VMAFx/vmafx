@@ -41,7 +41,13 @@ rc=0
 
 # (1) The intrinsic must not be *used*. The explanatory comment names it, so
 #     only flag occurrences outside comment lines.
-if grep -vE '^[[:space:]]*(\*|/\*|//)' "$HDR" | grep -qE '\b__lzcnt(64)?[[:space:]]*\('; then
+#
+#     Matches the bare IDENTIFIER, not `__lzcnt(`: keying on the call syntax
+#     let `#define LZ __lzcnt` + `LZ(x)` (or token pasting) reintroduce the
+#     instruction while still passing this gate. There is no legitimate
+#     non-comment mention of the identifier in this header, so requiring its
+#     total absence outside comments is both stricter and simpler.
+if grep -vE '^[[:space:]]*(\*|/\*|//)' "$HDR" | grep -qE '\b__lzcnt(64)?\b'; then
   echo "FAIL: $HDR calls __lzcnt/__lzcnt64." >&2
   echo "      LZCNT silently decodes as BSR on pre-Haswell x86-64 and yields" >&2
   echo "      wrong VIF/ADM shifts. Use _BitScanReverse. Netflix/vmaf#1551." >&2
@@ -74,7 +80,15 @@ elif ! grep -q '_M_ARM64' <<<"$guard"; then
 fi
 
 # (4) Nothing else in the tree may reintroduce the intrinsic either.
-others=$(grep -rlE '\b__lzcnt(64)?[[:space:]]*\(' "$ROOT/core/src" 2>/dev/null || true)
+# Restricted to source extensions: rule (1) now matches the bare identifier,
+# and documentation legitimately discusses `__lzcnt` in prose
+# (core/src/feature/AGENTS.md explains why the shim must not use it). The rule
+# is about CODE reintroducing the instruction.
+others=$(grep -rlE '\b__lzcnt(64)?\b' "$ROOT/core/src" \
+  --include='*.c' --include='*.h' --include='*.cpp' --include='*.hpp' \
+  --include='*.cu' --include='*.cuh' --include='*.hip' --include='*.mm' \
+  --include='*.metal' 2>/dev/null |
+  grep -vF "$HDR" || true)
 if [[ -n "$others" ]]; then
   echo "FAIL: __lzcnt used outside the audited shim:" >&2
   echo "$others" >&2

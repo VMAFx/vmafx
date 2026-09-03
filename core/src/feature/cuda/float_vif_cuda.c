@@ -22,6 +22,8 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "vif_tools.h"
+#include "log.h"
 
 #include "cuda/float_vif_cuda.h"
 #include "cuda/kernel_template.h"
@@ -121,6 +123,23 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     if (s->vif_kernelscale != 1.0)
         return -EINVAL;
+
+    /* Cross-backend parity with the CPU floor (ADR-0214 places=4). The
+     * four-scale ladder halves the working dimension once per scale, so the
+     * binding constraint is scale 3 -- at the default kernelscale the minimum
+     * is 16, not 8. This backend previously had no dimension floor at all, admitting the
+     * 8..15px range that walks the reflect-101 mirror out of the plane at
+     * scale 3 (Netflix/vmaf#1582, the same defect fixed on the CPU path).
+     * vif_get_min_dim() is the single source of truth shared with
+     * float_vif.c; see its derivation in vif_tools.c. */
+    const int vif_min_dim = vif_get_min_dim((float)s->vif_kernelscale);
+    if (w < (unsigned)vif_min_dim || h < (unsigned)vif_min_dim) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "float_vif_cuda: width and height must be >= %d for the four-scale VIF "
+                 "ladder (got %ux%u)\n",
+                 vif_min_dim, w, h);
+        return -EINVAL;
+    }
 
     s->width = w;
     s->height = h;

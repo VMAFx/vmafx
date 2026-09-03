@@ -194,6 +194,14 @@ test_model = executable('test_model',
 test_model_libsvm_dup_key = executable('test_model_libsvm_dup_key',
     ['test.c', 'test_model_libsvm_dup_key.c', '../src/dict.cpp', '../src/pdjson.c',
      json_model_c_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    c_args : [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
+    dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+    objects : [libsvm_static_lib.extract_all_objects(recursive: true),
+               read_json_model_cpp23_lib.extract_all_objects(recursive: true)],
+)
+
 # Netflix/vmaf#1242 regression: VmafFeatureDictionary ownership contract on
 # vmaf_model_feature_overload / vmaf_model_collection_feature_overload.
 test_model_feature_overload_ownership = executable('test_model_feature_overload_ownership',
