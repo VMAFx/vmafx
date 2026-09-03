@@ -404,7 +404,7 @@ When a caller names no model, libvmaf scores with a single default. Read it
 rather than assuming it:
 
 ```c
-const char *dflt = vmaf_default_model_version();   /* e.g. "vmaf_v0.6.1" */
+const char *dflt = vmaf_default_model_version();   /* "vmaf_v1.0.16_3d0h" */
 
 VmafModel *model = NULL;
 VmafModelConfig cfg = { .name = "vmaf" };
@@ -414,6 +414,29 @@ int err = vmaf_model_load(&model, &cfg, vmaf_default_model_version());
 The returned string is owned by libvmaf. It is never `NULL`, must not be freed,
 and stays valid for the life of the process. The call is thread-safe and does
 no allocation.
+
+**The default changed in 1.0.0.** The built-in default is
+**`vmaf_v1.0.16_3d0h`** (ADR-1169). It was `vmaf_v0.6.1` in every earlier build
+of this fork, and upstream Netflix still defaults to `vmaf_v0.6.1`.
+
+The two models emit **different feature families**. `vmaf_v0.6.1` reports
+`vif_scale0..3` and `motion2`; the v1.0.16 family does not emit those at all.
+Code that reads individual feature keys out of the result — rather than just the
+pooled `vmaf` score — will see a missing key, not a shifted number, if it assumed
+the old family.
+
+The NEG default stays on the v0.6.1 family (`vmaf_v0.6.1neg`): there is no
+v1.0.16 NEG model, so appending `neg` to the default would name
+`vmaf_v1.0.16_3d0hneg`, which does not exist and fails to load. The AOM CTC preset
+also keeps `vmaf_v0.6.1` deliberately, because the CTC spec mandates that exact
+model.
+
+To keep the previous behaviour, name the model explicitly instead of relying on
+the default:
+
+```c
+err = vmaf_model_load(&model, &cfg, "vmaf_v0.6.1");
+```
 
 C and C++ code compiled against these headers may use the
 `VMAF_DEFAULT_MODEL_VERSION` macro instead, which expands to the same string at
