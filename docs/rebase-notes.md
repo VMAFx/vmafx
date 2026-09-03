@@ -328,6 +328,25 @@ one `Options.NonFinite` field. Invariants a future change must not undo:
    `pkg/predictor/testdata/python_predictor.json`, `pkg/hdr/testdata/`,
    `pkg/pymath/testdata/`. Regenerate them only alongside a coordinated change
    on both sides.
+## refactor/x86-adm-avx-macro-hygiene — x86 ADM AVX2/AVX-512 macro hygiene (2026-09-02)
+
+No rebase impact against upstream Netflix: `core/src/feature/x86/adm_avx2.c` and
+`core/src/feature/x86/adm_avx512.c` are fork-added SIMD implementations and have no
+counterparts in upstream Netflix/vmaf.
+
+Invariants preserved:
+- Fully bit-exact outputs against scalar `integer_adm.c` across all 11 AVX2 and AVX-512
+  functions (`adm_decouple_*`, `adm_dwt2_*`, `adm_cm_*`, `i4_adm_cm_*`, `adm_csf_*`,
+  `i4_adm_csf_*`, `adm_csf_den_*`).
+- All 11 kernel functions maintain `// NOLINTNEXTLINE(readability-function-size)`
+  with inline ADR-0138/0139 and ADR-0141 citations to preserve register allocation
+  and vector reduction order.
+- Macro parameters across threshold and accumulation macros (`ADM_CM_THRESH_*`,
+  `I4_ADM_CM_THRESH_*`, `ADM_CM_ACCUM_ROUND*`) are strictly parenthesized.
+- Pointer arithmetic offsets explicitly cast to `(ptrdiff_t)` to prevent implicit
+  widening warnings on integer products.
+- Dead `print_*` debug macros in `adm_avx512.c` removed; `#include "adm_avx2.h"` added
+  to `adm_avx2.c` for internal linkage consistency with public declarations.
 
 ## feat/go-ort-runner — `vmafx-ort-runner` built in-tree (2026-09-02, ADR-1134)
 

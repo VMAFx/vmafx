@@ -22,214 +22,224 @@
 #include "feature/barten_csf_tools.h"
 #include "feature/compat_builtin.h"
 #include "feature/integer_adm.h"
+#include "adm_avx2.h"
 #include <immintrin.h>
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 
 #define shift15_64b_signExt_256(a, r)                                                              \
-    {                                                                                              \
-        r = _mm256_add_epi64(_mm256_srli_epi64(a, 15),                                             \
-                             _mm256_and_si256(a, _mm256_set1_epi64x(0xFFFE000000000000)));         \
-    }
+    do {                                                                                           \
+        (r) = _mm256_add_epi64(_mm256_srli_epi64((a), 15),                                         \
+                               _mm256_and_si256((a), _mm256_set1_epi64x(0xFFFE000000000000)));     \
+    } while (0)
 
 // i = 0, j = 0: indices y: 1,0,1, x: 1,0,1  for Fixed-point
 #define ADM_CM_THRESH_S_0_0(angles, flt_angles, src_stride, accum, w, h, i, j)                     \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
             int32_t sum = 0;                                                                       \
-            int16_t *src_ptr = angles[theta];                                                      \
-            int16_t *flt_ptr = flt_angles[theta];                                                  \
-            sum += flt_ptr[src_stride + 1];                                                        \
-            sum += flt_ptr[src_stride];                                                            \
-            sum += flt_ptr[src_stride + 1];                                                        \
+            int16_t *src_ptr = (angles)[theta];                                                    \
+            int16_t *flt_ptr = (flt_angles)[theta];                                                \
+            sum += flt_ptr[(src_stride) + 1];                                                      \
+            sum += flt_ptr[(src_stride)];                                                          \
+            sum += flt_ptr[(src_stride) + 1];                                                      \
             sum += flt_ptr[1];                                                                     \
             sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[0])) + 2048) >> 12);               \
             sum += flt_ptr[1];                                                                     \
-            sum += flt_ptr[src_stride + 1];                                                        \
-            sum += flt_ptr[src_stride];                                                            \
-            sum += flt_ptr[src_stride + 1];                                                        \
-            *accum += sum;                                                                         \
+            sum += flt_ptr[(src_stride) + 1];                                                      \
+            sum += flt_ptr[(src_stride)];                                                          \
+            sum += flt_ptr[(src_stride) + 1];                                                      \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 // i = 0, j = w-1: indices y: 1,0,1, x: w-2, w-1, w-1
 #define ADM_CM_THRESH_S_0_W_M_1(angles, flt_angles, src_stride, accum, w, h, i, j)                 \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int16_t *src_ptr = angles[theta];                                                      \
-            int16_t *flt_ptr = flt_angles[theta];                                                  \
+            int16_t *src_ptr = (angles)[theta];                                                    \
+            int16_t *flt_ptr = (flt_angles)[theta];                                                \
             int32_t sum = 0;                                                                       \
-            sum += flt_ptr[src_stride + w - 2];                                                    \
-            sum += flt_ptr[src_stride + w - 1];                                                    \
-            sum += flt_ptr[src_stride + w - 1];                                                    \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[w - 1])) + 2048) >> 12);           \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[src_stride + w - 2];                                                    \
-            sum += flt_ptr[src_stride + w - 1];                                                    \
-            sum += flt_ptr[src_stride + w - 1];                                                    \
-            *accum += sum;                                                                         \
+            sum += flt_ptr[(src_stride) + (w) - 2];                                                \
+            sum += flt_ptr[(src_stride) + (w) - 1];                                                \
+            sum += flt_ptr[(src_stride) + (w) - 1];                                                \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[(w) - 1])) + 2048) >> 12);         \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(src_stride) + (w) - 2];                                                \
+            sum += flt_ptr[(src_stride) + (w) - 1];                                                \
+            sum += flt_ptr[(src_stride) + (w) - 1];                                                \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 // i = 0, j = 1, ..., w-2: indices y: 1,0,1, x: j-1,j,j+1
 #define ADM_CM_THRESH_S_0_J(angles, flt_angles, src_stride, accum, w, h, i, j)                     \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
             int32_t sum = 0;                                                                       \
-            int16_t *src_ptr = angles[theta];                                                      \
-            int16_t *flt_ptr = flt_angles[theta];                                                  \
-            sum += flt_ptr[src_stride + j - 1];                                                    \
-            sum += flt_ptr[src_stride + j];                                                        \
-            sum += flt_ptr[src_stride + j + 1];                                                    \
-            sum += flt_ptr[j - 1];                                                                 \
-            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[j])) + 2048) >> 12);               \
-            sum += flt_ptr[j + 1];                                                                 \
-            sum += flt_ptr[src_stride + j - 1];                                                    \
-            sum += flt_ptr[src_stride + j];                                                        \
-            sum += flt_ptr[src_stride + j + 1];                                                    \
-            *accum += sum;                                                                         \
+            int16_t *src_ptr = (angles)[theta];                                                    \
+            int16_t *flt_ptr = (flt_angles)[theta];                                                \
+            sum += flt_ptr[(src_stride) + (j) - 1];                                                \
+            sum += flt_ptr[(src_stride) + (j)];                                                    \
+            sum += flt_ptr[(src_stride) + (j) + 1];                                                \
+            sum += flt_ptr[(j) - 1];                                                               \
+            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[(j)])) + 2048) >> 12);             \
+            sum += flt_ptr[(j) + 1];                                                               \
+            sum += flt_ptr[(src_stride) + (j) - 1];                                                \
+            sum += flt_ptr[(src_stride) + (j)];                                                    \
+            sum += flt_ptr[(src_stride) + (j) + 1];                                                \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 // i = h-1, j = 0: indices y: h-2,h-1,h-1, x: 1,0,1
 #define ADM_CM_THRESH_S_H_M_1_0(angles, flt_angles, src_stride, accum, w, h, i, j)                 \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
             int32_t sum = 0;                                                                       \
-            int16_t *src_ptr = angles[theta];                                                      \
-            int16_t *flt_ptr = flt_angles[theta];                                                  \
-            src_ptr += (src_stride * (h - 2));                                                     \
-            flt_ptr += (src_stride * (h - 2));                                                     \
+            int16_t *src_ptr = (angles)[theta];                                                    \
+            int16_t *flt_ptr = (flt_angles)[theta];                                                \
+            src_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
+            flt_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
             sum += flt_ptr[1];                                                                     \
             sum += flt_ptr[0];                                                                     \
             sum += flt_ptr[1];                                                                     \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
             sum += flt_ptr[1];                                                                     \
             sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[0])) + 2048) >> 12);               \
             sum += flt_ptr[1];                                                                     \
             sum += flt_ptr[1];                                                                     \
             sum += flt_ptr[0];                                                                     \
             sum += flt_ptr[1];                                                                     \
-            *accum += sum;                                                                         \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 // i = h-1, j = w-1: indices y: h-2,h-1,h-1, x: w-2, w-1, w-1
 #define ADM_CM_THRESH_S_H_M_1_W_M_1(angles, flt_angles, src_stride, accum, w, h, i, j)             \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int16_t *src_ptr = angles[theta];                                                      \
-            int16_t *flt_ptr = flt_angles[theta];                                                  \
+            int16_t *src_ptr = (angles)[theta];                                                    \
+            int16_t *flt_ptr = (flt_angles)[theta];                                                \
             int32_t sum = 0;                                                                       \
-            src_ptr += (src_stride * (h - 2));                                                     \
-            flt_ptr += (src_stride * (h - 2));                                                     \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[w - 1])) + 2048) >> 12);           \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            *accum += sum;                                                                         \
+            src_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
+            flt_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[(w) - 1])) + 2048) >> 12);         \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 // i = h-1, j = 1, ..., w-2: indices y: h-2,h-1,h-1, x: j-1,j,j+1
 #define ADM_CM_THRESH_S_H_M_1_J(angles, flt_angles, src_stride, accum, w, h, i, j)                 \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int16_t *src_ptr = angles[theta];                                                      \
-            int16_t *flt_ptr = flt_angles[theta];                                                  \
             int32_t sum = 0;                                                                       \
-            src_ptr += (src_stride * (h - 2));                                                     \
-            flt_ptr += (src_stride * (h - 2));                                                     \
-            sum += flt_ptr[j - 1];                                                                 \
-            sum += flt_ptr[j];                                                                     \
-            sum += flt_ptr[j + 1];                                                                 \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
-            sum += flt_ptr[j - 1];                                                                 \
-            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[j])) + 2048) >> 12);               \
-            sum += flt_ptr[j + 1];                                                                 \
-            sum += flt_ptr[j - 1];                                                                 \
-            sum += flt_ptr[j];                                                                     \
-            sum += flt_ptr[j + 1];                                                                 \
-            *accum += sum;                                                                         \
+            int16_t *src_ptr = (angles)[theta];                                                    \
+            int16_t *flt_ptr = (flt_angles)[theta];                                                \
+            src_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
+            flt_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
+            sum += flt_ptr[(j) - 1];                                                               \
+            sum += flt_ptr[(j)];                                                                   \
+            sum += flt_ptr[(j) + 1];                                                               \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
+            sum += flt_ptr[(j) - 1];                                                               \
+            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[(j)])) + 2048) >> 12);             \
+            sum += flt_ptr[(j) + 1];                                                               \
+            sum += flt_ptr[(j) - 1];                                                               \
+            sum += flt_ptr[(j)];                                                                   \
+            sum += flt_ptr[(j) + 1];                                                               \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 // i = 1,..,h-2, j = 1,..,w-2: indices y: i-1,i,i+1, x: j-1,j,j+1
 #define ADM_CM_THRESH_S_I_J(angles, flt_angles, src_stride, accum, w, h, i, j)                     \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
             int32_t sum = 0;                                                                       \
-            int16_t *src_ptr = angles[theta];                                                      \
-            int16_t *flt_ptr = flt_angles[theta];                                                  \
-            src_ptr += (src_stride * (i - 1));                                                     \
-            flt_ptr += (src_stride * (i - 1));                                                     \
-            sum += flt_ptr[j - 1];                                                                 \
-            sum += flt_ptr[j];                                                                     \
-            sum += flt_ptr[j + 1];                                                                 \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
-            sum += flt_ptr[j - 1];                                                                 \
-            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[j])) + 2048) >> 12);               \
-            sum += flt_ptr[j + 1];                                                                 \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
-            sum += flt_ptr[j - 1];                                                                 \
-            sum += flt_ptr[j];                                                                     \
-            sum += flt_ptr[j + 1];                                                                 \
-            *accum += sum;                                                                         \
+            int16_t *src_ptr = (angles)[theta];                                                    \
+            int16_t *flt_ptr = (flt_angles)[theta];                                                \
+            src_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
+            flt_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
+            sum += flt_ptr[(j) - 1];                                                               \
+            sum += flt_ptr[(j)];                                                                   \
+            sum += flt_ptr[(j) + 1];                                                               \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
+            sum += flt_ptr[(j) - 1];                                                               \
+            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[(j)])) + 2048) >> 12);             \
+            sum += flt_ptr[(j) + 1];                                                               \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
+            sum += flt_ptr[(j) - 1];                                                               \
+            sum += flt_ptr[(j)];                                                                   \
+            sum += flt_ptr[(j) + 1];                                                               \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 #define ADM_CM_THRESH_S_I_J_avx256(angles, flt_angles, src_stride, accum, w, h, i, j, sum)         \
-    {                                                                                              \
+    do {                                                                                           \
         __m256i perm1 = _mm256_set_epi32(0, 7, 6, 5, 4, 3, 2, 1);                                  \
         __m256i perm2 = _mm256_set_epi32(1, 0, 7, 6, 5, 4, 3, 2);                                  \
         __m256i const_2048_32b = _mm256_set1_epi32(2048);                                          \
-        int16_t *src_ptr0 = angles[0];                                                             \
-        int16_t *flt_ptr0 = flt_angles[0];                                                         \
-        int16_t *src_ptr1 = angles[1];                                                             \
-        int16_t *flt_ptr1 = flt_angles[1];                                                         \
-        int16_t *src_ptr2 = angles[2];                                                             \
-        int16_t *flt_ptr2 = flt_angles[2];                                                         \
-        src_ptr0 += (src_stride * (i - 1));                                                        \
-        flt_ptr0 += (src_stride * (i - 1));                                                        \
-        src_ptr1 += (src_stride * (i - 1));                                                        \
-        flt_ptr1 += (src_stride * (i - 1));                                                        \
-        src_ptr2 += (src_stride * (i - 1));                                                        \
-        flt_ptr2 += (src_stride * (i - 1));                                                        \
-        __m256i flt00 = _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(flt_ptr0 + j - 1)));     \
-        __m256i flt10 = _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(flt_ptr1 + j - 1)));     \
-        __m256i flt20 = _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(flt_ptr2 + j - 1)));     \
-        src_ptr0 += src_stride;                                                                    \
-        flt_ptr0 += src_stride;                                                                    \
-        src_ptr1 += src_stride;                                                                    \
-        flt_ptr1 += src_stride;                                                                    \
-        src_ptr2 += src_stride;                                                                    \
-        flt_ptr2 += src_stride;                                                                    \
-        __m256i src01 = _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(src_ptr0 + j - 1)));     \
-        __m256i src11 = _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(src_ptr1 + j - 1)));     \
-        __m256i src21 = _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(src_ptr2 + j - 1)));     \
-        __m256i flt01 = _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(flt_ptr0 + j - 1)));     \
-        __m256i flt11 = _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(flt_ptr1 + j - 1)));     \
-        __m256i flt21 = _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(flt_ptr2 + j - 1)));     \
+        int16_t *src_ptr0 = (angles)[0];                                                           \
+        int16_t *flt_ptr0 = (flt_angles)[0];                                                       \
+        int16_t *src_ptr1 = (angles)[1];                                                           \
+        int16_t *flt_ptr1 = (flt_angles)[1];                                                       \
+        int16_t *src_ptr2 = (angles)[2];                                                           \
+        int16_t *flt_ptr2 = (flt_angles)[2];                                                       \
+        src_ptr0 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
+        flt_ptr0 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
+        src_ptr1 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
+        flt_ptr1 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
+        src_ptr2 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
+        flt_ptr2 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
+        __m256i flt00 =                                                                            \
+            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr0 + (j) - 1)));         \
+        __m256i flt10 =                                                                            \
+            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr1 + (j) - 1)));         \
+        __m256i flt20 =                                                                            \
+            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr2 + (j) - 1)));         \
+        src_ptr0 += (src_stride);                                                                  \
+        flt_ptr0 += (src_stride);                                                                  \
+        src_ptr1 += (src_stride);                                                                  \
+        flt_ptr1 += (src_stride);                                                                  \
+        src_ptr2 += (src_stride);                                                                  \
+        flt_ptr2 += (src_stride);                                                                  \
+        __m256i src01 =                                                                            \
+            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(src_ptr0 + (j) - 1)));         \
+        __m256i src11 =                                                                            \
+            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(src_ptr1 + (j) - 1)));         \
+        __m256i src21 =                                                                            \
+            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(src_ptr2 + (j) - 1)));         \
+        __m256i flt01 =                                                                            \
+            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr0 + (j) - 1)));         \
+        __m256i flt11 =                                                                            \
+            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr1 + (j) - 1)));         \
+        __m256i flt21 =                                                                            \
+            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr2 + (j) - 1)));         \
         __m256i one_by_15 = _mm256_set1_epi32(ONE_BY_15);                                          \
         src01 = _mm256_srai_epi32(                                                                 \
             _mm256_add_epi32(_mm256_mullo_epi32(_mm256_abs_epi32(src01), one_by_15),               \
@@ -249,15 +259,18 @@
         __m256i sum0 = _mm256_add_epi32(flt00, flt01);                                             \
         __m256i sum1 = _mm256_add_epi32(flt10, flt11);                                             \
         __m256i sum2 = _mm256_add_epi32(flt20, flt21);                                             \
-        src_ptr0 += src_stride;                                                                    \
-        src_ptr1 += src_stride;                                                                    \
-        src_ptr2 += src_stride;                                                                    \
-        flt_ptr0 += src_stride;                                                                    \
-        flt_ptr1 += src_stride;                                                                    \
-        flt_ptr2 += src_stride;                                                                    \
-        __m256i flt02 = _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(flt_ptr0 + j - 1)));     \
-        __m256i flt12 = _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(flt_ptr1 + j - 1)));     \
-        __m256i flt22 = _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(flt_ptr2 + j - 1)));     \
+        src_ptr0 += (src_stride);                                                                  \
+        src_ptr1 += (src_stride);                                                                  \
+        src_ptr2 += (src_stride);                                                                  \
+        flt_ptr0 += (src_stride);                                                                  \
+        flt_ptr1 += (src_stride);                                                                  \
+        flt_ptr2 += (src_stride);                                                                  \
+        __m256i flt02 =                                                                            \
+            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr0 + (j) - 1)));         \
+        __m256i flt12 =                                                                            \
+            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr1 + (j) - 1)));         \
+        __m256i flt22 =                                                                            \
+            _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *)(flt_ptr2 + (j) - 1)));         \
         sum0 = _mm256_add_epi32(sum0, flt02);                                                      \
         sum1 = _mm256_add_epi32(sum1, flt12);                                                      \
         sum2 = _mm256_add_epi32(sum2, flt22);                                                      \
@@ -277,249 +290,258 @@
         sum0 = _mm256_add_epi32(sum0, sum1);                                                       \
         sum0 = _mm256_add_epi32(sum0, sum2);                                                       \
         sum0 = _mm256_and_si256(mask_end, sum0);                                                   \
-        _mm256_storeu_si256((__m256i *)sum, sum0);                                                 \
-    }
+        _mm256_storeu_si256((__m256i *)(sum), sum0);                                               \
+    } while (0)
 
 // i = 1,..,h-2, j = 0: indices y: i-1,i,i+1, x: 1,0,1
 #define ADM_CM_THRESH_S_I_0(angles, flt_angles, src_stride, accum, w, h, i, j)                     \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int16_t *src_ptr = angles[theta];                                                      \
-            int16_t *flt_ptr = flt_angles[theta];                                                  \
+            int16_t *src_ptr = (angles)[theta];                                                    \
+            int16_t *flt_ptr = (flt_angles)[theta];                                                \
             int32_t sum = 0;                                                                       \
-            src_ptr += (src_stride * (i - 1));                                                     \
-            flt_ptr += (src_stride * (i - 1));                                                     \
+            src_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
+            flt_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
             sum += flt_ptr[1];                                                                     \
             sum += flt_ptr[0];                                                                     \
             sum += flt_ptr[1];                                                                     \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
             sum += flt_ptr[1];                                                                     \
             sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[0])) + 2048) >> 12);               \
             sum += flt_ptr[1];                                                                     \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
             sum += flt_ptr[1];                                                                     \
             sum += flt_ptr[0];                                                                     \
             sum += flt_ptr[1];                                                                     \
-            *accum += sum;                                                                         \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 // i = 1,..,h-2, j = w-1: indices y: i-1,i,i+1, x: w-2,w-1,w-1
 #define ADM_CM_THRESH_S_I_W_M_1(angles, flt_angles, src_stride, accum, w, h, i, j)                 \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int16_t *src_ptr = angles[theta];                                                      \
-            int16_t *flt_ptr = flt_angles[theta];                                                  \
+            int16_t *src_ptr = (angles)[theta];                                                    \
+            int16_t *flt_ptr = (flt_angles)[theta];                                                \
             int32_t sum = 0;                                                                       \
-            src_ptr += (src_stride * (i - 1));                                                     \
-            flt_ptr += (src_stride * (i - 1));                                                     \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[w - 1])) + 2048) >> 12);           \
-            sum += flt_ptr[w - 1];                                                                 \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            *accum += sum;                                                                         \
+            src_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
+            flt_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += (int16_t)(((ONE_BY_15 * abs((int32_t)src_ptr[(w) - 1])) + 2048) >> 12);         \
+            sum += flt_ptr[(w) - 1];                                                               \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 // i = 0, j = 0: indices y: 1,0,1, x: 1,0,1  for Fixed-point
 #define I4_ADM_CM_THRESH_S_0_0(angles, flt_angles, src_stride, accum, w, h, i, j, add_bef_shift,   \
                                shift)                                                              \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
             int32_t sum = 0;                                                                       \
-            int32_t *src_ptr = angles[theta];                                                      \
-            int32_t *flt_ptr = flt_angles[theta];                                                  \
-            sum += flt_ptr[src_stride + 1];                                                        \
-            sum += flt_ptr[src_stride];                                                            \
-            sum += flt_ptr[src_stride + 1];                                                        \
+            int32_t *src_ptr = (angles)[theta];                                                    \
+            int32_t *flt_ptr = (flt_angles)[theta];                                                \
+            sum += flt_ptr[(src_stride) + 1];                                                      \
+            sum += flt_ptr[(src_stride)];                                                          \
+            sum += flt_ptr[(src_stride) + 1];                                                      \
             sum += flt_ptr[1];                                                                     \
-            sum +=                                                                                 \
-                (int32_t)((((int64_t)I4_ONE_BY_15 * abs(src_ptr[0])) + add_bef_shift) >> shift);   \
+            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs(src_ptr[0])) + (add_bef_shift)) >>      \
+                             (shift));                                                             \
             sum += flt_ptr[1];                                                                     \
-            sum += flt_ptr[src_stride + 1];                                                        \
-            sum += flt_ptr[src_stride];                                                            \
-            sum += flt_ptr[src_stride + 1];                                                        \
-            *accum += sum;                                                                         \
+            sum += flt_ptr[(src_stride) + 1];                                                      \
+            sum += flt_ptr[(src_stride)];                                                          \
+            sum += flt_ptr[(src_stride) + 1];                                                      \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 // i = 0, j = w-1: indices y: 1,0,1, x: w-2, w-1, w-1
 #define I4_ADM_CM_THRESH_S_0_W_M_1(angles, flt_angles, src_stride, accum, w, h, i, j,              \
                                    add_bef_shift, shift)                                           \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t *src_ptr = angles[theta];                                                      \
-            int32_t *flt_ptr = flt_angles[theta];                                                  \
+            int32_t *src_ptr = (angles)[theta];                                                    \
+            int32_t *flt_ptr = (flt_angles)[theta];                                                \
             int32_t sum = 0;                                                                       \
-            sum += flt_ptr[src_stride + w - 2];                                                    \
-            sum += flt_ptr[src_stride + w - 1];                                                    \
-            sum += flt_ptr[src_stride + w - 1];                                                    \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[w - 1])) +             \
-                              add_bef_shift) >>                                                    \
-                             shift);                                                               \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[src_stride + w - 2];                                                    \
-            sum += flt_ptr[src_stride + w - 1];                                                    \
-            sum += flt_ptr[src_stride + w - 1];                                                    \
-            *accum += sum;                                                                         \
+            sum += flt_ptr[(src_stride) + (w) - 2];                                                \
+            sum += flt_ptr[(src_stride) + (w) - 1];                                                \
+            sum += flt_ptr[(src_stride) + (w) - 1];                                                \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[(w) - 1])) +           \
+                              (add_bef_shift)) >>                                                  \
+                             (shift));                                                             \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(src_stride) + (w) - 2];                                                \
+            sum += flt_ptr[(src_stride) + (w) - 1];                                                \
+            sum += flt_ptr[(src_stride) + (w) - 1];                                                \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 // i = 0, j = 1, ..., w-2: indices y: 1,0,1, x: j-1,j,j+1
 #define I4_ADM_CM_THRESH_S_0_J(angles, flt_angles, src_stride, accum, w, h, i, j, add_bef_shift,   \
                                shift)                                                              \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
             int32_t sum = 0;                                                                       \
-            int32_t *src_ptr = angles[theta];                                                      \
-            int32_t *flt_ptr = flt_angles[theta];                                                  \
-            sum += flt_ptr[src_stride + j - 1];                                                    \
-            sum += flt_ptr[src_stride + j];                                                        \
-            sum += flt_ptr[src_stride + j + 1];                                                    \
-            sum += flt_ptr[j - 1];                                                                 \
-            sum +=                                                                                 \
-                (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[j])) + add_bef_shift) >>  \
-                          shift);                                                                  \
-            sum += flt_ptr[j + 1];                                                                 \
-            sum += flt_ptr[src_stride + j - 1];                                                    \
-            sum += flt_ptr[src_stride + j];                                                        \
-            sum += flt_ptr[src_stride + j + 1];                                                    \
-            *accum += sum;                                                                         \
+            int32_t *src_ptr = (angles)[theta];                                                    \
+            int32_t *flt_ptr = (flt_angles)[theta];                                                \
+            sum += flt_ptr[(src_stride) + (j) - 1];                                                \
+            sum += flt_ptr[(src_stride) + (j)];                                                    \
+            sum += flt_ptr[(src_stride) + (j) + 1];                                                \
+            sum += flt_ptr[(j) - 1];                                                               \
+            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[(j)])) +               \
+                              (add_bef_shift)) >>                                                  \
+                             (shift));                                                             \
+            sum += flt_ptr[(j) + 1];                                                               \
+            sum += flt_ptr[(src_stride) + (j) - 1];                                                \
+            sum += flt_ptr[(src_stride) + (j)];                                                    \
+            sum += flt_ptr[(src_stride) + (j) + 1];                                                \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 // i = h-1, j = 0: indices y: h-2,h-1,h-1, x: 1,0,1
 #define I4_ADM_CM_THRESH_S_H_M_1_0(angles, flt_angles, src_stride, accum, w, h, i, j,              \
                                    add_bef_shift, shift)                                           \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
             int32_t sum = 0;                                                                       \
-            int32_t *src_ptr = angles[theta];                                                      \
-            int32_t *flt_ptr = flt_angles[theta];                                                  \
-            src_ptr += (src_stride * (h - 2));                                                     \
-            flt_ptr += (src_stride * (h - 2));                                                     \
+            int32_t *src_ptr = (angles)[theta];                                                    \
+            int32_t *flt_ptr = (flt_angles)[theta];                                                \
+            src_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
+            flt_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
             sum += flt_ptr[1];                                                                     \
             sum += flt_ptr[0];                                                                     \
             sum += flt_ptr[1];                                                                     \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
             sum += flt_ptr[1];                                                                     \
-            sum +=                                                                                 \
-                (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[0])) + add_bef_shift) >>  \
-                          shift);                                                                  \
+            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[0])) +                 \
+                              (add_bef_shift)) >>                                                  \
+                             (shift));                                                             \
             sum += flt_ptr[1];                                                                     \
             sum += flt_ptr[1];                                                                     \
             sum += flt_ptr[0];                                                                     \
             sum += flt_ptr[1];                                                                     \
-            *accum += sum;                                                                         \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 // i = h-1, j = w-1: indices y: h-2,h-1,h-1, x: w-2, w-1, w-1
 #define I4_ADM_CM_THRESH_S_H_M_1_W_M_1(angles, flt_angles, src_stride, accum, w, h, i, j,          \
                                        add_bef_shift, shift)                                       \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t *src_ptr = angles[theta];                                                      \
-            int32_t *flt_ptr = flt_angles[theta];                                                  \
+            int32_t *src_ptr = (angles)[theta];                                                    \
+            int32_t *flt_ptr = (flt_angles)[theta];                                                \
             int32_t sum = 0;                                                                       \
-            src_ptr += (src_stride * (h - 2));                                                     \
-            flt_ptr += (src_stride * (h - 2));                                                     \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[w - 1])) +             \
-                              add_bef_shift) >>                                                    \
-                             shift);                                                               \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            *accum += sum;                                                                         \
+            src_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
+            flt_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[(w) - 1])) +           \
+                              (add_bef_shift)) >>                                                  \
+                             (shift));                                                             \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 // i = h-1, j = 1, ..., w-2: indices y: h-2,h-1,h-1, x: j-1,j,j+1
 #define I4_ADM_CM_THRESH_S_H_M_1_J(angles, flt_angles, src_stride, accum, w, h, i, j,              \
                                    add_bef_shift, shift)                                           \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t *src_ptr = angles[theta];                                                      \
-            int32_t *flt_ptr = flt_angles[theta];                                                  \
+            int32_t *src_ptr = (angles)[theta];                                                    \
+            int32_t *flt_ptr = (flt_angles)[theta];                                                \
             int32_t sum = 0;                                                                       \
-            src_ptr += (src_stride * (h - 2));                                                     \
-            flt_ptr += (src_stride * (h - 2));                                                     \
-            sum += flt_ptr[j - 1];                                                                 \
-            sum += flt_ptr[j];                                                                     \
-            sum += flt_ptr[j + 1];                                                                 \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
-            sum += flt_ptr[j - 1];                                                                 \
-            sum +=                                                                                 \
-                (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[j])) + add_bef_shift) >>  \
-                          shift);                                                                  \
-            sum += flt_ptr[j + 1];                                                                 \
-            sum += flt_ptr[j - 1];                                                                 \
-            sum += flt_ptr[j];                                                                     \
-            sum += flt_ptr[j + 1];                                                                 \
-            *accum += sum;                                                                         \
+            src_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
+            flt_ptr += ((ptrdiff_t)(src_stride) * ((h) - 2));                                      \
+            sum += flt_ptr[(j) - 1];                                                               \
+            sum += flt_ptr[(j)];                                                                   \
+            sum += flt_ptr[(j) + 1];                                                               \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
+            sum += flt_ptr[(j) - 1];                                                               \
+            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[(j)])) +               \
+                              (add_bef_shift)) >>                                                  \
+                             (shift));                                                             \
+            sum += flt_ptr[(j) + 1];                                                               \
+            sum += flt_ptr[(j) - 1];                                                               \
+            sum += flt_ptr[(j)];                                                                   \
+            sum += flt_ptr[(j) + 1];                                                               \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 #define I4_ADM_CM_THRESH_S_I_J_avx256(angles, flt_angles, src_stride, accum, w, h, i, j,           \
                                       add_bef_shift, shift, mask_msb_shift, sum)                   \
-    {                                                                                              \
-        __m256i add_bef_shift_256 = _mm256_set1_epi64x(add_bef_shift);                             \
-        int32_t *src_ptr0 = angles[0];                                                             \
-        int32_t *flt_ptr0 = flt_angles[0];                                                         \
-        int32_t *src_ptr1 = angles[1];                                                             \
-        int32_t *flt_ptr1 = flt_angles[1];                                                         \
-        int32_t *src_ptr2 = angles[2];                                                             \
-        int32_t *flt_ptr2 = flt_angles[2];                                                         \
-        src_ptr0 += (src_stride * (i - 1));                                                        \
-        flt_ptr0 += (src_stride * (i - 1));                                                        \
-        src_ptr1 += (src_stride * (i - 1));                                                        \
-        flt_ptr1 += (src_stride * (i - 1));                                                        \
-        src_ptr2 += (src_stride * (i - 1));                                                        \
-        flt_ptr2 += (src_stride * (i - 1));                                                        \
-        __m256i flt00 = _mm256_cvtepi32_epi64(_mm_loadu_si128((__m128i *)(flt_ptr0 + j - 1)));     \
-        __m256i flt10 = _mm256_cvtepi32_epi64(_mm_loadu_si128((__m128i *)(flt_ptr1 + j - 1)));     \
-        __m256i flt20 = _mm256_cvtepi32_epi64(_mm_loadu_si128((__m128i *)(flt_ptr2 + j - 1)));     \
-        src_ptr0 += src_stride;                                                                    \
-        flt_ptr0 += src_stride;                                                                    \
-        src_ptr1 += src_stride;                                                                    \
-        flt_ptr1 += src_stride;                                                                    \
-        src_ptr2 += src_stride;                                                                    \
-        flt_ptr2 += src_stride;                                                                    \
-        __m256i src01 = _mm256_cvtepi32_epi64(_mm_loadu_si128((__m128i *)(src_ptr0 + j - 1)));     \
-        __m256i src11 = _mm256_cvtepi32_epi64(_mm_loadu_si128((__m128i *)(src_ptr1 + j - 1)));     \
-        __m256i src21 = _mm256_cvtepi32_epi64(_mm_loadu_si128((__m128i *)(src_ptr2 + j - 1)));     \
-        __m256i flt01 = _mm256_cvtepi32_epi64(_mm_loadu_si128((__m128i *)(flt_ptr0 + j - 1)));     \
-        __m256i flt11 = _mm256_cvtepi32_epi64(_mm_loadu_si128((__m128i *)(flt_ptr1 + j - 1)));     \
-        __m256i flt21 = _mm256_cvtepi32_epi64(_mm_loadu_si128((__m128i *)(flt_ptr2 + j - 1)));     \
+    do {                                                                                           \
+        __m256i add_bef_shift_256 = _mm256_set1_epi64x((add_bef_shift));                           \
+        int32_t *src_ptr0 = (angles)[0];                                                           \
+        int32_t *flt_ptr0 = (flt_angles)[0];                                                       \
+        int32_t *src_ptr1 = (angles)[1];                                                           \
+        int32_t *flt_ptr1 = (flt_angles)[1];                                                       \
+        int32_t *src_ptr2 = (angles)[2];                                                           \
+        int32_t *flt_ptr2 = (flt_angles)[2];                                                       \
+        src_ptr0 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
+        flt_ptr0 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
+        src_ptr1 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
+        flt_ptr1 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
+        src_ptr2 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
+        flt_ptr2 += ((ptrdiff_t)(src_stride) * ((i) - 1));                                         \
+        __m256i flt00 =                                                                            \
+            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr0 + (j) - 1)));         \
+        __m256i flt10 =                                                                            \
+            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr1 + (j) - 1)));         \
+        __m256i flt20 =                                                                            \
+            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr2 + (j) - 1)));         \
+        src_ptr0 += (src_stride);                                                                  \
+        flt_ptr0 += (src_stride);                                                                  \
+        src_ptr1 += (src_stride);                                                                  \
+        flt_ptr1 += (src_stride);                                                                  \
+        src_ptr2 += (src_stride);                                                                  \
+        flt_ptr2 += (src_stride);                                                                  \
+        __m256i src01 =                                                                            \
+            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(src_ptr0 + (j) - 1)));         \
+        __m256i src11 =                                                                            \
+            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(src_ptr1 + (j) - 1)));         \
+        __m256i src21 =                                                                            \
+            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(src_ptr2 + (j) - 1)));         \
+        __m256i flt01 =                                                                            \
+            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr0 + (j) - 1)));         \
+        __m256i flt11 =                                                                            \
+            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr1 + (j) - 1)));         \
+        __m256i flt21 =                                                                            \
+            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr2 + (j) - 1)));         \
         __m256i mask_src01_ltz = _mm256_cmpgt_epi64(_mm256_setzero_si256(), src01);                \
         __m256i mask_src11_ltz = _mm256_cmpgt_epi64(_mm256_setzero_si256(), src11);                \
         __m256i mask_src21_ltz = _mm256_cmpgt_epi64(_mm256_setzero_si256(), src21);                \
@@ -540,29 +562,32 @@
         src11 = _mm256_add_epi64(_mm256_mul_epi32(src11, i4_one_by_15), add_bef_shift_256);        \
         src21 = _mm256_add_epi64(_mm256_mul_epi32(src21, i4_one_by_15), add_bef_shift_256);        \
         __m256i mask_signed01 =                                                                    \
-            _mm256_and_si256(mask_msb_shift, _mm256_cmpgt_epi64(_mm256_setzero_si256(), src01));   \
+            _mm256_and_si256((mask_msb_shift), _mm256_cmpgt_epi64(_mm256_setzero_si256(), src01)); \
         __m256i mask_signed11 =                                                                    \
-            _mm256_and_si256(mask_msb_shift, _mm256_cmpgt_epi64(_mm256_setzero_si256(), src11));   \
+            _mm256_and_si256((mask_msb_shift), _mm256_cmpgt_epi64(_mm256_setzero_si256(), src11)); \
         __m256i mask_signed21 =                                                                    \
-            _mm256_and_si256(mask_msb_shift, _mm256_cmpgt_epi64(_mm256_setzero_si256(), src21));   \
-        src01 = _mm256_or_si256(_mm256_srli_epi64(src01, shift), mask_signed01);                   \
-        src11 = _mm256_or_si256(_mm256_srli_epi64(src11, shift), mask_signed11);                   \
-        src21 = _mm256_or_si256(_mm256_srli_epi64(src21, shift), mask_signed21);                   \
+            _mm256_and_si256((mask_msb_shift), _mm256_cmpgt_epi64(_mm256_setzero_si256(), src21)); \
+        src01 = _mm256_or_si256(_mm256_srli_epi64(src01, (shift)), mask_signed01);                 \
+        src11 = _mm256_or_si256(_mm256_srli_epi64(src11, (shift)), mask_signed11);                 \
+        src21 = _mm256_or_si256(_mm256_srli_epi64(src21, (shift)), mask_signed21);                 \
         src01 = _mm256_sub_epi64(src01, flt01);                                                    \
         src11 = _mm256_sub_epi64(src11, flt11);                                                    \
         src21 = _mm256_sub_epi64(src21, flt21);                                                    \
         __m256i sum0 = _mm256_add_epi64(flt00, flt01);                                             \
         __m256i sum1 = _mm256_add_epi64(flt10, flt11);                                             \
         __m256i sum2 = _mm256_add_epi64(flt20, flt21);                                             \
-        src_ptr0 += src_stride;                                                                    \
-        src_ptr1 += src_stride;                                                                    \
-        src_ptr2 += src_stride;                                                                    \
-        flt_ptr0 += src_stride;                                                                    \
-        flt_ptr1 += src_stride;                                                                    \
-        flt_ptr2 += src_stride;                                                                    \
-        __m256i flt02 = _mm256_cvtepi32_epi64(_mm_loadu_si128((__m128i *)(flt_ptr0 + j - 1)));     \
-        __m256i flt12 = _mm256_cvtepi32_epi64(_mm_loadu_si128((__m128i *)(flt_ptr1 + j - 1)));     \
-        __m256i flt22 = _mm256_cvtepi32_epi64(_mm_loadu_si128((__m128i *)(flt_ptr2 + j - 1)));     \
+        src_ptr0 += (src_stride);                                                                  \
+        src_ptr1 += (src_stride);                                                                  \
+        src_ptr2 += (src_stride);                                                                  \
+        flt_ptr0 += (src_stride);                                                                  \
+        flt_ptr1 += (src_stride);                                                                  \
+        flt_ptr2 += (src_stride);                                                                  \
+        __m256i flt02 =                                                                            \
+            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr0 + (j) - 1)));         \
+        __m256i flt12 =                                                                            \
+            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr1 + (j) - 1)));         \
+        __m256i flt22 =                                                                            \
+            _mm256_cvtepi32_epi64(_mm_loadu_si128((const __m128i *)(flt_ptr2 + (j) - 1)));         \
         sum0 = _mm256_add_epi64(sum0, flt02);                                                      \
         sum1 = _mm256_add_epi64(sum1, flt12);                                                      \
         sum2 = _mm256_add_epi64(sum2, flt22);                                                      \
@@ -582,167 +607,170 @@
         sum0 = _mm256_add_epi64(sum0, sum1);                                                       \
         sum0 = _mm256_add_epi64(sum0, sum2);                                                       \
         sum0 = _mm256_and_si256(mask_end, sum0);                                                   \
-        _mm256_storeu_si256((__m256i *)sum, sum0);                                                 \
-    }
+        _mm256_storeu_si256((__m256i *)(sum), sum0);                                               \
+    } while (0)
 
 // i = 1,..,h-2, j = 1,..,w-2: indices y: i-1,i,i+1, x: j-1,j,j+1
 #define I4_ADM_CM_THRESH_S_I_J(angles, flt_angles, src_stride, accum, w, h, i, j, add_bef_shift,   \
                                shift)                                                              \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
             int32_t sum = 0;                                                                       \
-            int32_t *src_ptr = angles[theta];                                                      \
-            int32_t *flt_ptr = flt_angles[theta];                                                  \
-            src_ptr += (src_stride * (i - 1));                                                     \
-            flt_ptr += (src_stride * (i - 1));                                                     \
-            sum += flt_ptr[j - 1];                                                                 \
-            sum += flt_ptr[j];                                                                     \
-            sum += flt_ptr[j + 1];                                                                 \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
-            sum += flt_ptr[j - 1];                                                                 \
-            sum +=                                                                                 \
-                (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[j])) + add_bef_shift) >>  \
-                          shift);                                                                  \
-            sum += flt_ptr[j + 1];                                                                 \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
-            sum += flt_ptr[j - 1];                                                                 \
-            sum += flt_ptr[j];                                                                     \
-            sum += flt_ptr[j + 1];                                                                 \
-            *accum += sum;                                                                         \
+            int32_t *src_ptr = (angles)[theta];                                                    \
+            int32_t *flt_ptr = (flt_angles)[theta];                                                \
+            src_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
+            flt_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
+            sum += flt_ptr[(j) - 1];                                                               \
+            sum += flt_ptr[(j)];                                                                   \
+            sum += flt_ptr[(j) + 1];                                                               \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
+            sum += flt_ptr[(j) - 1];                                                               \
+            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[(j)])) +               \
+                              (add_bef_shift)) >>                                                  \
+                             (shift));                                                             \
+            sum += flt_ptr[(j) + 1];                                                               \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
+            sum += flt_ptr[(j) - 1];                                                               \
+            sum += flt_ptr[(j)];                                                                   \
+            sum += flt_ptr[(j) + 1];                                                               \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 // i = 1,..,h-2, j = 0: indices y: i-1,i,i+1, x: 1,0,1
 #define I4_ADM_CM_THRESH_S_I_0(angles, flt_angles, src_stride, accum, w, h, i, j, add_bef_shift,   \
                                shift)                                                              \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t *src_ptr = angles[theta];                                                      \
-            int32_t *flt_ptr = flt_angles[theta];                                                  \
+            int32_t *src_ptr = (angles)[theta];                                                    \
+            int32_t *flt_ptr = (flt_angles)[theta];                                                \
             int32_t sum = 0;                                                                       \
-            src_ptr += (src_stride * (i - 1));                                                     \
-            flt_ptr += (src_stride * (i - 1));                                                     \
+            src_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
+            flt_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
             sum += flt_ptr[1];                                                                     \
             sum += flt_ptr[0];                                                                     \
             sum += flt_ptr[1];                                                                     \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
             sum += flt_ptr[1];                                                                     \
-            sum +=                                                                                 \
-                (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[0])) + add_bef_shift) >>  \
-                          shift);                                                                  \
+            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[0])) +                 \
+                              (add_bef_shift)) >>                                                  \
+                             (shift));                                                             \
             sum += flt_ptr[1];                                                                     \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
             sum += flt_ptr[1];                                                                     \
             sum += flt_ptr[0];                                                                     \
             sum += flt_ptr[1];                                                                     \
-            *accum += sum;                                                                         \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 // i = 1,..,h-2, j = w-1: indices y: i-1,i,i+1, x: w-2,w-1,w-1
 #define I4_ADM_CM_THRESH_S_I_W_M_1(angles, flt_angles, src_stride, accum, w, h, i, j,              \
                                    add_bef_shift, shift)                                           \
-    {                                                                                              \
-        *accum = 0;                                                                                \
+    do {                                                                                           \
+        *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t *src_ptr = angles[theta];                                                      \
-            int32_t *flt_ptr = flt_angles[theta];                                                  \
+            int32_t *src_ptr = (angles)[theta];                                                    \
+            int32_t *flt_ptr = (flt_angles)[theta];                                                \
             int32_t sum = 0;                                                                       \
-            src_ptr += (src_stride * (i - 1));                                                     \
-            flt_ptr += (src_stride * (i - 1));                                                     \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[w - 1])) +             \
-                              add_bef_shift) >>                                                    \
-                             shift);                                                               \
-            sum += flt_ptr[w - 1];                                                                 \
-            src_ptr += src_stride;                                                                 \
-            flt_ptr += src_stride;                                                                 \
-            sum += flt_ptr[w - 2];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            sum += flt_ptr[w - 1];                                                                 \
-            *accum += sum;                                                                         \
+            src_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
+            flt_ptr += ((ptrdiff_t)(src_stride) * ((i) - 1));                                      \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs((int32_t)src_ptr[(w) - 1])) +           \
+                              (add_bef_shift)) >>                                                  \
+                             (shift));                                                             \
+            sum += flt_ptr[(w) - 1];                                                               \
+            src_ptr += (src_stride);                                                               \
+            flt_ptr += (src_stride);                                                               \
+            sum += flt_ptr[(w) - 2];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            sum += flt_ptr[(w) - 1];                                                               \
+            *(accum) += sum;                                                                       \
         }                                                                                          \
-    }
+    } while (0)
 
 #define ADM_CM_ACCUM_ROUND(x, thr, shift_xsub, x_sq, add_shift_xsq, shift_xsq, val,                \
                            add_shift_xcub, shift_xcub, accum_inner)                                \
-    {                                                                                              \
-        x = abs(x) - ((int32_t)(thr) << shift_xsub);                                               \
-        x = x < 0 ? 0 : x;                                                                         \
-        x_sq = (int32_t)((((int64_t)x * x) + add_shift_xsq) >> shift_xsq);                         \
-        val = (((int64_t)x_sq * x) + add_shift_xcub) >> shift_xcub;                                \
-        accum_inner += val;                                                                        \
-    }
+    do {                                                                                           \
+        (x) = abs(x) - ((int32_t)(thr) << (shift_xsub));                                           \
+        (x) = (x) < 0 ? 0 : (x);                                                                   \
+        (x_sq) = (int32_t)((((int64_t)(x) * (x)) + (add_shift_xsq)) >> (shift_xsq));               \
+        (val) = (((int64_t)(x_sq) * (x)) + (add_shift_xcub)) >> (shift_xcub);                      \
+        (accum_inner) += (val);                                                                    \
+    } while (0)
 
 #define ADM_CM_ACCUM_ROUND_avx256(x, thr, shift_xsub, x_sq, add_shift_xsq, shift_xsq, val,         \
                                   add_shift_xcub, shift_xcub, accum_inner_lo, accum_inner_hi)      \
-    {                                                                                              \
-        x = _mm256_sub_epi32(_mm256_abs_epi32(x), _mm256_slli_epi32(thr, shift_xsub));             \
-        x = _mm256_max_epi32(x, _mm256_setzero_si256());                                           \
+    do {                                                                                           \
+        (x) = _mm256_sub_epi32(_mm256_abs_epi32(x), _mm256_slli_epi32((thr), (shift_xsub)));       \
+        (x) = _mm256_max_epi32((x), _mm256_setzero_si256());                                       \
         __m256i x_sq_lo = _mm256_srli_epi64(                                                       \
-            _mm256_add_epi64(_mm256_mul_epi32(x, x), _mm256_set1_epi64x(add_shift_xsq)),           \
-            shift_xsq);                                                                            \
-        __m256i x_sq_hi = _mm256_srli_epi64(                                                       \
-            _mm256_add_epi64(_mm256_mul_epi32(_mm256_srli_epi64(x, 32), _mm256_srli_epi64(x, 32)), \
-                             _mm256_set1_epi64x(add_shift_xsq)),                                   \
-            shift_xsq);                                                                            \
-        x_sq_lo = _mm256_srli_epi64(                                                               \
-            _mm256_add_epi64(_mm256_mul_epi32(x_sq_lo, x), _mm256_set1_epi64x(add_shift_xcub)),    \
-            shift_xcub);                                                                           \
+            _mm256_add_epi64(_mm256_mul_epi32((x), (x)), _mm256_set1_epi64x((add_shift_xsq))),     \
+            (shift_xsq));                                                                          \
+        __m256i x_sq_hi =                                                                          \
+            _mm256_srli_epi64(_mm256_add_epi64(_mm256_mul_epi32(_mm256_srli_epi64((x), 32),        \
+                                                                _mm256_srli_epi64((x), 32)),       \
+                                               _mm256_set1_epi64x((add_shift_xsq))),               \
+                              (shift_xsq));                                                        \
+        x_sq_lo = _mm256_srli_epi64(_mm256_add_epi64(_mm256_mul_epi32(x_sq_lo, (x)),               \
+                                                     _mm256_set1_epi64x((add_shift_xcub))),        \
+                                    (shift_xcub));                                                 \
         x_sq_hi = _mm256_srli_epi64(                                                               \
-            _mm256_add_epi64(_mm256_mul_epi32(x_sq_hi, _mm256_srli_epi64(x, 32)),                  \
-                             _mm256_set1_epi64x(add_shift_xcub)),                                  \
-            shift_xcub);                                                                           \
-        accum_inner_lo = _mm256_add_epi64(accum_inner_lo, x_sq_lo);                                \
-        accum_inner_hi = _mm256_add_epi64(accum_inner_hi, x_sq_hi);                                \
-    }
+            _mm256_add_epi64(_mm256_mul_epi32(x_sq_hi, _mm256_srli_epi64((x), 32)),                \
+                             _mm256_set1_epi64x((add_shift_xcub))),                                \
+            (shift_xcub));                                                                         \
+        (accum_inner_lo) = _mm256_add_epi64((accum_inner_lo), x_sq_lo);                            \
+        (accum_inner_hi) = _mm256_add_epi64((accum_inner_hi), x_sq_hi);                            \
+    } while (0)
 
 #define I4_ADM_CM_ACCUM_ROUND(x, thr, shift_sub, x_sq, add_shift_sq, shift_sq, val, add_shift_cub, \
                               shift_cub, accum_inner)                                              \
-    {                                                                                              \
-        x = abs(x) - (thr >> shift_sub);                                                           \
-        x = x < 0 ? 0 : x;                                                                         \
-        x_sq = (int32_t)((((int64_t)x * x) + add_shift_sq) >> shift_sq);                           \
-        val = (((int64_t)x_sq * x) + add_shift_cub) >> shift_cub;                                  \
-        accum_inner += val;                                                                        \
-    }
+    do {                                                                                           \
+        (x) = abs(x) - ((thr) >> (shift_sub));                                                     \
+        (x) = (x) < 0 ? 0 : (x);                                                                   \
+        (x_sq) = (int32_t)((((int64_t)(x) * (x)) + (add_shift_sq)) >> (shift_sq));                 \
+        (val) = (((int64_t)(x_sq) * (x)) + (add_shift_cub)) >> (shift_cub);                        \
+        (accum_inner) += (val);                                                                    \
+    } while (0)
 
 #define I4_ADM_CM_ACCUM_ROUND_avx256(x, thr, shift_xsub, x_sq, add_shift_xsq, shift_xsq, val,      \
                                      add_shift_xcub, shift_xcub, accum_inner)                      \
-    {                                                                                              \
-        __m256i mask_x_ltz = _mm256_cmpgt_epi64(_mm256_setzero_si256(), x);                        \
-        __m256i x_us = _mm256_and_si256(_mm256_mul_epi32(x, _mm256_set1_epi32(-1)), mask_x_ltz);   \
-        x = _mm256_andnot_si256(mask_x_ltz, x);                                                    \
-        x = _mm256_or_si256(x, x_us);                                                              \
-        x = _mm256_sub_epi64(x, _mm256_srli_epi64(thr, shift_xsub));                               \
-        x = _mm256_and_si256(x, _mm256_cmpgt_epi64(x, _mm256_setzero_si256()));                    \
-        __m256i x_sq = _mm256_srli_epi64(                                                          \
-            _mm256_add_epi64(_mm256_mul_epi32(x, x), _mm256_set1_epi64x(add_shift_xsq)),           \
-            shift_xsq);                                                                            \
-        x_sq = _mm256_srli_epi64(                                                                  \
-            _mm256_add_epi64(_mm256_mul_epi32(x_sq, x), _mm256_set1_epi64x(add_shift_xcub)),       \
-            shift_xcub);                                                                           \
-        accum_inner = _mm256_add_epi64(accum_inner, x_sq);                                         \
-    }
+    do {                                                                                           \
+        __m256i mask_x_ltz = _mm256_cmpgt_epi64(_mm256_setzero_si256(), (x));                      \
+        __m256i x_us = _mm256_and_si256(_mm256_mul_epi32((x), _mm256_set1_epi32(-1)), mask_x_ltz); \
+        (x) = _mm256_andnot_si256(mask_x_ltz, (x));                                                \
+        (x) = _mm256_or_si256((x), x_us);                                                          \
+        (x) = _mm256_sub_epi64((x), _mm256_srli_epi64((thr), (shift_xsub)));                       \
+        (x) = _mm256_and_si256((x), _mm256_cmpgt_epi64((x), _mm256_setzero_si256()));              \
+        __m256i x_sq_val = _mm256_srli_epi64(                                                      \
+            _mm256_add_epi64(_mm256_mul_epi32((x), (x)), _mm256_set1_epi64x((add_shift_xsq))),     \
+            (shift_xsq));                                                                          \
+        x_sq_val = _mm256_srli_epi64(_mm256_add_epi64(_mm256_mul_epi32(x_sq_val, (x)),             \
+                                                      _mm256_set1_epi64x((add_shift_xcub))),       \
+                                     (shift_xcub));                                                \
+        (accum_inner) = _mm256_add_epi64((accum_inner), x_sq_val);                                 \
+    } while (0)
 
 #define calc_angle(ot_dp, o_mag_sq, t_mag_sq, angle_flag)                                          \
-    {                                                                                              \
-        angle_flag = ((((float)ot_dp / 4096.0) >= 0.0f) &&                                         \
-                      (((float)ot_dp / 4096.0) * ((float)ot_dp / 4096.0) >=                        \
-                       cos_1deg_sq * ((float)o_mag_sq / 4096.0) * ((float)t_mag_sq / 4096.0)));    \
-    }
+    do {                                                                                           \
+        (angle_flag) =                                                                             \
+            ((((float)(ot_dp) / 4096.0) >= 0.0f) &&                                                \
+             (((float)(ot_dp) / 4096.0) * ((float)(ot_dp) / 4096.0) >=                             \
+              cos_1deg_sq * ((float)(o_mag_sq) / 4096.0) * ((float)(t_mag_sq) / 4096.0)));         \
+    } while (0)
 
+// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void adm_decouple_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_enhn_gain_limit,
                        int32_t *adm_div_lookup)
 {
@@ -778,18 +806,18 @@ void adm_decouple_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_enhn
 
     for (int i = top; i < bottom; ++i) {
         for (int j = left; j < right_mod8; j += 8) {
-            __m256i oh =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(ref->band_h + i * stride + j)));
-            __m256i ov =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(ref->band_v + i * stride + j)));
-            __m256i od =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(ref->band_d + i * stride + j)));
-            __m256i th =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(dis->band_h + i * stride + j)));
-            __m256i tv =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(dis->band_v + i * stride + j)));
-            __m256i td =
-                _mm256_cvtepi16_epi32(_mm_loadu_si128((__m128i *)(dis->band_d + i * stride + j)));
+            __m256i oh = _mm256_cvtepi16_epi32(
+                _mm_loadu_si128((__m128i *)(ref->band_h + (ptrdiff_t)i * stride + j)));
+            __m256i ov = _mm256_cvtepi16_epi32(
+                _mm_loadu_si128((__m128i *)(ref->band_v + (ptrdiff_t)i * stride + j)));
+            __m256i od = _mm256_cvtepi16_epi32(
+                _mm_loadu_si128((__m128i *)(ref->band_d + (ptrdiff_t)i * stride + j)));
+            __m256i th = _mm256_cvtepi16_epi32(
+                _mm_loadu_si128((__m128i *)(dis->band_h + (ptrdiff_t)i * stride + j)));
+            __m256i tv = _mm256_cvtepi16_epi32(
+                _mm_loadu_si128((__m128i *)(dis->band_v + (ptrdiff_t)i * stride + j)));
+            __m256i td = _mm256_cvtepi16_epi32(
+                _mm_loadu_si128((__m128i *)(dis->band_d + (ptrdiff_t)i * stride + j)));
 
             __m256i oh_ov = _mm256_or_si256(_mm256_and_si256(oh, _mm256_set1_epi32(0xFFFF)),
                                             _mm256_slli_epi32(ov, 16));
@@ -1000,15 +1028,18 @@ void adm_decouple_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_enhn
             tv = _mm256_packs_epi32(tv, _mm256_permute4x64_epi64(tv, 0x0E));
             td = _mm256_packs_epi32(td, _mm256_permute4x64_epi64(td, 0x0E));
 
-            _mm_storeu_si128((__m128i *)(r->band_h + i * stride + j),
+            _mm_storeu_si128((__m128i *)(r->band_h + (ptrdiff_t)i * stride + j),
                              _mm256_castsi256_si128(rst_h));
-            _mm_storeu_si128((__m128i *)(r->band_v + i * stride + j),
+            _mm_storeu_si128((__m128i *)(r->band_v + (ptrdiff_t)i * stride + j),
                              _mm256_castsi256_si128(rst_v));
-            _mm_storeu_si128((__m128i *)(r->band_d + i * stride + j),
+            _mm_storeu_si128((__m128i *)(r->band_d + (ptrdiff_t)i * stride + j),
                              _mm256_castsi256_si128(rst_d));
-            _mm_storeu_si128((__m128i *)(a->band_h + i * stride + j), _mm256_castsi256_si128(th));
-            _mm_storeu_si128((__m128i *)(a->band_v + i * stride + j), _mm256_castsi256_si128(tv));
-            _mm_storeu_si128((__m128i *)(a->band_d + i * stride + j), _mm256_castsi256_si128(td));
+            _mm_storeu_si128((__m128i *)(a->band_h + (ptrdiff_t)i * stride + j),
+                             _mm256_castsi256_si128(th));
+            _mm_storeu_si128((__m128i *)(a->band_v + (ptrdiff_t)i * stride + j),
+                             _mm256_castsi256_si128(tv));
+            _mm_storeu_si128((__m128i *)(a->band_d + (ptrdiff_t)i * stride + j),
+                             _mm256_castsi256_si128(td));
         }
 
         for (int j = right_mod8; j < right; j++) {
@@ -1110,6 +1141,7 @@ void adm_decouple_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_enhn
     }
 }
 
+// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void adm_dwt2_8_avx2(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w, int h,
                      int src_stride, int dst_stride)
 {
@@ -1156,13 +1188,13 @@ void adm_dwt2_8_avx2(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *b
             __m256i s3;
 
             s0 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(src + (ind_y[0][i] * src_stride) + j)));
+                _mm_loadu_si128((__m128i *)(src + ((ptrdiff_t)ind_y[0][i] * src_stride) + j)));
             s1 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(src + (ind_y[1][i] * src_stride) + j)));
+                _mm_loadu_si128((__m128i *)(src + ((ptrdiff_t)ind_y[1][i] * src_stride) + j)));
             s2 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(src + (ind_y[2][i] * src_stride) + j)));
+                _mm_loadu_si128((__m128i *)(src + ((ptrdiff_t)ind_y[2][i] * src_stride) + j)));
             s3 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(src + (ind_y[3][i] * src_stride) + j)));
+                _mm_loadu_si128((__m128i *)(src + ((ptrdiff_t)ind_y[3][i] * src_stride) + j)));
 
             __m256i s0lo = _mm256_unpacklo_epi16(s0, s1);
             __m256i s0hi = _mm256_unpackhi_epi16(s0, s1);
@@ -1252,14 +1284,14 @@ void adm_dwt2_8_avx2(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *b
             accum += (int32_t)filter_lo[1] * s1;
             accum += (int32_t)filter_lo[2] * s2;
             accum += (int32_t)filter_lo[3] * s3;
-            dst->band_a[i * dst_stride] = (accum + add_shift_HP) >> shift_HP;
+            dst->band_a[(ptrdiff_t)i * dst_stride] = (accum + add_shift_HP) >> shift_HP;
 
             accum = 0;
             accum += (int32_t)filter_hi[0] * s0;
             accum += (int32_t)filter_hi[1] * s1;
             accum += (int32_t)filter_hi[2] * s2;
             accum += (int32_t)filter_hi[3] * s3;
-            dst->band_v[i * dst_stride] = (accum + add_shift_HP) >> shift_HP;
+            dst->band_v[(ptrdiff_t)i * dst_stride] = (accum + add_shift_HP) >> shift_HP;
 
             s0 = tmphi[j0];
             s1 = tmphi[j1];
@@ -1271,14 +1303,14 @@ void adm_dwt2_8_avx2(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *b
             accum += (int32_t)filter_lo[1] * s1;
             accum += (int32_t)filter_lo[2] * s2;
             accum += (int32_t)filter_lo[3] * s3;
-            dst->band_h[i * dst_stride] = (accum + add_shift_HP) >> shift_HP;
+            dst->band_h[(ptrdiff_t)i * dst_stride] = (accum + add_shift_HP) >> shift_HP;
 
             accum = 0;
             accum += (int32_t)filter_hi[0] * s0;
             accum += (int32_t)filter_hi[1] * s1;
             accum += (int32_t)filter_hi[2] * s2;
             accum += (int32_t)filter_hi[3] * s3;
-            dst->band_d[i * dst_stride] = (accum + add_shift_HP) >> shift_HP;
+            dst->band_d[(ptrdiff_t)i * dst_stride] = (accum + add_shift_HP) >> shift_HP;
         }
 
         // Horizontal pass: bounds checking
@@ -1324,7 +1356,8 @@ void adm_dwt2_8_avx2(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *b
 
                 accum_mu2_hi = _mm256_packus_epi32(accum_mu2_lo, accum_mu2_hi);
                 accum_mu2_hi = _mm256_permute4x64_epi64(accum_mu2_hi, 0xD8);
-                _mm256_storeu_si256((__m256i *)(dst->band_a + i * dst_stride + j), accum_mu2_hi);
+                _mm256_storeu_si256((__m256i *)(dst->band_a + (ptrdiff_t)i * dst_stride + j),
+                                    accum_mu2_hi);
 
                 accum_mu1_lo = _mm256_add_epi32(accum_mu1_lo, _mm256_madd_epi16(s00, fh0));
                 accum_mu1_hi = _mm256_add_epi32(accum_mu1_hi, _mm256_madd_epi16(s33, fh0));
@@ -1338,7 +1371,8 @@ void adm_dwt2_8_avx2(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *b
 
                 accum_mu1_hi = _mm256_packus_epi32(accum_mu1_lo, accum_mu1_hi);
                 accum_mu1_hi = _mm256_permute4x64_epi64(accum_mu1_hi, 0xD8);
-                _mm256_storeu_si256((__m256i *)(dst->band_v + i * dst_stride + j), accum_mu1_hi);
+                _mm256_storeu_si256((__m256i *)(dst->band_v + (ptrdiff_t)i * dst_stride + j),
+                                    accum_mu1_hi);
             }
 
             {
@@ -1370,7 +1404,8 @@ void adm_dwt2_8_avx2(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *b
 
                 accum_mu2_hi = _mm256_packus_epi32(accum_mu2_lo, accum_mu2_hi);
                 accum_mu2_hi = _mm256_permute4x64_epi64(accum_mu2_hi, 0xD8);
-                _mm256_storeu_si256((__m256i *)(dst->band_h + i * dst_stride + j), accum_mu2_hi);
+                _mm256_storeu_si256((__m256i *)(dst->band_h + (ptrdiff_t)i * dst_stride + j),
+                                    accum_mu2_hi);
 
                 accum_mu1_lo = _mm256_add_epi32(accum_mu1_lo, _mm256_madd_epi16(s00, fh0));
                 accum_mu1_hi = _mm256_add_epi32(accum_mu1_hi, _mm256_madd_epi16(s33, fh0));
@@ -1384,7 +1419,8 @@ void adm_dwt2_8_avx2(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *b
 
                 accum_mu1_hi = _mm256_packus_epi32(accum_mu1_lo, accum_mu1_hi);
                 accum_mu1_hi = _mm256_permute4x64_epi64(accum_mu1_hi, 0xD8);
-                _mm256_storeu_si256((__m256i *)(dst->band_d + i * dst_stride + j), accum_mu1_hi);
+                _mm256_storeu_si256((__m256i *)(dst->band_d + (ptrdiff_t)i * dst_stride + j),
+                                    accum_mu1_hi);
             }
         }
 
@@ -1505,6 +1541,7 @@ static inline int64_t extract_epi64(__m256i a, const int index)
 #endif
 
 // No lzcnt in avx2
+// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void adm_decouple_s123_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_enhn_gain_limit,
                             int32_t *adm_div_lookup)
 {
@@ -1551,12 +1588,18 @@ void adm_decouple_s123_avx2(AdmBuffer *buf, int w, int h, int stride, double adm
     for (int i = top; i < bottom; ++i) {
         for (int j = left; j < right_mod8; j += 8) {
             // oh, ov, od, th, tv, td as int32 * 8 elements
-            __m256i oh_epi32 = _mm256_loadu_si256((__m256i *)(ref->band_h + i * stride + j));
-            __m256i ov_epi32 = _mm256_loadu_si256((__m256i *)(ref->band_v + i * stride + j));
-            __m256i od_epi32 = _mm256_loadu_si256((__m256i *)(ref->band_d + i * stride + j));
-            __m256i th_epi32 = _mm256_loadu_si256((__m256i *)(dis->band_h + i * stride + j));
-            __m256i tv_epi32 = _mm256_loadu_si256((__m256i *)(dis->band_v + i * stride + j));
-            __m256i td_epi32 = _mm256_loadu_si256((__m256i *)(dis->band_d + i * stride + j));
+            __m256i oh_epi32 =
+                _mm256_loadu_si256((__m256i *)(ref->band_h + (ptrdiff_t)i * stride + j));
+            __m256i ov_epi32 =
+                _mm256_loadu_si256((__m256i *)(ref->band_v + (ptrdiff_t)i * stride + j));
+            __m256i od_epi32 =
+                _mm256_loadu_si256((__m256i *)(ref->band_d + (ptrdiff_t)i * stride + j));
+            __m256i th_epi32 =
+                _mm256_loadu_si256((__m256i *)(dis->band_h + (ptrdiff_t)i * stride + j));
+            __m256i tv_epi32 =
+                _mm256_loadu_si256((__m256i *)(dis->band_v + (ptrdiff_t)i * stride + j));
+            __m256i td_epi32 =
+                _mm256_loadu_si256((__m256i *)(dis->band_d + (ptrdiff_t)i * stride + j));
 
             // oh, ov, od, th, tv, td as int64
             __m256i oh_lo_epi64 = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(oh_epi32, 0));
@@ -2098,12 +2141,15 @@ void adm_decouple_s123_avx2(AdmBuffer *buf, int w, int h, int stride, double adm
             __m256i td_sub_rst_d_epi32 = _mm256_sub_epi32(td_epi32, rst_d_epi32);
 
             // store
-            _mm256_storeu_si256((__m256i *)(r->band_h + i * stride + j), rst_h_epi32);
-            _mm256_storeu_si256((__m256i *)(r->band_v + i * stride + j), rst_v_epi32);
-            _mm256_storeu_si256((__m256i *)(r->band_d + i * stride + j), rst_d_epi32);
-            _mm256_storeu_si256((__m256i *)(a->band_h + i * stride + j), th_sub_rst_h_epi32);
-            _mm256_storeu_si256((__m256i *)(a->band_v + i * stride + j), tv_sub_rst_v_epi32);
-            _mm256_storeu_si256((__m256i *)(a->band_d + i * stride + j), td_sub_rst_d_epi32);
+            _mm256_storeu_si256((__m256i *)(r->band_h + (ptrdiff_t)i * stride + j), rst_h_epi32);
+            _mm256_storeu_si256((__m256i *)(r->band_v + (ptrdiff_t)i * stride + j), rst_v_epi32);
+            _mm256_storeu_si256((__m256i *)(r->band_d + (ptrdiff_t)i * stride + j), rst_d_epi32);
+            _mm256_storeu_si256((__m256i *)(a->band_h + (ptrdiff_t)i * stride + j),
+                                th_sub_rst_h_epi32);
+            _mm256_storeu_si256((__m256i *)(a->band_v + (ptrdiff_t)i * stride + j),
+                                tv_sub_rst_v_epi32);
+            _mm256_storeu_si256((__m256i *)(a->band_d + (ptrdiff_t)i * stride + j),
+                                td_sub_rst_d_epi32);
         }
 
         for (int j = right_mod8; j < right; ++j) {
@@ -2265,6 +2311,7 @@ static inline float dwt_quant_step(const struct dwt_model_params *params, int la
     return Q;
 }
 
+// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 float adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride,
                   double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
                   double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
@@ -2481,11 +2528,11 @@ float adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride
 
             for (j = start_col; j < end_col_mod6; j += 6) {
                 xh_256 = _mm256_cvtepi16_epi32(
-                    _mm_loadu_si128((__m128i *)(src->band_h + i * src_stride + j)));
+                    _mm_loadu_si128((__m128i *)(src->band_h + (ptrdiff_t)i * src_stride + j)));
                 xv_256 = _mm256_cvtepi16_epi32(
-                    _mm_loadu_si128((__m128i *)(src->band_v + i * src_stride + j)));
+                    _mm_loadu_si128((__m128i *)(src->band_v + (ptrdiff_t)i * src_stride + j)));
                 xd_256 = _mm256_cvtepi16_epi32(
-                    _mm_loadu_si128((__m128i *)(src->band_d + i * src_stride + j)));
+                    _mm_loadu_si128((__m128i *)(src->band_d + (ptrdiff_t)i * src_stride + j)));
 
                 xh_256 = _mm256_mullo_epi32(xh_256, i_rfactor0);
                 xv_256 = _mm256_mullo_epi32(xv_256, i_rfactor1);
@@ -2550,9 +2597,9 @@ float adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride
             accum_inner_d = 0;
 
             /* j = 0 */
-            xh = src->band_h[i * src_stride] * i_rfactor[0];
-            xv = src->band_v[i * src_stride] * i_rfactor[1];
-            xd = src->band_d[i * src_stride] * i_rfactor[2];
+            xh = src->band_h[(ptrdiff_t)i * src_stride] * i_rfactor[0];
+            xv = src->band_v[(ptrdiff_t)i * src_stride] * i_rfactor[1];
+            xd = src->band_d[(ptrdiff_t)i * src_stride] * i_rfactor[2];
             ADM_CM_THRESH_S_I_0(angles, flt_angles, csf_a_stride, &thr, w, h, i, 0);
 
             ADM_CM_ACCUM_ROUND(xh, thr, shift_xhsub, xh_sq, add_shift_xhsq, shift_xhsq, val,
@@ -2625,9 +2672,9 @@ float adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride
             accum_inner_d = 0;
 
             /* j = 0 */
-            xh = src->band_h[i * src_stride] * i_rfactor[0];
-            xv = src->band_v[i * src_stride] * i_rfactor[1];
-            xd = src->band_d[i * src_stride] * i_rfactor[2];
+            xh = src->band_h[(ptrdiff_t)i * src_stride] * i_rfactor[0];
+            xv = src->band_v[(ptrdiff_t)i * src_stride] * i_rfactor[1];
+            xd = src->band_d[(ptrdiff_t)i * src_stride] * i_rfactor[2];
             ADM_CM_THRESH_S_I_0(angles, flt_angles, csf_a_stride, &thr, w, h, i, 0);
 
             ADM_CM_ACCUM_ROUND(xh, thr, shift_xhsub, xh_sq, add_shift_xhsq, shift_xhsq, val,
@@ -2675,9 +2722,9 @@ float adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride
 
     /* i=h-1,j=0 */
     if ((bottom > (h - 1)) && (left <= 0)) {
-        xh = src->band_h[(h - 1) * src_stride] * i_rfactor[0];
-        xv = src->band_v[(h - 1) * src_stride] * i_rfactor[1];
-        xd = src->band_d[(h - 1) * src_stride] * i_rfactor[2];
+        xh = src->band_h[(ptrdiff_t)(h - 1) * src_stride] * i_rfactor[0];
+        xv = src->band_v[(ptrdiff_t)(h - 1) * src_stride] * i_rfactor[1];
+        xd = src->band_d[(ptrdiff_t)(h - 1) * src_stride] * i_rfactor[2];
         ADM_CM_THRESH_S_H_M_1_0(angles, flt_angles, csf_a_stride, &thr, w, h, (h - 1), 0);
 
         ADM_CM_ACCUM_ROUND(xh, thr, shift_xhsub, xh_sq, add_shift_xhsq, shift_xhsq, val,
@@ -2757,6 +2804,7 @@ float adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride
     return (num_scale_h + num_scale_v + num_scale_d);
 }
 
+// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 float i4_adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride, int scale,
                      double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
                      double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
@@ -2961,11 +3009,11 @@ float i4_adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_str
 
             for (j = start_col; j < end_col_mod2; j += 2) {
                 xh_256 = _mm256_cvtepi32_epi64(
-                    _mm_loadu_si128((__m128i *)(src->band_h + i * src_stride + j)));
+                    _mm_loadu_si128((__m128i *)(src->band_h + (ptrdiff_t)i * src_stride + j)));
                 xv_256 = _mm256_cvtepi32_epi64(
-                    _mm_loadu_si128((__m128i *)(src->band_v + i * src_stride + j)));
+                    _mm_loadu_si128((__m128i *)(src->band_v + (ptrdiff_t)i * src_stride + j)));
                 xd_256 = _mm256_cvtepi32_epi64(
-                    _mm_loadu_si128((__m128i *)(src->band_d + i * src_stride + j)));
+                    _mm_loadu_si128((__m128i *)(src->band_d + (ptrdiff_t)i * src_stride + j)));
 
                 __m256i add_shift = _mm256_set1_epi64x(add_bef_shift_dst[scale - 1]);
 
@@ -3052,13 +3100,13 @@ float i4_adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_str
             accum_inner_d = 0;
 
             /* j = 0 */
-            xh = (int32_t)((((int64_t)src->band_h[i * src_stride] * rfactor[0]) +
+            xh = (int32_t)((((int64_t)src->band_h[(ptrdiff_t)i * src_stride] * rfactor[0]) +
                             add_bef_shift_dst[scale - 1]) >>
                            shift_dst[scale - 1]);
-            xv = (int32_t)((((int64_t)src->band_v[i * src_stride] * rfactor[1]) +
+            xv = (int32_t)((((int64_t)src->band_v[(ptrdiff_t)i * src_stride] * rfactor[1]) +
                             add_bef_shift_dst[scale - 1]) >>
                            shift_dst[scale - 1]);
-            xd = (int32_t)((((int64_t)src->band_d[i * src_stride] * rfactor[2]) +
+            xd = (int32_t)((((int64_t)src->band_d[(ptrdiff_t)i * src_stride] * rfactor[2]) +
                             add_bef_shift_dst[scale - 1]) >>
                            shift_dst[scale - 1]);
             I4_ADM_CM_THRESH_S_I_0(angles, flt_angles, csf_a_stride, &thr, w, h, i, 0,
@@ -3158,13 +3206,13 @@ float i4_adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_str
             accum_inner_d = 0;
 
             /* j = 0 */
-            xh = (int32_t)((((int64_t)src->band_h[i * src_stride] * rfactor[0]) +
+            xh = (int32_t)((((int64_t)src->band_h[(ptrdiff_t)i * src_stride] * rfactor[0]) +
                             add_bef_shift_dst[scale - 1]) >>
                            shift_dst[scale - 1]);
-            xv = (int32_t)((((int64_t)src->band_v[i * src_stride] * rfactor[1]) +
+            xv = (int32_t)((((int64_t)src->band_v[(ptrdiff_t)i * src_stride] * rfactor[1]) +
                             add_bef_shift_dst[scale - 1]) >>
                            shift_dst[scale - 1]);
-            xd = (int32_t)((((int64_t)src->band_d[i * src_stride] * rfactor[2]) +
+            xd = (int32_t)((((int64_t)src->band_d[(ptrdiff_t)i * src_stride] * rfactor[2]) +
                             add_bef_shift_dst[scale - 1]) >>
                            shift_dst[scale - 1]);
             I4_ADM_CM_THRESH_S_I_0(angles, flt_angles, csf_a_stride, &thr, w, h, i, 0,
@@ -3229,13 +3277,13 @@ float i4_adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_str
 
     /* i=h-1,j=0 */
     if ((bottom > (h - 1)) && (left <= 0)) {
-        xh = (int32_t)((((int64_t)src->band_h[(h - 1) * src_stride] * rfactor[0]) +
+        xh = (int32_t)((((int64_t)src->band_h[(ptrdiff_t)(h - 1) * src_stride] * rfactor[0]) +
                         add_bef_shift_dst[scale - 1]) >>
                        shift_dst[scale - 1]);
-        xv = (int32_t)((((int64_t)src->band_v[(h - 1) * src_stride] * rfactor[1]) +
+        xv = (int32_t)((((int64_t)src->band_v[(ptrdiff_t)(h - 1) * src_stride] * rfactor[1]) +
                         add_bef_shift_dst[scale - 1]) >>
                        shift_dst[scale - 1]);
-        xd = (int32_t)((((int64_t)src->band_d[(h - 1) * src_stride] * rfactor[2]) +
+        xd = (int32_t)((((int64_t)src->band_d[(ptrdiff_t)(h - 1) * src_stride] * rfactor[2]) +
                         add_bef_shift_dst[scale - 1]) >>
                        shift_dst[scale - 1]);
         I4_ADM_CM_THRESH_S_H_M_1_0(angles, flt_angles, csf_a_stride, &thr, w, h, (h - 1), 0,
@@ -3317,6 +3365,7 @@ float i4_adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_str
     return (num_scale_h + num_scale_v + num_scale_d);
 }
 
+// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void adm_dwt2_16_avx2(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w, int h,
                       int src_stride, int dst_stride, int inp_size_bits)
 {
@@ -3460,7 +3509,7 @@ void adm_dwt2_16_avx2(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffer 
             accum0_hi = _mm256_srai_epi32(accum0_hi, shift_HP);
 
             accum0_lo = _mm256_packs_epi32(accum0_lo, accum0_hi);
-            _mm256_storeu_si256((__m256i *)(dst->band_a + i * dst_stride + j),
+            _mm256_storeu_si256((__m256i *)(dst->band_a + (ptrdiff_t)i * dst_stride + j),
                                 _mm256_permute4x64_epi64(accum0_lo, 0xD8));
 
             accum0_lo = _mm256_setzero_si256();
@@ -3476,7 +3525,7 @@ void adm_dwt2_16_avx2(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffer 
             accum0_lo = _mm256_srai_epi32(accum0_lo, shift_HP);
             accum0_hi = _mm256_srai_epi32(accum0_hi, shift_HP);
             accum0_lo = _mm256_packs_epi32(accum0_lo, accum0_hi);
-            _mm256_storeu_si256((__m256i *)(dst->band_v + i * dst_stride + j),
+            _mm256_storeu_si256((__m256i *)(dst->band_v + (ptrdiff_t)i * dst_stride + j),
                                 _mm256_permute4x64_epi64(accum0_lo, 0xD8));
 
             s0 = _mm256_loadu_si256((__m256i *)(tmphi + j0));
@@ -3497,7 +3546,7 @@ void adm_dwt2_16_avx2(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffer 
             accum0_lo = _mm256_srai_epi32(accum0_lo, shift_HP);
             accum0_hi = _mm256_srai_epi32(accum0_hi, shift_HP);
             accum0_lo = _mm256_packs_epi32(accum0_lo, accum0_hi);
-            _mm256_storeu_si256((__m256i *)(dst->band_h + i * dst_stride + j),
+            _mm256_storeu_si256((__m256i *)(dst->band_h + (ptrdiff_t)i * dst_stride + j),
                                 _mm256_permute4x64_epi64(accum0_lo, 0xD8));
 
             accum0_lo = _mm256_setzero_si256();
@@ -3513,7 +3562,7 @@ void adm_dwt2_16_avx2(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffer 
             accum0_lo = _mm256_srai_epi32(accum0_lo, shift_HP);
             accum0_hi = _mm256_srai_epi32(accum0_hi, shift_HP);
             accum0_lo = _mm256_packs_epi32(accum0_lo, accum0_hi);
-            _mm256_storeu_si256((__m256i *)(dst->band_d + i * dst_stride + j),
+            _mm256_storeu_si256((__m256i *)(dst->band_d + (ptrdiff_t)i * dst_stride + j),
                                 _mm256_permute4x64_epi64(accum0_lo, 0xD8));
         }
 
@@ -3564,6 +3613,7 @@ void adm_dwt2_16_avx2(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffer 
     }
 }
 
+// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void adm_dwt2_s123_combined_avx2(const int32_t *i4_ref_scale, const int32_t *i4_curr_dis,
                                  AdmBuffer *buf, int w, int h, int ref_stride, int dis_stride,
                                  int dst_stride, int scale)
@@ -3624,23 +3674,23 @@ void adm_dwt2_s123_combined_avx2(const int32_t *i4_ref_scale, const int32_t *i4_
     for (int i = 0; i < (h + 1) / 2; ++i) {
         /* Vertical pass. */
         for (int j = 0; j < w_mod4; j += 4) {
-            __m256i ref10_256 = _mm256_cvtepi32_epi64(
-                _mm_loadu_si128((__m128i *)(i4_ref_scale + (ind_y[0][i] * ref_stride) + j)));
-            __m256i ref11_256 = _mm256_cvtepi32_epi64(
-                _mm_loadu_si128((__m128i *)(i4_ref_scale + (ind_y[1][i] * ref_stride) + j)));
-            __m256i ref12_256 = _mm256_cvtepi32_epi64(
-                _mm_loadu_si128((__m128i *)(i4_ref_scale + (ind_y[2][i] * ref_stride) + j)));
-            __m256i ref13_256 = _mm256_cvtepi32_epi64(
-                _mm_loadu_si128((__m128i *)(i4_ref_scale + (ind_y[3][i] * ref_stride) + j)));
+            __m256i ref10_256 = _mm256_cvtepi32_epi64(_mm_loadu_si128(
+                (__m128i *)(i4_ref_scale + ((ptrdiff_t)ind_y[0][i] * ref_stride) + j)));
+            __m256i ref11_256 = _mm256_cvtepi32_epi64(_mm_loadu_si128(
+                (__m128i *)(i4_ref_scale + ((ptrdiff_t)ind_y[1][i] * ref_stride) + j)));
+            __m256i ref12_256 = _mm256_cvtepi32_epi64(_mm_loadu_si128(
+                (__m128i *)(i4_ref_scale + ((ptrdiff_t)ind_y[2][i] * ref_stride) + j)));
+            __m256i ref13_256 = _mm256_cvtepi32_epi64(_mm_loadu_si128(
+                (__m128i *)(i4_ref_scale + ((ptrdiff_t)ind_y[3][i] * ref_stride) + j)));
 
-            __m256i dis10_256 = _mm256_cvtepi32_epi64(
-                _mm_loadu_si128((__m128i *)(i4_curr_dis + (ind_y[0][i] * dis_stride) + j)));
-            __m256i dis11_256 = _mm256_cvtepi32_epi64(
-                _mm_loadu_si128((__m128i *)(i4_curr_dis + (ind_y[1][i] * dis_stride) + j)));
-            __m256i dis12_256 = _mm256_cvtepi32_epi64(
-                _mm_loadu_si128((__m128i *)(i4_curr_dis + (ind_y[2][i] * dis_stride) + j)));
-            __m256i dis13_256 = _mm256_cvtepi32_epi64(
-                _mm_loadu_si128((__m128i *)(i4_curr_dis + (ind_y[3][i] * dis_stride) + j)));
+            __m256i dis10_256 = _mm256_cvtepi32_epi64(_mm_loadu_si128(
+                (__m128i *)(i4_curr_dis + ((ptrdiff_t)ind_y[0][i] * dis_stride) + j)));
+            __m256i dis11_256 = _mm256_cvtepi32_epi64(_mm_loadu_si128(
+                (__m128i *)(i4_curr_dis + ((ptrdiff_t)ind_y[1][i] * dis_stride) + j)));
+            __m256i dis12_256 = _mm256_cvtepi32_epi64(_mm_loadu_si128(
+                (__m128i *)(i4_curr_dis + ((ptrdiff_t)ind_y[2][i] * dis_stride) + j)));
+            __m256i dis13_256 = _mm256_cvtepi32_epi64(_mm_loadu_si128(
+                (__m128i *)(i4_curr_dis + ((ptrdiff_t)ind_y[3][i] * dis_stride) + j)));
 
             __m256i ref10_lo = _mm256_mul_epi32(ref10_256, f0_lo);
             __m256i ref11_lo = _mm256_mul_epi32(ref11_256, f1_lo);
@@ -3880,10 +3930,10 @@ void adm_dwt2_s123_combined_avx2(const int32_t *i4_ref_scale, const int32_t *i4_
                 _mm256_or_si256(_mm256_srli_epi64(accum_ref_hi_256, shift_HP),
                                 _mm256_and_si256(accum_ref_hi_256, mask_msb_shift_HP));
 
-            _mm_storeu_si128((__m128i *)(i4_ref_dwt2->band_a + (i * dst_stride) + j),
+            _mm_storeu_si128((__m128i *)(i4_ref_dwt2->band_a + ((ptrdiff_t)i * dst_stride) + j),
                              _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
                                  accum_ref_lo_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
-            _mm_storeu_si128((__m128i *)(i4_ref_dwt2->band_v + (i * dst_stride) + j),
+            _mm_storeu_si128((__m128i *)(i4_ref_dwt2->band_v + ((ptrdiff_t)i * dst_stride) + j),
                              _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
                                  accum_ref_hi_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
 
@@ -3919,10 +3969,10 @@ void adm_dwt2_s123_combined_avx2(const int32_t *i4_ref_scale, const int32_t *i4_
                 _mm256_or_si256(_mm256_srli_epi64(accum_ref_hi_256, shift_HP),
                                 _mm256_and_si256(accum_ref_hi_256, mask_msb_shift_HP));
 
-            _mm_storeu_si128((__m128i *)(i4_ref_dwt2->band_h + (i * dst_stride) + j),
+            _mm_storeu_si128((__m128i *)(i4_ref_dwt2->band_h + ((ptrdiff_t)i * dst_stride) + j),
                              _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
                                  accum_ref_lo_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
-            _mm_storeu_si128((__m128i *)(i4_ref_dwt2->band_d + (i * dst_stride) + j),
+            _mm_storeu_si128((__m128i *)(i4_ref_dwt2->band_d + ((ptrdiff_t)i * dst_stride) + j),
                              _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
                                  accum_ref_hi_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
 
@@ -3958,10 +4008,10 @@ void adm_dwt2_s123_combined_avx2(const int32_t *i4_ref_scale, const int32_t *i4_
                 _mm256_or_si256(_mm256_srli_epi64(accum_dis_hi_256, shift_HP),
                                 _mm256_and_si256(accum_dis_hi_256, mask_msb_shift_HP));
 
-            _mm_storeu_si128((__m128i *)(i4_dis_dwt2->band_a + (i * dst_stride) + j),
+            _mm_storeu_si128((__m128i *)(i4_dis_dwt2->band_a + ((ptrdiff_t)i * dst_stride) + j),
                              _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
                                  accum_dis_lo_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
-            _mm_storeu_si128((__m128i *)(i4_dis_dwt2->band_v + (i * dst_stride) + j),
+            _mm_storeu_si128((__m128i *)(i4_dis_dwt2->band_v + ((ptrdiff_t)i * dst_stride) + j),
                              _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
                                  accum_dis_hi_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
 
@@ -3997,10 +4047,10 @@ void adm_dwt2_s123_combined_avx2(const int32_t *i4_ref_scale, const int32_t *i4_
                 _mm256_or_si256(_mm256_srli_epi64(accum_dis_hi_256, shift_HP),
                                 _mm256_and_si256(accum_dis_hi_256, mask_msb_shift_HP));
 
-            _mm_storeu_si128((__m128i *)(i4_dis_dwt2->band_h + (i * dst_stride) + j),
+            _mm_storeu_si128((__m128i *)(i4_dis_dwt2->band_h + ((ptrdiff_t)i * dst_stride) + j),
                              _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
                                  accum_dis_lo_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
-            _mm_storeu_si128((__m128i *)(i4_dis_dwt2->band_d + (i * dst_stride) + j),
+            _mm_storeu_si128((__m128i *)(i4_dis_dwt2->band_d + ((ptrdiff_t)i * dst_stride) + j),
                              _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(
                                  accum_dis_hi_256, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0))));
         }
@@ -4099,6 +4149,7 @@ void adm_dwt2_s123_combined_avx2(const int32_t *i4_ref_scale, const int32_t *i4_
     }
 }
 
+// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 float adm_csf_den_scale_avx2(const adm_dwt_band_t *src, int w, int h, int src_stride,
                              double adm_norm_view_dist, int adm_ref_display_height,
                              int adm_csf_mode, double adm_csf_scale, double adm_csf_diag_scale,
@@ -4148,9 +4199,9 @@ float adm_csf_den_scale_avx2(const adm_dwt_band_t *src, int w, int h, int src_st
      * Because d+ = (a[i]^3)*(r^3)
      * is equivalent to d+=a[i]^3 and d=d*(r^3)
      */
-    int16_t *src_h = src->band_h + top * src_stride;
-    int16_t *src_v = src->band_v + top * src_stride;
-    int16_t *src_d = src->band_d + top * src_stride;
+    int16_t *src_h = src->band_h + (ptrdiff_t)top * src_stride;
+    int16_t *src_v = src->band_v + (ptrdiff_t)top * src_stride;
+    int16_t *src_d = src->band_d + (ptrdiff_t)top * src_stride;
 
     int right_mod_8 = right - ((right - left) % 8);
 
@@ -4259,6 +4310,7 @@ float adm_csf_den_scale_avx2(const adm_dwt_band_t *src, int w, int h, int src_st
     return (den_scale_h + den_scale_v + den_scale_d);
 }
 
+// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void adm_csf_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_norm_view_dist,
                   int adm_ref_display_height, int adm_csf_mode, double adm_csf_scale,
                   double adm_csf_diag_scale, bool measure_aim)
@@ -4438,6 +4490,7 @@ void adm_csf_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_norm_view
     }
 }
 
+// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 void i4_adm_csf_avx2(AdmBuffer *buf, int scale, int w, int h, int stride, double adm_norm_view_dist,
                      int adm_ref_display_height, int adm_csf_mode, double adm_csf_scale,
                      double adm_csf_diag_scale, bool measure_aim)
@@ -4661,6 +4714,7 @@ void i4_adm_csf_avx2(AdmBuffer *buf, int scale, int w, int h, int stride, double
     }
 }
 
+// NOLINTNEXTLINE(readability-function-size) — bit-exactness invariant: splitting would perturb register allocation + reduction order vs scalar (ADR-0138/0139, ADR-0141)
 float adm_csf_den_s123_avx2(const i4_adm_dwt_band_t *src, int scale, int w, int h, int src_stride,
                             double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
                             double adm_csf_scale, double adm_csf_diag_scale,
@@ -4709,9 +4763,9 @@ float adm_csf_den_s123_avx2(const i4_adm_dwt_band_t *src, int scale, int w, int 
     uint32_t shift_accum = (uint32_t)ceil(log2(bottom - top));
     uint32_t add_shift_accum = (uint32_t)pow(2, (shift_accum - 1));
 
-    int32_t *src_h = src->band_h + top * src_stride;
-    int32_t *src_v = src->band_v + top * src_stride;
-    int32_t *src_d = src->band_d + top * src_stride;
+    int32_t *src_h = src->band_h + (ptrdiff_t)top * src_stride;
+    int32_t *src_v = src->band_v + (ptrdiff_t)top * src_stride;
+    int32_t *src_d = src->band_d + (ptrdiff_t)top * src_stride;
 
     int right_mod_4 = right - ((right - left) % 4);
     for (int i = top; i < bottom; ++i) {

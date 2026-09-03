@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 282,
-  "total_warnings": 4484,
+  "total_warnings": 3353,
   "total_nolint_uncited": 58,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
@@ -73,8 +73,6 @@
     "core/src/feature/third_party/xiph/psnr_hvs.c": 2,
     "core/src/feature/transnet_v2.c": 7,
     "core/src/feature/vif.c": 48,
-    "core/src/feature/x86/adm_avx2.c": 570,
-    "core/src/feature/x86/adm_avx512.c": 561,
     "core/src/feature/x86/float_adm_avx2.c": 7,
     "core/src/feature/x86/float_adm_avx512.c": 26,
     "core/src/feature/x86/integer_ssim_avx2.c": 2,
