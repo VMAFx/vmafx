@@ -36,6 +36,7 @@
  */
 
 #include <assert.h>
+#include <libvmaf/model.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -570,7 +571,7 @@ int main(int argc, char *argv[])
 {
     const char *ref_file = NULL;
     const char *dis_file = NULL;
-    const char *model_name = "vmaf_v0.6.1";
+    const char *model_name = VMAF_DEFAULT_MODEL_VERSION;
     const char *render_node = "/dev/dri/renderD128";
     int max_frames = 0;
     int device_idx = 0;

@@ -39,6 +39,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .defaultmodel import DEFAULT_MODEL
 from .encode import EncodeRequest, EncodeResult, run_encode
 from .jsonio import dumps_strict
 from .score import ScoreRequest, ScoreResult, run_score
@@ -144,7 +145,7 @@ def run_plan(
     framerate: float = 25.0,
     source_is_container: bool = True,
     execute_all: bool = False,
-    vmaf_model: str = "vmaf_v0.6.1",
+    vmaf_model: str = DEFAULT_MODEL,
     vmaf_bin: str = "vmaf",
     ffmpeg_bin: str = "ffmpeg",
     encode_runner: Callable[..., Any] | None = None,
@@ -309,7 +310,7 @@ def run_plan_per_shot(
     height: int = 1080,
     framerate: float = 25.0,
     execute_all: bool = False,
-    vmaf_model: str = "vmaf_v0.6.1",
+    vmaf_model: str = DEFAULT_MODEL,
     vmaf_bin: str = "vmaf",
     ffmpeg_bin: str = "ffmpeg",
     per_shot_bin: str = "vmaf-perShot",
@@ -496,7 +497,7 @@ def run_plan_saliency(
     height: int = 1080,
     framerate: float = 25.0,
     execute_all: bool = False,
-    vmaf_model: str = "vmaf_v0.6.1",
+    vmaf_model: str = DEFAULT_MODEL,
     vmaf_bin: str = "vmaf",
     ffmpeg_bin: str = "ffmpeg",
     saliency_model_path: Path | None = None,

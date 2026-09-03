@@ -17,6 +17,7 @@ import tempfile
 from pathlib import Path
 
 from . import ROI_RESULT_KEYS, SCHEMA_VERSION, __version__, blend_scores
+from .defaultmodel import DEFAULT_MODEL
 from .score import ScoreRequest, run_score
 
 
@@ -93,7 +94,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--model",
-        default="vmaf_v0.6.1",
+        default=DEFAULT_MODEL,
         help="VMAF model version passed to the underlying vmaf CLI",
     )
     parser.add_argument(

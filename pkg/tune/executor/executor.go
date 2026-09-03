@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	vmafmodel "github.com/VMAFx/vmafx/pkg/model"
 	"log/slog"
 	"math"
 	"os"
@@ -296,7 +297,7 @@ func BuildVMAFCommand(req ScoreRequest, jsonOutput, vmafBin string) []string {
 	}
 	model := req.Model
 	if model == "" {
-		model = "vmaf_v0.6.1"
+		model = vmafmodel.DefaultVersion
 	}
 	if !strings.Contains(model, "=") {
 		model = "version=" + model
@@ -502,7 +503,7 @@ func DefaultParams(outDir string) Params {
 		Height:            1080,
 		Framerate:         25.0,
 		SourceIsContainer: true,
-		VMAFModel:         "vmaf_v0.6.1",
+		VMAFModel:         vmafmodel.DefaultVersion,
 		VMAFBin:           "vmaf",
 		FFmpegBin:         "ffmpeg",
 	}

@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	vmafmodel "github.com/VMAFx/vmafx/pkg/model"
 	"math"
 	"os"
 	"os/exec"
@@ -92,7 +93,7 @@ type Result struct {
 // "version=..."; pre-formatted key=value strings pass through.
 func modelArg(model string) string {
 	if model == "" {
-		model = "vmaf_v0.6.1"
+		model = vmafmodel.DefaultVersion
 	}
 	if strings.Contains(model, "=") {
 		return model

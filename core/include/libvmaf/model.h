@@ -28,6 +28,13 @@
 extern "C" {
 #endif
 
+/**
+ * Version string of the model libvmaf scores with when the caller names no
+ * model. Defined exactly once, here; every other component derives it from
+ * this macro or from vmaf_default_model_version() rather than repeating it.
+ */
+#define VMAF_DEFAULT_MODEL_VERSION "vmaf_v0.6.1"
+
 typedef struct VmafModel VmafModel;
 
 /**
@@ -401,6 +408,24 @@ VMAF_EXPORT void vmaf_model_collection_destroy(VmafModelCollection *model_collec
  *               read-only after library init.
  */
 VMAF_EXPORT const void *vmaf_model_version_next(const void *prev, const char **version);
+
+/**
+ * Version string of the model libvmaf scores with when no model is named.
+ *
+ * Returns the same value as the VMAF_DEFAULT_MODEL_VERSION macro. Prefer this
+ * function over the macro from anything that is not compiled against this
+ * header — language bindings, in particular — so the default is read from the
+ * library actually being used rather than copied into another source tree and
+ * left to drift. `scripts/ci/check-default-model-single-source.sh` enforces
+ * that no component hardcodes its own copy.
+ *
+ * @return a NUL-terminated string owned by libvmaf; never NULL, never freed by
+ *         the caller, valid for the lifetime of the process.
+ *
+ * @thread-safety Safe to call from any thread; returns a pointer to static
+ *                read-only storage.
+ */
+VMAF_EXPORT const char *vmaf_default_model_version(void);
 
 #ifdef __cplusplus
 }

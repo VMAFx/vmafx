@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/VMAFx/vmafx/pkg/model"
 	"math"
 	"os"
 	"path/filepath"
@@ -67,7 +68,7 @@ func (c PipelineConfig) pixFmtOrDefault() string {
 // vmafModelOrDefault returns the configured model, defaulting to vmaf_v0.6.1.
 func (c PipelineConfig) vmafModelOrDefault() string {
 	if c.VMAFModel == "" {
-		return "vmaf_v0.6.1"
+		return model.DefaultVersion
 	}
 	return c.VMAFModel
 }

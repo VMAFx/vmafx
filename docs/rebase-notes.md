@@ -87,6 +87,36 @@ no rebase impact: fork-local fixes and cleanups.
 - `ai/sidecar/online_trainer.py`: preserved server bind and documented 0o660 UNIX domain socket mode for group-peer IPC with `# nosemgrep`.
 - `mcp-server/vmaf-mcp`: removed unused import in `test_smoke_e2e.py` and converted `server.py` HTTP branch import to dynamic `importlib` to break static circular import.
 - `go.mod`, `go.sum`: upgraded `golang.org/x/crypto` to `v0.56.0`.
+## feat/default-model-single-source — one definition of the default model (ADR-1168) (2026-09-03)
+
+- `core/include/libvmaf/model.h`: **upstream-mirror header.** The fork adds
+  `#define VMAF_DEFAULT_MODEL_VERSION` and declares
+  `VMAF_EXPORT const char *vmaf_default_model_version(void);`. Neither exists
+  upstream. An upstream sync that rewrites this header must keep both; they are
+  the anchor for the whole single-source scheme and
+  `scripts/ci/check-default-model-single-source.sh` hard-fails without the macro.
+- `core/src/model.c`: **upstream-mirror.** The fork appends the
+  `vmaf_default_model_version()` definition at end of file, deliberately after
+  `vmaf_model_version_next()`, so an upstream diff to the built-in model table
+  above it does not conflict with it.
+- `core/tools/cli_parse.cpp`: **upstream-mirror (as `cli_parse.c` upstream).**
+  Two divergences. (1) The `model_cnt == 0` fallback reads
+  `VMAF_DEFAULT_MODEL_VERSION` where upstream writes `"vmaf_v0.6.1"` — keep the
+  fork's macro. (2) The two AOM CTC preset entries keep the literal
+  `"vmaf_v0.6.1"` and carry a `vmaf-model-pin:` comment; that is correct and
+  must survive, because the CTC specification mandates that exact model and it
+  must NOT follow the fork's default. If an upstream sync drops the comment the
+  gate will fail until it is restored.
+- `core/tools/vmaf_vpl.c`, `core/src/mcp/compute_vmaf.c`: fork-added tools;
+  both now include `<libvmaf/model.h>` for the macro. No upstream counterpart.
+- `core/tools/cli_parse.c`: untouched. It is the uncompiled twin (only
+  `cli_parse.cpp` is in `core/tools/meson.build`) and is allowlisted in the gate
+  rather than edited, so this change does not collide with the twin decision in
+  PR #1222.
+- Everything else is fork-only with no upstream counterpart: `pkg/model/`,
+  `tools/*/defaultmodel.py`, the Go and Python call sites,
+  `scripts/ci/check-default-model-single-source.sh` and its test,
+  `docs/development/default-model.md`, the ADR and the mkdocs nav entry.
 
 ## fix/adm-cm-gpu-border-and-rounding — integer ADM GPU border indexing and row-level rounding (ADR-1167) (2026-09-03)
 

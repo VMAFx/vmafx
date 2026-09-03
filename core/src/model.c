@@ -469,3 +469,8 @@ const void *vmaf_model_version_next(const void *prev, const char **version)
         *version = out_model->version;
     return out_model;
 }
+
+const char *vmaf_default_model_version(void)
+{
+    return VMAF_DEFAULT_MODEL_VERSION;
+}

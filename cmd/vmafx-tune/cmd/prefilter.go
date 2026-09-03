@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/VMAFx/vmafx/pkg/model"
 	"math"
 	"os"
 	"path/filepath"
@@ -133,7 +134,7 @@ Example:
 		"libvmaf backend for the probe scores: auto, cpu, cuda, sycl, hip")
 	cmd.Flags().StringVar(&flags.ffmpegBin, "ffmpeg-bin", "ffmpeg", "ffmpeg binary")
 	cmd.Flags().StringVar(&flags.vmafBin, "vmaf-bin", "vmaf", "libvmaf CLI binary")
-	cmd.Flags().StringVar(&flags.vmafModel, "vmaf-model", "vmaf_v0.6.1",
+	cmd.Flags().StringVar(&flags.vmafModel, "vmaf-model", model.DefaultVersion,
 		"libvmaf model version string")
 	cmd.Flags().StringVar(&flags.encodeDir, "encode-dir", ".workingdir2/prefilter",
 		"Scratch directory for the probe encodes")

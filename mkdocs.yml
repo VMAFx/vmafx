@@ -326,6 +326,7 @@ nav:
   - Development:
       - Engineering principles: principles.md
       - Build flags: development/build-flags.md
+      - Default model: development/default-model.md
       - Release: development/release.md
       - CI: development/ci.md
       - CI runners: development/ci-runners.md
