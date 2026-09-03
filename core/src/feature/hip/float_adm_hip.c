@@ -1087,10 +1087,7 @@ VmafFeatureExtractor vmaf_fex_float_adm_hip = {
     .options = options,
     .priv_size = sizeof(FloatAdmStateHip),
     .provided_features = provided_features,
-    /* Same scaffold-posture flags as every other HIP consumer:
-     * no VMAF_FEATURE_EXTRACTOR_HIP flag yet — the picture
-     * buffer-type plumbing lands with the runtime PR. */
-    .flags = 0,
+    .flags = VMAF_FEATURE_EXTRACTOR_HIP,
     .chars =
         {
             .n_dispatches_per_frame = 24, /* 6 stages × 4 scales (ADR-0574) */

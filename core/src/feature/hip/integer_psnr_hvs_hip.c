@@ -324,10 +324,6 @@ static void upload_plane(PsnrHvsStateHip *s, const VmafPicture *pic, int plane)
     if (s->bpc <= 8u) {
         const uint8_t *src = (const uint8_t *)pic->data[plane];
         const ptrdiff_t stride = pic->stride[plane];
-        uint8_t *dst_ref = (uint8_t *)s->h_uint_ref[plane];
-        uint8_t *dst_dist = (uint8_t *)s->h_uint_dist[plane];
-        /* Only one of ref/dist is passed; caller calls twice. */
-        (void)dst_dist;
         /* This helper is split: call with ref_pic and dist_pic separately. */
         for (unsigned y = 0; y < H; y++) {
             for (unsigned x = 0; x < W; x++) {
@@ -581,7 +577,7 @@ VmafFeatureExtractor vmaf_fex_psnr_hvs_hip = {
     .options = options,
     .priv_size = sizeof(PsnrHvsStateHip),
     .provided_features = provided_features,
-    .flags = 0,
+    .flags = VMAF_FEATURE_EXTRACTOR_HIP,
     .chars =
         {
             .n_dispatches_per_frame = 3,

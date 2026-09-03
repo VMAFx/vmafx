@@ -23,6 +23,11 @@ The following files were removed from this directory by ADR-0546
 
 Also removed from `core/src/feature/hip/`:
 
+- `adm_decouple.hip` (in `integer_adm/`) — dead uncompiled file removed by ADR-1154;
+  decoupling is already inlined in `adm_csf.hip`.
+- `integer_moment_hip.h` and `integer_moment/moment_score.hip` — orphan header and
+  duplicate kernel removed by ADR-1154; canonical implementation is `float_moment_hip.c`
+  using `float_moment/moment_score.hip`.
 - `integer_ciede_hip.c` — duplicate of `ciede_hip.c`; both defined
   `vmaf_fex_ciede_hip`. Only `ciede_hip.c` is in `hip/meson.build`.
 - `integer_moment_hip.c` — duplicate of `float_moment_hip.c`; both
@@ -36,7 +41,7 @@ And from `core/src/feature/cuda/`:
   is in `core/src/meson.build`. The newer TU adds `enable_chroma`
   and other improvements missing from the orphan copy.
 
-Do not re-add any of these files without first consulting ADR-0546.
+Do not re-add any of these files without first consulting ADR-0546 / ADR-1154.
 
 ## Memory copy direction enum discipline
 
@@ -148,20 +153,16 @@ key MUST be exactly `<name>` — the `xxd -i -n <name>_hsaco` step inside
 the meson custom_target derives the symbol from that key.  Two
 gotchas:
 
-1. **Distinct host TUs that consume different kernels must use
-   distinct meson keys, even when the underlying `.hip` filename is
-   `moment_score.hip`** for both.  Compare:
+1. **Meson key matches symbol name directly**:
+   `float_moment_hip.c` consumes `moment_score_hsaco` via:
 
    ```meson
    # float_moment_hip.c consumes `moment_score_hsaco`
    'moment_score' : feature_src_dir + 'hip/float_moment/moment_score.hip',
-   # integer_moment_hip.c consumes `integer_moment_score_hsaco`
-   'integer_moment_score' : feature_src_dir + 'hip/integer_moment/moment_score.hip',
    ```
 
-   The two `.hip` files contain different kernel entry points
-   (`calculate_float_moment_*` vs `calculate_integer_moment_hip_kernel_*`)
-   and are NOT interchangeable.
+   (The historical `integer_moment_score` duplicate key was removed in ADR-1154
+   together with the uncompiled `integer_moment/moment_score.hip` orphan).
 
 2. **A missing meson registration produces an undefined-reference link
    error** for `<name>_hsaco`, NOT a runtime `-ENOSYS`.  If you see
@@ -374,3 +375,31 @@ test, so the omission was invisible until a manual audit.
   flush blend/clip/seed/average logic must be mirrored into all four GPU
   twins (cuda/sycl/hip/metal) in the same PR to keep the `places=4`
   `test_hip_motion_v2_parity` gate green.
+
+## Option dictionary serialization timing (ADR-1154)
+
+Extractors providing features with parameterized names must call
+`vmaf_feature_name_dict_from_provided_features` **before** assigning internal
+dimension defaults (`s->w = w`, `s->h = h`) to options marked with
+`VMAF_OPT_FLAG_FEATURE_PARAM`. Overwriting struct fields with non-zero defaults
+before creating the dictionary causes `feature_name` to serialize the dimensions
+as option overrides (e.g. `_full_w_576_full_h_324`), which breaks feature lookups
+and parity tests.
+
+## Integer SSIM bit-exact CPU contract (ADR-0564, ADR-1154)
+
+`integer_ssim_hip` must retain `.flags = 0` until `integer_ssim_score.hip` is
+re-implemented using the 9-tap separable int64 kernel (`integer_ssim_score.cu`).
+The current 11-tap float Gaussian kernel deviates by 4.5e-3 from CPU integer SSIM.
+Under ADR-0564, silent numerical drift under the canonical `"ssim"` feature name is
+prohibited; keeping `.flags = 0` allows the VMAF dispatcher to select the CPU
+integer SSIM path and preserve bit-exact numerical ground truth.
+
+## Integer ADM staging buffer requirement (ADR-1154)
+
+`integer_adm_hip` retains `.flags = 0` (falling back to CPU) until internal
+HtoD picture staging buffers (~350 LOC) or the HIP device picture pool (T7-10c,
+~600 LOC) land. Unlike CUDA which supports device picture pools, HIP incoming
+pictures arrive with host pointers; passing host pointers directly to device
+kernels causes GPU memory faults. Float ADM (`float_adm_hip.c`) manages its
+own staging buffers and runs actively on GPU.

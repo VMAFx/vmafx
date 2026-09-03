@@ -2,6 +2,25 @@
 # Rebase notes
 
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
+## gap/hip-bucket-v2 — AMD ROCm HIP backend gap closure (ADR-1154) (2026-09-03)
+
+- `core/src/feature/hip/` and `core/src/hip/`: all touched files (`ciede_hip.c`, `float_adm_hip.c`,
+  `float_moment_hip.c`, `float_motion_hip.c`, `float_psnr_hip.c`, `float_ssim_hip.c`,
+  `integer_cambi_hip.c`, `integer_motion_v2_hip.c`, `integer_ms_ssim_hip.c`, `integer_psnr_hip.c`,
+  `integer_psnr_hvs_hip.c`, `integer_ssim_hip.c`, `dispatch_strategy.c`, `picture_hip.c`) are
+  wholly fork-added (upstream Netflix/vmaf does not have a HIP backend). No upstream rebase
+  conflicts will occur here.
+- `core/src/feature/hip/integer_adm/adm_decouple.hip`, `core/src/feature/hip/integer_moment_hip.h`,
+  `core/src/feature/hip/integer_moment/moment_score.hip`: deleted orphan uncompiled fork files.
+  No upstream counterpart.
+- `core/src/libvmaf.c`: in `flush_context_serial`, drained `gpu_pending` for all non-CUDA/SYCL
+  extractors before flush. This is fork-added GPU pipeline logic; resolve any future upstream
+  merge conflict by preserving the loop.
+- `Makefile`: `test-netflix-golden` target combines `CUDA_VISIBLE_DEVICES=""` and
+  `VMAF_FORCE_BACKEND=cpu`. Preserve both on rebase.
+- `core/test/meson.build`: updated deferral comments for `test_hip_adm_parity` and
+  `test_hip_ssim_parity` to cite ADR-1154.
+
 ## fix/test-feature-tidy-clean — modernise the assertions ported by #1219 (2026-09-03)
 
 - `core/test/test_feature.cpp`: upstream-mirror test (Netflix `libvmaf/test/test_feature.c`),

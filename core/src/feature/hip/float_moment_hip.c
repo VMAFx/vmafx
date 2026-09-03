@@ -189,10 +189,11 @@ static int moment_hip_launch(MomentStateHip *s, VmafPicture *ref_pic, VmafPictur
 
     const unsigned gx = (s->frame_w + MOMENT_HIP_BX - 1u) / MOMENT_HIP_BX;
     const unsigned gy = (s->frame_h + MOMENT_HIP_BY - 1u) / MOMENT_HIP_BY;
+    void *sums_dev = s->rb.device;
     if (s->bpc == 8u) {
         void *args[] = {
-            &s->ref_in,   (void *)&row_w, &s->dis_in,  (void *)&row_w,
-            s->rb.device, &s->frame_w,    &s->frame_h,
+            &s->ref_in, &s->dis_in,  (void *)&row_w, (void *)&row_w,
+            &sums_dev,  &s->frame_w, &s->frame_h,
         };
         hip_rc = hipModuleLaunchKernel(s->funcbpc8, gx, gy, 1u, MOMENT_HIP_BX, MOMENT_HIP_BY, 1u, 0,
                                        str, args, NULL);
@@ -201,8 +202,8 @@ static int moment_hip_launch(MomentStateHip *s, VmafPicture *ref_pic, VmafPictur
          * The kernel reads raw uint16_t pixels regardless of bpc depth;
          * the host already sized ref_in/dis_in at 2 bytes per pixel. */
         void *args[] = {
-            &s->ref_in,   (void *)&row_w, &s->dis_in,  (void *)&row_w,
-            s->rb.device, &s->frame_w,    &s->frame_h,
+            &s->ref_in, &s->dis_in,  (void *)&row_w, (void *)&row_w,
+            &sums_dev,  &s->frame_w, &s->frame_h,
         };
         hip_rc = hipModuleLaunchKernel(s->funcbpc16, gx, gy, 1u, MOMENT_HIP_BX, MOMENT_HIP_BY, 1u,
                                        0, str, args, NULL);
@@ -450,12 +451,7 @@ VmafFeatureExtractor vmaf_fex_float_moment_hip = {
     .options = options,
     .priv_size = sizeof(MomentStateHip),
     .provided_features = provided_features,
-    /* VMAF_FEATURE_EXTRACTOR_HIP flag cleared until picture buffer-type
-     * plumbing lands (T7-10c). Until then pictures arrive as CPU
-     * VmafPictures and submit() does explicit HtoD copies.
-     * Same posture as all other HIP consumers (ADR-0241 / ADR-0254 /
-     * ADR-0259 / ADR-0260 / ADR-0266 / ADR-0267 / ADR-0273). */
-    .flags = 0,
+    .flags = VMAF_FEATURE_EXTRACTOR_HIP,
     /* 1 dispatch/frame, reduction-dominated; AUTO + 1080p area
      * matches the CUDA twin's profile. */
     .chars =

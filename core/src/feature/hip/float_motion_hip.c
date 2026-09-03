@@ -602,15 +602,7 @@ VmafFeatureExtractor vmaf_fex_float_motion_hip = {
     .options = options,
     .priv_size = sizeof(FloatMotionStateHip),
     .provided_features = provided_features,
-    /* TEMPORAL flag is mandatory: float_motion needs the previous-frame
-     * blur carry, so the feature engine must drive collect before the
-     * next submit. Mirrors the CUDA twin verbatim.
-     *
-     * VMAF_FEATURE_EXTRACTOR_HIP flag is intentionally absent until
-     * picture buffer-type plumbing lands (T7-10c). Until then pictures
-     * arrive as CPU VmafPictures and fm_hip_launch() does explicit
-     * HtoD copies. Same posture as all prior HIP consumers. */
-    .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL,
+    .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_HIP,
     .chars =
         {
             .n_dispatches_per_frame = 1,

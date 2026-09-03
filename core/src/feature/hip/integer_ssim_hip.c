@@ -435,6 +435,9 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err != 0)
         goto fail_after_module;
 #else
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "feature '%s' requires HIP device kernels compiled with -Denable_hipcc=true\n",
+             fex->name);
     err = -ENOSYS;
     if (err != 0)
         goto fail_after_rb;
@@ -516,6 +519,9 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     (void)ref_pic;
     (void)dist_pic;
     (void)index;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "feature '%s' requires HIP device kernels compiled with -Denable_hipcc=true\n",
+             fex->name);
     return -ENOSYS;
 #else
     IssimStateHip *s = fex->priv;
@@ -556,6 +562,9 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     (void)fex;
     (void)index;
     (void)feature_collector;
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "feature '%s' requires HIP device kernels compiled with -Denable_hipcc=true\n",
+             fex->name);
     return -ENOSYS;
 #else
     IssimStateHip *s = fex->priv;
@@ -597,9 +606,10 @@ VmafFeatureExtractor vmaf_fex_integer_ssim_hip = {
     .options = options,
     .priv_size = sizeof(IssimStateHip),
     .provided_features = provided_features,
-    /* Pictures arrive as CPU VmafPictures; submit() does explicit HtoD.
-     * Same posture as all other HIP consumers (no VMAF_FEATURE_EXTRACTOR_HIP
-     * flag). */
+    /* Flags cleared (.flags = 0): integer_ssim_score.hip currently uses
+     * the 11-tap float Gaussian rather than the bit-exact 9-tap int64
+     * kernel from integer_ssim_score.cu. Model falls back to CPU to ensure
+     * numerical ground truth per ADR-0564. Deferred to follow-up. */
     .flags = 0,
     .chars =
         {

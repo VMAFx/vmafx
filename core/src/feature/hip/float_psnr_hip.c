@@ -209,15 +209,16 @@ static int float_psnr_hip_launch(FloatPsnrStateHip *s, VmafPicture *ref_pic, Vma
 
     const unsigned gx = (s->frame_w + FPSNR_BX - 1u) / FPSNR_BX;
     const unsigned gy = (s->frame_h + FPSNR_BY - 1u) / FPSNR_BY;
+    void *partials_dev = s->rb.device;
     if (s->bpc == 8u) {
-        void *args[] = {&s->ref_in,           &s->dis_in,   (void *)&plane_pitch,
-                        (void *)&plane_pitch, s->rb.device, (void *)&s->frame_w,
+        void *args[] = {&s->ref_in,           &s->dis_in,    (void *)&plane_pitch,
+                        (void *)&plane_pitch, &partials_dev, (void *)&s->frame_w,
                         (void *)&s->frame_h};
         hip_rc = hipModuleLaunchKernel(s->funcbpc8, gx, gy, 1, FPSNR_BX, FPSNR_BY, 1, 0, str, args,
                                        NULL);
     } else {
         void *args[] = {&s->ref_in,           &s->dis_in,     (void *)&plane_pitch,
-                        (void *)&plane_pitch, s->rb.device,   (void *)&s->frame_w,
+                        (void *)&plane_pitch, &partials_dev,  (void *)&s->frame_w,
                         (void *)&s->frame_h,  (void *)&s->bpc};
         hip_rc = hipModuleLaunchKernel(s->funcbpc16, gx, gy, 1, FPSNR_BX, FPSNR_BY, 1, 0, str, args,
                                        NULL);
@@ -447,11 +448,7 @@ VmafFeatureExtractor vmaf_fex_float_psnr_hip = {
     .options = options,
     .priv_size = sizeof(FloatPsnrStateHip),
     .provided_features = provided_features,
-    /* VMAF_FEATURE_EXTRACTOR_HIP flag cleared until picture buffer-type
-     * plumbing lands (T7-10c). Until then pictures arrive as CPU
-     * VmafPictures and float_psnr_hip_launch() does explicit HtoD copies.
-     * Same posture as all other HIP consumers (ADR-0241 / ADR-0254). */
-    .flags = 0,
+    .flags = VMAF_FEATURE_EXTRACTOR_HIP,
     .chars =
         {
             .n_dispatches_per_frame = 1,

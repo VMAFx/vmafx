@@ -1,0 +1,13 @@
+### Fixed
+- **HIP backend**: resolved the HIP bucket of the backend-gap inventory ([ADR-1154](docs/adr/1154-hip-backend-gaps.md)):
+  - Promoted 11 feature extractors (`integer_cambi_hip`, `ciede_hip`, `integer_psnr_hip`, `float_psnr_hip`, `float_moment_hip`, `integer_motion_v2_hip`, `float_motion_hip`, `float_ssim_hip`, `integer_ms_ssim_hip`, `integer_psnr_hvs_hip`, `float_adm_hip`) to active GPU execution with `VMAF_FEATURE_EXTRACTOR_HIP` / `TEMPORAL` flags, bringing active HIP extractors to 17/19, all passing parity tests on AMD hardware.
+  - Fixed pointer-to-pointer kernel parameter packaging in `float_psnr_hip` and `float_moment_hip` (`&partials_dev`, `&sums_dev`).
+  - Fixed parameter ordering in `float_moment_hip` kernel launch.
+  - Fixed parameter types (`double c1..c3`) and partial buffer sizes (`sizeof(double)`) in `integer_ms_ssim_hip` to match `ms_ssim_vert_lcs` kernel signature.
+  - Fixed option dictionary serialization in `integer_cambi_hip` by capturing options before dimension defaults.
+  - Fixed chroma plane copying in `integer_psnr_hip` across all planes.
+  - Added informative `vmaf_log` naming `-Denable_hipcc=true` before `-ENOSYS` returns in `float_ssim_hip.c`, `integer_ssim_hip.c`, and `vmaf_hip_picture_alloc`.
+  - Pruned dead uncompiled `core/src/feature/hip/integer_adm/adm_decouple.hip` and orphan `integer_moment_hip.h` / `moment_score.hip`.
+  - Implemented `vmaf_hip_dispatch_supports()` in `core/src/hip/dispatch_strategy.c` with `g_hip_features` lookup table and `VMAF_HIP_DISPATCH` env support.
+  - Updated `docs/backends/hip/overview.md` to remove references to deleted stubs and document zero-copy DMA-BUF architectural limitations.
+  - Formally deferred `integer_ssim_hip` (due to float kernel divergence vs CPU ground truth per ADR-0564) and `integer_adm_hip` (due to missing host-to-device picture staging buffers) in `docs/state.md`.

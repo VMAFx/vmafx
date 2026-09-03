@@ -357,21 +357,23 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
      * yet — mirrors float_psnr_hip.c and the CUDA twin pre-runtime). */
     const uintptr_t pic_stream_handle = 0;
     const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-    const size_t plane_pitch = (size_t)s->width[0] * bpp;
-    const unsigned frame_h = s->height[0];
 
-    /* HtoD copy ref luma via 2D memcpy to handle arbitrary source stride. */
-    hipError_t rc = hipMemcpy2DAsync(s->ref_in[0], plane_pitch, ref_pic->data[0],
-                                     (size_t)ref_pic->stride[0], plane_pitch, (size_t)frame_h,
-                                     hipMemcpyHostToDevice, (hipStream_t)pic_stream_handle);
-    if (rc != hipSuccess)
-        return -EIO;
+    for (unsigned p = 0; p < s->n_planes; ++p) {
+        const size_t plane_pitch = (size_t)s->width[p] * bpp;
+        const unsigned frame_h = s->height[p];
 
-    rc = hipMemcpy2DAsync(s->dis_in[0], plane_pitch, dist_pic->data[0], (size_t)dist_pic->stride[0],
-                          plane_pitch, (size_t)frame_h, hipMemcpyHostToDevice,
-                          (hipStream_t)pic_stream_handle);
-    if (rc != hipSuccess)
-        return -EIO;
+        hipError_t rc = hipMemcpy2DAsync(s->ref_in[p], plane_pitch, ref_pic->data[p],
+                                         (size_t)ref_pic->stride[p], plane_pitch, (size_t)frame_h,
+                                         hipMemcpyHostToDevice, (hipStream_t)pic_stream_handle);
+        if (rc != hipSuccess)
+            return -EIO;
+
+        rc = hipMemcpy2DAsync(s->dis_in[p], plane_pitch, dist_pic->data[p],
+                              (size_t)dist_pic->stride[p], plane_pitch, (size_t)frame_h,
+                              hipMemcpyHostToDevice, (hipStream_t)pic_stream_handle);
+        if (rc != hipSuccess)
+            return -EIO;
+    }
 
     return psnr_hip_launch(s, pic_stream_handle);
 #else
@@ -496,15 +498,7 @@ VmafFeatureExtractor vmaf_fex_psnr_hip = {
     .options = options,
     .priv_size = sizeof(PsnrStateHip),
     .provided_features = provided_features,
-    /* Intentionally no VMAF_FEATURE_EXTRACTOR_HIP flag yet — the
-     * picture buffer-type plumbing for HIP lands with the runtime
-     * PR (T7-10b). Until then the consumer registers as a
-     * "CPU-flagged" extractor whose `init()` returns -ENOSYS on
-     * non-ROCm builds, so any caller asking for `psnr_hip` gets a
-     * clean "runtime not ready" surface. The flag bit is reserved in
-     * `feature_extractor.h` so the runtime PR can adopt it
-     * without an enum reshuffle. */
-    .flags = 0,
+    .flags = VMAF_FEATURE_EXTRACTOR_HIP,
     .chars =
         {
             /* 3 dispatches/frame (one per plane) when enable_chroma=true.

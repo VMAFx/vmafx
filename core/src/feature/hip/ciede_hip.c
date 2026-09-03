@@ -455,12 +455,7 @@ VmafFeatureExtractor vmaf_fex_ciede_hip = {
     .options = options,
     .priv_size = sizeof(CiedeStateHip),
     .provided_features = provided_features,
-    /* Intentionally no VMAF_FEATURE_EXTRACTOR_HIP flag yet — the
-     * picture buffer-type plumbing for HIP lands with T7-10c.
-     * Until then, pictures arrive as CPU VmafPictures and the submit
-     * path does explicit HtoD copies. Same posture as all prior HIP
-     * consumers (ADR-0241, ADR-0254, ADR-0372, ADR-0373). */
-    .flags = 0,
+    .flags = VMAF_FEATURE_EXTRACTOR_HIP,
     .chars =
         {
             .n_dispatches_per_frame = 1,
