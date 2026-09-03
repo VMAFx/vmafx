@@ -651,6 +651,14 @@ jobs:
         # itself proven on every PR — including the release PR.
         run: bash scripts/ci/tests/test-release-pr-exempt.sh
 
+      - name: Test the container-only publishing gate
+        # ADR-1102. The gate that tells a container build from a host build is
+        # the only thing standing between the documented container-only
+        # publishing policy and a host-built release binary. Its unit suite is
+        # hermetic (no Docker) so it can run on every PR, here alongside the
+        # other release-contract tests.
+        run: bash scripts/ci/tests/test-check-container-build.sh
+
       - name: One-shot release-please fields must not outlive the first release
         run: |
           # ADR-1151. `release-as` and `bootstrap-sha` are one-shot cutover

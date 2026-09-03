@@ -45,6 +45,21 @@ LABEL org.opencontainers.image.description="Base build tools for VMAF fork dev-M
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
 
+# Container-only publishing marker (ADR-1102, docs/development/publishing.md).
+# `scripts/ci/check-container-build.sh` reads this file to tell a container
+# build from a host build; without it the container-only publishing policy is
+# documentation with nothing enforcing it. Written in the FIRST stage so every
+# downstream stage (gpu-sdks, libvmaf-build, go-build, dev-mcp) inherits it.
+# Keep the key names in sync with the gate script and with its unit test
+# (scripts/ci/tests/test-check-container-build.sh).
+RUN printf '%s\n' \
+    'vmafx_dev_container=1' \
+    'image_title=vmaf-dev-mcp' \
+    'containerfile=dev/Containerfile' \
+    'source=https://github.com/VMAFx/vmafx' \
+    > /etc/vmafx-dev-container \
+    && chmod 0644 /etc/vmafx-dev-container
+
 ARG DEBIAN_FRONTEND=noninteractive
 
 # BuildKit cache mounts on /var/cache/apt and /var/lib/apt let sequential
