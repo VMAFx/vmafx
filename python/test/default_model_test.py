@@ -121,6 +121,63 @@ class DefaultBuiltInModelTest(unittest.TestCase):
         )
 
 
+class NegRoutingTest(unittest.TestCase):
+    """`--neg` must resolve to a model that actually exists (ADR-1169).
+
+    There is no NEG counterpart to any ``vmaf_v1.0.16_*`` model, so a NEG
+    router that appends ``"neg"`` to the default synthesises
+    ``vmaf_v1.0.16_3d0hneg``, which libvmaf rejects at load. That shipped
+    briefly in the Go per-shot router and aborted every scored shot. These
+    tests assert the end state that matters: whatever NEG resolves to, the
+    binary can load it.
+    """
+
+    def _loads(self, version):
+        ref_path, dis_path, _a, _b = set_default_576_324_videos_for_testing()
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "out.xml")
+            proc = subprocess.run(
+                [
+                    ExternalProgram.vmafexec,
+                    "-r",
+                    ref_path,
+                    "-d",
+                    dis_path,
+                    "-w",
+                    "576",
+                    "-h",
+                    "324",
+                    "-p",
+                    "420",
+                    "-b",
+                    "8",
+                    "-m",
+                    f"version={version}",
+                    "-o",
+                    out,
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            return proc.returncode == 0, proc.stderr
+
+    def test_neg_default_is_a_loadable_model(self):
+        ok, err = self._loads("vmaf_v0.6.1neg")
+        self.assertTrue(ok, f"the NEG default does not load: {err}")
+
+    def test_appending_neg_to_the_default_is_NOT_a_real_model(self):
+        # Pins the reason DEFAULT_MODEL_NEG is an independent constant rather
+        # than DEFAULT_MODEL + "neg". If this ever starts passing, Netflix has
+        # published a v1 NEG model and the NEG constants should follow it.
+        ok, _err = self._loads(EXPECTED_DEFAULT_MODEL + "neg")
+        self.assertFalse(
+            ok,
+            f"{EXPECTED_DEFAULT_MODEL}neg now loads -- a v1 NEG model exists, so "
+            "DEFAULT_MODEL_NEG / DefaultNEGVersion should be updated to use it",
+        )
+
+
 class DefaultModelMirrorTest(unittest.TestCase):
     """The Python mirrors agree with the C header (ADR-1168)."""
 

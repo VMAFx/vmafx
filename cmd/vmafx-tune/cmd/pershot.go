@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/VMAFx/vmafx/pkg/corpus"
 	"github.com/VMAFx/vmafx/pkg/model"
 	"math"
 	"os"
@@ -693,7 +694,8 @@ func lastLine(s string) string {
 // a "key=value" path/version override and an already-NEG name both pass
 // through unchanged, and an unknown model gets the suffix appended so
 // libvmaf surfaces a clear missing-model error rather than silently using
-// the wrong one.
+// the wrong one. The NEG mapping itself lives in pkg/corpus.NegModelFor so the
+// Go CLI, the Go corpus package and the Python tool cannot drift apart.
 func resolveVMAFModel(model string, neg bool) string {
 	if !neg {
 		return model
@@ -704,11 +706,16 @@ func resolveVMAFModel(model string, neg bool) string {
 	if strings.HasSuffix(model, "neg") {
 		return model
 	}
-	// Every NEG model in the tree is its base name with "neg" appended
-	// ("vmaf_v0.6.1" -> "vmaf_v0.6.1neg", "vmaf_4k_v0.6.1" ->
-	// "vmaf_4k_v0.6.1neg"), so no per-model table is needed. The two cases
-	// that used to be spelled out here produced exactly this string.
-	return model + "neg"
+	// Defer to the shared mapping so this stays consistent with
+	// pkg/corpus.NegModelFor and vmaftune.resolution.neg_model_for.
+	//
+	// Appending "neg" unconditionally was correct only while the default was
+	// vmaf_v0.6.1. Since ADR-1169 the default is vmaf_v1.0.16_3d0h, and there
+	// is no NEG counterpart to any vmaf_v1.0.16_* model — Netflix published NEG
+	// for the v0.6.1 family only. Appending would synthesise
+	// "vmaf_v1.0.16_3d0hneg", which does not exist, so `vmafx-tune ... --neg`
+	// would abort every shot with "no such built-in model".
+	return corpus.NegModelFor(model)
 }
 
 // trimFloat renders a float with the shortest round-trip representation, for

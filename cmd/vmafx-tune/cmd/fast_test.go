@@ -10,6 +10,7 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
+	"github.com/VMAFx/vmafx/pkg/model"
 	"os"
 	"path/filepath"
 	"sort"
@@ -50,7 +51,9 @@ func TestFastCmdFlagSurface(t *testing.T) {
 		{flag: "score-backend", wantDefault: "auto"},
 		{flag: "ffmpeg-bin", wantDefault: "ffmpeg"},
 		{flag: "vmaf-bin", wantDefault: "vmaf"},
-		{flag: "vmaf-model", wantDefault: "vmaf_v0.6.1"},
+		// Derived, not literal: the Go and Python defaults must match each
+		// other, and ADR-1169 moved both to the v1.0.16 generation.
+		{flag: "vmaf-model", wantDefault: model.DefaultVersion},
 		{flag: "encode-dir", wantDefault: ".workingdir2/fast"},
 		{flag: "output", wantDefault: ""},
 	}

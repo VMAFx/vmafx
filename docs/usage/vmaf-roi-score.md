@@ -140,7 +140,7 @@ the interval between them is blended.
 | `--weight W` | `0.5` | saliency-masked component weight in `[0, 1]` |
 | `--threshold T` | `0.3` | saliency cutoff used by `--saliency-model` |
 | `--fade F` | `0.1` | soft fade band above `--threshold`; `0` makes a hard mask |
-| `--model NAME` | `vmaf_v0.6.1` | VMAF model version passed through to `vmaf` |
+| `--model NAME` | `vmaf_v1.0.16_3d0h` | VMAF model version passed through to `vmaf` |
 | `--vmaf-bin PATH` | `vmaf` | location of the libvmaf CLI binary |
 | `--output PATH` | stdout | write JSON result to this path |
 
