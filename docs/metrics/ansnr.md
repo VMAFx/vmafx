@@ -3,7 +3,7 @@
 
 !!! warning "This metric was removed"
     The `float_ansnr` feature extractor was removed from every backend in
-    PR #38 (see [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md)
+    PR #38 (see [ADR-0865](../adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md)
     and the follow-up
     [ADR-0749](../adr/0749-sunset-legacy-vmaf-feature-extractor.md)).
     ANSNR is a pre-VMAF metric (2001) that Netflix never adopted in
@@ -33,5 +33,5 @@ first-class extractors with active CPU + GPU paths.
 ## See also
 
 - [Features](features.md) — current feature extractor reference.
-- [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md)
+- [ADR-0865](../adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md)
 - [ADR-0749](../adr/0749-sunset-legacy-vmaf-feature-extractor.md)

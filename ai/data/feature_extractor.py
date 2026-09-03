@@ -152,11 +152,6 @@ _METRIC_TO_EXTRACTOR: dict[str, str] = {
     "psnr_hvs_cb": "psnr_hvs",
     "psnr_hvs_cr": "psnr_hvs",
     "ssimulacra2": "ssimulacra2",
-    # ANSNR / ANPSNR entries removed per ADR-0709 (PR #38) — `float_ansnr`
-    # is a pre-VMAF metric Netflix never adopted and was dropped from every
-    # backend in the C library. The `float_ansnr` / `float_anpsnr` mappings
-    # used to point callers at an extractor name that no longer registers,
-    # so any `features=["float_ansnr"]` invocation now raised at the CLI.
     # SpEED chroma/temporal — CPU-only (ADR-0559; GPU twins in ADR-0557/0558).
     # Short alias names registered in core/src/feature/alias.c.
     "speed_temporal": "speed_temporal",

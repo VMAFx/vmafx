@@ -153,8 +153,7 @@ extern VmafFeatureExtractor vmaf_fex_ciede_hip;
  * scaffold posture; emits four `float_moment_*` features. */
 extern VmafFeatureExtractor vmaf_fex_float_moment_hip;
 /* HIP sixth consumer — ADR-0267. Same posture as the first consumer:
- * registration succeeds, `init()` returns -ENOSYS until T7-10b.
- * (float_ansnr_hip removed: ADR-0720.) */
+ * registration succeeds, `init()` returns -ENOSYS until T7-10b. */
 extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_hip;
 /* HIP integer_motion consumer — ADR-0468 scaffold, registration
  * landed in ADR-0523 (PR #1283), promoted to real kernel with
@@ -344,7 +343,7 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
      * `float_moment_*` features once the runtime kernel arrives. */
     &vmaf_fex_float_moment_hip,
     /* T7-10b sixth consumer (ADR-0267): same scaffold-posture registration
-     * as the first consumer. (float_ansnr_hip removed: ADR-0720.) */
+     * as the first consumer. */
     &vmaf_fex_integer_motion_v2_hip,
     /* integer_motion_hip — ADR-0468 scaffold, registration landed
      * in ADR-0523 (PR #1283), promoted to real HIP-flagged
@@ -409,8 +408,7 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
     &vmaf_fex_integer_motion_v2_metal,
     /* T8-1 batch-1 additional consumers (ADR-0361). */
     &vmaf_fex_integer_psnr_metal, &vmaf_fex_float_ssim_metal, &vmaf_fex_integer_motion_metal,
-    /* T8-1 batch-2 additional consumers (ADR-0361): 3 float features.
-     * float_ansnr_metal removed: ADR-0720 (ansnr backend drop). */
+    /* T8-1 batch-2 additional consumers (ADR-0361): 3 float features. */
     &vmaf_fex_float_psnr_metal, &vmaf_fex_float_motion_metal, &vmaf_fex_float_moment_metal,
     /* T8-2a: float_ms_ssim_metal — 5-scale MS-SSIM pyramid on Metal
      * (ADR-0435). Real kernel dispatch replacing the -ENOSYS scaffold. */
