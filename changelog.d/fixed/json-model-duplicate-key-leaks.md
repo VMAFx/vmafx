@@ -48,3 +48,15 @@
   only the corpora are exempt. The `.bin` seeds were already passing because
   `\.bin$` sat in the shared binary exclusion, which is why this only
   surfaced once a corpus seed carried a `.json` extension.
+
+  Test placement: the duplicate-`model`-key regression lives in its own
+  translation unit, `core/test/test_model_libsvm_dup_key.c`, rather than
+  beside its `feature_names` sibling in `core/test/test_model.c`.
+  `test_model.c` carries 192 pre-existing clang-tidy warnings and
+  `.clang-tidy` sets `WarningsAsErrors`, so the required
+  "Clang-Tidy (Changed C/C++ Files)" job fails for **any** PR that merely
+  touches that file -- it exits non-zero on pristine `master` too. Clearing
+  that debt is PR #1192's dedicated job; duplicating it here would collide
+  with that PR for no benefit. CLAUDE.md §8 already directs fork-added tests
+  to separate files. The new TU is clang-tidy-clean (exit 0) and registered
+  in the `fast` suite.
