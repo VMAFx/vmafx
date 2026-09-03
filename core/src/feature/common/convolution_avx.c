@@ -150,11 +150,9 @@ void convolution_f32_avx_s(const float *RESTRICT filter, int filter_width,
     int width_floor_step = vmaf_floorn(width, AVX_STEP);
     int tmp_stride = vmaf_ceiln(width, AVX_STEP);
 
-    /* Clamp the vertical border split to the plane. For a plane shorter than
-     * the filter radius, `height - radius` is negative, so the trailing border
-     * loop below would start at a negative row and the leading one would run
-     * past the end -- both heap WRITES. Mirrors the scalar path; identical for
-     * every in-contract size, so no score moves. */
+    /* Clamp the vertical border split to the plane -- rationale and the
+     * negative-`height - radius` failure mode are documented on
+     * convolution_clamp_borders() in convolution_internal.h. */
     int i_border_top = radius;
     int i_vec_end = height - radius;
     convolution_clamp_borders(height, &i_border_top, &i_vec_end);
@@ -213,11 +211,9 @@ void convolution_f32_avx_sq_s(const float *RESTRICT filter, int filter_width,
     int width_floor_step = vmaf_floorn(width, AVX_STEP);
     int tmp_stride = vmaf_ceiln(width, AVX_STEP);
 
-    /* Clamp the vertical border split to the plane. For a plane shorter than
-     * the filter radius, `height - radius` is negative, so the trailing border
-     * loop below would start at a negative row and the leading one would run
-     * past the end -- both heap WRITES. Mirrors the scalar path; identical for
-     * every in-contract size, so no score moves. */
+    /* Clamp the vertical border split to the plane -- rationale and the
+     * negative-`height - radius` failure mode are documented on
+     * convolution_clamp_borders() in convolution_internal.h. */
     int i_border_top = radius;
     int i_vec_end = height - radius;
     convolution_clamp_borders(height, &i_border_top, &i_vec_end);
@@ -277,11 +273,9 @@ void convolution_f32_avx_xy_s(const float *RESTRICT filter, int filter_width,
     int width_floor_step = vmaf_floorn(width, AVX_STEP);
     int tmp_stride = vmaf_ceiln(width, AVX_STEP);
 
-    /* Clamp the vertical border split to the plane. For a plane shorter than
-     * the filter radius, `height - radius` is negative, so the trailing border
-     * loop below would start at a negative row and the leading one would run
-     * past the end -- both heap WRITES. Mirrors the scalar path; identical for
-     * every in-contract size, so no score moves. */
+    /* Clamp the vertical border split to the plane -- rationale and the
+     * negative-`height - radius` failure mode are documented on
+     * convolution_clamp_borders() in convolution_internal.h. */
     int i_border_top = radius;
     int i_vec_end = height - radius;
     convolution_clamp_borders(height, &i_border_top, &i_vec_end);

@@ -253,17 +253,39 @@ static char *test_use_feature_unknown_name_does_not_consume(void)
     return NULL;
 }
 
-char *run_tests(void)
+/* Grouped the way core/test/test_iqa_helpers.c and test_cli_parse.c group
+ * theirs: each `mu_run_test` expands to several statements, so eight of them in
+ * one function crosses .clang-tidy's readability-function-size
+ * StatementThreshold of 120. Splitting keeps the ratchet at zero for this file
+ * without a suppression. */
+
+/* Argument-validation guards: the caller still owns `opts_dict` when any of
+ * these fires. */
+static char *run_guard_tests(void)
 {
     mu_run_test(test_overload_guards_do_not_consume);
     mu_run_test(test_overload_null_feature_name_guard);
     mu_run_test(test_collection_overload_rejects_null_collection_handle);
     mu_run_test(test_collection_overload_null_lead_model_guard);
+    return NULL;
+}
+
+/* Ownership transfer: which paths consume the dictionary and which do not. */
+static char *run_consumption_tests(void)
+{
     mu_run_test(test_overload_success_consumes_dict);
     mu_run_test(test_overload_unknown_feature_name_returns_zero_and_consumes);
     mu_run_test(test_use_feature_unknown_name_does_not_consume);
     mu_run_test(test_overload_merge_failure_consumes_dict);
     return NULL;
+}
+
+char *run_tests(void)
+{
+    char *msg = run_guard_tests();
+    if (msg)
+        return msg;
+    return run_consumption_tests();
 }
 
 /* NOLINTEND(modernize-use-nullptr) */
