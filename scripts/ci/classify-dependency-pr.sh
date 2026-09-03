@@ -8,7 +8,9 @@
 # Exemption criteria (BOTH must hold):
 #   (a) Author is `renovate[bot]` or `dependabot[bot]` (or `app/renovate` /
 #       `app/dependabot`), OR the head branch matches `renovate/*` / `dependabot/*`.
-#   (b) Every changed path is an allowed dependency manifest or lockfile.
+#   (b) Every changed path is an allowed dependency manifest, lockfile, or
+#       image-tag surface (container build files, Helm chart values/templates,
+#       compose files, workflow pins).
 #
 # A Renovate PR that also edits source (e.g. under core/, ai/, python/, compat/,
 # cmd/, pkg/, internal/, bindings/, tools/, scripts/, docs/, model/) must still
@@ -112,12 +114,23 @@ is_allowed_dependency_path() {
   base="$(basename "$path")"
 
   # Prefix or exact full-path matches
+  #
+  # deploy/helm/* is the Helm chart surface. Renovate's helm-values and
+  # docker-image managers pin container image tags inside values.yaml and the
+  # chart templates, which is how `deploy/helm/vmafx/values.yaml` and
+  # `deploy/helm/vmafx/templates/tests/test-connection.yaml` came to be the
+  # only two paths in 25 consecutive Renovate PRs that this allowlist missed
+  # (PR #1232 was blocked by exactly that gap). Whole-prefix granularity
+  # matches how docker/* and .github/workflows/* are already treated: the
+  # conjunction with condition (a) means only a bot author or bot branch can
+  # reach this, so a human editing chart logic is still fully gated.
   case "$path" in
     renovate.json | \
       .github/renovate.json* | \
       .pre-commit-config.yaml | \
       dev/Containerfile | \
       docker/* | \
+      deploy/helm/* | \
       .github/workflows/* | \
       changelog.d/*)
       return 0
@@ -132,7 +145,9 @@ is_allowed_dependency_path() {
       Cargo.toml | Cargo.lock | deny.toml | \
       pyproject.toml | poetry.lock | uv.lock | tox.ini | \
       requirements*.txt | constraints*.txt | \
-      Dockerfile* | *.Dockerfile)
+      Dockerfile* | *.Dockerfile | \
+      Chart.yaml | Chart.lock | \
+      docker-compose.y*ml | docker-compose.*.y*ml | compose.y*ml)
       return 0
       ;;
   esac

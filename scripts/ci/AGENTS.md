@@ -273,3 +273,24 @@ Alpha pre-releases (`X.Y.Za<N>`) are never an acceptable pin.
 - A new gate added to the aggregator's `required` array must be checked against
   a release PR's shape (a `.release-please-manifest.json` + coordinated
   version-marker diff, and a rendered-changelog body) before it is promoted.
+
+## Adding a Renovate-managed surface (ADR-1152)
+
+`classify-dependency-pr.sh` exempts a bot PR only when **every** changed path
+matches its allowlist — one unmatched path fails the whole PR, and a bot cannot
+write a deliverables checklist to recover. So whenever a new dependency-pinning
+surface appears in the tree (a new chart under `deploy/helm/`, a new compose
+file, a new container build file outside `docker/`), add it to
+`is_allowed_dependency_path` **and** add a fixture case to
+`test-classify-dependency-pr.sh` in the same change.
+
+Two invariants the test suite pins deliberately — do not "simplify" them away:
+
+- Widening the allowlist must never drop the conjunction with condition (a).
+  A human-authored PR touching an allowlisted path must still be gated.
+- A bot PR that touches an allowlisted path **and** source code must still be
+  gated. That asymmetry is the entire point of the gate.
+
+Derive additions from what Renovate actually edits (`gh pr list --author
+app/renovate` and diff the file lists), not from what looks like a manifest —
+see [`docs/research/1152-dependency-classifier-surface-audit.md`](../../docs/research/1152-dependency-classifier-surface-audit.md).

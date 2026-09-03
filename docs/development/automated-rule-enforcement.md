@@ -96,10 +96,12 @@ If neither applies, the gate runs.
 Automated dependency-bump pull requests opened by bots (`renovate[bot]`
 or `dependabot[bot]`, or branches matching `renovate/*` / `dependabot/*`)
 cannot satisfy the deliverables checklist. When every changed file in the
-PR is an allowed dependency manifest or lockfile (e.g. `package.json`,
-`go.mod`, `Cargo.toml`, `pyproject.toml`, `requirements*.txt`, `Dockerfile*`,
-`dev/Containerfile`, `.pre-commit-config.yaml`, `.github/workflows/**`,
-`changelog.d/**`), the PR is classified as dependency-only via
+PR is an allowed dependency manifest, lockfile, or image-tag surface (e.g.
+`package.json`, `go.mod`, `Cargo.toml`, `pyproject.toml`, `requirements*.txt`,
+`Dockerfile*`, `dev/Containerfile`, `docker/**`, `deploy/helm/**`,
+`Chart.yaml` / `Chart.lock`, `docker-compose*.yml`,
+`.pre-commit-config.yaml`, `.github/workflows/**`, `changelog.d/**`), the PR
+is classified as dependency-only via
 `scripts/ci/classify-dependency-pr.sh`. The job emits a GitHub Actions
 notice and succeeds without running the deliverables body checks.
 
