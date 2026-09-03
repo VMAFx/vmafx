@@ -116,6 +116,14 @@ jobs:
         with:
           submodules: recursive
           persist-credentials: false
+          # Full history + tags: core/include/meson.build derives VMAF_VERSION
+          # from `git describe --tags --match 'v*.*.*'`, which needs a reachable
+          # tag and the commit distance to it. The default fetch-depth of 1
+          # fetches neither, so the build silently fell back to the project
+          # version and test_output's test_vmaf_version had no real version to
+          # check. libvmaf-build-matrix.yml already checks out at depth 0 for
+          # the same reason; this keeps the two workflows consistent.
+          fetch-depth: 0
 
       # ── ccache (Linux + macOS) ──────────────────────────────────────
       - name: Restore ccache
@@ -461,6 +469,16 @@ jobs:
           ./test/test_hip_smoke
 
       # ── Windows CPU tests ─────────────────────────────────────────────
+      # test_output joins this list deliberately: it is the only test that
+      # asserts VMAF_VERSION looks like a version, and it ran on no Windows
+      # leg at all, so this job could not catch a regression in the version
+      # string. The test already carries a GetTempPathA/GetTempFileNameA
+      # path for exactly this platform.
+      # `|| exit /b 1` is required, not decorative: GitHub runs `shell: cmd`
+      # as `%ComSpec% /D /E:ON /V:OFF /S /C "CALL ..."`, so the step result is
+      # the errorlevel of the *last* command alone — without it, a failing
+      # test anywhere but the end of the list is silently swallowed. /V:OFF
+      # also rules out `!ERRORLEVEL!`, so `||` is the portable check.
       - name: Run CPU tests (Windows)
         if: matrix.windows
         shell: cmd
@@ -470,10 +488,10 @@ jobs:
             test_dict test_ref test_log test_thread_pool test_cpu
             test_feature test_cli_parse test_model test_predict
             test_ciede test_cambi test_psnr test_luminance_tools
-            test_feature_collector test_framesync
+            test_feature_collector test_framesync test_output
           ) do (
             echo === %%t ===
-            test\%%t.exe
+            test\%%t.exe || exit /b 1
           )
 
       # ── Artifact ──────────────────────────────────────────────────────

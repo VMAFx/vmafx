@@ -204,6 +204,7 @@ lint-sh:
 	$(call require-tool,shellcheck,your package manager, e.g. pacman -S shellcheck)
 	shellcheck $$(git ls-files '*.sh')
 	@scripts/ci/check-default-model-single-source.sh
+	@scripts/ci/check-vcs-version-not-bare-sha.sh
 
 # Markdown lint (ADR-0866). Default scope is the touched-file delta vs
 # origin/master so the ~6.2k pre-existing-warning tail (ADR-0864) doesn't
