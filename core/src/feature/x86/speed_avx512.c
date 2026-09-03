@@ -20,6 +20,8 @@
 #include <immintrin.h>
 #include <stddef.h>
 
+#include "speed_avx512.h"
+
 // AVX-512 8-wide-double accumulator with two parallel chains for FMA pipelining.
 // Loop processes 16 elements per iteration, then 8, then scalar tail.
 double compute_cov_kernel_avx512(const float *data_x, const float *data_y, size_t stride_px,

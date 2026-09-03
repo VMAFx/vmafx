@@ -14354,6 +14354,9 @@ algorithm: online SGD with EMA weight averaging and 50/50 replay buffer mixing.
 Slow-test audit (ADR-0908): no >30 s tests found in any pytest/meson suite (max 13.40 s). Install `slow` pytest marker in `tools/vmaf-tune/pyproject.toml`, `ai/pyproject.toml`, and `mcp-server/vmaf-mcp/pyproject.toml` as a future-gate (`pytest -m 'not slow'`). Mark the two longest tests (`test_ladder_against_bbb_container_yields_plausible_vmaf`, `test_v14_a_nvenc_probe_succeeds_on_gpu_host`) with `@pytest.mark.slow`. Speed up the docker ladder e2e from ~13 s to ~6.4 s by cutting encode `--duration` 4 -> 2 s and `--crf-sweep` 3 -> 2 points; coverage invariants (`vmaf >= 50`, `len(samples) >= 4`, `(w,h,crf)` uniqueness) preserved.
 
 
+- Reworked the SPEED and CAMBI feature extractor translation units and headers (`cambi.h`, `cambi.c`, `speed.c`, `speed_qa.c`, and x86 AVX2/AVX-512 kernels) to meet the fork's strict lint and code health standards (ADR-1146). Decomposed monolithic routines exceeding line/nesting thresholds into single-purpose static helpers, improved const-correctness and explicit `(ptrdiff_t)` indexing casts, resolved missing header inclusions, and scoped `NULL` preservation under ADR-1138. Bit-exact max-precision numerical equivalence was strictly verified against master across all feature configurations, and Netflix golden tests pass unconditionally.
+
+
 ### SSIMULACRA2 CUDA: 3-channel kernel fusion + V-pass transpose (ADR-0456)
 
 The SSIMULACRA2 CUDA blur dispatch now issues 3 kernel launches per blur operation (one fused

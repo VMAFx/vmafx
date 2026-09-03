@@ -52,12 +52,15 @@
  * VMAF_FEATURE_EXTRACTOR_TEMPORAL set for in-order frame delivery.
  */
 
-#ifndef _USE_MATH_DEFINES
-#define _USE_MATH_DEFINES
-#endif
-
 #include <math.h>
 #include <stddef.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
+ * upstream-mirror file whose Netflix source spells the null pointer constant
+ * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -372,10 +375,7 @@ static int close_fex(VmafFeatureExtractor *fex)
 
 static const char *provided_features[] = {"speed_qa", NULL};
 
-/* NOLINTNEXTLINE(misc-use-internal-linkage) — external linkage required:
- * vmaf_fex_speed_qa is declared extern in feature_extractor.c and appears
- * in feature_extractor_list[]. Making it static would break linking.
- * ADR-0253 (real-impl follow-up). */
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_speed_qa = {
     .name = "speed_qa",
     .init = init,
@@ -388,3 +388,5 @@ VmafFeatureExtractor vmaf_fex_speed_qa = {
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL,
     .chars = {0},
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

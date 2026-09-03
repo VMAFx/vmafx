@@ -407,6 +407,22 @@ feature/
   figure out which kernel drifted and fix it. The Netflix golden
   assertions in `quality_runner_test.py` et al. remain untouched.
 
+- **SPEED and CAMBI feature decomposition and NULL preservation** (fork-local,
+  ADR-1146): [`cambi.c`](cambi.c), [`cambi.h`](cambi.h), [`speed.c`](speed.c),
+  [`speed_qa.c`](speed_qa.c), and SIMD twins in [`x86/`](x86/)
+  (`cambi_avx2.c`, `cambi_avx512.c`, `speed_avx2.c`, `speed_avx512.c`) are
+  decomposed into static single-purpose helpers to satisfy
+  `readability-function-size` (≤60 lines, max nesting 4). C TUs preserve `NULL`
+  through file-scoped `/* NOLINTBEGIN(modernize-use-nullptr) */` /
+  `/* NOLINTEND(modernize-use-nullptr) */` brackets (ADR-1138). **On rebase**:
+  when merging upstream changes to `calculate_c_values`, `init`, or
+  `est_params`, map changes into the respective decomposed helpers
+  (`c_values_*`, `validate_and_setup_dimensions`, `alloc_cambi_buffers`,
+  `solve_covariance_system`) rather than re-inlining. Shared prototypes in
+  `cambi_internal.h` and `speed_internal.h` must not change without mirroring
+  to all GPU/CPU twins (verified by `scripts/ci/twin-drift-check.sh`). Numerical
+  bit-exactness is governed by ADR-1146.
+
 - **SSIMULACRA 2 `picture_to_linear_rgb` SIMD** (fork-local, ADR-0163):
   `ssimulacra2_picture_to_linear_rgb_{avx2,avx512,neon}` vectorises
   the last scalar hot path (2×/frame). Strategy: per-lane scalar

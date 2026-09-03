@@ -1,6 +1,7 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+<!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 ## fix/test-feature-tidy-clean — modernise the assertions ported by #1219 (2026-09-03)
 
 - `core/test/test_feature.cpp`: upstream-mirror test (Netflix `libvmaf/test/test_feature.c`),

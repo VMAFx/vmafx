@@ -22,6 +22,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "cambi_avx512.h"
+
 void cambi_increment_range_avx512(uint16_t *arr, int left, int right)
 {
     __m512i val_vector = _mm512_set1_epi16(1);
@@ -117,37 +119,136 @@ void get_derivative_data_for_row_avx512(const uint16_t *image_data, uint16_t *de
  *    offsets index*2). The AVX-512 version carries no imm8 scale restriction;
  *    scale=2 is legal and saves the shift-then-add offset arithmetic.
  */
-void calculate_c_values_row_avx512(float *c_values, const uint16_t *histograms,
-                                   const uint16_t *image, const uint16_t *mask, int row, int width,
-                                   ptrdiff_t stride, const uint16_t num_diffs,
-                                   const uint16_t *tvi_thresholds, uint16_t vlt_luma,
-                                   const int *diff_weights, const int *all_diffs,
-                                   const float *reciprocal_lut)
+static inline __m512 accumulate_c_value_chunk_avx512(
+    __m512i value_v, __m512i compact_v, __m512i col_v, __m512i p0, __mmask16 mask_active,
+    const uint16_t *histograms, int width, const uint16_t num_diffs, const uint16_t *tvi_thresholds,
+    const int *diff_weights, const int *all_diffs, const float *reciprocal_lut, __m512i width_v,
+    __m512i vlt_luma_v, __m512i band_max_v, __m512i zero, __m512i lo16_mask)
 {
-    int v_lo_signed_sc = (int)vlt_luma - 3 * (int)num_diffs + 1;
-    uint16_t v_band_base = v_lo_signed_sc > 0 ? (uint16_t)v_lo_signed_sc : 0;
-    uint16_t v_band_size = tvi_thresholds[num_diffs - 1] + 1 - v_band_base;
+    (void)width;
+    __m512 c_value = _mm512_setzero_ps();
 
-    /* 16-lane lane-index vector: lane i holds value i. */
+    for (int d = 0; d < num_diffs; d++) {
+        int delta_plus = all_diffs[num_diffs + d + 1];
+        int delta_minus = all_diffs[num_diffs - d - 1];
+        int weight = diff_weights[d];
+        int tvi_thresh = tvi_thresholds[d];
+
+        /* pred_a: value <= tvi_thresh — compare gives mask of lanes satisfying. */
+        __mmask16 pred_a = _mm512_cmple_epi32_mask(value_v, _mm512_set1_epi32(tvi_thresh));
+
+        /* pred_b: (value + delta_plus) > vlt_luma. */
+        __m512i value_plus = _mm512_add_epi32(value_v, _mm512_set1_epi32(delta_plus));
+        __mmask16 pred_b = _mm512_cmpgt_epi32_mask(value_plus, vlt_luma_v);
+
+        __mmask16 predicate = pred_a & pred_b & mask_active;
+        if (predicate == 0) {
+            continue;
+        }
+
+        /* compact_plus clamped for safe gather; compact_minus with OOB tracking. */
+        __m512i compact_plus_raw = _mm512_add_epi32(compact_v, _mm512_set1_epi32(delta_plus));
+        __m512i compact_plus = _mm512_min_epi32(compact_plus_raw, band_max_v);
+
+        __m512i compact_minus_raw = _mm512_add_epi32(compact_v, _mm512_set1_epi32(delta_minus));
+        __mmask16 p2_inbounds = _mm512_cmpgt_epi32_mask(compact_minus_raw, _mm512_set1_epi32(-1));
+        __m512i compact_minus = _mm512_max_epi32(compact_minus_raw, zero);
+
+        /* p1 / p2 gathers. */
+        __m512i p1_idx = _mm512_add_epi32(_mm512_mullo_epi32(compact_plus, width_v), col_v);
+        __m512i p1 =
+            _mm512_and_si512(_mm512_i32gather_epi32(p1_idx, (const int *)histograms, 2), lo16_mask);
+
+        __m512i p2_idx = _mm512_add_epi32(_mm512_mullo_epi32(compact_minus, width_v), col_v);
+        __m512i p2 =
+            _mm512_and_si512(_mm512_i32gather_epi32(p2_idx, (const int *)histograms, 2), lo16_mask);
+        /* Zero OOB lanes in p2. */
+        p2 = _mm512_maskz_mov_epi32(p2_inbounds, p2);
+
+        __m512i p_max = _mm512_max_epu32(p1, p2);
+        __m512i denom = _mm512_add_epi32(p_max, p0);
+
+        /* num = weight * p0 * p_max; all values bounded by uint16 so i32 mul is safe. */
+        __m512i num_int =
+            _mm512_mullo_epi32(_mm512_set1_epi32(weight), _mm512_mullo_epi32(p0, p_max));
+        __m512 num_f = _mm512_cvtepi32_ps(num_int);
+
+        /* rcp = reciprocal_lut[denom]; LUT is hot in L1. */
+        __m512 rcp = _mm512_i32gather_ps(denom, reciprocal_lut, 4);
+
+        __m512 val = _mm512_mul_ps(num_f, rcp);
+        /* Mask off lanes where predicate is false. */
+        val = _mm512_maskz_mov_ps(predicate, val);
+        c_value = _mm512_max_ps(c_value, val);
+    }
+    return c_value;
+}
+
+static inline float calculate_c_value_pixel_scalar_avx512(
+    uint16_t img_val, int col, int width, const uint16_t *histograms, const uint16_t num_diffs,
+    const uint16_t *tvi_thresholds, uint16_t vlt_luma, const int *diff_weights,
+    const int *all_diffs, const float *reciprocal_lut, uint16_t v_band_base, uint16_t v_band_size)
+{
+    int compact_v_signed = (int)img_val - (int)v_band_base;
+    if ((unsigned)compact_v_signed >= v_band_size) {
+        return 0.0f;
+    }
+
+    uint16_t value = (uint16_t)(img_val + num_diffs);
+    uint16_t compact_v_sc = (uint16_t)compact_v_signed;
+    uint16_t p_0 = histograms[(ptrdiff_t)compact_v_sc * width + col];
+    float c_v = 0.0f;
+
+    for (int d = 0; d < num_diffs; d++) {
+        if ((value <= tvi_thresholds[d]) && ((value + all_diffs[num_diffs + d + 1]) > vlt_luma)) {
+            int idx1 = compact_v_signed + all_diffs[num_diffs + d + 1];
+            int idx2 = compact_v_signed + all_diffs[num_diffs - d - 1];
+            uint16_t p_1 = histograms[(ptrdiff_t)idx1 * width + col];
+            uint16_t p_2 = (idx2 >= 0) ? histograms[(ptrdiff_t)idx2 * width + col] : 0;
+            uint16_t p_max = (p_1 > p_2) ? p_1 : p_2;
+            float val = (float)(diff_weights[d] * p_0 * p_max) * reciprocal_lut[p_max + p_0];
+            if (val > c_v) {
+                c_v = val;
+            }
+        }
+    }
+    return c_v;
+}
+
+static void calculate_c_values_row_scalar_tail_avx512(
+    float *c_row, const uint16_t *histograms, const uint16_t *image_row, const uint16_t *mask_row,
+    int col_start, int width, const uint16_t num_diffs, const uint16_t *tvi_thresholds,
+    uint16_t vlt_luma, const int *diff_weights, const int *all_diffs, const float *reciprocal_lut,
+    uint16_t v_band_base, uint16_t v_band_size)
+{
+    for (int col = col_start; col < width; col++) {
+        c_row[col] = mask_row[col] ? calculate_c_value_pixel_scalar_avx512(
+                                         image_row[col], col, width, histograms, num_diffs,
+                                         tvi_thresholds, vlt_luma, diff_weights, all_diffs,
+                                         reciprocal_lut, v_band_base, v_band_size) :
+                                     0.0f;
+    }
+}
+
+static inline int process_c_values_row_chunks_avx512(
+    float *c_row, const uint16_t *image_row, const uint16_t *mask_row, const uint16_t *histograms,
+    int width, const uint16_t num_diffs, const uint16_t *tvi_thresholds, const int *diff_weights,
+    const int *all_diffs, const float *reciprocal_lut, uint16_t v_band_base, uint16_t v_band_size,
+    __m512i vlt_luma_v)
+{
     const __m512i col_base = _mm512_set_epi32(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
     const __m512i width_v = _mm512_set1_epi32(width);
     const __m512i num_diffs_v = _mm512_set1_epi32(num_diffs);
-    const __m512i vlt_luma_v = _mm512_set1_epi32(vlt_luma);
     const __m512i lo16_mask = _mm512_set1_epi32(0xFFFF);
     const __m512i band_offset_v = _mm512_set1_epi32((int)num_diffs + (int)v_band_base);
     const __m512i band_max_v = _mm512_set1_epi32((int)v_band_size - 1);
     const __m512i zero = _mm512_setzero_si512();
-
-    const uint16_t *image_row = &image[row * stride];
-    const uint16_t *mask_row = &mask[row * stride];
-    float *c_row = &c_values[row * width];
 
     int col = 0;
     for (; col + 16 < width; col += 16) {
         /* Load 16 mask values, promote to i32. */
         __m256i mask16 = _mm256_loadu_si256((const __m256i *)&mask_row[col]);
         __m512i mask32 = _mm512_cvtepu16_epi32(mask16);
-        /* Active lane mask: mask32[i] != 0. */
         __mmask16 mask_active = _mm512_cmpneq_epi32_mask(mask32, zero);
 
         /* Skip chunk if no lane is active: mask store of zeros is a no-op. */
@@ -172,96 +273,39 @@ void calculate_c_values_row_avx512(float *c_values, const uint16_t *histograms,
         __m512i p0 =
             _mm512_and_si512(_mm512_i32gather_epi32(p0_idx, (const int *)histograms, 2), lo16_mask);
 
-        __m512 c_value = _mm512_setzero_ps();
-
-        for (int d = 0; d < num_diffs; d++) {
-            int delta_plus = all_diffs[num_diffs + d + 1];
-            int delta_minus = all_diffs[num_diffs - d - 1];
-            int weight = diff_weights[d];
-            int tvi_thresh = tvi_thresholds[d];
-
-            /* pred_a: value <= tvi_thresh — compare gives mask of lanes satisfying. */
-            __mmask16 pred_a = _mm512_cmple_epi32_mask(value_v, _mm512_set1_epi32(tvi_thresh));
-
-            /* pred_b: (value + delta_plus) > vlt_luma. */
-            __m512i value_plus = _mm512_add_epi32(value_v, _mm512_set1_epi32(delta_plus));
-            __mmask16 pred_b = _mm512_cmpgt_epi32_mask(value_plus, vlt_luma_v);
-
-            __mmask16 predicate = pred_a & pred_b & mask_active;
-            if (predicate == 0)
-                continue;
-
-            /* compact_plus clamped for safe gather; compact_minus with OOB tracking. */
-            __m512i compact_plus_raw = _mm512_add_epi32(compact_v, _mm512_set1_epi32(delta_plus));
-            __m512i compact_plus = _mm512_min_epi32(compact_plus_raw, band_max_v);
-
-            __m512i compact_minus_raw = _mm512_add_epi32(compact_v, _mm512_set1_epi32(delta_minus));
-            __mmask16 p2_inbounds =
-                _mm512_cmpgt_epi32_mask(compact_minus_raw, _mm512_set1_epi32(-1));
-            __m512i compact_minus = _mm512_max_epi32(compact_minus_raw, zero);
-
-            /* p1 / p2 gathers. */
-            __m512i p1_idx = _mm512_add_epi32(_mm512_mullo_epi32(compact_plus, width_v), col_v);
-            __m512i p1 = _mm512_and_si512(
-                _mm512_i32gather_epi32(p1_idx, (const int *)histograms, 2), lo16_mask);
-
-            __m512i p2_idx = _mm512_add_epi32(_mm512_mullo_epi32(compact_minus, width_v), col_v);
-            __m512i p2 = _mm512_and_si512(
-                _mm512_i32gather_epi32(p2_idx, (const int *)histograms, 2), lo16_mask);
-            /* Zero OOB lanes in p2. */
-            p2 = _mm512_maskz_mov_epi32(p2_inbounds, p2);
-
-            __m512i p_max = _mm512_max_epu32(p1, p2);
-            __m512i denom = _mm512_add_epi32(p_max, p0);
-
-            /* num = weight * p0 * p_max; all values bounded by uint16 so i32 mul is safe. */
-            __m512i num_int =
-                _mm512_mullo_epi32(_mm512_set1_epi32(weight), _mm512_mullo_epi32(p0, p_max));
-            __m512 num_f = _mm512_cvtepi32_ps(num_int);
-
-            /* rcp = reciprocal_lut[denom]; LUT is hot in L1. */
-            __m512 rcp = _mm512_i32gather_ps(denom, reciprocal_lut, 4);
-
-            __m512 val = _mm512_mul_ps(num_f, rcp);
-            /* Mask off lanes where predicate is false. */
-            val = _mm512_maskz_mov_ps(predicate, val);
-            c_value = _mm512_max_ps(c_value, val);
-        }
+        __m512 c_value = accumulate_c_value_chunk_avx512(
+            value_v, compact_v, col_v, p0, mask_active, histograms, width, num_diffs,
+            tvi_thresholds, diff_weights, all_diffs, reciprocal_lut, width_v, vlt_luma_v,
+            band_max_v, zero, lo16_mask);
 
         /* Apply active-lane mask and store 16 floats. */
         c_value = _mm512_maskz_mov_ps(mask_active, c_value);
         _mm512_storeu_ps(&c_row[col], c_value);
     }
+    return col;
+}
 
-    /* Scalar tail (fewer than 16 columns remaining, same as AVX2 tail). */
-    for (; col < width; col++) {
-        if (mask_row[col]) {
-            uint16_t value = (uint16_t)(image_row[col] + num_diffs);
-            int compact_v_signed = (int)image_row[col] - (int)v_band_base;
-            if ((unsigned)compact_v_signed >= v_band_size) {
-                c_row[col] = 0.0f;
-                continue;
-            }
-            uint16_t compact_v_sc = (uint16_t)compact_v_signed;
-            uint16_t p_0 = histograms[compact_v_sc * width + col];
-            float c_v = 0.0f;
-            for (int d = 0; d < num_diffs; d++) {
-                if ((value <= tvi_thresholds[d]) &&
-                    ((value + all_diffs[num_diffs + d + 1]) > vlt_luma)) {
-                    int idx1 = compact_v_signed + all_diffs[num_diffs + d + 1];
-                    int idx2 = compact_v_signed + all_diffs[num_diffs - d - 1];
-                    uint16_t p_1 = histograms[idx1 * width + col];
-                    uint16_t p_2 = (idx2 >= 0) ? histograms[idx2 * width + col] : 0;
-                    uint16_t p_max = (p_1 > p_2) ? p_1 : p_2;
-                    float val =
-                        (float)(diff_weights[d] * p_0 * p_max) * reciprocal_lut[p_max + p_0];
-                    if (val > c_v)
-                        c_v = val;
-                }
-            }
-            c_row[col] = c_v;
-        } else {
-            c_row[col] = 0.0f;
-        }
-    }
+void calculate_c_values_row_avx512(float *c_values, const uint16_t *histograms,
+                                   const uint16_t *image, const uint16_t *mask, int row, int width,
+                                   ptrdiff_t stride, const uint16_t num_diffs,
+                                   const uint16_t *tvi_thresholds, uint16_t vlt_luma,
+                                   const int *diff_weights, const int *all_diffs,
+                                   const float *reciprocal_lut)
+{
+    int v_lo_signed_sc = (int)vlt_luma - 3 * (int)num_diffs + 1;
+    uint16_t v_band_base = v_lo_signed_sc > 0 ? (uint16_t)v_lo_signed_sc : 0;
+    uint16_t v_band_size = tvi_thresholds[num_diffs - 1] + 1 - v_band_base;
+
+    const uint16_t *image_row = &image[row * stride];
+    const uint16_t *mask_row = &mask[row * stride];
+    float *c_row = &c_values[(ptrdiff_t)row * width];
+    const __m512i vlt_luma_v = _mm512_set1_epi32(vlt_luma);
+
+    int col = process_c_values_row_chunks_avx512(
+        c_row, image_row, mask_row, histograms, width, num_diffs, tvi_thresholds, diff_weights,
+        all_diffs, reciprocal_lut, v_band_base, v_band_size, vlt_luma_v);
+
+    calculate_c_values_row_scalar_tail_avx512(c_row, histograms, image_row, mask_row, col, width,
+                                              num_diffs, tvi_thresholds, vlt_luma, diff_weights,
+                                              all_diffs, reciprocal_lut, v_band_base, v_band_size);
 }
