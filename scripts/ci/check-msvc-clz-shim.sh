@@ -13,8 +13,13 @@
 #
 # The shim must therefore be written with `_BitScanReverse` /
 # `_BitScanReverse64`, which are BSR by definition and present on every
-# x86-64 part, and must carry an architecture guard so an MSVC ARM64 leg
-# (where neither intrinsic exists) still compiles.
+# x86-64 part, and must carry an explicit architecture allowlist that
+# enumerates every architecture MSVC targets -- ARM64 included. Per the MSVC
+# intrinsics reference, `_BitScanReverse` is available on x86, ARM, x64 and
+# ARM64, and only `_BitScanReverse64` is restricted (to x64 and ARM64), so no
+# MSVC architecture needs to be excluded. An excluded one does not fall back to
+# anything: the header is the sole definition of `__builtin_clz` for the
+# generic scalar path, so that leg simply fails to compile.
 #
 # Usage: scripts/ci/check-msvc-clz-shim.sh [repo-root]
 # Exit 0 when the shim is in the required shape, 1 otherwise.
@@ -49,10 +54,22 @@ if ! grep -q '_BitScanReverse' "$HDR"; then
   rc=1
 fi
 
-# (3) The MSVC guard must carry an architecture test, otherwise an MSVC ARM64
-#     leg fails to compile (neither __lzcnt nor _BitScanReverse exists there).
-if ! grep -qE '^#if defined\(_MSC_VER\).*_M_(X64|IX86)' "$HDR"; then
+# (3) The MSVC guard must carry an explicit architecture allowlist covering
+#     every architecture MSVC targets. Continuation lines are joined first,
+#     because the guard legitimately spans several physical lines.
+guard=$(sed -e :a -e '/\\$/N; s/\\\n//; ta' "$HDR" | grep -E '^#if defined\(_MSC_VER\)' || true)
+if [[ -z "$guard" ]]; then
+  echo "FAIL: $HDR has no '#if defined(_MSC_VER)' guard at all." >&2
+  rc=1
+elif ! grep -qE '_M_(X64|IX86)' <<<"$guard"; then
   echo "FAIL: the _MSC_VER guard in $HDR has no _M_X64 / _M_IX86 architecture test." >&2
+  rc=1
+elif ! grep -q '_M_ARM64' <<<"$guard"; then
+  echo "FAIL: the _MSC_VER guard in $HDR does not cover _M_ARM64." >&2
+  echo "      _BitScanReverse is available on x86, ARM, x64 and ARM64 (MSVC" >&2
+  echo "      intrinsics reference); excluding ARM64 leaves __builtin_clz with" >&2
+  echo "      no definition on the generic scalar path, so the leg cannot" >&2
+  echo "      compile. Do not narrow this allowlist." >&2
   rc=1
 fi
 

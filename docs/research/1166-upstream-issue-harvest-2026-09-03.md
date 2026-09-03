@@ -347,6 +347,31 @@ comment names the MSVC C2036 problem), and the `HAVE_UNISTD_H` /
 NOT-APPLICABLE — the fork solved the same portability problem by point-gating
 the includes (rebase-notes round-21 items (l)/(m)).
 
+#### Correction — the guard excluded ARM64 on a false premise
+
+The first form of this fix carried the architecture test
+`_MSC_VER && !__clang__ && (_M_X64 || _M_IX86)`, documented in both the
+header and the CI gate as necessary because "`__lzcnt` and `_BitScanReverse`
+are x86-only". That premise is wrong. Per the MSVC intrinsics reference:
+
+| Intrinsic | Architectures |
+| --- | --- |
+| `_BitScanReverse` | x86, ARM, x64, ARM64 |
+| `_BitScanReverse64` | ARM64, x64 |
+
+Only `__lzcnt` is genuinely x86-only. The consequence of the wrong premise is
+that MSVC ARM64 matched no branch: this header is the sole definition of
+`__builtin_clz` for `integer_adm.c` and `integer_vif.h`, which sit on the
+generic scalar path and are compiled for every target, so the leg failed to
+compile outright rather than falling back to anything. The fork runs no MSVC
+ARM64 CI leg, so the break was latent.
+
+The allowlist now covers every architecture MSVC targets, selects
+`_BitScanReverse64` on x64/ARM64 and the two-step 32-bit reconstruction
+elsewhere, and `scripts/ci/check-msvc-clz-shim.sh` asserts the ARM64 arm
+specifically — a narrowed allowlist now fails the gate, verified by negative
+test alongside the existing `__lzcnt` negative test.
+
 ### Netflix/vmaf#1178 — C++ runtime missing from `Libs.private`
 
 `core/src/meson.build` built `libvmaf_private_libs` as `[thread_lib, math_lib]`

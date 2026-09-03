@@ -168,3 +168,23 @@
 
     Two cases added to `core/test/test_model_feature_overload_ownership.c` pin
     the asymmetry from both sides, and pass under `-Db_sanitize=address`.
+
+    Third post-review round — the MSVC clz shim's architecture allowlist
+    excluded the one platform it was introduced to protect:
+
+    - **The `_M_X64 || _M_IX86` guard locked MSVC ARM64 out of the shim
+      entirely.** Both the header comment and
+      `scripts/ci/check-msvc-clz-shim.sh` justified the exclusion by
+      asserting that `_BitScanReverse` is x86-only. The MSVC intrinsics
+      reference states the opposite: `_BitScanReverse` is available on x86,
+      ARM, x64 **and** ARM64, and only `_BitScanReverse64` is restricted (to
+      x64 and ARM64). Since this header is the sole definition of
+      `__builtin_clz` for `integer_adm.c` and `integer_vif.h` — generic
+      scalar code compiled for every target — an MSVC ARM64 build fell
+      through the guard with no definition at all and could not compile.
+      Nothing observed it because the fork has no MSVC ARM64 CI leg. The
+      allowlist now enumerates every architecture MSVC targets,
+      `_BitScanReverse64` is used on x64 and ARM64 with the two-step 32-bit
+      reconstruction elsewhere, and the gate pins the ARM64 arm so it cannot
+      be narrowed again. Both the narrowing and the `__lzcnt` reintroduction
+      were negative-tested against the gate.
