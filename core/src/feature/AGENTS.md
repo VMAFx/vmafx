@@ -325,9 +325,23 @@ feature/
   (the [ADR-0142](../../../docs/adr/0142-port-netflix-18e8f1c5-vif-sigma-nsq.md)
   carve-out). Netflix upstream #955 is OPEN since 2020 with no
   maintainer response — until it closes with a fix, the
-  overflow stays. See
+  overflow stays.  See
   [ADR-0155](../../../docs/adr/0155-adm-i4-rounding-deferred-netflix-955.md)
   and [rebase-notes 0048](../../../docs/rebase-notes.md).
+
+- **`integer_adm` GPU row-level rounding invariant** (fork-local, ADR-1167):
+  In integer ADM contrast masking kernels (`cuda/integer_adm/adm_cm.cu` and
+  `hip/integer_adm/adm_cm.hip`), the inner accumulation rounding shift
+  `(row_total + add_shift_inner_accum) >> shift_inner_accum` must NEVER be
+  distributed across warp reduction or per-thread reduction. Bitwise right-shift
+  with rounding bias is non-linear and non-distributive over addition. The
+  kernel must accumulate all columns of a row in 64-bit precision across the
+  entire width `[start_col, end_col)` before applying the shift once per row.
+  Kernel launch grids must use `gridDim.x = 1` to ensure single-block/warp
+  row traversal. Furthermore, border row selection at `i == 0 && top <= 0`
+  must use explicit absolute indices `{row_top, row_bot, col_l, col_r}` and
+  evaluate `csf_a` at row 0 center (`i * src_stride + j`), never walking running
+  pointer offsets. See [ADR-1167](../../../docs/adr/1167-adm-cm-row-level-rounding.md).
 
 - **`psnr_hvs` AVX2 DCT bit-exactness** (fork-local, ADR-0159):
   [`x86/psnr_hvs_avx2.c`](x86/psnr_hvs_avx2.c) vectorizes the

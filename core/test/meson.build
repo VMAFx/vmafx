@@ -1801,6 +1801,28 @@ test_cuda_adm_parity = executable('test_cuda_adm_parity',
 test('test_cuda_adm_parity', test_cuda_adm_parity,
     suite : ['fast', 'gpu'])
 
+# ADR-1167 — ADM small-frame border parity test (i == 0 && top <= 0 branch).
+test_cuda_adm_small_border = executable('test_cuda_adm_small_border',
+    ['test.c', 'test_adm_small_border.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_adm_small_border', test_cuda_adm_small_border,
+    suite : ['fast', 'gpu'])
+
+# ADR-1167 — ADM wide-frame row-level rounding parity test (spans 60 warps).
+test_cuda_adm_wide_rounding = executable('test_cuda_adm_wide_rounding',
+    ['test.c', 'test_adm_wide_rounding.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_adm_wide_rounding', test_cuda_adm_wide_rounding,
+    suite : ['fast', 'gpu'])
+
 # Round-2 GPU-kernel coverage gap-fill — motion_v2 CPU vs. CUDA parity
 # (places=4). Covers the SAD-weighted motion variant used by the
 # "vmaf_v0.6.1neg" model lineage. Distinct from test_cuda_motion3_parity
@@ -2665,6 +2687,30 @@ test_hip_adm_parity = executable('test_hip_adm_parity',
     c_args: ['-DHAVE_HIP=1']
 )
 test('test_hip_adm_parity', test_hip_adm_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+# ADR-1167 — ADM small-frame border parity test (i == 0 && top <= 0 branch).
+test_hip_adm_small_border = executable('test_hip_adm_small_border',
+    ['test.c', 'test_adm_small_border.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_adm_small_border', test_hip_adm_small_border,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+# ADR-1167 — ADM wide-frame row-level rounding parity test (spans 60 warps).
+test_hip_adm_wide_rounding = executable('test_hip_adm_wide_rounding',
+    ['test.c', 'test_adm_wide_rounding.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_adm_wide_rounding', test_hip_adm_wide_rounding,
     suite : ['fast', 'gpu'],
     timeout : 60)
 

@@ -894,3 +894,4 @@
 1145-neo-stack-derived-from-release
 1134-vmafx-ort-runner-in-tree
 1153-twin-dead-sides-resolution
+1167-adm-cm-row-level-rounding

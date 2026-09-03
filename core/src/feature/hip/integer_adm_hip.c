@@ -713,10 +713,9 @@ static int i4_adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h,
         const int BLOCKX = 32 * warps_per_cta;
         void *args[] = {
             &h, &w, &scale, &buffer_h, &buffer_stride, &buf->tmp_accum, &buf->adm_cm[scale]};
-        hipError_t rc = hipModuleLaunchKernel(
-            s->func_adm_cm_reduce_line_kernel_4,
-            (uint32_t)DIV_ROUND_UP(buffer_stride, BLOCKX * val_per_thread), (uint32_t)buffer_h, 3,
-            (uint32_t)BLOCKX, 1, 1, 0, c_stream, args, NULL);
+        hipError_t rc =
+            hipModuleLaunchKernel(s->func_adm_cm_reduce_line_kernel_4, 1, (uint32_t)buffer_h, 3,
+                                  (uint32_t)BLOCKX, 1, 1, 0, c_stream, args, NULL);
         if (rc != hipSuccess)
             return hip_rc(rc);
     }
@@ -782,10 +781,10 @@ static int adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, in
                         &ws,
                         &shift_inner_accum,
                         &add_shift_inner_accum};
-        hipError_t rc = hipModuleLaunchKernel(
-            s->func_adm_cm_line_kernel_8, (uint32_t)DIV_ROUND_UP(buffer_stride, BLOCKX),
-            (uint32_t)DIV_ROUND_UP(buffer_h, BLOCKY * rows_per_thread), 3, (uint32_t)BLOCKX,
-            (uint32_t)BLOCKY, 1, 0, c_stream, args, NULL);
+        hipError_t rc =
+            hipModuleLaunchKernel(s->func_adm_cm_line_kernel_8, 1,
+                                  (uint32_t)DIV_ROUND_UP(buffer_h, BLOCKY * rows_per_thread), 3,
+                                  (uint32_t)BLOCKX, (uint32_t)BLOCKY, 1, 0, c_stream, args, NULL);
         if (rc != hipSuccess)
             return hip_rc(rc);
     }

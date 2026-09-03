@@ -1,6 +1,17 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/adm-cm-gpu-border-and-rounding — integer ADM GPU border indexing and row-level rounding (ADR-1167) (2026-09-03)
+
+- `core/src/feature/cuda/integer_adm/adm_cm.cu` & `core/src/feature/hip/integer_adm/adm_cm.hip`:
+  - Defect 1 (border row selection): Replaced running pointer offsets with explicit absolute indexing `{row_top, row_bot, col_l, col_r}` and evaluated center `csf_a` at `i * src_stride + j` when `i == 0 && top <= 0`.
+  - Defect 2 (distributed rounding shift): Changed kernels to stride across columns with full row accumulation into 64-bit integers and applied `(row_total + add_shift_inner_accum) >> shift_inner_accum` once per row before atomic add into `accum_global`.
+- `core/src/feature/cuda/integer_adm_cuda.c` & `core/src/feature/hip/integer_adm_hip.c`:
+  - Launched CM kernels with `gridDim.x = 1` to ensure single-block/warp column striding per row.
+- `core/test/test_adm_small_border.c`, `core/test/test_adm_wide_rounding.c`, `core/test/meson.build`:
+  - Added new regression parity tests exercising small border frames and wide row rounding for CUDA and HIP.
+  no rebase impact: all touched GPU kernels, host wrappers, and tests are fork-added (upstream Netflix/vmaf does not have CUDA or HIP ADM kernels).
+
 ## fix/twin-dead-sides — resolve dead twin sides (T-TWIN-DEAD-SIDES-2026-09-02) (2026-09-03)
 
 - `core/src/model.cpp`: fork-added twin deleted. `core/src/model.c` is the sole

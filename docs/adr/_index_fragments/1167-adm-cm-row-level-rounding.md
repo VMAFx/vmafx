@@ -1,0 +1,1 @@
+| [ADR-1167](1167-adm-cm-row-level-rounding.md) | Row-level rounding accumulator and border row selection for integer ADM GPU kernels | Accepted | cuda, hip, gpu, feature, integer-adm, numerical-correctness |

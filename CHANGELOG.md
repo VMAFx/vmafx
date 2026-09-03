@@ -17975,6 +17975,12 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   no schema content changed.
 
 
+- CUDA & HIP backends: fixed two GPU numerical defects in integer ADM contrast masking kernels (`adm_cm.cu` and `adm_cm.hip`):
+  (1) Fixed border row selection at `i == 0 && top <= 0` (scale 3 height <= 14 px) by replacing running pointer offsets with explicit absolute indexing `{row_top, row_bot, col_l, col_r}` and evaluating `csf_a` at the row 0 center instead of row 2.
+  (2) Fixed distributed rounding shift by enforcing row-level accumulation across columns in 64-bit precision before applying `(row_total + add_shift_inner_accum) >> shift_inner_accum` once per row, eliminating warp-distributed (CUDA) and thread-distributed (HIP) rounding bias drift on wide frames (>= 1920 px).
+  Supersedes ADR-0539 with ADR-1167. Added regression parity tests `test_cuda_adm_small_border` and `test_cuda_adm_wide_rounding` (and HIP twins).
+
+
 **fix(adm):** Remove stale dead-code block and replace the `adm_p_norm` TODO
 comment in `integer_adm.c` with a brief explanatory note. The exponent is fixed
 at 3.0f per the Netflix training-data contract; no runtime parameterisation is
