@@ -2,6 +2,21 @@
 # Rebase notes
 
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
+## fix/vcs-version-bare-sha — VMAF_VERSION must never be a bare commit SHA (2026-09-03)
+
+- `core/include/meson.build`: upstream Netflix/vmaf carries the same `vcs_tag()` call **with**
+  `--always`. The fork deliberately drops that flag and pins an explicit
+  `fallback: meson.project_version()`. On an upstream sync this file will conflict; keep the
+  fork's side. Restoring `--always` reintroduces the defect where a tagless or shallow checkout
+  yields a bare abbreviated object name as `VMAF_VERSION`.
+  `scripts/ci/check-vcs-version-not-bare-sha.sh` fails the build if the flag comes back, so a
+  careless conflict resolution is caught rather than shipped.
+- `.github/workflows/build.yml`: fork-added workflow; no upstream counterpart. The
+  `fetch-depth: 0` on the checkout is load-bearing (git describe needs tags plus the commit
+  distance), as is `|| exit /b 1` in the Windows `for` loop (GitHub runs `shell: cmd` with
+  `/V:OFF`, so without it only the last executable's exit code reaches the step result).
+- `scripts/ci/check-vcs-version-not-bare-sha.sh`, `changelog.d/fixed/*`: wholly fork-added.
+
 ## gap/hip-bucket-v2 — AMD ROCm HIP backend gap closure (ADR-1154) (2026-09-03)
 
 - `core/src/feature/hip/` and `core/src/hip/`: all touched files (`ciede_hip.c`, `float_adm_hip.c`,
