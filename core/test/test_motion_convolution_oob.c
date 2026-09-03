@@ -72,13 +72,24 @@ static int drive_float_motion(unsigned w, unsigned h, enum VmafPixelFormat pix_f
     VmafFeatureDictionary *dict = NULL;
     char buf[128];
     (void)snprintf(buf, sizeof(buf), "%s", opts);
-    char *save = NULL;
-    for (char *tok = strtok_r(buf, ":", &save); tok; tok = strtok_r(NULL, ":", &save)) {
-        char *eq = strchr(tok, '=');
-        if (!eq)
-            continue;
-        *eq = '\0';
-        (void)vmaf_feature_dictionary_set(&dict, tok, eq + 1);
+    /* Split "k=v:k=v" by hand rather than with strtok_r: that function is
+     * POSIX-only and the MSVC legs (which ship strtok_s instead) failed to
+     * compile this file with "call to undeclared function 'strtok_r'". Plain
+     * strtok is on the fork's banned-function list (docs/principles.md
+     * S1.2 rule 30), so neither variant is an option here. */
+    char *cursor = buf;
+    while (*cursor != '\0') {
+        char *sep = strchr(cursor, ':');
+        if (sep != NULL)
+            *sep = '\0';
+        char *eq = strchr(cursor, '=');
+        if (eq != NULL) {
+            *eq = '\0';
+            (void)vmaf_feature_dictionary_set(&dict, cursor, eq + 1);
+        }
+        if (sep == NULL)
+            break;
+        cursor = sep + 1;
     }
 
     err = vmaf_use_feature(ctx, "float_motion", dict);
