@@ -204,6 +204,60 @@ DIFF
 expect_exit "human-authored helm change is NOT exempt" 1 "lusoris" \
   "feat/tune-helm-defaults" "${work}/case19_human_helm.diff"
 
+# Case 20: REGRESSION — BASE_SHA/HEAD_SHA path with a base branch that has MOVED.
+#
+# Every case above feeds a precomputed --diff file, which bypasses the git-diff
+# code path entirely. That is exactly why the following bug survived: the
+# explicit-SHA branch used a two-dot `base_sha..head_sha` range, and GitHub's
+# `pull_request.base.sha` is the base tip at PR-creation time, not the current
+# merge base. Once master moves, two-dot reports every file merged since the
+# branch point on top of the PR's own change -- a Renovate PR touching only
+# `deploy/helm/vmafx/values.yaml` was seen as touching 36 files including
+# `core/src/feature/*.c`, so the classifier refused the exemption and the PR
+# could never pass the documentation gates.
+#
+# This case builds a real repo where the base advances with a SOURCE file after
+# the PR branches, then asserts the classifier still sees only the PR's own file.
+repo="${work}/case20_repo"
+mkdir -p "${repo}/deploy/helm/vmafx" "${repo}/core/src/feature"
+(
+  cd "${repo}" || exit 1
+  git init -q .
+  git config user.email t@example.com
+  git config user.name t
+  echo "image: v1" >deploy/helm/vmafx/values.yaml
+  echo "int x;" >core/src/feature/seed.c
+  git add -A && git commit -qm base
+
+  # PR branches here.
+  git branch pr-branch
+  fork_point="$(git rev-parse HEAD)"
+
+  # Base branch moves on, touching SOURCE -- this is what poisons a two-dot diff.
+  echo "int y;" >>core/src/feature/seed.c
+  git add -A && git commit -qm "master moves, touching source"
+  base_sha="$(git rev-parse HEAD)"
+
+  # The PR itself changes only the Helm values file.
+  git checkout -q pr-branch
+  echo "image: v2" >deploy/helm/vmafx/values.yaml
+  git add -A && git commit -qm "renovate: bump image tag"
+  head_sha="$(git rev-parse HEAD)"
+
+  printf '%s %s %s\n' "${fork_point}" "${base_sha}" "${head_sha}" >"${repo}/.shas"
+) >/dev/null 2>&1
+
+read -r _fork case20_base case20_head <"${repo}/.shas"
+if (cd "${repo}" && PR_AUTHOR="renovate[bot]" HEAD_REF="renovate/img-0.x" \
+  BASE_SHA="${case20_base}" HEAD_SHA="${case20_head}" \
+  bash "${classifier}" >/dev/null 2>&1); then
+  echo "PASS: moved base branch still classifies a helm-only bot PR as exempt"
+  pass_count=$((pass_count + 1))
+else
+  echo "FAIL: moved base branch broke the exemption (two-dot diff regression)"
+  fail_count=$((fail_count + 1))
+fi
+
 echo ""
 echo "test-classify-dependency-pr: ${pass_count} passed, ${fail_count} failed"
 
