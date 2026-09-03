@@ -429,15 +429,40 @@ jobs:
         run: ninja -vC core/build test
 
       # ── Python tox (Linux + macOS) ───────────────────────────────────
-      - name: Cache Netflix vmaf_resource fixtures
+      - name: Restore Netflix vmaf_resource fixtures
+        id: fixtures
+        # Restore-only, with the save split out below and gated on success().
+        # The combined actions/cache action writes its cache from a post-job step
+        # that runs even when the job was CANCELLED or FAILED. Because the key is
+        # content-hashed over python/test/*_test.py, any PR touching a Python test
+        # gets its own key; a run cancelled part-way through tox then saved the
+        # partially-populated python/test/resource tree under that fresh key, and
+        # every later run on the branch got an EXACT hit on the truncated tree.
+        # download_reactively (compat/python-vmaf/config.py) only fetches a fixture
+        # when the file is ABSENT, so a short-but-present file is never repaired and
+        # the branch stays broken until someone deletes the cache by hand. That is
+        # what reddened #1261: master scored test_ssimulacra2_small_160x90 fine from
+        # its own cache while the PR failed on "no frames decoded" from a poisoned
+        # one. Saving only on success() means a cancelled or failing run can no
+        # longer publish a partial fixture tree.
         if: (startsWith(matrix.os, 'ubuntu') && !matrix.sycl) || matrix.os == 'macos-latest'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: python/test/resource
           key: vmaf-fixtures-resource-v1-${{ hashFiles('python/test/*_test.py', 'python/test/resource/test_*.py') }}
           restore-keys: |
             vmaf-fixtures-resource-v1-
             vmaf-fixtures-resource-
+
+      - name: Drop unusable restored fixtures
+        # A restored fixture that is empty, or that holds an HTML error page or
+        # a Git-LFS pointer instead of the payload, is worse than a missing one:
+        # download_reactively re-fetches only ABSENT files, so the bad copy is
+        # never repaired and the test fails with "no frames decoded". The
+        # success()-gated save below stops new poisoning; this heals caches
+        # already poisoned, which otherwise need a manual cache deletion.
+        if: (startsWith(matrix.os, 'ubuntu') && !matrix.sycl) || matrix.os == 'macos-latest'
+        run: bash scripts/ci/prune-corrupt-fixtures.sh python/test/resource
 
       - name: Run tox tests (Linux)
         # Python snapshots and the immutable Netflix assertions are authored
@@ -460,6 +485,15 @@ jobs:
           CC="$(brew --prefix)/opt/llvm/bin/clang" \
           CXX="$(brew --prefix)/opt/llvm/bin/clang++" \
           tox -c python
+
+      - name: Save Netflix vmaf_resource fixtures
+        # Only on success(): a cancelled or failing tox run must never publish
+        # a partial python/test/resource tree under this branch's key.
+        if: success() && ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl) || matrix.os == 'macos-latest') && steps.fixtures.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: python/test/resource
+          key: vmaf-fixtures-resource-v1-${{ hashFiles('python/test/*_test.py', 'python/test/resource/test_*.py') }}
 
       # ── HIP smoke test ────────────────────────────────────────────────
       - name: Run HIP smoke test (no GPU)

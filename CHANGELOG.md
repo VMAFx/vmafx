@@ -19065,6 +19065,18 @@ approximately 38 of the last 50 master-push failures caused by post-merge doc
 build errors. See [ADR-0986](../docs/adr/0986-ci-docs-pr-trigger.md).
 
 
+- Hardened the CI test-fixture cache against poisoning by cancelled or failing runs.
+  `actions/cache` saves from a post-job step that runs regardless of outcome,
+  and the fixture key is content-hashed over `python/test/*_test.py`, so a run
+  cancelled part-way through published a partially-populated
+  `python/test/resource` tree under that branch's key. Every later run on the
+  branch would then restore the truncated tree and fail with `no frames decoded`,
+  because the lazy fetcher only re-downloads fixtures that are *absent*. The
+  save is now split out and gated on `success()`, and a restored fixture that
+  is empty, or that holds an HTML error page or a Git-LFS pointer instead of
+  the payload, is dropped so it re-downloads.
+
+
 - **Windows MSVC /Zc:strictStrings build error (C2664):** The fallback
   `strsep` in `core/tools/cli_parse.cpp` declared its `sep` parameter
   as `char *` (non-const); MSVC rejects the implicit `const char[2]` →

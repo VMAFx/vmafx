@@ -2,6 +2,23 @@
 # Rebase notes
 
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
+## fix/fixture-cache-poisoning — fixture caches must not be written by failed runs (2026-09-04)
+
+- `.github/workflows/{build,libvmaf-build-matrix,tests-and-quality-gates}.yml`: all three are
+  fork-added and have no upstream counterpart, so no sync conflict is expected. The invariant
+  they now encode is easy to undo by accident: the fixture cache MUST stay split into
+  `actions/cache/restore` plus a separate `actions/cache/save` gated on `success()`. Collapsing
+  them back into the combined `actions/cache` action silently restores the poisoning bug,
+  because that action's post-job save runs even when the job was cancelled or failed.
+- `scripts/ci/prune-corrupt-fixtures.sh`, `scripts/ci/test-prune-corrupt-fixtures.sh`: wholly
+  fork-added. The pruner deletes files, so its match rules are deliberately narrow — empty, a
+  Git-LFS pointer, an HTML error page, a JSON API error. Do not widen them to include "file is
+  smaller than expected": several real fixtures are legitimately tiny, and the self-test pins
+  that case.
+- `compat/python-vmaf/config.py::download_reactively` is the reason any of this is needed — it
+  re-fetches only when the local file is ABSENT. If a future sync makes it validate content
+  instead, the pruner becomes redundant and can go.
+
 ## fix/vcs-version-bare-sha — VMAF_VERSION must never be a bare commit SHA (2026-09-03)
 
 - `core/include/meson.build`: upstream Netflix/vmaf carries the same `vcs_tag()` call **with**

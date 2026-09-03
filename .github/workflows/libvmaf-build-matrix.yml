@@ -602,18 +602,38 @@ jobs:
 
       # (ADR-0726: Vulkan removed — MoltenVK install + smoke test steps deleted)
 
-      - name: Cache Netflix vmaf_resource fixtures
+      - name: Restore Netflix vmaf_resource fixtures
+        id: fixtures
+        # Restore-only; the save is split out below and gated on success().
+        # The combined actions/cache action saves from a post-job step that runs even
+        # when the job was CANCELLED or FAILED, and the key is content-hashed over
+        # python/test/*_test.py, so any PR touching a Python test gets its own key. A
+        # run cancelled part-way through then published a partially-populated
+        # python/test/resource tree under that fresh key, and every later run on the
+        # branch hit it EXACTLY. download_reactively (compat/python-vmaf/config.py)
+        # re-fetches a fixture only when the file is ABSENT, so a short-but-present
+        # file is never repaired. See the same split in build.yml.
         # Insulates the tox lanes from the recurring HTTP-502s on
         # raw.githubusercontent.com when fetching python/test/resource/
         # fixtures via download_reactively (compat/python-vmaf/config.py).
         if: ${{ ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: python/test/resource
           key: vmaf-fixtures-resource-v1-${{ hashFiles('python/test/*_test.py', 'python/test/resource/test_*.py') }}
           restore-keys: |
             vmaf-fixtures-resource-v1-
             vmaf-fixtures-resource-
+
+      - name: Drop unusable restored fixtures
+        # A restored fixture that is empty, or that holds an HTML error page or
+        # a Git-LFS pointer instead of the payload, is worse than a missing one:
+        # download_reactively re-fetches only ABSENT files, so the bad copy is
+        # never repaired and the test fails with "no frames decoded". The
+        # success()-gated save below stops new poisoning; this heals caches
+        # already poisoned, which otherwise need a manual cache deletion.
+        if: ${{ ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
+        run: bash scripts/ci/prune-corrupt-fixtures.sh python/test/resource
 
       - name: Run tox tests (ubuntu)
         if: ${{ (startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) && steps.impact.outputs.c_core == 'true' }}
@@ -631,6 +651,15 @@ jobs:
           CC=$(brew --prefix)/opt/llvm/bin/clang \
           CXX=$(brew --prefix)/opt/llvm/bin/clang++ \
           tox -c python
+
+      - name: Save Netflix vmaf_resource fixtures
+        # success() only: a cancelled or failing run must never publish a
+        # partial fixture tree under this key. Placed after both tox legs.
+        if: ${{ success() && (((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true') && steps.fixtures.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: python/test/resource
+          key: vmaf-fixtures-resource-v1-${{ hashFiles('python/test/*_test.py', 'python/test/resource/test_*.py') }}
 
       # GPU builds: run tests that don't need hardware
       - name: Run CPU-only tests (GPU build)
