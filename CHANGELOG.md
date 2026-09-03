@@ -14175,6 +14175,9 @@ and config paths are also updated in `docs/architecture/workspace.md`.
   `libmfx` and `libvpl` correctly.
 
 
+- **README overhaul for clarity, accuracy, and first-time readers.** Restructures `README.md` to clearly explain what VMAFx is, why it differs from upstream Netflix/vmaf, how to build and score video, and links to deeper documentation. Corrects the broken logo path (`compat/python-vmaf/resource/images/vmaf_logo.jpg`), removes rotted static language/compiler badges and internal ADR citations, documents all 17 registered Metal kernels on Apple Silicon, highlights the five fork-added quality metrics (ΔE-ITP, PU21, NIQE, BRISQUE, Y-FUNQUE+), and adds links to the public roadmap and GitHub milestones.
+
+
 - **C++23 Wave bundle** (#319 log.c→.cpp, #232 gpu_dispatch_env.c→.cpp,
   #136 opt.cpp+read_json_model.cpp, #154 feature_extractor.c→.cpp,
   #198 cli_parse.c+vmaf.c→.cpp): five sequential file-rename conversions
