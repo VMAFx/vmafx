@@ -12493,9 +12493,14 @@ batched wait instead of issuing its own per-extractor stream sync.
   scores stay comparable across the 2160p boundary.
   **NEG is unchanged and now names a different generation**: Netflix published
   no NEG counterpart to any `vmaf_v1.0.16_*` model, so `--neg` still scores with
-  the v0.6.1 family. The Python mirror previously derived NEG as
-  `DEFAULT_MODEL + "neg"`, which would have synthesised the nonexistent
-  `vmaf_v1.0.16_3d0hneg`; it is now an independent constant.
+  the v0.6.1 family. Two routers would otherwise have synthesised the
+  nonexistent `vmaf_v1.0.16_3d0hneg` and aborted at model load — the Python
+  mirror derived NEG as `DEFAULT_MODEL + "neg"`, and `vmafx-tune`'s per-shot
+  router appended `"neg"` unconditionally, which would have failed every scored
+  shot under `--neg`. The mirror is now an independent constant and the per-shot
+  router defers to `pkg/corpus.NegModelFor`, so the Go CLI, the Go corpus
+  package and the Python tool cannot drift apart. Covered by new tests that
+  assert whatever NEG resolves to is a model the binary can actually load.
   Upstream Netflix still defaults to `vmaf_v0.6.1` — this is a deliberate fork
   divergence, recorded in `docs/rebase-notes.md`.
   **No Netflix golden assertion value was changed.** The single golden test that

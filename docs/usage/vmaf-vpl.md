@@ -49,7 +49,7 @@ to H.265.
 | --- | --- | --- | --- |
 | `--ref FILE` | string | — (required) | Reference elementary bitstream. |
 | `--dis FILE` | string | — (required) | Distorted elementary bitstream. |
-| `--model NAME` | string | `vmaf_v0.6.1` | VMAF model name (built-in lookup) or file path (fallback). |
+| `--model NAME` | string | `vmaf_v1.0.16_3d0h` | VMAF model name (built-in lookup) or file path (fallback). |
 | `--frames N` | uint | `0` (all frames) | Stop after N frames. |
 | `--device N` | int | `0` | SYCL device index. |
 | `--render-node PATH` | string | `/dev/dri/renderD128` | VA-API DRM render node. |

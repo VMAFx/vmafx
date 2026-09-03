@@ -297,7 +297,7 @@ The mapping is closed and order-stable; see
 | `--output PATH` | `corpus.jsonl` | JSONL destination. |
 | `--encode-dir PATH` | `.workingdir2/encodes` | Scratch dir; gitignored by convention. |
 | `--keep-encodes` | off | Retain encoded files after scoring. |
-| `--vmaf-model NAME` | `vmaf_v0.6.1` | Forwarded to `vmaf --model`. Only used when `--no-resolution-aware` is set; otherwise auto-picked per encode resolution (see "Resolution-aware mode" below). |
+| `--vmaf-model NAME` | `vmaf_v1.0.16_3d0h` | Forwarded to `vmaf --model`. Only used when `--no-resolution-aware` is set; otherwise auto-picked per encode resolution (see "Resolution-aware mode" below). |
 | `--resolution-aware` / `--no-resolution-aware` | on | Auto-pick the VMAF model per encode resolution. Default on. |
 | `--ffmpeg-bin PATH` | `ffmpeg` | Override the ffmpeg binary. |
 | `--ffprobe-bin PATH` | `ffprobe` | Override the ffprobe binary (used for HDR detection). |
@@ -314,8 +314,8 @@ The mapping is closed and order-stable; see
 ## Resolution-aware mode
 
 VMAF is a resolution-aware metric: the fork ships two production-grade
-pooled-mean models — `vmaf_v0.6.1` (trained on a 1080p viewing setup)
-and `vmaf_4k_v0.6.1` (re-fit for a 4K display). Scoring 4K content
+pooled-mean models — `vmaf_v1.0.16_3d0h` (the v1.0.16 standard 1080p model, 3H
+viewing distance) and `vmaf_v1.0.16_1d5h_2160` (its 4K counterpart, 2160p at 1.5H). Scoring 4K content
 against the 1080p model under-counts spatial detail; scoring 1080p
 content against the 4K model over-counts coding artefacts. The bias is
 several VMAF points either way — large enough to poison a
@@ -328,9 +328,9 @@ published guidance:
 | Encode height | Selected model |
 | --- | --- |
 | `≥ 2160` (UHD-1 and up) | `vmaf_4k_v0.6.1` |
-| `< 2160` (everything else, including 1440p / 720p / SD) | `vmaf_v0.6.1` |
+| `< 2160` (everything else, including 1440p / 720p / SD) | `vmaf_v1.0.16_3d0h` |
 
-The fork has no 720p / 1440p / SD model — `vmaf_v0.6.1` is the
+The fork has no 720p / 1440p / SD model — `vmaf_v1.0.16_3d0h` is the
 canonical fallback for all sub-2160p content (matches Netflix's
 recommendation).
 
@@ -356,13 +356,13 @@ need to consult it outside the corpus loop:
 
 ```python
 from vmaftune.resolution import (
-    select_vmaf_model_version,    # str: "vmaf_v0.6.1" or "vmaf_4k_v0.6.1"
+    select_vmaf_model_version,    # str: "vmaf_v1.0.16_3d0h" or "vmaf_v1.0.16_1d5h_2160"
     select_vmaf_model,            # Path: in-tree model JSON file
     crf_offset_for_resolution,    # int: -2 / 0 / +2 / +4 by resolution band
 )
 
 assert select_vmaf_model_version(3840, 2160) == "vmaf_4k_v0.6.1"
-assert select_vmaf_model_version(1920, 1080) == "vmaf_v0.6.1"
+assert select_vmaf_model_version(1920, 1080) == "vmaf_v1.0.16_3d0h"
 ```
 
 `crf_offset_for_resolution` returns a small integer offset that the
@@ -913,7 +913,7 @@ the fast-path is not confident.
 | `--smoke` | off | Synthetic curve; no ffmpeg / ONNX / GPU. |
 | `--score-backend` | `auto` | Verify-pass backend (`auto`/`cpu`/`cuda`/`sycl`/`hip`). (`vulkan` removed in ADR-0726.) |
 | `--ffmpeg-bin / --vmaf-bin` | `ffmpeg` / `vmaf` | Tool paths. |
-| `--vmaf-model` | `vmaf_v0.6.1` | libvmaf model for the verify pass. |
+| `--vmaf-model` | `vmaf_v1.0.16_3d0h` | libvmaf model for the verify pass. |
 | `--encode-dir` | `.workingdir2/fast` | Scratch dir for probe + verify encodes. |
 | `--output` | stdout | JSON destination for the recommendation payload. |
 
@@ -1027,7 +1027,7 @@ vmaf-tune prefilter --target-vmaf 93 --smoke \
 | `--smoke` | off | Synthetic deband+CRF surface; no ffmpeg / Vulkan / GPU. |
 | `--score-backend` | `auto` | Probe-score backend (`auto`/`cpu`/`cuda`/`sycl`/`hip`). |
 | `--ffmpeg-bin / --vmaf-bin` | `ffmpeg` / `vmaf` | Tool paths. |
-| `--vmaf-model` | `vmaf_v0.6.1` | libvmaf model for the probe scores. |
+| `--vmaf-model` | `vmaf_v1.0.16_3d0h` | libvmaf model for the probe scores. |
 | `--neg` | off | Use the VMAF NEG model variant. |
 | `--encode-dir` | `.workingdir2/prefilter` | Scratch dir for probe encodes. |
 | `--output` | stdout | JSON destination for the recommendation payload. |
@@ -1828,7 +1828,7 @@ from the ADR-0641 profile-report path (`--format both`) and list
 | `--preset` | adapter default | Preset forwarded to the codec adapter. |
 | `--crf-min / --crf-max` | adapter range | Inclusive CRF search window. Pass both or neither. |
 | `--max-iterations` | `8` | Encode+score round-trip cap per codec. |
-| `--vmaf-model` | `vmaf_v0.6.1` | VMAF model forwarded to the scorer. |
+| `--vmaf-model` | `vmaf_v1.0.16_3d0h` | VMAF model forwarded to the scorer. |
 | `--score-backend` | scorer default | `cpu`, `cuda`, `sycl`, `hip`, or `auto`. (`vulkan` removed in ADR-0726.) |
 | `--ffmpeg-bin / --vmaf-bin` | `ffmpeg` / `vmaf` | Binary overrides. |
 | `--encoder-ffmpeg-bin ENCODER=PATH` | off | Bind one compare token to a specific FFmpeg binary. Use with `ADAPTER@VARIANT` labels such as `libsvtav1@svt-av1-hdr=/opt/ffmpeg-8.1.1-svtav1-hdr/bin/ffmpeg`; unbound tokens use `--ffmpeg-bin`. |
@@ -2777,7 +2777,7 @@ shell script of the per-segment + concat commands.
 | `--preset NAME` | adapter default | Codec preset forwarded to Phase-B bisect. |
 | `--crf-min / --crf-max` | adapter range | Optional inclusive CRF search bounds; pass both or neither. |
 | `--max-iterations N` | `8` | Maximum encode+score iterations per detected shot. |
-| `--vmaf-model NAME` | `vmaf_v0.6.1` | VMAF model forwarded to the per-shot scorer. |
+| `--vmaf-model NAME` | `vmaf_v1.0.16_3d0h` | VMAF model forwarded to the per-shot scorer. |
 | `--score-backend NAME` | `auto` | libvmaf scoring backend for the per-shot scorer (`auto`, `cpu`, `cuda`, `sycl`, `hip`). (`vulkan` removed in ADR-0726.) |
 | `--predicate-module SPEC` | — | Advanced hook `MODULE:CALLABLE` matching `(shot, target_vmaf, encoder) -> (crf, measured_vmaf)`; bypasses real bisect. |
 | `--workdir PATH` | `None` | Directory under which to create the per-run temporary scratch directory. Overrides `VMAFTUNE_WORKDIR`. See `compare --workdir` for full semantics. ([ADR-0598](../adr/0598-vmaftune-workdir-relocation.md)) |
