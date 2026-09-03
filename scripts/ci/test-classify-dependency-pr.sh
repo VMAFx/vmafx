@@ -155,6 +155,55 @@ renovate.json
 DIFF
 expect_exit "PR #1214 fixture is exempt" 0 "renovate[bot]" "renovate/migrate-config" "${work}/case13_pr1214.diff"
 
+# --- Helm chart / compose image-tag surfaces -------------------------------
+# PR #1232 was BLOCKED by the deliverables gate because deploy/helm/*
+# matched no allowlist entry, even though it is a pure image-tag bump.
+
+# Case 14: Real PR #1232 fixture (Helm values image tag) -> exempt
+cat >"${work}/case14_pr1232.diff" <<'DIFF'
+deploy/helm/vmafx/values.yaml
+DIFF
+expect_exit "PR #1232 fixture (helm values) is exempt" 0 "app/renovate" \
+  "renovate/otel-opentelemetry-collector-contrib-0.x" "${work}/case14_pr1232.diff"
+
+# Case 15: Helm chart template carrying a pinned image -> exempt
+cat >"${work}/case15_helm_template.diff" <<'DIFF'
+deploy/helm/vmafx/templates/tests/test-connection.yaml
+DIFF
+expect_exit "helm chart template image pin is exempt" 0 "renovate[bot]" \
+  "renovate/busybox-1.x" "${work}/case15_helm_template.diff"
+
+# Case 16: Helm chart dependency pins -> exempt
+cat >"${work}/case16_chart.diff" <<'DIFF'
+deploy/helm/vmafx/Chart.yaml
+deploy/helm/vmafx/Chart.lock
+DIFF
+expect_exit "helm Chart.yaml/Chart.lock are exempt" 0 "renovate[bot]" \
+  "renovate/helm-deps" "${work}/case16_chart.diff"
+
+# Case 17: compose image tags -> exempt
+cat >"${work}/case17_compose.diff" <<'DIFF'
+dev/docker-compose.yml
+DIFF
+expect_exit "docker-compose image tag is exempt" 0 "renovate[bot]" \
+  "renovate/postgres-17.x" "${work}/case17_compose.diff"
+
+# Case 18: THE ASYMMETRY. A bot PR that also edits source must STAY gated,
+# otherwise widening the allowlist would have weakened the gate.
+cat >"${work}/case18_helm_plus_source.diff" <<'DIFF'
+deploy/helm/vmafx/values.yaml
+core/src/model.c
+DIFF
+expect_exit "helm values + core/ source is NOT exempt" 1 "renovate[bot]" \
+  "renovate/otel-0.x" "${work}/case18_helm_plus_source.diff"
+
+# Case 19: A human PR touching the same Helm path must STAY gated.
+cat >"${work}/case19_human_helm.diff" <<'DIFF'
+deploy/helm/vmafx/values.yaml
+DIFF
+expect_exit "human-authored helm change is NOT exempt" 1 "lusoris" \
+  "feat/tune-helm-defaults" "${work}/case19_human_helm.diff"
+
 echo ""
 echo "test-classify-dependency-pr: ${pass_count} passed, ${fail_count} failed"
 
