@@ -466,8 +466,20 @@ jobs:
             https://apt.repos.intel.com/oneapi all main" \
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
           sudo apt-get update
+          # libze-dev is the Level Zero loader *development* package.
+          # core/src/meson.build calls cc.find_library('ze_loader'), which
+          # emits a literal `-lze_loader`; ld resolves that against the
+          # unversioned libze_loader.so symlink ONLY. The runtime SONAME
+          # libze_loader.so.1 shipped by libze1 is invisible to -l, so
+          # libze1 alone does NOT fix this — do not "simplify" it to libze1.
+          # oneAPI does not supply the loader either: this step installs
+          # intel-oneapi-compiler-dpcpp-cpp and sources setvars.sh before
+          # meson setup, and -lze_loader still fails without libze-dev.
+          # Package name is release-specific: `libze-dev` on 24.04 noble
+          # (universe, already enabled); `level-zero-dev` does NOT exist there.
           sudo apt-get install -y \
             intel-oneapi-compiler-dpcpp-cpp \
+            libze-dev \
             ninja-build nasm jq parallel
           # clang-tidy-22 is NOT in the Ubuntu 24.04 archive — the image tops
           # out at clang-tidy-18 — so it has to come from apt.llvm.org, exactly
@@ -491,8 +503,17 @@ jobs:
           # shellcheck disable=SC1091
           source /opt/intel/oneapi/setvars.sh --force
           set -u
+          # -Db_lto=false: core/meson.build sets b_lto=true as a project
+          # default_option, so the link step runs LTO through the stock
+          # ubuntu-24.04 binutils gold plugin (LLVM 17.0.6). That plugin
+          # cannot read bitcode emitted by oneAPI DPC++, and every test
+          # binary dies with "LLVM gold plugin has failed to create LTO
+          # module: Unknown attribute kind (102)". The SYCL legs of
+          # libvmaf-build-matrix.yml disable LTO for exactly this reason.
+          # This job only needs codegen outputs and compile_commands.json,
+          # so it has nothing to gain from LTO anyway.
           CC=icx CXX=icpx meson setup build-sycl core \
-            -Denable_sycl=true -Denable_cuda=false
+            -Denable_sycl=true -Denable_cuda=false -Db_lto=false
           # Build first so codegen outputs (vcs_version.h, model JSONs → .c)
           # exist on disk before clang-tidy parses TUs.
           meson compile -C build-sycl
