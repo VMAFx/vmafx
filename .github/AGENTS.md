@@ -489,3 +489,33 @@ Note: pin updates to `codeql-action/upload-sarif` now arrive via Renovate
   Renovate replaces Dependabot
 - [`docs/development/dependency-bot.md`](../docs/development/dependency-bot.md)
   — operator playbook
+
+## `clang-tidy-<N>` always needs the apt.llvm.org repo
+
+Ubuntu 24.04 (`ubuntu-latest` / `ubuntu-24.04`) ships **clang-tidy-18** at
+most. Every job that installs a newer `clang-tidy-<N>` must add the LLVM
+archive first:
+
+```yaml
+wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+chmod +x /tmp/llvm.sh
+sudo /tmp/llvm.sh 22
+sudo apt-get install -y clang-tidy-22
+```
+
+Listing `clang-tidy-22` in a plain `apt-get install` line aborts the whole
+step with `E: Unable to locate package clang-tidy-22`.
+
+**This failure hides itself.** These jobs are gated on
+`if: steps.detect.outputs.files != ''`, so on any PR that changes no file in
+scope every step is skipped and the job reports **success**. The broken apt
+line is only reached when the job actually has work, so the run history looks
+mostly green while the gate has never once executed. `Clang-Tidy SYCL (Changed
+Files, Advisory)` sat in exactly that state from the LLVM 22 bump
+(PR #1161, PR #1200) until it was fixed: 7 green no-op runs, 2 red runs,
+and zero SYCL files ever linted.
+
+When you bump the clang-tidy major, grep the workflow for **every**
+`clang-tidy-<old>` occurrence and confirm each one is preceded by an
+`llvm.sh` step — and verify a job's green run actually did work before
+trusting it.

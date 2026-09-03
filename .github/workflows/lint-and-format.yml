@@ -468,7 +468,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             intel-oneapi-compiler-dpcpp-cpp \
-            ninja-build nasm clang-tidy-22 jq parallel
+            ninja-build nasm jq parallel
+          # clang-tidy-22 is NOT in the Ubuntu 24.04 archive — the image tops
+          # out at clang-tidy-18 — so it has to come from apt.llvm.org, exactly
+          # as the CPU `clang-tidy` and `clang-tidy-ratchet` jobs above already
+          # do. Without this the apt install aborts with "Unable to locate
+          # package clang-tidy-22" and this job can never execute.
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh 22
+          sudo apt-get install -y clang-tidy-22
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --quiet meson
