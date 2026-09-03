@@ -519,3 +519,42 @@ When you bump the clang-tidy major, grep the workflow for **every**
 `clang-tidy-<old>` occurrence and confirm each one is preceded by an
 `llvm.sh` step — and verify a job's green run actually did work before
 trusting it.
+
+## `cc.find_library('foo')` needs the `-dev` package, not the runtime one
+
+meson's `cc.find_library('foo')` emits a literal `-lfoo`. `ld` resolves `-lfoo`
+against `libfoo.so` or `libfoo.a` **only** — the unversioned linker symlink
+that lives in the `-dev` package. The versioned runtime SONAME `libfoo.so.1`
+that the runtime package ships is invisible to `-l`, so installing the runtime
+package alone leaves the probe failing with
+`/usr/bin/ld: cannot find -lfoo` and meson's
+`ERROR: C shared or static library 'foo' not found`.
+
+Concretely, for the Level Zero loader on `ubuntu-24.04`:
+
+```yaml
+sudo apt-get install -y libze-dev   # libze_loader.so + level_zero/ze_api.h
+# NOT libze1 — that ships only libze_loader.so.1
+```
+
+Two traps around this one:
+
+- **oneAPI does not supply it.** `intel-oneapi-compiler-dpcpp-cpp` plus
+  `source /opt/intel/oneapi/setvars.sh --force` still leaves `-lze_loader`
+  unresolvable. The loader is a separate, vendor-neutral dispatch library.
+- **The package name is release-specific.** It is `libze-dev` on 24.04
+  `noble` (source package `level-zero`, in `universe`, already enabled on the
+  hosted image). `level-zero-dev` does **not** exist on noble; do not copy
+  that name from a newer release or from a comment written for one.
+
+The loader links with no GPU present and never calls `zeInit`, so no
+accelerator, no `intel-level-zero-gpu`, and no device-plugin resource is
+needed for a configure/compile lane. Do not reach for Intel's graphics APT
+repository to satisfy `-lze_loader`; Intel's oneAPI APT repository contains no
+`level-zero` packages at all.
+
+`.github/workflows/libvmaf-build-matrix.yml` solves the same requirement
+differently — it builds `oneapi-src/level-zero` from source at a pinned tag,
+because it links a shipping artifact and wants a known loader version. A
+static-analysis lane that only needs the probe to resolve should prefer the
+distro package.
