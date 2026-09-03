@@ -8278,6 +8278,15 @@ YUV400P sources always produce luma-only output regardless of the option.
 - **test(libvmaf)**: add `test_public_api_score` covering three previously-untested public entry points: `vmaf_score_at_index()`, `vmaf_model_collection_load()`, and `vmaf_write_output()` — closes coverage gap identified in audit-test-coverage-2026-05-16.md §2.
 
 
+- **A public roadmap.** `docs/roadmap.md` maps the release sequence onto the
+  GitHub milestones, the `epic` issues and the public project board, so the plan
+  lives in the tracker rather than in a document that drifts. It also records the
+  guarantees that hold across every milestone — the Netflix golden values are
+  never edited, the `libvmaf.so` ABI and the FFmpeg filter name stay stable, the
+  public C API stays source-compatible, and release artifacts are built in the
+  container — and why the 1.0.0 model retraining is sequenced last.
+
+
 - **Python harness coverage push — round 2.** New focused unit-test
   file `python/test/python_harness_coverage_test.py` (82 cases) lifts
   coverage on pure-Python utility surfaces under `compat/python-vmaf/`
