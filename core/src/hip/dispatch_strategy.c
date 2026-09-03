@@ -11,6 +11,7 @@
 #include "../gpu_dispatch_env.h"
 #include "../gpu_dispatch_parse.h"
 
+#include <assert.h>
 #include <string.h>
 
 #ifdef HAVE_HIPCC
@@ -135,10 +136,25 @@ int vmaf_hip_dispatch_supports(const VmafHipContext *ctx, const char *feature)
         };
         int strat_idx = 0;
         if (vmaf_gpu_dispatch_parse_env(env, feature, k_hip_strategy_names, &strat_idx)) {
+            /* Power of 10 rule 5. A successful parse must hand back an index
+             * inside the table it was given -- the terminating NULL is not a
+             * selectable strategy -- so anything outside that range means
+             * vmaf_gpu_dispatch_parse_env() broke its contract, and silently
+             * treating it as "direct" would enable HIP dispatch the operator
+             * asked to disable. */
+            assert(strat_idx >= 0);
+            assert((size_t)strat_idx <
+                   (sizeof(k_hip_strategy_names) / sizeof(k_hip_strategy_names[0])) - 1u);
             if (strat_idx > 0)
                 return 0;
         }
     }
+
+    /* Power of 10 rule 5. g_hip_features is NULL-terminated and non-empty by
+     * construction; a table truncated to its terminator would make the scan
+     * below report every feature as unsupported, silently disabling the whole
+     * backend instead of failing loudly. */
+    assert(g_hip_features[0] != NULL);
 
     for (size_t i = 0; g_hip_features[i]; ++i) {
         if (strcmp(feature, g_hip_features[i]) == 0)

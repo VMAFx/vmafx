@@ -173,6 +173,7 @@ static char *run_extractor(const char *feature_name, int use_hip, double scores[
         int rc = vmaf_hip_state_init(&hip_state, hip_cfg);
         if (rc != 0 || hip_state == NULL) {
             (void)fprintf(stderr, "[skip: no HIP device] ");
+            mu_skipped = 1;
             *skipped = 1;
             return NULL;
         }
@@ -198,6 +199,7 @@ static char *run_extractor(const char *feature_name, int use_hip, double scores[
             return msg;
         if (enosys_skip) {
             (void)fprintf(stderr, "[skip: HIP kernels not built (enable_hipcc=false)] ");
+            mu_skipped = 1;
             *skipped = 1;
             (void)vmaf_close(vmaf);
             if (hip_state)

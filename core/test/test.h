@@ -37,6 +37,18 @@ typedef char *mu_message_t;
 #endif
 
 extern int mu_tests_run;
+
+/* Set by a test that could not exercise its subject at all -- no GPU device
+ * present, device kernels not compiled in, and so on. main() then exits 77,
+ * meson's "skipped" status, instead of reporting a pass.
+ *
+ * A skip that reports success is indistinguishable from a real pass, and that
+ * silently breaks any test registered `should_fail : true` because it is
+ * expected to fail only on capable hardware: on a runner without the device
+ * the test skips, exits 0, and meson reports UNEXPECTEDPASS. Exiting 77 keeps
+ * "could not run" and "ran and passed" distinct. */
+extern int mu_skipped;
+
 mu_message_t run_tests(void);
 
 #ifdef __cplusplus

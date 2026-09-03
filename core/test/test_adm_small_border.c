@@ -153,6 +153,7 @@ static char *run_gpu_adm(double scores_out[NUM_ADM_FEATURES])
     int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
     if (err != 0 || cu_state == NULL) {
         (void)fprintf(stderr, "[skip: no CUDA device] ");
+        mu_skipped = 1;
         return NULL;
     }
 
@@ -188,6 +189,7 @@ static char *run_gpu_adm(double scores_out[NUM_ADM_FEATURES])
     int err = vmaf_hip_state_init(&hip_state, hip_cfg);
     if (err != 0 || hip_state == NULL) {
         (void)fprintf(stderr, "[skip: no HIP device] ");
+        mu_skipped = 1;
         return NULL;
     }
 
@@ -210,6 +212,7 @@ static char *run_gpu_adm(double scores_out[NUM_ADM_FEATURES])
     err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
     if (err == -ENOSYS) {
         (void)fprintf(stderr, "[skip: HIP kernels not built] ");
+        mu_skipped = 1;
         vmaf_close(vmaf);
         vmaf_hip_state_free(&hip_state);
         return NULL;

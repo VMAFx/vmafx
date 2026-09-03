@@ -26,6 +26,7 @@
 #include <stdio.h>
 
 int mu_tests_run;
+int mu_skipped;
 
 #ifdef __APPLE__
 static void mu_crash_handler(int signum)
@@ -65,10 +66,17 @@ int main(void)
 
     if (msg) {
         (void)fprintf(stderr, "\033[31m%s\n%d tests run, 1 failed\033[0m\n", msg, mu_tests_run);
-    } else {
-        (void)fprintf(stderr, "\033[32m%d tests run, %d passed\033[0m\n", mu_tests_run,
-                      mu_tests_run);
+        return 1;
     }
 
-    return msg != 0;
+    if (mu_skipped) {
+        /* 77 is meson's (and autotools') "skipped" exit status. See the
+         * mu_skipped comment in test.h for why a skip must not report a
+         * pass. */
+        (void)fprintf(stderr, "\033[33m%d tests run, skipped\033[0m\n", mu_tests_run);
+        return 77;
+    }
+
+    (void)fprintf(stderr, "\033[32m%d tests run, %d passed\033[0m\n", mu_tests_run, mu_tests_run);
+    return 0;
 }
