@@ -24,6 +24,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/VMAFx/vmafx/pkg/model"
 )
 
 // writeVmafScript writes a minimal vmaf stub that emits a canned JSON
@@ -126,14 +128,18 @@ func TestScore_ParsesGoldenJSON(t *testing.T) {
 func TestScore_DefaultModel(t *testing.T) {
 	scriptPath := writeVmafScript(t, goldenJSON)
 	modelDir := t.TempDir()
-	writeModel(t, modelDir, "vmaf_v0.6.1")
+	// Stage the model the resolver will actually ask for. Naming it through
+	// model.DefaultVersion rather than a literal keeps this fixture correct when
+	// the default moves again — hardcoding "vmaf_v0.6.1" here is exactly what
+	// broke when the default became vmaf_v1.0.16_3d0h (ADR-1169).
+	writeModel(t, modelDir, model.DefaultVersion)
 
 	s, err := New(scriptPath, modelDir)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 
-	// Empty model name → falls back to vmaf_v0.6.1.
+	// Empty model name → falls back to the built-in default.
 	score, _, err := s.Score(context.Background(), "ref.yuv", "dis.yuv", "")
 	if err != nil {
 		t.Fatalf("Score with default model: %v", err)
