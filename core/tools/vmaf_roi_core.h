@@ -6,7 +6,7 @@
  *  mapper. Header-only so both the binary and the unit test compile their
  *  own copy without dragging libvmaf's full link surface into the test.
  *
- *  Stays in libvmaf/tools/ because it is private to vmaf-roi.
+ *  Stays in core/tools/ because it is private to vmaf-roi.
  */
 
 #ifndef LIBVMAF_TOOLS_VMAF_ROI_CORE_H_

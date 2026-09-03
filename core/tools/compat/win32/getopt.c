@@ -3,7 +3,7 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Implementation of the Windows MSVC getopt / getopt_long shim declared in
- *  libvmaf/tools/compat/win32/getopt.h. See the header for scope and known
+ *  core/tools/compat/win32/getopt.h. See the header for scope and known
  *  divergences from GNU/POSIX behaviour.
  *
  *  Algorithm sketch:

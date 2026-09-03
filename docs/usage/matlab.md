@@ -4,7 +4,7 @@
 ## Prerequisites
 
 Install and activate [MATLAB](https://www.mathworks.com/). Then set
-`MATLAB_PATH` in [`python/vmaf/config.py`](../../python/vmaf/config.py) to
+`MATLAB_PATH` in [`compat/python-vmaf/config.py`](../../compat/python-vmaf/config.py) to
 point at your MATLAB binary:
 
 ```python

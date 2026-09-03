@@ -202,7 +202,7 @@ Once a model is trained, the VMAF package also provides tools to cross validate 
 
 ### Create a Dataset
 
-To begin with, create a dataset file following the format in [`example_dataset.py`](../../python/vmaf/resource/example/example_dataset.py). A dataset is a collection of distorted videos. Each has a unique asset ID and a corresponding reference video, identified by a unique content ID. Each distorted video is also associated with subjective quality score, typically a MOS (mean opinion score), obtained through subjective study. An example code snippet that defines a dataset is as follows:
+To begin with, create a dataset file following the format in [`example_dataset.py`](../../compat/python-vmaf/resource/example/example_dataset.py). A dataset is a collection of distorted videos. Each has a unique asset ID and a corresponding reference video, identified by a unique content ID. Each distorted video is also associated with subjective quality score, typically a MOS (mean opinion score), obtained through subjective study. An example code snippet that defines a dataset is as follows:
 
 ```python
 dataset_name = 'example'
@@ -221,7 +221,7 @@ dis_videos = [
 ]
 ```
 
-See the directory [`python/vmaf/resource/dataset`](../../python/vmaf/resource/dataset) for more examples. Also refer to the [Datasets](../models/datasets.md) document regarding publicly available datasets.
+See the directory [`compat/python-vmaf/resource/dataset`](../../compat/python-vmaf/resource/dataset) for more examples. Also refer to the [Datasets](../models/datasets.md) document regarding publicly available datasets.
 
 ### Validate a Dataset
 
@@ -238,19 +238,19 @@ python -m vmaf.script.run_testing \
 
 where `quality_type` can be `VMAF`, `PSNR`, `SSIM`, `MS_SSIM`, etc.
 
-Enabling `--cache-result` allows storing/retrieving extracted features (or elementary quality metrics) in a data store (under `python/vmaf/workspace/result_store_dir/file_result_store` by default; overridable via the `VMAF_WORKSPACE` environment variable — see [docs/architecture/workspace.md](../architecture/workspace.md)), since feature extraction is the most expensive operations here.
-
-Enabling `--parallelize` allows execution on multiple reference-distorted video pairs in parallel. Sometimes it is desirable to disable parallelization for debugging purpose (e.g. some error messages can only be displayed when parallel execution is disabled).
-
 For example:
 
 ```bash
 python -m vmaf.script.run_testing \
     VMAF \
-    python/vmaf/resource/example/example_dataset.py \
+    compat/python-vmaf/resource/example/example_dataset.py \
     --cache-result \
     --parallelize
 ```
+
+Enabling `--cache-result` allows storing/retrieving extracted features (or elementary quality metrics) in a data store (under `compat/python-vmaf/workspace/result_store_dir/file_result_store` by default; overridable via the `VMAF_WORKSPACE` environment variable — see [docs/architecture/workspace.md](../architecture/workspace.md)), since feature extraction is the most expensive operations here.
+
+Enabling `--parallelize` allows execution on multiple reference-distorted video pairs in parallel. Sometimes it is desirable to disable parallelization for debugging purpose (e.g. some error messages can only be displayed when parallel execution is disabled).
 
 Make sure `matplotlib` is installed to visualize the MOS-prediction scatter plot and inspect the statistics:
 
@@ -275,7 +275,7 @@ to clean up corrupted results in the store before retrying. For example:
 ```bash
 python -m vmaf.script.run_cleaning_cache \
     VMAF \
-    python/vmaf/resource/example/example_dataset.py
+    compat/python-vmaf/resource/example/example_dataset.py
 ```
 
 ### Train a New Model
@@ -296,10 +296,10 @@ For example:
 
 ```bash
 python -m vmaf.script.run_vmaf_training \
-    python/vmaf/resource/example/example_dataset.py \
-    python/vmaf/resource/feature_param/vmaf_feature_v2.py \
-    python/vmaf/resource/model_param/libsvmnusvr_v2.py \
-    python/vmaf/workspace/model/test_model.pkl \
+    compat/python-vmaf/resource/example/example_dataset.py \
+    compat/python-vmaf/resource/feature_param/vmaf_feature_v2.py \
+    compat/python-vmaf/resource/model_param/libsvmnusvr_v2.py \
+    compat/python-vmaf/workspace/model/test_model.pkl \
     --cache-result \
     --parallelize
 ```
@@ -350,27 +350,27 @@ The subjective model option can be specified with option `--subj-model subjectiv
 
 ```bash
 python -m vmaf.script.run_vmaf_training \
-    python/vmaf/resource/example/example_raw_dataset.py \
-    python/vmaf/resource/feature_param/vmaf_feature_v2.py \
-    python/vmaf/resource/model_param/libsvmnusvr_v2.py \
-    python/vmaf/workspace/model/test_model.pkl \
+    compat/python-vmaf/resource/example/example_raw_dataset.py \
+    compat/python-vmaf/resource/feature_param/vmaf_feature_v2.py \
+    compat/python-vmaf/resource/model_param/libsvmnusvr_v2.py \
+    compat/python-vmaf/workspace/model/test_model.pkl \
     --subj-model MLE_CO_AP2 \
     --cache-result \
     --parallelize
 
 python -m vmaf.script.run_testing \
     VMAF \
-    python/vmaf/resource/example/example_raw_dataset.py \
+    compat/python-vmaf/resource/example/example_raw_dataset.py \
     --subj-model MLE_CO_AP2 \
     --cache-result \
     --parallelize
 ```
 
-Note that for the `--subj-model` option to have effect, the input dataset file must follow a format similar to [example_raw_dataset.py](../../python/vmaf/resource/example/example_raw_dataset.py). Specifically, for each dictionary element in `dis_videos`, instead of having a key named `dmos` or `groundtruth` as in [example_dataset.py](../../python/vmaf/resource/example/example_dataset.py), it must have a key named `os` (stands for opinion score), and the value must be a list of numbers. This is the "raw opinion score" collected from subjective experiments, which is used as the input to the custom subjective models.
+Note that for the `--subj-model` option to have effect, the input dataset file must follow a format similar to [example_raw_dataset.py](../../compat/python-vmaf/resource/example/example_raw_dataset.py). Specifically, for each dictionary element in `dis_videos`, instead of having a key named `dmos` or `groundtruth` as in [example_dataset.py](../../compat/python-vmaf/resource/example/example_dataset.py), it must have a key named `os` (stands for opinion score), and the value must be a list of numbers. This is the "raw opinion score" collected from subjective experiments, which is used as the input to the custom subjective models.
 
 ### Cross Validation
 
-[`run_vmaf_cross_validation.py`](../../python/vmaf/script/run_vmaf_cross_validation.py) provides tools for cross-validation of hyper-parameters and models. `run_vmaf_cv` runs training on a training dataset using hyper-parameters specified in a parameter file, output a trained model file, and then test the trained model on another test dataset and report testing correlation scores. `run_vmaf_kfold_cv` takes in a dataset file, a parameter file, and a data structure (list of lists) that specifies the folds based on video content's IDs, and run k-fold cross validation on the video dataset. This can be useful for manually tuning the model parameters.
+[`run_vmaf_cross_validation.py`](../../compat/python-vmaf/script/run_vmaf_cross_validation.py) provides tools for cross-validation of hyper-parameters and models. `run_vmaf_cv` runs training on a training dataset using hyper-parameters specified in a parameter file, output a trained model file, and then test the trained model on another test dataset and report testing correlation scores. `run_vmaf_kfold_cv` takes in a dataset file, a parameter file, and a data structure (list of lists) that specifies the folds based on video content's IDs, and run k-fold cross validation on the video dataset. This can be useful for manually tuning the model parameters.
 
 ### Creating New Features And Regressors
 
@@ -386,7 +386,7 @@ Overtime, a number of helper tools have been incorporated into the package, to f
 
 ### BD-Rate Calculator
 
-A Bjøntegaard-Delta (BD) rate [implementation](../../python/vmaf/tools/bd_rate_calculator.py) is added. An example usage is available in [`bd_rate_calculator_test.py`](../../python/test/bd_rate_calculator_test.py). The implementation is validated against [MPEG JCTVC-L1100](http://phenix.int-evry.fr/jct/doc_end_user/current_document.php?id=7281).
+A Bjøntegaard-Delta (BD) rate [implementation](../../compat/python-vmaf/tools/bd_rate_calculator.py) is added. An example usage is available in [`bd_rate_calculator_test.py`](../../python/test/bd_rate_calculator_test.py). The implementation is validated against [MPEG JCTVC-L1100](http://phenix.int-evry.fr/jct/doc_end_user/current_document.php?id=7281).
 
 ### LIME (Local-Explainer Model-Agnostic Explanation) Implementation
 
@@ -414,7 +414,7 @@ python -m vmaf.script.run_vmaf yuv420p 576 324 \
 
 ### Convert Model File from pickle (pkl) to json
 
-A tool to convert a model file (currently support libsvm model) from pickle to json is added at `python/vmaf/script/convert_model_from_pkl_to_json.py`. Usage:
+A tool to convert a model file (currently support libsvm model) from pickle to json is added at `compat/python-vmaf/script/convert_model_from_pkl_to_json.py`. Usage:
 
 ```text
 usage: convert_model_from_pkl_to_json.py [-h] --input-pkl-filepath
@@ -436,11 +436,11 @@ optional arguments:
 Examples:
 
 ```bash
-python/vmaf/script/convert_model_from_pkl_to_json.py \
+compat/python-vmaf/script/convert_model_from_pkl_to_json.py \
     --input-pkl-filepath model/vmaf_float_b_v0.6.3/vmaf_float_b_v0.6.3.pkl \
     --output-json-filepath ./vmaf_float_b_v0.6.3.json
 
-python/vmaf/script/convert_model_from_pkl_to_json.py \
+compat/python-vmaf/script/convert_model_from_pkl_to_json.py \
     --input-pkl-filepath model/vmaf_float_v0.6.1.pkl \
     --output-json-filepath ./vmaf_float_v0.6.1.json
 ```
@@ -449,7 +449,7 @@ python/vmaf/script/convert_model_from_pkl_to_json.py \
 
 The core classes of the VMAF Python library can be depicted in the diagram below:
 
-![UML](../../python/vmaf/resource/images/uml.png)
+![UML](../../compat/python-vmaf/resource/images/uml.png)
 
 ### Asset
 
@@ -467,7 +467,7 @@ Asset extends the `WorkdirEnabled` mixin, which comes with a thread-safe working
 
 ### Executor
 
-An `Executor` takes a list of `Assets` as input, run computations on them, and return a list of corresponding `Results`. An `Executor` extends the `TypeVersionEnabled` mixin, and must specify a unique type and version combination (by the `TYPE` and `VERSION` attribute), so that the `Result` generated by it can be uniquely identified. This facilitates a number of shared housekeeping functions, including storing and reusing `Results` (`result_store`), creating FIFO pipes (`fifo_mode`), etc. `Executor` understands the preprocessing steps specified in its input `Assets`. It relies on FFmpeg to do the processing for it (FFmpeg must be pre-installed and its path specified in the `FFMPEG_PATH` field in the `python/vmaf/config.py` file).
+An `Executor` takes a list of `Assets` as input, run computations on them, and return a list of corresponding `Results`. An `Executor` extends the `TypeVersionEnabled` mixin, and must specify a unique type and version combination (by the `TYPE` and `VERSION` attribute), so that the `Result` generated by it can be uniquely identified. This facilitates a number of shared housekeeping functions, including storing and reusing `Results` (`result_store`), creating FIFO pipes (`fifo_mode`), etc. `Executor` understands the preprocessing steps specified in its input `Assets`. It relies on FFmpeg to do the processing for it (FFmpeg must be pre-installed and its path specified in the `FFMPEG_PATH` field in the `compat/python-vmaf/config.py` file).
 
 An `Executor` and its subclasses can take optional parameters during initialization. There are two fields to put the optional parameters:
 
