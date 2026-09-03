@@ -65,6 +65,12 @@
 #include "libvmaf_priv.h"
 #include "output.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* Portable temp-file-path helper. Produces a path to a freshly created (and
  * already closed) zero-byte file suitable for handing to writer APIs that
  * fopen() the path themselves. POSIX uses mkstemp() against $TMPDIR (falling
@@ -90,9 +96,11 @@ static int make_temp_path(const char *prefix, char *out_buf, size_t out_buf_sz)
     memcpy(out_buf, path, plen + 1);
     return 0;
 #else
-    const char *tmpdir = getenv("TMPDIR");
-    if (!tmpdir || !*tmpdir)
-        tmpdir = "/tmp";
+#ifdef P_tmpdir
+    const char *tmpdir = P_tmpdir;
+#else
+    const char *tmpdir = "/tmp";
+#endif
     int written = snprintf(out_buf, out_buf_sz, "%s/%sXXXXXX", tmpdir, prefix);
     if (written < 0 || (size_t)written >= out_buf_sz)
         return -1;
@@ -182,7 +190,23 @@ static int seed_normal(VmafContext **out_vmaf)
     return err;
 }
 
-static char *test_csv_basic()
+static char *check_csv_basic_output(const char *out)
+{
+    /* Header row contains both feature names. */
+    mu_assert("csv: missing 'Frame,' header", strstr(out, "Frame,"));
+    mu_assert("csv: missing feat_a in header", strstr(out, "feat_a,"));
+    mu_assert("csv: missing feat_b in header", strstr(out, "feat_b,"));
+    /* Data row for frame 0 emits both scores. */
+    mu_assert("csv: missing 80.000000 (feat_a frame 0)", strstr(out, "80.000000"));
+    mu_assert("csv: missing 0.500000 (feat_b frame 0)", strstr(out, "0.500000"));
+    /* Frame 2 not present — count_written_at skipped it. */
+    mu_assert("csv: frame 2 should not appear (no scores written)", !strstr(out, "\n2,"));
+    /* Frame 3 present. */
+    mu_assert("csv: frame 3 missing", strstr(out, "\n3,"));
+    return NULL;
+}
+
+static char *test_csv_basic(void)
 {
     VmafContext *vmaf = NULL;
     int err = seed_normal(&vmaf);
@@ -198,23 +222,25 @@ static char *test_csv_basic()
     char *out = slurp(f);
     mu_assert("slurp failed", out);
 
-    /* Header row contains both feature names. */
-    mu_assert("csv: missing 'Frame,' header", strstr(out, "Frame,"));
-    mu_assert("csv: missing feat_a in header", strstr(out, "feat_a,"));
-    mu_assert("csv: missing feat_b in header", strstr(out, "feat_b,"));
-    /* Data row for frame 0 emits both scores. */
-    mu_assert("csv: missing 80.000000 (feat_a frame 0)", strstr(out, "80.000000"));
-    mu_assert("csv: missing 0.500000 (feat_b frame 0)", strstr(out, "0.500000"));
-    /* Frame 2 not present — count_written_at skipped it. */
-    mu_assert("csv: frame 2 should not appear (no scores written)", !strstr(out, "\n2,"));
-    /* Frame 3 present. */
-    mu_assert("csv: frame 3 missing", strstr(out, "\n3,"));
-
+    char *msg = check_csv_basic_output(out);
     teardown(vmaf, f, out);
+    return msg;
+}
+
+static char *check_csv_subsample_output(const char *out)
+{
+    /* "%.3f" of 80.0 == "80.000". The 6-digit default would print "80.000000";
+     * we want to make sure the custom format won. */
+    mu_assert("csv: custom format missing '80.000'", strstr(out, "80.000"));
+    mu_assert("csv: custom format must not produce default 80.000000", !strstr(out, "80.000000"));
+    /* Frame 1 dropped by subsample. */
+    mu_assert("csv: subsample=2 should drop frame 1", !strstr(out, "\n1,"));
+    /* Frame 3 dropped by subsample (odd). */
+    mu_assert("csv: subsample=2 should drop frame 3", !strstr(out, "\n3,"));
     return NULL;
 }
 
-static char *test_csv_subsample_and_custom_format()
+static char *test_csv_subsample_and_custom_format(void)
 {
     VmafContext *vmaf = NULL;
     int err = seed_normal(&vmaf);
@@ -232,20 +258,26 @@ static char *test_csv_subsample_and_custom_format()
     char *out = slurp(f);
     mu_assert("slurp failed", out);
 
-    /* "%.3f" of 80.0 == "80.000". The 6-digit default would print "80.000000";
-     * we want to make sure the custom format won. */
-    mu_assert("csv: custom format missing '80.000'", strstr(out, "80.000"));
-    mu_assert("csv: custom format must not produce default 80.000000", !strstr(out, "80.000000"));
-    /* Frame 1 dropped by subsample. */
-    mu_assert("csv: subsample=2 should drop frame 1", !strstr(out, "\n1,"));
-    /* Frame 3 dropped by subsample (odd). */
-    mu_assert("csv: subsample=2 should drop frame 3", !strstr(out, "\n3,"));
-
+    char *msg = check_csv_subsample_output(out);
     teardown(vmaf, f, out);
+    return msg;
+}
+
+static char *check_sub_basic_output(const char *out)
+{
+    /* SUB format prefixes each line with "{N}{N+1}frame: N|" then per-feature
+     * "name: value|" entries. Verify frame 0 and frame 1 are emitted; frame 2
+     * skipped; frame 3 present. */
+    mu_assert("sub: missing frame 0 marker", strstr(out, "{0}{1}frame: 0|"));
+    mu_assert("sub: missing frame 1 marker", strstr(out, "{1}{2}frame: 1|"));
+    mu_assert("sub: frame 2 must be skipped (no scores)", !strstr(out, "{2}{3}frame: 2|"));
+    mu_assert("sub: missing frame 3 marker", strstr(out, "{3}{4}frame: 3|"));
+    mu_assert("sub: missing feat_a:", strstr(out, "feat_a: "));
+    mu_assert("sub: missing feat_b:", strstr(out, "feat_b: "));
     return NULL;
 }
 
-static char *test_sub_basic()
+static char *test_sub_basic(void)
 {
     VmafContext *vmaf = NULL;
     int err = seed_normal(&vmaf);
@@ -261,21 +293,12 @@ static char *test_sub_basic()
     char *out = slurp(f);
     mu_assert("slurp failed", out);
 
-    /* SUB format prefixes each line with "{N}{N+1}frame: N|" then per-feature
-     * "name: value|" entries. Verify frame 0 and frame 1 are emitted; frame 2
-     * skipped; frame 3 present. */
-    mu_assert("sub: missing frame 0 marker", strstr(out, "{0}{1}frame: 0|"));
-    mu_assert("sub: missing frame 1 marker", strstr(out, "{1}{2}frame: 1|"));
-    mu_assert("sub: frame 2 must be skipped (no scores)", !strstr(out, "{2}{3}frame: 2|"));
-    mu_assert("sub: missing frame 3 marker", strstr(out, "{3}{4}frame: 3|"));
-    mu_assert("sub: missing feat_a:", strstr(out, "feat_a: "));
-    mu_assert("sub: missing feat_b:", strstr(out, "feat_b: "));
-
+    char *msg = check_sub_basic_output(out);
     teardown(vmaf, f, out);
-    return NULL;
+    return msg;
 }
 
-static char *test_xml_einval_guards()
+static char *test_xml_einval_guards(void)
 {
     /* All three guards live at the head of vmaf_write_output_xml. */
     VmafContext *vmaf = NULL;
@@ -304,7 +327,7 @@ static char *test_xml_einval_guards()
  * CSV and SUB writers previously omitted the NULL-fc / NULL-outfile guards
  * that the XML / JSON writers had since ADR-0602.  A NULL caller would
  * SIGSEGV on the very first fprintf instead of returning -EINVAL. */
-static char *test_csv_sub_einval_guards()
+static char *test_csv_sub_einval_guards(void)
 {
     VmafContext *vmaf = NULL;
     int err = seed_normal(&vmaf);
@@ -331,7 +354,37 @@ static char *test_csv_sub_einval_guards()
     return NULL;
 }
 
-static char *test_xml_basic()
+static char *check_xml_basic_structure(const char *out)
+{
+    mu_assert("xml: missing root open <VMAF version=", strstr(out, "<VMAF version="));
+    mu_assert("xml: missing root close </VMAF>", strstr(out, "</VMAF>"));
+    mu_assert("xml: missing <params qualityWidth=\"640\"",
+              strstr(out, "<params qualityWidth=\"640\""));
+    mu_assert("xml: missing <fyi fps=\"29.97\"", strstr(out, "<fyi fps=\"29.97\""));
+    mu_assert("xml: missing <frames>", strstr(out, "<frames>"));
+    mu_assert("xml: missing </frames>", strstr(out, "</frames>"));
+    return NULL;
+}
+
+static char *check_xml_basic_metrics(const char *out)
+{
+    mu_assert("xml: missing <pooled_metrics>", strstr(out, "<pooled_metrics>"));
+    mu_assert("xml: missing </pooled_metrics>", strstr(out, "</pooled_metrics>"));
+    mu_assert("xml: missing <aggregate_metrics", strstr(out, "<aggregate_metrics "));
+    mu_assert("xml: missing agg_x in aggregate_metrics", strstr(out, "agg_x=\""));
+    mu_assert("xml: missing pooled mean for feat_a", strstr(out, "mean=\""));
+    return NULL;
+}
+
+static char *check_xml_basic_output(const char *out)
+{
+    char *msg = check_xml_basic_structure(out);
+    if (msg)
+        return msg;
+    return check_xml_basic_metrics(out);
+}
+
+static char *test_xml_basic(void)
 {
     /* For the pooled-metrics block to emit per-feature mean/min/max/harmonic
      * entries, *every* frame in [0, pic_cnt) must have a written value for
@@ -366,24 +419,60 @@ static char *test_xml_basic()
     char *out = slurp(f);
     mu_assert("slurp failed", out);
 
-    mu_assert("xml: missing root open <VMAF version=", strstr(out, "<VMAF version="));
-    mu_assert("xml: missing root close </VMAF>", strstr(out, "</VMAF>"));
-    mu_assert("xml: missing <params qualityWidth=\"640\"",
-              strstr(out, "<params qualityWidth=\"640\""));
-    mu_assert("xml: missing <fyi fps=\"29.97\"", strstr(out, "<fyi fps=\"29.97\""));
-    mu_assert("xml: missing <frames>", strstr(out, "<frames>"));
-    mu_assert("xml: missing </frames>", strstr(out, "</frames>"));
-    mu_assert("xml: missing <pooled_metrics>", strstr(out, "<pooled_metrics>"));
-    mu_assert("xml: missing </pooled_metrics>", strstr(out, "</pooled_metrics>"));
-    mu_assert("xml: missing <aggregate_metrics", strstr(out, "<aggregate_metrics "));
-    mu_assert("xml: missing agg_x in aggregate_metrics", strstr(out, "agg_x=\""));
-    mu_assert("xml: missing pooled mean for feat_a", strstr(out, "mean=\""));
-
+    char *msg = check_xml_basic_output(out);
     teardown(vmaf, f, out);
+    return msg;
+}
+
+static char *check_json_basic_structure(const char *out)
+{
+    /* Top-level scalar fields. */
+    mu_assert("json: missing \"version\"", strstr(out, "\"version\":"));
+    mu_assert("json: missing \"fps\": 24.00", strstr(out, "\"fps\": 24.00"));
+    /* Frames array. */
+    mu_assert("json: missing \"frames\":", strstr(out, "\"frames\":"));
+    mu_assert("json: missing \"frameNum\"", strstr(out, "\"frameNum\":"));
+    mu_assert("json: missing \"metrics\":", strstr(out, "\"metrics\":"));
     return NULL;
 }
 
-static char *test_json_basic_and_format()
+static char *check_json_basic_pooled(const char *out)
+{
+    mu_assert("json: missing \"pooled_metrics\":", strstr(out, "\"pooled_metrics\":"));
+    /* Dense collector + pic_cnt=2 means every pool method emits a number. */
+    mu_assert("json: missing \"mean\" inside pooled_metrics", strstr(out, "\"mean\":"));
+    mu_assert("json: missing \"min\" inside pooled_metrics", strstr(out, "\"min\":"));
+    mu_assert("json: missing \"max\" inside pooled_metrics", strstr(out, "\"max\":"));
+    mu_assert("json: missing \"harmonic_mean\" inside pooled_metrics",
+              strstr(out, "\"harmonic_mean\":"));
+    return NULL;
+}
+
+static char *check_json_basic_aggregates(const char *out)
+{
+    mu_assert("json: missing \"aggregate_metrics\":", strstr(out, "\"aggregate_metrics\":"));
+    /* Two aggregates -> at least one comma separator inside the block. */
+    mu_assert("json: missing agg_x", strstr(out, "\"agg_x\":"));
+    mu_assert("json: missing agg_y", strstr(out, "\"agg_y\":"));
+    /* "%.17g" formats 80.0 as "80" (no fractional zeros), distinguishing it
+     * from the default "%.6f" which would render "80.000000". */
+    mu_assert("json: %.17g should produce \"80,\" or \"80\\n\" not \"80.000000\"",
+              !strstr(out, "80.000000"));
+    return NULL;
+}
+
+static char *check_json_basic_output(const char *out)
+{
+    char *msg = check_json_basic_structure(out);
+    if (msg)
+        return msg;
+    msg = check_json_basic_pooled(out);
+    if (msg)
+        return msg;
+    return check_json_basic_aggregates(out);
+}
+
+static char *test_json_basic_and_format(void)
 {
     /* Dense 2x2 collector so json_write_pooled_entry / json_write_pool_score
      * produce per-method numbers (otherwise vmaf_feature_score_pooled
@@ -416,34 +505,25 @@ static char *test_json_basic_and_format()
     char *out = slurp(f);
     mu_assert("slurp failed", out);
 
-    /* Top-level scalar fields. */
-    mu_assert("json: missing \"version\"", strstr(out, "\"version\":"));
-    mu_assert("json: missing \"fps\": 24.00", strstr(out, "\"fps\": 24.00"));
-    /* Frames array, pooled_metrics block, aggregate_metrics block. */
-    mu_assert("json: missing \"frames\":", strstr(out, "\"frames\":"));
-    mu_assert("json: missing \"frameNum\"", strstr(out, "\"frameNum\":"));
-    mu_assert("json: missing \"metrics\":", strstr(out, "\"metrics\":"));
-    mu_assert("json: missing \"pooled_metrics\":", strstr(out, "\"pooled_metrics\":"));
-    /* Dense collector + pic_cnt=2 means every pool method emits a number. */
-    mu_assert("json: missing \"mean\" inside pooled_metrics", strstr(out, "\"mean\":"));
-    mu_assert("json: missing \"min\" inside pooled_metrics", strstr(out, "\"min\":"));
-    mu_assert("json: missing \"max\" inside pooled_metrics", strstr(out, "\"max\":"));
-    mu_assert("json: missing \"harmonic_mean\" inside pooled_metrics",
-              strstr(out, "\"harmonic_mean\":"));
-    mu_assert("json: missing \"aggregate_metrics\":", strstr(out, "\"aggregate_metrics\":"));
-    /* Two aggregates -> at least one comma separator inside the block. */
-    mu_assert("json: missing agg_x", strstr(out, "\"agg_x\":"));
-    mu_assert("json: missing agg_y", strstr(out, "\"agg_y\":"));
-    /* "%.17g" formats 80.0 as "80" (no fractional zeros), distinguishing it
-     * from the default "%.6f" which would render "80.000000". */
-    mu_assert("json: %.17g should produce \"80,\" or \"80\\n\" not \"80.000000\"",
-              !strstr(out, "80.000000"));
-
+    char *msg = check_json_basic_output(out);
     teardown(vmaf, f, out);
+    return msg;
+}
+
+static char *check_json_nan_inf_output(const char *out)
+{
+    /* fps null branch (FP_NAN). */
+    mu_assert("json: NaN fps must serialize as \"fps\": null", strstr(out, "\"fps\": null"));
+    /* Frame metric NaN -> per-feature null. */
+    mu_assert("json: NaN frame metric must serialize as null", strstr(out, "\"feat_nan\": null"));
+    /* Aggregate +Inf -> null. */
+    mu_assert("json: Inf aggregate must serialize as null", strstr(out, "\"agg_inf\": null"));
+    /* Aggregate normal value still emitted. */
+    mu_assert("json: agg_ok must still appear", strstr(out, "\"agg_ok\":"));
     return NULL;
 }
 
-static char *test_json_nan_and_inf()
+static char *test_json_nan_and_inf(void)
 {
     /* Force NaN / +Inf into both frame metrics, pooled (via mean over the
      * frame values), and aggregates / fps. The writers route every numeric
@@ -475,20 +555,23 @@ static char *test_json_nan_and_inf()
     char *out = slurp(f);
     mu_assert("slurp failed", out);
 
-    /* fps null branch (FP_NAN). */
-    mu_assert("json: NaN fps must serialize as \"fps\": null", strstr(out, "\"fps\": null"));
-    /* Frame metric NaN -> per-feature null. */
-    mu_assert("json: NaN frame metric must serialize as null", strstr(out, "\"feat_nan\": null"));
-    /* Aggregate +Inf -> null. */
-    mu_assert("json: Inf aggregate must serialize as null", strstr(out, "\"agg_inf\": null"));
-    /* Aggregate normal value still emitted. */
-    mu_assert("json: agg_ok must still appear", strstr(out, "\"agg_ok\":"));
-
+    char *msg = check_json_nan_inf_output(out);
     teardown(vmaf, f, out);
+    return msg;
+}
+
+static char *check_json_empty_collector_output(const char *out)
+{
+    mu_assert("json: empty collector still emits skeleton open '{'", out[0] == '{');
+    mu_assert("json: empty collector emits frames block", strstr(out, "\"frames\":"));
+    mu_assert("json: empty collector emits pooled_metrics block",
+              strstr(out, "\"pooled_metrics\":"));
+    mu_assert("json: empty collector emits aggregate_metrics block",
+              strstr(out, "\"aggregate_metrics\":"));
     return NULL;
 }
 
-static char *test_json_empty_collector()
+static char *test_json_empty_collector(void)
 {
     /* Zero features, zero frames — exercises the "no frames" branch where
      * max_capacity returns 0 and the for-loop body never executes. The
@@ -507,15 +590,10 @@ static char *test_json_empty_collector()
 
     char *out = slurp(f);
     mu_assert("slurp failed", out);
-    mu_assert("json: empty collector still emits skeleton open '{'", out[0] == '{');
-    mu_assert("json: empty collector emits frames block", strstr(out, "\"frames\":"));
-    mu_assert("json: empty collector emits pooled_metrics block",
-              strstr(out, "\"pooled_metrics\":"));
-    mu_assert("json: empty collector emits aggregate_metrics block",
-              strstr(out, "\"aggregate_metrics\":"));
 
+    char *msg = check_json_empty_collector_output(out);
     teardown(vmaf, f, out);
-    return NULL;
+    return msg;
 }
 
 /* Read entire file at `path` into a malloc'd NUL-terminated buffer.
@@ -531,7 +609,7 @@ static char *slurp_path(const char *path)
     return out;
 }
 
-static char *test_vmaf_version()
+static char *test_vmaf_version(void)
 {
     /* vmaf_version() must return a non-NULL string that looks like a
      * semver-ish version (contains at least one ASCII digit). */
@@ -550,7 +628,15 @@ static char *test_vmaf_version()
     return NULL;
 }
 
-static char *test_write_output_json_path()
+static char *check_write_output_json(const char *out)
+{
+    mu_assert("write_output json: missing '{' open brace", strstr(out, "{"));
+    mu_assert("write_output json: missing frames block", strstr(out, "\"frames\":"));
+    mu_assert("write_output json: missing feat_a score", strstr(out, "feat_a"));
+    return NULL;
+}
+
+static char *test_write_output_json_path(void)
 {
     /* vmaf_write_output() — public path-based dispatcher — must produce a
      * well-formed JSON file for VMAF_OUTPUT_FORMAT_JSON. */
@@ -566,17 +652,29 @@ static char *test_write_output_json_path()
 
     char *out = slurp_path(tmp);
     (void)remove(tmp);
-    mu_assert("slurp_path failed after vmaf_write_output", out);
-    mu_assert("write_output json: missing '{' open brace", strstr(out, "{"));
-    mu_assert("write_output json: missing frames block", strstr(out, "\"frames\":"));
-    mu_assert("write_output json: missing feat_a score", strstr(out, "feat_a"));
+    if (!out) {
+        (void)vmaf_close(vmaf);
+        return "slurp_path failed after vmaf_write_output";
+    }
 
+    char *msg = check_write_output_json(out);
     free(out);
     (void)vmaf_close(vmaf);
+    return msg;
+}
+
+static char *check_write_output_format(const char *out)
+{
+    /* "%.3f" of 80.0 → "80.000" (exactly three decimal places). */
+    mu_assert("write_output_with_format: custom format '80.000' not found", strstr(out, "80.000"));
+    /* The default 17-significant-digit form must NOT appear — that would
+     * indicate the format string was ignored. */
+    mu_assert("write_output_with_format: default format leaked despite custom",
+              !strstr(out, "80.00000000000000"));
     return NULL;
 }
 
-static char *test_write_output_with_format_custom()
+static char *test_write_output_with_format_custom(void)
 {
     /* vmaf_write_output_with_format() must honour a caller-supplied printf
      * format string.  "%.3f" of 80.0 yields "80.000"; the default "%.17g"
@@ -593,17 +691,15 @@ static char *test_write_output_with_format_custom()
 
     char *out = slurp_path(tmp);
     (void)remove(tmp);
-    mu_assert("slurp_path failed after vmaf_write_output_with_format", out);
-    /* "%.3f" of 80.0 → "80.000" (exactly three decimal places). */
-    mu_assert("write_output_with_format: custom format '80.000' not found", strstr(out, "80.000"));
-    /* The default 17-significant-digit form must NOT appear — that would
-     * indicate the format string was ignored. */
-    mu_assert("write_output_with_format: default format leaked despite custom",
-              !strstr(out, "80.00000000000000"));
+    if (!out) {
+        (void)vmaf_close(vmaf);
+        return "slurp_path failed after vmaf_write_output_with_format";
+    }
 
+    char *msg = check_write_output_format(out);
     free(out);
     (void)vmaf_close(vmaf);
-    return NULL;
+    return msg;
 }
 
 /*
@@ -632,6 +728,15 @@ static int make_pic_cnt_zero_ctx(VmafContext **out)
     return vmaf_import_feature_score(*out, "feat_injected", 42.0, 0);
 }
 
+static char *check_pic_cnt_zero_json(const char *out)
+{
+    mu_assert("JSON pc0: missing '{' open brace", strstr(out, "{"));
+    mu_assert("JSON pc0: missing frames block", strstr(out, "\"frames\":"));
+    mu_assert("JSON pc0: missing feat_injected in output", strstr(out, "feat_injected"));
+    mu_assert("JSON pc0: missing pooled_metrics block", strstr(out, "\"pooled_metrics\":"));
+    return NULL;
+}
+
 /* Sub-test: JSON output with pic_cnt == 0. */
 static char *test_write_output_pic_cnt_zero_json(VmafContext *vmaf)
 {
@@ -641,12 +746,17 @@ static char *test_write_output_pic_cnt_zero_json(VmafContext *vmaf)
     mu_assert("vmaf_write_output(JSON,pic_cnt=0) returned non-zero", !err);
     char *out = slurp_path(tmp);
     (void)remove(tmp);
-    mu_assert("slurp failed for JSON pic_cnt=0", out);
-    mu_assert("JSON pc0: missing '{' open brace", strstr(out, "{"));
-    mu_assert("JSON pc0: missing frames block", strstr(out, "\"frames\":"));
-    mu_assert("JSON pc0: missing feat_injected in output", strstr(out, "feat_injected"));
-    mu_assert("JSON pc0: missing pooled_metrics block", strstr(out, "\"pooled_metrics\":"));
+    if (!out)
+        return "slurp failed for JSON pic_cnt=0";
+    char *msg = check_pic_cnt_zero_json(out);
     free(out);
+    return msg;
+}
+
+static char *check_pic_cnt_zero_xml(const char *out)
+{
+    mu_assert("XML pc0: missing <VMAF> root", strstr(out, "<VMAF"));
+    mu_assert("XML pc0: missing pooled_metrics block", strstr(out, "<pooled_metrics>"));
     return NULL;
 }
 
@@ -659,15 +769,15 @@ static char *test_write_output_pic_cnt_zero_xml(VmafContext *vmaf)
     mu_assert("vmaf_write_output(XML,pic_cnt=0) returned non-zero", !err);
     char *out = slurp_path(tmp);
     (void)remove(tmp);
-    mu_assert("slurp failed for XML pic_cnt=0", out);
-    mu_assert("XML pc0: missing <VMAF> root", strstr(out, "<VMAF"));
-    mu_assert("XML pc0: missing pooled_metrics block", strstr(out, "<pooled_metrics>"));
+    if (!out)
+        return "slurp failed for XML pic_cnt=0";
+    char *msg = check_pic_cnt_zero_xml(out);
     free(out);
-    return NULL;
+    return msg;
 }
 
 /* Top-level ADR-0602 regression entry point. */
-static char *test_write_output_pic_cnt_zero()
+static char *test_write_output_pic_cnt_zero(void)
 {
     VmafContext *vmaf = NULL;
     int err = make_pic_cnt_zero_ctx(&vmaf);
@@ -697,7 +807,7 @@ static char *test_write_output_pic_cnt_zero()
     return NULL;
 }
 
-char *run_tests()
+static char *run_output_tests_part1(void)
 {
     mu_run_test(test_csv_basic);
     mu_run_test(test_csv_subsample_and_custom_format);
@@ -706,6 +816,11 @@ char *run_tests()
     mu_run_test(test_csv_sub_einval_guards);
     mu_run_test(test_xml_basic);
     mu_run_test(test_json_basic_and_format);
+    return NULL;
+}
+
+static char *run_output_tests_part2(void)
+{
     mu_run_test(test_json_nan_and_inf);
     mu_run_test(test_json_empty_collector);
     mu_run_test(test_vmaf_version);
@@ -714,3 +829,13 @@ char *run_tests()
     mu_run_test(test_write_output_pic_cnt_zero);
     return NULL;
 }
+
+char *run_tests(void)
+{
+    char *msg = run_output_tests_part1();
+    if (msg)
+        return msg;
+    return run_output_tests_part2();
+}
+
+/* NOLINTEND(modernize-use-nullptr) */
