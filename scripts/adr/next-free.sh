@@ -62,6 +62,21 @@
 
 set -euo pipefail
 
+# ── shallow-safe fetch depth ──────────────────────────────────────────────────
+#
+# `--depth` CONVERTS a full clone into a shallow one: it writes `.git/shallow`,
+# after which `git merge-base` finds nothing and every `git rebase` in the
+# repository — including in all of its worktrees, which share one `.git` —
+# reports the whole tree as conflicting.  This script runs on every ADR claim,
+# so an unguarded `--depth` silently corrupts a developer's clone several times
+# an hour.  CI checkouts are already shallow and genuinely benefit from the
+# smaller fetch, so keep the depth flags there and drop them everywhere else.
+adr_depth_args() {
+  if [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+    printf '%s\n' "$@"
+  fi
+}
+
 # ── constants ────────────────────────────────────────────────────────────────
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
@@ -154,7 +169,8 @@ _collect_remote_branch_numbers() {
   # --no-tags avoids tag-name expansion; --depth=1 is the minimal fetch.
   # Soft failure: if the network drops between the ls-remote above and here,
   # ls-tree will simply find nothing.
-  git fetch --no-tags --depth=1 --quiet origin \
+  mapfile -t _adr_depth < <(adr_depth_args --depth=1)
+  git fetch --no-tags "${_adr_depth[@]}" --quiet origin \
     "${shas[@]}" 2>/dev/null || true
 
   # Step 4: for each SHA, run git ls-tree to enumerate docs/adr/ entries.
@@ -328,7 +344,8 @@ fi
 # ── shared network fetch (query and claim modes) ──────────────────────────────
 
 # Fetch the latest master tip (soft failure on network outage or offline dev).
-git fetch origin master --depth=50 --quiet 2>/dev/null || {
+mapfile -t _adr_depth_master < <(adr_depth_args --depth=50)
+git fetch origin master "${_adr_depth_master[@]}" --quiet 2>/dev/null || {
   REMOTE_OFFLINE=1
 }
 
