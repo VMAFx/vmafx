@@ -21647,8 +21647,8 @@ close) and adds the missing `<math.h>` / `<stdbool.h>` includes.
   Build + fast test suite verified clean.
 
 
-- **Two memory leaks in the JSON model parser, both on duplicate-key inputs,
-  found by the nightly `fuzz_json_model` LeakSanitizer lane.** The lane went red
+- **Three memory leaks in the JSON model parser, found by the nightly
+  `fuzz_json_model` LeakSanitizer lane.** The lane went red
   on master at `042c48adc7` with `248 byte(s) leaked in 6 allocation(s)`; both
   leaks are reproduced byte-for-byte by seeds now committed to the corpus.
   1. **A duplicate `model` key inside `model_dict` orphaned an entire
@@ -21667,9 +21667,23 @@ close) and adds the missing `<math.h>` / `<stdbool.h>` includes.
      rows orphaned the first allocation (8 bytes at `nr_class == 2`). A repeated
      header row is malformed input, so all five now reject it with the parser's
      existing `exceptAssert`, rather than silently picking a winner.
-  Neither leak is reachable from a well-formed model: both require a duplicate
-  key, so normal scoring is unaffected and no score changes. Netflix golden gate
-  unchanged.
+  3. **Feature option dictionaries above `n_features` were never freed.**
+     `vmaf_model_destroy` walked `min(feature_cap, n_features)`, but
+     `n_features` is only incremented by `parse_feature_names` while
+     `parse_feature_opts_dicts` also grows the array and stores an owned
+     `VmafDictionary` in the slot. A model carrying `feature_opts_dicts` with
+     no (or fewer) `feature_names` therefore left dictionaries nothing could
+     reach. Destroy now walks the full `feature_cap`, which cannot read past
+     the buffer (`feature_cap` *is* the allocated count) and frees the tail;
+     `ensure_feature_capacity` zeroes every newly grown slot, so an untouched
+     slot holds `NULL` and both `free(NULL)` and `vmaf_dictionary_free(&NULL)`
+     are no-ops. Inflating `n_features` instead would have been wrong — it is
+     the semantic count of model features and feeds prediction, not a
+     memory-management counter.
+  None of the three is reachable from a well-formed model, so normal scoring is
+  unaffected and no score changes. Verified with a 90-second libFuzzer + ASan
+  session over the seeded corpus: **10,703,871 runs, zero leaks or crashes** —
+  longer than the 60-second CI lane. Netflix golden gate unchanged.
 
 
 External JSON model loading now grows feature and score-transform knot arrays

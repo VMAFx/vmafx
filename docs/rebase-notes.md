@@ -47,6 +47,12 @@
   binary you test — the library-side reproducer looks fixed while the fuzz lane
   stays red, or vice versa. `scripts/ci/twin-drift-check.sh` reports the `.c`
   as a "test-only twin side".
+- `core/src/model.c`: **upstream-mirror.** `vmaf_model_destroy` walks
+  `model->feature_cap`, where upstream walks `model->n_features`. The fork's
+  form frees feature slots that `parse_feature_opts_dicts` populated without
+  bumping `n_features`; reverting it to `n_features` reintroduces the leak. It
+  is safe because `feature_cap` is the allocated element count and
+  `ensure_feature_capacity` zeroes newly grown slots.
 - `core/test/fuzz/json_model_corpus/seed_duplicate_model_key.json` and
   `seed_duplicate_rho_row.json`: fork-added corpus seeds, no upstream
   counterpart. `core/test/fuzz/json_model_known_crashes/` holds the reproducer
