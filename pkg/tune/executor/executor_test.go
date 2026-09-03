@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/VMAFx/vmafx/pkg/model"
 	"io"
 	"log/slog"
 	"math"
@@ -160,7 +161,7 @@ func TestBuildVMAFCommand(t *testing.T) {
 				"vmaf", "--reference", "ref.yuv", "--distorted", "dist.yuv",
 				"--width", "1920", "--height", "1080",
 				"--pixel_format", "420", "--bitdepth", "8",
-				"--model", "version=vmaf_v0.6.1", "--json", "--output", "/tmp/vmaf.json",
+				"--model", "version=" + model.DefaultVersion, "--json", "--output", "/tmp/vmaf.json",
 			},
 		},
 		{
@@ -174,7 +175,7 @@ func TestBuildVMAFCommand(t *testing.T) {
 				"vmaf", "--reference", "ref.yuv", "--distorted", "dist.yuv",
 				"--width", "3840", "--height", "2160",
 				"--pixel_format", "422", "--bitdepth", "10",
-				"--model", "version=vmaf_v0.6.1", "--json", "--output", "/tmp/vmaf.json",
+				"--model", "version=" + model.DefaultVersion, "--json", "--output", "/tmp/vmaf.json",
 				"--backend", "cuda", "--frame_skip_ref", "120", "--frame_cnt", "240",
 			},
 		},

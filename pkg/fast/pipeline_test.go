@@ -9,6 +9,7 @@ package fast
 
 import (
 	"context"
+	"github.com/VMAFx/vmafx/pkg/model"
 	"math"
 	"os"
 	"path/filepath"
@@ -505,8 +506,8 @@ func TestPipelineConfigDefaults(t *testing.T) {
 	if got := cfg.pixFmtOrDefault(); got != "yuv420p" {
 		t.Errorf("default pix_fmt = %q, want yuv420p", got)
 	}
-	if got := cfg.vmafModelOrDefault(); got != "vmaf_v0.6.1" {
-		t.Errorf("default model = %q, want vmaf_v0.6.1", got)
+	if got := cfg.vmafModelOrDefault(); got != model.DefaultVersion {
+		t.Errorf("default model = %q, want %q", got, model.DefaultVersion)
 	}
 	if got := cfg.presetArgs(); got != nil {
 		t.Errorf("empty preset must emit no args, got %v", got)
