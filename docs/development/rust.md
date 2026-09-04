@@ -12,7 +12,8 @@ Its first member is `bindings/rust/vmafx-sys`, the low-level FFI crate.
 |-------|-------------|
 | `vmafx-sys` | Auto-generated raw FFI bindings + thin safe wrappers. |
 
-A higher-level `vmafx` crate is planned for a future PR.
+The higher-level `vmafx` crate lives in [`bindings/rust/vmafx`](../../bindings/rust/vmafx)
+(ADR-0929); `vmafx-sys` is the raw FFI layer beneath it.
 
 ## Prerequisites
 
