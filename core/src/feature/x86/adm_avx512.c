@@ -3009,7 +3009,8 @@ void adm_dwt2_s123_combined_avx512(const int32_t *i4_ref_scale, const int32_t *i
     __m512i add_bef_shift_round_HP_512 = _mm512_set1_epi64(add_bef_shift_round_HP[scale - 1]);
 
     int w_mod8 = (w - (w % 8));
-    int half_w_mod8 = ((w + 1) / 2) - ((((w + 1) / 2) - 1) % 8);
+    int half_w = (w + 1) / 2;
+    int half_w_mod8 = half_w >= 2 ? half_w - 1 - ((half_w - 2) % 8) : 1;
 
     for (int i = 0; i < (h + 1) / 2; ++i) {
         /* Vertical pass. */
@@ -3493,7 +3494,8 @@ void adm_dwt2_16_avx512(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffe
     __m512i accum0_lo;
     __m512i accum0_hi;
 
-    int half_w_mod64 = ((w + 1) / 2) - ((((w + 1) / 2) - 1) % 64);
+    int half_w = (w + 1) / 2;
+    int half_w_mod64 = half_w >= 2 ? half_w - 1 - ((half_w - 2) % 64) : 1;
 
     for (int i = 0; i < (h + 1) / 2; ++i) {
         /* Vertical pass. */
@@ -3751,7 +3753,8 @@ void adm_dwt2_8_avx512(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer 
     __m512i add_shift_HP_vex = _mm512_set1_epi32(32768);
 
     int w_mod_32 = (w >> 5) << 5;
-    int half_w_mod_32 = ((w + 1) / 2) - ((((w + 1) / 2) - 1) % 32);
+    int half_w = (w + 1) / 2;
+    int half_w_mod_32 = half_w >= 2 ? half_w - 1 - ((half_w - 2) % 32) : 1;
 
     for (int i = 0; i < (h + 1) / 2; ++i) {
         /* Vertical pass. */

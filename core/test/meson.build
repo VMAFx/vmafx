@@ -1111,7 +1111,28 @@ test_integer_adm_simd = executable('test_integer_adm_simd',
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
 )
+
+test_adm_dwt2_x86 = executable('test_adm_dwt2_x86',
+    ['test.c', 'test_adm_dwt2_x86.c',
+     '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects,
+)
 endif
+
 
 # Bit-exactness test for the AVX2 horizontal moment accumulation kernel (ADR-0784).
 # Mirrors test_integer_adm_simd in structure; only the 8bpc / 16bpc accumulate_row
@@ -3444,6 +3465,7 @@ endif
 
 if integer_adm_simd_test_archs.contains(host_machine.cpu_family())
 test('test_integer_adm_simd', test_integer_adm_simd, suite : ['fast', 'simd'])
+test('test_adm_dwt2_x86', test_adm_dwt2_x86, suite : ['fast', 'simd'])
 endif
 
 if integer_ssim_simd_test_archs.contains(host_machine.cpu_family())
