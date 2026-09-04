@@ -9,6 +9,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from ai.data.feature_extractor import FULL_FEATURES
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -146,3 +148,86 @@ def test_main_skips_clip_with_missing_height_key(monkeypatch, tmp_path: Path) ->
 
     rc = _run_main(mod, fx)
     assert rc == 2  # graceful skip, not an unhandled KeyError
+
+
+def test_run_vmaf_rejects_invalid_dimensions_and_threads(tmp_path: Path) -> None:
+    mod = _load_module()
+    vmaf = tmp_path / "vmaf"
+    ref = tmp_path / "ref.yuv"
+    dis = tmp_path / "dis.yuv"
+    model = tmp_path / "model.json"
+
+    with pytest.raises(ValueError, match="w must be a positive integer"):
+        mod._run_vmaf(vmaf, ref, dis, 0, 1080, 1, model)
+    with pytest.raises(ValueError, match="w must be a positive integer"):
+        mod._run_vmaf(vmaf, ref, dis, -1920, 1080, 1, model)
+    with pytest.raises(ValueError, match="h must be a positive integer"):
+        mod._run_vmaf(vmaf, ref, dis, 1920, 0, 1, model)
+    with pytest.raises(ValueError, match="h must be a positive integer"):
+        mod._run_vmaf(vmaf, ref, dis, 1920, -1080, 1, model)
+    with pytest.raises(ValueError, match="n_threads must be a positive integer"):
+        mod._run_vmaf(vmaf, ref, dis, 1920, 1080, 0, model)
+
+
+def test_run_vmaf_rejects_empty_or_null_paths(tmp_path: Path) -> None:
+    mod = _load_module()
+    vmaf = tmp_path / "vmaf"
+    ref = tmp_path / "ref.yuv"
+    dis = tmp_path / "dis.yuv"
+    model = tmp_path / "model.json"
+
+    with pytest.raises(ValueError, match="cannot be empty"):
+        mod._run_vmaf(Path(""), ref, dis, 1920, 1080, 1, model)
+    with pytest.raises(ValueError, match="cannot contain null bytes"):
+        mod._run_vmaf(Path("vmaf\0bad"), ref, dis, 1920, 1080, 1, model)
+    with pytest.raises(ValueError, match="cannot contain null bytes"):
+        mod._run_vmaf(vmaf, Path("ref\0bad.yuv"), dis, 1920, 1080, 1, model)
+    with pytest.raises(ValueError, match="cannot contain null bytes"):
+        mod._run_vmaf(vmaf, ref, Path("dis\0bad.yuv"), 1920, 1080, 1, model)
+    with pytest.raises(ValueError, match="cannot contain null bytes"):
+        mod._run_vmaf(vmaf, ref, dis, 1920, 1080, 1, Path("model\0bad.json"))
+
+
+def test_run_vmaf_validates_scratch_dir(monkeypatch, tmp_path: Path) -> None:
+    mod = _load_module()
+    vmaf = tmp_path / "vmaf"
+    ref = tmp_path / "ref.yuv"
+    dis = tmp_path / "dis.yuv"
+    model = tmp_path / "model.json"
+
+    monkeypatch.setenv("VMAF_TINY_AI_SCRATCH", "   ")
+    with pytest.raises(ValueError, match="VMAF_TINY_AI_SCRATCH cannot be empty"):
+        mod._run_vmaf(vmaf, ref, dis, 1920, 1080, 1, model)
+
+    monkeypatch.setenv("VMAF_TINY_AI_SCRATCH", "relative/scratch/dir")
+    with pytest.raises(ValueError, match="VMAF_TINY_AI_SCRATCH must be an absolute path"):
+        mod._run_vmaf(vmaf, ref, dis, 1920, 1080, 1, model)
+
+
+def test_run_vmaf_honours_valid_scratch_dir(monkeypatch, tmp_path: Path) -> None:
+    mod = _load_module()
+    scratch = tmp_path / "custom_scratch"
+    monkeypatch.setenv("VMAF_TINY_AI_SCRATCH", str(scratch))
+
+    out_json = {"frames": [{"frameNum": 0, "metrics": {"vmaf": 90.0}}]}
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        out_path = Path(cmd[cmd.index("--output") + 1])
+        assert scratch.resolve() in out_path.parents or out_path.parent == scratch.resolve()
+        out_path.write_text(__import__("json").dumps(out_json))
+        return None
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    frames = mod._run_vmaf(
+        tmp_path / "vmaf",
+        tmp_path / "ref.yuv",
+        tmp_path / "dis.yuv",
+        1920,
+        1080,
+        1,
+        tmp_path / "model.json",
+    )
+    assert frames == out_json["frames"]

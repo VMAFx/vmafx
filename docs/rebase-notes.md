@@ -204,6 +204,7 @@ no rebase impact: changes GitHub Actions workflow job display names (`.github/wo
 - `core/src/feature/iqa/convolve.c`: upstream-mirror file (vendored IQA library). Widened `img[img_offset + u]`, `img_cache[img_offset + (ptrdiff_t)v * w]`, and `k->bnd_opt(...)` to `(double)` before multiplying with kernel coefficients in `iqa_convolve_horizontal_pass`, `iqa_convolve_vertical_pass`, and `iqa_filter_pixel` to resolve CodeQL `cpp/integer-multiplication-cast-to-long` warnings. On upstream sync, preserve `(double)` casts on the multiplied operands.
 - `core/src/feature/moment.c`: upstream-mirror file. In `compute_2nd_moment`, cast `pic_` to `(double)` in `cum += (double)pic_ * pic_;` before multiplying to avoid single-precision truncation into the double accumulator. On upstream sync, preserve the cast.
 - `core/src/feature/psnr.c`: upstream-mirror file. In `compute_psnr`, cast `diff` to `(double)` in `noise_ += (double)diff * diff;` before multiplying to avoid single-precision truncation into the double accumulator. On upstream sync, preserve the cast.
+- `ai/scripts/extract_ugc_features.py`, `ai/tests/test_extract_ugc_features.py`: wholly fork-added tooling and test files with no upstream Netflix/vmaf counterpart. No rebase impact.
 
 ## fix/sycl-adm-tidy-debt — SYCL ADM warning cleanup + tidy-lane scoping (2026-09-04)
 
