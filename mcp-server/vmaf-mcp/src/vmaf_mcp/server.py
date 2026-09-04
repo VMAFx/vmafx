@@ -292,6 +292,7 @@ def _allowed_roots() -> list[Path]:
     roots = [
         _repo_root() / "testdata",
         _repo_root() / "python" / "test" / "resource",
+        _repo_root() / "python" / "test" / "resource" / "yuv",
         _repo_root() / "model",
         # Bug B fix: absolute container path for the Netflix golden YUVs
         # (vmaf-dev-mcp container, ADR-0496). The bind-mount makes the
@@ -2666,7 +2667,11 @@ async def _list_tools() -> list[Tool]:
                         "default": 1,
                         "description": "Score every Nth frame (1 = every frame).",
                     },
-                    "precision": {"type": "string", "default": "legacy"},
+                    "precision": {
+                        "type": "string",
+                        "default": "legacy",
+                        "description": "Score precision format. Default 'legacy' (%.6f, Netflix-compatible per ADR-0119); use 'max' for lossless float output (%.17g).",
+                    },
                     **_scoring_extra_properties(),
                 },
             },
@@ -2847,7 +2852,11 @@ async def _list_tools() -> list[Tool]:
                         "default": 1,
                         "description": "Score every Nth frame (1 = every frame).",
                     },
-                    "precision": {"type": "string", "default": "legacy"},
+                    "precision": {
+                        "type": "string",
+                        "default": "legacy",
+                        "description": "Score precision format. Default 'legacy' (%.6f, Netflix-compatible per ADR-0119); use 'max' for lossless float output (%.17g).",
+                    },
                     **_scoring_extra_properties(),
                 },
             },

@@ -258,3 +258,67 @@ def test_extras_validation_rejects_bad_inputs(args: dict, match: str) -> None:
 def test_vmaf_score_rejects_invalid_core_params(args: dict, match: str) -> None:
     with pytest.raises(ValueError, match=match):
         anyio.run(lambda: srv._call_tool_dispatch("vmaf_score", args, None))
+
+
+def test_e2e_score_cpu_with_tinyai_flags_and_error_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = srv._repo_root()
+    ref = repo / "python" / "test" / "resource" / "yuv" / "src01_hrc00_576x324.yuv"
+    dis = repo / "python" / "test" / "resource" / "yuv" / "src01_hrc01_576x324.yuv"
+    if not ref.exists() or not dis.exists():
+        pytest.skip("Netflix src01 fixtures not found")
+    vmaf_bin = srv._vmaf_binary()
+    if not vmaf_bin.exists():
+        pytest.skip(f"vmaf binary {vmaf_bin} not found")
+
+    monkeypatch.setenv("VMAF_MCP_ALLOW", str(ref.resolve().parent))
+
+    # 1. Normal CPU scoring with extra scoring flags passed through
+    res = anyio.run(
+        lambda: srv._call_tool_dispatch(
+            "vmaf_score",
+            {
+                "ref": str(ref),
+                "dis": str(dis),
+                "width": 576,
+                "height": 324,
+                "pixfmt": "420",
+                "bitdepth": 8,
+                "model": "version=vmaf_v0.6.1",
+                "frame_cnt": 3,
+                "threads": 2,
+                "subsample": 1,
+            },
+            None,
+        )
+    )
+    import json
+    data = json.loads(res[0].text)
+    assert "pooled_metrics" in data
+    assert "vmaf" in data["pooled_metrics"]
+
+    # 2. Missing model error path exercises isError=True
+    from types import SimpleNamespace
+    from mcp.types import CallToolRequestParams
+
+    ctx = SimpleNamespace(session=SimpleNamespace())
+    err_res = anyio.run(
+        lambda: srv._mcp_call_tool(
+            ctx,  # type: ignore[arg-type]
+            CallToolRequestParams.model_validate(
+                {
+                    "name": "vmaf_score",
+                    "arguments": {
+                        "ref": str(ref),
+                        "dis": str(dis),
+                        "width": 576,
+                        "height": 324,
+                        "pixfmt": "420",
+                        "bitdepth": 8,
+                        "model": "path=/nonexistent/missing_model_path.json",
+                    },
+                }
+            ),
+        )
+    )
+    assert err_res.is_error is True
+    assert len(err_res.content) > 0

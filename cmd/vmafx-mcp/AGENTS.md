@@ -126,20 +126,23 @@ Key facts a future agent must keep straight:
    a `ctx context.Context` parameter by design; new subprocess functions must
    follow the same pattern.
 
-10. **Go↔Python byte-identical scoring surface** (ADR-1117): the Go server
+10. **Go↔Python byte-identical scoring surface** (ADR-1117 / #1240): the Go server
    (`tools.go` `scoringExtraProperties()` + `impl.go` `parseScoreExtras` /
-   `scoreExtras.appendArgs`) and the Python server
+   `buildVmafArgv`) and the Python server
    (`server.py` `_scoring_extra_properties()` + `_extras_from_args` /
-   `to_argv`) MUST declare the same `vmaf_score` / `vmaf_score_encoded` input
-   schema (property names, types, enums, defaults, required-ness) AND build the
-   same `vmaf` CLI argv for a given input. A client must get the same result
-   from either server. When you add or change a scoring param, change BOTH
-   sides and keep the argv ORDER identical (e.g. `--subsample` only when `>1`,
-   emitted before the extras — `server.py:755`). `score_extras_test.go`
-   (`TestScoreExtraPropertiesPresent` / `TestParseScoreExtrasMapsFlags` /
-   `TestSubsampleForwarded`) and `tests/test_score_extras_adr1117.py` pin both
-   sides; CLI flag spellings are ground-truthed against
-   `core/tools/cli_parse.c`.
+   `_build_vmaf_argv`) MUST declare the same `vmaf_score` /
+   `vmaf_score_encoded` input schema (property names, types, enums, defaults,
+   required-ness, including device selectors `--cpumask`, `--gpumask`,
+   `--sycl_device`, `--hip_device`, `--metal_device`, `output_fmt`,
+   `subsample`, and tiny-AI flags) AND build the same `vmaf` CLI argv for a
+   given input. A client must get the same result from either server. When you
+   add or change a scoring param, change BOTH sides and keep the canonical
+   argv ORDER identical (e.g. `--subsample` only when `>1`, emitted before the
+   extras). `TestGoAndPythonArgvParity` (Go) and `test_parity_argv.py` (Python)
+   enforce byte-identical CLI invocation; `score_extras_test.go` and
+   `tests/test_score_extras_adr1117.py` pin schema and bounds validation
+   against `core/tools/cli_parse.c`. Allowed roots must include
+   `python/test/resource/yuv` in both servers so worktree symlinks resolve.
 
 11. **stdio-stdout purity** (ADR-1119, `main.go`): in stdio mode the
    `mcp.StdioTransport` owns `os.Stdin` / `os.Stdout` for the JSON-RPC framing.

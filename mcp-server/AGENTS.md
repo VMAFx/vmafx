@@ -123,3 +123,16 @@ unset in the calling context; `set -u` aborts on those references and bypasses `
   `test_call_tool_missing_*_raises_value_error` asserts (regex
   `missing required argument.*'key'`) and silently red the non-required
   `MCP Smoke` lane (the `probe_backend` 2026-06-20 fix).
+
+- **Go↔Python byte-identical scoring surface (ADR-1117 / #1240).** The Python
+  server (`server.py` `_scoring_extra_properties()` + `_extras_from_args` /
+  `_build_vmaf_argv`) and the Go server (`cmd/vmafx-mcp/tools.go` +
+  `impl.go` `parseScoreExtras` / `buildVmafArgv`) MUST declare the same
+  `vmaf_score` / `vmaf_score_encoded` input schema (property names, types,
+  enums, defaults, required-ness, including device selectors `--cpumask`,
+  `--gpumask`, `--sycl_device`, `--hip_device`, `--metal_device`, `output_fmt`,
+  `subsample`, and tiny-AI flags) AND build the identical `vmaf` CLI argv
+  for a given input. Any additions must update both servers in lockstep and
+  preserve canonical flag ordering. `tests/test_parity_argv.py` and
+  `TestGoAndPythonArgvParity` enforce cross-server invocation parity. Both servers
+  include `python/test/resource/yuv` in allowed roots so worktree symlinks resolve.

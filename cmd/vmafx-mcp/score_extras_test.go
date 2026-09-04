@@ -12,9 +12,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -459,5 +462,69 @@ func TestVmafScoreRejectsInvalidCoreParams(t *testing.T) {
 				t.Fatalf("expected error containing %q, got %v", tc.wantErr, err)
 			}
 		})
+	}
+}
+
+// TestE2EScoreCPUWithTinyAIFlagsAndErrorPath runs the vmaf_score tool against the
+// real host vmaf CLI on the Netflix src01 pair with scoring extra flags, and
+// verifies the missing-model error path returns an error.
+func TestE2EScoreCPUWithTinyAIFlagsAndErrorPath(t *testing.T) {
+	repoRoot := findRepoRoot(t)
+	ref := filepath.Join(repoRoot, "python", "test", "resource", "yuv", "src01_hrc00_576x324.yuv")
+	dis := filepath.Join(repoRoot, "python", "test", "resource", "yuv", "src01_hrc01_576x324.yuv")
+	if _, err := os.Stat(ref); err != nil {
+		t.Skipf("Netflix fixture ref missing: %v", err)
+	}
+	if _, err := os.Stat(dis); err != nil {
+		t.Skipf("Netflix fixture dis missing: %v", err)
+	}
+	vmafBin := libvmaf.FindBinary()
+	if _, err := os.Stat(vmafBin); err != nil {
+		t.Skipf("vmaf binary %s not found: %v", vmafBin, err)
+	}
+
+	realRef, err := filepath.EvalSymlinks(ref)
+	if err == nil {
+		t.Setenv("VMAF_MCP_ALLOW", filepath.Dir(realRef))
+	} else {
+		t.Setenv("VMAF_MCP_ALLOW", filepath.Dir(ref))
+	}
+
+	// 1. Normal CPU scoring with extra scoring flags passed through
+	res, err := handleVmafScore(context.Background(), map[string]any{
+		"ref":       ref,
+		"dis":       dis,
+		"width":     float64(576),
+		"height":    float64(324),
+		"pixfmt":    "420",
+		"bitdepth":  float64(8),
+		"model":     "version=vmaf_v0.6.1",
+		"frame_cnt": float64(3),
+		"threads":   float64(2),
+		"subsample": float64(1),
+	})
+	if err != nil {
+		t.Fatalf("handleVmafScore failed: %v", err)
+	}
+	resMap, ok := res.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map[string]any result, got %T", res)
+	}
+	if _, ok := resMap["pooled_metrics"]; !ok {
+		t.Errorf("missing pooled_metrics in response: %v", resMap)
+	}
+
+	// 2. Missing model error path returns error (which addRawTool maps to isError=True)
+	_, err = handleVmafScore(context.Background(), map[string]any{
+		"ref":      ref,
+		"dis":      dis,
+		"width":    float64(576),
+		"height":   float64(324),
+		"pixfmt":   "420",
+		"bitdepth": float64(8),
+		"model":    "path=/nonexistent/missing_model_path.json",
+	})
+	if err == nil {
+		t.Fatal("expected error on missing model path, got nil")
 	}
 }

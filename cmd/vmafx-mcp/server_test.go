@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -228,10 +229,11 @@ func TestVmafScoreTool(t *testing.T) {
 	}
 	t.Setenv("VMAF_BIN", vmafBin)
 
-	// Also allowlist the YUV paths since the golden YUVs are under python/test/resource/yuv
-	// which is already in the default allowed roots — but set VMAF_MCP_ALLOW just in case
-	// the test is run from an unusual working directory.
-	t.Setenv("VMAF_MCP_ALLOW", repoRoot+"/python/test/resource")
+	allowPath := repoRoot + "/python/test/resource"
+	if realRef, err := filepath.EvalSymlinks(refYUV); err == nil {
+		allowPath += string(os.PathListSeparator) + filepath.Dir(realRef)
+	}
+	t.Setenv("VMAF_MCP_ALLOW", allowPath)
 
 	result, err := handleVmafScore(context.Background(), map[string]any{
 		"ref":       refYUV,

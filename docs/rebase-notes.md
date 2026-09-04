@@ -128,7 +128,7 @@ no rebase impact: edits fork documentation (`README.md`, `CHANGELOG.md`, `change
 
 ## feat/mcp-score-gaps — MCP scoring surface completeness (epic #1240) (2026-09-03)
 
-no rebase impact: MCP servers (`cmd/vmafx-mcp` and `mcp-server/vmaf-mcp`) and `docs/mcp/` are wholly fork-added surfaces with no upstream Netflix/vmaf counterpart.
+no rebase impact: MCP servers (`cmd/vmafx-mcp` and `mcp-server/vmaf-mcp`), `pkg/libvmaf/paths.go`, and `docs/mcp/` are wholly fork-added surfaces with no upstream Netflix/vmaf counterpart.
 
 ## gap/hip-bucket-v2 — AMD ROCm HIP backend gap closure (ADR-1154) (2026-09-03)
 

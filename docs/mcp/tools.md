@@ -40,10 +40,12 @@ The server exec's the local `vmaf` binary with, effectively:
 ```bash
 vmaf -r <ref> -d <dis> --width <w> --height <h> -p <pixfmt> -b <bitdepth> \
      -m <model> --precision <precision> -q --json -o <tmp>
-# plus per-backend flags:
-#   backend=cpu  → --no_cuda --no_sycl
-#   backend=cuda → --no_sycl
-#   backend=sycl → --no_cuda
+# plus per-backend flags disabling sibling backends:
+#   backend=cpu   → --no_cuda --no_sycl --no_hip --no_metal
+#   backend=cuda  → --no_sycl --no_hip --no_metal
+#   backend=sycl  → --no_cuda --no_hip --no_metal
+#   backend=hip   → --no_cuda --no_sycl --no_metal
+#   backend=metal → --no_cuda --no_sycl --no_hip
 ```
 
 The JSON written by vmaf is parsed and returned with two extra

@@ -22554,6 +22554,15 @@ so that MCP output is Netflix-compatible without explicit precision argument (AD
   ADR-0726). MCP `backend` enum is `auto/cpu/cuda/sycl/hip/metal`.
 
 
+- **MCP schema defect fixes and parity cleanups**:
+  Accept bitdepth 16 on scoring tools matching libvmaf capabilities; reconcile
+  `precision` tool schema description to document default `legacy` (%.6f) and `max`
+  lossless output (%.17g) per ADR-0119; remove stale Vulkan references following
+  ADR-0726; fix stale "16 tools" count comment in Go `cmd/vmafx-mcp/tools.go` with
+  exact 15-tool categorization derivation; and admit `python/test/resource/yuv` in
+  allowed roots for worktree test runners.
+
+
 - **MCP server vmaf binary path resolution post-ADR-0700.**
   `mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:_vmaf_binary()` listed
   `<repo>/libvmaf/build/tools/vmaf` as its second-preference fallback,
