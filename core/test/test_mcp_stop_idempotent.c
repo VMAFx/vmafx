@@ -129,11 +129,47 @@ static char *test_stop_thrice_without_start(void)
     return NULL;
 }
 
+static char *test_stop_thrice_with_uds(void)
+{
+    if (!vmaf_mcp_transport_available(VMAF_MCP_TRANSPORT_UDS))
+        return NULL;
+
+    VmafContext *ctx = NULL;
+    VmafConfiguration vcfg = {0};
+    vcfg.log_level = VMAF_LOG_LEVEL_NONE;
+    vcfg.n_threads = 1u;
+    mu_assert("vmaf_init", vmaf_init(&ctx, vcfg) == 0);
+
+    VmafMcpServer *server = NULL;
+    mu_assert("mcp init", vmaf_mcp_init(&server, ctx, NULL) == 0);
+
+    char path[80];
+    int n = snprintf(path, sizeof(path), "/tmp/vmaf-mcp-stop-uds-%d.sock", (int)getpid());
+    mu_assert("path snprintf", n > 0 && (size_t)n < sizeof(path));
+
+    VmafMcpUdsConfig ucfg = {.path = path};
+    mu_assert("start uds", vmaf_mcp_start_uds(server, &ucfg) == 0);
+
+    int rc1 = vmaf_mcp_stop(server);
+    mu_assert("stop #1 returns 0", rc1 == 0);
+    int rc2 = vmaf_mcp_stop(server);
+    mu_assert("stop #2 returns 0", rc2 == 0);
+    int rc3 = vmaf_mcp_stop(server);
+    mu_assert("stop #3 returns 0", rc3 == 0);
+
+    vmaf_mcp_close(&server);
+    mu_assert("close NULLs handle", server == NULL);
+
+    (void)vmaf_close(ctx);
+    return NULL;
+}
+
 typedef char *(*test_fn)(void);
 
 static const test_fn k_test_table[] = {
     test_stop_thrice_without_start,
     test_stop_thrice_with_stdio,
+    test_stop_thrice_with_uds,
 };
 
 static const size_t k_test_table_len = sizeof(k_test_table) / sizeof(k_test_table[0]);

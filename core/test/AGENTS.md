@@ -371,3 +371,15 @@ every `mu_run_test` expansion contributes two. Past ~7 cases, group them into
 named driver functions (see `test_motion_min_dim.c`'s
 `run_integer_motion_tests` / `run_float_and_metal_motion_tests`) rather than
 adding a NOLINT.
+
+## Test timeouts and readiness invariants
+
+- **Timeouts are evidence-based**: test timeouts in `meson.build` must reflect
+  measured execution distributions. A timeout may change ONLY with measured
+  evidence of why the passing case needs it. If a test times out, investigate
+  the root cause (deadlock, socket accept hang, blocking I/O) rather than
+  reflexively raising the timeout.
+- **Readiness is polled, never slept**: when testing asynchronous servers
+  or worker threads (such as stdio, UDS, or SSE MCP transports), synchronize on
+  real readiness signals or poll readiness endpoints with a timeout rather than
+  using fixed `sleep()` calls.
