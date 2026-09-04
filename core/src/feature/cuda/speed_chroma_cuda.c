@@ -668,6 +668,38 @@ static int extract_channel(SpeedChromaCudaState *s, CudaFunctions *cu_f, VmafPic
 /* Extractor lifecycle                                                 */
 /* ------------------------------------------------------------------ */
 
+/* Release the module and stream created during init.
+ *
+ * `free_cuda_buffers()` only releases device/host BUFFERS (cuMemFree /
+ * cuMemFreeHost); it never touches `s->module` or `s->stream`. Any init failure
+ * after cuModuleLoadData() therefore leaked the module, and any failure after
+ * cuStreamCreate() leaked the stream as well.
+ *
+ * This mirrors close_fex_cuda()'s release order exactly -- stream first, then
+ * module, each NULL-guarded, and with no context push, because after the
+ * `cuCtxPopCurrent` in the failure labels the context is no longer current and
+ * close_fex_cuda() releases them the same way.
+ *
+ * Regression note: PR #1007 added these calls inline to both failure labels and
+ * PR #1029 -- merged the same day as a descendant of #1007 -- removed them
+ * again. Factoring the release into one helper keeps the two labels from
+ * drifting apart a second time. docs/state.md:
+ * T-CUDA-INIT-SUBMIT-LEAKS-2026-06-19.
+ */
+static void release_cuda_module_and_stream(SpeedChromaCudaState *s, CudaFunctions *cu_f)
+{
+    if (!s || !cu_f)
+        return;
+    if (s->stream) {
+        (void)cu_f->cuStreamDestroy(s->stream);
+        s->stream = NULL;
+    }
+    if (s->module) {
+        (void)cu_f->cuModuleUnload(s->module);
+        s->module = NULL;
+    }
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -808,11 +840,13 @@ free_cpu:
 
 fail_after_pop:
     (void)cu_f->cuCtxPopCurrent(NULL);
+    release_cuda_module_and_stream(s, cu_f);
     free_cuda_buffers(s, cu_f);
     return _cuda_err;
 
 fail_pop:
     (void)cu_f->cuCtxPopCurrent(NULL);
+    release_cuda_module_and_stream(s, cu_f);
     free_cuda_buffers(s, cu_f);
     return _cuda_err;
 
