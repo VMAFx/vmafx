@@ -260,3 +260,15 @@ during the migration; see Stage roadmap in
     The runner still takes one flat `[1, N]` vector (invariant 20 stands);
     named inputs and a stdin transport are protocol extensions of the
     in-tree runner, not new dependencies.
+28. **Saliency moments reach `predict` through the shared session factory
+    (PR for the #1272 gaps).** `predict --use-saliency` opens the session via
+    `saliencySessionFactory` (the same path `recommend --saliency` uses) and
+    writes the per-shot population moments into `ShotFeatures.SaliencyMean` /
+    `SaliencyVar`, which land at `predictor.FeatureVector` indices 5-6. A
+    nonexistent `--saliency-model` is a usage error (exit 2, naming the file);
+    an unavailable runtime degrades to `(0, 0)` with a log line. Never bypass
+    the factory with a direct `newSaliencySession`, and any change to the
+    feature-vector layout updates `predictor.FeatureVector` and
+    `saliency_honesty_test.go` in the same commit. The retired Python CLI
+    redirects in `compare`/`root`/`main` are gone; do not reintroduce
+    "use vmaf-tune (Python)" hints for subcommands the Go binary implements.
