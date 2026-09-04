@@ -226,6 +226,17 @@ no rebase impact: fork-only test wiring in `core/test/meson.build` and documenta
 - `core/src/feature/sycl/speed_chroma_sycl.cpp`, `core/src/feature/sycl/speed_temporal_sycl.cpp`: Replaced `double` accumulators and workgroup local accessors with `float` to satisfy ADR-0220 on fp64-less Intel Arc devices.
 - `core/src/meson.build`: Passed `_x86_simd_strict_fp_extra` (`-fp-model=precise`) to `x86_avx2_static_lib` and `x86_avx512_static_lib` when compiling with `icx`.
 - `python/test/sycl_default_model_test.py`: Wholly fork-added regression test gating `--backend sycl` default model execution. No upstream rebase conflict.
+## ci/sycl-arc-self-hosted-runner — containerised self-hosted GitHub Actions runner for Intel Arc SYCL CI (ADR-1177) (2026-09-04)
+
+- `dev/Containerfile.runner`: fork-added; derives from `vmaf-dev-mcp:local` with GitHub Actions runner v2.337.0 and non-root `runner` user (uid 1001). Preserves all oneAPI SYCL tools and Level-Zero runtime. No upstream counterpart.
+- `dev/docker-compose.runner.yml`: fork-added compose file pinning device passthrough to `/dev/dri/renderD129` (Intel Arc A380) with NVIDIA and AMD device isolation, `seccomp=unconfined`, and 8 CPU / 16 GB limits.
+- `dev/scripts/runner-entrypoint.sh`: fork-added runner entrypoint handling token configuration and ephemeral execution.
+- `.github/workflows/sycl-parity.yml`: fork-added workflow; runs on `[self-hosted, linux, x64, sycl-arc]`. Strictly prohibits execution on untrusted forks (`github.event.pull_request.head.repo.full_name == github.repository`).
+- `.github/workflows/required-aggregator.yml`: added `SYCL Parity (Arc A380)` to `required` array, with dynamic probe to allow absence/skip when the runner is unregistered, and loud failure if registered but offline.
+- `scripts/ci/check-runner-available.sh`: fork-added helper to query GitHub runner registration status by label.
+- `scripts/ci/gpu_ulp_calibration.yaml`: added calibrated `float_ssim: 5.0e-4` entry for Arc A380 `sycl:0x8086:0x56a*`.
+- `core/test/meson.build`: tagged all 23 SYCL tests with `suite : ['fast', 'gpu', 'sycl']`. Upstream sync conflict resolution: preserve the `suite` additions on any upstream test additions.
+- Rebase impact: minimal. Upstream Netflix/vmaf has no SYCL backend, no self-hosted runner infrastructure, and no `required-aggregator.yml`. If upstream touches `core/test/meson.build`, keep the fork's SYCL test declarations and suite tags.
 ## fix/metal-motion-v2-mirror-closeout — Metal motion_v2 mirror closeout and test observability (2026-09-04)
 
 no rebase impact: fork-only Metal backend (`core/src/feature/metal/integer_motion_v2.metal`, `core/test/test_metal_motion_v2_parity.c`, `core/src/feature/metal/AGENTS.md`, ADR-1176). All touched files are fork-added surfaces with no upstream Netflix/vmaf counterpart.

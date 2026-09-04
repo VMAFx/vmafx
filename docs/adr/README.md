@@ -1000,5 +1000,6 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1171](1171-release-please-credential-gate-warning.md) | release-please credential gate warns on push, errors on dispatch | Accepted | ci, release, release-please |
 | [ADR-1179](1179-sycl-v1-model-crash-fix.md) | Fix Intel Arc SYCL Crashes and Default Model Resolution Divergence | Accepted | sycl, gpu, cambi, speed, model, default, arc, fp64, adr-0220 |
 | [ADR-1183](1183-model-options-gate-gpu-twin-selection.md) | Model options gate GPU twin selection | Accepted | core, feature, options, cuda, gpu-twins, dispatch |
+| [ADR-1177](1177-sycl-arc-self-hosted-runner.md) | Containerised self-hosted GitHub Actions runner for Intel Arc SYCL parity CI | Accepted | sycl, gpu, ci, runner, arc-a380, docker |
 | [ADR-1176](1176-metal-motion-v2-mirror-closeout.md) | Metal motion_v2 mirror closeout and reflect-101 parity contract | Accepted | metal, gpu, motion-v2, parity, boundary, closeout, fork-local |
 | [ADR-1197](1197-gpu-threaded-flush-ownership.md) | The threaded flush leaves GPU extractors to their own backend flush | Proposed | cuda, sycl, threading, cli, testing |
