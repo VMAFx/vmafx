@@ -51,12 +51,46 @@ def test_teacher_scores_round_trip_preserves_values() -> None:
     payload = original.to_jsonable()
     restored = scores_mod.TeacherScores.from_jsonable(payload)
     np.testing.assert_allclose(restored.per_frame, original.per_frame)
-    assert restored.pooled == pytest.approx(original.pooled)
+    assert restored.teacher_model == original.teacher_model
 
 
 # ---------------------------------------------------------------------------
-# _model_path env override
+# Teacher model resolution & single-source mirror
 # ---------------------------------------------------------------------------
+
+
+def test_resolve_teacher_model_default_matches_mirror(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("VMAF_MODEL_PATH", raising=False)
+    resolved = scores_mod.resolve_teacher_model()
+    assert resolved.name == scores_mod.DEFAULT_MODEL
+    assert resolved.arg == f"version={scores_mod.DEFAULT_MODEL}"
+    assert not resolved.is_path
+
+
+def test_resolve_teacher_model_path_override(tmp_path: Path) -> None:
+    custom = tmp_path / "custom" / "model.json"
+    resolved = scores_mod.resolve_teacher_model(custom)
+    assert resolved.arg == f"path={custom}"
+    assert resolved.name == "model"
+    assert resolved.is_path
+
+
+def test_resolve_teacher_model_env_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    custom = tmp_path / "env_override.json"
+    monkeypatch.setenv("VMAF_MODEL_PATH", str(custom))
+    resolved = scores_mod.resolve_teacher_model()
+    assert resolved.arg == f"path={custom}"
+    assert resolved.name == "env_override"
+    assert resolved.is_path
+
+
+def test_resolve_teacher_model_version_string() -> None:
+    resolved = scores_mod.resolve_teacher_model("version=vmaf_v0.6.1")
+    assert resolved.arg == "version=vmaf_v0.6.1"
+    assert resolved.name == "vmaf_v0.6.1"
+    assert not resolved.is_path
 
 
 def test_model_path_default_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -68,6 +102,53 @@ def test_model_path_env_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     custom = tmp_path / "custom" / "model.json"
     monkeypatch.setenv("VMAF_MODEL_PATH", str(custom))
     assert scores_mod._model_path() == custom
+
+
+def test_resolve_teacher_model_directory_ignored(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    monkeypatch.setenv("VMAF_MODEL_PATH", str(model_dir))
+    resolved = scores_mod.resolve_teacher_model()
+    assert resolved.name == scores_mod.DEFAULT_MODEL
+    assert resolved.arg == f"version={scores_mod.DEFAULT_MODEL}"
+    assert not resolved.is_path
+
+
+def test_run_vmaf_score_default_passes_version_arg(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("VMAF_MODEL_PATH", raising=False)
+    fake_binary = tmp_path / "vmaf"
+    fake_binary.write_text("")
+    ref = tmp_path / "ref.yuv"
+    dis = tmp_path / "dis.yuv"
+    ref.write_bytes(b"\x00" * 64)
+    dis.write_bytes(b"\x00" * 64)
+
+    captured_argv: list[list[str]] = []
+
+    def fake_run(cmd, **kw):
+        captured_argv.append(list(cmd))
+        out_path = Path(cmd[cmd.index("-o") + 1])
+        out_path.write_text(json.dumps({"frames": [], "pooled_metrics": {}}))
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+
+    with patch.object(scores_mod.subprocess, "run", side_effect=fake_run):
+        scores_mod._run_vmaf_score(
+            fake_binary,
+            ref,
+            dis,
+            320,
+            240,
+            pix_fmt="420",
+            bitdepth=8,
+        )
+
+    assert captured_argv, "subprocess.run not invoked"
+    argv = captured_argv[0]
+    assert argv[argv.index("-m") + 1] == f"version={scores_mod.DEFAULT_MODEL}"
 
 
 # ---------------------------------------------------------------------------

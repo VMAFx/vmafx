@@ -1,0 +1,36 @@
+<!-- ADR-1173 stub — claimed by scripts/adr/next-free.sh --claim ai-teacher-follows-default-model on 2026-09-04T21:14:37Z -->
+<!-- Replace this file with the real ADR and rename to 1173-ai-teacher-follows-default-model.md before committing. -->
+<!-- To abandon this claim run: scripts/adr/next-free.sh --release 1173 -->
+
+# ADR-1173: <fill in title>
+
+- **Status**: Proposed
+- **Date**: 2026-09-04
+- **Deciders**: <fill in>
+- **Tags**: <fill in>
+
+## Context
+
+<fill in>
+
+## Decision
+
+<fill in>
+
+## Alternatives considered
+
+| Option | Pros | Cons | Why not chosen |
+|---|---|---|---|
+| | | | |
+
+## Consequences
+
+- **Positive**: <fill in>
+- **Negative**: <fill in>
+- **Neutral / follow-ups**: <fill in>
+
+## References
+
+- See [ADR-0535](0535-adr-atomic-allocator.md) for the original allocator design.
+- See [ADR-0628](0628-adr-allocator-remote-aware.md) for the remote-aware extension.
+- Source: <req or Q<round>.<q>>
