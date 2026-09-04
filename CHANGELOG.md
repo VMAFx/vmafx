@@ -18336,6 +18336,16 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   Supersedes ADR-0539 with ADR-1167. Added regression parity tests `test_cuda_adm_small_border` and `test_cuda_adm_wide_rounding` (and HIP twins).
 
 
+### Fixed
+
+- `core/src/feature/integer_adm.c`: reject CSF configurations whose scale-0
+  factors exceed the 16-bit fixed-point budget (`factor1 * 2^21 >= 65536` or
+  `factor2 * 2^23 >= 65536`) with `-EINVAL` and an error log naming the offending
+  mode and values, preventing silent score distortion (e.g. `adm_csf_mode=1`
+  Barten at default 1080p/3H viewing conditions). Documented in `docs/metrics/features.md`
+  and ADR-1174. Stage 1 of T-UPSTREAM-1494; stage 2 will widen the internal pipeline.
+
+
 **fix(adm):** Remove stale dead-code block and replace the `adm_p_norm` TODO
 comment in `integer_adm.c` with a brief explanatory note. The exponent is fixed
 at 3.0f per the Netflix training-data contract; no runtime parameterisation is
@@ -18414,6 +18424,18 @@ Wire `adm_skip_scale0` and `adm_min_val` into `integer_adm_sycl`,
 accepted by the CPU, CUDA, and Vulkan extractors but silently ignored
 by the three remaining GPU paths; scale-0 was always accumulated and
 no score floor was applied.
+
+
+### Fixed
+
+- `core/src/feature/x86/adm_avx2.c`, `core/src/feature/x86/adm_avx512.c`: fix horizontal
+  DWT2 tail loop boundary condition for AVX2 and AVX-512 kernels. Previously,
+  the vector loop bound `((w + 1) / 2) - ((((w + 1) / 2) - 1) % N)` allowed the SIMD loop
+  to process the final column `(w + 1) / 2 - 1` when `(w + 1) / 2 % N == 1`, skipping
+  boundary reflection and causing scalar/SIMD divergence and potential out-of-bounds
+  loads. Guarded the vector loop bound to `half_w - 1 - ((half_w - 2) % N)` (with a minimum of 1),
+  ensuring the final column is always safely mirrored by the scalar tail loop.
+  Regression test added in `core/test/test_adm_dwt2_x86.c`.
 
 
 - Skip 9 Python `feature_extractor_test` cases that exercise `motion_five_frame_window=True`

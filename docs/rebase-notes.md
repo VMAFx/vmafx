@@ -280,6 +280,19 @@ No rebase impact: fork-only tools/vmaf-tune and documentation surfaces (`tools/v
 - `.github/workflows/build.yml` and `.github/workflows/libvmaf-build-matrix.yml`: Homebrew
   installation on macOS uses a 3-attempt retry loop with backoff and `brew fetch --retry`, plus
   `HOMEBREW_NO_AUTO_UPDATE=1` and `HOMEBREW_NO_INSTALL_CLEANUP=1`. Wholly fork-added workflows.
+## fix/adm-x86-dwt2-tail-bound-and-csf-mode-guard — x86 DWT2 tail bound and CSF mode overflow guard (2026-09-04)
+
+- `core/src/feature/x86/adm_avx2.c`, `core/src/feature/x86/adm_avx512.c`: horizontal DWT2 tail loop bounds
+  use `half_w >= 2 ? half_w - 1 - ((half_w - 2) % N) : 1` (with `half_w = (w + 1) / 2`) across `adm_dwt2_8_avx2`,
+  `adm_dwt2_16_avx2`, `adm_dwt2_s123_combined_avx2`, `adm_dwt2_s123_combined_avx512`, `adm_dwt2_16_avx512`,
+  and `adm_dwt2_8_avx512`. This guarantees the last column `half_w - 1` is always processed by the scalar
+  loop (which correctly mirrors indices) rather than contiguous SIMD loads when `half_w % N == 1`.
+  Upstream Netflix carries identical loop bounds; on rebase against upstream commits touching x86 DWT2,
+  preserve the guarded bounds and the test `core/test/test_adm_dwt2_x86.c`.
+- `core/src/feature/integer_adm.c`: `extract()` validates scale-0 CSF factors dynamically via `adm_csf_factors(0, ...)`
+  and rejects configurations exceeding the 16-bit `uint16_t` fixed-point budget (`factor1 * 2^21 >= 65536.0` or
+  `factor2 * 2^23 >= 65536.0`) with `-EINVAL` and `vmaf_log(VMAF_LOG_LEVEL_ERROR)`. Upstream does not support
+  `adm_csf_mode > 0`; preserve this guard on upstream syncs until stage 2 pipeline widening (`T-ADM-CSF-IRFACTOR-WIDEN`).
 
 ## fix/vmaftune-state-bugs — libx264 two-pass CRF conflict fix (2026-09-03)
 

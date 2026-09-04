@@ -1005,3 +1005,4 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1197](1197-gpu-threaded-flush-ownership.md) | The threaded flush leaves GPU extractors to their own backend flush | Proposed | cuda, sycl, threading, cli, testing |
 | [ADR-1192](1192-netflix-bench-snapshot-drift-not-regenerated.md) | Keep the recorded Netflix benchmark snapshot; do not regenerate it while the GPU paths are broken | Accepted | benchmark, cuda, sycl, testdata, docs |
 | [ADR-1195](1195-container-source-revision-guard.md) | Record and verify which source revision the dev container was built from | Proposed | ci, build, testing, agents |
+| [ADR-1174](1174-integer-adm-csf-mode-fixed-point-budget.md) | Reject Integer-ADM CSF Modes Exceeding 16-bit Scale-0 Fixed-Point Budget | Accepted | feature, adm, integer-adm, csf, overflow, security |

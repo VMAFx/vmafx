@@ -1,0 +1,1 @@
+| [ADR-1174](1174-integer-adm-csf-mode-fixed-point-budget.md) | Reject Integer-ADM CSF Modes Exceeding 16-bit Scale-0 Fixed-Point Budget | Accepted | feature, adm, integer-adm, csf, overflow, security |

@@ -288,6 +288,57 @@ static char *test_adm_invalid_view_dist_returns_einval(void)
     return NULL;
 }
 
+/* ----------------------------------------------------------------- */
+/* CSF mode budget guard: mode 1 (BARTEN) overflows uint16_t scale-0  */
+/* factor and returns -EINVAL; modes 0, 2, 3 fit and succeed.        */
+/* ----------------------------------------------------------------- */
+
+static char *test_adm_csf_mode_budget_guard(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("adm");
+    mu_assert("adm extractor missing", fex != NULL);
+
+    const char *modes[] = {"0", "1", "2", "3"};
+    const int expected_err[] = {0, -EINVAL, 0, 0};
+
+    for (size_t i = 0; i < 4; ++i) {
+        VmafDictionary *opts = NULL;
+        int err = vmaf_dictionary_set(&opts, "adm_csf_mode", modes[i], 0);
+        mu_assert("set adm_csf_mode", err == 0);
+
+        VmafFeatureExtractorContext *ctx = NULL;
+        err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
+        mu_assert("context_create with adm_csf_mode", err == 0);
+        err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, ADM_W, ADM_H);
+        mu_assert("context_init", err == 0);
+
+        VmafFeatureCollector *fc = NULL;
+        err = vmaf_feature_collector_init(&fc);
+        mu_assert("collector_init", err == 0);
+
+        VmafPicture ref;
+        VmafPicture dist;
+        err = alloc_grey8(&ref, 100u);
+        mu_assert("alloc ref", err == 0);
+        err = alloc_grey8(&dist, 100u);
+        mu_assert("alloc dist", err == 0);
+
+        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+        if (expected_err[i] == -EINVAL) {
+            mu_assert("extract with csf_mode=1 should return -EINVAL", err == -EINVAL);
+        } else {
+            mu_assert("extract with valid csf_mode should succeed", err == 0);
+        }
+
+        (void)vmaf_feature_extractor_context_close(ctx);
+        (void)vmaf_feature_extractor_context_destroy(ctx);
+        vmaf_feature_collector_destroy(fc);
+        vmaf_picture_unref(&ref);
+        vmaf_picture_unref(&dist);
+    }
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_adm_default_extract);
@@ -295,5 +346,6 @@ char *run_tests(void)
     mu_run_test(test_adm_debug_mode);
     mu_run_test(test_adm_10bit_extract);
     mu_run_test(test_adm_invalid_view_dist_returns_einval);
+    mu_run_test(test_adm_csf_mode_budget_guard);
     return NULL;
 }
