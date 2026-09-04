@@ -47989,6 +47989,20 @@ Rebase-sensitive points:
   `scripts/ci/tests/test-release-pr-exempt.sh`, and the docs. No rebase
   impact.
 
+## docs/ai-quantization-wire-format — int8 wire-format reconciliation (2026-09-03)
+
+- No rebase impact: docs-only. `docs/ai/quantization.md`, `docs/state.md` and
+  `changelog.d/` are fork-local files with no upstream Netflix counterpart, so
+  an upstream sync cannot conflict here.
+- Invariant the new text depends on (worth re-checking after any DNN sync,
+  though the whole `core/src/dnn/` tree is fork-local today): the documented
+  behaviour is pinned to two code facts — the quantisation entries in
+  `core/src/dnn/op_allowlist.c` (`QuantizeLinear`, `DequantizeLinear`,
+  `DynamicQuantizeLinear`, `MatMulInteger`, `ConvInteger`, and deliberately no
+  `QLinear*`), and the fp32 fallback branch in `vmaf_dnn_session_open`
+  (`core/src/dnn/dnn_api.c`) that logs at `VMAF_LOG_LEVEL_DEBUG` and keeps
+  `load_path` on the fp32 baseline. If either changes, the "What the fork
+  loads" and "Loader behaviour and fp32 fallback" sections go stale.
 ## fix/publishing-container-enforcement — make container-only publishing enforceable (2026-09-03)
 
 - `dev/Containerfile` — **the only rebase-sensitive file in this change, and only
