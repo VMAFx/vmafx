@@ -83,11 +83,9 @@ check_mirror tools/vmaf-roi-score/src/vmafroiscore/defaultmodel.py \
 #                                    are pinned to v0.6.1 by ADR-0024
 #   core/src/model.c                 the built-in model registry — it exists to
 #                                    name every model it embeds
-#   ai/                              training-corpus metadata recording which
-#                                    model produced a score; data, not a default
 #   docs, model, testdata, changelog documentation and fixtures
 #   this script and its tests        they must contain the string to check it
-allow_re='(^python/test/|^compat/python-vmaf/|^docs/|^model/|(^|/)testdata/|^changelog\.d/|^CHANGELOG\.md|^ai/|^core/src/model\.c:|^scripts/ci/check-default-model-single-source\.sh:|^scripts/ci/tests/|^core/include/libvmaf/model\.h:|^pkg/model/default\.go:|^tools/vmaf-tune/src/vmaftune/defaultmodel\.py:|^tools/vmaf-roi-score/src/vmafroiscore/defaultmodel\.py:|^dev/scripts/|^core/tools/cli_parse\.c:)'
+allow_re='(^python/test/|^compat/python-vmaf/|^docs/|^model/|(^|/)testdata/|^changelog\.d/|^CHANGELOG\.md|^core/src/model\.c:|^scripts/ci/check-default-model-single-source\.sh:|^scripts/ci/tests/|^core/include/libvmaf/model\.h:|^pkg/model/default\.go:|^tools/vmaf-tune/src/vmaftune/defaultmodel\.py:|^tools/vmaf-roi-score/src/vmafroiscore/defaultmodel\.py:|^dev/scripts/|^core/tools/cli_parse\.c:)'
 
 # Tests pin models deliberately; a test that says "score with v0.6.1" is
 # asserting behaviour, not choosing a default on a user's behalf.
