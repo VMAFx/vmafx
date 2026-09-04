@@ -103,14 +103,43 @@ Members are added by per-sweep PRs (the foundation PR adds none).
 
 **Setup:**
 
+The repository root `pyproject.toml` contains only tool configuration
+(Black, Ruff, Pytest, Mypy) for `vmaf-fork-tooling`; it has no build system or
+root project dependencies to install. Running `pip install -e .` fails
+flat-layout package discovery. Instead, the repository uses per-package
+editable installs for its independent distributions. See
+[python-test-orchestrator.md](python-test-orchestrator.md) for the `nox`
+per-package virtual environments.
+
+The canonical environment is the dev container (CLAUDE.md §12 r15);
+[`dev/Containerfile`](../../dev/Containerfile) (lines 1037–1047) is the
+authoritative install list. On the host, the verified recipe is:
+
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+.venv/bin/pip install --upgrade pip
+.venv/bin/pip install "meson==1.12.0" ninja pre-commit pytest nox
+.venv/bin/pip install -r python/requirements.txt
+.venv/bin/pip install -e python
+.venv/bin/pip install -e mcp-server/vmaf-mcp
+.venv/bin/pip install -e "tools/vmaf-tune[fast]"
+.venv/bin/pip install -e dev-llm
+# optional, heavy (PyTorch): .venv/bin/pip install -e "ai[dev]"   -- see dev/Containerfile:1040-1047
 ```
+
+Pinning `meson==1.12.0` matches the container and build tree: Meson build
+directories record the absolute path of the generator binary, so mismatching
+Meson executables break `ninja` re-generation.
 
 See [dev-mcp.md](dev-mcp.md) for the full dev-container setup which pins
 all Python dependencies in a stable environment.
+
+### Recovering a destroyed venv
+
+If `.venv` fails with `env: 'bash': Too many levels of symbolic links` or a
+`.venv -> .venv` self-loop, a legacy tracked `.venv` symlink (fixed in PR #1280)
+clobbered the environment. Remove the broken path (`rm -rf .venv`) and rerun
+the setup recipe above to recreate a clean virtualenv.
 
 ## GPU compute — CUDA / SYCL / HIP / Metal / Vulkan GLSL
 
