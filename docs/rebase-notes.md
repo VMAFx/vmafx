@@ -2,6 +2,17 @@
 # Rebase notes
 
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
+## fix/sycl-adm-tidy-debt — SYCL ADM warning cleanup + tidy-lane scoping (2026-09-04)
+
+- `core/src/feature/sycl/integer_adm_sycl.cpp`: wholly fork-added (upstream Netflix has no SYCL
+  backend); no sync conflict. Two things to preserve: the designated initialisers must stay in
+  struct declaration order (ISO C++ requires it; MSVC rejects the reverse), and `ks = 17 - clz`
+  at lines ~705 and ~1032 must NOT be clamped without the CPU-parity analysis tracked in
+  `docs/state.md` (`T-SYCL-ADM-NEGATIVE-SHIFT-REACHABILITY-2026-09-04`).
+- `.github/workflows/lint-and-format.yml`, `scripts/ci/clang-tidy-sycl.sh`,
+  `scripts/ci/gen-sycl-compile-commands.py`: fork-added. The SYCL tidy lane deliberately builds only
+  `include/vcs_version.h` before analysis. Restoring a full `meson compile` there re-creates the
+  scoping bug where any TU's compiler warning fails the lane regardless of the PR's diff.
 ## fix/vmaftune-state-bugs — libx264 two-pass CRF conflict fix (2026-09-03)
 
 No rebase impact: all touched files (`pkg/codecadapter/`, `pkg/ffencode/`, `pkg/corpus/`, `tools/vmaf-tune/`) are fork-added Go and Python tuning tooling with no upstream Netflix/vmaf counterpart. No public C API, header, Meson option, or golden assertion is touched.
