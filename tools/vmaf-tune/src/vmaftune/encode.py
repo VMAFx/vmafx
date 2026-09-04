@@ -148,7 +148,13 @@ def _resolve_codec_args(req: EncodeRequest) -> list[str]:
     if fn is None:
         return _legacy_codec_args(req.encoder, req.preset, req.crf)
 
-    args = list(fn(req.preset, req.crf))
+    import inspect
+
+    sig = inspect.signature(fn)
+    if "pass_number" in sig.parameters:
+        args = list(fn(req.preset, req.crf, pass_number=req.pass_number))
+    else:
+        args = list(fn(req.preset, req.crf))
     # Append adapter-level extra_params (codec-specific flags that are
     # orthogonal to quality/preset — e.g. -svtav1-params for SVT-AV1,
     # -row-mt for libaom-av1, -b:v 0 for VBR-mode encoders).

@@ -287,6 +287,56 @@ func TestResolveCodecArgs(t *testing.T) {
 	}
 }
 
+// TestResolveCodecArgsForPass_x264OmitsCRFInMultiPass pins the BUG 1 fix:
+// libx264 two-pass encoding omits -crf so rate-control flags do not conflict.
+func TestResolveCodecArgsForPass_x264OmitsCRFInMultiPass(t *testing.T) {
+	t.Parallel()
+
+	a, err := codecadapter.Get("libx264")
+	if err != nil {
+		t.Fatalf("Get(libx264): %v", err)
+	}
+
+	// Single-pass (pass 0) emits -crf
+	gotPass0, err := a.ResolveCodecArgsForPass("medium", 23, 0)
+	if err != nil {
+		t.Fatalf("ResolveCodecArgsForPass pass 0: %v", err)
+	}
+	wantPass0 := []string{"-c:v", "libx264", "-preset", "medium", "-crf", "23"}
+	if !slices.Equal(gotPass0, wantPass0) {
+		t.Errorf("pass 0 got %v, want %v", gotPass0, wantPass0)
+	}
+
+	// Multi-pass (pass 1 and 2) omits -crf
+	for _, pass := range []int{1, 2} {
+		gotPass, err := a.ResolveCodecArgsForPass("medium", 23, pass)
+		if err != nil {
+			t.Fatalf("ResolveCodecArgsForPass pass %d: %v", pass, err)
+		}
+		wantPass := []string{"-c:v", "libx264", "-preset", "medium"}
+		if !slices.Equal(gotPass, wantPass) {
+			t.Errorf("pass %d got %v, want %v", pass, gotPass, wantPass)
+		}
+	}
+
+	// Other encoders (e.g. libvpx-vp9, libaom-av1) keep quality knob in 2-pass
+	vpx, err := codecadapter.Get("libvpx-vp9")
+	if err != nil {
+		t.Fatalf("Get(libvpx-vp9): %v", err)
+	}
+	gotVPX, err := vpx.ResolveCodecArgsForPass("3", 32, 1)
+	if err != nil {
+		t.Fatalf("vpx ResolveCodecArgsForPass: %v", err)
+	}
+	wantVPX := []string{
+		"-c:v", "libvpx-vp9", "-deadline", "good", "-cpu-used", "3",
+		"-crf", "32", "-b:v", "0", "-row-mt", "1",
+	}
+	if !slices.Equal(gotVPX, wantVPX) {
+		t.Errorf("vpx pass 1 got %v, want %v", gotVPX, wantVPX)
+	}
+}
+
 // TestGOPArgs covers the keyint emission contract.
 func TestGOPArgs(t *testing.T) {
 	t.Parallel()

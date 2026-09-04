@@ -24,7 +24,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -178,15 +177,10 @@ func InputArgs(req Request) []string {
 
 // resolveCodecArgs routes through the codec-adapter registry, falling back to
 // the historic "-c:v <enc> -preset <p> -crf <q>" shape for unregistered
-// encoders (the Python _legacy_codec_args path).
+// encoders (the Python _legacy_codec_args path). In two-pass mode (PassNumber != 0),
+// libx264 omits -crf to prevent conflicting rate control flags.
 func resolveCodecArgs(req Request) ([]string, error) {
-	adapter, err := codecadapter.Get(req.Encoder)
-	if err != nil {
-		return []string{
-			"-c:v", req.Encoder, "-preset", req.Preset, "-crf", strconv.Itoa(req.CRF),
-		}, nil
-	}
-	return adapter.ResolveCodecArgs(req.Preset, req.CRF)
+	return codecadapter.ResolveCodecArgsForPass(req.Encoder, req.Preset, req.CRF, req.PassNumber)
 }
 
 var (

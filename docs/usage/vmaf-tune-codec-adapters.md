@@ -33,7 +33,7 @@ one real adapter name per row.
 
 | `--encoder` value   | Codec | Backend | ADR                                                        | Status           | Two-pass | Notes                                                     |
 |---------------------|-------|---------|------------------------------------------------------------|------------------|----------|-----------------------------------------------------------|
-| `libx264`           | H.264 | CPU     | [ADR-0237](../adr/0237-quality-aware-encode-automation.md) | Phase A baseline | yes      | Reference adapter; uses FFmpeg `-pass` / `-passlogfile`.  |
+| `libx264`           | H.264 | CPU     | [ADR-0237](../adr/0237-quality-aware-encode-automation.md) | Phase A baseline | yes      | Reference adapter; uses FFmpeg `-pass` / `-passlogfile` (omits `-crf` in multi-pass). |
 | `libx265`           | HEVC  | CPU     | [ADR-0288](../adr/0288-vmaf-tune-codec-adapter-x265.md)    | Accepted         | yes      | x265-style preset names; same CRF range as libx264.       |
 | `libaom-av1`        | AV1   | CPU     | [ADR-0279](../adr/0279-vmaf-tune-codec-adapter-libaom.md)  | Accepted         | no       | `--cpu-used` mapped from preset; long-encode warning.     |
 | `libsvtav1`         | AV1   | CPU     | [ADR-0294](../adr/0294-vmaf-tune-codec-adapter-svtav1.md)  | Accepted         | no       | SVT-AV1 preset 0–13 mapped from `--preset` slug.          |
