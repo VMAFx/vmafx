@@ -1499,7 +1499,7 @@ test_moment_simd = executable('test_moment_simd',
 )
 endif
 
-# ADR-0720: test_ansnr_simd removed — ansnr feature was dropped.
+# ADR-0865 / ADR-0720: test_ansnr_simd removed — ansnr feature was dropped.
 
 # Speed_chroma covariance-sum SIMD parity (AVX2 + AVX-512, upstream 30f472b14).
 # Gated on float_enabled (speed.c is float-only) and x86/x86_64 (no NEON path yet).
@@ -3393,7 +3393,7 @@ if float_enabled and speed_simd_test_archs.contains(host_machine.cpu_family())
 test('test_speed_simd', test_speed_simd, suite : ['fast', 'simd'])
 endif
 
-# (test_ansnr_simd removed — ADR-0720)
+# (test_ansnr_simd removed — ADR-0865 / ADR-0720)
 
 if iqa_convolve_test_archs.contains(host_machine.cpu_family())
 test('test_iqa_convolve', test_iqa_convolve, suite : ['fast', 'simd'])

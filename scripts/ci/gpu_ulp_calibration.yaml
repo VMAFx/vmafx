@@ -76,7 +76,6 @@ gpus:
       float_ssim: 5.0e-5
       float_ms_ssim: 5.0e-5
       float_ms_ssim_lcs: 5.0e-5
-      float_ansnr: 5.0e-5
       float_psnr: 5.0e-5
       float_motion: 5.0e-5
       float_vif: 5.0e-5

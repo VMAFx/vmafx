@@ -250,7 +250,7 @@ if is_hipcc_enabled and is_hip_enabled
     message('HIP ROCm root: ' + rocm_root)
 
     # Kernel source → HSACO → xxd-embedded C array.
-    # Batch-1 (ADR-0372): psnr_score. float_ansnr_score removed (ADR-0720: legacy metric drop).
+    # Batch-1 (ADR-0372): psnr_score. float_ansnr_score removed (ADR-0865: legacy metric drop).
     # Batch-1b (ADR-0254): float_psnr_score (pre-existing, omitted from earlier
     #   meson.build edit; added here alongside the float_motion fix).
     # Batch-2 (ADR-0373): float_motion_score (temporal Gaussian SAD).

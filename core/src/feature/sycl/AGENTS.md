@@ -201,8 +201,8 @@ HIP / Metal motion twins listed in the Twin-update table above) in the same PR.
   filter (Gaussian, box, motion-blur) with more than 3 taps **must** stage
   the required input region into shared local memory (SLM) via
   `local_accessor` + a cooperative tile-load loop + barrier, following the
-  pattern in `float_vif_sycl.cpp`, `float_ansnr_sycl.cpp`,
-  `float_motion_sycl.cpp`, and (post ADR-0458) `integer_ssim_sycl.cpp`.
+  pattern in `float_vif_sycl.cpp`, `float_motion_sycl.cpp`, and (post
+  ADR-0458) `integer_ssim_sycl.cpp`.
   A bare `parallel_for<range<N>>` reading global memory for every tap is a
   lint violation for convolution kernels — use `nd_range` instead.
 

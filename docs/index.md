@@ -69,7 +69,7 @@ GPU / SIMD backend notes under [backends/](backends/index.md):
 | CUDA | Production | [cuda/overview.md](backends/cuda/overview.md) + [NVTX profiling](backends/nvtx/profiling.md) |
 | SYCL / oneAPI | Production | [sycl/overview.md](backends/sycl/overview.md) + [bundling](backends/sycl/bundling.md) |
 | Vulkan | **Removed** ([ADR-0726](adr/0726-drop-vulkan-backend.md), 2026-05-28) | — |
-| HIP (AMD ROCm) | 7 of 10 real kernels (psnr, integer_psnr, float_motion, float_moment, float_ssim, ciede, integer_motion_v2); 3 stubs (adm/vif/integer_motion). `float_ansnr_hip` removed per [ADR-0720](adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md). | [hip/overview.md](backends/hip/overview.md) |
+| HIP (AMD ROCm) | 7 of 10 real kernels (psnr, integer_psnr, float_motion, float_moment, float_ssim, ciede, integer_motion_v2); 3 stubs (adm/vif/integer_motion). `float_ansnr_hip` removed per [ADR-0865](adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md). | [hip/overview.md](backends/hip/overview.md) |
 | Metal (Apple Silicon) | Scaffold — 4 of 17 extractors registered | [metal/index.md](backends/metal/index.md) |
 
 ## Architecture

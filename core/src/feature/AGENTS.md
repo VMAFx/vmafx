@@ -79,6 +79,18 @@ feature/
   `feature_extractor.cpp` rejects any unknown dictionary keys with
   `-EINVAL`. On rebase, do not bypass this validation or revert to silent
   option omission.
+- **ANSNR / float_ansnr feature extractor removal (ADR-0865)**:
+  `ansnr` and `float_ansnr` (CPU scalar, AVX2, AVX-512, NEON, CUDA, HIP, SYCL,
+  Metal) were sunset and completely removed from the library. ANSNR is a legacy
+  pre-VMAF metric (circa 2001) never adopted in any production VMAF model.
+  On any rebase or upstream sync from Netflix/vmaf:
+  - If upstream re-introduces `ansnr` or `float_ansnr` sources under `libvmaf/src/feature/`
+    (`ansnr.c`, `ansnr.h`, `ansnr_options.h`, `ansnr_tools.c`, `ansnr_tools.h`,
+    `float_ansnr.c`, or SIMD files `ansnr_avx2.c`, `ansnr_avx512.c`, `ansnr_neon.c`),
+    re-drop them.
+  - Keep `feature_extractor.cpp` free of any `ansnr` registration symbols.
+  - Keep dispatch registries and feature lists free of `ansnr` / `float_ansnr`.
+
 - `ssimulacra2.c` is fork-local (not upstream). It embeds several
   constant tables that must stay in lock-step with libjxl even across
   a rebase:

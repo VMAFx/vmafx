@@ -766,7 +766,7 @@ jobs:
           #   - coverage.json (machine-readable summary the gate parses)
           #   - coverage.txt (human-readable, surfaced in CI logs)
           # Suspicious/negative hit warnings on hot inner loops (e.g.
-          # ansnr_tools.c:207, 4.9 G hits on a 5x5 filter inner loop across
+          # 4.9 G hits on a 5x5 filter inner loop across
           # an HD frame batch — real, not a gcov bug) are filtered out so
           # the Coverage Gate stays warning-free. Underlying data is still
           # ingested via the .warn settings; only the chatty stderr line is

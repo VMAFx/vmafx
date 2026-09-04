@@ -402,9 +402,11 @@ the deviation:
   for `cambi_sycl` / `speed_chroma_sycl`) or name the twin explicitly
   through the C API (`vmaf_use_feature(vmaf, "cambi_sycl", NULL)`).
 - **CIEDE2000** — no SYCL kernel; CPU fallback.
-- **SSIM / MS-SSIM / PSNR / PSNR-HVS / ANSNR** — no SYCL kernels.
+- **SSIM / MS-SSIM / PSNR / PSNR-HVS** — no SYCL kernels (`float_ansnr`
+  removed per
+  [ADR-0865](../../adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md)).
 - **Float-twin extractors (`float_*`)** — the SYCL backend
-  implements ANSNR / PSNR / Motion / VIF / ADM
+  implements PSNR / Motion / VIF / ADM
   ([ADR-0202](../../adr/0202-float-adm-cuda-sycl.md)).
 - **`float_motion` extra options (`motion_add_scale1`,
   `motion_add_uv`, `motion_filter_size`, `motion_max_val`,

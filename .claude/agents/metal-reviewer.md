@@ -13,7 +13,7 @@ and `core/src/feature/metal/` (`.mm` host binders + `.metal` MSL
 kernel files).
 
 The Metal backend is **live on Apple-Family-7+** as of ADR-0420
-(T8-1b runtime). 8 kernels ship today (`float_ansnr`, `float_moment`,
+(T8-1b runtime). 7 kernels ship today (`float_moment`,
 `float_motion`, `float_psnr`, `float_ssim`, `integer_motion`,
 `integer_motion_v2`, `integer_psnr`). 9+ kernels remain to ship
 (VIF, ADM, CIEDE, CAMBI, SSIMULACRA2, MS-SSIM, PSNR-HVS, motion3).

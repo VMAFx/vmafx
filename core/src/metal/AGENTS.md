@@ -66,7 +66,7 @@ metal/
 ([ADR-0421](../../../docs/adr/0421-metal-first-kernel-motion-v2.md)):
 
 - `motion_v2_metal`, `float_psnr_metal`, `float_moment_metal`,
-  `float_ansnr_metal`, `integer_psnr_metal`, `float_motion_metal`,
+  `integer_psnr_metal`, `float_motion_metal`,
   `integer_motion_metal`, and `float_ssim_metal` are Obj-C++ host
   dispatch files backed by `.metal` shaders and the embedded
   `default.metallib`.

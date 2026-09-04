@@ -58,7 +58,7 @@ class QualityRunnerTest(MyTestCase):
 
     def test_run_vmaf_runner_v1_model(self):
         pytest.skip(
-            "sunset per ADR-0709 / PR #38: float_ansnr dropped from C library; "
+            "sunset per ADR-0865 / PR #38: legacy metric dropped from C library; "
             "v1 model + dis1st training paths depend on it. Tests cannot run "
             "without restoring the dropped feature."
         )

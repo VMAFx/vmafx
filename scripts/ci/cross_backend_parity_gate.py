@@ -131,10 +131,6 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
         "float_ms_ssim_s_scale3",
         "float_ms_ssim_s_scale4",
     ),
-    "float_ansnr": (
-        "float_ansnr",
-        "float_anpsnr",
-    ),
     "float_psnr": ("float_psnr",),
     "float_motion": (
         "motion",
@@ -192,7 +188,6 @@ FEATURE_TOLERANCE: dict[str, float] = {
     # T7-35 / ADR-0215: LCS triples are the same float reductions
     # that feed the Wang combine — same conditioning, same places=4.
     "float_ms_ssim_lcs": 5e-5,
-    "float_ansnr": 5e-5,
     "float_psnr": 5e-5,
     "float_motion": 5e-5,
     "float_vif": 5e-5,
