@@ -442,6 +442,20 @@ fail:
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
 
+static void release_cuda_module_and_stream_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f)
+{
+    if (!s || !cu_f)
+        return;
+    if (s->stream) {
+        (void)cu_f->cuStreamDestroy(s->stream);
+        s->stream = 0;
+    }
+    if (s->module) {
+        (void)cu_f->cuModuleUnload(s->module);
+        s->module = NULL;
+    }
+}
+
 static int init_fex_st(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                        unsigned w, unsigned h)
 {
@@ -550,10 +564,12 @@ static int init_fex_st(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
     return 0;
 
 free_all:
+    release_cuda_module_and_stream_st(s, cu_f);
     free_cuda_buffers_st(s, cu_f);
     return err;
 fail_pop:
     (void)cu_f->cuCtxPopCurrent(NULL);
+    release_cuda_module_and_stream_st(s, cu_f);
     free_cuda_buffers_st(s, cu_f);
     return _cuda_err;
 fail:
@@ -715,13 +731,10 @@ static int close_fex_st(VmafFeatureExtractor *fex)
     SpeedTemporalCudaState *s = fex->priv;
     if (fex->cu_state && fex->cu_state->f) {
         free_cuda_buffers_st(s, fex->cu_state->f);
-        if (s->stream)
-            (void)fex->cu_state->f->cuStreamDestroy(s->stream);
+        release_cuda_module_and_stream_st(s, fex->cu_state->f);
     }
     if (s->feature_name_dict)
         vmaf_dictionary_free(&s->feature_name_dict);
-    if (fex->cu_state && fex->cu_state->f && s->module)
-        (void)fex->cu_state->f->cuModuleUnload(s->module);
     return 0;
 }
 
