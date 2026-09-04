@@ -42,7 +42,7 @@ static inline int vmaf_validate_feature_dimensions(const char *feature_name, uns
         if (!cambi_validate_dimensions(w, h)) {
             if (err_msg && sz > 0) {
                 (void)snprintf(err_msg, sz, "needs width or height >= %u; got %ux%u",
-                               CAMBI_MIN_WIDTH_HEIGHT, w, h);
+                               (unsigned)CAMBI_MIN_WIDTH_HEIGHT, w, h);
             }
             return -EINVAL;
         }
@@ -62,7 +62,7 @@ static inline int vmaf_validate_feature_dimensions(const char *feature_name, uns
         if (!speed_validate_dimensions(cw, ch, 1.0)) {
             if (err_msg && sz > 0) {
                 (void)snprintf(err_msg, sz, "needs chroma width and height >= %u; got %ux%u",
-                               SPEED_INTERNAL_MIN_DIMENSION, cw, ch);
+                               (unsigned)SPEED_INTERNAL_MIN_DIMENSION, cw, ch);
             }
             return -EINVAL;
         }
@@ -74,7 +74,7 @@ static inline int vmaf_validate_feature_dimensions(const char *feature_name, uns
         if (!speed_validate_dimensions(w, h, 1.0)) {
             if (err_msg && sz > 0) {
                 (void)snprintf(err_msg, sz, "needs width and height >= %u; got %ux%u",
-                               SPEED_INTERNAL_MIN_DIMENSION, w, h);
+                               (unsigned)SPEED_INTERNAL_MIN_DIMENSION, w, h);
             }
             return -EINVAL;
         }
