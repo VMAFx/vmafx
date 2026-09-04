@@ -473,7 +473,8 @@ consumers of the float pipeline.
 
 **Output range** — dB, saturated at `6 × bpc + 12` when the two planes are
 identical (MSE=0): 60 dB for 8 bpc, 72 dB for 10 bpc, 84 dB for 12 bpc,
-108 dB for 16 bpc. Override the cap via `min_sse`.
+108 dB for 16 bpc. Override the cap via `min_sse`, or pass `uncapped=true` to
+disable per-bitdepth clipping (see [PSNR documentation](psnr.md)).
 
 **Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4 / 4:0:0, 8 / 10 / 12 / 16 bpc.
 
@@ -486,6 +487,7 @@ identical (MSE=0): 60 dB for 8 bpc, 72 dB for 10 bpc, 84 dB for 12 bpc,
 | `enable_apsnr`     | bool   | `false` | Emit clip-aggregate `apsnr_y/cb/cr` at flush                                       |
 | `reduced_hbd_peak` | bool   | `false` | Scale HBD peak to match 8-bit content                                              |
 | `min_sse`          | double | `0.0`   | Clamp the minimum MSE (and so the PSNR ceiling) — useful for identical-frame tests |
+| `uncapped`         | bool   | `false` | Disable per-bitdepth PSNR capping; report real values >60/72/84/108 dB (sse==0 stays at max) |
 
 **Backends** — AVX2, AVX-512, NEON, CUDA, SYCL, HIP. The GPU
 extractors honour `enable_chroma` (default `true`) and emit `psnr_cb` /

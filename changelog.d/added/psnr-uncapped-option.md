@@ -1,0 +1,1 @@
+- Add opt-in `uncapped` boolean option (default `false`) to the PSNR feature extractor across CPU (`integer_psnr.c`, `float_psnr.c`) and all 8 GPU twins (`cuda`, `sycl`, `hip`, `metal` for both integer and float PSNR), reporting real PSNR values above the per-bitdepth cap (60/72/84/108 dB) instead of truncating them. (ADR-1175).

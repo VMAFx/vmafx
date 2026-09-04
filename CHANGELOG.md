@@ -8340,6 +8340,9 @@ YUV400P sources always produce luma-only output regardless of the option.
   `psnr_vulkan` / ADR-0453 pattern. See ADR-0461.
 
 
+- Add opt-in `uncapped` boolean option (default `false`) to the PSNR feature extractor across CPU (`integer_psnr.c`, `float_psnr.c`) and all 8 GPU twins (`cuda`, `sycl`, `hip`, `metal` for both integer and float PSNR), reporting real PSNR values above the per-bitdepth cap (60/72/84/108 dB) instead of truncating them. (ADR-1175).
+
+
 - **test(libvmaf)**: add `test_public_api_score` covering three previously-untested public entry points: `vmaf_score_at_index()`, `vmaf_model_collection_load()`, and `vmaf_write_output()` — closes coverage gap identified in audit-test-coverage-2026-05-16.md §2.
 
 

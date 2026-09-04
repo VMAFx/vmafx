@@ -299,6 +299,22 @@ No rebase impact: fork-only tools/vmaf-tune and documentation surfaces (`tools/v
 - `.github/workflows/build.yml` and `.github/workflows/libvmaf-build-matrix.yml`: Homebrew
   installation on macOS uses a 3-attempt retry loop with backoff and `brew fetch --retry`, plus
   `HOMEBREW_NO_AUTO_UPDATE=1` and `HOMEBREW_NO_INSTALL_CLEANUP=1`. Wholly fork-added workflows.
+
+## feat/psnr-uncapped-option — opt-in uncapped option for PSNR feature extractors (ADR-1175) (2026-09-05)
+
+- `core/src/feature/integer_psnr.c` and `core/src/feature/float_psnr.c`: **upstream-mirror files**.
+  Both files received the `uncapped` boolean option (`default: false`), and modified the per-frame
+  PSNR calculation so that `s->psnr_max[p]` acts as the `mse <= 0.0` sentinel while the `MIN`
+  truncation is only applied when `!s->uncapped`.
+  In `integer_psnr.c`, note that the ADR-1033 `flush()` APSNR guards and max formula (`ceil(10 * log10(peak^2 * n_pixels))`) are kept intact.
+  In `float_psnr.c`, `<stddef.h>` and `"opt.h"` are included, and `.options = options` is registered in the vtable.
+  On upstream rebase / sync: if upstream modifies `integer_psnr.c` or `float_psnr.c`, preserve the `uncapped` field in `PsnrState`, the option entry in `options[]`, and the `(sse == 0) ? s->psnr_max[p] : 10 * log10(...)` calculation with the conditional `if (!s->uncapped) psnr = MIN(psnr, s->psnr_max[p]);`.
+- `core/src/feature/{cuda,sycl,hip,metal}/{integer_psnr,float_psnr}_*`: wholly fork-added GPU twins.
+  All 8 GPU twins gained `uncapped` in state structs, registered options, and conditional clamping in `collect_fex_*`. No upstream counterpart; no rebase conflict.
+- `core/test/test_integer_psnr_coverage.c` and `core/test/test_float_psnr_coverage.c`: fork-added test files.
+  Extended with uncapped vs capped tests asserting 100.840479 dB / 112.907188 dB / 72.213264 dB on single-sample diffs and identical-frame sentinel equivalence.
+- `docs/metrics/psnr.md`, `docs/metrics/features.md`, `docs/adr/1175-psnr-uncapped-option.md`: fork documentation.
+
 ## ci/release-artifacts-built-in-dev-container — native release artifacts built in canonical dev container (ADR-1178) (2026-09-04)
 ## ci/release-artifacts-built-in-dev-container — native release artifacts built on self-hosted canonical runner (ADR-1178) (2026-09-05)
 
