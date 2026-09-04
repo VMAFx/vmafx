@@ -172,6 +172,28 @@ vmaf --feature float_ssim_metal:enable_lcs=true:enable_db=true \
      --reference ref.yuv --distorted dist.yuv ...
 ```
 
+## CLI usage
+
+The standalone `vmaf` executable supports Metal selection on macOS when
+compiled with Metal enabled (gated by `-DHAVE_METAL=1` in `core/tools/meson.build`
+per ADR-0422):
+
+- `--backend metal` — exclusive backend selector; engages the Metal device and
+  disables sibling backends (defaults device index to 0).
+- `--metal_device <N>` — select a specific Metal device by index (default: `0` /
+  system default Apple Silicon GPU).
+- `--no_metal` — disable Metal dispatch even when built on macOS.
+
+Example:
+
+```bash
+vmaf --backend metal \
+     --reference ref.yuv --distorted dist.yuv \
+     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+     --model version=vmaf_v0.6.1 \
+     --json --output /tmp/output.json
+```
+
 ## Coordination with NEON
 
 The Metal backend targets the GPU on Apple Silicon. The NEON SIMD
