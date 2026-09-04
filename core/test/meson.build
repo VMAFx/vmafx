@@ -2459,8 +2459,8 @@ test_sycl_pic_preallocation = executable('test_sycl_pic_preallocation',
     c_args: ['-DHAVE_SYCL=1']
 )
 
-test('test_sycl', test_sycl, suite : ['fast', 'gpu'])
-test('test_sycl_pic_preallocation', test_sycl_pic_preallocation, suite : ['fast', 'gpu'])
+test('test_sycl', test_sycl, suite : ['fast', 'gpu', 'sycl'])
+test('test_sycl_pic_preallocation', test_sycl_pic_preallocation, suite : ['fast', 'gpu', 'sycl'])
 
 test_integer_cambi_sycl = executable('test_integer_cambi_sycl',
     ['test.c', 'test_integer_cambi_sycl.c'],
@@ -2469,7 +2469,7 @@ test_integer_cambi_sycl = executable('test_integer_cambi_sycl',
     dependencies: [pthread_dependency, sycl_dependency],
     c_args: ['-DHAVE_SYCL=1']
 )
-test('test_integer_cambi_sycl', test_integer_cambi_sycl, suite : ['fast', 'gpu'])
+test('test_integer_cambi_sycl', test_integer_cambi_sycl, suite : ['fast', 'gpu', 'sycl'])
 
 # T3-15(c) / ADR-0219 / ADR-0214 — motion3 CPU vs. SYCL parity gate.
 # The motion3 post-process (host-side moving-average over blended motion2)
@@ -2486,7 +2486,7 @@ test_sycl_motion3_parity = executable('test_sycl_motion3_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_motion3_parity', test_sycl_motion3_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 # ADR-0989 — motion_add_uv SYCL parity test.
 # Asserts (1) UV contribution is positive (UV-enabled score > Y-only)
@@ -2509,7 +2509,7 @@ test_sycl_motion_add_uv_parity = executable('test_sycl_motion_add_uv_parity',
 # queried as VMAF_integer_feature_motion2_score) was also corrected in the
 # test source.  should_fail removed — the test must now pass.
 test('test_sycl_motion_add_uv_parity', test_sycl_motion_add_uv_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 # ADR-0946 — SYCL kernel coverage round 3. Five new CPU vs. SYCL
 # parity gates filling the float-family + PSNR-HVS gaps left after
@@ -2525,7 +2525,7 @@ test_sycl_float_psnr_parity = executable('test_sycl_float_psnr_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_psnr_parity', test_sycl_float_psnr_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 test_sycl_float_adm_parity = executable('test_sycl_float_adm_parity',
     ['test.c', 'test_sycl_float_adm_parity.c'],
@@ -2535,7 +2535,7 @@ test_sycl_float_adm_parity = executable('test_sycl_float_adm_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_adm_parity', test_sycl_float_adm_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 test_sycl_float_vif_parity = executable('test_sycl_float_vif_parity',
     ['test.c', 'test_sycl_float_vif_parity.c'],
@@ -2545,7 +2545,7 @@ test_sycl_float_vif_parity = executable('test_sycl_float_vif_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_vif_parity', test_sycl_float_vif_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 test_sycl_float_motion_parity = executable('test_sycl_float_motion_parity',
     ['test.c', 'test_sycl_float_motion_parity.c'],
@@ -2555,7 +2555,7 @@ test_sycl_float_motion_parity = executable('test_sycl_float_motion_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_motion_parity', test_sycl_float_motion_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 test_sycl_psnr_hvs_parity = executable('test_sycl_psnr_hvs_parity',
     ['test.c', 'test_sycl_psnr_hvs_parity.c'],
@@ -2565,7 +2565,7 @@ test_sycl_psnr_hvs_parity = executable('test_sycl_psnr_hvs_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_psnr_hvs_parity', test_sycl_psnr_hvs_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 # ADR-0957 — SYCL kernel coverage round 4. Four new CPU vs. SYCL
 # parity gates closing the last uncovered SYCL extractors after
@@ -2582,7 +2582,7 @@ test_sycl_float_moment_parity = executable('test_sycl_float_moment_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_moment_parity', test_sycl_float_moment_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 # ADR-0884 — SYCL kernel coverage round 2.
 # Five additional CPU-vs-SYCL parity gates: adm, ciede, integer_ssim,
@@ -2601,7 +2601,7 @@ test_sycl_adm_parity = executable('test_sycl_adm_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_adm_parity', test_sycl_adm_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 test_sycl_ciede_parity = executable('test_sycl_ciede_parity',
     ['test.c', 'test_sycl_ciede_parity.c'],
@@ -2611,7 +2611,7 @@ test_sycl_ciede_parity = executable('test_sycl_ciede_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_ciede_parity', test_sycl_ciede_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 test_sycl_ssim_parity = executable('test_sycl_ssim_parity',
     ['test.c', 'test_sycl_ssim_parity.c'],
@@ -2621,7 +2621,7 @@ test_sycl_ssim_parity = executable('test_sycl_ssim_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_ssim_parity', test_sycl_ssim_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 test_sycl_ms_ssim_parity = executable('test_sycl_ms_ssim_parity',
     ['test.c', 'test_sycl_ms_ssim_parity.c'],
@@ -2631,7 +2631,7 @@ test_sycl_ms_ssim_parity = executable('test_sycl_ms_ssim_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_ms_ssim_parity', test_sycl_ms_ssim_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 # float_ssim SYCL parity — Research-0985. Tolerance is places=3 (5e-04) to
 # accommodate the CPU/GPU formula difference (L×C×S vs combined) and Arc A380
@@ -2644,7 +2644,7 @@ test_sycl_float_ssim_parity = executable('test_sycl_float_ssim_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_ssim_parity', test_sycl_float_ssim_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 test_sycl_motion_v2_parity = executable('test_sycl_motion_v2_parity',
     ['test.c', 'test_sycl_motion_v2_parity.c'],
@@ -2654,7 +2654,7 @@ test_sycl_motion_v2_parity = executable('test_sycl_motion_v2_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_motion_v2_parity', test_sycl_motion_v2_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 # GPU-kernel coverage gap-fill — psnr CPU vs. SYCL parity (places=4).
 # Covers integer_psnr_sycl.cpp, which previously had no cross-backend
@@ -2668,7 +2668,7 @@ test_sycl_psnr_parity = executable('test_sycl_psnr_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_psnr_parity', test_sycl_psnr_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 # GPU-kernel coverage gap-fill — VIF scale0 CPU vs. SYCL parity (places=3).
 # Covers integer_vif_sycl.cpp, the SYCL Gaussian filter + statistical
@@ -2682,7 +2682,7 @@ test_sycl_vif_parity = executable('test_sycl_vif_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_vif_parity', test_sycl_vif_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 # ADR-0964 — speed_chroma + speed_temporal CPU vs. SYCL parity gates.
 # Pin the cross-backend tolerance (places=4) for the SpEED-family GPU
@@ -2697,7 +2697,7 @@ test_sycl_speed_chroma_parity = executable('test_sycl_speed_chroma_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_speed_chroma_parity', test_sycl_speed_chroma_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 test_sycl_speed_temporal_parity = executable('test_sycl_speed_temporal_parity',
     ['test.c', 'test_sycl_speed_temporal_parity.c'],
@@ -2707,7 +2707,7 @@ test_sycl_speed_temporal_parity = executable('test_sycl_speed_temporal_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_speed_temporal_parity', test_sycl_speed_temporal_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 test_sycl_ssimulacra2_parity = executable('test_sycl_ssimulacra2_parity',
     ['test.c', 'test_sycl_ssimulacra2_parity.c'],
@@ -2717,7 +2717,7 @@ test_sycl_ssimulacra2_parity = executable('test_sycl_ssimulacra2_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_ssimulacra2_parity', test_sycl_ssimulacra2_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 
 # ADR-1001 — CAMBI CPU vs. SYCL parity (round 5). Fills the gap left by
 # test_integer_cambi_sycl.c which is explicitly a smoke test, not a
@@ -2731,7 +2731,7 @@ test_sycl_cambi_parity = executable('test_sycl_cambi_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_cambi_parity', test_sycl_cambi_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu', 'sycl'])
 endif
 
 # ADR-0209 / T5-2: embedded MCP scaffold smoke. Pins the -ENOSYS

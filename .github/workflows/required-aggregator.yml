@@ -78,6 +78,7 @@ jobs:
               'Tiny AI',
               'Ubuntu HIP',
               'SYCL float_ssim Parity',
+              'SYCL Parity (Arc A380)',
               // ADR-1151 — the process gates in rule-enforcement.yml were
               // reporting but not required, so a red Release Script Contract
               // (or a missing deliverables checklist / doc-substance /
@@ -211,10 +212,51 @@ jobs:
               await new Promise(r => setTimeout(r, 30000));
             }
 
+            // ADR-1177 — Probe whether a self-hosted runner with label 'sycl-arc' is registered.
+            // When unregistered, 'SYCL Parity (Arc A380)' degrades gracefully (absence or skip is OK).
+            // When registered, absence or skipped is a hard failure (loud failure per ADR-1177).
+            let syclArcRegistered = false;
+            try {
+              const { data: runnersData } = await github.rest.actions.listSelfHostedRunnersForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+              syclArcRegistered = runnersData.runners.some(r =>
+                r.labels && r.labels.some(l => l.name === 'sycl-arc')
+              );
+              core.info(`Self-hosted runner probe: sycl-arc registered = ${syclArcRegistered}`);
+            } catch (err) {
+              core.warning(`Failed to query self-hosted runners: ${err.message}`);
+            }
+
             const failed = [];
             const accepted = ['success', 'skipped', 'neutral'];
             for (const name of required) {
               const run = byName[name];
+              if (name === 'SYCL Parity (Arc A380)') {
+                if (syclArcRegistered) {
+                  if (!run) {
+                    failed.push(`${name}: runner is registered with 'sycl-arc' label, but job never reported on SHA ${sha}`);
+                    continue;
+                  }
+                  if (run.conclusion === 'skipped') {
+                    failed.push(`${name}: runner is registered with 'sycl-arc' label, but job was skipped (runner may be offline)`);
+                    continue;
+                  }
+                  if (!['success', 'neutral'].includes(run.conclusion)) {
+                    failed.push(`${name}: ${run.conclusion ?? run.status}`);
+                  } else {
+                    core.info(`OK (${run.conclusion}): ${name}`);
+                  }
+                  continue;
+                } else {
+                  // Not registered: absence or skipped is acceptable
+                  if (!run || run.conclusion === 'skipped') {
+                    core.info(`OK (no sycl-arc runner registered, absence/skip permitted): ${name}`);
+                    continue;
+                  }
+                }
+              }
               if (!run) {
                 if (enforceMustReport && mustReport.includes(name)) {
                   failed.push(`${name}: never reported on a release branch`);

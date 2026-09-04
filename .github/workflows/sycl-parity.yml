@@ -1,0 +1,92 @@
+name: "SYCL Parity (Arc A380)"
+
+# required-aggregator: SYCL Parity (Arc A380)
+# ADR-1177 — Intel Arc A380 containerised self-hosted runner SYCL parity CI gate.
+# Runs SYCL test suite and cross-backend parity gate on real Arc A380 silicon.
+# Degrades gracefully to skipped when no runner is registered.
+# Fails loudly when a runner is registered but offline.
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: sycl-parity-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runner-available:
+    name: "Probe SYCL Runner"
+    runs-on: ubuntu-24.04
+    # Security: never run on fork pull requests on self-hosted infrastructure
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    outputs:
+      available: ${{ steps.probe.outputs.available }}
+      registered: ${{ steps.probe.outputs.registered }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check runner availability
+        id: probe
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUNNER_LABEL: "sycl-arc"
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: bash scripts/ci/check-runner-available.sh
+
+  sycl-parity:
+    # required-aggregator: SYCL Parity (Arc A380)
+    name: "SYCL Parity (Arc A380)"
+    needs: [runner-available]
+    if: needs.runner-available.outputs.available == 'true'
+    runs-on: [self-hosted, linux, x64, sycl-arc]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+      - name: Verify Intel Arc GPU visibility
+        run: sycl-ls
+      - name: Build SYCL (float enabled)
+        env:
+          CC: icx
+          CXX: icpx
+        run: |
+          meson setup core/build core \
+            --buildtype=release \
+            -Denable_cuda=false \
+            -Denable_sycl=true \
+            -Denable_float=true
+          ninja -C core/build
+      - name: Run SYCL unit and parity tests
+        run: meson test -C core/build --suite sycl --print-errorlogs
+      - name: Run cross-backend parity gate (calibrated features)
+        run: |
+          python3 scripts/ci/cross_backend_parity_gate.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference testdata/ref_576x324_48f.yuv \
+            --distorted testdata/dis_576x324_48f.yuv \
+            --width 576 \
+            --height 324 \
+            --pixel-format 420 \
+            --bitdepth 8 \
+            --backends cpu sycl \
+            --features float_ssim \
+            --gpu-id sycl:0x8086:0x56a5 \
+            --json-out sycl_parity.json \
+            --md-out sycl_parity.md
+      - name: Upload parity artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sycl-parity-report
+          path: |
+            sycl_parity.json
+            sycl_parity.md
