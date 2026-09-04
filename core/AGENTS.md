@@ -338,7 +338,7 @@ core/
   `core/src/feature/sycl/**` files; it injects the oneAPI SYCL
   include path + `-D__SYCL_DEVICE_ONLY__=0` so stock LLVM clang-tidy
   resolves `<sycl/sycl.hpp>`. The CI lane
-  `Clang-Tidy SYCL (Changed Files, Advisory)` in
+  `Tidy SYCL (advisory)` in
   [`.github/workflows/lint-and-format.yml`](../.github/workflows/lint-and-format.yml)
   runs the wrapper over a SYCL build tree; do not invoke stock
   `clang-tidy` directly against SYCL TUs (will surface
