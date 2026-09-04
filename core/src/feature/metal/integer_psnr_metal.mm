@@ -54,6 +54,7 @@ typedef struct IntegerPsnrStateMetal {
 
     uint32_t peak;
     double   psnr_max;
+    bool     uncapped;
     size_t   partials_count;   /* grid_w × grid_h (for Y plane) */
     unsigned frame_w;
     unsigned frame_h;
@@ -64,7 +65,15 @@ typedef struct IntegerPsnrStateMetal {
 
 static const char *const psnr_name[PSNR_NUM_PLANES] = {"psnr_y", "psnr_cb", "psnr_cr"};
 
-static const VmafOption options[] = {{0}};
+static const VmafOption options[] = {
+    {
+        .name = "uncapped",
+        .help = "disable per-bitdepth PSNR capping",
+        .offset = offsetof(IntegerPsnrStateMetal, uncapped),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {0}};
 
 static int build_pipelines(IntegerPsnrStateMetal *s, id<MTLDevice> device)
 {
@@ -281,9 +290,9 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
         }
         const double n_pix = (double)pw * (double)ph;
         const double mse   = (n_pix > 0.0) ? (sse_d / n_pix) : 0.0;
-        double psnr = (mse <= 1e-16) ? s->psnr_max
+        double psnr = (sse_d == 0.0) ? s->psnr_max
                                      : 10.0 * log10(peak_sq / mse);
-        if (psnr > s->psnr_max) { psnr = s->psnr_max; }
+        if (!s->uncapped && psnr > s->psnr_max) { psnr = s->psnr_max; }
 
         int err = vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, psnr_name[p], psnr, index);

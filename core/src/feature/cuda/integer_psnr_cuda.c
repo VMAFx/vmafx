@@ -88,6 +88,7 @@ typedef struct PsnrStateCuda {
     /* `enable_chroma` option: when false, only luma is dispatched.
      * Default true mirrors CPU integer_psnr.c — see ADR-0453. */
     bool enable_chroma;
+    bool uncapped;
     /* Number of active planes (1 for YUV400, 3 otherwise). */
     unsigned n_planes;
     /* Per-plane psnr_max — `(6 * bpc) + 12` in the default branch
@@ -104,6 +105,13 @@ static const VmafOption options[] = {{
                                          .offset = offsetof(PsnrStateCuda, enable_chroma),
                                          .type = VMAF_OPT_TYPE_BOOL,
                                          .default_val.b = true,
+                                     },
+                                     {
+                                         .name = "uncapped",
+                                         .help = "disable per-bitdepth PSNR capping",
+                                         .offset = offsetof(PsnrStateCuda, uncapped),
+                                         .type = VMAF_OPT_TYPE_BOOL,
+                                         .default_val.b = false,
                                      },
                                      {0}};
 
@@ -297,9 +305,8 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
          * The 1e-16 floor guards against sse == 0 (trivially identical
          * frames); the CPU path uses the same constant. */
         const double peak_sq = (double)s->peak * (double)s->peak;
-        const double mse_clamped = (mse > 1e-16) ? mse : 1e-16;
-        double psnr = 10.0 * log10(peak_sq / mse_clamped);
-        if (psnr > s->psnr_max[p])
+        double psnr = (sse == 0.0) ? s->psnr_max[p] : 10.0 * log10(peak_sq / mse);
+        if (!s->uncapped && psnr > s->psnr_max[p])
             psnr = s->psnr_max[p];
 
         const int e = vmaf_feature_collector_append_with_dict(

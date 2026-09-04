@@ -8,12 +8,14 @@
 
 #include <errno.h>
 #include <math.h>
+#include <stddef.h>
 #include <string.h>
 
 #include "common.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "opt.h"
 
 #include "cuda/float_psnr_cuda.h"
 #include "cuda/kernel_template.h"
@@ -45,9 +47,19 @@ typedef struct FloatPsnrStateCuda {
     unsigned bpc;
     double peak;
     double psnr_max;
+    bool uncapped;
 
     VmafDictionary *feature_name_dict;
 } FloatPsnrStateCuda;
+
+static const VmafOption options[] = {{
+                                         .name = "uncapped",
+                                         .help = "disable per-bitdepth PSNR capping",
+                                         .offset = offsetof(FloatPsnrStateCuda, uncapped),
+                                         .type = VMAF_OPT_TYPE_BOOL,
+                                         .default_val.b = false,
+                                     },
+                                     {0}};
 
 #define FPSNR_BX 16
 #define FPSNR_BY 16
@@ -225,10 +237,8 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
         total += (double)partials_host[i];
     const double n_pix = (double)s->frame_w * (double)s->frame_h;
     const double noise = total / n_pix;
-    const double eps = 1e-10;
-    const double max_noise = noise > eps ? noise : eps;
-    double score = 10.0 * log10(s->peak * s->peak / max_noise);
-    if (score > s->psnr_max)
+    double score = (total == 0.0) ? s->psnr_max : 10.0 * log10(s->peak * s->peak / noise);
+    if (!s->uncapped && score > s->psnr_max)
         score = s->psnr_max;
 
     return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
@@ -272,6 +282,7 @@ VmafFeatureExtractor vmaf_fex_float_psnr_cuda = {
     .submit = submit_fex_cuda,
     .collect = collect_fex_cuda,
     .close = close_fex_cuda,
+    .options = options,
     .priv_size = sizeof(FloatPsnrStateCuda),
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_CUDA,

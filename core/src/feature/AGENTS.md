@@ -1103,6 +1103,14 @@ after a port-upstream of any of these files.
   default or the `n_planes` clamp logic requires a coordinated update
   across all three GPU twins. See CUDA AGENTS.md / Vulkan AGENTS.md
   invariant notes and [ADR-0453](../../../docs/adr/0453-psnr-enable-chroma-gpu-parity.md).
+- **`psnr` / `float_psnr` cross-backend `uncapped` option parity (ADR-1175)** —
+  `psnr` (integer) and `float_psnr` on CPU, CUDA, SYCL, HIP, and Metal honour
+  the opt-in `uncapped` boolean option (default `false`). When `false`, PSNR
+  values are clamped at `psnr_max` (`(6 * bpc) + 12` dB, or 60/72/84/108 dB).
+  When `true`, real finite PSNR values above the cap are reported, while
+  byte-identical frames (`sse == 0`) remain clamped at `psnr_max` in both
+  modes. Default behaviour is bit-identical across all backends. See
+  [ADR-1175](../../../docs/adr/1175-psnr-uncapped-option.md).
 - **MobileSal saliency extractor (T6-2a, PR #208 open, ADR-0218
   placeholder)** — first half of T6-2 (encoder-side ROI bundle).
   DNN-backed; opens sessions through
