@@ -2801,6 +2801,21 @@ test('test_hip_motion3_parity', test_hip_motion3_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
 
+# ADR-1106 / ADR-0214 — motion_v2 CPU vs. HIP parity gate.
+# Asserts the integer_motion_v2 SAD, motion2_v2, and motion3_v2 scores agree
+# between CPU and HIP paths to within places=4 (1e-4) on a synthetic fixture.
+# HIP-gated: skips cleanly when no AMD GPU is visible.
+test_hip_motion_v2_parity = executable('test_hip_motion_v2_parity',
+    ['test.c', 'test_hip_motion_v2_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_motion_v2_parity', test_hip_motion_v2_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
 # ADR-0539 — integer ADM CPU vs. HIP parity gate (places=4).
 # Verifies the per-thread atomicAdd reduction pattern adopted by
 # adm_csf_den.hip + adm_cm.hip produces bit-exact-tolerant scores
