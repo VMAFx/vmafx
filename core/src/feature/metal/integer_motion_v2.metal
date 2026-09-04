@@ -17,10 +17,9 @@
  *                    + 32768) >> 16
  *    4. SAD: atomic-add |h[i,j]| into a single ulong accumulator.
  *
- *  Mirror padding: edge-replicating reflective mirror
- *  (`2 * size - idx - 1` for idx >= size), matching the CUDA twin.
- *  DIFFERS from motion_v1's `2 * size - idx - 2`; see CUDA file
- *  header for the bring-up note.
+ *  Mirror padding: reflect-101 (`2 * (sup - 1) - idx`, iterated),
+ *  identical to CPU integer_motion_v2.c::mirror, CUDA mv2_mirror,
+ *  SYCL dev_mirror_mv2 and HIP mv2_mirror; see mv2_mirror below.
  *
  *  Threadgroup layout: 16 × 16 threads per group, +2 pixel halo on
  *  each side → 20 × 20 shared tile. Inner pitch padded to 21 to
@@ -55,7 +54,7 @@ constant int MV2_FILTER[5] = {3571, 16004, 26386, 16004, 3571};
  *     Reflect-101 skips it: `2 * (sup - 1) - idx`. Every other backend
  *     already carries the corrected form -- CPU
  *     (integer_motion_v2.c::mirror), CUDA (fixed in PR #120 / T7-15),
- *     SYCL (integer_motion_sycl.cpp::dev_mirror_motion) and HIP
+ *     SYCL (integer_motion_v2_sycl.cpp::dev_mirror_mv2) and HIP
  *     (integer_motion_v2/motion_v2_score.hip) -- and the SYCL fix records
  *     the measured impact of the `- 1` form as a systematic ~2.6e-3 motion
  *     drift vs CPU on every frame after the first. Metal was the last
