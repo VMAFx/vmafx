@@ -468,8 +468,9 @@ KoNViD-1k ships as no-reference (clip + MOS), not as VMAF-style
 trainer expects, the fork adds an acquisition step that synthesises
 a distorted variant per clip via libx264 CRF=35 round-trip — same
 recipe used for the Netflix dis-pairs in the existing corpus —
-and runs libvmaf to extract the 6 `vmaf_v0.6.1` features + per-
-frame VMAF teacher score per (ref, dis) pair.
+and runs libvmaf to extract the 6 canonical features + per-
+frame VMAF teacher score (resolved from ADR-1168 single source; ADR-1173) per
+(ref, dis) pair.
 
 ### Acquisition
 
@@ -483,7 +484,7 @@ python ai/scripts/konvid_to_vmaf_pairs.py
 
 Output: `ai/data/konvid_vmaf_pairs.parquet` (gitignored). Schema
 matches what `NetflixFrameDataset.numpy_arrays()` produces:
-`(key, frame_index, vif_scale0..3, adm2, motion2, vmaf)` per row.
+`(key, frame_index, vif_scale0..3, adm2, motion2, vmaf, teacher_model)` per row.
 The command also writes `ai/data/konvid_vmaf_pairs.manifest.json` by default,
 including CRF, feature names, clip/frame counts, failed clip IDs, the VMAF
 binary/model inputs, and `run_provenance`. Use `--manifest-out PATH` when the

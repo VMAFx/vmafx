@@ -100,8 +100,9 @@ downloading from a URL.
 
 ## Evaluation harness
 
-After extraction, fit and evaluate a model against the `vmaf_v0.6.1`
-soft-label baseline:
+After extraction, fit and evaluate a model against the teacher soft-label
+baseline (resolved from the ADR-1168 single source `DEFAULT_MODEL`, or specified
+via `--assume-teacher` for legacy datasets; ADR-1173):
 
 ```bash
 # 1. Train.
@@ -121,7 +122,7 @@ vmaf-train eval \
     --model model/tiny/vmaf_tiny_fr_v2_nflx.onnx \
     --features ai/data/nflx_local_features.parquet \
     --split test
-# Reports PLCC, SROCC, RMSE vs vmaf_v0.6.1 soft labels.
+# Reports PLCC, SROCC, RMSE vs teacher soft labels.
 
 # 4. One-command MCP server health check (ADR-0242).
 cd mcp-server/vmaf-mcp && python -m pytest tests/test_smoke_e2e.py -v

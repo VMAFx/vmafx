@@ -905,6 +905,7 @@
 1168-default-model-single-source
 1169-default-model-v1-0-16
 1166-upstream-issue-harvest
+1173-ai-teacher-follows-default-model
 1178-dev-container-image-publish
 1172-bound-lto-link-parallelism
 1171-release-please-credential-gate-warning

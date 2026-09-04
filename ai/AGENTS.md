@@ -108,6 +108,7 @@ ai/
 - [ADR-0963](../docs/adr/0963-ai-nan-propagation-guards-round25.md) — **NaN propagation guards in `eval.correlations` and `tune._read_best_metric`.** `correlations()` raises `ValueError` on empty inputs and returns `plcc=0.0, srocc=0.0` (with `RuntimeWarning`) for constant-valued inputs. The 0.0 sentinel is intentional: gate logic uses `>=` and NaN would silently fail every comparison. `_read_best_metric()` returns `float("inf")` when all metric rows are NaN (diverged training run), preventing Optuna study corruption. Do not change these sentinels without updating the downstream `_gate` comparison semantics in `bisect_model_quality.py`.
 - [ADR-0993](../docs/adr/0993-konvid-ugc-bvi-saliency-batch-launch.md) — **KoNViD / UGC / BVI-DVC saliency batch manifests.** In-tree manifests live under `ai/batch-manifests/saliency/`. The KoNViD-150K manifest (`konvid-150k.json`) is fully wired to `konvid_150k.jsonl` with `path_column=src`, `root=.corpus/konvid-150k/k150ka_extracted/`. UGC (`ugc.json`) and BVI-DVC (`bvi-dvc.json`) are scaffolded stubs with `tables: []` until a path-enriched corpus JSONL is generated for each (see `_status` / `_resolution` comments in each manifest). Never populate UGC tables using the `source` identifier column from the full-feature parquet — it contains corpus IDs, not file paths. Never populate BVI-DVC tables using the `key` column — it contains encode parameters, not file paths.
 - [ADR-1097](../docs/adr/1097-ai-script-atomic-writes.md) — **Cache and output file writes must be atomic.** All per-clip cache JSON writes in `ai/scripts/` and all final Parquet / JSONL output writes must go through `aiutils.file_utils.write_text_atomic` (for JSON/text) or `aiutils.parquet_utils.write_parquet_atomic` (for Parquet). Both helpers write to a sibling temp file and rename atomically so a crash mid-write never leaves a partially-truncated file that poisons subsequent resume logic. Do **not** use `Path.write_text(...)` or bare `df.to_parquet(dest)` for any file a resume loop tests with `path.is_file()`. `write_manifest_json` in `aiutils.run_manifest` was also made atomic (transparent to callers). `extract_k150k_features._write_parquet_from_rows` uses the same pattern as the established precedent.
+- [ADR-1173](../docs/adr/1173-ai-teacher-follows-default-model.md) — **AI teacher model follows default model single source.** AI training and extraction scripts resolve their teacher model through `ai.data.scores.resolve_teacher_model()` (which imports `DEFAULT_MODEL` from `vmaftune.defaultmodel`), falling back to `$VMAF_MODEL_PATH` then `DEFAULT_MODEL`. Feature producers stamp `teacher_model` on every row and manifest; combiners and trainers refuse mixed-teacher tables without `--assume-teacher`; raw feature extraction tables append `adm3` to `FULL_FEATURES` and K150K `FEATURE_NAMES` while canonical-6 student features remain frozen.
 
 ## Netflix-corpus training prep (ADR-0242 / ADR-0203)
 
@@ -1186,3 +1187,22 @@ binary upload is a separate PR.
   The staging→`.done` write order is deliberately staging-first (crash
   leaves the clip re-processable; the final parquet dedups by `clip_name`,
   `keep="last"`); do not reorder it.
+
+- **AI teacher model single source and table provenance invariants (ADR-1173).**
+  (1) AI training and extraction scripts resolve their teacher model through
+  `ai.data.scores.resolve_teacher_model()` (which imports `DEFAULT_MODEL` from
+  `vmaftune.defaultmodel`), falling back to `$VMAF_MODEL_PATH` then `DEFAULT_MODEL`.
+  No script under `ai/` may hardcode `"vmaf_v0.6.1"` or any literal model fallback.
+  (2) Feature producers (`extract_full_features.py`, `extract_k150k_features.py`,
+  `bvi_dvc_to_full_features.py`, `extract_ugc_features.py`, `konvid_to_full_features.py`,
+  `konvid_to_vmaf_pairs.py`, `bvi_dvc_to_corpus_jsonl.py`) unconditionally write a
+  `teacher_model` column on every row.
+  (3) Combiners and trainers (`combine_full_feature_parquets.py`,
+  `train_vmaf_tiny_v5.py`, `eval_loso_vmaf_tiny_v5.py`) verify teacher uniformity within
+  and across all input shards. Shards with different teacher models are strictly refused.
+  Tables lacking a `teacher_model` column are rejected unless `--assume-teacher <name>`
+  is explicitly passed for legacy datasets.
+  (4) Raw extraction feature lists (`FULL_FEATURES` in `ai/data/feature_extractor.py` and
+  `FEATURE_NAMES` in `ai/scripts/extract_k150k_features.py`) include `"adm3"`. The
+  canonical-6 student feature set (`DEFAULT_FEATURES`: `adm2`, `vif_scale0..3`, `motion2`)
+  remains strictly frozen.
