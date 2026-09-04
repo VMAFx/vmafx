@@ -2,6 +2,16 @@
 # Rebase notes
 
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
+## fix/untrack-venv-symlink — no virtualenv path may be tracked (2026-09-04)
+
+- `.gitignore`: the `.venv*` line (no trailing slash) is load-bearing next to `.venv*/`. The
+  slash form matches directories only; a symlink or file named `.venv` needs the slash-less form.
+  Upstream Netflix ignores nothing venv-related, so a sync will not conflict here, but do not
+  "simplify" the pair back to one line.
+- `scripts/ci/check-no-tracked-venv.sh`: wholly fork-added backstop. An ignore rule stops `git add`
+  from picking a path up; it does nothing about an already-tracked path and nothing against
+  `git add -f`. Keep the gate even though the ignore rule exists.
+
 ## chore/dedup-sweep-2026-09-03 — collapse dead C twins (gpu_picture_pool, opt) and stale pre-rename paths (2026-09-03)
 
 - `core/src/opt.c`: deleted dead C translation unit. Upstream still has `libvmaf/src/opt.c`.
