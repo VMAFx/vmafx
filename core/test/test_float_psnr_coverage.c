@@ -190,6 +190,95 @@ static char *test_float_psnr_invalid_bpc(void)
     return NULL;
 }
 
+static char *test_float_psnr_uncapped(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_psnr");
+    mu_assert("float_psnr extractor present", fex != NULL);
+
+    VmafPicture ref;
+    VmafPicture dist_diff;
+    VmafPicture dist_ident;
+
+    int err = alloc_grey(&ref, VMAF_PIX_FMT_YUV420P, 8u, 128u);
+    mu_assert("alloc ref", err == 0);
+    err = alloc_grey(&dist_diff, VMAF_PIX_FMT_YUV420P, 8u, 128u);
+    mu_assert("alloc dist_diff", err == 0);
+    err = alloc_grey(&dist_ident, VMAF_PIX_FMT_YUV420P, 8u, 128u);
+    mu_assert("alloc dist_ident", err == 0);
+
+    /* Differ in one luma sample by +1 */
+    ((uint8_t *)dist_diff.data[0])[0] = 129u;
+
+    /* 1. Default (capped): differing -> 60.0, identical -> 60.0 */
+    {
+        VmafFeatureExtractorContext *ctx = NULL;
+        err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+        mu_assert("ctx create default", err == 0);
+        err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, FP_W, FP_H);
+        mu_assert("ctx init default", err == 0);
+
+        VmafFeatureCollector *fc = NULL;
+        err = vmaf_feature_collector_init(&fc);
+        mu_assert("fc init", err == 0);
+        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist_diff, NULL, 0, fc);
+        mu_assert("extract default diff", err == 0);
+
+        double score = 0.0;
+        err = vmaf_feature_collector_get_score(fc, "float_psnr", &score, 0);
+        mu_assert("get score default diff", err == 0);
+        mu_assert("default score == 60.0", score == 60.0);
+
+        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist_ident, NULL, 1, fc);
+        mu_assert("extract default ident", err == 0);
+        err = vmaf_feature_collector_get_score(fc, "float_psnr", &score, 1);
+        mu_assert("get score default ident", err == 0);
+        mu_assert("default identical score == 60.0", score == 60.0);
+
+        (void)vmaf_feature_extractor_context_close(ctx);
+        (void)vmaf_feature_extractor_context_destroy(ctx);
+        vmaf_feature_collector_destroy(fc);
+    }
+
+    /* 2. Uncapped: differing -> > 60.0 (exact 72.213264 dB for 16x16 with sse=1), identical -> 60.0 */
+    {
+        VmafDictionary *opts = NULL;
+        err = vmaf_dictionary_set(&opts, "uncapped", "true", 0);
+        mu_assert("set uncapped opt", err == 0);
+
+        VmafFeatureExtractorContext *ctx = NULL;
+        err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
+        mu_assert("ctx create uncapped", err == 0);
+        err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, FP_W, FP_H);
+        mu_assert("ctx init uncapped", err == 0);
+
+        VmafFeatureCollector *fc = NULL;
+        err = vmaf_feature_collector_init(&fc);
+        mu_assert("fc init", err == 0);
+        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist_diff, NULL, 0, fc);
+        mu_assert("extract uncapped diff", err == 0);
+
+        double score = 0.0;
+        err = vmaf_feature_collector_get_score(fc, "float_psnr", &score, 0);
+        mu_assert("get score uncapped diff", err == 0);
+        mu_assert("uncapped |score - 72.213264| < 1e-4", fabs(score - 72.213264) < 1e-4);
+
+        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist_ident, NULL, 1, fc);
+        mu_assert("extract uncapped ident", err == 0);
+        err = vmaf_feature_collector_get_score(fc, "float_psnr", &score, 1);
+        mu_assert("get score uncapped ident", err == 0);
+        mu_assert("uncapped identical score == 60.0", score == 60.0);
+
+        (void)vmaf_feature_extractor_context_close(ctx);
+        (void)vmaf_feature_extractor_context_destroy(ctx);
+        vmaf_feature_collector_destroy(fc);
+    }
+
+    vmaf_picture_unref(&ref);
+    vmaf_picture_unref(&dist_diff);
+    vmaf_picture_unref(&dist_ident);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_float_psnr_8bit_identical);
@@ -198,5 +287,6 @@ char *run_tests(void)
     mu_run_test(test_float_psnr_12bit_identical);
     mu_run_test(test_float_psnr_16bit_identical);
     mu_run_test(test_float_psnr_invalid_bpc);
+    mu_run_test(test_float_psnr_uncapped);
     return NULL;
 }
