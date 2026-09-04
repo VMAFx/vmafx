@@ -1,0 +1,1 @@
+| [ADR-1175](1175-psnr-uncapped-option.md) | Opt-in `uncapped` bool option for PSNR feature extractors (CPU, CUDA, SYCL, HIP, Metal) so real PSNR values above per-bitdepth cap (60/72/84/108 dB) are reported instead of truncated; default behaviour stays bit-identical. | Accepted | 2026-09-04 | core, metrics, psnr, options, cross-backend |
