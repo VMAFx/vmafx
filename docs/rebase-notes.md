@@ -201,10 +201,16 @@ no rebase impact: changes GitHub Actions workflow job display names (`.github/wo
 - `docs/development/languages.md`: no rebase impact: docs/development/ is fork-added.
 ## fix/security-cleanup-1243 — widen multiplication operands in convolve, moment, psnr (2026-09-04)
 
-- `core/src/feature/iqa/convolve.c`: upstream-mirror file (vendored IQA library). Widened `img[img_offset + u]`, `img_cache[img_offset + (ptrdiff_t)v * w]`, and `k->bnd_opt(...)` to `(double)` before multiplying with kernel coefficients in `iqa_convolve_horizontal_pass`, `iqa_convolve_vertical_pass`, and `iqa_filter_pixel` to resolve CodeQL `cpp/integer-multiplication-cast-to-long` warnings. On upstream sync, preserve `(double)` casts on the multiplied operands.
-- `core/src/feature/moment.c`: upstream-mirror file. In `compute_2nd_moment`, cast `pic_` to `(double)` in `cum += (double)pic_ * pic_;` before multiplying to avoid single-precision truncation into the double accumulator. On upstream sync, preserve the cast.
-- `core/src/feature/psnr.c`: upstream-mirror file. In `compute_psnr`, cast `diff` to `(double)` in `noise_ += (double)diff * diff;` before multiplying to avoid single-precision truncation into the double accumulator. On upstream sync, preserve the cast.
+- `core/src/feature/iqa/convolve.c`: upstream-mirror file. Widen `(ptrdiff_t)y * dst_w + x` in `dst[...]` vertical pass while preserving `float * float` single-rounded arithmetic for SIMD bit-exactness contract (ADR-0138). On upstream sync, preserve the widening.
+- `core/src/feature/moment.c`: upstream-mirror file. Widen `(ptrdiff_t)i * stride_ + j` in `compute_1st_moment` and `compute_2nd_moment` while preserving `pic_ * pic_` float multiplication for SIMD bit-exactness contract (ADR-0179). On upstream sync, preserve the widening.
+- `core/src/feature/psnr.c`: upstream-mirror file. Widen `(ptrdiff_t)i * ref_stride_ + j` and `(ptrdiff_t)i * dis_stride_ + j` in `compute_psnr` while preserving `diff * diff` float multiplication for SIMD bit-exactness. On upstream sync, preserve the widening.
 - `ai/scripts/extract_ugc_features.py`, `ai/tests/test_extract_ugc_features.py`: wholly fork-added tooling and test files with no upstream Netflix/vmaf counterpart. No rebase impact.
+- `core/tools/spinner.h`: upstream-mirror header. Added `#ifndef VMAF_SPINNER_H` / `#define VMAF_SPINNER_H` header guard. On upstream sync, preserve header guards.
+- `core/tools/cli_parse.cpp`: fork-added C++ translation unit (replacing `cli_parse.c`, ADR-0809 / ADR-1155). Added non-variadic `usage(app, reason)` overload alongside variadic template. No upstream counterpart.
+- `core/test/test_model_feature_overload_ownership.c`: fork-added test file. Rephrased comment text to avoid CodeQL commented-out code heuristic. No upstream counterpart.
+- `core/src/pdjson.c`: vendored third-party parser (`pdjson`). Removed redundant lower bound comparisons in UTF-8 sequence length validation. On upstream sync, preserve bounds cleanup.
+- `mcp-server/vmaf-mcp/tests/test_parity_argv.py`: fork-added test file. Removed unused `pytest` import. No rebase impact.
+- `osv-scanner.toml`: fork-added configuration file ignoring `GO-2026-5932` for unimported `openpgp` subpackage. No rebase impact.
 
 ## fix/sycl-adm-tidy-debt — SYCL ADM warning cleanup + tidy-lane scoping (2026-09-04)
 
