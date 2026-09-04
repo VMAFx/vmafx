@@ -87,9 +87,19 @@ jobs:
             -Denable_float=true -Denable_avx512=true --buildtype=release
           meson compile -C build
 
-      - name: Cache Netflix vmaf_resource fixtures
+      - name: Restore Netflix vmaf_resource fixtures
+        id: fixtures
+        # Restore-only; the save is split out below and gated on success().
+        # The combined actions/cache action saves from a post-job step that runs even
+        # when the job was CANCELLED or FAILED, and the key is content-hashed over
+        # python/test/*_test.py, so any PR touching a Python test gets its own key. A
+        # run cancelled part-way through then published a partially-populated
+        # python/test/resource tree under that fresh key, and every later run on the
+        # branch hit it EXACTLY. download_reactively (compat/python-vmaf/config.py)
+        # re-fetches a fixture only when the file is ABSENT, so a short-but-present
+        # file is never repaired. See the same split in build.yml.
         if: steps.impact.outputs.golden_harness == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           # Cache the entire python/test/resource tree — pytest's
           # download_reactively (python/vmaf/config.py) populates it
@@ -102,6 +112,16 @@ jobs:
           restore-keys: |
             vmaf-fixtures-resource-v1-
             vmaf-fixtures-resource-
+
+      - name: Drop unusable restored fixtures
+        # A restored fixture that is empty, or that holds an HTML error page or
+        # a Git-LFS pointer instead of the payload, is worse than a missing one:
+        # download_reactively re-fetches only ABSENT files, so the bad copy is
+        # never repaired and the test fails with "no frames decoded". The
+        # success()-gated save below stops new poisoning; this heals caches
+        # already poisoned, which otherwise need a manual cache deletion.
+        if: steps.impact.outputs.golden_harness == 'true'
+        run: bash scripts/ci/prune-corrupt-fixtures.sh python/test/resource
 
       - name: Run Netflix golden normal pair
         if: steps.impact.outputs.golden_harness == 'true'
@@ -132,6 +152,15 @@ jobs:
           timeout --kill-after=30s 19m python3 -m pytest \
             python/test/quality_runner_test.py::QualityRunnerTest::test_run_vmaf_runner_checkerboard \
             -v --tb=short --timeout=1020 --timeout-method=signal
+
+      - name: Save Netflix vmaf_resource fixtures
+        # success() only: a cancelled or failing run must never publish a
+        # partial fixture tree under this key. Placed after both golden pairs.
+        if: ${{ success() && (steps.impact.outputs.golden_harness == 'true') && steps.fixtures.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: python/test/resource
+          key: vmaf-fixtures-resource-v1-${{ hashFiles('python/test/*_test.py', 'python/test/resource/test_*.py') }}
 
   # ===== Cross-backend ULP gate =====
   # Requires GPU hardware + local YUV fixtures not present on GitHub-hosted
