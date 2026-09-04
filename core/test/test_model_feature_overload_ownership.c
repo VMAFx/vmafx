@@ -179,7 +179,7 @@ static char *test_overload_success_consumes_dict(void)
 /* when there is nothing to merge, and vmaf_model_feature_overload()   */
 /* maps that to -ENOMEM.  Handing it a heap-allocated EMPTY dictionary */
 /* reaches that branch deterministically, with no malloc-fail          */
-/* injection: pre-fix it `return`ed straight out and leaked the        */
+/* injection: pre-fix the code returned straight out and leaked the    */
 /* caller's dictionary (the defect Netflix/vmaf#1242 reports);         */
 /* post-fix it breaks to the common exit and releases it.  The return  */
 /* code is -ENOMEM either way, so the leak half is what LeakSanitizer  */

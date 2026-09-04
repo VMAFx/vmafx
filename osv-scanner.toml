@@ -1,0 +1,6 @@
+# osv-scanner configuration
+# Ignored vulnerabilities
+
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+reason = "Unmaintained/deprecated subpackage golang.org/x/crypto/openpgp is an indirect dependency not imported or reachable anywhere in the vmafx codebase."

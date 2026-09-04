@@ -432,10 +432,14 @@ static int utf8_seq_length(char byte)
          * CodeQL cpp/constant-comparison. */
         // 2-byte sequence
         return 2;
-    } else if (0xE0 <= u && u <= 0xEF) {
+    } else if (u <= 0xEF) {
+        /* u >= 0xE0 is guaranteed by the preceding branch (u <= 0xDF);
+         * redundant lower bound removed for CodeQL cpp/constant-comparison. */
         // 3-byte sequence
         return 3;
-    } else if (0xF0 <= u && u <= 0xF4) {
+    } else if (u <= 0xF4) {
+        /* u >= 0xF0 is guaranteed by the preceding branch (u <= 0xEF);
+         * redundant lower bound removed for CodeQL cpp/constant-comparison. */
         // 4-byte sequence
         return 4;
     } else {

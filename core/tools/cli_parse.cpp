@@ -304,16 +304,25 @@ void print_usage_options_part2(FILE *const out)
     exit(is_error ? 1 : 0);
 }
 
-template <typename... Args>
-[[noreturn]] void usage(const char *const app, const char *const reason, Args &&...args)
+[[noreturn]] void usage(const char *const app, const char *const reason)
 {
     FILE *const out = reason ? stderr : stdout;
     if (reason) {
-        if constexpr (sizeof...(args) > 0) {
-            (void)fprintf(stderr, reason, std::forward<Args>(args)...);
-        } else {
-            (void)fputs(reason, stderr);
-        }
+        (void)fputs(reason, stderr);
+        (void)fprintf(stderr, "\n\n");
+    }
+    print_usage_options_part1(out, app);
+    print_usage_options_part2(out);
+    usage_exit(reason != nullptr);
+}
+
+template <typename First, typename... Rest>
+[[noreturn]] void usage(const char *const app, const char *const reason, First &&first,
+                        Rest &&...rest)
+{
+    FILE *const out = reason ? stderr : stdout;
+    if (reason) {
+        (void)fprintf(stderr, reason, std::forward<First>(first), std::forward<Rest>(rest)...);
         (void)fprintf(stderr, "\n\n");
     }
     print_usage_options_part1(out, app);

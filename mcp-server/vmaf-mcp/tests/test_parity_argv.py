@@ -4,8 +4,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from vmaf_mcp import server as srv
 
 
