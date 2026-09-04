@@ -63,23 +63,29 @@ def parse_ninja_sycl_commands(build_ninja_path: Path) -> list[dict]:
         # that stock clang-tidy/clang++ cannot parse.
         #
         # Flags removed:
+        #   -fsycl-targets  — SYCL device targets; unsupported by clang++
         #   -fsycl          — SYCL device-compilation; unsupported by clang++
+        #   -Xs ...         — icpx AOT device compilation flags
+        #   -fp-model=...   — icpx floating point model
         #   -pedantic       — harmless but generates noise from SYCL headers
         #
         # The wrapper (clang-tidy-sycl.sh) injects:
         #   -isystem<sycl-include>  — resolves <sycl/sycl.hpp>
-        #   -D__SYCL_DEVICE_ONLY__=0  — skips device-only intrinsic branches
+        #   -extra-arg-before=-std=c++20
         #   -Wno-unknown-warning-option / -Wno-unknown-pragmas
-        #   -std=c++17      — pins the language standard for clang-tidy
         #
         # We still keep the -I include paths and -D defines from the original
         # icpx command so clang-tidy can resolve project headers.
         cmd = re.sub(
-            r"/opt/intel/oneapi/compiler/[^/]+/bin/icpx",
+            r"(?:/opt/intel/oneapi/compiler/[^/]+/bin/)?icpx\b",
             "clang++",
             raw_command,
         )
+        cmd = re.sub(r"\s+-fsycl-targets=\S+", "", cmd)
         cmd = re.sub(r"\s+-fsycl\b", "", cmd)
+        cmd = re.sub(r"\s+-Xs\s+'[^']*'", "", cmd)
+        cmd = re.sub(r"\s+-Xs\s+\S+", "", cmd)
+        cmd = re.sub(r"\s+-fp-model=\S+", "", cmd)
         cmd = re.sub(r"\s+-pedantic\b", "", cmd)
         # Replace the output argument -o <obj> with nothing (clang-tidy
         # ignores compilation output).
@@ -117,24 +123,18 @@ def main(argv: list[str]) -> int:
 
     existing = json.loads(cc_path.read_text(encoding="utf-8"))
 
-    existing_files = {e.get("file") for e in existing}
-
     new_entries = parse_ninja_sycl_commands(ninja_path)
-    added = 0
-    for entry in new_entries:
-        if entry["file"] not in existing_files:
-            existing.append(entry)
-            added += 1
-        else:
-            print(
-                f"skip (already present): {Path(entry['file']).name}",
-                file=sys.stderr,
-            )
+    new_files = {e["file"] for e in new_entries}
 
-    cc_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+    # Replace any existing entries for these files (so updated flags take effect)
+    filtered_existing = [e for e in existing if e.get("file") not in new_files]
+    added = len(new_entries)
+    filtered_existing.extend(new_entries)
+
+    cc_path.write_text(json.dumps(filtered_existing, indent=2) + "\n", encoding="utf-8")
 
     print(
-        f"gen-sycl-compile-commands: added {added} SYCL TU entries to {cc_path}",
+        f"gen-sycl-compile-commands: added/updated {added} SYCL TU entries in {cc_path}",
         file=sys.stderr,
     )
     return 0
