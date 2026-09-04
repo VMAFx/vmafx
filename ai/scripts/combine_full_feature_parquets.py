@@ -44,6 +44,7 @@ OUTPUT_COLUMNS: tuple[str, ...] = (
     "source",
     "frame_index",
     "codec",
+    "teacher_model",
     *FULL_FEATURES,
     "vmaf",
 )
@@ -66,7 +67,12 @@ def _normalise_frame_index(series: pd.Series, n_rows: int) -> pd.Series:
     return series.fillna(0).astype("int64")
 
 
-def _normalise_shard(label: str, path: Path, max_rows: int | None = None) -> pd.DataFrame:
+def _normalise_shard(
+    label: str,
+    path: Path,
+    max_rows: int | None = None,
+    assume_teacher: str | None = None,
+) -> pd.DataFrame:
     if not path.is_file():
         raise FileNotFoundError(path)
     df = pd.read_parquet(path)
@@ -91,6 +97,30 @@ def _normalise_shard(label: str, path: Path, max_rows: int | None = None) -> pd.
 
     out["codec"] = df["codec"].astype(str) if "codec" in df.columns else "unknown"
 
+    if "teacher_model" in df.columns:
+        distinct = [str(x) for x in df["teacher_model"].dropna().unique()]
+        if len(distinct) > 1:
+            raise ValueError(f"{path}: mixed teacher_model values in shard: {distinct}")
+        if len(distinct) == 0:
+            if not assume_teacher:
+                raise ValueError(
+                    f"{path}: empty 'teacher_model' column; pass --assume-teacher <name>"
+                )
+            shard_teacher = assume_teacher
+        else:
+            shard_teacher = distinct[0]
+            if assume_teacher is not None and assume_teacher != shard_teacher:
+                raise ValueError(
+                    f"{path}: shard teacher_model '{shard_teacher}' conflicts with --assume-teacher '{assume_teacher}'"
+                )
+    else:
+        if assume_teacher is None:
+            raise ValueError(
+                f"{path}: missing required 'teacher_model' column; pass --assume-teacher <name> to ingest legacy tables"
+            )
+        shard_teacher = assume_teacher
+    out["teacher_model"] = shard_teacher
+
     missing = [feature for feature in FULL_FEATURES if feature not in df.columns]
     for feature in FULL_FEATURES:
         out[feature] = df[feature] if feature in df.columns else float("nan")
@@ -99,6 +129,7 @@ def _normalise_shard(label: str, path: Path, max_rows: int | None = None) -> pd.
     out["vmaf"] = df["vmaf"]
     out = out[list(OUTPUT_COLUMNS)]
     out.attrs["missing_features"] = missing
+    out.attrs["teacher_model"] = shard_teacher
     return out
 
 
@@ -124,6 +155,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Smoke-test cap applied independently to each shard.",
     )
     parser.add_argument(
+        "--assume-teacher",
+        default=None,
+        help="Teacher model name to assume when ingesting legacy tables lacking a 'teacher_model' column.",
+    )
+    parser.add_argument(
         "--manifest-out",
         type=Path,
         default=None,
@@ -140,7 +176,12 @@ def main(argv: list[str] | None = None) -> int:
     shards: list[pd.DataFrame] = []
     input_stats: list[dict[str, object]] = []
     for label, path in args.inputs:
-        shard = _normalise_shard(label, path, args.max_rows_per_input)
+        shard = _normalise_shard(
+            label,
+            path,
+            args.max_rows_per_input,
+            assume_teacher=args.assume_teacher,
+        )
         missing = list(shard.attrs.get("missing_features", []))
         print(
             f"[combine-full] {label}: {len(shard)} rows from {path}"
@@ -152,10 +193,18 @@ def main(argv: list[str] | None = None) -> int:
                 "label": label,
                 "path": str(path),
                 "rows": len(shard),
+                "teacher_model": shard.attrs.get("teacher_model"),
                 "missing_features": missing,
             }
         )
         shards.append(shard)
+
+    teachers = {shard.attrs["teacher_model"] for shard in shards if not shard.empty}
+    if len(teachers) > 1:
+        raise ValueError(
+            f"Cannot combine shards with conflicting teacher models: {sorted(teachers)}"
+        )
+    combined_teacher = next(iter(teachers)) if teachers else (args.assume_teacher or "unknown")
 
     combined = pd.concat(shards, ignore_index=True, sort=False)
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -165,10 +214,12 @@ def main(argv: list[str] | None = None) -> int:
         args.manifest_out,
         {
             "schema": "full-feature-parquet-combine-manifest-v1",
+            "teacher_model": combined_teacher,
             "stats": {
                 "input_count": len(args.inputs),
                 "output_rows": len(combined),
                 "corpora": corpora,
+                "teacher_model": combined_teacher,
                 "max_rows_per_input": args.max_rows_per_input,
             },
             "inputs": input_stats,

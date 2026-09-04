@@ -111,7 +111,7 @@ def _train_metrics(model, x: np.ndarray, y: np.ndarray) -> dict[str, float]:
     return {"plcc": plcc, "srocc": srocc, "rmse": rmse}
 
 
-def _load(parquet: Path, name: str):  # type: ignore[no-untyped-def]
+def _load(parquet: Path, name: str, assume_teacher: str | None = None):  # type: ignore[no-untyped-def]
     import pandas as pd
 
     df = pd.read_parquet(parquet)
@@ -120,7 +120,33 @@ def _load(parquet: Path, name: str):  # type: ignore[no-untyped-def]
         raise SystemExit(f"[train-v5] {name} parquet missing columns: {miss}")
     if "vmaf" not in df.columns:
         raise SystemExit(f"[train-v5] {name} parquet missing 'vmaf' column")
-    keep = [*list(CANONICAL_6), "vmaf"]
+    if "teacher_model" in df.columns:
+        distinct = [str(x) for x in df["teacher_model"].dropna().unique()]
+        if len(distinct) > 1:
+            raise SystemExit(
+                f"[train-v5] {name} parquet has mixed teacher_model values: {distinct}"
+            )
+        if len(distinct) == 0:
+            if not assume_teacher:
+                raise SystemExit(
+                    f"[train-v5] {name} parquet has empty 'teacher_model'; pass --assume-teacher"
+                )
+            teacher = assume_teacher
+        else:
+            teacher = distinct[0]
+            if assume_teacher is not None and assume_teacher != teacher:
+                raise SystemExit(
+                    f"[train-v5] {name} parquet teacher_model '{teacher}' conflicts with --assume-teacher '{assume_teacher}'"
+                )
+    else:
+        if assume_teacher is None:
+            raise SystemExit(
+                f"[train-v5] {name} parquet missing 'teacher_model'; pass --assume-teacher <name> to ingest legacy tables"
+            )
+        teacher = assume_teacher
+
+    df["teacher_model"] = teacher
+    keep = [*list(CANONICAL_6), "teacher_model", "vmaf"]
     if "corpus" in df.columns:
         keep = ["corpus", *keep]
     if "source" in df.columns:
@@ -143,6 +169,11 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="UGC parquet from extract_ugc_features.py.",
     )
+    ap.add_argument(
+        "--assume-teacher",
+        default=None,
+        help="Teacher model name to assume when ingesting legacy tables lacking a 'teacher_model' column.",
+    )
     ap.add_argument("--out-ckpt", type=Path, required=True)
     ap.add_argument("--out-stats", type=Path, required=True)
     ap.add_argument("--epochs", type=int, default=90)
@@ -156,8 +187,13 @@ def main(argv: list[str] | None = None) -> int:
 
     from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
-    base = _load(args.parquet_base, "base")
-    extra = _load(args.parquet_extra, "extra")
+    base = _load(args.parquet_base, "base", assume_teacher=args.assume_teacher)
+    extra = _load(args.parquet_extra, "extra", assume_teacher=args.assume_teacher)
+    if base["teacher_model"].iloc[0] != extra["teacher_model"].iloc[0]:
+        raise SystemExit(
+            f"[train-v5] conflicting teacher models: base={base['teacher_model'].iloc[0]} "
+            f"extra={extra['teacher_model'].iloc[0]}"
+        )
     if "corpus" not in extra.columns:
         extra["corpus"] = "ugc"
     df = pd.concat([base, extra], ignore_index=True, sort=False)
@@ -192,6 +228,7 @@ def main(argv: list[str] | None = None) -> int:
     torch.save(
         {
             "state_dict": model.state_dict(),
+            "teacher_model": base["teacher_model"].iloc[0],
             "features": list(CANONICAL_6),
             "input_mean": mean.tolist(),
             "input_std": std.tolist(),
@@ -204,6 +241,7 @@ def main(argv: list[str] | None = None) -> int:
         args.out_ckpt,
     )
     stats_payload = {
+        "teacher_model": base["teacher_model"].iloc[0],
         "features": list(CANONICAL_6),
         "input_mean": mean.tolist(),
         "input_std": std.tolist(),
