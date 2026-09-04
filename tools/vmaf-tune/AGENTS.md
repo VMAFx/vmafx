@@ -405,6 +405,30 @@ for the option-space digest.
   the slow Phase A grid (ADR-0276 fallback contract).
   `ENCODER_VOCAB_V2` ordering is frozen by ADR-0291; reordering
   silently invalidates every shipped v2 inference.
+- **Fast-path probe feature extraction and normalisation contract
+  (T-VMAFTUNE-FAST-PY-PROBE-BROKEN-2026-08-30).** The Python fast path
+  (`vmaftune.cli._build_fast_sample_extractor`, `vmaftune.fast._build_production_sample_extractor`,
+  `vmaftune.proxy.normalise_features`) and Go twin (`pkg/fast`) share a strict
+  numerical and operational contract:
+  1. Probe encodes output container bitstreams (e.g. `.mp4`); distorted inputs
+     must be decoded to temporary raw YUV via `maybe_decode_distorted` prior
+     to libvmaf execution and cleaned up in a `finally` block.
+  2. Feature extraction parses libvmaf pooled metric keys (`integer_adm2`,
+     `integer_vif_scale0..3`, `integer_motion2`), falling back to bare metric keys
+     and per-frame averages.
+  3. Raw canonical-6 features must be normalised with `(x - mean) / std` using
+     `feature_mean` and `feature_std` from `model/tiny/fr_regressor_v2.json` before
+     evaluating the ONNX proxy regressor alongside the 14-D codec block.
+  4. Any non-zero exit from probe encoding or libvmaf feature extraction must raise
+     `RuntimeError` immediately — never zero-fill (`[0.0] * 6`).
+  Cross-language parity is pinned by `tests/test_fast_parity.py` — its
+  `test_e2e_probe_extraction_parity` runs the Python extractor and
+  `go test ./pkg/fast -run TestProbePipelineExtractsRealFeatures` on the same
+  fixture and asserts identical raw pooled means and normalised features
+  within 1e-6 (skips when ffmpeg, the vmaf CLI or the Go toolchain is
+  absent) — and by the seam tests in `tests/test_cli_fast.py`. Changing the
+  probe argv, the pooled-key lookup, the scaler, or the vocabulary on one
+  side without the other breaks that test.
 - **`recommend` is a pure consumer of the corpus schema.** The
   `recommend` subcommand reads `vmaf_score`, `bitrate_kbps`, `crf`,
   `preset`, `encoder`, `exit_status` directly from rows produced by

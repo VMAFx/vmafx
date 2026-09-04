@@ -4181,18 +4181,18 @@ def _build_fast_sample_extractor(
     """Build the production ``sample_extractor`` callable for fast-path.
 
     The seam encodes a short ``--sample-chunk-seconds`` slice of the
-    source at the trial CRF, scores it with libvmaf, and parses the
-    canonical-6 (``adm2``, ``vif_scale0..3``, ``motion2``) per-feature
-    means out of the libvmaf JSON output. Proxy normalisation
-    (StandardScaler) is the proxy module's responsibility — this
-    helper returns the raw libvmaf means.
+    source at the trial CRF, decodes it to raw YUV if needed, scores it
+    with libvmaf, parses the canonical-6 (``adm2``, ``vif_scale0..3``,
+    ``motion2``) per-feature means out of the libvmaf JSON output,
+    and applies StandardScaler normalisation from the proxy sidecar.
     """
     import json as _json
     import subprocess as _sub
     import tempfile as _tempfile
 
     from .encode import EncodeRequest, run_encode
-    from .score import build_vmaf_command
+    from .proxy import normalise_features
+    from .score import ScoreRequest, build_vmaf_command, maybe_decode_distorted
 
     workdir.mkdir(parents=True, exist_ok=True)
 
@@ -4214,7 +4214,10 @@ def _build_fast_sample_extractor(
         )
         encode_result = run_encode(req, ffmpeg_bin=args.ffmpeg_bin)
         if encode_result.exit_status != 0 or not slot.exists():
-            return ([0.0] * 6, 0.0)
+            raise RuntimeError(
+                f"fast sample_extractor: encode failed (CRF {crf}, "
+                f"encoder {encoder}): {encode_result.stderr_tail[-300:]}"
+            )
 
         size_bytes = encode_result.encode_size_bytes
         observed_kbps = (
@@ -4224,52 +4227,59 @@ def _build_fast_sample_extractor(
         )
 
         # Score the slice and parse canonical-6 per-feature means out
-        # of libvmaf's per-frame JSON. We bypass score.run_score's
-        # pooled-only parser because we need adm2 / vif_scale0..3 /
-        # motion2 means rather than the headline VMAF score.
-        with _tempfile.TemporaryDirectory(prefix="fast-score-") as score_tmp:
-            json_path = Path(score_tmp) / "vmaf.json"
-            score_cmd = build_vmaf_command(
-                _ScoreReq(
-                    reference=src,
-                    distorted=slot,
-                    width=args.width,
-                    height=args.height,
-                    pix_fmt=args.pix_fmt,
-                    model=_resolve_vmaf_model(args),
-                ),
-                json_path,
-                vmaf_bin=args.vmaf_bin,
-                backend=None,  # fast-path proxy is encoder-side; pooled CPU is fine
+        # of libvmaf's JSON. Decode container distorted input to raw YUV first.
+        frame_cnt = int(args.sample_chunk_seconds * args.framerate)
+        score_req = ScoreRequest(
+            reference=src,
+            distorted=slot,
+            width=args.width,
+            height=args.height,
+            pix_fmt=args.pix_fmt,
+            model=_resolve_vmaf_model(args),
+            duration_s=args.sample_chunk_seconds,
+            frame_cnt=frame_cnt,
+        )
+        score_req, decode_rc = maybe_decode_distorted(
+            score_req,
+            workdir=workdir,
+            ffmpeg_bin=args.ffmpeg_bin,
+        )
+        if decode_rc != 0:
+            raise RuntimeError(
+                f"fast sample_extractor: failed to decode distorted container {slot} to raw YUV (rc={decode_rc})"
             )
-            completed = _sub.run(score_cmd, capture_output=True, text=True, check=False)
-            if completed.returncode != 0 or not json_path.exists():
-                return ([0.0] * 6, observed_kbps)
-            payload = _json.loads(json_path.read_text(encoding="utf-8"))
-            features = _parse_canonical6_means(payload)
+
+        try:
+            with _tempfile.TemporaryDirectory(prefix="fast-score-") as score_tmp:
+                json_path = Path(score_tmp) / "vmaf.json"
+                score_cmd = build_vmaf_command(
+                    score_req,
+                    json_path,
+                    vmaf_bin=args.vmaf_bin,
+                    backend=None,  # fast-path proxy is encoder-side; pooled CPU is fine
+                )
+                completed = _sub.run(score_cmd, capture_output=True, text=True, check=False)
+                if completed.returncode != 0:
+                    raise RuntimeError(
+                        f"fast sample_extractor: vmaf score failed (rc={completed.returncode}): {completed.stderr[-300:]}"
+                    )
+                if not json_path.exists():
+                    raise RuntimeError(
+                        f"fast sample_extractor: vmaf completed with rc=0 but output {json_path} was not created"
+                    )
+                payload = _json.loads(json_path.read_text(encoding="utf-8"))
+                raw_features = _parse_canonical6_means(payload)
+                features = normalise_features(raw_features)
+        finally:
+            if score_req.distorted != slot and score_req.distorted.exists():
+                try:
+                    score_req.distorted.unlink()
+                except OSError:
+                    pass
+
         return (features, observed_kbps)
 
     return _extract
-
-
-@dataclasses.dataclass(frozen=True)
-class _ScoreReq:
-    """Minimal duck-typed ScoreRequest for ``build_vmaf_command``.
-
-    ``score.run_score`` is the wrong seam here — we need the per-feature
-    means, not just the pooled VMAF score. Reusing ``build_vmaf_command``
-    keeps us on the canonical CLI invocation; this duck-type avoids
-    importing extras the helper does not need.
-    """
-
-    reference: Path
-    distorted: Path
-    width: int
-    height: int
-    pix_fmt: str
-    model: str
-    frame_skip_ref: int = 0
-    frame_cnt: int = 0
 
 
 _CANONICAL_6_KEYS: tuple[str, ...] = (
@@ -4282,30 +4292,54 @@ _CANONICAL_6_KEYS: tuple[str, ...] = (
 )
 
 
-def _parse_canonical6_means(payload: dict) -> list[float]:
+def _parse_canonical6_means(
+    payload: dict,
+    *,
+    normalise: bool = False,
+    model_id: str | None = None,
+) -> list[float]:
     """Pull canonical-6 per-feature means from libvmaf JSON output.
 
-    Tries ``pooled_metrics.<feature>.mean`` first (modern libvmaf shape),
-    falls back to averaging ``frames[].metrics.<feature>`` when only the
-    per-frame surface is present. Missing features fill 0.0 — the
-    fr_regressor_v2 proxy sees a zero feature rather than NaN, which is
+    Tries ``pooled_metrics.<feature>.mean`` first (checking both
+    ``integer_<feature>`` and bare ``<feature>``), then falls back to
+    averaging ``frames[].metrics.<feature>``. Missing features fill 0.0 —
+    the fr_regressor_v2 proxy sees a zero feature rather than NaN, which is
     in-distribution for content where libvmaf's model omits a metric.
     """
     pooled = payload.get("pooled_metrics") or {}
-    out: list[float] = []
     frames = payload.get("frames") or []
+    out: list[float] = []
     for key in _CANONICAL_6_KEYS:
+        int_key = f"integer_{key}"
+        # 1. pooled integer_key
+        block = pooled.get(int_key) or {}
+        if "mean" in block:
+            out.append(float(block["mean"]))
+            continue
+        # 2. pooled bare key
         block = pooled.get(key) or {}
         if "mean" in block:
             out.append(float(block["mean"]))
             continue
-        # Per-frame fallback.
-        vals: list[float] = []
-        for fr in frames:
-            metrics = fr.get("metrics") or {}
-            if key in metrics:
-                vals.append(float(metrics[key]))
+        # 3. per-frame fallback
+        vals = [
+            float(fr["metrics"][int_key])
+            for fr in frames
+            if fr.get("metrics") and int_key in fr["metrics"]
+        ]
+        if not vals:
+            vals = [
+                float(fr["metrics"][key])
+                for fr in frames
+                if fr.get("metrics") and key in fr["metrics"]
+            ]
         out.append(sum(vals) / len(vals) if vals else 0.0)
+
+    if normalise:
+        from .proxy import DEFAULT_PROXY_MODEL_ID, normalise_features
+
+        mid = model_id or DEFAULT_PROXY_MODEL_ID
+        return normalise_features(out, model_id=mid)
     return out
 
 
@@ -4322,7 +4356,7 @@ def _build_fast_encode_runner(
     (ADR-0304 invariant).
     """
     from .encode import EncodeRequest, run_encode
-    from .score import ScoreRequest, run_score
+    from .score import ScoreRequest, maybe_decode_distorted, run_score
 
     workdir.mkdir(parents=True, exist_ok=True)
 
@@ -4374,11 +4408,25 @@ def _build_fast_encode_runner(
             pix_fmt=args.pix_fmt,
             model=_resolve_vmaf_model(args),
         )
-        score_result = run_score(
+        score_req, decode_rc = maybe_decode_distorted(
             score_req,
-            vmaf_bin=args.vmaf_bin,
-            backend=backend if backend != "cpu" else None,
+            workdir=workdir,
+            ffmpeg_bin=args.ffmpeg_bin,
         )
+        if decode_rc != 0:
+            return (observed_kbps, float("nan"))
+        try:
+            score_result = run_score(
+                score_req,
+                vmaf_bin=args.vmaf_bin,
+                backend=backend if backend != "cpu" else None,
+            )
+        finally:
+            if score_req.distorted != slot and score_req.distorted.exists():
+                try:
+                    score_req.distorted.unlink()
+                except OSError:
+                    pass
         return (observed_kbps, float(score_result.vmaf_score))
 
     return _runner

@@ -228,6 +228,7 @@ def parse_feature_aggregates(
     pooling and is silently treated as an empty aggregate set.
     """
     pooled = payload.get("pooled_metrics") or {}
+    frames = payload.get("frames") or []
     means: dict[str, float] = {}
     stds: dict[str, float] = {}
     for name in feature_names:
@@ -240,18 +241,34 @@ def parse_feature_aggregates(
             # Also attempt the bare name in case the caller passed a
             # synthetic payload that does not use integer_* prefixes.
             block = pooled.get(name)
-        if not isinstance(block, dict):
-            continue
-        if "mean" in block:
-            try:
-                means[name] = float(block["mean"])
-            except (TypeError, ValueError):
-                pass
-        if "stddev" in block:
-            try:
-                stds[name] = float(block["stddev"])
-            except (TypeError, ValueError):
-                pass
+        if isinstance(block, dict):
+            if "mean" in block:
+                try:
+                    means[name] = float(block["mean"])
+                except (TypeError, ValueError):
+                    pass
+            if "stddev" in block:
+                try:
+                    stds[name] = float(block["stddev"])
+                except (TypeError, ValueError):
+                    pass
+        elif frames:
+            # Per-frame fallback when pooled_metrics omits the feature.
+            vals: list[float] = []
+            for fr in frames:
+                metrics = fr.get("metrics") or {}
+                if pooled_key in metrics:
+                    try:
+                        vals.append(float(metrics[pooled_key]))
+                    except (TypeError, ValueError):
+                        pass
+                elif name in metrics:
+                    try:
+                        vals.append(float(metrics[name]))
+                    except (TypeError, ValueError):
+                        pass
+            if vals:
+                means[name] = sum(vals) / len(vals)
     return means, stds
 
 
