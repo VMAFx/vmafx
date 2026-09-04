@@ -33,6 +33,7 @@ struct FloatPsnrStateSycl {
     unsigned bpc;
     double peak;
     double psnr_max;
+    bool uncapped;
     size_t plane_bytes;
 
     VmafSyclState *sycl_state;
@@ -151,7 +152,15 @@ static void copy_y_plane(const VmafPicture *pic, void *dst, unsigned w, unsigned
 
 extern "C" {
 
-static const VmafOption options_float_psnr_sycl[] = {{0}};
+static const VmafOption options_float_psnr_sycl[] = {
+    {
+        .name = "uncapped",
+        .help = "disable per-bitdepth PSNR capping",
+        .offset = offsetof(FloatPsnrStateSycl, uncapped),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {0}};
 
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
@@ -255,10 +264,8 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         total += (double)s->h_partials[i];
     const double n_pix = (double)s->width * (double)s->height;
     const double noise = total / n_pix;
-    const double eps = 1e-10;
-    const double max_noise = noise > eps ? noise : eps;
-    double score = 10.0 * std::log10(s->peak * s->peak / max_noise);
-    if (score > s->psnr_max)
+    double score = (total == 0.0) ? s->psnr_max : 10.0 * std::log10(s->peak * s->peak / noise);
+    if (!s->uncapped && score > s->psnr_max)
         score = s->psnr_max;
     return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "float_psnr", score, index);

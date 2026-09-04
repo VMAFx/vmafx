@@ -40,6 +40,7 @@
 #endif
 
 typedef struct PsnrState {
+    bool uncapped;
     bool enable_chroma;
     bool enable_mse;
     bool enable_apsnr;
@@ -92,6 +93,13 @@ static const VmafOption options[] = {
         .default_val.d = 0.0,
         .min = 0.0,
         .max = DBL_MAX,
+    },
+    {
+        .name = "uncapped",
+        .help = "disable per-bitdepth PSNR capping",
+        .offset = offsetof(PsnrState, uncapped),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
     },
     {0}};
 
@@ -200,7 +208,9 @@ static int psnr(VmafPicture *ref_pic, VmafPicture *dist_pic, unsigned index,
         }
 
         const double mse = ((double)sse) / (ref_pic->w[p] * ref_pic->h[p]);
-        const double psnr = MIN(10. * log10(peak * peak / MAX(mse, 1e-16)), s->psnr_max[p]);
+        double psnr = (sse == 0) ? s->psnr_max[p] : 10. * log10((double)peak * peak / mse);
+        if (!s->uncapped)
+            psnr = MIN(psnr, s->psnr_max[p]);
 
         err |= vmaf_feature_collector_append(feature_collector, psnr_name[p], psnr, index);
         if (s->enable_mse) {
@@ -237,7 +247,9 @@ static int psnr_hbd(VmafPicture *ref_pic, VmafPicture *dist_pic, unsigned index,
         }
 
         const double mse = ((double)sse) / (ref_pic->w[p] * ref_pic->h[p]);
-        const double psnr = MIN(10. * log10(s->peak * s->peak / MAX(mse, 1e-16)), s->psnr_max[p]);
+        double psnr = (sse == 0) ? s->psnr_max[p] : 10. * log10((double)s->peak * s->peak / mse);
+        if (!s->uncapped)
+            psnr = MIN(psnr, s->psnr_max[p]);
 
         err |= vmaf_feature_collector_append(feature_collector, psnr_name[p], psnr, index);
         if (s->enable_mse) {

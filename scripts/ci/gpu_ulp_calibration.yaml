@@ -35,6 +35,11 @@
 # values match the gate's built-in defaults, i.e. they are
 # operationally a no-op until measured. The PR body lists which
 # rows are calibrated vs placeholder.
+#
+# Note on PSNR uncapped option (ADR-1175): psnr and float_psnr extractors
+# support an opt-in `uncapped` boolean option (default false). Default output
+# remains bit-identical across CPU and all GPU twins; the parity gate's
+# default probe is unchanged and no separate calibration lane is required.
 ---
 version: 1
 

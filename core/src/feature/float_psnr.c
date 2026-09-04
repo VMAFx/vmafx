@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <math.h>
+#include <stddef.h>
 #include <string.h>
 
 #include "cpu.h"
@@ -25,6 +26,7 @@
 #include "feature_extractor.h"
 
 #include "mem.h"
+#include "opt.h"
 #include "picture_copy.h"
 
 #if ARCH_X86
@@ -52,6 +54,7 @@ static double float_psnr_noise_line_c(const float *ref, const float *dis, int w)
 }
 
 typedef struct PsnrState {
+    bool uncapped;
     size_t float_stride;
     float *ref;
     float *dist;
@@ -59,6 +62,15 @@ typedef struct PsnrState {
     double psnr_max;
     double (*noise_line)(const float *, const float *, int);
 } PsnrState;
+
+static const VmafOption options[] = {{
+                                         .name = "uncapped",
+                                         .help = "disable per-bitdepth PSNR capping",
+                                         .offset = offsetof(PsnrState, uncapped),
+                                         .type = VMAF_OPT_TYPE_BOOL,
+                                         .default_val.b = false,
+                                     },
+                                     {0}};
 
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
@@ -140,8 +152,9 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
         noise_ += s->noise_line(s->ref + (ptrdiff_t)i * stride, s->dist + (ptrdiff_t)i * stride, w);
     noise_ /= (w * h);
 
-    double eps = 1e-10;
-    double score = MIN(10 * log10(s->peak * s->peak / MAX(noise_, eps)), s->psnr_max);
+    double score = (noise_ == 0.0) ? s->psnr_max : 10 * log10(s->peak * s->peak / noise_);
+    if (!s->uncapped)
+        score = MIN(score, s->psnr_max);
     err = vmaf_feature_collector_append(feature_collector, "float_psnr", score, index);
     if (err)
         return err;
@@ -164,6 +177,7 @@ VmafFeatureExtractor vmaf_fex_float_psnr = {
     .name = "float_psnr",
     .init = init,
     .extract = extract,
+    .options = options,
     .close = close,
     .priv_size = sizeof(PsnrState),
     .provided_features = provided_features,
