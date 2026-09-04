@@ -98,7 +98,7 @@ namespace
 {
 
 static constexpr int CAMBI_SYCL_NUM_SCALES = 5;
-static constexpr int CAMBI_SYCL_MIN_WIDTH_HEIGHT = 216;
+static constexpr int CAMBI_SYCL_MIN_WIDTH_HEIGHT = CAMBI_MIN_WIDTH_HEIGHT;
 static constexpr unsigned CAMBI_SYCL_MASK_FILTER_SIZE = 7U;
 static constexpr double CAMBI_SYCL_DEFAULT_MAX_VAL = 1000.0;
 static constexpr int CAMBI_SYCL_DEFAULT_WINDOW_SIZE = 65;
@@ -581,9 +581,10 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         s->enc_width = (int)w;
         s->enc_height = (int)h;
     }
-    if (s->enc_width < CAMBI_SYCL_MIN_WIDTH_HEIGHT && s->enc_height < CAMBI_SYCL_MIN_WIDTH_HEIGHT) {
+    if (!cambi_validate_dimensions(static_cast<unsigned>(s->enc_width),
+                                   static_cast<unsigned>(s->enc_height))) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi_sycl: encoded resolution %dx%d below minimum %d\n",
-                 s->enc_width, s->enc_height, CAMBI_SYCL_MIN_WIDTH_HEIGHT);
+                 s->enc_width, s->enc_height, CAMBI_MIN_WIDTH_HEIGHT);
         return -EINVAL;
     }
 

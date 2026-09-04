@@ -229,9 +229,33 @@ func (s *Scorer) resolveModel(name string) (string, error) {
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate, nil
 		}
+		// The v1.0.16 models are not flat in model/: they live in a
+		// per-family subdirectory (model/vmaf_v1.0.16/... and
+		// model/vmaf_v1.0.16_hfr/...). Without this branch the fork's own
+		// default, vmaf_v1.0.16_3d0h, does not resolve.
+		if family := modelFamilyDir(name); family != "" {
+			candidate = filepath.Join(s.modelDir, family, name+".json")
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			}
+		}
 	}
 
 	return "", fmt.Errorf("libvmaf: model %q not found (modelDir=%q)", name, s.modelDir)
+}
+
+// modelFamilyDir returns the model/ subdirectory a version string lives in, or
+// "" when the model is stored flat. Only the v1.0.16 families are nested; the
+// v0.6.1-era models sit directly in model/.
+func modelFamilyDir(name string) string {
+	switch {
+	case strings.HasPrefix(name, "vmaf_v1.0.16_hfr_"):
+		return "vmaf_v1.0.16_hfr"
+	case strings.HasPrefix(name, "vmaf_v1.0.16_"):
+		return "vmaf_v1.0.16"
+	default:
+		return ""
+	}
 }
 
 // vmafJSONOutput represents the relevant subset of the vmaf CLI JSON output.

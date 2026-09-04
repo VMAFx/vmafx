@@ -27,8 +27,16 @@ const height4KThreshold = 2160
 // Model identifiers mirror libvmaf's "--model version=" vocabulary so the
 // strings flow straight through ScoreRequest.Model.
 const (
+	// Model1080P follows the fork default (ADR-1168); Model4K is its v1
+	// counterpart for 2160p, which docs/models/v1.md names the 4K default
+	// (2160p viewed at 1.5H). Both are vmaf_v1.0.16.
+	//
+	// The NEG entries stay on the v0.6.1 family on purpose: Netflix published
+	// no NEG counterpart to any vmaf_v1.0.16_* model, so there is nothing to
+	// point them at. Requesting NEG therefore also changes model generation —
+	// documented in docs/metrics/vmaf-neg.md — until a v1 NEG model exists.
 	Model1080P = model.DefaultVersion
-	Model4K    = "vmaf_4k_v0.6.1"
+	Model4K    = "vmaf_v1.0.16_1d5h_2160"
 
 	// NEG (No Enhancement Gain) variants resist sharpening-based score
 	// inflation. Use for codec A-vs-B comparisons, not production

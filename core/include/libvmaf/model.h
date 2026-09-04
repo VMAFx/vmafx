@@ -33,7 +33,7 @@ extern "C" {
  * model. Defined exactly once, here; every other component derives it from
  * this macro or from vmaf_default_model_version() rather than repeating it.
  */
-#define VMAF_DEFAULT_MODEL_VERSION "vmaf_v0.6.1"
+#define VMAF_DEFAULT_MODEL_VERSION "vmaf_v1.0.16_3d0h"
 
 typedef struct VmafModel VmafModel;
 
@@ -229,6 +229,36 @@ VMAF_EXPORT int vmaf_model_feature_overload(VmafModel *model, const char *featur
  * @since libvmaf 3.0.0 (upstream).
  */
 VMAF_EXPORT void vmaf_model_destroy(VmafModel *model);
+
+/**
+ * @brief Return the number of features required by a loaded model.
+ *
+ * Safe to call with NULL (returns 0).
+ *
+ * @param model Model handle.
+ *
+ * @return Number of features required by @p model, or 0 if @p model is NULL.
+ *
+ * @thread-safety Safe to call from any thread with a valid @ref VmafModel.
+ */
+VMAF_EXPORT unsigned vmaf_model_feature_count(const VmafModel *model);
+
+/**
+ * @brief Return the name of the feature at index @p index in @p model.
+ *
+ * The returned pointer is borrowed from @p model and remains valid for the
+ * lifetime of the model. Safe to call with NULL @p model or an out-of-bounds
+ * index (returns NULL).
+ *
+ * @param model Model handle.
+ * @param index 0-based feature index, in the range `[0, vmaf_model_feature_count(model))`.
+ *
+ * @return NUL-terminated feature name string, or NULL if @p model is NULL or
+ *         @p index >= @ref vmaf_model_feature_count.
+ *
+ * @thread-safety Safe to call from any thread with a valid @ref VmafModel.
+ */
+VMAF_EXPORT const char *vmaf_model_feature_name(const VmafModel *model, unsigned index);
 
 /**
  * @typedef VmafModelCollection

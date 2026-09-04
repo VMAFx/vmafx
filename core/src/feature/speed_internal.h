@@ -23,8 +23,12 @@
 #ifndef VMAF_SRC_FEATURE_SPEED_INTERNAL_H_
 #define VMAF_SRC_FEATURE_SPEED_INTERNAL_H_
 
-#include <stddef.h>
+#include <errno.h>
+#include <math.h>
 #include <stdbool.h>
+#include <stddef.h>
+
+#include "libvmaf/picture.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,6 +42,56 @@ extern "C" {
 #define SPEED_INTERNAL_ELEMENTS (SPEED_INTERNAL_BLOCK_SIZE * SPEED_INTERNAL_BLOCK_SIZE)
 #define SPEED_INTERNAL_NUM_SCALES (4)
 #define SPEED_INTERNAL_EIGENVALUE_MAX_ITERS (500)
+
+/* Minimum dimension (pre-scaled) required so that operating dimensions after
+ * SPEED_INTERNAL_NUM_SCALES downsamplings are at least SPEED_INTERNAL_BLOCK_SIZE
+ * (5 << 4 = 80). */
+#define SPEED_INTERNAL_MIN_DIMENSION (SPEED_INTERNAL_BLOCK_SIZE << SPEED_INTERNAL_NUM_SCALES)
+
+/**
+ * Validate that dimensions satisfy SpEED's minimum resolution constraint.
+ * SpEED downsamples by 2^SPEED_INTERNAL_NUM_SCALES (16x) and processes blocks
+ * of SPEED_INTERNAL_BLOCK_SIZE (5x5). To avoid 0 operating dimension,
+ * post-prescale width and height must each be >= SPEED_INTERNAL_MIN_DIMENSION (80).
+ */
+static inline bool speed_validate_dimensions(unsigned w, unsigned h, double prescale)
+{
+    const unsigned scaled_w = (unsigned)lround((double)w * prescale);
+    const unsigned scaled_h = (unsigned)lround((double)h * prescale);
+    return (scaled_w >= SPEED_INTERNAL_MIN_DIMENSION && scaled_h >= SPEED_INTERNAL_MIN_DIMENSION);
+}
+
+/**
+ * Derive chroma plane dimensions from luma dimensions and pixel format.
+ * Returns 0 on success, -EINVAL if pixel format has no chroma planes or is invalid.
+ */
+static inline int speed_chroma_dimensions(unsigned w, unsigned h, enum VmafPixelFormat pix_fmt,
+                                          unsigned *chroma_w, unsigned *chroma_h)
+{
+    if (!chroma_w || !chroma_h)
+        return -EINVAL;
+
+    switch (pix_fmt) {
+    case VMAF_PIX_FMT_YUV420P:
+        *chroma_w = w / 2u;
+        *chroma_h = h / 2u;
+        return 0;
+    case VMAF_PIX_FMT_YUV422P:
+        *chroma_w = w / 2u;
+        *chroma_h = h;
+        return 0;
+    case VMAF_PIX_FMT_YUV444P:
+        *chroma_w = w;
+        *chroma_h = h;
+        return 0;
+    case VMAF_PIX_FMT_UNKNOWN:
+    case VMAF_PIX_FMT_YUV400P:
+    default:
+        *chroma_w = 0;
+        *chroma_h = 0;
+        return -EINVAL;
+    }
+}
 
 typedef struct SpeedInternalDimensions {
     size_t original_height;

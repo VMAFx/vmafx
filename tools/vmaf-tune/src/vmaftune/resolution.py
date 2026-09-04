@@ -57,8 +57,16 @@ _HEIGHT_1080P_FALLBACK = 0
 
 # Model identifiers mirror libvmaf's `--model version=` vocabulary so the
 # strings flow straight through `score.py`'s ScoreRequest.model field.
+# MODEL_1080P follows the fork default (ADR-1168); MODEL_4K is its v1
+# counterpart for 2160p, which docs/models/v1.md names the 4K default (2160p
+# viewed at 1.5H). Both are vmaf_v1.0.16.
+#
+# The NEG entries below stay on the v0.6.1 family on purpose: Netflix published
+# no NEG counterpart to any vmaf_v1.0.16_* model, so there is nothing to point
+# them at. Requesting NEG therefore also changes model generation — documented
+# in docs/metrics/vmaf-neg.md — until a v1 NEG model exists.
 MODEL_1080P = DEFAULT_MODEL
-MODEL_4K = "vmaf_4k_v0.6.1"
+MODEL_4K = "vmaf_v1.0.16_1d5h_2160"
 
 # NEG (No Enhancement Gain) model variants — resist sharpening-based score
 # inflation. Use for codec A vs. B comparisons, not production monitoring.
@@ -105,10 +113,16 @@ def select_vmaf_model_version(width: int, height: int) -> str:
 def neg_model_for(model_version: str) -> str:
     """Return the NEG variant of a standard VMAF model version string.
 
-    Maps the two supported production models to their NEG counterparts:
+    Maps the two production models to their NEG counterparts:
 
-    - ``"vmaf_v0.6.1"``     → ``"vmaf_v0.6.1neg"``
-    - ``"vmaf_4k_v0.6.1"``  → ``"vmaf_4k_v0.6.1neg"``
+    - :data:`MODEL_1080P`  → :data:`MODEL_1080P_NEG`
+    - :data:`MODEL_4K`     → :data:`MODEL_4K_NEG`
+
+    Since ADR-1169 the production models are ``vmaf_v1.0.16_*`` while the NEG
+    constants remain ``vmaf_v0.6.1``-family, because Netflix published no NEG
+    counterpart to any v1 model. The mapping is therefore keyed off the
+    constants, not built by appending ``"neg"``: appending would synthesise
+    ``vmaf_v1.0.16_3d0hneg``, which does not exist.
 
     Any string already ending in ``"neg"`` is returned unchanged so the
     function is idempotent. Unknown models are returned unchanged with a
@@ -152,7 +166,44 @@ def select_vmaf_model(width: int, height: int) -> Path:
     model exists before kicking off a long sweep.
     """
     version = select_vmaf_model_version(width, height)
-    return _project_model_dir() / f"{version}.json"
+    return model_json_path(version)
+
+
+def _model_family_dir(version: str) -> str:
+    """Return the ``model/`` subdirectory *version* lives in, or ``""``.
+
+    Only the v1.0.16 families are nested (``model/vmaf_v1.0.16/`` and
+    ``model/vmaf_v1.0.16_hfr/``); the v0.6.1-era models sit directly in
+    ``model/``.
+    """
+    if version.startswith("vmaf_v1.0.16_hfr_"):
+        return "vmaf_v1.0.16_hfr"
+    if version.startswith("vmaf_v1.0.16_"):
+        return "vmaf_v1.0.16"
+    return ""
+
+
+def model_json_path(version: str) -> Path:
+    """Resolve a bare model version string to its in-tree JSON path.
+
+    The v1.0.16 models are **not** flat in ``model/``: they live in a
+    per-family subdirectory. Building ``model/<version>.json`` unconditionally —
+    as this module used to — does not resolve the fork's own default,
+    ``vmaf_v1.0.16_3d0h``.
+
+    Returns the flat path when neither candidate exists, so a caller's
+    existence check reports a sensible filename.
+    """
+    root = _project_model_dir()
+    flat = root / f"{version}.json"
+    if flat.exists():
+        return flat
+    family = _model_family_dir(version)
+    if family:
+        nested = root / family / f"{version}.json"
+        if nested.exists():
+            return nested
+    return flat
 
 
 def crf_offset_for_resolution(width: int, height: int) -> int:

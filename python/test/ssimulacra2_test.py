@@ -77,7 +77,7 @@ class Ssimulacra2SnapshotTest(unittest.TestCase):
         if os.path.exists(self.output_file_path):
             os.remove(self.output_file_path)
 
-    def _run_ssimulacra2(self, ref, dis, width, height, bitdepth=8):
+    def _run_ssimulacra2(self, ref, dis, width, height, bitdepth=8, model=None):
         """Invoke `vmaf --feature ssimulacra2` and return the parsed JSON."""
         exe = ExternalProgram.vmafexec
         cmd = [
@@ -101,6 +101,8 @@ class Ssimulacra2SnapshotTest(unittest.TestCase):
             self.output_file_path,
             "--quiet",
         ]
+        if model:
+            cmd.extend(["--model", model])
         ret = subprocess.call(cmd)
         self.assertEqual(ret, self.RC_SUCCESS, f"vmaf exited {ret}: {cmd}")
         with open(self.output_file_path) as fo:
@@ -140,6 +142,7 @@ class Ssimulacra2SnapshotTest(unittest.TestCase):
             VmafConfig.test_resource_path("yuv", dis_name),
             160,
             90,
+            model="version=vmaf_v0.6.1",
         )
         pooled = result["pooled_metrics"]["ssimulacra2"]
         frames = result["frames"]

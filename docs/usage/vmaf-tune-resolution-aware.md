@@ -9,7 +9,7 @@ the effective model in every JSONL row's `vmaf_model` field.
 | Encode height | VMAF model |
 | --- | --- |
 | `>= 2160` | `vmaf_4k_v0.6.1` |
-| `< 2160` | `vmaf_v0.6.1` |
+| `< 2160` | `vmaf_v1.0.16_3d0h` |
 
 The rule is height-only. Width is accepted by the Python API for symmetry, but
 the current implementation deliberately ignores it because the fork does not
@@ -54,7 +54,7 @@ from vmaftune.resolution import (
 )
 
 assert select_vmaf_model_version(3840, 2160) == "vmaf_4k_v0.6.1"
-assert select_vmaf_model_version(1920, 1080) == "vmaf_v0.6.1"
+assert select_vmaf_model_version(1920, 1080) == "vmaf_v1.0.16_3d0h"
 assert select_vmaf_model(3840, 2160).name == "vmaf_4k_v0.6.1.json"
 assert crf_offset_for_resolution(1280, 720) == 2
 ```
@@ -75,8 +75,9 @@ searches that need to traverse multiple resolution rungs.
 ## Operational Notes
 
 - `vmaf_model` is per-row metadata. Mixed-resolution corpora may contain both
-  `vmaf_v0.6.1` and `vmaf_4k_v0.6.1`; downstream consumers must group or
-  filter by that field instead of assuming one model per corpus file.
+  `vmaf_v1.0.16_3d0h` and `vmaf_v1.0.16_1d5h_2160`; downstream consumers
+  must group or filter by that field instead of assuming one model per
+  corpus file.
 - `--no-resolution-aware` is the compatibility escape hatch for reproducing
   older corpora or experiments that intentionally used one model everywhere.
 - Invalid dimensions raise `ValueError` in the Python API and are rejected by

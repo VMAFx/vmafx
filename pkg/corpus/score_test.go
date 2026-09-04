@@ -6,6 +6,13 @@
 // The expected argv slices were produced by calling
 // vmaftune.score.build_vmaf_command on the same requests; the parsed values by
 // calling parse_vmaf_json / parse_feature_aggregates on the same payloads.
+//
+// Cases whose request uses Model1080P derive the expected --model argument from
+// that same constant rather than spelling the version literally. These tests
+// exist to pin the argv PLUMBING, not the identity of the default model; the
+// default is asserted once, deliberately, in python/test/default_model_test.py
+// (ADR-1169). Hardcoding it here just made three tests fail when the default
+// moved, without telling anyone anything they did not already know.
 
 package corpus
 
@@ -39,7 +46,7 @@ func TestBuildVMAFCommand(t *testing.T) {
 				"vmaf", "--reference", "/refs/clip.yuv", "--distorted", "/enc/out.yuv",
 				"--width", "1920", "--height", "1080",
 				"--pixel_format", "420", "--bitdepth", "8",
-				"--model", "version=vmaf_v0.6.1",
+				"--model", "version=" + Model1080P,
 				"--json", "--output", "/tmp/vmaf.json",
 			},
 		},
@@ -54,7 +61,7 @@ func TestBuildVMAFCommand(t *testing.T) {
 				"vmaf", "--reference", "/refs/clip.yuv", "--distorted", "/enc/out.yuv",
 				"--width", "1920", "--height", "1080",
 				"--pixel_format", "420", "--bitdepth", "8",
-				"--model", "version=vmaf_v0.6.1",
+				"--model", "version=" + Model1080P,
 				"--json", "--output", "/tmp/vmaf.json",
 				"--backend", "cuda",
 			},
@@ -86,7 +93,7 @@ func TestBuildVMAFCommand(t *testing.T) {
 				"vmaf", "--reference", "a", "--distorted", "b",
 				"--width", "8", "--height", "8",
 				"--pixel_format", "444", "--bitdepth", "12",
-				"--model", "version=vmaf_v0.6.1",
+				"--model", "version=" + Model1080P,
 				"--json", "--output", "/tmp/vmaf.json",
 			},
 		},

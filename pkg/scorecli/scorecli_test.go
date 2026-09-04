@@ -5,6 +5,7 @@ package scorecli_test
 
 import (
 	"context"
+	"github.com/VMAFx/vmafx/pkg/model"
 	"math"
 	"os"
 	"slices"
@@ -35,7 +36,7 @@ func TestBuildCommand(t *testing.T) {
 				"vmaf", "--reference", "/r.yuv", "--distorted", "/d.yuv",
 				"--width", "1920", "--height", "1080",
 				"--pixel_format", "420", "--bitdepth", "8",
-				"--model", "version=vmaf_v0.6.1",
+				"--model", "version=" + model.DefaultVersion,
 				"--json", "--output", "/tmp/o.json",
 				"--backend", "cuda",
 			},
@@ -66,7 +67,7 @@ func TestBuildCommand(t *testing.T) {
 				"vmaf", "--reference", "/r.yuv", "--distorted", "/d.yuv",
 				"--width", "1280", "--height", "720",
 				"--pixel_format", "422", "--bitdepth", "8",
-				"--model", "version=vmaf_v0.6.1",
+				"--model", "version=" + model.DefaultVersion,
 				"--json", "--output", "/tmp/o.json",
 				"--frame_skip_ref", "48", "--frame_cnt", "240",
 			},
@@ -81,7 +82,7 @@ func TestBuildCommand(t *testing.T) {
 				"vmaf", "--reference", "/r.yuv", "--distorted", "/d.yuv",
 				"--width", "640", "--height", "480",
 				"--pixel_format", "420", "--bitdepth", "12",
-				"--model", "version=vmaf_v0.6.1",
+				"--model", "version=" + model.DefaultVersion,
 				"--json", "--output", "/tmp/o.json",
 			},
 		},

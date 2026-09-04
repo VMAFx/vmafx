@@ -242,7 +242,7 @@ def _build_parser() -> argparse.ArgumentParser:
     corpus.add_argument(
         "--vmaf-model",
         default=DEFAULT_MODEL,
-        help="vmaf model version string (default vmaf_v0.6.1)",
+        help="vmaf model version string (default: the fork default model)",
     )
     _add_neg_flag(corpus)
     corpus.add_argument("--ffmpeg-bin", default="ffmpeg")
@@ -4158,7 +4158,7 @@ def _add_fast_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--vmaf-model",
         default=DEFAULT_MODEL,
-        help="vmaf model version string (default vmaf_v0.6.1)",
+        help="vmaf model version string (default: the fork default model)",
     )
     p.add_argument(
         "--encode-dir",
@@ -4597,7 +4597,7 @@ def _add_prefilter_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--vmaf-model",
         default=DEFAULT_MODEL,
-        help="vmaf model version string (default vmaf_v0.6.1)",
+        help="vmaf model version string (default: the fork default model)",
     )
     _add_neg_flag(p)
     p.add_argument(

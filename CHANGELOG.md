@@ -8908,6 +8908,11 @@ behaviour unchanged). When `true`, `n_planes` follows pix_fmt (1 for YUV400P,
 3 otherwise); multi-plane kernel dispatch is deferred to v2.
 
 
+- `vmaf_model_feature_count` and `vmaf_model_feature_name` added to the
+  public C API (`<libvmaf/model.h>`). Callers can inspect the features
+  required by a loaded `VmafModel` without accessing opaque struct internals.
+
+
 ### vmaf-tune: `--neg` flag for VMAF NEG model variants (ADR-0622)
 
 Add a `--neg` flag to `vmaf-tune recommend`, `compare`, `tune-per-shot`,
@@ -12511,6 +12516,49 @@ batched wait instead of issuing its own per-extractor stream sync.
   the model version libvmaf scores with when none is named. Returns a
   never-`NULL`, never-freed string owned by the library, valid for the process
   lifetime; thread-safe and allocation-free. Documented in `docs/api/index.md`.
+
+
+- The `vmaf` CLI now refuses, with a specific error, to auto-load the default
+  model on an input it cannot score: `model 'vmaf_v1.0.16_3d0h' requires
+  feature 'cambi', which needs width or height >= 216; got 160x90`. The
+  message names the model, the feature and the constraint, is printed even
+  under `--quiet`, and the process exits non-zero. Previously such inputs
+  failed with a misleading `no frames decoded`. Pass `--model` explicitly to
+  score a clip below the default model's limits. The thresholds are read from
+  the extractors' own headers via `core/src/feature/feature_dimensions.h`.
+
+
+- **BREAKING (scores): the default VMAF model is now `vmaf_v1.0.16_3d0h`.**
+  Scoring without `--model` used `vmaf_v0.6.1`; it now uses the v1.0.16
+  standard 1080p / 3H model, the direct counterpart to v0.6.1's training
+  condition. **Every default score changes** — on the standard 576x324 pair the
+  pooled VMAF moves from `76.667831` to `82.816059`. Anyone comparing against
+  historical numbers must pin `--model version=vmaf_v0.6.1` or rebaseline. No
+  API, flag or output schema changed, and no model was removed: `vmaf_v0.6.1`
+  and every other model remain built in and selectable.
+  The default score now includes the v1 feature family — `integer_aim`,
+  `cambi` banding and `speed_chroma` — and no longer includes `vif_scale0..3`
+  or `motion2`, which are v0.6.1-family features.
+  The 4K ladder moves with it (`vmaf_4k_v0.6.1` → `vmaf_v1.0.16_1d5h_2160`) so
+  scores stay comparable across the 2160p boundary.
+  **NEG is unchanged and now names a different generation**: Netflix published
+  no NEG counterpart to any `vmaf_v1.0.16_*` model, so `--neg` still scores with
+  the v0.6.1 family. Two routers would otherwise have synthesised the
+  nonexistent `vmaf_v1.0.16_3d0hneg` and aborted at model load — the Python
+  mirror derived NEG as `DEFAULT_MODEL + "neg"`, and `vmafx-tune`'s per-shot
+  router appended `"neg"` unconditionally, which would have failed every scored
+  shot under `--neg`. The mirror is now an independent constant and the per-shot
+  router defers to `pkg/corpus.NegModelFor`, so the Go CLI, the Go corpus
+  package and the Python tool cannot drift apart. Covered by new tests that
+  assert whatever NEG resolves to is a model the binary can actually load.
+  Upstream Netflix still defaults to `vmaf_v0.6.1` — this is a deliberate fork
+  divergence, recorded in `docs/rebase-notes.md`.
+  **No Netflix golden assertion value was changed.** The single golden test that
+  covered the default now names `vmaf_v0.6.1` explicitly, which reproduces its
+  previous invocation byte-for-byte; the coverage it gave up is replaced by a
+  fork-added `python/test/default_model_test.py` that asserts which model the
+  default resolves to without hardcoding any score. Golden gate: 271 passed,
+  12 skipped, 0 failed. See ADR-1169.
 
 
 - **dev/container**: `vmaf-dev-mcp` now exposes every host GPU backend

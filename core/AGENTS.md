@@ -733,3 +733,27 @@ the gate. See `docs/rebase-notes.md`.
 the default model's scores, so any change of default breaks it and ADR-0024
 forbids editing it. Read `docs/development/default-model.md` before touching
 the value.
+
+## The default model is `vmaf_v1.0.16_3d0h`, and NEG is not
+
+Since [ADR-1169](../docs/adr/1169-default-model-v1-0-16.md) the fork scores with
+`vmaf_v1.0.16_3d0h` when no model is named. **Upstream Netflix still defaults to
+`vmaf_v0.6.1`**, so an upstream sync will look like it wants to revert this. It
+does not. See `docs/rebase-notes.md`.
+
+Two things that are easy to get wrong:
+
+- **NEG is not derived from the default.** There is no NEG counterpart to any
+  `vmaf_v1.0.16_*` model — Netflix published NEG for the v0.6.1 family only.
+  `DefaultNEGVersion` / `DEFAULT_MODEL_NEG` are independent constants naming
+  `vmaf_v0.6.1neg`. Writing `DefaultVersion + "neg"` synthesises
+  `vmaf_v1.0.16_3d0hneg`, which does not exist and which libvmaf rejects at
+  load. The Python mirror *did* derive it that way and had to be fixed.
+- **A default change breaks a golden test by KeyError, not by value drift.**
+  `vmafexec_test.py::test_run_vmafexec_runner_use_default_built_in_model`
+  asserts v0.6.1 feature-family values (`vif_scale0..3`, `motion2`); the v1
+  family emits `integer_aim` / `cambi` / `speed_chroma` and none of those. If you
+  change the default again you will see
+  `KeyError('VMAFEXEC_vif_scale0_score')`. Resolve it by naming the model in
+  that test, exactly as ADR-1169 did — **never** by editing an
+  `assertAlmostEqual` value (ADR-0024).

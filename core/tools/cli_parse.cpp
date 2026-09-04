@@ -511,6 +511,7 @@ CLIModelConfig parse_model_config(const char *const optarg, const char *const ap
         .feature_overload = {},
         .overload_cnt = 0,
         .buf = optarg_copy,
+        .is_default = false,
     };
 
     char *key_val = nullptr;
@@ -604,6 +605,7 @@ void aom_ctc_v1_0(CLISettings *const settings, const char *const app)
         .feature_overload = {},
         .overload_cnt = 0,
         .buf = nullptr,
+        .is_default = false,
     };
     checked_append(settings->model_config, settings->model_cnt, cfg, app, "models");
 
@@ -614,6 +616,7 @@ void aom_ctc_v1_0(CLISettings *const settings, const char *const app)
         .feature_overload = {},
         .overload_cnt = 0,
         .buf = nullptr,
+        .is_default = false,
     };
     checked_append(settings->model_config, settings->model_cnt, cfg_neg, app, "models");
 
@@ -724,6 +727,7 @@ void nflx_ctc_v1_0(CLISettings *const settings, const char *const app)
         .feature_overload = {},
         .overload_cnt = 0,
         .buf = nullptr,
+        .is_default = false,
     };
     checked_append(settings->model_config, settings->model_cnt, cfg, app, "models");
 
@@ -734,6 +738,7 @@ void nflx_ctc_v1_0(CLISettings *const settings, const char *const app)
         .feature_overload = {},
         .overload_cnt = 0,
         .buf = nullptr,
+        .is_default = false,
     };
     checked_append(settings->model_config, settings->model_cnt, cfg_neg, app, "models");
 
@@ -1016,6 +1021,7 @@ void validate_cli_settings(const char *const app, CLISettings *const settings)
             .feature_overload = {},
             .overload_cnt = 0,
             .buf = nullptr,
+            .is_default = true,
         };
         checked_append(settings->model_config, settings->model_cnt, cfg, app, "models");
 #else

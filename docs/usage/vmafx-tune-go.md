@@ -187,7 +187,7 @@ vmafx-tune-go recommend [flags]
 | `--encode-dir` | `.workingdir2/encodes` | Scratch directory for the probe encodes. |
 | `--keep-encodes` | off | Keep the encoded artefacts instead of deleting them after scoring. |
 | `--no-source-hash` | off | Skip the source SHA-256 (faster on very large sources). |
-| `--vmaf-model` | `vmaf_v0.6.1` | libvmaf model version, or a `path=...` string. |
+| `--vmaf-model` | `vmaf_v1.0.16_3d0h` | libvmaf model version, or a `path=...` string. |
 | `--score-backend` | `auto` | libvmaf backend: `auto`, `cpu`, `cuda`, `sycl`, `hip`. |
 | `--ffmpeg-bin` / `--vmaf-bin` | `ffmpeg` / `vmaf` | Binary paths. |
 
@@ -452,7 +452,7 @@ vmafx-tune-go fast --target-vmaf <N> [--smoke | --src <file> --width W --height 
 | `--score-backend` | `auto` | libvmaf backend for the verify pass: `auto`, `cpu`, `cuda`, `sycl`, `hip`. `auto` walks cuda → sycl → hip → cpu; an explicit value is honoured strictly and errors rather than downgrading. |
 | `--ffmpeg-bin` | `ffmpeg` | Path to the ffmpeg binary. |
 | `--vmaf-bin` | `vmaf` | Path to the libvmaf CLI binary. |
-| `--vmaf-model` | `vmaf_v0.6.1` | vmaf model version string. |
+| `--vmaf-model` | `vmaf_v1.0.16_3d0h` | vmaf model version string. |
 | `--encode-dir` | `.workingdir2/fast` | Scratch dir for probe + verify encodes. |
 | `--output`, `-o` | stdout | JSON destination for the recommendation payload. |
 | `--crf-max` | — | See `vmafx-tune-go fast --help`. |
@@ -560,7 +560,7 @@ trainers.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--vmaf-model` | `vmaf_v0.6.1` | libvmaf model version string. |
+| `--vmaf-model` | `vmaf_v1.0.16_3d0h` | libvmaf model version string. |
 | `--neg` | off | Use the VMAF NEG (No Enhancement Gain) variant. Use for codec A-vs-B comparisons; **not** for production monitoring — see [vmaf-neg.md](../metrics/vmaf-neg.md). |
 | `--score-backend` | `auto` | libvmaf backend: `auto`, `cpu`, `cuda`, `sycl`, `hip`. `auto` picks the fastest available (cuda > sycl > hip > cpu); a specific name is honoured strictly and errors out when unavailable. |
 | `--ffmpeg-bin` | `ffmpeg` | Path to the ffmpeg binary. |
@@ -1305,8 +1305,8 @@ Pipeline:
 | `--preset` | codec default (`medium`) | Preset for the bisect encodes. |
 | `--crf-min` / `--crf-max` | codec absolute window | Inclusive bisect search bounds. Pass both or neither. |
 | `--max-iterations` | `8` | Maximum encode+score rounds per shot. |
-| `--vmaf-model` | `vmaf_v0.6.1` | Model passed to the `vmaf` binary. |
-| `--neg` | off | Route the model to its NEG variant (`vmaf_v0.6.1neg`). See [vmaf-neg.md](../metrics/vmaf-neg.md). |
+| `--vmaf-model` | `vmaf_v1.0.16_3d0h` | Model passed to the `vmaf` binary. |
+| `--neg` | off | Route the model to its NEG variant. There is no NEG counterpart to any `vmaf_v1.0.16_*` model, so `--neg` also selects the v0.6.1 generation (`vmaf_v0.6.1neg`). See [vmaf-neg.md](../metrics/vmaf-neg.md). |
 | `--score-backend` | `auto` | libvmaf backend: `auto`, `cpu`, `cuda`, `sycl`, `hip`. An explicit backend that the host cannot provide fails fast rather than silently downgrading. |
 | `--vmaf-bin` / `--ffmpeg-bin` | `vmaf` / `ffmpeg` | Binary paths. |
 | `--workdir` | `$VMAFTUNE_WORKDIR` or OS temp | Scratch space for encode / decode artefacts. Raw YUV decodes are large — point this at a volume with room. |
