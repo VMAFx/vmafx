@@ -653,6 +653,7 @@ jobs:
           bash scripts/release/tests/test-rollover-changelog-fragments.sh
           bash scripts/release/tests/test-verify-native-release-artifacts.sh
           bash scripts/release/tests/test-verify-release-version.sh
+          bash scripts/release/tests/test-check-release-bot-secrets.sh
           bash scripts/release/tests/test-docker-publish-source-binding.sh
           bash scripts/release/tests/test-publication-environment-binding.sh
           scripts/release/concat-changelog-fragments.sh --check

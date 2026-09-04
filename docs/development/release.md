@@ -121,9 +121,14 @@ both read-only `gh api` probes — uses the token minted by
 `actions/create-github-app-token`, so the job's own `GITHUB_TOKEN` keeps the
 workflow default `contents: read` and holds no write scope at all.
 
-**One-time maintainer setup.** The workflow fails on its first step until this
-exists — deliberately, so it can never silently fall back to `GITHUB_TOKEN` and
-recreate an unmergeable release PR:
+**One-time maintainer setup.** Until this exists the workflow never falls back
+to `GITHUB_TOKEN` (that would recreate an unmergeable release PR). On every push
+to `master` the first step emits a *warning* annotation and skips every write
+step, so the run ends green and idle; on a manual `workflow_dispatch` the same
+missing credentials are an *error* and the run fails, because an operator asked
+for a release step (ADR-1171). `scripts/release/check-release-bot-secrets.sh`
+checks the two secret names locally and is part of the `/prep-release` dry run,
+so a release cannot be attempted without the identity:
 
 1. Create a GitHub App owned by the `VMAFx` org (name it e.g.
    `vmafx-release-bot`). Repository permissions: **Contents: read & write**

@@ -14285,6 +14285,13 @@ promoted to module scope as a side effect.
   fragments without the block being re-rendered.
 
 
+- `release-please.yml` no longer fails every push to `master` while the release-bot
+  App credentials are missing: the credential check emits a warning, skips every
+  write step, and the run ends idle-green; a manual `workflow_dispatch` still fails.
+  `scripts/release/check-release-bot-secrets.sh` (part of `/prep-release`) asserts
+  the two secret names exist before a release is attempted (ADR-1171).
+
+
 - **Release tooling**: `release-please-config.json` root package now sets `"draft": true` so the next release PR opens as a draft, requiring manual review before merge. Prevents an unintended `4.0.0` major bump caused by three incorrectly marked breaking commits (PR #52 CI-matrix pruning, PR #80 CUDA extern-C bug fix, PR #108 conflict-marker hotfix). The two genuinely breaking changes (PR #47 Vulkan public-API removal, PR #87 `VmafLegacyQualityRunner` removal) remain correctly attributed.
 
 
