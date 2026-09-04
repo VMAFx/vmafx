@@ -429,32 +429,6 @@ func TestEmitLadderMarkdown_EmptyHullAndRenditions(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// stubSubcommand / Execute(version)
-// ---------------------------------------------------------------------------
-
-func TestStubSubcommand_ReturnsError(t *testing.T) {
-	t.Parallel()
-	cmd := stubSubcommand("fast", "Fast NR-proxy accelerated tune")
-	if cmd.Use != "fast" {
-		t.Errorf("Use: got %q", cmd.Use)
-	}
-	if !strings.Contains(cmd.Short, "not yet ported") {
-		t.Errorf("Short should mention not ported: %q", cmd.Short)
-	}
-	if !strings.Contains(cmd.Long, "vmaf-tune") {
-		t.Errorf("Long should reference vmaf-tune: %q", cmd.Long)
-	}
-	// Invoke RunE: must return non-nil error.
-	err := cmd.RunE(cmd, nil)
-	if err == nil {
-		t.Fatal("RunE: expected error for stub subcommand")
-	}
-	if !strings.Contains(err.Error(), "not yet ported") {
-		t.Errorf("error should mention not ported, got: %v", err)
-	}
-}
-
 func TestNewCompareCmd_HasRequiredFlags(t *testing.T) {
 	t.Parallel()
 	cmd := newCompareCmd()

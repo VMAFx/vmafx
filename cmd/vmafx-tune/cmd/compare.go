@@ -66,9 +66,6 @@ func newCompareCmd() *cobra.Command {
 targets. For each (codec, target) pair the bisect finds the highest CRF whose
 measured VMAF still meets the target, then reports bitrate and score.
 
-Stage-1 supports libx264 and libx265 only. Hardware encoders (NVENC, QSV,
-AMF) and SVT-AV1 are Stage-2 scope; use 'vmaf-tune compare' for those.
-
 Example:
   vmafx-tune-go compare \
     --reference src.mp4 \
@@ -80,7 +77,7 @@ Example:
 	cmd.Flags().StringVarP(&flags.reference, "reference", "r", "",
 		"Path to the reference video (required)")
 	cmd.Flags().StringSliceVarP(&flags.codecs, "codecs", "c",
-		encoder.KnownEncoders(), "Comma-separated encoder names (stage-1: libx264,libx265)")
+		encoder.KnownEncoders(), "Comma-separated encoder names (libx264, libx265)")
 	cmd.Flags().Float64SliceVarP(&flags.targets, "targets", "t",
 		[]float64{85.0}, "Comma-separated VMAF targets (e.g. 85,90,95)")
 	cmd.Flags().StringVarP(&flags.output, "output", "o", "",

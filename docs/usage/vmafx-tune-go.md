@@ -4,9 +4,8 @@
 `vmafx-tune-go` is the Go port of the `vmaf-tune` rate-quality tuning CLI.
 **Every `vmaf-tune` subcommand is now ported**: `compare`, `ladder`, `report`,
 `recommend`, `predict`, `recommend-saliency`, `prefilter`, `tune-per-shot`,
-`fast`, `corpus`, `sidecar`, `benchmark`, `encode-profile` and `auto`. It ships
-as a **separate binary** alongside the Python `vmaf-tune` during the migration;
-the Python binary is unchanged.
+`fast`, `corpus`, `sidecar`, `benchmark`, `encode-profile` and `auto`. It is
+the active tuning binary after the retirement of the Python CLI shadow.
 
 A few individual *flags* still require Python — see
 [Python-only flags](#python-only-flags). Each fails with a message naming the
@@ -1407,12 +1406,8 @@ importing a Python callable at runtime:
 | `--fast-nr` | `tune-per-shot` | NR early-elimination needs an ONNX forward pass per bisect midpoint | `vmaf-tune tune-per-shot --fast-nr` |
 | `--predicate-module` | `tune-per-shot` | Imports an arbitrary Python `MODULE:CALLABLE` at runtime | `vmaf-tune tune-per-shot --predicate-module` |
 | `--saliency-aware` | `recommend-saliency` | Requires a saliency ONNX forward pass | `vmaf-tune recommend-saliency --saliency-aware` |
-| `--use-saliency` | `predict` | The Go feature extractor wires no `SaliencyFunc`, so the saliency moments would silently stay `0.0` | `vmaf-tune predict --use-saliency` |
 
-`recommend-saliency --saliency-aware` is accepted, but when the saliency
-session cannot be built the encode proceeds without an ROI map; the report's
-`saliency_aware` field then reads `false`, reflecting what was actually done
-rather than what was asked for.
+`recommend-saliency --saliency-aware` and `predict --use-saliency` are accepted by the Go binary. When the saliency session cannot be built, `recommend-saliency` proceeds without an ROI map (the report's `saliency_aware` field then reads `false`), and `predict` logs a warning and degrades saliency moments to 0.0, matching the Python behavior.
 
 `--model` (on `predict`, `sidecar`, `auto`) routes inference through the
 `vmafx-ort-runner` subprocess ([vmafx-ort-runner.md](vmafx-ort-runner.md)),

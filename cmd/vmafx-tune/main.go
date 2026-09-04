@@ -1,16 +1,8 @@
 // Copyright 2026 Lusoris
 // SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 
-// Command vmafx-tune-go is the Stage-1 Go port of the vmaf-tune rate-quality
-// tuning CLI. It installs alongside the Python vmaf-tune binary as
-// "vmafx-tune-go" to avoid naming collisions during the migration.
-//
-// Stage-1 ships one fully-functional subcommand:
-//
-//   - compare  Rate-quality sweep: compare codecs at one or more VMAF targets.
-//
-// All other subcommands (tune-per-shot, ladder, fast, corpus, report, …) are
-// stubs that redirect users to the Python vmaf-tune binary until Stage 2.
+// Command vmafx-tune-go is the Go port of the vmaf-tune rate-quality
+// tuning CLI.
 //
 // Build:
 //
