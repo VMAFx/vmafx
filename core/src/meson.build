@@ -861,7 +861,7 @@ if is_asm_enabled
           'x86_avx2',
           x86_avx2_sources,
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma'] + _x86_simd_strict_fp_extra + vmaf_cflags_common,
       )
 
       # ssim_avx2 carve-out (mirror of psnr_hvs_avx2 / ms_ssim_decimate_avx2
@@ -962,6 +962,7 @@ if is_asm_enabled
             include_directories : vmaf_base_include,
             c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
                       '-mavx512vbmi', '-mavx512vl'] +
+                     _x86_simd_strict_fp_extra +
                      vmaf_cflags_common,
             # b_lto=false: with b_lto=true at meson.build top, LTO over
             # this lib drops the convolution_f32_avx512_{s,sq_s,xy_s}

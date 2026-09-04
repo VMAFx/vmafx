@@ -1851,4 +1851,52 @@ int vmaf_cambi_preprocessing(const VmafPicture *image, VmafPicture *preprocessed
     return cambi_preprocessing(image, preprocessed, width, height, enc_bitdepth);
 }
 
+int vmaf_cambi_init_tvi_and_vlt(int num_diffs, const uint16_t *diffs_to_consider,
+                                double tvi_threshold, double cambi_vis_lum_threshold,
+                                const char *cambi_eotf, const char *eotf, uint16_t *tvi_for_diff,
+                                uint16_t *vlt_luma, uint16_t *v_band_base, uint16_t *v_band_size)
+{
+    if (!diffs_to_consider || !tvi_for_diff || !vlt_luma || num_diffs <= 0)
+        return -EINVAL;
+
+    VmafLumaRange luma_range;
+    int err = vmaf_luminance_init_luma_range(&luma_range, 10, VMAF_PIXEL_RANGE_LIMITED);
+    if (err)
+        return err;
+
+    const char *effective_eotf = (cambi_eotf && strcmp(cambi_eotf, DEFAULT_CAMBI_EOTF) != 0) ?
+                                     cambi_eotf :
+                                     (eotf ? eotf : DEFAULT_CAMBI_EOTF);
+
+    VmafEOTF eotf_obj;
+    err = vmaf_luminance_init_eotf(&eotf_obj, effective_eotf);
+    if (err)
+        return err;
+
+    for (int d = 0; d < num_diffs; d++) {
+        tvi_for_diff[d] = (uint16_t)get_tvi_for_diff(diffs_to_consider[d], tvi_threshold, 10,
+                                                     luma_range, eotf_obj);
+        tvi_for_diff[d] += (uint16_t)num_diffs;
+    }
+
+    *vlt_luma = (uint16_t)get_vlt_luma(cambi_vis_lum_threshold, luma_range, eotf_obj);
+
+    int v_lo_signed = (int)(*vlt_luma) - 3 * num_diffs + 1;
+    uint16_t base = v_lo_signed > 0 ? (uint16_t)v_lo_signed : 0;
+    int size_signed = (int)tvi_for_diff[num_diffs - 1] + 1 - (int)base;
+    if (size_signed <= 0) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "cambi: v_band_size underflow (tvi_max=%u v_band_base=%u); "
+                 "cambi_vis_lum_threshold may be too low\n",
+                 (unsigned)tvi_for_diff[num_diffs - 1], (unsigned)base);
+        return -EINVAL;
+    }
+    if (v_band_base)
+        *v_band_base = base;
+    if (v_band_size)
+        *v_band_size = (uint16_t)size_signed;
+
+    return 0;
+}
+
 /* NOLINTEND(modernize-use-nullptr) */

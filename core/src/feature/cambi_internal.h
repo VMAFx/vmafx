@@ -62,6 +62,15 @@ static inline bool cambi_validate_dimensions(unsigned w, unsigned h)
  * stay numerically identical if the 4K reference resolution ever changes. */
 #define CAMBI_WINDOW_DIVISOR 375
 
+#ifndef CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1080p
+#define CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1080p (1920 * 1080)
+#define CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1440p (2560 * 1440)
+#define CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_2160p (3840 * 2160)
+#endif
+#ifndef CAMBI_4K_HEIGHT
+#define CAMBI_4K_HEIGHT (2160)
+#endif
+
 /* Range update + derivative callback signatures (mirrors cambi.c
  * internal typedefs). */
 typedef void (*VmafCambiRangeUpdater)(uint16_t *arr, int left, int right);
@@ -82,6 +91,8 @@ typedef struct VmafCambiHostBuffers {
     uint16_t *derivative_buffer;
     int *diff_weights;
     int *all_diffs;
+    uint16_t v_band_base;
+    uint16_t v_band_size;
 } VmafCambiHostBuffers;
 
 /* ----- functions exported from cambi.c (otherwise file-static) ----- */
@@ -127,6 +138,12 @@ void vmaf_cambi_default_callbacks(VmafCambiRangeUpdater *inc, VmafCambiRangeUpda
  * cambi_preprocessing() entry. */
 int vmaf_cambi_preprocessing(const VmafPicture *image, VmafPicture *preprocessed, int width,
                              int height, int enc_bitdepth);
+
+/* Contrast & luminance TVI / VLT initialisation helper for GPU twins. */
+int vmaf_cambi_init_tvi_and_vlt(int num_diffs, const uint16_t *diffs_to_consider,
+                                double tvi_threshold, double cambi_vis_lum_threshold,
+                                const char *cambi_eotf, const char *eotf, uint16_t *tvi_for_diff,
+                                uint16_t *vlt_luma, uint16_t *v_band_base, uint16_t *v_band_size);
 
 #ifdef __cplusplus
 }

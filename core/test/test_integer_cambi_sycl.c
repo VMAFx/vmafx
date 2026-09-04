@@ -150,8 +150,7 @@ static char *test_cambi_sycl_smoke(void)
     mu_assert("vmaf_read_pictures should succeed", err == 0);
 
     /* Flush pipeline. */
-    VmafPicture null_pic = {0};
-    err = vmaf_read_pictures(vmaf, &null_pic, &null_pic, 0);
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("flush vmaf_read_pictures should succeed", err == 0);
 
     /* Retrieve the score. */
