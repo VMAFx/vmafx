@@ -205,6 +205,8 @@ FEATURE_NAMES: tuple[str, ...] = (
     "speed_chroma_u",
     "speed_chroma_v",
     "speed_chroma_uv",
+    # 2026-09-04 addition — adm3 required by v1 models (ADR-1173).
+    "adm3",
 )
 
 # Map feature names to their JSON key(s) in libvmaf output.  libvmaf may emit
@@ -249,6 +251,7 @@ _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
         "speed_chroma_uv",
         "Speed_chroma_feature_speed_chroma_uv_score",
     ),
+    "adm3": ("adm3", "integer_adm3"),
 }
 
 # ---------------------------------------------------------------------------
@@ -666,6 +669,9 @@ def _lookup_metric(metrics: dict, feature: str) -> float:
         v = metrics.get(alias)
         if v is not None:
             return float(v)
+    for k, val in metrics.items():
+        if val is not None and (k.startswith(f"integer_{feature}_") or k.startswith(f"{feature}_")):
+            return float(val)
     return float("nan")
 
 
