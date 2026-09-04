@@ -263,7 +263,7 @@ func applySaliencyROI(
 	cfg saliency.Config,
 	req ffencode.Request,
 ) (ffencode.Request, func(), bool, error) {
-	session, sessionErr := newSaliencySession(flags.saliencyModel)
+	session, sessionErr := saliencySessionFactory(flags.saliencyModel)
 	if sessionErr != nil {
 		d.Log.WarnContext(ctx,
 			"saliency inference unavailable; falling back to a plain encode",
