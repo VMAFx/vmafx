@@ -14353,6 +14353,9 @@ promoted to module scope as a side effect.
   fragments without the block being re-rendered.
 
 
+- **Native release artifacts built in canonical dev container (ADR-1178, Phase 4b.9).** Native release binaries (`libvmaf.so` SONAME chain, `vmaf` CLI binary, `models.tar.gz`) in `.github/workflows/supply-chain.yml` now build inside the canonical dev container (`ghcr.io/vmafx/vmafx-dev-mcp`) pinned by digest, rather than on the bare runner host. New `.github/workflows/dev-container-publish.yml` publishes and Cosign-signs the dev container image on master pushes touching `dev/Containerfile` or `dev/scripts/**`. Staged release artifacts are stamped with container-build provenance via `scripts/ci/check-container-build.sh --stamp`, verified in `verify-native-artifacts` via `--verify`, and required fail-closed by `scripts/release/verify-native-release-artifacts.sh` and `attach-to-release`. Closes `T-PUBLISH-NATIVE-RELEASE-NOT-CONTAINERISED-2026-09-03`.
+
+
 - `release-please.yml` no longer fails every push to `master` while the release-bot
   App credentials are missing: the credential check emits a warning, skips every
   write step, and the run ends idle-green; a manual `workflow_dispatch` still fails.
