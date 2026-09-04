@@ -2004,6 +2004,15 @@ test_picture_pool_error_paths = executable('test_picture_pool_error_paths',
 )
 test('test_picture_pool_error_paths', test_picture_pool_error_paths, suite : ['fast'])
 
+test_picture_pool_cpp_error_paths = executable('test_picture_pool_cpp_error_paths',
+    ['test.c', 'test_picture_pool_error_paths.c',
+     '../src/picture_pool.cpp', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
+    dependencies: [stdatomic_dependency, pthread_dependency, thread_lib],
+)
+test('test_picture_pool_cpp_error_paths', test_picture_pool_cpp_error_paths, suite : ['fast'])
+
 # ADR-0152 — monotonic-index guard on vmaf_read_pictures (Netflix#910).
 test_read_pictures_monotonic = executable('test_read_pictures_monotonic',
     ['test.c', 'test_read_pictures_monotonic.c'],

@@ -2,6 +2,19 @@
 # Rebase notes
 
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
+## fix/picture-pool-twin-drift — port concurrency and lifecycle fixes to picture_pool.cpp (2026-09-04)
+
+- `core/src/picture_pool.cpp`: C++ twin of `core/src/picture_pool.c` compiled into `libvmaf` via
+  `picture_pool_cpp23_lib` (ADR-0768). Ported four fixes from `picture_pool.c` that had drifted:
+  (1) ADR-0778 Fix-E two-pass picture preallocation to avoid leaking buffers when `vmaf_picture_alloc`
+  fails; (2) ADR-1020 Fix 3 stack-local snapshot of `pool->pictures[idx]` under mutex before unlock;
+  (3) ADR-0960 Fix A.3 `pic->priv = nullptr` after free on fetch failure; (4) ADR-0960 Fix A.2
+  `pthread_cond_signal(&pool->available)` on `return_to_pool` to wake waiting threads.
+  Preserved C++23 / ADR-1138 idioms (`nullptr`, `std::free`). On upstream rebase: Netflix/vmaf has only
+  the C file; resolve any future changes to picture pool by keeping `picture_pool.cpp` in sync with
+  `picture_pool.c`.
+- `core/test/meson.build`: added `test_picture_pool_cpp_error_paths` compiling `picture_pool.cpp`
+  directly into an internal error-path test target with `override_options : ['cpp_std=' + libvmaf_cpu_cpp_std]`.
 ## fix/fixture-cache-poisoning — fixture caches must not be written by failed runs (2026-09-04)
 
 - `.github/workflows/{build,libvmaf-build-matrix,tests-and-quality-gates}.yml`: all three are
