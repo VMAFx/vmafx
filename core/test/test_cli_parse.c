@@ -25,6 +25,7 @@
 #include "test.h"
 
 #include "cli_parse.h"
+#include <string.h>
 
 static int cli_free_dicts(CLISettings *settings)
 {
@@ -452,6 +453,96 @@ static char *run_no_reference_tests(void)
     return NULL;
 }
 
+/* ADR-0690: detect_vmafx_mode correctly parses argv[0] basename */
+static char *test_detect_vmafx_mode(void)
+{
+    mu_assert("detect_vmafx_mode: 'vmafx' must return true", detect_vmafx_mode("vmafx"));
+    mu_assert("detect_vmafx_mode: '/usr/local/bin/vmafx' must return true",
+              detect_vmafx_mode("/usr/local/bin/vmafx"));
+    mu_assert("detect_vmafx_mode: './build/tools/vmafx.exe' must return true",
+              detect_vmafx_mode("./build/tools/vmafx.exe"));
+    mu_assert("detect_vmafx_mode: 'vmaf' must return false", !detect_vmafx_mode("vmaf"));
+    mu_assert("detect_vmafx_mode: '/usr/local/bin/vmaf' must return false",
+              detect_vmafx_mode("/usr/local/bin/vmaf") == false);
+    mu_assert("detect_vmafx_mode: 'vmaf_bench' must return false",
+              detect_vmafx_mode("vmaf_bench") == false);
+    mu_assert("detect_vmafx_mode: NULL must return false", detect_vmafx_mode(NULL) == false);
+    return NULL;
+}
+
+/* ADR-0690: vmafx invocation defaults to precision=max and modern default model */
+static char *test_vmafx_mode_defaults(void)
+{
+    char *argv[] = {"vmafx", "-r", "ref.y4m", "-d", "dis.y4m"};
+    const int argc = sizeof(argv) / sizeof(argv[0]);
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("ADR-0690: vmafx must set vmafx_mode = true", settings.vmafx_mode);
+    mu_assert("ADR-0690: vmafx must default to precision_max = true", settings.precision_max);
+    mu_assert("ADR-0690: vmafx must format with %.17g",
+              strcmp(settings.precision_fmt, "%.17g") == 0);
+    mu_assert("ADR-0690: vmafx must default to 1 model", settings.model_cnt == 1);
+    mu_assert("ADR-0690: vmafx must default to VMAF_DEFAULT_MODEL_VERSION",
+              strcmp(settings.model_config[0].version, VMAF_DEFAULT_MODEL_VERSION) == 0);
+    cli_free(&settings);
+    cli_free_dicts(&settings);
+    return NULL;
+}
+
+/* ADR-0696: --netflix-compat restores legacy CPU, %.6f, and v0.6.1 model */
+static char *test_netflix_compat_flag(void)
+{
+    char *argv[] = {"vmafx", "-r", "ref.y4m", "-d", "dis.y4m", "--netflix-compat"};
+    const int argc = sizeof(argv) / sizeof(argv[0]);
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("ADR-0696: netflix_compat flag must be set", settings.netflix_compat);
+    mu_assert("ADR-0696: netflix_compat must force precision_max = false", !settings.precision_max);
+    mu_assert("ADR-0696: netflix_compat must use %.6f precision",
+              strcmp(settings.precision_fmt, "%.6f") == 0);
+    mu_assert("ADR-0696: netflix_compat must disable CUDA", settings.no_cuda);
+    mu_assert("ADR-0696: netflix_compat must disable SYCL", settings.no_sycl);
+    mu_assert("ADR-0696: netflix_compat must disable HIP", settings.no_hip);
+    mu_assert("ADR-0696: netflix_compat must disable Metal", settings.no_metal);
+    mu_assert("ADR-0696: netflix_compat must default to VMAF_NETFLIX_COMPAT_MODEL_VERSION (v0.6.1)",
+              strcmp(settings.model_config[0].version, VMAF_NETFLIX_COMPAT_MODEL_VERSION) == 0);
+    cli_free(&settings);
+    cli_free_dicts(&settings);
+    return NULL;
+}
+
+/* ADR-0696: underscore alias --netflix_compat and override behavior */
+static char *test_netflix_compat_underscore_override(void)
+{
+    char *argv[] = {"vmaf",      "-r",   "ref.y4m",     "-d",  "dis.y4m",
+                    "--backend", "cuda", "--precision", "max", "--netflix_compat"};
+    const int argc = sizeof(argv) / sizeof(argv[0]);
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("ADR-0696: netflix_compat must be set", settings.netflix_compat);
+    mu_assert("ADR-0696: netflix_compat must override --precision=max to %.6f",
+              !settings.precision_max && strcmp(settings.precision_fmt, "%.6f") == 0);
+    mu_assert("ADR-0696: netflix_compat must override --backend cuda to CPU",
+              settings.no_cuda && settings.no_sycl && settings.no_hip && settings.no_metal);
+    mu_assert("ADR-0696: netflix_compat model must be VMAF_NETFLIX_COMPAT_MODEL_VERSION",
+              strcmp(settings.model_config[0].version, VMAF_NETFLIX_COMPAT_MODEL_VERSION) == 0);
+    cli_free(&settings);
+    cli_free_dicts(&settings);
+    return NULL;
+}
+
+static char *run_vmafx_tests(void)
+{
+    mu_run_test(test_detect_vmafx_mode);
+    mu_run_test(test_vmafx_mode_defaults);
+    mu_run_test(test_netflix_compat_flag);
+    mu_run_test(test_netflix_compat_underscore_override);
+    return NULL;
+}
+
 char *run_tests()
 {
     char *result = run_aom_ctc_tests();
@@ -461,6 +552,9 @@ char *run_tests()
     if (result)
         return result;
     result = run_no_reference_tests();
+    if (result)
+        return result;
+    result = run_vmafx_tests();
     if (result)
         return result;
     return NULL;

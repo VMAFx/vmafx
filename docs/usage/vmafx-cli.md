@@ -1,18 +1,10 @@
 <!-- markdownlint-disable MD060 -->
 # `vmafx` — modernized CLI reference
 
-> **Status: planned — not yet implemented in `master`.**
-> The `vmafx` symlink, `--netflix-compat` flag, and `vmafx-*` Python aliases
-> are specified in [ADR-0690](../adr/0690-vmafx-binary-and-ai-aliases.md) and
-> [ADR-0696](../adr/0696-vmafx-netflix-compat.md) and are planned for the
-> next implementation sprint. The `vmaf` binary with `--precision=max` is the
-> interim equivalent. This page documents the intended behavior once the
-> implementation lands.
-
 `vmafx` is a thin alias for the `vmaf` binary that activates modernized
-defaults on invocation. It will be installed as a symlink to `vmaf` in the same
-`bindir`; the binary will detect the `vmafx` basename at startup and adjust its
-behavior accordingly (ADR-0690).
+defaults on invocation. It is installed as a symlink to `vmaf` in the same
+`bindir` (or a dedicated binary on Windows); the binary detects the `vmafx`
+basename at startup and adjusts its behavior accordingly (ADR-0690).
 
 > **Relationship to `vmaf`.** `vmafx` and `vmaf` will share one binary on disk.
 > Every flag documented in [`cli.md`](cli.md) is also accepted by `vmafx`.
@@ -45,25 +37,21 @@ number of significant digits required for exact round-trip through `strtod`,
 avoiding silent truncation when scores are stored in JSON, CSV, or database
 tables. See [precision.md](precision.md) for full details (ADR-0119).
 
-## Quick start (planned — not yet available)
-
-> These commands require the `vmafx` symlink from ADR-0690, which is not yet
-> installed. Use the `vmaf --precision=max` equivalent until the implementation
-> lands.
+## Quick start
 
 ```shell
-# .y4m pair — precision=max applied automatically (planned behavior)
+# .y4m pair — precision=max applied automatically
 vmafx --reference ref.y4m --distorted dist.y4m
 
-# Equivalent vmaf invocation with explicit flag (available now)
+# Equivalent vmaf invocation with explicit flag
 vmaf --reference ref.y4m --distorted dist.y4m --precision=max
 
-# Opt back into legacy %.6f precision via explicit flag (planned behavior)
+# Opt back into legacy %.6f precision via explicit flag
 vmafx --reference ref.y4m --distorted dist.y4m --precision=legacy
 
-# Check which version and defaults are active (planned behavior)
+# Check which version and defaults are active
 vmafx --version
-# Output: VMAFX 3.2.1 (auto-backend, precision=max)
+# Output: VMAFX v3.2.1 (auto-backend, precision=max)
 ```
 
 ## `--netflix-compat` — restore legacy defaults
@@ -80,6 +68,7 @@ When `--netflix-compat` is passed, the following defaults are forced as the
 |---|---|
 | Backend | CPU only (equivalent to `--backend=cpu`) |
 | Output precision | `%.6f` (equivalent to `--precision=legacy`) |
+| Default model | `vmaf_v0.6.1` (restores legacy upstream default model) |
 
 The flag is idempotent on the `vmaf` binary — `vmaf` already uses these
 defaults, so `vmaf --netflix-compat` is a no-op in practice.
@@ -125,7 +114,7 @@ Install any package with `pip install -e <path>` to get both names. The
 aliases are console_scripts entries pointing to the same Python callables;
 no behavior difference exists between `vmaf-train` and `vmafx-train`.
 
-## Smoke test (once implemented)
+## Smoke test
 
 After installation, confirm the symlink and default banner:
 
@@ -136,15 +125,11 @@ ls -la $(which vmafx)
 
 # Version string shows VMAFX identity and defaults
 vmafx --version
-# -> VMAFX 3.2.1 (auto-backend, precision=max)
+# -> VMAFX v3.2.1 (auto-backend, precision=max)
 
 # Or inside the dev container:
 docker exec vmaf-dev-mcp vmafx --version
 ```
-
-> **Not yet available.** The above commands will fail until the implementation
-> sprint described in ADR-0690 lands. In the interim, use
-> `vmaf --reference ref.y4m --distorted dist.y4m --precision=max`.
 
 ## See also
 

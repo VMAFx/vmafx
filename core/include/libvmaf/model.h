@@ -35,6 +35,13 @@ extern "C" {
  */
 #define VMAF_DEFAULT_MODEL_VERSION "vmaf_v1.0.16_3d0h"
 
+/**
+ * Version string of the model restored by --netflix-compat mode when the caller
+ * names no model. Defined here alongside VMAF_DEFAULT_MODEL_VERSION.
+ */
+#define VMAF_NETFLIX_COMPAT_MODEL_VERSION                                                          \
+    "vmaf_v0.6.1" /* vmaf-model-pin: Netflix upstream compat restores v0.6.1 default model */
+
 typedef struct VmafModel VmafModel;
 
 /**

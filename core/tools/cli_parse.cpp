@@ -92,6 +92,8 @@ enum : std::uint16_t {
     ARG_DNN_EP,
     /* ADR-0550 — NCHW tiny-model auto-resize filter. */
     ARG_TINY_RESIZE,
+    /* ADR-0696 — restore Netflix-upstream legacy defaults. */
+    ARG_NETFLIX_COMPAT,
 };
 
 /* Default matches Netflix's pre-fork output exactly so the CPU golden
@@ -196,6 +198,8 @@ const struct option long_opts[] = {
     {.name = "dnn-ep", .has_arg = 1, .flag = nullptr, .val = ARG_DNN_EP},
     {.name = "dnn_ep", .has_arg = 1, .flag = nullptr, .val = ARG_DNN_EP},
     {.name = "no_prediction", .has_arg = 0, .flag = nullptr, .val = 'n'},
+    {.name = "netflix-compat", .has_arg = 0, .flag = nullptr, .val = ARG_NETFLIX_COMPAT},
+    {.name = "netflix_compat", .has_arg = 0, .flag = nullptr, .val = ARG_NETFLIX_COMPAT},
     {.name = "version", .has_arg = 0, .flag = nullptr, .val = 'v'},
     {.name = "quiet", .has_arg = 0, .flag = nullptr, .val = 'q'},
     {.name = nullptr, .has_arg = 0, .flag = nullptr, .val = 0},
@@ -289,6 +293,8 @@ void print_usage_options_part2(FILE *const out)
         "                               the filter alongside your model checkpoint.\n"
         " --quiet/-q:                  disable FPS meter when run in a TTY\n"
         " --no_prediction/-n:          no prediction, extract features only\n"
+        " --netflix-compat:             restore Netflix-upstream legacy defaults (CPU backend,\n"
+        "                                  %.6f precision, v0.6.1 default model)\n"
         " --version/-v:                print version and exit\n");
 }
 
@@ -1016,7 +1022,10 @@ void validate_cli_settings(const char *const app, CLISettings *const settings)
 #if VMAF_BUILT_IN_MODELS
         const CLIModelConfig cfg = {
             .path = nullptr,
-            .version = VMAF_DEFAULT_MODEL_VERSION,
+            .version =
+                settings->netflix_compat ?
+                    VMAF_NETFLIX_COMPAT_MODEL_VERSION :
+                    VMAF_DEFAULT_MODEL_VERSION, /* vmaf-model-pin: Netflix upstream compat restores v0.6.1 default model */
             .cfg = {.name = "vmaf", .flags = VMAF_MODEL_FLAGS_DEFAULT},
             .feature_overload = {},
             .overload_cnt = 0,
@@ -1111,8 +1120,15 @@ void handle_misc_flag(const int o, const char *const app, CLISettings *const set
     case 'q':
         settings->quiet = true;
         break;
+    case ARG_NETFLIX_COMPAT:
+        settings->netflix_compat = true;
+        break;
     case 'v':
-        (void)fprintf(stderr, "%s\n", vmaf_version());
+        if (settings->vmafx_mode) {
+            (void)fprintf(stderr, "VMAFX %s (auto-backend, precision=max)\n", vmaf_version());
+        } else {
+            (void)fprintf(stderr, "%s\n", vmaf_version());
+        }
         // NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-1155: CLI version exit
         exit(0);
     default:
@@ -1197,6 +1213,7 @@ void process_single_cli_opt(const int o, const char *const optarg, const char *c
     case 'n':
     case 'q':
     case 'v':
+    case ARG_NETFLIX_COMPAT:
         handle_misc_flag(o, app, settings);
         break;
     default:
@@ -1206,9 +1223,21 @@ void process_single_cli_opt(const int o, const char *const optarg, const char *c
 
 } // namespace
 
+extern "C" bool detect_vmafx_mode(const char *const argv0)
+{
+    if (!argv0)
+        return false;
+    using sv = std::string_view;
+    const sv s{argv0};
+    const auto slash = s.find_last_of("/\\");
+    const sv base = (slash != sv::npos) ? s.substr(slash + 1) : s;
+    return (base == "vmafx" || base == "vmafx.exe");
+}
+
 void cli_parse(const int argc, char *const *const argv, CLISettings *const settings)
 {
     (void)memset(settings, 0, sizeof(*settings));
+    settings->vmafx_mode = detect_vmafx_mode(argv ? argv[0] : nullptr);
     settings->sycl_device = -1;  // auto-select by default
     settings->hip_device = -1;   // auto-select by default
     settings->metal_device = -1; // auto-select by default
@@ -1221,6 +1250,28 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
     // NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-1155: single-threaded CLI entry point before worker threads spawn
     while ((o = getopt_long(argc, argv, short_opts, long_opts, nullptr)) >= 0) {
         process_single_cli_opt(o, optarg, argv[0], settings);
+    }
+
+    if (settings->vmafx_mode) {
+        /* ADR-0690: apply modernized defaults (precision=max) unless explicit --precision given */
+        if (!settings->precision_max && !settings->precision_legacy &&
+            (settings->precision_n == -1)) {
+            settings->precision_max = true;
+            settings->precision_fmt = VMAF_LOSSLESS_PRECISION_FMT;
+        }
+    }
+
+    if (settings->netflix_compat) {
+        /* ADR-0696: Final post-parse pass overriding any modernizations back to legacy defaults */
+        settings->backend = "cpu";
+        settings->no_cuda = true;
+        settings->no_sycl = true;
+        settings->no_hip = true;
+        settings->no_metal = true;
+        settings->precision_max = false;
+        settings->precision_legacy = true;
+        settings->precision_n = -1;
+        settings->precision_fmt = VMAF_DEFAULT_PRECISION_FMT;
     }
 
     if (!settings->output_fmt)

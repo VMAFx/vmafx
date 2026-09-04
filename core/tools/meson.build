@@ -66,6 +66,34 @@ vmaf = executable(
     install : true,
 )
 
+# ADR-0690: vmafx alias.
+# On Windows, symlinks are non-portable so a second executable target is built from
+# the same sources. On POSIX systems, install_symlink installs vmafx -> vmaf, and a
+# build-dir custom_target creates tools/vmafx for testing before installation.
+if host_machine.system() == 'windows'
+    vmafx = executable(
+        'vmafx',
+        ['vmaf.cpp', 'cli_parse.cpp', 'y4m_input.c', 'vidinput.c', 'yuv_input.c'],
+        include_directories : [libvmaf_inc, vmaf_include],
+        dependencies: vmaf_tool_deps,
+        c_args : vmaf_tool_cflags,
+        cpp_args : vmaf_tool_cflags,
+        link_args : vmaf_tool_link_args,
+        link_with : vmaf_tool_link_target,
+        override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
+        install : true,
+    )
+else
+    install_symlink('vmafx', pointing_to: 'vmaf', install_dir: get_option('bindir'))
+    vmafx = custom_target(
+        'vmafx_build_symlink',
+        input : vmaf,
+        output : 'vmafx',
+        command : ['ln', '-sf', 'vmaf', '@OUTPUT@'],
+        build_by_default : true,
+    )
+endif
+
 # vmaf-perShot — T6-3b per-shot CRF predictor sidecar (ADR-0222).
 # Standalone tool: only links against libvmaf for future transnet_v2
 # integration; v1 itself uses libc-only frame-difference heuristic.

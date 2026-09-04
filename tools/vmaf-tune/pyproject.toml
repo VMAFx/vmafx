@@ -21,6 +21,7 @@ fast = ["optuna>=4.9.0"]
 
 [project.scripts]
 vmaf-tune = "vmaftune.cli:main"
+vmafx-tune = "vmaftune.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/VMAFx/vmafx"

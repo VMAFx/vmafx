@@ -466,6 +466,12 @@ this header — language bindings especially — so the value comes from the
 library actually loaded rather than from a constant copied into another source
 tree and left to drift.
 
+The legacy choice has a named constant of its own: `VMAF_NETFLIX_COMPAT_MODEL_VERSION`
+(`"vmaf_v0.6.1"`, also in `libvmaf/model.h`) is the model the CLI selects under
+`--netflix-compat` (see [the vmafx CLI page](../usage/vmafx-cli.md)). Use it when
+code deliberately wants the Netflix-parity model rather than the fork default, so
+the intent is visible and the string has one source.
+
 This is the fork's single source of truth for the default: nothing else in the
 tree hardcodes a fallback model name, and
 `scripts/ci/check-default-model-single-source.sh` fails the build if anything
