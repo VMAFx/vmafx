@@ -8908,6 +8908,11 @@ behaviour unchanged). When `true`, `n_planes` follows pix_fmt (1 for YUV400P,
 3 otherwise); multi-plane kernel dispatch is deferred to v2.
 
 
+- `vmaf_model_feature_count` and `vmaf_model_feature_name` added to the
+  public C API (`<libvmaf/model.h>`). Callers can inspect the features
+  required by a loaded `VmafModel` without accessing opaque struct internals.
+
+
 ### vmaf-tune: `--neg` flag for VMAF NEG model variants (ADR-0622)
 
 Add a `--neg` flag to `vmaf-tune recommend`, `compare`, `tune-per-shot`,

@@ -355,6 +355,10 @@ int vmaf_model_feature_overload(VmafModel *model, const char *feature_name,
                                 VmafFeatureDictionary *opts_dict);
 void vmaf_model_destroy(VmafModel *model);
 
+/* Read feature names required by a loaded model. */
+unsigned vmaf_model_feature_count(const VmafModel *model);
+const char *vmaf_model_feature_name(const VmafModel *model, unsigned index);
+
 /* Enumerate the built-in version strings compiled into this libvmaf. */
 const void *vmaf_model_version_next(const void *prev, const char **version);
 
@@ -397,6 +401,23 @@ without any built-in models. See
 [ADR-0135](../adr/0135-port-netflix-1424-expose-builtin-model-versions.md)
 for the contract's correctness-relevant details (NULL-on-first-call,
 end-of-iteration semantics).
+
+### Inspecting model features
+
+Callers can query the features required by a loaded `VmafModel` without
+touching opaque struct internals:
+
+```c
+const unsigned n = vmaf_model_feature_count(model);
+for (unsigned i = 0; i < n; i++) {
+    const char *feature_name = vmaf_model_feature_name(model, i);
+    printf("feature %u: %s\n", i, feature_name);
+}
+```
+
+`vmaf_model_feature_count` returns 0 if `model` is `NULL`. `vmaf_model_feature_name`
+returns a pointer borrowed from the model (valid for the lifetime of `model`), or
+`NULL` if `model` is `NULL` or `index >= n`.
 
 ### The default model
 

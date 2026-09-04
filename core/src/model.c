@@ -320,6 +320,18 @@ void vmaf_model_destroy(VmafModel *model)
     free(model);
 }
 
+unsigned vmaf_model_feature_count(const VmafModel *model)
+{
+    return model ? model->n_features : 0;
+}
+
+const char *vmaf_model_feature_name(const VmafModel *model, unsigned index)
+{
+    if (!model || index >= model->n_features)
+        return NULL;
+    return model->feature[index].name;
+}
+
 int vmaf_model_collection_append(VmafModelCollection **model_collection, VmafModel *model)
 {
     if (!model_collection)

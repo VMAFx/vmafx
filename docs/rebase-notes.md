@@ -206,6 +206,9 @@ no rebase impact: fork-local fixes and cleanups.
   `"vmaf_v0.6.1"` in `libvmaf/tools/cli_parse.c`. An upstream sync will look
   like it wants to revert the default. **It does not — keep the fork's value.**
   Verified against upstream master on 2026-09-03.
+- `core/include/libvmaf/model.h` and `core/src/model.c`: public model accessors
+  `vmaf_model_feature_count` and `vmaf_model_feature_name` are fork-added and
+  upstream Netflix has no counterpart, so on sync keep them.
 - `core/tools/cli_parse.cpp`: the `model_cnt == 0` fallback reads the macro. The
   AOM CTC preset in the same file keeps the literal `"vmaf_v0.6.1"` with a
   `vmaf-model-pin:` comment, because the CTC specification mandates that exact
