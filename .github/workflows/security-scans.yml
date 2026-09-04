@@ -30,7 +30,8 @@ concurrency:
 jobs:
   semgrep:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: Semgrep (CWE Top 25 + CERT-C + Custom)
+    # required-aggregator
+    name: Semgrep
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -92,11 +93,13 @@ jobs:
           sarif_file: semgrep-registry.sarif
           category: semgrep-registry
 
+  # required-aggregator: CodeQL
   # security-and-quality is a superset of security-extended, so specifying
   # both duplicates queries and trips the CodeQL setup UI's "ambiguous
   # configuration" detector. Pick one suite per job.
   codeql-cpp:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # required-aggregator
     name: CodeQL (C/C++)
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -146,6 +149,7 @@ jobs:
 
   codeql-python:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # required-aggregator
     name: CodeQL (Python)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -188,6 +192,7 @@ jobs:
   # it explicit here so the job history is versioned with the repo.
   codeql-actions:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # required-aggregator
     name: CodeQL (Actions)
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -226,7 +231,8 @@ jobs:
 
   secret-scan:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: Gitleaks (Secret Scan)
+    # required-aggregator
+    name: Gitleaks
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -265,7 +271,8 @@ jobs:
           category: gitleaks
 
   dependency-review:
-    name: Dependency Review (PR Diff)
+    # required-aggregator
+    name: Dependency Review
     if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (github.event_name == 'pull_request')
     runs-on: ubuntu-latest
     timeout-minutes: 5

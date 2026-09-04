@@ -47,7 +47,7 @@ env:
 
 jobs:
   validate-release:
-    name: Validate published ordinary tag
+    name: Validate tag
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -110,7 +110,7 @@ jobs:
   # Build + push the CPU (default) multi-arch image
   # -----------------------------------------------------------------------
   build-cpu:
-    name: Build + push CPU image (amd64 + arm64)
+    name: Publish CPU image
     needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -257,7 +257,7 @@ jobs:
   # GPU variant: CUDA 13 (amd64 only)
   # -----------------------------------------------------------------------
   build-cuda13:
-    name: Build + push CUDA 13 image (amd64)
+    name: Publish CUDA 13 image
     needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -352,7 +352,7 @@ jobs:
   # GPU variant: ROCm 7 (amd64 only)
   # -----------------------------------------------------------------------
   build-rocm7:
-    name: Build + push ROCm 7 image (amd64)
+    name: Publish ROCm 7 image
     needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -447,7 +447,7 @@ jobs:
   # GPU variant: oneAPI 2025 (amd64 only)
   # -----------------------------------------------------------------------
   build-oneapi2025:
-    name: Build + push oneAPI 2025 image (amd64)
+    name: Publish oneAPI 2025 image
     needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -542,7 +542,7 @@ jobs:
   # GPU runtime smoke: no device is required for the version-only probe.
   # -----------------------------------------------------------------------
   smoke-gpu:
-    name: Smoke-test GPU image entrypoints
+    name: Smoke-test GPU images
     needs:
       - build-cuda13
       - build-rocm7
@@ -596,7 +596,7 @@ jobs:
   # MCP server variant (cpu base, amd64 + arm64)
   # -----------------------------------------------------------------------
   build-server:
-    name: Build + push MCP server image (amd64 + arm64)
+    name: Publish MCP server image
     needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -766,7 +766,7 @@ jobs:
   # Summary job — depends on all build jobs so CI shows a single status
   # -----------------------------------------------------------------------
   all-images:
-    name: All production images published
+    name: Images published
     if: always()
     needs:
       - build-cpu

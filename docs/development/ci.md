@@ -21,6 +21,9 @@ The fork ships eight `pull_request`-triggered workflows:
 | [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100 / 0106 / 0108 / 0165 process gates. |
 | [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml) | Netflix golden, sanitizers, tiny-AI, MCP, coverage, assertion-density. |
 
+For the complete inventory, mapping of shortened names, and conventions,
+see [CI job display names](ci-job-names.md).
+
 ## Draft pull requests do not trigger CI
 
 Per [ADR-0331](../adr/0331-skip-ci-on-draft-prs.md), every
@@ -121,7 +124,7 @@ landed on one twin and never reached the other, and twice a rename
 (`mem.c` → `mem.cpp`, `dict.c` → `dict.cpp`) left a stale path in a build
 file that only nightly or opt-in lanes configure.
 [ADR-1135](../adr/1135-ci-twin-drift-gate.md) turns both into a blocking,
-required check — `Twin Drift + Stale Source Refs (ADR-1135)` in
+required check — `Twin Drift` in
 [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml),
 backed by
 [`scripts/ci/twin-drift-check.sh`](../../scripts/ci/twin-drift-check.sh).
@@ -189,7 +192,7 @@ instead of a touched-files rule:
   below its baseline (tighten it: `make tidy-ratchet-write`, commit the JSON
   in the same PR), `4` clang-tidy could not compile a TU (fail closed), `5`
   usage/IO error.
-- **`cpu` lane** — the required context `Clang-Tidy Ratchet (Whole Tree)` in
+- **`cpu` lane** — the required context `Tidy Ratchet` in
   `lint-and-format.yml` (aggregator list, ADR-0313). Like every required job
   it always starts and first runs the [ADR-1140](../adr/1140-ci-impact-planner.md)
   impact planner (`scripts/ci/plan-ci-impact.py`, step id `impact`); the
@@ -218,7 +221,7 @@ instead of a touched-files rule:
   toolchain exists for the lane; until then a lane that cannot run is reported
   as *not run*, never as clean. Metal (`.mm` / `.metal`) has no Linux
   toolchain and is tracked by structural proxy only.
-- The changed-files job `Clang-Tidy (Changed C/C++ Files)` stays as fast
+- The changed-files job `Tidy Changed` stays as fast
   feedback and keeps the `WarningsAsErrors` hard stop; ADR-0141's "a touched
   file ends the PR at zero" is unchanged. The ratchet adds the bound on
   untouched files.
@@ -237,7 +240,7 @@ to CI:
 | Carve-out | Blocker | Owner / plan |
 | --- | --- | --- |
 | Changed-files clang-tidy job excludes `core/src/cuda/`, `core/src/feature/cuda/`, `core/test/test_cuda_*`, `core/test/test_gpu_picture_pool.c` | CUDA toolkit headers on the hosted runner (`--cuda-host-only` needs them) | cuda lane → PR-required; retire the `grep -v` lines in the same PR |
-| … excludes `core/src/sycl/`, `core/src/feature/sycl/`, `core/test/test_sycl*`; `Clang-Tidy SYCL` job is `continue-on-error` | oneAPI on the runner (the advisory job already installs it) | sycl lane → PR-required first; drop `continue-on-error` |
+| … excludes `core/src/sycl/`, `core/src/feature/sycl/`, `core/test/test_sycl*`; `Tidy SYCL (advisory)` job is `continue-on-error` | oneAPI on the runner (the advisory job already installs it) | sycl lane → PR-required first; drop `continue-on-error` |
 | … excludes `core/src/hip/`, `core/src/feature/hip/`, `core/test/test_hip*` | ROCm headers on the hosted runner | hip lane → PR-required |
 | … excludes `core/src/feature/arm64/` | no aarch64 compile DB on x86 runners | measure on the ARM build leg (cross `-target aarch64`) |
 | … excludes `core/src/mcp/`, `core/test/test_mcp*`, `core/test/fuzz/`, `core/src/compat/win32/`, `core/tools/vmaf_vpl.c` | needs `-Denable_mcp=true` / fuzz / libva / MinGW compile DBs | add those TUs to the cpu-lane build in CI |

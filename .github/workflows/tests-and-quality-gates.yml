@@ -40,7 +40,9 @@ jobs:
   # truth for VMAF correctness. They MUST pass on every PR. No skips, no excuses.
   netflix-golden:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: "Netflix CPU Golden Tests (D24)"
+    # D24
+    # required-aggregator
+    name: Netflix CPU Golden
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -166,7 +168,7 @@ jobs:
   # Requires GPU hardware + local YUV fixtures not present on GitHub-hosted
   # runners. Disabled until a self-hosted GPU runner is available.
   cross-backend:
-    name: "Cross-Backend ULP Diff (CPU Sanity)"
+    name: Cross-Backend ULP Diff
     if: false
     runs-on: ubuntu-latest
     needs: netflix-golden
@@ -194,9 +196,12 @@ jobs:
   # vulkan-vif-arc-nightly jobs deleted (Vulkan backend removed).
 
   # ===== Sanitizer build =====
+  # required-aggregator: Sanitizers (address)
+  # required-aggregator: Sanitizers (thread)
+  # required-aggregator: Sanitizers (undefined)
   sanitizers:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: "Sanitizers — ASan + UBSan + MSan"
+    name: "Sanitizers (${{ matrix.sanitizer }})"
     # ADR-0359 — ARC self-hosted runner pilot (same pattern as cppcheck in
     # lint-and-format.yml). Variable `ARC_RUNNERS_ENABLED=true` routes this
     # job to the in-cluster `arc-runners` scale set; default `false` keeps
@@ -371,7 +376,8 @@ jobs:
   # ubuntu runner doesn't have onnxruntime available via pkg-config.
   dnn:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: "Tiny AI (DNN Suite + ai/ Pytests)"
+    # required-aggregator
+    name: Tiny AI
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -492,7 +498,7 @@ jobs:
   #   /tmp/mcp-venv/bin/pytest tests/ -v
   mcp-smoke:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: "MCP Smoke (Embedded C + Python Server)"
+    name: MCP Smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
@@ -573,7 +579,7 @@ jobs:
   # (core/src/dnn/, opt.c, read_json_model.c).
   coverage:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: "Coverage Gate (Ramping to 70% / 85% Critical)"
+    name: Coverage Gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -819,7 +825,7 @@ jobs:
   # CPU coverage job above. Will be promoted to required once the runner
   # has been stable for two weeks.
   coverage-gpu:
-    name: "Coverage Gate — GPU Backends (Advisory)"
+    name: Coverage GPU (advisory)
     runs-on: [self-hosted, linux, gpu-full]
     # ADR-0331: also gate on draft PR status. Self-hosted runners are
     # scarce — drafts must not contend for them.
@@ -927,7 +933,8 @@ jobs:
   # so the required gate degrades gracefully when the Arc runner is
   # offline.
   sycl-float-ssim-parity:
-    name: "SYCL float_ssim Parity (Arc DG2-G10)"
+    # required-aggregator
+    name: SYCL float_ssim Parity
     runs-on: [self-hosted, linux, gpu-full]
     if: ${{ vars.GPU_COVERAGE_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     timeout-minutes: 15
@@ -957,7 +964,9 @@ jobs:
   # Every fork-added (non-trivial) function must contain ≥1 assert().
   assertion-density:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: "Assertion Density (Power of 10 §5)"
+    # Power of 10 §5
+    # required-aggregator
+    name: Assertion Density
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -24,7 +24,9 @@ concurrency:
 jobs:
   deep-dive-checklist:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: Deep-Dive Deliverables Checklist (ADR-0108)
+    # ADR-0108
+    # required-aggregator
+    name: Deliverables Checklist
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -125,7 +127,9 @@ jobs:
 
   doc-substance-check:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: Doc-Substance Gate (ADR-0100 / 0167)
+    # ADR-0100 / ADR-0167
+    # required-aggregator
+    name: Doc-Substance Gate
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     # ADR-0167 (2026-04-25): promoted from advisory to blocking and
@@ -292,7 +296,9 @@ jobs:
 
   state-md-touch-check:
     if: github.event.pull_request.draft == false || github.event_name != 'pull_request'
-    name: docs/state.md Touch Gate (ADR-0165)
+    # ADR-0165
+    # required-aggregator
+    name: docs/state.md Gate
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     # ADR-0334 (2026-05-08): promotes CLAUDE.md §12 rule 13 (the
@@ -338,7 +344,9 @@ jobs:
 
   ffmpeg-patches-surface-check:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: FFmpeg-Patches Surface Sync (CLAUDE.md §12 r14, ADR-0356)
+    # CLAUDE.md §12 r14, ADR-0356
+    # required-aggregator
+    name: FFmpeg-Patches Surface Sync
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     # Blocking gate: every PR that changes a libvmaf public-surface
@@ -380,7 +388,8 @@ jobs:
 
   adr-backfill-check:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: ADR-Backfill Advisory (ADR-0106)
+    # ADR-0106
+    name: ADR-Backfill Advisory
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     continue-on-error: true
@@ -428,7 +437,9 @@ jobs:
 
   adr-collision-check:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: ADR Number Collision Guard (ADR-0386 / ADR-0628)
+    # ADR-0386 / ADR-0628
+    # required-aggregator
+    name: ADR Collision Guard
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     # Blocking gate: every ADR file added in this PR must have a 4-digit prefix
@@ -626,7 +637,9 @@ jobs:
 
   release-script-contract:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: Release Script Contract (ADR-1128)
+    # ADR-1128
+    # required-aggregator
+    name: Release Script Contract
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

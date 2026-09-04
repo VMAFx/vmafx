@@ -275,7 +275,7 @@ Alpha pre-releases (`X.Y.Za<N>`) are never an acceptable pin.
   load-bearing: the baselines were measured with exactly these rules, so
   changing either requires re-measuring every lane in the same PR (the `cpu`
   baseline is CI's own `tidy-ratchet-cpu` artifact, never a workstation run).
-- The `Clang-Tidy Ratchet (Whole Tree)` job starts unconditionally and gates its
+- The `Tidy Ratchet` job starts unconditionally and gates its
   work on the ADR-1140 planner's `c_core` selector; `.clang-tidy`, this
   directory (ratchet + baselines) and the workflow are CI-authority inputs, so
   editing any of them forces `mode=full` and the lane runs. Never add a
@@ -294,9 +294,9 @@ Alpha pre-releases (`X.Y.Za<N>`) are never an acceptable pin.
   skipping the whole job makes the check *absent*, which the aggregator's
   absent-means-pass rule (ADR-0313) cannot tell apart from a path-filter skip,
   and that is exactly the ambiguity the `mustReport` list exists to close.
-- Only the four authoring-discipline gates may consult it: Deep-Dive
-  Deliverables, Doc-Substance, `docs/state.md` Touch, FFmpeg-Patches Surface
-  Sync. `Release Script Contract` and `ADR Number Collision Guard` stay armed on
+- Only the four authoring-discipline gates may consult it: Deliverables
+  Checklist, Doc-Substance Gate, `docs/state.md` Gate, FFmpeg-Patches Surface
+  Sync. `Release Script Contract` and `ADR Collision Guard` stay armed on
   release PRs — the former is the gate that proves the cut ran, and it also runs
   `tests/test-release-pr-exempt.sh`, so the exemption's own test can never be
   skipped by the exemption.
@@ -324,3 +324,11 @@ Two invariants the test suite pins deliberately — do not "simplify" them away:
 Derive additions from what Renovate actually edits (`gh pr list --author
 app/renovate` and diff the file lists), not from what looks like a manifest —
 see [`docs/research/1152-dependency-classifier-surface-audit.md`](../../docs/research/1152-dependency-classifier-surface-audit.md).
+
+## check-aggregator-names.sh invariants
+
+- Gates 1:1 parity between the 34 required status checks declared in
+  `.github/workflows/required-aggregator.yml` (`const required = [...]`) and
+  the `# required-aggregator` markers on `name:` fields across workflow files.
+- Enforced locally via `make lint-sh` and pre-commit hook `check-aggregator-names`.
+- Display names must stay concise ($\le 30$ chars) per `docs/development/ci-job-names.md`.

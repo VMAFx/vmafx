@@ -31,7 +31,7 @@ concurrency:
 
 jobs:
   validate-release:
-    name: Validate ordinary tag and coordinated versions
+    name: Validate release versions
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -118,7 +118,7 @@ jobs:
           fi
 
   build-artifacts:
-    name: Build Linux release artifacts (libvmaf.so chain, vmaf CLI, models)
+    name: Build Linux artifacts
     needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -214,7 +214,7 @@ jobs:
           if-no-files-found: error
 
   verify-native-artifacts:
-    name: Verify downloaded Linux release runtime
+    name: Verify Linux runtime
     needs: [validate-release, build-artifacts]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -239,7 +239,7 @@ jobs:
             artifacts "$VMAFX_VERSION"
 
   sbom:
-    name: Generate libvmaf + vmaf-mcp SBOMs (SPDX + CycloneDX)
+    name: Generate SBOMs
     needs: [validate-release, build-artifacts, verify-native-artifacts, mcp-build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -404,7 +404,7 @@ jobs:
           if-no-files-found: error
 
   sign:
-    name: Sigstore keyless sign (release artifacts + SBOMs)
+    name: Sigstore sign artifacts
     needs: [build-artifacts, sbom]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -443,7 +443,7 @@ jobs:
           if-no-files-found: error
 
   slsa-provenance:
-    name: SLSA L3 provenance — libvmaf artifacts
+    name: SLSA libvmaf
     needs: [validate-release, build-artifacts, verify-native-artifacts]
     permissions:
       id-token: write
@@ -514,7 +514,7 @@ jobs:
           if-no-files-found: error
 
   mcp-sign:
-    name: Sigstore keyless sign — vmaf-mcp
+    name: Sigstore sign vmaf-mcp
     needs: mcp-build
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -547,7 +547,7 @@ jobs:
           if-no-files-found: error
 
   mcp-slsa-provenance:
-    name: SLSA L3 provenance — vmaf-mcp distributions
+    name: SLSA vmaf-mcp
     needs: [validate-release, mcp-build]
     permissions:
       id-token: write
@@ -562,7 +562,7 @@ jobs:
       upload-assets: false
 
   mcp-publish-pypi:
-    name: Publish vmaf-mcp to PyPI (Trusted Publishing)
+    name: Publish vmaf-mcp PyPI
     needs: [validate-release, mcp-build, mcp-sign, mcp-slsa-provenance, sbom]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -722,7 +722,7 @@ jobs:
           done
 
   attach-to-release:
-    name: Attach SBOM + signatures to GitHub Release
+    name: Attach release assets
     needs:
       - validate-release
       - build-artifacts

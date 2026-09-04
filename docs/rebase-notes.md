@@ -13,6 +13,10 @@ no rebase impact: fork-local CUDA and documentation files.
   `T-SYCL-INIT-LEAKS-EXC-2026-06-19`, `T-SPEED-GPU-REGISTRY-ORPHAN-2026-06-19`, and
   `T-CUDA-INIT-SUBMIT-LEAKS-2026-06-19`.
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
+## ci/shorten-job-names — shorten CI job display names and gate aggregator list (2026-09-04)
+
+no rebase impact: changes GitHub Actions workflow job display names (`.github/workflows/*.yml`), branch-protection aggregator list (`required-aggregator.yml`), adds verification gate (`scripts/ci/check-aggregator-names.sh`), and updates fork-added documentation (`docs/development/ci-job-names.md`, `docs/development/ci.md`, `docs/development/release.md`, `AGENTS.md`, `CLAUDE.md`, `.github/AGENTS.md`, `scripts/ci/AGENTS.md`). Upstream Netflix/vmaf uses a completely different CI setup; preserve fork-local workflow files on any sync.
+
 ## fix/sycl-adm-shift-reachability — verify non-negative shift reachability in integer_adm_sycl.cpp (2026-09-04)
 
 - `core/src/feature/sycl/integer_adm_sycl.cpp`: added invariant documentation comments at both

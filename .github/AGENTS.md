@@ -137,6 +137,17 @@ check runs older than its current workflow run when selecting sibling
 outcomes; otherwise stale draft-era skipped check runs on the same commit can
 mask real queued or failed ready-for-review checks.
 
+### CI job display names and aggregator parity
+
+All workflow job and matrix display names (`name:`) target $\le 30$ characters
+and omit trailing policy citations and redundant parentheticals (see
+[`docs/development/ci-job-names.md`](../docs/development/ci-job-names.md)).
+Every required check declared in `required-aggregator.yml` (`const required = [...]`)
+is tagged with `# required-aggregator` on its defining `name:` line in its workflow.
+The script `scripts/ci/check-aggregator-names.sh` gates 1:1 parity between
+`required-aggregator.yml` and the workflow files; any rename or addition must
+update both atomically.
+
 ### Advisory surface-path lists
 
 Both advisory jobs grep the diff for specific path prefixes

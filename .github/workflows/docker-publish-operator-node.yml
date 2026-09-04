@@ -49,7 +49,7 @@ env:
 
 jobs:
   validate-release:
-    name: Validate published ordinary tag
+    name: Validate tag
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -114,7 +114,7 @@ jobs:
   # cross-compilation; no QEMU emulation needed.
   # -------------------------------------------------------------------------
   build-operator:
-    name: Build + push vmafx-operator (amd64 + arm64)
+    name: Publish vmafx-operator
     needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -216,7 +216,7 @@ jobs:
   # CGO + libvmaf stages execute natively for each target under QEMU.
   # -------------------------------------------------------------------------
   build-server:
-    name: Build + push vmafx-server (amd64 + arm64)
+    name: Publish vmafx-server
     needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -322,7 +322,7 @@ jobs:
   # CGO + ffmpeg stages require QEMU for arm64 emulation.
   # -------------------------------------------------------------------------
   build-node:
-    name: Build + push vmafx-node CPU (amd64 + arm64)
+    name: Publish vmafx-node CPU
     needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -428,7 +428,7 @@ jobs:
   # Smoke-test: verify signatures, then pull and exercise all three images
   # -------------------------------------------------------------------------
   smoke-test:
-    name: Smoke-test operator + server + node images
+    name: Smoke-test images
     needs:
       - build-operator
       - build-server
@@ -551,7 +551,7 @@ jobs:
   # Summary gate — CI shows a single green/red status
   # -------------------------------------------------------------------------
   all-images:
-    name: All Go service images published
+    name: Images published
     if: always()
     needs:
       - build-operator

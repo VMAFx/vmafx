@@ -43,21 +43,21 @@ jobs:
           - os: ubuntu-latest
             CC: ccache gcc-14
             CXX: ccache g++-14
-            name: Build — Ubuntu gcc (CPU)
+            name: Ubuntu gcc
           - os: ubuntu-latest
             CC: ccache clang-22
             CXX: ccache clang++-22
-            name: Build — Ubuntu clang (CPU)
+            name: Ubuntu clang
           - os: macos-latest
             CC: ccache clang
             CXX: ccache clang++
             meson_extra: -Denable_metal=disabled
-            name: Build — macOS clang (CPU)
+            name: macOS clang
             experimental: true
           - os: ubuntu-24.04-arm
             CC: ccache clang-22
             CXX: ccache clang++-22
-            name: Build — Ubuntu ARM clang (CPU)
+            name: Ubuntu ARM clang
 
           # --- i686 (32-bit x86) build — reproduces Netflix#1481 ---
           # Verifies libvmaf still compiles on 32-bit x86 with
@@ -73,7 +73,7 @@ jobs:
             CXX: ccache g++-14
             i686: true
             meson_extra: --cross-file=build-aux/i686-linux-gnu.ini -Denable_asm=false
-            name: Build — Ubuntu i686 gcc (CPU, no-asm)
+            name: Ubuntu i686 gcc
 
           # --- DNN-enabled builds (ADR-0120) ---
           # Build with -Denable_dnn=enabled across compiler/OS combinations
@@ -82,24 +82,26 @@ jobs:
           # (Linux: MS tarball pinned to 1.22.0; macOS: Homebrew) and runs
           # the meson dnn suite. macOS leg stays `experimental: true` so a
           # Homebrew ORT bump that breaks ABI doesn't block merge.
+          # required-aggregator
           - os: ubuntu-latest
             CC: ccache gcc-14
             CXX: ccache g++-14
             dnn: true
             meson_extra: -Denable_dnn=enabled
-            name: Build — Ubuntu gcc (CPU) + DNN
+            name: Ubuntu gcc+DNN
+          # required-aggregator
           - os: ubuntu-latest
             CC: ccache clang-22
             CXX: ccache clang++-22
             dnn: true
             meson_extra: -Denable_dnn=enabled
-            name: Build — Ubuntu clang (CPU) + DNN
+            name: Ubuntu clang+DNN
           - os: macos-latest
             CC: ccache clang
             CXX: ccache clang++
             dnn: true
             meson_extra: -Denable_dnn=enabled -Denable_metal=disabled
-            name: Build — macOS clang (CPU) + DNN
+            name: macOS clang+DNN
             experimental: true
 
           # --- Vulkan backend removed (ADR-0726) ---
@@ -119,12 +121,13 @@ jobs:
           # device-resident smoke assertions, mirroring the
           # Vulkan-on-lavapipe-less-CI pattern from ADR-0175). See
           # ADR-0212 §"Status update 2026-05-09: CI lane enabled".
+          # required-aggregator
           - os: ubuntu-latest
             CC: ccache gcc-14
             CXX: ccache g++-14
             hip: true
             meson_extra: -Denable_hip=true
-            name: Build — Ubuntu HIP (T7-10b runtime)
+            name: Ubuntu HIP
 
           # --- Metal T8-1 scaffold (ADR-0361) ---
           # Stub-only build — every Metal entry point returns -ENOSYS
@@ -143,14 +146,14 @@ jobs:
             CC: ccache clang
             CXX: ccache clang++
             meson_extra: -Denable_metal=enabled
-            name: Build — macOS Metal (T8-1 scaffold)
+            name: macOS Metal
 
           # --- Static library builds ---
           - os: ubuntu-latest
             CC: ccache gcc-14
             CXX: ccache g++-14
             meson_extra: --default-library static
-            name: Build — Ubuntu gcc Static (CPU)
+            name: Ubuntu gcc static
           # T7-CI-DEDUP — `Build — Ubuntu SYCL Static` removed. The
           # dynamic-link `Build — Ubuntu SYCL` lane below already
           # proves the icx / icpx + meson contract for the SYCL
@@ -164,7 +167,7 @@ jobs:
             CXX: ccache g++-14
             cuda: true
             meson_extra: --default-library static -Denable_cuda=true -Denable_nvcc=true
-            name: Build — Ubuntu CUDA Static
+            name: Ubuntu CUDA static
 
           # --- SYCL build (icpx for both host + SYCL sources so the device
           #     image is registered at the .so link step; see post-T7-8
@@ -174,7 +177,7 @@ jobs:
             CXX: icpx
             sycl: true
             meson_extra: -Denable_sycl=true -Db_lto=false
-            name: Build — Ubuntu SYCL
+            name: Ubuntu SYCL
 
           # --- CUDA build (gcc + nvcc) ---
           - os: ubuntu-latest
@@ -182,7 +185,7 @@ jobs:
             CXX: ccache g++-14
             cuda: true
             meson_extra: -Denable_cuda=true -Denable_nvcc=true
-            name: Build — Ubuntu CUDA
+            name: Ubuntu CUDA
 
           # --- SYCL + CUDA combined (icpx host so SYCL link works; nvcc
           #     handles the CUDA TUs separately via -Denable_nvcc=true) ---
@@ -192,7 +195,7 @@ jobs:
             sycl: true
             cuda: true
             meson_extra: -Denable_sycl=true -Denable_cuda=true -Denable_nvcc=true -Db_lto=false
-            name: Build — Ubuntu SYCL + CUDA
+            name: Ubuntu SYCL+CUDA
 
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -704,7 +707,7 @@ jobs:
   # workflow lands (see ADR-0116 §Consequences).
   windows:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: Build — Windows MinGW64 (CPU)
+    name: ${{ matrix.name }}
     runs-on: windows-2025
     timeout-minutes: 45
     strategy:
@@ -714,7 +717,9 @@ jobs:
           # - msystem: MINGW32
           #   MINGW_PACKAGE_PREFIX: mingw-w64-i686
           #   CFLAGS: -msse2 -mfpmath=sse -mstackrealign
-          - msystem: MINGW64
+          # required-aggregator
+          - name: Windows MinGW64
+            msystem: MINGW64
             MINGW_PACKAGE_PREFIX: mingw-w64-x86_64
     env:
       CC: ccache gcc
@@ -833,12 +838,14 @@ jobs:
           # static` at line 387. Also lets the vmaf CLI pick the static
           # archive via core/tools/meson.build:26 without the
           # get_shared_lib() branch.
+          # required-aggregator
           - backend: cuda
             meson_extra: --default-library=static -Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false
-            name: Build — Windows MSVC + CUDA (build only)
+            name: Windows MSVC+CUDA
+          # required-aggregator
           - backend: sycl
             meson_extra: --default-library=static -Denable_cuda=false -Denable_sycl=true
-            name: Build — Windows MSVC + oneAPI SYCL (build only)
+            name: Windows MSVC+SYCL
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:

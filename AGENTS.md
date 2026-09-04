@@ -226,7 +226,7 @@ the root release aligns the release-owned Python packages and Helm
     tests, tools — and the whole tree is bounded by the clang-tidy ratchet
     (`scripts/ci/tidy-ratchet.py` vs
     `scripts/ci/tidy-baseline-<lane>.json`, required CI context
-    `Clang-Tidy Ratchet (Whole Tree)`): no file may exceed its baseline
+    `Tidy Ratchet`): no file may exceed its baseline
     count, a cleaned file must tighten the baseline in the same PR
     (`make tidy-ratchet-write`), and baselines are never hand-edited.
     "Touches" = any hunk in the
