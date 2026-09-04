@@ -61,6 +61,10 @@ no rebase impact: changes GitHub Actions workflow job display names (`.github/wo
   `include/vcs_version.h` before analysis. Restoring a full `meson compile` there re-creates the
   scoping bug where any TU's compiler warning fails the lane regardless of the PR's diff.
 
+## docs/state-sweep-four-closed-rows — docs/state.md bookkeeping sweep (2026-09-04)
+
+no rebase impact: docs-only
+
 ## fix/hip-motion-v2-parity-test-wiring — register test_hip_motion_v2_parity in meson.build (2026-09-04)
 
 no rebase impact: fork-only test wiring in `core/test/meson.build` and documentation updates in `core/src/feature/hip/AGENTS.md`, `docs/adr/1154-hip-backend-gaps.md`, and `docs/state.md`. Upstream Netflix/vmaf has no HIP backend or HIP parity test suite.
