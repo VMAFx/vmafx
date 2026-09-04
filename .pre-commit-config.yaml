@@ -207,6 +207,12 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: check-no-tracked-venv
+        name: No virtualenv path is tracked (dir or symlink)
+        entry: scripts/ci/check-no-tracked-venv.sh
+        language: script
+        pass_filenames: false
+        always_run: true
       - id: check-copyright
         name: ADR-0105 copyright header present (C/C++/CUDA)
         entry: scripts/ci/check-copyright.sh

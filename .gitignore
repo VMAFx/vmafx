@@ -13,7 +13,13 @@ target/
 *.py[cod]
 .tox/
 .*version
+# Virtual environments. No trailing slash on the second pattern: `.venv*/`
+# matches only DIRECTORIES, so a symlink named `.venv` sailed past it and was
+# committed by #1231. That symlink pointed at the maintainer's own absolute
+# venv path, so every fresh checkout materialised a self-referential loop and
+# `git pull` replaced anyone's real (ignored, hence disposable) venv with it.
 .venv*/
+.venv*
 __pycache__/
 build/
 dist/
