@@ -414,7 +414,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         s->enc_width = (int)w;
         s->enc_height = (int)h;
     }
-    if (s->enc_width < CAMBI_MIN_WIDTH_HEIGHT && s->enc_height < CAMBI_MIN_WIDTH_HEIGHT) {
+    if (!cambi_validate_dimensions(s->enc_width, s->enc_height)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "cambi_cuda: encoded resolution %dx%d below minimum %d×%d.\n", s->enc_width,
                  s->enc_height, CAMBI_MIN_WIDTH_HEIGHT, CAMBI_MIN_WIDTH_HEIGHT);

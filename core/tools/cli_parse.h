@@ -50,6 +50,7 @@ typedef struct {
     } feature_overload[CLI_SETTINGS_STATIC_ARRAY_LEN];
     unsigned overload_cnt;
     void *buf;
+    bool is_default;
 } CLIModelConfig;
 
 typedef struct {

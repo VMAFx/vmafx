@@ -91,12 +91,33 @@ is one line, and the gate names every mirror that must follow.
    carrying a `vmaf-model-pin:` marker), and
    `VmafQualityRunner.DEFAULT_MODEL_FILEPATH` in the `compat/python-vmaf`
    harness, whose purpose is reproducing Netflix's published numbers.
+6. **Inputs the default model cannot score fail loudly; nothing falls back.**
+   `vmaf_v1.0.16_3d0h` requires `cambi` (at least one dimension >= 216) and
+   `speed_chroma` (chroma planes >= 80x80 after the SpEED downsampling
+   chain). When the CLI auto-loads the default model on an input below those
+   limits it now refuses with an error that names the model, the feature and
+   the constraint - `model 'vmaf_v1.0.16_3d0h' requires feature 'cambi', which
+   needs width or height >= 216; got 160x90` - and exits non-zero. The message
+   is emitted regardless of `--quiet`: it is a fatal configuration error, not a
+   notice. The thresholds come from `core/src/feature/feature_dimensions.h`,
+   which reads them from `cambi_internal.h` and `speed_internal.h`, so the CLI
+   check and the extractors can never disagree. A silent fallback to
+   `vmaf_v0.6.1` was considered and rejected: it would hardcode a second default
+   model in direct contradiction of [ADR-1168](1168-default-model-single-source.md),
+   it would make scores incomparable across a mixed-resolution corpus, and a
+   `--quiet` run - the common case in automation - would have received no
+   warning at all.
 
 ## Consequences
 
 - **Positive**: the fork's model generation is settled before 1.0.0, so the
   tiny-AI retraining, `vmaf-tune` recalibration and benchmark rebaselining
   happen once against the shipped default.
+- **Behaviour change**: a clip too small for the default model (below 216 on
+  both axes, or with chroma planes under 80x80) no longer scores at all unless
+  `--model` names a model that fits. Under `vmaf_v0.6.1` such clips scored
+  silently. The failure is deliberate and loud; pass `--model version=vmaf_v0.6.1`
+  to keep the old behaviour for that clip.
 - **Positive**: users get the newer, more accurate model by default, and
   10-bit-aware banding (`cambi`) and chroma (`speed_chroma`) features are in the
   default score.

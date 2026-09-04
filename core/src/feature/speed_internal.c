@@ -76,7 +76,7 @@ int speed_internal_init_dimensions(SpeedInternalDimensions *dim, int w, int h, d
     dim->submatrix_height =
         dim->truncated_height >= dim->block_size ? dim->truncated_height - dim->block_size + 1 : 0;
 
-    if (dim->truncated_height == 0 || dim->truncated_width == 0) {
+    if (!speed_validate_dimensions((unsigned)w, (unsigned)h, prescale)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SpEED: image too small, operating width or height is 0\n");
         return -EINVAL;
     }

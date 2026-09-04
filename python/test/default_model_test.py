@@ -27,6 +27,7 @@ import unittest
 from test.testutil import set_default_576_324_videos_for_testing
 
 from vmaf import ExternalProgram
+from vmaf.config import VmafConfig
 
 #: Must equal ``VMAF_DEFAULT_MODEL_VERSION`` in ``core/include/libvmaf/model.h``.
 #: ``scripts/ci/check-default-model-single-source.sh`` does not police this file
@@ -119,6 +120,98 @@ class DefaultBuiltInModelTest(unittest.TestCase):
             any(V0_ONLY_FEATURE in k for k in keys),
             f"vmaf_v0.6.1 no longer emits {V0_ONLY_FEATURE!r}: {sorted(keys)}",
         )
+
+    def test_small_resolution_fails_loudly_even_when_quiet(self):
+        # vmaf_v1.0.16_3d0h needs cambi (width or height >= 216) and
+        # speed_chroma; at 160x90 neither can run. The CLI must refuse with an
+        # error that names the model, the feature and the constraint - and it
+        # must do so even under --quiet, because a silent wrong-model score is
+        # exactly the failure this test exists to prevent. A silent fallback to
+        # vmaf_v0.6.1 was rejected: it would hardcode a second default
+        # (contradicting ADR-1168) and make scores incomparable across a
+        # mixed-resolution corpus.
+        ref_path = VmafConfig.test_resource_path(
+            "yuv",
+            "ref_test_0_1_src01_hrc00_576x324_576x324_vs_src01_hrc01_576x324_576x324_q_160x90.yuv",
+        )
+        dis_path = VmafConfig.test_resource_path(
+            "yuv",
+            "dis_test_0_1_src01_hrc00_576x324_576x324_vs_src01_hrc01_576x324_576x324_q_160x90.yuv",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "out.xml")
+            cmd = [
+                ExternalProgram.vmafexec,
+                "-r",
+                ref_path,
+                "-d",
+                dis_path,
+                "-w",
+                "160",
+                "-h",
+                "90",
+                "-p",
+                "420",
+                "-b",
+                "8",
+                "-o",
+                out,
+                "--quiet",
+            ]
+            proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            self.assertNotEqual(
+                proc.returncode,
+                0,
+                "sub-216 input with the default model must fail, not score silently",
+            )
+            self.assertIn("vmaf_v1.0.16_3d0h", proc.stderr, proc.stderr)
+            self.assertIn("cambi", proc.stderr, proc.stderr)
+            self.assertIn("216", proc.stderr, proc.stderr)
+            self.assertIn("--model", proc.stderr, proc.stderr)
+            self.assertFalse(
+                os.path.exists(out) and os.path.getsize(out) > 0,
+                "no output file may be written when the model cannot run",
+            )
+
+    def test_small_resolution_scores_with_an_explicit_model_that_fits(self):
+        # The escape hatch the error message names: an explicit --model that
+        # has no sub-SD constraint runs at 160x90 exactly as before.
+        ref_path = VmafConfig.test_resource_path(
+            "yuv",
+            "ref_test_0_1_src01_hrc00_576x324_576x324_vs_src01_hrc01_576x324_576x324_q_160x90.yuv",
+        )
+        dis_path = VmafConfig.test_resource_path(
+            "yuv",
+            "dis_test_0_1_src01_hrc00_576x324_576x324_vs_src01_hrc01_576x324_576x324_q_160x90.yuv",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "out.xml")
+            cmd = [
+                ExternalProgram.vmafexec,
+                "-r",
+                ref_path,
+                "-d",
+                dis_path,
+                "-w",
+                "160",
+                "-h",
+                "90",
+                "-p",
+                "420",
+                "-b",
+                "8",
+                "-o",
+                out,
+                "--model",
+                "version=vmaf_v0.6.1",
+            ]
+            subprocess.run(cmd, capture_output=True, text=True, check=True)
+            with open(out, encoding="utf-8") as fh:
+                keys = set(_METRIC_RE.findall(fh.read()))
+            self.assertTrue(
+                any(V0_ONLY_FEATURE in k for k in keys),
+                f"explicit v0.6.1 should score at 160x90; got keys: {sorted(keys)}",
+            )
 
 
 class NegRoutingTest(unittest.TestCase):

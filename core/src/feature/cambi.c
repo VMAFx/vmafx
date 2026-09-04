@@ -605,10 +605,10 @@ static int validate_and_setup_dimensions(CambiState *s, unsigned bpc, unsigned w
         s->enc_height = h;
     }
 
-    if (s->enc_width < CAMBI_MIN_WIDTH_HEIGHT && s->enc_height < CAMBI_MIN_WIDTH_HEIGHT) {
+    if (!cambi_validate_dimensions(s->enc_width, s->enc_height)) {
         return -EINVAL;
     }
-    if (s->src_width < CAMBI_MIN_WIDTH_HEIGHT && s->src_height < CAMBI_MIN_WIDTH_HEIGHT) {
+    if (!cambi_validate_dimensions(s->src_width, s->src_height)) {
         return -EINVAL;
     }
     if (s->src_width > s->enc_width && s->src_height < s->enc_height) {

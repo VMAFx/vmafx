@@ -90,7 +90,7 @@ extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__
 
 /* --- Constants matching cambi.c / integer_cambi_cuda.c --- */
 #define CAMBI_METAL_NUM_SCALES        VMAF_CAMBI_NUM_SCALES
-#define CAMBI_METAL_MIN_WIDTH_HEIGHT  216
+#define CAMBI_METAL_MIN_WIDTH_HEIGHT  CAMBI_MIN_WIDTH_HEIGHT
 #define CAMBI_METAL_MASK_FILTER_SIZE  VMAF_CAMBI_MASK_FILTER_SIZE
 #define CAMBI_METAL_DEFAULT_MAX_VAL   1000.0
 #define CAMBI_METAL_DEFAULT_WINDOW_SIZE 65
@@ -435,8 +435,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
         s->enc_width  = (int)w;
         s->enc_height = (int)h;
     }
-    if (s->enc_width < CAMBI_METAL_MIN_WIDTH_HEIGHT &&
-        s->enc_height < CAMBI_METAL_MIN_WIDTH_HEIGHT) {
+    if (!cambi_validate_dimensions((unsigned)s->enc_width, (unsigned)s->enc_height)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "integer_cambi_metal: encoded resolution %dx%d below minimum %dx%d.\n",
                  s->enc_width, s->enc_height, CAMBI_METAL_MIN_WIDTH_HEIGHT,

@@ -47,6 +47,15 @@ extern "C" {
  * gate. */
 #define CAMBI_MIN_WIDTH_HEIGHT 216
 
+/**
+ * Validate that input dimensions satisfy CAMBI's minimum resolution constraint.
+ * CAMBI requires at least one dimension (width or height) >= CAMBI_MIN_WIDTH_HEIGHT (216).
+ */
+static inline bool cambi_validate_dimensions(unsigned w, unsigned h)
+{
+    return (w >= CAMBI_MIN_WIDTH_HEIGHT || h >= CAMBI_MIN_WIDTH_HEIGHT);
+}
+
 /* Window-size divisor: (CAMBI_4K_WIDTH + CAMBI_4K_HEIGHT) / 16
  * = (3840 + 2160) / 16 = 375.  Combined into a single constant so that
  * the three backends (cambi.c, integer_cambi_cuda.c, integer_cambi_hip.c)

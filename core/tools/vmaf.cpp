@@ -65,6 +65,8 @@
 #include "libvmaf/libvmaf_metal.h"
 #endif
 
+#include "feature/feature_dimensions.h"
+
 /* ADR-0543 (extends ADR-0498): dedicated exit code for an explicit-
  * backend init failure. Distinguishes a "you asked for SYCL but it
  * couldn't initialise" failure from generic encode / score errors
@@ -493,7 +495,8 @@ const char *model_label(const CLISettings *c, unsigned i)
  * initialised entry. Returns 0 on success.
  */
 [[nodiscard]] int load_model_collection_entry(VmafContext *vmaf, CLISettings *c, unsigned i,
-                                              ModelArrays &arrays)
+                                              ModelArrays &arrays, unsigned w, unsigned h,
+                                              enum VmafPixelFormat pix_fmt)
 {
     unsigned *slot = &arrays.collection_cnt();
     int err;
@@ -513,6 +516,20 @@ const char *model_label(const CLISettings *c, unsigned i)
     }
 
     arrays.collection_label()[*slot] = model_label(c, i);
+
+    VmafModelCollection *mc = arrays.collection()[*slot];
+    for (unsigned k = 0; k < mc->cnt; k++) {
+        char err_msg[512] = {0};
+        if (vmaf_validate_model_dimensions(mc->model[k], model_label(c, i), w, h, pix_fmt, err_msg,
+                                           sizeof(err_msg))) {
+            (void)fprintf(stderr, "error: %s.%s\n", err_msg,
+                          c->model_config[i].is_default ?
+                              " Pass --model explicitly to use a different model." :
+                              "");
+            (*slot)++;
+            return -EINVAL;
+        }
+    }
 
     for (unsigned j = 0; j < c->model_config[i].overload_cnt; j++) {
         err = vmaf_model_collection_feature_overload(
@@ -545,7 +562,8 @@ const char *model_label(const CLISettings *c, unsigned i)
  * semantics require.
  */
 [[nodiscard]] int load_one_model_entry(VmafContext *vmaf, CLISettings *c, unsigned i,
-                                       ModelArrays &arrays)
+                                       ModelArrays &arrays, unsigned w, unsigned h,
+                                       enum VmafPixelFormat pix_fmt)
 {
     int err;
 
@@ -561,7 +579,17 @@ const char *model_label(const CLISettings *c, unsigned i)
      * loading the same identifier as a model collection.
      */
     if (err) {
-        return load_model_collection_entry(vmaf, c, i, arrays);
+        return load_model_collection_entry(vmaf, c, i, arrays, w, h, pix_fmt);
+    }
+
+    char err_msg[512] = {0};
+    if (vmaf_validate_model_dimensions(arrays.model()[i], model_label(c, i), w, h, pix_fmt, err_msg,
+                                       sizeof(err_msg))) {
+        (void)fprintf(stderr, "error: %s.%s\n", err_msg,
+                      c->model_config[i].is_default ?
+                          " Pass --model explicitly to use a different model." :
+                          "");
+        return -EINVAL;
     }
 
     for (unsigned j = 0; j < c->model_config[i].overload_cnt; j++) {
@@ -1631,8 +1659,10 @@ int main(int argc, char *argv[])
         }
 
         for (unsigned i = 0; i < c.model_cnt; i++) {
-            if (load_one_model_entry(vmaf, &c, i, arrays)) {
-                ret = -1;
+            const int rc = load_one_model_entry(vmaf, &c, i, arrays, pic_cfg.pic_params.w,
+                                                pic_cfg.pic_params.h, pic_cfg.pic_params.pix_fmt);
+            if (rc) {
+                ret = -EINVAL;
                 goto cleanup;
             }
         }
@@ -1648,6 +1678,15 @@ int main(int argc, char *argv[])
          * write the structured JSON descriptor + exit with the dedicated
          * VMAF_EXIT_BACKEND_INIT_FAILED code. */
         for (unsigned i = 0; i < c.feature_cnt; i++) {
+            char feat_err[256] = {0};
+            if (vmaf_validate_feature_dimensions(c.feature_cfg[i].name, pic_cfg.pic_params.w,
+                                                 pic_cfg.pic_params.h, pic_cfg.pic_params.pix_fmt,
+                                                 feat_err, sizeof(feat_err))) {
+                (void)fprintf(stderr, "error: feature '%s' %s.\n", c.feature_cfg[i].name, feat_err);
+                ret = -EINVAL;
+                goto cleanup;
+            }
+
             const char *requested_be = nullptr;
             if (feature_backend_suffix(c.feature_cfg[i].name, &requested_be)) {
                 const bool sa =

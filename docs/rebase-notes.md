@@ -2,6 +2,25 @@
 # Rebase notes
 
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
+## feat/default-model-v1-0-16 — loud model-dimension validation in the CLI (2026-09-04)
+
+- `core/src/feature/feature_dimensions.h`: wholly fork-added. Single point that turns the
+  extractors' own minimum-dimension rules into a CLI-facing check. Do NOT copy thresholds into it;
+  it must keep reading `CAMBI_MIN_WIDTH_HEIGHT` from `cambi_internal.h` and
+  `SPEED_INTERNAL_MIN_DIMENSION` from `speed_internal.h`, so the check and the extractors cannot
+  drift apart.
+- `core/src/feature/cambi_internal.h`, `core/src/feature/speed_internal.h`: gained small
+  `*_validate_dimensions()` / `speed_chroma_dimensions()` helpers so the header above has something
+  to call. Upstream Netflix carries `cambi.c` but not these helpers; on a sync, keep the fork's
+  helpers and re-derive the threshold from whatever upstream's cambi asserts internally.
+- `core/tools/vmaf.cpp`: the validation runs in `load_model_entry` and
+  `load_model_collection_entry` after the load succeeds and before feature overloads. Upstream's
+  `vmaf.c` has neither function in this shape (ADR-0809 C++ conversion); resolve conflicts by
+  keeping the fork's version and re-applying the two `vmaf_validate_model_dimensions` calls. The
+  error is intentionally NOT gated on `--quiet`.
+- `python/test/ssimulacra2_test.py`: fork-added test; `test_ssimulacra2_small_160x90` must keep
+  passing `--model version=vmaf_v0.6.1` — it measures ssimulacra2 only and must not depend on
+  whether the current default model can run at 160x90.
 ## docs/readme-overhaul — README.md overhaul for clarity and accuracy (2026-09-03)
 
 no rebase impact: edits fork documentation (`README.md`, `CHANGELOG.md`, `changelog.d/changed/readme-overhaul.md`, `docs/state.md`, `docs/rebase-notes.md`) only. Upstream Netflix/vmaf has a completely separate README; if an upstream sync touches `README.md`, preserve the fork's overhauled version.
