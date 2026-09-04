@@ -1120,6 +1120,55 @@ while machine-readable provenance records `adapter = libsvtav1`,
 `runtime_variant = svt-av1-hdr`, and the exact `ffmpeg_bin` path. Tokens
 without a per-token binding use the global `--ffmpeg-bin`.
 
+### SVT-AV1-HDR tuning knobs
+
+[SVT-AV1-HDR](https://github.com/juliobbv-p/svt-av1-hdr) (fork of `psy-ex/svt-av1-psy`,
+upstream commit `00333404f455471aaa6ee2c927cac3c93efb76e3`, 2026-09-01) adds
+perceptual and HDR-tailored rate-distortion features to SVT-AV1 under a
+BSD-3-Clause-Clear license.
+
+In `vmaf-tune`, SVT-AV1-HDR operates through the `libsvtav1` codec adapter
+(`libsvtav1@svt-av1-hdr`). By architectural decision
+([ADR-0644](../adr/0644-vmaf-tune-codec-runtime-variants.md)), `'svtav1-hdr'`
+is **not** registered as an independent adapter in `known_codecs()`; instead, it
+inherits the canonical CRF `0..63` and preset `0..13` mappings from
+[ADR-0294](../adr/0294-vmaf-tune-codec-adapter-svtav1.md). Its specialized
+tuning parameters are passed through the `libsvtav1` adapter via FFmpeg's
+`-svtav1-params` knob:
+
+| Parameter | Values / Range | Default | Purpose & Recommended Usage |
+|---|---|---|---|
+| `variance-boost-curve` | `0..3` | `0` | Transfer curve for variance boost. `0`: default; `1`: alternative; `2`: still image; `3`: HDR PQ transfer curve (optimised for perceptual quantisation in high dynamic range). |
+| `enable-variance-boost` | `0..1` | `1` | Enable variance boost logic to reallocate bits toward visually complex or high-contrast macroblocks (`1` = enabled). |
+| `variance-boost-strength` | `1..4` | `2` | Variance boost strength. `1`: mild, `2`: gentle, `3`: medium, `4`: aggressive bit reallocation. |
+| `variance-octile` | `1..8` | `5` | 8x8 block variance selectivity octile threshold for boost triggering. |
+| `tune` | `0, 1, 2, 3, 5` | `0` | Tuning metric: `0` = Visual Quality (VQ), `1` = PSNR, `2` = SSIM, `3` = IQ+AVIF, `5` = Film Grain. Use `tune=0` for perceptual / VMAF sweeps. |
+| `cdef-scaling` | `1..30` | `15` | Constrained Directional Enhancement Filter strength scaling. Lower values (e.g. `10-12`) preserve fine high-frequency textures in HDR. |
+| `noise` | `0..200` | `0` | Generates a synthetic film grain table (`50` corresponds to `--film-grain 50`). |
+| `noise-chroma` | `-1..200` | `-1` | Chroma film grain synthesis strength. `-1`: auto (~60% of luma), `0`: disabled, `1..200`: explicit strength. |
+| `noise-chroma-from-luma` | `0..1` | `0` | Derive chroma noise synthesis patterns from the luma plane (`1` = enabled). |
+| `noise-size` | `-1..13` | `-1` | Film grain particle size (`-1` = auto selection based on resolution). |
+| `qp-scale-compress-strength` | `0.0..8.0` | `1.0` | Temporal layer QP scale compression factor. |
+| `ac-bias` | `0.0..8.0` | `1.0` | Psychovisual rate-distortion metric biasing high frequencies. |
+| `tx-bias` | `0..3` | `0` | Transform block size and type selection bias mode. |
+| `complex-hvs` | `0..1` | `0` | Enable high-complexity human visual system modeling for mode decision. |
+| `sharp-tx` | `0..1` | `0` | Sharp transform optimizations for crisp edge preservation. |
+| `hbd-mds` | `0..2` | `0` | High bit depth mode decisions: `0`: default; `1`: full 10-bit mode decision; `2`: hybrid 8/10-bit mode decision. |
+| `noise-adaptive-filtering` | `0..4` | `0` | Adaptive noise filtering disabling CDEF and loop restoration on detected noisy blocks. |
+
+#### Example: SVT-AV1-HDR compare sweep
+
+```shell
+vmaf-tune compare \
+    --src hdr_source.mkv --width 3840 --height 2160 --pix-fmt yuv420p10le \
+    --target-vmafs 94,96 \
+    --encoders libsvtav1,libsvtav1@svt-av1-hdr \
+    --ffmpeg-bin /opt/ffmpeg-main/bin/ffmpeg \
+    --encoder-ffmpeg-bin libsvtav1@svt-av1-hdr=/opt/ffmpeg-svtav1-hdr/bin/ffmpeg \
+    --json-sidecar \
+    --output hdr-comparison.html
+```
+
 ## Hardware encoders (NVENC)
 
 Phase A also wires the NVIDIA NVENC family for hardware-accelerated
@@ -1833,6 +1882,7 @@ from the ADR-0641 profile-report path (`--format both`) and list
 | `--ffmpeg-bin / --vmaf-bin` | `ffmpeg` / `vmaf` | Binary overrides. |
 | `--encoder-ffmpeg-bin ENCODER=PATH` | off | Bind one compare token to a specific FFmpeg binary. Use with `ADAPTER@VARIANT` labels such as `libsvtav1@svt-av1-hdr=/opt/ffmpeg-8.1.1-svtav1-hdr/bin/ffmpeg`; unbound tokens use `--ffmpeg-bin`. |
 | `--format` | `markdown` | One of `markdown`, `json`, `csv`, `html`, `both`. `html` and `both` render the profile-card report directly; `both` writes `.html` and `.md` next to `--output` and therefore requires `--output`. |
+| `--json-sidecar` | off | When emitting HTML or Markdown reports (`--format html`, `markdown`, or `both`), also write `<output>.json` containing `data.to_dict()` next to the rendered report. |
 | `--no-parallel` | off | Run codecs sequentially (default: thread pool, one per codec). |
 | `--max-workers N` | `len(encoders)` | Cap on the parallel thread pool. |
 | `--predicate-module MOD:FN` | off | Advanced hook that bypasses the bisect backend. |

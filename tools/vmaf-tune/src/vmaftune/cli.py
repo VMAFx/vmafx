@@ -1048,6 +1048,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="report destination (default: stdout)",
     )
+    compare.add_argument(
+        "--json-sidecar",
+        action="store_true",
+        help="when emitting html or markdown, also write <output>.json sidecar with data.to_dict()",
+    )
     compare.add_argument("--width", type=int, default=None, help="source width for real bisect")
     compare.add_argument("--height", type=int, default=None, help="source height for real bisect")
     compare.add_argument("--pix-fmt", default="yuv420p", help="source pixel format")
@@ -1440,6 +1445,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--ffmpeg-bin", default="", help="ffmpeg binary to record in encoder profile"
     )
     report.add_argument("--vmaf-bin", default="", help="vmaf binary to record in encoder profile")
+    report.add_argument(
+        "--json-sidecar",
+        action="store_true",
+        help="when emitting html or markdown, also write <output>.json sidecar with data.to_dict()",
+    )
 
     encode_profile = sub.add_parser(
         "encode-profile",
@@ -3655,6 +3665,8 @@ def _write_compare_profile_report(
     output = getattr(args, "output", None)
     fmt = str(args.format)
     if output is None:
+        if getattr(args, "json_sidecar", False):
+            raise ValueError("--json-sidecar requires --output PATH")
         if fmt == "html":
             rendered = render_html(data)
             sys.stdout.write(rendered)
@@ -3666,7 +3678,7 @@ def _write_compare_profile_report(
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
-    if fmt == "both":
+    if fmt == "both" or getattr(args, "json_sidecar", False):
         # Write the raw JSON artifact alongside HTML and MD so that
         # downstream tools can re-render or diff two reports without
         # re-running the encode pipeline.
@@ -5207,6 +5219,12 @@ def _run_report(args: argparse.Namespace) -> int:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
+    if getattr(args, "json_sidecar", False):
+        import json as _json
+
+        json_path = args.output.with_suffix(".json")
+        json_path.write_text(_json.dumps(data.to_dict(), indent=2) + "\n", encoding="utf-8")
+        outputs.append(json_path)
     if args.format in ("html", "both"):
         html_path = args.output if args.format == "html" else args.output.with_suffix(".html")
         html_path.write_text(render_html(data), encoding="utf-8")
