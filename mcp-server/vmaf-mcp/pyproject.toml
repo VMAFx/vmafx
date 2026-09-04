@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9.1.1", "pytest-asyncio>=1.4.0", "pytest-aiohttp>=1.1.1", "ruff>=0.16.5", "mypy>=2.3.1"]
+dev = ["pytest>=9.1.1", "pytest-asyncio>=1.4.0", "pytest-aiohttp>=1.1.1", "ruff>=0.16.6", "mypy>=2.3.1"]
 # Optional HTTP operator surface (--transport http). Kept separate so stdio
 # clients do not need aiohttp or Prometheus at runtime (ADR-0701).
 http = [
