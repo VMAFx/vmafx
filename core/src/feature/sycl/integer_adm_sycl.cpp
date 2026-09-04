@@ -702,7 +702,7 @@ launch_decouple_csf(sycl::queue &q, int scale, unsigned half_w, unsigned half_h,
                             // n is floor(log2(tmp)), so bit width is n+1
                             // clz = 31 - n for 32-bit
                             int const clz = 31 - n;
-                            int const ks = (17 - clz > 0) ? (17 - clz) : 1;
+                            int const ks = 17 - clz;
                             uint32_t const rounded = (tmp + (1u << (ks - 1))) >> ks;
                             kh_shift = ks;
                             div_val = div_lookup[32768 + rounded] * sign_oh;
@@ -1029,7 +1029,7 @@ static sycl::event launch_csf_den_cm_3band(
                                         v >>= 1;
                                     }
                                     int const clz = 31 - n;
-                                    int const ks = (17 - clz > 0) ? (17 - clz) : 1;
+                                    int const ks = 17 - clz;
                                     uint32_t const rounded = (tmp + (1u << (ks - 1))) >> ks;
                                     kh_shift = ks;
                                     div_val = div_lookup[32768 + rounded] * sign_oh;
