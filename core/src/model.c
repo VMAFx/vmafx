@@ -327,8 +327,10 @@ unsigned vmaf_model_feature_count(const VmafModel *model)
 
 const char *vmaf_model_feature_name(const VmafModel *model, unsigned index)
 {
-    if (!model || index >= model->n_features)
+    if (!model || index >= model->n_features) {
+        /* NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr). */
         return NULL;
+    }
     return model->feature[index].name;
 }
 
