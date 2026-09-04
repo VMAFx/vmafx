@@ -2208,6 +2208,30 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
         return -EINVAL;
     }
 
+    const AdmCsfFactors csf_f0 =
+        adm_csf_factors(0, s->adm_norm_view_dist, s->adm_ref_display_height, s->adm_csf_mode,
+                        s->adm_csf_scale, s->adm_csf_diag_scale);
+    const double pow2_21 = 2097152.0;
+    const double pow2_23 = 8388608.0;
+    if ((double)csf_f0.factor1 * pow2_21 >= 65536.0 ||
+        (double)csf_f0.factor2 * pow2_23 >= 65536.0) {
+        static const char *const csf_mode_names[] = {
+            "WATSON97",
+            "BARTEN",
+            "BARTEN_WATSON_BLEND",
+            "BARTEN_WATSON_BLEND_MAE",
+        };
+        const char *mode_name = (s->adm_csf_mode >= 0 && s->adm_csf_mode < 4) ?
+                                    csf_mode_names[s->adm_csf_mode] :
+                                    "UNKNOWN";
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "integer_adm: csf_mode %d (%s) scale-0 factor overflows 16-bit fixed-point budget "
+                 "(factor1*2^21=%.1f, factor2*2^23=%.1f >= 65536.0)\n",
+                 s->adm_csf_mode, mode_name, (double)csf_f0.factor1 * pow2_21,
+                 (double)csf_f0.factor2 * pow2_23);
+        return -EINVAL;
+    }
+
     AdmResult r;
     integer_compute_adm(s, ref_pic, dist_pic, &r);
 
