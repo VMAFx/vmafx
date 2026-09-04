@@ -9,12 +9,26 @@
 [![Rust (CI)](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml)
 [![Go (CI)](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml)
 
+<!-- Toolchain badges. LIVE: each reads its value from the tree (go.mod,
+     pyproject.toml, Cargo.toml, Dockerfile, dev/Containerfile) through
+     shields.io dynamic endpoints, so they cannot go stale. C and C++ are
+     static: the standard is a design decision set per compiler in
+     core/meson.build. -->
+[![Go](https://img.shields.io/github/go-mod/go-version/VMAFx/vmafx?logo=go&logoColor=white)](go.mod)
+[![Rust](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FVMAFx%2Fvmafx%2Fmaster%2FCargo.toml&query=%24.workspace.package.edition&label=Rust%20edition&color=CE422B&logo=rust&logoColor=white)](Cargo.toml)
+[![Python](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2FVMAFx%2Fvmafx%2Fmaster%2Fpyproject.toml&logo=python&logoColor=white)](pyproject.toml)
+[![C23](https://img.shields.io/badge/C-C23-00599C?logo=c&logoColor=white)](core/meson.build)
+[![C++23](https://img.shields.io/badge/C%2B%2B-C%2B%2B23-00599C?logo=cplusplus&logoColor=white)](core/meson.build)
+[![CUDA](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2FVMAFx%2Fvmafx%2Fmaster%2FDockerfile&search=nvidia%2Fcuda%3A%28%5Cd%2B%5C.%5Cd%2B%5C.%5Cd%2B%29&replace=%241&label=CUDA&color=76B900&logo=nvidia&logoColor=white)](Dockerfile)
+[![ROCm](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2FVMAFx%2Fvmafx%2Fmaster%2Fdev%2FContainerfile&search=ARG%20ROCM_VER%3D%28%5Cd%2B%5C.%5Cd%2B%28%5C.%5Cd%2B%29%3F%29&replace=%241&label=ROCm&color=ED1C24&logo=amd&logoColor=white)](dev/Containerfile)
+
 <!-- Hardware capability badges -->
 [![GPU: CUDA · SYCL · HIP · Metal](https://img.shields.io/badge/GPU-CUDA%20%C2%B7%20SYCL%20%C2%B7%20HIP%20%C2%B7%20Metal-76B900?logo=nvidia&logoColor=white)](docs/backends/)
 [![SIMD: AVX2 · AVX-512 · NEON · SVE2](https://img.shields.io/badge/SIMD-AVX2%20%C2%B7%20AVX--512%20%C2%B7%20NEON%20%C2%B7%20SVE2-orange?logo=intel&logoColor=white)](docs/backends/)
 
 <!-- Distribution / governance badges -->
 [![Container](https://img.shields.io/badge/Container-ghcr.io%2Fvmafx%2Fvmafx-2496ED?logo=docker&logoColor=white)](https://github.com/orgs/VMAFx/packages)
+[![Release](https://img.shields.io/github/v/release/VMAFx/vmafx?include_prereleases&sort=semver&logo=github)](https://github.com/VMAFx/vmafx/releases)
 [![License: BSD-2-Clause-Patent](https://img.shields.io/badge/License-BSD--2--Clause--Patent-blue.svg)](LICENSE)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196?logo=conventionalcommits)](https://www.conventionalcommits.org)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/VMAFx/vmafx/badge)](https://securityscorecards.dev/viewer/?uri=github.com/VMAFx/vmafx)
