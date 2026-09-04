@@ -441,6 +441,14 @@ the deviation:
   happy. The same pattern applies to `close_chroma_sycl` /
   `close_temporal_sycl` in `speed_chroma_sycl.cpp` and
   `speed_temporal_sycl.cpp`.
+- **`cambi_high_res_speedup` and fp64-free speed extractors (ADR-1179).**
+  The SYCL CAMBI extractor supports `cambi_high_res_speedup` (`hrs`),
+  ensuring feature dictionary key and numerical parity with CPU CAMBI
+  when running default model `vmaf_v1.0.16_3d0h`. Sizing of CAMBI histogram
+  buffers is bounded by `MAX(num_bins, v_band_size)`. `speed_chroma_sycl`
+  and `speed_temporal_sycl` use single-precision `float` accumulators and
+  work-group accessors exclusively, strictly adhering to ADR-0220 on
+  hardware lacking native double-precision support (Intel Arc A-series).
 
 See [metrics/features.md](../../metrics/features.md) for the
 per-extractor coverage matrix and [api/gpu.md](../../api/gpu.md#sycl)

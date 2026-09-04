@@ -75,6 +75,13 @@ no rebase impact: docs-only
 ## fix/hip-motion-v2-parity-test-wiring — register test_hip_motion_v2_parity in meson.build (2026-09-04)
 
 no rebase impact: fork-only test wiring in `core/test/meson.build` and documentation updates in `core/src/feature/hip/AGENTS.md`, `docs/adr/1154-hip-backend-gaps.md`, and `docs/state.md`. Upstream Netflix/vmaf has no HIP backend or HIP parity test suite.
+## fix/sycl-v1-model-crash — Intel Arc SYCL default model crashes and feature parity (2026-09-05)
+
+- `core/src/feature/cambi.c`, `core/src/feature/cambi_internal.h`: `vmaf_cambi_init_tvi_and_vlt()` exposed with extern "C" linkage so GPU and CPU cambi extractors share table initialization logic. Upstream sync should preserve this helper.
+- `core/src/feature/sycl/integer_cambi_sycl.cpp`: Added `cambi_high_res_speedup` (alias `hrs`) to `options_cambi_sycl` to maintain feature-name parity with CPU CAMBI under model `vmaf_v1.0.16_3d0h`. Sized histogram buffer to `MAX(num_bins, v_band_size)`.
+- `core/src/feature/sycl/speed_chroma_sycl.cpp`, `core/src/feature/sycl/speed_temporal_sycl.cpp`: Replaced `double` accumulators and workgroup local accessors with `float` to satisfy ADR-0220 on fp64-less Intel Arc devices.
+- `core/src/meson.build`: Passed `_x86_simd_strict_fp_extra` (`-fp-model=precise`) to `x86_avx2_static_lib` and `x86_avx512_static_lib` when compiling with `icx`.
+- `python/test/sycl_default_model_test.py`: Wholly fork-added regression test gating `--backend sycl` default model execution. No upstream rebase conflict.
 
 ## fix/vmaftune-state-bugs — libx264 two-pass CRF conflict fix (2026-09-03)
 

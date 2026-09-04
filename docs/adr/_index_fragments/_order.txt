@@ -907,3 +907,4 @@
 1166-upstream-issue-harvest
 1172-bound-lto-link-parallelism
 1171-release-please-credential-gate-warning
+1179-sycl-v1-model-crash-fix
