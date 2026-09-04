@@ -271,6 +271,200 @@ static char *test_psnr_extract_hbd_16bit(void)
     return run_extract_hbd_identical(16u);
 }
 
+static char *test_psnr_uncapped_8bit(void)
+{
+    char *fail = NULL;
+    VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
+    if (fail)
+        return fail;
+
+    const unsigned w = 576u;
+    const unsigned h = 324u;
+    const unsigned bpc = 8u;
+
+    VmafPicture ref;
+    VmafPicture dist_diff;
+    VmafPicture dist_ident;
+
+    int err = alloc_grey(&ref, VMAF_PIX_FMT_YUV420P, bpc, w, h, 128u);
+    mu_assert("alloc ref", err == 0);
+    err = alloc_grey(&dist_diff, VMAF_PIX_FMT_YUV420P, bpc, w, h, 128u);
+    mu_assert("alloc dist_diff", err == 0);
+    err = alloc_grey(&dist_ident, VMAF_PIX_FMT_YUV420P, bpc, w, h, 128u);
+    mu_assert("alloc dist_ident", err == 0);
+
+    /* Differ in one luma sample by +1 */
+    ((uint8_t *)dist_diff.data[0])[0] = 129u;
+
+    /* 1. Default (capped): differing pair -> 60.0 dB */
+    {
+        VmafFeatureExtractorContext *ctx = NULL;
+        err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+        mu_assert("ctx create default", err == 0);
+        err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, bpc, w, h);
+        mu_assert("ctx init default", err == 0);
+
+        VmafFeatureCollector *fc = NULL;
+        err = vmaf_feature_collector_init(&fc);
+        mu_assert("fc init", err == 0);
+        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist_diff, NULL, 0, fc);
+        mu_assert("extract default diff", err == 0);
+
+        double psnr_y = 0.0;
+        err = vmaf_feature_collector_get_score(fc, "psnr_y", &psnr_y, 0);
+        mu_assert("get score default diff", err == 0);
+        mu_assert("default psnr_y == 60.0", psnr_y == 60.0);
+
+        /* Identical frames in default mode -> 60.0 dB */
+        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist_ident, NULL, 1, fc);
+        mu_assert("extract default ident", err == 0);
+        err = vmaf_feature_collector_get_score(fc, "psnr_y", &psnr_y, 1);
+        mu_assert("get score default ident", err == 0);
+        mu_assert("default identical psnr_y == 60.0", psnr_y == 60.0);
+
+        (void)vmaf_feature_extractor_context_close(ctx);
+        (void)vmaf_feature_extractor_context_destroy(ctx);
+        vmaf_feature_collector_destroy(fc);
+    }
+
+    /* 2. Uncapped (uncapped=true): differing pair -> ~100.840479 dB, identical -> 60.0 dB */
+    {
+        VmafDictionary *opts = NULL;
+        err = vmaf_dictionary_set(&opts, "uncapped", "true", 0);
+        mu_assert("set uncapped opt", err == 0);
+
+        VmafFeatureExtractorContext *ctx = NULL;
+        err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
+        mu_assert("ctx create uncapped", err == 0);
+        err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, bpc, w, h);
+        mu_assert("ctx init uncapped", err == 0);
+
+        VmafFeatureCollector *fc = NULL;
+        err = vmaf_feature_collector_init(&fc);
+        mu_assert("fc init", err == 0);
+        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist_diff, NULL, 0, fc);
+        mu_assert("extract uncapped diff", err == 0);
+
+        double psnr_y = 0.0;
+        err = vmaf_feature_collector_get_score(fc, "psnr_y", &psnr_y, 0);
+        mu_assert("get score uncapped diff", err == 0);
+        mu_assert("uncapped |psnr_y - 100.840479| < 1e-5", fabs(psnr_y - 100.840479) < 1e-5);
+
+        /* Identical frames in uncapped mode -> 60.0 dB */
+        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist_ident, NULL, 1, fc);
+        mu_assert("extract uncapped ident", err == 0);
+        err = vmaf_feature_collector_get_score(fc, "psnr_y", &psnr_y, 1);
+        mu_assert("get score uncapped ident", err == 0);
+        mu_assert("uncapped identical psnr_y == 60.0", psnr_y == 60.0);
+
+        (void)vmaf_feature_extractor_context_close(ctx);
+        (void)vmaf_feature_extractor_context_destroy(ctx);
+        vmaf_feature_collector_destroy(fc);
+    }
+
+    vmaf_picture_unref(&ref);
+    vmaf_picture_unref(&dist_diff);
+    vmaf_picture_unref(&dist_ident);
+    return NULL;
+}
+
+static char *test_psnr_uncapped_hbd(void)
+{
+    char *fail = NULL;
+    VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
+    if (fail)
+        return fail;
+
+    const unsigned w = 576u;
+    const unsigned h = 324u;
+    const unsigned bpc = 10u;
+
+    VmafPicture ref;
+    VmafPicture dist_diff;
+    VmafPicture dist_ident;
+
+    int err = alloc_grey(&ref, VMAF_PIX_FMT_YUV420P, bpc, w, h, 512u);
+    mu_assert("alloc ref hbd", err == 0);
+    err = alloc_grey(&dist_diff, VMAF_PIX_FMT_YUV420P, bpc, w, h, 512u);
+    mu_assert("alloc dist_diff hbd", err == 0);
+    err = alloc_grey(&dist_ident, VMAF_PIX_FMT_YUV420P, bpc, w, h, 512u);
+    mu_assert("alloc dist_ident hbd", err == 0);
+
+    /* Differ in one luma sample by +1 */
+    ((uint16_t *)dist_diff.data[0])[0] = 513u;
+
+    /* 1. Default (capped): differing pair -> 72.0 dB */
+    {
+        VmafFeatureExtractorContext *ctx = NULL;
+        err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+        mu_assert("ctx create default hbd", err == 0);
+        err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, bpc, w, h);
+        mu_assert("ctx init default hbd", err == 0);
+
+        VmafFeatureCollector *fc = NULL;
+        err = vmaf_feature_collector_init(&fc);
+        mu_assert("fc init", err == 0);
+        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist_diff, NULL, 0, fc);
+        mu_assert("extract default diff hbd", err == 0);
+
+        double psnr_y = 0.0;
+        err = vmaf_feature_collector_get_score(fc, "psnr_y", &psnr_y, 0);
+        mu_assert("get score default diff hbd", err == 0);
+        mu_assert("default psnr_y == 72.0", psnr_y == 72.0);
+
+        /* Identical frames in default mode -> 72.0 dB */
+        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist_ident, NULL, 1, fc);
+        mu_assert("extract default ident hbd", err == 0);
+        err = vmaf_feature_collector_get_score(fc, "psnr_y", &psnr_y, 1);
+        mu_assert("get score default ident hbd", err == 0);
+        mu_assert("default identical psnr_y == 72.0", psnr_y == 72.0);
+
+        (void)vmaf_feature_extractor_context_close(ctx);
+        (void)vmaf_feature_extractor_context_destroy(ctx);
+        vmaf_feature_collector_destroy(fc);
+    }
+
+    /* 2. Uncapped (uncapped=true): differing pair -> ~112.907188 dB, identical -> 72.0 dB */
+    {
+        VmafDictionary *opts = NULL;
+        err = vmaf_dictionary_set(&opts, "uncapped", "true", 0);
+        mu_assert("set uncapped opt hbd", err == 0);
+
+        VmafFeatureExtractorContext *ctx = NULL;
+        err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
+        mu_assert("ctx create uncapped hbd", err == 0);
+        err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, bpc, w, h);
+        mu_assert("ctx init uncapped hbd", err == 0);
+
+        VmafFeatureCollector *fc = NULL;
+        err = vmaf_feature_collector_init(&fc);
+        mu_assert("fc init", err == 0);
+        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist_diff, NULL, 0, fc);
+        mu_assert("extract uncapped diff hbd", err == 0);
+
+        double psnr_y = 0.0;
+        err = vmaf_feature_collector_get_score(fc, "psnr_y", &psnr_y, 0);
+        mu_assert("get score uncapped diff hbd", err == 0);
+        mu_assert("uncapped |psnr_y - 112.907188| < 1e-5", fabs(psnr_y - 112.907188) < 1e-5);
+
+        /* Identical frames in uncapped mode -> 72.0 dB */
+        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist_ident, NULL, 1, fc);
+        mu_assert("extract uncapped ident hbd", err == 0);
+        err = vmaf_feature_collector_get_score(fc, "psnr_y", &psnr_y, 1);
+        mu_assert("get score uncapped ident hbd", err == 0);
+        mu_assert("uncapped identical psnr_y == 72.0", psnr_y == 72.0);
+
+        (void)vmaf_feature_extractor_context_close(ctx);
+        (void)vmaf_feature_extractor_context_destroy(ctx);
+        vmaf_feature_collector_destroy(fc);
+    }
+
+    vmaf_picture_unref(&ref);
+    vmaf_picture_unref(&dist_diff);
+    vmaf_picture_unref(&dist_ident);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_psnr_init_yuv400p_disables_chroma);
@@ -280,5 +474,7 @@ char *run_tests(void)
     mu_run_test(test_psnr_extract_hbd_12bit);
     mu_run_test(test_psnr_extract_hbd_16bit);
     mu_run_test(test_psnr_flush_apsnr_enabled);
+    mu_run_test(test_psnr_uncapped_8bit);
+    mu_run_test(test_psnr_uncapped_hbd);
     return NULL;
 }
