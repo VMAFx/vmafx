@@ -31,12 +31,6 @@
 
 #include "gpu_picture_pool.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but the Windows
- * MSVC legs compile the test tree with cl.exe, whose documented /std:clatest
- * C23 feature set does not include `nullptr`. Same carve-out and reasoning as
- * core/src/feature/float_motion.c. ADR-1138. */
-
 typedef struct {
     unsigned succeed_n;   /* allocate fine for the first N calls; fail after */
     unsigned alloc_calls; /* total alloc calls observed */
@@ -67,7 +61,7 @@ static int stub_free(VmafPicture *pic, void *cookie)
     c->free_calls++;
     if (pic && pic->data[0]) {
         free(pic->data[0]);
-        pic->data[0] = NULL;
+        pic->data[0] = nullptr;
     }
     return 0;
 }
@@ -79,17 +73,17 @@ static char *test_pool_init_unwinds_partial_success(void)
         .pic_cnt = 8,
         .alloc_picture_callback = stub_alloc,
         .free_picture_callback = stub_free,
-        .synchronize_picture_callback = NULL,
+        .synchronize_picture_callback = nullptr,
         .cookie = &cookie,
     };
-    VmafGpuPicturePool *pool = NULL;
+    VmafGpuPicturePool *pool = nullptr;
 
     int err = vmaf_gpu_picture_pool_init(&pool, cfg);
 
     /* Pool init must report the first failing alloc's error. */
     mu_assert("pool_init must propagate the alloc-callback error", err == -ENOMEM);
     /* *pool must be NULLed on failure (no half-initialised handle handed back). */
-    mu_assert("pool_init must NULL out *pool on failure", pool == NULL);
+    mu_assert("pool_init must NULL out *pool on failure", pool == nullptr);
     /* The allocator must have stopped at the first failure (4th call). */
     mu_assert("alloc_picture_callback must be called 4 times (3 success + 1 fail)",
               cookie.alloc_calls == 4);
@@ -97,7 +91,7 @@ static char *test_pool_init_unwinds_partial_success(void)
      * 3 successfully-allocated slots. Pre-fix value was 0. */
     mu_assert("free_picture_callback must be called for each successful prior slot",
               cookie.free_calls == 3);
-    return NULL;
+    return nullptr;
 }
 
 static char *test_pool_init_success_path_unaffected(void)
@@ -107,14 +101,14 @@ static char *test_pool_init_success_path_unaffected(void)
         .pic_cnt = 8,
         .alloc_picture_callback = stub_alloc,
         .free_picture_callback = stub_free,
-        .synchronize_picture_callback = NULL,
+        .synchronize_picture_callback = nullptr,
         .cookie = &cookie,
     };
-    VmafGpuPicturePool *pool = NULL;
+    VmafGpuPicturePool *pool = nullptr;
 
     int err = vmaf_gpu_picture_pool_init(&pool, cfg);
     mu_assert("pool_init must succeed when all alloc calls succeed", err == 0);
-    mu_assert("pool_init must populate *pool on success", pool != NULL);
+    mu_assert("pool_init must populate *pool on success", pool != nullptr);
     mu_assert("alloc_picture_callback must be called exactly pic_cnt times on success",
               cookie.alloc_calls == 8);
     mu_assert("no free callback on the success path of init", cookie.free_calls == 0);
@@ -122,14 +116,12 @@ static char *test_pool_init_success_path_unaffected(void)
     int close_err = vmaf_gpu_picture_pool_close(pool);
     mu_assert("pool_close must succeed", close_err == 0);
     mu_assert("pool_close must call free_picture_callback for every slot", cookie.free_calls == 8);
-    return NULL;
+    return nullptr;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_pool_init_unwinds_partial_success);
     mu_run_test(test_pool_init_success_path_unaffected);
-    return NULL;
+    return nullptr;
 }
-
-/* NOLINTEND(modernize-use-nullptr) */
