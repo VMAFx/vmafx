@@ -13,6 +13,14 @@ no rebase impact: fork-local CUDA and documentation files.
   `T-SYCL-INIT-LEAKS-EXC-2026-06-19`, `T-SPEED-GPU-REGISTRY-ORPHAN-2026-06-19`, and
   `T-CUDA-INIT-SUBMIT-LEAKS-2026-06-19`.
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
+## fix/sycl-adm-shift-reachability — verify non-negative shift reachability in integer_adm_sycl.cpp (2026-09-04)
+
+- `core/src/feature/sycl/integer_adm_sycl.cpp`: added invariant documentation comments at both
+  normalization shift sites (`launch_decouple_csf` and `launch_adm_cm_line`). Proved that
+  `ks = 17 - clz >= 1` is an algebraic invariant guaranteed by the enclosing `abs_oh >= 32768` (2^15)
+  guard, matching the unclamped structure of CPU `get_best15_from32` and CUDA `adm_decouple_inline.cuh`.
+  No code changes or numeric divergence.
+- `no rebase impact: SYCL integer ADM is a fork-added backend with no upstream Netflix counterpart.`
 ## fix/cli-metal-define — define HAVE_METAL for the CLI so its Metal paths are compiled at all (2026-09-04)
 
 - `core/tools/meson.build`: added Metal branch (`if is_metal_enabled`) that appends `-DHAVE_METAL=1`
