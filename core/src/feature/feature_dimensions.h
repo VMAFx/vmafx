@@ -15,11 +15,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "libvmaf/model.h"
 #include "libvmaf/picture.h"
-#include "feature/cambi_internal.h"
-#include "feature/speed_internal.h"
-#include "feature/feature_extractor.h"
-#include "model.h"
+#include "cambi_internal.h"
+#include "speed_internal.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -97,23 +96,31 @@ static inline int vmaf_validate_model_dimensions(const VmafModel *model, const c
     if (!model)
         return 0;
 
-    const char *const mname = model_name ? model_name : (model->name ? model->name : "vmaf");
+    const char *const mname = model_name ? model_name : "vmaf";
 
-    for (unsigned i = 0; i < model->n_features; i++) {
-        if (!model->feature[i].name)
+    const unsigned n_features = vmaf_model_feature_count(model);
+    for (unsigned i = 0; i < n_features; i++) {
+        const char *const feat_name = vmaf_model_feature_name(model, i);
+        if (!feat_name)
             continue;
 
-        VmafFeatureExtractor *fex =
-            vmaf_get_feature_extractor_by_feature_name(model->feature[i].name, 0);
-        const char *const fex_name = (fex && fex->name) ? fex->name : model->feature[i].name;
+        const char *canonical_name = feat_name;
+        if (strstr(feat_name, "cambi") || strstr(feat_name, "Cambi"))
+            canonical_name = "cambi";
+        else if (strstr(feat_name, "speed_chroma") || strstr(feat_name, "Speed_chroma"))
+            canonical_name = "speed_chroma";
+        else if (strstr(feat_name, "speed_temporal") || strstr(feat_name, "Speed_temporal"))
+            canonical_name = "speed_temporal";
+        else if (strstr(feat_name, "speed_qa") || strstr(feat_name, "Speed_qa"))
+            canonical_name = "speed_qa";
 
         char reason[256] = {0};
         const int rc =
-            vmaf_validate_feature_dimensions(fex_name, w, h, pix_fmt, reason, sizeof(reason));
+            vmaf_validate_feature_dimensions(canonical_name, w, h, pix_fmt, reason, sizeof(reason));
         if (rc) {
             if (err_msg && sz > 0) {
                 (void)snprintf(err_msg, sz, "model '%s' requires feature '%s', which %s", mname,
-                               fex_name, reason);
+                               canonical_name, reason);
             }
             return rc;
         }

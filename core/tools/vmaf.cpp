@@ -517,18 +517,15 @@ const char *model_label(const CLISettings *c, unsigned i)
 
     arrays.collection_label()[*slot] = model_label(c, i);
 
-    VmafModelCollection *mc = arrays.collection()[*slot];
-    for (unsigned k = 0; k < mc->cnt; k++) {
-        char err_msg[512] = {0};
-        if (vmaf_validate_model_dimensions(mc->model[k], model_label(c, i), w, h, pix_fmt, err_msg,
-                                           sizeof(err_msg))) {
-            (void)fprintf(stderr, "error: %s.%s\n", err_msg,
-                          c->model_config[i].is_default ?
-                              " Pass --model explicitly to use a different model." :
-                              "");
-            (*slot)++;
-            return -EINVAL;
-        }
+    char err_msg[512] = {0};
+    if (vmaf_validate_model_dimensions(arrays.model()[i], model_label(c, i), w, h, pix_fmt, err_msg,
+                                       sizeof(err_msg))) {
+        (void)fprintf(stderr, "error: %s.%s\n", err_msg,
+                      c->model_config[i].is_default ?
+                          " Pass --model explicitly to use a different model." :
+                          "");
+        (*slot)++;
+        return -EINVAL;
     }
 
     for (unsigned j = 0; j < c->model_config[i].overload_cnt; j++) {
