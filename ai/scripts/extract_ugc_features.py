@@ -256,7 +256,7 @@ def _write_manifest(
     fail_count: int,
     row_count: int,
     source_count: int,
-    teacher_model: str,
+    teacher_model: str = DEFAULT_MODEL,
 ) -> None:
     from aiutils.run_manifest import write_run_manifest
 
