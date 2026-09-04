@@ -2,6 +2,21 @@
 # Rebase notes
 
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
+## chore/drop-ansnr — scrub residual ansnr references across code and comments (ADR-0865) (2026-09-03)
+
+- `ai/data/feature_extractor.py`, `core/src/feature/feature_extractor.cpp`,
+  `core/src/feature/offset.c`, `core/src/feature/x86/moment_avx2.c`,
+  `core/src/hip/kernel_template.h`, `core/test/test_hip_smoke.c`,
+  `mcp-server/vmaf-mcp/tests/test_p1_tools.py`: removed stale comments and docstrings
+  referencing the sunset ANSNR / `float_ansnr` feature extractor.
+- `docs/metrics/ansnr.md`: retained as a concise metric deprecation stub pointing
+  callers to `psnr_y` and `psnr_hvs`; updated ADR citation from ADR-0709 to ADR-0865.
+- `compat/python-vmaf/core/quality_runner.py` and `core/test/test_metal_kernel_coverage_audit.c`:
+  deliberately preserved load-bearing backward compatibility stubs and negative dispatch tests.
+- Rebase impact: None. All modifications touch fork-added comments or fork-added test/doc
+  surfaces. If upstream touches `core/src/feature/offset.c`, preserve the `adm.c / motion.c`
+  comment text.
+
 ## feat/mcp-tinyai-flags — tiny-AI scoring flags and input validation (2026-09-03)
 
 - `no rebase impact: MCP servers (cmd/vmafx-mcp and mcp-server/vmaf-mcp) are wholly fork-added surfaces with no upstream Netflix/vmaf counterpart.`

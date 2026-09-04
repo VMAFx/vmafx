@@ -176,7 +176,7 @@ int vmaf_hip_kernel_readback_free(VmafHipKernelReadback *rb, VmafHipContext *ctx
  * Mirrors `vmaf_cuda_kernel_submit_post_record` from
  * `libvmaf/src/cuda/kernel_template.h`. PR #612 adds this helper for
  * `float_psnr_hip`; batch-1 (ADR-0372) also requires it for
- * `integer_psnr_hip` and `float_ansnr_hip`. On merge conflict with
+ * `integer_psnr_hip`. On merge conflict with
  * PR #612 at merge time, keep one copy and discard the duplicate.
  */
 int vmaf_hip_kernel_submit_post_record(VmafHipKernelLifecycle *lc, VmafHipContext *ctx);

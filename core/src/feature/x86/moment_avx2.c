@@ -8,10 +8,9 @@
  *
  *  Bit-exactness contract: the scalar reference accumulates `double cum`
  *  in row-major order across the entire frame.  The AVX2 path lifts each
- *  float lane into a `double` accumulator BEFORE summation (matches
- *  `ansnr_avx2.c`'s pattern), so the order divergence is bounded to the
- *  per-lane cross-lane sum and the per-row tail; the residual is well
- *  inside the snapshot gate's tolerance.
+ *  float lane into a `double` accumulator BEFORE summation, so the order
+ *  divergence is bounded to the per-lane cross-lane sum and the per-row
+ *  tail; the residual is well inside the snapshot gate's tolerance.
  */
 #include <assert.h>
 #include <immintrin.h>

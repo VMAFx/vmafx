@@ -53,9 +53,7 @@ def test_list_extractors_fields():
 def test_list_extractors_known_names():
     """At minimum the canonical CPU extractors must be present.
 
-    float_ansnr was removed from the CPU backend in PR #38 (sunset per
-    ADR-0749). The Vulkan twins were dropped wholesale by ADR-0726
-    (2026-05-28).
+    The Vulkan twins were dropped wholesale by ADR-0726 (2026-05-28).
     """
     names = {ex["name"] for ex in srv._list_extractors()}
     for expected in ("float_vif", "psnr", "ssim", "vif"):
@@ -72,10 +70,7 @@ def test_list_extractors_backend_tags():
 
 
 def test_list_extractors_cpu_backend_for_cpu_extractors():
-    """float_vif / ssim are CPU-only and must carry backend='cpu'.
-
-    float_ansnr removed from CPU backend (PR #38 / ADR-0749).
-    """
+    """float_vif / ssim are CPU-only and must carry backend='cpu'."""
     by_name = {ex["name"]: ex for ex in srv._list_extractors()}
     for cpu_name in ("float_vif", "ssim"):
         if cpu_name in by_name:
