@@ -5962,6 +5962,19 @@ No binary invocation; all I/O paths mocked.
   so the op allowlist (ADR-0039) is unaffected.
 
 
+- `scripts/ci/check-container-build.sh` makes the container-only publishing
+  policy (ADR-1102) enforceable instead of documentation-only. It has three
+  fail-closed modes: assert that the current process runs inside the
+  `vmaf-dev-mcp` container, `--stamp` a staged artifact tree with a
+  `container-build-provenance.txt` receipt (which a host build cannot produce,
+  because the assertion runs first), and `--verify` such a tree from anywhere.
+  `dev/Containerfile` bakes the `/etc/vmafx-dev-container` marker the gate
+  reads into its first stage, so every downstream stage inherits it. Wired into
+  `Dev Container Build (PR gate)` (rejects the bare runner, accepts the built
+  image, and round-trips a stamp through it) and into `Release Script Contract
+  (ADR-1128)`, which runs the gate's hermetic 23-case unit suite on every PR.
+
+
 - **The dev container now ships the six Go binaries.** `dev/Containerfile` had no
   Go toolchain at all, so `vmafx-server`, `vmafx-mcp`, `vmafx-tune`,
   `vmafx-controller`, `vmafx-node` and `vmafx-operator` existed only on a
@@ -23461,6 +23474,24 @@ default path is bit-for-bit unchanged. (ADR-0453 / Research-0136)
   `(6*bpc)+12` formula regardless of any `min_sse` argument. Added the option
   and the matching `ceil(10*log10(peak^2 / mse_floor))` init formula, matching
   the CPU reference exactly.
+
+
+- `docs/development/publishing.md` described a CI pipeline that does not
+  exist. Its "CI integration" section named `release.yml` and
+  `cross-backend.yml` — neither is a file in `.github/workflows/` — and claimed
+  both run inside `dev/Containerfile`, from which it concluded that a passing
+  local container build predicts the CI gates. No workflow in the repository
+  runs any build in `dev/Containerfile`; the real chain is `release-please.yml`
+  → `supply-chain.yml` (native artifacts, built on the `ubuntu-latest` host) →
+  `docker-publish-production.yml` (images, built from `docker/Dockerfile.production*`),
+  with backend parity being a `cross-backend` job inside
+  `tests-and-quality-gates.yml` (disabled with `if: false` pending a
+  self-hosted GPU runner). The page now carries a table of the four real
+  entries and says which of them containerise. The host-side-builds table also
+  claimed the Netflix golden gate does not run on the host "because CI uses the
+  container environment"; the `netflix-golden` job builds with host meson/ninja
+  on `ubuntu-latest`, and the row now says so and explains that a verification
+  job is out of the policy's scope in the first place.
 
 
 - **`feature_extractor_test.py` failed to load due to missing `PyPsnrFeatureExtractor` and `PyPsnrMaxdb100FeatureExtractor` class names.** The upstream Netflix/vmaf codebase treats `PyPsnrFeatureExtractor` (TYPE `"PyPsnr_feature"`) and `PyPsnrMaxdb100FeatureExtractor` (TYPE `"PyPsnr_maxdb100_feature"`) as the primary classes, with `PypsnrFeatureExtractor` and `PypsnrMaxdb100FeatureExtractor` as deprecated aliases. The fork had inadvertently dropped the primary classes and retained only the aliases, leaving the test file with broken imports and silently skipping all `test_run_pypsnr_*` and `test_run_pypsnr_fextractor_maxdb100_16bit` test cases. The fix restores the upstream class hierarchy: `PyPsnrFeatureExtractor` and `PyPsnrMaxdb100FeatureExtractor` carry the full implementation; `PypsnrFeatureExtractor` and `PypsnrMaxdb100FeatureExtractor` become `@deprecated` subclasses that delegate to the primary class. The import for `deprecated` was added to `vmaf.tools.decorator`. The `test_run_pypsnr_fextractor_deprecated` test now correctly emits a `DeprecationWarning`. A separate pre-existing bug was newly exposed: `PyFeatureExtractorMixin._get_feature_scores` uses `ast.literal_eval` to parse a log file written by `str(log_dicts)`, which produces unparseable `np.float64(...)` call expressions under numpy 2.x + Python 3.14. This is tracked in `docs/state.md` as a separate open item; it is not part of this PR.

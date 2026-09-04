@@ -56,6 +56,24 @@ jobs:
       - name: Lint docker-compose.yml — /dev/dri mounts must be writable
         run: bash scripts/ci/check-compose-dri-writable.sh dev/docker-compose.yml
 
+      # ADR-1102 container-only publishing. Two cheap assertions run before the
+      # expensive Docker build so a broken gate fails in seconds:
+      #   1. the gate's own unit suite, and
+      #   2. the gate must REJECT this runner, which is a host. If it ever
+      #      accepted a bare runner it would wave a host-built release binary
+      #      through, which is exactly the failure the policy exists to stop.
+      - name: Container-build gate — unit suite
+        run: bash scripts/ci/tests/test-check-container-build.sh
+
+      - name: Container-build gate — must reject the host runner
+        run: |
+          if bash scripts/ci/check-container-build.sh; then
+            echo "::error::check-container-build.sh accepted a bare GitHub runner"
+            echo "The gate is supposed to fail outside the vmaf-dev-mcp container."
+            exit 1
+          fi
+          echo "OK: the gate rejects a host build."
+
       # Build only up to the `libvmaf-build` stage (skips the heavy FFmpeg
       # stage and the final `dev-mcp` assembly) so the gate stays under 45 min
       # on a free-tier runner.  The GPU SDK layers (CUDA, oneAPI, ROCm) are the
@@ -88,6 +106,31 @@ jobs:
               --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
               --backend cpu \
               --json --output /tmp/probe_cpu.json
+
+      # The other half of the ADR-1102 gate: the built image must be
+      # RECOGNISED as the dev container, and a stamp produced inside it must
+      # verify on the outside. That stamp/verify pair is the mechanism the
+      # release path will use to prove a published artifact is container-built
+      # (docs/development/publishing.md § Enforcement), so it is exercised
+      # end-to-end here rather than only in the offline unit suite.
+      - name: Container-build gate — must accept the built image
+        run: |
+          docker run --rm \
+            --volume "$PWD:/src:ro" \
+            vmaf-dev-mcp-gate:${{ github.sha }} \
+            bash /src/scripts/ci/check-container-build.sh
+
+      - name: Container-build gate — stamp inside, verify outside
+        run: |
+          mkdir -p provenance
+          chmod 0777 provenance
+          docker run --rm \
+            --volume "$PWD:/src:ro" \
+            --volume "$PWD/provenance:/provenance" \
+            vmaf-dev-mcp-gate:${{ github.sha }} \
+            bash /src/scripts/ci/check-container-build.sh --stamp /provenance
+          cat provenance/container-build-provenance.txt
+          bash scripts/ci/check-container-build.sh --verify provenance
 
       - name: Cleanup image
         if: always()

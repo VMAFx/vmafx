@@ -52,8 +52,14 @@ docker exec vmaf-dev-mcp bash -c "
 ```
 
 The resulting binaries at `/workspace/build/` and `/usr/local/bin/vmaf`
-inside the container are the artifacts that CI clones via the same
-Containerfile to produce the release binaries.
+inside the container are the ones this policy calls canonical. Stamp the
+staged tree before it leaves the container so its provenance travels with it
+(see [Enforcement](#enforcement)):
+
+```bash
+docker exec vmaf-dev-mcp \
+  bash /workspace/scripts/ci/check-container-build.sh --stamp /workspace/artifacts
+```
 
 ---
 
@@ -86,7 +92,7 @@ paths post-dates the container image's build timestamp, rebuild.
 | gdb / lldb crash investigation | Yes — use the sanitizer-enabled host build |
 | ASan / UBSan / TSan sweep | Yes — `meson setup build-asan -Db_sanitize=address` |
 | Producing a release binary | **No** — must use container |
-| Running the Netflix golden gate in CI | **No** — CI uses the container environment |
+| Running the Netflix golden gate | Yes — it is a verification job, not an artifact producer, and is out of scope for this policy. The CI job `netflix-golden` in `tests-and-quality-gates.yml` builds with host meson/ninja on `ubuntu-latest` and runs pytest there |
 | Quick local smoke test during development | Yes — acceptable, but results should not be published |
 
 If a backend fails to reproduce in the container, diagnose the container first.
@@ -98,20 +104,131 @@ not pinned and will diverge over time.
 
 ## CI integration
 
-The release workflow (`release.yml`) and the backend-parity gate
-(`cross-backend.yml`) both run inside the container image defined at
-`dev/Containerfile`. They do **not** use the runner's host toolchain.
-This means a local container build that passes is a reliable predictor of
-whether the CI gate will pass.
+There is no `release.yml` and no `cross-backend.yml`. The publishing pipeline
+is three workflows plus one job:
+
+| Workflow / job | Trigger | Produces | Builds in a container? |
+|---|---|---|---|
+| `.github/workflows/release-please.yml` | push to `master` | the release PR and, on merge, the tag + GitHub release | n/a — no build |
+| `.github/workflows/supply-chain.yml` | `release: published` | `libvmaf.so` chain, the `vmaf` CLI, `models.tar.gz`, SBOMs, cosign signatures, SLSA provenance, the `vmaf-mcp` wheel | **No** — `build-artifacts` runs `meson`/`ninja` directly on `ubuntu-latest` |
+| `.github/workflows/docker-publish-production.yml` | `release: published` | `ghcr.io/vmafx/vmafx:*` (cpu / cuda13 / rocm7 / oneapi2025 / server) | Yes, inherently — `docker buildx` against `docker/Dockerfile.production*` |
+| `cross-backend` job in `.github/workflows/tests-and-quality-gates.yml` | Disabled (`if: false`, awaits self-hosted GPU runner) | backend-parity report (a gate, not an artifact) | **No** — `ubuntu-latest` host toolchain |
+
+Two consequences worth stating plainly, because the previous version of this
+page claimed the opposite:
+
+- A local container build is **not** a reliable predictor of the CI gates.
+  Every CI job that compiles libvmaf does so with the runner's host toolchain;
+  the only `container:` job key anywhere in `.github/workflows/` is in
+  `security-scans.yml`, and it names a scanner image. When a container run and
+  a CI run disagree, the toolchain difference is a live hypothesis, not
+  something to rule out.
+- `supply-chain.yml` currently builds the native release artifacts on the
+  runner host, which is a live violation of the policy on this page. The
+  enforcement mechanism below exists; wiring it into that job is tracked as
+  `T-PUBLISH-NATIVE-RELEASE-NOT-CONTAINERISED-2026-09-03` in
+  [docs/state.md](../state.md).
+
+Note that `docker/Dockerfile.production` and `docker/Dockerfile.production-gpu`
+are *not* `dev/Containerfile`. The published images are built from their own
+Dockerfiles; `dev/Containerfile` is the development and artifact-build
+container.
 
 See [docs/development/ci.md](ci.md) for the full CI gate list and
 [docs/development/dev-mcp.md](dev-mcp.md) for the container operator guide.
 
 ---
 
+## Enforcement
+
+The policy is checked by `scripts/ci/check-container-build.sh`. Without it the
+policy was documentation only: nothing anywhere could tell a container build
+from a host build, so a host-built binary could be attached to a release with
+no signal at all.
+
+`dev/Containerfile` writes a marker at `/etc/vmafx-dev-container` in its first
+(`build-deps`) stage, so every downstream stage inherits it. The marker is the
+gate's single source of truth:
+
+```text
+vmafx_dev_container=1
+image_title=vmaf-dev-mcp
+containerfile=dev/Containerfile
+source=https://github.com/VMAFx/vmafx
+```
+
+The gate has three modes, and fails closed in all three — a missing marker, a
+foreign container's marker, a truncated marker, a missing stamp, an empty
+stamp, or a stamp of an unknown schema all exit non-zero:
+
+```bash
+# 1. Am I in the container? Exit 0 only inside vmaf-dev-mcp.
+scripts/ci/check-container-build.sh
+
+# 2. Record provenance into a staged artifact tree. Asserts (1) first, so a
+#    host build cannot produce the stamp.
+scripts/ci/check-container-build.sh --stamp artifacts
+
+# 3. Verify a stamped tree. Runs anywhere — the verifying job does not itself
+#    need to be containerised.
+scripts/ci/check-container-build.sh --verify artifacts
+```
+
+Mode 2 writes `artifacts/container-build-provenance.txt`:
+
+```text
+schema=vmafx-container-build-provenance/1
+vmafx_dev_container=1
+image_title=vmaf-dev-mcp
+containerfile=dev/Containerfile
+source=https://github.com/VMAFx/vmafx
+git_commit=<GITHUB_SHA or git rev-parse HEAD>
+stamped_at=<SOURCE_DATE_EPOCH or now, UTC>
+```
+
+This is an **accident gate, not a security boundary**. It catches "the release
+job silently ran meson on the runner host", which is the failure this policy
+exists to prevent. It does not defend against someone who deliberately forges
+the marker; the cryptographic story for published bytes is cosign signing plus
+SLSA provenance in `supply-chain.yml`.
+
+**Known limitation:** the `VMAFX_CONTAINER_MARKER` environment variable
+overrides the marker path (introduced so the offline unit suite
+`scripts/ci/tests/test-check-container-build.sh` can test container and host
+behaviours without modifying `/etc`). A CI job or runner setting this variable
+to point to a valid marker file will bypass the gate. This is consistent with
+the accident-gate threat model: the gate prevents inadvertent host builds in
+the release pipeline, not malicious evasion.
+
+### Where the gate runs today
+
+| Job | What it asserts |
+|---|---|
+| `Dev Container Build (PR gate)` in `dev-container-build.yml` | the gate rejects the bare runner, accepts the built image, and a stamp made inside the image verifies outside it |
+| `Release Script Contract (ADR-1128)` in `rule-enforcement.yml` | the gate's hermetic unit suite (`scripts/ci/tests/test-check-container-build.sh`, no Docker needed) |
+
+It is **not** yet wired into `supply-chain.yml`. Adding it there is not a
+one-line change: `build-artifacts` would first have to be converted to a
+container build, and `dev/Containerfile` is never pushed to a registry
+(`dev-container-build.yml` builds it as a gate and pushes no image), so a
+release job has no image to pull. Wiring the gate in before that conversion
+would fail every release. See the state.md row cited above.
+
+Run the unit suite locally with:
+
+```bash
+bash scripts/ci/tests/test-check-container-build.sh
+```
+
+---
+
 ## Related documents
 
-- [ADR-1102](../adr/1102-phase4b9-container-only-publishing.md) — policy decision and rationale
+- [ADR-1102](../adr/1102-phase4b9-container-only-publishing.md) — policy
+  decision and rationale (note: its claim that `release.yml`/`cross-backend.yml`
+  run inside the container making local container builds reliable CI predictors
+  is superseded by observed CI reality, where neither workflow exists and CI
+  builds libvmaf on bare `ubuntu-latest` runners)
 - [ADR-0496](../adr/0496-prefer-dev-mcp-container-rule.md) — default-to-container project rule (CLAUDE.md §15)
 - [ADR-0451](../adr/0451-local-dev-mcp-container.md) — initial dev-MCP container decision
 - [docs/development/dev-mcp.md](dev-mcp.md) — container operator guide

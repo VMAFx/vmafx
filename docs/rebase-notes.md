@@ -47879,6 +47879,26 @@ Rebase-sensitive points:
   `pkg/version/version.go`, `scripts/ci/release-pr-exempt.sh`,
   `scripts/ci/tests/test-release-pr-exempt.sh`, and the docs. No rebase
   impact.
+
+## fix/publishing-container-enforcement — make container-only publishing enforceable (2026-09-03)
+
+- `dev/Containerfile` — **the only rebase-sensitive file in this change, and only
+  mildly so.** A `RUN printf ... > /etc/vmafx-dev-container` layer is inserted in
+  the `build-deps` stage, between the `LABEL` block and `ARG DEBIAN_FRONTEND`.
+  Upstream Netflix/vmaf has no `dev/Containerfile`, so there is no upstream
+  counterpart and no sync conflict. What matters on a *fork-local* rewrite of the
+  stage: the marker must stay in the **first** stage, because every downstream
+  stage (`gpu-sdks`, `libvmaf-build`, `go-build`, `dev-mcp`) inherits it from
+  there, and `scripts/ci/check-container-build.sh` reads it in all of them.
+  The four key names (`vmafx_dev_container`, `image_title`, `containerfile`,
+  `source`) are a contract with the gate script and with
+  `scripts/ci/tests/test-check-container-build.sh`, which parses the marker lines
+  back out of `dev/Containerfile` so the fixture cannot drift from the image.
+- `scripts/ci/check-container-build.sh`, `scripts/ci/tests/test-check-container-build.sh`,
+  `.github/workflows/dev-container-build.yml`, `.github/workflows/rule-enforcement.yml`,
+  `docs/development/publishing.md`, `docs/state.md`, `changelog.d/` — fork-only
+  CI, policy and documentation surfaces with no upstream counterpart. No rebase
+  impact.
 ## Upstream-issue harvest 2026-09-03 (ADR-1166, branch `fix/upstream-harvest-2026-09-03`)
 
 Nine stale Netflix/vmaf reports were verified against this tree and the
