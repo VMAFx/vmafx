@@ -9,7 +9,7 @@
  *  the primary pthread.h-probe-style check_header('getopt.h') fails. Linux
  *  and macOS pull <getopt.h> from libc and never reach this header.
  *
- *  Supported surface (matches the subset exercised by libvmaf/tools and the
+ *  Supported surface (matches the subset exercised by core/tools and the
  *  test_cli_parse test):
  *    - getopt() / getopt_long()
  *    - struct option { name, has_arg, flag, val }

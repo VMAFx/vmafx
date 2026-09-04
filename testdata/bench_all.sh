@@ -4,7 +4,7 @@
 # Per-backend bench across the three canonical fixture sizes
 # (576×324, 1080p_5f, 4K BBB 200f). For each fixture we engage CPU,
 # CUDA, SYCL, and Vulkan with the **correct** flag set per backend
-# (see libvmaf/AGENTS.md §"Backend-engagement foot-guns").
+# (see core/AGENTS.md §"Backend-engagement foot-guns").
 #
 # Earlier revisions of this script used `--no_cuda --no_sycl` for CPU
 # and the singletons `--no_sycl` / `--no_cuda` for "CUDA" / "SYCL".
@@ -143,7 +143,7 @@ for key, name in backends:
 PYEOF
 }
 
-# Backend-engagement flag sets (see libvmaf/AGENTS.md §"Backend-engagement
+# Backend-engagement flag sets (see core/AGENTS.md §"Backend-engagement
 # foot-guns"). The `--backend $name` exclusive selector is the canonical
 # CLI surface as of 2026-04-28; the explicit-flag form below is kept
 # because it works even on libvmaf builds without the selector.

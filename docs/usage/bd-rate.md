@@ -17,14 +17,14 @@ fork's existing tooling.
 
 ## What you have
 
-[`python/vmaf/tools/bd_rate.py`](../../python/vmaf/tools/bd_rate.py)
+[`compat/python-vmaf/tools/bd_rate.py`](../../compat/python-vmaf/tools/bd_rate.py)
 implements the Bjøntegaard piecewise-cubic-Hermite interpolation
 (`pchip_interpolate`) with the integration window clamped to the
 overlap region of the two RD curves, plus a convex-hull mode for
 near-monotonic data. The implementation is validated against
 JCTVC-E137 (the JCTVC reference numbers).
 
-[`python/vmaf/tools/bd_rate_calculator.py`](../../python/vmaf/tools/bd_rate_calculator.py)
+[`compat/python-vmaf/tools/bd_rate_calculator.py`](../../compat/python-vmaf/tools/bd_rate_calculator.py)
 is the higher-level calculator class.
 
 [`python/test/bd_rate_calculator_test.py`](../../python/test/bd_rate_calculator_test.py)

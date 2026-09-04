@@ -15387,6 +15387,11 @@ No build/test/runtime impact — the `enable_vulkan` meson option was already re
   `integer_cambi_hip.c` updated to reflect the removal.
 
 
+- **core: delete dead C translation units `core/src/gpu_picture_pool.c` and `core/src/opt.c`** — both translation units were superseded by modern C++23 implementations (`core/src/gpu_picture_pool.cpp` under ADR-0768, `core/src/opt.cpp` under ADR-0761) compiled into `libvmaf`. Their lingering inclusion in isolated test targets (`test_integer_ssim_simd` and `test_motion_avx512_parity`) in `core/test/meson.build` was updated to link against the standard C++23 libraries and objects (`gpu_picture_pool.cpp`, `log_cpp23_test_objects`, `wave8_opt_only_objects`), collapsing the twin pairs from 6 to 4 in `twin-drift-check.sh`.
+- **test: rescue orphaned `core/test/test_gpu_picture_pool_partial_init.c`** — wired into `core/test/meson.build` under the fast test suite, testing `vmaf_gpu_picture_pool_init` error-unwind paths against `gpu_picture_pool.cpp`.
+- **docs: fix stale pre-rename `libvmaf/` and `python/vmaf/` paths** — updated path references across `core/tools/meson.build`, `core/tools/compat/win32/getopt.{c,h}`, `core/tools/vmaf_roi_core.h`, `testdata/bench_all.sh`, and `docs/usage/{bd-rate,matlab,python}.md` to point to `core/` and `compat/python-vmaf/` (ADR-0700).
+
+
 - **`.gitignore` stale-rule cleanup** (ADR-0905): removed two undocumented
   rules with no matching artefacts in the tree (`.gradle/`, `.pypirc`),
   rewired three rule families to the post-ADR-0700 paths

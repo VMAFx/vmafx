@@ -31,6 +31,12 @@
 
 #include "gpu_picture_pool.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but the Windows
+ * MSVC legs compile the test tree with cl.exe, whose documented /std:clatest
+ * C23 feature set does not include `nullptr`. Same carve-out and reasoning as
+ * core/src/feature/float_motion.c. ADR-1138. */
+
 typedef struct {
     unsigned succeed_n;   /* allocate fine for the first N calls; fail after */
     unsigned alloc_calls; /* total alloc calls observed */
@@ -125,3 +131,5 @@ char *run_tests(void)
     mu_run_test(test_pool_init_success_path_unaffected);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

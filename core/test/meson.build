@@ -1122,7 +1122,7 @@ test_integer_ssim_simd = executable('test_integer_ssim_simd',
     ['test.c', 'test_integer_ssim_simd.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
      '../src/dict.cpp', '../src/predict.c',
-     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.c', dnn_sources],
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -1200,7 +1200,7 @@ if motion_avx512_parity_test_archs.contains(host_machine.cpu_family()) and is_av
 test_motion_avx512_parity = executable('test_motion_avx512_parity',
     ['test.c', 'test_motion_avx512_parity.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -1212,8 +1212,9 @@ test_motion_avx512_parity = executable('test_motion_avx512_parity',
       platform_specific_cpu_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ],
+    ] + wave8_opt_only_objects,
 )
 endif
 
@@ -1580,6 +1581,19 @@ test('test_gpu_picture_pool_uaf', test_gpu_picture_pool_uaf, suite : ['fast'],
         # No data race is present; this is purely the allocator-abort behaviour.
         'TSAN_OPTIONS=allocator_may_return_null=1',
     ])
+
+# ADR-0982 round-26 audit — regression for gpu_picture_pool_init partial-
+# init unwind. CPU-only: uses pure-C stub alloc/free callbacks so no GPU
+# runtime is required. ASan / UBSan catches any leak if the unwind in
+# vmaf_gpu_picture_pool_init regresses.
+test_gpu_picture_pool_partial_init = executable('test_gpu_picture_pool_partial_init',
+    ['test.c', 'test_gpu_picture_pool_partial_init.c', '../src/gpu_picture_pool.cpp'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency],
+)
+test('test_gpu_picture_pool_partial_init', test_gpu_picture_pool_partial_init,
+    suite : ['fast'])
 
 if get_option('enable_cuda')
 test_gpu_picture_pool = executable('test_gpu_picture_pool',

@@ -2,6 +2,21 @@
 # Rebase notes
 
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
+## chore/dedup-sweep-2026-09-03 — collapse dead C twins (gpu_picture_pool, opt) and stale pre-rename paths (2026-09-03)
+
+- `core/src/opt.c`: deleted dead C translation unit. Upstream still has `libvmaf/src/opt.c`.
+  If an upstream sync touches `opt.c`, port any new option keys or types into `core/src/opt.cpp`
+  (which is C++23 with `std::optional` and ADR-1080 UBSan fixes, compiled into `libvmaf` via
+  `opt_cpp23_lib`) and keep `core/src/opt.c` deleted.
+- `core/src/gpu_picture_pool.c`: deleted dead C translation unit. Wholly fork-added; upstream
+  has no GPU picture pool. No upstream rebase conflict.
+- `core/test/meson.build`: `test_integer_ssim_simd` and `test_motion_avx512_parity` updated
+  to compile/link `gpu_picture_pool.cpp` and `wave8_opt_only_objects` / `log_cpp23_test_objects`;
+  `test_gpu_picture_pool_partial_init` wired. Fork-added test wiring; resolve any rebase conflict
+  by preserving the references to `.cpp` and the test object libraries.
+- `docs/usage/{bd-rate,matlab,python}.md`, `core/tools/meson.build`, `core/tools/compat/win32/getopt.{c,h}`,
+  `core/tools/vmaf_roi_core.h`, `testdata/bench_all.sh`: mechanical path updates from `libvmaf/` ->
+  `core/` and `python/vmaf/` -> `compat/python-vmaf/` (ADR-0700). No upstream rebase impact.
 ## fix/picture-pool-twin-drift — port concurrency and lifecycle fixes to picture_pool.cpp (2026-09-04)
 
 - `core/src/picture_pool.cpp`: C++ twin of `core/src/picture_pool.c` compiled into `libvmaf` via
