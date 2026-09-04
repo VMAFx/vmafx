@@ -69,6 +69,15 @@ func scoringExtraProperties() schemaObj {
 			"description": "ONNX Runtime execution provider for the tiny model (--tiny-device / " +
 				"--dnn-ep). Default: auto.",
 		},
+		"dnn_ep": schemaObj{
+			"type": "string",
+			"enum": []string{
+				"auto", "cpu", "cuda", "openvino", "openvino-npu", "openvino-cpu",
+				"openvino-gpu", "coreml", "coreml-ane", "coreml-gpu", "coreml-cpu", "rocm",
+			},
+			"description": "Alias for tiny_device: ONNX Runtime execution provider for the " +
+				"tiny model (--dnn-ep / --tiny-device). Default: auto.",
+		},
 		"tiny_threads": schemaObj{
 			"type":        "integer",
 			"minimum":     0,

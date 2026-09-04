@@ -66,7 +66,7 @@ func TestScoreExtraPropertiesPresent(t *testing.T) {
 	t.Parallel()
 	want := []string{
 		"feature", "aom_ctc", "nflx_ctc",
-		"tiny_model", "tiny_device", "tiny_threads", "tiny_fp16",
+		"tiny_model", "tiny_device", "dnn_ep", "tiny_threads", "tiny_fp16",
 		"tiny_model_verify", "tiny_codec", "tiny_preset", "tiny_crf",
 		"tiny_resize", "no_reference",
 		"threads", "frame_cnt", "frame_skip_ref", "frame_skip_dist", "no_prediction",
@@ -94,6 +94,8 @@ func TestScoreExtraEnums(t *testing.T) {
 	cases := map[string][]string{
 		"aom_ctc":     {"v1.0", "v2.0", "v3.0", "v4.0", "v5.0", "v6.0", "v7.0"},
 		"nflx_ctc":    {"v1.0"},
+		"tiny_device": {"auto", "cpu", "cuda", "openvino", "openvino-npu", "openvino-cpu", "openvino-gpu", "coreml", "coreml-ane", "coreml-gpu", "coreml-cpu", "rocm"},
+		"dnn_ep":      {"auto", "cpu", "cuda", "openvino", "openvino-npu", "openvino-cpu", "openvino-gpu", "coreml", "coreml-ane", "coreml-gpu", "coreml-cpu", "rocm"},
 		"tiny_resize": {"bilinear", "nearest", "bicubic", "disabled"},
 	}
 	for key, wantEnum := range cases {
@@ -132,7 +134,11 @@ func TestParseScoreExtrasMapsFlags(t *testing.T) {
 		"frame_skip_dist":   float64(0),
 		"no_prediction":     true,
 	}
-	argv := parseScoreExtras(args).appendArgs(nil)
+	ex, err := parseScoreExtras(args)
+	if err != nil {
+		t.Fatalf("parseScoreExtras: %v", err)
+	}
+	argv := ex.appendArgs(nil)
 	joined := strings.Join(argv, " ")
 	wantSubstrings := []string{
 		"--feature psnr",
@@ -168,10 +174,14 @@ func TestParseScoreExtrasMapsFlags(t *testing.T) {
 func TestSubsampleForwarded(t *testing.T) {
 	t.Parallel()
 	// N > 1 is emitted, positioned before --feature (matches server.py order).
-	argv := parseScoreExtras(map[string]any{
+	ex1, err := parseScoreExtras(map[string]any{
 		"subsample": float64(5),
 		"feature":   []any{"psnr"},
-	}).appendArgs(nil)
+	})
+	if err != nil {
+		t.Fatalf("parseScoreExtras: %v", err)
+	}
+	argv := ex1.appendArgs(nil)
 	joined := strings.Join(argv, " ")
 	if !strings.Contains(joined, "--subsample 5") {
 		t.Errorf("argv %q missing %q", joined, "--subsample 5")
@@ -180,7 +190,10 @@ func TestSubsampleForwarded(t *testing.T) {
 		t.Errorf("argv %q: --subsample must precede --feature (Python-parity order)", joined)
 	}
 	// N <= 1 emits nothing and leaves the request cgo-direct-path eligible.
-	ex := parseScoreExtras(map[string]any{"subsample": float64(1)})
+	ex, err := parseScoreExtras(map[string]any{"subsample": float64(1)})
+	if err != nil {
+		t.Fatalf("parseScoreExtras: %v", err)
+	}
 	if !ex.isZero() {
 		t.Errorf("subsample=1 alone: isZero()=false, want true")
 	}
@@ -193,9 +206,12 @@ func TestSubsampleForwarded(t *testing.T) {
 // flags — the backward-compatibility guarantee.
 func TestParseScoreExtrasEmpty(t *testing.T) {
 	t.Parallel()
-	ex := parseScoreExtras(map[string]any{
+	ex, err := parseScoreExtras(map[string]any{
 		"ref": "/a.yuv", "dis": "/b.yuv", "width": float64(64), "height": float64(64),
 	})
+	if err != nil {
+		t.Fatalf("parseScoreExtras: %v", err)
+	}
 	if !ex.isZero() {
 		t.Errorf("parseScoreExtras with no extras: isZero()=false, want true")
 	}
@@ -208,10 +224,12 @@ func TestParseScoreExtrasEmpty(t *testing.T) {
 // 0 must be forwarded (e.g. --frame_skip_dist 0), an absent key must not be.
 func TestOptIntDistinguishesZeroFromUnset(t *testing.T) {
 	t.Parallel()
-	if p := optIntArg(map[string]any{"frame_skip_dist": float64(0)}, "frame_skip_dist"); p == nil || *p != 0 {
-		t.Errorf("explicit 0 should yield pointer to 0, got %v", p)
+	args := map[string]any{"frame_skip_dist": float64(0)}
+	p := optIntArg(args, "frame_skip_dist")
+	if p == nil || *p != 0 {
+		t.Errorf("explicit 0 should yield &0, got %v", p)
 	}
-	if p := optIntArg(map[string]any{}, "frame_skip_dist"); p != nil {
+	if p := optIntArg(args, "threads"); p != nil {
 		t.Errorf("absent key should yield nil, got %v", *p)
 	}
 }
@@ -228,5 +246,167 @@ func TestNoReferenceRequiresTinyModel(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "no_reference requires tiny_model") {
 		t.Errorf("expected no_reference-requires-tiny_model error, got %v", err)
+	}
+}
+
+// TestScoreExtrasValidationRejectsBadEnums verifies that unknown enum values
+// and out-of-range arguments are rejected before shelling out to the CLI.
+func TestScoreExtrasValidationRejectsBadEnums(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name    string
+		args    map[string]any
+		wantErr string
+	}{
+		{
+			name:    "invalid tiny_device",
+			args:    map[string]any{"tiny_device": "invalid_dev"},
+			wantErr: "invalid tiny_device",
+		},
+		{
+			name:    "invalid dnn_ep",
+			args:    map[string]any{"dnn_ep": "unknown_ep"},
+			wantErr: "invalid tiny_device",
+		},
+		{
+			name: "conflicting tiny_device and dnn_ep",
+			args: map[string]any{
+				"tiny_device": "cpu",
+				"dnn_ep":      "cuda",
+			},
+			wantErr: "conflicting tiny_device",
+		},
+		{
+			name:    "invalid tiny_resize",
+			args:    map[string]any{"tiny_resize": "cubic"},
+			wantErr: "invalid tiny_resize",
+		},
+		{
+			name:    "tiny_crf negative",
+			args:    map[string]any{"tiny_crf": float64(-1)},
+			wantErr: "invalid tiny_crf",
+		},
+		{
+			name:    "tiny_crf too large",
+			args:    map[string]any{"tiny_crf": float64(64)},
+			wantErr: "invalid tiny_crf",
+		},
+		{
+			name:    "tiny_threads negative",
+			args:    map[string]any{"tiny_threads": float64(-1)},
+			wantErr: "invalid tiny_threads",
+		},
+		{
+			name:    "invalid aom_ctc",
+			args:    map[string]any{"aom_ctc": "v8.0"},
+			wantErr: "invalid aom_ctc",
+		},
+		{
+			name:    "invalid nflx_ctc",
+			args:    map[string]any{"nflx_ctc": "v2.0"},
+			wantErr: "invalid nflx_ctc",
+		},
+		{
+			name:    "threads zero",
+			args:    map[string]any{"threads": float64(0)},
+			wantErr: "invalid threads",
+		},
+		{
+			name:    "frame_cnt zero",
+			args:    map[string]any{"frame_cnt": float64(0)},
+			wantErr: "invalid frame_cnt",
+		},
+		{
+			name:    "frame_skip_ref negative",
+			args:    map[string]any{"frame_skip_ref": float64(-1)},
+			wantErr: "invalid frame_skip_ref",
+		},
+		{
+			name:    "subsample zero",
+			args:    map[string]any{"subsample": float64(0)},
+			wantErr: "invalid subsample",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := parseScoreExtras(tc.args)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+// TestDnnEPAliasSupported verifies dnn_ep alone sets the tiny-device flag.
+func TestDnnEPAliasSupported(t *testing.T) {
+	t.Parallel()
+	ex, err := parseScoreExtras(map[string]any{
+		"dnn_ep": "openvino-npu",
+	})
+	if err != nil {
+		t.Fatalf("parseScoreExtras: %v", err)
+	}
+	argv := ex.appendArgs(nil)
+	joined := strings.Join(argv, " ")
+	if !strings.Contains(joined, "--tiny-device openvino-npu") {
+		t.Errorf("argv %q missing '--tiny-device openvino-npu'", joined)
+	}
+}
+
+// TestVmafScoreRejectsInvalidCoreParams verifies pixfmt, bitdepth, and backend validation.
+func TestVmafScoreRejectsInvalidCoreParams(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := findRepoRoot(t)
+	dummyPath := repoRoot + "/model/vmaf_v0.6.1.json"
+
+	cases := []struct {
+		name    string
+		args    map[string]any
+		wantErr string
+	}{
+		{
+			name: "invalid pixfmt",
+			args: map[string]any{
+				"ref": dummyPath, "dis": dummyPath,
+				"width": float64(64), "height": float64(64),
+				"pixfmt": "422p", "bitdepth": float64(8),
+			},
+			wantErr: "invalid pixfmt",
+		},
+		{
+			name: "invalid bitdepth",
+			args: map[string]any{
+				"ref": dummyPath, "dis": dummyPath,
+				"width": float64(64), "height": float64(64),
+				"pixfmt": "420", "bitdepth": float64(14),
+			},
+			wantErr: "invalid bitdepth",
+		},
+		{
+			name: "invalid backend",
+			args: map[string]any{
+				"ref": dummyPath, "dis": dummyPath,
+				"width": float64(64), "height": float64(64),
+				"pixfmt": "420", "bitdepth": float64(8),
+				"backend": "vulkan",
+			},
+			wantErr: "invalid backend",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := handleVmafScore(context.Background(), tc.args)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tc.wantErr, err)
+			}
+		})
 	}
 }

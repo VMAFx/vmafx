@@ -7372,6 +7372,16 @@ targeting residual gaps in `server.py` and `http_transport.py`:
   Closes previously uncovered lines: TLS-enabled `_build_ssl_context` branch, `_handle_score` path-validation 400 error path, `_serve` startup warning branches and cleanup finally-block, `run_http_server` CancelledError/KeyboardInterrupt/finally paths, and `make_score_handler` factory return.
 
 
+- **MCP tiny-AI scoring surface and strict input validation**:
+  Expose the full tiny-AI scoring flag suite (`tiny_model`, `tiny_device`,
+  `dnn_ep` alias, `tiny_threads`, `tiny_fp16`, `tiny_model_verify`,
+  `tiny_codec`, `tiny_preset`, `tiny_crf`, `tiny_resize`, `no_reference`)
+  along with feature/CTC selection and thread controls on `vmaf_score`
+  and `vmaf_score_encoded` across both Go (`cmd/vmafx-mcp`) and Python
+  (`mcp-server/vmaf-mcp`) MCP servers. Input validation rejects unknown
+  enums and out-of-range numeric values with byte-compatible argv parity.
+
+
 - **Metal (Apple Silicon) compute backend scaffold (T8-1)
   ([ADR-0361](../docs/adr/0361-metal-compute-backend.md))**. Audit-first
   scaffold mirroring the HIP T7-10 split

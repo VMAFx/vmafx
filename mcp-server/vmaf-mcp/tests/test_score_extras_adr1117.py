@@ -29,6 +29,7 @@ _NEW_PROPS = (
     "nflx_ctc",
     "tiny_model",
     "tiny_device",
+    "dnn_ep",
     "tiny_threads",
     "tiny_fp16",
     "tiny_model_verify",
@@ -70,6 +71,7 @@ def test_enums_match_cli_parse() -> None:
     assert props["tiny_resize"]["enum"] == ["bilinear", "nearest", "bicubic", "disabled"]
     assert "auto" in props["tiny_device"]["enum"]
     assert "rocm" in props["tiny_device"]["enum"]
+    assert props["dnn_ep"]["enum"] == props["tiny_device"]["enum"]
 
 
 def test_to_argv_maps_every_flag() -> None:
@@ -156,3 +158,77 @@ def test_no_reference_requires_tiny_model() -> None:
                 None,
             )
         )
+
+
+def test_dnn_ep_alias_supported() -> None:
+    extras = srv._extras_from_args({"dnn_ep": "openvino-npu"})
+    assert extras.tiny_device == "openvino-npu"
+    argv = extras.to_argv()
+    assert "--tiny-device openvino-npu" in " ".join(argv)
+
+
+@pytest.mark.parametrize(
+    ("args", "match"),
+    [
+        ({"tiny_device": "invalid_dev"}, "invalid tiny_device"),
+        ({"dnn_ep": "unknown_ep"}, "invalid tiny_device"),
+        ({"tiny_device": "cpu", "dnn_ep": "cuda"}, "conflicting tiny_device"),
+        ({"tiny_resize": "cubic"}, "invalid tiny_resize"),
+        ({"tiny_crf": -1}, "invalid tiny_crf"),
+        ({"tiny_crf": 64}, "invalid tiny_crf"),
+        ({"tiny_threads": -1}, "invalid tiny_threads"),
+        ({"aom_ctc": "v8.0"}, "invalid aom_ctc"),
+        ({"nflx_ctc": "v2.0"}, "invalid nflx_ctc"),
+        ({"threads": 0}, "invalid threads"),
+        ({"frame_cnt": 0}, "invalid frame_cnt"),
+        ({"frame_skip_ref": -1}, "invalid frame_skip_ref"),
+        ({"subsample": 0}, "invalid subsample"),
+    ],
+)
+def test_extras_validation_rejects_bad_enums(args: dict, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        srv._extras_from_args(args)
+
+
+@pytest.mark.parametrize(
+    ("args", "match"),
+    [
+        (
+            {
+                "ref": "model/vmaf_v0.6.1.json",
+                "dis": "model/vmaf_v0.6.1.json",
+                "width": 64,
+                "height": 64,
+                "pixfmt": "422p",
+                "bitdepth": 8,
+            },
+            "invalid pixfmt",
+        ),
+        (
+            {
+                "ref": "model/vmaf_v0.6.1.json",
+                "dis": "model/vmaf_v0.6.1.json",
+                "width": 64,
+                "height": 64,
+                "pixfmt": "420",
+                "bitdepth": 14,
+            },
+            "invalid bitdepth",
+        ),
+        (
+            {
+                "ref": "model/vmaf_v0.6.1.json",
+                "dis": "model/vmaf_v0.6.1.json",
+                "width": 64,
+                "height": 64,
+                "pixfmt": "420",
+                "bitdepth": 8,
+                "backend": "vulkan",
+            },
+            "invalid backend",
+        ),
+    ],
+)
+def test_vmaf_score_rejects_invalid_core_params(args: dict, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        anyio.run(lambda: srv._call_tool_dispatch("vmaf_score", args, None))
