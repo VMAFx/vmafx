@@ -83,6 +83,7 @@ except ModuleNotFoundError:
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 from ai.data.feature_extractor import FULL_FEATURES, _extractors_for  # noqa: E402
+from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
 
 # isort: split
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
@@ -206,17 +207,22 @@ def _run_vmaf_full(
     w: int,
     h: int,
     out_json: Path,
-    model_path: Path,
+    model_arg: str,
     bitdepth: int = 10,
 ) -> None:
     """Run libvmaf CLI with all FULL_FEATURES extractors + the
-    vmaf_v0.6.1 model attached for the per-frame VMAF teacher score.
+    teacher model attached for the per-frame VMAF teacher score.
 
     BVI-DVC ships 10-bit; ``--bitdepth 10`` is the only structural
     delta vs. the 8-bit konvid invocation. The ``bitdepth`` parameter
     is exposed so callers that synthesise 8-bit test fixtures can pass
     ``bitdepth=8``.
     """
+    m_arg = (
+        str(model_arg)
+        if (str(model_arg).startswith("path=") or str(model_arg).startswith("version="))
+        else f"path={model_arg}"
+    )
     feat_args: list[str] = []
     for ex in EXTRACTORS:
         feat_args += ["--feature", ex]
@@ -236,7 +242,7 @@ def _run_vmaf_full(
             "--bitdepth",
             str(bitdepth),
             "--model",
-            f"path={model_path}",
+            m_arg,
             *feat_args,
             "--threads",
             "1",
@@ -245,7 +251,6 @@ def _run_vmaf_full(
             "--output",
             str(out_json),
             "--json",
-            "-q",
         ]
     )
 
@@ -263,16 +268,27 @@ def _lookup(metrics: dict, name: str) -> float | None:
     v = metrics.get(f"integer_{name}")
     if v is not None:
         return float(v)
+    prefix = f"integer_{name}_"
+    for k, val in metrics.items():
+        if k.startswith(prefix) and val is not None:
+            return float(val)
     return None
 
 
-def _frames_to_rows(key: str, vmaf_json: Path, codec: str) -> list[dict]:
+def _frames_to_rows(
+    key: str, vmaf_json: Path, codec: str, teacher_model: str = DEFAULT_MODEL
+) -> list[dict]:
     with vmaf_json.open() as f:
         d = json.load(f)
     rows = []
     for fr in d["frames"]:
         m = fr["metrics"]
-        row: dict = {"key": key, "frame_index": int(fr["frameNum"]), "codec": codec}
+        row: dict = {
+            "key": key,
+            "frame_index": int(fr["frameNum"]),
+            "codec": codec,
+            "teacher_model": teacher_model,
+        }
         for feat in FULL_FEATURES:
             v = _lookup(m, feat)
             row[feat] = float("nan") if v is None else v
@@ -286,24 +302,25 @@ def _process_clip(
     key: str,
     src_video: Path,
     vmaf_bin: Path,
-    model_path: Path,
+    model_arg: str,
     crf: int,
     cache_dir: Path | None,
     scratch: Path,
     codec: str,
+    teacher_model: str = DEFAULT_MODEL,
 ) -> list[dict]:
     if cache_dir is not None:
         cache_path = cache_dir / f"{key}.json"
         if cache_path.is_file():
-            return _frames_to_rows(key, cache_path, codec)
+            return _frames_to_rows(key, cache_path, codec, teacher_model)
     ref_yuv = scratch / f"{key}_ref.yuv"
     dis_yuv = scratch / f"{key}_dis.yuv"
     vmaf_json = scratch / f"{key}_vmaf.json"
     try:
         w, h, _nb = _decode_yuv_10bit(src_video, ref_yuv)
         _encode_dis_10bit(src_video, dis_yuv, crf)
-        _run_vmaf_full(vmaf_bin, ref_yuv, dis_yuv, w, h, vmaf_json, model_path)
-        rows = _frames_to_rows(key, vmaf_json, codec)
+        _run_vmaf_full(vmaf_bin, ref_yuv, dis_yuv, w, h, vmaf_json, model_arg)
+        rows = _frames_to_rows(key, vmaf_json, codec, teacher_model)
         if cache_dir is not None:
             cache_dir.mkdir(parents=True, exist_ok=True)
             write_text_atomic(cache_dir / f"{key}.json", vmaf_json.read_text())
@@ -322,11 +339,12 @@ def _process_clip_yuv(
     fps: int,
     depth: int,
     vmaf_bin: Path,
-    model_path: Path,
+    model_arg: str,
     crf: int,
     cache_dir: Path | None,
     scratch: Path,
     codec: str,
+    teacher_model: str = DEFAULT_MODEL,
 ) -> list[dict]:
     """Process a pre-decoded YUV clip from ``--bvi-dir`` mode.
 
@@ -338,7 +356,7 @@ def _process_clip_yuv(
     if cache_dir is not None:
         cache_path = cache_dir / f"{key}.json"
         if cache_path.is_file():
-            return _frames_to_rows(key, cache_path, codec)
+            return _frames_to_rows(key, cache_path, codec, teacher_model)
     dis_yuv = scratch / f"{key}_dis.yuv"
     vmaf_json = scratch / f"{key}_vmaf.json"
     try:
@@ -350,10 +368,10 @@ def _process_clip_yuv(
             w,
             h,
             vmaf_json,
-            model_path,
+            model_arg,
             bitdepth=depth,
         )
-        rows = _frames_to_rows(key, vmaf_json, codec)
+        rows = _frames_to_rows(key, vmaf_json, codec, teacher_model)
         if cache_dir is not None:
             cache_dir.mkdir(parents=True, exist_ok=True)
             write_text_atomic(cache_dir / f"{key}.json", vmaf_json.read_text())
@@ -459,11 +477,21 @@ def _stream_extract(zf: zipfile.ZipFile, info: zipfile.ZipInfo, dest: Path) -> P
 
 
 def _run_zip_mode(
-    args: argparse.Namespace, out_path: Path, cache_dir: Path | None
+    args: argparse.Namespace,
+    out_path: Path,
+    cache_dir: Path | None,
+    teacher_model_arg: str,
+    teacher_model_name: str,
 ) -> tuple[int, dict[str, object]]:
-    """Process clips from a zip archive (original ``--bvi-zip`` path)."""
+    """Stream clips out of BVI-DVC Part 1.zip, decode, encode, score."""
     if not args.bvi_zip.is_file():
-        print(f"error: BVI-DVC zip not found at {args.bvi_zip}", file=sys.stderr)
+        print(
+            f"[bvi-dvc-full] ERROR: BVI-DVC archive not found at {args.bvi_zip}. "
+            "Pass --bvi-zip with the path to 'BVI-DVC Part 1.zip' or --bvi-dir "
+            "pointing to a directory of already-extracted clips.",
+            file=sys.stderr,
+            flush=True,
+        )
         return 2, {}
 
     with zipfile.ZipFile(args.bvi_zip) as zf:
@@ -471,9 +499,7 @@ def _run_zip_mode(
         if not entries:
             print(
                 f"[bvi-dvc-full] ERROR: no BVI-DVC clips found in {args.bvi_zip} "
-                f"for tier={args.tier!r}. "
-                "Check --bvi-zip and --tier; expected .mp4 entries matching the "
-                "BVI-DVC naming convention.",
+                f"for tier={args.tier!r}.",
                 file=sys.stderr,
                 flush=True,
             )
@@ -502,11 +528,12 @@ def _run_zip_mode(
                     key,
                     local_mp4,
                     args.vmaf_bin,
-                    args.model,
+                    teacher_model_arg,
                     args.crf,
                     cache_dir,
                     args.scratch,
                     args.codec,
+                    teacher_model=teacher_model_name,
                 )
             except Exception as exc:
                 # Don't let one bad clip (corrupt stream, ffmpeg/vmaf
@@ -535,7 +562,11 @@ def _run_zip_mode(
 
 
 def _run_dir_mode(
-    args: argparse.Namespace, out_path: Path, cache_dir: Path | None
+    args: argparse.Namespace,
+    out_path: Path,
+    cache_dir: Path | None,
+    teacher_model_arg: str,
+    teacher_model_name: str,
 ) -> tuple[int, dict[str, object]]:
     """Process clips from a pre-extracted directory (``--bvi-dir`` path).
 
@@ -576,11 +607,12 @@ def _run_dir_mode(
                     entry.fps,
                     entry.depth,
                     args.vmaf_bin,
-                    args.model,
+                    teacher_model_arg,
                     args.crf,
                     cache_dir,
                     args.scratch,
                     args.codec,
+                    teacher_model=teacher_model_name,
                 )
             else:
                 # Video-container path: decode to YUV, then re-encode a distorted side.
@@ -589,11 +621,12 @@ def _run_dir_mode(
                     key,
                     local_mp4,
                     args.vmaf_bin,
-                    args.model,
+                    teacher_model_arg,
                     args.crf,
                     cache_dir,
                     args.scratch,
                     args.codec,
+                    teacher_model=teacher_model_name,
                 )
         except Exception as exc:
             # One unreadable clip must not abort a multi-hour dir-mode run —
@@ -720,8 +753,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument(
         "--model",
-        type=Path,
-        default=REPO_ROOT / "model" / "vmaf_v0.6.1.json",
+        type=str,
+        default=None,
+        help=(
+            "Teacher model version string or JSON path. Defaults to fork "
+            f"default ({DEFAULT_MODEL} via ADR-1168/ADR-1173)."
+        ),
     )
     ap.add_argument(
         "--out",
@@ -788,9 +825,17 @@ def main(argv: list[str] | None = None) -> int:
     if not args.vmaf_bin.is_file():
         print(f"error: vmaf binary not found at {args.vmaf_bin}", file=sys.stderr)
         return 2
-    if not args.model.is_file():
-        print(f"error: model not found at {args.model}", file=sys.stderr)
-        return 2
+
+    resolved_teacher = resolve_teacher_model(args.model)
+    if resolved_teacher.is_path:
+        p_str = (
+            resolved_teacher.arg[5:]
+            if resolved_teacher.arg.startswith("path=")
+            else resolved_teacher.arg
+        )
+        if not Path(p_str).is_file():
+            print(f"error: model not found at {p_str}", file=sys.stderr)
+            return 2
 
     out_path = args.out or (REPO_ROOT / "runs" / f"full_features_bvi_dvc_{args.tier}.parquet")
     args.out = out_path
@@ -805,10 +850,14 @@ def main(argv: list[str] | None = None) -> int:
         if not args.bvi_dir.is_dir():
             print(f"error: --bvi-dir path is not a directory: {args.bvi_dir}", file=sys.stderr)
             return 2
-        rc, stats = _run_dir_mode(args, out_path, cache_dir)
+        rc, stats = _run_dir_mode(
+            args, out_path, cache_dir, resolved_teacher.arg, resolved_teacher.name
+        )
     else:
         # --bvi-zip path (original behaviour).
-        rc, stats = _run_zip_mode(args, out_path, cache_dir)
+        rc, stats = _run_zip_mode(
+            args, out_path, cache_dir, resolved_teacher.arg, resolved_teacher.name
+        )
 
     if rc == 0:
         _write_manifest(

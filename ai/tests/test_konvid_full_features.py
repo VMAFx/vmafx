@@ -133,11 +133,14 @@ def test_main_writes_full_and_folded_parquets(tmp_path: Path, monkeypatch) -> No
     for feature in FULL_FEATURES:
         assert feature in plain.columns
     assert "codec" in plain.columns
+    assert "teacher_model" in plain.columns
+    assert (plain["teacher_model"] == "model").all()
     assert "source" not in plain.columns
     assert set(folded["source"]).issubset({"fold0", "fold1", "fold2", "fold3", "fold4"})
 
     manifest = json.loads(out_plain.with_suffix(".manifest.json").read_text(encoding="utf-8"))
     assert manifest["schema"] == "konvid-full-features-manifest-v1"
+    assert manifest["teacher_model"] == "model"
     assert manifest["features"] == list(FULL_FEATURES)
     assert manifest["folds"] == {"enabled": True, "fold_count": 5}
     assert manifest["stats"]["clips_selected"] == 2

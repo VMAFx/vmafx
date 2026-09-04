@@ -131,8 +131,10 @@ def test_bvi_dvc_jsonl_writes_manifest(tmp_path: Path) -> None:
     assert set(rows[0]) >= set(mod.CORPUS_ROW_KEYS)
     assert rows[0]["schema_version"] == mod.SCHEMA_VERSION
     assert rows[0]["adm2_mean"] == 0.93
+    assert rows[0]["vmaf_model"] == mod.DEFAULT_MODEL
     assert math.isnan(rows[0]["adm2_std"])
     assert manifest["schema"] == "bvi-dvc-corpus-jsonl-manifest-v1"
+    assert manifest["vmaf_model"] == mod.DEFAULT_MODEL
     assert manifest["stats"] == {"cache_files": 1, "rows": 1}
     assert manifest["run_provenance"]["args"]["preset"] == "8"
 

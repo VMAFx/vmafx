@@ -44,6 +44,8 @@ class ResolvedTeacherModel:
     arg: str  # e.g. "version=vmaf_v1.0.16_3d0h" or "path=/path/to/model.json"
     name: str  # e.g. "vmaf_v1.0.16_3d0h"
     is_path: bool = False
+    resolved: str = ""
+    path: Path | None = None
 
     def __iter__(self):
         return iter((self.arg, self.name))
@@ -60,22 +62,33 @@ def resolve_teacher_model(model: Path | str | None = None) -> ResolvedTeacherMod
     if model is not None:
         s = str(model).strip()
         if s.startswith("version="):
-            return ResolvedTeacherModel(arg=s, name=s[len("version=") :], is_path=False)
+            ver = s[len("version=") :]
+            return ResolvedTeacherModel(arg=s, name=ver, is_path=False, resolved=ver)
         if s.startswith("path="):
             path_part = s[len("path=") :]
-            return ResolvedTeacherModel(arg=s, name=Path(path_part).stem, is_path=True)
+            p = Path(path_part)
+            return ResolvedTeacherModel(arg=s, name=p.stem, is_path=True, resolved=str(p), path=p)
         p = Path(s)
         if p.is_file() or s.endswith(".json") or "/" in s:
-            return ResolvedTeacherModel(arg=f"path={p}", name=p.stem, is_path=True)
-        return ResolvedTeacherModel(arg=f"version={s}", name=s, is_path=False)
+            return ResolvedTeacherModel(
+                arg=f"path={p}", name=p.stem, is_path=True, resolved=str(p), path=p
+            )
+        return ResolvedTeacherModel(arg=f"version={s}", name=s, is_path=False, resolved=s)
 
     env = os.environ.get("VMAF_MODEL_PATH")
     if env:
         p = Path(env)
         if not p.is_dir():
-            return ResolvedTeacherModel(arg=f"path={p}", name=p.stem, is_path=True)
+            return ResolvedTeacherModel(
+                arg=f"path={p}", name=p.stem, is_path=True, resolved=str(p), path=p
+            )
 
-    return ResolvedTeacherModel(arg=f"version={DEFAULT_MODEL}", name=DEFAULT_MODEL, is_path=False)
+    return ResolvedTeacherModel(
+        arg=f"version={DEFAULT_MODEL}",
+        name=DEFAULT_MODEL,
+        is_path=False,
+        resolved=DEFAULT_MODEL,
+    )
 
 
 @dataclass

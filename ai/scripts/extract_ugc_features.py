@@ -24,7 +24,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shlex
 import shutil
 import subprocess
 import sys
@@ -46,10 +45,12 @@ from ai.data.feature_extractor import (  # noqa: E402
     FULL_FEATURES,
     _extractors_for,
 )
+from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
 
-SCHEMA_COLS = (*FULL_FEATURES, "vmaf")
+SCHEMA_COLS = (*FULL_FEATURES, "teacher_model", "vmaf")
 
 _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
+    "adm3": ("adm3", "integer_adm3"),
     "speed_temporal": (
         "speed_temporal",
         "Speed_temporal_feature_speed_temporal_score",
@@ -182,6 +183,7 @@ def _run_vmaf(
         feature_args: list[str] = []
         for extractor in _extractors_for(FULL_FEATURES):
             feature_args += ["--feature", extractor]
+        resolved = resolve_teacher_model(model)
         cmd = [
             str(vmaf_bin),
             "-r",
@@ -197,7 +199,7 @@ def _run_vmaf(
             "-b",
             "8",
             "-m",
-            "path=" + shlex.quote(str(model)),
+            resolved.arg,
             *feature_args,
             "--threads",
             str(n_threads),
@@ -223,7 +225,7 @@ def _run_vmaf(
         out.unlink(missing_ok=True)
 
 
-def _frame_row(metrics: dict) -> dict:
+def _frame_row(metrics: dict, teacher_model: str = DEFAULT_MODEL) -> dict:
     """Translate libvmaf JSON metric names to our parquet schema."""
 
     def m(name: str) -> float:
@@ -232,9 +234,14 @@ def _frame_row(metrics: dict) -> dict:
             value = metrics.get(key)
             if value is not None:
                 return float(value)
+        prefix = f"integer_{name}_"
+        for k, val in metrics.items():
+            if k.startswith(prefix) and val is not None:
+                return float(val)
         return float("nan")
 
     row = {feature: m(feature) for feature in FULL_FEATURES}
+    row["teacher_model"] = teacher_model
     row["vmaf"] = m("vmaf")
     return row
 
@@ -249,6 +256,7 @@ def _write_manifest(
     fail_count: int,
     row_count: int,
     source_count: int,
+    teacher_model: str,
 ) -> None:
     from aiutils.run_manifest import write_run_manifest
 
@@ -262,7 +270,7 @@ def _write_manifest(
         inputs={
             "manifest": args.manifest,
             "vmaf_binary": args.vmaf_bin,
-            "model": args.model,
+            "model": teacher_model,
         },
         outputs={
             "parquet": args.out_parquet,
@@ -275,6 +283,7 @@ def _write_manifest(
             "fail_count": int(fail_count),
             "row_count": int(row_count),
             "source_count": int(source_count),
+            "teacher_model": teacher_model,
             "feature_columns": list(SCHEMA_COLS),
             "config": {
                 "max_height": int(args.max_height),
@@ -299,9 +308,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--vmaf-bin", type=Path, default=DEFAULT_VMAF_BINARY)
     ap.add_argument(
         "--model",
-        type=Path,
-        default=REPO_ROOT / "model" / "vmaf_v0.6.1.json",
-        help="Path to the vmaf_v0.6.1 model JSON.",
+        default=None,
+        help="Path or version name for teacher VMAF model (default: single-source default model).",
     )
     ap.add_argument("--out-parquet", type=Path, required=True)
     ap.add_argument(
@@ -325,11 +333,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.manifest_out is None:
         args.manifest_out = args.out_parquet.with_suffix(".manifest.json")
 
+    resolved_teacher = resolve_teacher_model(args.model)
+
     if not args.vmaf_bin.is_file():
         print(f"error: vmaf binary not found: {args.vmaf_bin}", file=sys.stderr)
         return 2
-    if not args.model.is_file():
-        print(f"error: model not found: {args.model}", file=sys.stderr)
+    if resolved_teacher.is_path and not Path(resolved_teacher.resolved).is_file():
+        print(f"error: model not found: {resolved_teacher.resolved}", file=sys.stderr)
         return 2
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
         print("error: ffmpeg/ffprobe not on PATH", file=sys.stderr)
@@ -407,7 +417,7 @@ def main(argv: list[str] | None = None) -> int:
                     target_w,
                     target_h,
                     args.threads,
-                    args.model,
+                    resolved_teacher.arg,
                 )
             except subprocess.CalledProcessError as exc:
                 print(f"  [{stem}/{sfx}] vmaf failed: {exc}", flush=True)
@@ -418,7 +428,7 @@ def main(argv: list[str] | None = None) -> int:
             source_name = f"ugc-{stem}-{sfx}"
             for frame in frames:
                 m = frame.get("metrics", {})
-                row = _frame_row(m)
+                row = _frame_row(m, teacher_model=resolved_teacher.name)
                 row["corpus"] = "ugc"
                 row["source"] = source_name
                 row["frame_index"] = int(frame.get("frameNum", len(rows)))
@@ -457,6 +467,7 @@ def main(argv: list[str] | None = None) -> int:
         fail_count=fail_count,
         row_count=len(df),
         source_count=int(df["source"].nunique()),
+        teacher_model=resolved_teacher.name,
     )
     print(
         f"[ugc-extract] wrote {args.out_parquet} pairs={pair_count} fails={fail_count} "
