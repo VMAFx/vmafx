@@ -131,7 +131,7 @@ static void iqa_convolve_horizontal_pass(const float *img, int w, const struct i
             const int kx = x + uc;
             const ptrdiff_t img_offset = (ptrdiff_t)ky * w + kx;
             for (int u = -uc; u <= uc - kw_even; ++u, ++k_offset) {
-                sum += img[img_offset + u] * k->kernel_h[k_offset];
+                sum += (double)img[img_offset + u] * k->kernel_h[k_offset];
             }
             img_cache[img_offset] = (float)(sum * scale);
         }
@@ -152,7 +152,7 @@ static void iqa_convolve_vertical_pass(const float *img_cache, int w, const stru
             const int kx = x + uc;
             const ptrdiff_t img_offset = (ptrdiff_t)ky * w + kx;
             for (int v = -vc; v <= vc - kh_even; ++v, ++k_offset) {
-                sum += img_cache[img_offset + (ptrdiff_t)v * w] * k->kernel_v[k_offset];
+                sum += (double)img_cache[img_offset + (ptrdiff_t)v * w] * k->kernel_v[k_offset];
             }
             dst[y * dst_w + x] = (float)(sum * scale);
         }
@@ -292,9 +292,10 @@ float iqa_filter_pixel(const float *img, int w, int h, int x, int y, const struc
         const ptrdiff_t img_offset = (ptrdiff_t)(y + v) * w + x;
         for (int u = -uc; u <= uc - kw_even; ++u, ++k_offset) {
             if (!edge) {
-                sum += img[img_offset + u] * k->kernel[k_offset];
+                sum += (double)img[img_offset + u] * k->kernel[k_offset];
             } else {
-                sum += k->bnd_opt(img, w, h, x + u, y + v, k->bnd_const) * k->kernel[k_offset];
+                sum +=
+                    (double)k->bnd_opt(img, w, h, x + u, y + v, k->bnd_const) * k->kernel[k_offset];
             }
         }
     }
