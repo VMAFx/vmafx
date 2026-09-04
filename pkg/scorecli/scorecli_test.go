@@ -38,6 +38,7 @@ func TestBuildCommand(t *testing.T) {
 				"--pixel_format", "420", "--bitdepth", "8",
 				"--model", "version=" + model.DefaultVersion,
 				"--json", "--output", "/tmp/o.json",
+				"--feature", "vif",
 				"--backend", "cuda",
 			},
 		},
@@ -54,6 +55,7 @@ func TestBuildCommand(t *testing.T) {
 				"--pixel_format", "444", "--bitdepth", "10",
 				"--model", "path=/m.json",
 				"--json", "--output", "/tmp/o.json",
+				"--feature", "vif",
 			},
 		},
 		{
@@ -69,7 +71,23 @@ func TestBuildCommand(t *testing.T) {
 				"--pixel_format", "422", "--bitdepth", "8",
 				"--model", "version=" + model.DefaultVersion,
 				"--json", "--output", "/tmp/o.json",
+				"--feature", "vif",
 				"--frame_skip_ref", "48", "--frame_cnt", "240",
+			},
+		},
+		{
+			name: "v0.6.1 already requests vif so --feature vif is omitted",
+			req: scorecli.Request{
+				Reference: "/r.yuv", Distorted: "/d.yuv",
+				Width: 1920, Height: 1080, PixFmt: "yuv420p",
+				Model: "vmaf_v0.6.1",
+			},
+			want: []string{
+				"vmaf", "--reference", "/r.yuv", "--distorted", "/d.yuv",
+				"--width", "1920", "--height", "1080",
+				"--pixel_format", "420", "--bitdepth", "8",
+				"--model", "version=vmaf_v0.6.1",
+				"--json", "--output", "/tmp/o.json",
 			},
 		},
 		{
@@ -84,6 +102,7 @@ func TestBuildCommand(t *testing.T) {
 				"--pixel_format", "420", "--bitdepth", "12",
 				"--model", "version=" + model.DefaultVersion,
 				"--json", "--output", "/tmp/o.json",
+				"--feature", "vif",
 			},
 		},
 	}
@@ -175,6 +194,35 @@ func TestParseFeatureAggregates(t *testing.T) {
 	// A feature the run never emitted must be absent, not NaN or zero.
 	if _, ok := means["vif_scale3"]; ok {
 		t.Error("vif_scale3 should be absent from the means map")
+	}
+}
+
+// TestParseFeatureAggregatesOptionsSuffixed pins the prefix fallback for the
+// options-suffixed keys the v1 default emits (adm2 / motion2 carry their
+// option string; vif_scale0..3 come bare from the explicit --feature vif).
+func TestParseFeatureAggregatesOptionsSuffixed(t *testing.T) {
+	t.Parallel()
+
+	payload := []byte(`{"pooled_metrics":{
+		"integer_adm2_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02":{"mean":0.935743},
+		"integer_adm3_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02":{"mean":0.948285},
+		"integer_motion2_mmxv_18":{"mean":3.894361},
+		"integer_motion3_mmxv_18":{"mean":3.989766},
+		"integer_vif_scale0":{"mean":0.363662},
+		"integer_vif_scale1":{"mean":0.767495},
+		"integer_vif_scale2":{"mean":0.863108},
+		"integer_vif_scale3":{"mean":0.91572}
+	}}`)
+	means, _ := scorecli.ParseFeatureAggregates(payload, scorecli.Canonical6Features)
+	want := map[string]float64{
+		"adm2": 0.935743, "motion2": 3.894361,
+		"vif_scale0": 0.363662, "vif_scale1": 0.767495,
+		"vif_scale2": 0.863108, "vif_scale3": 0.91572,
+	}
+	for name, w := range want {
+		if got, ok := means[name]; !ok || got != w {
+			t.Errorf("%s mean = %v (present %v), want %v", name, got, ok, w)
+		}
 	}
 }
 

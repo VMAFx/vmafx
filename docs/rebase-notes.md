@@ -329,6 +329,9 @@ no rebase impact: fork-only test wiring in `core/test/meson.build` and documenta
 ## fix/metal-motion-v2-mirror-closeout — Metal motion_v2 mirror closeout and test observability (2026-09-04)
 
 no rebase impact: fork-only Metal backend (`core/src/feature/metal/integer_motion_v2.metal`, `core/test/test_metal_motion_v2_parity.c`, `core/src/feature/metal/AGENTS.md`, ADR-1176). All touched files are fork-added surfaces with no upstream Netflix/vmaf counterpart.
+## fix/vmaf-tune-v1-canonical-features — request VIF explicitly so canonical-6 columns populate under v1 default (2026-09-04)
+
+No rebase impact: all touched files (`tools/vmaf-tune/`, `pkg/corpus/`, `pkg/fast/`) are fork-added Python and Go tuning tooling with no upstream Netflix/vmaf counterpart. No public C API, public header, Meson option, or golden assertion is touched.
 
 ## fix/vmaf-tune-report-audit-and-svtav1-hdr-knob-docs — vmaf-tune report audit findings #2–#10 and SVT-AV1-HDR knob docs (2026-09-04)
 

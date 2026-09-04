@@ -26517,6 +26517,10 @@ and fast recommend; the pages now describe the shipped implementations and
 remaining production limits.
 
 
+- Fixed missing VIF features and NaN canonical-6 columns in `vmaf-tune` and `vmafx-tune` under the default VMAF model (`T-VMAFTUNE-VIF-NAN-UNDER-V1-2026-09-04`).
+  Since the default model flipped to `vmaf_v1.0.16_3d0h` (ADR-1168 / commit `15b721a4e`), libvmaf no longer natively evaluates VIF, resulting in unpopulated `vif_scale0..3` metrics and option-suffixed keys (`integer_adm2_csf_...`, `integer_motion2_mmxv_18`) failing exact lookup. Both Python (`vmaftune.score`) and every Go libvmaf argv builder (`pkg/corpus`, `pkg/fast`, `pkg/scorecli`, `pkg/tune/executor`, sharing one `pkg/model.RequestsVIF` decision) now explicitly append `--feature vif` to the `vmaf` command line when scoring with a model that does not natively request VIF (while omitting it for `v0.6` family models), and support prefix matching on options-suffixed pooled keys so that all canonical-6 columns (`adm2`, `vif_scale0..3`, `motion2`) are properly populated.
+
+
 `vmaf-tune` now parses libx265 pass-1 stats aliases (`q-aq`, `icu`,
 `pcu`, `scu`) so x265 corpus rows populate the encoder-internal stats
 columns instead of falling back to zero-valued aggregates.

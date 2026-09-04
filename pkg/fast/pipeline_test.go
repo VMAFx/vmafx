@@ -146,6 +146,27 @@ func TestBuildVMAFCommand(t *testing.T) {
 				"--model", "path=/models/hdr.json",
 				"--json",
 				"--output", "/tmp/out.json",
+				"--feature", "vif",
+			},
+		},
+		{
+			name: "default model appends --feature vif",
+			cfg: PipelineConfig{
+				Src: "/refs/clip.yuv", Width: 1920, Height: 1080,
+				PixFmt: "yuv420p",
+			},
+			want: []string{
+				"vmaf",
+				"--reference", "/refs/clip.yuv",
+				"--distorted", "/tmp/dist.mp4",
+				"--width", "1920",
+				"--height", "1080",
+				"--pixel_format", "420",
+				"--bitdepth", "8",
+				"--model", "version=" + model.DefaultVersion,
+				"--json",
+				"--output", "/tmp/out.json",
+				"--feature", "vif",
 			},
 		},
 	}
@@ -256,6 +277,19 @@ func TestParseCanonical6Means(t *testing.T) {
 				"vmaf":               {"mean": 92.0}
 			}}`,
 			want: []float64{0.95, 0.51, 0.86, 0.91, 0.94, 8.9},
+		},
+		{
+			name: "options-suffixed pooled keys resolve via prefix matching",
+			payload: `{"pooled_metrics": {
+				"integer_adm2_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02": {"mean": 0.961},
+				"integer_vif_scale0": {"mean": 0.505},
+				"integer_vif_scale1": {"mean": 0.879},
+				"integer_vif_scale2": {"mean": 0.938},
+				"integer_vif_scale3": {"mean": 0.964},
+				"integer_motion2_mmxv_18": {"mean": 1.25},
+				"vmaf": {"mean": 89.5}
+			}}`,
+			want: []float64{0.961, 0.505, 0.879, 0.938, 0.964, 1.25},
 		},
 		{
 			name: "bare pooled keys still resolve",
