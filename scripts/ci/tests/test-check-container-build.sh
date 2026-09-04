@@ -181,6 +181,19 @@ EOF
 run_case "verify a stamp with an empty image_title" 1 "$HOST_MARKER" --verify "$TITLELESS_DIR"
 
 echo
+echo "=== consumer verifier: verify-native-release-artifacts.sh fails closed ==="
+VERIFY_NATIVE="${SCRIPT_DIR}/../../release/verify-native-release-artifacts.sh"
+if [ -f "$VERIFY_NATIVE" ]; then
+  if bash "$VERIFY_NATIVE" "$HOST_ARTIFACTS" 3.2.1 >"${WORKDIR}/verify-native.log" 2>&1; then
+    FAIL=$((FAIL + 1))
+    echo "FAIL verify-native-release-artifacts.sh accepted an unstamped tree"
+  else
+    PASS=$((PASS + 1))
+    echo "ok   verify-native-release-artifacts.sh rejects an unstamped tree"
+  fi
+fi
+
+echo
 echo "=== invocation errors exit 2 (never 0) ==="
 run_case "--stamp with no directory" 2 "$CONTAINER_MARKER" --stamp
 run_case "--verify with no directory" 2 "$CONTAINER_MARKER" --verify

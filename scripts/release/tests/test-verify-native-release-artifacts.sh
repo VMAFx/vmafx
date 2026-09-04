@@ -70,6 +70,15 @@ stage_fixture() {
   )
   cp -- "$build/vmaf" "$destination/vmaf"
   chmod +x "$destination/vmaf"
+  cat >"$destination/container-build-provenance.txt" <<'EOF'
+schema=vmafx-container-build-provenance/1
+vmafx_dev_container=1
+image_title=vmaf-dev-mcp
+containerfile=dev/Containerfile
+source=https://github.com/VMAFx/vmafx
+git_commit=testcommit
+stamped_at=1970-01-01T00:00:00Z
+EOF
 }
 
 good="$scratch/good"
@@ -108,6 +117,25 @@ wrong_version="$scratch/wrong-version"
 stage_fixture "$wrong_version"
 check 'CLI version mismatch is rejected' \
   expect_rejected "$wrong_version" 3.2.0
+
+missing_provenance="$scratch/missing-provenance"
+stage_fixture "$missing_provenance"
+rm -- "$missing_provenance/container-build-provenance.txt"
+check 'missing container-build provenance is rejected' \
+  expect_rejected "$missing_provenance"
+
+empty_provenance="$scratch/empty-provenance"
+stage_fixture "$empty_provenance"
+: >"$empty_provenance/container-build-provenance.txt"
+check 'empty container-build provenance is rejected' \
+  expect_rejected "$empty_provenance"
+
+symlinked_provenance="$scratch/symlinked-provenance"
+stage_fixture "$symlinked_provenance"
+rm -- "$symlinked_provenance/container-build-provenance.txt"
+ln -s "$scratch/vmaf.c" "$symlinked_provenance/container-build-provenance.txt"
+check 'symlinked container-build provenance is rejected' \
+  expect_rejected "$symlinked_provenance"
 
 printf '\n=== Results: %d passed, %d failed ===\n' "$pass" "$fail"
 [[ "$fail" -eq 0 ]]
