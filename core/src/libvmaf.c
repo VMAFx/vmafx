@@ -1619,20 +1619,33 @@ int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDic
     if (!fex)
         return -EINVAL;
 
+    /* Netflix/vmaf#1242 ownership contract: past the argument guards above, this
+     * call consumes `opts_dict` on every path. Both failure paths below used to
+     * return without releasing it, which leaked the caller's dictionary exactly
+     * when the caller was told not to free it. */
     VmafDictionary *d = NULL;
     if (s) {
         err = vmaf_dictionary_copy(&s, &d);
-        if (err)
+        if (err) {
+            (void)vmaf_dictionary_free(&s);
             return err;
+        }
         err = vmaf_dictionary_free(&s);
-        if (err)
+        if (err) {
+            (void)vmaf_dictionary_free(&d);
             return err;
+        }
     }
 
     VmafFeatureExtractorContext *fex_ctx = NULL;
     err = vmaf_feature_extractor_context_create(&fex_ctx, fex, d);
-    if (err)
+    if (err) {
+        /* context_create does not release the dictionary on its own failure
+         * paths (it frees only what it allocated), so the copy is ours to
+         * release here. */
+        (void)vmaf_dictionary_free(&d);
         return err;
+    }
     fex_ctx_bind_backends(fex_ctx, vmaf);
 
     RegisteredFeatureExtractors *rfe = &(vmaf->registered_feature_extractors);

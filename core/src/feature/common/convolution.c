@@ -22,15 +22,29 @@
 #include "convolution_internal.h"
 #include "cpu.h"
 
-extern int vmaf_floorn(int, int);
-extern int vmaf_ceiln(int, int);
-
+/*
+ * Clamp the border/interior split into [0, dim].
+ *
+ * `borders_hi` is derived as `dim - (filter_width - radius)`, which goes
+ * NEGATIVE as soon as the plane is narrower/shorter than the filter.  The
+ * trailing border loop then starts at a negative index and writes
+ * `dst[i * dst_stride - 1]` / `dst[-dst_stride + j]` — a heap underflow
+ * WRITE, reported upstream as Netflix/vmaf#1582.  `borders_lo` can likewise
+ * exceed the dimension (ceil(radius) > dim), which walks the leading border
+ * loop past the end of the row.
+ *
+ * Clamping leaves every in-contract size untouched (for dim >= filter_width
+ * neither bound is out of range) and additionally removes the duplicate
+ * recomputation that happens when the two border bands would otherwise
+ * overlap.
+ */
 void convolution_x_c_s(const float *filter, int filter_width, const float *src, float *dst,
                        int width, int height, int src_stride, int dst_stride, int step)
 {
     int radius = filter_width / 2;
     int borders_left = vmaf_ceiln(radius, step);
     int borders_right = vmaf_floorn(width - (filter_width - radius), step);
+    convolution_clamp_borders(width, &borders_left, &borders_right);
 
     for (int i = 0; i < height; ++i) {
         for (int j = 0; j < borders_left; j += step) {
@@ -59,6 +73,7 @@ void convolution_y_c_s(const float *filter, int filter_width, const float *src, 
     int radius = filter_width / 2;
     int borders_top = vmaf_ceiln(radius, step);
     int borders_bottom = vmaf_floorn(height - (filter_width - radius), step);
+    convolution_clamp_borders(height, &borders_top, &borders_bottom);
 
     for (int i = 0; i < borders_top; i += step) {
         for (int j = 0; j < width; ++j) {

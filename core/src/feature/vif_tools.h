@@ -23,6 +23,13 @@
 
 #include <stdbool.h>
 
+/* The GPU backends that share vif_get_min_dim() are C++ (SYCL) and
+ * Objective-C++ (Metal) translation units, while vif_tools.c is C -- without
+ * this guard they would demand mangled symbols and fail to link. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 enum vif_scaling_method {
     vif_scale_nearest = 0,
     vif_scale_bicubic = 1,
@@ -73,10 +80,20 @@ void vif_scale_frame_s(enum vif_scaling_method scale_method, const float *src, f
 
 int vif_get_filter_size(int scale, float kernelscale);
 
+/* Smallest frame dimension the four-scale VIF ladder can process without
+ * walking the reflect-101 mirror out of the plane, for a given kernelscale.
+ * 16 at the default kernelscale of 1.0.  See the definition for the
+ * derivation; Netflix/vmaf#1582. */
+int vif_get_min_dim(float kernelscale);
+
 void vif_get_filter(float *out, int scale, float kernelscale);
 
 void speed_get_antialias_filter(float *out, int scale, float kernelscale);
 
 bool vif_validate_kernelscale(float kernelscale);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* VIF_TOOLS_H_ */

@@ -194,18 +194,27 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     VifState *s = fex->priv;
 
     /*
-     * The scale-0 Gaussian uses a 17-tap separable filter.  The reflect-101
-     * mirror-padding formula `ii = 2*h - ii - 2` requires the dimension to be
-     * >= 9 to stay in-bounds for every filter position (half-width = 8,
-     * worst-case index = dim + 7, mirrored = dim - 9 >= 0).
-     * Guard on the raw input dimensions first (before any string-option access)
+     * compute_vif() runs a four-scale ladder: each scale halves the working
+     * dimension and then convolves at that size with the scale's own Gaussian
+     * (widths {17, 9, 5, 3} at the default kernelscale).  Every one of those
+     * convolutions needs `dim >= filter_width/2 + 1` for the reflect-101
+     * mirror to stay inside the plane, so the frame minimum is the largest
+     * `(filter_width_s/2 + 1) << s` over the ladder -- 16, not the 9 this
+     * guard used to carry.  The old scale-0-only floor let 9..15px input
+     * reach the scale-3 convolution with a sub-minimum plane and read out of
+     * bounds; reported upstream as Netflix/vmaf#1582.
+     *
+     * Guard the raw input dimensions first (before any string-option access)
      * to provide a fast, unconditional early exit.  A second guard after
-     * computing scaled_w / scaled_h covers the case where a prescale < 1.0
-     * shrinks a larger frame below the minimum.
+     * computing scaled_w / scaled_h covers the case where a prescale != 1.0
+     * moves the dimensions actually handed to compute_vif().
      */
-    if (w < 9 || h < 9) {
+    const int vif_min_dim = vif_get_min_dim((float)s->vif_kernelscale);
+    if (w < (unsigned)vif_min_dim || h < (unsigned)vif_min_dim) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "float_vif requires width >= 9 and height >= 9 (got %ux%u)\n", w, h);
+                 "float_vif requires width >= %d and height >= %d for the four-scale "
+                 "ladder (got %ux%u)\n",
+                 vif_min_dim, vif_min_dim, w, h);
         return -EINVAL;
     }
 
@@ -217,10 +226,11 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     s->scaled_w = (int)(w * s->vif_prescale + 0.5);
     s->scaled_h = (int)(h * s->vif_prescale + 0.5);
 
-    if (s->scaled_w < 9 || s->scaled_h < 9) {
+    if (s->scaled_w < (size_t)vif_min_dim || s->scaled_h < (size_t)vif_min_dim) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "float_vif requires scaled width >= 9 and height >= 9 (got %zux%zu)\n",
-                 s->scaled_w, s->scaled_h);
+                 "float_vif requires scaled width >= %d and height >= %d for the "
+                 "four-scale ladder (got %zux%zu)\n",
+                 vif_min_dim, vif_min_dim, s->scaled_w, s->scaled_h);
         return -EINVAL;
     }
     s->float_stride = ALIGN_CEIL(w * sizeof(float));

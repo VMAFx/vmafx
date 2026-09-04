@@ -525,6 +525,35 @@ jobs:
           # Static libs must include -lpthread and -lm
           pkg-config --static --libs libvmaf | grep -q '\-lpthread\|\-pthread'
           pkg-config --static --libs libvmaf | grep -q '\-lm'
+          # ... and the C++ runtime, because libvmaf contains C++ translation
+          # units (feature_extractor.cpp, luminance_tools.cpp, vendored libsvm,
+          # ...). Netflix/vmaf#1178.
+          pkg-config --static --libs libvmaf | grep -q '\-lstdc++\|\-lc++'
+          # Grepping the flag list is not the test that actually reproduces the
+          # downstream FFmpeg failure — LINKING is. Build a C consumer with the
+          # C driver, using exactly what pkg-config reports.
+          echo "=== static link smoke ==="
+          cat > /tmp/pc_static_smoke.c <<'SMOKE'
+          #include <libvmaf/libvmaf.h>
+          int main(void)
+          {
+              VmafContext *ctx = 0;
+              VmafConfiguration cfg = {0};
+              return vmaf_init(&ctx, cfg) == 0 ? 0 : 1;
+          }
+          SMOKE
+          # Use the leg's OWN compiler, not bare `cc`. The matrix builds with
+          # `ccache gcc-14` / `ccache clang-22`, while `cc` is the image
+          # default (a different gcc), so a bare `cc` link tests a toolchain
+          # the archive was not produced with. $CC is intentionally unquoted:
+          # its value is two words ("ccache gcc-14") and must word-split.
+          # (b_lto is meson-default false here, and explicitly false on the
+          # SYCL/CUDA legs, so the archive holds plain objects rather than LTO
+          # IR — a plugin mismatch is not in play, but matching the compiler
+          # still costs nothing.)
+          ${CC:-cc} /tmp/pc_static_smoke.c $(pkg-config --cflags libvmaf) \
+             $(pkg-config --static --libs libvmaf) -o /tmp/pc_static_smoke
+          echo "static link OK"
 
       # DNN legs: run the dedicated dnn suite first so its logs are easy
       # to find if the build regresses ORT compatibility. The full test

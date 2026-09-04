@@ -1,6 +1,6 @@
 # ADR-0806: VmafFeatureDictionary caller-ownership contract
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-1166](1166-upstream-issue-harvest.md)
 - **Date**: 2026-05-29
 - **Deciders**: lusoris
 - **Tags**: `api`, `memory`, `testing`

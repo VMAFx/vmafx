@@ -46,9 +46,34 @@ constant float FILT[5] = {
 /* s_vert: TILE_H × TILE_W. */
 #define TILE_PITCH_V 20
 
+/* Reflect-101 index fold, iterated.
+ *
+ * The kernels below load a TILE_W x TILE_H = 20x20 source tile at origin
+ * `bid * 16 - HALF_FW`, so this helper is handed indices spanning
+ * [-2, 16*bid + 17] -- far wider than the 5-tap neighbourhood it looks like
+ * it serves. A SINGLE bounce only lands back in range when the overshoot is
+ * at most `sup - 1`, i.e. `idx <= 2 * (sup - 1)`. Enumerated over the real
+ * tile span, the single-bounce form read OUT OF BOUNDS for every dimension
+ * in 1..9 and for exactly 17 -- at 17 the last workgroup's tile reaches
+ * idx = 33 while 2 * (17 - 1) = 32, folding to -1. The `w < 3 || h < 3`
+ * guard in the host wrapper covers neither case, which is why the fix
+ * belongs here and not in the guard.
+ *
+ * Folding until the index is in range is bit-identical to the single bounce
+ * for every index one bounce already handled (verified by exhaustive
+ * enumeration over dims 1..299 across the full tile span), so no
+ * in-contract score moves. `sup <= 1` has no interior to reflect into and
+ * would not terminate, so it short-circuits.
+ *
+ * Same defect and same fix as the CPU scalar path in
+ * core/src/feature/common/convolution_internal.h (Netflix/vmaf#1582 and
+ * Netflix/vmaf#1581).
+ */
 static inline int skip_mirror(int idx, int sup) {
-    if (idx < 0) { return -idx; }
-    if (idx >= sup) { return 2 * (sup - 1) - idx; }
+    if (sup <= 1) { return 0; }
+    while (idx < 0 || idx >= sup) {
+        idx = (idx < 0) ? -idx : 2 * (sup - 1) - idx;
+    }
     return idx;
 }
 

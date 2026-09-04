@@ -173,10 +173,23 @@ VMAF_EXPORT int vmaf_model_load_from_path(VmafModel **model, VmafModelConfig *cf
  * existing options. Useful when the caller wants to tweak (for example) the
  * VIF enhancement gain limit without editing the model JSON on disk.
  *
- * On both success and failure, ownership of @p opts_dict transfers to this
- * call — the function releases the dictionary internally before returning.
- * The caller MUST NOT call @ref vmaf_feature_dictionary_free on @p opts_dict
- * after invoking this function, even on a non-zero return.
+ * Ownership of @p opts_dict transfers to this call on every path EXCEPT the
+ * argument-validation guards: if the function returns `-EINVAL` because
+ * @p model, @p feature_name or @p opts_dict was NULL, nothing was consumed and
+ * the caller still owns the dictionary.  On any other return — success, or
+ * `-ENOMEM` from the merge step — the function has released the dictionary
+ * internally and the caller MUST NOT call
+ * @ref vmaf_feature_dictionary_free on it.
+ *
+ * This is NOT quite the same rule as @ref vmaf_use_feature, and the difference
+ * is deliberate.  That function resolves @p feature_name against the global
+ * extractor registry, so it can reject an unknown name with `-EINVAL` before
+ * touching the dictionary and hand it back.  This one matches @p feature_name
+ * against the features of a *particular model*: a name that matches nothing is
+ * not an error but a successful no-op returning `0`, and the dictionary is
+ * still consumed.  See <libvmaf/feature.h> for the contract covering all three
+ * entry points (Netflix/vmaf#1242 reported the headers contradicting each
+ * other; the `-ENOMEM` leak it described is fixed).
  *
  * @param model        Loaded model from @ref vmaf_model_load or
  *                     @ref vmaf_model_load_from_path. Must not be NULL.
@@ -342,10 +355,15 @@ VMAF_EXPORT int vmaf_model_collection_load_from_path(VmafModel **model,
  * the collection plus the lead model @p model, so a single override
  * propagates to the ensemble.
  *
- * Ownership of @p opts_dict transfers to this call — the function deep-copies
- * the dictionary onto each sub-model and releases the original (and every
- * temporary copy on failure) before returning. The caller MUST NOT call
- * @ref vmaf_feature_dictionary_free on @p opts_dict afterwards.
+ * Ownership of @p opts_dict transfers to this call on every path EXCEPT the
+ * argument-validation guards: if the function returns `-EINVAL` because
+ * @p model, @p model_collection, @p feature_name or @p opts_dict was NULL,
+ * nothing was consumed and the caller still owns the dictionary.  Otherwise
+ * the function deep-copies the dictionary onto each sub-model and releases the
+ * original (and every temporary copy, including a partially-built one on an
+ * allocation failure) before returning, and the caller MUST NOT call
+ * @ref vmaf_feature_dictionary_free on @p opts_dict afterwards.  Same rule as
+ * @ref vmaf_model_feature_overload; see <libvmaf/feature.h>.
  *
  * @param model            Lead model returned by
  *                         @ref vmaf_model_collection_load /

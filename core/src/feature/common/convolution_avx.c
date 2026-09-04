@@ -150,7 +150,12 @@ void convolution_f32_avx_s(const float *RESTRICT filter, int filter_width,
     int width_floor_step = vmaf_floorn(width, AVX_STEP);
     int tmp_stride = vmaf_ceiln(width, AVX_STEP);
 
+    /* Clamp the vertical border split to the plane -- rationale and the
+     * negative-`height - radius` failure mode are documented on
+     * convolution_clamp_borders() in convolution_internal.h. */
+    int i_border_top = radius;
     int i_vec_end = height - radius;
+    convolution_clamp_borders(height, &i_border_top, &i_vec_end);
     int j_vec_end = vmaf_floorn(width - radius, AVX_STEP);
 
     const ptrdiff_t src_pdt = (ptrdiff_t)src_stride;
@@ -158,7 +163,7 @@ void convolution_f32_avx_s(const float *RESTRICT filter, int filter_width,
     const ptrdiff_t tmp_pdt = (ptrdiff_t)tmp_stride;
 
     // Vertical pass.
-    for (int i = 0; i < radius; ++i) {
+    for (int i = 0; i < i_border_top; ++i) {
         for (int j = 0; j < width; ++j) {
             tmp[(ptrdiff_t)i * tmp_pdt + j] = convolution_edge_s(false, filter, filter_width, src,
                                                                  width, height, src_stride, i, j);
@@ -206,7 +211,12 @@ void convolution_f32_avx_sq_s(const float *RESTRICT filter, int filter_width,
     int width_floor_step = vmaf_floorn(width, AVX_STEP);
     int tmp_stride = vmaf_ceiln(width, AVX_STEP);
 
+    /* Clamp the vertical border split to the plane -- rationale and the
+     * negative-`height - radius` failure mode are documented on
+     * convolution_clamp_borders() in convolution_internal.h. */
+    int i_border_top = radius;
     int i_vec_end = height - radius;
+    convolution_clamp_borders(height, &i_border_top, &i_vec_end);
     int j_vec_end = vmaf_floorn(width - radius, AVX_STEP);
 
     const ptrdiff_t src_pdt = (ptrdiff_t)src_stride;
@@ -214,7 +224,7 @@ void convolution_f32_avx_sq_s(const float *RESTRICT filter, int filter_width,
     const ptrdiff_t tmp_pdt = (ptrdiff_t)tmp_stride;
 
     // Vertical pass.
-    for (int i = 0; i < radius; ++i) {
+    for (int i = 0; i < i_border_top; ++i) {
         for (int j = 0; j < width; ++j) {
             tmp[(ptrdiff_t)i * tmp_pdt + j] = convolution_edge_sq_s(
                 false, filter, filter_width, src, width, height, src_stride, i, j);
@@ -263,7 +273,12 @@ void convolution_f32_avx_xy_s(const float *RESTRICT filter, int filter_width,
     int width_floor_step = vmaf_floorn(width, AVX_STEP);
     int tmp_stride = vmaf_ceiln(width, AVX_STEP);
 
+    /* Clamp the vertical border split to the plane -- rationale and the
+     * negative-`height - radius` failure mode are documented on
+     * convolution_clamp_borders() in convolution_internal.h. */
+    int i_border_top = radius;
     int i_vec_end = height - radius;
+    convolution_clamp_borders(height, &i_border_top, &i_vec_end);
     int j_vec_end = vmaf_floorn(width - radius, AVX_STEP);
 
     const ptrdiff_t src1_pdt = (ptrdiff_t)src1_stride;
@@ -272,7 +287,7 @@ void convolution_f32_avx_xy_s(const float *RESTRICT filter, int filter_width,
     const ptrdiff_t tmp_pdt = (ptrdiff_t)tmp_stride;
 
     // Vertical pass.
-    for (int i = 0; i < radius; ++i) {
+    for (int i = 0; i < i_border_top; ++i) {
         for (int j = 0; j < width; ++j) {
             tmp[(ptrdiff_t)i * tmp_pdt + j] =
                 convolution_edge_xy_s(false, filter, filter_width, src1, src2, width, height,

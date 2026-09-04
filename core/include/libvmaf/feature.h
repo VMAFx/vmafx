@@ -34,13 +34,35 @@ extern "C" {
  * are detected at set-time and stored in a normalised form so that
  * `"1"` / `"1.0"` / `" 1 "` compare equal downstream.
  *
- * Ownership transfer rules:
- *   - On success of @ref vmaf_use_feature / @ref vmaf_model_feature_overload,
- *     ownership of the dictionary passes to the VmafContext / VmafModel and
- *     the caller MUST NOT free it.
- *   - On failure of those calls (non-zero return), the caller still owns the
- *     dictionary and is responsible for releasing it with
+ * Ownership transfer rules (identical for @ref vmaf_use_feature,
+ * @ref vmaf_model_feature_overload and
+ * @ref vmaf_model_collection_feature_overload; see Netflix/vmaf#1242, which
+ * reported the divergence these three headers used to carry):
+ *
+ *   - **NULL-argument failures do not consume the dictionary.** If the call
+ *     returns `-EINVAL` because a required argument was NULL, nothing was
+ *     taken: the caller still owns the dictionary and must release it with
  *     @ref vmaf_feature_dictionary_free.
+ *   - **@ref vmaf_use_feature additionally does not consume when
+ *     @p feature_name names no registered feature.** It looks the extractor up
+ *     first and returns `-EINVAL` before touching the dictionary.
+ *   - **Every other path consumes it.** Once those guards have passed, the call
+ *     releases the dictionary internally — on success and on failure alike,
+ *     including `-ENOMEM` from the merge/copy step — and the caller MUST NOT
+ *     free it.
+ *
+ * Note the asymmetry in the third bullet, which is deliberate and was the
+ * divergence Netflix/vmaf#1242 reported. @ref vmaf_model_feature_overload and
+ * @ref vmaf_model_collection_feature_overload match @p feature_name against the
+ * features of a *particular model*. A name that matches nothing there is not an
+ * error — it is a successful no-op that returns `0` — and the dictionary is
+ * still consumed. Only @ref vmaf_use_feature, which resolves against the global
+ * extractor registry, can report an unknown name as `-EINVAL` and hand the
+ * dictionary back.
+ *
+ * In practice: free the dictionary yourself only when the call returned
+ * `-EINVAL` *and* you either passed a NULL argument or called
+ * @ref vmaf_use_feature. Otherwise never.
  */
 typedef struct VmafFeatureDictionary VmafFeatureDictionary;
 

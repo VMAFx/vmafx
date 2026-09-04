@@ -43,6 +43,16 @@ Filter widths above this one will not use the AVX path for convolutions.
 void convolution_f32_c_s(const float *filter, int filter_width, const float *src, float *dst,
                          float *tmp, int width, int height, int src_stride, int dst_stride);
 
+/* Scalar single-axis passes.  Exposed so the border/mirror regression test can
+ * drive them directly without going through the runtime SIMD dispatch in
+ * convolution_f32_c_s; they carry external linkage either way, so declaring
+ * them here also silences -Wmissing-prototypes. */
+void convolution_x_c_s(const float *filter, int filter_width, const float *src, float *dst,
+                       int width, int height, int src_stride, int dst_stride, int step);
+
+void convolution_y_c_s(const float *filter, int filter_width, const float *src, float *dst,
+                       int width, int height, int src_stride, int dst_stride, int step);
+
 /* AVX2 paths (256-bit, 8 floats per FMA). */
 void convolution_f32_avx_s(const float *filter, int filter_width, const float *src, float *dst,
                            float *tmp, int width, int height, int src_stride, int dst_stride);

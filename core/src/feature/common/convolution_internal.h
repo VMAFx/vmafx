@@ -24,6 +24,37 @@
 #include "macros.h"
 #include <stdbool.h>
 
+/**
+ * Reflect-101 ("mirror without repeating the edge sample") index fold.
+ *
+ * Upstream carries a single-bounce form open-coded at every tap site:
+ *
+ *     if (idx < 0)          idx = -idx;
+ *     else if (idx >= size) idx = size - (idx - size + 2);   // == 2*size - idx - 2
+ *
+ * One bounce is only sufficient when `size >= radius + 1`.  For a smaller
+ * plane the bounced index lands outside the opposite edge and the caller
+ * dereferences out of bounds: at size == 2 a tap of -2 folds to +2 (>= size)
+ * and a tap of +3 folds to -1.  Reported upstream as Netflix/vmaf#1582 and
+ * Netflix/vmaf#1581; reachable in this fork through `float_motion`'s
+ * `motion_add_uv` chroma planes and through `float_vif`'s multi-scale ladder.
+ *
+ * Folding repeatedly until the index is in range is bit-identical to the
+ * single bounce for every `size >= radius + 1` (the loop exits after the
+ * first iteration), so no in-contract score moves.  `size <= 1` has no
+ * interior to reflect into and would not terminate, so it short-circuits
+ * to the only valid index.
+ */
+FORCE_INLINE int convolution_reflect101(int idx, int size)
+{
+    if (size <= 1)
+        return 0;
+    while (idx < 0 || idx >= size) {
+        idx = (idx < 0) ? -idx : (2 * size - idx - 2);
+    }
+    return idx;
+}
+
 FORCE_INLINE float convolution_edge_s(bool horizontal, const float *filter, int filter_width,
                                       const float *src, int width, int height, int stride, int i,
                                       int j)
@@ -35,19 +66,13 @@ FORCE_INLINE float convolution_edge_s(bool horizontal, const float *filter, int 
         int i_tap = horizontal ? i : i - radius + k;
         int j_tap = horizontal ? j - radius + k : j;
 
-        // Handle edges by mirroring. Upstream `41d42c9e` fixed the off-by-one:
-        // `+ 1` → `+ 2` makes the reflection match sample indexing correctly.
-        if (horizontal) {
-            if (j_tap < 0)
-                j_tap = -j_tap;
-            else if (j_tap >= width)
-                j_tap = width - (j_tap - width + 2);
-        } else {
-            if (i_tap < 0)
-                i_tap = -i_tap;
-            else if (i_tap >= height)
-                i_tap = height - (i_tap - height + 2);
-        }
+        // Handle edges by mirroring (reflect-101).  The fold is iterative so
+        // that planes smaller than radius + 1 stay in bounds; see
+        // convolution_reflect101 above (Netflix/vmaf#1582).
+        if (horizontal)
+            j_tap = convolution_reflect101(j_tap, width);
+        else
+            i_tap = convolution_reflect101(i_tap, height);
 
         accum += filter[k] * src[i_tap * stride + j_tap];
     }
@@ -66,18 +91,13 @@ FORCE_INLINE float convolution_edge_sq_s(bool horizontal, const float *filter, i
         int i_tap = horizontal ? i : i - radius + k;
         int j_tap = horizontal ? j - radius + k : j;
 
-        // Handle edges by mirroring (upstream `41d42c9e` +1 → +2 bugfix).
-        if (horizontal) {
-            if (j_tap < 0)
-                j_tap = -j_tap;
-            else if (j_tap >= width)
-                j_tap = width - (j_tap - width + 2);
-        } else {
-            if (i_tap < 0)
-                i_tap = -i_tap;
-            else if (i_tap >= height)
-                i_tap = height - (i_tap - height + 2);
-        }
+        // Handle edges by mirroring (reflect-101).  The fold is iterative so
+        // that planes smaller than radius + 1 stay in bounds; see
+        // convolution_reflect101 above (Netflix/vmaf#1582).
+        if (horizontal)
+            j_tap = convolution_reflect101(j_tap, width);
+        else
+            i_tap = convolution_reflect101(i_tap, height);
         src_val = src[i_tap * stride + j_tap];
         accum += filter[k] * (src_val * src_val);
     }
@@ -96,23 +116,36 @@ FORCE_INLINE float convolution_edge_xy_s(bool horizontal, const float *filter, i
         int i_tap = horizontal ? i : i - radius + k;
         int j_tap = horizontal ? j - radius + k : j;
 
-        // Handle edges by mirroring (upstream `41d42c9e` +1 → +2 bugfix).
-        if (horizontal) {
-            if (j_tap < 0)
-                j_tap = -j_tap;
-            else if (j_tap >= width)
-                j_tap = width - (j_tap - width + 2);
-        } else {
-            if (i_tap < 0)
-                i_tap = -i_tap;
-            else if (i_tap >= height)
-                i_tap = height - (i_tap - height + 2);
-        }
+        // Handle edges by mirroring (reflect-101).  The fold is iterative so
+        // that planes smaller than radius + 1 stay in bounds; see
+        // convolution_reflect101 above (Netflix/vmaf#1582).
+        if (horizontal)
+            j_tap = convolution_reflect101(j_tap, width);
+        else
+            i_tap = convolution_reflect101(i_tap, height);
         src_val1 = src1[i_tap * stride1 + j_tap];
         src_val2 = src2[i_tap * stride2 + j_tap];
         accum += filter[k] * (src_val1 * src_val2);
     }
     return accum;
+}
+
+/*
+ * convolution_clamp_borders — bound a vertical/horizontal border split to the
+ * plane so the border loops cannot run past, or before, the buffer.
+ *
+ * Shared by the scalar path and by every AVX2 / AVX-512 twin. The SIMD kernels
+ * derive the same `radius` / `dim - radius` split and had the identical defect:
+ * for a plane shorter than the filter radius, `dim - radius` goes negative, so
+ * the trailing border loop starts at a negative row and the leading one runs
+ * past the end. Both are heap writes, not just reads.
+ */
+static inline void convolution_clamp_borders(int dim, int *borders_lo, int *borders_hi)
+{
+    if (*borders_lo > dim)
+        *borders_lo = dim;
+    if (*borders_hi < *borders_lo)
+        *borders_hi = *borders_lo;
 }
 
 #endif // CONVOLUTION_INTERNAL_H_

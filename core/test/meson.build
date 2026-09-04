@@ -202,6 +202,18 @@ test_model_libsvm_dup_key = executable('test_model_libsvm_dup_key',
                read_json_model_cpp23_lib.extract_all_objects(recursive: true)],
 )
 
+# Netflix/vmaf#1242 regression: VmafFeatureDictionary ownership contract on
+# vmaf_model_feature_overload / vmaf_model_collection_feature_overload.
+test_model_feature_overload_ownership = executable('test_model_feature_overload_ownership',
+    ['test.c', 'test_model_feature_overload_ownership.c', '../src/dict.cpp', '../src/pdjson.c', json_model_c_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    c_args : [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
+    dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+    objects : [libsvm_static_lib.extract_all_objects(recursive: true),
+               read_json_model_cpp23_lib.extract_all_objects(recursive: true)],
+)
+
 # Coverage for model-collection public API: vmaf_model_collection_load,
 # vmaf_use_features_from_model_collection, vmaf_score_at_index_model_collection,
 # vmaf_score_pooled_model_collection, vmaf_model_collection_load_from_path,
@@ -608,6 +620,16 @@ test_cli_parse = executable('test_cli_parse',
     # CPP compiler" — the same trap ADR-0755 / ADR-0860 documents for cpu.cpp.
     override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     dependencies: [pthread_dependency, getopt_dependency, sycl_dependency],
+)
+
+# Netflix/vmaf#743 regression: the CLI progress spinner must fall back to an
+# ASCII table (and drop the CSI erase-to-EOL) on a console that reports a
+# non-UTF-8 code page or refuses VT processing, and must stay byte-identical
+# on POSIX.
+test_spinner = executable('test_spinner',
+    ['test.c', 'test_spinner.cpp'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../tools/')],
+    dependencies : [pthread_dependency],
 )
 
 # test_y4m_411_oob uses POSIX fmemopen which has no MSVC/MinGW
@@ -2087,6 +2109,55 @@ test_motion_min_dim = executable('test_motion_min_dim',
 )
 test('test_motion_min_dim', test_motion_min_dim, suite : ['fast'])
 
+# Drives float_motion through the PUBLIC API so the AVX2/AVX-512 convolution is
+# actually reached. test_motion_min_dim only calls init(), and
+# test_convolution_edge_small calls the scalar kernels directly, so neither can
+# observe the dispatched SIMD path where the out-of-bounds writes lived.
+test_motion_convolution_oob = executable('test_motion_convolution_oob',
+    ['test.c', 'test_motion_convolution_oob.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, math_lib],
+)
+test('test_motion_convolution_oob', test_motion_convolution_oob, suite : ['fast'])
+
+# Netflix/vmaf#1582 + #1581 regression: the float convolution border helpers
+# must stay inside the plane for every size, including planes smaller than the
+# filter (reachable through float_motion's motion_add_uv chroma planes and the
+# float_vif multi-scale ladder), and must remain bit-identical above it.
+test_convolution_edge_small = executable('test_convolution_edge_small',
+    ['test.c', 'test_convolution_edge_small.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, sycl_dependency],
+)
+test('test_convolution_edge_small', test_convolution_edge_small, suite : ['fast'])
+
+# Netflix/vmaf#1551 (retracting Netflix/vmaf#1422): the MSVC __builtin_clz shim
+# must derive the leading-zero count from BSR, not from the ungated LZCNT
+# instruction. The arithmetic is portable and unit-tested here; the "must not
+# be reimplemented with __lzcnt" half is the shell guard registered below.
+test_compat_clz = executable('test_compat_clz',
+    ['test.c', 'test_compat_clz.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    dependencies : [pthread_dependency],
+)
+test('test_compat_clz', test_compat_clz, suite : ['fast'])
+
+# Static source-content check, so one platform is enough — and on Windows it
+# cannot run at all. meson invokes the script through its shebang interpreter,
+# and on the MinGW64 runner `bash` resolves to Windows' own WSL bash.exe, which
+# has no installed distribution: the leg failed with "Windows Subsystem for
+# Linux has no installed distributions" before the script ever executed. Linux
+# and macOS both run it in the fast suite, and the lint lane runs it too, so
+# skipping the Windows hosts loses no coverage.
+if host_machine.system() != 'windows'
+    check_msvc_clz_shim = find_program(meson.project_source_root() / '..' / 'scripts' / 'ci' / 'check-msvc-clz-shim.sh')
+    test('check_msvc_clz_shim', check_msvc_clz_shim,
+         args : [meson.project_source_root() / '..'],
+         suite : ['fast'])
+endif
+
 # float_vif min-dimension guard — regression test for double-free / OOB-read
 # when min(w,h) <= 6 triggers the 17-tap Gaussian filter at scale 0.
 # Fixed by inserting a w < 7 || h < 7 guard in float_vif init() before any
@@ -3211,6 +3282,7 @@ test('test_public_api_score', test_public_api_score, suite : ['fast'])
 test('test_thread_pool', test_thread_pool, suite : ['fast'])
 test('test_model', test_model, suite : ['fast'])
 test('test_model_libsvm_dup_key', test_model_libsvm_dup_key, suite : ['fast'])
+test('test_model_feature_overload_ownership', test_model_feature_overload_ownership, suite : ['fast'])
 test('test_model_collection_api', test_model_collection_api, suite : ['fast'])
 test('test_predict', test_predict, suite : ['fast'])
 test('test_svm_api', test_svm_api, suite : ['fast'])
@@ -3244,6 +3316,7 @@ endif
 test('test_speed_qa', test_speed_qa, suite : ['fast'])
 test('test_luminance_tools', test_luminance_tools, suite : ['fast'])
 test('test_cli_parse', test_cli_parse, suite : ['fast'])
+test('test_spinner', test_spinner, suite : ['fast'])
 if host_machine.system() != 'windows'
     test('test_y4m_411_oob', test_y4m_411_oob, suite : ['fast'])
     test('test_cli_parse_long_only_args', test_cli_parse_long_only_args, suite : ['fast'])

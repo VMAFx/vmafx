@@ -1100,6 +1100,140 @@ double wall_time_s()
 }
 #endif
 
+#ifdef _WIN32
+/* Some older Windows SDK headers predate the VT console mode flag. */
+#ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
+#define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
+#endif
+
+/*
+ * Netflix/vmaf#743: the CLI writes the UTF-8 braille spinner and a `\033[K`
+ * erase-to-EOL straight to stderr with fprintf, but nothing in the tree ever
+ * set the console output code page or enabled VT processing — so under the
+ * default OEM/ANSI code pages the spinner rendered as mojibake and legacy
+ * conhost printed the CSI sequence literally, on every frame of every run.
+ *
+ * Switch the console to UTF-8 and enable VT for the life of the process, and
+ * restore whatever was there on the way out (including the `goto cleanup`
+ * paths — the guard is declared before every jump target, so C++ runs its
+ * destructor on each of them). Whatever the console refuses is reflected back
+ * through console_progress_style(), which then falls back to the ASCII table
+ * and space padding. No effect on POSIX: the whole class is #ifdef'd out.
+ */
+class WindowsConsoleGuard
+{
+  public:
+    WindowsConsoleGuard()
+    {
+        prev_code_page_ = GetConsoleOutputCP();
+        if (prev_code_page_ != 0 && prev_code_page_ != CP_UTF8)
+            code_page_changed_ = SetConsoleOutputCP(CP_UTF8) != 0;
+
+        const HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
+        if (h != INVALID_HANDLE_VALUE && GetConsoleMode(h, &prev_mode_) != 0) {
+            const DWORD wanted = prev_mode_ | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+            if (wanted != prev_mode_)
+                mode_changed_ = SetConsoleMode(h, wanted) != 0;
+        }
+    }
+
+    WindowsConsoleGuard(const WindowsConsoleGuard &) = delete;
+    WindowsConsoleGuard &operator=(const WindowsConsoleGuard &) = delete;
+
+    ~WindowsConsoleGuard()
+    {
+        if (code_page_changed_)
+            (void)SetConsoleOutputCP(prev_code_page_);
+        if (mode_changed_) {
+            const HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
+            if (h != INVALID_HANDLE_VALUE)
+                (void)SetConsoleMode(h, prev_mode_);
+        }
+    }
+
+  private:
+    UINT prev_code_page_ = 0;
+    DWORD prev_mode_ = 0;
+    bool code_page_changed_ = false;
+    bool mode_changed_ = false;
+};
+
+#endif /* _WIN32 */
+
+namespace
+{
+
+/* Glyph table + erase-to-EOL sequence for the interactive progress line. */
+struct ProgressStyle {
+    const char *const *table;
+    unsigned length;
+    const char *erase_eol;
+};
+
+/*
+ * Resolve the progress-line style from the console's ACTUAL capabilities.
+ * On POSIX this is unconditionally the braille table plus "\033[K", so the
+ * emitted bytes are identical to the pre-Netflix/vmaf#743 behaviour.
+ */
+#ifdef _WIN32
+unsigned console_output_code_page()
+{
+    const UINT cp = GetConsoleOutputCP();
+    return (cp != 0) ? static_cast<unsigned>(cp) : 0u;
+}
+
+int console_vt_enabled()
+{
+    const HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
+    DWORD mode = 0;
+    /* A redirected stderr has no console mode; raw bytes reach the file or
+     * pipe unmodified, so the CSI sequence is fine there. */
+    if (h == INVALID_HANDLE_VALUE || GetConsoleMode(h, &mode) == 0)
+        return 1;
+    return (mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0;
+}
+#else
+unsigned console_output_code_page()
+{
+    return SPINNER_CODEPAGE_UTF8;
+}
+
+int console_vt_enabled()
+{
+    return 1;
+}
+#endif
+
+/*
+ * Emit one interactive progress line. Netflix/vmaf#743: the glyph table and
+ * the erase-to-EOL sequence come from the console's actual capabilities, so a
+ * Windows console that refuses UTF-8 or VT gets ASCII plus space padding
+ * instead of mojibake and a literal erase sequence. On POSIX the style is
+ * always the braille table plus the CSI erase, i.e. the emitted bytes are
+ * identical to the previous unconditional form.
+ */
+void emit_progress_line(const ProgressStyle &style, unsigned picture_index, float fps)
+{
+    (void)fprintf(stderr, "\r%u frame%s %s %.2f FPS%s", picture_index + 1,
+                  picture_index ? "s" : " ", style.table[picture_index % style.length], fps,
+                  style.erase_eol);
+    (void)fflush(stderr);
+}
+
+ProgressStyle console_progress_style()
+{
+    const unsigned code_page = console_output_code_page();
+    const int vt_enabled = console_vt_enabled();
+
+    ProgressStyle style;
+    style.length = 0;
+    style.table = spinner_table_for_codepage(code_page, &style.length);
+    style.erase_eol = spinner_erase_eol(vt_enabled);
+    return style;
+}
+
+} // namespace
+
 /* Drive the main per-frame fetch + process loop. Returns the number of frames
  * successfully consumed (the post-increment `picture_index` value the original
  * inline loop used to compute `picture_index - 1` in pooling). Stops at EOF
@@ -1110,6 +1244,7 @@ unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_input *vi
 {
     float fps = 0.;
     const double t0 = wall_time_s();
+    const ProgressStyle progress_style = console_progress_style();
     unsigned picture_index;
     for (picture_index = 0;; picture_index++) {
 
@@ -1152,9 +1287,7 @@ unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_input *vi
                 fps = static_cast<float>((picture_index + 1) / (wall_time_s() - t0));
             }
 
-            (void)fprintf(stderr, "\r%u frame%s %s %.2f FPS\033[K", picture_index + 1,
-                          picture_index ? "s" : " ", spinner[picture_index % spinner_length], fps);
-            (void)fflush(stderr);
+            emit_progress_line(progress_style, picture_index, fps);
         }
 
         const int err = vmaf_read_pictures(vmaf, &pic_ref, &pic_dist, picture_index);
@@ -1307,6 +1440,22 @@ int main(int argc, char *argv[])
     int err = 0;
     int ret = 0;
     const int istty = isatty(fileno(stderr));
+
+#ifdef _WIN32
+    /* Netflix/vmaf#743: put the console into UTF-8 + VT mode for the run and
+     * restore it on every exit path, including the `goto cleanup` spine.
+     *
+     * `static` here is load-bearing, not a style choice. cli_parse() below
+     * terminates the process directly for --help, --version and every
+     * argument error: usage_exit() is [[noreturn]] and calls exit(), which
+     * does NOT destroy objects with automatic storage duration. As a plain
+     * local, this guard therefore never ran its destructor on those paths and
+     * left the user's console in UTF-8 + VT mode after a bare `vmaf --help`.
+     * Objects with static storage duration ARE destroyed by exit()
+     * ([basic.start.term]), so the restore now runs on the exit() paths, on
+     * the `goto cleanup` spine and on a normal return alike. */
+    static const WindowsConsoleGuard console_guard;
+#endif
 
     CLISettings c;
     cli_parse(argc, argv, &c);

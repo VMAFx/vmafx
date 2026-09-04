@@ -146,6 +146,28 @@ int vif_get_filter_size(int scale, float kernelscale)
     return MAX(round_up_to_odd(n * kernelscale), 3);
 }
 
+int vif_get_min_dim(float kernelscale)
+{
+    /* The scale ladder in compute_vif() halves the working dimension once per
+     * scale (VIF_OPT_HANDLE_BORDERS keeps the full plane, so
+     * `dim_s = dim_0 >> s`), then convolves at that size with the scale's own
+     * Gaussian.  The reflect-101 mirror needs `dim_s >= filter_width_s/2 + 1`,
+     * i.e. `dim_0 >= (filter_width_s/2 + 1) << s`; the binding scale is the
+     * last one.  At the default kernelscale of 1.0 the widths are
+     * {17, 9, 5, 3} and the bound is max(9, 10, 12, 16) = 16 — well above the
+     * scale-0-only floor of 9 the guard used to carry, which is why 9..15px
+     * input walked the mirror out of bounds (Netflix/vmaf#1582).
+     */
+    int min_dim = 1;
+    for (int scale = 0; scale < 4; scale++) {
+        const int filter_width = vif_get_filter_size(scale, kernelscale);
+        const int need = (filter_width / 2 + 1) << scale;
+        if (need > min_dim)
+            min_dim = need;
+    }
+    return min_dim;
+}
+
 void vif_get_filter(float *out, int scale, float kernelscale)
 {
     int window_size = vif_get_filter_size(scale, kernelscale);

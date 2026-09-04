@@ -122,6 +122,27 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
         return -ENOTSUP;
     }
 
+    /* The 5-tap separable Gaussian needs at least radius + 1 = 3 samples per
+     * axis to produce meaningful output; this matches the floor carried by the
+     * CPU, CUDA, SYCL and HIP twins since Research-0094. The Metal extractors
+     * were written afterwards and had no guard at all (found while triaging
+     * Netflix/vmaf#1580).
+     *
+     * This guard is NOT what keeps the device kernel in bounds, and must not
+     * be read as such: integer_motion.metal loads a 20x20 threadgroup tile, so its
+     * `skip_mirror` helper is handed indices far outside the 5-tap
+     * neighbourhood. A single-bounce fold read out of bounds for every
+     * dimension in 1..9 AND for exactly 17 -- a hole a 3x3 floor does not
+     * close. That is fixed in the kernel, where `skip_mirror` now folds
+     * iteratively; see the comment there. */
+    if (w < 3u || h < 3u) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "motion_metal: frame %ux%u is below the 5-tap filter minimum 3x3; "
+                 "refusing to avoid out-of-bounds mirror reads on device\n",
+                 w, h);
+        return -EINVAL;
+    }
+
     s->frame_w           = w;
     s->frame_h           = h;
     s->bpc               = bpc;

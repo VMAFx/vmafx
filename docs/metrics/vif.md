@@ -82,6 +82,43 @@ core/build/tools/vmaf \
     --no_prediction --feature 'integer_vif:vif_skip_scale0=true' --output /dev/stdout
 ```
 
+## Minimum frame size
+
+`float_vif` runs a four-scale pyramid: each scale halves the working dimension
+and then convolves at that size with the scale's own separable Gaussian —
+17, 9, 5 and 3 taps at the default `vif_kernelscale` of 1.0. Every one of those
+convolutions needs at least `filter_width / 2 + 1` samples in each axis for the
+reflect-101 mirror padding to stay inside the plane, so the frame minimum is
+the largest `(filter_width_s / 2 + 1) << s` over the ladder:
+
+| Scale | Filter width | Needs at that scale | Implies at full size |
+| --- | --- | --- | --- |
+| 0 | 17 | 9 | 9 |
+| 1 | 9 | 5 | 10 |
+| 2 | 5 | 3 | 12 |
+| 3 | 3 | 2 | **16** |
+
+**`float_vif` therefore rejects any frame below 16x16** with `-EINVAL` at
+`init()`:
+
+```text
+libvmaf ERROR float_vif requires width >= 16 and height >= 16 for the
+four-scale ladder (got 12x12)
+```
+
+The bound is derived from `vif_kernelscale`, not hard-coded, so a non-default
+kernel scale moves it. When `vif_prescale != 1.0` the check is applied to the
+*scaled* dimensions — the ones actually handed to the pyramid — as well as to
+the raw input.
+
+Before ADR-1166 the guard only covered scale 0 and admitted anything at or
+above 9x9, so frames in 9..15 px reached the scale-3 convolution with a
+sub-minimum plane and read out of bounds
+([Netflix/vmaf#1582](https://github.com/Netflix/vmaf/issues/1582)). If you were
+scoring 9..15 px input, that run was reading uninitialised memory and its
+scores were not meaningful; upscale the input or use a smaller
+`vif_kernelscale`.
+
 ## Cross-backend parity
 
 The `core/test/test_integer_vif_cpu_cuda_parity.c` smoke test (suite
