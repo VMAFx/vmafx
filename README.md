@@ -194,7 +194,10 @@ Key milestones:
 
 ## Documentation
 
-Comprehensive documentation is available under [`docs/`](docs/):
+The rendered documentation site is at **<https://vmafx.github.io/vmafx/>**
+(built from `docs/` by `mkdocs`; `site_url` in `mkdocs.yml` is the source of
+truth for that address). The same content, browsable in-tree, lives under
+[`docs/`](docs/):
 
 - **Engineering & Standards**:
   - [`docs/principles.md`](docs/principles.md) — NASA Power-of-10, JPL, CERT,
