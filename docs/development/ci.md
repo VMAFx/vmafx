@@ -362,3 +362,56 @@ pre-commit run --all-files  # if .pre-commit-config.yaml hooks are installed
 The format-check + pre-commit pair catches roughly the same surface as
 `lint-and-format.yml`'s `pre-commit` job in seconds, vs. a 10-minute
 CI round-trip.
+
+## Flaky legs (2026-09-04 audit)
+
+An audit of CI runs on `master` across all workflows identified two leg
+reliability issues, addressed under epic #1236. Summary (counts taken with
+`gh run list --branch master --limit 40` on 2026-09-05; the per-leg details
+follow the table):
+
+| Leg | Symptom | Frequency (n/N runs) | Cause | Status |
+| --- | --- | --- | --- | --- |
+| `tests-and-quality-gates.yml` / MCP Smoke (Embedded C + Python Server) | `test_mcp_smoke TIMEOUT 60.04s`, killed after test 15 (`test_uds_roundtrip`) | 1/40 master runs (27 passed, 11 cancelled, 1 failed) | `stop_uds()` closed the AF_UNIX listener without `shutdown()`; on Linux that never wakes a worker already blocked in `accept(2)`, so `pthread_join()` hung. Race: only when the worker re-entered `accept()` before `close()`. | real bug, fixed in `ci/flaky-legs-1236` (`T-CI-MCP-SMOKE-TIMEOUT-2026-09-04`) |
+| `build.yml` / `libvmaf-build-matrix.yml` macOS `brew install ... llvm` | Homebrew bottle download failure | 0/40 `build.yml` runs (25 passed, 14 cancelled on master; 0 download failures) | GitHub-hosted runner network / Homebrew CDN (infrastructure) | infrastructure, hardened with a 3-attempt retry + `brew fetch --retry`; documented (`T-CI-MACOS-BREW-LLVM-FLAKE-2026-09-04`) |
+| `release-please.yml` | fails on every master push | 3/3 master runs in the window | missing GitHub App credentials | infrastructure, tracked in #1289 (out of scope here) |
+| every other workflow on master | none | 0 failures in the last 40 master runs (one `CI` run was cancelled by a superseding push, not failed) | n/a | nothing to fix |
+
+1. **`test_mcp_smoke` timeout (run 33916590280, commit `0a8727ca7`)**:
+   - **Symptom**: The `MCP Smoke (Embedded C + Python Server)` job in
+     `tests-and-quality-gates.yml` hit the 60-second Meson timeout during
+     `test_uds_roundtrip`.
+   - **Root cause**: In `core/src/mcp/mcp.c`, `stop_uds()` called
+     `close(server->uds_listen_fd)` without calling
+     `shutdown(server->uds_listen_fd, SHUT_RDWR)` first. On Linux,
+     closing a listening `AF_UNIX` stream socket does not unblock a
+     concurrent `accept(2)` in the worker thread
+     (`vmaf_mcp_uds_thread_main`), leaving the thread asleep in the
+     socket wait queue while `stop_uds()` waited indefinitely on
+     `pthread_join()`.
+   - **Measured passing distribution**: Measured across 20 iterations,
+     `test_mcp_smoke` takes ~0.03s (range: 0.01s–0.05s). The 60s timeout
+     was a true deadlock/hang rather than a slow test.
+   - **Fix**: Added `shutdown(server->uds_listen_fd, SHUT_RDWR)` before
+     `close()` in `stop_uds()`, mirroring the existing SSE listener
+     shutdown contract, and added defensive early-stop guards in
+     `vmaf_mcp_uds_thread_main`.
+
+2. **macOS Homebrew `llvm` download reliability (`build.yml`)**:
+   - **Symptom**: Intermittent network dropouts or CDN blips when
+     downloading large Homebrew bottles (such as `llvm`, ~500 MB) on
+     GitHub-hosted macOS runners.
+   - **Audit**: An audit of 40 recent runs of `build.yml` found 0/40
+     failures in the audit window, confirming low baseline rate, but
+     network flakiness is an established infrastructure failure mode.
+   - **Mitigation**: Wrapped Homebrew package installation in `build.yml`
+     and `libvmaf-build-matrix.yml` in a 3-attempt retry loop with backoff
+     (10s, 20s) and fallback `brew fetch --retry`. Exported
+     `HOMEBREW_NO_AUTO_UPDATE=1` and `HOMEBREW_NO_INSTALL_CLEANUP=1` to
+     prevent costly auto-updates and cleanup from consuming runner time.
+
+3. **Other master workflow legs audit**:
+   - Audited the last 40 and 100 master runs across all workflows. Zero
+     other flaky test or build failures were observed (the only other
+     master failure was `release-please` token permissions, tracked in
+     #1289).

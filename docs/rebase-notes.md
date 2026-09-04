@@ -143,6 +143,7 @@ no rebase impact: fork-local CUDA and documentation files.
   `T-SYCL-INIT-LEAKS-EXC-2026-06-19`, `T-SPEED-GPU-REGISTRY-ORPHAN-2026-06-19`, and
   `T-CUDA-INIT-SUBMIT-LEAKS-2026-06-19`.
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
+
 ## build/bound-lto-link-parallelism — b_lto_threads=4 default (2026-09-04)
 
 Rebase impact: `core/meson.build` `default_options` is a fork-edited hunk of an upstream file
@@ -225,6 +226,7 @@ no rebase impact: docs-only
 ## fix/hip-motion-v2-parity-test-wiring — register test_hip_motion_v2_parity in meson.build (2026-09-04)
 
 no rebase impact: fork-only test wiring in `core/test/meson.build` and documentation updates in `core/src/feature/hip/AGENTS.md`, `docs/adr/1154-hip-backend-gaps.md`, and `docs/state.md`. Upstream Netflix/vmaf has no HIP backend or HIP parity test suite.
+
 ## fix/sycl-v1-model-crash — Intel Arc SYCL default model crashes and feature parity (2026-09-05)
 
 - `core/src/feature/cambi.c`, `core/src/feature/cambi_internal.h`: `vmaf_cambi_init_tvi_and_vlt()` exposed with extern "C" linkage so GPU and CPU cambi extractors share table initialization logic. Upstream sync should preserve this helper.
@@ -267,9 +269,22 @@ No rebase impact: fork-only tools/vmaf-tune and documentation surfaces (`tools/v
   On rebase or upstream sync, re-drop any restored ansnr files and do not allow `ansnr` registrations
   back into `feature_extractor.cpp`.
 
+## ci/flaky-legs-1236 — unblock UDS listener accept on stop and resilient macOS Homebrew (2026-09-04)
+
+- `core/src/mcp/mcp.c`: `stop_uds()` now invokes `shutdown(server->uds_listen_fd, SHUT_RDWR)`
+  before `close()`. On Linux, closing a listening `AF_UNIX` socket does not unblock `accept(2)`
+  on another thread; `shutdown()` is required to unblock the thread and return `EINVAL`.
+  Preserve this shutdown call on any upstream rebase touching `core/src/mcp/mcp.c`.
+- `core/src/mcp/transport_uds.c`: `vmaf_mcp_uds_thread_main` checks `uds_running` and guards
+  `uds_listen_fd` defensively before loop entry to prevent assertions if stopped immediately.
+- `.github/workflows/build.yml` and `.github/workflows/libvmaf-build-matrix.yml`: Homebrew
+  installation on macOS uses a 3-attempt retry loop with backoff and `brew fetch --retry`, plus
+  `HOMEBREW_NO_AUTO_UPDATE=1` and `HOMEBREW_NO_INSTALL_CLEANUP=1`. Wholly fork-added workflows.
+
 ## fix/vmaftune-state-bugs — libx264 two-pass CRF conflict fix (2026-09-03)
 
 No rebase impact: all touched files (`pkg/codecadapter/`, `pkg/ffencode/`, `pkg/corpus/`, `tools/vmaf-tune/`) are fork-added Go and Python tuning tooling with no upstream Netflix/vmaf counterpart. No public C API, header, Meson option, or golden assertion is touched.
+
 ## fix/vmafx-tune-go-gaps — resolve vmafx-tune Go parity gaps (#1272) (2026-09-04)
 
 - `cmd/vmafx-tune/cmd/predict.go`: wired saliency moments (`pkg/saliency.ComputeMap` and `computeSaliencyMoments`)
@@ -280,6 +295,7 @@ No rebase impact: all touched files (`pkg/codecadapter/`, `pkg/ffencode/`, `pkg/
   removed stale comments, docstrings, and dead `stubSubcommand` referencing the retired Python `vmaf-tune` binary.
 - Wholly fork-added: `cmd/vmafx-tune/`, `pkg/predictor/`, `pkg/saliency/`, `pkg/tune/` are all fork-local;
   upstream Netflix/vmaf has no Go rate-quality tuning CLI. No upstream rebase conflict.
+
 ## feat/vmafx-cli-alias — vmafx CLI alias and --netflix-compat override (ADR-0690/0696) (2026-09-04)
 
 - `core/tools/cli_parse.cpp`, `core/tools/cli_parse.h`: detects `vmafx` mode via `detect_vmafx_mode(argv[0])`, setting modernized defaults (`precision_max = true`, `precision_fmt = "%.17g"`, startup banner `VMAFX version <V> (precision=max)`, and `vmafx --version` printing `VMAFX <V> (auto-backend, precision=max)`).
@@ -307,9 +323,11 @@ No rebase impact: all touched files (`pkg/codecadapter/`, `pkg/ffencode/`, `pkg/
 - `python/test/ssimulacra2_test.py`: fork-added test; `test_ssimulacra2_small_160x90` must keep
   passing `--model version=vmaf_v0.6.1` — it measures ssimulacra2 only and must not depend on
   whether the current default model can run at 160x90.
+
 ## docs/readme-overhaul — README.md overhaul for clarity and accuracy (2026-09-03)
 
 no rebase impact: edits fork documentation (`README.md`, `CHANGELOG.md`, `changelog.d/changed/readme-overhaul.md`, `docs/state.md`, `docs/rebase-notes.md`) only. Upstream Netflix/vmaf has a completely separate README; if an upstream sync touches `README.md`, preserve the fork's overhauled version.
+
 ## chore/drop-ansnr — scrub residual ansnr references across code and comments (ADR-0865) (2026-09-03)
 
 - `ai/data/feature_extractor.py`, `core/src/feature/feature_extractor.cpp`,
@@ -324,9 +342,11 @@ no rebase impact: edits fork documentation (`README.md`, `CHANGELOG.md`, `change
 - Rebase impact: None. All modifications touch fork-added comments or fork-added test/doc
   surfaces. If upstream touches `core/src/feature/offset.c`, preserve the `adm.c / motion.c`
   comment text.
+
 ## feat/mcp-tinyai-flags — tiny-AI scoring flags and input validation (2026-09-03)
 
 - `no rebase impact: MCP servers (cmd/vmafx-mcp and mcp-server/vmaf-mcp) are wholly fork-added surfaces with no upstream Netflix/vmaf counterpart.`
+
 ## fix/untrack-venv-symlink — no virtualenv path may be tracked (2026-09-04)
 
 - `.gitignore`: the `.venv*` line (no trailing slash) is load-bearing next to `.venv*/`. The
@@ -352,6 +372,7 @@ no rebase impact: edits fork documentation (`README.md`, `CHANGELOG.md`, `change
 - `docs/usage/{bd-rate,matlab,python}.md`, `core/tools/meson.build`, `core/tools/compat/win32/getopt.{c,h}`,
   `core/tools/vmaf_roi_core.h`, `testdata/bench_all.sh`: mechanical path updates from `libvmaf/` ->
   `core/` and `python/vmaf/` -> `compat/python-vmaf/` (ADR-0700). No upstream rebase impact.
+
 ## fix/picture-pool-twin-drift — port concurrency and lifecycle fixes to picture_pool.cpp (2026-09-04)
 
 - `core/src/picture_pool.cpp`: C++ twin of `core/src/picture_pool.c` compiled into `libvmaf` via
@@ -365,6 +386,7 @@ no rebase impact: edits fork documentation (`README.md`, `CHANGELOG.md`, `change
   `picture_pool.c`.
 - `core/test/meson.build`: added `test_picture_pool_cpp_error_paths` compiling `picture_pool.cpp`
   directly into an internal error-path test target with `override_options : ['cpp_std=' + libvmaf_cpu_cpp_std]`.
+
 ## fix/fixture-cache-poisoning — fixture caches must not be written by failed runs (2026-09-04)
 
 - `.github/workflows/{build,libvmaf-build-matrix,tests-and-quality-gates}.yml`: all three are
@@ -448,6 +470,7 @@ no rebase impact: MCP servers (`cmd/vmafx-mcp` and `mcp-server/vmaf-mcp`), `pkg/
 - `scripts/ci/tidy-baseline-cpu.json`: fork-local ratchet state (ADR-1142), no upstream
   counterpart. Only this file's entry was removed; every other file keeps CI's measured
   number. No rebase impact.
+
 ## fix/json-model-libsvm-dup-key-leak — duplicate-key leaks in the model parser (2026-09-03)
 
 - `core/src/svm.cpp`: **vendored libsvm.** The fork adds five
@@ -475,6 +498,7 @@ no rebase impact: MCP servers (`cmd/vmafx-mcp` and `mcp-server/vmaf-mcp`), `pkg/
   `seed_duplicate_rho_row.json`: fork-added corpus seeds, no upstream
   counterpart. `core/test/fuzz/json_model_known_crashes/` holds the reproducer
   for the still-open third leak and is excluded from the nightly seed path.
+
 ## fix/code-scanning-open-alerts — resolve open code-scanning alerts & re-audit security dismissals (2026-09-03)
 
 no rebase impact: fork-local fixes and cleanups.
@@ -486,6 +510,7 @@ no rebase impact: fork-local fixes and cleanups.
 - `ai/sidecar/online_trainer.py`: preserved server bind and documented 0o660 UNIX domain socket mode for group-peer IPC with `# nosemgrep`.
 - `mcp-server/vmaf-mcp`: removed unused import in `test_smoke_e2e.py` and converted `server.py` HTTP branch import to dynamic `importlib` to break static circular import.
 - `go.mod`, `go.sum`: upgraded `golang.org/x/crypto` to `v0.56.0`.
+
 ## feat/default-model-v1-0-16 — the fork's default model is vmaf_v1.0.16_3d0h (ADR-1169) (2026-09-03)
 
 **Permanent, user-visible divergence from upstream. Read this before any sync.**
@@ -672,6 +697,7 @@ conflict keep the fork's version. Function map:
 - `get_noise_constant()` is `static`; `adm_dwt2_lo_d()` and
   `adm_buffer_copy()` (no caller in the tree, never declared in the
   header) are removed. `adm_dwt2_d()` stays: the Cython extension
+
 ## gap/cuda-intel-bucket — CUDA and Intel SYCL backend gap closure (2026-09-02)
 
 - **Dead CUDA source cleanup**: Removed `core/src/feature/cuda/integer_adm/adm_decouple.cu`
@@ -733,6 +759,7 @@ conflict keep the fork's version. Function map:
   table helper `vmaf_ort_internal_auto_ep_order(int is_apple)` and unit tests.
 - `core/include/libvmaf/libvmaf_metal.h`, `docs/backends/metal/index.md`, `docs/metrics/features.md`,
   `docs/ai/inference.md`: aligned documentation and doc comments with runtime truth.
+
 ## fix/neo-derive-matched-set — derive Intel NEO matched set at build time (ADR-1145) (2026-09-02)
 
 no rebase impact: fork-only container and Renovate configuration.
@@ -762,6 +789,7 @@ no rebase impact: dev/Containerfile is fork-local.
 - `core/test/fuzz/meson.build`, `scripts/setup/ubuntu.sh` — both fork-added
   (ADR-0270 fuzz harnesses; setup script has no upstream counterpart).
   no rebase impact: neither file exists upstream.
+
 ## ci/impact-planner — required CI routed by measured impact (2026-09-02)
 - `.github/workflows/*.yml`, `.github/ci-impact.json`, `scripts/ci/plan-ci-impact.py`,
   `scripts/ci/tests/test_ci_impact.py` — all fork-local CI. no rebase impact:
@@ -790,6 +818,7 @@ no rebase impact: dev/Containerfile is fork-local.
 - `core/test/fuzz/meson.build` (fork-added, ADR-0270): `fuzz_json_model`
   now lists `../../src/dict.cpp` with `cpp_args : fuzz_flags` — the same
   hunk as #1186; whichever lands second rebases onto an identical line.
+
 ## refactor/go-dedup-tune-shadow — ADR-1137 shadow-package consolidation (2026-09-02)
 
 Go-only; no upstream Netflix/vmaf counterpart, so no rebase conflict surface.
@@ -828,6 +857,7 @@ one `Options.NonFinite` field. Invariants a future change must not undo:
    `pkg/predictor/testdata/python_predictor.json`, `pkg/hdr/testdata/`,
    `pkg/pymath/testdata/`. Regenerate them only alongside a coordinated change
    on both sides.
+
 ## refactor/x86-adm-avx-macro-hygiene — x86 ADM AVX2/AVX-512 macro hygiene (2026-09-02)
 
 No rebase impact against upstream Netflix: `core/src/feature/x86/adm_avx2.c` and
@@ -847,6 +877,7 @@ Invariants preserved:
   widening warnings on integer products.
 - Dead `print_*` debug macros in `adm_avx512.c` removed; `#include "adm_avx2.h"` added
   to `adm_avx2.c` for internal linkage consistency with public declarations.
+
 ## refactor/test-model-tidy-clean — clang-tidy clean test_model.c and test_output.c (2026-09-02)
 Upstream-mirror files touched: `core/test/test_model.c` and `core/test/test_output.c`.
 Both files were brought to 0 clang-tidy warnings without altering, deleting, or skipping any Netflix test assertion. When rebasing against upstream changes to these tests, note the following structural reorganizations:
@@ -978,6 +1009,7 @@ the MCP HTTP transport registers dynamic routes only.
   15 `apt-get install … meson` sites replaced with
   `sudo pip3 install --break-system-packages --quiet meson`. Purely additive
   against upstream, no rebase impact.
+
 ## fix/precommit-master-green — isort retired in favour of ruff (2026-08-30)
 
 - `pyproject.toml`, `.pre-commit-config.yaml` — fork-local tooling config;
@@ -1191,6 +1223,7 @@ from `CHECK_CUDA_GOTO` must `return _cuda_err;` (the macro-mapped errno), not a
 literal `-EIO` — matching the `CHECK_CUDA_RETURN` convention in
 `cuda_helper.cuh`. The two manual `cuMemcpyDtoH` / `cuCtxPushCurrent` boolean
 checks deliberately keep their literal `-EIO`.
+
 ## fix/bughunt-core-engine — core-engine error-path fixes (2026-06-27)
 Rebase impact: **low — three upstream-mirror files touched, all on error/cleanup paths.**
 `core/src/libvmaf.c`, `core/src/feature/feature_collector.c`, and
@@ -1213,6 +1246,7 @@ fork-local divergences confined to failure paths:
 No public header, CLI flag, meson-option, ffmpeg-patch, or Netflix golden-gate
 surface changes; all three edits fire only on malloc/realloc/enqueue failure,
 so success-path scores are unchanged (golden gate verified green).
+
 ## fix/bughunt-mcp — MCP Go↔Python parity + HTTP hardening (2026-06-27)
 no rebase impact: edits the fork-only MCP servers (`cmd/vmafx-mcp/{main.go,impl.go,impl_direct.go}` + new `cmd/vmafx-mcp/http_security.go`, `mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py`) + tests + `docs/state.md` + changelog. No libvmaf C-API / CLI / `meson_options.txt` / public-header change → no ffmpeg-patch impact. **Rebase-sensitive invariant — HTTP transport security parity** (cmd/vmafx-mcp/AGENTS.md invariant #13): the Go `securityMiddleware` / bind logic (`http_security.go`) and the Python `_make_security_middleware` / `_resolve_bind_host` (`http_transport.py`) MUST share the same ADR-0967 env contract (`VMAFX_MCP_HTTP_TOKEN` constant-time bearer, `VMAFX_MCP_HTTP_NO_AUTH=1` opt-out, refuse-all-401-when-neither-set, 4 MiB body limit, `VMAFX_MCP_HTTP_BIND` default `127.0.0.1`). **Precision-default parity** (ADR-0119 / ADR-1117): both servers default `vmaf_score` precision to `legacy` (`%.6f`) on every transport / dispatch path. A rebase touching either server must keep both in lock-step.
 
@@ -1238,6 +1272,7 @@ submatrix, NOT per-tile `means[25*num_blocks]`), and the ref/dis paths must keep
 `core/src/feature/cuda/AGENTS.md` and verified by
 `test_cuda_speed_{chroma,temporal}_parity` at 1e-4. If a future change touches
 any one backend's kernels, mirror it across all four (CPU + CUDA + HIP + SYCL).
+
 ## fix/audit-runtime-bugs-batch — 18 audit runtime bugs: SYCL/CUDA init leaks, AI crash-hardening, MCP parity (2026-06-20)
 Rebase impact: **none on upstream**. All 18 fixes are fork-local and touch
 only fork-added files with no upstream Netflix/vmaf counterpart:
@@ -1258,6 +1293,7 @@ the Vulkan removal (ADR-0726); if a sync re-introduces a `vulkan` keyword in
 either MCP server, both must move together. No new rebase-sensitive invariants
 worth a dedicated `AGENTS.md` entry beyond the existing SYCL/CUDA error-path
 notes.
+
 ## fix/sycl-psnr-hvs-chroma-ceiling — SYCL psnr_hvs odd-dimension chroma geometry (2026-06-20)
 Rebase impact: **none on upstream**. Fork-local one-line correctness fix in the
 fork-only SYCL feature extractor `core/src/feature/sycl/integer_psnr_hvs_sycl.cpp`,
@@ -1273,6 +1309,7 @@ dimensions in its own `init` must use the ceiling form, not floor; the floor
 form only agrees on even dimensions and silently drops the last chroma block
 strip otherwise. This is the same class of bug as the PSNR and Vulkan chroma
 ceiling fixes already in tree.
+
 ## fix/metal-drain-motion2 — Metal end-of-stream drain + frame-0 motion2 (2026-06-20)
 Rebase impact: **none on upstream**. All changes are fork-local (the Metal
 backend has no upstream Netflix/vmaf counterpart) plus one additive bit in the
@@ -1299,6 +1336,7 @@ Rebase-sensitive notes for the next person syncing:
   `core/src/feature/metal/AGENTS.md`).
 - **Darwin-only.** Not buildable / not exercised on the Linux dev or CI lane;
   re-validate on Apple Silicon after any upstream flush-path sync.
+
 ## fix/k150k-training-data-integrity — fail-loud on empty-frame clips + MOS-join key mismatch (2026-06-20)
 Rebase impact: **none on upstream**. All changes are fork-local in
 `ai/scripts/extract_k150k_features.py` (a fork-added training script with no
@@ -1324,6 +1362,7 @@ references remain in ~40 sibling source comments (Metal `.mm`, HIP `.c`) and in
 historical `docs/adr/*` / `docs/research/*` (audit trail — do NOT rewrite); the
 live comment sweep for the non-ADR consumer files is deferred to the RC LOW
 doc-hygiene PR and coordinated with the in-flight Metal PR #986.
+
 ## fix/sycl-init-leaks-exception-safety — SYCL init error-path + exception-boundary hardening (2026-06-19)
 Rebase impact: none on upstream — fork-local SYCL error-path + exception-boundary
 hardening. Touches only fork-added SYCL sources (`core/src/feature/sycl/integer_adm_sycl.cpp`,
@@ -1332,6 +1371,7 @@ hardening. Touches only fork-added SYCL sources (`core/src/feature/sycl/integer_
 counterpart. No public header, CLI, meson-option, ffmpeg-patch, or golden-gate
 surface changes; success-path behaviour is unchanged (cleanup/exception handling
 only fires on already-failing paths).
+
 ## fix/cuda-init-submit-leaks — CUDA error-path resource frees (2026-06-19)
 Rebase impact: none on upstream — fork-local CUDA error-path hardening.
 Touches only fork-added CUDA feature extractors under
@@ -1340,6 +1380,7 @@ Touches only fork-added CUDA feature extractors under
 adds NULL-guarded frees / cleanup-goto routing on init + submit failure
 paths only. No public-header, meson, CLI, ffmpeg-patch, or golden-gate
 impact, and success-path behaviour is unchanged.
+
 ## fix/hip-chroma-mcp-parity — psnr_hip enable_chroma option + MCP Go/Python parity (2026-06-20)
 Rebase impact: **none on upstream** — all fork-local. Touches the fork-only HIP
 extractor (`core/src/feature/hip/integer_psnr_hip.c`: add an `enable_chroma`
@@ -1349,11 +1390,13 @@ extractor (`core/src/feature/hip/integer_psnr_hip.c`: add an `enable_chroma`
 (`server.py`: `probe_backend` ValueError guard). No upstream Netflix/vmaf file is
 touched; no public C-API/CLI surface changes (the `enable_chroma` option already
 exists on the CPU/CUDA psnr twins).
+
 ## fix/tox-py314-scipy-118 — tox env py311→py314 (2026-06-20)
 Rebase impact: **none on upstream** — fork-local CI config only. Touches
 `python/tox.ini` (envlist `py311`→`py314`, matching the CI `setup-python` 3.14.5,
 since the fork's `requirements.txt` deps now require ≥3.12) plus a changelog
 fragment + state.md row. No source or test code changed.
+
 ## feat/upstream-v1.0.16-models (2026-06-20)
 Rebase impact: **low (additive model data + one C registry block + one meson
 embed block; no public-header / CLI / ffmpeg-patch / golden-gate change)**.
@@ -1499,6 +1542,7 @@ Gaussian sigma=7/6 (not 1.166), MATLAB antialiased bicubic (not INTER_CUBIC),
 the inline range arrays (not `allrange`), no output clamp — all required for
 parity with the bundled trained model (see `core/src/feature/AGENTS.md` and
 ADR-1115).
+
 ## feat/metric-y-funque-plus (2026-06-14)
 Rebase impact: **low**. Fork-only additive metric — no upstream twin. Adds two
 fork-only files (`core/src/feature/y_funque_plus.c`,
@@ -1523,6 +1567,7 @@ the DLM numerator pools `rest^3` WITHOUT abs while the denominator pools the ref
 detail WITH abs (`pyr_features.py:54/61`); the 2x downscale is OpenCV
 `INTER_CUBIC` (Keys cubic `a=-0.75`), the dominant cross-host parity risk —
 keep `-ffp-contract=off`.
+
 ## feat/pelorus-sidedata-reader (2026-06-14)
 Rebase impact: **low-to-medium**. Fork-only additive feature (ADR-1118),
 builds on the vendored Pelorus interop ABI (ADR-1113). Adds three fork-only
@@ -1560,6 +1605,7 @@ upstream twin. Edits to shared files, all additive:
   `changelog.d/added/`, and the ADR index
   (`docs/adr/1118-perceptual-sidedata-weighting.md` + fragment + `_order.txt` +
   regenerated `README.md`).
+
 ## feat/mcp-tiny-ai-feature-coverage (2026-06-14)
 no rebase impact: all touched code is fork-local. The MCP servers
 (`cmd/vmafx-mcp/{tools.go,impl.go,impl_direct.go,main.go,score_extras_test.go}`
@@ -1610,6 +1656,7 @@ core/src/metal/meson.build; a foreach test block in core/test/meson.build). Edit
 docs/metrics/features.md (+Metal on the 4 rows), state.md, changelog. cambi is a
 Strategy-II hybrid (GPU kernels + exact-CPU host residual via cambi_internal.h),
 matching ADR-0205. Metal-only; no public C-API/CLI change -> no ffmpeg-patch impact.
+
 ## feat/metric-delta-e-itp (2026-06-14)
 Rebase impact: **low**. Fork-only additive metric — no upstream twin. Adds
 three new files (`core/src/feature/delta_e_itp.c`,
@@ -1627,6 +1674,7 @@ upstream `ciede.c` chroma-upsampling helpers are ever refactored, the
 copied-verbatim `scale_chroma_planes` / `scale_chroma_planes_hbd` in
 `delta_e_itp.c` are independent and need no follow-up. Compiled unconditionally
 (CPU); no backend flag.
+
 ## feat/metric-pu21 (2026-06-14)
 Rebase impact: **low** (fork-only additive). Adds five fork-only files
 (`core/src/feature/pu21.c`, `pu21_math.h`, `pu21_ssim.c`, `pu21_ssim.h`,
@@ -1750,6 +1798,7 @@ and the established `vmaf_feature_collector_append_with_dict` API — no public
 libvmaf C-API, ABI, header, CLI, or `meson_options.txt` surface change, so no
 ffmpeg-patch (CLAUDE §12 r14) impact. The CUDA kernel itself is unchanged; only
 the host-side flush + option table grew.
+
 ## feat/vmafx-scorestream-phase2 (2026-06-13)
 no rebase impact: all changes are in fork-local Go files that do not exist in
 upstream Netflix/vmaf — `pkg/libvmaf/stream.go` (+ test), `pkg/libvmaf/libvmaf.go`
@@ -1995,6 +2044,7 @@ In `core/test/meson.build`:
 In `core/test/test_sycl_motion_add_uv_parity.c`:
 - Feature-name queries updated (`integer_motion2_mau`, `float_motion2_mau`).
   Conflicts only if another branch edits the same query lines.
+
 ## fix/mcp-resource-uri-validation (2026-06-07)
 
 no rebase impact: single-function change in `cmd/vmafx-mcp/impl_direct.go`
@@ -2020,6 +2070,7 @@ no rebase impact: single-file change to
 `motion_score_pipeline_16_neon`.  No public API, no header, no test data,
 no upstream-mirrored file is modified.  Conflicts only if another branch
 edits the same static helper region of that file.
+
 ## fix/helm-values-completeness-adr-1074 (ADR-1074, 2026-06-06)
 
 no rebase impact: changes are confined to `deploy/helm/vmafx/values.yaml`,
@@ -3288,6 +3339,7 @@ touched, so upstream syncs cannot collide.
 (`vmaf_init` / `vmaf_read_pictures` / `vmaf_score_pooled` /
 `vmaf_close`) the Go layer wraps is unchanged; we only renamed a
 local `C.VmafContext*` variable inside Go.
+
 ## vmafx-tune-go deep bug audit (2026-05-31, fix/vmafx-tune-go-audit-20260531)
 
 **Files touched:**
@@ -3325,6 +3377,7 @@ sync will not encounter conflicts on any of these files.
   `sync.Once`.  Callers that depended on the old "first probe wins
   forever" shape (none in tree as of this PR) will see a re-probe
   on binary-path change.
+
 ## Python-surfaces bug-audit bundle (2026-05-31, fix/python-surfaces-bug-audit)
 
 no rebase impact: REASON — fork-local Python files only. Touches:
@@ -4342,6 +4395,7 @@ intact. Same pattern PR #327 (round 2) used for `feature.h` / `model.h` /
 `dnn.h`. If a future upstream sync changes the guard form (unlikely —
 these have been stable for years), the NOLINT cites become redundant and
 can be removed in a follow-on cleanup.
+
 ## libvmaf-public-header-doc-gaps-round2 (2026-05-30)
 
 **Files touched:**
@@ -4488,6 +4542,7 @@ Fork-local files:
 Verified clean under ASan+UBSan against the full unit-test suite (63
 tests OK) and the vmaf CLI on 4:2:0 8-bit, 4:2:2 10-bit, 4:2:0 12-bit.
 Cambi tuned-options feature-name derivation (`cambi_mlc_3_ws_63`) works.
+
 ## SIMD bit-exactness round-2 — SSIMULACRA 2 FMA unification + lib-FP-model extension (2026-05-30, ADR-0891)
 
 **Files touched:**
@@ -4690,6 +4745,7 @@ dead-code duplicate `_run_benchmark()` definition in
 `mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`; the deleted copy was
 silently shadowed at import time by the progress-token-aware
 implementation 575 lines later, so removal is behaviour-preserving.
+
 ## openapi-rest-schema (2026-05-29, ADR-0797)
 
 **Files touched:**
@@ -4901,6 +4957,7 @@ removing the deselect. The deselect is CI-only; the test runs in the Netflix gol
 gate without a per-test timeout.
 
 ---
+
 ## `.github/workflows/` — post-ADR-0700 path rename (`libvmaf/` → `core/`)
 
 If an upstream Netflix/vmaf sync or cherry-pick brings new CI references to
@@ -46806,6 +46863,7 @@ collect_fex_cuda. Resolution rules:
 
 `core/src/feature/cuda/AGENTS.md` — new section "Motion SAD batch fencing":
 keep verbatim on rebase.
+
 ## ADR-0930 — Helm NetworkPolicy + PSS baseline — 2026-05-31
 
 no rebase impact: REASON — every touched file lives entirely under
@@ -47528,6 +47586,7 @@ PostToolUse hook skip). A pelorus ABI bump is re-synced via
 `scripts/sync-pelorus-interop.sh --update` (which also bumps the pin), never by
 editing the mirror in place. If a future change rewrites these files, re-run the
 sync guard + the conformance fixture before merging.
+
 ## feat/pelorus-autotune-control-plane (2026-06-14)
 no rebase impact for upstream syncs: touches only fork-local files under
 `tools/vmaf-tune/` — a new `src/vmaftune/filter_adapters/` package
@@ -47572,6 +47631,7 @@ Rebase-sensitive invariants (fork-internal, NOT upstream):
   golusoris `http.addr` / `grpc.listen` keys under the `VMAFX_` prefix. If
   golusoris renames those keys, the server's documented env contract must
   follow.
+
 ## feat/golusoris-node (2026-06-15)
 no rebase impact for upstream Netflix/vmaf syncs: every file touched is
 fork-local Go and has no upstream counterpart. The change rewrites
@@ -47611,6 +47671,7 @@ Rebase-sensitive invariants (fork-internal, NOT upstream):
 - **Env-var contract.** `VMAFX_GRPC_LISTEN` maps to the golusoris `grpc.listen`
   key under the `VMAFX_` prefix (replaces `VMAFX_NODE_ADDR`). If golusoris
   renames that key, the node's documented env contract must follow.
+
 ## feat/golusoris-operator (2026-06-15)
 no rebase impact for upstream Netflix/vmaf syncs: every file is fork-local and
 has no upstream counterpart. `cmd/vmafx-operator/main.go` is rewritten from a
@@ -47639,6 +47700,7 @@ reverts that (regressing #227), re-add the shim as an
 Likewise webhooks are wired via `operator.Options.WebhookPort` (also added
 post-v0.3.1); if that field disappears upstream, the app must stand up its own
 `webhook.NewServer` and add it to the manager.
+
 ## feat/golusoris-mcp (2026-06-15)
 no rebase impact for upstream Netflix/vmaf syncs: this PR rewrites only
 `cmd/vmafx-mcp/main.go` (the Go MCP server composition root) onto the golusoris
@@ -47677,6 +47739,7 @@ has no upstream counterpart. The MCP tool surface (`tools.go`, `impl.go`,
   slog → stderr. A future rebase that adds an `fx.Print`-style logger, a stdout
   OTel exporter, or any `fmt.Println` to the composition root MUST gate it off
   in stdio mode. See cmd/vmafx-mcp/AGENTS.md invariant #11.
+
 ## feat/golusoris-controller (2026-06-15)
 no rebase impact for upstream Netflix/vmaf syncs: every file touched is
 fork-local Go and has no upstream counterpart. The change rewrites
@@ -47756,6 +47819,7 @@ a fork-internal error-path unwind (route init() failures through
 `-ENOMEM` / `-EINVAL` error paths with no success-path or scoring delta — a
 sync that re-pulls cambi `init()` should re-apply the `goto fail` unwind. No
 public header, CLI, meson-option, or ffmpeg-patch surface changes.
+
 ## fix/bughunt-simd (2026-06-27)
 no rebase impact: edits fork-added SIMD `float_moment` paths only
 (`core/src/feature/arm64/moment_sve2.c`, `core/src/feature/x86/moment_avx2.c`,
@@ -47769,6 +47833,7 @@ the lower contiguous lanes; the odd lanes must be widened with the SVE2 FCVTLT
 (`svcvtlt_f64_f32`, source element 2*i+1). Any future edit to `moment_sve2.c`
 must keep the even+odd dual-convert (stepping a full `svcntw()` register) or it
 will silently double-count even lanes and drop odd lanes on >128-bit SVE.
+
 ## fix/bughunt-dnn (2026-06-27)
 no rebase impact: edits the fork-only DNN tiny-AI / ONNX Runtime path
 (`core/src/dnn/tensor_io.c`, `core/src/dnn/ort_backend.c`) and its fork-only
@@ -47970,6 +48035,7 @@ constructs to preserve when rebasing:
 
 Point 3 is the one to watch: a conflict resolved in upstream's favour restores a
 green-but-dead gate with no test failure to signal it.
+
 ## fix/sycl-qsv-zerocopy-p010-normalize — SYCL QSV zero-copy P010 normalization + separate-session contract (2026-06-30)
 no ffmpeg-patch impact: edits the fork-added SYCL zero-copy path only
 (`core/src/sycl/dmabuf_import.cpp`, `core/src/sycl/common.cpp`/`.h`,
@@ -48013,6 +48079,7 @@ here covers the gap. If the vector loop is ever widened, the tail's start index
 `(w / 16) * 16` has to widen with it, or widths that are a multiple of the
 dispatch granularity but not the vector width will again read `buf->tmp_ref`
 entries that were never written in that iteration.
+
 ## 2026-08-31 — ADR-1127 single SemVer release stream
 
 No upstream rebase impact: preserve VMAFx's one independent `vX.Y.Z` root
@@ -48289,6 +48356,7 @@ Rebase-sensitive points:
   (`core/src/dnn/dnn_api.c`) that logs at `VMAF_LOG_LEVEL_DEBUG` and keeps
   `load_path` on the fp32 baseline. If either changes, the "What the fork
   loads" and "Loader behaviour and fp32 fallback" sections go stale.
+
 ## fix/publishing-container-enforcement — make container-only publishing enforceable (2026-09-03)
 
 - `dev/Containerfile` — **the only rebase-sensitive file in this change, and only
@@ -48308,6 +48376,7 @@ Rebase-sensitive points:
   `docs/development/publishing.md`, `docs/state.md`, `changelog.d/` — fork-only
   CI, policy and documentation surfaces with no upstream counterpart. No rebase
   impact.
+
 ## Upstream-issue harvest 2026-09-03 (ADR-1166, branch `fix/upstream-harvest-2026-09-03`)
 
 Nine stale Netflix/vmaf reports were verified against this tree and the
