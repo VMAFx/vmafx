@@ -44,6 +44,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include "compat/path_utf8.h"
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -669,7 +670,7 @@ static int per_shot_write_plan(const struct vmaf_per_shot_settings *s,
             return -EIO;
         }
 #else
-        out = fopen(s->output, "w");
+        out = vmaf_fopen_utf8(s->output, "w");
         if (out == NULL) {
             (void)fprintf(stderr, "vmaf-perShot: cannot open output %s\n", s->output);
             return -EIO;
@@ -758,7 +759,7 @@ static int per_shot_scan(const struct vmaf_per_shot_settings *s, struct vmaf_per
     }
     if (s->width == 0U || s->height == 0U || s->bitdepth == 0U)
         return -EINVAL;
-    FILE *fin = fopen(s->reference, "rb");
+    FILE *fin = vmaf_fopen_utf8(s->reference, "rb");
     if (fin == NULL) {
         /* strerror() is concurrency-mt-unsafe; the path is enough
          * context for the user. */
