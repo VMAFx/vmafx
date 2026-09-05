@@ -127,7 +127,7 @@ static void ssim_accumulate_row(const unsigned char *src, const unsigned char *d
             x + hkernel_offs - w + 1 <= 0 ? hkernel_sz : hkernel_sz - (x + hkernel_offs - w + 1);
         // k_min/k_max clamp to in-bounds — analyzer can't prove kernel
         // offsets stay within hkernel[0..hkernel_sz) and src/dst[0.._w) here.
-        // NOLINTBEGIN(clang-analyzer-security.ArrayBound)
+        // NOLINTBEGIN(clang-analyzer-security.ArrayBound) — ADR-0141 §2 / ADR-0278: upstream-parity bounds clamp
         for (k = k_min; k < k_max; k++) {
             signed s;
             signed d;
@@ -230,7 +230,7 @@ static void ssim_reduce_row_range(ssim_moments *const *lines, int line_mask, int
         memset(&m, 0, sizeof(m));
         // k_min/k_max clamp to in-bounds — analyzer can't prove kernel
         // offsets stay within vkernel[0..vkernel_sz) here.
-        // NOLINTBEGIN(clang-analyzer-security.ArrayBound)
+        // NOLINTBEGIN(clang-analyzer-security.ArrayBound) — ADR-0141 §2 / ADR-0278: upstream-parity bounds clamp
         for (k = k_min; k < k_max; k++) {
             signed window;
             buf = lines[(y + 1 - vkernel_sz + k) & line_mask] + x;

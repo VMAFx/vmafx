@@ -129,7 +129,8 @@ static inline int32x4_t od_mulrshift_neon(int32x4_t x, int32_t k, int32_t round,
  * break the one-to-one scalar diff that the bit-exactness audit
  * depends on.
  */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size)
+// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-0141 §2 /
+// ADR-0159 / ADR-0278: 30-butterfly network kept whole for the scalar bit-exact diff.
 static inline void od_bin_fdct8_simd(int32x4_t in0, int32x4_t in1, int32x4_t in2, int32x4_t in3,
                                      int32x4_t in4, int32x4_t in5, int32x4_t in6, int32x4_t in7,
                                      int32x4_t *out0, int32x4_t *out1, int32x4_t *out2,
@@ -452,7 +453,7 @@ static void compute_masks(psnr_hvs_block *b, const float mask[8][8])
     /* ADR-0141: `sqrt` (double) matches the scalar reference's float->double
      * promotion before sqrt; switching to `sqrtf` would diverge from the
      * bit-exact contract. */
-    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn)
+    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) — ADR-0141 / ADR-0159 / ADR-0278
     b->s_mask = sqrt(b->s_mask * b->s_gvar) / 32.f;
     // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-0141 as above.
     b->d_mask = sqrt(b->d_mask * b->d_gvar) / 32.f;

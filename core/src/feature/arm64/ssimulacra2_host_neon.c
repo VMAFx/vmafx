@@ -68,9 +68,10 @@ static inline float32x4_t cbrtf_lane4(float32x4_t v)
     return vld1q_f32(tmp);
 }
 
-/* ADR-0242 carve-out: matmul + per-lane cbrtf + rescale kept together for
- * line-for-line diff against the Vulkan scalar reference. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size)
+/* ADR-0252 carve-out: matmul + per-lane cbrtf + rescale kept together for
+ * line-for-line diff against the host scalar reference. */
+// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-0141 §2 /
+// ADR-0252 / ADR-0161 / ADR-0278: host XYB kernel kept whole for the bit-exact audit.
 void ssimulacra2_host_linear_rgb_to_xyb_neon(const float *lin, float *xyb, unsigned w, unsigned h,
                                              size_t plane_stride)
 {
