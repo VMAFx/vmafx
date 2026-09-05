@@ -93,9 +93,9 @@ static int init_paths_once(void)
  * Environment-side `ASAN_OPTIONS` overrides this if a CI
  * operator wants leak detection on. The `__` prefix is
  * mandated by the AddressSanitizer weak-symbol ABI. */
-/* NOLINTNEXTLINE(misc-use-internal-linkage,bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ASan weak-symbol ABI */
+/* NOLINTNEXTLINE(misc-use-internal-linkage,bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ASan weak-symbol ABI (ADR-0141 / ADR-0278) */
 const char *__asan_default_options(void);
-/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ASan weak-symbol ABI */
+/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ASan weak-symbol ABI (ADR-0141 / ADR-0278) */
 const char *__asan_default_options(void)
 {
     return "detect_leaks=0:allocator_may_return_null=1";
@@ -127,7 +127,7 @@ static void drive_one(const uint8_t *data, size_t size)
  * external linkage; the runtime resolves it by name at link time
  * (`-fsanitize=fuzzer`). Cannot be static — the
  * `misc-use-internal-linkage` warning is load-bearing-wrong. */
-/* NOLINTNEXTLINE(misc-use-internal-linkage) — libFuzzer entry-point ABI */
+/* NOLINTNEXTLINE(misc-use-internal-linkage) — libFuzzer entry-point ABI (ADR-0141 / ADR-0278) */
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     if (size == 0u || size > FUZZ_MAX_INPUT_BYTES)
