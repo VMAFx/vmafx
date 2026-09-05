@@ -194,16 +194,99 @@ def _build_example_inputs(cfg_doc: dict[str, Any], qat_cfg) -> tuple[Any, ...]:
     return (torch.zeros(tuple(int(d) for d in shape), dtype=torch.float32),)
 
 
+#: ``.npz`` keys accepted for the NCHW input / target arrays of a rank-4 cache.
+IMAGE_CACHE_INPUT_KEYS = ("x", "images", "degraded", "input")
+IMAGE_CACHE_TARGET_KEYS = ("y", "targets", "clean", "reference", "output")
+
+
+def _config_input_rank(cfg_doc: dict[str, Any], qat_cfg) -> int:
+    """Tensor rank the configured model expects on its single input.
+
+    Read from ``qat.input_shape`` — the same value
+    :func:`_build_example_inputs` traces the model with, so the loader and
+    the FX trace cannot disagree. When the key is absent
+    :func:`_build_example_inputs` falls back to ``[1, 1, 32, 32]``, so this
+    reports rank 4 for that case too.
+    """
+    qat_block = cfg_doc.get("qat", {}) or {}
+    shape = qat_block.get("input_shape") or qat_cfg.extra.get("input_shape")
+    if shape is None:
+        return 4
+    return len(shape)
+
+
+def _build_image_loader_factory(cfg_doc: dict[str, Any], cache: Path):
+    """Batch iterator over NCHW image tensors for rank-4 QAT models.
+
+    Research-2029 gap 4: ``VmafTrainDataModule`` materialises rank-2 tabular
+    feature rows (the canonical-6 vector plus a scalar MOS), which is what the
+    FR regressors train on. A 2D CNN — ``learned_filter``, ``nr_metric`` —
+    needs image batches instead, and handing it tabular rows fails inside the
+    first ``Conv2d``. Before this existed, ``learned_filter_v1_qat.yaml`` only
+    "worked" because its parquet cache is not committed, so the missing-cache
+    branch silently downgraded the run to ``--smoke`` and trained nothing.
+
+    The rank-4 cache is a ``.npz`` carrying the input batch under one of
+    :data:`IMAGE_CACHE_INPUT_KEYS` with shape ``(N, C, H, W)`` and the target
+    under one of :data:`IMAGE_CACHE_TARGET_KEYS` with a matching leading
+    dimension. Both are cast to float32. The archive is validated eagerly so a
+    malformed cache fails before the fp32 warm-start burns epochs.
+    """
+    import numpy as np
+
+    if cache.suffix != ".npz":
+        raise SystemExit(
+            f"rank-4 QAT cache must be a .npz of NCHW tensors, got {cache.suffix or cache.name!r}"
+        )
+    with np.load(cache) as data:
+        keys = list(data.files)
+        x_key = next((k for k in IMAGE_CACHE_INPUT_KEYS if k in keys), None)
+        y_key = next((k for k in IMAGE_CACHE_TARGET_KEYS if k in keys), None)
+        if x_key is None or y_key is None:
+            raise SystemExit(
+                f"{cache}: rank-4 cache needs an input array named one of "
+                f"{IMAGE_CACHE_INPUT_KEYS} and a target array named one of "
+                f"{IMAGE_CACHE_TARGET_KEYS}; found {keys}"
+            )
+        x_np = np.ascontiguousarray(data[x_key], dtype=np.float32)
+        y_np = np.ascontiguousarray(data[y_key], dtype=np.float32)
+
+    if x_np.ndim != 4:
+        raise SystemExit(f"{cache}: input array {x_key!r} must be 4D NCHW, got shape {x_np.shape}")
+    if x_np.shape[0] != y_np.shape[0]:
+        raise SystemExit(
+            f"{cache}: input/target length mismatch ({x_np.shape[0]} vs {y_np.shape[0]})"
+        )
+    if x_np.shape[0] == 0:
+        raise SystemExit(f"{cache}: cache is empty")
+
+    batch_size = max(1, int(cfg_doc.get("batch_size", 32)))
+
+    def factory():
+        import torch
+        from torch.utils.data import DataLoader, TensorDataset
+
+        dataset = TensorDataset(torch.from_numpy(x_np), torch.from_numpy(y_np))
+        return DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+    return factory
+
+
 def _build_train_loader_factory(cfg_doc: dict[str, Any], qat_cfg):
     """Best-effort training data loader for the QAT phases.
 
-    For the smoke path this returns ``None`` — the pipeline skips
-    both training phases. For real training the caller hooks up a
-    parquet feature cache via the existing
-    ``vmaf_train.datamodule.VmafTrainDataModule``; until that wiring
-    lands per-model, the driver supports the smoke path + real
-    training only when the config carries a ``cache:`` field that
-    points at a non-empty parquet on disk.
+    For the smoke path this returns ``None`` — the pipeline skips both
+    training phases. For real training the config must carry a ``cache:``
+    field pointing at a file on disk; which loader reads it is decided by the
+    rank of ``qat.input_shape``:
+
+    * rank 2 — tabular feature rows through
+      ``vmaf_train.datamodule.VmafTrainDataModule`` (parquet or ``.npz``).
+    * rank 4 — NCHW image batches through
+      :func:`_build_image_loader_factory` (``.npz``).
+
+    Any other rank has no loader; the run downgrades to smoke mode with a
+    message on stderr rather than failing deep inside the first forward pass.
     """
     if qat_cfg.smoke:
         return None
@@ -215,6 +298,18 @@ def _build_train_loader_factory(cfg_doc: dict[str, Any], qat_cfg):
     if not cache.is_file():
         print(
             f"[qat_train] cache {cache} missing; falling back to smoke mode",
+            file=sys.stderr,
+        )
+        qat_cfg.smoke = True
+        return None
+
+    rank = _config_input_rank(cfg_doc, qat_cfg)
+    if rank == 4:
+        return _build_image_loader_factory(cfg_doc, cache)
+    if rank != 2:
+        print(
+            f"[qat_train] no training loader for rank-{rank} input "
+            f"(qat.input_shape); falling back to smoke mode",
             file=sys.stderr,
         )
         qat_cfg.smoke = True
