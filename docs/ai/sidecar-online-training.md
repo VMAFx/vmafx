@@ -168,10 +168,52 @@ Increase `resources.limits.cpu` for the sidecar or reduce `batchSize`.
   `VMAFX_SIDECAR_CUDA=1` but requires the node pod to have excess GPU budget.
 - **Single base model per sidecar**: per-tenant adapter heads (LoRA) are
   deferred to v2.
-- **No stability gate**: a checkpoint that regresses PLCC by more than 0.005
-  is not automatically quarantined in v1.  Planned per Research-0733 §3.4.
+- **No stability gate, and no quarantine**: every checkpoint the sidecar
+  commits is immediately eligible for pickup. Nothing scores it against a
+  fixture set, nothing tags it, and nothing withholds it — a checkpoint that
+  regresses quality is picked up exactly like one that improves it. Recovery is
+  manual: pin the node to a known-good version or stop the training session.
+  See [Checkpoint quarantine](#checkpoint-quarantine-not-implemented) below for
+  what is and is not in the tree.
 
 ---
+
+## Checkpoint quarantine (not implemented)
+
+[Research-0733 §3.4](../research/0733-vmafx-sidecar-training-architecture.md)
+specifies a stability gate and a three-way version-selection policy. **None of
+it exists in the tree.** This section records the split so nobody plans against
+a surface that is not there.
+
+**What §3.4 specifies.** After each checkpoint is committed, the controller
+scores an internal fixture set (10–20 reference/distorted pairs with known VMAF
+scores) and compares PLCC against the previous checkpoint. A regression larger
+than `stability_plcc_delta` (default 0.005) tags the checkpoint `unstable` and
+excludes it from the `latest-stable` selection policy. `VmafxModelTraining`
+carries a `spec.versionPolicy` field with three values — `latest`,
+`latest-stable`, `pinned:<version>` — defaulting to `latest-stable`.
+
+**What is actually in the tree.**
+
+| §3.4 element | State |
+| --- | --- |
+| Atomic checkpoint write (temp file + `os.replace`) | Implemented — `SgdEmaTrainer.export_onnx` exports to a `mkstemp` `.tmp.onnx` and renames; the `.sha256` file is written the same way. |
+| `model.onnx.sha256` digest sidecar written | Implemented — `_write_sha256_sidecar` in [`ai/sidecar/online_trainer.py`](../../ai/sidecar/online_trainer.py). |
+| Digest **verified by the node before load** | **Not written** — no SHA-256 check exists anywhere in `cmd/vmafx-node/`. The file is produced but nothing consumes it. |
+| `status.modelVersion` propagated to the CR | Implemented — [`api/vmafx/v1/vmafxmodeltraining_types.go`](../../api/vmafx/v1/vmafxmodeltraining_types.go), applied in `vmafxmodeltraining_controller.go`. |
+| `spec.versionPolicy` field | **Absent** from the CRD — no `latest` / `latest-stable` / `pinned:` selection exists. |
+| Fixture set for the stability gate | **Does not exist.** |
+| PLCC comparison job in the controller | **Not written.** |
+| `unstable` tag / quarantine on a regressing checkpoint | **Not written.** No checkpoint is ever withheld. |
+| `stability_plcc_delta` knob | **Not a field anywhere.** |
+| Automatic rollback on `vmaf_score_pooled` failure rate | **Not written**; the `rollback_threshold` in §3.4 is a proposal. |
+
+**Consequence for operators.** Treat every committed checkpoint as unvetted.
+If quality regression matters for a deployment, gate it outside the sidecar —
+score the checkpoint yourself before pointing nodes at it, and keep the
+previous version reachable so you can pin back to it.
+[ADR-0781](../adr/0781-sidecar-sgd-ema-online-trainer.md) §Limitations records
+the same deferral from the design side.
 
 ## See also
 
