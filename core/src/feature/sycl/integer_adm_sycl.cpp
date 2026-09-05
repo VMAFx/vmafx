@@ -702,6 +702,11 @@ launch_decouple_csf(sycl::queue &q, int scale, unsigned half_w, unsigned half_h,
                             // n is floor(log2(tmp)), so bit width is n+1
                             // clz = 31 - n for 32-bit
                             int const clz = 31 - n;
+                            // INVARIANT (T-SYCL-ADM-NEGATIVE-SHIFT-REACHABILITY-2026-09-04):
+                            // Guarded by abs_oh >= 32768 (2^15) in the else branch above.
+                            // Because tmp >= 2^15, MSB index n >= 15, hence clz = 31 - n <= 16.
+                            // Thus ks = 17 - clz >= 1 (range [1, 17]), guaranteeing a strictly
+                            // positive shift amount. Matches CPU get_best15_from32 and CUDA/HIP twins.
                             int const ks = 17 - clz;
                             uint32_t const rounded = (tmp + (1u << (ks - 1))) >> ks;
                             kh_shift = ks;
@@ -1029,6 +1034,11 @@ static sycl::event launch_csf_den_cm_3band(
                                         v >>= 1;
                                     }
                                     int const clz = 31 - n;
+                                    // INVARIANT (T-SYCL-ADM-NEGATIVE-SHIFT-REACHABILITY-2026-09-04):
+                                    // Guarded by abs_oh >= 32768 (2^15) in the else branch above.
+                                    // Because tmp >= 2^15, MSB index n >= 15, hence clz = 31 - n <= 16.
+                                    // Thus ks = 17 - clz >= 1 (range [1, 17]), guaranteeing a strictly
+                                    // positive shift amount. Matches CPU get_best15_from32 and CUDA/HIP twins.
                                     int const ks = 17 - clz;
                                     uint32_t const rounded = (tmp + (1u << (ks - 1))) >> ks;
                                     kh_shift = ks;
