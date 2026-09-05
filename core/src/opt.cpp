@@ -151,8 +151,8 @@ extern "C" [[nodiscard]] int vmaf_option_set(const VmafOption *opt, void *obj, c
         /* opt.h changed default_val.s to const char* (prevents write-to-rodata).
          * The public char** ABI is preserved per ADR-0721; const_cast is the
          * approved bridge. The pointer is stored but never written through. */
-        *dst =
-            const_cast<char *>(opt->default_val.s); // NOLINT(cppcoreguidelines-pro-type-const-cast)
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) — ADR-0721 / ADR-0278
+        *dst = const_cast<char *>(opt->default_val.s);
         if (!val)
             return 0;
         /* String options store a borrowed pointer — lifetime owned by the
