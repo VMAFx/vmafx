@@ -43,10 +43,13 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	grpcmod "github.com/golusoris/golusoris/grpc"
+	"github.com/golusoris/golusoris/otel"
 
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
+	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
+	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
 
 // freeLoopbackAddr binds an OS-assigned loopback port, then releases it so the
@@ -262,5 +265,38 @@ func TestProductionGraphBadGRPCAddrFailsStart(t *testing.T) {
 	if err := app.Start(ctx); err == nil {
 		_ = app.Stop(context.Background())
 		t.Fatal("expected app.Start to fail with an unbindable gRPC address, got nil")
+	}
+}
+
+// TestOTelWiredThroughBootstrap asserts the OTel contract vmafx-node inherits
+// from bootstrap.Base (ADR-0782 / ADR-1119): golusoris's otel.Module is in the
+// production graph, is a silent no-op without an OTLP endpoint, and the
+// resource identity is service.name "vmafx-node" (derived from the binary)
+// with service.version from pkg/version. The gRPC server span itself comes
+// from grpcmod.Module's otelgrpc stats handler, exercised end to end by
+// cmd/vmafx-controller's TestGRPCHealthEmitsLinkedSpans on the same module.
+func TestOTelWiredThroughBootstrap(t *testing.T) {
+	writeNodeEnv(t)
+	oteltest.NoopEnv(t)
+	t.Setenv("OTEL_SERVICE_NAME", "")
+	t.Setenv("VMAFX_OTEL_SERVICE_NAME", "")
+	t.Setenv("VMAFX_OTEL_SERVICE_VERSION", "")
+
+	var (
+		providers *otel.Providers
+		opts      otel.Options
+	)
+	app := fxtest.New(t, productionGraph(), fx.Populate(&providers, &opts))
+	app.RequireStart()
+	defer app.RequireStop()
+
+	if providers == nil || providers.Tracer != nil || providers.Meter != nil || providers.Logger != nil {
+		t.Fatalf("expected no-op OTel providers without an endpoint, got %+v", providers)
+	}
+	if opts.Service.Name != "vmafx-node" {
+		t.Errorf("service.name = %q, want vmafx-node", opts.Service.Name)
+	}
+	if opts.Service.Version != buildversion.Version() {
+		t.Errorf("service.version = %q, want %q", opts.Service.Version, buildversion.Version())
 	}
 }

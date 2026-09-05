@@ -222,8 +222,13 @@ func runMCPTransport(
 		// ADR-0967: wrap the MCP streamable-HTTP handler in the security
 		// middleware (bearer auth + request-body size limit). Identical gate to
 		// the Python _make_security_middleware so both servers behave the same.
-		handler := securityMiddleware(mcp.NewStreamableHTTPHandler(
-			func(*http.Request) *mcp.Server { return srv }, nil))
+		// The otelhttp server span (bootstrap.TraceHTTPHandler, ADR-0782 /
+		// ADR-1119) is outermost so rejected requests are traced with their
+		// 401 / 413 status too; this hand-rolled *http.Server is not the
+		// golusoris.HTTP module, so the fx-side bootstrap.HTTPTracing decorator
+		// does not reach it and the wrapper is applied here directly.
+		handler := bootstrap.TraceHTTPHandler(securityMiddleware(mcp.NewStreamableHTTPHandler(
+			func(*http.Request) *mcp.Server { return srv }, nil)))
 		httpSrv := &http.Server{
 			Addr:              addr,
 			Handler:           handler,

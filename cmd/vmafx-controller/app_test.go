@@ -48,8 +48,14 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/golusoris/golusoris/config"
+	"github.com/golusoris/golusoris/otel"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
+	"github.com/VMAFx/vmafx/internal/oteltest"
+	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
 
 // writeControllerEnv writes a no-op vmaf stub + model dir and points the VMAFX_
@@ -333,4 +339,97 @@ func freeLocalAddr(t *testing.T) string {
 	addr := ln.Addr().String()
 	_ = ln.Close()
 	return addr
+}
+
+// TestOTelWiredThroughBootstrap asserts the OTel contract vmafx-controller
+// inherits from bootstrap.Base (ADR-0782 / ADR-1119): golusoris's otel.Module
+// is in the production graph, is a silent no-op without an OTLP endpoint, and
+// the resource identity is service.name "vmafx-controller" (derived from the
+// binary) with service.version from pkg/version.
+func TestOTelWiredThroughBootstrap(t *testing.T) {
+	writeControllerEnv(t)
+	oteltest.NoopEnv(t)
+	t.Setenv("OTEL_SERVICE_NAME", "")
+	t.Setenv("VMAFX_OTEL_SERVICE_NAME", "")
+	t.Setenv("VMAFX_OTEL_SERVICE_VERSION", "")
+
+	var (
+		providers *otel.Providers
+		opts      otel.Options
+	)
+	app := fxtest.New(t, productionGraph(), fx.Populate(&providers, &opts))
+	app.RequireStart()
+	defer app.RequireStop()
+
+	if providers == nil || providers.Tracer != nil || providers.Meter != nil || providers.Logger != nil {
+		t.Fatalf("expected no-op OTel providers without an endpoint, got %+v", providers)
+	}
+	if opts.Service.Name != "vmafx-controller" {
+		t.Errorf("service.name = %q, want vmafx-controller", opts.Service.Name)
+	}
+	if opts.Service.Version != buildversion.Version() {
+		t.Errorf("service.version = %q, want %q", opts.Service.Version, buildversion.Version())
+	}
+}
+
+// TestGRPCHealthEmitsLinkedSpans is the request-path integration test for the
+// gRPC surface: an RPC against the production graph's bound listener produces
+// a server span from grpcmod.Module's otelgrpc stats handler, and a client
+// dialled with the otelgrpc client handler (what pkg/score and golusoris's
+// ConnFactory install, ADR-1095) produces a client span in the same trace —
+// i.e. the W3C traceparent crossed the wire and the two hops are linked.
+func TestGRPCHealthEmitsLinkedSpans(t *testing.T) {
+	writeControllerEnv(t)
+	addr := freeLocalAddr(t)
+	t.Setenv("VMAFX_GRPC_LISTEN", addr)
+	sr := oteltest.Recorder(t)
+
+	app := fxtest.New(t, productionGraph())
+	app.RequireStart()
+	defer app.RequireStop()
+
+	conn, err := googlegrpc.NewClient(addr,
+		googlegrpc.WithTransportCredentials(insecure.NewCredentials()),
+		googlegrpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	)
+	if err != nil {
+		t.Fatalf("dial gRPC: %v", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := vmafxv1.NewVmafxScoringClient(conn).Health(ctx, &vmafxv1.HealthRequest{}); err != nil {
+		t.Fatalf("Health RPC: %v", err)
+	}
+
+	const rpc = "vmafx.v1.VmafxScoring/Health"
+	// The server span ends on the server goroutine after the response is on
+	// the wire, so it can trail the client's return by a few milliseconds.
+	var serverSpan, clientSpan sdktrace.ReadOnlySpan
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && (serverSpan == nil || clientSpan == nil) {
+		for _, s := range oteltest.Ended(sr, rpc) {
+			switch s.SpanKind() {
+			case trace.SpanKindServer:
+				serverSpan = s
+			case trace.SpanKindClient:
+				clientSpan = s
+			}
+		}
+		if serverSpan == nil || clientSpan == nil {
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	if serverSpan == nil || clientSpan == nil {
+		t.Fatalf("want server+client spans named %q, got %v", rpc, oteltest.Names(sr))
+	}
+	if serverSpan.SpanContext().TraceID() != clientSpan.SpanContext().TraceID() {
+		t.Errorf("trace context did not propagate: server trace %s, client trace %s",
+			serverSpan.SpanContext().TraceID(), clientSpan.SpanContext().TraceID())
+	}
+	if serverSpan.Parent().SpanID() != clientSpan.SpanContext().SpanID() {
+		t.Errorf("server span parent %s is not the client span %s",
+			serverSpan.Parent().SpanID(), clientSpan.SpanContext().SpanID())
+	}
 }

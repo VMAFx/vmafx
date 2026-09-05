@@ -10,10 +10,12 @@ import (
 	"log/slog"
 
 	"github.com/golusoris/golusoris/config"
+	"github.com/golusoris/golusoris/otel"
 	"github.com/spf13/cobra"
 	"go.uber.org/fx"
 
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
+	"github.com/VMAFx/vmafx/pkg/observability"
 )
 
 // deps is the set of golusoris framework values injected into a vmafx-tune
@@ -22,6 +24,13 @@ import (
 type deps struct {
 	Log *slog.Logger
 	Cfg *config.Config
+	// OTel is the golusoris OpenTelemetry provider set bootstrap.Base wired
+	// for this invocation (ADR-0782 / ADR-1119). All three providers are nil
+	// when no OTLP endpoint is configured — the silent no-op default — and the
+	// fx OnStop hook flushes them at app.Stop. Commands do not need it (spans
+	// go through the global tracer); it is populated so tests can prove the
+	// wiring without rebuilding the graph.
+	OTel *otel.Providers
 }
 
 // configOptions overrides the golusoris config defaults so vmafx-tune reads the
@@ -68,7 +77,7 @@ func withGolusoris(run func(ctx context.Context, d deps, args []string) error) f
 			// diagnostics. (bootstrap.FxLogger(), which routes fx events onto the
 			// app logger, is for long-running services, not a CLI.)
 			fx.NopLogger,
-			fx.Populate(&d.Log, &d.Cfg),
+			fx.Populate(&d.Log, &d.Cfg, &d.OTel),
 		)
 		if err := app.Err(); err != nil {
 			return fmt.Errorf("vmafx-tune: build dependency graph: %w", err)
@@ -80,7 +89,14 @@ func withGolusoris(run func(ctx context.Context, d deps, args []string) error) f
 			return fmt.Errorf("vmafx-tune: start dependency graph: %w", err)
 		}
 
-		runErr := run(ctx, d, args)
+		// One SpanTuneCommand span per invocation is the CLI's top-level job
+		// span (ADR-0782); the cobra command path (e.g. "vmafx-tune-go sidecar
+		// status") is its bounded-cardinality attribute. It ends before
+		// app.Stop so the OTel OnStop flush exports it.
+		spanCtx, span := observability.StartSpan(ctx, observability.SpanTuneCommand,
+			observability.AttrTuneCommand.String(cmd.CommandPath()))
+		runErr := run(spanCtx, d, args)
+		observability.EndSpan(span, &runErr)
 
 		stopCtx, cancelStop := context.WithTimeout(context.WithoutCancel(ctx), app.StopTimeout())
 		defer cancelStop()
