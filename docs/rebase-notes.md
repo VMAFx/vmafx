@@ -174,6 +174,14 @@ no rebase impact: fork-local SYCL feature extractor and tests.
   `core/src/feature/` wildcard glob, silently truncated the comment mid-file, and turned the
   header into parse errors). On a sync, keep the bracket balanced and do not "modernise" the
   header — every rewrite it suppresses breaks the C includers.
+## feat/dnn-int8-redirect-and-sidecar-fixes — docs/ai gap closeout for #1242 (2026-09-05)
+
+- `docs/ai/sidecar-online-training.md`, `docs/ai/extractor-template.md`,
+  `docs/ai/inference.md`: replaced three "planned" placeholders with the audited state of
+  the tree (sidecar checkpoint quarantine, `transnet_v2` sliding window, self-hosted GPU
+  runner). Opened `T-GPU-RUNNER-LABEL-MISMATCH-2026-09-05` in `docs/state.md`.
+- `no rebase impact: fork-added documentation only; upstream Netflix/vmaf has no docs/ai tree.`
+
 ## feat/dnn-int8-redirect-and-sidecar-fixes — qat_train.py rank-4 image loader (2026-09-05)
 
 - `ai/scripts/qat_train.py`: `_build_train_loader_factory` now dispatches on the rank of
