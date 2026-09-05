@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Per-frame feature extraction via the libvmaf CLI.
 
-The extractor mirrors what ``vmaf_v0.6.1`` consumes::
+The extractor mirrors the canonical-6 student contract (the ``vmaf_v0.6.1``
+feature set; the teacher itself follows the ADR-1168 default, ADR-1173)::
 
     DEFAULT_FEATURES = ("adm2", "vif_scale0", "vif_scale1",
                         "vif_scale2", "vif_scale3", "motion2")

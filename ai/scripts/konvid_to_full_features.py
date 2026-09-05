@@ -8,8 +8,8 @@ keeps the same synthetic-FR recipe:
 
 1. Decode each KoNViD-1k source MP4 to 8-bit 4:2:0 YUV as the reference.
 2. Encode a distorted side with libx264 at CRF 35 and decode it back to YUV.
-3. Run the fork libvmaf CLI once with ``FULL_FEATURES`` and
-   ``vmaf_v0.6.1`` attached.
+3. Run the fork libvmaf CLI once with ``FULL_FEATURES`` and the resolved
+   teacher model (ADR-1168 default, ``--model`` override; ADR-1173) attached.
 4. Write one parquet row per frame.
 
 Default outputs:

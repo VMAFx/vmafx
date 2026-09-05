@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Unit tests for :mod:`ai.data.scores` — teacher VMAF score loader.
 
-Covers ``TeacherScores`` round-trip, ``_model_path`` env override,
+Covers ``TeacherScores`` round-trip, ``resolve_teacher_model`` precedence,
 ``_run_vmaf_score`` argv composition (mocked subprocess), and
 ``teacher_scores`` happy + sad paths (missing binary, missing model,
 absent pooled metrics, NaN handling).
@@ -93,15 +93,20 @@ def test_resolve_teacher_model_version_string() -> None:
     assert not resolved.is_path
 
 
-def test_model_path_default_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("VMAF_MODEL_PATH", raising=False)
-    assert scores_mod._model_path() == scores_mod.DEFAULT_MODEL_PATH
+def test_teacher_scores_from_jsonable_legacy_payload_is_unknown_teacher() -> None:
+    # A cache payload written before ADR-1173 carries no teacher_model; it
+    # must surface as "unknown", never be relabelled as the current default.
+    payload = {"per_frame": [1.0, 2.0], "pooled": 1.5}
+    ts = scores_mod.TeacherScores.from_jsonable(payload)
+    assert ts.teacher_model == scores_mod.TEACHER_UNKNOWN
+    assert ts.teacher_model != scores_mod.DEFAULT_MODEL
 
 
-def test_model_path_env_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    custom = tmp_path / "custom" / "model.json"
-    monkeypatch.setenv("VMAF_MODEL_PATH", str(custom))
-    assert scores_mod._model_path() == custom
+def test_scores_module_carries_no_hardcoded_default_model_path() -> None:
+    # ADR-1168 / ADR-1173: the default teacher has exactly one source
+    # (vmaftune.defaultmodel.DEFAULT_MODEL); ai/ must not duplicate it.
+    assert not hasattr(scores_mod, "DEFAULT_MODEL_PATH")
+    assert not hasattr(scores_mod, "_model_path")
 
 
 def test_resolve_teacher_model_directory_ignored(

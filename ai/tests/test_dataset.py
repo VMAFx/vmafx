@@ -16,6 +16,7 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from ai.data.feature_extractor import DEFAULT_FEATURES  # noqa: E402
+from ai.data.scores import resolve_teacher_model  # noqa: E402
 from ai.train.dataset import DEFAULT_VAL_SOURCE, NetflixFrameDataset  # noqa: E402
 
 
@@ -32,6 +33,7 @@ def _make_payload(pair, n_frames=3, seed=0):  # type: ignore[no-untyped-def]
         "scores": {
             "per_frame": score.tolist(),
             "pooled": float(score.mean()),
+            "teacher_model": resolve_teacher_model().name,
         },
     }
 
@@ -127,3 +129,60 @@ def test_dataset_caches_payloads(mock_corpus: Path, tmp_path: Path, monkeypatch)
         assume_dims=(16, 16),
     )
     assert calls["n"] == first_calls, "Second instantiation must hit the cache."
+
+
+def test_dataset_recomputes_cache_from_other_or_unknown_teacher(
+    mock_corpus: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """ADR-1173: a cache entry stamped with another teacher, or a legacy entry
+    with no stamp at all, is stale -- it is recomputed, never relabelled."""
+    monkeypatch.setenv("VMAF_TINY_AI_CACHE", str(tmp_path / "cache"))
+    calls = {"n": 0}
+
+    def provider(p):
+        calls["n"] += 1
+        return _make_payload(p, n_frames=2, seed=0)
+
+    def build():
+        return NetflixFrameDataset(
+            mock_corpus,
+            split="train",
+            val_source="BetaSrc",
+            payload_provider=provider,
+            assume_dims=(16, 16),
+        )
+
+    build()
+    first_calls = calls["n"]
+    assert first_calls > 0
+
+    from ai.data.netflix_loader import cache_path_for, iter_pairs
+
+    cache_files = [
+        cache_path_for(p)
+        for p in iter_pairs(mock_corpus, assume_dims=(16, 16))
+        if p.source != "BetaSrc"
+    ]
+    assert cache_files and all(f.is_file() for f in cache_files)
+
+    # (a) stamped with a different teacher -> every entry is recomputed.
+    import json
+
+    for f in cache_files:
+        payload = json.loads(f.read_text())
+        payload["scores"]["teacher_model"] = "vmaf_v0.6.1"
+        f.write_text(json.dumps(payload))
+    build()
+    assert calls["n"] == 2 * first_calls
+
+    # (b) legacy entry without any stamp -> also recomputed.
+    for f in cache_files:
+        payload = json.loads(f.read_text())
+        del payload["scores"]["teacher_model"]
+        f.write_text(json.dumps(payload))
+    build()
+    assert calls["n"] == 3 * first_calls
+
+    # (c) freshly written entries carry the resolved teacher and are reused.
+    build()
+    assert calls["n"] == 3 * first_calls

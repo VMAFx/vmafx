@@ -543,8 +543,8 @@ python ai/scripts/combine_full_feature_parquets.py \
 ```
 
 The combiner normalizes every input to
-`corpus, source, frame_index, codec, <FULL_FEATURES>, vmaf`, fills
-missing feature columns with `NaN`, and preserves the caller-provided
+`corpus, source, frame_index, codec, teacher_model, <FULL_FEATURES>, vmaf`,
+fills missing feature columns with `NaN`, and preserves the caller-provided
 corpus label. It also writes `<out>.manifest.json` by default with
 per-input row counts, missing-feature fill lists, output column order,
 the aggregate corpus distribution, and `run_provenance`. Pass
@@ -555,6 +555,44 @@ The standalone KoNViD and BVI-DVC full-feature builders follow the same
 sidecar rule (`runs/full_features_konvid.manifest.json` and
 `runs/full_features_bvi_dvc_<tier>.manifest.json` by default), so each
 refreshed shard can be replayed before it is combined.
+
+#### Teacher model provenance (ADR-1173)
+
+Every producer distils from **one** teacher: the fork default model
+(`vmaf_v1.0.16_3d0h`, single-sourced from
+`core/include/libvmaf/model.h` / `vmaftune.defaultmodel.DEFAULT_MODEL`,
+ADR-1168). Resolution order, implemented by
+`ai.data.scores.resolve_teacher_model()`:
+
+1. an explicit override — `--vmaf-model` (`extract_full_features.py`,
+   `extract_k150k_features.py`) or `--model` (`bvi_dvc_to_full_features.py`,
+   `extract_ugc_features.py`, `konvid_to_full_features.py`,
+   `konvid_to_vmaf_pairs.py`, `bvi_dvc_to_corpus_jsonl.py`), accepting a
+   version name (`vmaf_v0.6.1`), a `version=`/`path=` libvmaf model spec, or
+   a model JSON path;
+2. `$VMAF_MODEL_PATH` (a model JSON file);
+3. the single-source default.
+
+Every feature row and run manifest carries a `teacher_model` column naming
+the teacher that produced its `vmaf` target. Consumers refuse to mix
+teachers:
+
+- `combine_full_feature_parquets.py`, `train_vmaf_tiny_v5.py` and
+  `eval_loso_vmaf_tiny_v5.py` raise `ValueError` when a shard contains more
+  than one `teacher_model`, when two inputs disagree, or when an input has
+  no `teacher_model` column at all. Legacy tables (extracted before the
+  column existed, i.e. with `vmaf_v0.6.1`) are only accepted with an
+  explicit `--assume-teacher vmaf_v0.6.1`, which stamps that value on
+  every row; the flag must match any stamp already present.
+- the `NetflixFrameDataset` per-clip cache (`$VMAF_TINY_AI_CACHE`, default
+  `~/.cache/vmaf-tiny-ai/`) is revalidated on read: an entry whose stamped
+  teacher differs from the resolved teacher, or a legacy entry with no
+  stamp, is treated as a miss and recomputed (logged at INFO), never
+  relabelled. Expect one full re-extraction the first time a pre-ADR-1173
+  cache is reused.
+
+Mixed-teacher tables are never merged silently; there is no flag that
+overrides a genuine conflict.
 
 ### Loader
 

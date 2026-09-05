@@ -34,7 +34,10 @@ if str(_VMAFTUNE_SRC) not in sys.path:
 
 from vmaftune.defaultmodel import DEFAULT_MODEL  # noqa: E402
 
-DEFAULT_MODEL_PATH = _REPO_ROOT / "model" / "vmaf_v1.0.16" / "vmaf_v1.0.16_3d0h.json"
+#: Sentinel stamped on legacy cache payloads that predate per-clip teacher
+#: provenance.  Consumers must treat it as "teacher unknown" and recompute or
+#: refuse -- never relabel it as the current default (ADR-1173).
+TEACHER_UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True)
@@ -110,13 +113,11 @@ class TeacherScores:
     def from_jsonable(cls, payload: dict) -> TeacherScores:
         per_frame = np.asarray(payload["per_frame"], dtype=np.float32)
         pooled = float(payload["pooled"])
-        teacher_model = payload.get("teacher_model", DEFAULT_MODEL)
+        # A payload without the key was written before ADR-1173 stamped
+        # provenance; the teacher that produced it is unknown, so do not
+        # silently relabel it with the current default.
+        teacher_model = str(payload.get("teacher_model") or TEACHER_UNKNOWN)
         return cls(per_frame=per_frame, pooled=pooled, teacher_model=teacher_model)
-
-
-def _model_path() -> Path:
-    env = os.environ.get("VMAF_MODEL_PATH")
-    return Path(env) if env else DEFAULT_MODEL_PATH
 
 
 def _run_vmaf_score(

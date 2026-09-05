@@ -244,6 +244,7 @@ no rebase impact: fork-only ai/ script
 - `ai/data/feature_extractor.py` and `ai/scripts/extract_k150k_features.py`: raw feature extraction lists append `"adm3"` to `FULL_FEATURES` and `FEATURE_NAMES`. The canonical-6 student features (`DEFAULT_FEATURES`) remain frozen.
 - `ai/scripts/combine_full_feature_parquets.py`, `ai/scripts/train_vmaf_tiny_v5.py`, `ai/scripts/eval_loso_vmaf_tiny_v5.py`: enforce intra-table and cross-table teacher model uniformity, refusing mixed-model datasets and unprovenanced tables without `--assume-teacher <name>`.
 - `scripts/ci/check-default-model-single-source.sh`: removed wholesale `^ai/` exemption from the gate's `allow_re`.
+- `ai/data/netflix_loader.py` (`load_or_compute(..., cache_valid=)`) and `ai/train/dataset.py`: the per-clip `$VMAF_TINY_AI_CACHE` entry is revalidated against the resolved teacher; a stale or unstamped entry is a cache miss. Keep the predicate when touching the loader — dropping it silently relabels pre-ADR-1173 `vmaf_v0.6.1` caches as the current teacher.
 
 ## docs/state-sweep-four-closed-rows — docs/state.md bookkeeping sweep (2026-09-04)
 

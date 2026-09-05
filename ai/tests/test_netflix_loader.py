@@ -126,6 +126,32 @@ def test_load_or_compute_recovers_from_corrupt_cache(
     assert out == {"hello": "world"}
 
 
+def test_load_or_compute_cache_valid_predicate_forces_recompute(
+    mock_corpus: Path, tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("VMAF_TINY_AI_CACHE", str(tmp_path / "cache"))
+    pair = next(iter(netflix_loader.iter_pairs(mock_corpus, assume_dims=(16, 16))))
+    cache_file = netflix_loader.cache_path_for(pair)
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(json.dumps({"scores": {"teacher_model": "vmaf_v0.6.1"}}))
+    calls = {"n": 0}
+
+    def compute(_p):
+        calls["n"] += 1
+        return {"scores": {"teacher_model": "current"}}
+
+    def valid(payload):
+        return payload.get("scores", {}).get("teacher_model") == "current"
+
+    out = netflix_loader.load_or_compute(pair, compute, cache_valid=valid)
+    assert out == {"scores": {"teacher_model": "current"}}
+    assert calls["n"] == 1, "a rejected cache entry must be recomputed"
+    assert json.loads(cache_file.read_text()) == out, "the stale entry must be overwritten"
+    out2 = netflix_loader.load_or_compute(pair, compute, cache_valid=valid)
+    assert out2 == out
+    assert calls["n"] == 1, "an accepted cache entry must not be recomputed"
+
+
 def test_iter_pairs_missing_root_raises(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         list(netflix_loader.iter_pairs(tmp_path / "does-not-exist"))

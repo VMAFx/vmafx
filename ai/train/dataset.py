@@ -3,7 +3,8 @@
 """PyTorch :class:`Dataset` adapter over the Netflix corpus loader.
 
 Each sample is one *frame* — feature vector :math:`x \\in \\mathbb{R}^{6}`
-paired with the ``vmaf_v0.6.1`` per-frame score :math:`y \\in [0, 100]`.
+paired with the teacher per-frame score :math:`y \\in [0, 100]` (teacher
+resolved from the ADR-1168 single source, ADR-1173).
 
 Train / val split
 -----------------
@@ -47,7 +48,7 @@ except ImportError:  # pragma: no cover - exercised only on stripped CI envs
 
 from ..data.feature_extractor import DEFAULT_FEATURES, FeatureExtractionResult, extract_features
 from ..data.netflix_loader import NetflixPair, iter_pairs, load_or_compute
-from ..data.scores import TeacherScores, teacher_scores
+from ..data.scores import TeacherScores, resolve_teacher_model, teacher_scores
 
 _LOG = logging.getLogger(__name__)
 
@@ -115,6 +116,24 @@ def _compute_pair_payload(
         "features": feats.to_jsonable(),
         "scores": teacher.to_jsonable(),
     }
+
+
+def _cache_payload_matches_teacher(payload: dict, teacher_name: str) -> bool:
+    """True when a cached payload was produced by ``teacher_name``.
+
+    Legacy caches written before ADR-1173 carry no ``teacher_model`` and
+    are treated as unknown -> stale -> recomputed, never relabelled.
+    """
+    scores = payload.get("scores") or {}
+    stamped = scores.get("teacher_model")
+    if stamped != teacher_name:
+        _LOG.info(
+            "vmaf-tiny-ai cache entry stamped teacher=%r != resolved teacher=%r; recomputing",
+            stamped,
+            teacher_name,
+        )
+        return False
+    return True
 
 
 def _payload_to_arrays(
@@ -187,6 +206,7 @@ class NetflixFrameDataset(Dataset):  # type: ignore[misc]
         provider = payload_provider or (
             lambda p: _compute_pair_payload(p, features=features, vmaf_binary=vmaf_binary)
         )
+        teacher_name = resolve_teacher_model().name
 
         for pair in iter_pairs(
             self.data_root,
@@ -199,7 +219,12 @@ class NetflixFrameDataset(Dataset):  # type: ignore[misc]
                 continue
             if split == "val" and not is_val:
                 continue
-            payload = load_or_compute(pair, provider, use_cache=use_cache)
+            payload = load_or_compute(
+                pair,
+                provider,
+                use_cache=use_cache,
+                cache_valid=lambda p: _cache_payload_matches_teacher(p, teacher_name),
+            )
             feat_arr, target_arr = _payload_to_arrays(payload)
             for i in range(feat_arr.shape[0]):
                 self._samples.append(

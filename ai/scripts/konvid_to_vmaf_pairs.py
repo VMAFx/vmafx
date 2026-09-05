@@ -14,8 +14,9 @@ For each clip, the script:
 
 1. Decodes the .mp4 to YUV (yuv420p, 8-bit) — the reference.
 2. Re-encodes via libx264 with a fixed CRF — the distorted variant.
-3. Runs the libvmaf CLI on (ref, dis) to extract the 6
-   ``vmaf_v0.6.1`` model features + per-frame VMAF teacher score.
+3. Runs the libvmaf CLI on (ref, dis) to extract the 6 canonical
+   student features + per-frame teacher VMAF score (teacher resolved from
+   the ADR-1168 default, ``--model`` override; ADR-1173).
 4. Appends one parquet row per frame.
 
 Closes the gap from Research-0023 §5: the existing 9-source Netflix
@@ -64,7 +65,7 @@ from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
-# vmaf_v0.6.1 model features — same set the LOSO trainer expects.
+# Canonical-6 student features — same set the LOSO trainer expects.
 DEFAULT_FEATURES = (
     "vif_scale0",
     "vif_scale1",

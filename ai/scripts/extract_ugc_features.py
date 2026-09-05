@@ -6,7 +6,8 @@
 For each (orig, dis) pair in the YouTube UGC vp9 manifest written by
 ``fetch_youtube_ugc_subset.py``, decode both clips to a common YUV
 geometry via ffmpeg, run ``vmaf`` with the current ``FULL_FEATURES``
-pool plus the production vmaf_v0.6.1 predictor as the teacher, and
+pool plus the fork default teacher model (ADR-1168 single source, ``--model``
+to override; ADR-1173) as the teacher, and
 append per-frame rows to a parquet matching the current full-feature
 corpus schema.
 
