@@ -39,7 +39,7 @@ producer script. This table is the mapping:
 | Producer | `quant_mode` | Wire format | Int8 ops emitted |
 | --- | --- | --- | --- |
 | `ai/scripts/ptq_dynamic.py` | `dynamic` | QOperator | `DynamicQuantizeLinear`, `MatMulInteger`, `ConvInteger` |
-| `ai/scripts/ptq_static.py` | `static` | QDQ (inherited default) | `QuantizeLinear` / `DequantizeLinear` wrapping stock `Conv` / `Gemm` / `MatMul` |
+| `ai/scripts/ptq_static.py` | `static` | QDQ (pinned) | `QuantizeLinear` / `DequantizeLinear` wrapping stock `Conv` / `Gemm` / `MatMul` |
 | `ai/src/vmaf_train/quantize.py` | `static` | QDQ (pinned explicitly) | as above, restricted to `Gemm` / `MatMul` / `Conv` |
 | `ai/scripts/qat_train.py` | `qat` | QDQ | as above — the export phase runs `quantize_static` |
 
@@ -300,14 +300,14 @@ relax the budget.
   supported by the harness, but no shipped registry row uses
   `quant_mode: "static"` or `quant_mode: "qat"` yet, so no QDQ model
   ships either.
-- **`ptq_static.py` does not pin `quant_format`.** It inherits ONNX
-  Runtime's default, which is `QuantFormat.QDQ` on the fork's pinned
-  floor (`onnxruntime>=1.29.0`), so it produces a loadable graph today.
-  `ai/src/vmaf_train/quantize.py` pins the value explicitly instead,
-  because a QOperator-static graph would be rejected by the op allowlist
-  and silently fall back to fp32. Tracked as
-  `T-AI-PTQ-STATIC-QUANT-FORMAT-UNPINNED-2026-09-03` in
-  [`docs/state.md`](../state.md).
+- **`ptq_static.py` pins `quant_format=QuantFormat.QDQ`.** Like
+  `ai/src/vmaf_train/quantize.py`, it explicitly pins QDQ so emitted static
+  graphs only contain allowlisted ops (`QuantizeLinear` / `DequantizeLinear`
+  wrapping stock `Conv` / `Gemm` / `MatMul`). A QOperator-static graph
+  (`QLinearConv`, `QLinearMatMul`, `QGemm`, ...) would be rejected by
+  `core/src/dnn/op_allowlist.c` and cause libvmaf to silently fall back to fp32.
+  This contract is tested by `test_ptq_static_full_roundtrip` in
+  `ai/tests/test_ptq_scripts.py`.
 - **Calibration sets are not redistributable** by default. Operators
   build their own from a parquet feature cache (the
   `ai/scripts/build_calibration_set.py` helper is queued — until it

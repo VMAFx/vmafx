@@ -63,7 +63,12 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         import numpy as np
-        from onnxruntime.quantization import CalibrationDataReader, QuantType, quantize_static
+        from onnxruntime.quantization import (
+            CalibrationDataReader,
+            QuantFormat,
+            QuantType,
+            quantize_static,
+        )
     except ImportError as exc:
         sys.exit(f"onnxruntime.quantization / numpy not available: {exc}")
 
@@ -104,6 +109,8 @@ def main(argv: list[str] | None = None) -> int:
         model_input=str(src),
         model_output=str(dst),
         calibration_data_reader=_NpzReader(arrays),
+        # QDQ only: core/src/dnn/op_allowlist.c has no QLinear* ops; mirrors ai/src/vmaf_train/quantize.py
+        quant_format=QuantFormat.QDQ,
         weight_type=QuantType.QInt8,
         activation_type=QuantType.QInt8,
         per_channel=args.per_channel,

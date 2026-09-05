@@ -124,6 +124,117 @@ def test_ptq_dynamic_full_roundtrip(tmp_path: Path) -> None:
     assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"
 
 
+# Allowlist copied from core/src/dnn/op_allowlist.c:101-105 + input graph ops
+OP_ALLOWLIST_STATIC = {
+    # op_allowlist.c:101-105
+    "QuantizeLinear",
+    "DequantizeLinear",
+    "DynamicQuantizeLinear",
+    "MatMulInteger",
+    "ConvInteger",
+    # Input graph ops
+    "Conv",
+    "Gemm",
+    "MatMul",
+    "Relu",
+    "Reshape",
+    "Constant",
+}
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("onnxruntime") is None or importlib.util.find_spec("onnx") is None,
+    reason="onnxruntime or onnx not installed; skipping full ptq_static round-trip",
+)
+def test_ptq_static_full_roundtrip(tmp_path: Path) -> None:
+    """End-to-end static PTQ: build a tiny Conv+Gemm ONNX, calibrate with .npz,
+    and assert output is in QDQ format (all node op_types within allowlist,
+    no QLinear* or QGemm ops). Proof test: fails if format ever flips to QOperator."""
+    pytest.importorskip("onnxruntime.quantization")
+
+    import numpy as np
+    import onnx
+    from onnx import TensorProto, helper
+
+    src = tmp_path / "tiny_conv_gemm.onnx"
+    cal = tmp_path / "calibration.npz"
+    dst = tmp_path / "tiny_conv_gemm.int8.onnx"
+    report = tmp_path / "ptq_static_report.json"
+
+    x = helper.make_tensor_value_info("x", TensorProto.FLOAT, [1, 1, 4, 4])
+    y = helper.make_tensor_value_info("y", TensorProto.FLOAT, [1, 2])
+
+    w_conv = helper.make_tensor(
+        "w_conv",
+        TensorProto.FLOAT,
+        [1, 1, 3, 3],
+        np.ones((1, 1, 3, 3), dtype=np.float32).flatten().tolist(),
+    )
+    b_conv = helper.make_tensor("b_conv", TensorProto.FLOAT, [1], [0.0])
+    conv = helper.make_node("Conv", ["x", "w_conv", "b_conv"], ["conv_out"], kernel_shape=[3, 3])
+    relu = helper.make_node("Relu", ["conv_out"], ["relu_out"])
+
+    shape_const = helper.make_tensor("shape_const", TensorProto.INT64, [2], [1, 4])
+    reshape = helper.make_node("Reshape", ["relu_out", "shape_const"], ["reshaped"])
+
+    w_gemm = helper.make_tensor(
+        "w_gemm",
+        TensorProto.FLOAT,
+        [4, 2],
+        np.ones((4, 2), dtype=np.float32).flatten().tolist(),
+    )
+    b_gemm = helper.make_tensor("b_gemm", TensorProto.FLOAT, [2], [0.0, 0.0])
+    gemm = helper.make_node("Gemm", ["reshaped", "w_gemm", "b_gemm"], ["y"])
+
+    graph = helper.make_graph(
+        [conv, relu, reshape, gemm],
+        "g",
+        [x],
+        [y],
+        initializer=[w_conv, b_conv, shape_const, w_gemm, b_gemm],
+    )
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
+    onnx.save(model, str(src))
+
+    cal_data = np.random.RandomState(42).randn(4, 1, 4, 4).astype(np.float32)
+    np.savez(cal, x=cal_data)
+
+    cp = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPTS_DIR / "ptq_static.py"),
+            str(src),
+            "--calibration",
+            str(cal),
+            "--output",
+            str(dst),
+            "--report-out",
+            str(report),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert cp.returncode == 0, cp.stderr
+    assert dst.is_file()
+
+    quantized_model = onnx.load(str(dst))
+    op_types = [node.op_type for node in quantized_model.graph.node]
+    assert len(op_types) > 0
+
+    for op in op_types:
+        assert op in OP_ALLOWLIST_STATIC, f"Op {op} not in allowlist"
+        assert not op.startswith("QLinear"), f"Unexpected QOperator op: {op}"
+        assert not op.startswith("QGemm"), f"Unexpected QOperator op: {op}"
+
+    payload = json.loads(report.read_text())
+    assert payload["mode"] == "static"
+    assert payload["output_bytes"] == dst.stat().st_size
+    assert payload["schema"] == "ptq-static-report-v1"
+    assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"
+
+
 def test_measure_quant_drop_report_for_fp32_skip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

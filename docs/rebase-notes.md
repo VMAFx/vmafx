@@ -209,6 +209,9 @@ No rebase impact: all touched files (`tools/vmaf-tune/src/vmaftune/`, `tools/vma
 - `tools/vmaf-tune/src/vmaftune/cli.py` & `fast.py`: probe distorted containers (`.mp4`) are decoded to temporary raw YUV before running libvmaf feature extraction (with guaranteed cleanup) and non-zero exit codes raise `RuntimeError` (no zero-fill).
 - `tools/vmaf-tune/src/vmaftune/proxy.py`: added `load_proxy_sidecar` and `normalise_features` adhering to `fr_regressor_v2.json` StandardScaler parameters, aligned `ENCODER_VOCAB_V2` ordering, and mapped unrecognized encoders to `"unknown"` (slot 11) when `allow_unknown=True`.
 - `tools/vmaf-tune/src/vmaftune/score.py`: `parse_feature_aggregates` handles `integer_*` keys and falls back to per-frame averages when pooled metrics are absent.
+## fix/ai-ptq-static-pin-qdq — pin ONNX Runtime static-PTQ output format to QDQ (2026-09-05)
+
+no rebase impact: fork-only ai/ script
 
 ## fix/security-cleanup-1243 — widen integer index operands in convolve, moment, psnr (2026-09-04)
 
