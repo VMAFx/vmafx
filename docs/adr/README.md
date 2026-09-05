@@ -1009,6 +1009,7 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1195](1195-container-source-revision-guard.md) | Record and verify which source revision the dev container was built from | Proposed | ci, build, testing, agents |
 | [ADR-1193](1193-psnr-uncapped-option.md) | Opt-in `uncapped` option splits the PSNR infinity sentinel from the truncation | Accepted | core, feature, psnr, options, cuda, sycl, hip, metal, gpu-twins, upstream |
 | [ADR-1191](1191-adm-csf-fixed-point-representability-guard.md) | Integer ADM rejects CSF configurations its fixed-point storage cannot represent | Accepted | metrics, adm, cuda, sycl, hip, correctness |
+| [ADR-1190](1190-cli-option-string-escape-grammar.md) | Backslash escapes (`\:`, `\=`, `\.`, `\\`) and a Windows drive-letter affordance in the `--model` / `--feature` option-string grammar; a pair's value is everything after the first unescaped `=`, so an inner `=` no longer silently truncates a path | Accepted | cli, parser, windows, upstream, bug |
 | [ADR-1185](1185-backend-perf-baseline-methodology.md) | Per-backend performance baselines are median-of-N, one backend per build dir | Accepted | perf, benchmarks, cuda, sycl, hip, docs |
 | [ADR-1198](1198-changelog-unknown-section-is-an-error.md) | An unknown `changelog.d/` subdirectory fails the run instead of warning | Proposed | ci, release, docs, testing |
 | [ADR-1199](1199-cuda-picture-handover-barrier.md) | Order caller-written CUDA pictures once per frame, at the dispatch point | Proposed | cuda, correctness, api, testing |
