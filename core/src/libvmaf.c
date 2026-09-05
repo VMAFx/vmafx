@@ -1716,6 +1716,25 @@ int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
             return -EINVAL;
         }
 
+        const unsigned gpu_mask = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
+                                  VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL;
+        if ((fex->flags & gpu_mask) && model->feature[i].opts_dict) {
+            const char *missing_key = NULL;
+            if (!vmaf_feature_extractor_supports_options(fex, model->feature[i].opts_dict,
+                                                         &missing_key)) {
+                vmaf_log(VMAF_LOG_LEVEL_INFO,
+                         "feature '%s': %s extractor lacks option '%s', computing it on the CPU\n",
+                         model->feature[i].name, fex->name, missing_key);
+                fex = vmaf_get_feature_extractor_by_feature_name(model->feature[i].name, 0);
+                if (!fex) {
+                    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                             "could not initialize feature extractor \"%s\"\n",
+                             model->feature[i].name);
+                    return -EINVAL;
+                }
+            }
+        }
+
         VmafFeatureExtractorContext *fex_ctx = NULL;
         VmafDictionary *d = NULL;
         if (model->feature[i].opts_dict) {

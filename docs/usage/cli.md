@@ -124,6 +124,11 @@ disabled). See [../metrics/brisque.md](../metrics/brisque.md).
 See [../metrics/features.md](../metrics/features.md) for the full list of feature
 identifiers and per-feature options.
 
+Option validation is strict: specifying an unknown option key or a typo
+(e.g., `--feature adm=adm_csf_moed=2`) causes libvmaf to reject the configuration
+immediately with `libvmaf ERROR feature extractor '<name>': unknown option '<key>'`
+and exit non-zero ([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)).
+
 ## Output
 
 | Flag | Default | Notes |

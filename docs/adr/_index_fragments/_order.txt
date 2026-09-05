@@ -908,3 +908,4 @@
 1172-bound-lto-link-parallelism
 1171-release-please-credential-gate-warning
 1179-sycl-v1-model-crash-fix
+1183-model-options-gate-gpu-twin-selection

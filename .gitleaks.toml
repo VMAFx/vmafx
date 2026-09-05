@@ -33,6 +33,12 @@ paths = [
 ]
 
 regexes = [
+  # VMAF pooled-metric names carry every feature option as `_<alias>_<value>`
+  # (e.g. integer_adm3_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02,
+  # cambi_hrs_1080_cmxv_17_vlt_0.06). Tests assign them to variables, which
+  # gitleaks' generic-api-key rule reads as `<name>_key = "<token>"`. They are
+  # public option strings, not credentials.
+  '''(integer_|float_)?[a-z0-9]+(_[a-z0-9]+)*(_(csf|dlmw|egl|min|nw|mmxv|hrs|cmxv|vlt|mxv|nnf|snn|wvm)_[0-9.]+)+''',
   '''0{8,}''',
   '''[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}''',
   '''vmaf_v\d+\.\d+\.\d+''',

@@ -558,14 +558,63 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_by_feature_name(const char *nam
     return NULL;
 }
 
+bool vmaf_feature_extractor_supports_options(const VmafFeatureExtractor *fex,
+                                             const VmafDictionary *opts_dict,
+                                             const char **missing_key)
+{
+    if (missing_key)
+        *missing_key = nullptr;
+
+    if (!opts_dict || opts_dict->cnt == 0 || !opts_dict->entry)
+        return true;
+
+    if (!fex || !fex->options) {
+        if (missing_key && opts_dict->cnt > 0 && opts_dict->entry)
+            *missing_key = opts_dict->entry[0].key;
+        return false;
+    }
+
+    for (unsigned i = 0; i < opts_dict->cnt; i++) {
+        const char *key = opts_dict->entry[i].key;
+        if (!key)
+            continue;
+
+        bool found = false;
+        for (unsigned j = 0; fex->options[j].name; j++) {
+            const VmafOption *opt = &fex->options[j];
+            if (strcmp(key, opt->name) == 0 || (opt->alias && strcmp(key, opt->alias) == 0)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            if (missing_key)
+                *missing_key = key;
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static int vmaf_fex_ctx_parse_options(VmafFeatureExtractorContext *fex_ctx)
 {
-    const VmafOption *opt = NULL;
+    const char *missing_key = nullptr;
+    if (!vmaf_feature_extractor_supports_options(fex_ctx->fex, fex_ctx->opts_dict, &missing_key)) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "feature extractor '%s': unknown option '%s'\n",
+                 fex_ctx->fex->name ? fex_ctx->fex->name : "(unknown)",
+                 missing_key ? missing_key : "(null)");
+        return -EINVAL;
+    }
+
+    const VmafOption *opt = nullptr;
     for (unsigned i = 0; (opt = &fex_ctx->fex->options[i]); i++) {
         if (!opt->name)
             break;
         const VmafDictionaryEntry *entry = vmaf_dictionary_get(&fex_ctx->opts_dict, opt->name, 0);
-        int err = vmaf_option_set(opt, fex_ctx->fex->priv, entry ? entry->val : NULL);
+        if (!entry && opt->alias)
+            entry = vmaf_dictionary_get(&fex_ctx->opts_dict, opt->alias, 0);
+        int err = vmaf_option_set(opt, fex_ctx->fex->priv, entry ? entry->val : nullptr);
         if (err)
             return -EINVAL;
     }
@@ -576,6 +625,7 @@ static int vmaf_fex_ctx_parse_options(VmafFeatureExtractorContext *fex_ctx)
 int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
                                           VmafFeatureExtractor *fex, VmafDictionary *opts_dict)
 {
+    int err = 0;
     VmafFeatureExtractorContext *f = *fex_ctx =
         static_cast<VmafFeatureExtractorContext *>(malloc(sizeof(*f)));
     if (!f)
@@ -598,13 +648,20 @@ int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
 
     f->opts_dict = opts_dict;
     if (f->fex->options && f->fex->priv) {
-        int err = vmaf_fex_ctx_parse_options(f);
+        err = vmaf_fex_ctx_parse_options(f);
         if (err) {
             /* parse_options failure: tear down all allocations and NULL the
              * out-parameter so callers cannot dereference a freed pointer. */
             free(f->fex->priv);
             goto free_x;
         }
+    } else if (f->opts_dict && f->opts_dict->cnt > 0) {
+        const char *missing_key = nullptr;
+        (void)vmaf_feature_extractor_supports_options(f->fex, f->opts_dict, &missing_key);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "feature extractor '%s': unknown option '%s'\n",
+                 f->fex->name ? f->fex->name : "(unknown)", missing_key ? missing_key : "(null)");
+        err = -EINVAL;
+        goto free_x;
     }
 
     return 0;
@@ -615,8 +672,8 @@ free_f:
     free(f);
     /* NULL the caller's handle so it cannot be dereferenced after a failed
      * create call. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
-    *fex_ctx = NULL;
-    return -ENOMEM;
+    *fex_ctx = nullptr;
+    return err ? err : -ENOMEM;
 }
 
 int vmaf_feature_extractor_context_init(VmafFeatureExtractorContext *fex_ctx,

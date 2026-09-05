@@ -169,6 +169,19 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_by_feature_name(const char *nam
  * silently doubling pool-entry init / extract / flush counts. */
 int vmaf_feature_extractor_list_audit(void);
 
+/**
+ * @brief Check whether a feature extractor supports all options in @p opts_dict.
+ *
+ * @param fex         Feature extractor descriptor.
+ * @param opts_dict   Dictionary of options to validate (may be NULL).
+ * @param missing_key If non-NULL, receives a pointer to the first unsupported key
+ *                    (or NULL if all options are supported).
+ * @return true if all options are supported (or opts_dict is NULL/empty), false otherwise.
+ */
+bool vmaf_feature_extractor_supports_options(const VmafFeatureExtractor *fex,
+                                             const VmafDictionary *opts_dict,
+                                             const char **missing_key);
+
 enum VmafFeatureExtractorContextFlags {
     VMAF_FEATURE_EXTRACTOR_CONTEXT_DO_NOT_OVERWRITE = 1 << 0,
 };

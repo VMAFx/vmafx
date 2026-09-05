@@ -295,6 +295,19 @@ static const VmafOption options[] = {
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
         .alias = "ceot",
     },
+    {
+        .name = "cambi_high_res_speedup",
+        .help =
+            "Speed up the processing by downsampling post spatial mask for resolutions >= 1080p. "
+            "Min speed-up resolution possible values: [1080, 1440, 2160, 0]. Default: 0 (not applied)",
+        .offset = offsetof(CambiStateCuda, cambi_high_res_speedup),
+        .type = VMAF_OPT_TYPE_INT,
+        .default_val.i = 0,
+        .min = 0,
+        .max = 2160,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .alias = "hrs",
+    },
     {0},
 };
 
@@ -339,8 +352,86 @@ static uint16_t cambi_cuda_get_mask_index(unsigned w, unsigned h, uint16_t filte
 }
 
 /* ------------------------------------------------------------------ */
-/* TVI table initialisation (mirrors CambiVkState::cambi_vk_init_tvi). */
+/* TVI table initialisation (mirrors cambi.c).                         */
 /* ------------------------------------------------------------------ */
+enum CambiCudaTVIBisectFlag {
+    CAMBI_CUDA_TVI_BISECT_TOO_SMALL,
+    CAMBI_CUDA_TVI_BISECT_CORRECT,
+    CAMBI_CUDA_TVI_BISECT_TOO_BIG,
+};
+
+static bool cambi_cuda_tvi_condition(int sample, int diff, double tvi_threshold,
+                                     VmafLumaRange luma_range, VmafEOTF eotf)
+{
+    double mean_luminance = vmaf_luminance_get_luminance(sample, luma_range, eotf);
+    double diff_luminance = vmaf_luminance_get_luminance(sample + diff, luma_range, eotf);
+    double delta_luminance = diff_luminance - mean_luminance;
+    return (delta_luminance > tvi_threshold * mean_luminance);
+}
+
+static enum CambiCudaTVIBisectFlag cambi_cuda_tvi_hard_threshold_condition(int sample, int diff,
+                                                                           double tvi_threshold,
+                                                                           VmafLumaRange luma_range,
+                                                                           VmafEOTF eotf)
+{
+    if (!cambi_cuda_tvi_condition(sample, diff, tvi_threshold, luma_range, eotf))
+        return CAMBI_CUDA_TVI_BISECT_TOO_BIG;
+
+    if (cambi_cuda_tvi_condition(sample + 1, diff, tvi_threshold, luma_range, eotf))
+        return CAMBI_CUDA_TVI_BISECT_TOO_SMALL;
+
+    return CAMBI_CUDA_TVI_BISECT_CORRECT;
+}
+
+static int cambi_cuda_get_tvi_for_diff(int diff, double tvi_threshold, int bitdepth,
+                                       VmafLumaRange luma_range, VmafEOTF eotf)
+{
+    const int max_val = (1 << bitdepth) - 1;
+    int foot = luma_range.foot;
+    int head = luma_range.head - diff - 1;
+
+    enum CambiCudaTVIBisectFlag tvi_bisect =
+        cambi_cuda_tvi_hard_threshold_condition(foot, diff, tvi_threshold, luma_range, eotf);
+    if (tvi_bisect == CAMBI_CUDA_TVI_BISECT_TOO_BIG)
+        return 0;
+    if (tvi_bisect == CAMBI_CUDA_TVI_BISECT_CORRECT)
+        return foot;
+
+    tvi_bisect =
+        cambi_cuda_tvi_hard_threshold_condition(head, diff, tvi_threshold, luma_range, eotf);
+    if (tvi_bisect == CAMBI_CUDA_TVI_BISECT_TOO_SMALL)
+        return max_val;
+    if (tvi_bisect == CAMBI_CUDA_TVI_BISECT_CORRECT)
+        return head;
+
+    while (head - foot > 1) {
+        int mid = foot + (head - foot) / 2;
+        tvi_bisect =
+            cambi_cuda_tvi_hard_threshold_condition(mid, diff, tvi_threshold, luma_range, eotf);
+        if (tvi_bisect == CAMBI_CUDA_TVI_BISECT_TOO_BIG) {
+            head = mid;
+        } else if (tvi_bisect == CAMBI_CUDA_TVI_BISECT_TOO_SMALL) {
+            foot = mid;
+        } else if (tvi_bisect == CAMBI_CUDA_TVI_BISECT_CORRECT) {
+            return mid;
+        }
+    }
+    return foot;
+}
+
+static int cambi_cuda_get_vlt_luma(double visibility_luminance_threshold, VmafLumaRange luma_range,
+                                   VmafEOTF eotf)
+{
+    uint16_t sample = (uint16_t)luma_range.foot;
+    while (vmaf_luminance_get_luminance(sample, luma_range, eotf) <
+           visibility_luminance_threshold) {
+        sample++;
+    }
+    if (sample == (uint16_t)luma_range.foot)
+        return 0;
+    return sample;
+}
+
 static int cambi_cuda_init_tvi(CambiStateCuda *s)
 {
     VmafLumaRange luma_range;
@@ -362,35 +453,12 @@ static int cambi_cuda_init_tvi(CambiStateCuda *s)
 
     const int num_diffs = 1 << s->max_log_contrast;
     for (int d = 0; d < num_diffs; d++) {
-        const int diff = (int)s->buffers.diffs_to_consider[d];
-        int lo = 0;
-        int hi = (1 << 10) - 1 - diff;
-        int found = -1;
-        while (lo <= hi) {
-            int mid = (lo + hi) / 2;
-            double sample_lum = vmaf_luminance_get_luminance(mid, luma_range, eotf);
-            double diff_lum =
-                vmaf_luminance_get_luminance(mid + diff, luma_range, eotf) - sample_lum;
-            if (diff_lum < s->tvi_threshold * sample_lum) {
-                found = mid;
-                lo = mid + 1;
-            } else {
-                hi = mid - 1;
-            }
-        }
-        if (found < 0)
-            found = 0;
-        s->buffers.tvi_for_diff[d] = (uint16_t)(found + num_diffs);
+        s->buffers.tvi_for_diff[d] = (uint16_t)cambi_cuda_get_tvi_for_diff(
+            s->buffers.diffs_to_consider[d], s->tvi_threshold, 10, luma_range, eotf);
+        s->buffers.tvi_for_diff[d] += (uint16_t)num_diffs;
     }
 
-    /* vlt_luma: largest luma sample below cambi_vis_lum_threshold. */
-    int vlt = 0;
-    for (int v = 0; v < (1 << 10); v++) {
-        double L = vmaf_luminance_get_luminance(v, luma_range, eotf);
-        if (L < s->cambi_vis_lum_threshold)
-            vlt = v;
-    }
-    s->vlt_luma = (uint16_t)vlt;
+    s->vlt_luma = (uint16_t)cambi_cuda_get_vlt_luma(s->cambi_vis_lum_threshold, luma_range, eotf);
     return 0;
 }
 
@@ -402,6 +470,11 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 {
     (void)pix_fmt;
     CambiStateCuda *s = fex->priv;
+
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict)
+        return -ENOMEM;
 
     /* Resolve enc geometry (matches cambi.c::init logic). */
     if (s->enc_bitdepth == 0)
@@ -517,9 +590,23 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (!s->buffers.c_values)
         goto free_ref;
 
+    int v_lo_signed = (int)s->vlt_luma - 3 * (int)num_diffs + 1;
+    uint16_t v_band_base = v_lo_signed > 0 ? (uint16_t)v_lo_signed : 0;
+    int v_band_size_signed = (int)s->buffers.tvi_for_diff[num_diffs - 1] + 1 - (int)v_band_base;
+    if (v_band_size_signed <= 0) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "cambi_cuda: v_band_size underflow (tvi_max=%u v_band_base=%u); "
+                 "cambi_vis_lum_threshold may be too low\n",
+                 (unsigned)s->buffers.tvi_for_diff[num_diffs - 1], (unsigned)v_band_base);
+        goto free_ref;
+    }
+
     const uint16_t num_bins = (uint16_t)(1024u + (unsigned)(s->buffers.all_diffs[2 * num_diffs] -
                                                             s->buffers.all_diffs[0]));
-    s->buffers.c_values_histograms = malloc(sizeof(uint16_t) * s->proc_width * (size_t)num_bins);
+    const size_t hist_bins = (size_t)v_band_size_signed > (size_t)num_bins ?
+                                 (size_t)v_band_size_signed :
+                                 (size_t)num_bins;
+    s->buffers.c_values_histograms = malloc(sizeof(uint16_t) * s->proc_width * hist_bins);
     if (!s->buffers.c_values_histograms)
         goto free_ref;
 
@@ -540,13 +627,6 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     vmaf_cambi_default_callbacks(&s->inc_range_callback, &s->dec_range_callback,
                                  &s->derivative_callback);
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        err = -ENOMEM;
-        goto free_ref;
-    }
 
     return 0;
 
@@ -667,6 +747,14 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CudaFunctions *cu_f = fex->cu_state->f;
     s->index = index;
 
+    int _cuda_err = 0;
+    int ctx_pushed = 0;
+    int err = 0;
+    int dist_host_allocated = 0;
+    VmafCudaBuffer *orig_d_image = s->d_image;
+    VmafCudaBuffer *orig_d_mask = s->d_mask;
+    VmafCudaBuffer *orig_d_tmp = s->d_tmp;
+
     /* Step 0: download dist_pic GPU→host so vmaf_cambi_preprocessing (host
      * code) can read it.  Pictures delivered to a CUDA extractor's submit()
      * have device pointers in data[]; dereferencing them on the host causes
@@ -674,39 +762,39 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
      * they keep all preprocessing on the GPU; CAMBI is unique in needing a
      * host-side decimate-and-10b-upcast before its GPU pipeline. */
     VmafPicture dist_host;
-    int err = vmaf_picture_alloc(&dist_host, dist_pic->pix_fmt, dist_pic->bpc, dist_pic->w[0],
-                                 dist_pic->h[0]);
+    err = vmaf_picture_alloc(&dist_host, dist_pic->pix_fmt, dist_pic->bpc, dist_pic->w[0],
+                             dist_pic->h[0]);
     if (err)
         return err;
+    dist_host_allocated = 1;
+
+    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail_cuda);
+    ctx_pushed = 1;
+
     err = vmaf_cuda_picture_download_async(dist_pic, &dist_host, 0x1);
-    if (err) {
-        (void)vmaf_picture_unref(&dist_host);
-        return err;
-    }
+    if (err)
+        goto fail_cuda;
+
     /* Sync the dist_pic private stream: vmaf_cuda_picture_download_async
      * enqueues the DtoH copy on that stream, so we must drain it before
      * the host preprocessing reads dist_host.data[0]. */
-    {
-        const CUresult _sync_res =
-            cu_f->cuStreamSynchronize(vmaf_cuda_picture_get_stream(dist_pic));
-        if (CUDA_SUCCESS != _sync_res) {
-            (void)vmaf_picture_unref(&dist_host);
-            return vmaf_cuda_result_to_errno((int)_sync_res);
-        }
-    }
+    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(vmaf_cuda_picture_get_stream(dist_pic)), fail_cuda);
 
     /* Step 1: host preprocessing → pics[0] (10-bit planar, proc_w × proc_h). */
     err = vmaf_cambi_preprocessing(&dist_host, &s->pics[0], (int)s->proc_width, (int)s->proc_height,
                                    s->enc_bitdepth);
     (void)vmaf_picture_unref(&dist_host);
+    dist_host_allocated = 0;
     if (err)
-        return err;
+        goto fail_cuda;
 
     CUstream stream = vmaf_cuda_picture_get_stream(ref_pic);
 
     /* Wait for dist upload to complete before starting GPU work. */
-    CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(stream, vmaf_cuda_picture_get_ready_event(dist_pic),
-                                              CU_EVENT_WAIT_DEFAULT));
+    CHECK_CUDA_GOTO(cu_f,
+                    cuStreamWaitEvent(stream, vmaf_cuda_picture_get_ready_event(dist_pic),
+                                      CU_EVENT_WAIT_DEFAULT),
+                    fail_cuda);
 
     /* Step 2: HtoD upload pics[0].data[0] → d_image. */
     const size_t row_bytes = s->proc_width * sizeof(uint16_t);
@@ -718,7 +806,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
          * the UB of casting an integer through uint8_t* and back. */
         const CUdeviceptr dst_dptr =
             s->d_image->data + (CUdeviceptr)((size_t)row * s->proc_width * sizeof(uint16_t));
-        CHECK_CUDA_RETURN(cu_f, cuMemcpyHtoDAsync(dst_dptr, src_row, row_bytes, stream));
+        CHECK_CUDA_GOTO(cu_f, cuMemcpyHtoDAsync(dst_dptr, src_row, row_bytes, stream), fail_cuda);
     }
 
     /* Step 3: spatial mask at full scale. */
@@ -727,7 +815,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     err =
         dispatch_mask(s, cu_f, stream, s->proc_width, s->proc_height, s->proc_width, mask_index_0);
     if (err)
-        return err;
+        goto fail_cuda;
 
     /* Step 4: per-scale GPU pipeline. */
     unsigned scaled_w = s->proc_width;
@@ -860,7 +948,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
             err = dispatch_decimate(s, cu_f, stream, s->d_image, s->d_tmp, new_w, new_h, scaled_w,
                                     new_w);
             if (err)
-                return err;
+                goto fail_cuda;
             /* Swap d_image ↔ d_tmp. */
             VmafCudaBuffer *tmp = s->d_image;
             s->d_image = s->d_tmp;
@@ -870,7 +958,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
             err = dispatch_decimate(s, cu_f, stream, s->d_mask, s->d_tmp, new_w, new_h, scaled_w,
                                     new_w);
             if (err)
-                return err;
+                goto fail_cuda;
             tmp = s->d_mask;
             s->d_mask = s->d_tmp;
             s->d_tmp = tmp;
@@ -883,16 +971,16 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         err = dispatch_filter_mode(s, cu_f, stream, s->d_image, s->d_tmp, scaled_w, scaled_h,
                                    scaled_w, 0);
         if (err)
-            return err;
+            goto fail_cuda;
         /* GPU filter_mode V: d_tmp → d_image. */
         err = dispatch_filter_mode(s, cu_f, stream, s->d_tmp, s->d_image, scaled_w, scaled_h,
                                    scaled_w, 1);
         if (err)
-            return err;
+            goto fail_cuda;
 
         /* Synchronous DtoH: drain the picture stream so the host readback
          * is safe before the CPU residual. */
-        CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(stream));
+        CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(stream), fail_cuda);
 
         /* DtoH: d_image → pics[0].data[0] (stride-aware). */
         const ptrdiff_t pic_stride_bytes = s->pics[0].stride[0];
@@ -904,11 +992,13 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
              * through uint8_t* and back (same pattern as the HtoD loop above). */
             const CUdeviceptr s0_dptr =
                 s->d_image->data + (CUdeviceptr)((size_t)row * scaled_w * sizeof(uint16_t));
-            CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoH(d0_row, s0_dptr, scaled_w * sizeof(uint16_t)));
+            CHECK_CUDA_GOTO(cu_f, cuMemcpyDtoH(d0_row, s0_dptr, scaled_w * sizeof(uint16_t)),
+                            fail_cuda);
             uint8_t *d1_row = (uint8_t *)dst1 + (size_t)row * (size_t)pic_stride_bytes;
             const CUdeviceptr s1_dptr =
                 s->d_mask->data + (CUdeviceptr)((size_t)row * scaled_w * sizeof(uint16_t));
-            CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoH(d1_row, s1_dptr, scaled_w * sizeof(uint16_t)));
+            CHECK_CUDA_GOTO(cu_f, cuMemcpyDtoH(d1_row, s1_dptr, scaled_w * sizeof(uint16_t)),
+                            fail_cuda);
         }
 
         /* CPU residual: calculate_c_values + spatial pooling. */
@@ -922,14 +1012,10 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
             vmaf_cambi_spatial_pooling(s->buffers.c_values, topk, scaled_w, scaled_h);
     }
 
-    /* Restore d_image / d_mask to point at the original (scale-0) device
-     * buffers if they were swapped. Track the swap count. */
-    /* Note: after 4 swaps (scale 1..4), d_image points to:
-     *   even swaps → original d_image, odd swaps → original d_tmp.
-     * We need to normalise before the next frame.  The simplest fix is
-     * to swap back so d_image always points to the same allocation. */
-    /* Actually, we track the number of swaps = (NUM_SCALES - 1) = 4.
-     * 4 swaps → even → back to original. No action needed. */
+    /* Restore d_image / d_mask / d_tmp to point at the original allocations. */
+    s->d_image = orig_d_image;
+    s->d_mask = orig_d_mask;
+    s->d_tmp = orig_d_tmp;
 
     /* Compute the final score. */
     const uint16_t pixels_in_window = vmaf_cambi_get_pixels_in_window(s->adjusted_window);
@@ -946,9 +1032,27 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
     /* Emit a dummy event on the private stream so collect() can drain
      * without blocking (the score is already computed). */
-    CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, stream));
-    CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));
-    return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
+    CHECK_CUDA_GOTO(cu_f, cuEventRecord(s->lc.submit, stream), fail_cuda);
+    CHECK_CUDA_GOTO(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT),
+                    fail_cuda);
+    err = vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
+    if (err)
+        goto fail_cuda;
+
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    ctx_pushed = 0;
+    return 0;
+
+fail_cuda:
+    s->d_image = orig_d_image;
+    s->d_mask = orig_d_mask;
+    s->d_tmp = orig_d_tmp;
+    if (dist_host_allocated)
+        (void)vmaf_picture_unref(&dist_host);
+    if (ctx_pushed)
+        (void)cu_f->cuCtxPopCurrent(NULL);
+fail_after_pop:
+    return (err != 0) ? err : (_cuda_err != 0 ? _cuda_err : -EIO);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1028,9 +1132,25 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
         if (e && rc == 0)
             rc = e;
     }
-    const CudaFunctions *cu_f = fex->cu_state->f;
-    if (cu_f && s->module)
-        (void)cu_f->cuModuleUnload(s->module);
+    const CudaFunctions *cu_f = fex->cu_state ? fex->cu_state->f : NULL;
+    if (cu_f && fex->cu_state && fex->cu_state->ctx && s->module) {
+        int _cuda_err = 0;
+        int ctx_pushed = 0;
+        CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail_unload);
+        ctx_pushed = 1;
+        CHECK_CUDA_GOTO(cu_f, cuModuleUnload(s->module), fail_unload);
+        s->module = NULL;
+        CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop_unload);
+        ctx_pushed = 0;
+        goto unload_done;
+    fail_unload:
+        if (ctx_pushed)
+            (void)cu_f->cuCtxPopCurrent(NULL);
+    fail_after_pop_unload:
+        if (_cuda_err && rc == 0)
+            rc = _cuda_err;
+    unload_done:;
+    }
     return rc;
 }
 

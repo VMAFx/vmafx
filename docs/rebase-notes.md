@@ -8,6 +8,19 @@ only purpose is to emit `compile_commands.json` for clang-tidy must configure wi
 because the project default (`b_lto_threads=4`, ADR-1172) renders as a GCC-only `-flto=<n>` that
 clang rejects outright.
 
+## fix/cambi-cuda-context — CUDA CAMBI context push/pop and model options twin selection gate (2026-09-05)
+
+- `core/src/feature/cuda/integer_cambi_cuda.c`: fork-added CUDA CAMBI extractor.
+  Invariant: every device-touching entry point (`init_fex_cuda`, `submit_fex_cuda`,
+  `close_fex_cuda`) must push `fex->cu_state->ctx` upon entry and cleanly pop it
+  on all exit paths (balanced `fail_after_pop` labels). Its option table and TVI
+  initialization must mirror `cambi.c`.
+- `core/src/feature/feature_extractor.cpp` / `core/src/libvmaf.c`: option validation
+  and GPU twin gating (ADR-1183). `vmaf_fex_ctx_parse_options` rejects unknown option
+  keys with `-EINVAL`. `vmaf_use_features_from_model` checks GPU twin option support
+  against model requirements and dispatches unsupported twins to the CPU reference.
+  Preserve this gating on rebase to prevent silent option drops.
+
 ## fix/gpu-init-leaks-and-hip-mirror — fix CUDA init error path leaks and close verified GPU state issues (2026-09-04)
 
 no rebase impact: fork-local CUDA and documentation files.

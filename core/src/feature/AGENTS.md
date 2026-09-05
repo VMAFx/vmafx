@@ -70,6 +70,15 @@ feature/
 
 ## Rebase-sensitive invariants
 
+- **Model options gate GPU twin selection (ADR-1183)**: every option a
+  model sets in its feature options dictionary must be present in the
+  chosen GPU twin's option table. If a GPU twin lacks any requested option
+  (e.g. `integer_adm_cuda` lacking `adm_csf_mode`),
+  `vmaf_use_features_from_model` in `core/src/libvmaf.c` rejects the GPU twin
+  and dispatches the extractor to the CPU reference. Option parsing in
+  `feature_extractor.cpp` rejects any unknown dictionary keys with
+  `-EINVAL`. On rebase, do not bypass this validation or revert to silent
+  option omission.
 - `ssimulacra2.c` is fork-local (not upstream). It embeds several
   constant tables that must stay in lock-step with libjxl even across
   a rebase:

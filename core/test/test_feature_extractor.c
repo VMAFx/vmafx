@@ -428,6 +428,75 @@ static char *test_fex_ctx_pool_null_guards(void)
     return NULL;
 }
 
+static char *test_feature_extractor_supports_options_helper(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
+    mu_assert("psnr extractor missing", fex != NULL);
+
+    const char *missing = NULL;
+
+    /* NULL / empty dict returns true */
+    bool ok = vmaf_feature_extractor_supports_options(fex, NULL, &missing);
+    mu_assert("supports_options(NULL dict) must return true", ok && missing == NULL);
+
+    VmafDictionary *opts = NULL;
+    ok = vmaf_feature_extractor_supports_options(fex, opts, &missing);
+    mu_assert("supports_options(empty dict) must return true", ok && missing == NULL);
+
+    /* Valid option returns true */
+    int err = vmaf_dictionary_set(&opts, "enable_chroma", "true", 0);
+    mu_assert("dictionary_set enable_chroma", err == 0);
+    ok = vmaf_feature_extractor_supports_options(fex, opts, &missing);
+    mu_assert("supports_options(enable_chroma) must return true", ok && missing == NULL);
+
+    /* Invalid option returns false and sets missing_key */
+    err = vmaf_dictionary_set(&opts, "unknown_opt_xyz", "42", 0);
+    mu_assert("dictionary_set unknown_opt_xyz", err == 0);
+    ok = vmaf_feature_extractor_supports_options(fex, opts, &missing);
+    mu_assert("supports_options(unknown) must return false", !ok);
+    mu_assert("missing key must match unknown_opt_xyz",
+              missing && !strcmp(missing, "unknown_opt_xyz"));
+
+    (void)vmaf_dictionary_free(&opts);
+
+    /* Alias option returns true */
+    VmafFeatureExtractor *mot_fex = vmaf_get_feature_extractor_by_name("motion");
+    mu_assert("motion extractor missing", mot_fex != NULL);
+    err = vmaf_dictionary_set(&opts, "mmxv", "18", 0);
+    mu_assert("dictionary_set mmxv alias", err == 0);
+    ok = vmaf_feature_extractor_supports_options(mot_fex, opts, &missing);
+    mu_assert("supports_options(alias mmxv) must return true", ok && missing == NULL);
+    (void)vmaf_dictionary_free(&opts);
+
+    /* NULL extractor with options returns false */
+    err = vmaf_dictionary_set(&opts, "some_key", "1", 0);
+    mu_assert("dictionary_set some_key", err == 0);
+    ok = vmaf_feature_extractor_supports_options(NULL, opts, &missing);
+    mu_assert("supports_options(NULL fex) must return false", !ok);
+    mu_assert("missing key must match some_key", missing && !strcmp(missing, "some_key"));
+    (void)vmaf_dictionary_free(&opts);
+
+    return NULL;
+}
+
+static char *test_feature_extractor_unknown_option_rejected(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
+    mu_assert("psnr extractor missing", fex != NULL);
+
+    VmafDictionary *opts = NULL;
+    int err = vmaf_dictionary_set(&opts, "bogus_option_name", "123", 0);
+    mu_assert("dictionary_set", err == 0);
+
+    VmafFeatureExtractorContext *ctx = (VmafFeatureExtractorContext *)0x1234;
+    err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
+    mu_assert("context_create with unknown option must return -EINVAL", err == -EINVAL);
+    mu_assert("context handle must be reset to NULL on failure", ctx == NULL);
+
+    (void)vmaf_dictionary_free(&opts);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_get_feature_extractor_by_name_and_feature_name);
@@ -441,5 +510,7 @@ char *run_tests(void)
     mu_run_test(test_get_feature_extractor_by_name_cuda_fallback);
     mu_run_test(test_feature_extractor_context_null_guards);
     mu_run_test(test_fex_ctx_pool_null_guards);
+    mu_run_test(test_feature_extractor_supports_options_helper);
+    mu_run_test(test_feature_extractor_unknown_option_rejected);
     return NULL;
 }
