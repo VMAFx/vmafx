@@ -120,7 +120,7 @@ static const char *const ALLOWED_OPS[] = {
      * appears. */
     "Loop",
     "If",
-    NULL,
+    nullptr,
 };
 
 bool vmaf_dnn_op_allowed(const char *op_type)
@@ -128,7 +128,7 @@ bool vmaf_dnn_op_allowed(const char *op_type)
     if (!op_type) {
         return false;
     }
-    for (size_t i = 0; ALLOWED_OPS[i] != NULL; ++i) {
+    for (size_t i = 0; ALLOWED_OPS[i] != nullptr; ++i) {
         if (strcmp(ALLOWED_OPS[i], op_type) == 0) {
             return true;
         }
