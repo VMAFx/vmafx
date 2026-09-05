@@ -121,6 +121,12 @@ func floatArg(args map[string]any, key string, def float64) float64 {
 		switch n := v.(type) {
 		case float64:
 			return n
+		case int:
+			// JSON decoding never produces this, but in-process callers (tests,
+			// the direct dispatch path) pass Go ints; without this case a valid
+			// integral value silently fell back to the default and skipped the
+			// bounds check. intArg already handled the mirror-image case.
+			return float64(n)
 		case json.Number:
 			// Return def (not 0) on parse failure so callers don't silently
 			// pass malformed numeric args to the vmaf subprocess.
