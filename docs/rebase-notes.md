@@ -28,6 +28,20 @@ clang rejects outright.
   case to the matching group runner rather than re-flattening `run_tests()`, and keep the
   file-scoped `NOLINTBEGIN(modernize-use-nullptr)` bracket (ADR-1138) — the TU must keep
   spelling the null pointer constant `NULL` for the required MSVC C lane.
+- `core/src/feature/feature_extractor.cpp`: this TU is C++, not the C twin, so ADR-1138's
+  `NULL`-for-MSVC exemption does not apply — the file now spells the null pointer constant
+  `nullptr` throughout and carries no `NOLINT`. Its file-local symbols
+  (`feature_extractor_list[]`, `vmaf_fex_ctx_parse_options`, `check_pic_buf_type`,
+  `find_fex_list_entry` / `grow_fex_list` / `init_fex_list_slot` / `get_fex_list_entry`,
+  `ctx_pool_ensure_slot_ctx`, `ctx_pool_claim_slot`) live in anonymous namespaces rather
+  than being `static` (`misc-use-anonymous-namespace`). When porting an upstream change to
+  `vmaf_feature_extractor_context_extract`, note the picture buf_type/backend validation now
+  lives in `check_pic_buf_type()` and the pool-slot registration is split across
+  `find_fex_list_entry` / `grow_fex_list` / `init_fex_list_slot`, so the two entry points stay
+  inside the `readability-function-size` budget (ADR-0141); re-inlining them re-opens the
+  warning. `grow_fex_list` uses a hard `if (pool->capacity == 0) return -EINVAL;` guard rather
+  than `assert()`, because clang-tidy 22's `misc-static-assert` / `cert-dcl03-c` flags every
+  `assert()` whose condition contains no non-constexpr call.
 
 ## fix/gpu-init-leaks-and-hip-mirror — fix CUDA init error path leaks and close verified GPU state issues (2026-09-04)
 

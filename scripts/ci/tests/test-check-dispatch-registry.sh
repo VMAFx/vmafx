@@ -88,7 +88,38 @@ out=$(bash "$CHECK_SCRIPT" "$mock_tree_dup" 2>&1) || exit_code=$?
 assert_eq "Mock tree with duplicates exits 0" "0" "$exit_code"
 assert_eq "Warning message emitted" "1" "$(grep -cF 'WARNING: vmaf_fex_sample_cuda appears 2 times' <<<"$out")"
 
-echo "=== Test 4: Missing feature_extractor.cpp triggers error ==="
+echo "=== Test 4: Anonymous-namespace registry is still parsed ==="
+# feature_extractor.cpp is a C++ TU: its file-local symbols live in an
+# anonymous namespace rather than being `static` (misc-use-anonymous-namespace),
+# so the registry declaration has no `static` keyword.  The C twin keeps it.
+mock_tree_ns="$(mktemp -d -p "$TMPDIR_TESTS")"
+mkdir -p "$mock_tree_ns/core/src/feature/cuda"
+cat <<'MOCK_EOF' >"$mock_tree_ns/core/src/feature/cuda/fex.c"
+VmafFeatureExtractor vmaf_fex_sample_cuda = {
+    .name = "sample_cuda",
+};
+MOCK_EOF
+cat <<'MOCK_EOF' >"$mock_tree_ns/core/src/feature/feature_extractor.cpp"
+namespace
+{
+
+VmafFeatureExtractor *feature_extractor_list[] = {
+    &vmaf_fex_other_cuda,
+    nullptr,
+};
+
+} /* anonymous namespace */
+MOCK_EOF
+
+exit_code=0
+out=$(bash "$CHECK_SCRIPT" "$mock_tree_ns" 2>&1) || exit_code=$?
+assert_eq "Anonymous-namespace registry is found (no parse error)" "0" \
+  "$(grep -cF 'ERROR: feature_extractor_list[] not found' <<<"$out")"
+assert_eq "Anonymous-namespace tree with missing symbol exits 1" "1" "$exit_code"
+assert_eq "Missing message emitted for namespace spelling" "1" \
+  "$(grep -cF 'MISSING: vmaf_fex_sample_cuda not in feature_extractor_list[]' <<<"$out")"
+
+echo "=== Test 5: Missing feature_extractor.cpp triggers error ==="
 mock_tree_nofex="$(mktemp -d -p "$TMPDIR_TESTS")"
 exit_code=0
 out=$(bash "$CHECK_SCRIPT" "$mock_tree_nofex" 2>&1) || exit_code=$?
