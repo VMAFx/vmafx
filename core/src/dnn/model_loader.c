@@ -595,6 +595,8 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
 {
     if (!onnx_path || !out)
         return -EINVAL;
+    assert(onnx_path != nullptr);
+    assert(out != nullptr);
     memset(out, 0, sizeof(*out));
     out->kind = VMAF_MODEL_KIND_DNN_FR;
 
@@ -602,11 +604,13 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
     int rc = sidecar_json_path(onnx_path, sidecar, sizeof(sidecar));
     if (rc != 0)
         return rc;
+    assert(sidecar[0] != '\0');
 
     char *buf = nullptr;
     rc = slurp_sidecar_json(sidecar, &buf);
     if (rc != 0)
         return rc;
+    assert(buf != nullptr);
 
     parse_sidecar_kind(buf, out);
     out->name = extract_string(buf, "name");
