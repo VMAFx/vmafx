@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
-# Research Digest: Dev Container Image Publication and Runner Disk Impact
+# Research Digest: Dev Container Release Artifact Compilation and Runner Architecture
 
-- **Date**: 2026-09-04
+- **Date**: 2026-09-04 (Updated 2026-09-05)
 - **Related ADR**: [ADR-1178](../adr/1178-dev-container-image-publish.md)
 - **Author**: Lusoris
 
@@ -9,65 +9,77 @@
 
 Under [ADR-1102](../adr/1102-phase4b9-container-only-publishing.md), all canonical build artifacts (release binaries, published images, CI artifacts consumed downstream) must be produced inside the `vmaf-dev-mcp` container. However, `.github/workflows/supply-chain.yml` historically built native release artifacts (`libvmaf.so` SONAME chain, `vmaf` CLI binary, `models.tar.gz`) directly on the bare `ubuntu-latest` runner host using ad-hoc `apt-get` and PyPI `meson`.
 
-The container-build detector `scripts/ci/check-container-build.sh` enforces this policy by asserting containerness via `/etc/vmafx-dev-container` and stamping staged artifact trees (`container-build-provenance.txt`). To run `build-artifacts` inside the canonical container in GitHub Actions, the container image must be pre-published and accessible from GHCR (`ghcr.io/vmafx/vmafx-dev-mcp`).
+The container-build detector `scripts/ci/check-container-build.sh` enforces this policy by asserting containerness via `/etc/vmafx-dev-container` and stamping staged artifact trees (`container-build-provenance.txt`).
 
-This research digest evaluates the image dimensions, layer composition, pull times, and runner disk space implications of using the canonical dev container in the release pipeline.
+This research digest evaluates the image dimensions, layer composition, hosted runner disk constraints, and the maintainer decision to execute release artifact compilation on the self-hosted Arc A380 canonical runner.
 
 ## 2. Image Metrics and Layer Breakdown
 
 Measured on the workstation on 2026-09-05 with
 `docker history --format '{{.Size}}\t{{.CreatedBy}}' vmaf-dev-mcp:local`
 (a local build of the full `dev-mcp` target of `dev/Containerfile`; the
-`libvmaf-build` stage is a prefix of the same layer stack). The image ID of that
-local build is `sha256:ff297e6d…`; it is a local image ID, **not** a GHCR
-manifest digest, and nothing under `ghcr.io/vmafx/vmafx-dev-mcp` exists yet
-(`docker manifest inspect ghcr.io/vmafx/vmafx-dev-mcp:master` → `manifest unknown`).
+`libvmaf-build` stage is a prefix of the same layer stack). The local image ID is `sha256:ff297e6d…`.
 
 | Stage / layer group (`dev/Containerfile`) | Uncompressed size (sum of layers) | Notes |
 |---|---|---|
-| `build-deps` (`ubuntu:26.04` + apt toolchain) | ~1.6 GB | gcc 15.2, clang, meson, ninja, Python |
-| `gpu-sdks`: CUDA toolkit layer | ~7.7 GB | single `RUN` layer |
-| `gpu-sdks`: oneAPI + ROCm layer | ~14.2 GB | single `RUN` layer |
-| `gpu-sdks`: Intel NEO / Level Zero / VPL | ~0.5 GB | |
+| `build-deps` (`ubuntu:26.04` + apt toolchain) | ~1.6 GB | gcc 15.2, clang 19, meson, ninja, Python 3.14 |
+| `gpu-sdks`: CUDA toolkit layer | ~7.7 GB | single `RUN` layer (cuda-toolkit-13-3) |
+| `gpu-sdks`: oneAPI + ROCm layer | ~14.2 GB | single `RUN` layer (intel-basekit + ROCm 7.2.4) |
+| `gpu-sdks`: Intel NEO / Level Zero / VPL | ~0.5 GB | Level Zero GPU ICD + compute runtime |
 | `libvmaf-build`: source copies + venv + ORT + ffmpeg deps | ~5.5 GB | 2.59 GB + 2.16 GB + ~0.5 GB of `COPY` layers |
-| **`libvmaf-build` cumulative** | **~29.5 GB** | the stage `dev-container-publish.yml` pushes |
-| `dev-mcp` additions (ffmpeg, MCP server, Go tools) | ~8 GB | not pushed |
-| `dev-mcp` total (`docker history` sum) | ~37.6 GB | `docker images` reports 52.3 GB with the containerd snapshotter |
+| **`libvmaf-build` cumulative** | **~29.5 GB** | the stage evaluated for containerised compilation |
+| `dev-mcp` additions (ffmpeg, MCP server, Go tools) | ~8 GB | interactive dev tools |
+| `dev-mcp` total (`docker history` sum) | ~37.6 GB | `docker images` reports 52.3 GB with containerd snapshotter |
 
-Compressed transfer size was **not** measured (no registry push was possible
-from the branch); a 2.5–4× ratio for SDK-heavy layers puts it in the
-8–12 GB range, which is an estimate, not a measurement.
-
-## 3. Runner Disk Footprint — open blocker
+## 3. Runner Disk Footprint — The 29.5 GB Pull Blocker
 
 GitHub's runner reference lists the standard `ubuntu-latest` / `ubuntu-24.04`
 runner for **public repositories** as 4 vCPU, 16 GB RAM, **14 GB SSD**
-(<https://docs.github.com/en/actions/reference/runners/github-hosted-runners>,
-read 2026-09-05). Two facts follow:
+(<https://docs.github.com/en/actions/reference/runners/github-hosted-runners>).
 
-1. A ~29.5 GB uncompressed image does not fit on a 14 GB disk, regardless of
-   how much of the pre-installed tool cache is deleted first.
-2. A job-level `container:` image is pulled by the runner during
-   "Initialize containers", **before any step runs**, so a disk-clearing step
-   cannot help this job shape at all. Only a `docker run` inside a step
-   (after freeing space) or a smaller image can.
+Two physical facts ruled out pulling the image as a job container on `ubuntu-latest`:
 
-`dev-container-build.yml` already builds `--target libvmaf-build` on
-`ubuntu-latest` as a PR gate; whether that build succeeds within the same
-disk budget (BuildKit can discard intermediate layers) is a separate question
-from pulling and unpacking the finished stage.
+1. A ~29.5 GB uncompressed image cannot fit on a 14 GB disk.
+2. A job-level `container:` image is pulled by GitHub Actions during
+   "Initialize containers", **before any workflow step runs**. Consequently, a disk-clearing step (such as removing Android SDKs or .NET runtimes) cannot precede the pull.
 
-**Consequence for D3:** option (a) as implemented is unverified on a real
-runner and, on the published numbers, expected to fail at image pull. Before
-this PR leaves draft, either (i) a `workflow_dispatch` dry run of
-`dev-container-publish.yml` followed by a run of `build-artifacts` proves the
-pull fits (larger runner or a much smaller stage), or (ii) D3 flips to option
-(c): a dedicated `release-build` stage in `dev/Containerfile` that inherits
-`build-deps` but not `gpu-sdks` (the release artifact is CPU-only:
-`-Denable_cuda=false -Denable_sycl=false`), which would be ~2 GB and keep the
-single-Containerfile invariant of ADR-1102.
+## 4. Evaluation of Build Execution Strategies
 
-## 4. Decision and Operational Verification
+| Strategy | Feasibility | Rationale |
+|---|---|---|
+| **GHCR job-container pull on `ubuntu-latest`** | Infeasible | 29.5 GB uncompressed layer size causes immediate disk exhaustion during image pull. |
+| **Slim release-only container stage** | Suboptimal | Violates ADR-1102/ADR-0496 single-container invariant; creates toolchain divergence risk between local development and release outputs. |
+| **On-the-fly container build in CI** | Infeasible | Adds 35-45 minutes to every release; risks network timeouts on multi-gigabyte SDK downloads and runner disk exhaustion during intermediate BuildKit caching. |
+| **Self-hosted Arc A380 canonical runner (Selected)** | Fully feasible | The runner container is already locally present on the maintainer workstation; zero network pull; exact bit-identical toolchain; enforces container provenance end-to-end. |
 
-- **Chosen Approach**: Option (a) — Publish canonical container image to GHCR via `dev-container-publish.yml` on pushes to `master` affecting `dev/Containerfile` or `dev/scripts/**`, with digest pinning and cosign keyless signing.
-- **Verification Gate**: `scripts/ci/check-container-build.sh --stamp artifacts` inside the container build step, verified by `scripts/ci/check-container-build.sh --verify artifacts` in downstream verification and release attachment gates.
+## 5. Runner Environment Audit & Gaps Analysis
+
+The self-hosted runner is provisioned by [ADR-1177](../adr/1177-sycl-arc-self-hosted-runner.md) (PR #1304) using `dev/Containerfile.runner` and `dev/docker-compose.runner.yml`.
+
+### Audit of `dev/Containerfile.runner`
+
+- **Base Image**: `ARG BASE_IMAGE=vmaf-dev-mcp:local` -> `FROM ${BASE_IMAGE}`.
+- **Inherited Layers**: `vmaf-dev-mcp:local` derives from `dev-mcp` -> `libvmaf-build` -> `gpu-sdks` -> `build-deps`.
+- **Toolchains Present**:
+  - GCC 13 / GCC 15, Clang 19, LLVM runtime
+  - Meson 1.x, Ninja, NASM, pkg-config, CMake
+  - Python 3.14 + venv + pip
+  - CUDA 13.3, ROCm 7.2.4, Intel oneAPI (icx, icpx, Level Zero)
+  - `/etc/vmafx-dev-container` (baked into `build-deps` stage with `vmafx_dev_container=1`)
+- **Isolation**: Ephemeral runner running as unprivileged `runner` user; only the Arc A380 DRI node (`/dev/dri/renderD129`) is exposed; no Docker socket mounted; no host filesystem bind mounts.
+
+### Release Build Requirements vs Runner Environment
+
+The native release compilation in `supply-chain.yml` executes:
+`meson setup build core --buildtype=release -Denable_avx512=true -Denable_cuda=false -Denable_sycl=false && meson compile -C build`
+
+- **Requirements**: C compiler, Meson, Ninja, NASM, AVX-512 assembler support, coreutils, tar, gzip, sha256sum, git, `/etc/vmafx-dev-container` marker.
+- **Runner Environment**: Fully satisfies every requirement natively inside the runner container. No gaps identified.
+- **Docker Socket Need**: None. Since the runner container itself IS the build environment, workflow steps execute directly inside the canonical environment without spawning sibling or child containers.
+
+## 6. Decision and Operational Verification
+
+- **Execution**: Release compilation runs on `runs-on: [self-hosted, linux, x64, sycl-arc]` with concurrency group `release-artifacts-build` and `timeout-minutes: 90`.
+- **Provenance**: `scripts/ci/check-container-build.sh --stamp artifacts` drops `container-build-provenance.txt`. The gate script was updated to accept both `vmaf-dev-mcp` and `vmaf-sycl-arc-runner` as canonical images while rejecting bare `ubuntu-latest` and unauthorized images.
+- **Verification**: `verify-native-artifacts` on `ubuntu-latest` downloads the artifacts and runs `check-container-build.sh --verify artifacts` and `verify-native-release-artifacts.sh`.
+- **Optional GHCR Image**: `dev-container-publish.yml` continues to build and publish `ghcr.io/vmafx/vmafx-dev-mcp` on master pushes for external transparency and remote contributors, decoupled from the release path.

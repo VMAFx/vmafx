@@ -120,19 +120,20 @@ jobs:
   build-artifacts:
     name: Build Linux artifacts
     needs: validate-release
-    runs-on: ubuntu-latest
-    # ADR-1178: the image is published by dev-container-publish.yml. It is
-    # referenced by tag until the first publication exists on GHCR; the
-    # renovate.json rule for ghcr.io/vmafx/vmafx-dev-mcp (pinDigests: true)
-    # then rewrites this line to `:master@sha256:<digest>` and keeps it
-    # current. Bootstrap: dispatch dev-container-publish.yml on master once
-    # before the first release that uses this job.
-    container:
-      image: ghcr.io/vmafx/vmafx-dev-mcp:master
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    timeout-minutes: 25
+    # Fork-PR guard: tag releases on the canonical repository only
+    if: github.repository == 'VMAFx/vmafx' && startsWith(github.ref, 'refs/tags/v')
+    # ADR-1178 / Maintainer Decision (2026-09-05): Native release artifacts
+    # are built on the Arc A380 containerised self-hosted runner (labels:
+    # [self-hosted, linux, x64, sycl-arc], prepared by ADR-1177 / PR #1304)
+    # using the workstation's local canonical dev container environment
+    # (vmaf-sycl-arc-runner:local, built FROM vmaf-dev-mcp:local) — no GHCR
+    # registry pull (avoiding the ~29.5 GB uncompressed layer size pull blocker).
+    # The runner container itself is the build environment (no Docker socket needed).
+    runs-on: [self-hosted, linux, x64, sycl-arc]
+    concurrency:
+      group: release-artifacts-build
+      cancel-in-progress: false
+    timeout-minutes: 90
     permissions:
       contents: read
     outputs:

@@ -6,7 +6,8 @@
 # publishing policy (ADR-1102, docs/development/publishing.md).
 #
 # The policy says every canonical/published artifact is produced inside the
-# `vmaf-dev-mcp` container and that a host-side build is diagnostic-only.
+# `vmaf-dev-mcp` container or the self-hosted canonical runner environment
+# and that a host-side build is diagnostic-only.
 # Until this script existed the policy was documentation-only: nothing in the
 # release path could tell a container build from a host build, so a host-built
 # binary could be attached to a release with no signal at all.
@@ -99,9 +100,9 @@ assert_container() {
   if [ ! -f "$MARKER_PATH" ]; then
     fail "container-only publishing policy violated: no VMAFx dev-container marker at ${MARKER_PATH}"
     {
-      echo "This process is NOT running inside the vmaf-dev-mcp container."
+      echo "This process is NOT running inside the vmaf-dev-mcp container or the canonical runner."
       echo "Canonical artifacts (release binaries, published images, CI"
-      echo "artifacts consumed downstream) must be built in the container."
+      echo "artifacts consumed downstream) must be built in the container environment."
       echo "See ${POLICY_DOC} and ${POLICY_ADR}."
       echo
       echo "  docker compose --project-directory \"\$(git rev-parse --show-toplevel)\" \\"
@@ -125,6 +126,16 @@ assert_container() {
     fail "marker ${MARKER_PATH} is malformed: image_title is empty"
     return 1
   fi
+
+  case "$title" in
+    vmaf-dev-mcp | vmaf-sycl-arc-runner | vmafx-dev-mcp | vmafx-sycl-arc-runner)
+      ;;
+    *)
+      fail "marker ${MARKER_PATH} carries unrecognized canonical image title: '${title}'"
+      echo "Expected 'vmaf-dev-mcp' or 'vmaf-sycl-arc-runner'. See ${POLICY_DOC}." >&2
+      return 1
+      ;;
+  esac
 
   echo "container-build: OK — inside '${title}' (marker ${MARKER_PATH})"
   return 0
@@ -204,6 +215,16 @@ verify_dir() {
     fail "${stamp} is malformed: image_title is empty"
     return 1
   fi
+
+  case "$title" in
+    vmaf-dev-mcp | vmaf-sycl-arc-runner | vmafx-dev-mcp | vmafx-sycl-arc-runner)
+      ;;
+    *)
+      fail "${stamp} carries unrecognized canonical image title: '${title}'"
+      echo "Expected 'vmaf-dev-mcp' or 'vmaf-sycl-arc-runner'. See ${POLICY_DOC}." >&2
+      return 1
+      ;;
+  esac
 
   echo "container-build: verified ${stamp} — built in '${title}'" \
     "at $(read_field stamped_at "$stamp") from commit $(read_field git_commit "$stamp")"

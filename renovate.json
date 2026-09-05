@@ -43,14 +43,6 @@
       "automerge": false
     },
     {
-      "description": "Dev container image used by supply-chain.yml native artifact build. Renovate should pin by digest and require review (ADR-1178).",
-      "matchPackageNames": [
-        "ghcr.io/vmafx/vmafx-dev-mcp"
-      ],
-      "pinDigests": true,
-      "automerge": false
-    },
-    {
       "description": "Intel NEO compute stack: dev/Containerfile derives the matched set of gmmlib and IGC deb packages dynamically from the pinned intel/compute-runtime release at build time (ADR-1145). Only compute-runtime and level-zero are tracked; manual review (ADR-0605).",
       "matchPackageNames": [
         "intel/compute-runtime",

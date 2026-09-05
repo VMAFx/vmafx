@@ -203,12 +203,34 @@ the release pipeline, not malicious evasion.
 |---|---|
 | `Dev Container Build (PR gate)` in `dev-container-build.yml` | the gate rejects the bare runner, accepts the built image, and a stamp made inside the image verifies outside it |
 | `Release Script Contract (ADR-1128)` in `rule-enforcement.yml` | the gate's hermetic unit suite (`scripts/ci/tests/test-check-container-build.sh`, no Docker needed) |
-| `build-artifacts` in `supply-chain.yml` | stamps `artifacts/` with `scripts/ci/check-container-build.sh --stamp` inside `ghcr.io/vmafx/vmafx-dev-mcp` |
+| `build-artifacts` in `supply-chain.yml` | stamps `artifacts/` with `scripts/ci/check-container-build.sh --stamp` inside the Arc A380 containerised self-hosted runner (`vmaf-sycl-arc-runner`, derived from `vmaf-dev-mcp:local`) |
 | `verify-native-artifacts` in `supply-chain.yml` | verifies downloaded `artifacts/` with `scripts/ci/check-container-build.sh --verify` |
 | `scripts/release/verify-native-release-artifacts.sh` | verifies staged release bundle contains valid, non-empty, non-symlink `container-build-provenance.txt` |
 | `attach-to-release` in `supply-chain.yml` | requires `container-build-provenance.txt` as a required release asset and verifies cosign signature bundle |
 
-Per [ADR-1178](../adr/1178-dev-container-image-publish.md), `.github/workflows/dev-container-publish.yml` publishes the canonical dev container image to GHCR, enabling `supply-chain.yml` to compile native artifacts in the container and enforce the gate end-to-end.
+### Release compilation runner and offline handling
+
+Under [ADR-1178](../adr/1178-dev-container-image-publish.md), native release compilation is assigned to the Arc A380 containerised self-hosted runner:
+
+- **Which runner builds releases**: `.github/workflows/supply-chain.yml` runs `build-artifacts` on `runs-on: [self-hosted, linux, x64, sycl-arc]` (provisioned by ADR-1177 / PR #1304). The build executes directly inside the runner container (`vmaf-sycl-arc-runner:local`, built `FROM vmaf-dev-mcp:local`), which already contains the full canonical toolchain and the `/etc/vmafx-dev-container` marker without requiring any registry pull.
+- **How to verify the artifact came from the canonical environment**:
+  1. `build-artifacts` runs `scripts/ci/check-container-build.sh --stamp artifacts`, generating `artifacts/container-build-provenance.txt`.
+  2. The gate asserts `/etc/vmafx-dev-container` exists and contains `vmafx_dev_container=1` and a canonical image title (`vmaf-dev-mcp` or `vmaf-sycl-arc-runner`). Any bare host build (such as `ubuntu-latest` without the container) lacks the marker and is rejected with exit code 1.
+  3. `verify-native-artifacts` (on `ubuntu-latest`) runs `scripts/ci/check-container-build.sh --verify artifacts` and `scripts/release/verify-native-release-artifacts.sh`.
+  4. `attach-to-release` requires `container-build-provenance.txt` in `dist/release-artifacts/` and attaches Cosign keyless signatures.
+- **What happens when the runner is offline**:
+  If the self-hosted runner is stopped or paused, GitHub Actions queues the `build-artifacts` job until the runner comes online. The operator runbook ([`docs/development/ci-self-hosted-sycl.md`](ci-self-hosted-sycl.md)) details the pause/resume commands:
+
+  ```bash
+  # Check runner container status on workstation
+  docker compose -f dev/docker-compose.runner.yml ps
+  # Start or resume runner in background
+  docker compose -f dev/docker-compose.runner.yml up -d
+  ```
+
+  Once the runner is online, the job dispatches immediately. Concurrency (`concurrency: group: release-artifacts-build`) guarantees that only one release build runs at a time.
+- **Optional GHCR image publication**:
+  `.github/workflows/dev-container-publish.yml` continues to build and publish `ghcr.io/vmafx/vmafx-dev-mcp` on master pushes affecting container definitions, providing public supply-chain provenance and container availability for remote developers, decoupled from release artifact compilation.
 
 Run the unit suite locally with:
 

@@ -281,8 +281,9 @@ No rebase impact: fork-only tools/vmaf-tune and documentation surfaces (`tools/v
   installation on macOS uses a 3-attempt retry loop with backoff and `brew fetch --retry`, plus
   `HOMEBREW_NO_AUTO_UPDATE=1` and `HOMEBREW_NO_INSTALL_CLEANUP=1`. Wholly fork-added workflows.
 ## ci/release-artifacts-built-in-dev-container — native release artifacts built in canonical dev container (ADR-1178) (2026-09-04)
+## ci/release-artifacts-built-in-dev-container — native release artifacts built on self-hosted canonical runner (ADR-1178) (2026-09-05)
 
-No rebase impact: all touched files (`.github/workflows/dev-container-publish.yml`, `.github/workflows/supply-chain.yml`, `scripts/release/verify-native-release-artifacts.sh`, `scripts/release/tests/test-verify-native-release-artifacts.sh`, `scripts/ci/tests/test-check-container-build.sh`, `renovate.json`, docs) are fork-local CI workflows, verification scripts, and documentation with no upstream Netflix/vmaf counterpart. No public C API, header, Meson option, or golden assertion is touched.
+No rebase impact: all touched files (`.github/actionlint.yaml`, `.github/workflows/dev-container-publish.yml`, `.github/workflows/supply-chain.yml`, `scripts/release/verify-native-release-artifacts.sh`, `scripts/release/tests/test-verify-native-release-artifacts.sh`, `scripts/ci/check-container-build.sh`, `scripts/ci/tests/test-check-container-build.sh`, docs) are fork-local CI workflows, verification scripts, and documentation with no upstream Netflix/vmaf counterpart. No public C API, header, Meson option, or golden assertion is touched.
 
 ## fix/vmaftune-state-bugs — libx264 two-pass CRF conflict fix (2026-09-03)
 
