@@ -133,7 +133,11 @@ typedef struct CambiStateCuda {
     double cambi_vis_lum_threshold;
     char *eotf;
     char *cambi_eotf;
-    int cambi_high_res_speedup; /* reserved; v1 ignores it */
+    /* Resolved in init_fex_cuda() against the encode pixel count, exactly as
+     * cambi.c does: a value of 1080 / 1440 / 2160 below its own threshold is
+     * reset to 0.  Non-zero means "decimate once before scale 0 and halve the
+     * adjusted window" (cambi.c::cambi_score / adjust_window_size). */
+    int cambi_high_res_speedup;
 
     /* Resolved per-frame geometry. */
     unsigned src_width;
@@ -314,12 +318,16 @@ static const VmafOption options[] = {
 /* ------------------------------------------------------------------ */
 /* Helper: compute adjusted window size (mirrors cambi.c). */
 /* ------------------------------------------------------------------ */
-static uint16_t cambi_cuda_adjust_window(int window_size, unsigned w, unsigned h)
+static uint16_t cambi_cuda_adjust_window(int window_size, unsigned w, unsigned h,
+                                         bool cambi_high_res_speedup)
 {
     /* cambi.c::adjust_window_size formula:
      *   window = window * (w + h) / (4K_W + 4K_H) / 16, rounded up to odd. */
     unsigned adjusted = (unsigned)(window_size) * (w + h) / (unsigned)CAMBI_WINDOW_DIVISOR;
     adjusted >>= 4;
+    if (cambi_high_res_speedup) {
+        adjusted = (adjusted + 1u) >> 1;
+    }
     if (adjusted < 1u)
         adjusted = 1u;
     if ((adjusted & 1u) == 0u)
@@ -494,13 +502,33 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         return -EINVAL;
     }
 
+    const int enc_pix = s->enc_width * s->enc_height;
+    switch (s->cambi_high_res_speedup) {
+    case 1080:
+        if (enc_pix < CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1080p)
+            s->cambi_high_res_speedup = 0;
+        break;
+    case 1440:
+        if (enc_pix < CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1440p)
+            s->cambi_high_res_speedup = 0;
+        break;
+    case 2160:
+        if (enc_pix < CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_2160p)
+            s->cambi_high_res_speedup = 0;
+        break;
+    default:
+        s->cambi_high_res_speedup = 0;
+        break;
+    }
+
     s->src_width = w;
     s->src_height = h;
     s->src_bpc = bpc;
     s->proc_width = (unsigned)s->enc_width;
     s->proc_height = (unsigned)s->enc_height;
 
-    s->adjusted_window = cambi_cuda_adjust_window(s->window_size, s->proc_width, s->proc_height);
+    s->adjusted_window = cambi_cuda_adjust_window(s->window_size, s->proc_width, s->proc_height,
+                                                  (bool)s->cambi_high_res_speedup);
 
     /* CUDA lifecycle. */
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
@@ -941,7 +969,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     const double topk = (s->topk != CAMBI_CUDA_DEFAULT_TOPK) ? s->topk : s->cambi_topk;
 
     for (int scale = 0; scale < CAMBI_CUDA_NUM_SCALES; scale++) {
-        if (scale > 0) {
+        if (scale > 0 || s->cambi_high_res_speedup) {
             /* GPU decimate d_image → d_tmp (out = half resolution). */
             const unsigned new_w = (scaled_w + 1u) >> 1;
             const unsigned new_h = (scaled_h + 1u) >> 1;
