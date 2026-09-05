@@ -568,8 +568,8 @@ static char *run_vmafx_tests(void)
     return NULL;
 }
 
-/* ADR-1180: Test direct vmaf_cli_split escape handling */
-static char *test_cli_split_escapes_direct(void)
+/* ADR-1180: Test direct vmaf_cli_split escape handling (\= and \\) */
+static char *test_cli_split_escapes_direct_equals_and_backslash(void)
 {
     /* psnr=some_path\=C:\x via \= */
     char buf1[] = "psnr=some_path\\=C:\\x";
@@ -591,6 +591,13 @@ static char *test_cli_split_escapes_direct(void)
     mu_assert("ADR-1180: split key == path", key && strcmp(key, "path") == 0);
     mu_assert("ADR-1180: split val == foo\\bar", val && strcmp(val, "foo\\bar") == 0);
 
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+/* ADR-1180: Test direct vmaf_cli_split escape handling (\: and \.) */
+static char *test_cli_split_escapes_direct_colon_and_dot(void)
+{
     /* \: delimiter escape */
     char buf3[] = "a\\:b:c";
     char *sp3 = buf3;
@@ -609,11 +616,12 @@ static char *test_cli_split_escapes_direct(void)
     mu_assert("ADR-1180: split d2 == opt", d2 && strcmp(d2, "opt") == 0);
     mu_assert("ADR-1180: sp4 exhausted", sp4 == NULL);
 
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
 
-/* ADR-1180: Test --model option escape parsing and Windows drive-letter affordance */
-static char *test_cli_parse_model_escapes(void)
+/* ADR-1180: Test --model option escape parsing (\= and \: in paths) */
+static char *test_cli_parse_model_escapes_delimiters(void)
 {
     /* path=<d>/dir\=eq/m.json */
     char *argv1[] = {
@@ -641,6 +649,13 @@ static char *test_cli_parse_model_escapes(void)
     cli_free(&settings2);
     cli_free_dicts(&settings2);
 
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+/* ADR-1180: Test --model option escape parsing (Windows drive-letter affordance) */
+static char *test_cli_parse_model_escapes_windows_drive(void)
+{
     /* path=C:\models\x.json unescaped drive letter */
     char *argv3[] = {
         "vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--model", "path=C:\\models\\x.json"};
@@ -674,6 +689,13 @@ static char *test_cli_parse_model_escapes(void)
     cli_free(&settings3b);
     cli_free_dicts(&settings3b);
 
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+/* ADR-1180: Test --model option parsing regression */
+static char *test_cli_parse_model_options_regression(void)
+{
     /* No-change regression: version=vmaf_v0.6.1:disable_clip:name=foo */
     char *argv4[] = {"vmaf",
                      "-r",
@@ -698,6 +720,7 @@ static char *test_cli_parse_model_escapes(void)
     cli_free(&settings4);
     cli_free_dicts(&settings4);
 
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
 
@@ -747,14 +770,19 @@ static char *test_cli_parse_feature_regression_and_escapes(void)
     cli_free(&settings2);
     cli_free_dicts(&settings2);
 
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
 
 static char *run_cli_escape_tests(void)
 {
-    mu_run_test(test_cli_split_escapes_direct);
-    mu_run_test(test_cli_parse_model_escapes);
+    mu_run_test(test_cli_split_escapes_direct_equals_and_backslash);
+    mu_run_test(test_cli_split_escapes_direct_colon_and_dot);
+    mu_run_test(test_cli_parse_model_escapes_delimiters);
+    mu_run_test(test_cli_parse_model_escapes_windows_drive);
+    mu_run_test(test_cli_parse_model_options_regression);
     mu_run_test(test_cli_parse_feature_regression_and_escapes);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
 
