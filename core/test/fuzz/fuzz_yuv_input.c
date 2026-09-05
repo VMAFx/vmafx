@@ -59,7 +59,7 @@
  * external linkage; the runtime resolves it by name at link time
  * (`-fsanitize=fuzzer`). Cannot be static — the
  * `misc-use-internal-linkage` warning is load-bearing-wrong. */
-/* NOLINTNEXTLINE(misc-use-internal-linkage) — libFuzzer entry-point ABI */
+/* NOLINTNEXTLINE(misc-use-internal-linkage) — libFuzzer entry-point ABI (ADR-0141 / ADR-0278) */
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     if (size == 0u || size > FUZZ_MAX_INPUT_BYTES)
@@ -83,7 +83,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     /* fmemopen() returns a read-only stream over the supplied
      * buffer. The yuv reader only calls `fread` on it, so the
      * `(void *)` cast (dropping const) is safe. */
-    /* NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) — fmemopen reads only */
+    /* NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) — fmemopen reads only (ADR-0141 / ADR-0278) */
     FILE *fp = fmemopen((void *)(const void *)data, size, "rb");
     if (fp == NULL)
         return 0;
