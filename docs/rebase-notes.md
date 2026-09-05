@@ -47,6 +47,40 @@ No rebase impact: `scripts/ci/check-no-tracked-venv.sh` and its test are fork-ad
   keys with `-EINVAL`. `vmaf_use_features_from_model` checks GPU twin option support
   against model requirements and dispatches unsupported twins to the CPU reference.
   Preserve this gating on rebase to prevent silent option drops.
+
+## fix/t-upstream-1494-adm-csf-mode-irfactor-ov — integer-ADM CSF representability guard (2026-09-06)
+
+- `core/src/feature/adm_csf_fixed_point.h` is **fork-added**. It owns the
+  fixed-point exponents (2^21 / 2^23 at scale 0, 2^32 at scales 1-3), the
+  storage bounds, the tabulated-fast-path predicate, and the scale-0 narrowing
+  conversion. Invariant: the conversion must stay `double`-valued
+  (`(double)float_weight * pow(2, N)`), because that is exactly what the four
+  `(uint16_t)(rfactor1[k] * pow2_N)` expressions it replaced evaluated —
+  `float * double` promotes to `double`. Changing it to a `float` product
+  would move scores.
+- `core/src/feature/integer_adm.c`: `adm_csf_rfactor_scale0()` now delegates to
+  that header, and `adm_csf_config_check()` (called once from `init()`, cached
+  in `AdmState::csf_config_err`, returned by `extract()`) refuses weights the
+  storage cannot hold. On a rebase, keep the verdict in `extract()` beside the
+  pre-existing `nvd * rdh >= 3240` guard: `core/test/test_adm_coverage.c
+  ::test_adm_invalid_view_dist_returns_einval` pins that an unsupported ADM
+  configuration initialises and then fails at extract time. See ADR-1191.
+- `core/src/feature/cuda/integer_adm_cuda.c`,
+  `core/src/feature/hip/integer_adm_hip.c`,
+  `core/src/feature/sycl/integer_adm_sycl.cpp`: each keeps its own copy of
+  `adm_csf_factors()` / `adm_csf_rfactor_scale0()` (upstream parity, unchanged)
+  and gains an `adm_csf_config_check()` called from its own `init()`. Invariant:
+  all four backends must apply the **CPU** bounds from the shared header, even
+  where the twin's own storage is wider — the SYCL twin holds scale 0 in
+  `uint32_t`, but accepting a configuration the CPU rejects would break the
+  ADR-1183 option / feature-name parity contract.
+- `core/src/feature/x86/adm_avx2.c` and `adm_avx512.c` deliberately keep their
+  own byte-identical copies of the scale-0 conversion. They are unreachable
+  with an out-of-range weight now that `init()` gates the configuration, and
+  leaving them untouched keeps the SIMD bit-exactness story unchanged. Do not
+  "unify" them into the shared header without re-running
+  `core/test/test_integer_adm_simd.c`.
+
 ## ci/release-artifacts-built-in-dev-container — native release artifacts built on self-hosted canonical runner (ADR-1178) (2026-09-05)
 
 No rebase impact: all touched files (`.github/actionlint.yaml`, `.github/workflows/dev-container-publish.yml`, `.github/workflows/supply-chain.yml`, `scripts/release/verify-native-release-artifacts.sh`, `scripts/release/tests/test-verify-native-release-artifacts.sh`, `scripts/ci/check-container-build.sh`, `scripts/ci/tests/test-check-container-build.sh`, docs) are fork-local CI workflows, verification scripts, and documentation with no upstream Netflix/vmaf counterpart. No public C API, header, Meson option, or golden assertion is touched.
@@ -57,6 +91,7 @@ No rebase impact: `.github/workflows/lint-and-format.yml` is fork-added. Invaria
 only purpose is to emit `compile_commands.json` for clang-tidy must configure with `-Db_lto=false`,
 because the project default (`b_lto_threads=4`, ADR-1172) renders as a GCC-only `-flto=<n>` that
 clang rejects outright.
+
 ## fix/state-md-duplicate-rows — one row per bug id (2026-09-05)
 
 No rebase impact: `docs/state.md`, `scripts/ci/check-state-md-rows.sh` and its test are fork-added.
@@ -203,12 +238,14 @@ no rebase impact: changes GitHub Actions workflow job display names (`.github/wo
 ## docs/venv-recipe — replace impossible venv recipe with verified one (2026-09-04)
 
 - `docs/development/languages.md`: no rebase impact: docs/development/ is fork-added.
+
 ## fix/vmaf-tune-python-fast-path — Python fast-path probe decoding, feature parsing, and normalisation parity (2026-09-05)
 
 No rebase impact: all touched files (`tools/vmaf-tune/src/vmaftune/`, `tools/vmaf-tune/tests/`, `docs/`) are fork-added Python tuning tooling with no upstream Netflix/vmaf counterpart. No public C API, header, Meson option, or golden assertion is touched.
 - `tools/vmaf-tune/src/vmaftune/cli.py` & `fast.py`: probe distorted containers (`.mp4`) are decoded to temporary raw YUV before running libvmaf feature extraction (with guaranteed cleanup) and non-zero exit codes raise `RuntimeError` (no zero-fill).
 - `tools/vmaf-tune/src/vmaftune/proxy.py`: added `load_proxy_sidecar` and `normalise_features` adhering to `fr_regressor_v2.json` StandardScaler parameters, aligned `ENCODER_VOCAB_V2` ordering, and mapped unrecognized encoders to `"unknown"` (slot 11) when `allow_unknown=True`.
 - `tools/vmaf-tune/src/vmaftune/score.py`: `parse_feature_aggregates` handles `integer_*` keys and falls back to per-frame averages when pooled metrics are absent.
+
 ## fix/ai-ptq-static-pin-qdq — pin ONNX Runtime static-PTQ output format to QDQ (2026-09-05)
 
 no rebase impact: fork-only ai/ script
@@ -253,6 +290,7 @@ no rebase impact: fork-only test wiring in `core/test/meson.build` and documenta
 - `core/src/feature/sycl/speed_chroma_sycl.cpp`, `core/src/feature/sycl/speed_temporal_sycl.cpp`: Replaced `double` accumulators and workgroup local accessors with `float` to satisfy ADR-0220 on fp64-less Intel Arc devices.
 - `core/src/meson.build`: Passed `_x86_simd_strict_fp_extra` (`-fp-model=precise`) to `x86_avx2_static_lib` and `x86_avx512_static_lib` when compiling with `icx`.
 - `python/test/sycl_default_model_test.py`: Wholly fork-added regression test gating `--backend sycl` default model execution. No upstream rebase conflict.
+
 ## ci/sycl-arc-self-hosted-runner — containerised self-hosted GitHub Actions runner for Intel Arc SYCL CI (ADR-1177) (2026-09-04)
 
 - `dev/Containerfile.runner`: fork-added; derives from `vmaf-dev-mcp:local` with GitHub Actions runner v2.337.0 and non-root `runner` user (uid 1001). Preserves all oneAPI SYCL tools and Level-Zero runtime. No upstream counterpart.
@@ -265,9 +303,11 @@ no rebase impact: fork-only test wiring in `core/test/meson.build` and documenta
 - `scripts/ci/gpu_ulp_calibration.yaml`: added calibrated `float_ssim: 5.0e-4` entry for Arc A380 `sycl:0x8086:0x56a*`.
 - `core/test/meson.build`: tagged all 23 SYCL tests with `suite : ['fast', 'gpu', 'sycl']`. Upstream sync conflict resolution: preserve the `suite` additions on any upstream test additions.
 - Rebase impact: minimal. Upstream Netflix/vmaf has no SYCL backend, no self-hosted runner infrastructure, and no `required-aggregator.yml`. If upstream touches `core/test/meson.build`, keep the fork's SYCL test declarations and suite tags.
+
 ## fix/metal-motion-v2-mirror-closeout — Metal motion_v2 mirror closeout and test observability (2026-09-04)
 
 no rebase impact: fork-only Metal backend (`core/src/feature/metal/integer_motion_v2.metal`, `core/test/test_metal_motion_v2_parity.c`, `core/src/feature/metal/AGENTS.md`, ADR-1176). All touched files are fork-added surfaces with no upstream Netflix/vmaf counterpart.
+
 ## fix/vmaf-tune-report-audit-and-svtav1-hdr-knob-docs — vmaf-tune report audit findings #2–#10 and SVT-AV1-HDR knob docs (2026-09-04)
 
 No rebase impact: fork-only tools/vmaf-tune and documentation surfaces (`tools/vmaf-tune/`, `docs/usage/vmaf-tune.md`, `docs/usage/vmaf-tune-codec-adapters.md`). No upstream Netflix/vmaf counterpart, no C engine files, and no Netflix golden test assertions touched.
@@ -299,7 +339,9 @@ No rebase impact: fork-only tools/vmaf-tune and documentation surfaces (`tools/v
 - `.github/workflows/build.yml` and `.github/workflows/libvmaf-build-matrix.yml`: Homebrew
   installation on macOS uses a 3-attempt retry loop with backoff and `brew fetch --retry`, plus
   `HOMEBREW_NO_AUTO_UPDATE=1` and `HOMEBREW_NO_INSTALL_CLEANUP=1`. Wholly fork-added workflows.
+
 ## ci/release-artifacts-built-in-dev-container — native release artifacts built in canonical dev container (ADR-1178) (2026-09-04)
+
 ## ci/release-artifacts-built-in-dev-container — native release artifacts built on self-hosted canonical runner (ADR-1178) (2026-09-05)
 
 No rebase impact: all touched files (`.github/actionlint.yaml`, `.github/workflows/dev-container-publish.yml`, `.github/workflows/supply-chain.yml`, `scripts/release/verify-native-release-artifacts.sh`, `scripts/release/tests/test-verify-native-release-artifacts.sh`, `scripts/ci/check-container-build.sh`, `scripts/ci/tests/test-check-container-build.sh`, docs) are fork-local CI workflows, verification scripts, and documentation with no upstream Netflix/vmaf counterpart. No public C API, header, Meson option, or golden assertion is touched.
@@ -48626,6 +48668,7 @@ reintroduce this. Two invariants:
 The guard that used to sit in `flush_context_cuda()` (`if (vmaf->thread_pool && TEMPORAL)
 continue;`) is intentionally **deleted**, not moved. A rebase that resurrects it alongside
 invariant 1 will skip the flush entirely for temporal GPU extractors.
+
 ## RN-2026-09-06 — Netflix benchmark harness paths and flags are host-coupled
 
 `testdata/benchmark_netflix.py` and `testdata/bench_all.sh` are fork-added and
@@ -48651,6 +48694,7 @@ values inside them silently rot and are worth re-checking after any sync:
 `testdata/netflix_benchmark_results.json` is deliberately stale as of
 2026-09-06 — see [ADR-1192](adr/1192-netflix-bench-snapshot-drift-not-regenerated.md).
 Do not regenerate it as part of a rebase.
+
 ## ci/container-source-guard — record the container's source revision (2026-09-06)
 
 Fork-only tooling (`dev/`, `scripts/dev/`, `scripts/ci/tests/`). One invariant:

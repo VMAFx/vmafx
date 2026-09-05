@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "adm_csf_fixed_point.h"
 #include "barten_csf_tools.h"
 #include "common.h"
 #include "dict.h"
@@ -170,6 +171,32 @@ static void adm_csf_rfactor_scale0(const float rfactor1[3], double adm_norm_view
         i_rfactor[1] = (uint16_t)(rfactor1[1] * pow2_21);
         i_rfactor[2] = (uint16_t)(rfactor1[2] * pow2_23);
     }
+}
+
+/**
+ * Refuse a CSF configuration whose fixed-point weights would wrap
+ * (ADR-1191). Mirrors `adm_csf_config_check()` in
+ * core/src/feature/integer_adm.c so the CPU reference and this twin accept
+ * exactly the same set of configurations -- the bounds in
+ * adm_csf_fixed_point.h are the CPU pipeline's, deliberately applied here
+ * too, because a twin that accepted a configuration the CPU rejects would
+ * break the option / feature-name parity contract (ADR-1183). Returns 0 or
+ * -EINVAL.
+ */
+static int adm_csf_config_check(const AdmStateHip *s)
+{
+    for (int scale = 0; scale < 4; ++scale) {
+        const AdmCsfFactors f =
+            adm_csf_factors(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
+                            s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+        const float rfactor1[3] = {f.factor1, f.factor1, f.factor2};
+        const int err = adm_csf_check_scale(scale, rfactor1, s->adm_norm_view_dist,
+                                            s->adm_ref_display_height, s->adm_csf_mode);
+        if (err) {
+            return err;
+        }
+    }
+    return 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1089,6 +1116,17 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (s->adm_norm_view_dist * s->adm_ref_display_height <
         DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) {
         return -EINVAL;
+    }
+
+    /* ADR-1191: reject CSF configurations the fixed-point pipeline cannot
+     * represent before any device resource is claimed, so an unsupported
+     * adm_csf_mode / viewing geometry fails loudly instead of wrapping.
+     * Same accept/reject set as the CPU reference. */
+    {
+        const int csf_err = adm_csf_config_check(s);
+        if (csf_err) {
+            return csf_err;
+        }
     }
 
     for (unsigned scale = 0; scale < 4; scale++) {

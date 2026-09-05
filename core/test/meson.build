@@ -819,6 +819,30 @@ test_adm_coverage = executable('test_adm_coverage',
     ] + wave8_opt_only_objects
 )
 
+# ADR-1191 — integer-ADM CSF fixed-point representability guard: the
+# configurations init() must reject (adm_csf_mode=1 at the default
+# adm_csf_scale; a blend mode at an untabulated viewing geometry) and the
+# ones it must keep accepting (default, mode 1 with the fork's small scale
+# coefficients, modes 2 and 3 at 1080@3H).
+test_adm_csf_representable = executable('test_adm_csf_representable',
+    ['test.c', 'test_adm_csf_representable.c', '../src/mem.cpp', '../src/picture.c',
+     '../src/ref.cpp', '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+        common_cuda_objects,
+        log_cpp23_test_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+
 # Coverage round 3 — psnr_hvs.c: bpc>12 rejection, YUV400P chroma-disable,
 # enable_chroma=false option, and 10-bit HBD path.
 test_psnr_hvs_coverage = executable('test_psnr_hvs_coverage',
@@ -3421,6 +3445,7 @@ test('test_integer_motion_coverage', test_integer_motion_coverage, suite : ['fas
 test('test_integer_motion_v2_coverage', test_integer_motion_v2_coverage, suite : ['fast'])
 test('test_ssim_coverage', test_ssim_coverage, suite : ['fast'])
 test('test_adm_coverage', test_adm_coverage, suite : ['fast'])
+test('test_adm_csf_representable', test_adm_csf_representable, suite : ['fast'])
 test('test_psnr_hvs_coverage', test_psnr_hvs_coverage, suite : ['fast'])
 test('test_ssimulacra2_coverage', test_ssimulacra2_coverage, suite : ['fast'])
 test('test_niqe', test_niqe, suite : ['fast'])
