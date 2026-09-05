@@ -5,13 +5,17 @@
 
 use vmafx_sys::{
     VmafPoolingMethod_VMAF_POOL_METHOD_HARMONIC_MEAN, VmafPoolingMethod_VMAF_POOL_METHOD_MAX,
-    VmafPoolingMethod_VMAF_POOL_METHOD_MEAN, VmafPoolingMethod_VMAF_POOL_METHOD_MIN,
+    VmafPoolingMethod_VMAF_POOL_METHOD_MEAN, VmafPoolingMethod_VMAF_POOL_METHOD_MEDIAN,
+    VmafPoolingMethod_VMAF_POOL_METHOD_MIN, VmafPoolingMethod_VMAF_POOL_METHOD_PERC5,
+    VmafPoolingMethod_VMAF_POOL_METHOD_PERC10, VmafPoolingMethod_VMAF_POOL_METHOD_PERC20,
 };
 
 /// Pooling method used by [`crate::Context::score_pooled`].
 ///
 /// The variants mirror libvmaf's `VmafPoolingMethod` enum; we expose only the
-/// stable subset documented in the C public header.
+/// stable subset documented in the C public header. The four order-statistic
+/// variants interpolate linearly between ranks, matching
+/// `numpy.percentile(method = "linear")` and hence the Python harness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PoolingMethod {
@@ -23,6 +27,14 @@ pub enum PoolingMethod {
     Max,
     /// Harmonic mean across frames.
     HarmonicMean,
+    /// Median (50th percentile) of the per-frame scores (ADR-1188).
+    Median,
+    /// 5th percentile of the per-frame scores — the "worst 5%" summary.
+    Perc5,
+    /// 10th percentile of the per-frame scores.
+    Perc10,
+    /// 20th percentile of the per-frame scores.
+    Perc20,
 }
 
 impl PoolingMethod {
@@ -32,6 +44,10 @@ impl PoolingMethod {
             Self::Min => VmafPoolingMethod_VMAF_POOL_METHOD_MIN,
             Self::Max => VmafPoolingMethod_VMAF_POOL_METHOD_MAX,
             Self::HarmonicMean => VmafPoolingMethod_VMAF_POOL_METHOD_HARMONIC_MEAN,
+            Self::Median => VmafPoolingMethod_VMAF_POOL_METHOD_MEDIAN,
+            Self::Perc5 => VmafPoolingMethod_VMAF_POOL_METHOD_PERC5,
+            Self::Perc10 => VmafPoolingMethod_VMAF_POOL_METHOD_PERC10,
+            Self::Perc20 => VmafPoolingMethod_VMAF_POOL_METHOD_PERC20,
         }
     }
 }

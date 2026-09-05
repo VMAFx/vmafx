@@ -370,6 +370,38 @@ relying on that alone delays the wake-up until destroy time, which is after
 extractors, GPU dispatch loops) must include a `vmaf_framesync_abort` call on
 all error exits from `extract()` or equivalent before returning.
 
+### Pooling: accumulators stay O(1) and byte-identical; percentiles buffer (ADR-1188)
+
+`pool_accumulate()` in `libvmaf.c` feeds two consumers from one frame walk: the
+O(1) `PoolAccumulators` used by `MIN` / `MAX` / `MEAN` / `HARMONIC_MEAN`, and —
+only when the caller asked for `MEDIAN` / `PERC5` / `PERC10` / `PERC20` — a
+`PoolSamples` buffer holding every pooled per-frame score.
+
+Three invariants a rebase or follow-up branch must preserve:
+
+1. **Never derive the accumulator methods from the sample buffer.** Their float
+   expressions are the upstream ones and are pinned by the Netflix golden gate
+   (ADR-1118 golden-gate isolation). Summing a sorted vector instead would
+   change the summation order and move golden numbers.
+2. **Never allocate the sample buffer unconditionally.** Callers legitimately
+   pass `index_high == UINT_MAX`; the buffer must stay opt-in per method and
+   geometrically grown, never sized from `index_high - index_low`.
+3. **Percentiles are order statistics and ignore perceptual weighting** —
+   ADR-1118 weights change `MEAN` / `HARMONIC_MEAN` only, exactly as `MIN` /
+   `MAX` are unaffected. Do not weight ranks.
+
+`vmaf_percentile()` / `vmaf_score_compare()` live in `percentile.h` as `static
+inline` on purpose: `predict.c` computes the golden-asserted bootstrap `ci_p95`
+bounds with the same expression, and keeping it header-inline keeps that
+arithmetic inside `predict.c`'s own translation unit rather than behind a
+cross-TU call whose contraction could differ under `-flto` (ADR-1172). Do not
+"clean this up" into a `percentile.c`.
+
+The XML / JSON writers in `output.cpp` iterate `pool_report_order[]`, **not**
+`[1, VMAF_POOL_METHOD_NB)`. Appending a pooling enumerator must not widen the
+`pooled_metrics` schema by accident; add a method to that table only as a
+deliberate, documented output change.
+
 ## Doxygen comment invariant (ADR-1096)
 
 The following `core/src/*.h` internal headers now carry Doxygen `@brief`,

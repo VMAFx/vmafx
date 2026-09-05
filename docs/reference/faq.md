@@ -81,10 +81,24 @@ for simplicity and consistency with other metrics (e.g. mean PSNR).
 Psycho-visual evidence suggests humans weigh the worst-quality frames more
 heavily, so mean is not necessarily optimal.
 
-Pooling can be changed via `--pool` on `vmaf` and via the `pool_method`
-argument to `run_vmaf`, `run_psnr`, `run_vmaf_training`, `run_testing` and
-friends. Accepted values: `mean`, `harmonic_mean`, `median`, `min`, `perc5`,
-`perc10`, `perc20`.
+Pooling can be changed on three surfaces, all of which now understand the same
+seven methods — `mean`, `harmonic_mean`, `median`, `min`, `max`, `perc5`,
+`perc10`, `perc20`:
+
+- **Python harness**: the `pool_method` argument to `run_vmaf`, `run_psnr`,
+  `run_vmaf_training`, `run_testing` and friends.
+- **C API**: the `VmafPoolingMethod` discriminant passed to
+  `vmaf_score_pooled` / `vmaf_feature_score_pooled` — the order-statistic
+  methods were added in [ADR-1188](../adr/1188-percentile-pooling-methods.md)
+  and use the same linear-interpolation rule as the harness, so both surfaces
+  report the same number. See [the C API reference](../api/index.md#vmafpoolingmethod).
+- **FFmpeg**: the `pool` option on the `libvmaf*` filters (see
+  [FFmpeg usage](../usage/ffmpeg.md)).
+
+The `vmaf` CLI has no `--pool` flag: its XML / JSON report always carries
+`min`, `max`, `mean` and `harmonic_mean` side by side, and its stdout line
+reports the mean. Select a percentile through the C API, a binding, or the
+FFmpeg filter.
 
 ## Inputs & formats
 

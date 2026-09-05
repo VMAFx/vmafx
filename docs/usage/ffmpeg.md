@@ -71,7 +71,7 @@ libvmaf=model=version=vmaf_v0.6.1:log_path=/dev/stdout:log_fmt=json:n_threads=4
 | `log_path` | path | (stderr only) | Where to write the per-frame report (`/dev/stdout` is common). |
 | `log_fmt` | `xml` / `json` / `csv` / `sub` | `xml` | Report format; matches the `vmaf` CLI output modes. |
 | `feature` | string (pipe-separated `name=` entries; escaped-colon intra-feature options) | (only model features) | Attach extra feature extractors. See [Feature option syntax](#feature-option-syntax) below. |
-| `pool` | `mean` / `min` / `harmonic_mean` | `mean` | Pooling method for the per-frame scores. |
+| `pool` | `mean` / `min` / `max` / `harmonic_mean` / `median` / `perc5` / `perc10` / `perc20` | `mean` | Pooling method for the per-frame scores. The four order-statistic values (`median`, `perc5`, `perc10`, `perc20`) come from [ADR-1188](../adr/1188-percentile-pooling-methods.md) and need `ffmpeg-patches/0018-libvmaf-map-percentile-pool-methods.patch` in the applied series; they interpolate linearly between ranks, so `perc10` is the same "worst 10% of frames" number the Python harness reports. An unrecognised string falls back to `mean`, as upstream. |
 | `n_threads` | integer | `0` (library default) | Number of worker threads libvmaf is allowed to spawn. |
 | `n_subsample` | integer `≥ 1` | `1` | Compute VMAF on every Nth frame only — useful for long-clip QC. |
 
