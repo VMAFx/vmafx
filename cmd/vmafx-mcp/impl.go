@@ -2,7 +2,9 @@
 // Use of this source code is governed by the BSD-3-Clause-Plus-Patent
 // license that can be found in the LICENSE file.
 
-// impl.go contains the handler implementations for each of the 15 MCP tools.
+// impl.go contains the handler implementations for the classic 15 MCP tools.
+// The four sidecar-binary tools live in impl_sidecar.go and the five Phase-4b
+// gRPC bridge tools in impl_grpc.go.
 // Each handler delegates to the vmaf or vmaf-tune CLI binary, matching the
 // behaviour of the Python server (mcp-server/vmaf-mcp/src/vmaf_mcp/server.py).
 
@@ -268,7 +270,6 @@ func optIntArg(args map[string]any, key string) *int {
 	v := intArg(args, key, 0)
 	return &v
 }
-
 
 // parseScoreExtras extracts and validates the optional scoring pass-through flags from args.
 func parseScoreExtras(args map[string]any) (scoreExtras, error) {
