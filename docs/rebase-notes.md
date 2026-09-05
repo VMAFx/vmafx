@@ -61,6 +61,18 @@ The gate exists **because** of rebases: resolving a `docs/state.md` conflict by 
 the documented shortcut for the append-only sections, and it silently duplicates a row that a PR was
 moving between sections. After any such resolution, run `bash scripts/ci/check-state-md-rows.sh`.
 
+## fix/sycl-motion2-checkerboard-drift — clip integer_motion2 score to motion_max_val (2026-09-05)
+
+no rebase impact: fork-local SYCL feature extractor and tests.
+
+- `core/src/feature/sycl/integer_motion_sycl.cpp`: wholly fork-added (upstream Netflix/vmaf has no SYCL
+  backend). Collector calls now append `motion2_clipped` (lines 841, 848) and `last_motion2` in `flush_fex_sycl`
+  (line 896), matching CPU reference behavior when `motion_max_val` is set.
+- `core/test/test_sycl_motion3_parity.c`: fork-added test; added 1080p checkerboard test case verifying
+  `integer_motion2_mmxv_18` and `integer_motion3_mmxv_18` clipping and CPU/SYCL parity.
+- `core/test/test_sycl_motion_add_uv_parity.c`: adjusted tolerance to 2e-4 for 3-plane fixed-point integer motion.
+- `python/test/sycl_motion_parity_test.py`: fork-added Python parity tests for checkerboard and src01 pairs.
+
 ## fix/cambi-cuda-context — CUDA CAMBI context push/pop and model options twin selection gate (2026-09-05)
 
 - `core/src/feature/cuda/integer_cambi_cuda.c`: fork-added CUDA CAMBI extractor.
