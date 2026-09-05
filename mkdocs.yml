@@ -212,6 +212,7 @@ nav:
       - Motion: metrics/motion.md
       - MS-SSIM: metrics/ms-ssim.md
       - NIQE: metrics/niqe.md
+      - PSNR: metrics/psnr.md
       - PSNR-HVS: metrics/psnr-hvs.md
       - PU21 (HDR): metrics/pu21.md
       - SpeedQA: metrics/speed_qa.md
