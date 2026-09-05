@@ -55,8 +55,8 @@ int vmaf_dnn_session_open(VmafDnnSession **out, const char *onnx_path, const Vma
 {
     if (!out || !onnx_path)
         return -EINVAL;
-    assert(out != NULL);
-    assert(onnx_path != NULL);
+    assert(out != nullptr);
+    assert(onnx_path != nullptr);
 
     /* T7-12: the historical VMAF_MAX_MODEL_BYTES env override has been
      * removed. The compile-time cap (VMAF_DNN_DEFAULT_MAX_BYTES = 50 MB)
@@ -73,9 +73,9 @@ int vmaf_dnn_session_open(VmafDnnSession **out, const char *onnx_path, const Vma
         return -ENOMEM;
 
     rc = vmaf_dnn_sidecar_load(onnx_path, &s->meta);
-    if (rc == 0)
+    if (rc == 0) {
         s->has_sidecar = true;
-    else if (rc != -ENOENT) {
+    } else if (rc != -ENOENT) {
         free(s);
         return rc;
     }
@@ -116,7 +116,6 @@ int vmaf_dnn_session_open(VmafDnnSession **out, const char *onnx_path, const Vma
                      int8_path, rc);
             /* load_path already equals onnx_path — no assignment needed;
              * fall through to vmaf_ort_open below. */
-            rc = 0;
         } else {
             load_path = int8_path;
         }
@@ -209,7 +208,7 @@ int vmaf_dnn_session_run_luma8(VmafDnnSession *sess, const uint8_t *in, size_t i
      * use the generic vmaf_dnn_session_run() with caller-managed
      * tensors. */
     int rc = vmaf_tensor_from_luma(in, in_stride, w, h, VMAF_TENSOR_LAYOUT_NCHW,
-                                   VMAF_TENSOR_DTYPE_F32, NULL, NULL, sess->in_buf);
+                                   VMAF_TENSOR_DTYPE_F32, nullptr, nullptr, sess->in_buf);
     if (rc < 0)
         return rc;
 
@@ -223,7 +222,7 @@ int vmaf_dnn_session_run_luma8(VmafDnnSession *sess, const uint8_t *in, size_t i
         return -ENOTSUP;
 
     return vmaf_tensor_to_luma(sess->out_buf, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, w, h,
-                               NULL, NULL, out, out_stride);
+                               nullptr, nullptr, out, out_stride);
 }
 
 int vmaf_dnn_session_run_plane16(VmafDnnSession *sess, const uint16_t *in, size_t in_stride, int w,
@@ -241,7 +240,7 @@ int vmaf_dnn_session_run_plane16(VmafDnnSession *sess, const uint16_t *in, size_
     /* ADR-0976 — see vmaf_dnn_session_run_luma8 above for the rationale
      * behind dropping the sidecar-driven normalisation branch. */
     int rc = vmaf_tensor_from_plane16(in, in_stride, w, h, bpc, VMAF_TENSOR_LAYOUT_NCHW,
-                                      VMAF_TENSOR_DTYPE_F32, NULL, NULL, sess->in_buf);
+                                      VMAF_TENSOR_DTYPE_F32, nullptr, nullptr, sess->in_buf);
     if (rc < 0)
         return rc;
 
@@ -255,7 +254,7 @@ int vmaf_dnn_session_run_plane16(VmafDnnSession *sess, const uint16_t *in, size_
         return -ENOTSUP;
 
     return vmaf_tensor_to_plane16(sess->out_buf, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, w,
-                                  h, bpc, NULL, NULL, out, out_stride);
+                                  h, bpc, nullptr, nullptr, out, out_stride);
 }
 
 int vmaf_dnn_session_run(VmafDnnSession *sess, const VmafDnnInput *inputs, size_t n_inputs,
@@ -323,7 +322,7 @@ void vmaf_dnn_session_close(VmafDnnSession *sess)
 const char *vmaf_dnn_session_attached_ep(VmafDnnSession *sess)
 {
     if (!sess || !sess->ort)
-        return NULL;
+        return nullptr;
     return vmaf_ort_attached_ep(sess->ort);
 }
 
@@ -343,9 +342,9 @@ int vmaf_dnn_session_open(VmafDnnSession **out, const char *onnx_path, const Vma
 
 /* Stub signature must match the real-ORT path declared in the header (ADR-0040). */
 int vmaf_dnn_session_run_luma8(
-    VmafDnnSession *sess, const uint8_t *in, size_t in_stride, int w, int h, uint8_t *out,
-    size_t
-        out_stride) // NOLINT(readability-non-const-parameter): stub must match ORT header (ADR-0040)
+    VmafDnnSession *sess, const uint8_t *in, size_t in_stride, int w, int h,
+    uint8_t *out, // NOLINT(readability-non-const-parameter): stub must match ORT header (ADR-0040)
+    size_t out_stride)
 {
     (void)sess;
     (void)in;
@@ -394,7 +393,7 @@ void vmaf_dnn_session_close(VmafDnnSession *sess)
 const char *vmaf_dnn_session_attached_ep(VmafDnnSession *sess)
 {
     (void)sess;
-    return NULL;
+    return nullptr;
 }
 
 #endif /* VMAF_HAVE_DNN */
