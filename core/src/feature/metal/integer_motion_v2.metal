@@ -17,10 +17,13 @@
  *                    + 32768) >> 16
  *    4. SAD: atomic-add |h[i,j]| into a single ulong accumulator.
  *
- *  Mirror padding: edge-replicating reflective mirror
- *  (`2 * size - idx - 1` for idx >= size), matching the CUDA twin.
- *  DIFFERS from motion_v1's `2 * size - idx - 2`; see CUDA file
- *  header for the bring-up note.
+ *  Mirror padding: reflect-101 (`2 * (size - 1) - idx` for
+ *  idx >= size, i.e. the `2 * size - idx - 2` form spelled by the
+ *  scalar `integer_motion_v2.c::mirror`), iterated until the index
+ *  lands in range. Same convention as motion_v1 and as the CUDA,
+ *  SYCL and HIP twins; see the `mv2_mirror` comment below for the
+ *  two defects the iterated reflect-101 fold fixed (commit
+ *  71da046db, ADR-1166).
  *
  *  Threadgroup layout: 16 × 16 threads per group, +2 pixel halo on
  *  each side → 20 × 20 shared tile. Inner pitch padded to 21 to
