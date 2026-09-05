@@ -517,6 +517,23 @@ void apply_model_opt(CLIModelConfig &model_cfg, char *key, char *val, const char
     }
 }
 
+void unescape_equals_in_place(char *const s)
+{
+    if (!s)
+        return;
+    const char *r = s;
+    char *w = s;
+    for (size_t i = 0; i < 4096 && *r != '\0'; ++i) {
+        if (*r == '\\' && *(r + 1) == '=') {
+            *w++ = '=';
+            r += 2;
+        } else {
+            *w++ = *r++;
+        }
+    }
+    *w = '\0';
+}
+
 CLIModelConfig parse_model_config(const char *const optarg, const char *const app)
 {
     const size_t optarg_sz = strnlen(optarg, 1024);
@@ -548,20 +565,10 @@ CLIModelConfig parse_model_config(const char *const optarg, const char *const ap
             std::isalpha(static_cast<unsigned char>(val[0])) && val[1] == '\0' && optarg_copy &&
             (*optarg_copy == '\\' || *optarg_copy == '/')) {
             val[1] = ':';
-            char *rest = vmaf_cli_split(&optarg_copy, ':');
+            const char *const rest = vmaf_cli_split(&optarg_copy, ':');
             (void)rest;
             /* In-place compact any \= in the path value since it is not split by '=' again */
-            char *r = val + 2;
-            char *w = val + 2;
-            for (size_t i = 0; i < 4096 && *r != '\0'; ++i) {
-                if (*r == '\\' && *(r + 1) == '=') {
-                    *w++ = '=';
-                    r += 2;
-                } else {
-                    *w++ = *r++;
-                }
-            }
-            *w = '\0';
+            unescape_equals_in_place(val + 2);
         }
         if (!val) {
             if (!strcmp(key, "disable_clip") || !strcmp(key, "enable_transform")) {
