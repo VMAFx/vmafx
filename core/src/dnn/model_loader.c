@@ -33,6 +33,7 @@
 
 #include "model_loader.h"
 #include "onnx_scan.h"
+#include "compat/path_utf8.h"
 
 /* Portable realpath wrapper: POSIX realpath() on Linux/macOS, _fullpath()
  * on MinGW/Windows. Both resolve symlinks and canonicalise the path in
@@ -380,7 +381,7 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
             return -EFBIG;
     }
 
-    FILE *f = fopen(sidecar, "rb");
+    FILE *f = vmaf_fopen_utf8(sidecar, "rb");
     if (!f)
         return -errno;
     if (fseek(f, 0, SEEK_END) != 0) {
@@ -816,7 +817,7 @@ static int stat_regular(const char *path, size_t max_bytes, size_t *out_size)
 /* Read @p sz bytes of @p path into a freshly-allocated buffer. Caller frees. */
 static int slurp_file(const char *path, size_t sz, unsigned char **out_buf)
 {
-    FILE *f = fopen(path, "rb");
+    FILE *f = vmaf_fopen_utf8(path, "rb");
     if (!f)
         return -errno;
     unsigned char *buf = (unsigned char *)malloc(sz);
@@ -981,7 +982,7 @@ static int find_bundle_for_onnx(const char *registry_doc, const char *onnx_basen
  * sanity bound. Caller frees. */
 static int slurp_registry(const char *registry_path, char **out_buf)
 {
-    FILE *f = fopen(registry_path, "rb");
+    FILE *f = vmaf_fopen_utf8(registry_path, "rb");
     if (!f)
         return -errno;
     if (fseek(f, 0, SEEK_END) != 0) {

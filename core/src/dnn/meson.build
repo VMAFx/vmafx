@@ -37,6 +37,7 @@ dnn_sources = files(
   'op_allowlist.c',
   'ort_backend.c',
   'tensor_io.c',
+  '../compat/path_utf8.c',
 )
 # `dnn_attach_api.c` defines `vmaf_use_tiny_model`, which references
 # `vmaf_ctx_dnn_attach` from `libvmaf.c`. It is therefore linked into

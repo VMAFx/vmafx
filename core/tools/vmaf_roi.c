@@ -33,6 +33,7 @@
 #include <string.h>
 
 #include "libvmaf/dnn.h"
+#include "compat/path_utf8.h"
 #include "vmaf_roi_core.h"
 
 /* x265 / SVT-AV1 ROI sidecars use a small integer offset range. We clamp
@@ -247,7 +248,7 @@ static int read_luma8(FILE *fp, uint8_t *dst, size_t y_sz, int bitdepth, size_t 
 
 static int load_luma_frame(const struct vmaf_roi_opts *o, uint8_t *dst)
 {
-    FILE *fp = fopen(o->reference, "rb");
+    FILE *fp = vmaf_fopen_utf8(o->reference, "rb");
     if (fp == NULL) {
         const int saved = errno;
         (void)fprintf(stderr, "vmaf-roi: cannot open %s: errno=%d\n", o->reference, saved);
@@ -400,7 +401,7 @@ static int emit_sidecar(const struct vmaf_roi_opts *o, const float *grid, int co
     if (strcmp(o->output, "-") == 0) {
         fp = stdout;
     } else {
-        fp = fopen(o->output, (o->encoder == VMAF_ROI_ENCODER_SVTAV1) ? "wb" : "w");
+        fp = vmaf_fopen_utf8(o->output, (o->encoder == VMAF_ROI_ENCODER_SVTAV1) ? "wb" : "w");
         if (fp == NULL) {
             const int saved = errno;
             (void)fprintf(stderr, "vmaf-roi: cannot open %s for writing: errno=%d\n", o->output,

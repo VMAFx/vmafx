@@ -16,6 +16,7 @@
  *
  */
 
+#include "compat/path_utf8.h"
 #include "libvmaf/model.h"
 #include "log.h"
 #include "model.h"
@@ -674,7 +675,7 @@ int vmaf_read_json_model_from_buffer(VmafModel **model, VmafModelConfig *cfg, co
 int vmaf_read_json_model_from_path(VmafModel **model, VmafModelConfig *cfg, const char *path)
 {
     int err = 0;
-    FILE *in = fopen(path, "r");
+    FILE *in = vmaf_fopen_utf8(path, "r");
     if (!in)
         return -EINVAL;
     json_stream s;
@@ -809,7 +810,7 @@ int vmaf_read_json_model_collection_from_path(VmafModel **model,
                                               VmafModelConfig *cfg, const char *path)
 {
     int err = 0;
-    FILE *in = fopen(path, "r");
+    FILE *in = vmaf_fopen_utf8(path, "r");
     if (!in)
         return -EINVAL;
     json_stream s;

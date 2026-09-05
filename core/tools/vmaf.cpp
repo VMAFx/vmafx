@@ -46,6 +46,7 @@
 #endif
 
 #include "cli_parse.h"
+#include "compat/path_utf8.h"
 #include "spinner.h"
 #include "vidinput.h"
 
@@ -148,7 +149,7 @@ void write_backend_error_json(const char *output_path, enum VmafOutputFormat fmt
     /* Use open()+fdopen() with explicit 0644 mode so the created file is never
      * world-writable regardless of the caller's umask (CodeQL cpp/world-writable-file-creation). */
 #ifdef _WIN32
-    FILE *fp = fopen(output_path, "wb");
+    FILE *fp = vmaf_fopen_utf8(output_path, "wb");
 #else
     const int raw_fd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     FILE *fp = (raw_fd >= 0) ? fdopen(raw_fd, "wb") : nullptr;
@@ -1402,7 +1403,7 @@ void amend_json_with_backend_used(const char *output_path, enum VmafOutputFormat
     if (fmt != VMAF_OUTPUT_FORMAT_JSON)
         return;
 
-    FILE *fp = fopen(output_path, "rb+");
+    FILE *fp = vmaf_fopen_utf8(output_path, "rb+");
     if (!fp)
         return;
     if (fseek(fp, 0, SEEK_END) != 0) {
@@ -1544,14 +1545,14 @@ int main(int argc, char *argv[])
      * when `no_reference` is set), so the second copy is touched only by
      * `vmaf_picture_unref` in the cleanup tail. */
     const char *const ref_open_path = c.no_reference ? c.path_dist : c.path_ref;
-    file_ref = fopen(ref_open_path, "rb");
+    file_ref = vmaf_fopen_utf8(ref_open_path, "rb");
     if (!file_ref) {
         (void)fprintf(stderr, "could not open file: %s\n", ref_open_path);
         ret = -1;
         goto cleanup;
     }
 
-    file_dist = fopen(c.path_dist, "rb");
+    file_dist = vmaf_fopen_utf8(c.path_dist, "rb");
     if (!file_dist) {
         (void)fprintf(stderr, "could not open file: %s\n", c.path_dist);
         ret = -1;
