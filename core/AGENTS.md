@@ -898,3 +898,35 @@ The four DNN bridge exports retain out-of-profile consumers in
 preserve those interfaces without disabling ordinary unused checks. The glibc
 weak symbol retains its dictated ABI spelling. See
 [Research-2048](../docs/research/2048-model-registration-ownership-2026-09-08.md).
+
+## Every `NOLINT` names its ADR, and the citation has to be within one line
+
+[ADR-0141](../docs/adr/0141-touched-file-cleanup-rule.md) §2 requires each
+suppression to cite the load-bearing invariant that forces it, in the format
+[ADR-0278](../docs/adr/0278-t7-5-nolint-sweep.md) fixed. Since the CPU-lane
+sweep (epic #1237) `core/src`, `core/tools` and `core/test` are at **zero**
+uncited markers, and `scripts/ci/tidy-ratchet.py` measures that.
+
+Three mechanics bite when you add or move a suppression:
+
+- **The window is ±1 line.** `tidy-ratchet.py::count_uncited_nolints` accepts an
+  `ADR-NNNN` on the previous line, the same line, the next line, or anywhere
+  inside the `/* … */` block comment that *holds* the marker. An ADR named three
+  lines above in a separate comment block does **not** count — that is exactly
+  how the nine survivors of the first sweep pass slipped through.
+- **A long trailing comment can move the marker off its diagnostic.** Appending
+  a citation to `free(p); // NOLINT(...)` can push the line past the 100-column
+  budget, and clang-format then wraps the *code*, leaving the `// NOLINT` on the
+  continuation line while clang-tidy still reports the finding at the `free`
+  token — a silently dead suppression. When the line no longer fits, convert to
+  a preceding `// NOLINTNEXTLINE(...) — ADR-NNNN` instead of letting
+  clang-format re-wrap. `core/src/ref.cpp`, `core/src/opt.cpp` and
+  `core/src/dnn/model_loader.c` are in that form for this reason.
+- **The word "NOLINT" in prose is counted as a marker.** `NOLINT_RE` matches the
+  bare token, so a comment that says "NOLINT justification: …" registers as an
+  uncited suppression even when no directive exists. Write "suppression
+  justification" instead.
+
+Cite the ADR that actually governs the site: upstream-parity → ADR-0141 §2;
+SIMD bit-exactness → ADR-0138 / ADR-0139 / ADR-0159 / ADR-0161 / ADR-0252;
+public-ABI `const_cast` in the C++23 pilot → ADR-0721.
