@@ -62,6 +62,7 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "model.h"
 #include "output.h"
 #include "picture.h"
+#include "pooling_percentile.h"
 #include "predict.h"
 #include "thread_pool.h"
 #include "vcs_version.h"
@@ -3269,6 +3270,15 @@ static int pool_reduce(const PoolAccumulators *a, enum VmafPoolingMethod pool_me
             *score = (a->i_sum > 0.) ? ((double)a->pic_cnt / a->i_sum - 1.0) : 0.;
         }
         return 0;
+    case VMAF_POOL_METHOD_MEDIAN:
+    case VMAF_POOL_METHOD_PERC5:
+    case VMAF_POOL_METHOD_PERC10:
+    case VMAF_POOL_METHOD_PERC20:
+        /* Percentile pooling methods ignore perceptual weights (identical
+         * to MIN/MAX) and require the full sorted score vector, so they are
+         * handled directly in vmaf_feature_score_pooled rather than via
+         * stream accumulators. */
+        return -EINVAL;
     default:
         return -EINVAL;
     }
@@ -3282,10 +3292,52 @@ int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
         return -EINVAL;
     if (!feature_name)
         return -EINVAL;
+    if (!score)
+        return -EINVAL;
     if (index_low > index_high)
         return -EINVAL;
     if (!pool_method)
         return -EINVAL;
+
+    if (pool_method == VMAF_POOL_METHOD_MEDIAN || pool_method == VMAF_POOL_METHOD_PERC5 ||
+        pool_method == VMAF_POOL_METHOD_PERC10 || pool_method == VMAF_POOL_METHOD_PERC20) {
+        const unsigned capacity = (index_high - index_low + 1);
+        double *scores = (double *)malloc(capacity * sizeof(double));
+        if (!scores)
+            return -ENOMEM;
+
+        unsigned pic_cnt = 0;
+        for (unsigned i = index_low; i <= index_high; i++) {
+            if ((vmaf->cfg.n_subsample > 1) && (i % vmaf->cfg.n_subsample))
+                continue;
+            double s;
+            int err = vmaf_feature_score_at_index(vmaf, feature_name, &s, i);
+            if (err) {
+                free(scores);
+                return err;
+            }
+            scores[pic_cnt++] = s;
+        }
+
+        if (pic_cnt == 0) {
+            free(scores);
+            return -EINVAL;
+        }
+
+        qsort(scores, pic_cnt, sizeof(double), score_compare);
+
+        double perc = 50.0;
+        if (pool_method == VMAF_POOL_METHOD_PERC5)
+            perc = 5.0;
+        else if (pool_method == VMAF_POOL_METHOD_PERC10)
+            perc = 10.0;
+        else if (pool_method == VMAF_POOL_METHOD_PERC20)
+            perc = 20.0;
+
+        *score = percentile(scores, pic_cnt, perc);
+        free(scores);
+        return 0;
+    }
 
     /* GOLDEN-GATE ISOLATION (ADR-1118): perceptual weighting only diverges from
      * the legacy arithmetic when it is enabled AND at least one frame carries a

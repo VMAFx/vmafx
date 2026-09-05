@@ -121,16 +121,20 @@ static unsigned max_capacity(VmafFeatureCollector *fc)
  * array compiles cleanly under -std=c++23. Index 0 (UNKNOWN) is nullptr and
  * never accessed — callers loop from j=1. */
 static constexpr const char *pool_method_name[] = {
-    nullptr,        /* VMAF_POOL_METHOD_UNKNOWN = 0 */
-    "min",          /* VMAF_POOL_METHOD_MIN = 1     */
-    "max",          /* VMAF_POOL_METHOD_MAX = 2     */
-    "mean",         /* VMAF_POOL_METHOD_MEAN = 3    */
-    "harmonic_mean" /* VMAF_POOL_METHOD_HARMONIC_MEAN = 4 */
+    nullptr,         /* VMAF_POOL_METHOD_UNKNOWN = 0 */
+    "min",           /* VMAF_POOL_METHOD_MIN = 1     */
+    "max",           /* VMAF_POOL_METHOD_MAX = 2     */
+    "mean",          /* VMAF_POOL_METHOD_MEAN = 3    */
+    "harmonic_mean", /* VMAF_POOL_METHOD_HARMONIC_MEAN = 4 */
+    "median",        /* VMAF_POOL_METHOD_MEDIAN = 5 */
+    "perc5",         /* VMAF_POOL_METHOD_PERC5 = 6 */
+    "perc10",        /* VMAF_POOL_METHOD_PERC10 = 7 */
+    "perc20"         /* VMAF_POOL_METHOD_PERC20 = 8 */
 };
 /* Guard: if VMAF_POOL_METHOD_NB grows without updating this array,
  * callers loop to NB-1 and read out of bounds. Catch it at compile time
  * (adversarial review 2026-05-28 finding #17; JPL Rule 23 spirit). */
-static_assert(VMAF_POOL_METHOD_NB == 5,
+static_assert(VMAF_POOL_METHOD_NB == 9,
               "pool_method_name array size mismatch — update the array above");
 
 static inline std::string_view fmt_or_default(const char *score_format) noexcept

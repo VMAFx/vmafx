@@ -2192,6 +2192,18 @@ test_score_pooled_eagain = executable('test_score_pooled_eagain',
 )
 test('test_score_pooled_eagain', test_score_pooled_eagain, suite : ['fast'])
 
+# ADR-1181 — Percentile pooling methods (Netflix#818).
+test_pooling_percentile = executable('test_pooling_percentile',
+    ['test.c', 'test_pooling_percentile.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + [
+        '-DTESTDATA_YUV_DIR="' + join_paths(meson.project_source_root(), '../python/test/resource/yuv') + '"',
+    ],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [math_lib, pthread_dependency, thread_lib],
+)
+test('test_pooling_percentile', test_pooling_percentile, suite : ['fast'])
+
 # ADR-1118 — Pelorus perceptual spatial-pooling weighting. Golden-gate
 # isolation proof: pooling is bit-exact without side-data (and when only one of
 # the two opt-in conditions holds), and shifts in the expected direction once

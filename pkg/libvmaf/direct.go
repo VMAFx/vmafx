@@ -91,6 +91,92 @@ func ParsePixFmt(s string) (PixelFormat, error) {
 	}
 }
 
+// PoolMethod mirrors enum VmafPoolingMethod without exposing cgo types to Go callers.
+type PoolMethod int
+
+const (
+	PoolMethodUnknown      PoolMethod = 0
+	PoolMethodMin          PoolMethod = 1
+	PoolMethodMax          PoolMethod = 2
+	PoolMethodMean         PoolMethod = 3
+	PoolMethodHarmonicMean PoolMethod = 4
+	PoolMethodMedian       PoolMethod = 5
+	PoolMethodPerc5        PoolMethod = 6
+	PoolMethodPerc10       PoolMethod = 7
+	PoolMethodPerc20       PoolMethod = 8
+)
+
+// String returns the human-readable name of the pooling method.
+func (p PoolMethod) String() string {
+	switch p {
+	case PoolMethodMin:
+		return "min"
+	case PoolMethodMax:
+		return "max"
+	case PoolMethodMean:
+		return "mean"
+	case PoolMethodHarmonicMean:
+		return "harmonic_mean"
+	case PoolMethodMedian:
+		return "median"
+	case PoolMethodPerc5:
+		return "perc5"
+	case PoolMethodPerc10:
+		return "perc10"
+	case PoolMethodPerc20:
+		return "perc20"
+	default:
+		return fmt.Sprintf("unknown(%d)", int(p))
+	}
+}
+
+// ParsePoolMethod converts a string into a PoolMethod. Empty string defaults to PoolMethodMean.
+func ParsePoolMethod(s string) (PoolMethod, error) {
+	switch s {
+	case "min":
+		return PoolMethodMin, nil
+	case "max":
+		return PoolMethodMax, nil
+	case "mean", "":
+		return PoolMethodMean, nil
+	case "harmonic_mean":
+		return PoolMethodHarmonicMean, nil
+	case "median":
+		return PoolMethodMedian, nil
+	case "perc5":
+		return PoolMethodPerc5, nil
+	case "perc10":
+		return PoolMethodPerc10, nil
+	case "perc20":
+		return PoolMethodPerc20, nil
+	default:
+		return 0, fmt.Errorf("libvmaf: unsupported pooling method %q", s)
+	}
+}
+
+func (p PoolMethod) toC() (C.enum_VmafPoolingMethod, error) {
+	switch p {
+	case PoolMethodMin:
+		return C.VMAF_POOL_METHOD_MIN, nil
+	case PoolMethodMax:
+		return C.VMAF_POOL_METHOD_MAX, nil
+	case PoolMethodMean, PoolMethodUnknown:
+		return C.VMAF_POOL_METHOD_MEAN, nil
+	case PoolMethodHarmonicMean:
+		return C.VMAF_POOL_METHOD_HARMONIC_MEAN, nil
+	case PoolMethodMedian:
+		return C.VMAF_POOL_METHOD_MEDIAN, nil
+	case PoolMethodPerc5:
+		return C.VMAF_POOL_METHOD_PERC5, nil
+	case PoolMethodPerc10:
+		return C.VMAF_POOL_METHOD_PERC10, nil
+	case PoolMethodPerc20:
+		return C.VMAF_POOL_METHOD_PERC20, nil
+	default:
+		return 0, fmt.Errorf("libvmaf: unsupported pooling method %d", int(p))
+	}
+}
+
 // ScoreDirectRequest carries the parameters for the direct-cgo scoring path.
 // Fields mirror the `vmaf_score` MCP tool's input schema.
 //
@@ -113,6 +199,8 @@ type ScoreDirectRequest struct {
 	// BitDepth is 8, 10, or 12.  10/12 use 16-bit planes per libvmaf
 	// convention (bpc).
 	BitDepth int
+	// PoolMethod selects the temporal pooling strategy. Zero / unset defaults to PoolMethodMean.
+	PoolMethod PoolMethod
 }
 
 // ScoreDirectResult mirrors the subset of subprocess-path JSON the MCP server
@@ -329,11 +417,15 @@ func ScoreDirect(ctx context.Context, req ScoreDirectRequest) (*ScoreDirectResul
 		return nil, err
 	}
 
-	// Pool: mean VMAF over [0, frameIdx-1].
+	// Pool VMAF over [0, frameIdx-1].
+	cPoolMethod, err := req.PoolMethod.toC()
+	if err != nil {
+		return nil, fmt.Errorf("ScoreDirect: %w: %v", ErrInvalidArgument, err)
+	}
 	var score C.double
 	rc = C.vmaf_score_pooled(
 		vmafCtx, model,
-		C.VMAF_POOL_METHOD_MEAN,
+		cPoolMethod,
 		&score,
 		0, C.uint(frameIdx-1),
 	)
