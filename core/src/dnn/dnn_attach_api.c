@@ -31,13 +31,47 @@
 #include "model_loader.h"
 #include "ort_backend.h"
 
+#if defined(VMAF_HAVE_DNN) && VMAF_HAVE_DNN
+static int load_optional_sidecar(const char *onnx_path, VmafModelSidecar *meta, bool *have_meta)
+{
+    memset(meta, 0, sizeof(*meta));
+    *have_meta = false;
+    int rc = vmaf_dnn_sidecar_load(onnx_path, meta);
+    if (rc == 0) {
+        *have_meta = true;
+        return 0;
+    }
+    if (rc == -ENOENT)
+        return 0;
+    return rc;
+}
+
+static int open_session_and_probe_input(const char *onnx_path, const VmafDnnConfig *cfg,
+                                        VmafOrtSession **sess_out, int64_t in_shape[4],
+                                        size_t *in_rank)
+{
+    VmafOrtSession *sess = nullptr;
+    int rc = vmaf_ort_open(&sess, onnx_path, cfg);
+    if (rc < 0)
+        return rc;
+
+    rc = vmaf_ort_input_shape(sess, in_shape, 4u, in_rank);
+    if (rc < 0) {
+        vmaf_ort_close(sess);
+        return rc;
+    }
+    *sess_out = sess;
+    return 0;
+}
+#endif
+
 int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path, const VmafDnnConfig *cfg)
 {
 #if defined(VMAF_HAVE_DNN) && VMAF_HAVE_DNN
     if (!ctx || !onnx_path)
         return -EINVAL;
-    assert(ctx != NULL);
-    assert(onnx_path != NULL);
+    assert(ctx != nullptr);
+    assert(onnx_path != nullptr);
 
     /* T7-12: the historical VMAF_MAX_MODEL_BYTES env override has been
      * removed; see dnn_api.c for the rationale. */
@@ -47,30 +81,16 @@ int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path, const VmafDnnCo
         return rc;
 
     VmafModelSidecar meta;
-    memset(&meta, 0, sizeof(meta));
     bool have_meta = false;
-    rc = vmaf_dnn_sidecar_load(onnx_path, &meta);
-    /* Missing sidecar is not fatal — we only need it for NR/FR disambiguation
-     * and pretty-printing. Lack of a sidecar defaults to FR. */
-    if (rc < 0 && rc != -ENOENT) {
+    rc = load_optional_sidecar(onnx_path, &meta, &have_meta);
+    if (rc < 0)
         return rc;
-    }
-    if (rc == 0)
-        have_meta = true;
 
-    VmafOrtSession *sess = NULL;
-    rc = vmaf_ort_open(&sess, onnx_path, cfg);
-    if (rc < 0) {
-        if (have_meta)
-            vmaf_dnn_sidecar_free(&meta);
-        return rc;
-    }
-
+    VmafOrtSession *sess = nullptr;
     int64_t in_shape[4] = {0};
     size_t in_rank = 0;
-    rc = vmaf_ort_input_shape(sess, in_shape, 4u, &in_rank);
+    rc = open_session_and_probe_input(onnx_path, cfg, &sess, in_shape, &in_rank);
     if (rc < 0) {
-        vmaf_ort_close(sess);
         if (have_meta)
             vmaf_dnn_sidecar_free(&meta);
         return rc;
@@ -79,7 +99,8 @@ int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path, const VmafDnnCo
     const char *feature_name =
         (have_meta && meta.name && *meta.name) ? meta.name : "vmaf_tiny_model";
 
-    rc = vmaf_ctx_dnn_attach(ctx, sess, have_meta ? &meta : NULL, in_shape, in_rank, feature_name);
+    rc = vmaf_ctx_dnn_attach(ctx, sess, have_meta ? &meta : nullptr, in_shape, in_rank,
+                             feature_name);
     if (rc < 0) {
         vmaf_ort_close(sess);
         if (have_meta)
@@ -138,8 +159,8 @@ int vmaf_dnn_set_resize_mode(VmafContext *ctx, VmafDnnResizeMode mode)
         mode != VMAF_DNN_RESIZE_BICUBIC && mode != VMAF_DNN_RESIZE_DISABLED) {
         return -EINVAL;
     }
-    /* ctx is non-NULL and mode is a valid enum value at this point. */
-    assert(ctx != NULL);
+    /* ctx is non-nullptr and mode is a valid enum value at this point. */
+    assert(ctx != nullptr);
     return vmaf_ctx_dnn_set_resize_mode(ctx, (int)mode);
 #else
     (void)ctx;
