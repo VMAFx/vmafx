@@ -116,6 +116,18 @@ The redirect keys off `quant_mode != fp32` alone. It does not distinguish
 records a wire format — the allowlist scan in step 3 is the only thing that
 decides whether a given int8 graph is acceptable.
 
+**The redirect does not verify `int8_sha256`.** The fp32 sidecar records an
+`int8_sha256` for its quantised sibling, but neither loader parses it: the
+gates at load time are the 50 MB size cap and the op allowlist, nothing else.
+Integrity of the shipped int8 artefacts is enforced elsewhere —
+`ai/scripts/validate_model_registry.py` and `core/test/dnn/test_registry.sh`
+compare `int8_sha256` against the file on disk in CI, and
+`--tiny-model-verify` checks the Sigstore bundle
+([ADR-0209](../adr/0209-mcp-embedded-scaffold.md)). A digest check inside the
+loader would change the ADR-1032 fallback semantics (a digest mismatch would
+need its own outcome, distinct from "int8 absent") and needs its own ADR; it is
+not in the tree today.
+
 Two consequences an operator needs to know:
 
 - A quantised model whose int8 file is absent or rejected **still loads and
