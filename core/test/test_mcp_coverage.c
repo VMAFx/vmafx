@@ -528,13 +528,13 @@ static char *test_transport_available_positive_and_oob(void)
     mu_assert("stdio availability is binary", rt == 0 || rt == 1);
 
     /* OOB transport id (> 31). The bitmask code path early-returns 0.
-     * NOLINTNEXTLINE-justification: this test deliberately exercises
+     * Suppression justification (ADR-0141 / ADR-0278): this test deliberately exercises
      * the > 31 guard in vmaf_mcp_transport_available; the cast is the
      * only way to drive that branch through the public API surface. */
-    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) */
+    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) — ADR-0141 / ADR-0278 */
     int rb = vmaf_mcp_transport_available((VmafMcpTransport)32);
     mu_assert("oob id -> 0", rb == 0);
-    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) */
+    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) — ADR-0141 / ADR-0278 */
     int rb2 = vmaf_mcp_transport_available((VmafMcpTransport)100);
     mu_assert("huge oob id -> 0", rb2 == 0);
     return NULL;
@@ -844,13 +844,13 @@ static ssize_t sse_cov_drain(int fd, char *buf, size_t cap)
     const size_t max_total = cap - 1u;
     while (total < max_total) {
         size_t want = max_total - total;
-        /* NOLINTNEXTLINE-justification: `read()` is read()-tainted by
+        /* Suppression justification (ADR-0141 / ADR-0278): `read()` is read()-tainted by
          * the analyzer; the explicit `> want` clamp below + the
          * `total < max_total` loop guard pin `total` to `<= cap - 2`
          * BEFORE the buf[total] write. The static analyzer can't
          * follow the clamp across the `total += r` arithmetic, so the
          * ArrayBound finding is a known false positive. */
-        /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) */
+        /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) — ADR-0141 / ADR-0278 */
         ssize_t r = read(fd, buf + total, want);
         if (r <= 0)
             break; /* EOF or error. */
@@ -858,7 +858,7 @@ static ssize_t sse_cov_drain(int fd, char *buf, size_t cap)
         total += got;
         if (total >= cap)
             total = cap - 1u; /* unreachable — silences the analyzer's taint flow. */
-        /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) */
+        /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) — ADR-0141 / ADR-0278 */
         buf[total] = '\0';
         const char *hdr_end = strstr(buf, "\r\n\r\n");
         if (hdr_end == NULL)
@@ -872,7 +872,7 @@ static ssize_t sse_cov_drain(int fd, char *buf, size_t cap)
     }
     if (total >= cap)
         total = cap - 1u;
-    /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) */
+    /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) — ADR-0141 / ADR-0278 */
     buf[total] = '\0';
     return (ssize_t)total;
 }
