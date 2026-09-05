@@ -127,8 +127,17 @@ jobs:
       - name: Generate compile_commands.json
         if: steps.cpp-changes.outputs.any == 'true'
         run: |
+          # -Db_lto=false: the project default carries b_lto_threads=4
+          # (ADR-1172), which meson renders as GCC's -flto=4. gcc accepts it;
+          # clang does not ("unsupported argument '4' to option '-flto='"), so
+          # clang-tidy — which parses these very compile_commands with clang —
+          # errored on EVERY translation unit and this gate failed on every
+          # C/C++ PR. This build exists only to produce compile_commands.json
+          # and the generated headers, so LTO buys nothing here. The SYCL tidy
+          # lane below already configures with -Db_lto=false for its own
+          # toolchain reason.
           CC=gcc-14 CXX=g++-14 meson setup build core \
-            -Denable_cuda=false -Denable_sycl=false
+            -Denable_cuda=false -Denable_sycl=false -Db_lto=false
           # Build first so codegen outputs (vcs_version.h, model JSONs → .c)
           # exist on disk before clang-tidy parses the translation units.
           meson compile -C build
@@ -357,8 +366,17 @@ jobs:
       - name: Build (compile_commands.json + generated headers)
         if: steps.impact.outputs.c_core == 'true'
         run: |
+          # -Db_lto=false: the project default carries b_lto_threads=4
+          # (ADR-1172), which meson renders as GCC's -flto=4. gcc accepts it;
+          # clang does not ("unsupported argument '4' to option '-flto='"), so
+          # clang-tidy — which parses these very compile_commands with clang —
+          # errored on EVERY translation unit and this gate failed on every
+          # C/C++ PR. This build exists only to produce compile_commands.json
+          # and the generated headers, so LTO buys nothing here. The SYCL tidy
+          # lane below already configures with -Db_lto=false for its own
+          # toolchain reason.
           CC=gcc-14 CXX=g++-14 meson setup build core \
-            -Denable_cuda=false -Denable_sycl=false
+            -Denable_cuda=false -Denable_sycl=false -Db_lto=false
           meson compile -C build
       - name: Ratchet — whole-tree clang-tidy vs committed baseline
         if: steps.impact.outputs.c_core == 'true'

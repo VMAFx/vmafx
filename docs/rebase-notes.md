@@ -1,6 +1,13 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/tidy-lane-lto-flag — the tidy lane builds without LTO (2026-09-05)
+
+No rebase impact: `.github/workflows/lint-and-format.yml` is fork-added. Invariant: any build whose
+only purpose is to emit `compile_commands.json` for clang-tidy must configure with `-Db_lto=false`,
+because the project default (`b_lto_threads=4`, ADR-1172) renders as a GCC-only `-flto=<n>` that
+clang rejects outright.
+
 ## fix/gpu-init-leaks-and-hip-mirror — fix CUDA init error path leaks and close verified GPU state issues (2026-09-04)
 
 no rebase impact: fork-local CUDA and documentation files.
