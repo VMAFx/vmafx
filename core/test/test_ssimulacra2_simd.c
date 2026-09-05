@@ -410,7 +410,7 @@ static char *test_multiply(void)
     fn(a, b, out_simd, W, H);
     /* memcmp on float buffers is deliberate: ADR-0161's SIMD contract
      * requires byte-for-byte equality under FLT_EVAL_METHOD == 0. */
-    // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison,cert-exp42-c,cert-flp37-c)
+    // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison,cert-exp42-c,cert-flp37-c) — ADR-0161 / ADR-0278
     int match = memcmp(out_ref, out_simd, RGB_SZ * sizeof(float)) == 0;
     free(a);
     free(b);

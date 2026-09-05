@@ -40,7 +40,7 @@
  * test_y4m_411_oob gating.
  */
 
-/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — POSIX feature-test macro */
+/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — POSIX feature-test macro (ADR-0141 / ADR-0278) */
 #define _POSIX_C_SOURCE 200809L
 
 #include <stdio.h>

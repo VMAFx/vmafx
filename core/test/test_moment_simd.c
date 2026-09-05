@@ -380,7 +380,7 @@ static char *test_sve2_tiny(void)
 
 /* Per-arch registration extracted into helpers so run_tests() itself stays
  * under the readability-function-size threshold (matches the sibling
- * test_*_simd.c convention; no NOLINT). */
+ * test_*_simd.c convention; no suppression needed). */
 #if ARCH_X86
 #if HAVE_AVX512
 static char *run_tests_avx512(void)
