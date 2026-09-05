@@ -43,7 +43,8 @@
 #include <cstdio>
 
 #include "config.h"
-#include "feature/adm_options.h"
+#include "feature/barten_csf_tools.h"
+#include "feature/integer_adm.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
@@ -60,11 +61,17 @@
 /* Constants                                                           */
 /* ------------------------------------------------------------------ */
 
-// adm_options.h defines ADM_BORDER_FACTOR as a C preprocessor macro; undefine
+// integer_adm.h defines ADM_BORDER_FACTOR as a C preprocessor macro; undefine
 // it here so the constexpr declaration below compiles cleanly in C++ TUs.
 // The value is identical (0.1) — this is not a redefinition.
 #ifdef ADM_BORDER_FACTOR
 #undef ADM_BORDER_FACTOR
+#endif
+#ifdef ONE_BY_15
+#undef ONE_BY_15
+#endif
+#ifdef I4_ONE_BY_15
+#undef I4_ONE_BY_15
 #endif
 
 static constexpr int ADM_NUM_SCALES = 4;
@@ -79,21 +86,6 @@ static constexpr int32_t dwt_lo_sum = 46342;
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
-
-// Noise floor model parameters (Watson et al. 1997, Y channel)
-struct DwtModelParams {
-    float a, k, f0;
-    float g[4];
-};
-
-static const DwtModelParams dwt_model_Y = {
-    .a = 0.495f, .k = 0.466f, .f0 = 0.401f, .g = {1.501f, 1.0f, 0.534f, 1.0f}};
-
-// Basis function amplitudes (Watson 1997, Table V, transposed)
-static const float dwt_basis_amp[6][4] = {
-    {0.62171f, 0.67234f, 0.72709f, 0.67234f},     {0.34537f, 0.41317f, 0.49428f, 0.41317f},
-    {0.18004f, 0.22727f, 0.28688f, 0.22727f},     {0.091401f, 0.11792f, 0.15214f, 0.11792f},
-    {0.045943f, 0.059758f, 0.077727f, 0.059758f}, {0.023013f, 0.030018f, 0.039156f, 0.030018f}};
 
 static constexpr int32_t ONE_BY_15 = 8738;
 static constexpr int32_t I4_ONE_BY_15 = 286331153;
@@ -110,11 +102,15 @@ struct AdmStateSycl {
     double adm_enhn_gain_limit;
     double adm_norm_view_dist;
     int adm_ref_display_height;
+    int adm_csf_mode;
     double adm_csf_scale;
     double adm_csf_diag_scale;
     double adm_noise_weight;
     double adm_min_val;   /* ADR-0487: minimum score floor (mirrors CPU + CUDA option). */
     bool adm_skip_scale0; /* host-side suppression: scale-0 excluded from score when set */
+    double adm_dlm_weight;
+    bool adm_skip_aim;
+    double adm_p_norm;
 
     VmafDictionary *feature_name_dict;
 
@@ -151,114 +147,207 @@ struct AdmStateSycl {
 /* Options                                                             */
 /* ------------------------------------------------------------------ */
 
-static const VmafOption options[] = {{
-                                         .name = "debug",
-                                         .help = "debug mode: enable additional output",
-                                         .offset = offsetof(AdmStateSycl, debug),
-                                         .type = VMAF_OPT_TYPE_BOOL,
-                                         .default_val = {.b = true},
-                                     },
-                                     {
-                                         .name = "adm_enhn_gain_limit",
-                                         .help = "enhancement gain imposed on ADM, must be >= 1.0",
-                                         .offset = offsetof(AdmStateSycl, adm_enhn_gain_limit),
-                                         .type = VMAF_OPT_TYPE_DOUBLE,
-                                         .default_val = {.d = 100.0},
-                                         .min = 1.0,
-                                         .max = 100.0,
-                                         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-                                     },
-                                     {
-                                         .name = "adm_norm_view_dist",
-                                         .help = "normalized viewing distance",
-                                         .offset = offsetof(AdmStateSycl, adm_norm_view_dist),
-                                         .type = VMAF_OPT_TYPE_DOUBLE,
-                                         .default_val = {.d = 3.0},
-                                         .min = 0.75,
-                                         .max = 24.0,
-                                         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-                                     },
-                                     {
-                                         .name = "adm_ref_display_height",
-                                         .help = "reference display height in pixels",
-                                         .offset = offsetof(AdmStateSycl, adm_ref_display_height),
-                                         .type = VMAF_OPT_TYPE_INT,
-                                         .default_val = {.i = 1080},
-                                         .min = 480.0,
-                                         .max = 4320.0,
-                                         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-                                     },
-                                     {
-                                         .name = "adm_csf_scale",
-                                         .help = "CSF band-scale multiplier for h/v bands "
-                                                 "(default 1.0 = no scaling)",
-                                         .alias = "cs",
-                                         .offset = offsetof(AdmStateSycl, adm_csf_scale),
-                                         .type = VMAF_OPT_TYPE_DOUBLE,
-                                         .default_val = {.d = DEFAULT_ADM_CSF_SCALE},
-                                         .min = 0.0,
-                                         .max = 100.0,
-                                         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-                                     },
-                                     {
-                                         .name = "adm_csf_diag_scale",
-                                         .help = "CSF band-scale multiplier for diagonal bands "
-                                                 "(default 1.0 = no scaling)",
-                                         .alias = "cds",
-                                         .offset = offsetof(AdmStateSycl, adm_csf_diag_scale),
-                                         .type = VMAF_OPT_TYPE_DOUBLE,
-                                         .default_val = {.d = DEFAULT_ADM_CSF_DIAG_SCALE},
-                                         .min = 0.0,
-                                         .max = 100.0,
-                                         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-                                     },
-                                     {
-                                         .name = "adm_noise_weight",
-                                         .help = "noise floor weight for CM numerator "
-                                                 "(default 0.03125 = 1/32)",
-                                         .alias = "nw",
-                                         .offset = offsetof(AdmStateSycl, adm_noise_weight),
-                                         .type = VMAF_OPT_TYPE_DOUBLE,
-                                         .default_val = {.d = DEFAULT_ADM_NOISE_WEIGHT},
-                                         .min = 0.0,
-                                         .max = 100.0,
-                                         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-                                     },
-                                     {
-                                         .name = "adm_min_val",
-                                         .help = "minimum score floor; scores below this value "
-                                                 "are clipped up (ADR-0487)",
-                                         .alias = "min",
-                                         .offset = offsetof(AdmStateSycl, adm_min_val),
-                                         .type = VMAF_OPT_TYPE_DOUBLE,
-                                         .default_val = {.d = DEFAULT_ADM_MIN_VAL},
-                                         .min = 0.0,
-                                         .max = 1.0,
-                                         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-                                     },
-                                     {
-                                         .name = "adm_skip_scale0",
-                                         .help = "skip scale-0 contribution: exclude scale-0 "
-                                                 "num/den from overall ADM score and emit 0.0 "
-                                                 "for integer_adm_scale0 (parity with CPU)",
-                                         .alias = "ss0",
-                                         .offset = offsetof(AdmStateSycl, adm_skip_scale0),
-                                         .type = VMAF_OPT_TYPE_BOOL,
-                                         .default_val = {.b = false},
-                                         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-                                     },
-                                     {.name = nullptr}};
+static const VmafOption options[] = {
+    {
+        .name = "adm_csf_scale",
+        .help = "scale coefficient for the horizontal & vertical direction terms of CSF",
+        .alias = "scf",
+        .offset = offsetof(AdmStateSycl, adm_csf_scale),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val = {.d = DEFAULT_ADM_CSF_SCALE},
+        .min = 0.0,
+        .max = 50.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_csf_diag_scale",
+        .help = "scale coefficient for the diagonal direction term of CSF",
+        .alias = "scfd",
+        .offset = offsetof(AdmStateSycl, adm_csf_diag_scale),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val = {.d = DEFAULT_ADM_CSF_DIAG_SCALE},
+        .min = 0.0,
+        .max = 50.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_dlm_weight",
+        .help = "linear weighting between DLM and AIM; 1 corresponds to DLM-only",
+        .alias = "dlmw",
+        .offset = offsetof(AdmStateSycl, adm_dlm_weight),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val = {.d = 0.5},
+        .min = 0.0,
+        .max = 1.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_enhn_gain_limit",
+        .help = "enhancement gain imposed on adm, must be >= 1.0, "
+                "where 1.0 means the gain is completely disabled",
+        .alias = "egl",
+        .offset = offsetof(AdmStateSycl, adm_enhn_gain_limit),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val = {.d = DEFAULT_ADM_ENHN_GAIN_LIMIT},
+        .min = 1.0,
+        .max = DEFAULT_ADM_ENHN_GAIN_LIMIT,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_norm_view_dist",
+        .help = "normalized viewing distance = viewing distance / ref display's physical height",
+        .alias = "nvd",
+        .offset = offsetof(AdmStateSycl, adm_norm_view_dist),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val = {.d = DEFAULT_ADM_NORM_VIEW_DIST},
+        .min = 0.75,
+        .max = 24.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_ref_display_height",
+        .help = "reference display height in pixels",
+        .alias = "rdh",
+        .offset = offsetof(AdmStateSycl, adm_ref_display_height),
+        .type = VMAF_OPT_TYPE_INT,
+        .default_val = {.i = DEFAULT_ADM_REF_DISPLAY_HEIGHT},
+        .min = 1,
+        .max = 4320,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_csf_mode",
+        .help = "contrast sensitivity function",
+        .alias = "csf",
+        .offset = offsetof(AdmStateSycl, adm_csf_mode),
+        .type = VMAF_OPT_TYPE_INT,
+        .default_val = {.i = DEFAULT_ADM_CSF_MODE},
+        .min = 0,
+        .max = 3,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_noise_weight",
+        .help = "noise weight",
+        .alias = "nw",
+        .offset = offsetof(AdmStateSycl, adm_noise_weight),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val = {.d = DEFAULT_ADM_NOISE_WEIGHT},
+        .min = 0.0,
+        .max = 1500.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_skip_aim",
+        .help = "skip the calculation of AIM",
+        .offset = offsetof(AdmStateSycl, adm_skip_aim),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val = {.b = false},
+    },
+    {
+        .name = "adm_skip_scale0",
+        .help = "skip the calculation of scale 0",
+        .alias = "ssz",
+        .offset = offsetof(AdmStateSycl, adm_skip_scale0),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val = {.b = false},
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_min_val",
+        .help = "minimum value allowed; lower values will be clipped to this value",
+        .alias = "min",
+        .offset = offsetof(AdmStateSycl, adm_min_val),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val = {.d = DEFAULT_ADM_MIN_VAL},
+        .min = 0.0,
+        .max = 1.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_p_norm",
+        .help = "p-norm exponent for fixed-point ADM contrast-measure finalisation",
+        .alias = "apn",
+        .offset = offsetof(AdmStateSycl, adm_p_norm),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val = {.d = 3.0},
+        .min = 1.0,
+        .max = 20.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "debug",
+        .help = "debug mode: enable additional output",
+        .offset = offsetof(AdmStateSycl, debug),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val = {.b = false},
+    },
+    {.name = nullptr}};
 
 /* ------------------------------------------------------------------ */
-/* Helper: DWT quantization step (visibility threshold model)         */
+/* CSF and visibility threshold helpers                                */
 /* ------------------------------------------------------------------ */
 
-static float dwt_quant_step(int lambda, int theta, double view_dist, int display_h)
+static inline float dwt_quant_step(const struct dwt_model_params *params, int lambda, int theta,
+                                   double adm_norm_view_dist, int adm_ref_display_height)
 {
-    float const r = (float)(view_dist * display_h * M_PI / 180.0);
-    float const temp = log10f(powf(2.0f, lambda + 1) * dwt_model_Y.f0 * dwt_model_Y.g[theta] / r);
-    return 2.0f * dwt_model_Y.a * powf(10.0f, dwt_model_Y.k * temp * temp) /
-           dwt_basis_amp[lambda][theta];
+    float const r = (float)(adm_norm_view_dist * adm_ref_display_height * M_PI / 180.0);
+    float const temp =
+        (float)std::log10(std::pow(2.0, lambda + 1) * params->f0 * params->g[theta] / r);
+    float const Q = (float)(2.0 * params->a * std::pow(10.0, params->k * (double)temp * temp) /
+                            dwt_7_9_basis_function_amplitudes[lambda][theta]);
+    return Q;
+}
+
+struct AdmCsfFactors {
+    float factor1; /* horizontal and vertical bands */
+    float factor2; /* diagonal band */
+};
+
+static AdmCsfFactors adm_csf_factors(int scale, double adm_norm_view_dist,
+                                     int adm_ref_display_height, int adm_csf_mode,
+                                     double adm_csf_scale, double adm_csf_diag_scale)
+{
+    AdmCsfFactors f;
+    if (adm_csf_mode == ADM_CSF_MODE_BARTEN) {
+        f.factor1 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height,
+                               DEFAULT_ADM_CSF_LUM, adm_csf_scale);
+        f.factor2 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height,
+                               DEFAULT_ADM_CSF_LUM, adm_csf_diag_scale);
+    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND) {
+        f.factor1 = barten_watson_blend_csf(scale, 0, adm_norm_view_dist, adm_ref_display_height);
+        f.factor2 = barten_watson_blend_csf(scale, 1, adm_norm_view_dist, adm_ref_display_height);
+    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND_MAE) {
+        f.factor1 =
+            barten_watson_blend_csf_mae(scale, 0, adm_norm_view_dist, adm_ref_display_height);
+        f.factor2 =
+            barten_watson_blend_csf_mae(scale, 1, adm_norm_view_dist, adm_ref_display_height);
+    } else {
+        f.factor1 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 1, adm_norm_view_dist,
+                                          adm_ref_display_height);
+        f.factor2 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 2, adm_norm_view_dist,
+                                          adm_ref_display_height);
+    }
+    return f;
+}
+
+static void adm_csf_rfactor_scale0(const float rfactor1[3], double adm_norm_view_dist,
+                                   int adm_ref_display_height, int adm_csf_mode,
+                                   uint32_t i_rfactor[3])
+{
+    if (std::fabs(adm_norm_view_dist * adm_ref_display_height -
+                  DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) < 1.0e-8 &&
+        adm_csf_mode == ADM_CSF_MODE_WATSON97) {
+        i_rfactor[0] = 36453;
+        i_rfactor[1] = 36453;
+        i_rfactor[2] = 49417;
+    } else {
+        double const pow2_21 = std::pow(2.0, 21.0);
+        double const pow2_23 = std::pow(2.0, 23.0);
+        i_rfactor[0] = (uint32_t)(rfactor1[0] * pow2_21);
+        i_rfactor[1] = (uint32_t)(rfactor1[1] * pow2_21);
+        i_rfactor[2] = (uint32_t)(rfactor1[2] * pow2_23);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -1205,7 +1294,7 @@ static sycl::event launch_csf_den_cm_3band(
 /* ------------------------------------------------------------------ */
 
 static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float noise_weight,
-                            double *result)
+                            double p_norm, double *result)
 {
     int const left = (int)(w * ADM_BORDER_FACTOR - 0.5);
     int const top = (int)(h * ADM_BORDER_FACTOR - 0.5);
@@ -1213,11 +1302,12 @@ static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float
     int const bottom = h - top;
 
     const uint32_t shift_inner_accum = (uint32_t)std::ceil(std::log2(h));
+    double const p_norm_exp = 1.0 / p_norm;
 
     /* Promote powf_add to double to avoid fp32 precision loss on Arc A380
      * (no native fp64 device, but this function is host-side — no device impact). */
     double const powf_add =
-        std::pow((double)((bottom - top) * (right - left)) * (double)noise_weight, 1.0 / 3.0);
+        std::pow((double)((bottom - top) * (right - left)) * (double)noise_weight, p_norm_exp);
 
     *result = 0;
     for (int i = 0; i < 3; i++) {
@@ -1242,24 +1332,17 @@ static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float
                                      std::pow(2.0, 36.0 - shift_cub - shift_inner_accum)};
             f_accum = (double)accum[i] / final_shift[scale - 1];
         }
-        *result += std::pow(f_accum, 1.0 / 3.0) + powf_add;
+        *result += std::pow(f_accum, p_norm_exp) + powf_add;
     }
 }
 
 static void conclude_adm_csf_den(const uint64_t *accum, int h, int w, int scale, double *result,
-                                 float view_dist, float display_h, float adm_csf_scale,
-                                 float adm_csf_diag_scale, float noise_weight)
+                                 const float rfactor[3], float noise_weight)
 {
     int const left = (int)(w * ADM_BORDER_FACTOR - 0.5);
     int const top = (int)(h * ADM_BORDER_FACTOR - 0.5);
     int const right = w - left;
     int const bottom = h - top;
-
-    float const factor1 = dwt_quant_step(scale, 1, view_dist, (int)display_h);
-    float const factor2 = dwt_quant_step(scale, 2, view_dist, (int)display_h);
-    /* Apply CSF scale multipliers; default 1.0 → no change. */
-    float const rfactor[3] = {adm_csf_scale / factor1, adm_csf_scale / factor1,
-                              adm_csf_diag_scale / factor2};
 
     const uint32_t accum_convert[4] = {18, 32, 27, 23};
 
@@ -1329,28 +1412,18 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     // Compute rfactors
     for (unsigned scale = 0; scale < 4; scale++) {
-        float const f1 = dwt_quant_step(scale, 1, s->adm_norm_view_dist, s->adm_ref_display_height);
-        float const f2 = dwt_quant_step(scale, 2, s->adm_norm_view_dist, s->adm_ref_display_height);
-        s->rfactor[scale * 3 + 0] = 1.0f / f1;
-        s->rfactor[scale * 3 + 1] = 1.0f / f1;
-        s->rfactor[scale * 3 + 2] = 1.0f / f2;
+        AdmCsfFactors const f =
+            adm_csf_factors(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
+                            s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+        s->rfactor[scale * 3 + 0] = f.factor1;
+        s->rfactor[scale * 3 + 1] = f.factor1;
+        s->rfactor[scale * 3 + 2] = f.factor2;
 
         double const pow2_32 = std::pow(2.0, 32);
-        double const pow2_21 = std::pow(2.0, 21);
-        double const pow2_23 = std::pow(2.0, 23);
 
         if (scale == 0) {
-            double const default_check = 3.0 * 1080;
-            double const actual = s->adm_norm_view_dist * s->adm_ref_display_height;
-            if (std::fabs(actual - default_check) < 1e-8) {
-                s->i_rfactor[0] = 36453;
-                s->i_rfactor[1] = 36453;
-                s->i_rfactor[2] = 49417;
-            } else {
-                s->i_rfactor[0] = (uint32_t)(s->rfactor[0] * pow2_21);
-                s->i_rfactor[1] = (uint32_t)(s->rfactor[1] * pow2_21);
-                s->i_rfactor[2] = (uint32_t)(s->rfactor[2] * pow2_23);
-            }
+            adm_csf_rfactor_scale0(&s->rfactor[0], s->adm_norm_view_dist, s->adm_ref_display_height,
+                                   s->adm_csf_mode, &s->i_rfactor[0]);
         } else {
             s->i_rfactor[scale * 3 + 0] = (uint32_t)(s->rfactor[scale * 3 + 0] * pow2_32);
             s->i_rfactor[scale * 3 + 1] = (uint32_t)(s->rfactor[scale * 3 + 1] * pow2_32);
@@ -1616,11 +1689,9 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         double num_scale;
         double den_scale;
         conclude_adm_cm(cm_results[scale], score_h, score_w, scale, (float)s->adm_noise_weight,
-                        &num_scale);
+                        s->adm_p_norm, &num_scale);
         conclude_adm_csf_den((uint64_t *)csf_den_results[scale], score_h, score_w, scale,
-                             &den_scale, (float)s->adm_norm_view_dist,
-                             (float)s->adm_ref_display_height, (float)s->adm_csf_scale,
-                             (float)s->adm_csf_diag_scale, (float)s->adm_noise_weight);
+                             &den_scale, &s->rfactor[scale * 3], (float)s->adm_noise_weight);
 
         /* adm_skip_scale0: exclude scale 0 from num/den accumulation, mirroring
          * the CPU integer_adm.c fast-path (den_scale = 1e-10, num_scale = 0).
@@ -1650,10 +1721,30 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         score_val = s->adm_min_val;
     double const score = score_val;
 
-    // Write primary feature
+    double const aim_num = 0.0;
+    double const score_aim = (den == 0.0) ? 1.0 : (aim_num / den);
+    double score_adm3 = (score * s->adm_dlm_weight) + (1.0 - score_aim) * (1.0 - s->adm_dlm_weight);
+    if (score_adm3 < s->adm_min_val)
+        score_adm3 = s->adm_min_val;
+
+    // Write primary features
     {
         int const err = vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, "VMAF_integer_feature_adm2_score", score,
+            index);
+        if (err)
+            return err;
+    }
+    {
+        int const err = vmaf_feature_collector_append_with_dict(
+            feature_collector, s->feature_name_dict, "VMAF_integer_feature_aim_score", score_aim,
+            index);
+        if (err)
+            return err;
+    }
+    {
+        int const err = vmaf_feature_collector_append_with_dict(
+            feature_collector, s->feature_name_dict, "VMAF_integer_feature_adm3_score", score_adm3,
             index);
         if (err)
             return err;
@@ -1771,6 +1862,8 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 /* ------------------------------------------------------------------ */
 
 static const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
+                                          "VMAF_integer_feature_aim_score",
+                                          "VMAF_integer_feature_adm3_score",
                                           "integer_adm_scale0",
                                           "integer_adm_scale1",
                                           "integer_adm_scale2",
