@@ -383,3 +383,19 @@ Doxygen block in the same commit. A dangling `@param` for a deleted argument
 or a missing `@param` for a new one is a docs regression. Run
 `doxygen Doxyfile 2>&1 | grep warning` to check — zero new warnings is the
 bar.
+
+## Percentile pooling ignores weights invariant (ADR-1181)
+
+`VMAF_POOL_METHOD_MEDIAN`, `VMAF_POOL_METHOD_PERC5`, `VMAF_POOL_METHOD_PERC10`, and
+`VMAF_POOL_METHOD_PERC20` evaluate rank-order quantiles on the unweighted frame score distribution
+(consistent with `MIN` and `MAX`). Perceptual spatial weights (`perceptual_weight.c`) apply only to
+mean and harmonic mean pooling. Any rebase or refactor of `vmaf_feature_score_pooled` must preserve
+this invariant.
+
+## Open files only via vmaf_fopen_utf8 / vmaf_open_utf8 (ADR-1182)
+
+All file and file descriptor opens across `libvmaf`, tools, and loaders must use
+`vmaf_fopen_utf8` and `vmaf_open_utf8` (`core/src/compat/path_utf8.h`).
+Direct calls to narrow `fopen()`, `_open()`, or `open()` break non-ASCII UTF-8 path handling
+on Windows (Netflix#1568). On Windows, these functions convert UTF-8 paths to wide strings (`wchar_t`)
+and call `_wfopen`/`_wopen`; on POSIX, they pass through directly.

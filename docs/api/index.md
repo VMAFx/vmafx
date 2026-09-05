@@ -208,9 +208,22 @@ typedef struct VmafConfiguration {
 | `vmaf_fetch_preallocated_picture(ctx, *pic)` | 0 / -errno | Pull a picture from the pool; return it via `vmaf_picture_unref()`. |
 | `vmaf_close(ctx)` | 0 / -errno | Free the context. After this the pointer is invalid. |
 
-`VmafPoolingMethod`: `MIN`, `MAX`, `MEAN`, `HARMONIC_MEAN`. Pooled output in
-XML / JSON reports always includes `min`, `max`, `mean`, `harmonic_mean` in
-parallel.
+### `VmafPoolingMethod`
+
+`VmafPoolingMethod` specifies the temporal pooling strategy across frames in a sequence:
+
+| `enum VmafPoolingMethod` value | String name | Description |
+| --- | --- | --- |
+| `VMAF_POOL_METHOD_MIN` | `"min"` | Minimum frame score across the window |
+| `VMAF_POOL_METHOD_MAX` | `"max"` | Maximum frame score across the window |
+| `VMAF_POOL_METHOD_MEAN` | `"mean"` | Arithmetic mean of frame scores |
+| `VMAF_POOL_METHOD_HARMONIC_MEAN` | `"harmonic_mean"` | Harmonic mean of frame scores |
+| `VMAF_POOL_METHOD_MEDIAN` | `"median"` | 50th percentile (median) frame score (ADR-1181) |
+| `VMAF_POOL_METHOD_PERC5` | `"perc5"` | 5th percentile frame score (ADR-1181) |
+| `VMAF_POOL_METHOD_PERC10` | `"perc10"` | 10th percentile frame score (ADR-1181) |
+| `VMAF_POOL_METHOD_PERC20` | `"perc20"` | 20th percentile frame score (ADR-1181) |
+
+Pooled output in XML / JSON reports computes all registered pooling methods in parallel.
 
 ## `VmafPicture`
 
@@ -662,6 +675,41 @@ Returns `0` on success; `-EINVAL` if `vmaf` or `out` is `NULL`.
 New enum values may be appended in future releases. Callers should treat
 unknown values as `VMAF_BACKEND_UNKNOWN` (i.e. use a `default:` branch in
 any `switch`). See [ADR-0804](../adr/0804-vmaf-context-get-backend.md).
+
+## UTF-8 path contract
+
+All path arguments accepted across libvmaf public C API functions, CLI
+tools, and model loaders are UTF-8 on every platform:
+
+- `vmaf_write_output(ctx, path, fmt)` / `vmaf_write_output_with_format(...)`
+- `vmaf_model_load_from_path(*model, *cfg, path)`
+- `vmaf_model_collection_load_from_path(*coll, *cfg, path)`
+- `vmaf_use_tiny_model(ctx, path, ...)`
+- CLI options (`--reference`, `--distorted`, `--output`, `--model`, etc.)
+  across `vmaf`, `vmaf_per_shot`, `vmaf_roi`, and `vmaf_bench`
+
+On POSIX platforms (Linux, macOS), filesystem paths are byte sequences and
+standard system calls handle UTF-8 transparently.
+
+On Windows (`_WIN32`), standard C runtime functions (`fopen`, `_open`)
+interpret narrow `char *` strings using the legacy system ANSI code page,
+failing on non-ASCII characters. libvmaf establishes a universal UTF-8 contract
+via internal wide-character conversion shims
+([ADR-1182](../adr/1182-windows-utf8-path-contract.md)):
+
+```c
+#include "compat/path_utf8.h"
+
+/* Opens a file using a UTF-8 path on Windows (_wfopen) or fopen on POSIX */
+FILE *vmaf_fopen_utf8(const char *path, const char *mode);
+
+/* Opens a file descriptor using a UTF-8 path on Windows (_wopen) or open */
+int vmaf_open_utf8(const char *path, int flags, int mode);
+```
+
+On Windows, invalid UTF-8 byte sequences set `errno = EILSEQ` and return
+`NULL` (or `-1`). Paths longer than 4096 bytes return `NULL` / `-1` with
+`errno = ENAMETOOLONG` per NASA/JPL Power of 10.
 
 ## Doxygen reference (auto-generated)
 
