@@ -860,7 +860,7 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-0946](0946-sycl-kernel-coverage-round3.md) | SYCL kernel coverage round 3 — 5 CPU vs. SYCL parity gates for `float_psnr_sycl`, `float_adm_sycl`, `float_vif_sycl`, `float_motion_sycl`, `psnr_hvs_sycl` at ADR-0214 places=4 (1e-4) | Accepted | 2026-05-31 | sycl, test, gpu, parity, kernel-coverage |
 | [ADR-0957](0957-sycl-kernel-coverage-round4.md) | SYCL kernel coverage round 4 — 4 CPU vs. SYCL parity gates for `float_moment_sycl`, `speed_chroma_sycl`, `speed_temporal_sycl` (places=4 / 1e-4) and `ssimulacra2_sycl` (5e-3 per ADR-0214 FEATURE_TOLERANCE); closes the SYCL kernel-coverage backlog at 18/18 = 100 % | Accepted | 2026-05-31 | sycl, test, gpu, parity, kernel-coverage |
 | [ADR-0984](0984-port-upstream-netflix-may-jun-2026.md) | Port Netflix Upstream May–Jun 2026 (5 commits) | Accepted |  |
-| [ADR-0985](0985-sycl-parity-divergence-2026-06-03.md) | SYCL parity divergence investigation — float_ssim + ssimulacra2 on Arc A380 | Proposed | sycl, parity, ci, gpu, precision, arc |
+| [ADR-0985](0985-sycl-parity-divergence-2026-06-03.md) | SYCL parity divergence investigation — float_ssim + ssimulacra2 on Arc A380 | Accepted | sycl, parity, ci, gpu, precision, arc |
 | [ADR-0986](0986-ci-docs-pr-trigger.md) | docs.yml — add PR trigger to surface doc-substance gaps before merge | Accepted | ci, docs, fork-local |
 | [ADR-0987](0987-avx512-float-moment.md) | AVX-512 path for float_moment feature extractor | Accepted | `simd`, `avx512`, `performance`, `float_moment`, `fork-local` |
 | [ADR-0988](0988-shared-strict-json-helpers.md) | Route strict-JSON helpers through `vmaftune.jsonio` across vmaf-tune | Accepted | `refactor`, `json`, `vmaf-tune`, `mcp` |
