@@ -45,3 +45,5 @@ alongside classic VMAF SVM models.
 - [Saliency feature materializer](saliency-feature-materializer.md) — append
   `saliency_mean` / `saliency_var` columns to existing JSONL or parquet
   feature tables before predictor and MOS-head retrains
+- [v1.0.16 Teacher Retrain Runbook (Epic #1246)](retrain-runbook-1246.md) — operator
+  runbook for the one-shot model retrain against the `vmaf_v1.0.16_3d0h` teacher

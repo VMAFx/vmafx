@@ -48664,6 +48664,11 @@ Fork-only tooling (`dev/`, `scripts/dev/`, `scripts/ci/tests/`). One invariant:
    reports a stale revision authoritatively is worse than no marker. See
    [ADR-1195](adr/1195-container-source-revision-guard.md).
 
+### `docs/ai/retrain-runbook-1246.md`
+
+no rebase impact: fork-added operator runbook for the one-shot v1.0.16 teacher retrain (epic #1246); no upstream-mirrored files touched.
+
+
 ## docs/ms-ssim-gpu-chroma-accuracy — per-backend option-table reality (2026-09-06)
 
 Documentation only; no code is touched. One invariant for whoever closes
