@@ -25,7 +25,13 @@ else
   listing=$(git ls-files)
 fi
 
-bad=$(printf '%s\n' "$listing" | grep -E '(^|/)(\.?venv[^/]*|\.virtualenv|pyvenv\.cfg)$' || true)
+# Two shapes are virtualenv paths: (1) a tracked entry whose basename IS a venv
+# directory/symlink or marker — `.venv`, `.venv-foo`, `venv`, `.virtualenv`,
+# `pyvenv.cfg` (a symlink shows up as a plain path in ls-files); (2) a tracked
+# file INSIDE such a directory (`venv/bin/python`, `.venv-x/lib/...`). A basename
+# that merely starts with "venv" (e.g. changelog.d/fixed/venv-recipe-docs.md) is
+# not a virtualenv — the previous pattern's optional dot matched it (#1282).
+bad=$(printf '%s\n' "$listing" | grep -E '(^|/)(\.venv[^/]*|venv|\.virtualenv|pyvenv\.cfg)$|(^|/)(\.venv[^/]*|venv|\.virtualenv)/' || true)
 if [ -n "$bad" ]; then
   printf 'error: virtualenv path(s) tracked in git — these must never be committed:\n' >&2
   printf '%s\n' "$bad" | sed 's/^/  /' >&2
