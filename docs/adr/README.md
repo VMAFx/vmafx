@@ -1005,3 +1005,4 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1197](1197-gpu-threaded-flush-ownership.md) | The threaded flush leaves GPU extractors to their own backend flush | Proposed | cuda, sycl, threading, cli, testing |
 | [ADR-1192](1192-netflix-bench-snapshot-drift-not-regenerated.md) | Keep the recorded Netflix benchmark snapshot; do not regenerate it while the GPU paths are broken | Accepted | benchmark, cuda, sycl, testdata, docs |
 | [ADR-1195](1195-container-source-revision-guard.md) | Record and verify which source revision the dev container was built from | Proposed | ci, build, testing, agents |
+| [ADR-1180](1180-cli-option-string-escapes.md) | Escape-aware CLI option-string parser and Windows drive-letter affordance | Accepted | cli, tools, bug, windows, options |
