@@ -333,6 +333,7 @@ see [`docs/research/1152-dependency-classifier-surface-audit.md`](../../docs/res
   the `# required-aggregator` markers on `name:` fields across workflow files.
 - Enforced locally via `make lint-sh` and pre-commit hook `check-aggregator-names`.
 - Display names must stay concise ($\le 30$ chars) per `docs/development/ci-job-names.md`.
+
 ## Self-hosted SYCL Arc runner invariants (ADR-1177)
 
 The Intel Arc A380 self-hosted runner executes hardware-in-the-loop SYCL parity tests
