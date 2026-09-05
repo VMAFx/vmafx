@@ -385,6 +385,16 @@ is single-output by construction and would reopen T-DNN-MULTI-OUTPUT.
   bakes in input normalisation / scaling ops (`Sub`/`Div` or scalar constants),
   its companion sidecar `.json` must declare `"onnx_has_scaler": true` so the
   runtime normalisation is bypassed and double-scaling is prevented.
+  Enforced over every `model/tiny/*.int8.onnx` by
+  `core/test/dnn/test_registry.sh`, `python/test/model_registry_schema_test.py`,
+  and `ai/scripts/validate_model_registry.py`. Measured cost of getting this
+  wrong: pooled `vmaf_tiny_model` 16.02 instead of 71.95 on the Netflix src01
+  pair (`T-TINY-V3-INT8-SIDECAR-MISSING-ONNX-HAS-SCALER-2026-09-04`).
+- **The redirect does not check `int8_sha256`**: the only load-time gates are
+  the size cap and the op allowlist, in both `dnn_api.c` and
+  `dnn_attach_api.c`. Do not add a digest check to one twin without the other,
+  and not at all without an ADR — a digest mismatch is a third outcome that
+  ADR-1032's fp32-fallback semantics do not currently define.
 
 ## Testing
 
