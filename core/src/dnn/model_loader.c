@@ -222,6 +222,29 @@ static int json_array_begin(const char *doc, const char *key, const char **out_p
     return 0;
 }
 
+/* Parse one `"..."` array element at *pp: duplicate it into *out_s and advance
+ * *pp past the closing quote. Returns 0, -EINVAL when the element is not a
+ * terminated string, or -ENOMEM. */
+static int json_dup_string_elem(const char **pp, char **out_s)
+{
+    const char *p = *pp;
+    if (*p != '"')
+        return -EINVAL;
+    ++p;
+    const char *q = strchr(p, '"');
+    if (!q)
+        return -EINVAL;
+    const size_t len = (size_t)(q - p);
+    char *s = (char *)malloc(len + 1u);
+    if (!s)
+        return -ENOMEM;
+    memcpy(s, p, len);
+    s[len] = '\0';
+    *out_s = s;
+    *pp = q + 1;
+    return 0;
+}
+
 static int extract_string_array(const char *doc, const char *key, char **out, size_t max,
                                 size_t *out_n)
 {
@@ -251,26 +274,16 @@ static int extract_string_array(const char *doc, const char *key, char **out, si
             free_partial_string_array(out, cnt);
             return -EINVAL;
         }
-        ++p;
-        const char *q = strchr(p, '"');
-        if (!q) {
-            free_partial_string_array(out, cnt);
-            return -EINVAL;
-        }
-        const size_t len = (size_t)(q - p);
         if (cnt >= max) {
             free_partial_string_array(out, cnt);
             return -ERANGE;
         }
-        char *s = (char *)malloc(len + 1u);
-        if (!s) {
+        const int erc = json_dup_string_elem(&p, &out[cnt]);
+        if (erc != 0) {
             free_partial_string_array(out, cnt);
-            return -ENOMEM;
+            return erc;
         }
-        memcpy(s, p, len);
-        s[len] = '\0';
-        out[cnt++] = s;
-        p = q + 1;
+        ++cnt;
         while (*p && json_is_space(*p))
             p++;
         if (*p == ',') {
@@ -1243,12 +1256,12 @@ static int run_cosign_verify(const char *cosign_path, const char *bundle_abs, co
     return 0;
 }
 
-int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path)
+/* Look @p onnx_path's basename up in the registry (defaulting to
+ * <dirname(onnx_path)>/registry.json when @p registry_path is nullptr) and
+ * write the absolute path of its cosign bundle into @p out. */
+static int lookup_bundle_abs(const char *onnx_path, const char *registry_path, char *out,
+                             size_t out_sz)
 {
-    if (!onnx_path)
-        return -EINVAL;
-    assert(onnx_path != nullptr);
-
     /* Default registry: <dirname(onnx_path)>/registry.json. */
     char default_reg[PATH_MAX];
     const char *reg_path = registry_path;
@@ -1275,8 +1288,17 @@ int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path)
         return err;
     assert(bundle_rel[0] != '\0');
 
+    return resolve_bundle_abs(reg_path, bundle_rel, out, out_sz);
+}
+
+int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path)
+{
+    if (!onnx_path)
+        return -EINVAL;
+    assert(onnx_path != nullptr);
+
     char bundle_abs[PATH_MAX];
-    err = resolve_bundle_abs(reg_path, bundle_rel, bundle_abs, sizeof(bundle_abs));
+    int err = lookup_bundle_abs(onnx_path, registry_path, bundle_abs, sizeof(bundle_abs));
     if (err != 0)
         return err;
     assert(bundle_abs[0] != '\0');
