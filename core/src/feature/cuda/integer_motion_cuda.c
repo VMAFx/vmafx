@@ -463,9 +463,15 @@ static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
      * emission (the same as the legacy path). */
     if (s->index == 0) {
         /* Single-frame video (frame 0 only): back-fill motion3_score for index 0
-         * with 0.0 (mirrors CPU integer_motion.c when n <= min_idx). */
-        return append_if_unwritten(feature_collector, s->feature_name_dict,
-                                   "VMAF_integer_feature_motion3_score", 0.0, 0);
+         * with 0.0 (mirrors CPU integer_motion.c when n <= min_idx).
+         *
+         * The engine drains flush in a loop — `while (!(err = fex->flush(...)))`
+         * in feature_extractor.cpp — so a flush that keeps returning 0 never
+         * terminates. Append at most once and then report 1 ("nothing more to
+         * append"), which is what the legacy single-frame path returned. */
+        const int backfill_err = append_if_unwritten(feature_collector, s->feature_name_dict,
+                                                     "VMAF_integer_feature_motion3_score", 0.0, 0);
+        return (backfill_err < 0) ? backfill_err : 1;
     }
 
     const int pending_start = s->last_batch_boundary + 1;

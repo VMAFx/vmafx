@@ -20432,6 +20432,14 @@ uses the kernel-template readback pair: `integer_psnr_cuda`, `integer_ssim_cuda`
 `integer_cambi_cuda`. PR #93 follow-up sweep (2026-05-29).
 
 
+- CUDA: `vmaf --backend cuda --frame_cnt 1` no longer hangs. The engine drains an
+  extractor with `while (!(err = fex->flush(...)))`, so a flush that keeps
+  returning 0 never terminates; the CUDA motion twin's single-frame back-fill
+  returned the append result instead of 1. It now appends at most once and then
+  reports "nothing more to append". Single-frame CUDA scores match the CPU on
+  every v0.6.1 feature.
+
+
 - **`speed_chroma_cuda` leaked its CUDA module and stream on every init failure
   path — a regression, not unfinished work.** `cuModuleLoadData()` and
   `cuStreamCreate()` both jump to `fail_pop` on error, but that label (and
