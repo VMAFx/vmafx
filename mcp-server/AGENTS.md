@@ -30,6 +30,14 @@ Locked in [ADR-0009](../docs/adr/0009-mcp-server-tool-surface.md):
 - `compare_models` — rank ONNX regressors on the same split
 - `describe_worst_frames` — local VLM describes the N frames with lowest VMAF score
 
+Later additions (the ADR-0608 P1 wave, then #1240):
+
+- `probe_backend`, `vmaf_version`, `vmaf_score_encoded`, `list_extractors`,
+  `describe_model`, `run_compare`, `run_ladder`, `run_tune_per_shot`
+- `vmaf_per_shot`, `vmaf_roi`, `vmaf_bench`, `vmaf_vpl` — one per sidecar CLI
+  binary built next to `vmaf` in [`../core/tools/`](../core/tools/), documented in
+  [`../docs/mcp/tools.md`](../docs/mcp/tools.md)
+
 ## Ground rules
 
 - **Parent rules** apply (see [../AGENTS.md](../AGENTS.md)).
@@ -45,6 +53,31 @@ Locked in [ADR-0009](../docs/adr/0009-mcp-server-tool-surface.md):
   See [ADR-0042](../docs/adr/0042-tinyai-docs-required-per-pr.md).
 
 ## Rebase-sensitive invariants
+
+**The sidecar tools' argv must stay byte-identical to the Go server's**
+(ADR-1184, #1240). `_build_per_shot_argv`, `_build_roi_argv`,
+`_build_bench_argv` and `_build_vpl_argv` in
+[`src/vmaf_mcp/server.py`](vmaf-mcp/src/vmaf_mcp/server.py) are twins of
+`buildPerShotArgv` / `buildRoiArgv` / `buildBenchArgv` / `buildVplArgv` in
+[`../cmd/vmafx-mcp/impl_sidecar.go`](../cmd/vmafx-mcp/impl_sidecar.go);
+`cmd/vmafx-mcp/sidecar_parity_test.go` runs both and compares. They are separate
+from the handlers precisely so that test can call them without a sidecar binary
+on disk — do not inline them back.
+
+**Float arguments go through `_fmt_float`, never `repr` or f-string
+formatting.** Go writes `strconv.FormatFloat(v, 'f', -1, 64)`: shortest
+round-trip, never exponent notation, no trailing `.0`. Python's `repr(90.0)` is
+`"90.0"` and `repr(1e-05)` is `"1e-05"`; both differ from Go's bytes and would
+break the argv-parity gate.
+
+**The five gRPC control-plane tools are Go-only and must NOT be added here**
+(`submit_job`, `get_job`, `cancel_job`, `list_jobs`, `vmaf_score_remote`).
+[ADR-1184](../docs/adr/1184-mcp-grpc-bridge-go-only.md) records the decision: this
+server deliberately has no gRPC stack, because ADR-0704's whole motivation for the
+Go port was removing the Python wheel chain from the deployment path. Adding
+`grpcio` and vendored Python stubs here requires superseding that ADR.
+`tests/test_smoke_e2e.py::test_list_tools_returns_expected_names` pins the exact
+Python tool set, so an accidental addition fails the suite.
 
 **`run_benchmark` takes no positional arguments** (ADR-0517). `bench_all.sh` is a
 fixed-fixture suite. Do not add `ref`/`dis`/`width`/`height` args back — they
