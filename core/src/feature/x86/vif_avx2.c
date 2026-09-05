@@ -749,7 +749,7 @@ void vif_statistic_16_avx2(struct VifPublicState *s, float *num, float *den, uns
             __m256i accumdis2;
             __m256i accumdis3;
             __m256i accumdis4;
-            // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores): chained zero-init of every SIMD accumulator before the inner loop. The analyzer flags the rmul1/rmul2/dmul1/dmul2 slots because their values are reset on every fi iteration before being read (i.e. the zero-init is never the value that flows into a read), but the chain is preserved verbatim from upstream Netflix to keep the kernel byte-exact.
+            // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores) — ADR-0138 / ADR-0141 / ADR-0278: chained zero-init of every SIMD accumulator before the inner loop. The analyzer flags the rmul1/rmul2/dmul1/dmul2 slots because their values are reset on every fi iteration before being read (i.e. the zero-init is never the value that flows into a read), but the chain is preserved verbatim from upstream Netflix to keep the kernel byte-exact.
             accumr_lo = accumr_hi = accumd_lo = accumd_hi = rmul1 = rmul2 = dmul1 = dmul2 =
                 accumref1 = accumref2 = accumref3 = accumref4 = accumrefdis1 = accumrefdis2 =
                     accumrefdis3 = accumrefdis4 = accumdis1 = accumdis2 = accumdis3 = accumdis4 =
@@ -1725,7 +1725,7 @@ void vif_subsample_rd_16_avx2(const VifBuffer *buf, unsigned w, unsigned h, int 
             __m256i rmul2;
             __m256i dmul1;
             __m256i dmul2;
-            // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores): chained zero-init reset every fi iteration before the per-element reads inside the inner loop. Upstream-verbatim.
+            // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores) — ADR-0138 / ADR-0141 / ADR-0278: chained zero-init reset every fi iteration before the per-element reads inside the inner loop. Upstream-verbatim.
             accumr_lo = accumr_hi = accumd_lo = accumd_hi = rmul1 = rmul2 = dmul1 = dmul2 =
                 _mm256_setzero_si256();
             for (unsigned fi = 0; fi < fwidth; ++fi, ii_check = ii + fi) {
