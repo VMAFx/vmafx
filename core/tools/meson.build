@@ -31,6 +31,15 @@ if get_option('enable_hip')
     # still refused.
     vmaf_tool_cflags += ['-DHAVE_HIP=1']
 endif
+if is_metal_enabled
+    # The vmaf CLI gates Metal support on `#ifdef HAVE_METAL` (see
+    # `core/tools/vmaf.cpp` — includes of `libvmaf_metal.h`, init/cleanup
+    # of `VmafMetalState`, the `--backend metal` strict-mode arm). Without
+    # this define the CLI never compiled the Metal branches on macOS,
+    # leaving `--backend metal` dead at runtime.
+    vmaf_tool_cflags += ['-DHAVE_METAL=1']
+    vmaf_tool_deps += metal_deps
+endif
 
 vmaf_tool_link_target = libvmaf
 if get_option('default_library') == 'both'

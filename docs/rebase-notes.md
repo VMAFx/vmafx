@@ -13,6 +13,13 @@ no rebase impact: fork-local CUDA and documentation files.
   `T-SYCL-INIT-LEAKS-EXC-2026-06-19`, `T-SPEED-GPU-REGISTRY-ORPHAN-2026-06-19`, and
   `T-CUDA-INIT-SUBMIT-LEAKS-2026-06-19`.
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
+## fix/cli-metal-define — define HAVE_METAL for the CLI so its Metal paths are compiled at all (2026-09-04)
+
+- `core/tools/meson.build`: added Metal branch (`if is_metal_enabled`) that appends `-DHAVE_METAL=1`
+  to `vmaf_tool_cflags` and `metal_deps` to `vmaf_tool_deps`. `core/tools/meson.build` is fork-modified;
+  upstream has no Metal backend. On upstream sync, keep this branch intact so that the CLI continues
+  to compile Metal translation units on macOS.
+
 ## docs/venv-recipe — replace impossible venv recipe with verified one (2026-09-04)
 
 - `docs/development/languages.md`: no rebase impact: docs/development/ is fork-added.
@@ -67,7 +74,6 @@ no rebase impact: edits fork documentation (`README.md`, `CHANGELOG.md`, `change
 - Rebase impact: None. All modifications touch fork-added comments or fork-added test/doc
   surfaces. If upstream touches `core/src/feature/offset.c`, preserve the `adm.c / motion.c`
   comment text.
-
 ## feat/mcp-tinyai-flags — tiny-AI scoring flags and input validation (2026-09-03)
 
 - `no rebase impact: MCP servers (cmd/vmafx-mcp and mcp-server/vmaf-mcp) are wholly fork-added surfaces with no upstream Netflix/vmaf counterpart.`
