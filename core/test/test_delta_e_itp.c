@@ -21,7 +21,7 @@
 #include <string.h>
 
 #include "test.h"
-// NOLINTNEXTLINE(bugprone-suspicious-include): the test deliberately includes the .c to exercise the static per-pixel ITP helpers (rgb_pq_to_itp / delta_e_itp_pair) against the BT.2124-0 oracle — the same pattern as test_ciede.c.
+// NOLINTNEXTLINE(bugprone-suspicious-include): the test deliberately includes the .c to exercise the static per-pixel ITP helpers (rgb_pq_to_itp / delta_e_itp_pair) against the BT.2124-0 oracle (ADR-0141 / ADR-0278) — the same pattern as test_ciede.c.
 #include "feature/delta_e_itp.c"
 
 #include "dict.h"
