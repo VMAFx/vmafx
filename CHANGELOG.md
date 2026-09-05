@@ -19581,6 +19581,10 @@ mean VMAF 94.32301 on CPU.
   are identical.
 
 
+- Fixed `--model` and `--feature` option-string parsing when paths contain `=`, `:`, `.`, or Windows drive letters (Netflix/vmaf#766, [ADR-1180](docs/adr/1180-cli-option-string-escapes.md)).
+  Replaced raw `strsep` calls in `core/tools/cli_parse.cpp` with `vmaf_cli_split`, an in-place splitter supporting delimiter escapes (`\:`, `\=`, `\.`, `\\`) and preserving Windows drive-letter paths (`path=C:\...`) unescaped. Updated Go callers (`pkg/libvmaf`, `pkg/corpus`) and FFmpeg tune filter patch (`ffmpeg-patches/0008-add-libvmaf_tune-filter.patch`) to escape and unescape delimiters consistently.
+
+
 - **`vmaf` CLI assertion crash on bad `--threads` / `--subsample` /
   `--cpumask` arguments.** Three handlers in
   `core/tools/cli_parse.c` passed a synthesised short-option char

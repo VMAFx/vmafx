@@ -216,6 +216,18 @@ tools/
     multiplication overflow.
   - In `vmaf.cpp`, `ModelArrays` is encapsulated with private members and RAII
     accessors; all internal helpers reside in an anonymous namespace.
+- [ADR-1180](../../docs/adr/1180-cli-option-string-escapes.md) —
+  **CLI option string delimiter escaping and Windows drive letter affordance**
+  (Netflix/vmaf#766).
+  **Parser invariant**:
+  - Option strings for `--model` and `--feature` are escape-aware. Never
+    re-introduce raw `vmaf_cli_strsep` or `strsep` without delimiter-escape
+    handling (`\:`, `\=`, `\.`, `\\`).
+  - `vmaf_cli_split` operates in-place, scanning up to the first unescaped
+    delimiter and compacting `\<sep>` and `\\` in place.
+  - Windows drive-letter paths (`[A-Za-z]:\` or `[A-Za-z]:/`) in `path=` values
+    are preserved verbatim via the drive-letter affordance without requiring
+    manual escape.
 
 ## Progress-line rendering is console-capability-driven (ADR-1166)
 
