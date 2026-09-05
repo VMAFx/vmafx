@@ -199,7 +199,8 @@ no rebase impact: changes GitHub Actions workflow job display names (`.github/wo
 ## docs/venv-recipe — replace impossible venv recipe with verified one (2026-09-04)
 
 - `docs/development/languages.md`: no rebase impact: docs/development/ is fork-added.
-## fix/security-cleanup-1243 — widen multiplication operands in convolve, moment, psnr (2026-09-04)
+
+## fix/security-cleanup-1243 — widen integer index operands in convolve, moment, psnr (2026-09-04)
 
 - `core/src/feature/iqa/convolve.c`: upstream-mirror file. Widen `(ptrdiff_t)y * dst_w + x` in `dst[...]` vertical pass while preserving `float * float` single-rounded arithmetic for SIMD bit-exactness contract (ADR-0138). On upstream sync, preserve the widening.
 - `core/src/feature/moment.c`: upstream-mirror file. Widen `(ptrdiff_t)i * stride_ + j` in `compute_1st_moment` and `compute_2nd_moment` while preserving `pic_ * pic_` float multiplication for SIMD bit-exactness contract (ADR-0179). On upstream sync, preserve the widening.
