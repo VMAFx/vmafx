@@ -24710,6 +24710,9 @@ phantom extra columns. Fixed by rewriting as prose or using bare pipes inside
 backtick code spans.
 
 
+- Move four merged-fix rows (T-HIP-PSNR-CHROMA-MCP-PARITY-2026-06-20, T-CI-TOX-PY311-SCIPY-118-2026-06-20, T-NEON-FMA-FLOAT-ADM-DWT2-2026-06-06, T-CI-DOCKER-SMOKE-NO-OUTPUT-2026-06-13) out of Open bugs in docs/state.md.
+
+
 - **test(svm):** Add `test_svm_multiclass` — 17-class and 32-class C_SVC fixtures
   plus a 17-class NU_SVC fixture to exercise the `max_nr_class=16→32` realloc
   doubling in `svm_group_classes()` and `svm_check_parameter()`.  Under
