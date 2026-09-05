@@ -1,6 +1,19 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/cambi-cuda-context — CUDA CAMBI context push/pop and model options twin selection gate (2026-09-05)
+
+- `core/src/feature/cuda/integer_cambi_cuda.c`: fork-added CUDA CAMBI extractor.
+  Invariant: every device-touching entry point (`init_fex_cuda`, `submit_fex_cuda`,
+  `close_fex_cuda`) must push `fex->cu_state->ctx` upon entry and cleanly pop it
+  on all exit paths (balanced `fail_after_pop` labels). Its option table and TVI
+  initialization must mirror `cambi.c`.
+- `core/src/feature/feature_extractor.cpp` / `core/src/libvmaf.c`: option validation
+  and GPU twin gating (ADR-1183). `vmaf_fex_ctx_parse_options` rejects unknown option
+  keys with `-EINVAL`. `vmaf_use_features_from_model` checks GPU twin option support
+  against model requirements and dispatches unsupported twins to the CPU reference.
+  Preserve this gating on rebase to prevent silent option drops.
+
 ## fix/tidy-lane-lto-flag — the tidy lane builds without LTO (2026-09-05)
 
 No rebase impact: `.github/workflows/lint-and-format.yml` is fork-added. Invariant: any build whose
