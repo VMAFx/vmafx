@@ -80,6 +80,64 @@ func TestPixelFormat_String(t *testing.T) {
 	}
 }
 
+func TestParsePoolMethod(t *testing.T) {
+	cases := []struct {
+		in   string
+		want PoolMethod
+		ok   bool
+	}{
+		{"min", PoolMethodMin, true},
+		{"max", PoolMethodMax, true},
+		{"mean", PoolMethodMean, true},
+		{"", PoolMethodMean, true},
+		{"harmonic_mean", PoolMethodHarmonicMean, true},
+		{"median", PoolMethodMedian, true},
+		{"perc5", PoolMethodPerc5, true},
+		{"perc10", PoolMethodPerc10, true},
+		{"perc20", PoolMethodPerc20, true},
+		{"garbage", 0, false},
+		{"perc50", 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			got, err := ParsePoolMethod(tc.in)
+			if tc.ok && err != nil {
+				t.Fatalf("ParsePoolMethod(%q) unexpected error: %v", tc.in, err)
+			}
+			if !tc.ok && err == nil {
+				t.Fatalf("ParsePoolMethod(%q) expected error, got nil", tc.in)
+			}
+			if got != tc.want {
+				t.Errorf("ParsePoolMethod(%q) = %v, want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPoolMethod_String(t *testing.T) {
+	cases := []struct {
+		in   PoolMethod
+		want string
+	}{
+		{PoolMethodMin, "min"},
+		{PoolMethodMax, "max"},
+		{PoolMethodMean, "mean"},
+		{PoolMethodHarmonicMean, "harmonic_mean"},
+		{PoolMethodMedian, "median"},
+		{PoolMethodPerc5, "perc5"},
+		{PoolMethodPerc10, "perc10"},
+		{PoolMethodPerc20, "perc20"},
+		{PoolMethod(99), "unknown(99)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.want, func(t *testing.T) {
+			if got := tc.in.String(); got != tc.want {
+				t.Errorf("PoolMethod(%d).String() = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestFrameBytes(t *testing.T) {
 	cases := []struct {
 		w, h, bd int

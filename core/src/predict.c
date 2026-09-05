@@ -30,6 +30,7 @@
 #include "feature/feature_name.h"
 #include "log.h"
 #include "model.h"
+#include "pooling_percentile.h"
 #include "predict.h"
 #include "svm.h"
 
@@ -562,29 +563,6 @@ int vmaf_predict_score_at_index(VmafModel *model, VmafFeatureCollector *feature_
     *vmaf_score = prediction;
 
     return 0;
-}
-
-static int score_compare(const void *a, const void *b)
-{
-    const double *x = a;
-    const double *y = b;
-    if (*x > *y) {
-        return 1;
-    }
-    if (*x < *y) {
-        return -1;
-    }
-    return 0;
-}
-
-static double percentile(const double *scores, unsigned n_scores, double perc)
-{
-    const double p = perc * (n_scores - 1) / 100.;
-    const int idx_l = (int)floor(p);
-    const int idx_r = (int)ceil(p);
-
-    return (idx_l == idx_r) ? scores[idx_l] :
-                              scores[idx_l] * (idx_r - p) + scores[idx_r] * (p - idx_l);
 }
 
 static int bootstrap_gather_scores(VmafModelCollection *model_collection,

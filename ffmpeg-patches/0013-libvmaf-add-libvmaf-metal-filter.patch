@@ -1,7 +1,11 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 1de88053272eb76d600cac8ca2a872802706ab41 Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Mon, 11 May 2026 23:30:00 +0200
-Subject: [PATCH] libvmaf: add libvmaf_metal filter (zero-copy IOSurface import)
+Subject: [PATCH] libvmaf: add libvmaf_metal filter (zero-copy IOSurface
+ import)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
 Introduces a dedicated `libvmaf_metal` FFmpeg filter that consumes
 VideoToolbox-decoded frames (`AVFrame->format == AV_PIX_FMT_VIDEOTOOLBOX`,
@@ -40,25 +44,26 @@ import on Apple-Family-7+ hosts. The filter passes
 docs/adr/0423-metal-iosurface-import-scaffold.md.
 
 Patch is on top of 0001-0012 (post-metal-backend-selector baseline).
-
 ---
- configure                |  3 +
- libavfilter/Makefile     |  1 +
- libavfilter/allfilters.c |  1 +
- libavfilter/vf_libvmaf.c | 269 +++++++++++++++++++++++++++++++++++++++
- 4 files changed, 274 insertions(+)
+ configure                |   3 +
+ libavfilter/Makefile     |   1 +
+ libavfilter/allfilters.c |   1 +
+ libavfilter/vf_libvmaf.c | 268 +++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 273 insertions(+)
 
 diff --git a/configure b/configure
+index fc8cab818e..bacc4e9bf0 100755
 --- a/configure
 +++ b/configure
-@@ -4246,5 +4246,6 @@ vidstabtransform_filter_deps="libvidstab"
+@@ -4306,6 +4306,7 @@ vidstabdetect_filter_deps="libvidstab"
+ vidstabtransform_filter_deps="libvidstab"
  libvmaf_filter_deps="libvmaf"
  libvmaf_cuda_filter_deps="libvmaf libvmaf_cuda ffnvcodec"
 +libvmaf_metal_filter_deps="libvmaf libvmaf_metal metal corevideo videotoolbox"
  libvmaf_sycl_filter_deps="libvmaf libvmaf_sycl libvpl"
  libvmaf_vulkan_filter_deps="libvmaf libvmaf_vulkan vulkan"
  vmaf_pre_filter_deps="libvmaf"
-@@ -7405,6 +7406,8 @@ enabled libvmaf           && check_pkg_config libvmaf_hip "libvmaf >= 3.0.0" lib
+@@ -7476,6 +7477,8 @@ enabled libvmaf           && check_pkg_config libvmaf_hip "libvmaf >= 3.0.0" lib
  enabled libvmaf_metal     && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
                               check_pkg_config libvmaf_metal "libvmaf >= 3.0.0" libvmaf/libvmaf_metal.h vmaf_metal_state_init
  enabled libvmaf           && check_pkg_config libvmaf_metal "libvmaf >= 3.0.0" libvmaf/libvmaf_metal.h vmaf_metal_state_init
@@ -68,9 +73,11 @@ diff --git a/configure b/configure
                               check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
  enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
+index 3b20788df7..9e19069dc9 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
-@@ -377,5 +377,6 @@ OBJS-$(CONFIG_LIBPLACEBO_FILTER)             += vf_libplacebo.o vulkan.o vulkan_
+@@ -376,6 +376,7 @@ OBJS-$(CONFIG_LENSFUN_FILTER)                += vf_lensfun.o
+ OBJS-$(CONFIG_LIBPLACEBO_FILTER)             += vf_libplacebo.o vulkan.o vulkan_filter.o
  OBJS-$(CONFIG_LIBVMAF_FILTER)                += vf_libvmaf.o framesync.o
  OBJS-$(CONFIG_LIBVMAF_CUDA_FILTER)           += vf_libvmaf.o framesync.o
 +OBJS-$(CONFIG_LIBVMAF_METAL_FILTER)          += vf_libvmaf.o framesync.o
@@ -78,9 +85,11 @@ diff --git a/libavfilter/Makefile b/libavfilter/Makefile
  OBJS-$(CONFIG_LIBVMAF_VULKAN_FILTER)          += vf_libvmaf.o framesync.o
  OBJS-$(CONFIG_LIMITDIFF_FILTER)              += vf_limitdiff.o framesync.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
+index 9bd3aa0163..75e598b530 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
-@@ -351,5 +351,6 @@ extern const FFFilter ff_vf_libplacebo;
+@@ -350,6 +350,7 @@ extern const FFFilter ff_vf_lensfun;
+ extern const FFFilter ff_vf_libplacebo;
  extern const FFFilter ff_vf_libvmaf;
  extern const FFFilter ff_vf_libvmaf_cuda;
 +extern const FFFilter ff_vf_libvmaf_metal;
@@ -88,12 +97,13 @@ diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
  extern const FFFilter ff_vf_libvmaf_vulkan;
  extern const FFFilter ff_vf_libvmaf_tune;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
+index b6d77a7a9e..e8d018ed9e 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -76,6 +76,12 @@
  #include <libvmaf/libvmaf_metal.h>
  #endif
-
+ 
 +#if CONFIG_LIBVMAF_METAL_FILTER
 +#include "libavutil/hwcontext.h"
 +#include "libavutil/hwcontext_videotoolbox.h"
@@ -103,7 +113,7 @@ diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
  typedef struct LIBVMAFContext {
      const AVClass *class;
      FFFrameSync fs;
-@@ -1500,3 +1506,265 @@ const FFFilter ff_vf_libvmaf_vulkan = {
+@@ -1836,3 +1842,265 @@ const FFFilter ff_vf_libvmaf_vulkan = {
      .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
  };
  #endif
@@ -115,7 +125,7 @@ diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
 +                  OFFSET(log_path), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, MTL_FLAGS},
 +    {"log_fmt",   "Set the format of the log (csv, json, xml, or sub).",
 +                  OFFSET(log_fmt), AV_OPT_TYPE_STRING, {.str="xml"}, 0, 1, MTL_FLAGS},
-+    {"pool",      "Set the pool method to be used for computing vmaf.",
++    {"pool",      "Set the pool method to be used for computing vmaf (min, max, mean, harmonic_mean, median, perc5, perc10, perc20).",
 +                  OFFSET(pool), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, MTL_FLAGS},
 +    {"n_threads", "Set number of threads to be used when computing vmaf.",
 +                  OFFSET(n_threads), AV_OPT_TYPE_INT, {.i64=0}, 0, UINT_MAX, MTL_FLAGS},
@@ -369,5 +379,6 @@ diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
 +    .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 +};
 +#endif
---
-2.54.0
+-- 
+2.55.0
+

@@ -1,7 +1,10 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From afb386a43fdb288974a0de445e0c7c38f4f1714c Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Sun, 26 Apr 2026 19:30:00 +0200
 Subject: [PATCH] libvmaf: add libvmaf_sycl filter (zero-copy VAAPI/QSV import)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
 Introduces a dedicated `libvmaf_sycl` FFmpeg filter that consumes
 QSV/oneVPL frames (`AVFrame->data[3] -> mfxFrameSurface1*`),
@@ -30,13 +33,18 @@ two patches give users:
 Validated end-to-end on Intel Arc A380 with VAAPI hwdec via QSV
 oneVPL. Patch is on top of 0001-0004 (post-vulkan-selector
 baseline).
-
 ---
+ configure                |   5 +
+ libavfilter/Makefile     |   1 +
+ libavfilter/allfilters.c |   1 +
+ libavfilter/vf_libvmaf.c | 368 +++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 375 insertions(+)
+
 diff --git a/configure b/configure
-index 9b16ddf1e6..41738050f0 100755
+index f804911e5b..144b458cab 100755
 --- a/configure
 +++ b/configure
-@@ -295,6 +295,7 @@ External library support:
+@@ -294,6 +294,7 @@ External library support:
    --enable-libv4l2         enable libv4l2/v4l-utils [no]
    --enable-libvidstab      enable video stabilization using vid.stab [no]
    --enable-libvmaf         enable vmaf filter via libvmaf [no]
@@ -44,7 +52,7 @@ index 9b16ddf1e6..41738050f0 100755
    --enable-libvo-amrwbenc  enable AMR-WB encoding via libvo-amrwbenc [no]
    --enable-libvorbis       enable Vorbis en/decoding via libvorbis,
                             native implementation exists [no]
-@@ -2099,6 +2100,7 @@ EXTERNAL_LIBRARY_LIST="
+@@ -2138,6 +2139,7 @@ EXTERNAL_LIBRARY_LIST="
      libuavs3d
      libv4l2
      libvmaf
@@ -52,7 +60,7 @@ index 9b16ddf1e6..41738050f0 100755
      libvorbis
      libvpx
      libvvenc
-@@ -4235,6 +4237,7 @@ vidstabdetect_filter_deps="libvidstab"
+@@ -4296,6 +4298,7 @@ vidstabdetect_filter_deps="libvidstab"
  vidstabtransform_filter_deps="libvidstab"
  libvmaf_filter_deps="libvmaf"
  libvmaf_cuda_filter_deps="libvmaf libvmaf_cuda ffnvcodec"
@@ -60,7 +68,7 @@ index 9b16ddf1e6..41738050f0 100755
  vmaf_pre_filter_deps="libvmaf"
  zmq_filter_deps="libzmq"
  zoompan_filter_deps="swscale"
-@@ -7391,6 +7394,8 @@ enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_i
+@@ -7458,6 +7461,8 @@ enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_i
  enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid.stab/libvidstab.h vsMotionDetectInit
  enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init
  enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf_cuda.h vmaf_cuda_state_init
@@ -70,7 +78,7 @@ index 9b16ddf1e6..41738050f0 100755
  enabled libvmaf           && check_pkg_config libvmaf_vulkan "libvmaf >= 3.0.0" libvmaf/libvmaf_vulkan.h vmaf_vulkan_state_init
  enabled vmaf_pre_filter   && require_pkg_config libvmaf_dnn "libvmaf >= 3.0.0" libvmaf/dnn.h vmaf_dnn_session_open
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
-index db0e09bd32..f3de17a502 100644
+index f29e468f82..5e27bfc66c 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
 @@ -376,6 +376,7 @@ OBJS-$(CONFIG_LENSFUN_FILTER)                += vf_lensfun.o
@@ -82,7 +90,7 @@ index db0e09bd32..f3de17a502 100644
  OBJS-$(CONFIG_LIMITER_FILTER)                += vf_limiter.o
  OBJS-$(CONFIG_LOOP_FILTER)                   += f_loop.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
-index 4e951ca561..f46c695865 100644
+index 7172332904..ac7f3f4d84 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
 @@ -350,6 +350,7 @@ extern const FFFilter ff_vf_lensfun;
@@ -94,7 +102,7 @@ index 4e951ca561..f46c695865 100644
  extern const FFFilter ff_vf_limiter;
  extern const FFFilter ff_vf_loop;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index f0ec23605c..d9dab0bdd9 100644
+index 74bd5ca4c2..59d3bf007a 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -51,6 +51,11 @@
@@ -119,7 +127,28 @@ index f0ec23605c..d9dab0bdd9 100644
  #endif
      int   vulkan_device;
  #if CONFIG_LIBVMAF_VULKAN
-@@ -969,3 +977,353 @@ const FFFilter ff_vf_libvmaf_cuda = {
+@@ -710,10 +718,20 @@ static enum VmafPoolingMethod pool_method_map(const char *pool_method)
+     if (pool_method) {
+         if (!strcmp(pool_method, "min"))
+             return VMAF_POOL_METHOD_MIN;
++        if (!strcmp(pool_method, "max"))
++            return VMAF_POOL_METHOD_MAX;
+         if (!strcmp(pool_method, "mean"))
+             return VMAF_POOL_METHOD_MEAN;
+         if (!strcmp(pool_method, "harmonic_mean"))
+             return VMAF_POOL_METHOD_HARMONIC_MEAN;
++        if (!strcmp(pool_method, "median"))
++            return VMAF_POOL_METHOD_MEDIAN;
++        if (!strcmp(pool_method, "perc5"))
++            return VMAF_POOL_METHOD_PERC5;
++        if (!strcmp(pool_method, "perc10"))
++            return VMAF_POOL_METHOD_PERC10;
++        if (!strcmp(pool_method, "perc20"))
++            return VMAF_POOL_METHOD_PERC20;
+     }
+ 
+     return VMAF_POOL_METHOD_MEAN;
+@@ -1008,3 +1026,353 @@ const FFFilter ff_vf_libvmaf_cuda = {
      .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
  };
  #endif
@@ -131,7 +160,7 @@ index f0ec23605c..d9dab0bdd9 100644
 +                  OFFSET(log_path), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, SYCL_FLAGS},
 +    {"log_fmt",   "Set the format of the log (csv, json, xml, or sub).",
 +                  OFFSET(log_fmt), AV_OPT_TYPE_STRING, {.str="xml"}, 0, 1, SYCL_FLAGS},
-+    {"pool",      "Set the pool method to be used for computing vmaf.",
++    {"pool",      "Set the pool method to be used for computing vmaf (min, max, mean, harmonic_mean, median, perc5, perc10, perc20).",
 +                  OFFSET(pool), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, SYCL_FLAGS},
 +    {"n_threads", "Set number of threads to be used when computing vmaf.",
 +                  OFFSET(n_threads), AV_OPT_TYPE_INT, {.i64=0}, 0, UINT_MAX, SYCL_FLAGS},
@@ -473,3 +502,6 @@ index f0ec23605c..d9dab0bdd9 100644
 +    .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 +};
 +#endif
+-- 
+2.55.0
+
