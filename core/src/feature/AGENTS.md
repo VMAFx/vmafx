@@ -1313,3 +1313,53 @@ will let the defective sizes through.
 `picture.c`.** Using `h / 2` under-allocates by one row for every odd luma
 height, and even-height fixtures — including both Netflix golden resolutions —
 never catch it.
+
+## GPU-twin `VmafOption` tables mirror the CPU table (2026-09-05)
+
+`vmaf_feature_name_from_options()` (`feature_name.cpp`) builds the emitted
+feature key from the extractor's **own** `options[]` table: every entry that
+carries `VMAF_OPT_FLAG_FEATURE_PARAM` and holds a non-default value appends
+`_<alias>_<value>`. A GPU twin whose table is missing one FEATURE_PARAM entry
+therefore emits a *different key* than its CPU twin for the same opts dict, and
+the model lookup misses. The default model
+(`model/vmaf_v1.0.16/vmaf_v1.0.16_3d0h.json`) is the live example: it requests
+`VMAF_integer_feature_adm3_score` with `adm_csf_mode=2`, `adm_dlm_weight=0.7`,
+`adm_enhn_gain_limit=1.0`, `adm_min_val=0.5`, `adm_noise_weight=0.02`, and the
+key it looks up is
+`integer_adm3_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02`.
+
+Two rules follow, and they are not the same rule:
+
+1. **The table mirrors the CPU table entry-for-entry** — name, alias,
+   `type`, `default_val`, `min`, `max`, and the `VMAF_OPT_FLAG_FEATURE_PARAM`
+   bit. Anything that diverges (a different alias, a different default, a
+   missing flag) silently changes the key. `core/src/feature/integer_adm.c` is
+   the reference for the `adm` family.
+2. **Never declared-and-ignored.** An option that changes a value the twin
+   emits must actually change it. A FEATURE_PARAM option whose arithmetic
+   only feeds a feature the twin does **not** emit is the one legitimate
+   exception — it stays in the table for key parity, exactly as
+   `adm_dlm_weight` and `adm_min_val` have no arithmetic effect on `adm2` in
+   the CPU reference either — and the entry must carry a comment saying so.
+   A non-FEATURE_PARAM option (`adm_skip_aim`, `debug`) never affects the key,
+   so it has no key-parity excuse: implement it or leave it out.
+
+**Never fabricate a feature to make a name resolve.** If a twin cannot compute
+a feature, leave that feature out of its `provided_features[]`.
+`vmaf_get_feature_extractor_by_feature_name()` then routes the request to the
+CPU twin through the ADR-0530 fallback, which produces the correct value under
+the correct key. Emitting the feature from a hard-coded stand-in (the SYCL and
+HIP `integer_adm` twins briefly emitted `VMAF_integer_feature_aim_score` from a
+literal `aim_num = 0.0`) is strictly worse than not providing it: the fallback
+stops firing and the model silently consumes a fabricated score.
+
+**`adm_min_val` clamps `adm3` only.** `integer_adm.c::extract()` applies
+`MAX(..., s->adm_min_val)` to the adm3 expression alone; `adm2` is emitted
+unclamped. The Netflix golden `adm_min_val=0.98` case pins
+`VMAF_integer_feature_adm2_min_0.98_score` at `0.9345148541666667` —
+*below* the floor. A twin that clamps `adm2` diverges.
+
+**`numden_limit` scales with the full-frame area.** `1e-10 * (w * h) /
+(1920.0 * 1080.0)` uses the picture dimensions, not the scale-3 dimensions the
+per-scale loop variables hold once the loop has run. All three GPU twins had
+inherited the post-loop values (a 256× too-small floor).

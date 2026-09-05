@@ -474,3 +474,32 @@ for the programmatic surface.
 - [Intel oneAPI DPC++ Compiler](https://github.com/intel/llvm)
 - [Level Zero Specification](https://spec.oneapi.io/level-zero/latest/)
 - [Intel oneAPI Programming Guide](https://www.intel.com/content/www/us/en/docs/oneapi/programming-guide/current/overview.html)
+
+## `integer_adm_sycl` and the default model's ADM (2026-09-05)
+
+The default model `vmaf_v1.0.16_3d0h` requests
+`VMAF_integer_feature_adm3_score` with `adm_csf_mode=2`,
+`adm_dlm_weight=0.7`, `adm_enhn_gain_limit=1.0`, `adm_min_val=0.5` and
+`adm_noise_weight=0.02`, under the key
+`integer_adm3_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02`.
+
+`integer_adm_sycl` now honours `adm_csf_mode` (all four CSF models) and
+`adm_p_norm`, and its `VmafOption` table is an entry-for-entry mirror of the
+CPU table, so the `adm2` and `integer_adm_scale*` keys it emits are identical
+to the CPU twin's for any options dict.
+
+**`adm3_score` / `aim_score` are not emitted by this twin.** The AIM contrast
+measure needs a second device CM pass with the `decouple_a` / `decouple_r`
+roles swapped (the CUDA twin's ADR-0746 kernels); the SYCL kernel set does not
+have one. Both features are therefore left out of `provided_features[]`, and
+`vmaf_get_feature_extractor_by_feature_name()` routes a request for either to
+the CPU `integer_adm` twin through the ADR-0530 fallback — correct value,
+correct key. So on `--backend sycl` the default model's ADM branch runs on the
+CPU while VIF / motion / CAMBI run on the device. Tracked as
+`T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05` in
+[`state.md`](../../state.md).
+
+Two CPU-parity corrections landed with the option work: `adm_min_val` no
+longer clamps `adm2` (the CPU floors the adm3 expression only), and the
+`numden_limit` precision floor scales with the full-frame area rather than the
+scale-3 area.
