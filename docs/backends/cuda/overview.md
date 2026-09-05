@@ -159,6 +159,18 @@ Adding a new CUDA extractor: see [`/add-feature-extractor`](../../../.claude/ski
   that amortises `cuStreamSynchronize` over 8 frames rather than 1, superseding
   the engine-level optimization for this extractor.
 
+### Error-path resource release (PR #1279)
+
+Every CUDA feature extractor releases what it has already acquired when `init`
+or `submit` fails part-way: pinned host buffers, device buffers, the module and
+the stream, in the reverse order of acquisition and each one NULL-guarded. The
+`speed_chroma` / `speed_temporal` twins share one `release_cuda_module_and_stream()`
+helper so the two failure labels cannot drift apart again (PR #1007 added the
+calls inline and PR #1029 removed them the same day); `integer_ms_ssim` and
+`integer_psnr_hvs` release their pinned buffers on the same labels. There is no
+user-visible behaviour change: a failed init still returns the same error code,
+it just no longer leaks (docs/state.md `T-CUDA-INIT-SUBMIT-LEAKS-2026-06-19`).
+
 ## Profiling
 
 See [nvtx/profiling.md](../nvtx/profiling.md) for Nsight Systems recipes that
