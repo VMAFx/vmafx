@@ -294,7 +294,7 @@ void print_usage_options_part2(FILE *const out)
         " --quiet/-q:                  disable FPS meter when run in a TTY\n"
         " --no_prediction/-n:          no prediction, extract features only\n"
         " --netflix-compat:             restore Netflix-upstream legacy defaults (CPU backend,\n"
-        "                                  %.6f precision, v0.6.1 default model)\n"
+        "                                  %%.6f precision, v0.6.1 default model)\n"
         " --version/-v:                print version and exit\n");
 }
 
@@ -1237,7 +1237,7 @@ extern "C" bool detect_vmafx_mode(const char *const argv0)
 void cli_parse(const int argc, char *const *const argv, CLISettings *const settings)
 {
     (void)memset(settings, 0, sizeof(*settings));
-    settings->vmafx_mode = detect_vmafx_mode(argv ? argv[0] : nullptr);
+    settings->vmafx_mode = detect_vmafx_mode(argv[0]);
     settings->sycl_device = -1;  // auto-select by default
     settings->hip_device = -1;   // auto-select by default
     settings->metal_device = -1; // auto-select by default
