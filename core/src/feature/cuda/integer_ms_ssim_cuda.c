@@ -311,7 +311,7 @@ fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
 fail_after_pop:
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    (void)close_fex_cuda(fex);
     return _cuda_err;
 }
 
@@ -628,8 +628,10 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     }
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
     const CudaFunctions *cu_f = fex->cu_state->f;
-    if (cu_f && s->module)
+    if (cu_f && s->module) {
         (void)cu_f->cuModuleUnload(s->module);
+        s->module = NULL;
+    }
     return ret;
 }
 

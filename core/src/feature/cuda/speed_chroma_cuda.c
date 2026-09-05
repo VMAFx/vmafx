@@ -835,6 +835,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     return 0;
 
 free_cpu:
+    release_cuda_module_and_stream(s, cu_f);
     free_cuda_buffers(s, cu_f);
     return err;
 
@@ -914,14 +915,12 @@ fail:
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     SpeedChromaCudaState *s = fex->priv;
-    if (fex->cu_state && fex->cu_state->f)
+    if (fex->cu_state && fex->cu_state->f) {
         free_cuda_buffers(s, fex->cu_state->f);
+        release_cuda_module_and_stream(s, fex->cu_state->f);
+    }
     if (s->feature_name_dict)
         vmaf_dictionary_free(&s->feature_name_dict);
-    if (s->stream && fex->cu_state && fex->cu_state->f)
-        (void)fex->cu_state->f->cuStreamDestroy(s->stream);
-    if (fex->cu_state && fex->cu_state->f && s->module)
-        (void)fex->cu_state->f->cuModuleUnload(s->module);
     return 0;
 }
 

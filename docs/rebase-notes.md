@@ -1,6 +1,17 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/gpu-init-leaks-and-hip-mirror — fix CUDA init error path leaks and close verified GPU state issues (2026-09-04)
+
+no rebase impact: fork-local CUDA and documentation files.
+
+- `core/src/feature/cuda/speed_chroma_cuda.c`, `core/src/feature/cuda/speed_temporal_cuda.c`,
+  `core/src/feature/cuda/integer_ms_ssim_cuda.c`, `core/src/feature/cuda/integer_psnr_hvs_cuda.c`:
+  wholly fork-added CUDA feature extractors (upstream Netflix/vmaf does not have GPU SpEED, and
+  upstream CUDA extractors lack these fork-specific teardown paths). No upstream rebase conflicts.
+- `docs/state.md`: closed out resolved audit tasks `T-HIP-MOTION-V2-MIRROR-OFF-BY-ONE-2026-06-13`,
+  `T-SYCL-INIT-LEAKS-EXC-2026-06-19`, `T-SPEED-GPU-REGISTRY-ORPHAN-2026-06-19`, and
+  `T-CUDA-INIT-SUBMIT-LEAKS-2026-06-19`.
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 ## fix/sycl-adm-tidy-debt — SYCL ADM warning cleanup + tidy-lane scoping (2026-09-04)
 
