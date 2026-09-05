@@ -48,6 +48,14 @@ Every cell is the **median of 3 timed runs after one discarded warmup**,
 > `master`**; they are published because the throughput they show is real and
 > the retrain planning needs it. SYCL and HIP stay `BLOCKED` because the patch
 > does not unblock them.
+>
+> **Cross-check that the CPU rows are `master` behaviour.** Re-running the
+> 576×324 cells against a *pristine* all-backends build of the same commit
+> reproduces the pooled scores exactly — 76.667831 and 82.816062 — while the
+> throughput lands at 551.24 and 349.46 fps against the 613.71 and 379.15
+> quoted below. That ~11 % gap is the load difference (12.6 vs ~6.5) and a
+> different build directory, not a code difference, and it is a fair estimate
+> of how much this host's numbers move between sessions.
 
 ### `model/vmaf_v0.6.1.json` (the model every historical row above used)
 

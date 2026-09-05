@@ -160,4 +160,9 @@ scoring needs the twin-coverage gaps closed first, and the flush defect in
 - HIP's flush failure cause (no duplicate-write warning at all).
 - Whether the 1.5e-2 CUDA motion parity delta predates the flush defect.
 - Clean-machine numbers. Every figure here carries container-rebuild load;
-  a quiesced re-run would tighten the 4K rows in particular.
+  a quiesced re-run would tighten the 4K rows in particular. As a scale for
+  how much that matters: re-running the 576x324 CPU cells on a pristine
+  all-backends build of the same commit reproduced the pooled scores exactly
+  (76.667831 / 82.816062) but gave 551.24 / 349.46 fps against the published
+  613.71 / 379.15, at load 12.6 instead of ~6.5. Roughly 11 % of session-to-
+  session movement on this host is load and build-directory, not code.
