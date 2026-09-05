@@ -66,7 +66,7 @@ typedef int32_t od_coeff;
 #define OD_UNBIASED_RSHIFT32(_a, _b) (((int32_t)(((uint32_t)(_a) >> (32 - (_b))) + (_a))) >> (_b))
 #define OD_DCT_RSHIFT(_a, _b) OD_UNBIASED_RSHIFT32(_a, _b)
 
-// NOLINTNEXTLINE(readability-function-size) load-bearing upstream scalar reference.
+// NOLINTNEXTLINE(readability-function-size) — load-bearing upstream scalar reference (ADR-0138 / ADR-0141 / ADR-0278).
 static void ref_od_bin_fdct8(od_coeff y[8], const od_coeff *x, int xstride)
 {
     const ptrdiff_t xs = (ptrdiff_t)xstride;
