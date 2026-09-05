@@ -919,6 +919,7 @@
 1193-psnr-uncapped-option
 1191-adm-csf-fixed-point-representability-guard
 1181-percentile-pooling-methods
+1182-windows-utf8-path-contract
 1185-backend-perf-baseline-methodology
 1198-changelog-unknown-section-is-an-error
 1199-cuda-picture-handover-barrier
