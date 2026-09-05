@@ -67,7 +67,6 @@ fuzz_cli_parse = executable('fuzz_cli_parse',
     dependencies : [getopt_dependency],
     c_args : fuzz_flags + compat_cflags,
     cpp_args : fuzz_flags + compat_cflags,
-    override_options : ['cpp_std=c++23'],
     link_args : fuzz_flags + ['-Wl,--wrap=exit'],
     link_with : fuzz_cli_parse_link_target,
 )

@@ -10727,12 +10727,22 @@ core internal headers (`framesync.h`, `thread_pool.h`, `picture_pool.h`,
   re-pin.
 
 
-- The epic #1246 retrain runbook's gate table records **G4 (K150K re-smoke,
-  zero disk leak) as PASS**, measured 2026-09-06 against `master` `e91ab8284`
-  after PR #1302 merged: `ok=5 fail=0` in 10.6 s, all seven §4.2 assertions
-  green, and an empty scratch directory after the run. G1 drops from 12 open
-  epics to 11 now that #1244 is closed. Of the five gates, only G1 (remaining
-  epics) and G5 (maintainer authorization) are still outstanding.
+- **build(meson):** Remove the redundant per-target
+  `override_options : ['cpp_std=...']` entries (and the `libvmaf_cpu_cpp_std`
+  token variable) from `core/src/meson.build`, `core/test/meson.build`,
+  `core/tools/meson.build` and `core/test/fuzz/meson.build` — epic #1241
+  leftover. The C++ standard is project-wide since ADR-1003 / ADR-1056
+  (`add_project_arguments` in `core/meson.build`), and meson emits that flag
+  after any per-target `cpp_std=` option, so the 14 overrides never changed
+  the standard a TU was compiled at (`-std=c++23 ... -std=c++26`, last flag
+  wins). `meson introspect --buildoptions` is option-for-option identical
+  before and after for the CPU configure (96 options, no value or metadata
+  delta); the only compile-command delta is the dropped leading
+  `-std=c++23` / `-std=c++20` token on the 15 formerly overridden TUs. The two
+  `b_lto=false` overrides (AVX-512 symbol visibility, macOS `test_output`)
+  are real and stay.
+
+
 - **chore(rebrand):** Scrub the last live pre-rebrand identifiers left over
   from epic #1241. The root tooling distribution is now `vmafx-tooling` (was
   `vmaf-fork-tooling`; never published, no install path changes),
@@ -10747,6 +10757,14 @@ core internal headers (`framesync.h`, `thread_pool.h`, `picture_pool.h`,
   Unchanged on purpose: the `libvmaf.so` ABI / soname, the `libvmaf` ffmpeg
   filter name, the version scheme, the `lusoris.*` ONNX metadata keys (a
   model-sidecar contract), and historical "formerly `lusoris/vmaf`" notes.
+
+
+- The epic #1246 retrain runbook's gate table records **G4 (K150K re-smoke,
+  zero disk leak) as PASS**, measured 2026-09-06 against `master` `e91ab8284`
+  after PR #1302 merged: `ok=5 fail=0` in 10.6 s, all seven §4.2 assertions
+  green, and an empty scratch directory after the run. G1 drops from 12 open
+  epics to 11 now that #1244 is closed. Of the five gates, only G1 (remaining
+  epics) and G5 (maintainer authorization) are still outstanding.
 
 
 - **SHA-pin every GitHub Actions reference in `.github/workflows/*.yml`

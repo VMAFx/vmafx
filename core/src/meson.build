@@ -673,27 +673,19 @@ libvmaf_include = include_directories(
     is_nvtx_enabled ? '/usr/local/cuda/include' : '',
 )
 
-# GCC/Clang accept `c++23`; MSVC needs `vc++latest`; Intel oneAPI on Windows
-# (icx-cl, `intel-llvm-cl`) and clang-cl reject `c++23` and need plain
-# `c++latest`. Pick the right token per compiler so override_options
-# doesn't fail meson configure.
-_cpp_id = meson.get_compiler('cpp').get_id()
-if _cpp_id == 'msvc'
-    libvmaf_cpu_cpp_std = 'vc++latest'
-elif _cpp_id == 'intel-llvm-cl' or _cpp_id == 'intel-cl' or _cpp_id == 'clang-cl'
-    libvmaf_cpu_cpp_std = 'c++latest'
-else
-    libvmaf_cpu_cpp_std = 'c++23'
-endif
-
+# C++ standard: project-wide, not per target. core/meson.build injects the
+# newest working -std=c++2x flag (or /std:c++latest on MSVC) through
+# add_project_arguments (ADR-1003 / ADR-1056), and that flag follows every
+# per-target `cpp_std=` option on the command line, so a per-target
+# `override_options : ['cpp_std=...']` never changed the standard a C++ TU
+# was actually compiled at. The isolated `*_cpp23_lib` static libraries
+# below therefore carry no cpp_std override any more; they stay separate
+# libraries only for the extract_all_objects() link pattern (ADR-0708,
+# ADR-0858). Only `b_lto=false` overrides remain, and those are real.
 libvmaf_cpu_static_lib = static_library(
     'libvmaf_cpu',
     libvmaf_cpu_sources,
     include_directories : [libvmaf_include],
-    # ADR-0755 / ADR-0860: cpu.cpp uses constinit (C++20) and std::atomic, so
-    # this TU needs the compiler-aware cpp_std token; the plain 'c++23' spelling
-    # is rejected by MSVC / clang-cl / icx-cl.
-    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
 )
 
 platform_specific_cpu_objects = []
@@ -1874,16 +1866,13 @@ libvmaf_y_funque_plus_static_lib = static_library(
 )
 
 # ADR-0858: gpu_dispatch_env.cpp is compiled as an isolated C++23 static lib
-# so its cpp_std override (c++23) does not propagate to any other TU — same
-# isolation pattern as metadata_handler_cpp20_lib (ADR-0708).  The public C
+# (same isolation pattern as metadata_handler_cpp20_lib, ADR-0708).  The public C
 # symbol vmaf_gpu_dispatch_env_get retains its extern "C" linkage; callers
 # in C translation units link without modification.
 gpu_dispatch_env_cpp23_lib = static_library(
     'gpu_dispatch_env_cpp23',
     src_dir + 'gpu_dispatch_env.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
-    # libvmaf_cpu_cpp_std: compiler-aware token (ADR-0860 follow-up, PR #692 fix).
-    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     pic : true,
     install : false,
 )
@@ -1917,45 +1906,37 @@ libsvm_static_lib = static_library(
     cpp_args : libsvm_cpp_args,
 )
 
-# ADR-0708: metadata_handler.cpp is the first C++20 pilot TU. Compiled as a
-# separate static lib so its cpp_std override (c++20) does not propagate to
-# any other C++ TU in libvmaf. Linked into the final libvmaf via link_with below.
+# ADR-0708: metadata_handler.cpp is the first C++20 pilot TU. Kept as a
+# separate static lib (the isolated-lib link pattern every later C++ wave
+# copied); it is compiled at the project-wide C++ standard like every other
+# C++ TU. Linked into the final libvmaf via link_with below.
 metadata_handler_cpp20_lib = static_library(
     'metadata_handler_cpp20',
     src_dir + 'metadata_handler.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
-    override_options : ['cpp_std=c++20'],
     pic : true,
     install : false,
 )
 
 # ADR-0708 (Wave 1, second pilot after dict — supersedes PR #42 / ADR-0722):
 # log.cpp converts the libvmaf logging subsystem from C to C++23. The public
-# C ABI in src/log.h is preserved verbatim via `extern "C"` guards; this
-# isolated static-library pattern keeps the cpp_std=c++23 override scoped to
-# the single TU so it cannot leak into other C++ TUs that may still need a
-# lower floor (notably the SYCL device-image TUs compiled by icpx).
+# C ABI in src/log.h is preserved verbatim via `extern "C"` guards; the
+# isolated static-library pattern is kept for the extract_all_objects() link
+# path (log_cpp23_test_objects in test/meson.build).
 log_cpp23_lib = static_library(
     'log_cpp23',
     src_dir + 'log.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
-    # libvmaf_cpu_cpp_std is the compiler-aware token defined above
-    # (gcc/clang: 'c++23', MSVC: 'vc++latest', icx-cl: 'c++latest').
-    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     pic : true,
     install : false,
 )
 
-# ADR-0761: opt.cpp and predict.cpp — C++23 Wave 8. Isolated static libs so
-# cpp_std=c++23 does not propagate to the remaining C TUs in libvmaf.
-# Linked into libvmaf.so via extract_all_objects() in the library() call below.
+# ADR-0761: opt.cpp and predict.cpp — C++23 Wave 8. Isolated static libs,
+# linked into libvmaf.so via extract_all_objects() in the library() call below.
 opt_cpp23_lib = static_library(
     'opt_cpp23',
     src_dir + 'opt.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
-    # libvmaf_cpu_cpp_std: 'vc++latest' on MSVC, 'c++latest' on clang-cl/icx-cl,
-    # 'c++23' elsewhere — same compiler-aware token as log_cpp23_lib (ADR-0860).
-    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     pic : true,
     install : false,
 )
@@ -1969,8 +1950,6 @@ picture_pool_cpp23_lib = static_library(
     'picture_pool_cpp23',
     src_dir + 'picture_pool.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
-    # libvmaf_cpu_cpp_std: compiler-aware token (ADR-0860 follow-up, PR #692 fix).
-    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     # ODR fix: picture_pool.cpp must see the same HAVE_CUDA / HAVE_SYCL defines
     # as libvmaf.c so that VmafPicturePrivate has an identical layout in both
     # the pool allocator TU and every consumer TU.  Without this, the 40-byte
@@ -1991,8 +1970,6 @@ gpu_picture_pool_cpp23_lib = static_library(
     'gpu_picture_pool_cpp23',
     src_dir + 'gpu_picture_pool.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
-    # libvmaf_cpu_cpp_std: compiler-aware token (ADR-0860 follow-up, PR #692 fix).
-    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     # ODR fix (follow-up to PR #840): gpu_picture_pool.cpp includes picture.h
     # (line 30) and gpu_picture_pool.h (line 31, which re-includes picture.h).
     # VmafPicturePrivate's cuda sub-struct changes size when HAVE_CUDA is absent,
@@ -2011,8 +1988,6 @@ read_json_model_cpp23_lib = static_library(
     'read_json_model_cpp23',
     src_dir + 'read_json_model.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
-    # libvmaf_cpu_cpp_std: compiler-aware token (ADR-0860 follow-up, PR #692 fix).
-    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     pic : true,
     install : false,
     # read_json_model.cpp includes model.h which carries pthread_mutex_t
