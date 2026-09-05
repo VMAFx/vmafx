@@ -175,3 +175,28 @@ def test_build_vmaf_argv_subsample_and_features() -> None:
     assert "--no_prediction" in joined
     # Subsample must precede feature
     assert joined.index("--subsample 3") < joined.index("--feature psnr")
+
+
+def test_build_vmaf_argv_model_clip_transform_and_csv_sub() -> None:
+    extras = srv._extras_from_args(
+        {
+            "disable_clip": True,
+            "enable_transform": True,
+            "csv": True,
+        }
+    )
+    req = srv.ScoreRequest(
+        ref=Path("/data/ref.yuv"),
+        dis=Path("/data/dis.yuv"),
+        width=1920,
+        height=1080,
+        pixfmt="420",
+        bitdepth=8,
+        model="version=vmaf_v0.6.1",
+        output_fmt=extras.output_fmt,
+        extras=extras,
+    )
+    argv = srv._build_vmaf_argv(req, vmaf="vmaf", output="/tmp/out.csv")
+    idx = argv.index("-m")
+    assert argv[idx + 1] == "version=vmaf_v0.6.1:disable_clip:enable_transform"
+    assert "--csv" in argv

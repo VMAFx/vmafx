@@ -18,6 +18,8 @@ The schemas here MUST stay byte-identical to the Go server's
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import anyio
 import pytest
 
@@ -49,6 +51,10 @@ _NEW_PROPS = (
     "hip_device",
     "metal_device",
     "output_fmt",
+    "disable_clip",
+    "enable_transform",
+    "csv",
+    "sub",
 )
 
 
@@ -322,3 +328,92 @@ def test_e2e_score_cpu_with_tinyai_flags_and_error_path(monkeypatch: pytest.Monk
     )
     assert err_res.is_error is True
     assert len(err_res.content) > 0
+
+
+def test_model_clip_transform_and_csv_sub_flags() -> None:
+    """Verify model option flags and csv/sub output flags in Python server."""
+    # 1. disable_clip and enable_transform append to model in _build_vmaf_argv
+    extras = srv._extras_from_args({
+        "disable_clip": True,
+        "enable_transform": True,
+    })
+    assert not extras.is_empty()
+    req = srv.ScoreRequest(
+        ref=Path("/ref.yuv"),
+        dis=Path("/dis.yuv"),
+        width=1920,
+        height=1080,
+        pixfmt="420",
+        bitdepth=8,
+        model="version=vmaf_v0.6.1",
+        backend="cpu",
+        precision="legacy",
+        extras=extras,
+    )
+    argv = srv._build_vmaf_argv(req, vmaf="vmaf", output="/out.json")
+    assert "-m" in argv
+    idx = argv.index("-m")
+    assert argv[idx + 1] == "version=vmaf_v0.6.1:disable_clip:enable_transform"
+
+    # 2. Pre-existing :disable_clip is not duplicated
+    req_dup = srv.ScoreRequest(
+        ref=Path("/ref.yuv"),
+        dis=Path("/dis.yuv"),
+        width=1920,
+        height=1080,
+        pixfmt="420",
+        bitdepth=8,
+        model="version=vmaf_v0.6.1:disable_clip",
+        backend="cpu",
+        precision="legacy",
+        extras=extras,
+    )
+    argv_dup = srv._build_vmaf_argv(req_dup, vmaf="vmaf", output="/out.json")
+    idx = argv_dup.index("-m")
+    assert argv_dup[idx + 1] == "version=vmaf_v0.6.1:disable_clip:enable_transform"
+
+    # 3. csv=True maps to output_fmt="csv" and emits --csv
+    extras_csv = srv._extras_from_args({"csv": True})
+    assert extras_csv.output_fmt == "csv"
+    req_csv = srv.ScoreRequest(
+        ref=Path("/ref.yuv"),
+        dis=Path("/dis.yuv"),
+        width=1920,
+        height=1080,
+        pixfmt="420",
+        bitdepth=8,
+        model="version=vmaf_v0.6.1",
+        backend="cpu",
+        precision="legacy",
+        output_fmt=extras_csv.output_fmt,
+        extras=extras_csv,
+    )
+    argv_csv = srv._build_vmaf_argv(req_csv, vmaf="vmaf", output="/out.csv")
+    assert "--csv" in argv_csv
+
+    # 4. sub=True maps to output_fmt="sub" and emits --sub
+    extras_sub = srv._extras_from_args({"sub": True})
+    assert extras_sub.output_fmt == "sub"
+    req_sub = srv.ScoreRequest(
+        ref=Path("/ref.yuv"),
+        dis=Path("/dis.yuv"),
+        width=1920,
+        height=1080,
+        pixfmt="420",
+        bitdepth=8,
+        model="version=vmaf_v0.6.1",
+        backend="cpu",
+        precision="legacy",
+        output_fmt=extras_sub.output_fmt,
+        extras=extras_sub,
+    )
+    argv_sub = srv._build_vmaf_argv(req_sub, vmaf="vmaf", output="/out.sub")
+    assert "--sub" in argv_sub
+
+    # 5. Conflicting csv and sub flags rejected
+    with pytest.raises(ValueError, match="conflicting csv and sub flags"):
+        srv._extras_from_args({"csv": True, "sub": True})
+
+    # 6. Conflicting csv and output_fmt rejected
+    with pytest.raises(ValueError, match="conflicting output format"):
+        srv._extras_from_args({"csv": True, "output_fmt": "xml"})

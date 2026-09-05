@@ -428,6 +428,8 @@ class ScoreExtras:
     hip_device: int | None = None  # --hip_device
     metal_device: int | None = None  # --metal_device
     output_fmt: str = "json"  # --json | --xml | --csv | --sub
+    disable_clip: bool = False  # :disable_clip on model
+    enable_transform: bool = False  # :enable_transform on model
 
     def is_empty(self) -> bool:
         """Return True when no extra flag is set."""
@@ -615,7 +617,26 @@ def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
     if metal_device is not None and metal_device < 0:
         raise ValueError(f"invalid metal_device {metal_device}: must be non-negative")
 
-    output_fmt = _opt_str("output_fmt") or _opt_str("format") or "json"
+    output_fmt = _opt_str("output_fmt") or _opt_str("format")
+    csv_flag = bool(arguments.get("csv", False))
+    sub_flag = bool(arguments.get("sub", False))
+    if csv_flag and sub_flag:
+        raise ValueError("conflicting csv and sub flags: cannot specify both")
+    if csv_flag:
+        if output_fmt and output_fmt != "csv":
+            raise ValueError(
+                f"conflicting output format: csv flag cannot be used with output_fmt '{output_fmt}'"
+            )
+        output_fmt = "csv"
+    elif sub_flag:
+        if output_fmt and output_fmt != "sub":
+            raise ValueError(
+                f"conflicting output format: sub flag cannot be used with output_fmt '{output_fmt}'"
+            )
+        output_fmt = "sub"
+    elif not output_fmt:
+        output_fmt = "json"
+
     if output_fmt not in _VALID_OUTPUT_FMTS:
         raise ValueError(
             f"invalid output_fmt '{output_fmt}': must be one of json|xml|csv|sub"
@@ -646,6 +667,8 @@ def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
         hip_device=hip_device,
         metal_device=metal_device,
         output_fmt=output_fmt,
+        disable_clip=bool(arguments.get("disable_clip", False)),
+        enable_transform=bool(arguments.get("enable_transform", False)),
     )
 
 
@@ -866,6 +889,11 @@ def _build_vmaf_argv(
     # one. Mirrors the Go server's conditional -r (ADR-1117).
     if req.ref is not None:
         argv += ["-r", str(req.ref)]
+    model = req.model
+    if req.extras.disable_clip and ":disable_clip" not in model:
+        model = f"{model}:disable_clip"
+    if req.extras.enable_transform and ":enable_transform" not in model:
+        model = f"{model}:enable_transform"
     argv += [
         "-d",
         str(req.dis),
@@ -878,7 +906,7 @@ def _build_vmaf_argv(
         "-b",
         str(req.bitdepth),
         "-m",
-        req.model,
+        model,
         "--precision",
         req.precision,
         "-q",
@@ -2634,6 +2662,23 @@ def _scoring_extra_properties() -> dict[str, Any]:
             "enum": ["json", "xml", "csv", "sub"],
             "default": "json",
             "description": "Score output format (--json, --xml, --csv, --sub). Default: json.",
+        },
+        # --- Model flags & score-param leftovers ---
+        "disable_clip": {
+            "type": "boolean",
+            "description": "Disable score clipping to [0, 100] on the model (--model ...:disable_clip).",
+        },
+        "enable_transform": {
+            "type": "boolean",
+            "description": "Enable score transform on the model (--model ...:enable_transform).",
+        },
+        "csv": {
+            "type": "boolean",
+            "description": "Write output file as CSV (--csv). Equivalent to output_fmt='csv'.",
+        },
+        "sub": {
+            "type": "boolean",
+            "description": "Write output file as subtitle-style per-frame scores (--sub). Equivalent to output_fmt='sub'.",
         },
     }
 

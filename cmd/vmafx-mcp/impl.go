@@ -238,6 +238,8 @@ type scoreExtras struct {
 	hipDevice       *int     // --hip_device
 	metalDevice     *int     // --metal_device
 	outputFmt       string   // --json | --xml | --csv | --sub
+	disableClip     bool     // :disable_clip on model
+	enableTransform bool     // :enable_transform on model
 }
 
 // isZero reports whether no scoring-extra flag is set, i.e. the request is a
@@ -252,6 +254,7 @@ func (ex scoreExtras) isZero() bool {
 		ex.subsample <= 1 &&
 		ex.cpumask == nil && ex.gpumask == nil && ex.syclDevice == nil &&
 		ex.hipDevice == nil && ex.metalDevice == nil &&
+		!ex.disableClip && !ex.enableTransform &&
 		(ex.outputFmt == "" || ex.outputFmt == "json")
 }
 
@@ -356,11 +359,27 @@ func parseScoreExtras(args map[string]any) (scoreExtras, error) {
 		return scoreExtras{}, fmt.Errorf("invalid metal_device %d: must be non-negative", *metalDevice)
 	}
 
-	outputFmt := strArg(args, "output_fmt", "")
-	if outputFmt == "" {
-		outputFmt = strArg(args, "format", "")
+	csvFlag := boolArg(args, "csv", false)
+	subFlag := boolArg(args, "sub", false)
+	if csvFlag && subFlag {
+		return scoreExtras{}, fmt.Errorf("conflicting csv and sub flags: cannot specify both")
 	}
-	if outputFmt == "" {
+	rawFmt := strArg(args, "output_fmt", "")
+	if rawFmt == "" {
+		rawFmt = strArg(args, "format", "")
+	}
+	outputFmt := rawFmt
+	if csvFlag {
+		if rawFmt != "" && rawFmt != "csv" {
+			return scoreExtras{}, fmt.Errorf("conflicting output format: csv flag cannot be used with output_fmt %q", rawFmt)
+		}
+		outputFmt = "csv"
+	} else if subFlag {
+		if rawFmt != "" && rawFmt != "sub" {
+			return scoreExtras{}, fmt.Errorf("conflicting output format: sub flag cannot be used with output_fmt %q", rawFmt)
+		}
+		outputFmt = "sub"
+	} else if outputFmt == "" {
 		outputFmt = "json"
 	}
 	if !validOutputFmts[outputFmt] {
@@ -392,6 +411,8 @@ func parseScoreExtras(args map[string]any) (scoreExtras, error) {
 		hipDevice:       hipDevice,
 		metalDevice:     metalDevice,
 		outputFmt:       outputFmt,
+		disableClip:     boolArg(args, "disable_clip", false),
+		enableTransform: boolArg(args, "enable_transform", false),
 	}
 
 	if raw, ok := args["feature"].([]any); ok {
@@ -554,6 +575,12 @@ func handleVmafScore(ctx context.Context, args map[string]any) (any, error) {
 // buildVmafArgv constructs the complete argv list for invoking the vmaf CLI,
 // maintaining strict byte-parity with the Python vmaf-mcp server.
 func buildVmafArgv(vmafBin, ref, dis string, width, height int, pixfmt string, bitdepth int, model, backend, precision, outPath string, extras scoreExtras) []string {
+	if extras.disableClip && !strings.Contains(model, ":disable_clip") {
+		model += ":disable_clip"
+	}
+	if extras.enableTransform && !strings.Contains(model, ":enable_transform") {
+		model += ":enable_transform"
+	}
 	argv := []string{}
 	if vmafBin != "" {
 		argv = append(argv, vmafBin)
