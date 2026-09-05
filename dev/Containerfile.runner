@@ -43,6 +43,12 @@ RUN mkdir -p /actions-runner \
 COPY dev/scripts/runner-entrypoint.sh /actions-runner/entrypoint.sh
 RUN chmod +x /actions-runner/entrypoint.sh
 
+# dev/docker-compose.runner.yml mounts a named volume at /actions-runner/_work.
+# Docker seeds a fresh named volume from the image directory, ownership
+# included, so the directory must exist and belong to the runner user here;
+# otherwise config.sh / checkout fail with EACCES on a root-owned mount point.
+RUN mkdir -p /actions-runner/_work && chown runner:runner /actions-runner/_work
+
 # Environment for oneAPI and runner
 ENV ONEAPI_ROOT=/opt/intel/oneapi
 ENV DPCPP_ROOT=${ONEAPI_ROOT}/compiler/latest

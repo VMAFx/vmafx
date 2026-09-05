@@ -41,9 +41,13 @@ services:
       ONEAPI_ROOT: "/opt/intel/oneapi"
       DPCPP_ROOT: "/opt/intel/oneapi/compiler/latest"
     # ONLY the Intel Arc A380 render node is passed through.
-    # By-path: /dev/dri/by-path/pci-0000:03:00.0-render -> renderD129
+    # By-path: /dev/dri/by-path/pci-0000:03:00.0-render -> renderD129 (vendor
+    # 0x8086, device 0x56a5). renderD numbers and PCI BDFs can change after a
+    # PCI re-enumeration (docs/state.md T-DEV-CONTAINER-DRI-BIND-RACE-2026-05-18),
+    # so resolve the node before every `up`:
+    #   ARC_RENDER_NODE=$(dev/scripts/arc-render-node.sh)   # verifies vendor 0x8086
     devices:
-      - /dev/dri/renderD129:/dev/dri/renderD129
+      - "${ARC_RENDER_NODE:-/dev/dri/renderD129}:/dev/dri/renderD129"
     # Level Zero NEO runtime 26.x requires unconfined seccomp on Linux >= 7.0 (ADR-0541)
     security_opt:
       - seccomp=unconfined

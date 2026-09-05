@@ -43,6 +43,9 @@ jobs:
       - name: Wait for sibling workflows + verify required-check outcomes
         if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          # ADR-1177 — operator switch for the Arc A380 self-hosted lane.
+          SYCL_ARC_RUNNER_ENABLED: ${{ vars.SYCL_ARC_RUNNER_ENABLED }}
         with:
           retries: 3
           script: |
@@ -212,35 +215,29 @@ jobs:
               await new Promise(r => setTimeout(r, 30000));
             }
 
-            // ADR-1177 — Probe whether a self-hosted runner with label 'sycl-arc' is registered.
-            // When unregistered, 'SYCL Parity (Arc A380)' degrades gracefully (absence or skip is OK).
-            // When registered, absence or skipped is a hard failure (loud failure per ADR-1177).
-            let syclArcRegistered = false;
-            try {
-              const { data: runnersData } = await github.rest.actions.listSelfHostedRunnersForRepo({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-              });
-              syclArcRegistered = runnersData.runners.some(r =>
-                r.labels && r.labels.some(l => l.name === 'sycl-arc')
-              );
-              core.info(`Self-hosted runner probe: sycl-arc registered = ${syclArcRegistered}`);
-            } catch (err) {
-              core.warning(`Failed to query self-hosted runners: ${err.message}`);
-            }
+            // ADR-1177 — 'SYCL Parity (Arc A380)' runs on the workstation's
+            // Arc A380 self-hosted runner. The lane is switched by the repository
+            // variable SYCL_ARC_RUNNER_ENABLED (read below from env; the runner
+            // list itself is not queried here because GITHUB_TOKEN cannot list
+            // self-hosted runners). Disabled: absence or skip is accepted.
+            // Enabled: the job must report and succeed — the probe job in
+            // sycl-parity.yml fails loudly when the runner is missing/offline,
+            // which skips the parity job, and that skip is rejected here.
+            const syclArcEnabled = (process.env.SYCL_ARC_RUNNER_ENABLED || '').trim() === 'true';
+            core.info(`SYCL_ARC_RUNNER_ENABLED=${syclArcEnabled}`);
 
             const failed = [];
             const accepted = ['success', 'skipped', 'neutral'];
             for (const name of required) {
               const run = byName[name];
               if (name === 'SYCL Parity (Arc A380)') {
-                if (syclArcRegistered) {
+                if (syclArcEnabled) {
                   if (!run) {
-                    failed.push(`${name}: runner is registered with 'sycl-arc' label, but job never reported on SHA ${sha}`);
+                    failed.push(`${name}: SYCL_ARC_RUNNER_ENABLED=true but the job never reported on SHA ${sha}`);
                     continue;
                   }
                   if (run.conclusion === 'skipped') {
-                    failed.push(`${name}: runner is registered with 'sycl-arc' label, but job was skipped (runner may be offline)`);
+                    failed.push(`${name}: SYCL_ARC_RUNNER_ENABLED=true but the job was skipped (runner probe failed — runner not registered or offline)`);
                     continue;
                   }
                   if (!['success', 'neutral'].includes(run.conclusion)) {
@@ -249,12 +246,10 @@ jobs:
                     core.info(`OK (${run.conclusion}): ${name}`);
                   }
                   continue;
-                } else {
-                  // Not registered: absence or skipped is acceptable
-                  if (!run || run.conclusion === 'skipped') {
-                    core.info(`OK (no sycl-arc runner registered, absence/skip permitted): ${name}`);
-                    continue;
-                  }
+                }
+                if (!run || run.conclusion === 'skipped') {
+                  core.info(`OK (Arc A380 lane disabled, absence/skip permitted): ${name}`);
+                  continue;
                 }
               }
               if (!run) {

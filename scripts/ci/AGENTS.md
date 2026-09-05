@@ -43,7 +43,7 @@ until master is fixed.
 | `check-dispatch-registry.sh` | `.pre-commit-config.yaml` (`check-dispatch-registry` hook), `tests-and-quality-gates.yml` (`Pre-Commit` job) | Cross-references backend symbols `vmaf_fex_*_<backend>` in `core/src/feature/<backend>/` against `feature_extractor_list[]` in `core/src/feature/feature_extractor.cpp`. Fails if any backend symbol is omitted from the registration array. Test suite: `scripts/ci/tests/test-check-dispatch-registry.sh`. |
 | `classify-dependency-pr.sh` | `rule-enforcement.yml` — `deep-dive-checklist` and `doc-substance-check` jobs ([ADR-1152](../../docs/adr/1152-dependency-pr-gate-exemption.md)) | Reads `$PR_AUTHOR`, `$HEAD_REF`, `$BASE_SHA`, `$HEAD_SHA` from workflow env. The exemption is author-AND-path-gated and must never be widened to a path glob alone. Bot identity requires `renovate[bot]` / `dependabot[bot]` (or `app/renovate` / `app/dependabot`), or a `renovate/*` / `dependabot/*` branch, AND all changed paths must be in the explicit manifest/lockfile allowlist. Bot PRs touching source code must still satisfy both documentation gates. Test suite: `scripts/ci/test-classify-dependency-pr.sh`. |
 | `test-classify-dependency-pr.sh` | (local-only fixture driver, not invoked by CI) | Run before pushing changes to `classify-dependency-pr.sh`; exercises the predicate space across dependency-only diffs, mixed source diffs, non-bot authors, and real PR fixtures (#1206, #1207, #1212, #1214). |
-| `check-runner-available.sh` | `sycl-parity.yml` (`Probe Arc A380 runner availability`), `required-aggregator.yml` (`Check Arc A380 runner registration`) | Probes whether a runner matching the specified label (`sycl-arc`) is registered. Exit 0 = unregistered or online; exit 1 = registered but offline. Preserves CI green status when runner hardware is unprovisioned, while failing loudly when registered runner drops offline. Test suite: `scripts/ci/tests/test-runner-available.sh`. |
+| `check-runner-available.sh` | `sycl-parity.yml` (`runner-available` job, step `Check runner availability`) | Reads the lane switch `$RUNNER_ENABLED` (= `vars.SYCL_ARC_RUNNER_ENABLED`). Disabled: exit 0, `available=false`, no API call. Enabled: queries `GET repos/<repo>/actions/runners` with `$GH_TOKEN` (`secrets.SYCL_RUNNER_PROBE_TOKEN`) and requires an ONLINE runner labelled `sycl-arc`; API error, no such runner, or all offline = exit 1 with `::error::`. Never maps an API error to "unregistered". Test suite: `scripts/ci/tests/test-runner-available.sh`. |
 
 ## `check-vcs-version-not-bare-sha.sh` invariants
 
@@ -349,8 +349,18 @@ under `.github/workflows/sycl-parity.yml`. The following invariants are load-bea
    `runner` (uid 1001, gid 1001) in groups 988 (`render`) and 984 (`video`). No Docker socket
    (`/var/run/docker.sock`) is mounted. Container resource limits are capped at 8 CPUs and 16 GB RAM.
    Ephemeral mode (`--ephemeral`) ensures a clean environment per job without state persistence.
-4. **Registration probe contract**: `required-aggregator.yml` lists `SYCL Parity (Arc A380)` in its
-   required status checks list, but queries GitHub's runner API via `check-runner-available.sh`:
-   - If the runner is unregistered in the repository: absent or skipped jobs are accepted as pass.
-   - If the runner is registered: the job MUST report and MUST succeed; skipped or offline state
-     causes a loud aggregator failure.
+4. **Lane-switch contract**: `required-aggregator.yml` lists `SYCL Parity (Arc A380)` as required and
+   reads `vars.SYCL_ARC_RUNNER_ENABLED` (it makes no runner API call — `GITHUB_TOKEN` cannot list
+   self-hosted runners):
+   - Lane disabled (variable unset / not `true`): absent or skipped is accepted as pass.
+   - Lane enabled: the job MUST report `success`; absent or skipped (the probe failed because the
+     runner is unregistered, offline, or the probe token was rejected) is a loud aggregator failure.
+   Never reintroduce an auto-detect probe that treats an API error as "unregistered" — that makes a
+   required check silently green.
+5. **Probe token**: `check-runner-available.sh` runs the runner-list query only while the lane is
+   enabled, with `secrets.SYCL_RUNNER_PROBE_TOKEN` (fine-grained PAT, single repository,
+   Administration: read-only). Do not widen the workflow's `permissions:` in an attempt to replace it —
+   there is no `administration` scope there.
+6. **Render node is resolved, not hard-coded**: `dev/docker-compose.runner.yml` takes
+   `ARC_RENDER_NODE` from `dev/scripts/arc-render-node.sh` (exactly one vendor-`0x8086` render node).
+   Do not replace it with a bare `renderD<N>`; numbers change after PCI re-enumeration.

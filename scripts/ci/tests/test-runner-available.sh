@@ -4,11 +4,14 @@
 #
 # scripts/ci/tests/test-runner-available.sh — Test suite for check-runner-available.sh
 #
-# Tests probe logic across:
-#   1. Empty runner list (unregistered)
-#   2. Runner registered and online
-#   3. Runner registered and offline (must exit 1 with loud error)
-#   4. Other runners registered without sycl-arc label
+# Pins the ADR-1177 probe contract:
+#   1. Lane disabled (RUNNER_ENABLED unset / not "true"): exit 0, available=false,
+#      regardless of the runner list (no API call is made).
+#   2. Lane enabled, runner registered and online: exit 0, available=true.
+#   3. Lane enabled, runner registered but offline: exit 1 (loud).
+#   4. Lane enabled, no runner with the label (only other runners): exit 1 (loud).
+#   5. Lane enabled, empty runner list: exit 1 (loud).
+#   6. Lane enabled, runner list unreadable (API/token failure): exit 1 (loud).
 #
 # Exit 0 on all pass, 1 on failure.
 
@@ -31,12 +34,15 @@ trap cleanup EXIT
 pass=0
 fail=0
 
+# run_case LABEL ENABLED JSON WANT_RC WANT_REGISTERED WANT_AVAILABLE [EXTRA_ENV...]
 run_case() {
   local label="$1"
-  local json_payload="$2"
-  local want_rc="$3"
-  local want_reg="$4"
-  local want_avail="$5"
+  local enabled="$2"
+  local json_payload="$3"
+  local want_rc="$4"
+  local want_reg="$5"
+  local want_avail="$6"
+  shift 6
 
   local out_file="${TMPDIR_TESTS}/output.txt"
   local log_file="${TMPDIR_TESTS}/log.txt"
@@ -44,7 +50,9 @@ run_case() {
   : >"$log_file"
 
   local rc=0
-  RUNNERS_JSON="$json_payload" \
+  env "$@" \
+    RUNNER_ENABLED="$enabled" \
+    RUNNERS_JSON="$json_payload" \
     GITHUB_OUTPUT="$out_file" \
     bash "$PROBE" >"$log_file" 2>&1 || rc=$?
 
@@ -71,15 +79,20 @@ run_case() {
     return
   fi
 
+  # A loud failure must carry a ::error:: annotation so it is visible in the
+  # Checks UI, and a disabled lane must never claim availability.
+  if [[ "$want_rc" -eq 1 ]] && ! grep -q '^::error' "$log_file"; then
+    echo "FAIL ${label}: exit 1 without a ::error:: annotation"
+    fail=$((fail + 1))
+    return
+  fi
+
   echo "PASS ${label}"
   pass=$((pass + 1))
 }
 
-# Case 1: Empty runner list
 JSON_EMPTY='{"total_count":0,"runners":[]}'
-run_case "unregistered_empty" "$JSON_EMPTY" 0 "false" "false"
 
-# Case 2: Other runner registered (cuda)
 JSON_OTHER='{
   "total_count": 1,
   "runners": [
@@ -91,9 +104,7 @@ JSON_OTHER='{
     }
   ]
 }'
-run_case "other_label_only" "$JSON_OTHER" 0 "false" "false"
 
-# Case 3: SYCL Arc runner registered and online
 JSON_ONLINE='{
   "total_count": 1,
   "runners": [
@@ -105,9 +116,7 @@ JSON_ONLINE='{
     }
   ]
 }'
-run_case "sycl_arc_online" "$JSON_ONLINE" 0 "true" "true"
 
-# Case 4: SYCL Arc runner registered and offline (fails loudly)
 JSON_OFFLINE='{
   "total_count": 1,
   "runners": [
@@ -119,7 +128,30 @@ JSON_OFFLINE='{
     }
   ]
 }'
-run_case "sycl_arc_offline" "$JSON_OFFLINE" 1 "true" "false"
+
+# 1. Lane disabled — always a clean skip, whatever the runner list says.
+run_case "disabled_unset" "" "$JSON_ONLINE" 0 "false" "false"
+run_case "disabled_false" "false" "$JSON_ONLINE" 0 "false" "false"
+run_case "disabled_empty_list" "no" "$JSON_EMPTY" 0 "false" "false"
+
+# 2. Lane enabled, runner online.
+run_case "enabled_online" "true" "$JSON_ONLINE" 0 "true" "true"
+
+# 3. Lane enabled, runner registered but offline — loud.
+run_case "enabled_offline" "true" "$JSON_OFFLINE" 1 "true" "false"
+
+# 4. Lane enabled, only unrelated runners — loud.
+run_case "enabled_other_label_only" "true" "$JSON_OTHER" 1 "false" "false"
+
+# 5. Lane enabled, nothing registered — loud.
+run_case "enabled_unregistered" "true" "$JSON_EMPTY" 1 "false" "false"
+
+# 6. Lane enabled, runner list unreadable (stands in for a 403 from the API).
+run_case "enabled_api_failure" "true" "" 1 "false" "false" \
+  "RUNNERS_FILE=${TMPDIR_TESTS}/does-not-exist.json"
+
+# 7. Lane enabled, malformed payload — loud, never silently "unregistered".
+run_case "enabled_malformed_json" "true" "not json" 1 "false" "false"
 
 echo "Results: ${pass} passed, ${fail} failed"
 [[ "$fail" -eq 0 ]]

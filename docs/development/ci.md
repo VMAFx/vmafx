@@ -117,12 +117,15 @@ check. Because the aggregator itself skips on drafts, draft PRs
 display "missing required check" — same situation as item 1 above
 and unmergeable for the same reason.
 
-For hardware-dependent jobs (`SYCL Parity (Arc A380)`,
-[ADR-1177](../adr/1177-sycl-arc-self-hosted-runner.md)), the aggregator
-dynamically probes repository runner registration via GitHub's API.
-If no runner with label `sycl-arc` is registered, the absent/skipped job is
-accepted as passing; if a runner is registered, the check is strictly required
-and fails loudly if offline or skipped.
+For the hardware-dependent `SYCL Parity (Arc A380)` check
+([ADR-1177](../adr/1177-sycl-arc-self-hosted-runner.md)), the aggregator
+reads the repository variable `SYCL_ARC_RUNNER_ENABLED`. While it is not
+`true` (lane not provisioned or paused by the operator) an absent or skipped
+job is accepted as passing; while it is `true` the job must report
+`success`, and a skip — which is what the loud probe failure in
+`sycl-parity.yml` produces when the runner is unregistered, offline, or the
+probe token is rejected — fails the aggregator. Operator runbook:
+[ci-self-hosted-sycl.md](ci-self-hosted-sycl.md).
 
 ## Twin-drift gate
 

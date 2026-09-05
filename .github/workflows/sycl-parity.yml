@@ -1,10 +1,24 @@
 name: "SYCL Parity (Arc A380)"
 
 # required-aggregator: SYCL Parity (Arc A380)
-# ADR-1177 — Intel Arc A380 containerised self-hosted runner SYCL parity CI gate.
-# Runs SYCL test suite and cross-backend parity gate on real Arc A380 silicon.
-# Degrades gracefully to skipped when no runner is registered.
-# Fails loudly when a runner is registered but offline.
+# ADR-1177 — SYCL parity on the workstation's Intel Arc A380, executed by a
+# containerised, ephemeral, repository-level self-hosted runner
+# (dev/Containerfile.runner + dev/docker-compose.runner.yml; operator runbook
+# in docs/development/ci-self-hosted-sycl.md).
+#
+# Lane switch: the repository variable SYCL_ARC_RUNNER_ENABLED.
+#   unset / not "true"  -> the probe reports available=false, the self-hosted
+#                          job is skipped, and the Required Checks Aggregator
+#                          accepts the skip (lane not provisioned).
+#   "true"              -> the probe must find an ONLINE runner labelled
+#                          `sycl-arc`; otherwise it fails loudly, the job is
+#                          skipped, and the aggregator rejects the skip.
+# The probe needs the SYCL_RUNNER_PROBE_TOKEN secret (fine-grained PAT,
+# Administration: read) because GITHUB_TOKEN cannot list self-hosted runners.
+#
+# Fork PRs never reach this workflow's jobs: the `if:` below requires the PR
+# head to live in this repository. There is no pull_request_target here and
+# must never be one.
 
 on:
   pull_request:
@@ -15,7 +29,6 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: read
   contents: read
 
 concurrency:
@@ -26,17 +39,21 @@ jobs:
   runner-available:
     name: "Probe SYCL Runner"
     runs-on: ubuntu-24.04
-    # Security: never run on fork pull requests on self-hosted infrastructure
+    # Security: never schedule anything from a fork PR onto self-hosted
+    # infrastructure; drafts do not contend for the scarce runner (ADR-0331).
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    timeout-minutes: 5
     outputs:
       available: ${{ steps.probe.outputs.available }}
       registered: ${{ steps.probe.outputs.registered }}
+      enabled: ${{ steps.probe.outputs.enabled }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check runner availability
         id: probe
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.SYCL_RUNNER_PROBE_TOKEN || github.token }}
+          RUNNER_ENABLED: ${{ vars.SYCL_ARC_RUNNER_ENABLED }}
           RUNNER_LABEL: "sycl-arc"
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: bash scripts/ci/check-runner-available.sh
@@ -47,13 +64,21 @@ jobs:
     needs: [runner-available]
     if: needs.runner-available.outputs.available == 'true'
     runs-on: [self-hosted, linux, x64, sycl-arc]
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
-      - name: Verify Intel Arc GPU visibility
-        run: sycl-ls
+      - name: Verify only the Intel Arc is visible
+        # The container passes through one render node; anything else here
+        # means the compose device list drifted (scripts/ci/AGENTS.md).
+        run: |
+          sycl-ls
+          if sycl-ls | grep -Eiq 'nvidia|amd radeon|gfx[0-9]'; then
+            echo "::error::a non-Intel GPU is visible inside the runner container"
+            exit 1
+          fi
+          sycl-ls | grep -Eq 'level_zero:gpu.*Arc'
       - name: Build SYCL (float enabled)
         env:
           CC: icx

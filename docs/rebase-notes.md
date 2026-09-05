@@ -229,11 +229,12 @@ no rebase impact: fork-only test wiring in `core/test/meson.build` and documenta
 ## ci/sycl-arc-self-hosted-runner — containerised self-hosted GitHub Actions runner for Intel Arc SYCL CI (ADR-1177) (2026-09-04)
 
 - `dev/Containerfile.runner`: fork-added; derives from `vmaf-dev-mcp:local` with GitHub Actions runner v2.337.0 and non-root `runner` user (uid 1001). Preserves all oneAPI SYCL tools and Level-Zero runtime. No upstream counterpart.
-- `dev/docker-compose.runner.yml`: fork-added compose file pinning device passthrough to `/dev/dri/renderD129` (Intel Arc A380) with NVIDIA and AMD device isolation, `seccomp=unconfined`, and 8 CPU / 16 GB limits.
+- `dev/docker-compose.runner.yml`: fork-added compose file passing through only the Intel Arc A380 render node (`${ARC_RENDER_NODE:-/dev/dri/renderD129}`, by-path `pci-0000:03:00.0-render`) with NVIDIA and AMD device isolation, `seccomp=unconfined`, and 8 CPU / 16 GB limits.
 - `dev/scripts/runner-entrypoint.sh`: fork-added runner entrypoint handling token configuration and ephemeral execution.
 - `.github/workflows/sycl-parity.yml`: fork-added workflow; runs on `[self-hosted, linux, x64, sycl-arc]`. Strictly prohibits execution on untrusted forks (`github.event.pull_request.head.repo.full_name == github.repository`).
-- `.github/workflows/required-aggregator.yml`: added `SYCL Parity (Arc A380)` to `required` array, with dynamic probe to allow absence/skip when the runner is unregistered, and loud failure if registered but offline.
-- `scripts/ci/check-runner-available.sh`: fork-added helper to query GitHub runner registration status by label.
+- `.github/workflows/required-aggregator.yml`: added `SYCL Parity (Arc A380)` to the `required` array; the check is switched by `vars.SYCL_ARC_RUNNER_ENABLED` (absence/skip accepted while disabled; skip = loud failure while enabled). No runner API call in the aggregator.
+- `scripts/ci/check-runner-available.sh` + `scripts/ci/tests/test-runner-available.sh`: fork-added hosted probe (lane switch + online check via `secrets.SYCL_RUNNER_PROBE_TOKEN`; API errors fail loudly).
+- `dev/scripts/arc-render-node.sh`: fork-added; resolves the single Intel render node for `ARC_RENDER_NODE`.
 - `scripts/ci/gpu_ulp_calibration.yaml`: added calibrated `float_ssim: 5.0e-4` entry for Arc A380 `sycl:0x8086:0x56a*`.
 - `core/test/meson.build`: tagged all 23 SYCL tests with `suite : ['fast', 'gpu', 'sycl']`. Upstream sync conflict resolution: preserve the `suite` additions on any upstream test additions.
 - Rebase impact: minimal. Upstream Netflix/vmaf has no SYCL backend, no self-hosted runner infrastructure, and no `required-aggregator.yml`. If upstream touches `core/test/meson.build`, keep the fork's SYCL test declarations and suite tags.
