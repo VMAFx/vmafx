@@ -80,7 +80,7 @@ struct VmafCudaKernelLifecycle;
  * Idempotent: a second open without an intervening close is a no-op
  * and keeps the existing batch.
  */
-void vmaf_cuda_drain_batch_open(void);
+void vmaf_cuda_drain_batch_open(const VmafCudaState *cu_state);
 
 /**
  * Register an extractor lifecycle into the open batch.
@@ -149,6 +149,18 @@ void vmaf_cuda_drain_batch_close(void);
  * never opened a batch.
  */
 void vmaf_cuda_drain_batch_thread_destroy(VmafCudaState *cu_state);
+
+/**
+ * Number of entries currently registered in this thread's batch.
+ *
+ * Introspection for the unit test that pins the owner scoping
+ * (docs/state.md T-UPSTREAM-1305-CUDA-DRAIN-BATCH-THREAD-GLOBAL-2026-09-03):
+ * a batch owned by another ``VmafCudaState`` must never be waited on, and
+ * ``vmaf_cuda_drain_batch_thread_destroy`` must leave zero entries behind so
+ * the next context on this thread cannot see freed events or flags. Not part
+ * of the public libvmaf API — ``drain_batch.h`` is a private header.
+ */
+unsigned vmaf_cuda_drain_batch_pending(void);
 
 #ifdef __cplusplus
 } /* extern "C" */

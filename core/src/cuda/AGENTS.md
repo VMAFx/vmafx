@@ -243,6 +243,18 @@ cuda/
   [ADR-0356](../../../docs/adr/0356-ssimulacra2-cuda-leaks-perf.md)
   (`ssimulacra2_cuda` had two unloaded modules — `module_blur` +
   `module_mul`).
+- **The drain batch belongs to one engine at a time.** `drain_batch.c`'s
+  `g_drain_batch` is thread-local (ADR-0242) but two `VmafContext`s can run on
+  one OS thread, so it carries the owning `VmafCudaState`:
+  `vmaf_cuda_drain_batch_open()` takes that state and drops entries left by a
+  different owner, `vmaf_cuda_drain_batch_flush()` returns 0 without touching
+  CUDA when the caller is not the owner, the flush clears the entries it
+  consumed, and `vmaf_cuda_drain_batch_thread_destroy()` wipes entries, the open
+  flag and the owner before the engine state is freed. Never restore the
+  owner-less `open(void)` signature: without it a closed context leaves dangling
+  `CUevent`s and freed `bool *` flags for the next one (docs/state.md
+  T-UPSTREAM-1305-CUDA-DRAIN-BATCH-THREAD-GLOBAL-2026-09-03, pinned by
+  `core/test/test_cuda_drain_batch.c`).
 
 ## Governing ADRs
 

@@ -2666,7 +2666,7 @@ static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, VmafPicture *ref
     /* Phase 2: batched submit of the curr frame. The drain batch is
      * re-opened so each extractor's submit() registers its
      * ``finished`` event for the next frame's drain_flush. */
-    vmaf_cuda_drain_batch_open();
+    vmaf_cuda_drain_batch_open(&vmaf->cuda.state);
     for (unsigned i = 0; i < vmaf->registered_feature_extractors.cnt; i++) {
         VmafFeatureExtractorContext *fex_ctx = vmaf->registered_feature_extractors.fex_ctx[i];
         if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA)) {
@@ -3021,6 +3021,59 @@ int vmaf_register_metadata_handler(VmafContext *vmaf, VmafMetadataConfiguration 
     return vmaf_feature_collector_register_metadata(vmaf->feature_collector, cfg);
 }
 
+/* Fence the pipeline so a read at ``index`` sees every write that is already
+ * owed for it (Netflix/vmaf#1305, docs/state.md
+ * T-UPSTREAM-1305-CUDA-DRAIN-BATCH-THREAD-GLOBAL-2026-09-03).
+ *
+ * The read entry points below used to go straight to the feature collector, so
+ * a caller pulling index N-2 while N was in flight could read a slot the
+ * producing thread (or the GPU collect step) had not written yet. Fencing on
+ * every read would serialise the pipeline, so the callers fence only after the
+ * lock-free read reports the slot unwritten: wait for the worker threads, then,
+ * on CUDA, drain the batch and run the pending collect() so the slots the
+ * device already computed are actually in the collector. The drain batch stays
+ * open afterwards — Phase 1 of the next vmaf_read_pictures() re-flushes it, and
+ * flushing twice is a no-op because the flush clears its entries.
+ *
+ * Returns 0 when it is worth re-reading, negative on a fence error. */
+static int fence_for_read(VmafContext *vmaf, unsigned index)
+{
+    int err = 0;
+
+    if (vmaf->thread_pool) {
+        err = vmaf_thread_pool_wait(vmaf->thread_pool);
+        if (err)
+            return err;
+    }
+
+#ifdef HAVE_CUDA
+    if (vmaf->cuda.state.ctx) {
+        err = vmaf_cuda_drain_batch_flush(&vmaf->cuda.state);
+        if (err)
+            return err;
+        for (unsigned i = 0; i < vmaf->registered_feature_extractors.cnt; i++) {
+            VmafFeatureExtractorContext *fex_ctx = vmaf->registered_feature_extractors.fex_ctx[i];
+            if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA))
+                continue;
+            if (!fex_ctx->gpu_pending)
+                continue;
+            if (fex_ctx->gpu_pending_index > index)
+                continue;
+            err = vmaf_feature_extractor_context_collect(fex_ctx, fex_ctx->gpu_pending_index,
+                                                         vmaf->feature_collector);
+            fex_ctx->gpu_pending = false;
+            fex_release_prev_ref(fex_ctx->fex);
+            if (err)
+                return err;
+        }
+    }
+#else
+    (void)index;
+#endif
+
+    return 0;
+}
+
 int vmaf_feature_score_at_index(VmafContext *vmaf, const char *feature_name, double *score,
                                 unsigned index)
 {
@@ -3031,7 +3084,16 @@ int vmaf_feature_score_at_index(VmafContext *vmaf, const char *feature_name, dou
     if (!score)
         return -EINVAL;
 
-    return vmaf_feature_collector_get_score(vmaf->feature_collector, feature_name, score, index);
+    int err = vmaf_feature_collector_get_score(vmaf->feature_collector, feature_name, score, index);
+    if (err == -EAGAIN) {
+        /* The slot exists but is unwritten: fence and read once more before
+         * telling the caller the frame is not ready (Netflix/vmaf#1305). */
+        const int fence_err = fence_for_read(vmaf, index);
+        if (fence_err)
+            return fence_err;
+        err = vmaf_feature_collector_get_score(vmaf->feature_collector, feature_name, score, index);
+    }
+    return err;
 }
 
 int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsigned index)
@@ -3057,6 +3119,13 @@ int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsi
      * first, causing vmaf_score_pooled to return -EAGAIN for multi-frame
      * sequences.  ADR-1073. */
     if (err) {
+        /* Netflix/vmaf#1305: the input features for this index may still be in
+         * flight (worker threads, or a CUDA collect that has not run yet), so
+         * fence before predicting — otherwise the prediction is computed from
+         * unwritten slots. */
+        const int fence_err = fence_for_read(vmaf, index);
+        if (fence_err)
+            return fence_err;
         err = vmaf_predict_score_at_index(model, vmaf->feature_collector, index, score, true, false,
                                           0);
     }

@@ -64,6 +64,14 @@ moving between sections. After any such resolution, run `bash scripts/ci/check-s
   header into parse errors). On a sync, keep the bracket balanced and do not "modernise" the
   header — every rewrite it suppresses breaks the C includers.
 
+## fix/cuda-drain-batch-per-state-lifetime — drain-batch ownership and the read fence (2026-09-05)
+
+`core/src/cuda/drain_batch.{c,h}` and `core/test/test_cuda_drain_batch.c` are fork-added (ADR-0242);
+`core/src/libvmaf.c` is an upstream-mirror file and the two hunks there are fork-only: the
+`fence_for_read()` helper above `vmaf_feature_score_at_index()` and its two call sites. On rebase,
+keep the invariant that `vmaf_cuda_drain_batch_open()` takes the owning `VmafCudaState` — an
+upstream signature without the owner reintroduces the cross-context bleed.
+
 ## fix/gpu-init-leaks-and-hip-mirror — fix CUDA init error path leaks and close verified GPU state issues (2026-09-04)
 
 no rebase impact: fork-local CUDA and documentation files.

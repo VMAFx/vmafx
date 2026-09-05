@@ -39,6 +39,13 @@
  * the ``thread_pool`` only parallelises CPU extractors), so a TLS
  * batch matches the actual call graph 1:1. */
 typedef struct DrainBatchTls {
+    /* Owning engine state. The batch is thread-local (ADR-0242) but two
+     * VmafContexts can share one OS thread: without an owner check, context
+     * B's flush would wait on context A's CUevents and write through A's
+     * ``bool *`` flags after A was closed. Registration is refused for a
+     * foreign owner, and open()/thread_destroy() re-claim / clear it.
+     * docs/state.md T-UPSTREAM-1305-CUDA-DRAIN-BATCH-THREAD-GLOBAL-2026-09-03. */
+    const VmafCudaState *owner;
     bool open;
     unsigned n;
     CUevent finished[VMAF_CUDA_DRAIN_BATCH_MAX];
@@ -48,8 +55,17 @@ typedef struct DrainBatchTls {
 
 static _Thread_local DrainBatchTls g_drain_batch;
 
-void vmaf_cuda_drain_batch_open(void)
+void vmaf_cuda_drain_batch_open(const VmafCudaState *cu_state)
 {
+    if (g_drain_batch.owner != cu_state) {
+        /* A different engine (or the first one on this thread) is taking the
+         * batch over. Any entries left by the previous owner refer to events
+         * and flags whose lifetime we cannot vouch for, so drop them rather
+         * than wait on them. The previous owner's own close()/destroy() has
+         * already released the objects themselves. */
+        g_drain_batch.n = 0;
+        g_drain_batch.owner = cu_state;
+    }
     if (g_drain_batch.open) {
         return;
     }
@@ -137,6 +153,10 @@ int vmaf_cuda_drain_batch_flush(VmafCudaState *cu_state)
     if (cu_state == NULL) {
         return -EINVAL;
     }
+    if (g_drain_batch.owner != NULL && g_drain_batch.owner != cu_state) {
+        /* Another engine owns this thread's batch — never wait on its events. */
+        return 0;
+    }
     if (!g_drain_batch.open || g_drain_batch.n == 0U) {
         return 0;
     }
@@ -173,6 +193,10 @@ int vmaf_cuda_drain_batch_flush(VmafCudaState *cu_state)
             *g_drain_batch.flags[i] = true;
         }
     }
+    /* Entries are consumed: the flags are set and the events belong to the
+     * frame that just drained. Clearing here means a later flush without an
+     * intervening open() cannot wait on them a second time. */
+    g_drain_batch.n = 0;
     return 0;
 }
 
@@ -186,8 +210,22 @@ void vmaf_cuda_drain_batch_close(void)
      * paths in integer_motion/adm/vif_cuda.c. */
 }
 
+unsigned vmaf_cuda_drain_batch_pending(void)
+{
+    return g_drain_batch.n;
+}
+
 void vmaf_cuda_drain_batch_thread_destroy(VmafCudaState *cu_state)
 {
+    /* Wipe the registrations before anything else: after this call the
+     * caller frees the engine state, so every registered CUevent and every
+     * ``bool *`` flag becomes dangling. A later context on the same thread
+     * must not see them (T-UPSTREAM-1305-CUDA-DRAIN-BATCH-THREAD-GLOBAL). */
+    if (g_drain_batch.owner == NULL || g_drain_batch.owner == cu_state) {
+        g_drain_batch.n = 0;
+        g_drain_batch.open = false;
+        g_drain_batch.owner = NULL;
+    }
     if (cu_state == NULL || g_drain_batch.drain_str == NULL) {
         g_drain_batch.drain_str = NULL;
         return;
