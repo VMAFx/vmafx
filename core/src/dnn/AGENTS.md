@@ -373,6 +373,19 @@ because it changes report schema cardinality. Also do not revert the
 rank-2 / rank-4 frame runners back to `vmaf_ort_infer()` — that helper
 is single-output by construction and would reopen T-DNN-MULTI-OUTPUT.
 
+## Invariant — int8 loader redirect and scaler declaration contract
+
+- **Sidecar `quant_mode` drives the redirect**: `vmaf_use_tiny_model()` in
+  `dnn_attach_api.c` mirrors `vmaf_dnn_session_open()` in `dnn_api.c`. When the
+  companion sidecar declares `quant_mode != VMAF_QUANT_FP32`, the runtime
+  redirects to load sibling `<basename>.int8.onnx` if present and valid; if
+  absent or invalid, it gracefully falls back to the fp32 baseline per
+  ADR-1032 (`VMAF_LOG_LEVEL_DEBUG`).
+- **`onnx_has_scaler` must match the graph**: If an int8 model's ONNX graph
+  bakes in input normalisation / scaling ops (`Sub`/`Div` or scalar constants),
+  its companion sidecar `.json` must declare `"onnx_has_scaler": true` so the
+  runtime normalisation is bypassed and double-scaling is prevented.
+
 ## Testing
 
 ```bash

@@ -278,6 +278,14 @@ Underscore aliases (`--tiny_model`, `--tiny_device`, `--tiny_threads`, `--tiny_f
 `--no_reference`, `--dnn_ep`) are accepted for scripting symmetry with the underscore
 flags upstream uses.
 
+When `--tiny-model <path>` is specified with a path like `<stem>.onnx`, the
+loader inspects the companion sidecar `<stem>.json`. If the sidecar declares
+`quant_mode != "fp32"` (such as `"dynamic"`, `"static"`, or `"qat"`), the runtime
+automatically redirects to load the quantized sibling `<stem>.int8.onnx` if
+present and valid. If the int8 artifact is missing or fails the op allowlist,
+it gracefully falls back to loading the fp32 baseline `<stem>.onnx` at debug
+log level (ADR-1032).
+
 `--no-reference` puts the CLI into no-reference (NR) mode (ADR-0520):
 
 - `--reference` / `-r` is no longer required. The CLI opens the

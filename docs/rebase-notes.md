@@ -174,6 +174,13 @@ no rebase impact: fork-local SYCL feature extractor and tests.
   `core/src/feature/` wildcard glob, silently truncated the comment mid-file, and turned the
   header into parse errors). On a sync, keep the bracket balanced and do not "modernise" the
   header — every rewrite it suppresses breaks the C includers.
+## feat/dnn-int8-redirect-and-sidecar-fixes — wire int8 redirect and fp32 fallback into vmaf_use_tiny_model (2026-09-05)
+
+- `core/src/dnn/dnn_attach_api.c`: wired `.int8.onnx` redirect and ADR-1032 debug fallback
+  into `vmaf_use_tiny_model()` when sidecar `quant_mode != VMAF_QUANT_FP32`.
+- `core/test/dnn/test_vmaf_use_tiny_model.c`: unit tests for int8 redirect, fp32 fallback,
+  and missing external data error path.
+- `no rebase impact: fork-added tiny-AI DNN loader surface with no upstream Netflix counterpart.`
 
 ## fix/cuda-drain-batch-per-state-lifetime — drain-batch ownership and the read fence (2026-09-05)
 

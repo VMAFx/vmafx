@@ -51,6 +51,7 @@
  * rejects it at the attach-time shape gate because the public tiny-model
  * frame path supports rank-2 feature vectors and rank-4 NCHW images only. */
 #define RANK5_MODEL "model/tiny/transnet_v2.onnx"
+#define TINY_V1_MODEL "model/tiny/vmaf_tiny_v1.onnx"
 
 #ifndef _WIN32
 static const unsigned char kAllowedOnnx[] = {0x3A, 0x08, 0x0A, 0x06, 0x22,
@@ -429,6 +430,97 @@ static char *test_rank5_model_closes_session_after_shape_reject(void)
     return NULL;
 }
 
+#ifndef _WIN32
+static char *test_use_tiny_model_int8_redirect_and_fallback(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    if (access(SMOKE_FP32_MODEL, R_OK) != 0)
+        return NULL;
+
+    char tmpl[] = "/tmp/vmaf-tiny-redir-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    (void)close(fd);
+
+    char onnx[1024];
+    char int8_onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof(onnx), "%s.onnx", tmpl);
+    (void)snprintf(int8_onnx, sizeof(int8_onnx), "%s.int8.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof(sidecar), "%s.json", tmpl);
+
+    mu_assert("copy smoke onnx failed", copy_file_600(SMOKE_FP32_MODEL, onnx) == 0);
+    mu_assert("copy smoke int8 onnx failed", copy_file_600(SMOKE_FP32_MODEL, int8_onnx) == 0);
+    static const unsigned char json_dyn[] =
+        "{\"kind\":\"fr\",\"quant_mode\":\"dynamic\",\"name\":\"redir_test\"}\n";
+    mu_assert("write sidecar failed",
+              write_file_600(sidecar, json_dyn, sizeof(json_dyn) - 1u) == 0);
+
+    /* 1. Both present: redirects to int8 and succeeds */
+    VmafContext *ctx = alloc_ctx();
+    mu_assert("alloc_ctx failed", ctx != NULL);
+    int rc = vmaf_use_tiny_model(ctx, onnx, NULL);
+    mu_assert("redirect to int8 should succeed", rc == 0);
+    (void)vmaf_close(ctx);
+
+    /* 2. int8 removed: falls back to fp32 per ADR-1032 and succeeds */
+    mu_assert("unlink int8 failed", unlink(int8_onnx) == 0);
+    ctx = alloc_ctx();
+    mu_assert("alloc_ctx failed", ctx != NULL);
+    rc = vmaf_use_tiny_model(ctx, onnx, NULL);
+    mu_assert("fallback to fp32 should succeed", rc == 0);
+    (void)vmaf_close(ctx);
+
+    /* 3. Both removed: fails */
+    mu_assert("unlink fp32 failed", unlink(onnx) == 0);
+    ctx = alloc_ctx();
+    mu_assert("alloc_ctx failed", ctx != NULL);
+    rc = vmaf_use_tiny_model(ctx, onnx, NULL);
+    mu_assert("missing both should fail", rc < 0);
+    (void)vmaf_close(ctx);
+
+    (void)unlink(sidecar);
+    (void)unlink(tmpl);
+    return NULL;
+}
+
+static char *test_use_tiny_model_missing_external_data_returns_error_not_abort(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    if (access(TINY_V1_MODEL, R_OK) != 0)
+        return NULL;
+
+    char tmpl[] = "/tmp/vmaf-tiny-ext-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    (void)close(fd);
+
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof(onnx), "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof(sidecar), "%s.json", tmpl);
+
+    /* Copy ONNX with external data references without copying .data file */
+    mu_assert("copy vmaf_tiny_v1 failed", copy_file_600(TINY_V1_MODEL, onnx) == 0);
+    static const unsigned char json_fp32[] = "{\"kind\":\"fr\",\"quant_mode\":\"fp32\"}\n";
+    mu_assert("write sidecar failed",
+              write_file_600(sidecar, json_fp32, sizeof(json_fp32) - 1u) == 0);
+
+    VmafContext *ctx = alloc_ctx();
+    mu_assert("alloc_ctx failed", ctx != NULL);
+    int rc = vmaf_use_tiny_model(ctx, onnx, NULL);
+    mu_assert("missing external data must return error < 0, not abort", rc < 0);
+    (void)vmaf_close(ctx);
+
+    (void)unlink(sidecar);
+    (void)unlink(onnx);
+    (void)unlink(tmpl);
+    return NULL;
+}
+#endif
+
 /* -------------------------------------------------------------------------- */
 
 char *run_tests(void)
@@ -442,6 +534,8 @@ char *run_tests(void)
     mu_run_test(test_rejects_oversized_sidecar_before_ort_open);
     mu_run_test(test_valid_scanner_invalid_ort_model_closes_session);
     mu_run_test(test_invalid_ort_model_frees_loaded_sidecar);
+    mu_run_test(test_use_tiny_model_int8_redirect_and_fallback);
+    mu_run_test(test_use_tiny_model_missing_external_data_returns_error_not_abort);
 #endif
     mu_run_test(test_happy_path_smoke_model);
     mu_run_test(test_attached_multi_output_model_records_named_scores);

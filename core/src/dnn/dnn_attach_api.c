@@ -28,6 +28,7 @@
 #include "libvmaf/vmaf_assert.h"
 
 #include "dnn_ctx.h"
+#include "log.h"
 #include "model_loader.h"
 #include "ort_backend.h"
 
@@ -58,8 +59,52 @@ int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path, const VmafDnnCo
     if (rc == 0)
         have_meta = true;
 
+    /* ADR-0174 / ADR-1032: when the sidecar declares quant_mode != FP32,
+     * the caller-supplied path is the fp32 baseline; the runtime should load
+     * the sibling `<basename>.int8.onnx` instead. We append `.int8.onnx`
+     * to the basename (stripping a trailing `.onnx`) and re-run the
+     * size + allowlist validator on the int8 file. */
+    const char *load_path = onnx_path;
+    char int8_path[4096];
+    if (have_meta && meta.quant_mode != VMAF_QUANT_FP32) {
+        size_t plen = strlen(onnx_path);
+        const char *int8_suffix = ".int8.onnx";
+        const size_t int8_suffix_len = 10u;
+        bool already_int8 = (plen >= int8_suffix_len &&
+                             strcmp(onnx_path + plen - int8_suffix_len, int8_suffix) == 0);
+        if (!already_int8) {
+            const char *suffix = ".onnx";
+            const size_t suffix_len = 5u;
+            size_t base_len =
+                (plen >= suffix_len && strcmp(onnx_path + plen - suffix_len, suffix) == 0) ?
+                    plen - suffix_len :
+                    plen;
+            if (base_len + sizeof(".int8.onnx") > sizeof(int8_path)) {
+                if (have_meta)
+                    vmaf_dnn_sidecar_free(&meta);
+                return -ENAMETOOLONG;
+            }
+            memcpy(int8_path, onnx_path, base_len);
+            memcpy(int8_path + base_len, ".int8.onnx", sizeof(".int8.onnx"));
+            rc = vmaf_dnn_validate_onnx(int8_path, max_bytes);
+            if (rc < 0) {
+                /* int8 file missing or fails the allowlist — fall back to fp32;
+                 * better degraded than dead. Keep have_meta / meta intact so
+                 * the caller can still read quant_mode; only the load_path stays
+                 * as the fp32 baseline. */
+                vmaf_log(VMAF_LOG_LEVEL_DEBUG,
+                         "dnn: int8 sidecar unavailable (%s, rc=%d); "
+                         "falling back to fp32 path\n",
+                         int8_path, rc);
+                rc = 0;
+            } else {
+                load_path = int8_path;
+            }
+        }
+    }
+
     VmafOrtSession *sess = NULL;
-    rc = vmaf_ort_open(&sess, onnx_path, cfg);
+    rc = vmaf_ort_open(&sess, load_path, cfg);
     if (rc < 0) {
         if (have_meta)
             vmaf_dnn_sidecar_free(&meta);
