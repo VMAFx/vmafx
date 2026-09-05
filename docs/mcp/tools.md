@@ -868,6 +868,334 @@ Returns the parsed JSON output of `vmaf-tune tune-per-shot --format json`
 
 ### Errors — same pattern as `run_compare`.
 
+## Sidecar-binary tools
+
+Four tools bridge the CLI binaries meson builds next to `vmaf` in
+[core/tools/](../../core/tools/). Both servers implement them and build a
+byte-identical argv (pinned by `cmd/vmafx-mcp/sidecar_parity_test.go`).
+
+Every numeric and enum bound below is the bound the corresponding C parser
+enforces, so an out-of-range value fails with a readable MCP error instead of a
+`usage()` dump on stderr.
+
+### Binary resolution
+
+Each tool resolves its binary in this order, and the first hit wins:
+
+1. the tool's own environment override,
+2. a **sibling of the resolved `vmaf` binary** — so `VMAF_BIN` resolves the whole
+   family, which is what the `vmaf-dev-mcp` container relies on after
+   `make install`,
+3. `/usr/local/bin/<name>`,
+4. `<repo>/core/build/tools/<name>`,
+5. `<repo>/build/tools/<name>`.
+
+| Tool | Binary | Environment override |
+|---|---|---|
+| `vmaf_per_shot` | `vmaf-perShot` | `VMAF_PER_SHOT_BIN` |
+| `vmaf_roi` | `vmaf_roi` | `VMAF_ROI_BIN` |
+| `vmaf_bench` | `vmaf_bench` | `VMAF_BENCH_BIN` |
+| `vmaf_vpl` | `vmaf_vpl` | `VMAF_VPL_BIN` |
+
+When none of the candidates exists the tool returns `isError=true` naming both
+the path it looked for and the `meson compile` target that builds it.
+
+## `vmaf_per_shot`
+
+Wrap [`vmaf-perShot`](../usage/vmaf-perShot.md): scan a raw YUV reference,
+detect shot boundaries from luma complexity + motion energy, and return a
+per-shot CRF plan targeting a VMAF score. ADR-0222.
+
+### Input schema
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `reference` | string (path) | yes | — | Raw planar YUV; must be under an allowed root. |
+| `width` | integer `16..65535` | yes | — | Frame width. |
+| `height` | integer `16..65535` | yes | — | Frame height. |
+| `pixel_format` | `"420" \| "422" \| "444"` | no | `"420"` | `--pixel_format`. |
+| `bitdepth` | `8 \| 10 \| 12 \| 16` | no | `8` | `--bitdepth`. |
+| `target_vmaf` | number `0..100` | no | `90` | `--target-vmaf`. |
+| `crf_min` | integer `0..63` | no | `18` | `--crf-min`; must not exceed `crf_max`. |
+| `crf_max` | integer `0..63` | no | `35` | `--crf-max`. |
+| `diff_threshold` | number `0..255` | no | — | `--diff-threshold`. Omitted from argv when unset, so the C default (12.0) stays authoritative. |
+| `format` | `"json" \| "csv"` | no | `"json"` | `--format`. The MCP tool defaults to `json` where the C CLI defaults to `csv`, so the plan comes back structured. |
+
+### Response body
+
+```json
+{
+  "format": "json",
+  "exit_code": 0,
+  "stderr": "vmaf-perShot: wrote 2 shot(s) to -\n",
+  "plan": {
+    "target_vmaf": 92.0,
+    "crf_min": 18,
+    "crf_max": 35,
+    "shots": [
+      {"shot_id": 0, "start_frame": 0, "end_frame": 3, "frames": 4,
+       "mean_complexity": 0.000051, "mean_motion": 0.020046, "predicted_crf": 25.31}
+    ]
+  }
+}
+```
+
+With `format="csv"` the `plan` key is replaced by `output`, the raw CSV text.
+
+### Errors
+
+`isError=true` on: a `reference` outside the allowlist, any out-of-range
+argument, `crf_min > crf_max`, a missing binary, a non-zero exit
+(`vmaf-perShot exited N: <stderr>`), or JSON the plan writer produced that does
+not parse.
+
+## `vmaf_roi`
+
+Wrap `vmaf_roi`: compute a per-CTU saliency grid for **one** frame of a raw YUV
+file and emit an encoder ROI sidecar.
+
+### Input schema
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `reference` | string (path) | yes | — | Raw planar YUV, under an allowed root. |
+| `width` | integer `1..16384` | yes | — | Frame width. |
+| `height` | integer `1..16384` | yes | — | Frame height. |
+| `frame` | integer `0..1000000` | yes | — | 0-based frame index (`--frame`). |
+| `pixel_format` | `"420" \| "422" \| "444"` | no | `"420"` | |
+| `bitdepth` | `8 \| 10 \| 12 \| 16` | no | `8` | |
+| `ctu_size` | integer `8..128` | no | `64` | `--ctu-size` (x265 max-ctu). |
+| `encoder` | `"x265" \| "svt-av1"` | no | `"x265"` | Sidecar dialect. |
+| `strength` | number `0..64` | no | `6.0` | QP-offset gain (`--strength`). |
+| `saliency_model` | string (path) | no | — | ONNX `[1,1,H,W]` luma→`[0,1]` model, under an allowed root. Without it a centre-weighted radial placeholder is used — smoke-test quality only. |
+
+### Response body
+
+The sidecar is always written to a server-owned temp file, never to stdout: the
+SVT-AV1 emitter produces a raw `int8` grid that is not text-safe. The response
+carries the bytes in the encoding that matches the emitter.
+
+```json
+{
+  "encoder": "x265",
+  "sidecar_fmt": "qpfile",
+  "exit_code": 0,
+  "stderr": "",
+  "ctu_size": 64,
+  "frame": 2,
+  "bytes": 216,
+  "grid_cols": 9,
+  "grid_rows": 6,
+  "saliency": "placeholder",
+  "qpfile": "# vmaf-roi qpfile (x265, --qpfile-style)\n# frame=2 ctu=64 cols=9 rows=6 strength=6.000\n4 2 1 -1 -1 -1 1 2 4\n…"
+}
+```
+
+For `encoder="svt-av1"`, `sidecar_fmt` is `"roi_map_int8"` and `qpfile` is
+replaced by `roi_map_base64` — the base64 of the raw row-major `int8` grid.
+`saliency` is `"onnx"` when a `saliency_model` was supplied, `"placeholder"`
+otherwise.
+
+### Errors — same pattern as `vmaf_per_shot`.
+
+## `vmaf_bench`
+
+Wrap `vmaf_bench`: a per-feature micro-benchmark over the built-in synthetic
+fixtures, or a GPU-vs-CPU correctness comparison.
+
+This is **not** [`run_benchmark`](#run_benchmark): that one runs the end-to-end
+`bench_all.sh` harness over real YUV fixtures across every backend and takes no
+arguments (ADR-0513 / ADR-0517). `vmaf_bench` is the per-feature timing tool.
+
+### Input schema
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `frames` | integer `2..48` | no | — | `--frames`; the C default is 10 and 48 is `MAX_TEST_FRAMES`. Out-of-range values are rejected rather than silently clamped as the C parser does. |
+| `resolution` | `"576x324" \| "640x480" \| "1280x720" \| "1920x1080" \| "3840x2160"` | no | — | `--resolution`. Omit to test all five. |
+| `bpc` | `8 \| 10 \| 12 \| 16` | no | — | `--bpc`; C default 8. |
+| `data_dir` | string (path) | no | — | `--data-dir`. Must be a **directory** under an allowed root. Otherwise `VMAF_TEST_DATA` applies. |
+| `validate` | boolean | no | `false` | `--validate`: compare GPU vs CPU scores. |
+| `gpu_only` | boolean | no | `false` | `--gpu-only`: skip the CPU targets. |
+| `device_list` | boolean | no | `false` | `--list-devices`: list GPU devices and exit. |
+
+### Response body
+
+```json
+{
+  "mode": "benchmark",
+  "exit_code": 0,
+  "stdout": "VMAF Performance Benchmark (…)\nFeature   Res   Init ms   Avg ms …",
+  "stderr": ""
+}
+```
+
+In `validate` mode the payload additionally carries `"validation_failed":
+true|false` and `"mode": "validate"`.
+
+### Errors
+
+In **benchmark** mode a non-zero exit is a tool error. In **validate** mode it is
+not: `vmaf_bench --validate` exits 1 to report that the GPU/CPU comparison found
+deltas, which is a result rather than a failure, so the call succeeds with
+`validation_failed=true`. Argument validation errors and a missing binary are
+always tool errors.
+
+## `vmaf_vpl`
+
+Wrap `vmaf_vpl`: decode an encoded `(reference, distorted)` pair with Intel
+oneVPL, import the VA surfaces zero-copy into SYCL over DMA-BUF, and score them.
+
+The binary is only built when the oneVPL + libva + SYCL toolchain is present. On
+a build without it the tool returns `isError=true` naming the missing binary —
+it never silently falls back to another path.
+
+### Input schema
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `ref` | string (path) | yes | — | Reference encoded video, under an allowed root. |
+| `dis` | string (path) | yes | — | Distorted encoded video. |
+| `model` | string | no | `"vmaf_v0.6.1"` | `--model`. A **bare model name**; a value containing `/`, `\`, a space or a tab is rejected. The default mirrors the sidecar's own. |
+| `frames` | integer `≥ 0` | no | `0` | `--frames`; 0 = all. |
+| `device` | integer `≥ 0` | no | `0` | `--device` (SYCL device index). |
+| `render_node` | string | no | `"/dev/dri/renderD128"` | `--render-node`. Restricted to `/dev/dri/renderD<N>` or `/dev/dri/card<N>` — the value goes straight to `open(2)`, so anything else is rejected. |
+| `fallback` | boolean | no | `false` | `--fallback`: host upload when the zero-copy import fails. |
+
+### Response body
+
+```json
+{
+  "exit_code": 0,
+  "stdout": "Frames: 12\nTime:   0.400 s (30.0 FPS)\nVMAF:   96.123456 (mean)\n…",
+  "stderr": "",
+  "model": "vmaf_v0.6.1",
+  "device": 0,
+  "render_node": "/dev/dri/renderD128",
+  "vmaf_score": 96.123456,
+  "frames_processed": 12
+}
+```
+
+`vmaf_score` and `frames_processed` are parsed out of the sidecar's summary
+lines; both are omitted when the sidecar did not print them (for example when
+the model failed to load).
+
+## Control-plane tools (gRPC bridge, **Go only**)
+
+Five tools expose the Phase-4b control plane: the `vmafx-controller` job API and
+the `vmafx-server` scoring API. They exist **only in the Go server**
+(`vmafx-mcp`); the Python server does not ship a gRPC stack. See
+[ADR-1184](../adr/1184-mcp-grpc-bridge-go-only.md) for why, and
+[docs/architecture/phase4b-distributed-platform.md](../architecture/phase4b-distributed-platform.md)
+for the topology.
+
+### Configuration
+
+Connection targets are **environment-only** — a tool argument naming a host would
+turn the MCP server into an SSRF pivot.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `VMAFX_CONTROLLER_ADDR` | `localhost:9090` | `vmafx-controller` gRPC address. |
+| `VMAFX_SERVER_ADDR` | `localhost:9090` | `vmafx-server` gRPC address (used by `vmaf_score_remote`). |
+| `VMAFX_CONTROLLER_TOKEN` | — | Optional bearer token; sent as `authorization: Bearer <token>` on every controller RPC. Omit it against a controller started with `VMAFX_AUTH_DISABLED=true`. |
+| `VMAFX_GRPC_TIMEOUT` | `30` | Per-RPC deadline in seconds. A malformed or non-positive value falls back to the default rather than disabling the deadline. |
+
+The transport is insecure by default, matching `pkg/score.Dial`: the control
+plane is expected to run inside the cluster mesh.
+
+### Path arguments are resolved remotely
+
+`reference` / `distorted` on these tools are **not** checked against the MCP
+host's allowlist — the file lives on the worker node's shared mount, so
+`VMAF_MCP_ALLOW` does not apply and the file need not exist locally. What is
+enforced is the shape: the value must be absolute, must contain no `..`
+component, and must contain no NUL / CR / LF.
+
+### `submit_job`
+
+Enqueue a scoring job and return its ID.
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `reference` | string (absolute worker-side path) | yes | — | |
+| `distorted` | string (absolute worker-side path) | yes | — | |
+| `model` | string | no | — | Omit to let the controller apply its own default. |
+| `backend` | `"auto" \| "cpu" \| "cuda" \| "sycl" \| "hip" \| "metal"` | no | `"auto"` | Node capability the scheduler must match. `auto` is spelled as the empty string on the wire. |
+
+```json
+{
+  "job_id": "555090fd-1349-471f-8a07-751f37e162cc",
+  "status": "PENDING",
+  "controller": "127.0.0.1:9090",
+  "scoring": {"reference": "/mnt/data/ref.yuv", "distorted": "/mnt/data/dis.yuv",
+              "model": "", "backend": "cpu"}
+}
+```
+
+### `get_job`
+
+Fetch a job by ID (`job_id`, required).
+
+```json
+{
+  "id": "555090fd-…", "status": "CANCELLED", "assigned_node": "", "error": "",
+  "created_at": 1788622781, "updated_at": 1788622781, "final_score": 0,
+  "scoring": {"reference": "…", "distorted": "…", "model": "", "backend": "cpu"},
+  "controller": "127.0.0.1:9090"
+}
+```
+
+`status` is one of `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED`.
+`partial_results` and `partial_result_count` appear only when the node has
+reported per-frame partials. An unknown ID is a tool error carrying the
+controller's `NotFound` status.
+
+### `cancel_job`
+
+Request cancellation of a PENDING or RUNNING job (`job_id`, required). Returns
+`{"job_id": …, "ok": true, "message": "cancellation requested", "controller": …}`.
+`ok=false` means the controller declined; the `message` says why.
+
+### `list_jobs`
+
+List the controller's current job snapshot.
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `status_filter` | array of status strings | no | — | Any of `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED`; case-insensitive. Omit for all jobs. |
+| `limit` | integer `1..500` | no | `100` | Maximum jobs returned. |
+
+```json
+{"jobs": [ … ], "count": 1, "truncated": false, "limit": 100,
+ "controller": "127.0.0.1:9090"}
+```
+
+Each entry has the `get_job` shape. The tool drains the `StreamJobs`
+server-streaming RPC, which sends the current snapshot and closes (ADR-0962) —
+it is not a subscription. `truncated=true` means the controller had more jobs
+than `limit`.
+
+### `vmaf_score_remote`
+
+Score a pair on a remote `vmafx-server` over the unary `VmafxScoring.Score` RPC.
+Nothing is read locally.
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `reference` | string (absolute server-side path) | yes | — | |
+| `distorted` | string (absolute server-side path) | yes | — | |
+| `model` | string | no | — | Omit to let the server apply its own default. |
+
+```json
+{"score": 76.6683, "features": {"vif_scale0": 0.79, "adm2": 0.93},
+ "model": "", "reference": "/mnt/data/ref.yuv", "distorted": "/mnt/data/dis.yuv",
+ "server": "127.0.0.1:9090"}
+```
+
+Use [`vmaf_score`](#vmaf_score) for files on the MCP host.
+
 ## Progress notifications
 
 All four `run_*` tools — `run_benchmark`, `run_compare`, `run_ladder`, and
