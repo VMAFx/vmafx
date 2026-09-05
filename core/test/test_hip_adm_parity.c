@@ -52,6 +52,7 @@
 
 #include "test.h"
 
+#include "feature/feature_extractor.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
@@ -260,8 +261,74 @@ static char *test_integer_adm_cpu_hip_parity(void)
     return NULL;
 }
 
+/* Every option the CPU `adm` table declares must also exist, with the same
+ * alias, type and feature-param flag, in the `adm_hip` table. The emitted
+ * feature-name key is built from the extractor's own option table
+ * (feature_name.cpp), so a missing entry makes this twin emit a shorter key
+ * than the CPU twin for the same opts dict and the model lookup misses.
+ *
+ * Host-side only: no HIP device or HSACO blob is needed, so this runs (and
+ * catches table drift) on every machine, unlike the device parity test above.
+ *
+ * `adm_skip_aim` is exempt: it is not a feature param, it only drives the AIM
+ * contrast-measure pass, and this twin has none — see
+ * test_integer_adm_hip_does_not_claim_aim. */
+static char *test_integer_adm_hip_option_table_mirrors_cpu(void)
+{
+    VmafFeatureExtractor *cpu = vmaf_get_feature_extractor_by_name("adm");
+    VmafFeatureExtractor *gpu = vmaf_get_feature_extractor_by_name("adm_hip");
+    mu_assert("adm extractor must be registered", cpu != NULL);
+    mu_assert("adm_hip extractor must be registered", gpu != NULL);
+    mu_assert("adm must declare options", cpu->options != NULL);
+    mu_assert("adm_hip must declare options", gpu->options != NULL);
+
+    for (unsigned i = 0; cpu->options[i].name; i++) {
+        const VmafOption *a = &cpu->options[i];
+        if (!strcmp(a->name, "adm_skip_aim"))
+            continue;
+        const VmafOption *b = NULL;
+        for (unsigned j = 0; gpu->options[j].name; j++) {
+            if (!strcmp(gpu->options[j].name, a->name)) {
+                b = &gpu->options[j];
+                break;
+            }
+        }
+        if (!b)
+            (void)fprintf(stderr, "\nadm_hip is missing CPU option \"%s\"\n", a->name);
+        mu_assert("adm_hip option table is missing a CPU option", b != NULL);
+        mu_assert("adm_hip option type differs from CPU", a->type == b->type);
+        mu_assert("adm_hip feature-param flag differs from CPU",
+                  (a->flags & VMAF_OPT_FLAG_FEATURE_PARAM) ==
+                      (b->flags & VMAF_OPT_FLAG_FEATURE_PARAM));
+        mu_assert("adm_hip option alias differs from CPU",
+                  (a->alias == NULL) == (b->alias == NULL) &&
+                      (a->alias == NULL || !strcmp(a->alias, b->alias)));
+    }
+    return NULL;
+}
+
+/* Never fabricate a feature to make a name resolve: this twin has no AIM
+ * device pass (the CUDA twin's ADR-0746 kernels), so aim_score / adm3_score
+ * must stay out of provided_features[] and fall back to the CPU twin through
+ * the ADR-0530 name lookup. */
+static char *test_integer_adm_hip_does_not_claim_aim(void)
+{
+    VmafFeatureExtractor *gpu = vmaf_get_feature_extractor_by_name("adm_hip");
+    mu_assert("adm_hip extractor must be registered", gpu != NULL);
+    mu_assert("adm_hip must declare provided_features", gpu->provided_features != NULL);
+    for (unsigned i = 0; gpu->provided_features[i]; i++) {
+        mu_assert("adm_hip must not claim VMAF_integer_feature_aim_score",
+                  strcmp(gpu->provided_features[i], "VMAF_integer_feature_aim_score") != 0);
+        mu_assert("adm_hip must not claim VMAF_integer_feature_adm3_score",
+                  strcmp(gpu->provided_features[i], "VMAF_integer_feature_adm3_score") != 0);
+    }
+    return NULL;
+}
+
 char *run_tests(void)
 {
+    mu_run_test(test_integer_adm_hip_option_table_mirrors_cpu);
+    mu_run_test(test_integer_adm_hip_does_not_claim_aim);
     mu_run_test(test_integer_adm_cpu_hip_parity);
     return NULL;
 }
