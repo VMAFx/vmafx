@@ -47,6 +47,9 @@ No rebase impact: `scripts/ci/check-no-tracked-venv.sh` and its test are fork-ad
   keys with `-EINVAL`. `vmaf_use_features_from_model` checks GPU twin option support
   against model requirements and dispatches unsupported twins to the CPU reference.
   Preserve this gating on rebase to prevent silent option drops.
+## ci/release-artifacts-built-in-dev-container — native release artifacts built on self-hosted canonical runner (ADR-1178) (2026-09-05)
+
+No rebase impact: all touched files (`.github/actionlint.yaml`, `.github/workflows/dev-container-publish.yml`, `.github/workflows/supply-chain.yml`, `scripts/release/verify-native-release-artifacts.sh`, `scripts/release/tests/test-verify-native-release-artifacts.sh`, `scripts/ci/check-container-build.sh`, `scripts/ci/tests/test-check-container-build.sh`, docs) are fork-local CI workflows, verification scripts, and documentation with no upstream Netflix/vmaf counterpart. No public C API, header, Meson option, or golden assertion is touched.
 
 ## fix/tidy-lane-lto-flag — the tidy lane builds without LTO (2026-09-05)
 
