@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "barten_csf_tools.h"
 #include "common.h"
 #include "dict.h"
 #include "feature_collector.h"
@@ -61,11 +62,17 @@ typedef struct AdmStateHip {
     double adm_enhn_gain_limit;
     double adm_norm_view_dist;
     int adm_ref_display_height;
+    int adm_csf_mode;
     double adm_csf_scale;
     double adm_csf_diag_scale;
     double adm_noise_weight;
-    double adm_min_val;          /* ADR-0487: minimum score floor (mirrors CPU + CUDA option). */
-    bool adm_skip_scale0;        /* host-side suppression: scale-0 excluded from score when set */
+    double adm_min_val;   /* ADR-0487: minimum score floor (mirrors CPU + CUDA option). */
+    bool adm_skip_scale0; /* host-side suppression: scale-0 excluded from score when set */
+    double adm_dlm_weight;
+    bool adm_skip_aim;
+    double adm_p_norm;
+    float rfactor[12];
+    uint32_t i_rfactor[12];
     unsigned submit_w, submit_h; /* stored by submit for collect */
 
 #ifdef HAVE_HIPCC
@@ -108,11 +115,62 @@ typedef struct AdmStateHip {
 static inline float dwt_quant_step(const struct dwt_model_params *params, int lambda, int theta,
                                    double adm_norm_view_dist, int adm_ref_display_height)
 {
-    float r = (float)(adm_norm_view_dist * adm_ref_display_height) * (float)M_PI / 180.0f;
-    float temp = log10f(powf(2.0f, (float)(lambda + 1)) * params->f0 * params->g[theta] / r);
-    float Q = 2.0f * params->a * powf(10.0f, params->k * temp * temp) /
+    float r = (float)(adm_norm_view_dist * adm_ref_display_height * M_PI / 180.0);
+    float temp = log10(pow(2.0, lambda + 1) * params->f0 * params->g[theta] / r);
+    float Q = 2.0 * params->a * pow(10.0, params->k * (double)temp * temp) /
               dwt_7_9_basis_function_amplitudes[lambda][theta];
     return Q;
+}
+
+typedef struct AdmCsfFactors {
+    float factor1; /* horizontal and vertical bands */
+    float factor2; /* diagonal band */
+} AdmCsfFactors;
+
+static AdmCsfFactors adm_csf_factors(int scale, double adm_norm_view_dist,
+                                     int adm_ref_display_height, int adm_csf_mode,
+                                     double adm_csf_scale, double adm_csf_diag_scale)
+{
+    AdmCsfFactors f;
+    if (adm_csf_mode == ADM_CSF_MODE_BARTEN) {
+        f.factor1 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height,
+                               DEFAULT_ADM_CSF_LUM, adm_csf_scale);
+        f.factor2 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height,
+                               DEFAULT_ADM_CSF_LUM, adm_csf_diag_scale);
+    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND) {
+        f.factor1 = barten_watson_blend_csf(scale, 0, adm_norm_view_dist, adm_ref_display_height);
+        f.factor2 = barten_watson_blend_csf(scale, 1, adm_norm_view_dist, adm_ref_display_height);
+    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND_MAE) {
+        f.factor1 =
+            barten_watson_blend_csf_mae(scale, 0, adm_norm_view_dist, adm_ref_display_height);
+        f.factor2 =
+            barten_watson_blend_csf_mae(scale, 1, adm_norm_view_dist, adm_ref_display_height);
+    } else {
+        f.factor1 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 1, adm_norm_view_dist,
+                                          adm_ref_display_height);
+        f.factor2 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 2, adm_norm_view_dist,
+                                          adm_ref_display_height);
+    }
+    return f;
+}
+
+static void adm_csf_rfactor_scale0(const float rfactor1[3], double adm_norm_view_dist,
+                                   int adm_ref_display_height, int adm_csf_mode,
+                                   uint16_t i_rfactor[3])
+{
+    if (fabs(adm_norm_view_dist * adm_ref_display_height -
+             DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) < 1.0e-8 &&
+        adm_csf_mode == ADM_CSF_MODE_WATSON97) {
+        i_rfactor[0] = 36453;
+        i_rfactor[1] = 36453;
+        i_rfactor[2] = 49417;
+    } else {
+        const double pow2_21 = pow(2, 21);
+        const double pow2_23 = pow(2, 23);
+        i_rfactor[0] = (uint16_t)(rfactor1[0] * pow2_21);
+        i_rfactor[1] = (uint16_t)(rfactor1[1] * pow2_21);
+        i_rfactor[2] = (uint16_t)(rfactor1[2] * pow2_23);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -120,13 +178,14 @@ static inline float dwt_quant_step(const struct dwt_model_params *params, int la
 /* ------------------------------------------------------------------ */
 
 static void conclude_adm_cm(int64_t *accum, int h, int w, int scale, float noise_weight,
-                            float *result)
+                            double p_norm, float *result)
 {
     int left = (int)(w * ADM_BORDER_FACTOR - 0.5);
     int top = (int)(h * ADM_BORDER_FACTOR - 0.5);
     int right = w - left;
     int bottom = h - top;
     const uint32_t shift_inner_accum = (uint32_t)ceil(log2((double)h));
+    const double p_norm_exp = 1.0 / p_norm;
 
     const uint32_t shift_xcub[3] = {(uint32_t)ceil(log2((double)w) - 4.0),
                                     (uint32_t)ceil(log2((double)w) - 4.0),
@@ -137,7 +196,8 @@ static void conclude_adm_cm(int64_t *accum, int h, int w, int scale, float noise
     float final_shift[3] = {powf(2.0f, (float)(45 - (int)shift_cub - (int)shift_inner_accum)),
                             powf(2.0f, (float)(39 - (int)shift_cub - (int)shift_inner_accum)),
                             powf(2.0f, (float)(36 - (int)shift_cub - (int)shift_inner_accum))};
-    float powf_add = powf((float)((bottom - top) * (right - left)) * noise_weight, 1.0f / 3.0f);
+    float powf_add =
+        powf((float)((bottom - top) * (right - left)) * noise_weight, (float)p_norm_exp);
 
     float f_accum;
     *result = 0;
@@ -148,24 +208,17 @@ static void conclude_adm_cm(int64_t *accum, int h, int w, int scale, float noise
         } else {
             f_accum = (float)((double)accum[i] / (double)final_shift[scale - 1]);
         }
-        *result += powf(f_accum, 1.0f / 3.0f) + powf_add;
+        *result += powf(f_accum, (float)p_norm_exp) + powf_add;
     }
 }
 
 static void conclude_adm_csf_den(uint64_t *accum, int h, int w, int scale, float *result,
-                                 float adm_norm_view_dist, float adm_ref_display_height,
-                                 float adm_csf_scale, float adm_csf_diag_scale, float noise_weight)
+                                 const float rfactor[3], float noise_weight)
 {
     const int left = (int)(w * ADM_BORDER_FACTOR - 0.5);
     const int top = (int)(h * ADM_BORDER_FACTOR - 0.5);
     const int right = w - left;
     const int bottom = h - top;
-    const float factor1 = dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 1, adm_norm_view_dist,
-                                         (int)adm_ref_display_height);
-    const float factor2 = dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 2, adm_norm_view_dist,
-                                         (int)adm_ref_display_height);
-    const float rfactor[3] = {adm_csf_scale / factor1, adm_csf_scale / factor1,
-                              adm_csf_diag_scale / factor2};
     const uint32_t accum_convert_float[4] = {18, 32, 27, 23};
 
     int32_t shift_accum;
@@ -224,11 +277,9 @@ static void write_scores(const write_score_parameters_adm_hip *params)
         h = (h + 1) / 2;
 
         conclude_adm_cm(&adm_cm[scale * 3], (int)h, (int)w, (int)scale, (float)s->adm_noise_weight,
-                        &num_scale);
+                        s->adm_p_norm, &num_scale);
         conclude_adm_csf_den(&adm_csf[scale * 3], (int)h, (int)w, (int)scale, &den_scale,
-                             (float)s->adm_norm_view_dist, (float)s->adm_ref_display_height,
-                             (float)s->adm_csf_scale, (float)s->adm_csf_diag_scale,
-                             (float)s->adm_noise_weight);
+                             &s->rfactor[scale * 3], (float)s->adm_noise_weight);
 
         /* adm_skip_scale0: exclude scale 0 from num/den accumulation, mirroring
          * the CPU integer_adm.c fast-path (den_scale = 1e-10, num_scale = 0).
@@ -261,9 +312,21 @@ static void write_scores(const write_score_parameters_adm_hip *params)
     score_num = num;
     score_den = den;
 
+    const double aim_num = 0.0;
+    const double score_aim = (den == 0.0) ? 1.0 : (aim_num / den);
+    double score_adm3 = (score * s->adm_dlm_weight) + (1.0 - score_aim) * (1.0 - s->adm_dlm_weight);
+    if (score_adm3 < s->adm_min_val)
+        score_adm3 = s->adm_min_val;
+
     int err = 0;
     err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "VMAF_integer_feature_adm2_score", score, index);
+    err |=
+        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                "VMAF_integer_feature_aim_score", score_aim, index);
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "VMAF_integer_feature_adm3_score", score_adm3,
+                                                   index);
     err |=
         vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                 "integer_adm_scale0", scores[0] / scores[1], index);
@@ -320,6 +383,39 @@ static const VmafOption options_hip[] = {
         .default_val.b = false,
     },
     {
+        .name = "adm_csf_scale",
+        .alias = "scf",
+        .help = "scale coefficient for the horizontal & vertical direction terms of CSF",
+        .offset = offsetof(AdmStateHip, adm_csf_scale),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = DEFAULT_ADM_CSF_SCALE,
+        .min = 0.0,
+        .max = 50.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_csf_diag_scale",
+        .alias = "scfd",
+        .help = "scale coefficient for the diagonal direction term of CSF",
+        .offset = offsetof(AdmStateHip, adm_csf_diag_scale),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = DEFAULT_ADM_CSF_DIAG_SCALE,
+        .min = 0.0,
+        .max = 50.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_dlm_weight",
+        .alias = "dlmw",
+        .help = "linear weighting between DLM and AIM; 1 corresponds to DLM-only",
+        .offset = offsetof(AdmStateHip, adm_dlm_weight),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = 0.5,
+        .min = 0.0,
+        .max = 1.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
         .name = "adm_enhn_gain_limit",
         .alias = "egl",
         .help = "enhancement gain imposed on adm, must be >= 1.0, "
@@ -333,59 +429,68 @@ static const VmafOption options_hip[] = {
     },
     {
         .name = "adm_norm_view_dist",
+        .alias = "nvd",
         .help = "normalized viewing distance = viewing distance / ref display's physical height",
         .offset = offsetof(AdmStateHip, adm_norm_view_dist),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val.d = DEFAULT_ADM_NORM_VIEW_DIST,
         .min = 0.75,
         .max = 24.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {
         .name = "adm_ref_display_height",
+        .alias = "rdh",
         .help = "reference display height in pixels",
         .offset = offsetof(AdmStateHip, adm_ref_display_height),
         .type = VMAF_OPT_TYPE_INT,
         .default_val.i = DEFAULT_ADM_REF_DISPLAY_HEIGHT,
         .min = 1,
         .max = 4320,
-    },
-    {
-        .name = "adm_csf_scale",
-        .alias = "cs",
-        .help = "CSF band-scale multiplier for h/v bands (default 1.0 = no scaling)",
-        .offset = offsetof(AdmStateHip, adm_csf_scale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_ADM_CSF_SCALE,
-        .min = 0.0,
-        .max = 100.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {
-        .name = "adm_csf_diag_scale",
-        .alias = "cds",
-        .help = "CSF band-scale multiplier for diagonal bands (default 1.0 = no scaling)",
-        .offset = offsetof(AdmStateHip, adm_csf_diag_scale),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = DEFAULT_ADM_CSF_DIAG_SCALE,
-        .min = 0.0,
-        .max = 100.0,
+        .name = "adm_csf_mode",
+        .alias = "csf",
+        .help = "contrast sensitivity function",
+        .offset = offsetof(AdmStateHip, adm_csf_mode),
+        .type = VMAF_OPT_TYPE_INT,
+        .default_val.i = DEFAULT_ADM_CSF_MODE,
+        .min = 0,
+        .max = 3,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {
         .name = "adm_noise_weight",
         .alias = "nw",
-        .help = "noise floor weight for CM numerator (default 0.03125 = 1/32)",
+        .help = "noise weight",
         .offset = offsetof(AdmStateHip, adm_noise_weight),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val.d = DEFAULT_ADM_NOISE_WEIGHT,
         .min = 0.0,
-        .max = 100.0,
+        .max = 1500.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_skip_aim",
+        .help = "skip the calculation of AIM",
+        .offset = offsetof(AdmStateHip, adm_skip_aim),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "adm_skip_scale0",
+        .alias = "ssz",
+        .help = "skip the calculation of scale 0",
+        .offset = offsetof(AdmStateHip, adm_skip_scale0),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {
         .name = "adm_min_val",
         .alias = "min",
-        .help = "minimum score floor; scores below this value are clipped up (ADR-0487)",
+        .help = "minimum value allowed; lower values will be clipped to this value",
         .offset = offsetof(AdmStateHip, adm_min_val),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val.d = DEFAULT_ADM_MIN_VAL,
@@ -394,13 +499,14 @@ static const VmafOption options_hip[] = {
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {
-        .name = "adm_skip_scale0",
-        .alias = "ss0",
-        .help = "skip scale-0 contribution: exclude scale-0 num/den from overall ADM score "
-                "and emit 0.0 for integer_adm_scale0 (parity with CPU integer_adm option)",
-        .offset = offsetof(AdmStateHip, adm_skip_scale0),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
+        .name = "adm_p_norm",
+        .alias = "apn",
+        .help = "p-norm exponent for fixed-point ADM contrast-measure finalisation",
+        .offset = offsetof(AdmStateHip, adm_p_norm),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = 3.0,
+        .min = 1.0,
+        .max = 20.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {0}};
@@ -820,36 +926,30 @@ static int integer_compute_adm_hip(AdmStateHip *s, VmafPicture *ref_pic, VmafPic
     p.adm_norm_view_dist = adm_norm_view_dist;
     p.adm_enhn_gain_limit = adm_enhn_gain_limit;
 
-    const double pow2_32 = (double)(1ULL << 32);
-    const double pow2_21 = (double)(1ULL << 21);
-    const double pow2_23 = (double)(1ULL << 23);
+    const double pow2_32 = pow(2, 32);
     for (unsigned scale = 0; scale < 4; ++scale) {
-        float factor1 = dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], (int)scale, 1,
-                                       adm_norm_view_dist, adm_ref_display_height);
-        float factor2 = dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], (int)scale, 2,
-                                       adm_norm_view_dist, adm_ref_display_height);
-        p.factor1[scale] = factor1;
-        p.factor2[scale] = factor2;
-        p.rfactor[scale * 3] = 1.0f / factor1;
-        p.rfactor[scale * 3 + 1] = 1.0f / factor1;
-        p.rfactor[scale * 3 + 2] = 1.0f / factor2;
+        const AdmCsfFactors f =
+            adm_csf_factors((int)scale, adm_norm_view_dist, adm_ref_display_height, s->adm_csf_mode,
+                            s->adm_csf_scale, s->adm_csf_diag_scale);
+        p.factor1[scale] = f.factor1;
+        p.factor2[scale] = f.factor2;
+        p.rfactor[scale * 3] = f.factor1;
+        p.rfactor[scale * 3 + 1] = f.factor1;
+        p.rfactor[scale * 3 + 2] = f.factor2;
         if (scale == 0) {
-            if (fabs(p.adm_norm_view_dist * p.adm_ref_display_height -
-                     DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) < 1.0e-8) {
-                p.i_rfactor[scale * 3] = 36453;
-                p.i_rfactor[scale * 3 + 1] = 36453;
-                p.i_rfactor[scale * 3 + 2] = 49417;
-            } else {
-                p.i_rfactor[scale * 3] = (uint32_t)(p.rfactor[scale * 3] * pow2_21);
-                p.i_rfactor[scale * 3 + 1] = (uint32_t)(p.rfactor[scale * 3 + 1] * pow2_21);
-                p.i_rfactor[scale * 3 + 2] = (uint32_t)(p.rfactor[scale * 3 + 2] * pow2_23);
-            }
+            uint16_t i_rf[3];
+            adm_csf_rfactor_scale0(p.rfactor, adm_norm_view_dist, adm_ref_display_height,
+                                   s->adm_csf_mode, i_rf);
+            p.i_rfactor[0] = i_rf[0];
+            p.i_rfactor[1] = i_rf[1];
+            p.i_rfactor[2] = i_rf[2];
         } else {
             p.i_rfactor[scale * 3] = (uint32_t)(p.rfactor[scale * 3] * pow2_32);
             p.i_rfactor[scale * 3 + 1] = (uint32_t)(p.rfactor[scale * 3 + 1] * pow2_32);
             p.i_rfactor[scale * 3 + 2] = (uint32_t)(p.rfactor[scale * 3 + 2] * pow2_32);
         }
     }
+    memcpy(s->rfactor, p.rfactor, sizeof(p.rfactor));
 
     /* Zero result accumulator */
     hipError_t hip_err = hipMemsetAsync(buf->tmp_res, 0, sizeof(int64_t) * RES_BUFFER_SIZE, s->str);
@@ -992,6 +1092,29 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (s->adm_norm_view_dist * s->adm_ref_display_height <
         DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) {
         return -EINVAL;
+    }
+
+    for (unsigned scale = 0; scale < 4; scale++) {
+        const AdmCsfFactors f =
+            adm_csf_factors((int)scale, s->adm_norm_view_dist, s->adm_ref_display_height,
+                            s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+        s->rfactor[scale * 3 + 0] = f.factor1;
+        s->rfactor[scale * 3 + 1] = f.factor1;
+        s->rfactor[scale * 3 + 2] = f.factor2;
+
+        const double pow2_32 = pow(2, 32);
+        if (scale == 0) {
+            uint16_t i_rf[3];
+            adm_csf_rfactor_scale0(&s->rfactor[0], s->adm_norm_view_dist, s->adm_ref_display_height,
+                                   s->adm_csf_mode, i_rf);
+            s->i_rfactor[0] = i_rf[0];
+            s->i_rfactor[1] = i_rf[1];
+            s->i_rfactor[2] = i_rf[2];
+        } else {
+            s->i_rfactor[scale * 3 + 0] = (uint32_t)(s->rfactor[scale * 3 + 0] * pow2_32);
+            s->i_rfactor[scale * 3 + 1] = (uint32_t)(s->rfactor[scale * 3 + 1] * pow2_32);
+            s->i_rfactor[scale * 3 + 2] = (uint32_t)(s->rfactor[scale * 3 + 2] * pow2_32);
+        }
     }
 
 #ifndef HAVE_HIPCC
@@ -1345,6 +1468,8 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
 /* ------------------------------------------------------------------ */
 
 static const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
+                                          "VMAF_integer_feature_aim_score",
+                                          "VMAF_integer_feature_adm3_score",
                                           "integer_adm_scale0",
                                           "integer_adm_scale1",
                                           "integer_adm_scale2",
