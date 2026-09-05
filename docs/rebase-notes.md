@@ -20,6 +20,14 @@ clang rejects outright.
   keys with `-EINVAL`. `vmaf_use_features_from_model` checks GPU twin option support
   against model requirements and dispatches unsupported twins to the CPU reference.
   Preserve this gating on rebase to prevent silent option drops.
+- `core/test/test_feature_extractor.c`: upstream Netflix carries this file with a flat
+  `run_tests()` and a handful of cases; the fork's copy is now mostly fork-added regression
+  tests, split one-behaviour-per-function and registered through
+  `run_registry_tests` / `run_context_tests` / `run_option_tests` so the
+  `readability-function-size` branch budget (ADR-0141) holds. On a sync, add any new upstream
+  case to the matching group runner rather than re-flattening `run_tests()`, and keep the
+  file-scoped `NOLINTBEGIN(modernize-use-nullptr)` bracket (ADR-1138) — the TU must keep
+  spelling the null pointer constant `NULL` for the required MSVC C lane.
 
 ## fix/gpu-init-leaks-and-hip-mirror — fix CUDA init error path leaks and close verified GPU state issues (2026-09-04)
 
