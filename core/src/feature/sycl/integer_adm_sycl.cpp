@@ -109,7 +109,6 @@ struct AdmStateSycl {
     double adm_min_val;   /* ADR-0487: minimum score floor (mirrors CPU + CUDA option). */
     bool adm_skip_scale0; /* host-side suppression: scale-0 excluded from score when set */
     double adm_dlm_weight;
-    bool adm_skip_aim;
     double adm_p_norm;
 
     VmafDictionary *feature_name_dict;
@@ -171,6 +170,13 @@ static const VmafOption options[] = {
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {
+        /* FEATURE_PARAM: honoured for feature-name-key parity only. dlm_weight
+         * enters the arithmetic of VMAF_integer_feature_adm3_score, which this
+         * twin does not emit (see collect_fex_sycl). Dropping it from the table
+         * would make this twin emit `integer_adm2_...` where the CPU twin emits
+         * `integer_adm2_dlmw_<v>_...` for the same opts dict, and the model
+         * lookup would miss. Same posture as the CPU reference, where
+         * adm_dlm_weight likewise has no arithmetic effect on adm2. */
         .name = "adm_dlm_weight",
         .help = "linear weighting between DLM and AIM; 1 corresponds to DLM-only",
         .alias = "dlmw",
@@ -236,13 +242,6 @@ static const VmafOption options[] = {
         .min = 0.0,
         .max = 1500.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "adm_skip_aim",
-        .help = "skip the calculation of AIM",
-        .offset = offsetof(AdmStateSycl, adm_skip_aim),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val = {.b = false},
     },
     {
         .name = "adm_skip_scale0",
@@ -1708,43 +1707,33 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         scores_den[scale] = den_scale;
     }
 
-    // Apply numden_limit
-    double const numden_limit = 1e-10 * (score_w * score_h) / (1920.0 * 1080.0);
+    /* Apply numden_limit — CPU parity (integer_adm.c::integer_compute_adm):
+     * the precision floor scales with the FULL-FRAME area, not the scale-3
+     * area that `score_w` / `score_h` hold after the loop above. */
+    double const numden_limit = 1e-10 * ((double)s->width * s->height) / (1920.0 * 1080.0);
     if (num < numden_limit)
         num = 0.0;
     if (den < numden_limit)
         den = 0.0;
 
-    double score_val = (den == 0.0) ? 1.0 : num / den;
-    /* ADR-0487: apply minimum score floor, matching CPU integer_adm behaviour. */
-    if (score_val < s->adm_min_val)
-        score_val = s->adm_min_val;
-    double const score = score_val;
+    /* ADR-0487 clamps adm3 only: the CPU reference emits
+     * VMAF_integer_feature_adm2_score unclamped (integer_adm.c::extract()
+     * applies MAX(..., adm_min_val) to the adm3 expression alone). */
+    double const score = (den == 0.0) ? 1.0 : num / den;
 
-    double const aim_num = 0.0;
-    double const score_aim = (den == 0.0) ? 1.0 : (aim_num / den);
-    double score_adm3 = (score * s->adm_dlm_weight) + (1.0 - score_aim) * (1.0 - s->adm_dlm_weight);
-    if (score_adm3 < s->adm_min_val)
-        score_adm3 = s->adm_min_val;
+    /* AIM / adm3 are NOT emitted by this twin: the AIM contrast measure needs
+     * a second device CM pass with the decouple_a / decouple_r roles swapped
+     * (the CUDA twin's ADR-0746 kernels), which the SYCL kernel set does not
+     * have. Leaving both features out of `provided_features` routes them to
+     * the CPU twin through the ADR-0530 name-based fallback, which produces
+     * the correct value under the correct feature-name key. Emitting them
+     * here from a hard-coded aim_num would fabricate a score. Tracked as
+     * T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05 in docs/state.md. */
 
-    // Write primary features
+    // Write primary feature
     {
         int const err = vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, "VMAF_integer_feature_adm2_score", score,
-            index);
-        if (err)
-            return err;
-    }
-    {
-        int const err = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_integer_feature_aim_score", score_aim,
-            index);
-        if (err)
-            return err;
-    }
-    {
-        int const err = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_integer_feature_adm3_score", score_adm3,
             index);
         if (err)
             return err;
@@ -1862,8 +1851,6 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 /* ------------------------------------------------------------------ */
 
 static const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
-                                          "VMAF_integer_feature_aim_score",
-                                          "VMAF_integer_feature_adm3_score",
                                           "integer_adm_scale0",
                                           "integer_adm_scale1",
                                           "integer_adm_scale2",

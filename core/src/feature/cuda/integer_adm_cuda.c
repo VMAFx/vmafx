@@ -923,7 +923,10 @@ static void write_scores(write_score_parameters_adm *params)
         scores[2 * scale + 0] = num_scale;
         scores[2 * scale + 1] = den_scale;
     }
-    const double numden_limit = 1e-10 * (w * h) / (1920.0 * 1080.0);
+    /* CPU parity (integer_adm.c::integer_compute_adm): the precision floor
+     * scales with the FULL-FRAME area, not the scale-3 area that `w`/`h`
+     * hold after the loop above. */
+    const double numden_limit = 1e-10 * ((double)params->w * params->h) / (1920.0 * 1080.0);
 
     num = num < numden_limit ? 0 : num;
     den = den < numden_limit ? 0 : den;
@@ -933,9 +936,11 @@ static void write_scores(write_score_parameters_adm *params)
     } else {
         score = num / den;
     }
-    /* ADR-0487: apply minimum score floor, matching CPU integer_adm behaviour. */
-    if (score < s->adm_min_val)
-        score = s->adm_min_val;
+    /* ADR-0487 clamps adm3 only: the CPU reference emits
+     * VMAF_integer_feature_adm2_score unclamped (integer_adm.c::extract()
+     * applies MAX(..., adm_min_val) to the adm3 expression alone). The
+     * Netflix golden `adm_min_val=0.98` case pins adm2 at 0.93451485, below
+     * the floor. Clamping here would diverge from the CPU twin. */
     score_num = num;
     score_den = den;
 
@@ -1054,8 +1059,6 @@ static int integer_compute_adm_cuda(VmafFeatureExtractor *fex, AdmStateCuda *s,
         const AdmCsfFactors f =
             adm_csf_factors(scale, adm_norm_view_dist, adm_ref_display_height, s->adm_csf_mode,
                             s->adm_csf_scale, s->adm_csf_diag_scale);
-        p.factor1[scale] = f.factor1;
-        p.factor2[scale] = f.factor2;
         p.rfactor[scale * 3] = f.factor1;
         p.rfactor[scale * 3 + 1] = f.factor1;
         p.rfactor[scale * 3 + 2] = f.factor2;
