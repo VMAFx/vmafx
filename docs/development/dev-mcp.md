@@ -44,8 +44,21 @@ Use the provided wrapper from the repository root:
 Or, to build without starting:
 
 ```bash
+./dev/scripts/container-build.sh
+```
+
+This is the form to prefer for a rebuild, because it checks *what it is about to
+build from* before spending 20–40 minutes, and records the answer in the image.
+See [ADR-1195](../adr/1195-container-source-revision-guard.md).
+
+The bare compose form still works and is what the wrapper calls underneath:
+
+```bash
 docker compose --project-directory "$(pwd)" -f dev/docker-compose.yml build
 ```
+
+but it performs no such check and leaves the image recording
+`source_rev=unknown`.
 
 > **Important — always pass `--project-directory`.**  Without it, Docker
 > Compose v2 sets the project directory to the compose-file's parent (`dev/`),
@@ -60,6 +73,39 @@ docker compose --project-directory "$(pwd)" -f dev/docker-compose.yml build
 The first build downloads all GPU SDK layers and compiles libvmaf from source.
 Expect 20–40 minutes on a typical workstation; subsequent builds use the
 layer cache and take 1–3 minutes when only Python packages change.
+
+### Which source is in the image?
+
+A rebuild only picks up work that is *in the checkout you build from*. If the
+checkout is behind `master`, the build still succeeds and the image is still
+newer than every commit in the repository — it simply does not contain the
+commits you rebuilt for. Timestamps cannot distinguish the two cases, so a
+rebuild that "looks fresh" is not evidence of anything.
+
+This is not hypothetical: on 2026-09-06 the container was rebuilt specifically to
+pick up the GPU default-model fixes (#1307, #1312, #1324), the checkout was 28
+commits behind, and the resulting image had none of them. It was noticed only
+because a test file was missing. Had a GPU smoke run instead, it would have
+reported green numbers for code that was not in the image.
+
+Ask the image directly rather than inferring:
+
+```bash
+# Is this checkout a valid build context right now?
+bash scripts/dev/check-container-source.sh --pre-build
+
+# What was an existing image actually built from?
+bash scripts/dev/check-container-source.sh --image vmaf-dev-mcp:local
+```
+
+Exit codes are `0` current, `1` stale (the missing commits are listed), `2`
+cannot tell — the latter for an image built before this marker existed, or built
+by a bare `docker compose build` that never received `VMAFX_SOURCE_REV`. Treat
+`2` as "rebuild before trusting anything measured in here", not as a pass.
+
+Before citing a number produced inside the container — a GPU smoke, a benchmark,
+a parity sweep — check the image first. An unattributable measurement is worse
+than none, because it looks like evidence.
 
 ---
 

@@ -686,6 +686,7 @@ jobs:
         run: |
           bash scripts/ci/check-state-md-rows.sh
           bash scripts/ci/tests/test-check-state-md-rows.sh
+
       - name: Test the self-hosted SYCL runner probe
         # ADR-1177. Hermetic unit suite for check-runner-available.sh.
         run: bash scripts/ci/tests/test-runner-available.sh
@@ -693,6 +694,15 @@ jobs:
       - name: Test the self-hosted SYCL runner supervisor
         # ADR-1177. Hermetic unit suite for runner-supervisor.sh with stubbed gh and docker.
         run: bash scripts/ci/tests/test-runner-supervisor.sh
+
+      - name: Test the container source-revision guard
+        # ADR-1195. Its companion: the ADR-1102 gate above proves *a* container
+        # built the artifact, this one proves *which source* the container was
+        # built from. A build context that is behind master produces an image
+        # newer than every commit, so nothing time-based catches it. Hermetic
+        # apart from one optional Docker case, which the suite skips when no
+        # daemon is reachable.
+        run: bash scripts/ci/tests/test-check-container-source.sh
 
       - name: One-shot release-please fields must not outlive the first release
         run: |

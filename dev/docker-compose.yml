@@ -84,6 +84,14 @@ services:
       context: .
       dockerfile: dev/Containerfile
       target: dev-mcp
+      # Record what the image was built from, so a running container can be
+      # asked rather than guessed at (ADR-1195). Compose cannot run git, so the
+      # value comes from the environment; dev/scripts/container-build.sh sets
+      # it. A plain `docker compose build` leaves it `unknown`, which
+      # scripts/dev/check-container-source.sh reports as unverifiable.
+      args:
+        VMAFX_SOURCE_REV: "${VMAFX_SOURCE_REV:-unknown}"
+        VMAFX_SOURCE_REF: "${VMAFX_SOURCE_REF:-unknown}"
     image: vmaf-dev-mcp:local
     container_name: vmaf-dev-mcp
     restart: unless-stopped
