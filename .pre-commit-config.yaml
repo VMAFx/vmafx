@@ -213,6 +213,13 @@ repos:
         language: script
         pass_filenames: false
         always_run: true
+      - id: check-state-md-rows
+        name: Every docs/state.md bug id appears exactly once (ADR-0165)
+        entry: scripts/ci/check-state-md-rows.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+
       - id: check-aggregator-names
         name: Check required CI checks aggregator list matches workflows
         entry: scripts/ci/check-aggregator-names.sh
