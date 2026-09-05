@@ -438,7 +438,8 @@ static int slurp_sidecar_json(const char *sidecar, char **out_buf)
     assert(sz <= DNN_SIDECAR_JSON_MAX);
     /* buf was allocated as sz + 1u bytes just above, so buf[sz] is valid. The
      * analyzer loses this relationship across the fread path. */
-    buf[sz] = '\0'; // NOLINT(clang-analyzer-security.ArrayBound)
+    // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) — ADR-0141: buf is sz + 1u bytes
+    buf[sz] = '\0';
     *out_buf = buf;
     return 0;
 }
