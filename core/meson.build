@@ -9,6 +9,11 @@ project('libvmaf', ['c', 'cpp'],
                        'buildtype=release',
                        'default_library=both',
                        'b_lto=true',
+                       # ADR-1172: bound the per-link LTO partition parallelism. GCC's
+                       # plain -flto means -flto=auto = every core per link; ninja -j N
+                       # then runs N links x nproc ltrans jobs and load hits 5x the core
+                       # count on a workstation. -flto=4 keeps LTO and caps it.
+                       'b_lto_threads=4',
                       ],
     # >= 1.4.0: the explicit `-Dc_std=c23` override is only recognised from
     # meson 1.4.0 on (1.3.2 fails with "Unknown C std ['c23']"). Declaring the

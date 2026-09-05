@@ -13,6 +13,12 @@ no rebase impact: fork-local CUDA and documentation files.
   `T-SYCL-INIT-LEAKS-EXC-2026-06-19`, `T-SPEED-GPU-REGISTRY-ORPHAN-2026-06-19`, and
   `T-CUDA-INIT-SUBMIT-LEAKS-2026-06-19`.
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
+## build/bound-lto-link-parallelism — b_lto_threads=4 default (2026-09-04)
+
+Rebase impact: `core/meson.build` `default_options` is a fork-edited hunk of an upstream file
+(`libvmaf/meson.build` upstream has no `b_lto`); on rebase keep both `b_lto=true` and
+`b_lto_threads=4` together — the second exists only because the first is on (ADR-1172).
+
 ## ci/release-please-gate-warning — idle-green release-please without the App (2026-09-04)
 
 No rebase impact: `.github/workflows/release-please.yml`, `scripts/release/`, ADR-1171 and

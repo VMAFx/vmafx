@@ -108,7 +108,8 @@ the emitted artifact, so they belong in the build-time surface.
 | `default_library` | `shared` | `shared` / `static` / `both` — `both` is required for the test suite layout |
 | `b_ndebug` | `false` | Disable C `assert()` when `true`; set with `-Db_ndebug=true` |
 | `b_sanitize` | `none` | `address`, `undefined`, `address,undefined`, `thread`, `memory` |
-| `b_lto` | `false` | Enable LTO; measurable speedup on the scalar / AVX2 paths |
+| `b_lto` | `true` | LTO is on by default (`core/meson.build` `default_options`); measurable speedup on the scalar / AVX2 paths. `-Db_lto=false` for sanitizer / fuzzing builds |
+| `b_lto_threads` | `4` | Per-link LTO partition parallelism (`-flto=4` on GCC, `-flto-jobs=4` on Clang). The project default caps it because GCC's plain `-flto` uses every core per link and `ninja -j N` multiplies that by N (ADR-1172). Raise for a dedicated build box, e.g. `-Db_lto_threads=0` = compiler default |
 | `c_args` | (empty) | Extra C flags. Passing `-DVMAF_PICTURE_POOL` enables the picture-pool allocator (gated test target) |
 | `prefix` | `/usr/local` | Install prefix for `ninja install` |
 | `pkg_config_path` | (system) | Useful when linking against a non-system ONNX Runtime for `enable_dnn` |
