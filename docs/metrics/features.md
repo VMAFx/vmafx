@@ -471,9 +471,13 @@ consumers of the float pipeline.
 `enable_mse=true` also `mse_y/cb/cr`. With `enable_apsnr=true` also
 `apsnr_y/cb/cr` (aggregate across the whole clip, emitted at flush).
 
-**Output range** — dB, saturated at `6 × bpc + 12` when the two planes are
-identical (MSE=0): 60 dB for 8 bpc, 72 dB for 10 bpc, 84 dB for 12 bpc,
-108 dB for 16 bpc. Override the cap via `min_sse`.
+**Output range** — dB, saturated at `6 × bpc + 12`: 60 dB for 8 bpc, 72 dB
+for 10 bpc, 84 dB for 12 bpc, 108 dB for 16 bpc. That value is reported both
+when the two planes are identical (MSE=0, where the true PSNR is `+inf`) and
+— by default — when a genuinely computed score exceeds it. Set
+`uncapped=true` to report the true value while keeping the MSE=0 sentinel
+([ADR-1193](../adr/1193-psnr-uncapped-option.md)), or `min_sse` to raise both
+at once. See [PSNR](psnr.md) for the full comparison.
 
 **Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4 / 4:0:0, 8 / 10 / 12 / 16 bpc.
 
@@ -485,14 +489,18 @@ identical (MSE=0): 60 dB for 8 bpc, 72 dB for 10 bpc, 84 dB for 12 bpc,
 | `enable_mse`       | bool   | `false` | Emit `mse_y/cb/cr` alongside PSNR                                                  |
 | `enable_apsnr`     | bool   | `false` | Emit clip-aggregate `apsnr_y/cb/cr` at flush                                       |
 | `reduced_hbd_peak` | bool   | `false` | Scale HBD peak to match 8-bit content                                              |
-| `min_sse`          | double | `0.0`   | Clamp the minimum MSE (and so the PSNR ceiling) — useful for identical-frame tests |
+| `min_sse`          | double | `0.0`   | Clamp the minimum MSE (and so the PSNR ceiling *and* the identical-frame sentinel) |
+| `uncapped`         | bool   | `false` | Report the true PSNR instead of truncating at the ceiling; the MSE=0 sentinel is unaffected |
 
-**Backends** — AVX2, AVX-512, NEON, CUDA, SYCL, HIP. The GPU
+**Backends** — AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal. The GPU
 extractors honour `enable_chroma` (default `true`) and emit `psnr_cb` /
 `psnr_cr` identically to the CPU path when enabled. Pass
-`enable_chroma=false` for luma-only operation on any backend. `float_psnr`
-adds CUDA / SYCL / HIP twins on the float pipeline. (The Vulkan backend was
-removed in ADR-0726.)
+`enable_chroma=false` for luma-only operation on any backend. `uncapped` is
+mirrored on every GPU twin under the same name and default; `enable_mse`,
+`enable_apsnr`, `reduced_hbd_peak` and `min_sse` remain CPU-only.
+`float_psnr` adds CUDA / SYCL / HIP / Metal twins on the float pipeline and
+accepts `uncapped` on all of them. (The Vulkan backend was removed in
+ADR-0726.)
 
 **Limitations** — Temporal flag set only because of `apsnr` accumulation;
 per-frame PSNR itself is stateless.

@@ -23,7 +23,9 @@
  *  Algorithm (mirrors CPU `integer_psnr.c`):
  *      sse_p = sum_{i,j} (ref_p[i,j] - dis_p[i,j])^2;   (per plane p)
  *      mse_p = sse_p / (w_p * h_p);
- *      psnr_p = MIN(10 * log10(peak^2 / max(mse_p, 1e-16)), psnr_max)
+ *      psnr_p = (mse_p == 0) ? psnr_max                 (infinity sentinel)
+ *             : uncapped     ? 10 * log10(peak^2 / mse_p)
+ *                            : MIN(10 * log10(peak^2 / mse_p), psnr_max)
  *  psnr_max = (6 * bpc) + 12  (CPU `integer_psnr.c::init` min_sse==0 branch).
  *
  *  enable_chroma (default true): when false or pix_fmt == YUV400P, only
@@ -80,6 +82,11 @@ typedef struct PsnrStateHip {
     /* `enable_chroma` option: when false, only luma is dispatched.
      * Default true mirrors CPU integer_psnr.c — see ADR-0453/0471. */
     bool enable_chroma;
+    /* `uncapped` option: mirrors CPU integer_psnr.c. When true, psnr_max
+     * keeps only its `sse == 0` infinity-sentinel role and stops
+     * truncating genuinely computed values. Default false keeps every
+     * shipped score unchanged. See ADR-1193 / T-UPSTREAM-1109. */
+    bool uncapped;
     /* Number of active planes (1 for YUV400 or enable_chroma=false,
      * 3 otherwise). */
     unsigned n_planes;
@@ -105,6 +112,15 @@ static const VmafOption options[] = {{
                                          .offset = offsetof(PsnrStateHip, enable_chroma),
                                          .type = VMAF_OPT_TYPE_BOOL,
                                          .default_val.b = true,
+                                     },
+                                     {
+                                         .name = "uncapped",
+                                         .help = "report the true PSNR instead of truncating at "
+                                                 "the psnr_max ceiling (an all-zero SSE still "
+                                                 "reports psnr_max)",
+                                         .offset = offsetof(PsnrStateHip, uncapped),
+                                         .type = VMAF_OPT_TYPE_BOOL,
+                                         .default_val.b = false,
                                      },
                                      {0}};
 
@@ -411,11 +427,18 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
         const double sse = (double)*(const uint64_t *)s->rb[p].host_pinned;
         const double n_pixels = (double)s->width[p] * (double)s->height[p];
         const double mse = sse / n_pixels;
-        /* Clamp at psnr_max[p]; 1e-16 floor guards sse==0. */
-        const double mse_clamped = (mse > 1e-16) ? mse : 1e-16;
-        double psnr = 10.0 * log10(peak_sq / mse_clamped);
-        if (psnr > s->psnr_max[p])
+        /* Match CPU integer_psnr.c::psnr_from_mse — `mse == 0` reports
+         * psnr_max[p] as the infinity sentinel; the truncation applies
+         * only when `uncapped` is false. See ADR-1193 / T-UPSTREAM-1109. */
+        double psnr;
+        if (mse <= 0.0) {
             psnr = s->psnr_max[p];
+        } else {
+            const double mse_clamped = (mse > 1e-16) ? mse : 1e-16;
+            psnr = 10.0 * log10(peak_sq / mse_clamped);
+            if (!s->uncapped && psnr > s->psnr_max[p])
+                psnr = s->psnr_max[p];
+        }
         const int e = vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, psnr_name[p], psnr, index);
         if (e != 0 && rc == 0)

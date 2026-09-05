@@ -16,24 +16,16 @@
  *
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <limits.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
 #include <math.h>
+#include <stdbool.h>
 
-#include "mem.h"
-#include "psnr_tools.h"
-#include "psnr_options.h"
+#include "psnr.h"
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 int compute_psnr(const float *ref, const float *dis, int w, int h, int ref_stride, int dis_stride,
-                 double *score, double peak, double psnr_max)
+                 double *score, double peak, double psnr_max, bool uncapped)
 {
     double noise_ = 0;
 
@@ -50,8 +42,16 @@ int compute_psnr(const float *ref, const float *dis, int w, int h, int ref_strid
     }
     noise_ /= ((double)w * h);
 
+    /* Split `psnr_max`'s infinity-sentinel role from its truncation role —
+     * see psnr.h and ADR-1193. The `uncapped == false` path is
+     * bit-identical to the pre-fix expression. */
     double eps = 1e-10;
-    *score = MIN(10 * log10(peak * peak / MAX(noise_, eps)), psnr_max);
+    if (noise_ <= 0.0) {
+        *score = psnr_max;
+    } else {
+        const double psnr = 10 * log10(peak * peak / MAX(noise_, eps));
+        *score = uncapped ? psnr : MIN(psnr, psnr_max);
+    }
 
     return 0;
 }

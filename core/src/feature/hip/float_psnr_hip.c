@@ -99,6 +99,11 @@ typedef struct FloatPsnrStateHip {
     /* `enable_chroma` option: when false, only luma is computed.
      * Default true mirrors CPU float_psnr.c — see ADR-0469. */
     bool enable_chroma;
+    /* `uncapped` option: mirrors CPU float_psnr.c. When true, psnr_max
+     * keeps only its zero-noise infinity-sentinel role and stops
+     * truncating genuinely computed values. Default false keeps every
+     * shipped score unchanged. See ADR-1193 / T-UPSTREAM-1109. */
+    bool uncapped;
     VmafDictionary *feature_name_dict;
 } FloatPsnrStateHip;
 
@@ -108,6 +113,15 @@ static const VmafOption options[] = {{
                                          .offset = offsetof(FloatPsnrStateHip, enable_chroma),
                                          .type = VMAF_OPT_TYPE_BOOL,
                                          .default_val.b = true,
+                                     },
+                                     {
+                                         .name = "uncapped",
+                                         .help = "report the true PSNR instead of truncating at "
+                                                 "the psnr_max ceiling (a zero-noise pair still "
+                                                 "reports psnr_max)",
+                                         .offset = offsetof(FloatPsnrStateHip, uncapped),
+                                         .type = VMAF_OPT_TYPE_BOOL,
+                                         .default_val.b = false,
                                      },
                                      {0}};
 
@@ -417,11 +431,19 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
 
     const double n_pix = (double)s->frame_w * (double)s->frame_h;
     const double noise = total / n_pix;
+    /* Match CPU float_psnr.c — a zero-noise pair reports psnr_max as the
+     * infinity sentinel; the truncation at psnr_max applies only when
+     * `uncapped` is false. See ADR-1193 / T-UPSTREAM-1109. */
     const double eps = 1e-10;
-    const double max_noise = noise > eps ? noise : eps;
-    double score = 10.0 * log10(s->peak * s->peak / max_noise);
-    if (score > s->psnr_max)
+    double score;
+    if (noise <= 0.0) {
         score = s->psnr_max;
+    } else {
+        const double max_noise = noise > eps ? noise : eps;
+        score = 10.0 * log10(s->peak * s->peak / max_noise);
+        if (!s->uncapped && score > s->psnr_max)
+            score = s->psnr_max;
+    }
 
     return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "float_psnr", score, index);

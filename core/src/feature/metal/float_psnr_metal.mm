@@ -5,7 +5,10 @@
  *  float_psnr feature extractor on the Metal backend (T8-1d / ADR-0421).
  *  Dispatches `float_psnr_kernel_{8,16}bpc` from float_psnr.metal.
  *
- *  Score: peak² / max(mse, 1e-10) via 10·log10, clamped to psnr_max.
+ *  Score: peak² / max(mse, 1e-10) via 10·log10. `psnr_max` is reported
+ *  verbatim for a zero-noise pair (infinity sentinel) and, unless the
+ *  `uncapped` option is set, also truncates every computed value above it
+ *  (ADR-1193 / T-UPSTREAM-1109).
  *  Peak / psnr_max table matches float_psnr_vulkan.c::init().
  */
 
@@ -47,6 +50,11 @@ typedef struct FloatPsnrStateMetal {
 
     double peak;
     double psnr_max;
+    /* `uncapped` option: mirrors CPU float_psnr.c. When true, psnr_max
+     * keeps only its zero-noise infinity-sentinel role and stops
+     * truncating genuinely computed values. Default false keeps every
+     * shipped score unchanged. See ADR-1193 / T-UPSTREAM-1109. */
+    bool uncapped;
     size_t plane_bytes;
     size_t partials_count;
     unsigned frame_w;
@@ -56,7 +64,16 @@ typedef struct FloatPsnrStateMetal {
     VmafDictionary *feature_name_dict;
 } FloatPsnrStateMetal;
 
-static const VmafOption options[] = {{0}};
+static const VmafOption options[] = {
+    {
+        .name = "uncapped",
+        .help = "report the true PSNR instead of truncating at the psnr_max ceiling "
+                "(a zero-noise pair still reports psnr_max)",
+        .offset = offsetof(FloatPsnrStateMetal, uncapped),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {0}};
 
 static int build_pipelines(FloatPsnrStateMetal *s, id<MTLDevice> device)
 {
@@ -228,9 +245,17 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
     }
     const double n_pix = (double)s->frame_w * (double)s->frame_h;
     const double mse   = (n_pix > 0.0) ? (mse_sum / n_pix) : 0.0;
-    const double noise = (mse < 1e-10) ? 1e-10 : mse;
-    double score       = 10.0 * log10((s->peak * s->peak) / noise);
-    if (score > s->psnr_max) { score = s->psnr_max; }
+    /* Match CPU float_psnr.c — a zero-noise pair reports psnr_max as the
+     * infinity sentinel; the truncation applies only when `uncapped` is
+     * false. See ADR-1193 / T-UPSTREAM-1109. */
+    double score;
+    if (mse <= 0.0) {
+        score = s->psnr_max;
+    } else {
+        const double noise = (mse < 1e-10) ? 1e-10 : mse;
+        score = 10.0 * log10((s->peak * s->peak) / noise);
+        if (!s->uncapped && score > s->psnr_max) { score = s->psnr_max; }
+    }
 
     return vmaf_feature_collector_append_with_dict(
         feature_collector, s->feature_name_dict, "float_psnr", score, index);

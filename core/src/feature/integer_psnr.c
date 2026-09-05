@@ -47,6 +47,11 @@ typedef struct PsnrState {
     uint32_t peak;
     double psnr_max[3];
     double min_sse;
+    /* ADR-1193 / T-UPSTREAM-1109: when true, `psnr_max[p]` keeps only its
+     * `mse == 0` infinity-sentinel role and stops truncating genuinely
+     * computed values above it. Default false keeps every shipped score
+     * bit-identical. */
+    bool uncapped;
     struct {
         uint64_t sse[3];
         uint64_t n_pixels[3];
@@ -92,6 +97,14 @@ static const VmafOption options[] = {
         .default_val.d = 0.0,
         .min = 0.0,
         .max = DBL_MAX,
+    },
+    {
+        .name = "uncapped",
+        .help = "report the true PSNR instead of truncating at the psnr_max ceiling "
+                "(an all-zero SSE still reports psnr_max)",
+        .offset = offsetof(PsnrState, uncapped),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
     },
     {0}};
 
@@ -170,6 +183,35 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
+/*
+ * Convert a per-plane MSE into a PSNR, keeping the two roles `psnr_max`
+ * used to conflate strictly separate (ADR-1193, T-UPSTREAM-1109,
+ * Netflix/vmaf#1109):
+ *
+ *   (a) infinity sentinel — `mse == 0` means the planes are byte-identical
+ *       and the true PSNR is +inf, so a finite stand-in has to be reported.
+ *       This role is unconditional and is what the golden 60 / 84 / 108 dB
+ *       assertions pin.
+ *   (b) hard truncation — every genuinely computed value above `psnr_max`
+ *       was silently replaced by it, so an 8-bit pair differing by one
+ *       luma step over 576x324 reported 60.000000 dB instead of its true
+ *       100.840479 dB. `uncapped` drops role (b) only.
+ *
+ * With `uncapped == false` the expression is bit-identical to the
+ * pre-fix `MIN(10 * log10(peak^2 / MAX(mse, 1e-16)), psnr_max)`: for
+ * `mse == 0` the floored argument yields >= 208 dB, which the MIN
+ * collapsed to `psnr_max` anyway. The 1e-16 floor is retained in the
+ * computed branch so the two modes agree on any 0 < mse < 1e-16 input
+ * (unreachable below ~1e16 pixels, since sse is a positive integer).
+ */
+static double psnr_from_mse(double mse, double peak_sq, double psnr_max, bool uncapped)
+{
+    if (mse <= 0.)
+        return psnr_max;
+    const double psnr = 10. * log10(peak_sq / MAX(mse, 1e-16));
+    return uncapped ? psnr : MIN(psnr, psnr_max);
+}
+
 static char *mse_name[3] = {"mse_y", "mse_cb", "mse_cr"};
 static char *psnr_name[3] = {"psnr_y", "psnr_cb", "psnr_cr"};
 
@@ -200,7 +242,7 @@ static int psnr(VmafPicture *ref_pic, VmafPicture *dist_pic, unsigned index,
         }
 
         const double mse = ((double)sse) / (ref_pic->w[p] * ref_pic->h[p]);
-        const double psnr = MIN(10. * log10(peak * peak / MAX(mse, 1e-16)), s->psnr_max[p]);
+        const double psnr = psnr_from_mse(mse, (double)peak * peak, s->psnr_max[p], s->uncapped);
 
         err |= vmaf_feature_collector_append(feature_collector, psnr_name[p], psnr, index);
         if (s->enable_mse) {
@@ -237,7 +279,8 @@ static int psnr_hbd(VmafPicture *ref_pic, VmafPicture *dist_pic, unsigned index,
         }
 
         const double mse = ((double)sse) / (ref_pic->w[p] * ref_pic->h[p]);
-        const double psnr = MIN(10. * log10(s->peak * s->peak / MAX(mse, 1e-16)), s->psnr_max[p]);
+        const double psnr =
+            psnr_from_mse(mse, (double)s->peak * s->peak, s->psnr_max[p], s->uncapped);
 
         err |= vmaf_feature_collector_append(feature_collector, psnr_name[p], psnr, index);
         if (s->enable_mse) {

@@ -10,8 +10,11 @@
  *    diff = (int64)(ref_px) - (int64)(dis_px)
  *    sse  += diff * diff        (exact integer)
  *    mse  = sse / (W * H)
- *    psnr = min(10 * log10(peak^2 / max(mse, 1e-16)), psnr_max)
- *    where peak = (1 << bpc) - 1, psnr_max = 6*bpc + 12.
+ *    psnr = (mse == 0) ? psnr_max
+ *                      : min(10 * log10(peak^2 / mse), psnr_max)
+ *    where peak = (1 << bpc) - 1, psnr_max = 6*bpc + 12. The host-side
+ *    `uncapped` option (ADR-1193) drops the min() and keeps only the
+ *    `mse == 0` sentinel; the kernel itself is unaffected.
  *
  *  Reduction: each pixel produces a uint64 squared-error. MSL lacks
  *  `atomic_ulong`, so we split into (lo, hi) uint32 slots per threadgroup

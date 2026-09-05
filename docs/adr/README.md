@@ -1006,4 +1006,5 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1197](1197-gpu-threaded-flush-ownership.md) | The threaded flush leaves GPU extractors to their own backend flush | Proposed | cuda, sycl, threading, cli, testing |
 | [ADR-1192](1192-netflix-bench-snapshot-drift-not-regenerated.md) | Keep the recorded Netflix benchmark snapshot; do not regenerate it while the GPU paths are broken | Accepted | benchmark, cuda, sycl, testdata, docs |
 | [ADR-1195](1195-container-source-revision-guard.md) | Record and verify which source revision the dev container was built from | Proposed | ci, build, testing, agents |
+| [ADR-1193](1193-psnr-uncapped-option.md) | Opt-in `uncapped` option splits the PSNR infinity sentinel from the truncation | Accepted | core, feature, psnr, options, cuda, sycl, hip, metal, gpu-twins, upstream |
 | [ADR-1185](1185-backend-perf-baseline-methodology.md) | Per-backend performance baselines are median-of-N, one backend per build dir | Accepted | perf, benchmarks, cuda, sycl, hip, docs |

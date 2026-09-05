@@ -48663,6 +48663,55 @@ Fork-only tooling (`dev/`, `scripts/dev/`, `scripts/ci/tests/`). One invariant:
    revision of whichever build first populated the layer cache. A marker that
    reports a stale revision authoritatively is worse than no marker. See
    [ADR-1195](adr/1195-container-source-revision-guard.md).
+## fix/t-upstream-1109-psnr-cap-truncates — PSNR `uncapped` option (2026-09-06)
+
+**Rebase-sensitive files**: `core/src/feature/integer_psnr.c`,
+`core/src/feature/float_psnr.c`, `core/src/feature/psnr.{c,h}`,
+`core/src/feature/{cuda,sycl,hip,metal}/{integer,float}_psnr_*`,
+`core/src/feature/metal/{integer,float}_psnr.metal`,
+`core/test/test_psnr_uncapped.c`.
+
+`integer_psnr.c`, `float_psnr.c` and `psnr.{c,h}` are upstream-mirror files;
+the eight GPU twins are fork-local. ADR-1193 changed the same expression in
+all of them, so an upstream sync that touches PSNR needs the following
+invariants held:
+
+1. **`psnr_max` has exactly two roles and they are now separate.** Role (a),
+   the `mse == 0` infinity sentinel, is unconditional. Role (b), the
+   truncation of computed values, applies only when `uncapped == false`.
+   Upstream's expression conflates them
+   (`MIN(10*log10(peak^2 / MAX(mse, 1e-16)), psnr_max)`), so a verbatim
+   upstream hunk landing on `integer_psnr.c::psnr_from_mse()`,
+   `float_psnr.c::extract()` or `psnr.c::compute_psnr()` silently
+   reintroduces the bug. Resolve such a conflict by keeping the fork's
+   two-branch form and folding any upstream numeric change into the
+   *computed* branch only.
+
+2. **The default must stay bit-identical.** `core/test/test_psnr_uncapped.c`
+   carries no-change guards (`test_psnr_default_still_truncates`,
+   `test_float_psnr_default_still_truncates`) next to the fix assertions.
+   Both directions have to keep passing; a rebase that moves the default 60 dB
+   value is wrong even if the uncapped value is right.
+
+3. **The option name, type and default are mirrored across ten extractors.**
+   `uncapped` / `VMAF_OPT_TYPE_BOOL` / `false` appears in `integer_psnr.c`,
+   `float_psnr.c` and each of the eight GPU twins. Adding it to one backend
+   only produces a cross-backend divergence that no CPU test catches. The
+   option is deliberately **not** `VMAF_OPT_FLAG_FEATURE_PARAM`: setting it
+   must not rename `psnr_y` / `float_psnr`, because the CPU extractor appends
+   without a name dict while the GPU twins append with one — flagging it would
+   make the two backends emit different keys for the same request.
+
+4. **`compute_psnr()` in `psnr.c` has no in-tree caller.** It is part of the
+   upstream float "tools" layer and is kept in sync deliberately. Its
+   signature grew a trailing `bool uncapped`; an upstream rebase that
+   reintroduces the three-argument form will compile (nothing calls it), so
+   the mismatch has to be caught by review rather than by the build.
+
+5. **Metal was not executed.** The two `.mm` twins and their `.metal` comment
+   blocks were changed by inspection only — no Apple GPU is available on the
+   fork's dev hardware. Treat the Metal hunks as unverified against silicon
+   when reconciling them.
 
 ### `docs/ai/retrain-runbook-1246.md`
 

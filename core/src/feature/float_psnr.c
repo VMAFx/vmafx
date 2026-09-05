@@ -18,11 +18,14 @@
 
 #include <errno.h>
 #include <math.h>
+#include <stdbool.h>
+#include <stddef.h>
 #include <string.h>
 
 #include "cpu.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
+#include "opt.h"
 
 #include "mem.h"
 #include "picture_copy.h"
@@ -57,8 +60,27 @@ typedef struct PsnrState {
     float *dist;
     double peak;
     double psnr_max;
+    /* ADR-1193 / T-UPSTREAM-1109: mirrors the `uncapped` option on the
+     * integer `psnr` extractor. When true, `psnr_max` keeps only its
+     * zero-noise infinity-sentinel role. Default false is bit-identical
+     * to the pre-fix score. */
+    bool uncapped;
     double (*noise_line)(const float *, const float *, int);
 } PsnrState;
+
+static const VmafOption options[] = {
+    {
+        .name = "uncapped",
+        .help = "report the true PSNR instead of truncating at the psnr_max ceiling "
+                "(a zero-noise pair still reports psnr_max)",
+        .offset = offsetof(PsnrState, uncapped),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    /* Terminator. `{}` rather than `{0}`: the C23 empty initialiser
+     * zero-fills without spelling a null pointer constant as `0`, which
+     * keeps this file at its ADR-1142 clang-tidy baseline. */
+    {}};
 
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
@@ -140,8 +162,22 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
         noise_ += s->noise_line(s->ref + (ptrdiff_t)i * stride, s->dist + (ptrdiff_t)i * stride, w);
     noise_ /= (w * h);
 
+    /* `psnr_max` is an infinity sentinel for a zero-noise pair and, before
+     * ADR-1193, was also a hard truncation of every computed value above
+     * it. Split the two: the sentinel is unconditional, the truncation is
+     * opt-out via `uncapped`. With `uncapped == false` this is
+     * bit-identical to the pre-fix `MIN(..., s->psnr_max)` — a zero noise
+     * floored to `eps` yields >= 208 dB, which the MIN collapsed to
+     * `psnr_max` anyway. See T-UPSTREAM-1109 / Netflix/vmaf#1109. */
     double eps = 1e-10;
-    double score = MIN(10 * log10(s->peak * s->peak / MAX(noise_, eps)), s->psnr_max);
+    double score;
+    if (noise_ <= 0.0) {
+        score = s->psnr_max;
+    } else {
+        score = 10 * log10(s->peak * s->peak / MAX(noise_, eps));
+        if (!s->uncapped)
+            score = MIN(score, s->psnr_max);
+    }
     err = vmaf_feature_collector_append(feature_collector, "float_psnr", score, index);
     if (err)
         return err;
@@ -162,6 +198,7 @@ static const char *provided_features[] = {"float_psnr", NULL};
 
 VmafFeatureExtractor vmaf_fex_float_psnr = {
     .name = "float_psnr",
+    .options = options,
     .init = init,
     .extract = extract,
     .close = close,
