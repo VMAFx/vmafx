@@ -265,6 +265,44 @@ for a complete example.
 pipeline for direct Python invocation (used by tests and by future
 `vmaf-train qat` subcommand).
 
+**Training data.** The `cache:` field in the config points at the training
+corpus; which reader parses it is decided by the rank of `qat.input_shape`
+(the same shape the FX trace uses, so the loader and the trace cannot
+disagree):
+
+| `qat.input_shape` rank | Loader | Cache format |
+| --- | --- | --- |
+| 2 (e.g. `[1, 6]`) | `vmaf_train.datamodule.VmafTrainDataModule` | `.parquet` (canonical-6 feature columns + `mos`) or `.npz` (`features`, `scores`) |
+| 4 (e.g. `[1, 1, 32, 32]`) | built-in NCHW image loader | `.npz` (see below) |
+| anything else | none — the run downgrades to `--smoke` with a message on stderr | — |
+
+Rank 4 is also the default when `qat.input_shape` is absent, matching the
+`[1, 1, 32, 32]` fallback the exporter traces with.
+
+A rank-4 `.npz` carries the input batch under `x` (aliases: `images`,
+`degraded`, `input`) with shape `(N, C, H, W)`, and the target under `y`
+(aliases: `targets`, `clean`, `reference`, `output`) with the same leading
+dimension. Both are cast to float32, and the archive is validated when the
+loader is built — a wrong extension, an unknown array name, a non-4D input, a
+length mismatch, or an empty cache all exit before the fp32 warm-start burns
+an epoch. Batch size comes from the config's `batch_size` (default 32).
+
+```python
+import numpy as np
+np.savez(
+    "ai/data/learned_filter_patches.npz",
+    x=degraded_patches,   # (N, 1, 32, 32) float32
+    y=clean_patches,      # (N, 1, 32, 32) float32
+)
+```
+
+Before this dispatch existed, every config went to `VmafTrainDataModule`,
+which only materialises rank-2 tabular rows. 2D CNN configs such as
+[`learned_filter_v1_qat.yaml`](../../ai/configs/learned_filter_v1_qat.yaml)
+therefore could not train for real; they appeared to work only because their
+parquet cache is uncommitted, so the missing-cache branch silently downgraded
+the run to smoke mode (Research-2029 §5 gap 4).
+
 ## CI accuracy gate (`ai-quant-accuracy`)
 
 Wired into the `Tiny AI` job in

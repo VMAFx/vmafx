@@ -174,6 +174,14 @@ no rebase impact: fork-local SYCL feature extractor and tests.
   `core/src/feature/` wildcard glob, silently truncated the comment mid-file, and turned the
   header into parse errors). On a sync, keep the bracket balanced and do not "modernise" the
   header — every rewrite it suppresses breaks the C includers.
+## feat/dnn-int8-redirect-and-sidecar-fixes — qat_train.py rank-4 image loader (2026-09-05)
+
+- `ai/scripts/qat_train.py`: `_build_train_loader_factory` now dispatches on the rank of
+  `qat.input_shape`; new `_build_image_loader_factory` reads an NCHW `.npz` for rank-4
+  models. `_config_input_rank` is the single place the rank is read.
+- `ai/tests/test_qat_train_loader.py`, `docs/ai/quantization.md`: coverage + docs.
+- `no rebase impact: fork-added tiny-AI training script; upstream Netflix/vmaf has no ai/ tree.`
+
 ## feat/dnn-int8-redirect-and-sidecar-fixes — measure_quant_drop.py path overrides (2026-09-05)
 
 - `ai/scripts/measure_quant_drop.py`: added `--fp32` / `--int8` / `--budget` / `--id` so a
