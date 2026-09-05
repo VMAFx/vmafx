@@ -125,7 +125,7 @@ static void yuv_check_file_size(FILE *fin, const yuv_input *yuv)
                       frame_sz, yuv->width, yuv->height, yuv->bitdepth, fmt_name,
                       (long long)file_sz);
         exit(
-            2); // NOLINT(concurrency-mt-unsafe) — CLI single-threaded at open time; mirrors cli_parse.c exit() pattern
+            2); // NOLINT(concurrency-mt-unsafe) — CLI single-threaded at open time; mirrors cli_parse.c exit() pattern (ADR-0141 / ADR-0278)
     }
     if (file_sz % (off_t)frame_sz != 0) {
         (void)fprintf(stderr,
@@ -136,7 +136,7 @@ static void yuv_check_file_size(FILE *fin, const yuv_input *yuv)
                       frame_sz, yuv->width, yuv->height, yuv->bitdepth, fmt_name,
                       (long long)file_sz, yuv->bitdepth, bpp, bpp == 1u ? "" : "s");
         exit(
-            2); // NOLINT(concurrency-mt-unsafe) — CLI single-threaded at open time; mirrors cli_parse.c exit() pattern
+            2); // NOLINT(concurrency-mt-unsafe) — CLI single-threaded at open time; mirrors cli_parse.c exit() pattern (ADR-0141 / ADR-0278)
     }
 }
 
@@ -343,7 +343,7 @@ static int yuv_vtbl_fetch_into_vmaf_picture(void *ctx, FILE *fin, VmafPicture *p
     return yuv_fetch_into_vmaf_picture((yuv_input *)ctx, fin, pic);
 }
 
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) — extern linkage required: vidinput.c references this symbol via `extern video_input_vtbl YUV_INPUT_VTBL`
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) — extern linkage required: vidinput.c references this symbol via `extern video_input_vtbl YUV_INPUT_VTBL` (ADR-0141 / ADR-0278)
 OC_EXTERN const video_input_vtbl YUV_INPUT_VTBL = {
     yuv_vtbl_open_raw,    NULL,           yuv_vtbl_get_info,
     yuv_vtbl_fetch_frame, yuv_vtbl_close, yuv_vtbl_fetch_into_vmaf_picture};
