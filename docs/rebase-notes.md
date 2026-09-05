@@ -48640,3 +48640,25 @@ Fork-only tooling (`dev/`, `scripts/dev/`, `scripts/ci/tests/`). One invariant:
    revision of whichever build first populated the layer cache. A marker that
    reports a stale revision authoritatively is worse than no marker. See
    [ADR-1195](adr/1195-container-source-revision-guard.md).
+## ci/publish-dev-builder-image — publish the dev builder image to GHCR (2026-09-06)
+
+Fork-only CI surface; `dev/Containerfile` itself is untouched. One invariant is
+worth knowing before resolving a conflict in
+`.github/workflows/dev-container-build.yml`:
+
+1. **`packages: write` must stay out of the pull-request job.** The workflow is
+   deliberately split into `dev-container-build` (the PR gate, `contents: read`
+   only) and `publish-builder-image` (`if: github.event_name == 'push' &&
+   github.ref == 'refs/heads/master'`, `packages: write`). Collapsing them into
+   one job to avoid the rebuild would put registry-write scope in the token
+   during every pull-request run, which would let a PR overwrite the image a
+   release consumes. The rebuild is cheap because both jobs share
+   `cache-from/cache-to: type=gha`; the cost of merging them is a supply-chain
+   hole, not a saved minute. See
+   [ADR-1186](adr/1186-publish-dev-builder-image.md).
+
+2. **`cancel-in-progress` is an expression, not `true`.** It is
+   `${{ github.event_name == 'pull_request' }}` so a `master` run is never
+   cancelled mid-push, which would leave `:master` and `:sha-<short>` pointing at
+   different builds. A rebase that restores the plain `true` reintroduces that
+   race.

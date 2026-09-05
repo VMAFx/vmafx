@@ -112,6 +112,7 @@ is three workflows plus one job:
 | `.github/workflows/release-please.yml` | push to `master` | the release PR and, on merge, the tag + GitHub release | n/a — no build |
 | `.github/workflows/supply-chain.yml` | `release: published` | `libvmaf.so` chain, the `vmaf` CLI, `models.tar.gz`, SBOMs, cosign signatures, SLSA provenance, the `vmaf-mcp` wheel | **No** — `build-artifacts` runs `meson`/`ninja` directly on `ubuntu-latest` |
 | `.github/workflows/docker-publish-production.yml` | `release: published` | `ghcr.io/vmafx/vmafx:*` (cpu / cuda13 / rocm7 / oneapi2025 / server) | Yes, inherently — `docker buildx` against `docker/Dockerfile.production*` |
+| `publish-builder-image` job in `.github/workflows/dev-container-build.yml` | push to `master` touching `dev/Containerfile`, `dev/scripts/**`, `dev/docker-compose.yml` | `ghcr.io/vmafx/vmafx-dev-builder:master` and `:sha-<short>` — the `libvmaf-build` stage, i.e. the toolchain a release build runs inside | Yes, inherently — `docker buildx` against `dev/Containerfile` |
 | `cross-backend` job in `.github/workflows/tests-and-quality-gates.yml` | Disabled (`if: false`, awaits self-hosted GPU runner) | backend-parity report (a gate, not an artifact) | **No** — `ubuntu-latest` host toolchain |
 
 Two consequences worth stating plainly, because the previous version of this
@@ -127,7 +128,11 @@ page claimed the opposite:
   runner host, which is a live violation of the policy on this page. The
   enforcement mechanism below exists; wiring it into that job is tracked as
   `T-PUBLISH-NATIVE-RELEASE-NOT-CONTAINERISED-2026-09-03` in
-  [docs/state.md](../state.md).
+  [docs/state.md](../state.md). The first half of that work has landed — the
+  build toolchain is now published as an image a release job can pull (see
+  [ADR-1186](../adr/1186-publish-dev-builder-image.md)) — but `build-artifacts`
+  itself still compiles on the host, so the violation stands until it is
+  pointed at that image.
 
 Note that `docker/Dockerfile.production` and `docker/Dockerfile.production-gpu`
 are *not* `dev/Containerfile`. The published images are built from their own
@@ -204,15 +209,30 @@ the release pipeline, not malicious evasion.
 
 | Job | What it asserts |
 |---|---|
-| `Dev Container Build (PR gate)` in `dev-container-build.yml` | the gate rejects the bare runner, accepts the built image, and a stamp made inside the image verifies outside it |
+| `Dev Container Build` in `dev-container-build.yml` (pull requests) | the gate rejects the bare runner, accepts the built image, and a stamp made inside the image verifies outside it |
+| `Publish builder image` in `dev-container-build.yml` (pushes to `master`) | the image actually pushed to GHCR, addressed by digest, is recognised as container-built |
 | `Release Script Contract (ADR-1128)` in `rule-enforcement.yml` | the gate's hermetic unit suite (`scripts/ci/tests/test-check-container-build.sh`, no Docker needed) |
 
-It is **not** yet wired into `supply-chain.yml`. Adding it there is not a
-one-line change: `build-artifacts` would first have to be converted to a
-container build, and `dev/Containerfile` is never pushed to a registry
-(`dev-container-build.yml` builds it as a gate and pushes no image), so a
-release job has no image to pull. Wiring the gate in before that conversion
-would fail every release. See the state.md row cited above.
+It is **not** yet wired into `supply-chain.yml`, and wiring it in before
+`build-artifacts` is containerised would fail every release, because the gate
+fails closed.
+
+The registry half of that blocker is now resolved. `dev/Containerfile`'s
+`libvmaf-build` stage is published to `ghcr.io/vmafx/vmafx-dev-builder` on every
+`master` push that touches the container inputs, tagged `:master` (moving) and
+`:sha-<short>` (immutable), per
+[ADR-1186](../adr/1186-publish-dev-builder-image.md). A release job therefore has
+an image to pull, and it is the same image the PR gate smoke-tests. The package
+is private: its only reader is a `GITHUB_TOKEN`-authenticated job in this
+repository, so publishing it creates no public distribution surface.
+
+What remains is the conversion itself — running `build-artifacts` with
+`container: ghcr.io/vmafx/vmafx-dev-builder:master` and stamping its output tree
+with `check-container-build.sh --stamp`. That change cannot be exercised by any
+pull request, since `supply-chain.yml` triggers only on `release: published` and
+on a `workflow_dispatch` naming an existing tag; it must therefore verify that
+the tag resolves rather than assume it. The state.md row cited above stays open
+until it lands.
 
 Run the unit suite locally with:
 
