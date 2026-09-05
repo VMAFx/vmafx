@@ -37,7 +37,7 @@ limitations in the same PR as the code.
 | Motion2 (fixed)    | `motion`        | Yes           | `motion2` (+ `motion` if `debug=true`)                                                         | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
 | Motion v2 (fixed)  | `motion_v2`     | No            | `VMAF_integer_feature_motion_v2_sad_score`, `VMAF_integer_feature_motion2_v2_score`            | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
 | Motion2 (float)    | `float_motion`  | Yes           | `float_motion2` (+ `float_motion` if `debug=true`)                                             | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
-| ADM (fixed-point)  | `adm`           | Yes           | `adm2`, `adm_scale0`, `adm_scale1`, `adm_scale2`, `adm_scale3`                                 | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
+| ADM (fixed-point)  | `adm`           | Yes           | `adm2`, `adm_scale0`, `adm_scale1`, `adm_scale2`, `adm_scale3`, `aim_score`⁷, `adm3_score`⁷    | AVX2, AVX-512, NEON       | CUDA, SYCL⁷, HIP⁷, Metal |
 | ADM (float)        | `float_adm`     | Yes           | `float_adm2`, `adm_scale0..3`, `aim_score`⁶, `adm3_score`⁶                                    | AVX2, AVX-512, NEON       | CUDA⁶, SYCL, HIP, Metal |
 | [CAMBI](cambi.md)  | `cambi`         | No            | `cambi`                                                                                        | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal⁴ |
 | CIEDE2000          | `ciede`         | No            | `ciede2000`                                                                                    | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
@@ -100,12 +100,23 @@ Depending on your build configuration not every backend is available — see
 `feature_extractor_list[]` and resolve via `vmaf_get_feature_extractor_by_name`.
 See [`backends/hip/overview.md`](../backends/hip/overview.md).
 
-⁶ `aim_score` and `adm3_score` are emitted by the `float_adm`
-extractor only (not the fixed-point `adm` extractor). The CUDA twin
-(`float_adm_cuda`) gained support for both sub-features in ADR-0574
-(2026-05-18). The SYCL and HIP `float_adm` twins emit `adm2` /
-`adm_scale*` only; `aim_score` / `adm3_score` Phase 2 (SYCL/HIP)
-is tracked as a follow-up. (The Vulkan backend was removed in ADR-0726.)
+⁶ `aim_score` and `adm3_score` on the **float** path are emitted by
+`float_adm` (CPU) and `float_adm_cuda` (ADR-0574, 2026-05-18). The
+SYCL and HIP `float_adm` twins emit `adm2` / `adm_scale*` only;
+`aim_score` / `adm3_score` Phase 2 (SYCL/HIP) is tracked as a
+follow-up. (The Vulkan backend was removed in ADR-0726.)
+
+⁷ On the **fixed-point** path, `aim_score` and `adm3_score` are
+emitted by the CPU `adm` extractor, by `integer_adm_cuda`
+(ADR-0746) and by `integer_adm_metal` — each has a dedicated AIM
+contrast-measure device pass. The SYCL and HIP `integer_adm` twins do
+**not**, so they leave both features out of `provided_features[]`; a
+request
+for either resolves to the CPU twin through the ADR-0530 name-based
+fallback, which returns the correct value under the correct
+feature-name key. Tracked as
+`T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05` in
+[`docs/state.md`](../state.md).
 
 ## Per-feature GPU dispatch hints (T7-26 / ADR-0181)
 
@@ -326,16 +337,19 @@ to avoid divide-by-zero.
 - `adm2` — the fused final value (range `[0, 1]`), published as the
   VMAF-model input.
 - `adm_scale0..3` — per-wavelet-scale fidelity.
-- `aim_score` (`float_adm` only) — Anchored Impairment Metric (AIM):
-  CM of `decouple_a` relative to the CSF of `decouple_r`, with
-  `noise_weight = 0`. Range `[0, 1]`. Required by the Netflix HDR
-  VMAF model. Available on CUDA (ADR-0574) and CPU; SYCL/HIP
-  pending Phase 2.
-- `adm3_score` (`float_adm` only) — ADM version 3: blends adm2 and
-  AIM via harmonic mean (`adm_adm3_apply_hm=true`) or a linear
-  combination weighted by `adm_dlm_weight`. Range `[adm_min_val, 1]`.
-  Required by the Netflix HDR VMAF model. Available on CUDA
-  (ADR-0574) and CPU; SYCL/HIP pending Phase 2.
+- `aim_score` — Anchored Impairment Metric (AIM): CM of `decouple_a`
+  relative to the CSF of `decouple_r`, with `noise_weight = 0`.
+  Range `[0, 1]`. Required by the Netflix HDR VMAF model and by the
+  default model `vmaf_v1.0.16_3d0h`. Emitted by CPU `adm` /
+  `float_adm`, by `integer_adm_cuda` (ADR-0746) and by
+  `float_adm_cuda` (ADR-0574), and by `integer_adm_metal`. Not
+  emitted by the SYCL / HIP `integer_adm` twins — a request for it
+  falls back to the CPU twin.
+- `adm3_score` — ADM version 3: blends adm2 and AIM via harmonic
+  mean (`adm_adm3_apply_hm=true`, float path) or a linear combination
+  weighted by `adm_dlm_weight`, floored at `adm_min_val`. Range
+  `[adm_min_val, 1]`. This is the ADM feature the default model
+  consumes. Same backend coverage as `aim_score` above.
 - With `debug=true`: `adm`, `adm_num`, `adm_den`, and per-scale
   numerator / denominator.
 
@@ -352,25 +366,30 @@ only.
 | `adm_enhn_gain_limit`    | `egl`  | double | `1.2`     | `1.0–1.2`   | Cap enhancement-gain ratio                                                                                                                                |
 | `adm_norm_view_dist`     | `nvd`  | double | `3.0`     | `0.75–24.0` | Normalised viewing distance (distance ÷ display height)                                                                                                   |
 | `adm_ref_display_height` | `rdh`  | int    | `1080`    | `1–4320`    | Reference display height in pixels (for viewing-distance scaling)                                                                                         |
-| `adm_csf_mode`           | `csf`  | int    | `0`       | `0–3`       | Contrast-sensitivity-function model index                                                                                                                 |
-| `adm_csf_scale`          | —      | double | `1.0`     | `>0`        | Uniform scale on H/V-axis CSF sensitivity (`rfactor_h/v = scale / quant_step`); `1.0` = upstream-canonical                                                |
-| `adm_csf_diag_scale`     | —      | double | `1.0`     | `>0`        | Separate scale on diagonal-axis CSF sensitivity (`rfactor_d = diag_scale / quant_step`); `1.0` = upstream-canonical                                       |
+| `adm_csf_mode`           | `csf`  | int    | `0`       | `0–3`       | Contrast-sensitivity-function model: `0` Watson97 (upstream-canonical), `1` Barten, `2` Barten/Watson blend, `3` Barten/Watson blend (MAE-fitted). The default model `vmaf_v1.0.16_3d0h` requests `2`. |
+| `adm_csf_scale`          | `scf`  | double | `1.0`     | `0–50`      | H/V-axis CSF sensitivity scale. **Only `adm_csf_mode=1` (Barten) reads it** — it is the `adm_csf_scale` argument of `barten_csf()`. Ignored by modes 0, 2 and 3, on every backend including the CPU. `1.0` = upstream-canonical |
+| `adm_csf_diag_scale`     | `scfd` | double | `1.0`     | `0–50`      | Diagonal-axis CSF sensitivity scale; same `adm_csf_mode=1`-only applicability as `adm_csf_scale`                                                          |
 | `adm_noise_weight`       | `nw`   | double | `0.03125` | `0–1500`    | Weight in `(area × noise_weight)^(1/3)` noise-floor term in `adm_cm` / `adm_csf_den`; default `1/32 ≈ 0.03125` = upstream-canonical noise-floor divisor   |
 | `adm_dlm_weight`         | `dlmw` | double | `0.5`     | `0.0–1.0`   | Linear blend between DLM and AIM scores; `1.0` = DLM-only (no AIM contribution), `0.0` = AIM-only                                                         |
 | `adm_skip_aim`           | —      | bool   | `false`   | —           | Skip the AIM (Additive Impairment Metric) sub-band calculation entirely; forces AIM contribution to zero                                                  |
 | `adm_skip_scale0`        | `ssz`  | bool   | `false`   | —           | Skip scale-0 (finest wavelet level) calculation; scale-0 outputs forced to `0.0` and excluded from the fused score. Matches GPU-backend parity mode.      |
 | `adm_min_val`            | `min`  | double | `0.0`     | `0.0–1.0`   | Floor value: fused ADM scores below this threshold are clipped up to it                                                                                   |
-| `adm_p_norm`             | `apn`  | double | `3.0`     | `1.0–20.0`  | CPU `float_adm` p-norm exponent; CPU fixed-point `adm` uses it for contrast-measure finalisation. The x86 AVX2 / AVX-512 `adm` paths honour it.          |
+| `adm_p_norm`             | `apn`  | double | `3.0`     | `1.0–20.0`  | p-norm exponent for the contrast-measure finalisation (`x^(1/p)` pooling in `adm_cm`). Honoured by CPU `adm` / `float_adm`, the x86 AVX2 / AVX-512 `adm` paths, and the CUDA / SYCL / HIP `integer_adm` twins.                 |
 
-The CPU `adm` / `float_adm` extractors expose the full option table above.
-GPU integer-ADM twins expose their backend-specific subsets; pin GPU sweeps to
-default `adm_p_norm=3.0` until a backend explicitly documents the option.
+The CPU `adm` / `float_adm` extractors expose the full option table above,
+and the CUDA / SYCL / HIP `integer_adm` twins now mirror it entry-for-entry —
+same names, aliases, defaults, bounds and feature-param flags — so the
+feature-name key a twin emits is identical to the CPU twin's for any given
+options dict. Every option above changes the value the twin computes, with
+two documented exceptions that match the CPU reference: `adm_dlm_weight` and
+`adm_min_val` affect `adm3_score` only, so on the SYCL and HIP twins (which do
+not emit `adm3_score`) they are carried for feature-name-key parity alone.
 Setting `adm_csf_scale`, `adm_csf_diag_scale`, and `adm_noise_weight` to their
 defaults (`1.0`, `1.0`, `0.03125`) produces output bit-identical to upstream
 Netflix ADM.
 
-**Backends** — `adm`: AVX2, AVX-512, NEON, CUDA, SYCL.
-`float_adm`: AVX2, AVX-512, NEON, CUDA, SYCL.
+**Backends** — `adm`: AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal.
+`float_adm`: AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal.
 
 **32-bit (i686) portability** — the integer ADM SSE2 path uses
 `_mm_extract_epi64`, an intrinsic that is unavailable on 32-bit x86 toolchains.

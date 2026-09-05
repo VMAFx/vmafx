@@ -48316,3 +48316,63 @@ relative form only resolved when the build directory was a direct child of
 `libvmaf_private_libs` gained the C++ runtime for Netflix/vmaf#1178, detected
 via `_LIBCPP_VERSION` rather than the compiler id. The three shell-driven tool
 tests now declare `depends` and `workdir`.
+
+## feat/gpu-adm-csf-mode-parity — GPU integer-ADM option-table parity (2026-09-05)
+
+**Rebase-sensitive files**: `core/src/feature/cuda/integer_adm_cuda.{c,h}`,
+`core/src/feature/sycl/integer_adm_sycl.cpp`,
+`core/src/feature/hip/integer_adm_hip.{c,h}`,
+`core/test/test_{cuda,sycl,hip}_adm_parity.c`.
+
+All five sources are **fork-local** — upstream Netflix/vmaf has no GPU ADM
+twin beyond CUDA, and even the CUDA one diverged long ago (ADR-0746 added the
+AIM device pass, ADR-0487 the `adm_min_val` option). An upstream rebase that
+touches `core/src/feature/integer_adm.c` (the reference) can still invalidate
+this work, because these three twins are now defined as *mirrors* of it:
+
+1. **The option table is a mirror, and the mirror is load-bearing.**
+   `vmaf_feature_name_from_options()` builds the emitted feature key from the
+   extractor's own `options[]`. If an upstream sync adds, renames or re-aliases
+   an entry in `integer_adm.c`'s table, the same edit must land in all three
+   twin tables in the same commit or the twins start emitting a different key
+   than the CPU for the same opts dict and every model lookup that names that
+   feature misses — silently. `core/test/test_{cuda,sycl,hip}_adm_parity.c`
+   each carry a `..._option_table_mirrors_cpu` test that walks the CPU table
+   and fails on the first name / alias / type / feature-param-flag mismatch;
+   that test is the tripwire.
+
+2. **`adm_csf_factors()` and `adm_csf_rfactor_scale0()` are copied, not
+   shared.** Each twin has a private copy of the two helpers from
+   `integer_adm.c` (a shared header would have to be includable from `.cpp`
+   under icpx and from `.c` under nvcc/hipcc; the ADM enum already exists in
+   two conflicting forms — `adm_options.h` has `{WATSON97, BARTEN, ADM}` while
+   `integer_adm.h` has `{WATSON97, BARTEN, BARTEN_WATSON_BLEND,
+   BARTEN_WATSON_BLEND_MAE}`). An upstream change to the CSF weights, to the
+   `{36453, 36453, 49417}` scale-0 constants, or to the `nvd * rdh` canonical
+   test must be replicated into all three copies.
+
+3. **`AdmFixedParametersCuda` / `AdmFixedParametersHip` are passed by value
+   into device kernels, and the fatbin does not rebuild on a header change.**
+   `core/src/meson.build`'s `cu_ptx_target_*` `custom_target` lists only the
+   `.cu` file as input — no `depfile`. Editing the struct in
+   `core/src/feature/cuda/integer_adm_cuda.h` therefore pairs a new host
+   layout with a stale device layout and produces wrong scores with **no build
+   error**. The two unused `float factor1[4]` / `float factor2[4]` members are
+   retained for exactly this reason and carry a comment saying so. Filed as
+   `T-CUDA-FATBIN-NO-HEADER-DEP-2026-09-05` in `docs/state.md`. After any edit
+   to those headers, `touch core/src/feature/cuda/integer_adm/*.cu
+   core/src/feature/hip/integer_adm/*.hip` before rebuilding.
+
+4. **`adm_min_val` floors `adm3` only.** `integer_adm.c::extract()` wraps only
+   the adm3 expression in `MAX(..., s->adm_min_val)`; `adm2` is emitted raw.
+   The Netflix golden `adm_min_val=0.98` case pins
+   `VMAF_integer_feature_adm2_min_0.98_score` at `0.9345148541666667`, below
+   the floor — that assertion is the contract. All three twins used to clamp
+   `adm2`; they no longer do.
+
+5. **SYCL and HIP do not provide `aim_score` / `adm3_score`.** They have no AIM
+   device pass, so both features are left out of `provided_features[]` and the
+   ADR-0530 name-based fallback routes them to the CPU twin. Do not "fix" a
+   rebase conflict by re-adding them to the array unless the AIM kernels land
+   with it — an earlier draft of this branch emitted them from a hard-coded
+   `aim_num = 0.0`, which is a fabricated score, not a fallback.

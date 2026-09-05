@@ -33,6 +33,7 @@
  */
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -183,6 +184,162 @@ static char *run_cuda_adm(double scores_out[NUM_ADM_FEATURES])
     return NULL;
 }
 
+/* The default model `vmaf_v1.0.16_3d0h` asks integer ADM for
+ * VMAF_integer_feature_adm3_score with exactly these five options. Because
+ * every one of them is a VMAF_OPT_FLAG_FEATURE_PARAM and non-default, the
+ * feature-name key both twins must emit is the fully-suffixed form below —
+ * see MODEL_KEYS. A twin whose option table is missing one entry emits a
+ * shorter key and the model lookup misses. */
+static VmafFeatureDictionary *model_opts(void)
+{
+    VmafFeatureDictionary *d = NULL;
+    if (vmaf_feature_dictionary_set(&d, "adm_csf_mode", "2"))
+        return NULL;
+    if (vmaf_feature_dictionary_set(&d, "adm_dlm_weight", "0.7"))
+        return NULL;
+    if (vmaf_feature_dictionary_set(&d, "adm_enhn_gain_limit", "1.0"))
+        return NULL;
+    if (vmaf_feature_dictionary_set(&d, "adm_min_val", "0.5"))
+        return NULL;
+    if (vmaf_feature_dictionary_set(&d, "adm_noise_weight", "0.02"))
+        return NULL;
+    if (vmaf_feature_dictionary_set(&d, "adm_p_norm", "2.0"))
+        return NULL;
+    return d;
+}
+
+#define MODEL_SUFFIX "_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02_apn_2"
+static const char *const MODEL_KEYS[] = {
+    "integer_adm2" MODEL_SUFFIX,       "integer_aim" MODEL_SUFFIX,
+    "integer_adm3" MODEL_SUFFIX,       "integer_adm_scale0" MODEL_SUFFIX,
+    "integer_adm_scale1" MODEL_SUFFIX, "integer_adm_scale2" MODEL_SUFFIX,
+    "integer_adm_scale3" MODEL_SUFFIX,
+};
+#define NUM_MODEL_KEYS (sizeof(MODEL_KEYS) / sizeof(MODEL_KEYS[0]))
+
+/* Run one extractor under model_opts() and read every MODEL_KEYS entry back.
+ * `use_cuda` selects the twin; on a machine without a CUDA device the CUDA leg
+ * reports a skip and leaves the scores NaN. */
+static char *run_adm_with_model_opts(bool use_cuda, double out[NUM_MODEL_KEYS])
+{
+    for (unsigned k = 0; k < NUM_MODEL_KEYS; k++)
+        out[k] = NAN;
+
+    VmafCudaState *cu_state = NULL;
+    if (use_cuda) {
+        VmafCudaConfiguration cuda_cfg = {0};
+        const int cu_err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
+        if (cu_err != 0 || cu_state == NULL) {
+            (void)fprintf(stderr, "[skip: no CUDA device] ");
+            return NULL;
+        }
+    }
+
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    int err = vmaf_init(&vmaf, cfg);
+    mu_assert("model-opts: vmaf_init failed", !err);
+    if (use_cuda) {
+        err = vmaf_cuda_import_state(vmaf, cu_state);
+        mu_assert("model-opts: vmaf_cuda_import_state failed", !err);
+    }
+
+    VmafFeatureDictionary *opts = model_opts();
+    mu_assert("model-opts: dictionary build failed", opts != NULL);
+    err = vmaf_use_feature(vmaf, use_cuda ? "adm_cuda" : "adm", opts);
+    mu_assert("model-opts: vmaf_use_feature failed", !err);
+
+    char *msg = feed_one_frame(vmaf);
+    if (msg)
+        return msg;
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("model-opts: vmaf_read_pictures(EOS) failed", !err);
+
+    for (unsigned k = 0; k < NUM_MODEL_KEYS; k++) {
+        err = vmaf_feature_score_at_index(vmaf, MODEL_KEYS[k], &out[k], 0u);
+        if (err) {
+            (void)fprintf(stderr, "\nmissing feature-name key: %s (%s twin)\n", MODEL_KEYS[k],
+                          use_cuda ? "CUDA" : "CPU");
+        }
+        mu_assert("model-opts: feature-name key not emitted", !err);
+    }
+
+    err = vmaf_close(vmaf);
+    mu_assert("model-opts: vmaf_close failed", !err);
+    if (use_cuda) {
+        err = vmaf_cuda_state_free(cu_state);
+        mu_assert("model-opts: vmaf_cuda_state_free failed", !err);
+    }
+    return NULL;
+}
+
+/* Every option the CPU table declares must also exist, with the same alias,
+ * type, default, bounds and feature-param flag, in the CUDA table — otherwise
+ * the emitted feature-name key diverges (feature_name.cpp builds it from the
+ * extractor's own table). */
+static char *test_adm_cuda_option_table_mirrors_cpu(void)
+{
+    VmafFeatureExtractor *cpu = vmaf_get_feature_extractor_by_name("adm");
+    VmafFeatureExtractor *gpu = vmaf_get_feature_extractor_by_name("adm_cuda");
+    mu_assert("adm extractor must be registered", cpu != NULL);
+    mu_assert("adm_cuda extractor must be registered", gpu != NULL);
+    mu_assert("adm must declare options", cpu->options != NULL);
+    mu_assert("adm_cuda must declare options", gpu->options != NULL);
+
+    for (unsigned i = 0; cpu->options[i].name; i++) {
+        const VmafOption *a = &cpu->options[i];
+        const VmafOption *b = NULL;
+        for (unsigned j = 0; gpu->options[j].name; j++) {
+            if (!strcmp(gpu->options[j].name, a->name)) {
+                b = &gpu->options[j];
+                break;
+            }
+        }
+        if (!b)
+            (void)fprintf(stderr, "\nadm_cuda is missing CPU option \"%s\"\n", a->name);
+        mu_assert("adm_cuda option table is missing a CPU option", b != NULL);
+        mu_assert("adm_cuda option type differs from CPU", a->type == b->type);
+        mu_assert("adm_cuda feature-param flag differs from CPU",
+                  (a->flags & VMAF_OPT_FLAG_FEATURE_PARAM) ==
+                      (b->flags & VMAF_OPT_FLAG_FEATURE_PARAM));
+        mu_assert("adm_cuda option alias differs from CPU",
+                  (a->alias == NULL) == (b->alias == NULL) &&
+                      (a->alias == NULL || !strcmp(a->alias, b->alias)));
+    }
+    return NULL;
+}
+
+/* csf_mode / p_norm / dlm_weight / min_val / noise_weight are honoured by the
+ * CUDA twin, not merely declared: the seven emitted values must match the CPU
+ * reference at places=4 under the default model's option dict. */
+static char *test_adm_cpu_cuda_model_option_parity(void)
+{
+    double cpu[NUM_MODEL_KEYS];
+    double gpu[NUM_MODEL_KEYS];
+
+    char *msg = run_adm_with_model_opts(false, cpu);
+    if (msg)
+        return msg;
+    msg = run_adm_with_model_opts(true, gpu);
+    if (msg)
+        return msg;
+    if (isnan(gpu[0]))
+        return NULL;
+
+    for (unsigned k = 0; k < NUM_MODEL_KEYS; k++) {
+        const double delta = fabs(cpu[k] - gpu[k]);
+        if (delta > PARITY_TOL) {
+            (void)fprintf(stderr,
+                          "\nadm model-opt parity FAIL (%s): cpu=%.8f cuda=%.8f "
+                          "delta=%.2e tol=%.2e\n",
+                          MODEL_KEYS[k], cpu[k], gpu[k], delta, PARITY_TOL);
+        }
+        mu_assert("adm model-opt CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)",
+                  delta <= PARITY_TOL);
+    }
+    return NULL;
+}
+
 static char *test_adm_cuda_registered(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("adm_cuda");
@@ -220,6 +377,8 @@ static char *test_adm_cpu_cuda_parity(void)
 char *run_tests(void)
 {
     mu_run_test(test_adm_cuda_registered);
+    mu_run_test(test_adm_cuda_option_table_mirrors_cpu);
     mu_run_test(test_adm_cpu_cuda_parity);
+    mu_run_test(test_adm_cpu_cuda_model_option_parity);
     return NULL;
 }

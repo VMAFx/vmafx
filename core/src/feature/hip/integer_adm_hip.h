@@ -49,6 +49,9 @@ typedef struct hip_i4_adm_dwt_band_t {
 typedef struct AdmFixedParametersHip {
     float rfactor[3 * 4];
     uint32_t i_rfactor[3 * 4];
+    /* Unused by every kernel in this backend, retained so the host-side
+     * struct stays layout-identical to the one the .cu/.hip translation
+     * units see. */
     float factor1[4];
     float factor2[4];
     float log2_h;

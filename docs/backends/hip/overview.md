@@ -477,3 +477,28 @@ environment variable:
 # Disable specific HIP feature extractor, forcing CPU fallback
 export VMAF_HIP_DISPATCH="float_ssim:disable,ciede:none"
 ```
+
+## `integer_adm_hip` and the default model's ADM (2026-09-05)
+
+The default model `vmaf_v1.0.16_3d0h` requests
+`VMAF_integer_feature_adm3_score` with `adm_csf_mode=2`,
+`adm_dlm_weight=0.7`, `adm_enhn_gain_limit=1.0`, `adm_min_val=0.5` and
+`adm_noise_weight=0.02`, under the key
+`integer_adm3_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02`.
+
+`integer_adm_hip` now honours `adm_csf_mode` (all four CSF models) and
+`adm_p_norm`, and its `VmafOption` table is an entry-for-entry mirror of the
+CPU table, so the `adm2` and `integer_adm_scale*` keys it emits are identical
+to the CPU twin's for any options dict.
+
+**`adm3_score` / `aim_score` are not emitted by this twin**, for the same
+reason as the SYCL twin: no AIM device pass (the CUDA twin's ADR-0746
+kernels). Both features are left out of `provided_features[]` so the ADR-0530
+name-based fallback routes them to the CPU `integer_adm` twin. Tracked as
+`T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05` in
+[`state.md`](../../state.md).
+
+Two CPU-parity corrections landed with the option work: `adm_min_val` no
+longer clamps `adm2` (the CPU floors the adm3 expression only), and the
+`numden_limit` precision floor scales with the full-frame area rather than the
+scale-3 area.
