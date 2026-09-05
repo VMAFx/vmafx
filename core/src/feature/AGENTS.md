@@ -70,6 +70,37 @@ feature/
 
 ## Rebase-sensitive invariants
 
+- **The CAMBI GPU twins mirror `cambi.c`'s host-side semantics, not "something
+  reasonable" (branch `fix/gpu-cambi-parity-drift`, 2026-09-05)**. `cambi.c` is
+  pinned by the Netflix golden gate, so when a twin and the reference disagree
+  the twin is always the side that moves. Two places where the natural GPU idiom
+  is the wrong answer, in both `cuda/integer_cambi/cambi_score.cu` and
+  `sycl/integer_cambi_sycl.cpp`:
+  - the 7×7 zero-derivative box sum must contribute **zero** for taps outside
+    the image, because `get_spatial_mask_for_index`'s summed-area table
+    zero-pads (`compute_dp_row` with `actual_width = 0`). Clamping to the edge
+    pixel — the usual GPU border idiom — inflates the sum, because edge pixels
+    are `zero_derivative = 1` by construction, and over-marks banding within
+    three pixels of every border.
+  - the vertical `filter_mode` pass must skip `y == 0` and `y == height - 1`.
+    `cambi.c::filter_mode` writes back only under `if (i > 1)`, so it fills
+    output rows `1 .. height-2` and leaves both border rows at their
+    **pre-filter** values. Because the V pass writes into the buffer the H pass
+    read from, an early return preserves exactly those pixels.
+
+  `cambi_high_res_speedup` (`hrs`) is part of the same contract and has three
+  separate effects that must all be present in a twin: resolution against the
+  encode pixel count at init, halving the adjusted window, and one extra
+  decimation before scale 0. The default model `vmaf_v1.0.16_3d0h` sets
+  `hrs=1080`, so omitting any of them silently changes every `>= 1080p` score.
+
+  **Parity fixtures must have real-content structure.** The original
+  `test_{cuda,sycl}_cambi_parity.c` fixture was a quantised gradient: constant
+  down every column and along every border. Both defects above are invisible on
+  it, and the gates stayed green for months while real content drifted 2.7e-3.
+  The added "textured" fixture (horizontal bands + vertical ramp + deterministic
+  LCG dither + inverted border ring) fails at 2.11e-2 against the pre-fix kernel.
+  Keep both fixtures; a new CAMBI twin needs to pass both.
 - **Model options gate GPU twin selection (ADR-1183)**: every option a
   model sets in its feature options dictionary must be present in the
   chosen GPU twin's option table. If a GPU twin lacks any requested option

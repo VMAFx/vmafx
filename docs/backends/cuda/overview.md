@@ -260,6 +260,26 @@ When running the default model `vmaf_v1.0.16_3d0h` under `--backend cuda`, featu
 selectively dispatched between GPU and CPU based on option support ([ADR-1183](../../adr/1183-model-options-gate-gpu-twin-selection.md)):
 
 - **CAMBI** (`cambi_cuda`) and **SpEED** (`speed_chroma_cuda`) run directly on the GPU.
+  `cambi_cuda` honours `cambi_high_res_speedup` (`hrs`), which the default model sets to
+  `1080`: at `>= 1080p` the twin resolves the option against the encode pixel count, halves
+  the adjusted window and runs one extra decimation before scale 0, exactly as
+  `core/src/feature/cambi.c` does. Before branch `fix/gpu-cambi-parity-drift` it ignored the
+  option outright and additionally mis-mirrored two kernel-level semantics (spatial-mask edge
+  padding, `filter_mode` border rows), which cost 1.76e-2 pooled `vmaf` on a 1080p pair.
+  Measured parity after the fix, per-frame `cambi_hrs_1080_cmxv_17_vlt_0.06` at
+  `--precision max` (`%.17g`) on an RTX 4090:
+
+  | Fixture | Frames | pooled cambi (CPU and CUDA) | max per-frame CPU↔CUDA delta |
+  | --- | --- | --- | --- |
+  | `src01` 576x324 | 48 | 0.2596781483085728 | 0 |
+  | Tennis 1920x1080 | 10 | 0.5670459080762581 | 0 |
+  | checkerboard 1px / 10px 1920x1080 | 3 each | 0 | 0 |
+
+  Every CAMBI GPU stage is integer-only and the c-value / pooling residual is the CPU code
+  called through `cambi_internal.h`, which is why the emitted score agrees to every printed
+  digit on these fixtures. That is a measurement, **not** a bit-exactness guarantee for the
+  CUDA backend in general — the golden gate is CPU-only and pooled `vmaf` still differs by
+  1.1e-5 on the Tennis pair because of the ADM / VIF / motion twins.
 - **Motion** (`integer_motion_cuda`) computes motion scores on device while honoring `motion_max_val`.
 - **ADM** (`integer_adm_cuda`) lacks support for `adm_csf_mode: 2` (required by `vmaf_v1.0.16_3d0h`),
   so libvmaf automatically dispatches ADM to the CPU reference extractor with an informational
