@@ -72,9 +72,9 @@ enum {
  * success. Returns 0 on success, -EBADMSG on truncated / overlong varint. */
 static int pb_read_varint(const unsigned char *buf, size_t len, size_t *off, uint64_t *out)
 {
-    assert(buf != NULL);
-    assert(off != NULL);
-    assert(out != NULL);
+    assert(buf != nullptr);
+    assert(off != nullptr);
+    assert(out != nullptr);
 
     uint64_t value = 0;
     unsigned shift = 0;
@@ -106,8 +106,8 @@ static int pb_read_varint(const unsigned char *buf, size_t len, size_t *off, uin
  * the wire type. Advances *off. Returns 0 or -EBADMSG. */
 static int pb_skip_field(const unsigned char *buf, size_t len, size_t *off, unsigned wire_type)
 {
-    assert(buf != NULL);
-    assert(off != NULL);
+    assert(buf != nullptr);
+    assert(off != nullptr);
 
     switch (wire_type) {
     case PB_WIRE_VARINT: {
@@ -154,7 +154,29 @@ static int check_op_name(const char *op_name, size_t slen, char **first_bad)
     if (vmaf_dnn_op_allowed(op_name)) {
         return 0;
     }
-    if (first_bad && *first_bad == NULL) {
+    if (first_bad && *first_bad == nullptr) {
+        char *copy = (char *)malloc(slen + 1u);
+        if (!copy) {
+            return -ENOMEM;
+        }
+        memcpy(copy, op_name, slen + 1u);
+        *first_bad = copy;
+    }
+    return -EPERM;
+}
+
+static int check_loop_budget(const char *op_name, size_t slen, unsigned *loop_count,
+                             char **first_bad)
+{
+    if (!loop_count || strcmp(op_name, "Loop") != 0) {
+        return 0;
+    }
+    if (++(*loop_count) <= VMAF_DNN_MAX_LOOP_NODES) {
+        return 0;
+    }
+    if (first_bad && *first_bad == nullptr) {
+        /* Surface the rejection through the same channel as a
+         * forbidden op — callers already log first_bad. */
         char *copy = (char *)malloc(slen + 1u);
         if (!copy) {
             return -ENOMEM;
@@ -192,22 +214,7 @@ static int read_op_type(const unsigned char *buf, size_t len, size_t *off, char 
     if (err != 0) {
         return err;
     }
-    if (loop_count && strcmp(op_name, "Loop") == 0) {
-        if (++(*loop_count) > VMAF_DNN_MAX_LOOP_NODES) {
-            if (first_bad && *first_bad == NULL) {
-                /* Surface the rejection through the same channel as a
-                 * forbidden op — callers already log first_bad. */
-                char *copy = (char *)malloc(slen + 1u);
-                if (!copy) {
-                    return -ENOMEM;
-                }
-                memcpy(copy, op_name, slen + 1u);
-                *first_bad = copy;
-            }
-            return -EPERM;
-        }
-    }
-    return 0;
+    return check_loop_budget(op_name, (size_t)slen, loop_count, first_bad);
 }
 
 /* Check a NodeProto.domain string extracted from a node field whose tag was
@@ -234,7 +241,7 @@ static int read_domain(const unsigned char *buf, size_t len, size_t *off, char *
     }
     /* Reject pathologically long names before touching them. */
     if (slen > 127u) {
-        if (first_bad && *first_bad == NULL) {
+        if (first_bad && *first_bad == nullptr) {
             char *copy = (char *)malloc(sizeof("<custom-domain>"));
             if (copy) {
                 memcpy(copy, "<custom-domain>", sizeof("<custom-domain>"));
@@ -253,7 +260,7 @@ static int read_domain(const unsigned char *buf, size_t len, size_t *off, char *
         return 0;
     }
     /* Any other domain is a custom / third-party op set: reject. */
-    if (first_bad && *first_bad == NULL) {
+    if (first_bad && *first_bad == nullptr) {
         char *copy = (char *)malloc(slen + 1u);
         if (!copy) {
             return -ENOMEM;
@@ -405,10 +412,10 @@ int vmaf_dnn_scan_onnx(const unsigned char *buf, size_t len, char **first_bad)
     if (!buf || len == 0u) {
         return -EINVAL;
     }
-    assert(buf != NULL);
+    assert(buf != nullptr);
     assert(len > 0u);
     if (first_bad) {
-        *first_bad = NULL;
+        *first_bad = nullptr;
     }
 
     size_t off = 0;
