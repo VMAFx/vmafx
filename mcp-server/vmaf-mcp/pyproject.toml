@@ -45,6 +45,7 @@ vlm = [
 
 [project.scripts]
 vmaf-mcp = "vmaf_mcp.server:main"
+vmafx-mcp = "vmaf_mcp.server:main"
 
 [project.urls]
 Homepage = "https://github.com/VMAFx/vmafx"

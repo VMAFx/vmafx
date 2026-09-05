@@ -62,6 +62,7 @@ dev  = [
 
 [project.scripts]
 vmaf-train = "vmaf_train.cli:app"
+vmafx-train = "vmaf_train.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/VMAFx/vmafx"

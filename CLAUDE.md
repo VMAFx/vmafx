@@ -98,7 +98,7 @@ core/                         # C library + build root (was libvmaf/, ADR-0700)
     sycl/                     # SYCL backend runtime (queue, USM, dmabuf)
     dnn/                      # ONNX Runtime integration (tiny AI, Phase 3k)
   include/libvmaf/            # public C API headers (install path unchanged)
-  tools/                      # CLI: vmaf.cpp, vmaf_bench.c, cli_parse.cpp
+  tools/                      # CLI: vmaf.cpp, vmafx (symlink / Windows exe), vmaf_bench.c, cli_parse.cpp
   test/                       # C unit tests
 compat/python-vmaf/           # Python harness package (was python/vmaf/, ADR-0700)
 python/vmaf/                  # Shim — re-exports from compat/python-vmaf/

@@ -50,6 +50,14 @@ no rebase impact: changes GitHub Actions workflow job display names (`.github/wo
 ## fix/vmaftune-state-bugs — libx264 two-pass CRF conflict fix (2026-09-03)
 
 No rebase impact: all touched files (`pkg/codecadapter/`, `pkg/ffencode/`, `pkg/corpus/`, `tools/vmaf-tune/`) are fork-added Go and Python tuning tooling with no upstream Netflix/vmaf counterpart. No public C API, header, Meson option, or golden assertion is touched.
+## feat/vmafx-cli-alias — vmafx CLI alias and --netflix-compat override (ADR-0690/0696) (2026-09-04)
+
+- `core/tools/cli_parse.cpp`, `core/tools/cli_parse.h`: detects `vmafx` mode via `detect_vmafx_mode(argv[0])`, setting modernized defaults (`precision_max = true`, `precision_fmt = "%.17g"`, startup banner `VMAFX version <V> (precision=max)`, and `vmafx --version` printing `VMAFX <V> (auto-backend, precision=max)`).
+- `--netflix-compat` / `--netflix_compat`: final post-parse override in `cli_parse()` forcing CPU backend (`settings->backend = VMAF_BACKEND_CPU`), `%.6f` precision format, and selecting `VMAF_NETFLIX_COMPAT_MODEL_VERSION` in `validate_cli_settings()`.
+- `core/include/libvmaf/model.h`: added `#define VMAF_NETFLIX_COMPAT_MODEL_VERSION "vmaf_v0.6.1"` with the single-source pin comment (`/* vmaf-model-pin: ... */`). Must be preserved on upstream rebase to satisfy `scripts/ci/check-default-model-single-source.sh`.
+- `core/tools/meson.build`: installs `vmafx` as a symlink to `vmaf` via `install_symlink` on POSIX systems with build-dir custom target `vmafx_build_symlink`, or as a separate Windows executable compiled from the same sources. Keep this block when rebasing tool build configurations.
+- `ai/pyproject.toml`, `tools/vmaf-tune/pyproject.toml`, `mcp-server/vmaf-mcp/pyproject.toml`: companion entrypoints `vmafx-train`, `vmafx-tune`, `vmafx-mcp` added alongside legacy commands.
+
 ## feat/default-model-v1-0-16 — loud model-dimension validation in the CLI (2026-09-04)
 
 - `core/src/feature/feature_dimensions.h`: wholly fork-added. Single point that turns the

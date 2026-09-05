@@ -121,7 +121,13 @@ typedef struct {
      * (libvmaf default of bilinear applies). Accepted values:
      * "bilinear" (default), "nearest", "bicubic", "disabled". */
     const char *tiny_resize;
+    /* ADR-0690: true when binary invoked as vmafx (argv[0] basename detection). */
+    bool vmafx_mode;
+    /* ADR-0696: true when --netflix-compat passed to restore legacy defaults. */
+    bool netflix_compat;
 } CLISettings;
+
+bool detect_vmafx_mode(const char *argv0);
 
 void cli_parse(const int argc, char *const *const argv, CLISettings *const settings);
 

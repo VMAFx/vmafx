@@ -1521,7 +1521,15 @@ int main(int argc, char *argv[])
 #endif
 
     if (istty && !c.quiet) {
-        (void)fprintf(stderr, "VMAF version %s\n", vmaf_version());
+        if (c.vmafx_mode && !c.netflix_compat) {
+            if (c.precision_max) {
+                (void)fprintf(stderr, "VMAFX version %s (precision=max)\n", vmaf_version());
+            } else {
+                (void)fprintf(stderr, "VMAFX version %s\n", vmaf_version());
+            }
+        } else {
+            (void)fprintf(stderr, "VMAF version %s\n", vmaf_version());
+        }
     }
 
     /* ADR-0520: --no-reference mode opens the distorted file twice and
