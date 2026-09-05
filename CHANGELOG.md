@@ -5352,6 +5352,18 @@ and `docs/api/perceptual-weight.md`.
   scoring endpoint.
 
 
+- **Per-backend performance baseline harness.** New `testdata/bench_backends.py`
+  measures `vmaf` CLI throughput one backend at a time and reports the median of
+  N timed runs (default 3, after a discarded warmup) with the min/max spread and
+  the 1-minute load average sampled around every cell. It runs each fixture
+  against both `model/vmaf_v0.6.1.json` and the resolved default model
+  (`vmaf_v1.0.16_3d0h`), so the cost a caller pays when passing no `--model` is
+  now a measured figure rather than an assumption. `--dry-run` prints the exact
+  command lines without touching hardware. Documented in
+  [`docs/development/backend-perf-baselines.md`](docs/development/backend-perf-baselines.md);
+  methodology in ADR-1185.
+
+
 - **`psnr_cuda` chroma extension — `psnr_cb` / `psnr_cr` on CUDA
   (T3-15(b), [ADR-0351](../docs/adr/0351-cuda-chroma-psnr.md)).**
   Extends the luma-only [ADR-0182](../docs/adr/0182-gpu-long-tail-batch-1.md)
@@ -18328,6 +18340,14 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   `ADR-0100` link, and a dangling Related link that accumulated during
   incremental document appends. All `run_*` / P0 / P1 tool sections remain;
   no schema content changed.
+
+
+- **`docs/benchmarks.md` reproduce block no longer names a path that stopped
+  existing at ADR-0700.** The documented build step was
+  `meson setup core/build libvmaf`; the meson source root has been `core/` since
+  the repo layout change, so the documented procedure aborted with
+  "Neither source directory 'core/build' nor build directory None contain a
+  build file meson.build". Corrected to `meson setup core/build core`.
 
 
 - CUDA & HIP backends: fixed two GPU numerical defects in integer ADM contrast masking kernels (`adm_cm.cu` and `adm_cm.hip`):

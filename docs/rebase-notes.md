@@ -48640,3 +48640,23 @@ Fork-only tooling (`dev/`, `scripts/dev/`, `scripts/ci/tests/`). One invariant:
    revision of whichever build first populated the layer cache. A marker that
    reports a stale revision authoritatively is worse than no marker. See
    [ADR-1195](adr/1195-container-source-revision-guard.md).
+## perf/backend-baselines-1245 — per-backend baseline harness (2026-09-06)
+
+Fork-local only; nothing here touches an upstream-mirrored file, so a
+Netflix rebase cannot conflict with the harness or the docs page. Two
+invariants are worth carrying forward anyway:
+
+1. **`testdata/bench_all.sh`'s stdout shape is a consumed interface, not a
+   convenience format.** The MCP `run_benchmark` tool (ADR-0517) and
+   `make bench` both parse it. The new `testdata/bench_backends.py` was added
+   *beside* it rather than folded into it for exactly that reason. If a future
+   change wants repetition inside `bench_all.sh`, the MCP wrapper and its
+   schema tests have to move in the same PR.
+
+2. **The benchmark fixture directories are gitignored, so a worktree does not
+   have them.** `python/test/resource/yuv/` (`.gitignore` line 199) and
+   `testdata/bbb/*.yuv` (line 51) exist only in a full checkout. A benchmark
+   run from a fresh `git worktree` fails with `could not open file: …` that
+   looks like a build problem and is not. Link the directory in before running;
+   never "fix" it by un-ignoring the YUVs — they are hundreds of MB and the
+   4K pair is ~2.5 GB per file.
