@@ -22,7 +22,8 @@ concurrency:
 jobs:
   pre-commit:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: Pre-Commit (Formatters + Basic Checks)
+    # required-aggregator
+    name: Pre-Commit
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -55,7 +56,8 @@ jobs:
 
   clang-tidy:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: Clang-Tidy (Changed C/C++ Files)
+    # required-aggregator
+    name: Tidy Changed
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -314,7 +316,8 @@ jobs:
     # Always starts (required context); real work is gated on the ADR-1140
     # impact planner's `c_core` selector like every other required job.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: Clang-Tidy Ratchet (Whole Tree)
+    # required-aggregator
+    name: Tidy Ratchet
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -334,12 +337,12 @@ jobs:
           # mode=full, so a ratchet or baseline edit always runs the lane.
           python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
             --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
-      - name: Not impacted — Clang-Tidy Ratchet (Whole Tree) skipped by plan
+      - name: Not impacted — Tidy Ratchet skipped by plan
         if: steps.impact.outputs.c_core != 'true'
         env:
           MODE: ${{ steps.impact.outputs.mode }}
           REASON: ${{ steps.impact.outputs.reason }}
-        run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — Clang-Tidy Ratchet (Whole Tree) satisfied without running (ADR-1140)"
+        run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — Tidy Ratchet satisfied without running (ADR-1140)"
       - name: Install deps
         if: steps.impact.outputs.c_core == 'true'
         run: |
@@ -390,7 +393,7 @@ jobs:
     # the wrapper holds across all current SYCL TUs; gate tightens after that.
     # See ADR-0217 for the design rationale and alternatives matrix.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: Clang-Tidy SYCL (Changed Files, Advisory)
+    name: Tidy SYCL (advisory)
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     continue-on-error: true
@@ -539,7 +542,8 @@ jobs:
 
   cppcheck:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: Cppcheck (Whole Project)
+    # required-aggregator
+    name: Cppcheck
     # ADR-0359 — pilot job for the ARC self-hosted runner pool.
     # Variable `ARC_RUNNERS_ENABLED=true` flips this job to the in-cluster
     # `arc-runners` scale set; default `false` keeps GitHub-hosted. If the
@@ -614,7 +618,8 @@ jobs:
     # this dedup. Body is mypy-only per T7-CI-DEDUP; the rename to
     # "Python Lint (mypy)" lands separately together with the
     # branch-protection change.
-    name: Python Lint (Ruff + Black + mypy)
+    # required-aggregator
+    name: Python Lint
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -660,6 +665,7 @@ jobs:
     # broken anchors / missing nav entries from landing silently on master
     # (38 of 50 docs.yml runs were failing before this job was added).
     # The job is intentionally path-filtered so C-only PRs skip it quickly.
+    # required-aggregator
     name: Docs
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -686,11 +692,13 @@ jobs:
     # Excludes: binary extensions, LICENSES/ vendored texts, and the
     # .pre-commit-config.yaml itself (which references hook IDs that contain
     # the string "conflict").
-    name: Check — No committed conflict markers
+    name: No Conflict Markers
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - name: Fail if conflict markers are committed
         run: |
           set +e
@@ -724,7 +732,8 @@ jobs:
     # scripts/ci/twin-drift-allowlist.txt; the gate fails on stale rows.
     # Pure git + awk, no build. The job `name:` is a required check in
     # required-aggregator.yml — rename both in the same commit.
-    name: "Twin Drift + Stale Source Refs (ADR-1135)"
+    # required-aggregator
+    name: Twin Drift
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -742,7 +751,8 @@ jobs:
     # without an admin update in lockstep with this PR. The standalone
     # apt-install / shfmt-curl steps are dropped — pre-commit covers
     # the same surface in the same PR via the pinned hook revs.
-    name: ShellCheck + shfmt (All *.sh)
+    # required-aggregator
+    name: ShellCheck + shfmt
     runs-on: ubuntu-24.04
     timeout-minutes: 1
     needs: pre-commit
@@ -758,7 +768,7 @@ jobs:
     # config). NO --fix: 7 default rules are unsafe under autofix per
     # ADR-0864.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: Markdown lint (markdownlint-cli2)
+    name: Markdown Lint
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

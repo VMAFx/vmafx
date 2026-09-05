@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   ffmpeg-av1-videotoolbox:
-    name: FFmpeg av1_videotoolbox encoder
+    name: FFmpeg av1_videotoolbox
     runs-on: ubuntu-24.04
     permissions:
       contents: read

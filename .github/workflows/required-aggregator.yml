@@ -50,34 +50,34 @@ jobs:
             // because they path-filter-skip on doc/Python-only diffs and that
             // is the explicit semantics ADR-0313 codifies as acceptable.
             const required = [
-              'Build — Ubuntu gcc (CPU) + DNN',
-              'Build — Ubuntu clang (CPU) + DNN',
-              'Build — Windows MinGW64 (CPU) (MINGW64, mingw-w64-x86_64)',
-              'Build — Windows MSVC + CUDA (build only)',
-              'Build — Windows MSVC + oneAPI SYCL (build only)',
+              'Ubuntu gcc+DNN',
+              'Ubuntu clang+DNN',
+              'Windows MinGW64',
+              'Windows MSVC+CUDA',
+              'Windows MSVC+SYCL',
               'CodeQL',
               'CodeQL (Actions)',
               'CodeQL (C/C++)',
               'CodeQL (Python)',
-              'Pre-Commit (Formatters + Basic Checks)',
-              'Python Lint (Ruff + Black + mypy)',
-              'Semgrep (CWE Top 25 + CERT-C + Custom)',
-              'Clang-Tidy (Changed C/C++ Files)',
-              'Clang-Tidy Ratchet (Whole Tree)',
-              'Cppcheck (Whole Project)',
-              'Dependency Review (PR Diff)',
-              'Gitleaks (Secret Scan)',
+              'Pre-Commit',
+              'Python Lint',
+              'Semgrep',
+              'Tidy Changed',
+              'Tidy Ratchet',
+              'Cppcheck',
+              'Dependency Review',
+              'Gitleaks',
               'Docs',
-              'ShellCheck + shfmt (All *.sh)',
-              'Netflix CPU Golden Tests (D24)',
-              'Sanitizers — ASan + UBSan + MSan (address)',
-              'Sanitizers — ASan + UBSan + MSan (thread)',
-              'Sanitizers — ASan + UBSan + MSan (undefined)',
-              'Assertion Density (Power of 10 §5)',
-              'Twin Drift + Stale Source Refs (ADR-1135)',
-              'Tiny AI (DNN Suite + ai/ Pytests)',
-              'Build — Ubuntu HIP (T7-10b runtime)',
-              'SYCL float_ssim Parity (Arc DG2-G10)',
+              'ShellCheck + shfmt',
+              'Netflix CPU Golden',
+              'Sanitizers (address)',
+              'Sanitizers (thread)',
+              'Sanitizers (undefined)',
+              'Assertion Density',
+              'Twin Drift',
+              'Tiny AI',
+              'Ubuntu HIP',
+              'SYCL float_ssim Parity',
               // ADR-1151 — the process gates in rule-enforcement.yml were
               // reporting but not required, so a red Release Script Contract
               // (or a missing deliverables checklist / doc-substance /
@@ -92,12 +92,12 @@ jobs:
               // to docs/ trees a bot never touches, so without that they would
               // be red on every release PR. `Release Script Contract` and
               // `ADR Number Collision Guard` stay armed there on purpose.
-              'Deep-Dive Deliverables Checklist (ADR-0108)',
-              'Doc-Substance Gate (ADR-0100 / 0167)',
-              'docs/state.md Touch Gate (ADR-0165)',
-              'FFmpeg-Patches Surface Sync (CLAUDE.md §12 r14, ADR-0356)',
-              'ADR Number Collision Guard (ADR-0386 / ADR-0628)',
-              'Release Script Contract (ADR-1128)',
+              'Deliverables Checklist',
+              'Doc-Substance Gate',
+              'docs/state.md Gate',
+              'FFmpeg-Patches Surface Sync',
+              'ADR Collision Guard',
+              'Release Script Contract',
             ];
 
             // ADR-1151 — absent-means-pass (below) is correct ADR-0313
@@ -112,9 +112,9 @@ jobs:
             // .github/ci-impact.json so the two build/test entries do real
             // work rather than reporting a no-op success.
             const mustReport = [
-              'Release Script Contract (ADR-1128)',
-              'Netflix CPU Golden Tests (D24)',
-              'Build — Ubuntu gcc (CPU) + DNN',
+              'Release Script Contract',
+              'Netflix CPU Golden',
+              'Ubuntu gcc+DNN',
             ];
             const headRef = context.eventName === 'pull_request'
               ? context.payload.pull_request.head.ref

@@ -61,7 +61,7 @@ jobs:
           # identity; CUDA and HIP custom targets invoke their own tools.
           # ──────────────────────────────────────────────────────────────
           - os: ubuntu-24.04
-            name: Build — Linux (Intel LLVM, all backends)
+            name: Linux Intel LLVM
             CC: icx
             CXX: icpx
             cuda: true
@@ -83,7 +83,7 @@ jobs:
           # macos-latest (Metal.framework guaranteed in system frameworks).
           # ──────────────────────────────────────────────────────────────
           - os: macos-latest
-            name: Build — macOS (Clang, CPU + Metal)
+            name: macOS Clang+Metal
             CC: ccache clang
             CXX: ccache clang++
             metal: true
@@ -98,7 +98,7 @@ jobs:
           # windows-2025 runner). CPU-only meson tests are run after build.
           # ──────────────────────────────────────────────────────────────
           - os: windows-2025
-            name: Build — Windows (MSVC + CUDA)
+            name: Windows MSVC+CUDA
             cuda: true
             windows: true
             meson_extra: >-

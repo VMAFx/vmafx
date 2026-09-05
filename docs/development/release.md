@@ -104,10 +104,9 @@ things now prevent that:
 - `.release-please-manifest.json` and `release-please-config.json` are members
   of the `c_core` selector in `.github/ci-impact.json`, so a release PR really
   does select the C build and the Netflix golden gate.
-- The aggregator keeps a `mustReport` list — `Release Script Contract
-  (ADR-1128)`, `Netflix CPU Golden Tests (D24)`, `Build — Ubuntu gcc (CPU) +
-  DNN` — that fails instead of passing when a check is *absent* on a
-  `release-please--` head ref.
+- The aggregator keeps a `mustReport` list — `Release Script Contract`,
+  `Netflix CPU Golden`, `Ubuntu gcc+DNN` — that fails instead of passing when a
+  check is *absent* on a `release-please--` head ref.
 
 ### Release-bot identity
 
@@ -148,10 +147,10 @@ and cannot be satisfied by a PR nobody writes by hand:
 
 | Gate | Why a release PR cannot pass it unaided |
 | --- | --- |
-| Deep-Dive Deliverables Checklist (ADR-0108) | release-please's body is the rendered changelog: no six-item checklist, no opt-out sentinel. |
-| Doc-Substance Gate (ADR-0100 / 0167) | the coordinated version markers include `mcp-server/vmaf-mcp/pyproject.toml`, which the gate path-maps to a mandatory `docs/mcp/` edit. |
-| docs/state.md Touch Gate (ADR-0165) | the changelog body can carry a `closes #N` line inherited from a commit subject, which trips the bug-shaped heuristic. |
-| FFmpeg-Patches Surface Sync (ADR-0356) | diff-driven, and a version-marker bump is not a patch-stack change. |
+| Deliverables Checklist | release-please's body is the rendered changelog: no six-item checklist, no opt-out sentinel. |
+| Doc-Substance Gate | the coordinated version markers include `mcp-server/vmaf-mcp/pyproject.toml`, which the gate path-maps to a mandatory `docs/mcp/` edit. |
+| docs/state.md Gate | the changelog body can carry a `closes #N` line inherited from a commit subject, which trips the bug-shaped heuristic. |
+| FFmpeg-Patches Surface Sync | diff-driven, and a version-marker bump is not a patch-stack change. |
 
 Each of those four jobs therefore runs `scripts/ci/release-pr-exempt.sh` first
 and skips its work step when the predicate says the PR is machine-generated.
@@ -161,8 +160,8 @@ required gate. The jobs still report — they report green, not absent, which
 keeps them distinguishable from a path-filter skip.
 
 The remaining two stay armed on release PRs on purpose: `Release Script
-Contract (ADR-1128)` is the gate that proves the cut ran and that the one-shot
-`release-as` / `bootstrap-sha` fields are gone, and `ADR Number Collision
+Contract` is the gate that proves the cut ran and that the one-shot
+`release-as` / `bootstrap-sha` fields are gone, and `ADR Collision
 Guard` is diff-driven and trivially green when no ADR is added. The Release
 Script Contract job also runs
 `scripts/ci/tests/test-release-pr-exempt.sh`, so the predicate that disarms the
@@ -532,26 +531,22 @@ is enforced at the host, not just honored by convention.
   The aggregator's own `required` array
   (`.github/workflows/required-aggregator.yml`) is the real inventory — **34
   entries** as of ADR-1151:
-  - **Builds (7):** Ubuntu gcc (CPU) + DNN, Ubuntu clang (CPU) + DNN,
-    Windows MinGW64 (CPU), Windows MSVC + CUDA, Windows MSVC + oneAPI SYCL,
-    Ubuntu HIP (T7-10b runtime), SYCL float_ssim Parity (Arc DG2-G10).
-  - **Static analysis (10):** CodeQL ×4, Pre-Commit (Formatters + Basic
-    Checks), Python Lint (Ruff + Black + mypy), Semgrep, Clang-Tidy (Changed
-    C/C++ Files), Clang-Tidy Ratchet (Whole Tree), Cppcheck (Whole Project).
-  - **Supply chain / docs (4):** Dependency Review (PR Diff), Gitleaks (Secret
-    Scan), Docs, ShellCheck + shfmt (All \*.sh).
-  - **Tests (7):** Netflix CPU Golden Tests (D24), ASan / UBSan / MSan ×3,
-    Assertion Density (Power of 10 §5), Twin Drift + Stale Source Refs
-    (ADR-1135), Tiny AI (DNN Suite + ai/ Pytests).
-  - **Process gates (6), required since ADR-1151:** Deep-Dive Deliverables
-    Checklist (ADR-0108), Doc-Substance Gate (ADR-0100 / 0167),
-    docs/state.md Touch Gate (ADR-0165), FFmpeg-Patches Surface Sync
-    (CLAUDE.md §12 r14, ADR-0356), ADR Number Collision Guard (ADR-0386 /
-    ADR-0628), Release Script Contract (ADR-1128). These reported on every
-    non-draft PR but were not in the required set, so a red release-script
-    contract did not block a merge and needed no admin bypass to get past.
-    Four of the six auto-exempt the machine-generated release PR — see
-    "Process gates on the release PR" above; the other two stay armed there.
+  - **Builds (7):** Ubuntu gcc+DNN, Ubuntu clang+DNN,
+    Windows MinGW64, Windows MSVC+CUDA, Windows MSVC+SYCL,
+    Ubuntu HIP, SYCL float_ssim Parity.
+  - **Static analysis (10):** CodeQL ×4 (CodeQL, CodeQL (C/C++),
+    CodeQL (Python), CodeQL (Actions)), Pre-Commit, Python Lint, Semgrep,
+    Tidy Changed, Tidy Ratchet, Cppcheck.
+  - **Supply chain / docs (4):** Dependency Review, Gitleaks, Docs,
+    ShellCheck + shfmt.
+  - **Tests (7):** Netflix CPU Golden, Sanitizers ×3 (Sanitizers (address),
+    Sanitizers (thread), Sanitizers (undefined)), Assertion Density, Twin Drift,
+    Tiny AI.
+  - **Process gates (6):** Deliverables Checklist, Doc-Substance Gate,
+    docs/state.md Gate, FFmpeg-Patches Surface Sync, ADR Collision Guard,
+    Release Script Contract. These report on every non-draft PR; four of the
+    six auto-exempt the machine-generated release PR — see "Process gates on
+    the release PR" above; the other two stay armed there.
 
   When adding, renaming, or removing a gate, update the aggregator's `required`
   array **and this list** in the same PR — branch protection's `contexts` list

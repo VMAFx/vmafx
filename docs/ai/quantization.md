@@ -226,7 +226,7 @@ pipeline for direct Python invocation (used by tests and by future
 
 ## CI accuracy gate (`ai-quant-accuracy`)
 
-Wired into the `Tiny AI (DNN Suite + ai/ Pytests)` job in
+Wired into the `Tiny AI` job in
 [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml)
 as of [ADR-0174](../adr/0174-first-model-quantisation.md). The job
 calls `ai/scripts/measure_quant_drop.py --all`, which walks the

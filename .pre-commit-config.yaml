@@ -213,6 +213,12 @@ repos:
         language: script
         pass_filenames: false
         always_run: true
+      - id: check-aggregator-names
+        name: Check required CI checks aggregator list matches workflows
+        entry: scripts/ci/check-aggregator-names.sh
+        language: script
+        files: '^\.github/workflows/.*\.ya?ml$|^scripts/ci/check-aggregator-names\.sh$'
+        pass_filenames: false
       - id: check-copyright
         name: ADR-0105 copyright header present (C/C++/CUDA)
         entry: scripts/ci/check-copyright.sh

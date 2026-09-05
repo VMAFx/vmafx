@@ -29,7 +29,7 @@ is the higher-level calculator class.
 
 [`python/test/bd_rate_calculator_test.py`](../../python/test/bd_rate_calculator_test.py)
 gates the math against published reference numbers; it runs in CI
-under the `Netflix CPU Golden Tests (D24)` lane.
+under the `Netflix CPU Golden` lane.
 
 ## What this fork ships beyond Netflix upstream
 

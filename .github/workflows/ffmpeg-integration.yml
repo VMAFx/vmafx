@@ -49,11 +49,11 @@ jobs:
           - os: ubuntu-latest
             CC: gcc
             CXX: g++
-            name: FFmpeg — Ubuntu gcc (Build Only)
+            name: FFmpeg Ubuntu gcc
           - os: macos-latest
             CC: clang
             CXX: clang++
-            name: FFmpeg — macOS clang (Build Only)
+            name: FFmpeg macOS clang
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -96,7 +96,7 @@ jobs:
   # Build-only: FFmpeg with SYCL patch (no GPU hardware on runners)
   ffmpeg-sycl:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: FFmpeg — SYCL (Build Only)
+    name: FFmpeg SYCL
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:

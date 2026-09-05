@@ -207,6 +207,7 @@ lint-sh:
 	@scripts/ci/check-vcs-version-not-bare-sha.sh
 	@scripts/ci/test-prune-corrupt-fixtures.sh
 	@scripts/ci/check-no-tracked-venv.sh
+	@scripts/ci/check-aggregator-names.sh
 
 # Markdown lint (ADR-0866). Default scope is the touched-file delta vs
 # origin/master so the ~6.2k pre-existing-warning tail (ADR-0864) doesn't
