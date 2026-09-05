@@ -542,7 +542,7 @@ static int parse_args(int argc, char **argv, struct vmaf_roi_opts *o)
      * warning is inherent to CLI option parsing and matches upstream
      * libvmaf/tools/cli_parse.c. CLI parsing happens before any threads
      * are spawned, so this is safe. */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0141 / ADR-0278: CLI single-threaded option parsing via getopt_long */
     while ((c = getopt_long(argc, argv, "h", g_long_opts, NULL)) != -1) {
         if (c == 'h') {
             print_usage(stdout);
