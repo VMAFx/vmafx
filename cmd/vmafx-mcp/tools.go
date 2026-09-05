@@ -184,6 +184,23 @@ func scoringExtraProperties() schemaObj {
 			"default":     "json",
 			"description": "Score output format (--json, --xml, --csv, --sub). Default: json.",
 		},
+		// --- Model flags & score-param leftovers ---
+		"disable_clip": schemaObj{
+			"type":        "boolean",
+			"description": "Disable score clipping to [0, 100] on the model (--model ...:disable_clip).",
+		},
+		"enable_transform": schemaObj{
+			"type":        "boolean",
+			"description": "Enable score transform on the model (--model ...:enable_transform).",
+		},
+		"csv": schemaObj{
+			"type":        "boolean",
+			"description": "Write output file as CSV (--csv). Equivalent to output_fmt='csv'.",
+		},
+		"sub": schemaObj{
+			"type":        "boolean",
+			"description": "Write output file as subtitle-style per-frame scores (--sub). Equivalent to output_fmt='sub'.",
+		},
 	}
 }
 

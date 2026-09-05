@@ -74,7 +74,7 @@ func TestScoreExtraPropertiesPresent(t *testing.T) {
 		"tiny_resize", "no_reference",
 		"threads", "frame_cnt", "frame_skip_ref", "frame_skip_dist", "no_prediction",
 		"cpumask", "gpumask", "sycl_device", "hip_device", "metal_device",
-		"output_fmt",
+		"output_fmt", "disable_clip", "enable_transform", "csv", "sub",
 	}
 	for _, tool := range []string{"vmaf_score", "vmaf_score_encoded"} {
 		props := scoreToolProperties(t, tool)
@@ -526,5 +526,97 @@ func TestE2EScoreCPUWithTinyAIFlagsAndErrorPath(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error on missing model path, got nil")
+	}
+}
+
+// TestModelClipTransformAndCsvSubFlags verifies model option flags and csv/sub output flags.
+func TestModelClipTransformAndCsvSubFlags(t *testing.T) {
+	t.Parallel()
+
+	// 1. disable_clip and enable_transform append to model in buildVmafArgv
+	ex, err := parseScoreExtras(map[string]any{
+		"disable_clip":     true,
+		"enable_transform": true,
+	})
+	if err != nil {
+		t.Fatalf("parseScoreExtras failed: %v", err)
+	}
+	if ex.isZero() {
+		t.Error("expected isZero() to be false when disable_clip/enable_transform set")
+	}
+	argv := buildVmafArgv("vmaf", "/ref.yuv", "/dis.yuv", 1920, 1080, "420", 8, "version=vmaf_v0.6.1", "cpu", "legacy", "/out.json", ex)
+	foundModel := false
+	for i, arg := range argv {
+		if arg == "-m" && i+1 < len(argv) {
+			foundModel = true
+			expected := "version=vmaf_v0.6.1:disable_clip:enable_transform"
+			if argv[i+1] != expected {
+				t.Errorf("model arg = %q, want %q", argv[i+1], expected)
+			}
+		}
+	}
+	if !foundModel {
+		t.Error("-m flag not found in argv")
+	}
+
+	// 2. Pre-existing :disable_clip is not duplicated
+	argvDup := buildVmafArgv("vmaf", "/ref.yuv", "/dis.yuv", 1920, 1080, "420", 8, "version=vmaf_v0.6.1:disable_clip", "cpu", "legacy", "/out.json", ex)
+	for i, arg := range argvDup {
+		if arg == "-m" && i+1 < len(argvDup) {
+			expected := "version=vmaf_v0.6.1:disable_clip:enable_transform"
+			if argvDup[i+1] != expected {
+				t.Errorf("model arg with pre-existing flag = %q, want %q", argvDup[i+1], expected)
+			}
+		}
+	}
+
+	// 3. csv=true maps to outputFmt="csv" and emits --csv
+	exCSV, err := parseScoreExtras(map[string]any{"csv": true})
+	if err != nil {
+		t.Fatalf("parseScoreExtras with csv failed: %v", err)
+	}
+	if exCSV.outputFmt != "csv" {
+		t.Errorf("expected outputFmt 'csv', got %q", exCSV.outputFmt)
+	}
+	argvCSV := buildVmafArgv("vmaf", "/ref.yuv", "/dis.yuv", 1920, 1080, "420", 8, "version=vmaf_v0.6.1", "cpu", "legacy", "/out.csv", exCSV)
+	foundCSV := false
+	for _, arg := range argvCSV {
+		if arg == "--csv" {
+			foundCSV = true
+		}
+	}
+	if !foundCSV {
+		t.Errorf("expected --csv in argv: %v", argvCSV)
+	}
+
+	// 4. sub=true maps to outputFmt="sub" and emits --sub
+	exSUB, err := parseScoreExtras(map[string]any{"sub": true})
+	if err != nil {
+		t.Fatalf("parseScoreExtras with sub failed: %v", err)
+	}
+	if exSUB.outputFmt != "sub" {
+		t.Errorf("expected outputFmt 'sub', got %q", exSUB.outputFmt)
+	}
+	argvSUB := buildVmafArgv("vmaf", "/ref.yuv", "/dis.yuv", 1920, 1080, "420", 8, "version=vmaf_v0.6.1", "cpu", "legacy", "/out.sub", exSUB)
+	foundSUB := false
+	for _, arg := range argvSUB {
+		if arg == "--sub" {
+			foundSUB = true
+		}
+	}
+	if !foundSUB {
+		t.Errorf("expected --sub in argv: %v", argvSUB)
+	}
+
+	// 5. Conflicting csv and sub flags rejected
+	_, err = parseScoreExtras(map[string]any{"csv": true, "sub": true})
+	if err == nil {
+		t.Error("expected error with both csv and sub flags, got nil")
+	}
+
+	// 6. Conflicting csv and output_fmt rejected
+	_, err = parseScoreExtras(map[string]any{"csv": true, "output_fmt": "xml"})
+	if err == nil {
+		t.Error("expected error with conflicting csv and output_fmt, got nil")
 	}
 }
