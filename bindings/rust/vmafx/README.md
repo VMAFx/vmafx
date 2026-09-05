@@ -42,17 +42,17 @@ fn main() -> vmafx::Result<()> {
 
 ## API surface (Phase 1)
 
-| Type            | Purpose                                                 |
-| --------------- | ------------------------------------------------------- |
-| `Context`       | Owns a `vmaf_context`; drives the scoring loop.         |
-| `ContextBuilder`| Optional fine-grained configuration before `Context`.   |
-| `Model`         | Owns a `vmaf_model` loaded from a `.json` file.         |
-| `Picture`       | Owns a `vmaf_picture` plane allocation.                 |
-| `PixelFormat`   | YUV 4:0:0 / 4:2:0 / 4:2:2 / 4:4:4 enum.                 |
-| `PoolingMethod` | Mean / Min / Max / HarmonicMean for `score_pooled`.     |
-| `Score`         | `(index, value)` pair for per-frame results.            |
-| `LogLevel`      | None / Error / Warning / Info / Debug.                  |
-| `Error`         | Result-friendly error type with errno mapping.          |
+| Type             | Purpose                                                             |
+| ---------------- | ------------------------------------------------------------------- |
+| `Context`        | Owns a `vmaf_context`; drives the scoring loop.                     |
+| `ContextBuilder` | Optional fine-grained configuration before `Context`.               |
+| `Model`          | Owns a `vmaf_model` loaded from a `.json` file.                     |
+| `Picture`        | Owns a `vmaf_picture` plane allocation.                             |
+| `PixelFormat`    | YUV 4:0:0 / 4:2:0 / 4:2:2 / 4:4:4 enum.                             |
+| `PoolingMethod`  | Mean / Min / Max / HarmonicMean / Median / Perc5 / Perc10 / Perc20. |
+| `Score`          | `(index, value)` pair for per-frame results.                        |
+| `LogLevel`       | None / Error / Warning / Info / Debug.                              |
+| `Error`          | Result-friendly error type with errno mapping.                      |
 
 ## Ownership model
 

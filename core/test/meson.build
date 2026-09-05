@@ -74,6 +74,15 @@ test_hip_wavefront_reduce = executable('test_hip_wavefront_reduce',
 )
 test('test_hip_wavefront_reduce', test_hip_wavefront_reduce, suite : ['fast'])
 
+# ADR-1188 — percentile temporal pooling (MEDIAN / PERC5 / PERC10 / PERC20).
+# Pools imported per-frame scores, so it needs no YUV fixture and no model.
+test_pool_percentile = executable('test_pool_percentile',
+    ['test.c', 'test_pool_percentile.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [math_lib, stdatomic_dependency, pthread_dependency, gpu_all_deps],
+)
+
 test_context = executable('test_context',
     ['test.c', 'test_context.c'],
     include_directories : [libvmaf_inc, test_inc],
@@ -3445,6 +3454,7 @@ test('test_metal_kernel_registration', test_metal_kernel_registration,
 endif
 
 test('test_context', test_context, suite : ['fast'])
+test('test_pool_percentile', test_pool_percentile, suite : ['fast'])
 test('test_log', test_log, suite : ['fast'])
 test('test_picture', test_picture, suite : ['fast'])
 test('test_picture_v2', test_picture_v2, suite : ['fast'])

@@ -208,9 +208,50 @@ typedef struct VmafConfiguration {
 | `vmaf_fetch_preallocated_picture(ctx, *pic)` | 0 / -errno | Pull a picture from the pool; return it via `vmaf_picture_unref()`. |
 | `vmaf_close(ctx)` | 0 / -errno | Free the context. After this the pointer is invalid. |
 
-`VmafPoolingMethod`: `MIN`, `MAX`, `MEAN`, `HARMONIC_MEAN`. Pooled output in
-XML / JSON reports always includes `min`, `max`, `mean`, `harmonic_mean` in
-parallel.
+### `VmafPoolingMethod`
+
+| Enumerator | Value | Pooled result | Cost |
+| --- | --- | --- | --- |
+| `VMAF_POOL_METHOD_UNKNOWN` | 0 | sentinel — rejected with `-EINVAL` | — |
+| `VMAF_POOL_METHOD_MIN` | 1 | minimum per-frame score | O(1) memory |
+| `VMAF_POOL_METHOD_MAX` | 2 | maximum per-frame score | O(1) memory |
+| `VMAF_POOL_METHOD_MEAN` | 3 | arithmetic mean | O(1) memory |
+| `VMAF_POOL_METHOD_HARMONIC_MEAN` | 4 | harmonic mean of `score + 1`, minus 1 | O(1) memory |
+| `VMAF_POOL_METHOD_MEDIAN` | 5 | 50th percentile | O(n) memory, sorts |
+| `VMAF_POOL_METHOD_PERC5` | 6 | 5th percentile ("worst 5%") | O(n) memory, sorts |
+| `VMAF_POOL_METHOD_PERC10` | 7 | 10th percentile | O(n) memory, sorts |
+| `VMAF_POOL_METHOD_PERC20` | 8 | 20th percentile | O(n) memory, sorts |
+
+The four order-statistic methods (`MEDIAN` / `PERC*`, added in
+[ADR-1188](../adr/1188-percentile-pooling-methods.md)) sort the pooled
+per-frame scores and interpolate linearly between the two neighbouring ranks —
+identical to `numpy.percentile(scores, q, method="linear")`, which is the rule
+the Python harness applies through `ListStats.perc10` and friends. Both
+surfaces therefore report the same pooled number for the same frames:
+
+```c
+double worst10 = 0.0;
+int err = vmaf_score_pooled(vmaf, model, VMAF_POOL_METHOD_PERC10, &worst10, 0, n_frames - 1);
+```
+
+Notes and limits:
+
+- **Weighting.** Percentiles are pure order statistics, so ADR-1118 perceptual
+  spatial weighting does not change them — exactly as for `MIN` and `MAX`. Only
+  `MEAN` and `HARMONIC_MEAN` have weighted forms.
+- **Subsampling.** `n_subsample` skips the same frames for every method, so a
+  percentile and a mean pooled over the same interval summarise the same
+  samples.
+- **Memory.** A percentile pool retains `8 × n_frames` bytes and sorts them;
+  the accumulator methods still run in constant space. Prefer a bounded
+  `index_high` over `UINT_MAX` when pooling percentiles over a long sequence.
+- **Report output.** Pooled output in XML / JSON reports still includes exactly
+  `min`, `max`, `mean`, `harmonic_mean` in parallel — appending enumerators
+  deliberately does not widen that schema. Percentiles are available through
+  the API calls above.
+- **Enumerator values are append-only.** `VMAF_POOL_METHOD_NB` moved from 5 to
+  9; it is a count sentinel, not a stable API value, so do not switch on it or
+  persist it.
 
 ## `VmafPicture`
 
