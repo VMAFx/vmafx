@@ -245,44 +245,49 @@ gpus:
   # Intel Arc Alchemist DG2/G10 — SYCL (Arc A380 and related).
   # vendorID 0x8086; device IDs 0x56a0–0x56a5 (DG2-G10 slice).
   #
-  # Status: placeholder (T-SYCL-ARC-SSIMULACRA2-PARITY-2026-06-03).
+  # Status: placeholder — awaiting a hardware measurement, NOT a
+  # known-open code defect. (T-SYCL-ARC-SSIMULACRA2-PARITY-2026-06-03
+  # is closed in docs/state.md; see below.)
   #
-  # ssimulacra2 observed max_abs_diff = 8.72e-2 on Arc A380 (DG2-G10)
-  # vs CPU scalar. Root cause: fp32-IIR accumulation drift in the
-  # 3-pole Charalampidis blur (``ssimulacra2_sycl.cpp::launch_blur``)
-  # over up to 329 rows of recurrence state per scale × 6 pyramid
-  # scales. Arc A380 lacks native fp64 (ADR-0220); the IIR does not
-  # use Kahan compensation. RTX 4090 passes places=2 (5e-3). The same
-  # failure mode manifests on the Vulkan backend (max_abs_diff=5.48e-2,
-  # Vulkan backend now dropped per ADR-0726).
+  # History: ssimulacra2 was observed at max_abs_diff = 8.72e-2 on an
+  # Arc A380 (DG2-G10) vs CPU scalar on 2026-06-03. Root cause was
+  # uncompensated fp32 accumulation in the 3-pole Charalampidis IIR
+  # blur (``ssimulacra2_sycl.cpp::launch_blur``) over up to 329 rows
+  # of recurrence state per scale × 6 pyramid scales, with no fp64
+  # escape hatch on Arc A380 (ADR-0220). RTX 4090 passed places=2
+  # (5e-3). The same failure mode manifested on the Vulkan backend
+  # (max_abs_diff=5.48e-2; Vulkan dropped per ADR-0726).
   #
-  # Short-term: this entry sets ssimulacra2 at places=2 (5e-3) as a
-  # calibration anchor matching the default gate contract. The
-  # observed divergence (8.72e-2) exceeds this threshold — the entry
-  # serves as a named placeholder so gate tooling matches Arc A380
-  # explicitly rather than falling through to the generic Intel glob.
-  # A hardware-validated places=1 (5e-2) value should replace this
-  # once Arc A380 hardware testing is possible (see TODO below).
+  # That root cause is FIXED: commit 8b7ae731a (PR #865, 2026-06-12)
+  # added Kahan (compensated-summation) state tracking to all three
+  # poles of launch_blur<PASS>, bounding per-iteration error to
+  # O(eps^2) without fp64. Do not re-derive the IIR analysis from
+  # this comment — read the kernel.
   #
-  # Long-term TODO (T-SYCL-ARC-SSIMULACRA2-PARITY-2026-06-03 §b):
-  #   Kahan-compensated IIR rewrite in
-  #   core/src/feature/sycl/ssimulacra2_sycl.cpp::launch_blur.
-  #   The CUDA twin is in core/src/feature/cuda/ssimulacra2/
-  #   ssimulacra2_iir_kernel.cu (or inline kernel files there).
-  #   Requires Arc A380 hardware access to validate; RTX 4090 passes
-  #   without the fix. Blocked on self-hosted Arc runner availability.
-  #   Once Kahan-IIR lands and Arc A380 gate passes places=2, promote
-  #   this entry to status: calibrated with the measured tolerance.
+  # What is still outstanding is only the MEASUREMENT: nobody has
+  # re-run the gate on Arc A380 hardware since the fix, so this entry
+  # keeps ssimulacra2 anchored at the default places=2 (5e-3) rather
+  # than at a device-measured tolerance. The named entry exists so
+  # gate tooling matches Arc A380 explicitly instead of falling
+  # through to the generic Intel glob. The tolerance has never been
+  # loosened, and must not be loosened to make a run pass.
+  #
+  # Next step (needs self-hosted Arc A380 runner access):
+  #   ./build-sycl/test/test_sycl_ssimulacra2_parity on DG2-G10, then
+  #   either promote this entry to status: calibrated with the
+  #   measured tolerance, or reopen a state.md row with the new
+  #   number if the post-Kahan delta still exceeds 5e-3.
   # ---------------------------------------------------------------
   - id: "sycl:0x8086:0x56a*"
     label: "Intel Arc Alchemist DG2/G10 (SYCL, Arc A380 class)"
     status: placeholder
     notes: >-
-      Arc A380 (DG2-G10) SYCL placeholder per T-SYCL-ARC-SSIMULACRA2-PARITY-2026-06-03.
-      ssimulacra2 observed 8.72e-2 divergence vs CPU (fp32-IIR accumulation drift,
-      ADR-0220 fp64-free contract). Tolerance anchored at the default places=2 (5e-3);
-      replace with hardware-measured value once Arc A380 calibration corpus is available.
-      Long-term fix: Kahan-compensated IIR in ssimulacra2_sycl.cpp::launch_blur.
+      Arc A380 (DG2-G10) SYCL placeholder. The 8.72e-2 ssimulacra2 divergence recorded
+      on 2026-06-03 was caused by uncompensated fp32 IIR accumulation; that defect was
+      fixed by 8b7ae731a (PR #865, 2026-06-12), which added Kahan-compensated state to
+      ssimulacra2_sycl.cpp::launch_blur under the ADR-0220 fp64-free contract. Only the
+      post-fix hardware measurement is outstanding: the tolerance stays anchored at the
+      default places=2 (5e-3) until an Arc A380 run produces a calibrated value.
     features:
       ssimulacra2: 5.0e-3
 
