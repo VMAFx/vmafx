@@ -118,8 +118,9 @@ is four workflows plus one job:
 Consequences:
 
 - Release native binaries (`libvmaf.so` SONAME chain, `vmaf` CLI, `models.tar.gz`)
-  are compiled directly within the canonical dev container environment pinned by
-  digest, enforcing ADR-1102 and ADR-1178 (closing
+  are compiled directly within the canonical dev container environment (image
+  referenced by tag until the first GHCR publication, then digest-pinned by
+  Renovate), enforcing ADR-1102 and ADR-1178 (closing
   `T-PUBLISH-NATIVE-RELEASE-NOT-CONTAINERISED-2026-09-03`).
 - Non-release PR CI gates (e.g. `tests-and-quality-gates.yml`) continue to run on
   host runners for fast unit testing. When a container run and a CI host run

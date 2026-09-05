@@ -15,46 +15,57 @@ This research digest evaluates the image dimensions, layer composition, pull tim
 
 ## 2. Image Metrics and Layer Breakdown
 
-Local inspection of the canonical dev container (`vmaf-dev-mcp:local`, image digest `sha256:ff297e6d26bbcfaa094dba593984822f003ebc1bf60d2b07d67f90533acacf70`):
+Measured on the workstation on 2026-09-05 with
+`docker history --format '{{.Size}}\t{{.CreatedBy}}' vmaf-dev-mcp:local`
+(a local build of the full `dev-mcp` target of `dev/Containerfile`; the
+`libvmaf-build` stage is a prefix of the same layer stack). The image ID of that
+local build is `sha256:ff297e6d…`; it is a local image ID, **not** a GHCR
+manifest digest, and nothing under `ghcr.io/vmafx/vmafx-dev-mcp` exists yet
+(`docker manifest inspect ghcr.io/vmafx/vmafx-dev-mcp:master` → `manifest unknown`).
 
-| Component / Layer | Approximate Uncompressed Size | Notes |
+| Stage / layer group (`dev/Containerfile`) | Uncompressed size (sum of layers) | Notes |
 |---|---|---|
-| Base OS (`ubuntu:24.04`) + build tools (`gcc-15`, `clang`, `ninja`, `meson`) | ~1.2 GB | System packages, headers, Python runtime |
-| NVIDIA CUDA Toolkit 13.3 + NVCodec headers | ~6.2 GB | CUDA compiler, runtime, libraries |
-| Intel oneAPI 2025.3 (DPC++/C++, Level Zero) | ~8.4 GB | oneAPI Base Toolkit, SYCL toolchain |
-| AMD ROCm 7.2.4 (HIP runtime, rocBLAS) | ~18.5 GB | HIP compiler and device libraries |
-| ONNX Runtime 1.29.0 + Python dependencies | ~3.8 GB | Inference engine, numpy, scipy |
-| Libvmaf build stage (`libvmaf-build` target) | **~45.4 GB total** | Cumulative stage used for compilation |
-| Downstream stages (FFmpeg n9.0.1, Go MCP server) | ~6.9 GB | Excluded when targeting `libvmaf-build` |
-| Full development image (`dev-mcp` target) | ~52.3 GB total | Full interactive dev environment |
+| `build-deps` (`ubuntu:26.04` + apt toolchain) | ~1.6 GB | gcc 15.2, clang, meson, ninja, Python |
+| `gpu-sdks`: CUDA toolkit layer | ~7.7 GB | single `RUN` layer |
+| `gpu-sdks`: oneAPI + ROCm layer | ~14.2 GB | single `RUN` layer |
+| `gpu-sdks`: Intel NEO / Level Zero / VPL | ~0.5 GB | |
+| `libvmaf-build`: source copies + venv + ORT + ffmpeg deps | ~5.5 GB | 2.59 GB + 2.16 GB + ~0.5 GB of `COPY` layers |
+| **`libvmaf-build` cumulative** | **~29.5 GB** | the stage `dev-container-publish.yml` pushes |
+| `dev-mcp` additions (ffmpeg, MCP server, Go tools) | ~8 GB | not pushed |
+| `dev-mcp` total (`docker history` sum) | ~37.6 GB | `docker images` reports 52.3 GB with the containerd snapshotter |
 
-### Transfer vs. Storage Sizing
+Compressed transfer size was **not** measured (no registry push was possible
+from the branch); a 2.5–4× ratio for SDK-heavy layers puts it in the
+8–12 GB range, which is an estimate, not a measurement.
 
-- **Virtual uncompressed footprint (`libvmaf-build`)**: ~45.4 GB
-- **Compressed registry transfer size (zstd / gzip blobs)**: ~10.5 - 11.6 GB
-- **Pull time on GitHub Actions network**: ~2 to 4 minutes at typical runner network speeds (400-800 Mbps).
+## 3. Runner Disk Footprint — open blocker
 
-## 3. Runner Disk Footprint and Headroom
+GitHub's runner reference lists the standard `ubuntu-latest` / `ubuntu-24.04`
+runner for **public repositories** as 4 vCPU, 16 GB RAM, **14 GB SSD**
+(<https://docs.github.com/en/actions/reference/runners/github-hosted-runners>,
+read 2026-09-05). Two facts follow:
 
-GitHub-hosted `ubuntu-latest` (Standard 2-core x86_64 runner) characteristics:
+1. A ~29.5 GB uncompressed image does not fit on a 14 GB disk, regardless of
+   how much of the pre-installed tool cache is deleted first.
+2. A job-level `container:` image is pulled by the runner during
+   "Initialize containers", **before any step runs**, so a disk-clearing step
+   cannot help this job shape at all. Only a `docker run` inside a step
+   (after freeing space) or a smaller image can.
 
-- Total root disk space: ~75 GB.
-- Pre-installed software (Android SDKs, .NET, Haskell, Docker images): ~30-35 GB.
-- Default available free space: ~35-42 GB.
+`dev-container-build.yml` already builds `--target libvmaf-build` on
+`ubuntu-latest` as a PR gate; whether that build succeeds within the same
+disk budget (BuildKit can discard intermediate layers) is a separate question
+from pulling and unpacking the finished stage.
 
-### Disk Headroom Analysis
-
-1. **Targeting `libvmaf-build`**:
-   The publish workflow `.github/workflows/dev-container-publish.yml` targets `libvmaf-build`, eliminating ~7 GB of FFmpeg build trees, Go toolchains, and MCP server assets from the image.
-2. **Container Runner Cache**:
-   In `supply-chain.yml`, GitHub Actions runs the job inside `container: { image: ... }`. The runner daemon pulls layers sequentially. Because Docker unpacks layers as it pulls, disk usage peaks during layer extraction.
-3. **Build Space Safety**:
-   Native artifact compilation (`meson setup build core --buildtype=release ... && meson compile -C build`) generates ~150 MB of build objects and ~25 MB of staged artifacts (`libvmaf.so`, `vmaf`, `models.tar.gz`).
-4. **Remediation if Free Space Regresses**:
-   If future GPU SDK updates expand the layer size beyond standard runner free space, two standard mitigations exist:
-   - Run a disk-clearing step before container pull (e.g. removing `/usr/local/lib/android` and `/opt/ghc`, which frees ~25 GB in 15 seconds).
-   - Alternatively, dispatch `build-artifacts` on larger runners or self-hosted runners where disk limits are configurable.
-   Currently, the 25-minute `timeout-minutes` ceiling in `build-artifacts` is more than sufficient for the ~3 minute pull and ~45 second compilation.
+**Consequence for D3:** option (a) as implemented is unverified on a real
+runner and, on the published numbers, expected to fail at image pull. Before
+this PR leaves draft, either (i) a `workflow_dispatch` dry run of
+`dev-container-publish.yml` followed by a run of `build-artifacts` proves the
+pull fits (larger runner or a much smaller stage), or (ii) D3 flips to option
+(c): a dedicated `release-build` stage in `dev/Containerfile` that inherits
+`build-deps` but not `gpu-sdks` (the release artifact is CPU-only:
+`-Denable_cuda=false -Denable_sycl=false`), which would be ~2 GB and keep the
+single-Containerfile invariant of ADR-1102.
 
 ## 4. Decision and Operational Verification
 

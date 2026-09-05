@@ -24,7 +24,7 @@ We resolve `T-PUBLISH-NATIVE-RELEASE-NOT-CONTAINERISED-2026-09-03` by establishi
    Create `.github/workflows/dev-container-publish.yml` triggered on pushes to `master` affecting `dev/Containerfile` or `dev/scripts/**`, as well as manual `workflow_dispatch`. The workflow builds the `libvmaf-build` target of `dev/Containerfile`, pushes tags `ghcr.io/vmafx/vmafx-dev-mcp:sha-<commit>` and `:master`, and signs the pushed image using Cosign keyless OIDC via Sigstore.
 
 2. **Containerised Release Compilation**:
-   Update `build-artifacts` in `.github/workflows/supply-chain.yml` to run inside `container: ghcr.io/vmafx/vmafx-dev-mcp@<digest>`. Drop host-level package installation (`apt-get`/`pip3`), keeping the Meson configure line unchanged.
+   Update `build-artifacts` in `.github/workflows/supply-chain.yml` to run inside `container: ghcr.io/vmafx/vmafx-dev-mcp:master`. No image exists on GHCR before the first `dev-container-publish.yml` run, so the reference starts as a tag; the `renovate.json` rule (`pinDigests: true`) rewrites it to `:master@sha256:<digest>` after the first publication and tracks later digests. Bootstrap order: dispatch `dev-container-publish.yml` on `master` once before the first release that uses this job. Drop host-level package installation (`apt-get`/`pip3`), keeping the Meson configure line unchanged.
 
 3. **Container Provenance Stamping & Verification**:
    - In `build-artifacts`, invoke `scripts/ci/check-container-build.sh --stamp artifacts` after staging, writing `artifacts/container-build-provenance.txt`.
@@ -52,7 +52,7 @@ We resolve `T-PUBLISH-NATIVE-RELEASE-NOT-CONTAINERISED-2026-09-03` by establishi
   - Completely satisfies Phase 4b.9 policy ([ADR-1102](1102-phase4b9-container-only-publishing.md)) and closes `T-PUBLISH-NATIVE-RELEASE-NOT-CONTAINERISED-2026-09-03`.
 
 - **Negative**:
-  - GitHub runner pulls ~10-11 GB compressed layer data, unpacking to ~45 GB uncompressed virtual space.
+  - **Unresolved blocker (measured 2026-09-05, see the research digest):** the `libvmaf-build` stage sums to roughly 29 GB of uncompressed layers (`docker history vmaf-dev-mcp:local`), while the standard GitHub-hosted `ubuntu-latest` runner for public repositories lists 14 GB of SSD. A job-level `container:` image is pulled by the runner before any step runs, so no disk-clearing step can precede it. Until a dry run on a real runner proves the pull fits, this decision is not validated end-to-end and option (c) — a minimal release-build stage derived from `dev/Containerfile` — remains the fallback.
   - `dev-container-publish.yml` takes up to 45-60 minutes to complete on cold runners when container definitions change.
 
 - **Neutral / follow-ups**:

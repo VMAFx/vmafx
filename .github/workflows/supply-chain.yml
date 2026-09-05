@@ -121,8 +121,14 @@ jobs:
     name: Build Linux artifacts
     needs: validate-release
     runs-on: ubuntu-latest
+    # ADR-1178: the image is published by dev-container-publish.yml. It is
+    # referenced by tag until the first publication exists on GHCR; the
+    # renovate.json rule for ghcr.io/vmafx/vmafx-dev-mcp (pinDigests: true)
+    # then rewrites this line to `:master@sha256:<digest>` and keeps it
+    # current. Bootstrap: dispatch dev-container-publish.yml on master once
+    # before the first release that uses this job.
     container:
-      image: ghcr.io/vmafx/vmafx-dev-mcp@sha256:ff297e6d26bbcfaa094dba593984822f003ebc1bf60d2b07d67f90533acacf70
+      image: ghcr.io/vmafx/vmafx-dev-mcp:master
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
