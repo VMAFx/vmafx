@@ -465,7 +465,7 @@ void error(const char *const app, const char *const optarg, const int option,
  * A distinct name cannot collide on any platform. HAVE_STRSEP still selects the
  * platform implementation where one exists. */
 #ifndef HAVE_STRSEP
-char *vmaf_cli_strsep(char **sp, const char *sep)
+[[maybe_unused]] char *vmaf_cli_strsep(char **sp, const char *sep)
 {
     char *p = nullptr;
     char *s = nullptr;
@@ -480,54 +480,11 @@ char *vmaf_cli_strsep(char **sp, const char *sep)
 }
 #else
 /* The platform provides strsep; forward to it so the call sites stay uniform. */
-char *vmaf_cli_strsep(char **sp, const char *sep)
+[[maybe_unused]] char *vmaf_cli_strsep(char **sp, const char *sep)
 {
     return strsep(sp, sep);
 }
 #endif
-
-/* ADR-1180: In-place escape-aware splitter for CLI option strings.
- * Scans *sp up to the first unescaped `sep`, compacts escaped delimiters
- * (`\<sep>`) and escaped backslashes (`\\`) in place, terminates the token
- * with '\0', updates *sp to point after the delimiter (or nullptr if end of
- * string), and returns the token start. */
-char *vmaf_cli_split(char **sp, char sep)
-{
-    if (!sp || !*sp)
-        return nullptr;
-    if (!**sp) {
-        *sp = nullptr;
-        return nullptr;
-    }
-
-    char *head = *sp;
-    char *read = head;
-    char *write = head;
-
-    for (size_t i = 0; i < 4096 && *read != '\0'; ++i) {
-        if (*read == '\\') {
-            if (*(read + 1) == sep) {
-                *write++ = sep;
-                read += 2;
-            } else if (*(read + 1) == '\\') {
-                *write++ = '\\';
-                read += 2;
-            } else {
-                *write++ = *read++;
-            }
-        } else if (*read == sep) {
-            *write = '\0';
-            *sp = read + 1;
-            return head;
-        } else {
-            *write++ = *read++;
-        }
-    }
-
-    *write = '\0';
-    *sp = nullptr;
-    return head;
-}
 
 void apply_model_opt(CLIModelConfig &model_cfg, char *key, char *val, const char *const app)
 {
@@ -1369,4 +1326,47 @@ void cli_free(CLISettings *const settings)
         free(settings->model_config[i].buf);
     for (unsigned i = 0; i < settings->feature_cnt; i++)
         free(settings->feature_cfg[i].buf);
+}
+
+/* ADR-1180: In-place escape-aware splitter for CLI option strings.
+ * Scans *sp up to the first unescaped `sep`, compacts escaped delimiters
+ * (`\<sep>`) and escaped backslashes (`\\`) in place, terminates the token
+ * with '\0', updates *sp to point after the delimiter (or nullptr if end of
+ * string), and returns the token start. */
+extern "C" char *vmaf_cli_split(char **sp, char sep)
+{
+    if (!sp || !*sp)
+        return nullptr;
+    if (!**sp) {
+        *sp = nullptr;
+        return nullptr;
+    }
+
+    char *head = *sp;
+    char *read = head;
+    char *write = head;
+
+    for (size_t i = 0; i < 4096 && *read != '\0'; ++i) {
+        if (*read == '\\') {
+            if (*(read + 1) == sep) {
+                *write++ = sep;
+                read += 2;
+            } else if (*(read + 1) == '\\') {
+                *write++ = '\\';
+                read += 2;
+            } else {
+                *write++ = *read++;
+            }
+        } else if (*read == sep) {
+            *write = '\0';
+            *sp = read + 1;
+            return head;
+        } else {
+            *write++ = *read++;
+        }
+    }
+
+    *write = '\0';
+    *sp = nullptr;
+    return head;
 }
