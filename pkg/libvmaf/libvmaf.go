@@ -151,7 +151,7 @@ func (s *Scorer) Score(ctx context.Context, ref, dis, modelName string) (float64
 	args := []string{
 		"-r", ref,
 		"-d", dis,
-		"-m", "path=" + modelPath,
+		"-m", "path=" + escapeOptValue(modelPath),
 		"-o", tmpOut.Name(),
 		"--json",
 	}
@@ -305,4 +305,45 @@ func parseOutput(path string) (float64, map[string]float64, error) {
 	}
 
 	return score, features, nil
+}
+
+// escapeOptValue escapes delimiters (':', '=', and any backslash preceding them or another backslash)
+// for use in CLI option strings per ADR-1180.
+// A Windows drive letter at the start (e.g. "C:\" or "C:/") is preserved unescaped
+// per the drive-letter affordance.
+func escapeOptValue(s string) string {
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 8)
+
+	start := 0
+	// Check for Windows drive letter prefix: [A-Za-z]:[\\/]
+	if len(s) >= 3 &&
+		((s[0] >= 'a' && s[0] <= 'z') || (s[0] >= 'A' && s[0] <= 'Z')) &&
+		s[1] == ':' &&
+		(s[2] == '\\' || s[2] == '/') {
+		b.WriteByte(s[0])
+		b.WriteByte(':')
+		start = 2
+	}
+
+	for i := start; i < len(s); i++ {
+		switch s[i] {
+		case ':', '=':
+			b.WriteByte('\\')
+			b.WriteByte(s[i])
+		case '\\':
+			if i+1 < len(s) && (s[i+1] == ':' || s[i+1] == '=' || s[i+1] == '\\') {
+				b.WriteByte('\\')
+				b.WriteByte('\\')
+			} else {
+				b.WriteByte('\\')
+			}
+		default:
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
 }

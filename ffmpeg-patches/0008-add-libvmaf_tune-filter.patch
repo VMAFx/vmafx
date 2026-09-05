@@ -76,7 +76,7 @@ new file mode 100644
 index 0000000..37b1e9c
 --- /dev/null
 +++ b/libavfilter/vf_libvmaf_tune.c
-@@ -0,0 +1,410 @@
+@@ -0,0 +1,427 @@
 +/*
 + * Copyright 2026 Lusoris
 + *
@@ -274,12 +274,31 @@ index 0000000..37b1e9c
 +    int err;
 +
 +    /* Accept "version=NAME" or "path=PATH"; fall back to treating the
-+     * whole string as a version when no key= prefix is present. */
++     * whole string as a version when no key= prefix is present.
++     * ADR-1180: Support Windows drive-letter affordance and unescape \=, \:, \\. */
 +    eq = strchr(spec, '=');
 +    if (eq && !strncmp(spec, "version=", 8)) {
 +        err = vmaf_model_load(&s->vmaf_model, &model_cfg, eq + 1);
-+    } else if (eq && !strncmp(spec, "path=", 5)) {
-+        err = vmaf_model_load_from_path(&s->vmaf_model, &model_cfg, eq + 1);
++    } else if ((eq && !strncmp(spec, "path=", 5)) ||
++               (((spec[0] >= 'a' && spec[0] <= 'z') || (spec[0] >= 'A' && spec[0] <= 'Z')) &&
++                spec[1] == ':' && (spec[2] == '\\' || spec[2] == '/'))) {
++        const char *raw_path = (eq && !strncmp(spec, "path=", 5)) ? eq + 1 : spec;
++        char *path_copy = av_strdup(raw_path);
++        if (!path_copy)
++            return AVERROR(ENOMEM);
++        char *r = path_copy;
++        char *w = path_copy;
++        while (*r) {
++            if (*r == '\\' && (r[1] == '=' || r[1] == ':' || r[1] == '\\')) {
++                *w++ = r[1];
++                r += 2;
++            } else {
++                *w++ = *r++;
++            }
++        }
++        *w = '\0';
++        err = vmaf_model_load_from_path(&s->vmaf_model, &model_cfg, path_copy);
++        av_free(path_copy);
 +    } else {
 +        err = vmaf_model_load(&s->vmaf_model, &model_cfg, spec);
 +    }

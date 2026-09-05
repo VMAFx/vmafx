@@ -32,6 +32,7 @@
 #include <getopt.h>
 #include <unistd.h>
 #endif
+#include <cctype>
 #include <cerrno>
 #include <climits>
 #include <cstdarg>
@@ -485,6 +486,49 @@ char *vmaf_cli_strsep(char **sp, const char *sep)
 }
 #endif
 
+/* ADR-1180: In-place escape-aware splitter for CLI option strings.
+ * Scans *sp up to the first unescaped `sep`, compacts escaped delimiters
+ * (`\<sep>`) and escaped backslashes (`\\`) in place, terminates the token
+ * with '\0', updates *sp to point after the delimiter (or nullptr if end of
+ * string), and returns the token start. */
+char *vmaf_cli_split(char **sp, char sep)
+{
+    if (!sp || !*sp)
+        return nullptr;
+    if (!**sp) {
+        *sp = nullptr;
+        return nullptr;
+    }
+
+    char *head = *sp;
+    char *read = head;
+    char *write = head;
+
+    for (size_t i = 0; i < 4096 && *read != '\0'; ++i) {
+        if (*read == '\\') {
+            if (*(read + 1) == sep) {
+                *write++ = sep;
+                read += 2;
+            } else if (*(read + 1) == '\\') {
+                *write++ = '\\';
+                read += 2;
+            } else {
+                *write++ = *read++;
+            }
+        } else if (*read == sep) {
+            *write = '\0';
+            *sp = read + 1;
+            return head;
+        } else {
+            *write++ = *read++;
+        }
+    }
+
+    *write = '\0';
+    *sp = nullptr;
+    return head;
+}
+
 void apply_model_opt(CLIModelConfig &model_cfg, char *key, char *val, const char *const app)
 {
     if (!strcmp(key, "path")) {
@@ -504,9 +548,9 @@ void apply_model_opt(CLIModelConfig &model_cfg, char *key, char *val, const char
                   " are supported\n",
                   CLI_SETTINGS_STATIC_ARRAY_LEN);
         }
-        char *name = vmaf_cli_strsep(&key, ".");
+        char *name = vmaf_cli_split(&key, '.');
         model_cfg.feature_overload[model_cfg.overload_cnt].name = name;
-        const char *const opt = vmaf_cli_strsep(&key, ".");
+        const char *const opt = vmaf_cli_split(&key, '.');
         const int err = vmaf_feature_dictionary_set(
             &model_cfg.feature_overload[model_cfg.overload_cnt].opts_dict, opt, val);
         if (err)
@@ -540,9 +584,28 @@ CLIModelConfig parse_model_config(const char *const optarg, const char *const ap
     };
 
     char *key_val = nullptr;
-    while ((key_val = vmaf_cli_strsep(&optarg_copy, ":")) != nullptr) {
-        char *key = vmaf_cli_strsep(&key_val, "=");
-        char *val = vmaf_cli_strsep(&key_val, "=");
+    while ((key_val = vmaf_cli_split(&optarg_copy, ':')) != nullptr) {
+        char *key = vmaf_cli_split(&key_val, '=');
+        char *val = vmaf_cli_split(&key_val, '=');
+        if (key && !strcmp(key, "path") && val &&
+            std::isalpha(static_cast<unsigned char>(val[0])) && val[1] == '\0' && optarg_copy &&
+            (*optarg_copy == '\\' || *optarg_copy == '/')) {
+            val[1] = ':';
+            char *rest = vmaf_cli_split(&optarg_copy, ':');
+            (void)rest;
+            /* In-place compact any \= in the path value since it is not split by '=' again */
+            char *r = val + 2;
+            char *w = val + 2;
+            for (size_t i = 0; i < 4096 && *r != '\0'; ++i) {
+                if (*r == '\\' && *(r + 1) == '=') {
+                    *w++ = '=';
+                    r += 2;
+                } else {
+                    *w++ = *r++;
+                }
+            }
+            *w = '\0';
+        }
         if (!val) {
             if (!strcmp(key, "disable_clip") || !strcmp(key, "enable_transform")) {
                 val = const_cast<char *>("true");
@@ -588,7 +651,7 @@ CLIFeatureConfig parse_feature_config(const char *const optarg, const char *cons
     void *buf = optarg_copy;
 
     CLIFeatureConfig feature_cfg = {
-        .name = vmaf_cli_strsep(&optarg_copy, "="),
+        .name = vmaf_cli_split(&optarg_copy, '='),
         .opts_dict = nullptr,
         .buf = buf,
     };
@@ -604,9 +667,9 @@ CLIFeatureConfig parse_feature_config(const char *const optarg, const char *cons
     }
 
     char *key_val = nullptr;
-    while ((key_val = vmaf_cli_strsep(&optarg_copy, ":")) != nullptr) {
-        const char *const key = vmaf_cli_strsep(&key_val, "=");
-        const char *const val = vmaf_cli_strsep(&key_val, "=");
+    while ((key_val = vmaf_cli_split(&optarg_copy, ':')) != nullptr) {
+        const char *const key = vmaf_cli_split(&key_val, '=');
+        const char *const val = vmaf_cli_split(&key_val, '=');
         if (!val) {
             usage(app,
                   "Problem parsing feature \"%s\", "
