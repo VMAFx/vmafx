@@ -96,6 +96,17 @@ We resolve the HIP backend gap inventory in a unified change:
 - **Neutral / follow-ups**:
   - Porting the 9-tap int64 integer SSIM kernel (`integer_ssim_score.cu`) and the HIP device picture pool (T7-10c) remain tracked in `docs/state.md`.
 
+## Update (2026-09-04) — test_hip_motion_v2_parity registration corrected
+
+The assertion in §Decision item 2 that "All 17 pass device parity tests against CPU reference"
+overclaimed at time of writing: while 17 extractors were active, `test_hip_motion_v2_parity.c`
+(added in PR #913) had not been registered in `core/test/meson.build`, so only 16 device parity
+tests actually ran during the PR #1231 verification sweep. The test has now been registered
+in `fix/hip-motion-v2-parity-test-wiring` directly following `test_hip_motion3_parity`. The test
+executes on AMD Granite Ridge `gfx1036` (ROCm 7.2, HIP 7.2.53211) with bit-exact agreement
+(max delta 0.00e+00 across SAD, motion2_v2, and motion3_v2 at `places=4`), confirming device
+parity for all 17 active extractors.
+
 ## References
 
 - ADR-0212: AMD HIP backend scaffold

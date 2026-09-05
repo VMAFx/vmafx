@@ -374,7 +374,9 @@ test, so the omission was invisible until a manual audit.
   via the shared `motion_blend_tools.h` helper. Any change to the CPU
   flush blend/clip/seed/average logic must be mirrored into all four GPU
   twins (cuda/sycl/hip/metal) in the same PR to keep the `places=4`
-  `test_hip_motion_v2_parity` gate green.
+  `test_hip_motion_v2_parity` gate green (note: `test_hip_motion_v2_parity`
+  was added in PR #913 but was unregistered in `core/test/meson.build` until
+  wired in `fix/hip-motion-v2-parity-test-wiring`).
 
 ## Option dictionary serialization timing (ADR-1154)
 
