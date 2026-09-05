@@ -25017,6 +25017,17 @@ in `integer_ssim_sycl.cpp` that were accidentally dropped by PR #1095 when it ad
   after UV copies and before graph submission. (ADR-1034)
 
 
+- Bug ledger: de-duplicated the `T-SPEED-GPU-REGISTRY-ORPHAN-2026-06-19`
+  entry in `docs/state.md`. The bug — the six GPU SpEED registrations
+  (`speed_{chroma,temporal}_{cuda,sycl,hip}`) stranded in the dead
+  `core/src/feature/feature_extractor.c` twin — was fixed on master by
+  commit `a0bf83c214` (PR #1004), but the ledger carried two "Recently
+  closed" rows and two tombstone comments for it. Collapsed to a single
+  row, re-verified against `origin/master` (externs and registry entries
+  present inside their `HAVE_CUDA` / `HAVE_SYCL` / `HAVE_HIP` guards; the
+  dead `.c` twin gone). No source change.
+
+
 - **The seven assertions ported into `core/test/test_feature.cpp` by PR #1219
   raised that file's clang-tidy debt from 9 warnings to 34.** The port
   (ADR-1153, rescuing the dead C twin's unique coverage before deleting it)
