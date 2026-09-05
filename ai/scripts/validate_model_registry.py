@@ -90,6 +90,47 @@ def _structural_fallback_validate(reg: dict[str, Any]) -> list[str]:
     return errors
 
 
+def graph_bakes_scaler(onnx_path: Path) -> bool:
+    """True when the ONNX graph applies the StandardScaler itself.
+
+    A sidecar that declares ``"onnx_has_scaler": true`` tells the C runtime
+    (``core/src/libvmaf.c``) *not* to normalise the feature vector before
+    inference, because the graph already carries the ``Sub`` (mean) and
+    ``Div`` (std) Constant nodes. When the two disagree the runtime
+    double-scales and the score is garbage — the failure mode recorded as
+    ``T-TINY-V3-INT8-SIDECAR-MISSING-ONNX-HAS-SCALER-2026-09-04``.
+
+    Detection prefers the ``onnx`` protobuf parser (exact ``op_type``
+    match). CI legs that install neither ``onnx`` nor the AI extras fall
+    back to a length-prefixed protobuf byte scan for the ``Sub`` / ``Div``
+    ``op_type`` strings (``0x22`` = field 4 ``op_type``, ``0x03`` = length).
+    """
+    try:
+        import onnx  # type: ignore[import-not-found]
+    except ImportError:
+        raw = onnx_path.read_bytes()
+        return (b"\x22\x03Sub" in raw) and (b"\x22\x03Div" in raw)
+    model = onnx.load(str(onnx_path), load_external_data=False)
+    ops = {node.op_type for node in model.graph.node}
+    return "Sub" in ops and "Div" in ops
+
+
+def sidecar_for(onnx_path: Path) -> Path:
+    """Companion sidecar for an ONNX file.
+
+    ``foo.int8.onnx`` prefers ``foo.int8.json`` and falls back to the fp32
+    sidecar ``foo.json`` — the loader (``vmaf_dnn_sidecar_load``) resolves
+    the same way.
+    """
+    direct = onnx_path.with_suffix(".json")
+    if direct.is_file():
+        return direct
+    name = onnx_path.name
+    if name.endswith(".int8.onnx"):
+        return onnx_path.with_name(name[: -len(".int8.onnx")] + ".json")
+    return direct
+
+
 def _consistency_check(reg: dict[str, Any], registry_dir: Path) -> list[str]:
     """Cross-file invariants the schema cannot express (file existence, sha match)."""
     errors: list[str] = []
@@ -130,6 +171,24 @@ def _consistency_check(reg: dict[str, Any], registry_dir: Path) -> list[str]:
                         errors.append(
                             f"{mid}: int8_sha256 mismatch (file={got8}, registry={int8_sha})"
                         )
+                    if graph_bakes_scaler(int8_path):
+                        sidecar8 = sidecar_for(int8_path)
+                        if not sidecar8.is_file():
+                            errors.append(
+                                f"{mid}: {int8_path.name} bakes the scaler but no companion "
+                                f"sidecar ({sidecar8.name}) exists to declare onnx_has_scaler"
+                            )
+                        else:
+                            try:
+                                sdata8 = json.loads(sidecar8.read_text(encoding="utf-8"))
+                            except ValueError as err:
+                                errors.append(f"{mid}: {sidecar8.name} JSON parse error: {err}")
+                            else:
+                                if sdata8.get("onnx_has_scaler") is not True:
+                                    errors.append(
+                                        f"{mid}: {int8_path.name} bakes scaler ops but "
+                                        f"{sidecar8.name} does not declare onnx_has_scaler: true"
+                                    )
 
         bundle_rel = m.get("sigstore_bundle")
         # Bundle file presence is checked at runtime by --tiny-model-verify,

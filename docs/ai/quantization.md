@@ -136,6 +136,46 @@ than dead" rationale, and the code has matched ADR-1032 ever since. ADR-0174
 is Accepted and therefore frozen, so it still reads the old way; **this page
 is authoritative for the runtime behaviour.**
 
+### The `onnx_has_scaler` contract
+
+Feature-vector tiny models (`vmaf_tiny_v2` .. `v4`, `fr_regressor_v*`) ship the
+StandardScaler two different ways, and the sidecar is the only thing that says
+which:
+
+- The graph applies it — `Sub` (mean) and `Div` (std) Constant nodes sit in
+  front of the first `Gemm`. The sidecar must declare `"onnx_has_scaler": true`
+  and the C runtime feeds **raw** canonical-6 values.
+- The runtime applies it — the sidecar carries `input_mean` / `input_std` (or
+  `feature_mean` / `feature_std`) and omits `onnx_has_scaler`, and
+  `core/src/libvmaf.c` normalises the vector before inference.
+
+The two must not both happen. When a scaler-baking graph ships without the
+declaration, the runtime double-scales and the score is meaningless — measured
+on the Netflix `src01_hrc00/hrc01_576x324` pair with `vmaf_tiny_v3.int8.onnx`:
+pooled `vmaf_tiny_model` **16.020865** without the declaration versus
+**71.952113** with it, against an fp32 baseline of **72.359458** (per-frame PLCC
+vs fp32 0.975443 versus 0.999876). That was the shipped state of
+`model/tiny/vmaf_tiny_v3.int8.json` until 2026-09-05
+(`T-TINY-V3-INT8-SIDECAR-MISSING-ONNX-HAS-SCALER-2026-09-04`).
+
+Quantising a model does not change which of the two applies — `ptq_dynamic.py` /
+`ptq_static.py` / `qat_train.py` keep the scaler nodes in the graph — so an
+`.int8.onnx` needs the same declaration its fp32 parent has. Three gates now
+enforce it over every `model/tiny/*.int8.onnx`:
+
+```bash
+bash core/test/dnn/test_registry.sh                                   # meson `dnn` suite
+python -m pytest python/test/model_registry_schema_test.py -q         # python suite
+python ai/scripts/validate_model_registry.py                          # CI registry gate
+```
+
+Each loads the graph with `onnx` when it is installed (falling back to a
+protobuf byte scan otherwise) and fails when a graph containing both `Sub` and
+`Div` has a companion sidecar that does not declare
+`"onnx_has_scaler": true`. The companion sidecar for `foo.int8.onnx` is
+`foo.int8.json` when present, otherwise the fp32 sidecar `foo.json` — the same
+resolution order `vmaf_dnn_sidecar_load` uses.
+
 ## Mode selection
 
 | Mode | Accuracy | Cost to produce | Best for |

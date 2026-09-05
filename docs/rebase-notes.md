@@ -174,6 +174,18 @@ no rebase impact: fork-local SYCL feature extractor and tests.
   `core/src/feature/` wildcard glob, silently truncated the comment mid-file, and turned the
   header into parse errors). On a sync, keep the bracket balanced and do not "modernise" the
   header — every rewrite it suppresses breaks the C includers.
+## feat/dnn-int8-redirect-and-sidecar-fixes — declare onnx_has_scaler in vmaf_tiny_v3.int8.json (2026-09-05)
+
+- `model/tiny/vmaf_tiny_v3.int8.json`: added `"onnx_has_scaler": true`, so the C runtime
+  stops normalising the canonical-6 vector that the graph already scales.
+- `core/test/dnn/test_registry.sh`, `python/test/model_registry_schema_test.py`,
+  `ai/scripts/validate_model_registry.py`: added a consistency check asserting that any
+  `model/tiny/*.int8.onnx` baking scaler ops (`Sub` / `Div`) has a companion sidecar
+  declaring `"onnx_has_scaler": true`. Detection prefers the `onnx` parser and falls back
+  to a protobuf byte scan on legs without it.
+- `no rebase impact: fork-added tiny-AI model artifact and fork-added validation tests;
+  upstream Netflix/vmaf ships no ONNX model registry.`
+
 ## feat/dnn-int8-redirect-and-sidecar-fixes — wire int8 redirect and fp32 fallback into vmaf_use_tiny_model (2026-09-05)
 
 - `core/src/dnn/dnn_attach_api.c`: wired `.int8.onnx` redirect and ADR-1032 debug fallback
