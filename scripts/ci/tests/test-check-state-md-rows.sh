@@ -42,6 +42,37 @@ expect "an id in two sections fails" 1 "$tmp/cross.md"
 } >"$tmp/same.md"
 expect "an id twice in one section fails" 1 "$tmp/same.md"
 
+# Regression: the id opens the first cell but a description follows it, so the
+# cell does not end right after the bold token. This is the majority row shape in
+# docs/state.md (30 of 335 rows were invisible to the first version of the gate,
+# which anchored on `\*\* \|`), and it hid two real duplicate pairs.
+cat >"$tmp/described.md" <<'MD'
+## Open bugs
+
+| ID | Description |
+| --- | --- |
+| **T-GAMMA-2026-01-03** — `core/src/x.c:12` returns `-ENOSYS` | still broken |
+
+## Deferred (waiting on external trigger)
+
+| ID | Description |
+| --- | --- |
+| **T-GAMMA-2026-01-03** — the same bug, filed a second time | no action required |
+MD
+expect "an id with a trailing description in the first cell fails" 1 "$tmp/described.md"
+
+# Regression: ids are not restricted to [A-Z0-9-]; T-VK-VIF-1.4-RESIDUAL carries a
+# dot and slipped through the first version of the character class.
+cat >"$tmp/dotted.md" <<'MD'
+## Recently closed
+
+| ID | Description |
+| --- | --- |
+| **T-DELTA-VIF-1.4-RESIDUAL** — dotted id | fixed |
+| **T-DELTA-VIF-1.4-RESIDUAL** — dotted id, kept twice by a rebase | fixed |
+MD
+expect "an id containing a dot fails" 1 "$tmp/dotted.md"
+
 expect "a missing file is rc=2" 2 "$tmp/nope.md"
 
 # the real file must be clean
