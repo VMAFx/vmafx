@@ -59,10 +59,10 @@ struct CallbackListDeleter {
             /* free() on a VmafCallbackItem that carries no heap-owned
              * sub-fields (metadata_cfg, callback, data are all value or
              * borrowed-pointer types — callers own those lifetimes). */
-            free(node); // NOLINT(cppcoreguidelines-no-malloc) — C ABI node
+            free(node); // NOLINT(cppcoreguidelines-no-malloc) — C ABI node (ADR-0141 / ADR-0278)
             node = next;
         }
-        free(list); // NOLINT(cppcoreguidelines-no-malloc) — C ABI struct
+        free(list); // NOLINT(cppcoreguidelines-no-malloc) — C ABI struct (ADR-0141 / ADR-0278)
     }
 };
 

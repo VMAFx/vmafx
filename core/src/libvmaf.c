@@ -40,7 +40,7 @@
  * take precedence when available. */
 #ifdef __linux__
 /* The name is dictated by glibc's ABI and must match exactly. */
-/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) */
+/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — glibc weak-symbol ABI (ADR-0141 / ADR-0278) */
 __attribute__((weak)) char __libc_single_threaded = 1;
 #endif
 

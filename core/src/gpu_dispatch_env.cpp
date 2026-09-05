@@ -112,7 +112,7 @@ const char *snapshot_into_slot(EnvRow *slot, std::string_view key, const char *v
 extern "C" {
 
 /* NOLINTNEXTLINE(readability-redundant-declaration) — required: public C header
- * forward-declares this without [[nodiscard]]; the attribute is additive here. */
+ * forward-declares this without [[nodiscard]]; the attribute is additive here (ADR-0141 / ADR-0278). */
 [[nodiscard]] const char *vmaf_gpu_dispatch_env_get(const char *var_name)
 {
     if (!var_name)
