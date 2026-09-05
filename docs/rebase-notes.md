@@ -42,6 +42,21 @@ clang rejects outright.
   warning. `grow_fex_list` uses a hard `if (pool->capacity == 0) return -EINVAL;` guard rather
   than `assert()`, because clang-tidy 22's `misc-static-assert` / `cert-dcl03-c` flags every
   `assert()` whose condition contains no non-constexpr call.
+- `core/src/feature/feature_extractor.h`: upstream Netflix header. Keeps the upstream
+  `__VMAF_FEATURE_EXTRACTOR_H__` include guard, `<stdint.h>` / `<stdlib.h>`, plain C
+  `typedef struct` and untyped flag enums, because roughly a hundred C translation units
+  include it. clang-tidy has no compile command for a header and falls back to
+  `feature_extractor.cpp`'s, so it analyses the file as C++ and proposes C++-only rewrites;
+  a single file-scoped `NOLINTBEGIN(...)` / `NOLINTEND(...)` bracket after the licence block
+  and after the closing `#endif` suppresses them. Two constraints on that bracket: the
+  `ADR-NNNN` citations must sit **inside the `NOLINTBEGIN` marker's own block comment**, not
+  in a separate comment above it — `scripts/ci/tidy-ratchet.py::count_uncited_nolints` scans
+  only the current line, its neighbours and the marker's own comment, and counts anything else
+  as an uncited NOLINT, which fails the ADR-1142 ratchet; and the justification text must not
+  contain the character pair that closes a block comment (an earlier draft wrote a
+  `core/src/feature/` wildcard glob, silently truncated the comment mid-file, and turned the
+  header into parse errors). On a sync, keep the bracket balanced and do not "modernise" the
+  header — every rewrite it suppresses breaks the C includers.
 
 ## fix/gpu-init-leaks-and-hip-mirror — fix CUDA init error path leaks and close verified GPU state issues (2026-09-04)
 
