@@ -1,6 +1,6 @@
 <!-- markdownlint-disable MD041 -->
 You are writing a model card for a shipped VMAF tiny-AI model in the
-Lusoris VMAF fork. The audience is a practitioner evaluating whether to
+VMAFx fork. The audience is a practitioner evaluating whether to
 deploy this model — they want facts, not marketing.
 
 Use ONLY the facts in the "Collected facts" block. Do not invent

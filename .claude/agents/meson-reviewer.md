@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash
 
 <!-- markdownlint-disable MD013 MD041 -->
 
-You review Meson build-system changes for the Lusoris VMAF fork. Scope: `meson.build`
+You review Meson build-system changes for the VMAFx fork. Scope: `meson.build`
 (all levels), `meson_options.txt`, `subprojects/*.wrap`.
 
 ## What to check

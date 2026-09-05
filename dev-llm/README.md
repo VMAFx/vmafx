@@ -1,6 +1,6 @@
 # vmaf-dev-llm
 
-Local-LLM helpers for developers working on the Lusoris VMAF fork — review,
+Local-LLM helpers for developers working on the VMAFx fork — review,
 commit-message drafting, and doc-block generation. Ollama-first (offline by
 default); cloud providers (Anthropic, OpenAI-compatible) are opt-in via the
 `cloud` extra.

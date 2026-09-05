@@ -89,7 +89,7 @@ def _download(url: str, dst: Path, min_bytes: int) -> Path:
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
-    req = urllib.request.Request(url, headers={"User-Agent": "vmaf-fork/fetch_konvid_1k.py"})
+    req = urllib.request.Request(url, headers={"User-Agent": "vmafx/fetch_konvid_1k.py"})
     # nosec B310: scheme is restricted to http(s) above; URL provenance
     # is the hardcoded VIDEOS_URL / METADATA_URL module constants.
     with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:  # nosec B310
