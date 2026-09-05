@@ -52,8 +52,8 @@ int vmaf_ref_init(VmafRef **ref)
      * identified as a CRITICAL finding in adversarial review PR #78.
      * VmafRef is trivially destructible (atomic_int has no destructor
      * side effects), so placement-new + free() is well-defined. */
-    auto *r = static_cast<VmafRef *>(malloc(sizeof(
-        VmafRef))); // NOLINT(cppcoreguidelines-no-malloc) — C ABI; paired with free() in vmaf_ref_close
+    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc) — ADR-0141: C ABI; freed in vmaf_ref_close
+    auto *r = static_cast<VmafRef *>(malloc(sizeof(VmafRef)));
     if (!r)
         return -ENOMEM;
     new (r) VmafRef{}; /* value-init: zero-initialises atomic_int cnt */
@@ -92,6 +92,6 @@ int vmaf_ref_close(VmafRef *ref)
      * there). VmafRef is trivially destructible; no explicit destructor call
      * is needed. C callers MUST use vmaf_ref_close() exclusively — never
      * call free(VmafRef*) directly (see ref.h). */
-    free(ref); // NOLINT(cppcoreguidelines-no-malloc) — C ABI; pairs with malloc in vmaf_ref_init
+    free(ref); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0141: pairs with vmaf_ref_init
     return 0;
 }
