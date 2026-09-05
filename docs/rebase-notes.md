@@ -48607,6 +48607,31 @@ relative form only resolved when the build directory was a direct child of
 via `_LIBCPP_VERSION` rather than the compiler id. The three shell-driven tool
 tests now declare `depends` and `workdir`.
 
+### `core/src/feature/psnr_tools.cpp`, `psnr.c`, `integer_psnr.c`, `float_psnr.c` — ADR-1142 tidy ratchet
+
+These four files carry the Netflix upstream copyright header and still track
+upstream's PSNR implementation. The wave-2 lint pass on the psnr bucket touches
+them in ways a future `port-upstream-commit` has to be aware of:
+
+- `psnr_tools.cpp` — the `kFormatTable` rows are now written with designated
+  initialisers (`{.fmt = "yuv420p", .params = {.peak = 255.0, .psnr_max = 60.0}}`).
+  The table already diverged from upstream's `strcmp` ladder at ADR-0731; this
+  is a syntax-only change on top of that divergence. Peak / psnr_max values are
+  byte-identical to upstream's.
+- `psnr.c` — now includes its own `psnr.h`. Upstream does not; the include is
+  what tells clang-tidy that `compute_psnr()` legitimately has external
+  linkage. Keep it when replaying an upstream hunk that rewrites the include
+  block.
+- `integer_psnr.c` / `float_psnr.c` — the `provided_features[]` sentinels and
+  the `options[]` terminator use `nullptr` (the tree is C23, ADR-0692), and the
+  `VmafFeatureExtractor` definitions carry the ADR-0278
+  `NOLINTNEXTLINE(misc-use-internal-linkage)` citation used by every other
+  extractor in the fork. An upstream hunk that re-adds `NULL` here will
+  re-open the ratchet; convert it rather than accepting it verbatim.
+
+`core/src/dnn/model_loader.c` is fork-local (no upstream counterpart) — its
+function split in the same change carries no rebase risk.
+
 ## feat/gpu-adm-csf-mode-parity — GPU integer-ADM option-table parity (2026-09-05)
 
 **Rebase-sensitive files**: `core/src/feature/cuda/integer_adm_cuda.{c,h}`,
