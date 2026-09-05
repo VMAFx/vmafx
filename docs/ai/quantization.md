@@ -94,9 +94,10 @@ allowlist change requiring security review, not a documentation change.
 
 ### Loader behaviour and fp32 fallback
 
-`vmaf_dnn_session_open` in
-[`core/src/dnn/dnn_api.c`](../../core/src/dnn/dnn_api.c) resolves which
-file to load:
+Both `vmaf_dnn_session_open` in
+[`core/src/dnn/dnn_api.c`](../../core/src/dnn/dnn_api.c) and `vmaf_use_tiny_model`
+in [`core/src/dnn/dnn_attach_api.c`](../../core/src/dnn/dnn_attach_api.c)
+resolve which file to load using the exact same redirect logic:
 
 1. Validate the caller-supplied (fp32) path — size cap plus op allowlist.
 2. Load the sidecar. If it declares `quant_mode: "fp32"`, that file is the

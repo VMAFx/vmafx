@@ -431,6 +431,19 @@ never reaches the availability check. The probe therefore feeds the real
 check ever moves earlier in `vmaf.cpp`, the probe may be simplified —
 until then, keep the full command line.
 
+## Invariant — int8 loader redirect and scaler declaration contract
+
+- **Sidecar `quant_mode` drives the redirect**: `vmaf_use_tiny_model()` in
+  `dnn_attach_api.c` mirrors `vmaf_dnn_session_open()` in `dnn_api.c`. When the
+  companion sidecar declares `quant_mode != VMAF_QUANT_FP32`, the runtime
+  redirects to load sibling `<basename>.int8.onnx` if present and valid; if
+  absent or invalid, it gracefully falls back to the fp32 baseline per
+  ADR-1032 (`VMAF_LOG_LEVEL_DEBUG`).
+- **`onnx_has_scaler` must match the graph**: If an int8 model's ONNX graph
+  bakes in input normalisation / scaling ops (`Sub`/`Div` or scalar constants),
+  its companion sidecar `.json` must declare `"onnx_has_scaler": true` so the
+  runtime normalisation is bypassed and double-scaling is prevented.
+
 ## Testing
 
 ```bash
