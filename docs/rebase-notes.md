@@ -168,6 +168,7 @@ no rebase impact: changes GitHub Actions workflow job display names (`.github/wo
   guard, matching the unclamped structure of CPU `get_best15_from32` and CUDA `adm_decouple_inline.cuh`.
   No code changes or numeric divergence.
 - `no rebase impact: SYCL integer ADM is a fork-added backend with no upstream Netflix counterpart.`
+
 ## fix/sycl-ssimulacra2-blur-recurrence-and-arc-calibration — revert pseudo-Kahan recurrence and calibrate Arc A380 (2026-09-05)
 
 - `core/src/feature/sycl/ssimulacra2_sycl.cpp`: wholly fork-added (upstream
