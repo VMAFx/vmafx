@@ -17,7 +17,7 @@ Running `vmaf --backend sycl --model version=vmaf_v1.0.16_3d0h` (the default mod
 
 ## Decision
 
-We fix all five failure points at their respective architectural boundaries:
+We fix all six items (the four failure points, a test-harness flush, and a regression test) at their respective architectural boundaries:
 
 1. **Cambi Initialization & Histogram Sizing**: Expose `vmaf_cambi_init_tvi_and_vlt` in `core/src/feature/cambi.c` and `cambi_internal.h`. In `integer_cambi_sycl.cpp`, invoke this helper on `init()` to properly populate TVI, VLT, and contrast tables. Size device histogram buffers with `MAX(num_bins, v_band_size)`.
 2. **FP64 Elimination in Speed Extractors**: Replace all `double` accumulators, work-group local accessors, and reduction buffers with `float` in `speed_chroma_sycl.cpp` and `speed_temporal_sycl.cpp`, adhering strictly to ADR-0220.
@@ -38,8 +38,8 @@ We fix all five failure points at their respective architectural boundaries:
 
 - **Positive**:
   - `vmaf --backend sycl` runs out of the box with the default model (`vmaf_v1.0.16_3d0h`) on Intel Arc GPUs.
-  - Zero crashes (SIGSEGV, SIGABRT) across all resolutions.
-  - Bit-exact or within-tolerance numerical parity between CPU and SYCL on standard test pairs.
+  - No crash (SIGSEGV, SIGABRT) on the three verified pairs (576x324 src01, 1080p 1-px and 10-px checkerboards) on an Arc A380.
+  - Pooled `vmaf` SYCL vs CPU: 82.814061 vs 82.816062 at 576x324 (delta 2.0e-3), identical at six decimals on both 1080p checkerboards; `integer_adm3` / `integer_motion3` identical at six decimals, `speed_chroma_uv` within 2e-6. GPU twins are not bit-exact to the CPU: the residual `cambi` drift (2.7e-3 pooled at 576x324) is tracked in `docs/state.md` as T-SYCL-CAMBI-PARITY-DRIFT-2026-09-05.
   - Netflix CPU golden test suite (`make test-netflix-golden`) remains 100% green (271 passed, 12 skipped, 0 failed).
 - **Negative**:
   - None. Code complexity is minimal and reuses existing C helpers.

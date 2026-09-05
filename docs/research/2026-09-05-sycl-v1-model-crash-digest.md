@@ -89,8 +89,14 @@ floating point values matching GCC reference builds.
 2. Regression test:
    - `python/test/sycl_default_model_test.py`: 1/1 passed.
 3. Reproducers:
-   - 576x324 (48 frames): CPU=82.816062, SYCL=82.814061 (delta 0.002 <= 0.005).
-   - 1080p 10-px checkerboard: CPU=0.000000, SYCL=0.000000 (bit-exact).
-   - 1080p 1-px checkerboard: CPU=45.315104, SYCL=45.315104 (bit-exact).
+   - 576x324 (48 frames): vmaf CPU=82.816062, SYCL=82.814061 (delta 2.0e-3);
+     cambi_hrs_1080 CPU=0.259678, SYCL=0.262341 (delta 2.66e-3 pooled, 7.2e-3
+     max per frame — above the 1e-3 verification bound, tracked as
+     T-SYCL-CAMBI-PARITY-DRIFT-2026-09-05); integer_adm3 / integer_motion3
+     identical at six decimals; speed_chroma_uv delta 2e-6.
+   - 1080p 10-px checkerboard: vmaf CPU=0.000000, SYCL=0.000000 (identical at
+     `%.6f`; GPU twins are not bit-exact to the CPU).
+   - 1080p 1-px checkerboard: vmaf CPU=45.315104, SYCL=45.315104 (identical at
+     `%.6f`).
 4. Netflix golden gate:
    - `make test-netflix-golden`: 271 passed, 12 skipped, 0 failed.
