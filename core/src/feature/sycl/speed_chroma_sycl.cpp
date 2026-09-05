@@ -71,11 +71,11 @@ static void launch_means(sycl::queue &q, const float *plane, float *means, uint3
                 return;
             const uint32_t er = elem / SP_BLOCK_SIZE;
             const uint32_t ec = elem % SP_BLOCK_SIZE;
-            double acc = 0.0;
+            float acc = 0.0f;
             for (uint32_t i = 0; i < submatrix_h; ++i)
                 for (uint32_t j = 0; j < submatrix_w; ++j)
-                    acc += (double)plane[(er + i) * stride_px + (ec + j)];
-            means[elem] = (float)(acc / (double)(submatrix_w * submatrix_h));
+                    acc += plane[(er + i) * stride_px + (ec + j)];
+            means[elem] = acc / (float)(submatrix_w * submatrix_h);
         });
     });
 }
@@ -97,7 +97,7 @@ static void launch_cov(sycl::queue &q, const float *plane, const float *means, f
     /* 625 work-groups of COV_WG threads, one per (x_index, y_index) pair. */
     const size_t total_wg = SP_ELEMENTS * SP_ELEMENTS;
     q.submit([&](sycl::handler &cgh) {
-        sycl::local_accessor<double, 1> s_partial(sycl::range<1>(COV_WG), cgh);
+        sycl::local_accessor<float, 1> s_partial(sycl::range<1>(COV_WG), cgh);
         cgh.parallel_for(sycl::nd_range<1>(total_wg * COV_WG, COV_WG), [=](sycl::nd_item<1> it) {
             const uint32_t x_index = (uint32_t)(it.get_group(0) / SP_ELEMENTS);
             const uint32_t y_index = (uint32_t)(it.get_group(0) % SP_ELEMENTS);
@@ -107,16 +107,16 @@ static void launch_cov(sycl::queue &q, const float *plane, const float *means, f
             const uint32_t xc = x_index % SP_BLOCK_SIZE;
             const uint32_t yr = y_index / SP_BLOCK_SIZE;
             const uint32_t yc = y_index % SP_BLOCK_SIZE;
-            const double mean_x = (double)means[x_index];
-            const double mean_y = (double)means[y_index];
+            const float mean_x = means[x_index];
+            const float mean_y = means[y_index];
 
             const uint32_t total = submatrix_h * submatrix_w;
-            double local_sum = 0.0;
+            float local_sum = 0.0f;
             for (uint32_t p = tid; p < total; p += COV_WG) {
                 const uint32_t i = p / submatrix_w;
                 const uint32_t j = p % submatrix_w;
-                const double vx = (double)plane[(xr + i) * stride_px + (xc + j)];
-                const double vy = (double)plane[(yr + i) * stride_px + (yc + j)];
+                const float vx = plane[(xr + i) * stride_px + (xc + j)];
+                const float vy = plane[(yr + i) * stride_px + (yc + j)];
                 local_sum += (vx - mean_x) * (vy - mean_y);
             }
             s_partial[tid] = local_sum;
@@ -128,7 +128,7 @@ static void launch_cov(sycl::queue &q, const float *plane, const float *means, f
                 it.barrier(sycl::access::fence_space::local_space);
             }
             if (tid == 0u)
-                cov_mat[x_index * SP_ELEMENTS + y_index] = (float)(s_partial[0] / (double)total);
+                cov_mat[x_index * SP_ELEMENTS + y_index] = s_partial[0] / (float)total;
         });
     });
 }

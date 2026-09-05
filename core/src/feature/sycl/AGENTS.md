@@ -326,6 +326,21 @@ producing silently-wrong scores without any error. This is the root cause
 of the `motion_fps_weight` gap in `integer_motion_v2_sycl.cpp` closed by
 PR #851-follow-up (2026-05-16).
 
+Second instance (ADR-1179, `fix/sycl-v1-model-crash`): `options_cambi_sycl`
+lacked `cambi_high_res_speedup` (`hrs`). Because that knob carries
+`VMAF_OPT_FLAG_FEATURE_PARAM`, its absence changed the *serialised feature
+name* — the SYCL twin emitted `cambi_cmxv_17_vlt_0.06` while the default
+model `vmaf_v1.0.16_3d0h` asks for `cambi_hrs_1080_cmxv_17_vlt_0.06` — and
+prediction failed with `-EAGAIN` instead of falling through to a default.
+Two rebase-sensitive consequences: (1) every `VMAF_OPT_FLAG_FEATURE_PARAM`
+knob of `cambi.c` must exist verbatim in `options_cambi_sycl`, and (2)
+`vmaf_feature_name_dict_from_provided_features()` must run in
+`init_fex_sycl` **before** `enc_width` / `enc_height` / `enc_bitdepth`
+are defaulted from the picture geometry (same ordering as `cambi.c`),
+otherwise the geometry defaults leak into the feature name. The TVI / VLT
+tables come from the shared `vmaf_cambi_init_tvi_and_vlt()` in `cambi.c`
+— do not reintroduce a private bisection in the twin.
+
 ## Per-kernel parity-test invariant (ADR-0214 + ADR-0868 + ADR-0884)
 
 **Every shipping SYCL kernel here must have a CPU-vs-SYCL parity test

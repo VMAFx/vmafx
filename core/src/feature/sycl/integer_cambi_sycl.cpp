@@ -155,6 +155,7 @@ struct CambiStateSycl {
     double cambi_vis_lum_threshold;
     char *eotf;
     char *cambi_eotf;
+    int cambi_high_res_speedup;
 
     /* Resolved per-frame geometry. */
     unsigned src_width;
@@ -178,10 +179,14 @@ struct CambiStateSycl {
 /* ------------------------------------------------------------------ */
 /* Helpers (mirrors integer_cambi_cuda.c's static helpers). */
 /* ------------------------------------------------------------------ */
-static uint16_t cambi_sycl_adjust_window(int window_size, unsigned w, unsigned h)
+static uint16_t cambi_sycl_adjust_window(int window_size, unsigned w, unsigned h,
+                                         bool cambi_high_res_speedup)
 {
-    unsigned adjusted = (unsigned)(window_size) * (w + h) / 375u;
+    unsigned adjusted = (unsigned)(window_size) * (w + h) / (unsigned)CAMBI_WINDOW_DIVISOR;
     adjusted >>= 4;
+    if (cambi_high_res_speedup) {
+        adjusted = (adjusted + 1u) >> 1;
+    }
     if (adjusted < 1u)
         adjusted = 1u;
     if ((adjusted & 1u) == 0u)
@@ -208,58 +213,6 @@ static uint16_t cambi_sycl_get_mask_index(unsigned w, unsigned h, unsigned filte
     return (uint16_t)((filter_size * filter_size + 3u * (cambi_sycl_ceil_log2(shifted_wh) - 11u) -
                        1u) >>
                       1u);
-}
-
-static int cambi_sycl_init_tvi(CambiStateSycl *s)
-{
-    VmafLumaRange luma_range;
-    int err = vmaf_luminance_init_luma_range(&luma_range, 10, VMAF_PIXEL_RANGE_LIMITED);
-    if (err)
-        return err;
-
-    const char *effective_eotf;
-    if (s->cambi_eotf && strcmp(s->cambi_eotf, CAMBI_SYCL_DEFAULT_EOTF) != 0) {
-        effective_eotf = s->cambi_eotf;
-    } else {
-        effective_eotf = (s->eotf != NULL) ? s->eotf : CAMBI_SYCL_DEFAULT_EOTF;
-    }
-
-    VmafEOTF eotf;
-    err = vmaf_luminance_init_eotf(&eotf, effective_eotf);
-    if (err)
-        return err;
-
-    const int num_diffs = 1 << s->max_log_contrast;
-    for (int d = 0; d < num_diffs; d++) {
-        const int diff = (int)s->buffers.diffs_to_consider[d];
-        int lo = 0;
-        int hi = (1 << 10) - 1 - diff;
-        int found = -1;
-        while (lo <= hi) {
-            int mid = (lo + hi) / 2;
-            double sample_lum = vmaf_luminance_get_luminance(mid, luma_range, eotf);
-            double diff_lum =
-                vmaf_luminance_get_luminance(mid + diff, luma_range, eotf) - sample_lum;
-            if (diff_lum < s->tvi_threshold * sample_lum) {
-                found = mid;
-                lo = mid + 1;
-            } else {
-                hi = mid - 1;
-            }
-        }
-        if (found < 0)
-            found = 0;
-        s->buffers.tvi_for_diff[d] = (uint16_t)(found + num_diffs);
-    }
-
-    int vlt = 0;
-    for (int v = 0; v < (1 << 10); v++) {
-        double L = vmaf_luminance_get_luminance(v, luma_range, eotf);
-        if (L < s->cambi_vis_lum_threshold)
-            vlt = v;
-    }
-    s->vlt_luma = (uint16_t)vlt;
-    return 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -429,61 +382,62 @@ static const VmafOption options_cambi_sycl[] = {
     {
         .name = "cambi_max_val",
         .help = "maximum value allowed; larger values will be clipped",
+        .alias = "cmxv",
         .offset = offsetof(CambiStateSycl, cambi_max_val),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val.d = CAMBI_SYCL_DEFAULT_MAX_VAL,
         .min = 0.0,
         .max = 1000.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "cmxv",
     },
     {
         .name = "enc_width",
         .help = "Encoding width",
+        .alias = "encw",
         .offset = offsetof(CambiStateSycl, enc_width),
         .type = VMAF_OPT_TYPE_INT,
         .default_val.i = 0,
         .min = 180,
         .max = 7680,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "encw",
     },
     {
         .name = "enc_height",
         .help = "Encoding height",
+        .alias = "ench",
         .offset = offsetof(CambiStateSycl, enc_height),
         .type = VMAF_OPT_TYPE_INT,
         .default_val.i = 0,
         .min = 150,
         .max = 7680,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ench",
     },
     {
         .name = "enc_bitdepth",
         .help = "Encoding bitdepth",
+        .alias = "encbd",
         .offset = offsetof(CambiStateSycl, enc_bitdepth),
         .type = VMAF_OPT_TYPE_INT,
         .default_val.i = 0,
         .min = 6,
         .max = 16,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "encbd",
     },
     {
         .name = "window_size",
         .help = "Window size to compute CAMBI: 65 corresponds to ~1 degree at 4k",
+        .alias = "ws",
         .offset = offsetof(CambiStateSycl, window_size),
         .type = VMAF_OPT_TYPE_INT,
         .default_val.i = CAMBI_SYCL_DEFAULT_WINDOW_SIZE,
         .min = 15,
         .max = 127,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ws",
     },
     {
         .name = "topk",
         .help = "Ratio of pixels for the spatial pooling computation",
+        .alias = NULL,
         .offset = offsetof(CambiStateSycl, topk),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val.d = CAMBI_SYCL_DEFAULT_TOPK,
@@ -494,63 +448,80 @@ static const VmafOption options_cambi_sycl[] = {
     {
         .name = "cambi_topk",
         .help = "Ratio of pixels for the spatial pooling computation",
+        .alias = "ctpk",
         .offset = offsetof(CambiStateSycl, cambi_topk),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val.d = CAMBI_SYCL_DEFAULT_TOPK,
         .min = 0.0001,
         .max = 1.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ctpk",
     },
     {
         .name = "tvi_threshold",
         .help = "Visibility threshold: delta-L < tvi_threshold * L_mean",
+        .alias = "tvit",
         .offset = offsetof(CambiStateSycl, tvi_threshold),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val.d = CAMBI_SYCL_DEFAULT_TVI,
         .min = 0.0001,
         .max = 1.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "tvit",
     },
     {
         .name = "cambi_vis_lum_threshold",
         .help = "Luminance value below which banding is assumed invisible",
+        .alias = "vlt",
         .offset = offsetof(CambiStateSycl, cambi_vis_lum_threshold),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val.d = CAMBI_SYCL_DEFAULT_VLT,
         .min = 0.0,
         .max = 300.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "vlt",
     },
     {
         .name = "max_log_contrast",
         .help = "Maximum log contrast (0 to 5, default 2)",
+        .alias = "mlc",
         .offset = offsetof(CambiStateSycl, max_log_contrast),
         .type = VMAF_OPT_TYPE_INT,
         .default_val.i = CAMBI_SYCL_DEFAULT_MAX_LOG_CONTRAST,
         .min = 0,
         .max = 5,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "mlc",
     },
     {
         .name = "eotf",
         .help = "EOTF for visibility-threshold conversion (bt1886 / pq)",
+        .alias = NULL,
         .offset = offsetof(CambiStateSycl, eotf),
         .type = VMAF_OPT_TYPE_STRING,
         .default_val.s = CAMBI_SYCL_DEFAULT_EOTF,
+        .min = 0.0,
+        .max = 0.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {
         .name = "cambi_eotf",
         .help = "EOTF override for cambi (defaults to eotf)",
+        .alias = "ceot",
         .offset = offsetof(CambiStateSycl, cambi_eotf),
         .type = VMAF_OPT_TYPE_STRING,
         .default_val.s = CAMBI_SYCL_DEFAULT_EOTF,
+        .min = 0.0,
+        .max = 0.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-        .alias = "ceot",
+    },
+    {
+        .name = "cambi_high_res_speedup",
+        .help =
+            "Speed up the processing by downsampling post spatial mask for resolutions >= 1080p",
+        .alias = "hrs",
+        .offset = offsetof(CambiStateSycl, cambi_high_res_speedup),
+        .type = VMAF_OPT_TYPE_INT,
+        .default_val = {.i = 0},
+        .min = 0,
+        .max = CAMBI_4K_HEIGHT,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {0},
 };
@@ -570,6 +541,14 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     }
     s->sycl_state = fex->sycl_state;
 
+    /* Option dictionary serialization timing (ADR-1154):
+     * Must be called BEFORE internal dimension defaults (enc_width, enc_height)
+     * are assigned to options marked with VMAF_OPT_FLAG_FEATURE_PARAM. */
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict)
+        return -ENOMEM;
+
     /* Resolve enc geometry (mirrors cambi.c / integer_cambi_cuda.c). */
     if (s->enc_bitdepth == 0)
         s->enc_bitdepth = (int)bpc;
@@ -588,12 +567,32 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         return -EINVAL;
     }
 
+    const int enc_pix = s->enc_width * s->enc_height;
+    switch (s->cambi_high_res_speedup) {
+    case 1080:
+        if (enc_pix < CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1080p)
+            s->cambi_high_res_speedup = 0;
+        break;
+    case 1440:
+        if (enc_pix < CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1440p)
+            s->cambi_high_res_speedup = 0;
+        break;
+    case 2160:
+        if (enc_pix < CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_2160p)
+            s->cambi_high_res_speedup = 0;
+        break;
+    default:
+        s->cambi_high_res_speedup = 0;
+        break;
+    }
+
     s->src_width = w;
     s->src_height = h;
     s->src_bpc = bpc;
     s->proc_width = (unsigned)s->enc_width;
     s->proc_height = (unsigned)s->enc_height;
-    s->adjusted_window = cambi_sycl_adjust_window(s->window_size, s->proc_width, s->proc_height);
+    s->adjusted_window = cambi_sycl_adjust_window(s->window_size, s->proc_width, s->proc_height,
+                                                  (bool)s->cambi_high_res_speedup);
 
     const size_t buf_elements = (size_t)s->proc_width * s->proc_height;
     const size_t buf_bytes = buf_elements * sizeof(uint16_t);
@@ -649,7 +648,10 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
             goto free_ref;
         }
 
-        err = cambi_sycl_init_tvi(s);
+        err = vmaf_cambi_init_tvi_and_vlt(num_diffs, s->buffers.diffs_to_consider, s->tvi_threshold,
+                                          s->cambi_vis_lum_threshold, s->cambi_eotf, s->eotf,
+                                          s->buffers.tvi_for_diff, &s->vlt_luma,
+                                          &s->buffers.v_band_base, &s->buffers.v_band_size);
         if (err)
             goto free_ref;
 
@@ -663,8 +665,10 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         const uint16_t num_bins =
             (uint16_t)(1024u +
                        (unsigned)(s->buffers.all_diffs[2 * num_diffs] - s->buffers.all_diffs[0]));
+        const size_t hist_bins =
+            s->buffers.v_band_size > num_bins ? (size_t)s->buffers.v_band_size : (size_t)num_bins;
         s->buffers.c_values_histograms =
-            static_cast<uint16_t *>(malloc(sizeof(uint16_t) * s->proc_width * (size_t)num_bins));
+            static_cast<uint16_t *>(malloc(sizeof(uint16_t) * (size_t)s->proc_width * hist_bins));
         if (!s->buffers.c_values_histograms) {
             err = -ENOMEM;
             goto free_ref;
@@ -692,13 +696,6 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     vmaf_cambi_default_callbacks(&s->inc_range_callback, &s->dec_range_callback,
                                  &s->derivative_callback);
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        err = -ENOMEM;
-        goto free_ref;
-    }
 
     s->has_pending = false;
     return 0;
@@ -797,7 +794,7 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     uint16_t *cur_tmp = s->d_tmp;
 
     for (int scale = 0; scale < CAMBI_SYCL_NUM_SCALES; scale++) {
-        if (scale > 0) {
+        if (scale > 0 || s->cambi_high_res_speedup) {
             /* GPU decimate cur_image → cur_tmp.  Depends on prior event
              * (spatial_mask or previous scale's filter_mode V). */
             const unsigned new_w = (scaled_w + 1u) >> 1;
