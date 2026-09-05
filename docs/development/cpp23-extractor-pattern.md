@@ -75,11 +75,18 @@ foo_cpp23_lib = static_library(
     'foo_cpp23',
     src_dir + 'foo.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
-    override_options : ['cpp_std=c++23'],
     pic : true,
     install : false,
 )
 ```
+
+Do **not** add `override_options : ['cpp_std=...']`. The C++ standard is
+project-wide: `core/meson.build` probes the newest `-std=c++2x` the compiler's
+standard library actually supports (or `/std:c++latest` on MSVC) and injects
+it through `add_project_arguments` (ADR-1003 / ADR-1056). Meson emits that
+flag after any per-target `cpp_std=` option, so a per-target override never
+changed the effective standard; the redundant ones were removed under
+epic #1241 (see `core/AGENTS.md`, invariant 7).
 
 Remove the `.c` entry from `libvmaf_sources` and add a comment pointing to
 the new lib. Add `foo_cpp23_lib.extract_all_objects(recursive: true)` to the
