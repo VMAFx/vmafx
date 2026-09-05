@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/golusoris/golusoris/clikit"
 	"github.com/spf13/cobra"
@@ -21,6 +22,7 @@ import (
 	"github.com/VMAFx/vmafx/pkg/pershot"
 	"github.com/VMAFx/vmafx/pkg/predictor"
 	"github.com/VMAFx/vmafx/pkg/pyjson"
+	"github.com/VMAFx/vmafx/pkg/saliency"
 	"github.com/VMAFx/vmafx/pkg/scorecli"
 )
 
@@ -172,19 +174,10 @@ var errFallBackVerdict = errors.New("predictor validation verdict: fall_back")
 
 // runPredict is the implementation of the predict subcommand.
 func runPredict(ctx context.Context, d deps, flags *predictFlags) error {
-	// --use-saliency is not wired in this binary. predictor.ExtractorConfig
-	// gates the saliency pass on `cfg.UseSaliency && saliency != nil`, and no
-	// production caller ever supplies a predictor.SaliencyFunc -- it is
-	// referenced only by features.go itself and its own test. Passing the flag
-	// therefore left the saliency mean/variance features at 0.0 for every shot
-	// while the run reported success, which silently changes the feature vector
-	// the prediction is built from. Fail instead of pretending.
-	if flags.useSaliency {
-		return &exitCodeError{code: usageExitCode, err: errors.New(
-			"--use-saliency is not implemented in vmafx-tune-go: the saliency " +
-				"feature pass needs an ONNX forward pass, and no SaliencyFunc is " +
-				"wired into the Go feature extractor. Use " +
-				"'vmaf-tune predict --use-saliency'")}
+	if flags.saliencyModel != "" {
+		if _, err := os.Stat(flags.saliencyModel); err != nil {
+			return &exitCodeError{code: usageExitCode, err: fmt.Errorf("saliency model %q: %w", flags.saliencyModel, err)}
+		}
 	}
 
 	if flags.source == "" {
@@ -268,9 +261,14 @@ func runPredict(ctx context.Context, d deps, flags *predictFlags) error {
 		}
 	}()
 
+	var salFunc predictor.SaliencyFunc
+	if flags.useSaliency {
+		salFunc = newPredictSaliencyFunc(ctx, d)
+	}
+
 	extract := func(shot pershot.Shot) (predictor.ShotFeatures, error) {
 		return predictor.ExtractFeatures(ctx, shot, flags.source, flags.codec,
-			geometry, extractorCfg, runCommand, nil)
+			geometry, extractorCfg, runCommand, salFunc)
 	}
 	encodeAndScore := func(shot pershot.Shot, crf int, codec string) (string, float64, error) {
 		return realEncodeAndScore(ctx, d, flags, geometry, workdir, shot, crf, codec)
@@ -459,4 +457,60 @@ func realEncodeAndScore(
 		return distPath, math.NaN(), scoreErr
 	}
 	return distPath, scoreRes.VMAFScore, nil
+}
+
+// computeSaliencyMoments computes the population mean and variance of mask.
+// An empty slice returns (0.0, 0.0).
+func computeSaliencyMoments(mask []float64) (mean, variance float64) {
+	if len(mask) == 0 {
+		return 0.0, 0.0
+	}
+	var sum float64
+	for _, v := range mask {
+		sum += v
+	}
+	mean = sum / float64(len(mask))
+	var sumSq float64
+	for _, v := range mask {
+		diff := v - mean
+		sumSq += diff * diff
+	}
+	variance = sumSq / float64(len(mask))
+	return mean, variance
+}
+
+// newPredictSaliencyFunc constructs a SaliencyFunc for the predictor feature
+// extraction pipeline. If inference is unavailable or fails, it logs a warning
+// once and degrades to zero moments, matching the Python behavior.
+func newPredictSaliencyFunc(ctx context.Context, d deps) predictor.SaliencyFunc {
+	var warnOnce sync.Once
+	return func(rawYUVPath string, width, height, frameSamples int, modelPath string) (float64, float64, error) {
+		session, sessionErr := saliencySessionFactory(modelPath)
+		if sessionErr != nil {
+			warnOnce.Do(func() {
+				d.Log.WarnContext(ctx,
+					"saliency inference unavailable; degrading saliency moments to 0.0",
+					"reason", sessionErr.Error())
+			})
+			return 0.0, 0.0, nil
+		}
+		mask, mapErr := saliency.ComputeMap(rawYUVPath, width, height, session, saliency.MapOptions{
+			FrameSamples:       frameSamples,
+			TemporalAggregator: saliency.DefaultAggregator,
+			EMAAlpha:           saliency.DefaultEMAAlpha,
+		})
+		if mapErr != nil {
+			if errors.Is(mapErr, saliency.ErrUnavailable) {
+				warnOnce.Do(func() {
+					d.Log.WarnContext(ctx,
+						"saliency inference failed; degrading saliency moments to 0.0",
+						"error", mapErr)
+				})
+				return 0.0, 0.0, nil
+			}
+			return 0.0, 0.0, mapErr
+		}
+		mean, variance := computeSaliencyMoments(mask)
+		return mean, variance, nil
+	}
 }

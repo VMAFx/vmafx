@@ -76,6 +76,9 @@ func resolveSaliencyModel(modelPath string) (string, error) {
 	}
 }
 
+// saliencySessionFactory constructs a Session for modelPath. Replaced in tests.
+var saliencySessionFactory = newSaliencySession
+
 // newSaliencySession returns an inference session for the saliency model.
 //
 // It always reports ErrSaliencyInferenceUnavailable today — see that

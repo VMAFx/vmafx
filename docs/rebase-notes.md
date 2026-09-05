@@ -50,6 +50,16 @@ no rebase impact: changes GitHub Actions workflow job display names (`.github/wo
 ## fix/vmaftune-state-bugs — libx264 two-pass CRF conflict fix (2026-09-03)
 
 No rebase impact: all touched files (`pkg/codecadapter/`, `pkg/ffencode/`, `pkg/corpus/`, `tools/vmaf-tune/`) are fork-added Go and Python tuning tooling with no upstream Netflix/vmaf counterpart. No public C API, header, Meson option, or golden assertion is touched.
+## fix/vmafx-tune-go-gaps — resolve vmafx-tune Go parity gaps (#1272) (2026-09-04)
+
+- `cmd/vmafx-tune/cmd/predict.go`: wired saliency moments (`pkg/saliency.ComputeMap` and `computeSaliencyMoments`)
+  into `runPredict` via `newPredictSaliencyFunc`, replacing the `--use-saliency` usage error and allowing
+  `--use-saliency` to feed moments into `predictor.ExtractFeatures` and feature vectors (with graceful
+  degradation to 0.0 moments when inference is unavailable).
+- `cmd/vmafx-tune/main.go`, `cmd/vmafx-tune/cmd/root.go`, `cmd/vmafx-tune/cmd/compare.go`, `docs/usage/vmafx-tune-go.md`:
+  removed stale comments, docstrings, and dead `stubSubcommand` referencing the retired Python `vmaf-tune` binary.
+- Wholly fork-added: `cmd/vmafx-tune/`, `pkg/predictor/`, `pkg/saliency/`, `pkg/tune/` are all fork-local;
+  upstream Netflix/vmaf has no Go rate-quality tuning CLI. No upstream rebase conflict.
 ## feat/vmafx-cli-alias — vmafx CLI alias and --netflix-compat override (ADR-0690/0696) (2026-09-04)
 
 - `core/tools/cli_parse.cpp`, `core/tools/cli_parse.h`: detects `vmafx` mode via `detect_vmafx_mode(argv[0])`, setting modernized defaults (`precision_max = true`, `precision_fmt = "%.17g"`, startup banner `VMAFX version <V> (precision=max)`, and `vmafx --version` printing `VMAFX <V> (auto-backend, precision=max)`).

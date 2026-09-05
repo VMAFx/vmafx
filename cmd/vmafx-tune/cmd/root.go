@@ -2,47 +2,19 @@
 // SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 
 // Package cmd wires together the vmafx-tune-go subcommands via the golusoris
-// clikit (cobra + fx) framework (ADR-1119 Phase-1).
+// clikit (cobra + fx) framework (ADR-1119).
 //
 // The root is built with clikit.New, and each subcommand with clikit.Command.
-// Ported subcommands carry their domain RunE; the not-yet-ported stubs
-// redirect users to the Python vmaf-tune binary. Stubs run inside a golusoris
-// fx graph so their redirect notice is emitted through the injected structured
-// *slog.Logger rather than a bare fmt.Fprintf.
 package cmd
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"os"
 
 	"github.com/golusoris/golusoris/clikit"
-	"github.com/spf13/cobra"
 
 	"github.com/VMAFx/vmafx/pkg/report"
 )
-
-// stubSubcommand returns a clikit-built command that logs a "not yet ported"
-// notice through the injected golusoris logger and exits non-zero when invoked.
-func stubSubcommand(name, shortDesc string) *cobra.Command {
-	cmd := clikit.Command(name, shortDesc+" [not yet ported — use vmaf-tune "+name+"]",
-		clikit.WithRunE(withGolusoris(func(ctx context.Context, d deps, _ []string) error {
-			d.Log.WarnContext(ctx,
-				"subcommand not yet ported to vmafx-tune-go; use the Python vmaf-tune binary",
-				"subcommand", name,
-				"redirect", "vmaf-tune "+name)
-			return fmt.Errorf("subcommand %q not yet ported", name)
-		})),
-	)
-	cmd.Long = fmt.Sprintf(`%s is not yet ported to vmafx-tune-go.
-
-Use the Python vmaf-tune binary for this subcommand:
-  vmaf-tune %s [flags...]
-
-It will be ported in a future Stage-2 release.`, shortDesc, name)
-	return cmd
-}
 
 // newRoot builds the clikit root command with all subcommands attached. It is
 // factored out of Execute so tests can assemble the command tree without
@@ -51,9 +23,8 @@ func newRoot(version string) *clikit.Root {
 	root := clikit.New("vmafx-tune-go",
 		"vmafx-tune-go — Go port of the vmaf-tune rate-quality tuning CLI")
 	root.Cobra().Long = `vmafx-tune-go is the Go port of the vmaf-tune rate-quality tuning CLI.
-It runs alongside the Python vmaf-tune binary during the migration.
 
-Fully ported subcommands:
+Subcommands:
   compare              Rate-quality sweep: compare codecs at VMAF targets
   ladder               Per-title ABR bitrate-ladder generation
   report               Render Markdown / HTML from prior compare or ladder runs
