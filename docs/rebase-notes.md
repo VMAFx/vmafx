@@ -48703,3 +48703,13 @@ invariants are worth carrying forward anyway:
    looks like a build problem and is not. Link the directory in before running;
    never "fix" it by un-ignoring the YUVs — they are hundreds of MB and the
    4K pair is ~2.5 GB per file.
+
+### `core/tools/cli_parse.cpp`, `core/tools/cli_parse.h` — Netflix/vmaf#766 (ADR-1180)
+
+`core/tools/cli_parse.cpp` replaced raw `vmaf_cli_strsep` calls with
+`vmaf_cli_split`, an in-place escape-aware splitter supporting `\:`, `\=`,
+`\.`, and `\\`. Additionally, `parse_model_config` contains a Windows
+drive-letter affordance when parsing `path=` (`[A-Za-z]:\` or `[A-Za-z]:/`),
+preserving the drive letter and colon without requiring escaping.
+`core/tools/cli_parse.h` exposes `char *vmaf_cli_split(char **sp, char sep);`.
+On upstream syncs, do not revert `vmaf_cli_split` calls back to raw `strsep`.
