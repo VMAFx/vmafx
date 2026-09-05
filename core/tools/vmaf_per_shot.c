@@ -319,7 +319,7 @@ static int per_shot_parse_args(int argc, char **argv, struct vmaf_per_shot_setti
     /* getopt_long flagged concurrency-mt-unsafe by clang-tidy; same
      * baseline applies in libvmaf/tools/cli_parse.c — every C CLI
      * uses it, and the binary is single-threaded by construction. */
-    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    // NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0141 / ADR-0278: CLI single-threaded option parsing via getopt_long
     while ((c = getopt_long(argc, argv, "r:w:h:p:b:o:t:m:M:d:f:H", per_shot_long_opts, &idx)) !=
            -1) {
         if (c == 'H') {
