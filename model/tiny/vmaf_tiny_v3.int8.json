@@ -39,5 +39,6 @@
   ],
   "arch": "mlp_medium",
   "n_params": 769,
+  "onnx_has_scaler": true,
   "notes": "Dynamic-PTQ int8 sidecar of vmaf_tiny_v3. Directly addressable by ID vmaf_tiny_v3_int8. Measured PLCC drop=0.000120 vs fp32 baseline; within 0.01 budget. Produced via ai/scripts/ptq_dynamic.py (ADR-0275). See docs/ai/models/vmaf_tiny_v3.md."
 }
