@@ -4,9 +4,8 @@
 # Stock LLVM clang-tidy does not pick up Intel oneAPI's SYCL include path
 # the way `icpx` does, so direct invocations against SYCL TUs report
 # `'sycl/sycl.hpp' file not found` clang-diagnostic-errors. This wrapper
-# injects the SYCL include path + the device-only macro guard + a couple
-# of warning suppressions so the changed-file CI lint gate can cover
-# files under core/src/sycl/ and core/src/feature/sycl/.
+# injects the SYCL include path + warning suppressions so the changed-file
+# CI lint gate can cover files under core/src/sycl/ and core/src/feature/sycl/.
 #
 # Usage (mirrors clang-tidy):
 #   scripts/ci/clang-tidy-sycl.sh -p <build-sycl-dir> [other args] <file>
@@ -79,45 +78,23 @@ esac
 # ---------------------------------------------------------------------
 # Build the clang-tidy invocation.
 #
+# -extra-arg-before=-std=c++20        — pin the language standard. icpx
+#                                       uses C++20 for SYCL TUs in this repo.
+#                                       Stock clang-tidy without a -std flag
+#                                       falls back to C++11 defaults if not
+#                                       present in compile_commands.json.
 # -extra-arg-before=-isystem<dir>     — make <sycl/sycl.hpp> resolvable.
-# -extra-arg-before=-D__SYCL_DEVICE_ONLY__=0
-#                                     — skip device-only branches that
-#                                       require the icpx device compiler
-#                                       to lower correctly.
 # -extra-arg-before=-Wno-unknown-warning-option
-#                                     — suppress kernel-image-related
-#                                       warnings shipped by stock clang
-#                                       that map to icpx-only flags.
+#                                     — suppress warnings for flags not
+#                                       supported by clang.
 # -extra-arg-before=-Wno-unknown-pragmas
 #                                     — same rationale for icpx pragmas
 #                                       (`#pragma clang fp ...` etc).
-# -extra-arg=-std=c++17               — pin the language standard. icpx
-#                                       defaults to C++17 when invoked
-#                                       directly, but the
-#                                       compile_commands.json entry that
-#                                       meson writes for picture_sycl.cpp
-#                                       does NOT contain a `-std=` flag
-#                                       (icpx applies the default
-#                                       implicitly). Stock clang-tidy
-#                                       therefore parses with the C++11
-#                                       default, which blows up on SYCL
-#                                       headers that require
-#                                       `std::enable_if_t` and trip the
-#                                       `static_assert(__cplusplus >=
-#                                       201703L)` guard. `-extra-arg`
-#                                       (appended) is used here rather
-#                                       than `-extra-arg-before` because
-#                                       clang takes the LAST `-std=` it
-#                                       sees on the command line —
-#                                       appending guarantees ours wins
-#                                       over anything compile_commands
-#                                       might inject.
 # ---------------------------------------------------------------------
 exec "$CLANG_TIDY_BIN" \
+  "-extra-arg-before=-std=c++20" \
   "-extra-arg-before=-isystem$SYCL_INCLUDE_BASE" \
   "-extra-arg-before=-isystem$SYCL_INCLUDE_BASE/sycl" \
-  "-extra-arg-before=-D__SYCL_DEVICE_ONLY__=0" \
   "-extra-arg-before=-Wno-unknown-warning-option" \
   "-extra-arg-before=-Wno-unknown-pragmas" \
-  "-extra-arg=-std=c++17" \
   "$@"

@@ -86,7 +86,8 @@ struct DwtModelParams {
     float g[4];
 };
 
-static const DwtModelParams dwt_model_Y = {0.495f, 0.466f, 0.401f, {1.501f, 1.0f, 0.534f, 1.0f}};
+static const DwtModelParams dwt_model_Y = {
+    .a = 0.495f, .k = 0.466f, .f0 = 0.401f, .g = {1.501f, 1.0f, 0.534f, 1.0f}};
 
 // Basis function amplitudes (Watson 1997, Table V, transposed)
 static const float dwt_basis_amp[6][4] = {
@@ -189,9 +190,9 @@ static const VmafOption options[] = {{
                                      },
                                      {
                                          .name = "adm_csf_scale",
-                                         .alias = "cs",
                                          .help = "CSF band-scale multiplier for h/v bands "
                                                  "(default 1.0 = no scaling)",
+                                         .alias = "cs",
                                          .offset = offsetof(AdmStateSycl, adm_csf_scale),
                                          .type = VMAF_OPT_TYPE_DOUBLE,
                                          .default_val = {.d = DEFAULT_ADM_CSF_SCALE},
@@ -201,9 +202,9 @@ static const VmafOption options[] = {{
                                      },
                                      {
                                          .name = "adm_csf_diag_scale",
-                                         .alias = "cds",
                                          .help = "CSF band-scale multiplier for diagonal bands "
                                                  "(default 1.0 = no scaling)",
+                                         .alias = "cds",
                                          .offset = offsetof(AdmStateSycl, adm_csf_diag_scale),
                                          .type = VMAF_OPT_TYPE_DOUBLE,
                                          .default_val = {.d = DEFAULT_ADM_CSF_DIAG_SCALE},
@@ -213,9 +214,9 @@ static const VmafOption options[] = {{
                                      },
                                      {
                                          .name = "adm_noise_weight",
-                                         .alias = "nw",
                                          .help = "noise floor weight for CM numerator "
                                                  "(default 0.03125 = 1/32)",
+                                         .alias = "nw",
                                          .offset = offsetof(AdmStateSycl, adm_noise_weight),
                                          .type = VMAF_OPT_TYPE_DOUBLE,
                                          .default_val = {.d = DEFAULT_ADM_NOISE_WEIGHT},
@@ -225,9 +226,9 @@ static const VmafOption options[] = {{
                                      },
                                      {
                                          .name = "adm_min_val",
-                                         .alias = "min",
                                          .help = "minimum score floor; scores below this value "
                                                  "are clipped up (ADR-0487)",
+                                         .alias = "min",
                                          .offset = offsetof(AdmStateSycl, adm_min_val),
                                          .type = VMAF_OPT_TYPE_DOUBLE,
                                          .default_val = {.d = DEFAULT_ADM_MIN_VAL},
@@ -237,16 +238,16 @@ static const VmafOption options[] = {{
                                      },
                                      {
                                          .name = "adm_skip_scale0",
-                                         .alias = "ss0",
                                          .help = "skip scale-0 contribution: exclude scale-0 "
                                                  "num/den from overall ADM score and emit 0.0 "
                                                  "for integer_adm_scale0 (parity with CPU)",
+                                         .alias = "ss0",
                                          .offset = offsetof(AdmStateSycl, adm_skip_scale0),
                                          .type = VMAF_OPT_TYPE_BOOL,
                                          .default_val = {.b = false},
                                          .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
                                      },
-                                     {nullptr}};
+                                     {.name = nullptr}};
 
 /* ------------------------------------------------------------------ */
 /* Helper: DWT quantization step (visibility threshold model)         */
@@ -929,10 +930,8 @@ static sycl::event launch_csf_den_cm_3band(
 
                 const int32_t *const cf_ptrs[3] = {csf_f_h, csf_f_v, csf_f_d};
                 // All 3 ref/dis band pointers for inline decouple
-                // NOLINTNEXTLINE(misc-const-correctness): SYCL kernel-local — variable is mutated via atomic_ref / sub-group reduction the analyzer cannot trace.
-                const int32_t const const *ref_ptrs[3] = {ref_band_h, ref_band_v, ref_band_d};
-                // NOLINTNEXTLINE(misc-const-correctness): SYCL kernel-local — variable is mutated via atomic_ref / sub-group reduction the analyzer cannot trace.
-                const int32_t const const *dis_ptrs[3] = {dis_band_h, dis_band_v, dis_band_d};
+                const int32_t *const ref_ptrs[3] = {ref_band_h, ref_band_v, ref_band_d};
+                const int32_t *const dis_ptrs[3] = {dis_band_h, dis_band_v, dis_band_d};
                 uint32_t const irf_all[3] = {i_rfactor_h, i_rfactor_v, i_rfactor_d};
 
                 // Per-thread accumulators for both reductions
@@ -1360,8 +1359,8 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         s->d_dis_band[i] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, band_size));
     }
 
-    for (int i = 0; i < 3; i++) {
-        s->d_csf_f[i] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, band_size));
+    for (auto &csf_buf : s->d_csf_f) {
+        csf_buf = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, band_size));
     }
 
     // Division LUT: 65537 entries
@@ -1384,8 +1383,8 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         if (!s->d_ref_band[i] || !s->d_dis_band[i])
             band_ok = false;
     }
-    for (int i = 0; i < 3; i++) {
-        if (!s->d_csf_f[i])
+    for (const auto *csf_buf : s->d_csf_f) {
+        if (!csf_buf)
             band_ok = false;
     }
     if (!s->d_dwt_tmp_ref || !s->d_dwt_tmp_dis || !band_ok || !s->d_div_lookup || !s->d_cm_accum ||
@@ -1449,18 +1448,19 @@ static void enqueue_adm_work_impl(sycl::queue &q, AdmStateSycl *s, void *shared_
         unsigned v_shift, v_add, h_shift, h_add;
     };
     DwtShifts dwt_shifts[4];
-    dwt_shifts[0] = {s->bpc, 1u << (s->bpc - 1), 16u, 32768u};
-    dwt_shifts[1] = {0u, 0u, 15u, 16384u};
-    dwt_shifts[2] = {16u, 32768u, 16u, 32768u};
-    dwt_shifts[3] = {16u, 32768u, 15u, 16384u};
+    dwt_shifts[0] = {
+        .v_shift = s->bpc, .v_add = 1u << (s->bpc - 1), .h_shift = 16u, .h_add = 32768u};
+    dwt_shifts[1] = {.v_shift = 0u, .v_add = 0u, .h_shift = 15u, .h_add = 16384u};
+    dwt_shifts[2] = {.v_shift = 16u, .v_add = 32768u, .h_shift = 16u, .h_add = 32768u};
+    dwt_shifts[3] = {.v_shift = 16u, .v_add = 32768u, .h_shift = 15u, .h_add = 16384u};
 
     unsigned cur_w = s->width;
     unsigned cur_h = s->height;
-    unsigned cur_stride = s->buf_stride;
+    unsigned const cur_stride = s->buf_stride;
 
     for (int scale = 0; scale < ADM_NUM_SCALES; scale++) {
-        unsigned half_w = (cur_w + 1) / 2;
-        unsigned half_h = (cur_h + 1) / 2;
+        unsigned const half_w = (cur_w + 1) / 2;
+        unsigned const half_h = (cur_h + 1) / 2;
 
         // Input source: scale 0 reads from shared frame, others from LL band
         const void *ref_src = (scale == 0) ? shared_ref : (const void *)s->d_ref_band[0];
@@ -1523,7 +1523,7 @@ static void adm_pre_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<AdmStateSycl *>(priv);
-    size_t adm_accum_size = (ptrdiff_t)ADM_NUM_SCALES * ADM_NUM_BANDS * sizeof(int64_t);
+    size_t const adm_accum_size = (ptrdiff_t)ADM_NUM_SCALES * ADM_NUM_BANDS * sizeof(int64_t);
     q.memset(s->d_cm_accum, 0, adm_accum_size);
     q.memset(s->d_csf_den_accum, 0, adm_accum_size);
 }
@@ -1541,7 +1541,7 @@ static void adm_post_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<AdmStateSycl *>(priv);
-    size_t accum_size = (ptrdiff_t)ADM_NUM_SCALES * ADM_NUM_BANDS * sizeof(int64_t);
+    size_t const accum_size = (ptrdiff_t)ADM_NUM_SCALES * ADM_NUM_BANDS * sizeof(int64_t);
     q.memcpy(s->h_cm_accum, s->d_cm_accum, accum_size);
     q.memcpy(s->h_csf_den_accum, s->d_csf_den_accum, accum_size);
 }
@@ -1700,7 +1700,7 @@ static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
         return -EINVAL;
     VmafSyclState *state = fex->sycl_state;
     if (state) {
-        int wait_err = vmaf_sycl_queue_wait(state);
+        int const wait_err = vmaf_sycl_queue_wait(state);
         if (wait_err)
             return wait_err;
     }
@@ -1733,9 +1733,9 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
             if (s->d_dis_band[i])
                 vmaf_sycl_free(state, s->d_dis_band[i]);
         }
-        for (int i = 0; i < 3; i++) {
-            if (s->d_csf_f[i])
-                vmaf_sycl_free(state, s->d_csf_f[i]);
+        for (auto *csf_buf : s->d_csf_f) {
+            if (csf_buf)
+                vmaf_sycl_free(state, csf_buf);
         }
 
         if (s->d_div_lookup)
