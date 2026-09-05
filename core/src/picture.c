@@ -206,7 +206,7 @@ int vmaf_picture_alloc(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned 
     /* The callback userdata slot stores pic_size inline as a tagged value,
      * never dereferenced — standard uintptr_t idiom. pic->priv is guaranteed
      * non-NULL here because vmaf_picture_priv_init succeeded above. */
-    // NOLINTNEXTLINE(performance-no-int-to-ptr)
+    // NOLINTNEXTLINE(performance-no-int-to-ptr) — ADR-0141 / ADR-0278: uintptr_t payload in pool release callback
     err = vmaf_picture_set_release_callback(pic, (void *)(uintptr_t)pic_size, pool_release_picture);
     if (err)
         goto free_priv;

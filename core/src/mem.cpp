@@ -66,6 +66,6 @@ void aligned_free(void *ptr)
 #if defined(_MSC_VER) || defined(__MINGW32__)
     _aligned_free(ptr);
 #else
-    free(ptr); // NOLINT(cppcoreguidelines-no-malloc) — C ABI allocator pair
+    free(ptr); // NOLINT(cppcoreguidelines-no-malloc) — C ABI allocator pair (ADR-0141 / ADR-0278)
 #endif
 }

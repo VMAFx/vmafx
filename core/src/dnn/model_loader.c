@@ -411,7 +411,8 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
     assert(sz <= DNN_SIDECAR_JSON_MAX);
     /* buf was allocated as sz + 1u bytes (line ~115), so buf[sz] is valid. The
      * analyzer loses this relationship across the fread path. */
-    buf[sz] = '\0'; // NOLINT(clang-analyzer-security.ArrayBound)
+    // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) — ADR-0141: buf is sz + 1u bytes
+    buf[sz] = '\0';
 
     char *kind_str = extract_string(buf, "kind");
     if (kind_str) {

@@ -153,7 +153,7 @@ void vmaf_log(enum VmafLogLevel level, const char *fmt, ...)
      * and auditable (Power of 10 #5; adversarial review 2026-05-28 finding #7). */
     assert(level_str[idx].data()[level_str[idx].size()] == '\0');
     assert(level_str_color[idx].data()[level_str_color[idx].size()] == '\0');
-    /* NOLINT justification (bugprone-suspicious-stringview-data-usage): the
+    /* Suppression justification (bugprone-suspicious-stringview-data-usage): the
      * two asserts above prove the .data() pointer is NUL-terminated. The
      * string_views are constructed from string literals; their backing storage
      * always ends in '\0'. Required for printf-family %s pass-through which is
@@ -161,9 +161,11 @@ void vmaf_log(enum VmafLogLevel level, const char *fmt, ...)
      * output). */
     (void)fprintf(
         stderr, "%slibvmaf%s %s%s%s ", istty ? "\x1B[35m" : "", istty ? "\x1B[0m" : "",
+        /* ADR-0141 §2 / ADR-0708: the asserts above prove NUL-termination. */
         istty ? level_str_color[idx].data() // NOLINT(bugprone-suspicious-stringview-data-usage)
                 :
                 "",
+        /* ADR-0141 §2 / ADR-0708: NUL-termination proven above. */
         level_str[idx].data(), // NOLINT(bugprone-suspicious-stringview-data-usage)
         istty ? "\x1B[0m" : "");
 

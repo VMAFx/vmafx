@@ -693,7 +693,7 @@ static int model_collection_read_one(json_stream *s, VmafModel **model,
     /* When i==0, ownership of m is transferred to *model below; when
      * i>=1, ownership is transferred to *model_collection via append.
      * The analyzer loses track of this cross-parameter ownership. */
-    // NOLINTBEGIN(clang-analyzer-unix.Malloc)
+    // NOLINTBEGIN(clang-analyzer-unix.Malloc) — ADR-0141 / ADR-0278: cross-parameter ownership transfer
     VmafModel *m;
     int err = vmaf_read_json_model(&m, c, s);
     if (err)
