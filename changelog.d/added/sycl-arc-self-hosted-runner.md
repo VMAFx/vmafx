@@ -20,6 +20,12 @@ for Intel Arc A380 SYCL kernel verification on real discrete GPU silicon.
 - **Aggregator Integration**: `.github/workflows/required-aggregator.yml` requires `SYCL Parity (Arc A380)`
   while `SYCL_ARC_RUNNER_ENABLED=true` (a skip = loud failure: runner unregistered, offline, or probe
   token rejected) and accepts absence/skip while the lane is disabled.
-- **Operator Runbook**: `docs/development/ci-self-hosted-sycl.md` — repository settings (`gh api` calls), image build, isolation proof, register/serve loop, pause order, rotation/removal.
+- **Host Supervisor & User Service**: Added `dev/scripts/runner-supervisor.sh` and
+  `dev/systemd/vmafx-sycl-arc-runner.service` (`systemd --user` unit) to automate
+  ephemeral runner re-registration between CI jobs, blocking via `docker wait`, clean
+  SIGTERM teardown, exponential backoff on token/docker failures, and daily-driver pause
+  support. Validated with hermetic unit tests in `scripts/ci/tests/test-runner-supervisor.sh`
+  wired into `.github/workflows/rule-enforcement.yml`.
+- **Operator Runbook**: `docs/development/ci-self-hosted-sycl.md` — repository settings (`gh api` calls), image build, isolation proof, supervisor / systemd setup, daily-driver pause flow, re-registration verification, and rotation/removal.
 
 References: ADR-1177, ADR-0214, ADR-0220, ADR-0234, ADR-0541.

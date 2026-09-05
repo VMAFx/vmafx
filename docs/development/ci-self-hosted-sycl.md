@@ -19,8 +19,12 @@ ssimulacra2 blur change (#865) merged unnoticed (`docs/state.md` row
 
 ## 1. Architecture and security model
 
-The runner is a Docker container, never a host service or systemd unit. The
-workstation is a daily driver with three GPUs; the container sees one.
+The runner execution environment is always an isolated Docker container, never
+running arbitrary CI jobs directly on the host. Lifecycle management (waiting for
+job completion, minting registration tokens, starting fresh containers) is handled
+by the host supervisor loop, which runs either as a user script or as a
+`systemd --user` service unit. The workstation is a daily driver with three GPUs;
+the container sees one.
 
 | Property | Value | Where |
 | --- | --- | --- |
@@ -106,6 +110,9 @@ gh api -X PUT repos/VMAFx/vmafx/actions/permissions/fork-pr-contributor-approval
 
 # Probe token: fine-grained PAT, resource owner VMAFx, repository access
 # "Only select repositories" -> VMAFx/vmafx, permission Administration: Read-only.
+# Note: during initial lane bootstrap, SYCL_RUNNER_PROBE_TOKEN was seeded with
+# the maintainer's personal `gh` OAuth token. It should be rotated to a dedicated
+# fine-grained PAT with Administration: Read-only scoped strictly to VMAFx/vmafx.
 # Create it at https://github.com/settings/personal-access-tokens/new, then:
 gh secret set SYCL_RUNNER_PROBE_TOKEN -R VMAFx/vmafx   # paste the token
 
@@ -156,42 +163,142 @@ No NVIDIA and no AMD GPU line may appear (the `opencl:cpu` entry is the
 host CPU via the Intel OpenCL CPU runtime, not a GPU). Smoke the runner
 binary without registering: `docker run --rm vmaf-sycl-arc-runner:local ./run.sh --help`.
 
-### Step 3 — register and serve
+### Step 3 — supervise and serve (systemd --user or background script)
+
+The runner runs in `--ephemeral` mode: it handles exactly one job and terminates.
+To keep the runner continuously online and automatically re-register between CI jobs,
+the host supervisor script [`dev/scripts/runner-supervisor.sh`](../../dev/scripts/runner-supervisor.sh)
+manages the lifecycle:
+
+1. Waits for any active job to finish (`docker wait`) and removes the container (`docker compose down`).
+2. Mints a fresh registration token via `gh api`.
+3. Resolves the active Arc render node via `dev/scripts/arc-render-node.sh`.
+4. Starts the ephemeral container via `docker compose up -d`.
+5. Applies exponential backoff on token or compose failures.
+6. Respects the pause file to prevent container launches when the workstation is paused.
+
+#### Option A: systemd --user service (recommended)
+
+Install the provided user unit [`dev/systemd/vmafx-sycl-arc-runner.service`](../../dev/systemd/vmafx-sycl-arc-runner.service):
 
 ```bash
-export RUNNER_TOKEN="$(gh api -X POST repos/VMAFx/vmafx/actions/runners/registration-token --jq .token)"  # valid 1 h
-docker compose -f dev/docker-compose.runner.yml up -d
-docker compose -f dev/docker-compose.runner.yml logs -f      # "Listening for Jobs"
+mkdir -p ~/.config/systemd/user
+cp dev/systemd/vmafx-sycl-arc-runner.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now vmafx-sycl-arc-runner.service
+```
 
-gh api repos/VMAFx/vmafx/actions/runners --jq '.runners[] | {name,status,labels:[.labels[].name]}'
-# -> {"name":"cachyos-arc-a380-ephemeral","status":"online","labels":["self-hosted","linux","x64","sycl-arc"]}
+To allow the supervisor loop to continue running when you log out of desktop or SSH sessions,
+enable lingering:
 
+```bash
+loginctl enable-linger "$USER"
+```
+
+Monitor status and logs:
+
+```bash
+systemctl --user status vmafx-sycl-arc-runner.service
+journalctl --user -u vmafx-sycl-arc-runner.service -f
+# or directly inspect the supervisor log:
+tail -f "${XDG_STATE_HOME:-$HOME/.local/state}/vmafx-runner/supervisor.log"
+```
+
+#### Option B: foreground or tmux script
+
+Alternatively, run the supervisor directly in an active shell session:
+
+```bash
+dev/scripts/runner-supervisor.sh
+```
+
+#### Token source & headless host configuration
+
+By default, `runner-supervisor.sh` uses `gh` on the host, running under the maintainer's
+authenticated CLI user to mint registration tokens (`gh api -X POST repos/VMAFx/vmafx/actions/runners/registration-token`).
+
+For an unattended or headless server where interactive `gh auth login` is unavailable,
+set up an environment file with a fine-grained PAT with *Administration: read-write* permissions
+scoped to `VMAFx/vmafx`:
+
+```bash
+mkdir -p ~/.config/vmafx-runner
+echo "GH_TOKEN=github_pat_..." > ~/.config/vmafx-runner/env
+chmod 0600 ~/.config/vmafx-runner/env
+```
+
+Then un-comment `EnvironmentFile=-%h/.config/vmafx-runner/env` in `~/.config/systemd/user/vmafx-sycl-arc-runner.service`.
+
+#### Enable the CI lane
+
+Once the runner is running and confirmed online, enable the lane variable in GitHub:
+
+```bash
 gh variable set SYCL_ARC_RUNNER_ENABLED -b true -R VMAFx/vmafx   # enable the lane LAST
 ```
 
-The container serves exactly one job and exits; the runner disappears from
-the list when it does. To keep serving during a review session, loop on the
-host (each iteration fetches a fresh registration token):
+### Step 4 — verify registration and post-job re-registration
+
+Check that the runner is registered and online:
 
 ```bash
-while :; do
-  RUNNER_TOKEN="$(gh api -X POST repos/VMAFx/vmafx/actions/runners/registration-token --jq .token)" \
-  ARC_RENDER_NODE="$(dev/scripts/arc-render-node.sh)" \
-  docker compose -f dev/docker-compose.runner.yml up --abort-on-container-exit --exit-code-from sycl-arc-runner || break
-done
+gh api repos/VMAFx/vmafx/actions/runners --jq '.runners[] | {name,status,labels:[.labels[].name]}'
+# -> {"name":"cachyos-arc-a380-ephemeral","status":"online","labels":["self-hosted","linux","x64","sycl-arc"]}
+
+docker ps --filter "name=vmaf-sycl-arc-runner"
 ```
 
-### Step 4 — pause (the workstation is a daily driver)
+**Verify re-registration after a job**:
+When a CI job finishes, the ephemeral container exits and unregisters itself.
+The supervisor detects container termination via `docker wait`, removes the container,
+mints a fresh token, and brings up a new container within seconds. Check the supervisor log:
 
 ```bash
-gh variable set SYCL_ARC_RUNNER_ENABLED -b false -R VMAFx/vmafx   # lane off: PRs skip the job, aggregator accepts
-docker compose -f dev/docker-compose.runner.yml down                # stops the listener; ephemeral runner unregisters itself
+tail -n 20 "${XDG_STATE_HOME:-$HOME/.local/state}/vmafx-runner/supervisor.log"
 ```
 
-Order matters: disable the variable *before* stopping the container, or the
-next PR fails loudly at the probe. Re-enable in the reverse order.
+Expected log sequence across a completed job:
 
-### Step 5 — rotate / remove
+```text
+[HH:MM:SS] runner container 'vmaf-sycl-arc-runner' alive; waiting for job completion
+[HH:MM:SS] job finished; container removed
+[HH:MM:SS] runner re-registered (node /dev/dri/renderD129); listening for jobs
+```
+
+### Step 5 — pause for daily-driver use
+
+When using the workstation for gaming or other interactive workloads, pause the runner so it
+does not contend for the Arc GPU or CPU resources:
+
+```bash
+# 1. Disable the lane variable first so incoming PRs skip cleanly without failing the probe:
+gh variable set SYCL_ARC_RUNNER_ENABLED -b false -R VMAFx/vmafx
+
+# 2. Touch the pause file (stops the supervisor from spawning any new containers):
+mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/vmafx-runner"
+touch "${XDG_STATE_HOME:-$HOME/.local/state}/vmafx-runner/pause"
+
+# 3. Stop the active runner container:
+docker compose -f dev/docker-compose.runner.yml down
+```
+
+Order matters: disable `SYCL_ARC_RUNNER_ENABLED` *before* stopping the container,
+or concurrent PRs will encounter a loud probe failure.
+
+To resume runner service:
+
+```bash
+# 1. Remove the pause file (supervisor will detect this and launch a container within 60 s):
+rm -f "${XDG_STATE_HOME:-$HOME/.local/state}/vmafx-runner/pause"
+
+# 2. Verify runner is online (Step 4):
+gh api repos/VMAFx/vmafx/actions/runners --jq '.runners[] | select(.status=="online") | .name'
+
+# 3. Re-enable the lane:
+gh variable set SYCL_ARC_RUNNER_ENABLED -b true -R VMAFx/vmafx
+```
+
+### Step 6 — rotate / remove
 
 ```bash
 # Registration tokens expire after 1 h and are single-use with --ephemeral; nothing to rotate.
@@ -210,10 +317,10 @@ docker compose -f dev/docker-compose.runner.yml down -v            # also drops 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | Probe: `GET repos/.../actions/runners failed (... 403 ...)` | `SYCL_RUNNER_PROBE_TOKEN` missing or lacks Administration: read | Step 0 |
-| Probe: `no self-hosted runner with label 'sycl-arc' is registered` while enabled | container not running (ephemeral runner already consumed) | Step 3 loop, or pause (Step 4) |
+| Probe: `no self-hosted runner with label 'sycl-arc' is registered` while enabled | container not running (supervisor paused, stopped, or waiting on token) | Step 3 supervisor setup, or resume (Step 5) |
 | `sycl-ls` shows no `level_zero:gpu` inside the container | wrong node (PCI re-enumeration), missing `seccomp=unconfined`, or a NEO/kernel ABI mismatch | Step 2; [ADR-0541](../adr/0541-dev-container-sycl-hip-runtime-fix.md) |
 | `config.sh` / checkout: `Permission denied` under `/actions-runner/_work` | scratch volume created by an older image with a root-owned mount point | `docker compose ... down -v`, rebuild (Step 1) |
-| job queued forever | a runner was registered without `x64` or `sycl-arc` | Step 5 remove, re-register |
+| job queued forever | a runner was registered without `x64` or `sycl-arc` | Step 6 remove, re-register |
 
 ---
 
@@ -223,9 +330,13 @@ docker compose -f dev/docker-compose.runner.yml down -v            # also drops 
 | --- | --- |
 | `dev/Containerfile.runner` | image: `vmaf-dev-mcp:local` + pinned runner tarball, non-root user, `_work` ownership |
 | `dev/docker-compose.runner.yml` | device passthrough, limits, volume, env; `ARC_RENDER_NODE` override |
+| `dev/scripts/runner-supervisor.sh` | host supervisor loop (job wait, fresh token mint, compose up, backoff, pause file) |
+| `dev/systemd/vmafx-sycl-arc-runner.service` | `systemd --user` service unit managing `runner-supervisor.sh` |
 | `dev/scripts/runner-entrypoint.sh` | `config.sh --ephemeral --unattended` then `run.sh`; any other argv is exec'd (smoke tests) |
 | `dev/scripts/arc-render-node.sh` | resolves the single Intel render node from `/sys/class/drm` |
 | `scripts/ci/check-runner-available.sh` | hosted probe; tests in `scripts/ci/tests/test-runner-available.sh` |
+| `scripts/ci/tests/test-runner-available.sh` | unit suite for `check-runner-available.sh` |
+| `scripts/ci/tests/test-runner-supervisor.sh` | unit suite for `runner-supervisor.sh` with stubbed `gh` and `docker` |
 | `.github/workflows/sycl-parity.yml` | the two jobs |
 | `.github/actionlint.yaml` | declares the `sycl-arc` / `gpu-full` labels for actionlint |
 
