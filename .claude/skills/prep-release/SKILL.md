@@ -21,6 +21,9 @@ description: Dry-run release-please locally, preview the CHANGELOG diff, verify 
    - Every signing/publishing job that needs OIDC has job-scoped
      `id-token: write` in `supply-chain.yml` and the two Docker publication
      workflows.
+   - `bash scripts/release/check-release-bot-secrets.sh` — the two release-bot
+     secret names exist (ADR-1151 / ADR-1171); NO-GO if it exits non-zero, the
+     master workflow stays idle-green without them and will not say so.
 2. Run `release-please release-pr --dry-run --repo-url=<fork>` (via the
    release-please CLI or a scripted equivalent) from an origin-faithful clone.
    This repository fetches Netflix upstream tags into the shared local tag

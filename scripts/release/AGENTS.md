@@ -173,3 +173,14 @@ metadata. Do not replace the runtime check with a filename-only assertion.
 
 Test coverage:
 `scripts/release/tests/test-verify-native-release-artifacts.sh`.
+
+## check-release-bot-secrets.sh (ADR-1171)
+
+Preflight for the release-bot identity: `gh secret list` must show both
+`RELEASE_BOT_APP_ID` and `RELEASE_BOT_PRIVATE_KEY`; exit 1 when a name is
+missing, 2 when `gh` cannot list. Invariant: `release-please.yml` stays
+idle-green on `push` without the secrets (warning, every write step skipped),
+so this script is the only loud local signal that a release cannot be cut —
+`/prep-release` step 1 runs it and treats non-zero as NO-GO. Never add a
+`GITHUB_TOKEN` fallback to the workflow to "fix" the idle run. Test coverage:
+`scripts/release/tests/test-check-release-bot-secrets.sh` (stubbed `gh`).
