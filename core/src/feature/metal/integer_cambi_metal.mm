@@ -29,8 +29,9 @@
  *       the Shared-storage MTLBuffer's [contents]).
  *    3. Scale 0: GPU cambi_mask_kernel over d_image -> d_mask.
  *    4. For scale = 0 .. NUM_SCALES-1:
- *         a. (scale > 0) GPU cambi_decimate_kernel on d_image -> d_tmp,
- *            swap; same for d_mask.
+ *         a. (scale > 0, or any scale when cambi_high_res_speedup is active
+ *            for this resolution) GPU cambi_decimate_kernel on d_image ->
+ *            d_tmp, swap; same for d_mask. Mirrors cambi.c::cambi_score.
  *         b. GPU cambi_filter_mode_kernel H: d_image -> d_tmp.
  *         c. GPU cambi_filter_mode_kernel V: d_tmp   -> d_image.
  *         d. Buffer->pic copy: d_image -> pics[0], d_mask -> pics[1].
@@ -49,7 +50,6 @@
  *  Out of scope for v1 (matches the CUDA twin's v1 scope, ADR-0360):
  *    - full_ref / FR-CAMBI mode (no GPU twin for the source pyramid).
  *    - heatmap dump via heatmaps_path.
- *    - high_res_speedup.
  *    - EOTF variants other than bt1886 (host TVI table is already correct).
  *
  *  Feature name: cambi (provided feature "Cambi_feature_cambi_score").
@@ -99,6 +99,10 @@ extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__
 #define CAMBI_METAL_DEFAULT_VLT       0.0
 #define CAMBI_METAL_DEFAULT_MAX_LOG_CONTRAST 2
 #define CAMBI_METAL_DEFAULT_EOTF      "bt1886"
+#define CAMBI_METAL_DEFAULT_HIGH_RES_SPEEDUP 0
+/* The >= 1080p / 1440p / 2160p pixel-count thresholds are the shared
+ * CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_* macros from ../cambi_internal.h; do not
+ * re-declare them here — a local copy is exactly how the twins drift. */
 #define CAMBI_METAL_BLOCK_X           16u
 #define CAMBI_METAL_BLOCK_Y           16u
 
@@ -141,6 +145,8 @@ typedef struct IntegerCambiStateMetal {
     double cambi_vis_lum_threshold;
     char  *eotf;
     char  *cambi_eotf;
+    int    cambi_high_res_speedup;
+    bool   high_res_speedup;
 
     /* Resolved per-frame geometry. */
     unsigned src_bpc;
@@ -156,8 +162,7 @@ typedef struct IntegerCambiStateMetal {
     VmafDictionary *feature_name_dict;
 } IntegerCambiStateMetal;
 
-/* --- Options (EXACT subset mirror of integer_cambi_cuda.c / cambi.c
- *     v1 GPU scope: full_ref / heatmaps / high_res_speedup excluded). --- */
+/* --- Options (mirrors integer_cambi_cuda.c / cambi.c: full_ref / heatmaps excluded). --- */
 static const VmafOption options[] = {
     {
         .name        = "cambi_max_val",
@@ -285,16 +290,32 @@ static const VmafOption options[] = {
         .flags       = VMAF_OPT_FLAG_FEATURE_PARAM,
         .alias       = "ceot",
     },
+    {
+        .name        = "cambi_high_res_speedup",
+        .help        = "Speed up the processing by downsampling post spatial mask for resolutions >= 1080p. "
+                       "Min speed-up resolution possible values: [1080, 1440, 2160, 0]. Default: 0 (not applied)",
+        .offset      = offsetof(IntegerCambiStateMetal, cambi_high_res_speedup),
+        .type        = VMAF_OPT_TYPE_INT,
+        .default_val = {.i = CAMBI_METAL_DEFAULT_HIGH_RES_SPEEDUP},
+        .min         = 0,
+        .max         = 2160,
+        .flags       = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .alias       = "hrs",
+    },
     {0},
 };
 
 /* ------------------------------------------------------------------ */
 /* Helpers (mirror integer_cambi_cuda.c — same integer arithmetic).    */
 /* ------------------------------------------------------------------ */
-static uint16_t cambi_metal_adjust_window(int window_size, unsigned w, unsigned h)
+static uint16_t cambi_metal_adjust_window(int window_size, unsigned w, unsigned h,
+                                          bool high_res_speedup)
 {
     unsigned adjusted = (unsigned)(window_size) * (w + h) / 375u;
     adjusted >>= 4;
+    if (high_res_speedup) {
+        adjusted = (adjusted + 1u) >> 1;
+    }
     if (adjusted < 1u) { adjusted = 1u; }
     if ((adjusted & 1u) == 0u) { adjusted++; }
     return (uint16_t)adjusted;
@@ -443,11 +464,35 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
         return -EINVAL;
     }
 
+    bool high_res_speedup = false;
+    const int enc_pix = s->enc_width * s->enc_height;
+    switch (s->cambi_high_res_speedup) {
+    case 1080:
+        if (enc_pix >= CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1080p) {
+            high_res_speedup = true;
+        }
+        break;
+    case 1440:
+        if (enc_pix >= CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1440p) {
+            high_res_speedup = true;
+        }
+        break;
+    case 2160:
+        if (enc_pix >= CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_2160p) {
+            high_res_speedup = true;
+        }
+        break;
+    default:
+        high_res_speedup = false;
+        break;
+    }
+    s->high_res_speedup = high_res_speedup;
+
     s->src_bpc      = bpc;
     s->proc_width   = (unsigned)s->enc_width;
     s->proc_height  = (unsigned)s->enc_height;
     s->adjusted_window =
-        cambi_metal_adjust_window(s->window_size, s->proc_width, s->proc_height);
+        cambi_metal_adjust_window(s->window_size, s->proc_width, s->proc_height, s->high_res_speedup);
 
     int err = vmaf_metal_context_new(&s->ctx, 0);
     if (err != 0) { return err; }
@@ -626,6 +671,10 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     id<MTLBuffer>       d_mask  = (__bridge id<MTLBuffer>)s->d_mask;
     id<MTLBuffer>       d_tmp   = (__bridge id<MTLBuffer>)s->d_tmp;
 
+    void *orig_d_image = s->d_image;
+    void *orig_d_mask  = s->d_mask;
+    void *orig_d_tmp   = s->d_tmp;
+
     id<MTLComputePipelineState> pso_mask = (__bridge id<MTLComputePipelineState>)s->pso_mask;
     id<MTLComputePipelineState> pso_dec  = (__bridge id<MTLComputePipelineState>)s->pso_decimate;
     id<MTLComputePipelineState> pso_fm   = (__bridge id<MTLComputePipelineState>)s->pso_filter_mode;
@@ -664,9 +713,14 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     unsigned scaled_h = s->proc_height;
     for (int scale = 0; scale < CAMBI_METAL_NUM_SCALES; ++scale) {
         id<MTLCommandBuffer> cmd = [queue commandBuffer];
-        if (cmd == nil) { return -ENOMEM; }
+        if (cmd == nil) {
+            s->d_image = orig_d_image;
+            s->d_mask  = orig_d_mask;
+            s->d_tmp   = orig_d_tmp;
+            return -ENOMEM;
+        }
 
-        if (scale > 0) {
+        if (scale > 0 || s->high_res_speedup) {
             const unsigned new_w = (scaled_w + 1u) >> 1;
             const unsigned new_h = (scaled_h + 1u) >> 1;
             const uint32_t pd[4] = {new_w, new_h, scaled_w, new_w};
@@ -704,6 +758,11 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
         scores_per_scale[scale] =
             vmaf_cambi_spatial_pooling(s->buffers.c_values, topk, scaled_w, scaled_h);
     }
+
+    /* Restore d_image / d_mask / d_tmp to point at original allocations. */
+    s->d_image = orig_d_image;
+    s->d_mask  = orig_d_mask;
+    s->d_tmp   = orig_d_tmp;
 
     /* Step 5: inner-product scale weighting + clamp. */
     const uint16_t pixels_in_window = vmaf_cambi_get_pixels_in_window(s->adjusted_window);
