@@ -505,7 +505,7 @@ static int vpl_host_upload_fallback(VADisplay va_display, VASurfaceID ref_surf,
         (void)fprintf(stderr, "vmaf_picture_alloc(dis) failed\n");
         goto cleanup;
     }
-    // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores): defensive flag — kept so a future early-exit `goto cleanup` between this alloc and `vmaf_read_pictures` (which transfers ownership and resets the flag) doesn't leak `dis_pic`. Currently no such exit exists, so the analyzer flags the assignment as dead.
+    // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores) — ADR-0141 / ADR-0278: defensive flag — kept so a future early-exit `goto cleanup` between this alloc and `vmaf_read_pictures` (which transfers ownership and resets the flag) doesn't leak `dis_pic`. Currently no such exit exists, so the analyzer flags the assignment as dead.
     have_dis_pic = 1;
 
     /* Copy Y plane row-by-row to account for VA pitch ≠ width. NV12/P010
