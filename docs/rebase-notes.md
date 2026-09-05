@@ -13,6 +13,10 @@ no rebase impact: fork-local CUDA and documentation files.
   `T-SYCL-INIT-LEAKS-EXC-2026-06-19`, `T-SPEED-GPU-REGISTRY-ORPHAN-2026-06-19`, and
   `T-CUDA-INIT-SUBMIT-LEAKS-2026-06-19`.
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
+## docs/venv-recipe — replace impossible venv recipe with verified one (2026-09-04)
+
+- `docs/development/languages.md`: no rebase impact: docs/development/ is fork-added.
+
 ## fix/sycl-adm-tidy-debt — SYCL ADM warning cleanup + tidy-lane scoping (2026-09-04)
 
 - `core/src/feature/sycl/integer_adm_sycl.cpp`: wholly fork-added (upstream Netflix has no SYCL

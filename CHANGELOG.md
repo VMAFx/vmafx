@@ -25619,6 +25619,12 @@ score-suppression wiring.
   / `ALMOST_EQUAL` machinery.
 
 
+- **docs/development**: Replace impossible repo-root `pip install -e ".[dev]"`
+  recipe in `languages.md` with verified per-package editable installs and
+  explicit `meson==1.12.0` pinning matching `dev/Containerfile`. Add note on
+  recovering virtualenvs broken by the legacy tracked `.venv` symlink.
+
+
 - `core/tools/vmaf_bench.c`: harden three classes of unchecked
   return values flagged by the 2026-05-30 S9 (JPL Power-of-10 r7)
   audit.
