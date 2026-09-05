@@ -123,7 +123,7 @@ static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
 
     const size_t dst_sz = strnlen(buf, buf_sz) + 1U;
     char *dst =
-        static_cast<char *>(malloc(dst_sz)); // NOLINT(cppcoreguidelines-no-malloc) — C ABI owner
+        static_cast<char *>(malloc(dst_sz)); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0141 C ABI
     if (!dst)
         return nullptr;
     strncpy(dst, buf, dst_sz);
@@ -233,7 +233,7 @@ vmaf_feature_name_dict_from_provided_features(const char **provided_features,
         }
 
         const int err = vmaf_dictionary_set(&dict_raw, feature_name, fn, 0);
-        free(fn); // NOLINT(cppcoreguidelines-no-malloc) — C ABI string owner
+        free(fn); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0141 C ABI string owner
         if (err) {
             vmaf_dictionary_free(&dict_raw);
             return nullptr;

@@ -19,7 +19,7 @@
 /**
  * Note: stride is in terms of bytes
  */
-// NOLINTNEXTLINE(misc-use-internal-linkage): declared extern in offset.h; consumed via per-feature `#define offset_image offset_image_s` aliases in adm.c / motion.c.
+// NOLINTNEXTLINE(misc-use-internal-linkage) — ADR-0141 / ADR-0278: declared extern in offset.h; consumed via per-feature `#define offset_image offset_image_s` aliases in adm.c / motion.c.
 int offset_image_s(float *buf, float off, int width, int height, int stride)
 {
     char *byte_ptr = (char *)buf;

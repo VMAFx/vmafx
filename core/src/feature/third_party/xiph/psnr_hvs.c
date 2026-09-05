@@ -64,6 +64,7 @@ typedef int32_t od_coeff;
  * reference implementation the AVX2 TU diffs against line-for-line).
  * Suppressions are scoped to the upstream block only; fork-local
  * dispatch code below uses full lint hygiene. */
+// ADR-0141 §2 / ADR-0159 / ADR-0278: upstream-parity carve-out (see the block above).
 // NOLINTBEGIN(readability-function-size,google-readability-function-size,
 // bugprone-implicit-widening-of-multiplication-result,
 // readability-braces-around-statements,
@@ -482,7 +483,7 @@ static const char *provided_features[] = {"psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs
 
 /* External linkage is required — the extractor registry iterates over
  * `vmaf_fex_*` externs in libvmaf/src/feature/feature_extractor.c. */
-// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables)
+// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables) — ADR-0141 / ADR-0278: extractor registry external linkage
 VmafFeatureExtractor vmaf_fex_psnr_hvs = {
     .name = "psnr_hvs",
     .init = init,

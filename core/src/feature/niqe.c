@@ -625,7 +625,7 @@ static const char *provided_features[] = {"niqe", NULL};
 
 /* External linkage is required — the extractor registry iterates over
  * `vmaf_fex_*` externs in core/src/feature/feature_extractor.cpp. */
-// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables)
+// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables) — ADR-0141 / ADR-0278: extractor registry external linkage
 VmafFeatureExtractor vmaf_fex_niqe = {
     .name = "niqe",
     .init = init,

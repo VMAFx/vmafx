@@ -124,7 +124,8 @@ static inline __m256i od_mulrshift_avx2(__m256i x, int32_t k, int32_t round, int
  * it would break the one-to-one scalar diff that the bit-exactness
  * audit depends on. The scalar `od_bin_fdct8` has the same structure.
  */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size)
+// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-0141 §2 /
+// ADR-0159 / ADR-0278: 30-butterfly network kept whole for the scalar bit-exact diff.
 static inline void od_bin_fdct8_simd(__m256i in0, __m256i in1, __m256i in2, __m256i in3,
                                      __m256i in4, __m256i in5, __m256i in6, __m256i in7,
                                      __m256i *out0, __m256i *out1, __m256i *out2, __m256i *out3,

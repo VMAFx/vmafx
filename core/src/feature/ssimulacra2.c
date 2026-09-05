@@ -40,7 +40,7 @@
  * and ADR-0206 (CUDA + SYCL).
  */
 
-// NOLINTNEXTLINE(misc-include-cleaner) — ENOMEM at line ~979 in init() bailouts.
+// NOLINTNEXTLINE(misc-include-cleaner) — ENOMEM at line ~979 in init() bailouts (ADR-0141 / ADR-0278).
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
@@ -1153,7 +1153,7 @@ static const char *provided_features[] = {"ssimulacra2", NULL};
 
 /* External linkage is required — the extractor registry iterates over
  * `vmaf_fex_*` externs in libvmaf/src/feature/feature_extractor.c. */
-// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables)
+// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables) — ADR-0141 / ADR-0278: extractor registry external linkage
 VmafFeatureExtractor vmaf_fex_ssimulacra2 = {
     .name = "ssimulacra2",
     .init = init,

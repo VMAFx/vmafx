@@ -666,7 +666,7 @@ void vif_statistic_16_avx512(struct VifPublicState *s, float *num, float *den, u
             __m512i accumdis2;
             __m512i accumdis3;
             __m512i accumdis4;
-            // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores): chained zero-init of every SIMD accumulator (rmul1/rmul2/dmul1/dmul2 included) before the inner fi loop overwrites them. Verbatim from upstream Netflix; preserved to keep the AVX-512 VIF kernel byte-identical to its AVX2 / scalar twins.
+            // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores) — ADR-0138 / ADR-0141 / ADR-0278: chained zero-init of every SIMD accumulator (rmul1/rmul2/dmul1/dmul2 included) before the inner fi loop overwrites them. Verbatim from upstream Netflix; preserved to keep the AVX-512 VIF kernel byte-identical to its AVX2 / scalar twins.
             accumr_lo = accumr_hi = accumd_lo = accumd_hi = rmul1 = rmul2 = dmul1 = dmul2 =
                 accumref1 = accumref2 = accumref3 = accumref4 = accumrefdis1 = accumrefdis2 =
                     accumrefdis3 = accumrefdis4 = accumdis1 = accumdis2 = accumdis3 = accumdis4 =
@@ -1475,7 +1475,7 @@ void vif_subsample_rd_16_avx512(const VifBuffer *buf, unsigned w, unsigned h, in
             __m512i rmul2;
             __m512i dmul1;
             __m512i dmul2;
-            // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores): chained zero-init reset every fi iteration; upstream-verbatim AVX-512 VIF chunk.
+            // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores) — ADR-0138 / ADR-0141 / ADR-0278: chained zero-init reset every fi iteration; upstream-verbatim AVX-512 VIF chunk.
             accumr_lo = accumr_hi = accumd_lo = accumd_hi = rmul1 = rmul2 = dmul1 = dmul2 =
                 _mm512_setzero_si512();
             __m512i mask3 = _mm512_set_epi64(11, 10, 3, 2, 9, 8, 1, 0);   //first half of 512
