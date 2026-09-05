@@ -1,7 +1,7 @@
 [project]
 name = "vmaf-dev-llm"
 version = "3.2.1" # x-release-please-version
-description = "Local LLM dev helpers for the Lusoris VMAF fork (Ollama-first)."
+description = "Local LLM dev helpers for the VMAFx fork (Ollama-first)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "BSD-2-Clause-Patent" }

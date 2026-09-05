@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # vmaf-mcp
 
-MCP (Model Context Protocol) server that exposes the Lusoris VMAF fork's
+MCP (Model Context Protocol) server that exposes the VMAFx fork's
 scoring CLI to LLM tooling via JSON-RPC over stdio.
 
 ## Tools

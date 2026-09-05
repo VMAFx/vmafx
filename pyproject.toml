@@ -3,7 +3,7 @@
 # tests are formatted but not lint-failed (see [tool.ruff.lint.per-file-ignores]).
 
 [project]
-name = "vmaf-fork-tooling"
+name = "vmafx-tooling"
 # Never-published tooling aggregate - independently versioned on purpose
 # (ADR-1127, reaffirmed by ADR-1151). It carries no x-release-please-version
 # marker; the three real Python distributions (ai/, dev-llm/,

@@ -14,10 +14,10 @@ Keeps our ffmpeg integration patches current with upstream ffmpeg. Run this when
 
 ```text
 /refresh-ffmpeg-patches [--ffmpeg-ref=master|n7.0|<sha>] [--ffmpeg-dir=/tmp/ffmpeg]
-                        [--branch=vmaf-fork-patches]
+                        [--branch=vmafx-patches]
 ```
 
-Defaults: `master` at HEAD, `/tmp/ffmpeg`, `vmaf-fork-patches` work branch.
+Defaults: `master` at HEAD, `/tmp/ffmpeg`, `vmafx-patches` work branch.
 
 ## Steps
 

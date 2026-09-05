@@ -125,6 +125,15 @@ no rebase impact: fork-local SYCL feature extractor and tests.
   `core/src/feature/` wildcard glob, silently truncated the comment mid-file, and turned the
   header into parse errors). On a sync, keep the bracket balanced and do not "modernise" the
   header — every rewrite it suppresses breaks the C includers.
+## chore/modernization-leftovers-1241 — rebrand residual scrub (2026-09-05)
+
+no rebase impact: every touched file is fork-added (`.claude/`, `ai/scripts/`, `dev-llm/`,
+`mcp-server/`, `docs/development/`, the root and `python/` `pyproject.toml`, `CLAUDE.md`);
+upstream Netflix/vmaf has no counterpart for any of them. Deliberately NOT renamed — keep them
+on any sync: the `libvmaf.so` soname, the `libvmaf` ffmpeg filter name, the version scheme,
+the `lusoris.*` ONNX metadata keys asserted by `ai/tests/test_export_u2netp_mirror.py`, and
+`model/tiny/transnet_v2.onnx` (its baked-in `producer_name` only changes at the next
+re-export).
 
 ## fix/cuda-drain-batch-per-state-lifetime — drain-batch ownership and the read fence (2026-09-05)
 

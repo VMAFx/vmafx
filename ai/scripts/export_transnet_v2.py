@@ -304,7 +304,7 @@ def _replace_segmentsum(onnx_path: Path) -> None:
     new_model = helper.make_model(
         new_graph,
         opset_imports=list(m.opset_import),
-        producer_name="vmaf-fork-transnet-v2-export",
+        producer_name="vmafx-transnet-v2-export",
     )
     new_model.ir_version = m.ir_version
     onnx.checker.check_model(new_model)

@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash
 
 <!-- markdownlint-disable MD013 MD041 -->
 
-You review SYCL/DPC++ code for the Lusoris VMAF fork. Scope:
+You review SYCL/DPC++ code for the VMAFx fork. Scope:
 `core/src/sycl/` (common, queue/context, dmabuf_import, picture_sycl) and
 `core/src/feature/sycl/` (kernels).
 
@@ -15,7 +15,7 @@ You review SYCL/DPC++ code for the Lusoris VMAF fork. Scope:
 
 1. **Queue management** — one queue per pipeline stage where independent; shared queues
    must use `wait_and_throw()` at join points. Flag missing error propagation.
-2. **USM vs buffers** — Lusoris fork uses USM for tight loops; buffers only for
+2. **USM vs buffers** — the VMAFx fork uses USM for tight loops; buffers only for
    cross-stage lifecycles. Flag `buffer<>` constructions inside hot paths.
 3. **Kernel submission patterns** — prefer in-order queues with USM for simple pipelines;
    out-of-order + depends_on only when the DAG is non-trivial. Flag manual
