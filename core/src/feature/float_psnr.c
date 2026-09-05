@@ -201,8 +201,9 @@ static int close(VmafFeatureExtractor *fex)
     return 0;
 }
 
-static const char *provided_features[] = {"float_psnr", NULL};
+static const char *provided_features[] = {"float_psnr", nullptr};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_psnr = {
     .name = "float_psnr",
     .options = options,

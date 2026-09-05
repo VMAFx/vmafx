@@ -22,7 +22,10 @@
  * to the inner loop below. Do not prune. */
 #include <stddef.h>
 
+#include "mem.h"
 #include "psnr.h"
+#include "psnr_options.h"
+#include "psnr_tools.h"
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))

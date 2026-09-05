@@ -106,7 +106,7 @@ static const VmafOption options[] = {
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
     },
-    {0}};
+    {nullptr}};
 
 static uint32_t sse_line_8_c(const uint8_t *ref, const uint8_t *dis, unsigned w)
 {
@@ -350,8 +350,9 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
     return (err < 0) ? err : !err;
 }
 
-static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", NULL};
+static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", nullptr};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_psnr = {
     .name = "psnr",
     .options = options,
