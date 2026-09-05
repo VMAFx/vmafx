@@ -16,6 +16,30 @@
  *
  */
 
+/* NOLINTBEGIN(modernize-deprecated-headers,modernize-use-using,performance-enum-size,bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp):
+ * clang-tidy has no compile command for a header, so it analyses this one
+ * under the nearest matching translation unit — `feature_extractor.cpp` —
+ * and therefore parses every construct below as C++. This is a C header:
+ * roughly a hundred C translation units include it (every `.c` feature
+ * extractor under `core/src/feature/` and its CUDA / HIP registrations,
+ * `core/src/libvmaf.c`, `core/src/predict.c`, `core/src/model.c`), so none
+ * of the rewrites clang-tidy proposes is expressible here.
+ * `modernize-deprecated-headers` (<cstdint>, <cstdlib>) and
+ * `modernize-use-using` (`using` in place of `typedef`) are C++-only
+ * spellings; C has neither. `performance-enum-size` wants a fixed underlying
+ * type on the two flag enums — C23 spells that `enum E : uint8_t`, but MSVC
+ * does not document it under `/std:clatest` and `Build — Windows
+ * (MSVC + CUDA)` is a required check, the same unverifiable-on-a-required-lane
+ * constraint ADR-1138 records for C `nullptr`.
+ * `bugprone-reserved-identifier` / `cert-dcl37-c` / `cert-dcl51-cpp` fire on
+ * the `__VMAF_FEATURE_EXTRACTOR_H__` include guard: that spelling is upstream
+ * Netflix's and is shared by every header under `core/src/`, so renaming one
+ * file's guard buys nothing and costs upstream-sync parity — the posture
+ * ADR-0148 and ADR-0150 already record for upstream-mirror identifiers.
+ * Applied to this file under ADR-0141 because this PR touches it, and
+ * file-scoped rather than eight separate NOLINTNEXTLINE markers because that
+ * is the shape ADR-1138 prescribes for the same C-parsed-as-C++ artefact in
+ * C sources. */
 #ifndef __VMAF_FEATURE_EXTRACTOR_H__
 #define __VMAF_FEATURE_EXTRACTOR_H__
 
@@ -169,6 +193,19 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_by_feature_name(const char *nam
  * silently doubling pool-entry init / extract / flush counts. */
 int vmaf_feature_extractor_list_audit(void);
 
+/**
+ * @brief Check whether a feature extractor supports all options in @p opts_dict.
+ *
+ * @param fex         Feature extractor descriptor.
+ * @param opts_dict   Dictionary of options to validate (may be NULL).
+ * @param missing_key If non-NULL, receives a pointer to the first unsupported key
+ *                    (or NULL if all options are supported).
+ * @return true if all options are supported (or opts_dict is NULL/empty), false otherwise.
+ */
+bool vmaf_feature_extractor_supports_options(const VmafFeatureExtractor *fex,
+                                             const VmafDictionary *opts_dict,
+                                             const char **missing_key);
+
 enum VmafFeatureExtractorContextFlags {
     VMAF_FEATURE_EXTRACTOR_CONTEXT_DO_NOT_OVERWRITE = 1 << 0,
 };
@@ -255,3 +292,4 @@ int vmaf_fex_ctx_pool_destroy(VmafFeatureExtractorContextPool *pool);
 #endif
 
 #endif /* __VMAF_FEATURE_EXTRACTOR_H__ */
+/* NOLINTEND(modernize-deprecated-headers,modernize-use-using,performance-enum-size,bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */

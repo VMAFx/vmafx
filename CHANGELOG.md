@@ -19040,6 +19040,16 @@ sanitizer builds (address / undefined / thread), causing a compile failure at
 step 40/663 introduced by PR #907.
 
 
+- **CUDA CAMBI extractor failed with `CUDA_ERROR_INVALID_CONTEXT`.**
+  During execution of the default model `vmaf_v1.0.16_3d0h` under
+  `--backend cuda`, the CAMBI feature extractor crashed during
+  synchronous `cuMemcpyDtoH` readback in `submit_fex_cuda` because the
+  calling thread had no CUDA context current. Fixed by pushing
+  `fex->cu_state->ctx` at submit entry and popping it cleanly on all exit
+  paths, as well as aligning CAMBI options and TVI initialization with the
+  CPU extractor (`integer_cambi_cuda.c`).
+
+
 ### Fixed: `cambi_cuda` SIGSEGV on `submit_fex_cuda` — host dereference of device pointer
 
 `integer_cambi_cuda.c::submit_fex_cuda` called `vmaf_cambi_preprocessing(dist_pic, ...)`
@@ -23003,6 +23013,17 @@ preprocessor macros. (PR #744)
   residual INFO tail is dominated by the two mkdocs.yml carveouts
   (source-tree pointers + immutable-ADR cross-references) per the
   `validation:` block comment.
+
+
+- **Unknown feature options rejected and model GPU twin selection gated.**
+  Feature extractor options parsing (`vmaf_fex_ctx_parse_options`) previously
+  ignored unrecognised dictionary keys, allowing CLI typos to pass silently and
+  causing GPU twins lacking model-requested options (such as `adm_csf_mode: 2`
+  in `vmaf_v1.0.16_3d0h`) to run with wrong parameters and emit mismatched feature
+  names. Libvmaf now returns `-EINVAL` on unknown options, and
+  `vmaf_use_features_from_model` checks GPU twin options against model requirements,
+  automatically dispatching extractors with unsupported options to the CPU reference
+  twin with an informational notice ([ADR-1183](docs/adr/1183-model-options-gate-gpu-twin-selection.md)).
 
 
 - `model/tiny/registry.json`: added missing `license`, `license_url`, and

@@ -421,13 +421,15 @@ fail_after_pop:
  * duplicate-write warning that fires when `flush_context_cuda`'s pending
  * collect (T-GPU-OPT-1 / PR #312) already wrote the same (feature, index)
  * pair. Returns 0 on success, negative errno on real failure. */
-static int append_if_unwritten(VmafFeatureCollector *fc, const char *feature, double value,
-                               unsigned index)
+static int append_if_unwritten(VmafFeatureCollector *fc, VmafDictionary *dict, const char *feature,
+                               double value, unsigned index)
 {
+    VmafDictionaryEntry *entry = vmaf_dictionary_get(&dict, feature, 0);
+    const char *fn = entry ? entry->val : feature;
     double existing;
-    if (vmaf_feature_collector_get_score(fc, feature, &existing, index) == 0)
+    if (vmaf_feature_collector_get_score(fc, fn, &existing, index) == 0)
         return 0;
-    return vmaf_feature_collector_append(fc, feature, value, index);
+    return vmaf_feature_collector_append(fc, fn, value, index);
 }
 
 static inline double normalize_and_scale_sad(uint64_t sad, unsigned w, unsigned h)
@@ -459,8 +461,12 @@ static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
      * frame happened to be exactly a batch boundary, flush() has
      * nothing pending and only handles the final motion2/motion3
      * emission (the same as the legacy path). */
-    if (s->index == 0)
-        return 1; /* Return 1 = "no score to append"; matches legacy. */
+    if (s->index == 0) {
+        /* Single-frame video (frame 0 only): back-fill motion3_score for index 0
+         * with 0.0 (mirrors CPU integer_motion.c when n <= min_idx). */
+        return append_if_unwritten(feature_collector, s->feature_name_dict,
+                                   "VMAF_integer_feature_motion3_score", 0.0, 0);
+    }
 
     const int pending_start = s->last_batch_boundary + 1;
 
@@ -508,12 +514,13 @@ flush_emit_trailing:;
      * append_if_unwritten so that if the batch-boundary collect() already
      * emitted this pair we don't warn about a duplicate write. */
     double const last_motion2 = MIN(s->score * s->motion_fps_weight, s->motion_max_val);
-    ret = append_if_unwritten(feature_collector, "VMAF_integer_feature_motion2_score", last_motion2,
-                              s->index);
+    ret = append_if_unwritten(feature_collector, s->feature_name_dict,
+                              "VMAF_integer_feature_motion2_score", last_motion2, s->index);
     if (ret >= 0) {
         double const motion3_score = motion3_postprocess_cuda(s, last_motion2);
-        int ret_m3 = append_if_unwritten(feature_collector, "VMAF_integer_feature_motion3_score",
-                                         motion3_score, s->index);
+        int ret_m3 =
+            append_if_unwritten(feature_collector, s->feature_name_dict,
+                                "VMAF_integer_feature_motion3_score", motion3_score, s->index);
         if (ret_m3 < 0)
             ret = ret_m3;
     }
@@ -605,8 +612,8 @@ static int emit_batch_scores(MotionStateCuda *s, VmafFeatureCollector *fc, unsig
             (i == batch_start) ? score_before_batch : s->score_ring[(i - 1) % MOTION_BATCH_DEPTH];
 
         if (s->debug) {
-            err |= vmaf_feature_collector_append(fc, "VMAF_integer_feature_motion_score", cur_score,
-                                                 i);
+            err |= vmaf_feature_collector_append_with_dict(
+                fc, s->feature_name_dict, "VMAF_integer_feature_motion_score", cur_score, i);
         }
 
         if (i == 1) {
@@ -614,16 +621,18 @@ static int emit_batch_scores(MotionStateCuda *s, VmafFeatureCollector *fc, unsig
              * No min(prev,cur) yet — mirrors CPU integer_motion.c. */
             double const score_clipped = MIN(cur_score * s->motion_fps_weight, s->motion_max_val);
             double const m3 = motion3_postprocess_cuda(s, score_clipped);
-            err |= vmaf_feature_collector_append(fc, "VMAF_integer_feature_motion3_score", m3, 0);
+            err |= vmaf_feature_collector_append_with_dict(
+                fc, s->feature_name_dict, "VMAF_integer_feature_motion3_score", m3, 0);
         }
         if (i > 1) {
             double const motion2 = (prev_score < cur_score) ? prev_score : cur_score;
             double const motion2_clipped = MIN(motion2 * s->motion_fps_weight, s->motion_max_val);
-            err |= vmaf_feature_collector_append(fc, "VMAF_integer_feature_motion2_score",
-                                                 motion2_clipped, i - 1);
+            err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
+                                                           "VMAF_integer_feature_motion2_score",
+                                                           motion2_clipped, i - 1);
             double const m3 = motion3_postprocess_cuda(s, motion2_clipped);
-            err |=
-                vmaf_feature_collector_append(fc, "VMAF_integer_feature_motion3_score", m3, i - 1);
+            err |= vmaf_feature_collector_append_with_dict(
+                fc, s->feature_name_dict, "VMAF_integer_feature_motion3_score", m3, i - 1);
         }
     }
     /* Restore frame_index to what the caller set it to (batch_end + 1). */
@@ -639,11 +648,12 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 
     /* Frame 0: emit zeros and return — no SAD computed for the first frame. */
     if (index == 0) {
-        int err = vmaf_feature_collector_append(feature_collector,
-                                                "VMAF_integer_feature_motion2_score", 0., 0);
+        int err = vmaf_feature_collector_append_with_dict(
+            feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_score", 0., 0);
         if (s->debug) {
-            err |= vmaf_feature_collector_append(feature_collector,
-                                                 "VMAF_integer_feature_motion_score", 0., 0);
+            err |=
+                vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                        "VMAF_integer_feature_motion_score", 0., 0);
         }
         s->frame_index++;
         return err;

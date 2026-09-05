@@ -8,6 +8,56 @@ only purpose is to emit `compile_commands.json` for clang-tidy must configure wi
 because the project default (`b_lto_threads=4`, ADR-1172) renders as a GCC-only `-flto=<n>` that
 clang rejects outright.
 
+## fix/cambi-cuda-context — CUDA CAMBI context push/pop and model options twin selection gate (2026-09-05)
+
+- `core/src/feature/cuda/integer_cambi_cuda.c`: fork-added CUDA CAMBI extractor.
+  Invariant: every device-touching entry point (`init_fex_cuda`, `submit_fex_cuda`,
+  `close_fex_cuda`) must push `fex->cu_state->ctx` upon entry and cleanly pop it
+  on all exit paths (balanced `fail_after_pop` labels). Its option table and TVI
+  initialization must mirror `cambi.c`.
+- `core/src/feature/feature_extractor.cpp` / `core/src/libvmaf.c`: option validation
+  and GPU twin gating (ADR-1183). `vmaf_fex_ctx_parse_options` rejects unknown option
+  keys with `-EINVAL`. `vmaf_use_features_from_model` checks GPU twin option support
+  against model requirements and dispatches unsupported twins to the CPU reference.
+  Preserve this gating on rebase to prevent silent option drops.
+- `core/test/test_feature_extractor.c`: upstream Netflix carries this file with a flat
+  `run_tests()` and a handful of cases; the fork's copy is now mostly fork-added regression
+  tests, split one-behaviour-per-function and registered through
+  `run_registry_tests` / `run_context_tests` / `run_option_tests` so the
+  `readability-function-size` branch budget (ADR-0141) holds. On a sync, add any new upstream
+  case to the matching group runner rather than re-flattening `run_tests()`, and keep the
+  file-scoped `NOLINTBEGIN(modernize-use-nullptr)` bracket (ADR-1138) — the TU must keep
+  spelling the null pointer constant `NULL` for the required MSVC C lane.
+- `core/src/feature/feature_extractor.cpp`: this TU is C++, not the C twin, so ADR-1138's
+  `NULL`-for-MSVC exemption does not apply — the file now spells the null pointer constant
+  `nullptr` throughout and carries no `NOLINT`. Its file-local symbols
+  (`feature_extractor_list[]`, `vmaf_fex_ctx_parse_options`, `check_pic_buf_type`,
+  `find_fex_list_entry` / `grow_fex_list` / `init_fex_list_slot` / `get_fex_list_entry`,
+  `ctx_pool_ensure_slot_ctx`, `ctx_pool_claim_slot`) live in anonymous namespaces rather
+  than being `static` (`misc-use-anonymous-namespace`). When porting an upstream change to
+  `vmaf_feature_extractor_context_extract`, note the picture buf_type/backend validation now
+  lives in `check_pic_buf_type()` and the pool-slot registration is split across
+  `find_fex_list_entry` / `grow_fex_list` / `init_fex_list_slot`, so the two entry points stay
+  inside the `readability-function-size` budget (ADR-0141); re-inlining them re-opens the
+  warning. `grow_fex_list` uses a hard `if (pool->capacity == 0) return -EINVAL;` guard rather
+  than `assert()`, because clang-tidy 22's `misc-static-assert` / `cert-dcl03-c` flags every
+  `assert()` whose condition contains no non-constexpr call.
+- `core/src/feature/feature_extractor.h`: upstream Netflix header. Keeps the upstream
+  `__VMAF_FEATURE_EXTRACTOR_H__` include guard, `<stdint.h>` / `<stdlib.h>`, plain C
+  `typedef struct` and untyped flag enums, because roughly a hundred C translation units
+  include it. clang-tidy has no compile command for a header and falls back to
+  `feature_extractor.cpp`'s, so it analyses the file as C++ and proposes C++-only rewrites;
+  a single file-scoped `NOLINTBEGIN(...)` / `NOLINTEND(...)` bracket after the licence block
+  and after the closing `#endif` suppresses them. Two constraints on that bracket: the
+  `ADR-NNNN` citations must sit **inside the `NOLINTBEGIN` marker's own block comment**, not
+  in a separate comment above it — `scripts/ci/tidy-ratchet.py::count_uncited_nolints` scans
+  only the current line, its neighbours and the marker's own comment, and counts anything else
+  as an uncited NOLINT, which fails the ADR-1142 ratchet; and the justification text must not
+  contain the character pair that closes a block comment (an earlier draft wrote a
+  `core/src/feature/` wildcard glob, silently truncated the comment mid-file, and turned the
+  header into parse errors). On a sync, keep the bracket balanced and do not "modernise" the
+  header — every rewrite it suppresses breaks the C includers.
+
 ## fix/gpu-init-leaks-and-hip-mirror — fix CUDA init error path leaks and close verified GPU state issues (2026-09-04)
 
 no rebase impact: fork-local CUDA and documentation files.

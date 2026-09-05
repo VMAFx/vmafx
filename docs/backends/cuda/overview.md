@@ -254,6 +254,19 @@ for the complete table.
 
 ## Known gaps
 
+### Default model feature dispatch (`vmaf_v1.0.16_3d0h`)
+
+When running the default model `vmaf_v1.0.16_3d0h` under `--backend cuda`, features are
+selectively dispatched between GPU and CPU based on option support ([ADR-1183](../../adr/1183-model-options-gate-gpu-twin-selection.md)):
+
+- **CAMBI** (`cambi_cuda`) and **SpEED** (`speed_chroma_cuda`) run directly on the GPU.
+- **Motion** (`integer_motion_cuda`) computes motion scores on device while honoring `motion_max_val`.
+- **ADM** (`integer_adm_cuda`) lacks support for `adm_csf_mode: 2` (required by `vmaf_v1.0.16_3d0h`),
+  so libvmaf automatically dispatches ADM to the CPU reference extractor with an informational
+  notice (`adm_cuda extractor lacks option 'adm_csf_mode', computing it on the CPU`). This ensures
+  complete numerical correctness without breaking model evaluation until `adm_csf_mode` is ported
+  to CUDA device kernels (`T-GPU-ADM-CSF-MODE-NOT-PORTED-2026-09-05`).
+
 - **CIEDE2000** — no CUDA kernel (same CPU-fallback behaviour).
 - **PSNR** — `psnr_cuda` ships with the full luma + chroma set
   (`psnr_y`, `psnr_cb`, `psnr_cr`); luma landed in

@@ -1695,6 +1695,40 @@ static unsigned compute_fex_flags(const VmafContext *vmaf)
     return fex_flags;
 }
 
+/* Pick the extractor that can honour every option the model sets for this
+ * feature (ADR-1183).
+ *
+ * A GPU twin whose option table lacks one of the model's keys would silently
+ * drop it and emit a differently-named feature, so the model's prediction would
+ * read from a vector that never gets written. When that happens, fall back to
+ * the CPU twin for this one feature and say so at INFO level; the rest of the
+ * model keeps running on the device. Returns NULL when no extractor provides
+ * the feature at all (the caller turns that into -EINVAL). */
+static VmafFeatureExtractor *fex_honouring_model_options(VmafFeatureExtractor *fex,
+                                                         const VmafModelFeature *feature)
+{
+    const unsigned gpu_mask = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
+                              VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL;
+
+    if (!(fex->flags & gpu_mask) || !feature->opts_dict)
+        return fex;
+
+    const char *missing_key = NULL;
+    if (vmaf_feature_extractor_supports_options(fex, feature->opts_dict, &missing_key))
+        return fex;
+
+    vmaf_log(VMAF_LOG_LEVEL_INFO,
+             "feature '%s': %s extractor lacks option '%s', computing it on the CPU\n",
+             feature->name, fex->name, missing_key);
+
+    VmafFeatureExtractor *cpu_fex = vmaf_get_feature_extractor_by_feature_name(feature->name, 0);
+    if (!cpu_fex) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "could not initialize feature extractor \"%s\"\n",
+                 feature->name);
+    }
+    return cpu_fex;
+}
+
 int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
 {
     if (!vmaf)
@@ -1715,6 +1749,10 @@ int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
                      model->feature[i].name);
             return -EINVAL;
         }
+
+        fex = fex_honouring_model_options(fex, &model->feature[i]);
+        if (!fex)
+            return -EINVAL;
 
         VmafFeatureExtractorContext *fex_ctx = NULL;
         VmafDictionary *d = NULL;

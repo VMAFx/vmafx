@@ -23,7 +23,12 @@ if [[ ! -f "$FEX" ]]; then
   exit 1
 fi
 
-list_block=$(sed -n '/static VmafFeatureExtractor \*feature_extractor_list\[\]/,/};/p' "$FEX")
+# The registry is spelled `static VmafFeatureExtractor *feature_extractor_list[]`
+# in the C twin and, since the C++ TU moved its file-local symbols into an
+# anonymous namespace (misc-use-anonymous-namespace), plain
+# `VmafFeatureExtractor *feature_extractor_list[]` in feature_extractor.cpp.
+# Accept both spellings.
+list_block=$(sed -n '/^\(static \)\?VmafFeatureExtractor \*feature_extractor_list\[\]/,/};/p' "$FEX")
 if [[ -z "$list_block" ]]; then
   echo "ERROR: feature_extractor_list[] not found in $FEX" >&2
   exit 1

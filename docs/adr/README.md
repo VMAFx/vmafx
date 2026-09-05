@@ -999,3 +999,4 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1172](1172-bound-lto-link-parallelism.md) | Bound per-link LTO parallelism to four partitions by default | Accepted | build, meson, developer-experience, lto |
 | [ADR-1171](1171-release-please-credential-gate-warning.md) | release-please credential gate warns on push, errors on dispatch | Accepted | ci, release, release-please |
 | [ADR-1179](1179-sycl-v1-model-crash-fix.md) | Fix Intel Arc SYCL Crashes and Default Model Resolution Divergence | Accepted | sycl, gpu, cambi, speed, model, default, arc, fp64, adr-0220 |
+| [ADR-1183](1183-model-options-gate-gpu-twin-selection.md) | Model options gate GPU twin selection | Accepted | core, feature, options, cuda, gpu-twins, dispatch |
