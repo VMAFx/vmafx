@@ -519,6 +519,31 @@ flag pattern (`--no_sycl` for "CUDA"). Numbers from runs older than
 [ADR-0064 in rebase-notes](../docs/rebase-notes.md) and PR #169 for
 the corrected methodology.
 
+**A GPU bench row that reads "unavailable" is not evidence the backend is
+absent** (measured 2026-09-06 on `cd52f2670`). Two invariants a bench run must
+hold onto:
+
+- **`--threads N` aborts every GPU backend.** `--gpumask=0` or
+  `--sycl_device=0` combined with any `--threads` value emits one
+  `feature "VMAF_integer_feature_motion2_score" cannot be overwritten at index N`
+  pair per frame, then `context could not be synchronized` /
+  `problem flushing context`, and exits 234 with no output file. Without
+  `--threads` both backends succeed and are bit-stable over 10 runs (CUDA
+  76.667830, SYCL 76.667746 on the Netflix 576x324 pair). `bench_all.sh`
+  hard-codes `--threads 1`, so its GPU rows fail by construction until
+  `T-GPU-CLI-THREADS-CTX-SYNC-2026-09-06` closes — do not silence that by
+  deleting the flag.
+- **Never discard the binary's stderr in a bench harness.** `bench_all.sh` used
+  to send it to `/dev/null` and relabel any non-zero exit as "backend likely
+  unavailable"; that turned a hard abort into a row that looked like a missing
+  device for months. Capture stderr, print the exit code, and let the reader
+  decide what it means.
+
+Key counts have moved since the 2026-04 note above: on `cd52f2670` the FFmpeg
+filter path emits 15 keys for CPU, 14 for CUDA and 24 for SYCL (35 before
+PR #1324). Use the counts as a "did the backends run different code" signal,
+not as fixed constants.
+
 - **Build-option combination validation** (fork-local, fixes 1b/1c/1d of audit-build-matrix-symbols-2026-05-16):
   `core/src/meson.build` validates dependent-option combinations and errors or warns when incompatible flags are set:
   — `enable_mcp_sse=enabled/true` requires `enable_mcp=true` (error if violated);

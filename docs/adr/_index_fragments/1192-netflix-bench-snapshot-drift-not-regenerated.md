@@ -1,0 +1,1 @@
+| [ADR-1192](1192-netflix-bench-snapshot-drift-not-regenerated.md) | Keep the recorded Netflix benchmark snapshot; do not regenerate it while the GPU paths are broken | Accepted | benchmark, cuda, sycl, testdata, docs |

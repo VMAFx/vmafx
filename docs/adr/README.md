@@ -1003,4 +1003,5 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1177](1177-sycl-arc-self-hosted-runner.md) | Containerised self-hosted GitHub Actions runner for Intel Arc SYCL parity CI | Accepted | sycl, gpu, ci, runner, arc-a380, docker |
 | [ADR-1176](1176-metal-motion-v2-mirror-closeout.md) | Metal motion_v2 mirror closeout and reflect-101 parity contract | Accepted | metal, gpu, motion-v2, parity, boundary, closeout, fork-local |
 | [ADR-1197](1197-gpu-threaded-flush-ownership.md) | The threaded flush leaves GPU extractors to their own backend flush | Proposed | cuda, sycl, threading, cli, testing |
+| [ADR-1192](1192-netflix-bench-snapshot-drift-not-regenerated.md) | Keep the recorded Netflix benchmark snapshot; do not regenerate it while the GPU paths are broken | Accepted | benchmark, cuda, sycl, testdata, docs |
 | [ADR-1195](1195-container-source-revision-guard.md) | Record and verify which source revision the dev container was built from | Proposed | ci, build, testing, agents |
