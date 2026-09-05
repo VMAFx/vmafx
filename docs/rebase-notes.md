@@ -7,6 +7,12 @@ No rebase impact: `.github/workflows/lint-and-format.yml` is fork-added. Invaria
 only purpose is to emit `compile_commands.json` for clang-tidy must configure with `-Db_lto=false`,
 because the project default (`b_lto_threads=4`, ADR-1172) renders as a GCC-only `-flto=<n>` that
 clang rejects outright.
+## fix/state-md-duplicate-rows — one row per bug id (2026-09-05)
+
+No rebase impact: `docs/state.md`, `scripts/ci/check-state-md-rows.sh` and its test are fork-added.
+The gate exists **because** of rebases: resolving a `docs/state.md` conflict by keeping both sides is
+the documented shortcut for the append-only sections, and it silently duplicates a row that a PR was
+moving between sections. After any such resolution, run `bash scripts/ci/check-state-md-rows.sh`.
 
 ## fix/gpu-init-leaks-and-hip-mirror — fix CUDA init error path leaks and close verified GPU state issues (2026-09-04)
 

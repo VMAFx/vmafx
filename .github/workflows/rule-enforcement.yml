@@ -673,6 +673,15 @@ jobs:
         # other release-contract tests.
         run: bash scripts/ci/tests/test-check-container-build.sh
 
+      - name: state.md row hygiene (ADR-0165)
+        # A keep-both rebase resolution can leave a bug id in both "## Open
+        # bugs" and "## Recently closed", so a fixed bug reads as open forever
+        # (five rows were in that state on 2026-09-05). The gate and its
+        # hermetic self-test run on every PR.
+        run: |
+          bash scripts/ci/check-state-md-rows.sh
+          bash scripts/ci/tests/test-check-state-md-rows.sh
+
       - name: One-shot release-please fields must not outlive the first release
         run: |
           # ADR-1151. `release-as` and `bootstrap-sha` are one-shot cutover
