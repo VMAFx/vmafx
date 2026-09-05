@@ -174,6 +174,14 @@ no rebase impact: fork-local SYCL feature extractor and tests.
   `core/src/feature/` wildcard glob, silently truncated the comment mid-file, and turned the
   header into parse errors). On a sync, keep the bracket balanced and do not "modernise" the
   header — every rewrite it suppresses breaks the C includers.
+## feat/dnn-int8-redirect-and-sidecar-fixes — measure_quant_drop.py path overrides (2026-09-05)
+
+- `ai/scripts/measure_quant_drop.py`: added `--fp32` / `--int8` / `--budget` / `--id` so a
+  pair of ONNX files can be gated without a `model/tiny/registry.json` entry. Registry-driven
+  `--all` and positional forms are untouched.
+- `ai/tests/test_measure_quant_drop_unit.py`, `docs/ai/quantization.md`: coverage + docs.
+- `no rebase impact: fork-added tiny-AI training script; upstream Netflix/vmaf has no ai/ tree.`
+
 ## feat/dnn-int8-redirect-and-sidecar-fixes — declare onnx_has_scaler in vmaf_tiny_v3.int8.json (2026-09-05)
 
 - `model/tiny/vmaf_tiny_v3.int8.json`: added `"onnx_has_scaler": true`, so the C runtime

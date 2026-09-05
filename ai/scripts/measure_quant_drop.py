@@ -16,6 +16,13 @@ Usage::
 
     python ai/scripts/measure_quant_drop.py model/tiny/learned_filter_v1.onnx
     python ai/scripts/measure_quant_drop.py --all   # iterate every quantised model in registry
+
+    # Registry-free: measure any pair of files, e.g. an uncommitted PTQ / QAT
+    # output during development or a pre-release gate on a build artifact.
+    python ai/scripts/measure_quant_drop.py \
+        --fp32 /tmp/out/mlp_small_final.onnx \
+        --int8 /tmp/out/mlp_small_final.ptq_static.int8.onnx \
+        --budget 0.002
 """
 
 from __future__ import annotations
@@ -36,6 +43,10 @@ from aiutils.run_manifest import build_run_provenance, write_manifest_json  # no
 REGISTRY = REPO_ROOT / "model" / "tiny" / "registry.json"
 SEED = 0
 N_SAMPLES = 16
+#: PLCC-drop budget applied to a ``--fp32`` / ``--int8`` pair, which by
+#: definition has no ``quant_accuracy_budget_plcc`` registry entry to read.
+#: Matches the registry-wide default used by :func:`_gate_one`.
+DEFAULT_BUDGET_PLCC = 0.01
 
 
 def _load_registry() -> dict[str, Any]:
@@ -123,6 +134,50 @@ def _gate_one(entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _gate_pair(fp32: Path, int8: Path, budget: float, model_id: str) -> dict[str, Any]:
+    """Gate an explicit fp32 / int8 pair, bypassing ``registry.json``.
+
+    Backs the ``--fp32`` / ``--int8`` overrides. Used for models that are not
+    (yet) in the registry: PTQ / QAT scratch output during development, CI
+    smoke artifacts, and pre-release gating of a freshly built checkpoint.
+    Because there is no registry entry there is also no
+    ``quant_accuracy_budget_plcc``; the caller supplies it via ``--budget``
+    (default ``DEFAULT_BUDGET_PLCC``).
+    """
+    missing = [str(p) for p in (fp32, int8) if not p.is_file()]
+    if missing:
+        print(f"[FAIL] {model_id} — file(s) not found: {', '.join(missing)}", file=sys.stderr)
+        return {
+            "id": model_id,
+            "quant_mode": "override",
+            "status": "missing_model",
+            "ok": False,
+            "fp32_exists": fp32.is_file(),
+            "int8_exists": int8.is_file(),
+            "fp32_path": str(fp32),
+            "int8_path": str(int8),
+        }
+    plcc, drop, worst = _measure(fp32, int8)
+    ok = drop <= budget
+    status = "PASS" if ok else "FAIL"
+    print(
+        f"[{status}] {model_id:<24} mode=override "
+        f"PLCC={plcc:.6f}  drop={drop:.6f}  budget={budget:.4f}  worst_abs={worst:.4f}"
+    )
+    return {
+        "id": model_id,
+        "quant_mode": "override",
+        "status": status.lower(),
+        "ok": ok,
+        "plcc": plcc,
+        "drop": drop,
+        "budget": budget,
+        "worst_abs": worst,
+        "fp32_path": str(fp32),
+        "int8_path": str(int8),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(description=__doc__)
@@ -131,12 +186,76 @@ def main(argv: list[str] | None = None) -> int:
         "--all", action="store_true", help="Iterate every quantised model in the registry"
     )
     parser.add_argument(
+        "--fp32",
+        type=Path,
+        default=None,
+        help=(
+            "fp32 ONNX path override — measure this exact file instead of resolving "
+            "a registry entry. Requires --int8; incompatible with --all and with the "
+            "positional argument."
+        ),
+    )
+    parser.add_argument(
+        "--int8",
+        type=Path,
+        default=None,
+        help="int8 ONNX path override; requires --fp32.",
+    )
+    parser.add_argument(
+        "--budget",
+        type=float,
+        default=DEFAULT_BUDGET_PLCC,
+        help=(
+            f"PLCC-drop budget for the --fp32/--int8 pair (default {DEFAULT_BUDGET_PLCC}). "
+            "Ignored for registry-driven runs, which read quant_accuracy_budget_plcc."
+        ),
+    )
+    parser.add_argument(
+        "--id",
+        dest="model_id",
+        default=None,
+        help="Label for the --fp32/--int8 pair in the report (default: the fp32 stem).",
+    )
+    parser.add_argument(
         "--out-json",
         type=Path,
         default=None,
         help="Optional JSON gate report with ADR-0661 run provenance.",
     )
     args = parser.parse_args(raw_argv)
+
+    if (args.fp32 is None) != (args.int8 is None):
+        print("--fp32 and --int8 must be given together", file=sys.stderr)
+        return 2
+    if args.fp32 is not None:
+        if args.all or args.onnx is not None:
+            print(
+                "--fp32/--int8 cannot be combined with --all or a positional ONNX path",
+                file=sys.stderr,
+            )
+            return 2
+        fp32 = args.fp32.resolve()
+        int8 = args.int8.resolve()
+        stem = fp32.name[: -len(".onnx")] if fp32.name.endswith(".onnx") else fp32.name
+        model_id = args.model_id or stem
+        result = _gate_pair(fp32, int8, float(args.budget), model_id)
+        if args.out_json is not None:
+            write_manifest_json(
+                args.out_json,
+                {
+                    "gate_pass": bool(result["ok"]),
+                    "models": [result],
+                    "run_provenance": build_run_provenance(
+                        entrypoint=SCRIPT_PATH,
+                        repo_root=REPO_ROOT,
+                        argv=raw_argv,
+                        args=args,
+                        inputs={"fp32": fp32, "int8": int8},
+                        outputs={"report": args.out_json},
+                    ),
+                },
+            )
+        return 0 if result["ok"] else 1
 
     try:
         reg = _load_registry()

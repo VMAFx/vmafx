@@ -288,6 +288,42 @@ python ai/scripts/measure_quant_drop.py --all \
 `run_provenance` block as the producer scripts. Use it for model-card evidence
 or when comparing a refreshed int8 sidecar against a previous CI gate.
 
+### Gating a model that is not in the registry
+
+`--all` and the positional form both resolve through
+[`model/tiny/registry.json`](../../model/tiny/registry.json): the positional
+argument must live under `model/tiny/`, and the budget comes from that entry's
+`quant_accuracy_budget_plcc`. A model that has not been committed yet — PTQ or
+QAT scratch output, a CI smoke artifact, a freshly built release candidate —
+has neither. The `--fp32` / `--int8` overrides measure an explicit pair
+instead, touching no registry at all:
+
+```bash
+python ai/scripts/measure_quant_drop.py \
+    --fp32 /tmp/train_out/mlp_small_final.onnx \
+    --int8 /tmp/train_out/mlp_small_final.ptq_static.int8.onnx \
+    --budget 0.002 \
+    --id mlp_small_static_ptq \
+    --out-json /tmp/quant_drop.json
+```
+
+```text
+[PASS] mlp_small_static_ptq     mode=override PLCC=0.999536  drop=0.000464  budget=0.0020  worst_abs=0.0010
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--fp32 PATH` | fp32 ONNX to measure. Required together with `--int8`; any path, not just `model/tiny/`. |
+| `--int8 PATH` | int8 ONNX to measure against it. |
+| `--budget FLOAT` | PLCC-drop budget for the pair (default `0.01`, matching the registry-wide default). Research-2029 §6 recommends `0.002` for static PTQ and `0.001` for QAT. |
+| `--id NAME` | Label in the console line and the `--out-json` report. Defaults to the fp32 filename without `.onnx`. |
+
+The overrides are mutually exclusive with `--all` and with the positional
+argument — passing both exits `2`. Exit codes are otherwise unchanged: `0`
+pass, `1` drop over budget or a missing file, `2` bad invocation. The
+`--out-json` report keeps the same shape as a registry run, with
+`"quant_mode": "override"` on the single row.
+
 ## Currently quantised models
 
 | Model id | Mode | Size shrink | Measured drop | Budget |
