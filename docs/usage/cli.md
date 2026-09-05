@@ -69,6 +69,53 @@ The `--model / -m` flag takes a colon-delimited key/value string:
 --model version=...:enable_transform      # apply transform
 ```
 
+### Option string escaping and Windows paths
+
+Option strings for `--model` and `--feature` use `:`, `=`, and `.` as structural
+delimiters. If an option value (such as a filesystem path) contains these
+characters, escape them with a backslash (`\`):
+
+- `\:` escapes a colon
+- `\=` escapes an equals sign
+- `\.` escapes a dot (in model feature overloads)
+- `\\` escapes a literal backslash
+
+Additionally, when `path=` is followed by a Windows drive letter prefix
+(`[A-Za-z]:\` or `[A-Za-z]:/`), the drive-letter colon is parsed verbatim
+without requiring an escape (ADR-1180).
+
+Examples:
+
+1. **Path containing an equals sign (`\=`)**:
+
+   ```shell
+   vmaf -r ref.y4m -d dis.y4m --model "path=/models/dir\=eq/m.json"
+   ```
+
+2. **Path containing a colon (`\:`)**:
+
+   ```shell
+   vmaf -r ref.y4m -d dis.y4m --model "path=/models/dir\:colon/m.json"
+   ```
+
+3. **Windows drive-letter path (unescaped affordance)**:
+
+   ```shell
+   vmaf -r ref.y4m -d dis.y4m --model "path=C:\models\vmaf_v0.6.1.json"
+   ```
+
+4. **Feature option containing an escaped delimiter (`\=`)**:
+
+   ```shell
+   vmaf -r ref.y4m -d dis.y4m --feature "psnr=some_path\=C:\x"
+   ```
+
+5. **Literal backslash (`\\`)**:
+
+   ```shell
+   vmaf -r ref.y4m -d dis.y4m --model "path=/dir\\sub/m.json"
+   ```
+
 Built-in model versions (compiled into `libvmaf` via `-Dbuilt_in_models=true`,
 default `true`):
 

@@ -133,6 +133,12 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
 
 void cli_free(CLISettings *settings);
 
+/* ADR-1180: Escape-aware option string splitter. Scans *sp up to the first
+ * unescaped sep, compacts \<sep> and \\ in place, terminates the token with '\0',
+ * advances *sp past the delimiter (or to nullptr if end of string), and returns
+ * the token. */
+char *vmaf_cli_split(char **sp, char sep);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

@@ -1,0 +1,1 @@
+-r a -d b -m path=/dir\=eq/m\:colon.json:name=test --feature psnr=some_path\=C:\x:enable_chroma=false

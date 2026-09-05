@@ -25,6 +25,7 @@
 #include "test.h"
 
 #include "cli_parse.h"
+#include "dict.h"
 #include <string.h>
 
 static int cli_free_dicts(CLISettings *settings)
@@ -567,6 +568,196 @@ static char *run_vmafx_tests(void)
     return NULL;
 }
 
+/* ADR-1180: Test direct vmaf_cli_split escape handling */
+static char *test_cli_split_escapes_direct(void)
+{
+    /* psnr=some_path\=C:\x via \= */
+    char buf1[] = "psnr=some_path\\=C:\\x";
+    char *sp1 = buf1;
+    char *token1 = vmaf_cli_split(&sp1, '=');
+    mu_assert("ADR-1180: split token1 == psnr", token1 && strcmp(token1, "psnr") == 0);
+    char *token2 = vmaf_cli_split(&sp1, '=');
+    mu_assert("ADR-1180: split token2 == some_path=C:\\x",
+              token2 && strcmp(token2, "some_path=C:\\x") == 0);
+    mu_assert("ADR-1180: sp1 exhausted", sp1 == NULL);
+
+    /* \\ literal backslash */
+    char buf2[] = "path=foo\\\\bar:name=test";
+    char *sp2 = buf2;
+    char *kv = vmaf_cli_split(&sp2, ':');
+    mu_assert("ADR-1180: split kv == path=foo\\bar", kv && strcmp(kv, "path=foo\\bar") == 0);
+    char *key = vmaf_cli_split(&kv, '=');
+    char *val = vmaf_cli_split(&kv, '=');
+    mu_assert("ADR-1180: split key == path", key && strcmp(key, "path") == 0);
+    mu_assert("ADR-1180: split val == foo\\bar", val && strcmp(val, "foo\\bar") == 0);
+
+    /* \: delimiter escape */
+    char buf3[] = "a\\:b:c";
+    char *sp3 = buf3;
+    char *t1 = vmaf_cli_split(&sp3, ':');
+    char *t2 = vmaf_cli_split(&sp3, ':');
+    mu_assert("ADR-1180: split t1 == a:b", t1 && strcmp(t1, "a:b") == 0);
+    mu_assert("ADR-1180: split t2 == c", t2 && strcmp(t2, "c") == 0);
+    mu_assert("ADR-1180: sp3 exhausted", sp3 == NULL);
+
+    /* \. delimiter escape */
+    char buf4[] = "vif\\.scale0.opt";
+    char *sp4 = buf4;
+    char *d1 = vmaf_cli_split(&sp4, '.');
+    char *d2 = vmaf_cli_split(&sp4, '.');
+    mu_assert("ADR-1180: split d1 == vif.scale0", d1 && strcmp(d1, "vif.scale0") == 0);
+    mu_assert("ADR-1180: split d2 == opt", d2 && strcmp(d2, "opt") == 0);
+    mu_assert("ADR-1180: sp4 exhausted", sp4 == NULL);
+
+    return NULL;
+}
+
+/* ADR-1180: Test --model option escape parsing and Windows drive-letter affordance */
+static char *test_cli_parse_model_escapes(void)
+{
+    /* path=<d>/dir\=eq/m.json */
+    char *argv1[] = {
+        "vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--model", "path=/models/dir\\=eq/m.json"};
+    const int argc1 = sizeof(argv1) / sizeof(argv1[0]);
+    CLISettings settings1;
+    optind = 1;
+    cli_parse(argc1, argv1, &settings1);
+    mu_assert("ADR-1180: model path with \\= escape",
+              settings1.model_cnt == 1 && settings1.model_config[0].path &&
+                  strcmp(settings1.model_config[0].path, "/models/dir=eq/m.json") == 0);
+    cli_free(&settings1);
+    cli_free_dicts(&settings1);
+
+    /* path=<d>/dir\:colon/m.json */
+    char *argv2[] = {
+        "vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--model", "path=/models/dir\\:colon/m.json"};
+    const int argc2 = sizeof(argv2) / sizeof(argv2[0]);
+    CLISettings settings2;
+    optind = 1;
+    cli_parse(argc2, argv2, &settings2);
+    mu_assert("ADR-1180: model path with \\: escape",
+              settings2.model_cnt == 1 && settings2.model_config[0].path &&
+                  strcmp(settings2.model_config[0].path, "/models/dir:colon/m.json") == 0);
+    cli_free(&settings2);
+    cli_free_dicts(&settings2);
+
+    /* path=C:\models\x.json unescaped drive letter */
+    char *argv3[] = {
+        "vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--model", "path=C:\\models\\x.json"};
+    const int argc3 = sizeof(argv3) / sizeof(argv3[0]);
+    CLISettings settings3;
+    optind = 1;
+    cli_parse(argc3, argv3, &settings3);
+    mu_assert("ADR-1180: model path C:\\models\\x.json unescaped drive letter",
+              settings3.model_cnt == 1 && settings3.model_config[0].path &&
+                  strcmp(settings3.model_config[0].path, "C:\\models\\x.json") == 0);
+    cli_free(&settings3);
+    cli_free_dicts(&settings3);
+
+    /* path=C:\models\x.json:name=custom_vmaf unescaped drive letter followed by option */
+    char *argv3b[] = {"vmaf",
+                      "-r",
+                      "ref.y4m",
+                      "-d",
+                      "dis.y4m",
+                      "--model",
+                      "path=C:\\models\\x.json:name=custom_vmaf"};
+    const int argc3b = sizeof(argv3b) / sizeof(argv3b[0]);
+    CLISettings settings3b;
+    optind = 1;
+    cli_parse(argc3b, argv3b, &settings3b);
+    mu_assert("ADR-1180: model path C:\\models\\x.json with name option",
+              settings3b.model_cnt == 1 && settings3b.model_config[0].path &&
+                  strcmp(settings3b.model_config[0].path, "C:\\models\\x.json") == 0 &&
+                  settings3b.model_config[0].cfg.name &&
+                  strcmp(settings3b.model_config[0].cfg.name, "custom_vmaf") == 0);
+    cli_free(&settings3b);
+    cli_free_dicts(&settings3b);
+
+    /* No-change regression: version=vmaf_v0.6.1:disable_clip:name=foo */
+    char *argv4[] = {"vmaf",
+                     "-r",
+                     "ref.y4m",
+                     "-d",
+                     "dis.y4m",
+                     "--model",
+                     "version=vmaf_v0.6.1:disable_clip:name=foo"};
+    const int argc4 = sizeof(argv4) / sizeof(argv4[0]);
+    CLISettings settings4;
+    optind = 1;
+    cli_parse(argc4, argv4, &settings4);
+    mu_assert("ADR-1180 regression: model_cnt == 1", settings4.model_cnt == 1);
+    mu_assert("ADR-1180 regression: version == vmaf_v0.6.1",
+              settings4.model_config[0].version &&
+                  strcmp(settings4.model_config[0].version, "vmaf_v0.6.1") == 0);
+    mu_assert("ADR-1180 regression: disable_clip flag set",
+              (settings4.model_config[0].cfg.flags & VMAF_MODEL_FLAG_DISABLE_CLIP) != 0);
+    mu_assert("ADR-1180 regression: name == foo",
+              settings4.model_config[0].cfg.name &&
+                  strcmp(settings4.model_config[0].cfg.name, "foo") == 0);
+    cli_free(&settings4);
+    cli_free_dicts(&settings4);
+
+    return NULL;
+}
+
+/* ADR-1180: Test --feature regression and option escape parsing */
+static char *test_cli_parse_feature_regression_and_escapes(void)
+{
+    /* No-change regression: --feature psnr=enable_chroma=false:min_sse=1 */
+    char *argv1[] = {"vmaf",
+                     "-r",
+                     "ref.y4m",
+                     "-d",
+                     "dis.y4m",
+                     "--feature",
+                     "psnr=enable_chroma=false:min_sse=1"};
+    const int argc1 = sizeof(argv1) / sizeof(argv1[0]);
+    CLISettings settings1;
+    optind = 1;
+    cli_parse(argc1, argv1, &settings1);
+    mu_assert("ADR-1180 regression: feature_cnt == 1", settings1.feature_cnt == 1);
+    mu_assert("ADR-1180 regression: feature name == psnr",
+              settings1.feature_cfg[0].name && strcmp(settings1.feature_cfg[0].name, "psnr") == 0);
+    mu_assert("ADR-1180 regression: opts_dict not NULL",
+              settings1.feature_cfg[0].opts_dict != NULL);
+    VmafDictionaryEntry *e_chroma = vmaf_dictionary_get(
+        (VmafDictionary **)&settings1.feature_cfg[0].opts_dict, "enable_chroma", 0);
+    mu_assert("ADR-1180 regression: enable_chroma == false",
+              e_chroma && e_chroma->val && strcmp(e_chroma->val, "false") == 0);
+    VmafDictionaryEntry *e_sse =
+        vmaf_dictionary_get((VmafDictionary **)&settings1.feature_cfg[0].opts_dict, "min_sse", 0);
+    mu_assert("ADR-1180 regression: min_sse == 1",
+              e_sse && e_sse->val && strcmp(e_sse->val, "1") == 0);
+    cli_free(&settings1);
+    cli_free_dicts(&settings1);
+
+    /* Feature option with escaped colon: psnr=custom_tag=a\:b */
+    char *argv2[] = {
+        "vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--feature", "psnr=custom_tag=a\\:b"};
+    const int argc2 = sizeof(argv2) / sizeof(argv2[0]);
+    CLISettings settings2;
+    optind = 1;
+    cli_parse(argc2, argv2, &settings2);
+    mu_assert("ADR-1180: feature_cnt == 1", settings2.feature_cnt == 1);
+    VmafDictionaryEntry *e_tag = vmaf_dictionary_get(
+        (VmafDictionary **)&settings2.feature_cfg[0].opts_dict, "custom_tag", 0);
+    mu_assert("ADR-1180: custom_tag unescaped == a:b",
+              e_tag && e_tag->val && strcmp(e_tag->val, "a:b") == 0);
+    cli_free(&settings2);
+    cli_free_dicts(&settings2);
+
+    return NULL;
+}
+
+static char *run_cli_escape_tests(void)
+{
+    mu_run_test(test_cli_split_escapes_direct);
+    mu_run_test(test_cli_parse_model_escapes);
+    mu_run_test(test_cli_parse_feature_regression_and_escapes);
+    return NULL;
+}
+
 char *run_tests()
 {
     char *result = run_aom_ctc_tests();
@@ -579,6 +770,9 @@ char *run_tests()
     if (result)
         return result;
     result = run_vmafx_tests();
+    if (result)
+        return result;
+    result = run_cli_escape_tests();
     if (result)
         return result;
     return NULL;

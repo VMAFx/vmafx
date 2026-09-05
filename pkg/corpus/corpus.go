@@ -235,7 +235,7 @@ func resolveHDRScoreModel(info *HdrInfo, sdrModel string, warned *bool) string {
 		return sdrModel
 	}
 	if hdrModel := SelectHDRVMAFModel("", info.Transfer); hdrModel != "" {
-		return "path=" + hdrModel
+		return "path=" + escapeOptValue(hdrModel)
 	}
 	if !*warned {
 		slog.Warn("vmaf-tune: HDR source detected but no HDR VMAF model is shipped; "+
@@ -766,4 +766,42 @@ func MissingRowKeys(row map[string]any) []string {
 		}
 	}
 	return missing
+}
+
+// escapeOptValue escapes delimiters (':', '=', and any backslash preceding them or another backslash)
+// for use in CLI option strings per ADR-1180.
+func escapeOptValue(s string) string {
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 8)
+
+	start := 0
+	if len(s) >= 3 &&
+		((s[0] >= 'a' && s[0] <= 'z') || (s[0] >= 'A' && s[0] <= 'Z')) &&
+		s[1] == ':' &&
+		(s[2] == '\\' || s[2] == '/') {
+		b.WriteByte(s[0])
+		b.WriteByte(':')
+		start = 2
+	}
+
+	for i := start; i < len(s); i++ {
+		switch s[i] {
+		case ':', '=':
+			b.WriteByte('\\')
+			b.WriteByte(s[i])
+		case '\\':
+			if i+1 < len(s) && (s[i+1] == ':' || s[i+1] == '=' || s[i+1] == '\\') {
+				b.WriteByte('\\')
+				b.WriteByte('\\')
+			} else {
+				b.WriteByte('\\')
+			}
+		default:
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
 }

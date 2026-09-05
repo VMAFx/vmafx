@@ -391,3 +391,27 @@ func TestScore_PreCancelledContext(t *testing.T) {
 		t.Errorf("pre-cancelled Score took %v — fast-path not working", elapsed)
 	}
 }
+
+func TestEscapeOptValue(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"", ""},
+		{"/path/to/model.json", "/path/to/model.json"},
+		{"/path/dir=eq/m.json", "/path/dir\\=eq/m.json"},
+		{"/path/dir:colon/m.json", "/path/dir\\:colon/m.json"},
+		{`C:\models\x.json`, `C:\models\x.json`},
+		{`C:\models\dir=eq\x.json`, `C:\models\dir\=eq\x.json`},
+		{`C:/models/dir=eq/x.json`, `C:/models/dir\=eq/x.json`},
+		{`C:\models\dir:colon\x.json`, `C:\models\dir\:colon\x.json`},
+		{`foo\\=bar`, `foo\\\\\=bar`},
+	}
+
+	for _, tc := range tests {
+		got := escapeOptValue(tc.in)
+		if got != tc.want {
+			t.Errorf("escapeOptValue(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
