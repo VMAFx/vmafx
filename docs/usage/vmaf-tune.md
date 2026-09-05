@@ -1122,39 +1122,88 @@ without a per-token binding use the global `--ffmpeg-bin`.
 
 ### SVT-AV1-HDR tuning knobs
 
-[SVT-AV1-HDR](https://github.com/juliobbv-p/svt-av1-hdr) (fork of `psy-ex/svt-av1-psy`,
-upstream commit `00333404f455471aaa6ee2c927cac3c93efb76e3`, 2026-09-01) adds
-perceptual and HDR-tailored rate-distortion features to SVT-AV1 under a
-BSD-3-Clause-Clear license.
+[SVT-AV1-HDR](https://github.com/juliobbv-p/svt-av1-hdr) is a
+BSD-3-Clause-Clear fork of `psy-ex/svt-av1-psy` that adds perceptual and
+HDR-oriented rate-distortion features to SVT-AV1. Everything in this section
+is taken from the upstream
+[README](https://github.com/juliobbv-p/svt-av1-hdr/blob/00333404f455471aaa6ee2c927cac3c93efb76e3/README.md)
+and
+[`Docs/Parameters.md`](https://github.com/juliobbv-p/svt-av1-hdr/blob/00333404f455471aaa6ee2c927cac3c93efb76e3/Docs/Parameters.md)
+at commit `00333404f455471aaa6ee2c927cac3c93efb76e3` (2026-09-01); re-check
+those pages before relying on a default, because the fork tracks mainline
+SVT-AV1 and its defaults move.
 
-In `vmaf-tune`, SVT-AV1-HDR operates through the `libsvtav1` codec adapter
-(`libsvtav1@svt-av1-hdr`). By architectural decision
-([ADR-0644](../adr/0644-vmaf-tune-codec-runtime-variants.md)), `'svtav1-hdr'`
-is **not** registered as an independent adapter in `known_codecs()`; instead, it
-inherits the canonical CRF `0..63` and preset `0..13` mappings from
-[ADR-0294](../adr/0294-vmaf-tune-codec-adapter-svtav1.md). Its specialized
-tuning parameters are passed through the `libsvtav1` adapter via FFmpeg's
-`-svtav1-params` knob:
+**How `vmaf-tune` selects it.** By decision
+([ADR-0644](../adr/0644-vmaf-tune-codec-runtime-variants.md)) there is no
+separate `svtav1-hdr` adapter token — `'svtav1-hdr' in known_codecs()` is
+`False` — because FFmpeg exposes the fork through the same `libsvtav1`
+wrapper as mainline SVT-AV1. Select it as the runtime variant
+`libsvtav1@svt-av1-hdr` and bind that token to an FFmpeg binary linked
+against the fork with `--encoder-ffmpeg-bin` (see the previous section).
+The variant inherits the `libsvtav1` adapter contract from
+[ADR-0294](../adr/0294-vmaf-tune-codec-adapter-svtav1.md): integer CRF
+`0..63`, x264-style preset names mapped onto SVT-AV1 presets `0..13`
+(`medium` = `7`). The fork itself accepts CRF `1..70` in `0.25` steps
+(default `35`) and presets `-3..13` (default `4`); those extensions are
+**not** reachable from `vmaf-tune` — the adapter validates against the
+ADR-0294 window before FFmpeg is invoked.
 
-| Parameter | Values / Range | Default | Purpose & Recommended Usage |
+**How the knobs reach the encoder.** The fork's extra parameters are not
+separate FFmpeg options; they travel as one colon-separated
+`-svtav1-params key=value:key=value` string that FFmpeg's `libsvtav1`
+wrapper forwards verbatim. `vmaf-tune` composes the argv as
+`adapter.ffmpeg_codec_args(...)` + `adapter.extra_params()` +
+`request.extra_params` (see the dispatcher listing under
+[Codec adapter contract](#codec-adapter-contract)), so there are three
+places to inject the string:
+
+- Python API: `EncodeRequest(..., extra_params=("-svtav1-params",
+  "tune=0:cdef-scaling=12"))`.
+- An adapter subclass whose `extra_params()` returns the same pair
+  (registered as its own adapter name).
+- CLI: `vmaf-tune encode-profile --extra-ffmpeg-arg=-svtav1-params
+  --extra-ffmpeg-arg=tune=0:cdef-scaling=12`. `vmaf-tune compare` has no
+  raw-argv passthrough flag; a compare sweep runs the fork with its own
+  defaults (plus the HDR signalling below).
+
+Two cautions. The HDR signalling path (`vmaftune.hdr.hdr_codec_args`)
+already emits `-svtav1-params color-primaries=9:transfer-characteristics=16|18:matrix-coefficients=9[:mastering-display=…:content-light=…]`
+for `libsvtav1`; a second `-svtav1-params` option on the same command line
+replaces that value instead of merging with it, so fold your tuning keys
+into one string together with the colour keys. And `-svtav1-params` is
+parsed last by the wrapper, so a `crf=` or `preset=` key inside it silently
+overrides the `-crf` / `-preset` that the bisect loop is steering — never put
+those two keys in the string.
+
+| `-svtav1-params` key | Range | Default | Purpose |
 |---|---|---|---|
-| `variance-boost-curve` | `0..3` | `0` | Transfer curve for variance boost. `0`: default; `1`: alternative; `2`: still image; `3`: HDR PQ transfer curve (optimised for perceptual quantisation in high dynamic range). |
-| `enable-variance-boost` | `0..1` | `1` | Enable variance boost logic to reallocate bits toward visually complex or high-contrast macroblocks (`1` = enabled). |
-| `variance-boost-strength` | `1..4` | `2` | Variance boost strength. `1`: mild, `2`: gentle, `3`: medium, `4`: aggressive bit reallocation. |
-| `variance-octile` | `1..8` | `5` | 8x8 block variance selectivity octile threshold for boost triggering. |
-| `tune` | `0, 1, 2, 3, 5` | `0` | Tuning metric: `0` = Visual Quality (VQ), `1` = PSNR, `2` = SSIM, `3` = IQ+AVIF, `5` = Film Grain. Use `tune=0` for perceptual / VMAF sweeps. |
-| `cdef-scaling` | `1..30` | `15` | Constrained Directional Enhancement Filter strength scaling. Lower values (e.g. `10-12`) preserve fine high-frequency textures in HDR. |
-| `noise` | `0..200` | `0` | Generates a synthetic film grain table (`50` corresponds to `--film-grain 50`). |
-| `noise-chroma` | `-1..200` | `-1` | Chroma film grain synthesis strength. `-1`: auto (~60% of luma), `0`: disabled, `1..200`: explicit strength. |
-| `noise-chroma-from-luma` | `0..1` | `0` | Derive chroma noise synthesis patterns from the luma plane (`1` = enabled). |
-| `noise-size` | `-1..13` | `-1` | Film grain particle size (`-1` = auto selection based on resolution). |
-| `qp-scale-compress-strength` | `0.0..8.0` | `1.0` | Temporal layer QP scale compression factor. |
-| `ac-bias` | `0.0..8.0` | `1.0` | Psychovisual rate-distortion metric biasing high frequencies. |
-| `tx-bias` | `0..3` | `0` | Transform block size and type selection bias mode. |
-| `complex-hvs` | `0..1` | `0` | Enable high-complexity human visual system modeling for mode decision. |
-| `sharp-tx` | `0..1` | `0` | Sharp transform optimizations for crisp edge preservation. |
-| `hbd-mds` | `0..2` | `0` | High bit depth mode decisions: `0`: default; `1`: full 10-bit mode decision; `2`: hybrid 8/10-bit mode decision. |
-| `noise-adaptive-filtering` | `0..4` | `0` | Adaptive noise filtering disabling CDEF and loop restoration on detected noisy blocks. |
+| `tune` | `0..5` | `1` | `0` = VQ (perceptual, README recommends it with any CRF, presets 2–6), `1` = PSNR, `2` = SSIM, `3` = IQ (still images, pair with `--avif 1`), `4` = MS-SSIM, `5` = Film Grain (CRF 20–40, preset 2; equals `tune=0:enable-tf=0:enable-restoration=0:enable-cdef=0:complex-hvs=1:tx-bias=1:ac-bias=4.00`). |
+| `enable-variance-boost` | `0..1` | `1` | Variance-based superblock boost (AQ modes 0 and 2); on by default in the fork, off in mainline. |
+| `variance-boost-strength` | `1..4` | `2` | Boost curve strength: `1` mild, `2` gentle, `3` medium, `4` aggressive. |
+| `variance-octile` | `1..8` | `5` | Selectivity: how much of a superblock must be low-variance (in eighths) before it is boosted; lower values raise bitrate. |
+| `variance-boost-curve` | `0..3` | `0` | `0` default, `1` alternative, `2` still image, `3` HDR PQ curve — `3` is auto-selected when `transfer-characteristics=16` (PQ). |
+| `ac-bias` | `0.0..8.0` | `1.0` | Psychovisual RD bias preserving high-frequency energy. |
+| `tx-bias` | `0..3` | `0` | Sharpness-biased transform decisions: `0` off, `1` full, `2` transform size only, `3` interpolation filter only. |
+| `sharp-tx` | `0..1` | `1` | Sharp transform optimisations; on by default to complement `ac-bias`, upstream recommends `0` when `ac-bias=0`. |
+| `complex-hvs` | `0..1` | `0` | Highest-complexity HVS model for mode decision. |
+| `qp-scale-compress-strength` | `0.0..8.0` | `1.0` | Compresses the per-temporal-layer QP range for more consistent quality (`0.0` = mainline behaviour). |
+| `hbd-mds` | `0..2` | `0` | Mode-decision bit depth: `0` preset default, `1` force 10-bit, `2` adaptive 8/10-bit. |
+| `cdef-scaling` | `1..30` | `15` | CDEF strength scale (`1` = 0.06x, `30` = 2x); `10..12` reported useful for sharper output. |
+| `noise-adaptive-filtering` | `0..4` | `2` | Disable CDEF / restoration on detected noise: `0` off, `1` both, `2` tune default, `3` CDEF only, `4` restoration only. |
+| `noise-norm-strength` | `0..4` | `1` | Boost selected AC coefficients on fine textures. |
+| `tf-strength` | `0..4` | `1` | Alt-ref temporal filtering strength (each step 2x; `3` equals the mainline default). |
+| `kf-tf-strength` | `0..4` | `1` | Same as `tf-strength`, keyframes only. |
+| `luminance-qp-bias` | `0..100` | `0` | Frame-level QP bias from average luma (dark-scene quality). |
+| `sharpness` | `-7..7` | `1` | Deblocking loop-filter sharpness and RD bias (`Docs/Parameters.md` prose still says `0`; the parameter table and README say `1`). |
+| `chroma-qm-min` / `chroma-qm-max` | `0..15` | `8` / `15` | Chroma quantisation-matrix flatness bounds, decoupled from luma. |
+| `max-tx-size` | `32`, `64` | `64` | Cap on transform block size. |
+| `adaptive-film-grain` | `0..1` | `1` | Film-grain block size follows input resolution. |
+| `alt-ssim-tuning` | `0..1` | `0` | Alternative SSIM RD path; only acts with `tune=2`. |
+| `noise` | `0..200` | `0` | Synthesised film-grain table strength (`50` is roughly `--film-grain 50`). |
+| `noise-chroma` | `-1..200` | `-1` | Chroma grain strength; `-1` = about 60 % of `noise`, `0` off. |
+| `noise-chroma-from-luma` | `0..1` | `0` | Derive chroma grain from the luma plane (grain also on greyscale content). |
+| `noise-size` | `-1..13` | `-1` | Grain particle size; `-1` = auto from resolution. |
+| `dolby-vision-rpu` / `hdr10plus-json` | path | — | Dolby Vision RPU / HDR10+ JSON metadata; need the fork built with `enable-libdovi` / `enable-hdr10plus`. |
 
 #### Example: SVT-AV1-HDR compare sweep
 
@@ -1168,6 +1217,12 @@ vmaf-tune compare \
     --json-sidecar \
     --output hdr-comparison.html
 ```
+
+Mainline and the HDR fork then appear as two curves in the same report,
+with provenance recording `adapter = libsvtav1`, `runtime_variant =
+svt-av1-hdr` and the bound `ffmpeg_bin`. No pinned SVT-AV1-HDR container
+build ships with the fork; adding one is an optional follow-up that needs
+its own ADR.
 
 ## Hardware encoders (NVENC)
 
