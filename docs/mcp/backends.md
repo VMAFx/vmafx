@@ -14,12 +14,11 @@ boolean values:
 
 ```json
 {
-  "cpu":    true,
-  "cuda":   true,
-  "sycl":   false,
-  "vulkan": true,
-  "hip":    false,
-  "metal":  false
+  "cpu":   true,
+  "cuda":  true,
+  "sycl":  false,
+  "hip":   false,
+  "metal": false
 }
 ```
 
@@ -30,7 +29,7 @@ corresponding `--no_<backend>` disable flag in its `--help` output.
 ### Why `--help`, not `--version`
 
 Historically the probe grepped the output of `vmaf --version` for the
-substrings `"cuda"`, `"sycl"`, `"vulkan"`, ... The fork's `vmaf`
+substrings `"cuda"`, `"sycl"`, ... The fork's `vmaf`
 banner does not list compiled-in GPU backends there, so on hosts
 where the kernel + driver + binary all supported (e.g.) CUDA — and
 `vmaf --backend cuda` produced valid scores — `list_backends`

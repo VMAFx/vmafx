@@ -104,6 +104,7 @@ func AllowedRoots() []string {
 		roots = append(roots,
 			filepath.Join(root, "testdata"),
 			filepath.Join(root, "python", "test", "resource"),
+			filepath.Join(root, "python", "test", "resource", "yuv"),
 			filepath.Join(root, "model"),
 		)
 	}

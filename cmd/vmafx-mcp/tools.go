@@ -2,9 +2,18 @@
 // Use of this source code is governed by the BSD-3-Clause-Plus-Patent
 // license that can be found in the LICENSE file.
 
-// tools.go registers the 15 VMAFX MCP tools. Tool names, argument schemas,
-// and response shapes are byte-for-byte compatible with the Python vmaf-mcp
-// server so that IDE MCP clients (Claude Desktop, Cursor) work unchanged.
+// tools.go registers the 15 VMAFX MCP tools across 6 functional categories:
+//  1. Metric computation & scoring (2): vmaf_score, vmaf_score_encoded
+//  2. Model discovery & inspection (3): list_models, describe_model, compare_models
+//  3. Platform & hardware inspection (4): list_backends, list_extractors, probe_backend, vmaf_version
+//  4. Frame-level diagnosis & ML (2): describe_worst_frames, eval_model_on_split
+//  5. Benchmarking (1): run_benchmark
+//  6. Tuning & optimization CLI wrappers (3): run_compare, run_ladder, run_tune_per_shot
+// Total: 2 + 3 + 4 + 2 + 1 + 3 = 15 tools. Stale historical comments referenced 16
+// tools prior to model inspection tool consolidation into compare_models.
+// Tool names, argument schemas, and response shapes are byte-for-byte compatible
+// with the Python vmaf-mcp server so that IDE MCP clients (Claude Desktop, Cursor)
+// work unchanged.
 //
 // Each tool is implemented by a corresponding function in impl.go that calls
 // out to the vmaf CLI binary. The Go server does NOT link against libvmaf.so
@@ -142,6 +151,39 @@ func scoringExtraProperties() schemaObj {
 			"type":        "boolean",
 			"description": "Extract features only, skip VMAF prediction (--no_prediction).",
 		},
+		// --- Device selectors ---
+		"cpumask": schemaObj{
+			"type":        "integer",
+			"minimum":     0,
+			"description": "Bitmask restricting permitted CPU SIMD instruction sets (--cpumask).",
+		},
+		"gpumask": schemaObj{
+			"type":        "integer",
+			"minimum":     0,
+			"description": "Bitmask restricting permitted GPU operations (--gpumask).",
+		},
+		"sycl_device": schemaObj{
+			"type":        "integer",
+			"minimum":     0,
+			"description": "Select SYCL GPU device by index (--sycl_device).",
+		},
+		"hip_device": schemaObj{
+			"type":        "integer",
+			"minimum":     0,
+			"description": "Select HIP GPU device by index (--hip_device).",
+		},
+		"metal_device": schemaObj{
+			"type":        "integer",
+			"minimum":     0,
+			"description": "Select Metal GPU device by index (--metal_device).",
+		},
+		// --- Output format ---
+		"output_fmt": schemaObj{
+			"type":        "string",
+			"enum":        []string{"json", "xml", "csv", "sub"},
+			"default":     "json",
+			"description": "Score output format (--json, --xml, --csv, --sub). Default: json.",
+		},
 	}
 }
 
@@ -171,8 +213,17 @@ func registerTools(srv *mcp.Server) {
 					"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
 					"default": "auto",
 				},
-				// "legacy" = %.6f, matching C CLI default per ADR-0119; use "max" for lossless.
-				"precision": schemaObj{"type": "string", "default": "legacy"},
+				"subsample": schemaObj{
+					"type":        "integer",
+					"minimum":     1,
+					"default":     1,
+					"description": "Score every Nth frame (1 = every frame).",
+				},
+				"precision": schemaObj{
+					"type":        "string",
+					"default":     "legacy",
+					"description": "Score precision format. Default 'legacy' (%.6f, Netflix-compatible per ADR-0119); use 'max' for lossless float output (%.17g).",
+				},
 			}, scoringExtraProperties()),
 		}),
 	}, handleVmafScore)
@@ -342,8 +393,11 @@ func registerTools(srv *mcp.Server) {
 					"default":     1,
 					"description": "Score every Nth frame (1 = every frame).",
 				},
-				// "legacy" = %.6f, matching C CLI default per ADR-0119; use "max" for lossless.
-				"precision": schemaObj{"type": "string", "default": "legacy"},
+				"precision": schemaObj{
+					"type":        "string",
+					"default":     "legacy",
+					"description": "Score precision format. Default 'legacy' (%.6f, Netflix-compatible per ADR-0119); use 'max' for lossless float output (%.17g).",
+				},
 			}, scoringExtraProperties()),
 		}),
 	}, handleVmafScoreEncoded)

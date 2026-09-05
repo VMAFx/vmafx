@@ -7236,6 +7236,16 @@ annotations required to leave the touched files lint-clean.
   coverage audit.
 
 
+- **MCP scoring surface completeness (#1240)** exposes device selectors
+  (`cpumask`, `gpumask`, `sycl_device`, `hip_device`, `metal_device`) and
+  serialization format options (`output_fmt`: `json`, `xml`, `csv`, `sub`)
+  in both Go (`cmd/vmafx-mcp`) and Python (`mcp-server/vmaf-mcp`) servers,
+  resolves schema asymmetry by adding `subsample` to `vmaf_score`, adds strict
+  enum and bounds input validation for all pass-through scoring extras, and
+  introduces cross-server argv parity tests. See
+  [docs/mcp/tools.md](../docs/mcp/tools.md).
+
+
 - **Embedded MCP server — v1 stdio runtime
   ([ADR-0209](../docs/adr/0209-mcp-embedded-scaffold.md)
   § "Status update 2026-05-08").** Promotes the T5-2 `-ENOSYS`
@@ -22542,6 +22552,15 @@ so that MCP output is Netflix-compatible without explicit precision argument (AD
   `16` in both the Python and Go MCP servers. Also removed the stale `vulkan`
   backend from `docs/mcp/tools.md` enums/examples (Vulkan was dropped in
   ADR-0726). MCP `backend` enum is `auto/cpu/cuda/sycl/hip/metal`.
+
+
+- **MCP schema defect fixes and parity cleanups**:
+  Accept bitdepth 16 on scoring tools matching libvmaf capabilities; reconcile
+  `precision` tool schema description to document default `legacy` (%.6f) and `max`
+  lossless output (%.17g) per ADR-0119; remove stale Vulkan references following
+  ADR-0726; fix stale "16 tools" count comment in Go `cmd/vmafx-mcp/tools.go` with
+  exact 15-tool categorization derivation; and admit `python/test/resource/yuv` in
+  allowed roots for worktree test runners.
 
 
 - **MCP server vmaf binary path resolution post-ADR-0700.**

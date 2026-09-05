@@ -43,6 +43,12 @@ _NEW_PROPS = (
     "frame_skip_ref",
     "frame_skip_dist",
     "no_prediction",
+    "cpumask",
+    "gpumask",
+    "sycl_device",
+    "hip_device",
+    "metal_device",
+    "output_fmt",
 )
 
 
@@ -58,7 +64,8 @@ def _tool_props(tool_name: str) -> dict:
 def test_new_properties_present(tool: str) -> None:
     props = _tool_props(tool)
     for key in _NEW_PROPS:
-        assert key in props, f"tool {tool!r} missing ADR-1117 property {key!r}"
+        assert key in props, f"tool {tool!r} missing property {key!r}"
+    assert "subsample" in props, f"tool {tool!r} missing subsample property"
     # Backward-compat: pre-existing properties still advertised.
     for key in ("model", "backend", "precision"):
         assert key in props, f"tool {tool!r} lost pre-existing property {key!r}"
@@ -69,6 +76,7 @@ def test_enums_match_cli_parse() -> None:
     assert props["aom_ctc"]["enum"] == ["v1.0", "v2.0", "v3.0", "v4.0", "v5.0", "v6.0", "v7.0"]
     assert props["nflx_ctc"]["enum"] == ["v1.0"]
     assert props["tiny_resize"]["enum"] == ["bilinear", "nearest", "bicubic", "disabled"]
+    assert props["output_fmt"]["enum"] == ["json", "xml", "csv", "sub"]
     assert "auto" in props["tiny_device"]["enum"]
     assert "rocm" in props["tiny_device"]["enum"]
     assert props["dnn_ep"]["enum"] == props["tiny_device"]["enum"]
@@ -93,6 +101,12 @@ def test_to_argv_maps_every_flag() -> None:
         frame_skip_ref=2,
         frame_skip_dist=0,  # explicit 0 must be emitted
         no_prediction=True,
+        cpumask=3,
+        gpumask=1,
+        sycl_device=0,
+        hip_device=2,
+        metal_device=0,
+        output_fmt="csv",
     )
     argv = extras.to_argv()
     joined = " ".join(argv)
@@ -115,6 +129,11 @@ def test_to_argv_maps_every_flag() -> None:
         "--frame_skip_ref 2",
         "--frame_skip_dist 0",
         "--no_prediction",
+        "--cpumask 3",
+        "--gpumask 1",
+        "--sycl_device 0",
+        "--hip_device 2",
+        "--metal_device 0",
     ):
         assert sub in joined, f"argv {joined!r} missing {sub!r}"
 
@@ -170,6 +189,7 @@ def test_dnn_ep_alias_supported() -> None:
 @pytest.mark.parametrize(
     ("args", "match"),
     [
+        ({"output_fmt": "yaml"}, "invalid output_fmt"),
         ({"tiny_device": "invalid_dev"}, "invalid tiny_device"),
         ({"dnn_ep": "unknown_ep"}, "invalid tiny_device"),
         ({"tiny_device": "cpu", "dnn_ep": "cuda"}, "conflicting tiny_device"),
@@ -182,10 +202,16 @@ def test_dnn_ep_alias_supported() -> None:
         ({"threads": 0}, "invalid threads"),
         ({"frame_cnt": 0}, "invalid frame_cnt"),
         ({"frame_skip_ref": -1}, "invalid frame_skip_ref"),
+        ({"frame_skip_dist": -1}, "invalid frame_skip_dist"),
         ({"subsample": 0}, "invalid subsample"),
+        ({"cpumask": -1}, "invalid cpumask"),
+        ({"gpumask": -1}, "invalid gpumask"),
+        ({"sycl_device": -1}, "invalid sycl_device"),
+        ({"hip_device": -1}, "invalid hip_device"),
+        ({"metal_device": -1}, "invalid metal_device"),
     ],
 )
-def test_extras_validation_rejects_bad_enums(args: dict, match: str) -> None:
+def test_extras_validation_rejects_bad_inputs(args: dict, match: str) -> None:
     with pytest.raises(ValueError, match=match):
         srv._extras_from_args(args)
 
@@ -232,3 +258,67 @@ def test_extras_validation_rejects_bad_enums(args: dict, match: str) -> None:
 def test_vmaf_score_rejects_invalid_core_params(args: dict, match: str) -> None:
     with pytest.raises(ValueError, match=match):
         anyio.run(lambda: srv._call_tool_dispatch("vmaf_score", args, None))
+
+
+def test_e2e_score_cpu_with_tinyai_flags_and_error_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = srv._repo_root()
+    ref = repo / "python" / "test" / "resource" / "yuv" / "src01_hrc00_576x324.yuv"
+    dis = repo / "python" / "test" / "resource" / "yuv" / "src01_hrc01_576x324.yuv"
+    if not ref.exists() or not dis.exists():
+        pytest.skip("Netflix src01 fixtures not found")
+    vmaf_bin = srv._vmaf_binary()
+    if not vmaf_bin.exists():
+        pytest.skip(f"vmaf binary {vmaf_bin} not found")
+
+    monkeypatch.setenv("VMAF_MCP_ALLOW", str(ref.resolve().parent))
+
+    # 1. Normal CPU scoring with extra scoring flags passed through
+    res = anyio.run(
+        lambda: srv._call_tool_dispatch(
+            "vmaf_score",
+            {
+                "ref": str(ref),
+                "dis": str(dis),
+                "width": 576,
+                "height": 324,
+                "pixfmt": "420",
+                "bitdepth": 8,
+                "model": "version=vmaf_v0.6.1",
+                "frame_cnt": 3,
+                "threads": 2,
+                "subsample": 1,
+            },
+            None,
+        )
+    )
+    import json
+    data = json.loads(res[0].text)
+    assert "pooled_metrics" in data
+    assert "vmaf" in data["pooled_metrics"]
+
+    # 2. Missing model error path exercises isError=True
+    from types import SimpleNamespace
+    from mcp.types import CallToolRequestParams
+
+    ctx = SimpleNamespace(session=SimpleNamespace())
+    err_res = anyio.run(
+        lambda: srv._mcp_call_tool(
+            ctx,  # type: ignore[arg-type]
+            CallToolRequestParams.model_validate(
+                {
+                    "name": "vmaf_score",
+                    "arguments": {
+                        "ref": str(ref),
+                        "dis": str(dis),
+                        "width": 576,
+                        "height": 324,
+                        "pixfmt": "420",
+                        "bitdepth": 8,
+                        "model": "path=/nonexistent/missing_model_path.json",
+                    },
+                }
+            ),
+        )
+    )
+    assert err_res.is_error is True
+    assert len(err_res.content) > 0
