@@ -57,8 +57,17 @@
 
 /* 320×240 clears CAMBI_MIN_WIDTH_HEIGHT (216) on both dims for cambi.c
  * and CAMBI_HIP_MIN_WIDTH_HEIGHT (216) for integer_cambi_hip.c. */
+/* ADR-1219 chose 640x480 at 10 bpc for this test specifically: CAMBI needs
+ * banding content to score above zero, and the 320x240 8-bit fixture the other
+ * HIP parity tests use scores exactly 0.0 on both sides, which would pass while
+ * measuring nothing. The ADR-1206 large-fixture variant overrides the geometry
+ * from meson (-DFIXTURE_W / -DFIXTURE_H); the bit depth stays 10. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 640u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 480u
+#endif
 #define FIXTURE_BPC 10u
 
 /* Filtered feature with multi-scale pooling — places=3 per ADR-0214. */
