@@ -1697,3 +1697,11 @@ Concretely, when kernel promotes `float` inputs to `double`, do promotion
 **before** arithmetic, not after. `(double)a - (double)b` is exact for two
 floats; `(double)(a - b)` is not, and mixing two between vector body and
 its scalar tail makes result depend on vector width.
+## Twin option tables mirror the CPU's aliases and semantics (ADR-1214)
+
+When a GPU twin copies an option from the CPU extractor, copy the `alias` and
+range too: ADR-1183 builds the emitted feature name from the alias and value of
+every non-default option, so `cs` on the twin and `scf` on the CPU means two
+different keys for one feature. And copy the *semantics* from the branch the
+twin actually implements — `adm_csf_scale` is a Barten-mode argument, so in the
+Watson-only twins it must be a no-op exactly as it is on the CPU.
