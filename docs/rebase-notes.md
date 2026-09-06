@@ -48937,3 +48937,17 @@ Documentation only. One thing worth knowing:
    the 256-system threshold, so the launch bug was invisible to
    `meson test --suite=fast`. Verify 4K parity by hand against the CPU backend
    when touching these files.
+## `fix/codeql-float-widen-mult` — float-widening in the vendored PSNR path (2026-09-06)
+
+1. **`compute_psnr()`'s `(double)diff * diff` is a deliberate deviation from
+   upstream.** Upstream computes the product in `float`. The cast satisfies
+   CodeQL alert 1009 and is safe only because the function is unreachable; an
+   upstream sync that reverts it re-opens the alert but changes no score.
+
+2. **Do NOT apply the same cast to `core/src/feature/iqa/convolve.c`.** Its four
+   accumulation sites must keep the `float` multiply: the AVX2 / AVX-512 / NEON
+   twins widen *after* multiplying to stay bit-identical
+   ([ADR-0138](adr/0138-iqa-convolve-avx2-bitexact-double.md)), and
+   `test_iqa_convolve` fails the moment the scalar side is widened. CodeQL
+   alert 1005 on that line is reported-not-fixed on purpose — see
+   [research digest 2031](research/2031-codeql-float-widening-multiplication.md).
