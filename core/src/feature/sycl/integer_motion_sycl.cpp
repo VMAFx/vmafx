@@ -161,8 +161,8 @@ static const VmafOption options[] = {
     },
     {
         .name = "motion_blend_factor",
-        .alias = "mbf",
         .help = "blend motion score given an offset",
+        .alias = "mbf",
         .offset = offsetof(MotionStateSycl, motion_blend_factor),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = 1.0},
@@ -172,8 +172,8 @@ static const VmafOption options[] = {
     },
     {
         .name = "motion_blend_offset",
-        .alias = "mbo",
         .help = "blend motion score starting from this offset",
+        .alias = "mbo",
         .offset = offsetof(MotionStateSycl, motion_blend_offset),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = 40.0},
@@ -183,8 +183,8 @@ static const VmafOption options[] = {
     },
     {
         .name = "motion_fps_weight",
-        .alias = "mfw",
         .help = "fps-aware multiplicative weight/correction",
+        .alias = "mfw",
         .offset = offsetof(MotionStateSycl, motion_fps_weight),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = 1.0},
@@ -194,8 +194,8 @@ static const VmafOption options[] = {
     },
     {
         .name = "motion_max_val",
-        .alias = "mmxv",
         .help = "maximum value allowed; larger values will be clipped to this value",
+        .alias = "mmxv",
         .offset = offsetof(MotionStateSycl, motion_max_val),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = MOTION_SYCL_DEFAULT_MAX_VAL},
@@ -205,8 +205,8 @@ static const VmafOption options[] = {
     },
     {
         .name = "motion_five_frame_window",
-        .alias = "mffw",
         .help = "use five-frame temporal window (NOT YET SUPPORTED on SYCL — T3-15(c) deferred)",
+        .alias = "mffw",
         .offset = offsetof(MotionStateSycl, motion_five_frame_window),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
@@ -214,8 +214,8 @@ static const VmafOption options[] = {
     },
     {
         .name = "motion_moving_average",
-        .alias = "mma",
         .help = "use moving average for motion3 scores after first frame",
+        .alias = "mma",
         .offset = offsetof(MotionStateSycl, motion_moving_average),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
@@ -223,8 +223,8 @@ static const VmafOption options[] = {
     },
     {
         .name = "motion_add_uv",
-        .alias = "mau",
         .help = "include U and V plane SADs in the motion score (ADR-0989)",
+        .alias = "mau",
         .offset = offsetof(MotionStateSycl, motion_add_uv),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
@@ -828,7 +828,7 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         if (s->debug) {
             err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                            "VMAF_integer_feature_motion_score",
-                                                           motion_score, index);
+                                                           score_clipped, index);
         }
         // Don't write motion2 yet (CPU returns early at index 1)
     } else {
@@ -838,15 +838,17 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         double const motion2_clipped = MIN(motion2 * s->motion_fps_weight, s->motion_max_val);
         err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                        "VMAF_integer_feature_motion2_score",
-                                                       motion2, index - 1);
+                                                       motion2_clipped, index - 1);
         double const motion3_score = motion3_postprocess_sycl(s, motion2_clipped);
         err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                        "VMAF_integer_feature_motion3_score",
                                                        motion3_score, index - 1);
         if (s->debug) {
+            double const score_clipped =
+                MIN(motion_score * s->motion_fps_weight, s->motion_max_val);
             err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                            "VMAF_integer_feature_motion_score",
-                                                           motion_score, index);
+                                                           score_clipped, index);
         }
     }
 
@@ -893,7 +895,7 @@ static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
             MIN(s->prev_motion_score * s->motion_fps_weight, s->motion_max_val);
         ret = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "VMAF_integer_feature_motion2_score",
-                                                      s->prev_motion_score, s->frame_index - 1);
+                                                      last_motion2, s->frame_index - 1);
         if (ret >= 0) {
             double const motion3_score = motion3_postprocess_sycl(s, last_motion2);
             int const ret_m3 = vmaf_feature_collector_append_with_dict(

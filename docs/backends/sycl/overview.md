@@ -434,6 +434,10 @@ the deviation:
   `motion2_score`; the full options surface
   (`motion_blend_factor`, `motion_blend_offset`, `motion_fps_weight`,
   `motion_max_val`, `motion_moving_average`) is exposed.
+  The `motion_max_val` clipping bound is strictly honored on both
+  `integer_motion2` and `integer_motion3` scores, matching the CPU
+  reference semantics and eliminating drift on high-motion content
+  (such as 1080p checkerboard pairs).
   `motion_five_frame_window=true` is rejected with `-ENOTSUP` at
   `init()` (the 5-deep blur ring is still deferred). The
   `motion_add_uv=true` path is independent from motion3 and remains
