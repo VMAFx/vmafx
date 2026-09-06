@@ -672,6 +672,11 @@ jobs:
         # hermetic (no Docker) so it can run on every PR, here alongside the
         # other release-contract tests.
         run: bash scripts/ci/tests/test-check-container-build.sh
+      - name: Tracked-venv gate self-test (scripts/ci/tests)
+        # The tracked-venv gate (#1280) once matched any basename starting with
+        # "venv" (#1282). Its hermetic self-test pins the real virtualenv shapes
+        # and the look-alikes that must pass.
+        run: bash scripts/ci/tests/test-check-no-tracked-venv.sh
 
       - name: state.md row hygiene (ADR-0165)
         # A keep-both rebase resolution can leave a bug id in both "## Open
