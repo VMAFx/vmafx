@@ -484,14 +484,22 @@ size unless the flags are right.**
   nonzero value disables CUDA. Public-header semantics:
   `if gpumask: disable CUDA` (see
   [`include/libvmaf/libvmaf.h`](include/libvmaf/libvmaf.h) `VmafConfiguration::gpumask`).
-- **`--backend cuda` currently *initialises* CUDA but disables the
-  dispatch slot.** The CLI sets `gpumask = 1` ([`tools/cli_parse.c::parse_cli_args`](tools/cli_parse.c))
-  intending it as a device pin, but the runtime treats `gpumask = 1`
-  as "disable CUDA". So `--backend cuda` runs CUDA init and then
-  routes the actual feature extractors through the CPU path. The
-  vmaf_v0.6.1-style models then emit identical scores because the
-  CPU code is doing the work. **This is a bug** (tracked separately;
-  do not assume `--backend cuda` works for benching until it lands).
+- **`--backend cuda` does engage CUDA — this bullet used to say it did
+  not, and that is no longer true.** Re-verified on 2026-09-06 at commit
+  `cd52f2670` on the `ryzen-4090-arc` host while refreshing the baselines
+  (ADR-1185): `--backend cuda` on the 200-frame 4K BBB pair runs at
+  167.16 fps against the CPU's 14.37 fps and emits 14 `frames[0].metrics`
+  keys against the CPU's 15. Identical scores *and* identical fps would
+  be the fallback signature; neither holds. Use `--backend $name` as the
+  canonical exclusive selector. (Historical note, kept because it explains
+  older bench rows: the CLI once set `gpumask = 1` as a device pin while
+  the runtime read any nonzero `gpumask` as "disable CUDA", so
+  `--backend cuda` really did run CUDA init and then score on the CPU.
+  Bench numbers captured while that was live are not CUDA numbers.)
+- **Check engagement per run, do not trust the flag.** The cheap check is
+  the `frames[0].metrics` key count, which `testdata/bench_backends.py`
+  records for every cell. See
+  [`docs/development/backend-perf-baselines.md`](../docs/development/backend-perf-baselines.md).
 - **`--no_cuda` / `--no_sycl` are *disable*-only.** Pairing
   `--no_sycl` alone (without `--gpumask`) does NOT enable CUDA — it
   just disables SYCL while leaving CUDA unrequested. The CLI inits

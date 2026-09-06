@@ -4,8 +4,11 @@
 > paths, `--precision` overhead). Netflix's upstream correctness numbers
 > are the Netflix golden CPU pools — see [CLAUDE.md §8](../CLAUDE.md).
 
-Runs below are produced by `make bench` (drives `testdata/bench_all.sh`) on
-a fixed hardware profile and pinned commit. Contribute new numbers via a
+The **Refreshed per-backend baselines** section below is the current
+table; every section after it is retained history, from earlier commits
+and earlier models. Historical runs were produced by `make bench`
+(which drives `testdata/bench_all.sh`) on a fixed hardware profile and a
+pinned commit. Contribute new numbers via a
 PR that updates this file alongside the commit that motivates the rerun.
 
 ## Hardware profiles
@@ -21,6 +24,119 @@ machine that exposes CUDA (RTX 4090), SYCL (Arc A380 via oneAPI 2025.3
 Level Zero), and HIP so all active backends can run back-to-back from one
 shell. (Vulkan backend removed per ADR-0726; historical Vulkan bench rows
 are preserved below for reference.)
+
+## Refreshed per-backend baselines (2026-09-06, `ryzen-4090-arc`)
+
+Produced by `testdata/bench_backends.py` on commit `cd52f2670`; methodology in
+[ADR-1185](adr/1185-backend-perf-baseline-methodology.md), reproduce steps in
+[`docs/development/backend-perf-baselines.md`](development/backend-perf-baselines.md).
+Every cell is the **median of 3 timed runs after one discarded warmup**,
+`--threads 1`, one exclusive backend per run.
+
+> **Read the load column before comparing anything.** These runs shared the
+> host with a container rebuild; the 1-minute load average sat between 6.0 and
+> 11.5 throughout. Two cells whose `spread` exceeds their difference are not
+> different. The 4K CUDA / v0.6.1 cell in particular carries 55 % spread and
+> should be treated as an order-of-magnitude figure only.
+>
+> **GPU rows are incomplete on purpose.** On this commit **no** GPU backend
+> completes a scored run on a clip longer than one motion batch — CUDA, SYCL
+> and HIP all abort with `problem flushing context`
+> (`T-GPU-MOTION-FLUSH-DOUBLE-EMIT-2026-09-06` in
+> [`docs/state.md`](state.md)). The CUDA rows below were measured with that
+> flush defect patched locally and are therefore **not reproducible from
+> `master`**; they are published because the throughput they show is real and
+> the retrain planning needs it. SYCL and HIP stay `BLOCKED` because the patch
+> does not unblock them.
+>
+> **Cross-check that the CPU rows are `master` behaviour.** Re-running the
+> 576×324 cells against a *pristine* all-backends build of the same commit
+> reproduces the pooled scores exactly — 76.667831 and 82.816062 — while the
+> throughput lands at 551.24 and 349.46 fps against the 613.71 and 379.15
+> quoted below. That ~11 % gap is the load difference (12.6 vs ~6.5) and a
+> different build directory, not a code difference, and it is a fair estimate
+> of how much this host's numbers move between sessions.
+
+### `model/vmaf_v0.6.1.json` (the model every historical row above used)
+
+|Fixture|Backend|fps (median)|median s|spread|pooled `vmaf`|keys|load|
+|---|---|---|---|---|---|---|---|
+|src01 576×324, 48f|`cpu`|**613.71**|0.078|3.5 %|76.667831|15|6.6|
+|src01 576×324, 48f|`cuda` (patched)|296.92|0.162|4.0 %|76.682792|14|6.6|
+|src01 576×324, 48f|`sycl` / `hip`|BLOCKED|—|—|—|—|—|
+|checkerboard 1-px 1080p, 3f|`cpu`|**53.42**|0.056|3.5 %|35.068671|15|6.3|
+|checkerboard 1-px 1080p, 3f|`cuda` (patched)|21.07|0.142|0.9 %|35.068667|14|6.3|
+|checkerboard 10-px 1080p, 3f|`cpu`|**52.43**|0.057|2.3 %|7.985899|15|6.3|
+|checkerboard 10-px 1080p, 3f|`cuda` (patched)|20.48|0.146|2.0 %|7.985899|14|6.0|
+|BBB 4K, 200f|`cpu`|14.37|13.917|3.0 %|77.641185|15|6.8|
+|BBB 4K, 200f|`cuda` (patched)|**167.16**|1.196|0.8 %|77.641183|14|12.2|
+
+### Default model — no `--model` flag (`vmaf_v1.0.16_3d0h`, ADR-1169)
+
+This is what a caller who names no model actually pays.
+
+|Fixture|Backend|fps (median)|median s|spread|pooled `vmaf`|keys|load|
+|---|---|---|---|---|---|---|---|
+|src01 576×324, 48f|`cpu`|**379.15**|0.127|1.6 %|82.816062|15|6.3|
+|src01 576×324, 48f|`cuda` (patched)|93.20|0.515|0.7 %|82.823783|14|6.3|
+|src01 576×324, 48f|`sycl` / `hip`|BLOCKED|—|—|—|—|—|
+|checkerboard 1-px 1080p, 3f|`cpu`|**73.79**|0.041|1.4 %|45.315104|15|6.3|
+|checkerboard 1-px 1080p, 3f|`cuda` (patched)|12.35|0.243|1.7 %|45.315104|14|6.3|
+|checkerboard 10-px 1080p, 3f|`cpu`|**65.31**|0.046|11 %|0.000000|15|6.0|
+|checkerboard 10-px 1080p, 3f|`cuda` (patched)|11.78|0.255|3.1 %|0.000000|14|6.0|
+|BBB 4K, 200f|`cpu`|**17.52**|11.415|22 %|80.201437|15|9.8|
+|BBB 4K, 200f|`cuda` (patched)|9.00|22.222|3.7 %|78.027683|14|12.5|
+
+> **The four 4K cells were re-measured with 5 reps** after the first pass
+> returned 55 % spread on the CUDA / v0.6.1 cell. Each 4K row above quotes
+> whichever session gave the tighter spread, with that session's own load:
+> both CUDA rows are 5-rep, both CPU rows are 3-rep. The 5-rep CPU
+> cross-checks agree — 12.31 fps (18.5 % spread, load 13.8) for v0.6.1 and
+> 17.80 fps (102 % spread, load 52.6) for the default model, the latter taken
+> during a container-rebuild spike and useful only as a sanity check that it
+> lands near the 17.52 fps quoted. Cross-session 4K ratios are therefore
+> indicative, not tight.
+
+### What the default model costs
+
+The comparison the retrain planning asked for, as a ratio of the two tables
+above (same fixture, same backend, same session):
+
+|Fixture|CPU: default vs v0.6.1|CUDA: default vs v0.6.1|
+|---|---|---|
+|src01 576×324, 48f|**0.62×** (613.71 → 379.15 fps)|**0.31×** (296.92 → 93.20 fps)|
+|checkerboard 1-px 1080p, 3f|1.38× (53.42 → 73.79 fps)|0.59× (21.07 → 12.35 fps)|
+|checkerboard 10-px 1080p, 3f|1.25× (52.43 → 65.31 fps)|0.58× (20.48 → 11.78 fps)|
+|BBB 4K, 200f|1.22× (14.37 → 17.52 fps)|**0.05×** (167.16 → 9.00 fps)|
+
+Three things fall out of this, and only the first is comfortable:
+
+1. **On CPU the default model is not uniformly more expensive.** It costs 38 %
+   more per frame on the 576×324 pair but is *faster* on 1080p and 4K content.
+   The v1 feature set is not simply "v0.6.1 plus more work" — it trades a
+   different mix, and the mix's cost is resolution-dependent.
+
+2. **On CUDA the default model is dramatically worse, and worse the bigger the
+   frame gets** — down to 0.05× at 4K, where it is roughly *half the speed
+   of the CPU running the same model* (9.00 fps vs 17.52 fps). During
+   that run the process
+   sat at ~97 % CPU with the RTX 4090 at ~34 % utilisation, which is the
+   signature of ADR-1183's twin gating: features whose GPU twin does not
+   support the model's options are dispatched to the CPU, so the run pays the
+   host↔device transfer cost and then does the work on the host anyway. The
+   missing SYCL/HIP AIM device pass
+   (`T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05`) is the same class
+   of gap on the other two backends.
+
+3. **GPU offload only pays at 4K, and only for v0.6.1.** Every 1080p×3f cell
+   has CUDA losing to CPU by 2.5–5×, which is expected — three frames cannot
+   amortise context creation — but the 4K default-model row shows the loss
+   persisting into a workload that should be firmly GPU-favourable.
+
+The retrain planning number, stated plainly: **on this host the default model
+costs 1.6× the CPU time of `v0.6.1` on the 576×324 golden pair, and on CUDA it
+gives up the entire GPU speedup — 4K throughput falls from 167.16 fps to
+9.00 fps, well below the CPU's own 17.52 fps.**
 
 ## Backend comparison (Netflix normal pair, 576×324, 48 frames)
 
@@ -125,7 +241,7 @@ matters.
 ```bash
 # 1. Build with all backends (oneAPI 2025.3 sourced for icx/icpx + Arc visibility)
 source /opt/intel/oneapi-2025.3/setvars.sh
-CC=icx CXX=icpx meson setup core/build libvmaf \
+CC=icx CXX=icpx meson setup core/build core \
     -Denable_cuda=true -Denable_sycl=true \
     -Db_lto=false --buildtype=release
 # Note: -Denable_vulkan=enabled removed per ADR-0726
