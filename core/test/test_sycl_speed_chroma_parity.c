@@ -67,8 +67,12 @@
  * 256x144 fixture was BELOW the chroma minimum (chroma 128x72 -> operating
  * 8x4 -> truncated 5x0) and never actually ran the extractor; it was masked
  * while speed_chroma_sycl was unregistered (pre-#1004). */
+#ifndef FIXTURE_W
 #define FIXTURE_W 320u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 320u
+#endif
 #define FIXTURE_BPC 8u
 #define PARITY_TOL 1e-4
 

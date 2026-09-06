@@ -2841,6 +2841,57 @@ test_sycl_cambi_parity = executable('test_sycl_cambi_parity',
 )
 test('test_sycl_cambi_parity', test_sycl_cambi_parity,
     suite : ['fast', 'gpu', 'sycl'])
+# ADR-1206 — large-fixture parity variants (resolution blind spot).
+#
+# Same rationale as the CUDA family above: every parity test here pins one
+# small fixture, so the shared SSIM/MS-SSIM auto-scale
+# `max(1, round(min(w, h) / 256))` never leaves 1 and the ADM border crop
+# `(int)(dim * 0.1 - 0.5)` never leaves 0. Both of the defects fixed in
+# ADR-1204 / ADR-1205 lived in exactly that unreachable region. These variants
+# rebuild the same TUs against 960x540 (auto-scale 2, and 540 is not a multiple
+# of the 16/32-wide kernel blocks so tail bounds are exercised too).
+# `test_sycl_motion_add_uv_parity` is deliberately absent from the list below.
+# It does not compare two implementations of the same arithmetic: the CPU side
+# is `float_motion` and the SYCL side is the fixed-point `motion_sycl`, so its
+# 2e-4 tolerance is a fixed-point-vs-float budget calibrated for one fixture
+# rather than a bit-exactness bound. At 960x540 it lands at 2.30e-04 — 15% over
+# a budget that was never derived for that resolution. Registering a large
+# variant would assert something the test was never designed to assert; giving
+# it a second, separately derived tolerance is tracked as a follow-up.
+sycl_parity_large_fixture_tests = [
+    'test_sycl_adm_parity',
+    'test_sycl_cambi_parity',
+    'test_sycl_ciede_parity',
+    'test_sycl_float_adm_parity',
+    'test_sycl_float_moment_parity',
+    'test_sycl_float_motion_parity',
+    'test_sycl_float_psnr_parity',
+    'test_sycl_float_ssim_parity',
+    'test_sycl_float_vif_parity',
+    'test_sycl_motion3_parity',
+    'test_sycl_motion_v2_parity',
+    'test_sycl_ms_ssim_parity',
+    'test_sycl_psnr_hvs_parity',
+    'test_sycl_psnr_parity',
+    'test_sycl_speed_chroma_parity',
+    'test_sycl_speed_temporal_parity',
+    'test_sycl_ssim_parity',
+    'test_sycl_ssimulacra2_parity',
+    'test_sycl_vif_parity',
+]
+foreach parity_test : sycl_parity_large_fixture_tests
+    parity_large_exe = executable(parity_test + '_large',
+        ['test.c', parity_test + '.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        dependencies: [pthread_dependency, sycl_dependency,  math_lib],
+        c_args: ['-DHAVE_SYCL=1', '-DFIXTURE_W=960u', '-DFIXTURE_H=540u']
+    )
+    test(parity_test + '_large', parity_large_exe,
+        suite : ['fast', 'gpu', 'sycl'])
+endforeach
+
+
 endif
 
 # ADR-0209 / T5-2: embedded MCP scaffold smoke. Pins the -ENOSYS
@@ -3219,6 +3270,7 @@ test_hip_speed_temporal_parity = executable('test_hip_speed_temporal_parity',
 test('test_hip_speed_temporal_parity', test_hip_speed_temporal_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
+
 endif
 
 # ADR-0338 / T8-1: Metal (Apple Silicon) backend scaffold smoke. Same
@@ -3442,6 +3494,7 @@ test_metal_kernel_registration = executable('test_metal_kernel_registration',
 )
 test('test_metal_kernel_registration', test_metal_kernel_registration,
     suite : ['fast', 'gpu'])
+
 endif
 
 test('test_context', test_context, suite : ['fast'])

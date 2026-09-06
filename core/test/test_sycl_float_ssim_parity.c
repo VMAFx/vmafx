@@ -56,8 +56,12 @@
  * scale=1 auto-detect threshold (min(w,h)/256 = 180/256 ≈ 0.7 → scale=1).
  * The kernel requires scale=1; auto-detect with this fixture avoids the
  * need to pass options. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 320u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 180u
+#endif
 #define FIXTURE_BPC 8u
 
 /*
@@ -147,6 +151,26 @@ static char *run_sycl_float_ssim(double *score, int *device_present)
     err = vmaf_use_feature(vmaf, "float_ssim_sycl", NULL);
     mu_assert("SYCL: vmaf_use_feature(float_ssim_sycl) failed", !err);
     err = feed_frame(vmaf);
+    /* `float_ssim_sycl` is a v1 scale=1-only extractor: its init rejects any
+     * resolution whose auto-detected decimation factor
+     * `max(1, round(min(w, h) / 256))` is not 1 — i.e. min(w, h) >= 384 —
+     * with -EINVAL (core/src/feature/sycl/integer_ssim_sycl.cpp). The CPU
+     * `float_ssim` has no such limit and silently decimates instead, so at
+     * those resolutions the two extractors do not compute the same quantity
+     * and there is no parity to assert. Treat the documented refusal as a
+     * skip; anything else is a real failure. Keeping the large-fixture
+     * variant registered means that if the twin ever stops refusing and
+     * starts returning a scale=1 score at a decimating resolution, this test
+     * fails instead of silently comparing two different metrics. See
+     * ADR-1206. */
+    if (err && ((FIXTURE_W < FIXTURE_H ? FIXTURE_W : FIXTURE_H) >= 384u)) {
+        (void)fprintf(stderr, "[skip: float_ssim_sycl is scale=1-only; %ux%u auto-decimates] ",
+                      FIXTURE_W, FIXTURE_H);
+        *device_present = 0; /* reuse the caller's skip path */
+        (void)vmaf_close(vmaf);
+        vmaf_sycl_state_free(&sycl_state);
+        return NULL;
+    }
     mu_assert("SYCL: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);

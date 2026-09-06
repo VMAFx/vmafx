@@ -54,8 +54,12 @@
  * the 11-tap Gaussian: min dimension is `MS_SSIM_GAUSSIAN_LEN << (MS_SSIM_SCALES - 1)`
  * = 11 << 4 = 176. We use 256x192 — both dimensions ≥ 176 and the
  * 256/192 ratio still resembles a typical 16:9 content shape. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 192u
+#endif
 #define FIXTURE_BPC 8u
 /* MS-SSIM has more variance across the 5-scale exponent stack than
  * single-scale SSIM; ADR-0214 places=4 (1e-4) still applies. */

@@ -54,8 +54,12 @@
 /* Fixture must be ≥ 8x8 for the DCT block size and ideally a
  * multiple of 8 in both dimensions; 256x144 satisfies both
  * (256 % 8 == 0, 144 % 8 == 0). */
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 144u
+#endif
 #define FIXTURE_BPC 8u
 #define PARITY_TOL 1e-4
 

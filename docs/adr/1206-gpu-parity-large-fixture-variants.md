@@ -60,9 +60,23 @@ comparing two different metrics.
   than something found by accident. The 16 variants run in ~2-6 s each.
 - **Negative**: 16 additional test binaries to compile and run in the GPU lane.
   Build and runtime cost is small but not zero.
-- **Neutral / follow-ups**: only the CUDA family is covered here, because this
-  workstation has a free CUDA device to verify against. Extending the same
-  pattern to the SYCL / HIP / Metal parity families is a follow-up.
+- **Neutral / follow-ups**: the CUDA and SYCL families are covered. Both were
+  verified on real hardware — CUDA on an RTX 4090, SYCL on the Arc A380 — and
+  the SYCL sweep immediately paid for itself the same way: it surfaced the
+  `float_ssim_sycl` scale=1-only refusal and a `motion_add_uv` tolerance gap
+  (below). HIP and Metal are deliberately **not** registered yet: this
+  workstation cannot verify Metal at all, and shipping test registrations that
+  have never been run is how a lane goes red for reasons nobody has looked at.
+  They remain a follow-up.
+- **Neutral / follow-ups**: `test_sycl_motion_add_uv_parity` is excluded from
+  the SYCL list on purpose. It does not compare two implementations of the same
+  arithmetic — the CPU side is `float_motion` and the SYCL side is the
+  fixed-point `motion_sycl` — so its 2e-4 tolerance is a fixed-point-vs-float
+  budget calibrated for one fixture, not a bit-exactness bound. At 960x540 it
+  lands at 2.30e-04, 15% over a budget never derived for that resolution.
+  Registering a large variant would assert something the test was never
+  designed to assert; deriving a second tolerance for that regime is tracked
+  separately.
 
 ## References
 

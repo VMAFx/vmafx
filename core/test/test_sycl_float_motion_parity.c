@@ -53,8 +53,12 @@
 /* Fixture matches the motion_v2 round-2 sizing — large enough for a
  * stable SAD reduction on Intel Arc, small enough to keep the test
  * under the fast-suite budget. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 144u
+#endif
 #define FIXTURE_BPC 8u
 #define NUM_FRAMES 2u
 #define PARITY_TOL 1e-4
