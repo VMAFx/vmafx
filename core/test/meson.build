@@ -2050,6 +2050,19 @@ test_cuda_psnr_parity = executable('test_cuda_psnr_parity',
 test('test_cuda_psnr_parity', test_cuda_psnr_parity,
     suite : ['fast', 'gpu'])
 
+# ADR-1215 — the same TU at 10 bpc with non-flat chroma. The 16-bpc CUDA PSNR
+# kernel read data[0] for every plane, so high-bit-depth chroma PSNR was a luma
+# value; every psnr fixture was 8-bit and flat-chroma, which is how it survived.
+test_cuda_psnr_parity_10bit = executable('test_cuda_psnr_parity_10bit',
+    ['test.c', 'test_cuda_psnr_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_BPC=10u']
+)
+test('test_cuda_psnr_parity_10bit', test_cuda_psnr_parity_10bit,
+    suite : ['fast', 'gpu'])
+
 # GPU-kernel coverage gap-fill — ciede2000 CPU vs. CUDA parity (places=4).
 # Covers integer_ciede_cuda.c + integer_ciede/ciede_score.cu, which had
 # no cross-backend gate before. GPU-gated: skips when no CUDA device.
