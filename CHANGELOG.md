@@ -18316,6 +18316,26 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   macOS CPU + Metal build before Meson invokes `xcrun metal`.
 
 
+- **Integer ADM no longer emits wrapped scores for out-of-range CSF
+  configurations** (`core/src/feature/integer_adm.c` plus the CUDA, HIP and
+  SYCL twins). The fixed-point pipeline stores each scale's
+  contrast-sensitivity weight in a `uint16_t` (scale 0) or `uint32_t`
+  (scales 1-3), sized for the Watson97 weights. `--feature adm=adm_csf_mode=1`
+  (Barten) at the default `adm_csf_scale` produces weights 38x to 155x past
+  those ceilings; the narrowing casts wrapped silently and the extractor
+  emitted `integer_adm2_csf_1: null` with per-scale scores three orders of
+  magnitude below the float reference. The blended-CSF modes (`2` / `3`) had a
+  related defect: for viewing geometries their tables do not carry they return
+  `-EINVAL` *as a float*, which then hit an undefined negative-to-unsigned
+  conversion. Both configurations are now rejected with `-EINVAL` and a log
+  line naming the scale, band and offending weight. Configurations that fit
+  are unchanged, including `adm_csf_mode=1` with small `adm_csf_scale` /
+  `adm_csf_diag_scale` coefficients and `adm_csf_mode=2` as requested by the
+  default model `vmaf_v1.0.16_3d0h`; the Netflix golden gate is untouched.
+  Use `--feature float_adm` to run the Barten CSF at full scale.
+  ADR-1191, `docs/metrics/features.md` § Fixed-point CSF limits.
+
+
 - `vmafx-tune predict --use-saliency` now wires saliency moments into
   feature extraction via `pkg/saliency.ComputeMap` rather than returning an
   unimplemented error directing users to the retired Python binary (#1272).
@@ -18469,6 +18489,18 @@ Wire `adm_skip_scale0` and `adm_min_val` into `integer_adm_sycl`,
 accepted by the CPU, CUDA, and Vulkan extractors but silently ignored
 by the three remaining GPU paths; scale-0 was always accumulated and
 no score floor was applied.
+
+
+### Fixed
+
+- `core/src/feature/x86/adm_avx2.c`, `core/src/feature/x86/adm_avx512.c`: fix horizontal
+  DWT2 tail loop boundary condition for AVX2 and AVX-512 kernels. Previously,
+  the vector loop bound `((w + 1) / 2) - ((((w + 1) / 2) - 1) % N)` allowed the SIMD loop
+  to process the final column `(w + 1) / 2 - 1` when `(w + 1) / 2 % N == 1`, skipping
+  boundary reflection and causing scalar/SIMD divergence and potential out-of-bounds
+  loads. Guarded the vector loop bound to `half_w - 1 - ((half_w - 2) % N)` (with a minimum of 1),
+  ensuring the final column is always safely mirrored by the scalar tail loop.
+  Regression test added in `core/test/test_adm_dwt2_x86.c`.
 
 
 - Skip 9 Python `feature_extractor_test` cases that exercise `motion_five_frame_window=True`

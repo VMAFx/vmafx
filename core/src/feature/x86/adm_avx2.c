@@ -1169,6 +1169,9 @@ void adm_dwt2_8_avx2(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *b
     __m256i pad_register = _mm256_setzero_si256();
     __m256i add_shift_HP_vex = _mm256_set1_epi32(32768);
 
+    int half_w = (w + 1) / 2;
+    int half_w_mod16 = half_w >= 2 ? half_w - 1 - ((half_w - 2) % 16) : 1;
+
     for (int i = 0; i < (h + 1) / 2; ++i) {
         // Vertical pass 16 pixels at a time
         // Ensure we only process complete 16 element chunks that fit entirely
@@ -1313,20 +1316,8 @@ void adm_dwt2_8_avx2(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *b
             dst->band_d[(ptrdiff_t)i * dst_stride] = (accum + add_shift_HP) >> shift_HP;
         }
 
-        // Horizontal pass: bounds checking
-        int w_half = (w + 1) / 2;
-
-        int j_hp_end_input = (w - 32) / 2;
-        int j_hp_end_output = w_half - 16;
-
-        int j_hp_end;
-        if (j_hp_end_input < j_hp_end_output) {
-            j_hp_end = j_hp_end_input;
-        } else {
-            j_hp_end = j_hp_end_output;
-        }
         // Horizontal pass
-        for (int j = 1; j <= j_hp_end; j = j + 16) {
+        for (int j = 1; j < half_w_mod16; j = j + 16) {
             {
                 __m256i accum_mu2_lo;
                 __m256i accum_mu2_hi;
@@ -1425,16 +1416,7 @@ void adm_dwt2_8_avx2(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *b
         }
 
         // Horizontal pass: tail loop for remaining elements
-        int j_start;
-        if (j_hp_end >= 1) {
-
-            int k = (j_hp_end - 1) / 16;
-            j_start = 16 * (k + 1) + 1;
-
-        } else {
-            j_start = 1;
-        }
-        for (int j = j_start; j < w_half; ++j) {
+        for (int j = half_w_mod16; j < half_w; ++j) {
             int j0 = ind_x[0][j];
             int j1 = ind_x[1][j];
             int j2 = ind_x[2][j];
@@ -3403,7 +3385,8 @@ void adm_dwt2_16_avx2(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffer 
     __m256i accum0_lo;
     __m256i accum0_hi;
 
-    int half_w_mod16 = ((w + 1) / 2) - ((((w + 1) / 2) - 1) % 16);
+    int half_w = (w + 1) / 2;
+    int half_w_mod16 = half_w >= 2 ? half_w - 1 - ((half_w - 2) % 16) : 1;
 
     for (int i = 0; i < (h + 1) / 2; ++i) {
         /* Vertical pass. */
@@ -3669,7 +3652,8 @@ void adm_dwt2_s123_combined_avx2(const int32_t *i4_ref_scale, const int32_t *i4_
     __m256i add_bef_shift_round_HP_256 = _mm256_set1_epi64x(add_bef_shift_round_HP[scale - 1]);
 
     int w_mod4 = (w - (w % 4));
-    int half_w_mod4 = ((w + 1) / 2) - ((((w + 1) / 2) - 1) % 4);
+    int half_w = (w + 1) / 2;
+    int half_w_mod4 = half_w >= 2 ? half_w - 1 - ((half_w - 2) % 4) : 1;
 
     for (int i = 0; i < (h + 1) / 2; ++i) {
         /* Vertical pass. */
