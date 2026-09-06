@@ -121,6 +121,27 @@ static int fill_dist(VmafPicture *pic, unsigned frame_idx)
     return 0;
 }
 
+/* Derived feature names use the feature's ALIAS as their base once any option
+ * is non-default (feature_name.cpp: `vmaf_feature_name_alias(name)` + one
+ * `_<alias>_<value>` per option, options sorted alphabetically by name), e.g.
+ * "VMAF_feature_adm2_score" -> "adm2_scfd_0.5_scf_2". Strip the fixed
+ * prefix/suffix at runtime rather than keeping a parallel alias table. */
+static void adm_key(char *out, size_t n, const char *full, const char *suffix)
+{
+    static const char pfx[] = "VMAF_feature_";
+    static const char sfx[] = "_score";
+    const size_t pl = sizeof(pfx) - 1u;
+    const size_t sl = sizeof(sfx) - 1u;
+    const size_t fl = strlen(full);
+    if (!suffix[0]) {
+        (void)snprintf(out, n, "%s", full);
+    } else if (strncmp(full, pfx, pl) == 0 && fl > pl + sl && strcmp(full + fl - sl, sfx) == 0) {
+        (void)snprintf(out, n, "%.*s%s", (int)(fl - pl - sl), full + pl, suffix);
+    } else {
+        (void)snprintf(out, n, "%s%s", full, suffix);
+    }
+}
+
 static char *run_cpu(double *out_scores, VmafFeatureDictionary *opts, const char *suffix)
 {
     int err = 0;
@@ -146,7 +167,7 @@ static char *run_cpu(double *out_scores, VmafFeatureDictionary *opts, const char
 
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
         char key[128];
-        (void)snprintf(key, sizeof(key), "%s%s", ADM_FEATURES[m], suffix);
+        adm_key(key, sizeof(key), ADM_FEATURES[m], suffix);
         err = vmaf_feature_score_at_index(vmaf, key, &out_scores[m], 1u);
         mu_assert("CPU: vmaf_feature_score_at_index(adm[i], idx=1) failed", !err);
     }
@@ -198,7 +219,7 @@ static char *run_cuda(double *out_scores, int *skipped, VmafFeatureDictionary *o
 
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
         char key[128];
-        (void)snprintf(key, sizeof(key), "%s%s", ADM_FEATURES[m], suffix);
+        adm_key(key, sizeof(key), ADM_FEATURES[m], suffix);
         err = vmaf_feature_score_at_index(vmaf, key, &out_scores[m], 1u);
         mu_assert("CUDA: vmaf_feature_score_at_index(adm[i], idx=1) failed", !err);
     }
