@@ -242,9 +242,9 @@ static char *test_adm_dwt2_8_neon_matches_scalar(void)
                         if (j == w_half - 1)
                             ++last_col_mismatches;
                         if (mismatches <= 6)
-                            fprintf(stderr, "  %dx%d %s[%d][%d]%s: scalar %d != neon %d\n", w, h,
-                                    names[b], i, j, (j == w_half - 1) ? " (last col)" : "",
-                                    bands[b][idx], bands[b + 4][idx]);
+                            (void)fprintf(stderr, "  %dx%d %s[%d][%d]%s: scalar %d != neon %d\n", w,
+                                          h, names[b], i, j, (j == w_half - 1) ? " (last col)" : "",
+                                          bands[b][idx], bands[b + 4][idx]);
                         mu_assert("adm_dwt2_8_neon diverges from the scalar reference", 0);
                     }
                 }

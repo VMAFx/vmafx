@@ -50,7 +50,7 @@ static char *test_ring_buffer()
     int err = vmaf_cuda_state_init(&my_cookie.state, cu_cfg);
     if (err || !my_cookie.state) {
         free(my_cookie.state);
-        fprintf(stderr, "[skip: no CUDA device] ");
+        (void)fprintf(stderr, "[skip: no CUDA device] ");
         return NULL;
     }
 
