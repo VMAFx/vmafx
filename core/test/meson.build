@@ -711,6 +711,29 @@ test_integer_psnr_coverage = executable('test_integer_psnr_coverage',
     ] + wave8_opt_only_objects
 )
 
+# T-UPSTREAM-1109 / ADR-1193 — the `uncapped` option that splits the
+# `mse == 0` infinity sentinel from the psnr_max truncation, on both the
+# integer `psnr` and the float `float_psnr` extractor. Same link-recipe as
+# test_integer_psnr_coverage (float_psnr pulls in picture_copy.c).
+test_psnr_uncapped = executable('test_psnr_uncapped',
+    ['test.c', 'test_psnr_uncapped.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+        common_cuda_objects,
+      log_cpp23_test_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+
 # Coverage round 2 — drives integer_motion (v1) motion_force_zero +
 # three-frame default + moving-average + five-frame-under-min branches.
 test_integer_motion_coverage = executable('test_integer_motion_coverage',
@@ -3393,6 +3416,7 @@ if host_machine.system() != 'windows'
 endif
 test('test_psnr', test_psnr, suite : ['fast'])
 test('test_integer_psnr_coverage', test_integer_psnr_coverage, suite : ['fast'])
+test('test_psnr_uncapped', test_psnr_uncapped, suite : ['fast'])
 test('test_integer_motion_coverage', test_integer_motion_coverage, suite : ['fast'])
 test('test_integer_motion_v2_coverage', test_integer_motion_v2_coverage, suite : ['fast'])
 test('test_ssim_coverage', test_ssim_coverage, suite : ['fast'])

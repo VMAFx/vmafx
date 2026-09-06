@@ -14,7 +14,11 @@
  *         16bpc:      val = (float)raw / 256.0  (peak = 255.99609375)
  *    2. noise += (ref_val - dis_val)^2   (per-pixel float)
  *    3. Host (collect): mse = sum(partials) / (W * H)
- *                       score = min(10*log10(peak^2 / max(mse, 1e-10)), psnr_max)
+ *                       score = (mse == 0)
+ *                                 ? psnr_max
+ *                                 : min(10*log10(peak^2 / mse), psnr_max)
+ *                       (the host-side `uncapped` option — ADR-1193 —
+ *                        drops the min(); the kernel is unaffected)
  *
  *  Reduction: per-thread float → simd_sum into 8-slot threadgroup
  *  array → single float partial per threadgroup written to

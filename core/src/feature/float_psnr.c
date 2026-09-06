@@ -18,11 +18,14 @@
 
 #include <errno.h>
 #include <math.h>
+#include <stdbool.h>
+#include <stddef.h>
 #include <string.h>
 
 #include "cpu.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
+#include "opt.h"
 
 #include "mem.h"
 #include "picture_copy.h"
@@ -57,8 +60,35 @@ typedef struct PsnrState {
     float *dist;
     double peak;
     double psnr_max;
+    /* ADR-1193 / T-UPSTREAM-1109: mirrors the `uncapped` option on the
+     * integer `psnr` extractor. When true, `psnr_max` keeps only its
+     * zero-noise infinity-sentinel role. Default false is bit-identical
+     * to the pre-fix score. */
+    bool uncapped;
     double (*noise_line)(const float *, const float *, int);
 } PsnrState;
+
+/*
+ * Size the table explicitly and leave the terminator element out: C
+ * zero-initialises the trailing element, which is exactly the `.name == NULL`
+ * sentinel the option walker stops on. Written this way rather than with an
+ * explicit `{0}` / `{NULL}` terminator, because either spells a null pointer
+ * constant and adds a `modernize-use-nullptr` diagnostic that would push this
+ * file past its ADR-1142 clang-tidy baseline; and rather than with the C23
+ * empty initialiser `{}`, because MSVC's partial C23 mode (`/std:clatest`,
+ * documented as implementing `typeof` / `typeof_unqual`) is not documented to
+ * accept it, and this file builds on the required Windows MSVC leg.
+ */
+static const VmafOption options[2] = {
+    {
+        .name = "uncapped",
+        .help = "report the true PSNR instead of truncating at the psnr_max ceiling "
+                "(a zero-noise pair still reports psnr_max)",
+        .offset = offsetof(PsnrState, uncapped),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+};
 
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
@@ -140,8 +170,21 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
         noise_ += s->noise_line(s->ref + (ptrdiff_t)i * stride, s->dist + (ptrdiff_t)i * stride, w);
     noise_ /= (w * h);
 
+    /* `psnr_max` is an infinity sentinel for a zero-noise pair and, before
+     * ADR-1193, was also a hard truncation of every computed value above
+     * it. Split the two: the truncation is opt-out via `uncapped`, the
+     * sentinel is not. The `!uncapped` arm is the pre-fix expression
+     * verbatim, so the default is bit-identical by construction. See
+     * T-UPSTREAM-1109 / Netflix/vmaf#1109. */
     double eps = 1e-10;
-    double score = MIN(10 * log10(s->peak * s->peak / MAX(noise_, eps)), s->psnr_max);
+    double score;
+    if (!s->uncapped) {
+        score = MIN(10 * log10(s->peak * s->peak / MAX(noise_, eps)), s->psnr_max);
+    } else if (noise_ <= 0.0) {
+        score = s->psnr_max;
+    } else {
+        score = 10 * log10(s->peak * s->peak / MAX(noise_, eps));
+    }
     err = vmaf_feature_collector_append(feature_collector, "float_psnr", score, index);
     if (err)
         return err;
@@ -162,6 +205,7 @@ static const char *provided_features[] = {"float_psnr", NULL};
 
 VmafFeatureExtractor vmaf_fex_float_psnr = {
     .name = "float_psnr",
+    .options = options,
     .init = init,
     .extract = extract,
     .close = close,

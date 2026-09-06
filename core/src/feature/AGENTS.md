@@ -1103,6 +1103,24 @@ after a port-upstream of any of these files.
   default or the `n_planes` clamp logic requires a coordinated update
   across all three GPU twins. See CUDA AGENTS.md / Vulkan AGENTS.md
   invariant notes and [ADR-0453](../../../docs/adr/0453-psnr-enable-chroma-gpu-parity.md).
+- **`psnr` / `float_psnr` cross-backend `uncapped` option parity
+  (ADR-1193)** — the integer `psnr` and `float_psnr` extractors on CPU and
+  all eight GPU twins (CUDA / SYCL / HIP / Metal x integer / float) carry an
+  opt-in `uncapped` boolean, default `false`. `psnr_max` has two roles: the
+  `mse == 0` infinity sentinel (unconditional, and what the Netflix golden
+  60 / 84 / 108 dB assertions pin) and the truncation of genuinely computed
+  values above it (dropped when `uncapped` is true). Two invariants: the
+  `!uncapped` arm must stay the pre-ADR-1193 expression **verbatim** rather
+  than a re-derivation, because with a `min_sse` below ~1.9e-11 the ceiling
+  rises past the ~208 dB a zero MSE floored to 1e-16 produces and a
+  re-derived `mse == 0 -> psnr_max` arm would move the default score; and
+  the option must **not** be `VMAF_OPT_FLAG_FEATURE_PARAM`, since the CPU
+  extractor appends without a name dict while the GPU twins append with
+  one, so flagging it would make the two backends emit different feature
+  keys for the same request. Adding it to one backend only is a silent
+  cross-backend divergence no CPU test catches. See
+  [ADR-1193](../../../docs/adr/1193-psnr-uncapped-option.md) and
+  `core/test/test_psnr_uncapped.c`.
 - **MobileSal saliency extractor (T6-2a, PR #208 open, ADR-0218
   placeholder)** — first half of T6-2 (encoder-side ROI bundle).
   DNN-backed; opens sessions through

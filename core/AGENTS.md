@@ -249,6 +249,34 @@ core/
   shrink without re-checking lavapipe behaviour under
   frames-in-flight > 1.
 
+- **PSNR `psnr_max` has two separate roles**
+  (fork-local since [ADR-1193](../docs/adr/1193-psnr-uncapped-option.md)).
+  Role (a): the finite stand-in reported when `mse == 0` and the true
+  PSNR is `+inf` — unconditional, and what the Netflix golden 60 / 84 /
+  108 dB assertions pin. Role (b): the truncation of computed values at
+  the same number — applied only when the `uncapped` option is `false`.
+  Upstream conflates the two in one
+  `MIN(10*log10(peak^2 / MAX(mse, 1e-16)), psnr_max)`, so a verbatim
+  upstream hunk landing on `feature/integer_psnr.c::psnr_from_mse()`,
+  `feature/float_psnr.c::extract()` or `feature/psnr.c::compute_psnr()`
+  silently reintroduces Netflix/vmaf#1109. The `!uncapped` arm is that
+  upstream expression character-for-character and must stay that way:
+  with a `min_sse` below ~1.9e-11 the ceiling rises past the ~208 dB a
+  floored zero MSE produces, so a re-derived `mse == 0 -> psnr_max`
+  default would not be bit-identical there. Do not merge the two
+  computed arms. The `uncapped` option name,
+  `VMAF_OPT_TYPE_BOOL` type and `false` default are mirrored across ten
+  extractors — the two CPU ones plus all eight GPU twins — and must move
+  together. It is deliberately **not**
+  `VMAF_OPT_FLAG_FEATURE_PARAM`: the CPU extractor appends without a
+  name dict while the twins append with one, so flagging it would make
+  the backends emit different feature keys for the same request.
+  `core/test/test_psnr_uncapped.c` guards both directions (the default
+  must still report 60.0; `uncapped=true` must report 100.840479).
+  Standing divergence, unchanged by that ADR: the GPU twins implement
+  only `enable_chroma` and `uncapped`; `enable_mse`, `enable_apsnr`,
+  `reduced_hbd_peak` and `min_sse` are CPU-only.
+
 - **Embedded MCP runtime contract** (fork-local, [ADR-0209](../docs/adr/0209-mcp-embedded-scaffold.md)).
   [`src/mcp/`](src/mcp/) now contains the promoted in-process MCP
   runtime declared in

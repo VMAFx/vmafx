@@ -10,7 +10,9 @@
  *  uint64 SSE, computes MSE, then PSNR.
  *    peak     = (1 << bpc) - 1
  *    psnr_max = 6 * bpc + 12
- *    psnr     = min(10·log10(peak² / max(mse, 1e-16)), psnr_max)
+ *    psnr     = (mse == 0) ? psnr_max                  (infinity sentinel)
+ *             : uncapped   ? 10·log10(peak² / mse)
+ *                          : min(10·log10(peak² / mse), psnr_max)
  */
 
 #include <errno.h>
@@ -54,6 +56,11 @@ typedef struct IntegerPsnrStateMetal {
 
     uint32_t peak;
     double   psnr_max;
+    /* `uncapped` option: mirrors CPU integer_psnr.c. When true, psnr_max
+     * keeps only its `sse == 0` infinity-sentinel role and stops
+     * truncating genuinely computed values. Default false keeps every
+     * shipped score unchanged. See ADR-1193 / T-UPSTREAM-1109. */
+    bool     uncapped;
     size_t   partials_count;   /* grid_w × grid_h (for Y plane) */
     unsigned frame_w;
     unsigned frame_h;
@@ -64,7 +71,16 @@ typedef struct IntegerPsnrStateMetal {
 
 static const char *const psnr_name[PSNR_NUM_PLANES] = {"psnr_y", "psnr_cb", "psnr_cr"};
 
-static const VmafOption options[] = {{0}};
+static const VmafOption options[] = {
+    {
+        .name = "uncapped",
+        .help = "report the true PSNR instead of truncating at the psnr_max ceiling "
+                "(an all-zero SSE still reports psnr_max)",
+        .offset = offsetof(IntegerPsnrStateMetal, uncapped),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {0}};
 
 static int build_pipelines(IntegerPsnrStateMetal *s, id<MTLDevice> device)
 {
@@ -281,9 +297,19 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
         }
         const double n_pix = (double)pw * (double)ph;
         const double mse   = (n_pix > 0.0) ? (sse_d / n_pix) : 0.0;
-        double psnr = (mse <= 1e-16) ? s->psnr_max
-                                     : 10.0 * log10(peak_sq / mse);
-        if (psnr > s->psnr_max) { psnr = s->psnr_max; }
+        /* Match CPU integer_psnr.c::psnr_from_mse — `mse == 0` reports
+         * psnr_max as the infinity sentinel; the truncation applies only
+         * when `uncapped` is false. See ADR-1193 / T-UPSTREAM-1109. */
+        double psnr;
+        if (!s->uncapped) {
+            /* Pre-ADR-1193 expression verbatim — bit-identical default. */
+            psnr = (mse <= 1e-16) ? s->psnr_max : 10.0 * log10(peak_sq / mse);
+            if (psnr > s->psnr_max) { psnr = s->psnr_max; }
+        } else if (mse <= 0.0) {
+            psnr = s->psnr_max; /* infinity sentinel */
+        } else {
+            psnr = 10.0 * log10(peak_sq / ((mse > 1e-16) ? mse : 1e-16));
+        }
 
         int err = vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, psnr_name[p], psnr, index);
