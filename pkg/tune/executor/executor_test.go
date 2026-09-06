@@ -162,6 +162,7 @@ func TestBuildVMAFCommand(t *testing.T) {
 				"--width", "1920", "--height", "1080",
 				"--pixel_format", "420", "--bitdepth", "8",
 				"--model", "version=" + model.DefaultVersion, "--json", "--output", "/tmp/vmaf.json",
+				"--feature", "vif",
 			},
 		},
 		{
@@ -176,6 +177,7 @@ func TestBuildVMAFCommand(t *testing.T) {
 				"--width", "3840", "--height", "2160",
 				"--pixel_format", "422", "--bitdepth", "10",
 				"--model", "version=" + model.DefaultVersion, "--json", "--output", "/tmp/vmaf.json",
+				"--feature", "vif",
 				"--backend", "cuda", "--frame_skip_ref", "120", "--frame_cnt", "240",
 			},
 		},
@@ -190,6 +192,20 @@ func TestBuildVMAFCommand(t *testing.T) {
 				"--width", "1", "--height", "1",
 				"--pixel_format", "444", "--bitdepth", "12",
 				"--model", "path=/models/hdr.json", "--json", "--output", "/tmp/vmaf.json",
+				"--feature", "vif",
+			},
+		},
+		{
+			name: "v0.6.1 already requests vif so --feature vif is omitted",
+			req: ScoreRequest{
+				Reference: "ref.yuv", Distorted: "dist.yuv",
+				Width: 1920, Height: 1080, PixFmt: "yuv420p", Model: "vmaf_v0.6.1",
+			},
+			want: []string{
+				"vmaf", "--reference", "ref.yuv", "--distorted", "dist.yuv",
+				"--width", "1920", "--height", "1080",
+				"--pixel_format", "420", "--bitdepth", "8",
+				"--model", "version=vmaf_v0.6.1", "--json", "--output", "/tmp/vmaf.json",
 			},
 		},
 	}
@@ -365,6 +381,36 @@ func TestParseFeatureAggregates(t *testing.T) {
 	for _, absent := range []string{"vif_scale1", "vif_scale2", "vif_scale3"} {
 		if _, ok := means[absent]; ok {
 			t.Errorf("%s should be absent, not zero", absent)
+		}
+	}
+}
+
+// TestParseFeatureAggregatesOptionsSuffixed pins the prefix fallback for the
+// options-suffixed keys the v1 default emits.
+func TestParseFeatureAggregatesOptionsSuffixed(t *testing.T) {
+	t.Parallel()
+
+	payload := map[string]any{
+		"pooled_metrics": map[string]any{
+			"integer_adm2_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02": map[string]any{"mean": 0.935743},
+			"integer_adm3_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02": map[string]any{"mean": 0.948285},
+			"integer_motion2_mmxv_18":                           map[string]any{"mean": 3.894361},
+			"integer_motion3_mmxv_18":                           map[string]any{"mean": 3.989766},
+			"integer_vif_scale0":                                map[string]any{"mean": 0.363662},
+			"integer_vif_scale1":                                map[string]any{"mean": 0.767495},
+			"integer_vif_scale2":                                map[string]any{"mean": 0.863108},
+			"integer_vif_scale3":                                map[string]any{"mean": 0.91572},
+		},
+	}
+	means, _ := ParseFeatureAggregates(payload, Canonical6Features)
+	want := map[string]float64{
+		"adm2": 0.935743, "motion2": 3.894361,
+		"vif_scale0": 0.363662, "vif_scale1": 0.767495,
+		"vif_scale2": 0.863108, "vif_scale3": 0.91572,
+	}
+	for name, w := range want {
+		if got, ok := means[name]; !ok || got != w {
+			t.Errorf("%s mean = %v (present=%v), want %v", name, got, ok, w)
 		}
 	}
 }

@@ -27,6 +27,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -147,6 +148,11 @@ func BuildCommand(req Request, jsonOutput, vmafBin, backend string) []string {
 		"--json",
 		"--output", jsonOutput,
 	}
+	// The v1 default omits VIF; request it so the canonical-6 vif_scale0..3
+	// aggregates are populated (T-VMAFTUNE-VIF-NAN-UNDER-V1-2026-09-04).
+	if !vmafmodel.RequestsVIF(req.Model) {
+		cmd = append(cmd, "--feature", "vif")
+	}
 	if backend != "" {
 		cmd = append(cmd, "--backend", backend)
 	}
@@ -204,9 +210,15 @@ func ParseFeatureAggregates(data []byte, featureNames []string) (map[string]floa
 		return means, stds
 	}
 	for _, name := range featureNames {
-		block, ok := payload.PooledMetrics[canonicalToPooledKey[name]]
+		pooledKey := canonicalToPooledKey[name]
+		block, ok := payload.PooledMetrics[pooledKey]
 		if !ok {
 			block, ok = payload.PooledMetrics[name]
+		}
+		if !ok {
+			// Options-suffixed keys (integer_adm2_csf_2_..., integer_motion2_mmxv_18)
+			// are what the v1 default emits; match on the "<key>_" prefix.
+			block, ok = pooledByPrefix(payload.PooledMetrics, pooledKey+"_", name+"_")
 		}
 		if !ok {
 			continue
@@ -219,6 +231,25 @@ func ParseFeatureAggregates(data []byte, featureNames []string) (map[string]floa
 		}
 	}
 	return means, stds
+}
+
+// pooledByPrefix returns the first pooled block whose key starts with one
+// of the prefixes. Keys are visited in sorted order so the choice is
+// deterministic when several option variants of one feature are present.
+func pooledByPrefix(pooled map[string]pooledBlock, prefixes ...string) (pooledBlock, bool) {
+	keys := make([]string, 0, len(pooled))
+	for k := range pooled {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		for _, pref := range prefixes {
+			if strings.HasPrefix(k, pref) {
+				return pooled[k], true
+			}
+		}
+	}
+	return pooledBlock{}, false
 }
 
 var vmafVersionRE = regexp.MustCompile(`VMAF version[: ]+(\S+)`)

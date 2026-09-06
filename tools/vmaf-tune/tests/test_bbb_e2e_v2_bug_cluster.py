@@ -367,7 +367,10 @@ def test_vmaf_explicit_backend_failure_errors() -> None:
     per-backend strcmp targets.
     """
     repo_root = Path(__file__).resolve().parents[3]
-    src = (repo_root / "core/tools/vmaf.c").read_text(encoding="utf-8")
+    vmaf_src = repo_root / "core/tools/vmaf.cpp"
+    if not vmaf_src.exists():
+        vmaf_src = repo_root / "core/tools/vmaf.c"
+    src = vmaf_src.read_text(encoding="utf-8")
     # The explicit-backend gate must be defined exactly once.
     assert "explicit_backend" in src, "missing explicit_backend variable in vmaf.c"
     assert 'strcmp(c->backend, "auto") != 0' in src, "auto exemption missing"

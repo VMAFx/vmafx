@@ -672,6 +672,14 @@ trade-off: per-encode wall-clock cost roughly doubles for opt-in
 adapters because the harness runs a stats-only `-pass 1` invocation
 before the production CRF encode.
 
+The twelve canonical-6 aggregate columns (`adm2_mean`, `adm2_std`,
+`vif_scale0_mean`…`vif_scale3_std`, `motion2_mean`, `motion2_std`) are
+extracted from libvmaf's pooled metrics. When scoring with models that omit VIF
+(including the default `vmaf_v1.0.16_3d0h` model, ADR-1168/1169), both Python
+`vmaf-tune` and Go `vmafx-tune` automatically pass `--feature vif` to libvmaf
+and parse options-suffixed feature aliases, ensuring all canonical-6 columns are
+populated with real float values rather than `NaN`.
+
 ### Example row
 
 ```json

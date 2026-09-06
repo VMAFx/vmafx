@@ -12,6 +12,7 @@ package corpus
 import (
 	"context"
 	"encoding/json"
+	vmafmodel "github.com/VMAFx/vmafx/pkg/model"
 	"math"
 	"os"
 	"path/filepath"
@@ -98,6 +99,9 @@ func BuildVMAFCommand(req ScoreRequest, jsonOutput, vmafBin, backend string) []s
 		"--json",
 		"--output", jsonOutput,
 	}
+	if !ModelRequestsVIF(req.Model) {
+		cmd = append(cmd, "--feature", "vif")
+	}
 	if backend != "" {
 		cmd = append(cmd, "--backend", backend)
 	}
@@ -111,6 +115,13 @@ func BuildVMAFCommand(req ScoreRequest, jsonOutput, vmafBin, backend string) []s
 		cmd = append(cmd, "--frame_cnt", strconv.Itoa(req.FrameCnt))
 	}
 	return cmd
+}
+
+// ModelRequestsVIF reports whether a model version or path already requests
+// VIF features natively. It delegates to model.RequestsVIF so pkg/corpus,
+// pkg/fast, pkg/scorecli and pkg/tune/executor share one decision.
+func ModelRequestsVIF(model string) bool {
+	return vmafmodel.RequestsVIF(model)
 }
 
 // modelArg formats the --model argument. A bare version identifier is wrapped
@@ -212,9 +223,25 @@ func ParseFeatureAggregates(
 			// Also try the bare name for synthetic payloads that do not
 			// use the integer_* prefix.
 			block, ok = pooled[name].(map[string]any)
-			if !ok {
-				continue
+		}
+		if !ok {
+			// Fall back to prefix matching for options-suffixed keys
+			// (e.g. integer_adm2_csf_2_dlmw_0.7_..., integer_motion2_mmxv_18,
+			// integer_vif_scale0_...).
+			pref1 := pooledKey + "_"
+			pref2 := name + "_"
+			for k, v := range pooled {
+				if strings.HasPrefix(k, pref1) || strings.HasPrefix(k, pref2) {
+					if b, isMap := v.(map[string]any); isMap {
+						block = b
+						ok = true
+						break
+					}
+				}
 			}
+		}
+		if !ok {
+			continue
 		}
 		if v, ok := toFloat(block["mean"]); ok {
 			means[name] = v

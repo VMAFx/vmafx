@@ -30,6 +30,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -314,6 +315,11 @@ func BuildVMAFCommand(req ScoreRequest, jsonOutput, vmafBin string) []string {
 		"--json",
 		"--output", jsonOutput,
 	}
+	// The v1 default omits VIF; request it so the canonical-6 vif_scale0..3
+	// aggregates are populated (T-VMAFTUNE-VIF-NAN-UNDER-V1-2026-09-04).
+	if !vmafmodel.RequestsVIF(model) {
+		cmd = append(cmd, "--feature", "vif")
+	}
 	if req.Backend != "" {
 		cmd = append(cmd, "--backend", req.Backend)
 	}
@@ -445,12 +451,18 @@ func ParseFeatureAggregates(
 		return means, stds
 	}
 	for _, name := range featureNames {
-		block, ok := pooled[canonicalToPooledKey[name]].(map[string]any)
+		pooledKey := canonicalToPooledKey[name]
+		block, ok := pooled[pooledKey].(map[string]any)
 		if !ok {
 			block, ok = pooled[name].(map[string]any)
-			if !ok {
-				continue
-			}
+		}
+		if !ok {
+			// Options-suffixed keys (integer_adm2_csf_2_..., integer_motion2_mmxv_18)
+			// are what the v1 default emits; match on the "<key>_" prefix.
+			block, ok = pooledByPrefix(pooled, pooledKey+"_", name+"_")
+		}
+		if !ok {
+			continue
 		}
 		if mean, ok := block["mean"].(float64); ok {
 			means[name] = mean
@@ -460,6 +472,28 @@ func ParseFeatureAggregates(
 		}
 	}
 	return means, stds
+}
+
+// pooledByPrefix returns the first pooled block whose key starts with one
+// of the prefixes. Keys are visited in sorted order so the choice is
+// deterministic when several option variants of one feature are present.
+func pooledByPrefix(pooled map[string]any, prefixes ...string) (map[string]any, bool) {
+	keys := make([]string, 0, len(pooled))
+	for k := range pooled {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		for _, pref := range prefixes {
+			if !strings.HasPrefix(k, pref) {
+				continue
+			}
+			if block, isMap := pooled[k].(map[string]any); isMap {
+				return block, true
+			}
+		}
+	}
+	return nil, false
 }
 
 // ---------------------------------------------------------------------------

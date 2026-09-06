@@ -182,6 +182,18 @@ for the option-space digest.
   back-fills missing v3 columns on legacy v2 rows with `NaN`; the
   on-disk `schema_version` is preserved so consumers can filter on
   `>= 3` when they need real per-feature data.
+- **Canonical-6 columns are unconditionally populated across all default and
+  custom models.** Since ADR-1168/1169 moved the default model to
+  `vmaf_v1.0.16_3d0h`, libvmaf does not evaluate VIF unless explicitly
+  requested via `--feature vif`. `vmaftune.score.build_vmaf_command` and every
+  Go libvmaf argv builder (`pkg/corpus.BuildVMAFCommand`,
+  `pkg/fast.BuildVMAFCommand`, `pkg/scorecli.BuildCommand`,
+  `pkg/tune/executor.BuildVMAFCommand`) append `--feature vif` for models
+  lacking VIF natively — the Go side decides via the single
+  `pkg/model.RequestsVIF` helper, so a new argv builder must call it — and
+  parse options-suffixed keys via prefix matching, guaranteeing that all
+  canonical-6 columns (`adm2`, `vif_scale0..3`, `motion2`) populate real float
+  means rather than emitting `NaN`.
 - **The `vmaf_model` JSONL field is now per-row, not per-job.** Since
   ADR-0289 (resolution-aware model selection), `corpus._row_for`
   populates `vmaf_model` from `score_res.request.model`, which in

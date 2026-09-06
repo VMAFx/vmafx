@@ -84,7 +84,7 @@ func scriptedRunners(scores map[int]float64) Runners {
 		}
 		body := `{"pooled_metrics": {"vmaf": {"mean": ` +
 			strconv.FormatFloat(vmaf, 'f', -1, 64) +
-			`}, "integer_adm2": {"mean": 0.98}, "integer_motion2": {"mean": 3.25}}}`
+			`}, "integer_adm2": {"mean": 0.98}, "integer_motion2": {"mean": 3.25}, "integer_vif_scale0": {"mean": 0.85}, "integer_vif_scale1": {"mean": 0.90}, "integer_vif_scale2": {"mean": 0.95}, "integer_vif_scale3": {"mean": 0.98}}}`
 		for i, a := range argv {
 			if a == "--output" && i+1 < len(argv) {
 				if err := os.WriteFile(argv[i+1], []byte(body), 0o600); err != nil {
@@ -176,8 +176,8 @@ func TestIterRowsEmitsCompleteRows(t *testing.T) {
 	if rows[0]["adm2_mean"] != 0.98 {
 		t.Errorf("adm2_mean = %v, want 0.98", rows[0]["adm2_mean"])
 	}
-	if v, _ := rows[0]["vif_scale0_mean"].(float64); !math.IsNaN(v) {
-		t.Errorf("vif_scale0_mean = %v, want NaN for a feature libvmaf did not emit", v)
+	if rows[0]["vif_scale0_mean"] != 0.85 {
+		t.Errorf("vif_scale0_mean = %v, want 0.85", rows[0]["vif_scale0_mean"])
 	}
 	if v, _ := rows[0]["adm2_std"].(float64); !math.IsNaN(v) {
 		t.Errorf("adm2_std = %v, want NaN — the integer pipeline emits no stddev", v)
