@@ -22,6 +22,12 @@
 #define UTF8_PATH_MAX 4096
 #define UTF8_MODE_MAX 32
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit where NULL is the canonical null pointer constant, and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 FILE *vmaf_fopen_utf8(const char *path, const char *mode)
 {
     if (!path || !mode) {
@@ -101,3 +107,5 @@ int vmaf_open_utf8(const char *path, int flags, int mode)
     return open(path, flags, (mode_t)mode);
 #endif
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
