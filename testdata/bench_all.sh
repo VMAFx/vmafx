@@ -73,25 +73,36 @@ fi
 run() {
   local name="$1" ref="$2" dis="$3" w="$4" h="$5" bd="$6" flags="$7"
   local out="$OUTDIR/${name}.json"
+  local err="$OUTDIR/${name}.err"
   local start end ms score vmaf_rc
   echo -n "  $name ... "
   start=$(date +%s%N)
+  # stderr is kept, not discarded: an earlier revision sent it to /dev/null,
+  # so a hard backend failure (e.g. the CUDA/SYCL `--threads` context-sync
+  # abort, exit 234) was indistinguishable from an absent device and every
+  # GPU row printed "backend likely unavailable". See
+  # docs/development/netflix-benchmark-baselines.md.
   # shellcheck disable=SC2086  # $flags is an intentionally-split flag list
   "$VMAF" --reference "$ref" --distorted "$dis" \
     --width "$w" --height "$h" --pixel_format 420 --bitdepth "$bd" \
     --model "path=$MODEL" --threads 1 \
-    --output "$out" --json -q $flags 2>/dev/null || vmaf_rc=$?
+    --output "$out" --json -q $flags 2>"$err" || vmaf_rc=$?
   end=$(date +%s%N)
   ms=$(((end - start) / 1000000))
   if [[ -n "${vmaf_rc:-}" ]]; then
-    echo "SKIP (vmaf exited ${vmaf_rc} — backend likely unavailable)  (${ms}ms)"
+    # Do not claim to know why: report the exit code and the last non-empty
+    # stderr line (the failure, not the first INFO banner), and let the
+    # operator read "$err" for the rest.
+    local last
+    last=$(grep -v '^[[:space:]]*$' "$err" 2>/dev/null | tail -n 1)
+    echo "FAIL (vmaf exited ${vmaf_rc}: ${last:-no stderr}; see ${err})  (${ms}ms)"
     return 0
   fi
   if [[ ! -f "$out" ]]; then
     # vmaf returned 0 but did not write the output file — this happens when
     # the requested backend is unavailable and the fallback path also fails
-    # to open the output (e.g. Vulkan without ICD: "could not open file").
-    echo "SKIP (no output file produced — backend likely unavailable)  (${ms}ms)"
+    # to open the output.
+    echo "FAIL (exit 0 but no output file; see ${err})  (${ms}ms)"
     return 0
   fi
   score=$(python3 -c "import json; print(f'{json.load(open(\"$out\"))[\"pooled_metrics\"][\"vmaf\"][\"mean\"]:.6f}')")
@@ -137,7 +148,7 @@ for key, name in backends:
                 for i, d in bad[:5]:
                     print(f"      frame {i}: cpu={cpu_scores[i]:.6f} gpu={scores[i]:.6f} diff={d:.6f}")
     except FileNotFoundError:
-        print(f"  {name:8s}: SKIP (output not produced — backend likely unavailable)")
+        print(f"  {name:8s}: NO DATA (run() reported FAIL — read the .err file it named)")
     except Exception as e:
         print(f"  {name:8s}: ERROR {e}")
 PYEOF
@@ -148,17 +159,20 @@ PYEOF
 # CLI surface as of 2026-04-28; the explicit-flag form below is kept
 # because it works even on libvmaf builds without the selector.
 #
-#   CPU:    --no_cuda --no_sycl --no_vulkan
-#   CUDA:   --gpumask=0 --no_sycl --no_vulkan
-#   SYCL:   --sycl_device=0 --no_cuda --no_vulkan
+#   CPU:    --no_cuda --no_sycl
+#   CUDA:   --gpumask=0 --no_sycl
+#   SYCL:   --sycl_device=0 --no_cuda
+#
+# `--no_vulkan` was dropped from all three sets: ADR-0726 removed the Vulkan
+# backend and current CLI builds reject the flag as unrecognized.
 #
 # Verifying engagement after a run: the JSON's `frames[0].metrics`
 # key set differs per backend (CPU 14-15, CUDA 11-12, SYCL ~15,
 # Vulkan ~34). Same key-count + same pool across two rows is a
 # strong signal that both ran the same code path.
-FLAGS_CPU="--no_cuda --no_sycl --no_vulkan"
-FLAGS_CUDA="--gpumask=0 --no_sycl --no_vulkan"
-FLAGS_SYCL="--sycl_device=0 --no_cuda --no_vulkan"
+FLAGS_CPU="--no_cuda --no_sycl"
+FLAGS_CUDA="--gpumask=0 --no_sycl"
+FLAGS_SYCL="--sycl_device=0 --no_cuda"
 # FLAGS_VULKAN removed per ADR-0726
 
 run_test() {

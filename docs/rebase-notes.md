@@ -48509,6 +48509,31 @@ reintroduce this. Two invariants:
 The guard that used to sit in `flush_context_cuda()` (`if (vmaf->thread_pool && TEMPORAL)
 continue;`) is intentionally **deleted**, not moved. A rebase that resurrects it alongside
 invariant 1 will skip the flush entirely for temporal GPU extractors.
+## RN-2026-09-06 — Netflix benchmark harness paths and flags are host-coupled
+
+`testdata/benchmark_netflix.py` and `testdata/bench_all.sh` are fork-added and
+have no upstream counterpart, so a rebase never conflicts them — but three
+values inside them silently rot and are worth re-checking after any sync:
+
+1. **`bench_all.sh` must not pass a flag the CLI has removed.** It carried
+   `--no_vulkan` in all three backend flag sets long after ADR-0726 deleted the
+   Vulkan backend; current builds print `unrecognized option '--no_vulkan'` and
+   the run continues, so the staleness is invisible until something else fails.
+   If a future sync removes another negative selector (`--no_cuda`,
+   `--no_sycl`), update the flag sets in the same change.
+2. **`bench_all.sh` hard-codes `--threads 1`.** That is not cosmetic: on
+   `cd52f2670` every GPU backend aborts with `problem flushing context` when a
+   thread pool is present (`T-GPU-CLI-THREADS-CTX-SYNC-2026-09-06`). Do not
+   "fix" a red bench row by dropping the flag — that hides the defect the row is
+   now correctly reporting.
+3. **The VA-API render node is not stable.** `benchmark_netflix.py` used to pin
+   `/dev/dri/renderD130` for the SYCL/QSV import; on the bench host that is now
+   the AMD iGPU and the Arc A380 is `renderD129`. The node is an environment
+   override (`VMAF_SYCL_RENDER_NODE`), never a literal.
+
+`testdata/netflix_benchmark_results.json` is deliberately stale as of
+2026-09-06 — see [ADR-1192](adr/1192-netflix-bench-snapshot-drift-not-regenerated.md).
+Do not regenerate it as part of a rebase.
 ## ci/container-source-guard — record the container's source revision (2026-09-06)
 
 Fork-only tooling (`dev/`, `scripts/dev/`, `scripts/ci/tests/`). One invariant:

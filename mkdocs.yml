@@ -358,6 +358,7 @@ nav:
       - Rust guide: development/rust.md
       - GPU scheduling: development/gpu-scheduling.md
       - Performance benchmarking: development/perf.md
+      - Netflix benchmark baselines: development/netflix-benchmark-baselines.md
       - Deprecations: development/deprecations.md
       - vmafx-node: development/vmafx-node.md
       - ADR workflow: development/adr-workflow.md

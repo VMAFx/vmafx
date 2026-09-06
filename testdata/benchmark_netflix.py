@@ -30,7 +30,13 @@ import time
 # freshly-built libvmaf instead of the system install. Defaults match the
 # author's local layout. See PR #305 (2026-05-02) for why the snapshot must be
 # regenerated against the fork build, not against /usr/local/bin/vmaf v3.0.0.
-FFMPEG = os.environ.get("VMAF_FFMPEG", "/home/kilian/dev/ffmpeg-8/ffmpeg")
+# FFmpeg binary carrying the fork's libvmaf / libvmaf_cuda / libvmaf_sycl
+# filters. The default is the vmaf-dev-mcp container's install path (CLAUDE.md
+# §12 rule 15); set VMAF_FFMPEG to point at any other build. The previous
+# default was a hard-coded path in the author's home directory that no longer
+# exists on the bench host — see ADR-0792 for the same fix applied to the YUV
+# fixtures.
+FFMPEG = os.environ.get("VMAF_FFMPEG", "/usr/local/bin/ffmpeg")
 BASEDIR = os.path.dirname(os.path.abspath(__file__))
 # YUV fixtures live in the upstream-mirror python/test/resource/yuv/ tree.
 # When invoked from a git worktree (where those files aren't checked out),
@@ -39,6 +45,15 @@ YUVDIR = os.environ.get(
     "VMAF_YUVDIR",
     os.path.join(os.path.dirname(BASEDIR), "python", "test", "resource", "yuv"),
 )
+
+# VA-API render node the SYCL/QSV import path uploads through. Node numbering
+# is not stable across hosts or across PCI re-enumeration: on the ryzen-4090-arc
+# bench host the Arc A380 moved from renderD130 to renderD129 and renderD130 is
+# now the AMD iGPU, which fails with "unsupported drm device by media driver:
+# amdg". Pick the node whose `vainfo --display drm --device <node>` reports the
+# Intel iHD driver and pass it here. See
+# docs/development/netflix-benchmark-baselines.md.
+SYCL_RENDER_NODE = os.environ.get("VMAF_SYCL_RENDER_NODE", "/dev/dri/renderD128")
 
 # Netflix reference scores (vmaf_v0.6.1, integer path)
 # From python/test/quality_runner_test.py
@@ -100,7 +115,7 @@ BACKENDS = [
         "filter": "libvmaf_sycl",
         "extra_args": [
             "-init_hw_device",
-            "vaapi=va:/dev/dri/renderD130",
+            f"vaapi=va:{SYCL_RENDER_NODE}",
             "-init_hw_device",
             "qsv=qsv@va",
             "-filter_hw_device",
