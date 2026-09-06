@@ -361,15 +361,25 @@ void ssimulacra2_edge_diff_map_sve2(const float *img1, const float *mu1, const f
             const svfloat32_t a2 = svld1_f32(pg, r2 + i);
             const svfloat32_t am1 = svld1_f32(pg, rm1 + i);
             const svfloat32_t am2 = svld1_f32(pg, rm2 + i);
-            const svfloat32_t d1 = svabs_f32_x(pg, svsub_f32_x(pg, a1, am1));
-            const svfloat32_t d2 = svabs_f32_x(pg, svsub_f32_x(pg, a2, am2));
-            alignas(16) float d1f[4] = {0.f, 0.f, 0.f, 0.f};
-            alignas(16) float d2f[4] = {0.f, 0.f, 0.f, 0.f};
-            svst1_f32(pg, d1f, d1);
-            svst1_f32(pg, d2f, d2);
+            /* ADR-1208: the reference difference is taken in DOUBLE.
+             * `a` and `am` are floats, so `(double)a - (double)am` is exact,
+             * whereas subtracting in float rounds first. The scalar
+             * `edge_diff_map`, this function's own scalar tail, and the test's
+             * reference all promote before subtracting; vectorising the
+             * subtract in float made the ssimulacra2 score depend on whether
+             * the host had SIMD. The per-lane loop below is scalar anyway, so
+             * nothing is lost by folding the subtraction into it. */
+            alignas(16) float a1f[4] = {0.f, 0.f, 0.f, 0.f};
+            alignas(16) float am1f[4] = {0.f, 0.f, 0.f, 0.f};
+            alignas(16) float a2f[4] = {0.f, 0.f, 0.f, 0.f};
+            alignas(16) float am2f[4] = {0.f, 0.f, 0.f, 0.f};
+            svst1_f32(pg, a1f, a1);
+            svst1_f32(pg, am1f, am1);
+            svst1_f32(pg, a2f, a2);
+            svst1_f32(pg, am2f, am2);
             for (int k = 0; k < 4; k++) {
-                double ed1 = (double)d1f[k];
-                double ed2 = (double)d2f[k];
+                double ed1 = fabs((double)a1f[k] - (double)am1f[k]);
+                double ed2 = fabs((double)a2f[k] - (double)am2f[k]);
                 double d = (1.0 + ed2) / (1.0 + ed1) - 1.0;
                 double art = d > 0.0 ? d : 0.0;
                 double det = d < 0.0 ? -d : 0.0;
