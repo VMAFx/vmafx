@@ -1,0 +1,36 @@
+<!-- ADR-1213 stub — claimed by scripts/adr/next-free.sh --claim hip-ciede-chroma-ceil-dimensions on 2026-09-06T18:23:56Z -->
+<!-- Replace this file with the real ADR and rename to 1213-hip-ciede-chroma-ceil-dimensions.md before committing. -->
+<!-- To abandon this claim run: scripts/adr/next-free.sh --release 1213 -->
+
+# ADR-1213: <fill in title>
+
+- **Status**: Proposed
+- **Date**: 2026-09-06
+- **Deciders**: <fill in>
+- **Tags**: <fill in>
+
+## Context
+
+<fill in>
+
+## Decision
+
+<fill in>
+
+## Alternatives considered
+
+| Option | Pros | Cons | Why not chosen |
+|---|---|---|---|
+| | | | |
+
+## Consequences
+
+- **Positive**: <fill in>
+- **Negative**: <fill in>
+- **Neutral / follow-ups**: <fill in>
+
+## References
+
+- See [ADR-0535](0535-adr-atomic-allocator.md) for the original allocator design.
+- See [ADR-0628](0628-adr-allocator-remote-aware.md) for the remote-aware extension.
+- Source: <req or Q<round>.<q>>

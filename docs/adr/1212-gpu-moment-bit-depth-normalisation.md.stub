@@ -1,0 +1,36 @@
+<!-- ADR-1212 stub — claimed by scripts/adr/next-free.sh --claim gpu-moment-bit-depth-normalisation on 2026-09-06T18:23:55Z -->
+<!-- Replace this file with the real ADR and rename to 1212-gpu-moment-bit-depth-normalisation.md before committing. -->
+<!-- To abandon this claim run: scripts/adr/next-free.sh --release 1212 -->
+
+# ADR-1212: <fill in title>
+
+- **Status**: Proposed
+- **Date**: 2026-09-06
+- **Deciders**: <fill in>
+- **Tags**: <fill in>
+
+## Context
+
+<fill in>
+
+## Decision
+
+<fill in>
+
+## Alternatives considered
+
+| Option | Pros | Cons | Why not chosen |
+|---|---|---|---|
+| | | | |
+
+## Consequences
+
+- **Positive**: <fill in>
+- **Negative**: <fill in>
+- **Neutral / follow-ups**: <fill in>
+
+## References
+
+- See [ADR-0535](0535-adr-atomic-allocator.md) for the original allocator design.
+- See [ADR-0628](0628-adr-allocator-remote-aware.md) for the remote-aware extension.
+- Source: <req or Q<round>.<q>>
