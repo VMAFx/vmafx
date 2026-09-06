@@ -214,28 +214,11 @@ static inline void iadm_af_norm24(ulong v, thread ulong *m, thread int *e)
     *e = s;
 }
 
-static inline bool iadm_angle_flag(long ot_dp, long o_mag_sq, long t_mag_sq)
+/* round53(V) * 2^p with V = MC*mo*mt*2^-24; the scale exponent lands in
+ * *p_out. Mirrors adm_angle_flag_round53_v() in
+ * core/src/feature/adm_angle_flag.h. */
+static inline ulong iadm_af_round53_v(ulong mo, ulong mt, thread int *p_out)
 {
-    if (ot_dp < 0) {
-        return false;
-    }
-    if (o_mag_sq <= 0 || t_mag_sq <= 0) {
-        return true; /* RHS <= 0 <= LHS (magnitudes are sums of squares) */
-    }
-    if (ot_dp == 0) {
-        return false;
-    }
-
-    ulong mp = 0ul, mo = 0ul, mt = 0ul;
-    int ep = 0, eo = 0, et = 0;
-    iadm_af_norm24((ulong)ot_dp, &mp, &ep);
-    iadm_af_norm24((ulong)o_mag_sq, &mo, &eo);
-    iadm_af_norm24((ulong)t_mag_sq, &mt, &et);
-
-    const int sp = 2 * ep - eo - et;
-    if (sp >= 3) { return true; }
-    if (sp <= -3) { return false; }
-
     const ulong g = mo * mt;
     const ulong r = g & 0xFFFFFFul;
     const ulong s_val = g - IADM_AF_D * (g >> 24);
@@ -259,6 +242,34 @@ static inline bool iadm_angle_flag(long ot_dp, long o_mag_sq, long t_mag_sq)
             rounded += (rounded & 1ul);
         }
     }
+    *p_out = p;
+    return rounded;
+}
+
+static inline bool iadm_angle_flag(long ot_dp, long o_mag_sq, long t_mag_sq)
+{
+    if (ot_dp < 0) {
+        return false;
+    }
+    if (o_mag_sq <= 0 || t_mag_sq <= 0) {
+        return true; /* RHS <= 0 <= LHS (magnitudes are sums of squares) */
+    }
+    if (ot_dp == 0) {
+        return false;
+    }
+
+    ulong mp = 0ul, mo = 0ul, mt = 0ul;
+    int ep = 0, eo = 0, et = 0;
+    iadm_af_norm24((ulong)ot_dp, &mp, &ep);
+    iadm_af_norm24((ulong)o_mag_sq, &mo, &eo);
+    iadm_af_norm24((ulong)t_mag_sq, &mt, &et);
+
+    const int sp = 2 * ep - eo - et;
+    if (sp >= 3) { return true; }
+    if (sp <= -3) { return false; }
+
+    int p = 0;
+    const ulong rounded = iadm_af_round53_v(mo, mt, &p);
     return ((mp * mp) << (sp + p)) >= rounded;
 }
 

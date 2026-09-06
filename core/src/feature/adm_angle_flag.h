@@ -157,6 +157,55 @@ ADM_ANGLE_FLAG_FN void adm_angle_flag_norm24(uint64_t v, uint64_t *m, int *e)
 }
 
 /**
+ * Right-hand side of the predicate, scaled so it is an exact integer.
+ *
+ * With V = MC*mo*mt*2^-24 (the mathematically exact product the fp64 form
+ * rounds once to binary64), this returns `round53(V) * 2^p` and stores the
+ * scale exponent `p` in `*p_out`. V is written as S - D*r*2^-24 with
+ * D = 2^24 - MC = 5110, which keeps every intermediate inside 64 bits: no
+ * 128-bit product and no floating point of any width are needed.
+ *
+ * `mo` and `mt` are 24-bit significands in [2^23, 2^24), so the caller must
+ * have normalised them with adm_angle_flag_norm24() first.
+ */
+ADM_ANGLE_FLAG_FN uint64_t adm_angle_flag_round53_v(uint64_t mo, uint64_t mt, int *p_out)
+{
+    const uint64_t g = mo * mt; /* < 2^48 */
+    const uint64_t r = g & UINT64_C(0xFFFFFF);
+    const uint64_t s_val = g - ADM_ANGLE_FLAG_D * (g >> 24);
+    const uint64_t dr = ADM_ANGLE_FLAG_D * r; /* < 2^37 */
+
+    /* Binade of V. S - 2^(n-1) < D*r*2^-24 means V dropped a binade. */
+    int n = adm_angle_flag_bitlen(s_val);
+    const uint64_t below = s_val - (UINT64_C(1) << (n - 1));
+    if (below < ADM_ANGLE_FLAG_D && (below << 24) < dr) {
+        n--;
+    }
+
+    /* Round V to 53 significant bits: V * 2^p lands in [2^52, 2^53), so
+     * round53(V) * 2^p is round-to-nearest-even of that to an integer. */
+    const int p = 53 - n; /* 5 <= p <= 8 */
+    const uint64_t u = dr << p;
+    const uint64_t ui = u >> 24;
+    const uint64_t uf = u & UINT64_C(0xFFFFFF);
+    uint64_t rounded = (s_val << p) - ui;
+
+    if (uf != 0) {
+        /* Fraction of V*2^p is (2^24 - uf) / 2^24, integer part one lower. */
+        const uint64_t frac = UINT64_C(0x1000000) - uf;
+        rounded -= 1;
+        if (frac > UINT64_C(0x800000)) {
+            rounded += 1;
+        } else if (frac == UINT64_C(0x800000)) {
+            rounded += (rounded & 1u); /* ties to even */
+        }
+    }
+
+    *p_out = p;
+    return rounded;
+}
+
+/**
  * fp64-free evaluation of adm_angle_flag_fp64() with
  * cos_1deg_sq == ADM_ANGLE_FLAG_COS_1DEG_SQ. Bit-identical for every
  * int64 input triple; uses no floating-point operation of any width.
@@ -205,37 +254,8 @@ ADM_ANGLE_FLAG_FN int adm_angle_flag_i64(int64_t ot_dp, int64_t o_mag_sq, int64_
         return 0;
     }
 
-    /* V = MC*mo*mt*2^-24 = S - D*r*2^-24, all terms inside 64 bits. */
-    const uint64_t g = mo * mt; /* < 2^48 */
-    const uint64_t r = g & UINT64_C(0xFFFFFF);
-    const uint64_t s_val = g - ADM_ANGLE_FLAG_D * (g >> 24);
-    const uint64_t dr = ADM_ANGLE_FLAG_D * r; /* < 2^37 */
-
-    /* Binade of V. S - 2^(n-1) < D*r*2^-24 means V dropped a binade. */
-    int n = adm_angle_flag_bitlen(s_val);
-    const uint64_t below = s_val - (UINT64_C(1) << (n - 1));
-    if (below < ADM_ANGLE_FLAG_D && (below << 24) < dr) {
-        n--;
-    }
-
-    /* Round V to 53 significant bits: V * 2^p lands in [2^52, 2^53), so
-     * round53(V) * 2^p is round-to-nearest-even of that to an integer. */
-    const int p = 53 - n; /* 5 <= p <= 8 */
-    const uint64_t u = dr << p;
-    const uint64_t ui = u >> 24;
-    const uint64_t uf = u & UINT64_C(0xFFFFFF);
-    uint64_t rounded = (s_val << p) - ui;
-
-    if (uf != 0) {
-        /* Fraction of V*2^p is (2^24 - uf) / 2^24, integer part one lower. */
-        const uint64_t frac = UINT64_C(0x1000000) - uf;
-        rounded -= 1;
-        if (frac > UINT64_C(0x800000)) {
-            rounded += 1;
-        } else if (frac == UINT64_C(0x800000)) {
-            rounded += (rounded & 1u); /* ties to even */
-        }
-    }
+    int p = 0;
+    const uint64_t rounded = adm_angle_flag_round53_v(mo, mt, &p);
 
     return ((mp * mp) << (sp + p)) >= rounded;
 }
