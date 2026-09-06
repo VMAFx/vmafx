@@ -398,11 +398,26 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
      * divide by the pixel count to recover means / second moments.
      * Mirrors the CUDA twin's collect path. */
     const uint64_t *sums = (const uint64_t *)s->rb.host_pinned;
+    /* ADR-1212: normalise by the bit-depth scaler exactly as the CPU reference
+     * does. `float_moment` runs `picture_copy()` first, which divides every
+     * sample by 4 (10 bpc), 16 (12 bpc) or 256 (16 bpc) before `moment.c`
+     * accumulates it — see core/src/feature/picture_copy.cpp. This kernel
+     * accumulates the RAW codeword, so without this step a 10-bit input
+     * reported ref1st/dis1st 4x and ref2nd/dis2nd 16x too large. The device
+     * sums are exact integers, so dividing here reproduces the CPU's
+     * sum(x / scaler) bit-for-bit at 10 and 12 bpc (every term is an exact
+     * multiple of 1/scaler and the running double sum stays exact); at 16 bpc
+     * the CPU rounds each float square, so agreement is to float precision. */
+    const double moment_scaler = (s->bpc == 10u) ? 4.0 :
+                                 (s->bpc == 12u) ? 16.0 :
+                                 (s->bpc == 16u) ? 256.0 :
+                                                   1.0;
+    const double moment_scaler_sq = moment_scaler * moment_scaler;
     const double n_pix = (double)s->frame_w * (double)s->frame_h;
-    const double ref1st = (double)sums[0] / n_pix;
-    const double dis1st = (double)sums[1] / n_pix;
-    const double ref2nd = (double)sums[2] / n_pix;
-    const double dis2nd = (double)sums[3] / n_pix;
+    const double ref1st = ((double)sums[0] / moment_scaler) / n_pix;
+    const double dis1st = ((double)sums[1] / moment_scaler) / n_pix;
+    const double ref2nd = ((double)sums[2] / moment_scaler_sq) / n_pix;
+    const double dis2nd = ((double)sums[3] / moment_scaler_sq) / n_pix;
 
     err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                   "float_moment_ref1st", ref1st, index);
