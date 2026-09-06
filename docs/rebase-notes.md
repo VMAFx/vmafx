@@ -308,10 +308,18 @@ No rebase impact: fork-only tools/vmaf-tune and documentation surfaces (`tools/v
   loop (which correctly mirrors indices) rather than contiguous SIMD loads when `half_w % N == 1`.
   Upstream Netflix carries identical loop bounds; on rebase against upstream commits touching x86 DWT2,
   preserve the guarded bounds and the test `core/test/test_adm_dwt2_x86.c`.
-- `core/src/feature/integer_adm.c`: `extract()` validates scale-0 CSF factors dynamically via `adm_csf_factors(0, ...)`
-  and rejects configurations exceeding the 16-bit `uint16_t` fixed-point budget (`factor1 * 2^21 >= 65536.0` or
-  `factor2 * 2^23 >= 65536.0`) with `-EINVAL` and `vmaf_log(VMAF_LOG_LEVEL_ERROR)`. Upstream does not support
+- `core/src/feature/integer_adm.c`: `check_csf_scale0_budget()` — called from `extract()` right after the
+  `adm_norm_view_dist * adm_ref_display_height` guard — validates the scale-0 CSF factors dynamically via
+  `adm_csf_factors(0, ...)` and rejects configurations exceeding the 16-bit `uint16_t` fixed-point budget
+  (`factor1 * 2^21 >= 65536.0` or `factor2 * 2^23 >= 65536.0`) with `-EINVAL` and
+  `vmaf_log(VMAF_LOG_LEVEL_ERROR)`. It is a separate function only so `extract()` stays inside the 60-line
+  `readability-function-size` threshold (ADR-0141); fold it back inline at your peril. Upstream does not support
   `adm_csf_mode > 0`; preserve this guard on upstream syncs until stage 2 pipeline widening (`T-ADM-CSF-IRFACTOR-WIDEN`).
+- `core/test/test_adm_dwt2_x86.c`: the scalar reference and both SIMD cases share one `dwt2_case_matches()`
+  harness parameterised by an `adm_dwt2_8_fn` kernel pointer, and every working buffer is a file-scope array
+  sized for the largest case (`ADM_DWT2_MAX_W` 576 x `ADM_DWT2_H` 32). Both shapes exist to keep the file at
+  zero clang-tidy findings (ADR-1142 whole-tree ratchet); a rebase that reintroduces per-case `malloc` /
+  `free` re-adds `clang-analyzer-unix.Malloc` findings on the assert-early-return paths.
 ## ci/release-artifacts-built-in-dev-container — native release artifacts built in canonical dev container (ADR-1178) (2026-09-04)
 ## ci/release-artifacts-built-in-dev-container — native release artifacts built on self-hosted canonical runner (ADR-1178) (2026-09-05)
 
