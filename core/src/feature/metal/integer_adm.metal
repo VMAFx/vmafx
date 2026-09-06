@@ -87,7 +87,11 @@ constant int IADM_LO_SUM = 46342; /* dwt2_db2_coeffs_lo_sum */
 
 /* Fixed-point reciprocal constant 2^30, mirrors div_Q_factor. */
 constant float IADM_DIV_Q_FACTOR = 1073741824.0f; /* 2^30 */
-constant float IADM_COS_1DEG_SQ = 0.99969541f;    /* cosf(M_PI/180)^2 */
+/* Exact significand of cos(1 deg)^2 as binary32 (0x3F7FEC0A): the constant
+ * is MC * 2^-24 with MC = 16772106, so IADM_AF_D = 2^24 - MC. Used by
+ * iadm_angle_flag(); mirrors ADM_ANGLE_FLAG_D in
+ * core/src/feature/adm_angle_flag.h. */
+constant ulong IADM_AF_D = 5110ul;
 
 /* CM threshold fixed-point coefficients (matches integer_adm.c /
  * adm_cm.cu). Scale 0: ONE_BY_15 with >>12; scales 1-3: I4_ONE_BY_15 with
@@ -167,6 +171,98 @@ static inline int iadm_mirror_hi(int idx, int sup)
 }
 
 /* ------------------------------------------------------------------ */
+/*  angle_flag — shared by scale 0 and scales 1-3.                     */
+/*                                                                     */
+/*  MSL mirror of adm_angle_flag_i64() in                              */
+/*  core/src/feature/adm_angle_flag.h (ADR-1194). Metal Shading        */
+/*  Language has no `double` type, so the golden-frozen CPU expression */
+/*  — narrow each operand to float, then compare in binary64 — cannot  */
+/*  be written directly; this is its bit-identical reformulation in    */
+/*  64-bit integer arithmetic. Keep the two in lockstep: the C header  */
+/*  is the source of truth and core/test/test_adm_angle_flag.c pins it */
+/*  against the frozen expression.                                     */
+/* ------------------------------------------------------------------ */
+static inline int iadm_af_bitlen(ulong v)
+{
+    int n = 0;
+    if (v >> 32) { v >>= 32; n += 32; }
+    if (v >> 16) { v >>= 16; n += 16; }
+    if (v >> 8)  { v >>= 8;  n += 8;  }
+    if (v >> 4)  { v >>= 4;  n += 4;  }
+    if (v >> 2)  { v >>= 2;  n += 2;  }
+    if (v >> 1)  { v >>= 1;  n += 1;  }
+    return n + (int)v;
+}
+
+static inline void iadm_af_norm24(ulong v, thread ulong *m, thread int *e)
+{
+    const int n = iadm_af_bitlen(v);
+    if (n <= 24) {
+        *m = v << (24 - n);
+        *e = n - 24;
+        return;
+    }
+    int s = n - 24;
+    ulong q = v >> s;
+    const ulong rem = v & ((1ul << s) - 1ul);
+    const ulong half = 1ul << (s - 1);
+    if (rem > half || (rem == half && (q & 1ul) != 0ul)) {
+        q++;
+        if (q == (1ul << 24)) { q >>= 1; s++; }
+    }
+    *m = q;
+    *e = s;
+}
+
+static inline bool iadm_angle_flag(long ot_dp, long o_mag_sq, long t_mag_sq)
+{
+    if (ot_dp < 0) {
+        return false;
+    }
+    if (o_mag_sq <= 0 || t_mag_sq <= 0) {
+        return true; /* RHS <= 0 <= LHS (magnitudes are sums of squares) */
+    }
+    if (ot_dp == 0) {
+        return false;
+    }
+
+    ulong mp = 0ul, mo = 0ul, mt = 0ul;
+    int ep = 0, eo = 0, et = 0;
+    iadm_af_norm24((ulong)ot_dp, &mp, &ep);
+    iadm_af_norm24((ulong)o_mag_sq, &mo, &eo);
+    iadm_af_norm24((ulong)t_mag_sq, &mt, &et);
+
+    const int sp = 2 * ep - eo - et;
+    if (sp >= 3) { return true; }
+    if (sp <= -3) { return false; }
+
+    const ulong g = mo * mt;
+    const ulong r = g & 0xFFFFFFul;
+    const ulong s_val = g - IADM_AF_D * (g >> 24);
+    const ulong dr = IADM_AF_D * r;
+
+    int n = iadm_af_bitlen(s_val);
+    const ulong below = s_val - (1ul << (n - 1));
+    if (below < IADM_AF_D && (below << 24) < dr) { n--; }
+
+    const int p = 53 - n;
+    const ulong u = dr << p;
+    const ulong ui = u >> 24;
+    const ulong uf = u & 0xFFFFFFul;
+    ulong rounded = (s_val << p) - ui;
+    if (uf != 0ul) {
+        const ulong frac = 0x1000000ul - uf;
+        rounded -= 1ul;
+        if (frac > 0x800000ul) {
+            rounded += 1ul;
+        } else if (frac == 0x800000ul) {
+            rounded += (rounded & 1ul);
+        }
+    }
+    return ((mp * mp) << (sp + p)) >= rounded;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Fixed-point decouple — scale 0 (int16 bands).                      */
 /*  Bit-for-bit replica of decouple_angle_flag_s0 / decouple_r_s0.     */
 /* ------------------------------------------------------------------ */
@@ -175,8 +271,7 @@ static inline bool iadm_angle_flag_s0(int oh, int ov, int th, int tv)
     int ot_dp = oh * th + ov * tv;
     int o_mag_sq = oh * oh + ov * ov;
     int t_mag_sq = th * th + tv * tv;
-    return (ot_dp >= 0) &&
-           (float((long)ot_dp * ot_dp) >= float((long)o_mag_sq * t_mag_sq) * IADM_COS_1DEG_SQ);
+    return iadm_angle_flag(ot_dp, o_mag_sq, t_mag_sq);
 }
 
 static inline int iadm_decouple_r_s0(int o_val, int t_val, bool angle_flag, float gain_limit)
@@ -219,9 +314,7 @@ static inline bool iadm_angle_flag_s123(int oh, int ov, int th, int tv)
     long ot_dp = (long)oh * th + (long)ov * tv;
     long o_mag_sq = (long)oh * oh + (long)ov * ov;
     long t_mag_sq = (long)th * th + (long)tv * tv;
-    float d = (float)ot_dp / 4096.0f;
-    return (d >= 0.0f) &&
-           (d * d >= IADM_COS_1DEG_SQ * ((float)o_mag_sq / 4096.0f) * ((float)t_mag_sq / 4096.0f));
+    return iadm_angle_flag(ot_dp, o_mag_sq, t_mag_sq);
 }
 
 static inline int iadm_decouple_r_s123(int o_val, int t_val, bool angle_flag, float gain_limit)
