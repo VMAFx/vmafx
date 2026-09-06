@@ -182,8 +182,26 @@ int vmaf_dnn_session_open(VmafDnnSession **out, const char *onnx_path, const Vma
     char int8_path[4096];
     const char *load_path = NULL;
     rc = resolve_load_path(s, onnx_path, max_bytes, int8_path, sizeof(int8_path), &load_path);
-    if (rc == 0)
+    if (rc == 0) {
         rc = vmaf_ort_open(&s->ort, load_path, cfg);
+        if (rc < 0 && load_path != onnx_path) {
+            /* The int8 graph cleared the size cap and the op allowlist but the
+             * runtime could not create a session for it — an ONNX Runtime build
+             * without a kernel for one of its quantised ops reports exactly this
+             * ("Could not find an implementation for ConvInteger"). Same
+             * "better degraded than dead" rule as the missing-file branch in
+             * resolve_load_path(): the redirect must never turn a call that
+             * worked against the fp32 baseline into a hard failure.
+             * vmaf_ort_open() leaves `s->ort` untouched on error, so the retry
+             * cannot leak the failed session. Kept identical to
+             * vmaf_use_tiny_model() in dnn_attach_api.c — see
+             * core/src/dnn/AGENTS.md. */
+            vmaf_log(VMAF_LOG_LEVEL_DEBUG,
+                     "dnn: int8 session open failed (%s, rc=%d); retrying fp32 path\n",
+                     load_path, rc);
+            rc = vmaf_ort_open(&s->ort, onnx_path, cfg);
+        }
+    }
     if (rc < 0) {
         if (s->has_sidecar)
             vmaf_dnn_sidecar_free(&s->meta);
