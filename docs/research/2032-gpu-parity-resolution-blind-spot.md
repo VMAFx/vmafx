@@ -1,6 +1,6 @@
 <!-- markdownlint-disable MD013 MD060 -->
 
-# Finding two GPU parity bugs by varying one constant (2026-09-06)
+# Research-2032: Finding two GPU parity bugs by varying one constant (2026-09-06)
 
 ## Why this is written down
 
