@@ -127,9 +127,10 @@ teacher stamping and manifest generation before launching the multi-day run.
 
 ```bash
 docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract_k150k_features.py \
-  --clips-dir /workspace/.corpus/konvid-150k/clips \
+  --clips-dir /workspace/.corpus/konvid-150k/k150ka_extracted \
   --scores /workspace/.corpus/konvid-150k/k150ka_scores.csv \
   --vmaf-bin /usr/local/bin/vmaf \
+  --cpu-vmaf-bin /usr/local/bin/vmaf \
   --vmaf-model version=vmaf_v1.0.16_3d0h \
   --out /tmp/k150k_smoke.parquet \
   --manifest-out /tmp/k150k_smoke.manifest.json \
@@ -140,24 +141,45 @@ docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract
   --limit 5
 ```
 
-> **Corpus paths, checked against the workstation on 2026-09-06.** Both this
-> command and the §5.1 production extraction previously named
-> `--scores .../scores.csv`, which does not exist. KoNViD-150k ships its scores
-> split by part: the corpus holds `k150ka_scores.csv` and `k150kb_scores.csv`
-> (plus matching `*_votes.csv` and a `manifest.csv`). `k150ka_scores.csv` is also
-> what `extract_k150k_features.py` defaults to, and the script fails closed on a
-> missing file — `error: scores CSV not found` — so the old path would have
-> aborted the smoke on its first line, and the multi-day run with it.
+> **Corpus and binary paths — all four corrected after running this end to end
+> on 2026-09-06.** As written, this command failed on its first line, then again
+> on its second, then on every clip. Each fix below is from an actual run.
 >
-> `--clips-dir` is left as `clips/`: a real directory of 153,841 files and a
-> superset of the script's own default `k150ka_extracted/` (152,265). Lookup is
-> by `video_name`, so either resolves. Verify both paths exist before committing
-> to the long run rather than discovering it hours in:
+> 1. **`--scores`** named `scores.csv`, which does not exist. KoNViD-150k splits
+>    its scores by part: the corpus holds `k150ka_scores.csv` (154,746 rows) and
+>    `k150kb_scores.csv`. `k150ka_scores.csv` is also the script's own default.
+> 2. **`--cpu-vmaf-bin` was missing entirely.** It is required, and its default
+>    `/build/vmaf/core/build-cpu/tools/vmaf` does not exist in the container, so
+>    the run aborts with `error: cpu-vmaf-bin not found`. `/usr/local/bin/vmaf`
+>    serves both roles.
+> 3. **`--clips-dir` named `clips/`, which is unusable from inside the
+>    container.** Its 153,841 entries are symlinks to *host* absolute paths under
+>    `/home/kilian/dev/vmaf/.workingdir2/konvid-150k/…`, which do not resolve in
+>    the container mount. Every clip failed `ffprobe … returned non-zero exit
+>    status 1`, which reads like corrupt media and is really a dangling link. The
+>    real files are in `k150ka_extracted/` (152,265 files, e.g. 465,490 bytes,
+>    `ffprobe` reports 960x540) — again the script's own default.
+> 4. With those three fixed the pipeline runs clean: **`ok=5 fail=0`** at
+>    1.26 clip/s, `status: complete`, `schema:
+>    k150k-feature-extraction-manifest-v1`, 5 parquet rows.
+>
+> Verify before committing to the multi-day run:
 >
 > ```bash
-> docker exec vmaf-dev-mcp ls -d /workspace/.corpus/konvid-150k/clips \
+> docker exec vmaf-dev-mcp ls -d \
+>   /workspace/.corpus/konvid-150k/k150ka_extracted \
 >   /workspace/.corpus/konvid-150k/k150ka_scores.csv
+> # and confirm the clips are real files, not dangling links:
+> docker exec vmaf-dev-mcp ffprobe -v error -show_entries stream=width,height -of csv \
+>   /workspace/.corpus/konvid-150k/k150ka_extracted/orig_10000251326_540_5s.mp4
 > ```
+>
+> **What still needs [#1302](https://github.com/VMAFx/vmafx/pull/1302).** Of §4.2's
+> assertions, `schema`, `status` and `stats.ok` already pass on `master`. Three do
+> not, and all three are supplied by #1302: `teacher_model` in the manifest,
+> the `teacher_model` parquet column, and `adm3_mean` (`grep -c adm3` on master's
+> extractor returns 0, on #1302's returns 3). G4 is blocked on that PR alone —
+> the corpus, the binary and the pipeline are all verified working.
 
 ### 4.2 Validate Manifest Fields and Schema
 
@@ -220,9 +242,10 @@ mkdir -p runs/logs runs/shards
 
 ```bash
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract_k150k_features.py \
-  --clips-dir /workspace/.corpus/konvid-150k/clips \
+  --clips-dir /workspace/.corpus/konvid-150k/k150ka_extracted \
   --scores /workspace/.corpus/konvid-150k/k150ka_scores.csv \
   --vmaf-bin /usr/local/bin/vmaf \
+  --cpu-vmaf-bin /usr/local/bin/vmaf \
   --vmaf-model version=vmaf_v1.0.16_3d0h \
   --out /workspace/runs/shards/k150k_v1_features.parquet \
   --manifest-out /workspace/runs/shards/k150k_v1_features.manifest.json \
@@ -245,6 +268,7 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/e
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract_full_features.py \
   --data-root /workspace/.corpus/netflix \
   --vmaf-bin /usr/local/bin/vmaf \
+  --cpu-vmaf-bin /usr/local/bin/vmaf \
   --vmaf-model version=vmaf_v1.0.16_3d0h \
   --cache-dir /tmp/vmaf_nflx_cache \
   --out /workspace/runs/shards/full_features_netflix.parquet \
@@ -265,6 +289,7 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/b
   --bvi-dir /workspace/.workingdir2/bvi-dvc-extracted \
   --tier all \
   --vmaf-bin /usr/local/bin/vmaf \
+  --cpu-vmaf-bin /usr/local/bin/vmaf \
   --model version=vmaf_v1.0.16_3d0h \
   --out /workspace/runs/shards/full_features_bvi_dvc_all.parquet \
   --manifest-out /workspace/runs/shards/full_features_bvi_dvc_all.manifest.json \
@@ -287,6 +312,7 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/e
   --manifest /workspace/.workingdir2/youtube-ugc/manifest.csv \
   --yuv-dir /tmp/ugc_yuv_scratch \
   --vmaf-bin /usr/local/bin/vmaf \
+  --cpu-vmaf-bin /usr/local/bin/vmaf \
   --model version=vmaf_v1.0.16_3d0h \
   --out-parquet /workspace/runs/shards/full_features_ugc.parquet \
   --manifest-out /workspace/runs/shards/full_features_ugc.manifest.json \
@@ -310,6 +336,7 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/c
   --full \
   --feature-set full \
   --vmaf-bin /usr/local/bin/vmaf \
+  --cpu-vmaf-bin /usr/local/bin/vmaf \
   > runs/logs/extract_chug.log 2>&1 &
 ```
 
