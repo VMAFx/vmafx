@@ -1222,14 +1222,27 @@ static sycl::event launch_csf_den_cm_3band(
                             for (int dx = -1; dx <= 1; dx++) {
                                 if (dx == 0 && dy == 0)
                                     continue;
+                                /* ADR-1210: the CPU rule is ASYMMETRIC — the
+                                 * near edge MIRRORS to index 1, the far edge
+                                 * CLAMPS to the last index:
+                                 *   i_m1 = (i == 0)     ? 1     : i - 1;
+                                 *   i_p1 = (i == h - 1) ? h - 1 : i + 1;
+                                 * (core/src/feature/integer_adm.c:1009-1012).
+                                 * Clamping the near edge to 0 instead reads the
+                                 * centre row/column twice and drops the mirror,
+                                 * which only diverges once a scale's border crop
+                                 * collapses to 0 — band dimensions <= 14 — since
+                                 * only then are row 0 / col 0 inside the CM
+                                 * region. CUDA (adm_cm.cu) and HIP already carry
+                                 * the ADR-1167 fix; this twin was missed. */
                                 int ny = row + dy;
                                 int nx = col + dx;
                                 if (ny < 0)
-                                    ny = 0;
+                                    ny = 1;
                                 if (ny >= (int)e_h)
                                     ny = (int)e_h - 1;
                                 if (nx < 0)
-                                    nx = 0;
+                                    nx = 1;
                                 if (nx >= (int)e_w)
                                     nx = (int)e_w - 1;
                                 thr += cf_ptrs[b][ny * e_stride + nx];
