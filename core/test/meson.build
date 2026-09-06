@@ -1314,6 +1314,21 @@ _ssimulacra2_test_x86_fma_args = []
 if host_machine.cpu_family() in ['x86_64', 'x86']
     _ssimulacra2_test_x86_fma_args = ['-mavx2', '-mfma']
 endif
+# ADR-1207 — a score must not depend on the host instruction set.
+# Drives the public API twice over one fixture, once with the host ISA and
+# once with cpumask disabling every SIMD flag, and asserts bit-identical
+# scores. Complements the per-feature *_simd tests, which compare a SIMD
+# kernel against a scalar reference defined inside the test TU rather than
+# against the shipped one.
+test_feature_isa_invariance = executable('test_feature_isa_invariance',
+    ['test.c', 'test_feature_isa_invariance.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_feature_isa_invariance', test_feature_isa_invariance,
+    suite : ['fast'])
+
 test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
     ['test.c', 'test_ssimulacra2_simd.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
