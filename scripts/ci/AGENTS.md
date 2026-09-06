@@ -43,6 +43,7 @@ until master is fixed.
 | `check-dispatch-registry.sh` | `.pre-commit-config.yaml` (`check-dispatch-registry` hook), `tests-and-quality-gates.yml` (`Pre-Commit` job) | Cross-references backend symbols `vmaf_fex_*_<backend>` in `core/src/feature/<backend>/` against `feature_extractor_list[]` in `core/src/feature/feature_extractor.cpp`. Fails if any backend symbol is omitted from the registration array. Test suite: `scripts/ci/tests/test-check-dispatch-registry.sh`. |
 | `classify-dependency-pr.sh` | `rule-enforcement.yml` — `deep-dive-checklist` and `doc-substance-check` jobs ([ADR-1152](../../docs/adr/1152-dependency-pr-gate-exemption.md)) | Reads `$PR_AUTHOR`, `$HEAD_REF`, `$BASE_SHA`, `$HEAD_SHA` from workflow env. The exemption is author-AND-path-gated and must never be widened to a path glob alone. Bot identity requires `renovate[bot]` / `dependabot[bot]` (or `app/renovate` / `app/dependabot`), or a `renovate/*` / `dependabot/*` branch, AND all changed paths must be in the explicit manifest/lockfile allowlist. Bot PRs touching source code must still satisfy both documentation gates. Test suite: `scripts/ci/test-classify-dependency-pr.sh`. |
 | `test-classify-dependency-pr.sh` | (local-only fixture driver, not invoked by CI) | Run before pushing changes to `classify-dependency-pr.sh`; exercises the predicate space across dependency-only diffs, mixed source diffs, non-bot authors, and real PR fixtures (#1206, #1207, #1212, #1214). |
+| `check-runner-available.sh` | `sycl-parity.yml` (`runner-available` job, step `Check runner availability`) | Reads the lane switch `$RUNNER_ENABLED` (= `vars.SYCL_ARC_RUNNER_ENABLED`). Disabled: exit 0, `available=false`, no API call. Enabled: queries `GET repos/<repo>/actions/runners` with `$GH_TOKEN` (`secrets.SYCL_RUNNER_PROBE_TOKEN`) and requires an ONLINE runner labelled `sycl-arc`; API error, no such runner, or all offline = exit 1 with `::error::`. Never maps an API error to "unregistered". Test suite: `scripts/ci/tests/test-runner-available.sh`. |
 
 ## `check-vcs-version-not-bare-sha.sh` invariants
 
@@ -327,8 +328,40 @@ see [`docs/research/1152-dependency-classifier-surface-audit.md`](../../docs/res
 
 ## check-aggregator-names.sh invariants
 
-- Gates 1:1 parity between the 34 required status checks declared in
+- Gates 1:1 parity between the 35 required status checks declared in
   `.github/workflows/required-aggregator.yml` (`const required = [...]`) and
   the `# required-aggregator` markers on `name:` fields across workflow files.
 - Enforced locally via `make lint-sh` and pre-commit hook `check-aggregator-names`.
 - Display names must stay concise ($\le 30$ chars) per `docs/development/ci-job-names.md`.
+
+## Self-hosted SYCL Arc runner invariants (ADR-1177)
+
+The Intel Arc A380 self-hosted runner executes hardware-in-the-loop SYCL parity tests
+under `.github/workflows/sycl-parity.yml`. The following invariants are load-bearing:
+
+1. **Untrusted fork PR execution prohibition**: `sycl-parity.yml` must strictly enforce
+   `if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository`.
+   Fork PRs must NEVER execute arbitrary workflows or code on self-hosted infrastructure.
+2. **Device isolation**: Container passthrough (`dev/docker-compose.runner.yml`) is
+   restricted to `/dev/dri/renderD129` (Intel Arc A380, vendor `0x8086`, device `0x56a5`,
+   PCI `03:00.0`). The host NVIDIA RTX 4090 and AMD iGPU device nodes must NOT be passed into
+   the container under any circumstances.
+3. **Container security posture**: The runner container runs as an unprivileged user
+   `runner` (uid 1001, gid 1001) in groups 988 (`render`) and 984 (`video`). No Docker socket
+   (`/var/run/docker.sock`) is mounted. Container resource limits are capped at 8 CPUs and 16 GB RAM.
+   Ephemeral mode (`--ephemeral`) ensures a clean environment per job without state persistence.
+4. **Lane-switch contract**: `required-aggregator.yml` lists `SYCL Parity (Arc A380)` as required and
+   reads `vars.SYCL_ARC_RUNNER_ENABLED` (it makes no runner API call — `GITHUB_TOKEN` cannot list
+   self-hosted runners):
+   - Lane disabled (variable unset / not `true`): absent or skipped is accepted as pass.
+   - Lane enabled: the job MUST report `success`; absent or skipped (the probe failed because the
+     runner is unregistered, offline, or the probe token was rejected) is a loud aggregator failure.
+   Never reintroduce an auto-detect probe that treats an API error as "unregistered" — that makes a
+   required check silently green.
+5. **Probe token**: `check-runner-available.sh` runs the runner-list query only while the lane is
+   enabled, with `secrets.SYCL_RUNNER_PROBE_TOKEN` (fine-grained PAT, single repository,
+   Administration: read-only). Do not widen the workflow's `permissions:` in an attempt to replace it —
+   there is no `administration` scope there.
+6. **Render node is resolved, not hard-coded**: `dev/docker-compose.runner.yml` takes
+   `ARC_RENDER_NODE` from `dev/scripts/arc-render-node.sh` (exactly one vendor-`0x8086` render node).
+   Do not replace it with a bare `renderD<N>`; numbers change after PCI re-enumeration.

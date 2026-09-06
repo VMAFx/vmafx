@@ -1,0 +1,62 @@
+# syntax=docker/dockerfile:1.27@sha256:bde3983e9c939224420ddaf6b784cc30e09b035a4dea01f581230c50809f372e
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# dev/Containerfile.runner — Self-hosted GitHub Actions runner image for Intel Arc SYCL CI
+#
+# Built on top of the dev-MCP oneAPI / build environment.
+# Exposes actions-runner configured to run ephemeral jobs as a non-root user
+# with DRI access to the host's Intel Arc A380 render node.
+#
+# ADR-1177. See docs/development/ci-self-hosted-sycl.md for full operator runbook.
+
+ARG BASE_IMAGE=vmaf-dev-mcp:local
+FROM ${BASE_IMAGE}
+
+LABEL org.opencontainers.image.title="vmaf-sycl-arc-runner"
+LABEL org.opencontainers.image.description="Containerised GitHub Actions runner for Intel Arc A380 SYCL CI"
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+
+ARG RUNNER_VERSION=2.337.0
+ARG RUNNER_SHA256=70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613
+ARG RUNNER_UID=1001
+ARG RUNNER_GID=1001
+
+USER root
+
+# Create render group if absent and configure non-root runner user in video/render groups
+RUN (getent group render >/dev/null || groupadd -g 988 render 2>/dev/null || groupadd render 2>/dev/null || true) \
+    && (getent group runner >/dev/null || groupadd -g "${RUNNER_GID}" runner 2>/dev/null || groupadd runner 2>/dev/null || true) \
+    && (id -u runner >/dev/null 2>&1 || useradd -m -s /bin/bash -u "${RUNNER_UID}" -g runner -G video,render runner 2>/dev/null || useradd -m -s /bin/bash runner)
+
+# Download and verify official actions-runner tarball
+RUN mkdir -p /actions-runner \
+    && cd /actions-runner \
+    && curl -fsSL "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz" -o runner.tar.gz \
+    && echo "${RUNNER_SHA256}  runner.tar.gz" | sha256sum -c - \
+    && tar xzf runner.tar.gz \
+    && rm -f runner.tar.gz \
+    && chown -R runner:runner /actions-runner
+
+# Copy entrypoint script
+COPY dev/scripts/runner-entrypoint.sh /actions-runner/entrypoint.sh
+RUN chmod +x /actions-runner/entrypoint.sh
+
+# dev/docker-compose.runner.yml mounts a named volume at /actions-runner/_work.
+# Docker seeds a fresh named volume from the image directory, ownership
+# included, so the directory must exist and belong to the runner user here;
+# otherwise config.sh / checkout fail with EACCES on a root-owned mount point.
+RUN mkdir -p /actions-runner/_work && chown runner:runner /actions-runner/_work
+
+# Environment for oneAPI and runner
+ENV ONEAPI_ROOT=/opt/intel/oneapi
+ENV DPCPP_ROOT=${ONEAPI_ROOT}/compiler/latest
+ENV PATH=${DPCPP_ROOT}/bin:/actions-runner:${PATH}
+ENV LD_LIBRARY_PATH=${DPCPP_ROOT}/lib:${ONEAPI_ROOT}/umf/latest/lib:${ONEAPI_ROOT}/tcm/latest/lib:${ONEAPI_ROOT}/tbb/latest/lib:${LD_LIBRARY_PATH}
+
+WORKDIR /actions-runner
+USER runner
+
+ENTRYPOINT ["/actions-runner/entrypoint.sh"]
+CMD ["run-runner"]

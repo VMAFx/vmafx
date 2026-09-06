@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# dev/systemd/vmafx-sycl-arc-runner.service — systemd --user service for the
+# VMAFx Intel Arc A380 SYCL self-hosted runner supervisor loop.
+#
+# Install:
+#   mkdir -p ~/.config/systemd/user
+#   cp dev/systemd/vmafx-sycl-arc-runner.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now vmafx-sycl-arc-runner.service
+#
+# Lingering (persist across logout on headless/workstation hosts):
+#   loginctl enable-linger "$USER"
+#
+# Token source & credentials:
+#   The supervisor loop runs as the maintainer user on the host. By default,
+#   it mints registration tokens using the host `gh` CLI credentials (e.g. from
+#   `gh auth login`).
+#   For a headless or unattended host where `gh` interactive login is not
+#   available, provide a fine-grained personal access token (PAT) with
+#   Administration: read-write permissions scoped to VMAFx/vmafx:
+#     mkdir -p ~/.config/vmafx-runner
+#     echo "GH_TOKEN=github_pat_..." > ~/.config/vmafx-runner/env
+#     chmod 0600 ~/.config/vmafx-runner/env
+#   and uncomment EnvironmentFile below.
+
+[Unit]
+Description=VMAFx Intel Arc A380 SYCL self-hosted runner supervisor
+Documentation=https://github.com/VMAFx/vmafx/blob/master/docs/development/ci-self-hosted-sycl.md
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Assumes repository is located at %h/dev/vmaf. Adjust if located elsewhere.
+WorkingDirectory=%h/dev/vmaf
+ExecStart=%h/dev/vmaf/dev/scripts/runner-supervisor.sh
+# Optional environment file for headless hosts or explicit PAT:
+# EnvironmentFile=-%h/.config/vmafx-runner/env
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+KillMode=mixed
+
+[Install]
+WantedBy=default.target

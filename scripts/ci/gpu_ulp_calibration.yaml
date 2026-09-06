@@ -270,7 +270,15 @@ gpus:
       and ADR-0985. ssimulacra2 measured max_abs_diff = 1.211e-02 on src01
       fixture (0.0 on checkerboards). Tolerance calibrated at places=1 (5.0e-2)
       due to fp64-free fp32 accumulation across 6 pyramid scales.
+      float_ssim tolerance 5e-4 (places=3) per ADR-0234 and Research-0985 §3:
+      the Wang-2004 formula plus fp32 accumulation drifts on fp64-free hardware.
+      NOTE on the rebase: this branch proposed ssimulacra2 = 5.0e-3, described in
+      its own comment as a placeholder pending Kahan-IIR. Master's 5.0e-2 is kept
+      because it is the measured value -- 1.211e-02 exceeds 5.0e-3, so adopting
+      the placeholder would fail the gate on real Arc hardware. The branch's new
+      float_ssim key is kept as-is; it adds a bound master did not have.
     features:
+      float_ssim: 5.0e-4
       ssimulacra2: 5.0e-2
 
   - id: "sycl:0x8086:*"

@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# dev/docker-compose.runner.yml — Containerised self-hosted GitHub Actions runner for Intel Arc A380 SYCL parity
+#
+# Usage:
+#   1. Export token from: gh api -X POST repos/VMAFx/vmafx/actions/runners/registration-token --jq .token
+#      export RUNNER_TOKEN="..."
+#   2. Start runner in background:
+#      docker compose -f dev/docker-compose.runner.yml up -d
+#   3. Stop / pause runner (workstation daily driver):
+#      docker compose -f dev/docker-compose.runner.yml down
+#
+# Security & isolation (ADR-1177):
+#   - Runs inside container as non-root 'runner' user
+#   - Exposes ONLY the Intel Arc A380 render node (/dev/dri/renderD129)
+#     (Host by-path: /dev/dri/by-path/pci-0000:03:00.0-render -> renderD129, vendor 0x8086, device 0x56a5)
+#     NVIDIA RTX 4090 and AMD iGPU render nodes are NOT mounted.
+#   - No Docker daemon socket mounted
+#   - No host filesystem mounts (ephemeral scratch volume only)
+#   - Resource limits: 8 CPUs, 16 GB RAM
+#   - Ephemeral runner mode: registers, runs one job, unregisters and exits.
+
+name: vmaf-sycl-runner
+
+services:
+  sycl-arc-runner:
+    build:
+      context: ..
+      dockerfile: dev/Containerfile.runner
+    image: vmaf-sycl-arc-runner:local
+    container_name: vmaf-sycl-arc-runner
+    # Ephemeral runner exits after executing one job
+    restart: "no"
+    environment:
+      GITHUB_REPOSITORY: "VMAFx/vmafx"
+      RUNNER_TOKEN: "${RUNNER_TOKEN}"
+      RUNNER_NAME: "${RUNNER_NAME:-cachyos-arc-a380-ephemeral}"
+      RUNNER_LABELS: "self-hosted,linux,x64,sycl-arc"
+      RUNNER_WORKDIR: "/actions-runner/_work"
+      ONEAPI_ROOT: "/opt/intel/oneapi"
+      DPCPP_ROOT: "/opt/intel/oneapi/compiler/latest"
+    # ONLY the Intel Arc A380 render node is passed through.
+    # By-path: /dev/dri/by-path/pci-0000:03:00.0-render -> renderD129 (vendor
+    # 0x8086, device 0x56a5). renderD numbers and PCI BDFs can change after a
+    # PCI re-enumeration (docs/state.md T-DEV-CONTAINER-DRI-BIND-RACE-2026-05-18),
+    # so resolve the node before every `up`:
+    #   ARC_RENDER_NODE=$(dev/scripts/arc-render-node.sh)   # verifies vendor 0x8086
+    devices:
+      - "${ARC_RENDER_NODE:-/dev/dri/renderD129}:/dev/dri/renderD129"
+    # Level Zero NEO runtime 26.x requires unconfined seccomp on Linux >= 7.0 (ADR-0541)
+    security_opt:
+      - seccomp=unconfined
+    group_add:
+      - "${HOST_GID_RENDER:-988}"
+      - "${HOST_GID_VIDEO:-984}"
+    deploy:
+      resources:
+        limits:
+          cpus: "8"
+          memory: 16G
+    volumes:
+      - type: volume
+        source: runner-scratch
+        target: /actions-runner/_work
+
+volumes:
+  runner-scratch:
+    driver: local

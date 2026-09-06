@@ -8,7 +8,7 @@ file.
 
 ## Workflows
 
-The fork ships eight `pull_request`-triggered workflows:
+The fork ships nine `pull_request`-triggered workflows:
 
 | File | Purpose |
 | --- | --- |
@@ -20,6 +20,7 @@ The fork ships eight `pull_request`-triggered workflows:
 | [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform / cross-backend libvmaf build matrix. |
 | [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100 / 0106 / 0108 / 0165 process gates. |
 | [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml) | Netflix golden, sanitizers, tiny-AI, MCP, coverage, assertion-density. |
+| [`sycl-parity.yml`](../../.github/workflows/sycl-parity.yml) | SYCL parity tests on self-hosted Intel Arc A380 runner (ADR-1177; see [runbook](ci-self-hosted-sycl.md)). |
 
 For the complete inventory, mapping of shortened names, and conventions,
 see [CI job display names](ci-job-names.md).
@@ -115,6 +116,16 @@ terminal state, and accepts `success`, `skipped`, or `neutral` per
 check. Because the aggregator itself skips on drafts, draft PRs
 display "missing required check" — same situation as item 1 above
 and unmergeable for the same reason.
+
+For the hardware-dependent `SYCL Parity (Arc A380)` check
+([ADR-1177](../adr/1177-sycl-arc-self-hosted-runner.md)), the aggregator
+reads the repository variable `SYCL_ARC_RUNNER_ENABLED`. While it is not
+`true` (lane not provisioned or paused by the operator) an absent or skipped
+job is accepted as passing; while it is `true` the job must report
+`success`, and a skip — which is what the loud probe failure in
+`sycl-parity.yml` produces when the runner is unregistered, offline, or the
+probe token is rejected — fails the aggregator. Operator runbook:
+[ci-self-hosted-sycl.md](ci-self-hosted-sycl.md).
 
 ## Twin-drift gate
 

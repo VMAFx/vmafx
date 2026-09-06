@@ -686,6 +686,13 @@ jobs:
         run: |
           bash scripts/ci/check-state-md-rows.sh
           bash scripts/ci/tests/test-check-state-md-rows.sh
+      - name: Test the self-hosted SYCL runner probe
+        # ADR-1177. Hermetic unit suite for check-runner-available.sh.
+        run: bash scripts/ci/tests/test-runner-available.sh
+
+      - name: Test the self-hosted SYCL runner supervisor
+        # ADR-1177. Hermetic unit suite for runner-supervisor.sh with stubbed gh and docker.
+        run: bash scripts/ci/tests/test-runner-supervisor.sh
 
       - name: One-shot release-please fields must not outlive the first release
         run: |
