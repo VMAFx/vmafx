@@ -125,16 +125,20 @@ __global__ __launch_bounds__(256) void cambi_spatial_mask_kernel(const uint16_t 
         const int tj = k % (int)ZD_TILE_W;
         const int raw_gy = by - (int)SMEM_HALF + ti;
         const int raw_gx = bx - (int)SMEM_HALF + tj;
-        const int gy = (raw_gy < 0) ? 0 : ((raw_gy >= (int)height) ? (int)height - 1 : raw_gy);
-        const int gx = (raw_gx < 0) ? 0 : ((raw_gx >= (int)width) ? (int)width - 1 : raw_gx);
-        const uint16_t p = image[(size_t)gy * stride_words + (unsigned)gx];
-        const unsigned r_gx = (unsigned)((gx == (int)width - 1) ? gx : gx + 1);
-        const unsigned b_gy = (unsigned)((gy == (int)height - 1) ? gy : gy + 1);
-        const uint16_t r = image[(size_t)gy * stride_words + r_gx];
-        const uint16_t b = image[(size_t)b_gy * stride_words + (unsigned)gx];
-        const int eq_r = (gx == (int)width - 1) || (p == r);
-        const int eq_b = (gy == (int)height - 1) || (p == b);
-        zd_tile[ti][tj] = (uint8_t)(eq_r & eq_b);
+        if (raw_gy < 0 || raw_gy >= (int)height || raw_gx < 0 || raw_gx >= (int)width) {
+            zd_tile[ti][tj] = 0;
+        } else {
+            const int gy = raw_gy;
+            const int gx = raw_gx;
+            const uint16_t p = image[(size_t)gy * stride_words + (unsigned)gx];
+            const unsigned r_gx = (unsigned)((gx == (int)width - 1) ? gx : gx + 1);
+            const unsigned b_gy = (unsigned)((gy == (int)height - 1) ? gy : gy + 1);
+            const uint16_t r = image[(size_t)gy * stride_words + r_gx];
+            const uint16_t b = image[(size_t)b_gy * stride_words + (unsigned)gx];
+            const int eq_r = (gx == (int)width - 1) || (p == r);
+            const int eq_b = (gy == (int)height - 1) || (p == b);
+            zd_tile[ti][tj] = (uint8_t)(eq_r & eq_b);
+        }
     }
     /* Pass 1: elements 256..483 (228 threads active). */
     if (tid < (int)(ZD_TILE_H * ZD_TILE_W) - 256) {
@@ -143,16 +147,20 @@ __global__ __launch_bounds__(256) void cambi_spatial_mask_kernel(const uint16_t 
         const int tj = k % (int)ZD_TILE_W;
         const int raw_gy = by - (int)SMEM_HALF + ti;
         const int raw_gx = bx - (int)SMEM_HALF + tj;
-        const int gy = (raw_gy < 0) ? 0 : ((raw_gy >= (int)height) ? (int)height - 1 : raw_gy);
-        const int gx = (raw_gx < 0) ? 0 : ((raw_gx >= (int)width) ? (int)width - 1 : raw_gx);
-        const uint16_t p = image[(size_t)gy * stride_words + (unsigned)gx];
-        const unsigned r_gx = (unsigned)((gx == (int)width - 1) ? gx : gx + 1);
-        const unsigned b_gy = (unsigned)((gy == (int)height - 1) ? gy : gy + 1);
-        const uint16_t r = image[(size_t)gy * stride_words + r_gx];
-        const uint16_t b = image[(size_t)b_gy * stride_words + (unsigned)gx];
-        const int eq_r = (gx == (int)width - 1) || (p == r);
-        const int eq_b = (gy == (int)height - 1) || (p == b);
-        zd_tile[ti][tj] = (uint8_t)(eq_r & eq_b);
+        if (raw_gy < 0 || raw_gy >= (int)height || raw_gx < 0 || raw_gx >= (int)width) {
+            zd_tile[ti][tj] = 0;
+        } else {
+            const int gy = raw_gy;
+            const int gx = raw_gx;
+            const uint16_t p = image[(size_t)gy * stride_words + (unsigned)gx];
+            const unsigned r_gx = (unsigned)((gx == (int)width - 1) ? gx : gx + 1);
+            const unsigned b_gy = (unsigned)((gy == (int)height - 1) ? gy : gy + 1);
+            const uint16_t r = image[(size_t)gy * stride_words + r_gx];
+            const uint16_t b = image[(size_t)b_gy * stride_words + (unsigned)gx];
+            const int eq_r = (gx == (int)width - 1) || (p == r);
+            const int eq_b = (gy == (int)height - 1) || (p == b);
+            zd_tile[ti][tj] = (uint8_t)(eq_r & eq_b);
+        }
     }
     __syncthreads();
 
@@ -247,6 +255,11 @@ __global__ void cambi_filter_mode_kernel(const uint16_t *in, uint16_t *out, unsi
     const int x = (int)(blockIdx.x * blockDim.x + threadIdx.x);
     const int y = (int)(blockIdx.y * blockDim.y + threadIdx.y);
     if (x >= (int)width || y >= (int)height)
+        return;
+
+    /* Vertical pass mirrors cambi.c: row 0 and row height-1 are never
+     * overwritten by filter_mode; out already contains the pre-filter pixels. */
+    if (axis == 1 && (y == 0 || y >= (int)height - 1))
         return;
 
     uint16_t a, b, c;

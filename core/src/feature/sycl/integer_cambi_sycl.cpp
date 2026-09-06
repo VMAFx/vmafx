@@ -248,21 +248,18 @@ static sycl::event launch_spatial_mask(sycl::queue &q, const uint16_t *image, ui
             static constexpr int HALF = 3;
             unsigned box_sum = 0u;
             for (int dy = -HALF; dy <= HALF; dy++) {
-                int ry = y + dy;
-                if (ry < 0)
-                    ry = 0;
-                if (ry >= (int)e_h)
-                    ry = (int)e_h - 1;
+                const int ry = y + dy;
+                if (ry < 0 || ry >= (int)e_h)
+                    continue;
                 for (int dx = -HALF; dx <= HALF; dx++) {
-                    int rx = x + dx;
-                    if (rx < 0)
-                        rx = 0;
-                    if (rx >= (int)e_w)
-                        rx = (int)e_w - 1;
-                    const uint16_t p = e_image[(size_t)ry * e_stride + (unsigned)rx];
+                    const int rx = x + dx;
+                    if (rx < 0 || rx >= (int)e_w)
+                        continue;
+                    const uint16_t p = e_image[(size_t)(unsigned)ry * e_stride + (unsigned)rx];
                     const int rx_right = (rx == (int)e_w - 1) ? rx : rx + 1;
                     const int ry_below = (ry == (int)e_h - 1) ? ry : ry + 1;
-                    const uint16_t r = e_image[(size_t)ry * e_stride + (unsigned)rx_right];
+                    const uint16_t r =
+                        e_image[(size_t)(unsigned)ry * e_stride + (unsigned)rx_right];
                     const uint16_t b =
                         e_image[(size_t)(unsigned)ry_below * e_stride + (unsigned)rx];
                     const int eq_right = (rx == (int)e_w - 1) || (p == r);
@@ -337,6 +334,11 @@ static sycl::event launch_filter_mode(sycl::queue &q, const uint16_t *in, uint16
             const int x = (int)it.get_global_id(1);
             const int y = (int)it.get_global_id(0);
             if (x >= (int)e_w || y >= (int)e_h)
+                return;
+
+            /* Vertical pass mirrors cambi.c: row 0 and row height-1 are never
+             * overwritten by filter_mode; e_out already contains the pre-filter pixels. */
+            if (e_axis == 1 && (y == 0 || y >= (int)e_h - 1))
                 return;
 
             uint16_t a, b, c;

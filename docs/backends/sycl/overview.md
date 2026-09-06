@@ -385,13 +385,29 @@ the deviation:
 
 - **CAMBI** — SYCL twin (`cambi_sycl`) shipped in ADR-0371. Strategy II
   hybrid: three GPU kernels (spatial-mask, 2× decimate, 3-tap mode filter)
-  and host CPU residual (`calculate_c_values` + top-K pooling). Matches the
-  CPU scalar extractor at `places=4` on the synthetic
-  `test_sycl_cambi_parity` fixture, but on real content it is **not**
-  bit-exact: with the default model on the 576x324 `src01` pair the pooled
-  `cambi` score differs by 2.7e-3 (7.2e-3 max per frame), tracked in
-  [`docs/state.md`](../../state.md) as
-  `T-SYCL-CAMBI-PARITY-DRIFT-2026-09-05`.
+  and host CPU residual (`calculate_c_values` + top-K pooling).
+
+  Until branch `fix/gpu-cambi-parity-drift` the twin drifted from the CPU
+  extractor on real content by 2.7e-3 pooled (7.2e-3 max per frame) on the
+  576x324 `src01` pair: its spatial-mask kernel clamped out-of-image
+  neighbours where `cambi.c` zero-pads them, and its vertical `filter_mode`
+  pass overwrote the two border rows `cambi.c` deliberately leaves
+  unfiltered. Both are fixed, and the measured parity is now:
+
+  | Fixture | Frames | pooled `cambi_hrs_1080_cmxv_17_vlt_0.06` | max per-frame CPU↔SYCL delta |
+  | --- | --- | --- | --- |
+  | `src01` 576x324 | 48 | 0.2596781483085728 (CPU and SYCL) | 0 |
+  | Tennis 1920x1080 | 10 | 0.5670459080762581 (CPU and SYCL) | 0 |
+  | checkerboard 1px / 10px 1920x1080 | 3 each | 0 (CPU and SYCL) | 0 |
+
+  Measured at `--precision max` (`%.17g`) on an Intel Arc A380. Every CAMBI
+  GPU stage is integer-only and the c-value / pooling residual is the CPU
+  code called through `cambi_internal.h`, which is why the emitted score
+  agrees to every printed digit here — this is a measurement on these four
+  fixtures, **not** a general bit-exactness guarantee for the SYCL backend
+  (see [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md) for the tolerance
+  contract). Pooled `vmaf` still differs by 2.2e-6 on `src01` because the
+  ADM / VIF / motion twins carry their own deltas.
 - **GPU twins are only reached through a model.** `--feature <name>`
   resolves via `vmaf_get_feature_extractor_by_name()`, a plain name match
   on the registry, so `--backend sycl --feature cambi` runs the CPU

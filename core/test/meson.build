@@ -1615,6 +1615,17 @@ test_cuda_pic_preallocation = executable('test_cuda_pic_preallocation',
 test('test_gpu_picture_pool', test_gpu_picture_pool, suite : ['fast', 'gpu'])
 test('test_cuda_pic_preallocation', test_cuda_pic_preallocation, suite : ['fast', 'gpu'])
 
+# The flush drain loop must terminate (T-CUDA-SINGLE-FRAME-HANG-2026-09-05).
+# Stub-driven, so it needs no CUDA device and no nvcc.
+test_cuda_single_frame_flush = executable('test_cuda_single_frame_flush',
+    ['test.c', 'test_cuda_single_frame_flush.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency],
+)
+test('test_cuda_single_frame_flush', test_cuda_single_frame_flush, suite : ['fast'])
+
+
 # Finding R2-2 — HOST_PINNED picture-allocator dimension-overflow guard.
 # vmaf_cuda_picture_alloc_pinned now rejects w/h out of [1, 32768] BEFORE
 # touching cuda_state, mirroring vmaf_picture_alloc's VMAF_PIC_DIM_MAX guard

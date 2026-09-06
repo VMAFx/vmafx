@@ -1,6 +1,49 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/gpu-cambi-parity-drift — align the CUDA/SYCL CAMBI twins with `cambi.c` (2026-09-05)
+
+- `core/src/feature/cuda/integer_cambi/cambi_score.cu`,
+  `core/src/feature/sycl/integer_cambi_sycl.cpp`: fork-added GPU CAMBI kernels
+  with no upstream Netflix counterpart. **Invariant: these kernels mirror
+  `cambi.c`'s host-side semantics exactly, not "something reasonable".** Two
+  places where the natural GPU idiom is wrong and must not be "simplified" back:
+  (1) `cambi_spatial_mask_kernel` / `launch_spatial_mask` must contribute **zero**
+  for taps outside the image when accumulating the 7x7 zero-derivative box sum —
+  `cambi.c`'s summed-area table zero-pads (`compute_dp_row` with
+  `actual_width = 0`); clamping to the edge pixel inflates the sum, because edge
+  pixels are `zero_derivative = 1` by construction. (2) the vertical
+  `filter_mode` pass must return early for `y == 0` and `y == height - 1`:
+  `cambi.c::filter_mode` writes only output rows `1 .. height-2` and leaves both
+  border rows at their **pre-filter** values. Both twins write the V pass back
+  into the buffer the H pass read from, so the early return preserves exactly
+  those pre-filter pixels.
+- `core/src/feature/cuda/integer_cambi_cuda.c`: `cambi_high_res_speedup` is no
+  longer "reserved". It must be resolved against the encode pixel count in
+  `init_fex_cuda` (mirroring `cambi.c:622-640`), halve the adjusted window in
+  `cambi_cuda_adjust_window` (`cambi.c:471`) and trigger one extra decimation
+  before scale 0 in `submit_fex_cuda` (`cambi.c:1621`). The default model
+  `vmaf_v1.0.16_3d0h` sets `hrs=1080`, so dropping any of the three silently
+  changes every `>= 1080p` CUDA score.
+- `core/test/test_cuda_cambi_parity.c`, `core/test/test_sycl_cambi_parity.c`:
+  the second ("textured") fixture is a regression gate, not decoration — the
+  original quantised-gradient fixture is flat along every border and down every
+  column and cannot observe either defect. Keep both fixtures on rebase.
+- `core/src/feature/cambi.c` is **unchanged** by this branch (Netflix golden gate).
+
+## fix/cambi-cuda-context — CUDA CAMBI context push/pop and model options twin selection gate (2026-09-05)
+
+- `core/src/feature/cuda/integer_cambi_cuda.c`: fork-added CUDA CAMBI extractor.
+  Invariant: every device-touching entry point (`init_fex_cuda`, `submit_fex_cuda`,
+  `close_fex_cuda`) must push `fex->cu_state->ctx` upon entry and cleanly pop it
+  on all exit paths (balanced `fail_after_pop` labels). Its option table and TVI
+  initialization must mirror `cambi.c`.
+- `core/src/feature/feature_extractor.cpp` / `core/src/libvmaf.c`: option validation
+  and GPU twin gating (ADR-1183). `vmaf_fex_ctx_parse_options` rejects unknown option
+  keys with `-EINVAL`. `vmaf_use_features_from_model` checks GPU twin option support
+  against model requirements and dispatches unsupported twins to the CPU reference.
+  Preserve this gating on rebase to prevent silent option drops.
+
 ## fix/tidy-lane-lto-flag — the tidy lane builds without LTO (2026-09-05)
 
 No rebase impact: `.github/workflows/lint-and-format.yml` is fork-added. Invariant: any build whose
