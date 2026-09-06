@@ -927,3 +927,4 @@
 1204-adm-cm-edge-clamp-gpu-twins
 1205-ssimulacra2-fma-unification-scalar-and-gpu
 1206-gpu-parity-large-fixture-variants
+1211-hip-integer-adm-picture-staging

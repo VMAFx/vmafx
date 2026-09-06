@@ -69,8 +69,12 @@
 /* speed_temporal needs >= 2 frames (frame 0 is forced-zero; frame 1 carries
  * the first real score).  3 frames gives a non-trivial inter-frame delta
  * and matches the CUDA speed_temporal test geometry. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 768u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 432u
+#endif
 #define FIXTURE_BPC 8u
 #define NUM_FRAMES 3u
 

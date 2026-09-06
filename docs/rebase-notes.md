@@ -48978,3 +48978,22 @@ Documentation only. One thing worth knowing:
    in item 2 passed its bit-exactness assertion for as long as it did. When
    touching the conversion, change the shipped copies and the test reference
    together, or the test will keep agreeing with itself.
+
+## ADR-1211 — HIP is host-pic; device kernels need staged input
+
+1. **`VmafPicture::data[]` is HOST memory under the HIP backend** (ADR-0530
+   host-pic). Any HIP kernel that reads picture planes must be handed a device
+   pointer that the extractor staged itself — passing `pic->data[i]` straight
+   through faults the GPU with "Page not present or supervisor privilege" and
+   kills the process.
+
+2. **Do not copy the CUDA call shape verbatim when porting an extractor to
+   HIP.** The CUDA twins receive a device picture from `vmaf_cuda_picture_*`,
+   so their `dwt2_*_device(...)`-style helpers take a device pointer that the
+   caller never had to produce. That is exactly how `integer_adm_hip` acquired
+   this bug. `integer_psnr_hip` shows the correct shape: per-plane device
+   buffers allocated in init, `hipMemcpy2DAsync` host-to-device in extract.
+
+3. **Staged rows are tightly packed**, so the element stride passed to the
+   kernel is the plane width, NOT `pic->stride[i]`. Reusing the picture's
+   stride against a staged buffer reads past the end of each row.
