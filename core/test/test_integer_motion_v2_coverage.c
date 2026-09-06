@@ -34,6 +34,12 @@
 #include "libvmaf/picture.h"
 #include "picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 #define MV2_W (16u)
 #define MV2_H (16u)
 
@@ -368,3 +374,5 @@ char *run_tests(void)
     mu_run_test(test_motion_v2_10bit_extract);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
