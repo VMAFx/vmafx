@@ -7424,6 +7424,19 @@ targeting residual gaps in `server.py` and `http_transport.py`:
   enums and out-of-range numeric values with byte-compatible argv parity.
 
 
+**`measure_quant_drop.py --fp32 / --int8` path overrides** (Research-2029 gap 5)
+
+- `ai/scripts/measure_quant_drop.py` gained `--fp32 PATH --int8 PATH` to gate an
+  explicit pair of ONNX files without a `model/tiny/registry.json` entry, plus
+  `--budget FLOAT` (default `0.01`) for the PLCC-drop budget the registry would
+  otherwise supply and `--id NAME` for the report label. Intended for PTQ / QAT
+  scratch output, CI smoke artifacts, and pre-release gating of a freshly built
+  checkpoint — the registry-driven `--all` and positional forms are unchanged.
+- The overrides are rejected together with `--all` or a positional path (exit 2)
+  and never load the registry. Documented in
+  [`docs/ai/quantization.md`](../../docs/ai/quantization.md).
+
+
 - **Metal (Apple Silicon) compute backend scaffold (T8-1)
   ([ADR-0361](../docs/adr/0361-metal-compute-backend.md))**. Audit-first
   scaffold mirroring the HIP T7-10 split
@@ -8391,6 +8404,26 @@ YUV400P sources always produce luma-only output regardless of the option.
   `ProcessRunner.run` uses `setdefault` for `LC_ALL`/`LANG` so a
   caller env that already has a non-C `LANG` is preserved, contrary
   to the comment claim that error messages are forced to English.
+
+
+**`qat_train.py` trains rank-4 image models for real** (Research-2029 gap 4)
+
+- `ai/scripts/qat_train.py` now picks the training loader from the rank of
+  `qat.input_shape`: rank 2 keeps going to
+  `vmaf_train.datamodule.VmafTrainDataModule` (tabular canonical-6 rows), and
+  rank 4 goes to a new NCHW image loader that reads an `.npz` carrying `x`
+  (aliases `images` / `degraded` / `input`, shape `(N, C, H, W)`) and `y`
+  (aliases `targets` / `clean` / `reference` / `output`). Any other rank
+  downgrades to `--smoke` with a message on stderr instead of failing inside
+  the first `Conv2d`.
+- Previously every config was handed to the tabular datamodule, so 2D CNN
+  configs such as `ai/configs/learned_filter_v1_qat.yaml` could not train — they
+  only appeared to work because their uncommitted parquet cache tripped the
+  missing-cache branch into smoke mode.
+- The `.npz` is validated when the loader is built (extension, array names,
+  4D-ness, length match, non-empty), so a malformed cache fails before the fp32
+  warm-start burns an epoch. Documented in
+  [`docs/ai/quantization.md`](../../docs/ai/quantization.md).
 
 
 ### Added — `vmaf-tune recommend` and `ladder` consume conformal intervals
@@ -12739,6 +12772,32 @@ findings documented in `docs/research/research-0775-dnn-ort-backend-audit.md`.
 Three follow-up items filed: (1) document per-session thread-safety contract in
 `dnn.h`, (2) fix `VMAF_DNN_DEVICE_AUTO` chain to include OpenVINO:CPU fallback,
 (3) propagate `GetTensorElementType` failure instead of silent UNDEFINED default.
+
+
+**Close the three `docs/ai/` gaps of epic #1242** — factual state, not promises
+
+- [`docs/ai/sidecar-online-training.md`](../../docs/ai/sidecar-online-training.md):
+  the one-line "planned per Research-0733 §3.4" is replaced by a
+  **Checkpoint quarantine (not implemented)** section that tabulates §3.4
+  element by element against the tree. Atomic checkpoint writes and the
+  `.sha256` sidecar exist; the stability gate, the fixture set, the
+  `unstable` tag, `spec.versionPolicy`, `stability_plcc_delta`, automatic
+  rollback, and node-side digest verification do not. Every committed
+  checkpoint is picked up unvetted.
+- [`docs/ai/extractor-template.md`](../../docs/ai/extractor-template.md):
+  the large-N recipe row called `feature_transnet_v2.c` "planned". The
+  extractor shipped as `core/src/feature/transnet_v2.c`; the new
+  **Large sliding windows** subsection documents the real 100-slot ring
+  buffer, the `[1, 100, 3, 27, 48]` tensor, the fact that the suggested
+  decimation was *not* taken (the network runs once per frame), the
+  ~50-frame warm-up, and that per-shot aggregation is not in the tree.
+- [`docs/ai/inference.md`](../../docs/ai/inference.md): "planned:
+  self-hosted runner" is replaced by the actual CI state — two `gpu-full`
+  jobs exist but the only registered runner is labelled `sycl-arc` and
+  `GPU_COVERAGE_ENABLED` is unset, so neither can be scheduled, and no job
+  covers tiny-AI cross-device parity at all. Tracked as
+  `T-GPU-RUNNER-LABEL-MISMATCH-2026-09-05` in
+  [`docs/state.md`](../../docs/state.md).
 
 
 - docs: API reference and backends pages now include Vulkan/HIP/Metal headers
@@ -21008,6 +21067,22 @@ The DNN C API docs now describe the current execution-provider selectors
 behaviour instead of the retired CPU/CUDA-only status.
 
 
+**Wire int8 redirect and fp32 fallback into vmaf_use_tiny_model** (ADR-0174, ADR-1032)
+
+- `vmaf_use_tiny_model()` in `core/src/dnn/dnn_attach_api.c` now redirects to load `<basename>.int8.onnx`
+  when the companion sidecar declares `quant_mode != VMAF_QUANT_FP32`, matching the behaviour of
+  `vmaf_dnn_session_open()`.
+- If the `.int8.onnx` model is missing or fails validation, the loader emits a debug-level log message
+  and gracefully falls back to loading the fp32 baseline model per ADR-1032.
+- The same fallback now also covers an int8 graph that passes the size cap and the op allowlist but
+  that ONNX Runtime cannot create a session for (a build without a kernel for one of its quantised
+  ops, e.g. `ConvInteger`). Both loader twins — `vmaf_use_tiny_model()` and
+  `vmaf_dnn_session_open()` — retry the fp32 baseline once instead of failing, so the redirect never
+  turns a working `--tiny-model` invocation into an error.
+- Added regression tests in `core/test/dnn/test_vmaf_use_tiny_model.c` verifying the redirect, the fallback,
+  and that missing external data files return an error rather than aborting.
+
+
 ### Fixed
 
 - **DNN / ORT internals**: add missing `vmaf_ort_internal_input_elem_type` and
@@ -26313,6 +26388,23 @@ Unix behaviour is unchanged (`":"` remains the list separator).
   (`openvino-npu`, `openvino-cpu`, `openvino-gpu`, `coreml`, `coreml-ane`, `coreml-gpu`,
   `coreml-cpu` were previously silently rejected with `AVERROR(EINVAL)`). Parity with the
   main `libvmaf` filter's `tiny_device=` option is now complete (ADR-0482).
+
+
+**Declare `onnx_has_scaler` in `vmaf_tiny_v3.int8.json`** (ADR-0174, ADR-0275)
+
+- `model/tiny/vmaf_tiny_v3.int8.json` now declares `"onnx_has_scaler": true`.
+  `vmaf_tiny_v3.int8.onnx` bakes the StandardScaler into the graph as `Sub` /
+  `Div` Constant nodes; without the declaration `core/src/libvmaf.c` normalised
+  the canonical-6 feature vector a second time and the tiny-model score was
+  garbage. Measured on the Netflix `src01_hrc00/hrc01_576x324` pair (48 frames,
+  CPU backend): pooled `vmaf_tiny_model` mean **16.020865 → 71.952113**, against
+  an fp32 baseline of **72.359458**; per-frame PLCC vs fp32 **0.975443 →
+  0.999876** (drop 0.000124, inside the sidecar's declared 0.01 budget).
+- Added a registry consistency gate — every `model/tiny/*.int8.onnx` whose graph
+  contains both `Sub` and `Div` must have a companion sidecar declaring
+  `"onnx_has_scaler": true`. Enforced in `core/test/dnn/test_registry.sh`,
+  `python/test/model_registry_schema_test.py`, and
+  `ai/scripts/validate_model_registry.py`.
 
 
 - `core/tools/vmaf.c` + `core/tools/vmaf_bench.c`: plug four

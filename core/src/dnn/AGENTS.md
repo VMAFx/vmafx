@@ -373,6 +373,36 @@ because it changes report schema cardinality. Also do not revert the
 rank-2 / rank-4 frame runners back to `vmaf_ort_infer()` — that helper
 is single-output by construction and would reopen T-DNN-MULTI-OUTPUT.
 
+## Invariant — int8 loader redirect and scaler declaration contract
+
+- **Sidecar `quant_mode` drives the redirect**: `vmaf_use_tiny_model()` in
+  `dnn_attach_api.c` mirrors `vmaf_dnn_session_open()` in `dnn_api.c`. When the
+  companion sidecar declares `quant_mode != VMAF_QUANT_FP32`, the runtime
+  redirects to load sibling `<basename>.int8.onnx` if present and valid; if
+  absent or invalid, it gracefully falls back to the fp32 baseline per
+  ADR-1032 (`VMAF_LOG_LEVEL_DEBUG`). The fallback has **two** triggers and both
+  twins must implement both: the int8 file fails the size cap or the op
+  allowlist, *and* `vmaf_ort_open()` fails on the int8 path even though it
+  passed those gates (an ONNX Runtime build with no kernel for one of its
+  quantised ops — `ConvInteger` is the one seen in practice). The redirect must
+  never turn an invocation that worked against the fp32 baseline into a hard
+  failure; `core/test/dnn/test_cli.sh` covers this through
+  `--tiny-model model/tiny/nr_metric_v1.onnx`.
+- **`onnx_has_scaler` must match the graph**: If an int8 model's ONNX graph
+  bakes in input normalisation / scaling ops (`Sub`/`Div` or scalar constants),
+  its companion sidecar `.json` must declare `"onnx_has_scaler": true` so the
+  runtime normalisation is bypassed and double-scaling is prevented.
+  Enforced over every `model/tiny/*.int8.onnx` by
+  `core/test/dnn/test_registry.sh`, `python/test/model_registry_schema_test.py`,
+  and `ai/scripts/validate_model_registry.py`. Measured cost of getting this
+  wrong: pooled `vmaf_tiny_model` 16.02 instead of 71.95 on the Netflix src01
+  pair (`T-TINY-V3-INT8-SIDECAR-MISSING-ONNX-HAS-SCALER-2026-09-04`).
+- **The redirect does not check `int8_sha256`**: the only load-time gates are
+  the size cap and the op allowlist, in both `dnn_api.c` and
+  `dnn_attach_api.c`. Do not add a digest check to one twin without the other,
+  and not at all without an ADR — a digest mismatch is a third outcome that
+  ADR-1032's fp32-fallback semantics do not currently define.
+
 ## Testing
 
 ```bash

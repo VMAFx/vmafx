@@ -174,6 +174,66 @@ no rebase impact: fork-local SYCL feature extractor and tests.
   `core/src/feature/` wildcard glob, silently truncated the comment mid-file, and turned the
   header into parse errors). On a sync, keep the bracket balanced and do not "modernise" the
   header — every rewrite it suppresses breaks the C includers.
+## feat/dnn-int8-redirect-and-sidecar-fixes — dnn_attach_api.c helper split (2026-09-05)
+
+- `core/src/dnn/dnn_attach_api.c`: the int8 redirect is now
+  `resolve_quantised_load_path()`; the sidecar load and the post-open attach are
+  `load_optional_sidecar()` / `attach_opened_session()`. `vmaf_use_tiny_model()` is back
+  under the `readability-function-size` threshold and no longer trips
+  `bugprone-redundant-branch-condition` or `clang-analyzer-deadcode.DeadStores`.
+- All three helpers live inside the `#if VMAF_HAVE_DNN` guard, so a `-Denable_dnn=disabled`
+  build is byte-for-byte the ADR-0374 stub it was before.
+- `no rebase impact: fork-added DNN loader TU with no upstream Netflix counterpart.`
+
+## feat/dnn-int8-redirect-and-sidecar-fixes — docs/ai gap closeout for #1242 (2026-09-05)
+
+- `docs/ai/sidecar-online-training.md`, `docs/ai/extractor-template.md`,
+  `docs/ai/inference.md`: replaced three "planned" placeholders with the audited state of
+  the tree (sidecar checkpoint quarantine, `transnet_v2` sliding window, self-hosted GPU
+  runner). Opened `T-GPU-RUNNER-LABEL-MISMATCH-2026-09-05` in `docs/state.md`.
+- `no rebase impact: fork-added documentation only; upstream Netflix/vmaf has no docs/ai tree.`
+
+## feat/dnn-int8-redirect-and-sidecar-fixes — qat_train.py rank-4 image loader (2026-09-05)
+
+- `ai/scripts/qat_train.py`: `_build_train_loader_factory` now dispatches on the rank of
+  `qat.input_shape`; new `_build_image_loader_factory` reads an NCHW `.npz` for rank-4
+  models. `_config_input_rank` is the single place the rank is read.
+- `ai/tests/test_qat_train_loader.py`, `docs/ai/quantization.md`: coverage + docs.
+- `no rebase impact: fork-added tiny-AI training script; upstream Netflix/vmaf has no ai/ tree.`
+
+## feat/dnn-int8-redirect-and-sidecar-fixes — measure_quant_drop.py path overrides (2026-09-05)
+
+- `ai/scripts/measure_quant_drop.py`: added `--fp32` / `--int8` / `--budget` / `--id` so a
+  pair of ONNX files can be gated without a `model/tiny/registry.json` entry. Registry-driven
+  `--all` and positional forms are untouched.
+- `ai/tests/test_measure_quant_drop_unit.py`, `docs/ai/quantization.md`: coverage + docs.
+- `no rebase impact: fork-added tiny-AI training script; upstream Netflix/vmaf has no ai/ tree.`
+
+## feat/dnn-int8-redirect-and-sidecar-fixes — declare onnx_has_scaler in vmaf_tiny_v3.int8.json (2026-09-05)
+
+- `model/tiny/vmaf_tiny_v3.int8.json`: added `"onnx_has_scaler": true`, so the C runtime
+  stops normalising the canonical-6 vector that the graph already scales.
+- `core/test/dnn/test_registry.sh`, `python/test/model_registry_schema_test.py`,
+  `ai/scripts/validate_model_registry.py`: added a consistency check asserting that any
+  `model/tiny/*.int8.onnx` baking scaler ops (`Sub` / `Div`) has a companion sidecar
+  declaring `"onnx_has_scaler": true`. Detection prefers the `onnx` parser and falls back
+  to a protobuf byte scan on legs without it.
+- `no rebase impact: fork-added tiny-AI model artifact and fork-added validation tests;
+  upstream Netflix/vmaf ships no ONNX model registry.`
+
+## feat/dnn-int8-redirect-and-sidecar-fixes — wire int8 redirect and fp32 fallback into vmaf_use_tiny_model (2026-09-05)
+
+- `core/src/dnn/dnn_attach_api.c`: wired `.int8.onnx` redirect and ADR-1032 debug fallback
+  into `vmaf_use_tiny_model()` when sidecar `quant_mode != VMAF_QUANT_FP32`.
+- `core/test/dnn/test_vmaf_use_tiny_model.c`: unit tests for int8 redirect, fp32 fallback,
+  and missing external data error path.
+- `core/src/dnn/dnn_api.c` + `core/src/dnn/dnn_attach_api.c`: both twins retry the fp32
+  baseline once when `vmaf_ort_open()` fails on an int8 graph that already cleared the size
+  cap and the op allowlist. Without it `--tiny-model model/tiny/nr_metric_v1.onnx` regressed
+  to `-EIO` on any ONNX Runtime build lacking a `ConvInteger` kernel, which
+  `core/test/dnn/test_cli.sh` catches. The retry must stay in **both** twins — the
+  invariant note in `core/src/dnn/AGENTS.md` pins that.
+- `no rebase impact: fork-added tiny-AI DNN loader surface with no upstream Netflix counterpart.`
 
 ## fix/cuda-drain-batch-per-state-lifetime — drain-batch ownership and the read fence (2026-09-05)
 

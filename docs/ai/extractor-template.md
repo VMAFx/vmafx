@@ -203,10 +203,39 @@ specific tensor wiring. Compare to the pre-template baseline of
 | **Single-frame, distorted-only** | `feature_mobilesal.c` (PR #208) | As above. |
 | **Single-frame, full-reference** | `feature_lpips.c` | Add a second RGB scratch + tensor for `ref`; bind two `VmafDnnInput`s named `"ref"` and `"dist"`. |
 | **Sliding window (small N)** | `fastdvdnet_pre.c` (5 frames) | Add a ring buffer of N planes + `next_slot` + `n_buffered`; gather into a `[1, N, H, W]` input tensor; replicate-edge clamp at clip boundaries. |
-| **Sliding window (large N)** | planned `feature_transnet_v2.c` (100 frames) | Same shape as above with bigger N; consider strided/decimated submission to keep the per-frame `vmaf_dnn_session_run` cost bounded. |
+| **Sliding window (large N)** | [`transnet_v2.c`](../../core/src/feature/transnet_v2.c) (100 frames) | Same shape as above with bigger N. See [Large sliding windows](#large-sliding-windows-transnet_v2) below. |
 
 Each variant's lifecycle is hand-written — the template stays out of
 the way of the per-frame data shape.
+
+### Large sliding windows (`transnet_v2`)
+
+The large-N row used to read "planned `feature_transnet_v2.c`". The extractor
+shipped — as [`core/src/feature/transnet_v2.c`](../../core/src/feature/transnet_v2.c),
+not `feature_transnet_v2.c` — and is registered in
+[`core/src/meson.build`](../../core/src/meson.build) and documented in
+[`docs/metrics/features.md`](../../docs/metrics/features.md#transnetv2--transnet-v2-shot-boundary-detector-tiny-ai-nr--single-input).
+What it actually does, for anyone copying the recipe:
+
+- **Window**: a 100-slot ring buffer of 27x48 luma thumbnails. The input
+  tensor is `[1, 100, 3, 27, 48]` (`"frames"`); the output is `[1, 100]`
+  per-frame logits (`"boundary_logits"`). The 27x48 / 100-frame geometry is
+  the published Soucek & Lokoc 2020 architecture, not a fork choice.
+- **No decimation.** The "consider strided/decimated submission" note was a
+  suggestion, and the shipped extractor does not take it: the network runs
+  **once per `extract()` call**, every frame, and only the slot for the most
+  recent push is read out. That is the dominant per-frame cost of the feature
+  and is why `transnet_v2` is not in any default model.
+- **Warm-up, not padding.** Until the ring holds 100 frames the most recent
+  frame is replicated across the empty slots, so the tensor is always
+  well-formed. The reported probability is therefore delayed-onset —
+  treat roughly the first 50 frames as warm-up rather than as scores.
+- **Per-shot aggregation is not shipped.** The extractor emits per-frame
+  `shot_boundary_probability` (sigmoid of the logit) and a `shot_boundary`
+  flag thresholded at 0.5. Turning those into shot intervals and a per-shot
+  CRF target is backlog item T6-3b and does not exist in the tree.
+- **Disabled-DNN builds** return `-ENOSYS` from `init()` before any model-path
+  probing, per the shared optional-runtime contract.
 
 ## Do / don't
 

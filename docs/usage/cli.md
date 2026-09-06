@@ -278,6 +278,20 @@ Underscore aliases (`--tiny_model`, `--tiny_device`, `--tiny_threads`, `--tiny_f
 `--no_reference`, `--dnn_ep`) are accepted for scripting symmetry with the underscore
 flags upstream uses.
 
+When `--tiny-model <path>` is specified with a path like `<stem>.onnx`, the
+loader inspects the companion sidecar `<stem>.json`. If the sidecar declares
+`quant_mode != "fp32"` (such as `"dynamic"`, `"static"`, or `"qat"`), the runtime
+automatically redirects to load the quantized sibling `<stem>.int8.onnx` if
+present and valid. If the int8 artifact is missing, fails the op allowlist, or
+cannot be opened by the installed ONNX Runtime (a build without a kernel for
+one of its quantised ops), the loader gracefully falls back to the fp32
+baseline `<stem>.onnx` rather than failing the run (ADR-1032). The fallback is
+announced on the `VMAF_LOG_LEVEL_DEBUG` channel, which the CLI does not expose
+— the `vmaf` binary runs at `VMAF_LOG_LEVEL_INFO` — so a fallback is silent on
+the command line by design; API callers that set
+`VmafConfiguration.log_level = VMAF_LOG_LEVEL_DEBUG` see which graph was
+actually opened.
+
 `--no-reference` puts the CLI into no-reference (NR) mode (ADR-0520):
 
 - `--reference` / `-r` is no longer required. The CLI opens the

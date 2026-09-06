@@ -406,5 +406,27 @@ scores:
 - CPU vs CUDA (FP32): within **1e-4**.
 - CPU vs CUDA (FP16 via `--tiny-fp16`): within **1e-2**.
 
-CI exercises CPU-only; GPU parity is checked manually on the dev workstation
-for now (planned: self-hosted runner).
+CI exercises CPU-only. **No CI job checks tiny-AI cross-device parity today**,
+so those two bounds are workstation measurements, not gated numbers.
+
+The self-hosted-runner half of the picture is partly built:
+
+- Two jobs in
+  [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml)
+  target `runs-on: [self-hosted, linux, gpu-full]` — `Coverage GPU (advisory)`
+  and `SYCL float_ssim Parity`. Setup is documented in
+  [`docs/development/self-hosted-runner.md`](../development/self-hosted-runner.md).
+- Both are additionally gated on the repository variable
+  `GPU_COVERAGE_ENABLED == 'true'`, and on the PR not being a draft (ADR-0331).
+- The variable is **not set** on `VMAFx/vmafx`, and the one registered runner
+  carries the labels `self-hosted, Linux, X64, sycl-arc` — not `gpu-full`. So
+  neither job can be scheduled even if the variable were flipped.
+- Neither job would cover this page's claim anyway: they build CUDA/SYCL
+  kernels and run the `float_ssim` parity test. Nothing runs a tiny-AI ONNX
+  model on two execution providers and diffs the scores.
+
+Until that changes, verify cross-device tiny-AI parity yourself before trusting
+a GPU score — run the same `.onnx` under `--tiny-device cpu` and your target
+device on the same pair and compare. `/cross-backend-diff` and
+`scripts/ci/cross_backend_vif_diff.py` cover the *feature* backends, not the
+tiny-AI execution providers.

@@ -28,8 +28,143 @@
 #include "libvmaf/vmaf_assert.h"
 
 #include "dnn_ctx.h"
+#include "log.h"
 #include "model_loader.h"
 #include "ort_backend.h"
+
+#if defined(VMAF_HAVE_DNN) && VMAF_HAVE_DNN
+/**
+ * Resolve which ONNX file a quantised sidecar should actually load.
+ *
+ * ADR-0174 / ADR-1032: when the sidecar declares `quant_mode != FP32`, the
+ * caller-supplied path is the fp32 baseline and the runtime should open the
+ * sibling `<basename>.int8.onnx` instead. This mirrors the resolution in
+ * `vmaf_dnn_session_open` (dnn_api.c) — the two must stay identical; see
+ * `core/src/dnn/AGENTS.md`.
+ *
+ * @p buf (of @p buf_size bytes) receives the derived int8 path when one is
+ * built. On success writes the path to open into @p out_path — either @p buf,
+ * or @p onnx_path when the caller already named an int8 graph or when the int8
+ * sibling is missing / oversized / carries a non-allowlisted op (ADR-1032 fp32
+ * fallback, logged at debug level) — and returns 0. The only hard error today
+ * is `-ENAMETOOLONG` for a path that would not fit @p buf.
+ *
+ * The int8 file is *not* checked against the sidecar's `int8_sha256`; the
+ * only load-time gates are the size cap and the op allowlist. See
+ * docs/ai/quantization.md ("The redirect does not verify int8_sha256").
+ */
+static int resolve_quantised_load_path(const char *onnx_path, size_t max_bytes, char *buf,
+                                       size_t buf_size, const char **out_path)
+{
+    assert(onnx_path != NULL);
+    assert(buf != NULL);
+    assert(out_path != NULL);
+
+    static const char kInt8Suffix[] = ".int8.onnx";
+    static const char kOnnxSuffix[] = ".onnx";
+    const size_t plen = strlen(onnx_path);
+    const size_t int8_len = sizeof(kInt8Suffix) - 1u;
+    const size_t onnx_len = sizeof(kOnnxSuffix) - 1u;
+
+    /* The caller already named the int8 graph — nothing to derive. */
+    if (plen >= int8_len && strcmp(onnx_path + plen - int8_len, kInt8Suffix) == 0) {
+        *out_path = onnx_path;
+        return 0;
+    }
+
+    const size_t base_len =
+        (plen >= onnx_len && strcmp(onnx_path + plen - onnx_len, kOnnxSuffix) == 0) ?
+            plen - onnx_len :
+            plen;
+    if (base_len + sizeof(kInt8Suffix) > buf_size)
+        return -ENAMETOOLONG;
+    memcpy(buf, onnx_path, base_len);
+    memcpy(buf + base_len, kInt8Suffix, sizeof(kInt8Suffix));
+
+    const int rc = vmaf_dnn_validate_onnx(buf, max_bytes);
+    if (rc < 0) {
+        /* int8 file missing or fails the allowlist — fall back to fp32;
+         * better degraded than dead (ADR-1032 Fix 3). The caller keeps the
+         * sidecar, so the session still reports the declared quant_mode;
+         * only the weights are fp32. */
+        vmaf_log(VMAF_LOG_LEVEL_DEBUG,
+                 "dnn: int8 sidecar unavailable (%s, rc=%d); falling back to fp32 path\n", buf, rc);
+        *out_path = onnx_path;
+        return 0;
+    }
+    *out_path = buf;
+    return 0;
+}
+
+/**
+ * Open @p load_path, falling back to @p fp32_path once when the two differ.
+ *
+ * The int8 graph can clear the size cap and the op allowlist and still fail
+ * session creation — an ONNX Runtime build without a kernel for one of its
+ * quantised ops reports exactly that ("Could not find an implementation for
+ * ConvInteger"). ADR-1032's "better degraded than dead" rule applies for the
+ * same reason it applies to a missing int8 file: the redirect must never turn
+ * a call that worked against the fp32 baseline into a hard failure.
+ *
+ * `vmaf_ort_open()` leaves @p sess untouched when it fails, so the retry
+ * cannot leak the failed session. Kept identical to the retry in
+ * `vmaf_dnn_session_open()` (dnn_api.c) — see `core/src/dnn/AGENTS.md`.
+ */
+static int open_session_with_fp32_retry(VmafOrtSession **sess, const char *load_path,
+                                        const char *fp32_path, const VmafDnnConfig *cfg)
+{
+    int rc = vmaf_ort_open(sess, load_path, cfg);
+    if (rc < 0 && load_path != fp32_path) {
+        vmaf_log(VMAF_LOG_LEVEL_DEBUG,
+                 "dnn: int8 session open failed (%s, rc=%d); retrying fp32 path\n", load_path, rc);
+        rc = vmaf_ort_open(sess, fp32_path, cfg);
+    }
+    return rc;
+}
+
+/**
+ * Query the opened session's input shape and hand ownership to `libvmaf.c`.
+ *
+ * Split out of vmaf_use_tiny_model() so the entry point stays inside the
+ * `readability-function-size` budget. On any negative return the caller still
+ * owns @p sess and @p meta and must close / free them.
+ */
+static int attach_opened_session(VmafContext *ctx, VmafOrtSession *sess, VmafModelSidecar *meta,
+                                 bool have_meta)
+{
+    assert(ctx != NULL);
+    assert(sess != NULL);
+
+    int64_t in_shape[4] = {0};
+    size_t in_rank = 0;
+    const int rc = vmaf_ort_input_shape(sess, in_shape, 4u, &in_rank);
+    if (rc < 0)
+        return rc;
+
+    const char *feature_name =
+        (have_meta && meta->name && *meta->name) ? meta->name : "vmaf_tiny_model";
+    return vmaf_ctx_dnn_attach(ctx, sess, have_meta ? meta : NULL, in_shape, in_rank, feature_name);
+}
+
+/**
+ * Load the companion sidecar, treating "absent" as success.
+ *
+ * A missing sidecar is not fatal — it only carries NR/FR disambiguation,
+ * quant_mode, and pretty-printing metadata; its absence defaults to FR.
+ * Sets @p have_meta and returns 0 in that case; returns the loader's error
+ * for any other failure (a malformed or oversized sidecar).
+ */
+static int load_optional_sidecar(const char *onnx_path, VmafModelSidecar *meta, bool *have_meta)
+{
+    memset(meta, 0, sizeof(*meta));
+    *have_meta = false;
+    const int rc = vmaf_dnn_sidecar_load(onnx_path, meta);
+    if (rc < 0 && rc != -ENOENT)
+        return rc;
+    *have_meta = (rc == 0);
+    return 0;
+}
+#endif
 
 int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path, const VmafDnnConfig *cfg)
 {
@@ -47,39 +182,34 @@ int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path, const VmafDnnCo
         return rc;
 
     VmafModelSidecar meta;
-    memset(&meta, 0, sizeof(meta));
     bool have_meta = false;
-    rc = vmaf_dnn_sidecar_load(onnx_path, &meta);
-    /* Missing sidecar is not fatal — we only need it for NR/FR disambiguation
-     * and pretty-printing. Lack of a sidecar defaults to FR. */
-    if (rc < 0 && rc != -ENOENT) {
+    rc = load_optional_sidecar(onnx_path, &meta, &have_meta);
+    if (rc < 0)
         return rc;
+
+    /* ADR-0174 / ADR-1032 — a non-fp32 sidecar redirects to the int8 sibling.
+     * resolve_quantised_load_path() falls back to the fp32 baseline on its own
+     * when the sibling is unusable, so a 0 return always yields an openable path. */
+    const char *load_path = onnx_path;
+    char int8_path[4096];
+    if (have_meta && meta.quant_mode != VMAF_QUANT_FP32) {
+        rc = resolve_quantised_load_path(onnx_path, max_bytes, int8_path, sizeof(int8_path),
+                                         &load_path);
+        if (rc < 0) {
+            vmaf_dnn_sidecar_free(&meta);
+            return rc;
+        }
     }
-    if (rc == 0)
-        have_meta = true;
 
     VmafOrtSession *sess = NULL;
-    rc = vmaf_ort_open(&sess, onnx_path, cfg);
+    rc = open_session_with_fp32_retry(&sess, load_path, onnx_path, cfg);
     if (rc < 0) {
         if (have_meta)
             vmaf_dnn_sidecar_free(&meta);
         return rc;
     }
 
-    int64_t in_shape[4] = {0};
-    size_t in_rank = 0;
-    rc = vmaf_ort_input_shape(sess, in_shape, 4u, &in_rank);
-    if (rc < 0) {
-        vmaf_ort_close(sess);
-        if (have_meta)
-            vmaf_dnn_sidecar_free(&meta);
-        return rc;
-    }
-
-    const char *feature_name =
-        (have_meta && meta.name && *meta.name) ? meta.name : "vmaf_tiny_model";
-
-    rc = vmaf_ctx_dnn_attach(ctx, sess, have_meta ? &meta : NULL, in_shape, in_rank, feature_name);
+    rc = attach_opened_session(ctx, sess, &meta, have_meta);
     if (rc < 0) {
         vmaf_ort_close(sess);
         if (have_meta)
