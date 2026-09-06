@@ -57,10 +57,10 @@ the verification command for each gate and confirm a passing result.
 
 | Gate | Requirement | Verification Command | Gate Status Today |
 |---|---|---|---|
-| **G1** | Every other 1.0.0 epic closed | `gh issue list --milestone "1.0.0 — First release" --state open` | **FAIL** — 12 open besides this one: #1235, #1236, #1237, #1238, #1240, #1241, #1242, #1243, #1244, #1245, #1270, #1272. Note the epic bodies are snapshots and several items in them have already shipped, so the count overstates the remaining work; each needs auditing against the code before it is treated as outstanding. |
+| **G1** | Every other 1.0.0 epic closed | `gh issue list --milestone "1.0.0 — First release" --state open` | **FAIL** — 11 open besides this one: #1235, #1236, #1237, #1238, #1240, #1241, #1242, #1243, #1245, #1270, #1272. #1244 (container-only publishing) was closed 2026-09-06 after verifying all three of its tasks on `master` plus the enforcement gate #1269 added. Note the epic bodies are snapshots and several items in them have already shipped, so the count overstates the remaining work; each needs auditing against the code before it is treated as outstanding. |
 | **G2** | `master` fully green across CI matrix | `gh run list --branch master --limit 20 --json conclusion,name --jq '[.[]\|select(.conclusion=="failure")]'` | **PASS** as of 2026-09-06 — zero failing runs on `master` HEAD. The release-please failure this row was written for is gone: it was the missing release-bot App credential, warned-not-errored on push by ADR-1171, and the workflow now reports success. |
 | **G3** | Container rebuilt with GPU default-model fixes | See §3 for container rebuild & CUDA verification command | **PASS** as of 2026-09-06 — #1307, #1312 and #1324 are all on `master`, the container was rebuilt from `cd52f2670` and the default model was verified on **all four** backends, not just CUDA: CPU 82.816062, CUDA 82.814062, SYCL 82.814061, HIP 82.816061, every one exiting 0. Evidence and container digest in [issue #1246 comment](https://github.com/VMAFx/vmafx/issues/1246#issuecomment-5555646084). |
-| **G4** | K150K re-smoke verified with zero disk leak | See §4 for 5-clip smoke & manifest validation command | **FAIL** — still blocked on [#1302](https://github.com/VMAFx/vmafx/pull/1302), which adds the `--vmaf-model` flag and the row-level `teacher_model` stamping §4.2 asserts. Confirmed absent from `master`: `git show origin/master:ai/scripts/extract_k150k_features.py \| grep -c vmaf.model` returns 0. #1302 itself has **no failing check** — its only red mark is the aggregator's draft guard ("Draft PRs must not satisfy Required Checks Aggregator"), and its ADR-0108 deliverables validator passes six of six. It needs promotion, not repair. |
+| **G4** | K150K re-smoke verified with zero disk leak | See §4 for 5-clip smoke & manifest validation command | **PASS** as of 2026-09-06 — [#1302](https://github.com/VMAFx/vmafx/pull/1302) merged at 13:03Z, so the three assertions it supplied now hold. Re-ran §4.1 end to end against `master` `e91ab8284`: `ok=5 fail=0`, 10.6 s, 0.47 clip/s, 5 parquet rows x 60 columns. All seven §4.2 assertions pass — `schema` = `k150k-feature-extraction-manifest-v1`, `status` = `complete`, manifest `teacher_model` = `vmaf_v1.0.16_3d0h`, `stats.ok` = 5, the `teacher_model` parquet column present with the single value `vmaf_v1.0.16_3d0h`, and `adm3_mean` present. Zero disk leak confirmed: `/tmp/k150k_smoke_scratch` was empty after the run (no per-clip temp survivors) and only the two intended outputs remained, both removed by §4.3. |
 | **G5** | Explicit maintainer authorization | `gh issue view 1246 --comments` | **FAIL** (Awaiting maintainer sign-off) |
 
 > **Gate status is a measurement, not a plan.** Every cell above says how it was
@@ -121,7 +121,7 @@ docker exec vmaf-dev-mcp rm -f /tmp/smoke_cuda_v1.json
 Verify `extract_k150k_features.py` under the rebuilt binary and confirm row-level
 teacher stamping and manifest generation before launching the multi-day run.
 
-*(Note: `--vmaf-model` and row-level teacher stamping require PR [#1302](https://github.com/VMAFx/vmafx/pull/1302)).*
+*(`--vmaf-model` and row-level teacher stamping came from PR [#1302](https://github.com/VMAFx/vmafx/pull/1302), merged 2026-09-06 — they are on `master`.)*
 
 ### 4.1 Execute Smoke Command
 
