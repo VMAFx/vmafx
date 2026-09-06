@@ -718,6 +718,17 @@ jobs:
           # X.Y.Z` commit footer instead - that form is inherently one-shot.
           manifest_version="$(jq -er '.["."]' .release-please-manifest.json)"
           echo "root manifest version: $manifest_version"
+          # ADR-1201: a release-candidate manifest (1.0.0-rc.N) still predates the
+          # first FINAL release, so the one-shot fields are still allowed. This
+          # must be checked BEFORE the sort, because `sort -V` orders 1.0.0
+          # ahead of 1.0.0-rc.1 -- so a naive comparison concludes the RC line
+          # has "reached 1.0.0" and fails every RC build while release-as is
+          # legitimately still present. Verified: printf '1.0.0\n1.0.0-rc.1\n'
+          # | sort -V | head -1  ->  1.0.0
+          if [[ "$manifest_version" == *-* ]]; then
+            echo "::notice::manifest $manifest_version is a prerelease - one-shot fields still allowed"
+            exit 0
+          fi
           lowest="$(printf '1.0.0\n%s\n' "$manifest_version" | sort -V | head -n1)"
           if [[ "$lowest" != "1.0.0" ]]; then
             echo "::notice::manifest $manifest_version predates the first 1.0.0 release - one-shot fields still allowed"

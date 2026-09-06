@@ -157,10 +157,42 @@ fixture "$missing_changelog"
 rm -f "$missing_changelog/CHANGELOG.md"
 reject 'missing CHANGELOG.md is rejected' "$missing_changelog"
 
+# `reject` varies the fixture; this varies the TAG against a fixed fixture, which
+# is what the ADR-1201 suffix cases need.
+reject_tag() {
+  local desc="$1" root="$2" tag="$3" rc=0
+  env VMAFX_REPO_ROOT="$root" "$VERIFY" "$tag" >/dev/null 2>&1 || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    printf 'FAIL: %s (accepted, expected rejection)\n' "$desc" >&2
+    fail=$((fail + 1))
+  else
+    printf 'PASS: %s\n' "$desc"
+    pass=$((pass + 1))
+  fi
+}
+
 first_release="$scratch/first-release"
 fixture "$first_release" 1.0.0 1.0.0 1.0.0
 check 'first 1.0.0 release on the fresh number line succeeds' \
   env VMAFX_REPO_ROOT="$first_release" "$VERIFY" v1.0.0
+
+# ADR-1201 -- release candidates precede the final 1.0.0. The accepted suffix is
+# deliberately narrow: only `rc`, only a dotted integer, no leading zero. SemVer
+# permits far more, but the fork ships exactly one prerelease channel and every
+# extra shape is a way to mis-tag a release.
+rc_release="$scratch/rc-release"
+fixture "$rc_release" 1.0.0-rc.1 1.0.0-rc.1 1.0.0-rc.1
+check 'a release candidate tag is accepted' \
+  env VMAFX_REPO_ROOT="$rc_release" "$VERIFY" v1.0.0-rc.1
+
+rc_release8="$scratch/rc-release8"
+fixture "$rc_release8" 1.0.0-rc.8 1.0.0-rc.8 1.0.0-rc.8
+check 'a later release candidate tag is accepted' \
+  env VMAFX_REPO_ROOT="$rc_release8" "$VERIFY" v1.0.0-rc.8
+
+for bad_tag in v1.0.0-beta v1.0.0-rc v1.0.0-rc.01 v1.0.0-rc.1.2 v1.0.0-RC.1; do
+  reject_tag "a non-rc prerelease tag is rejected: $bad_tag" "$rc_release" "$bad_tag"
+done
 
 tagged="$scratch/tagged"
 fixture "$tagged"
