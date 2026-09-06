@@ -48885,3 +48885,12 @@ Touches `core/src/libvmaf.c`, which is upstream-mirrored. Three invariants:
    load** — CPU load is not a stressor for this race (1/80 at load 22 versus
    56/60 with three concurrent CUDA processes), and two builds must be compared
    by interleaving runs, never sequentially.
+## docs/retrain-gate-status-1246 — measured retrain gate status (2026-09-06)
+
+Documentation only. One thing worth knowing:
+
+1. **The gate table is a measurement log, not a plan.** Every cell states how it
+   was checked and on what date. Do not carry a status forward across a rebase
+   without re-running its verification command — the table this replaced had G3
+   marked FAIL against "PR #1307 & fix/cambi-cuda-context unmerged" when both had
+   already merged, which is exactly the drift the format is meant to prevent.

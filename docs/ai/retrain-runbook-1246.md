@@ -57,11 +57,17 @@ the verification command for each gate and confirm a passing result.
 
 | Gate | Requirement | Verification Command | Gate Status Today |
 |---|---|---|---|
-| **G1** | Every other 1.0.0 epic closed | `gh issue list --milestone "1.0.0 — First release" --state open` | **FAIL** (Epics #1235–#1245 remain open) |
-| **G2** | `master` fully green across CI matrix | `gh run list --branch master --limit 5` | **FAIL** (release-please failure on master) |
-| **G3** | Container rebuilt with GPU default-model fixes | See §3 for container rebuild & CUDA verification command | **FAIL** (PR #1307 & fix/cambi-cuda-context unmerged) |
-| **G4** | K150K re-smoke verified with zero disk leak | See §4 for 5-clip smoke & manifest validation command | **FAIL** (Requires PR #1302; smoke pending) |
+| **G1** | Every other 1.0.0 epic closed | `gh issue list --milestone "1.0.0 — First release" --state open` | **FAIL** — 12 open besides this one: #1235, #1236, #1237, #1238, #1240, #1241, #1242, #1243, #1244, #1245, #1270, #1272. Note the epic bodies are snapshots and several items in them have already shipped, so the count overstates the remaining work; each needs auditing against the code before it is treated as outstanding. |
+| **G2** | `master` fully green across CI matrix | `gh run list --branch master --limit 20 --json conclusion,name --jq '[.[]\|select(.conclusion=="failure")]'` | **PASS** as of 2026-09-06 — zero failing runs on `master` HEAD. The release-please failure this row was written for is gone: it was the missing release-bot App credential, warned-not-errored on push by ADR-1171, and the workflow now reports success. |
+| **G3** | Container rebuilt with GPU default-model fixes | See §3 for container rebuild & CUDA verification command | **PASS** as of 2026-09-06 — #1307, #1312 and #1324 are all on `master`, the container was rebuilt from `cd52f2670` and the default model was verified on **all four** backends, not just CUDA: CPU 82.816062, CUDA 82.814062, SYCL 82.814061, HIP 82.816061, every one exiting 0. Evidence and container digest in [issue #1246 comment](https://github.com/VMAFx/vmafx/issues/1246#issuecomment-5555646084). |
+| **G4** | K150K re-smoke verified with zero disk leak | See §4 for 5-clip smoke & manifest validation command | **FAIL** — still blocked on [#1302](https://github.com/VMAFx/vmafx/pull/1302), which adds the `--vmaf-model` flag and the row-level `teacher_model` stamping §4.2 asserts. Confirmed absent from `master`: `git show origin/master:ai/scripts/extract_k150k_features.py \| grep -c vmaf.model` returns 0. #1302 itself has **no failing check** — its only red mark is the aggregator's draft guard ("Draft PRs must not satisfy Required Checks Aggregator"), and its ADR-0108 deliverables validator passes six of six. It needs promotion, not repair. |
 | **G5** | Explicit maintainer authorization | `gh issue view 1246 --comments` | **FAIL** (Awaiting maintainer sign-off) |
+
+> **Gate status is a measurement, not a plan.** Every cell above says how it was
+> checked and when. G2 and G3 moved to PASS on 2026-09-06 because they were
+> re-run, not because the work was assumed done; G1 and G4 stayed FAIL for the
+> same reason. Re-run the verification command before trusting any row — the
+> table this replaced had G3 failing on two PRs that had already merged.
 
 ---
 
@@ -121,9 +127,10 @@ teacher stamping and manifest generation before launching the multi-day run.
 
 ```bash
 docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract_k150k_features.py \
-  --clips-dir /workspace/.corpus/konvid-150k/clips \
-  --scores /workspace/.corpus/konvid-150k/scores.csv \
+  --clips-dir /workspace/.corpus/konvid-150k/k150ka_extracted \
+  --scores /workspace/.corpus/konvid-150k/k150ka_scores.csv \
   --vmaf-bin /usr/local/bin/vmaf \
+  --cpu-vmaf-bin /usr/local/bin/vmaf \
   --vmaf-model version=vmaf_v1.0.16_3d0h \
   --out /tmp/k150k_smoke.parquet \
   --manifest-out /tmp/k150k_smoke.manifest.json \
@@ -133,6 +140,46 @@ docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract
   --allow-fr-from-nr \
   --limit 5
 ```
+
+> **Corpus and binary paths — all four corrected after running this end to end
+> on 2026-09-06.** As written, this command failed on its first line, then again
+> on its second, then on every clip. Each fix below is from an actual run.
+>
+> 1. **`--scores`** named `scores.csv`, which does not exist. KoNViD-150k splits
+>    its scores by part: the corpus holds `k150ka_scores.csv` (154,746 rows) and
+>    `k150kb_scores.csv`. `k150ka_scores.csv` is also the script's own default.
+> 2. **`--cpu-vmaf-bin` was missing entirely.** It is required, and its default
+>    `/build/vmaf/core/build-cpu/tools/vmaf` does not exist in the container, so
+>    the run aborts with `error: cpu-vmaf-bin not found`. `/usr/local/bin/vmaf`
+>    serves both roles.
+> 3. **`--clips-dir` named `clips/`, which is unusable from inside the
+>    container.** Its 153,841 entries are symlinks to *host* absolute paths under
+>    `/home/kilian/dev/vmaf/.workingdir2/konvid-150k/…`, which do not resolve in
+>    the container mount. Every clip failed `ffprobe … returned non-zero exit
+>    status 1`, which reads like corrupt media and is really a dangling link. The
+>    real files are in `k150ka_extracted/` (152,265 files, e.g. 465,490 bytes,
+>    `ffprobe` reports 960x540) — again the script's own default.
+> 4. With those three fixed the pipeline runs clean: **`ok=5 fail=0`** at
+>    1.26 clip/s, `status: complete`, `schema:
+>    k150k-feature-extraction-manifest-v1`, 5 parquet rows.
+>
+> Verify before committing to the multi-day run:
+>
+> ```bash
+> docker exec vmaf-dev-mcp ls -d \
+>   /workspace/.corpus/konvid-150k/k150ka_extracted \
+>   /workspace/.corpus/konvid-150k/k150ka_scores.csv
+> # and confirm the clips are real files, not dangling links:
+> docker exec vmaf-dev-mcp ffprobe -v error -show_entries stream=width,height -of csv \
+>   /workspace/.corpus/konvid-150k/k150ka_extracted/orig_10000251326_540_5s.mp4
+> ```
+>
+> **What still needs [#1302](https://github.com/VMAFx/vmafx/pull/1302).** Of §4.2's
+> assertions, `schema`, `status` and `stats.ok` already pass on `master`. Three do
+> not, and all three are supplied by #1302: `teacher_model` in the manifest,
+> the `teacher_model` parquet column, and `adm3_mean` (`grep -c adm3` on master's
+> extractor returns 0, on #1302's returns 3). G4 is blocked on that PR alone —
+> the corpus, the binary and the pipeline are all verified working.
 
 ### 4.2 Validate Manifest Fields and Schema
 
@@ -195,9 +242,10 @@ mkdir -p runs/logs runs/shards
 
 ```bash
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract_k150k_features.py \
-  --clips-dir /workspace/.corpus/konvid-150k/clips \
-  --scores /workspace/.corpus/konvid-150k/scores.csv \
+  --clips-dir /workspace/.corpus/konvid-150k/k150ka_extracted \
+  --scores /workspace/.corpus/konvid-150k/k150ka_scores.csv \
   --vmaf-bin /usr/local/bin/vmaf \
+  --cpu-vmaf-bin /usr/local/bin/vmaf \
   --vmaf-model version=vmaf_v1.0.16_3d0h \
   --out /workspace/runs/shards/k150k_v1_features.parquet \
   --manifest-out /workspace/runs/shards/k150k_v1_features.manifest.json \
@@ -220,6 +268,7 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/e
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract_full_features.py \
   --data-root /workspace/.corpus/netflix \
   --vmaf-bin /usr/local/bin/vmaf \
+  --cpu-vmaf-bin /usr/local/bin/vmaf \
   --vmaf-model version=vmaf_v1.0.16_3d0h \
   --cache-dir /tmp/vmaf_nflx_cache \
   --out /workspace/runs/shards/full_features_netflix.parquet \
@@ -240,6 +289,7 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/b
   --bvi-dir /workspace/.workingdir2/bvi-dvc-extracted \
   --tier all \
   --vmaf-bin /usr/local/bin/vmaf \
+  --cpu-vmaf-bin /usr/local/bin/vmaf \
   --model version=vmaf_v1.0.16_3d0h \
   --out /workspace/runs/shards/full_features_bvi_dvc_all.parquet \
   --manifest-out /workspace/runs/shards/full_features_bvi_dvc_all.manifest.json \
@@ -262,6 +312,7 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/e
   --manifest /workspace/.workingdir2/youtube-ugc/manifest.csv \
   --yuv-dir /tmp/ugc_yuv_scratch \
   --vmaf-bin /usr/local/bin/vmaf \
+  --cpu-vmaf-bin /usr/local/bin/vmaf \
   --model version=vmaf_v1.0.16_3d0h \
   --out-parquet /workspace/runs/shards/full_features_ugc.parquet \
   --manifest-out /workspace/runs/shards/full_features_ugc.manifest.json \
@@ -285,6 +336,7 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/c
   --full \
   --feature-set full \
   --vmaf-bin /usr/local/bin/vmaf \
+  --cpu-vmaf-bin /usr/local/bin/vmaf \
   > runs/logs/extract_chug.log 2>&1 &
 ```
 
