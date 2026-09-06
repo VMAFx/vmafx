@@ -8506,6 +8506,12 @@ Docs: `docs/usage/vmaf-tune-recommend.md`,
   modifications.
 
 
+- **docs(ai)**: add operator runbook for the one-shot tiny-AI model retrain
+  against the `vmaf_v1.0.16_3d0h` teacher (epic #1246). Covers preconditions,
+  container rebuild, K150K smoke, per-corpus extraction, mixed-teacher refusal,
+  model retraining, static PTQ/QAT export, validation gates, and rollback.
+
+
 **Rust crate audit — TAD extractor and vmafx-sys bindings (Research-0760)**
 
 Security and correctness audit of the two Rust workspace crates:
@@ -19308,6 +19314,16 @@ The `cross_backend_vif_diff.py` per-feature lane already carried a `cambi` entry
   release-please `## [vX.Y.Z]` sections are preserved across re-renders.
   See [ADR-0913](docs/adr/0913-changelog-renderer-splice-contract.md)
   and [Research-0913](docs/research/0913-changelog-renderer-and-drift-2026-05-31.md).
+
+
+- A changelog fragment filed under a directory that is not a Keep-a-Changelog section now
+  **fails** the run instead of printing a warning and exiting 0. The old behaviour silently
+  dropped the entry: `changelog.d/docs/retrain-runbook-1246.md` had been on `master` since
+  PR #1313 and never rendered, and `--check` still passed because it compares rendered
+  output against `CHANGELOG.md` and both agreed the entry did not exist. That fragment is
+  restored to `changelog.d/added/`, so the retrain-runbook entry appears in the Unreleased
+  block for the first time. See
+  [ADR-1198](docs/adr/1198-changelog-unknown-section-is-an-error.md).
 
 
 - **CHUG sidecar `chug_bit_depth` not loaded** (`ai/scripts/extract_k150k_features.py`):
