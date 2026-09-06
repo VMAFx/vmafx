@@ -48382,3 +48382,27 @@ this work, because these three twins are now defined as *mirrors* of it:
    rebase conflict by re-adding them to the array unless the AIM kernels land
    with it — an earlier draft of this branch emitted them from a hard-coded
    `aim_num = 0.0`, which is a fabricated score, not a fallback.
+
+## fix/gpu-threads-ctx-sync — threaded flush leaves GPU extractors alone (2026-09-06)
+
+Touches `core/src/libvmaf.c`, which is upstream-mirrored, so a rebase can plausibly
+reintroduce this. Two invariants:
+
+1. **`flush_context_threaded()`'s first loop must skip `VMAF_FEATURE_EXTRACTOR_CUDA`
+   and `VMAF_FEATURE_EXTRACTOR_SYCL`.** Its second loop already skipped CUDA; the first
+   did not, and that asymmetry made `vmaf --threads N` fail on every GPU backend for
+   every `N`. Restoring the plain `TEMPORAL`-only condition brings the bug straight back.
+   The backend flush paths own GPU extractors in both threaded and serial mode, so they
+   run collect-then-flush in the one order that yields correct `motion2` / `motion3` at a
+   batch boundary. See [ADR-1197](adr/1197-gpu-threaded-flush-ownership.md).
+
+2. **Do not re-merge the extractor error and the CUDA driver error in
+   `flush_context_cuda()`.** They are deliberately separate variables
+   (`extractor_err`, `cuda_err`). Folding them back into one `err` is what made an
+   extractor's `-EINVAL` announce itself as "context could not be synchronized" while all
+   four driver calls were returning success — the single most misleading symptom in this
+   bug, and the reason it went unfixed.
+
+The guard that used to sit in `flush_context_cuda()` (`if (vmaf->thread_pool && TEMPORAL)
+continue;`) is intentionally **deleted**, not moved. A rebase that resurrects it alongside
+invariant 1 will skip the flush entirely for temporal GPU extractors.

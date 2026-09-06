@@ -15,6 +15,25 @@ if get_option('enable_cuda')
          timeout : 10)
 endif
 
+# ADR-1197 — `vmaf --threads N` on a GPU backend must succeed and agree with the
+# serial run. Registered once per GPU backend that is compiled in; the script
+# skips (exit 77) when the backend is not usable on the machine.
+foreach gpu_backend : ['cuda', 'sycl']
+    if get_option('enable_' + gpu_backend)
+        test_vmaf_gpu_threads = find_program('test_vmaf_gpu_threads.sh')
+        test('test_vmaf_' + gpu_backend + '_threads', test_vmaf_gpu_threads,
+             args : [gpu_backend],
+             suite : ['slow', 'gpu'],
+             depends : [vmaf],
+             workdir : meson.project_build_root(),
+             env : [
+                 'MESON_BUILD_ROOT=' + meson.project_build_root(),
+                 'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+             ],
+             timeout : 300)
+    endif
+endforeach
+
 # T6-3b / ADR-0222 — per-shot CRF predictor sidecar smoke test.
 test_vmaf_per_shot = find_program('test_vmaf_per_shot.sh')
 test('test_vmaf_per_shot', test_vmaf_per_shot,

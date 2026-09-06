@@ -179,7 +179,20 @@ variable that overrides it.
 | `--backend <name>` | `auto` | Exclusive backend selector — `auto` (default; whichever backends are built compete by registry order), `cpu`, `cuda`, `sycl`, `hip`, `metal`. Setting a specific backend disables the others via the matching `--no_X` flags BEFORE dispatch and pins the device index for the chosen backend (`gpumask=0` for CUDA, `sycl_device=0` for SYCL, `hip_device=0` for HIP, `metal_device=0` for Metal). (The `vulkan` token and `--no_vulkan` / `--vulkan_device` flags were removed in ADR-0726.) |
 | `--cpumask <bitmask>` (`-c`) | all ISAs enabled | Mask out specific CPU ISAs (e.g. force scalar, disable AVX-512). Values are fork-internal — see `core/src/cpu.h`. |
 | `--gpumask <bitmask>` | all GPU ops enabled | Mask out specific GPU ops. |
-| `--threads <N>` | host `nproc` | CPU-side worker thread count. |
+| `--threads <N>` | host `nproc` | Worker thread count. Valid with every backend, including `cuda` and `sycl`, and the result is identical to a serial run. |
+
+> **`--threads` with a GPU backend.** Builds before
+> [ADR-1197](../adr/1197-gpu-threaded-flush-ownership.md) aborted with
+> `libvmaf ERROR context could not be synchronized` and exit 234
+> whenever `--threads` was combined with `--backend cuda` or
+> `--backend sycl` — for every thread count, including `--threads 1`.
+> The message was misleading: the GPU context was healthy and the
+> failure came from the feature-extractor flush. If you see it, you
+> are on an older build. Note that `testdata/bench_all.sh` pins
+> `--threads 1`, so GPU rows produced by older builds of that harness
+> were failures rather than measurements.
+
+<!-- MD028: separates the two blockquotes above and below. -->
 
 > **Vulkan backend removed (ADR-0726):** The `--no_vulkan`, `--vulkan_device`,
 > and `--backend vulkan` flags no longer exist. Passing them produces an
