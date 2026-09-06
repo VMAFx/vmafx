@@ -235,6 +235,8 @@ truth for that address). The same content, browsable in-tree, lives under
     workflows.
   - [`CONTRIBUTING.md`](CONTRIBUTING.md) — Contribution workflow and testing.
   - [`SECURITY.md`](SECURITY.md) — Security policy and vulnerability disclosure.
+  - [`docs/security/scorecard-alerts-2026-09-04.md`](docs/security/scorecard-alerts-2026-09-04.md)
+    — OpenSSF Scorecard and CodeQL alerts audit.
 
 ---
 

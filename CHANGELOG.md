@@ -26776,6 +26776,25 @@ across the fork-local Python trees (`ai/`, `mcp-server/vmaf-mcp/`,
   gaps. Error counts: ai 370→306, mcp 61→61 (#366-owned), tune 1257→1236.
 
 
+- **Integer index operands widened to `ptrdiff_t` in convolve, moment, psnr (2026-09-04)** —
+  `core/src/feature/iqa/convolve.c` (`iqa_convolve_vertical_pass`),
+  `core/src/feature/moment.c` (`compute_1st_moment`, `compute_2nd_moment`) and
+  `core/src/feature/psnr.c` (`compute_psnr`) now index as
+  `pic[(ptrdiff_t)i * stride + j]` instead of forming the `int * int` product first.
+  Numerically inert: the same element is addressed and no floating-point
+  arithmetic changed. This closes no open alert — the six
+  `cpp/integer-multiplication-cast-to-long` alerts CodeQL ever raised on these
+  files (30, 31, 33, 706, 707, 708) are `float * float` products accumulated
+  into `double`, dismissed as false positives in June 2026 and deliberately
+  left as they are: widening those operands to `double` changes the
+  single-rounded product and breaks the SIMD bit-exactness contract
+  (ADR-0138, ADR-0179). Bit-exactness of this change verified via
+  `vmaf --precision=max` JSON diff (byte-identical before/after for `psnr_y`,
+  `psnr_cb`, `psnr_cr`, `float_ssim`, `float_ms_ssim`), 13/13 convolve +
+  10/10 moment unit tests, and the Netflix CPU golden-data gate
+  (271 passed, 12 skipped, 0 failed).
+
+
 - **CodeQL error/warning sweep — 18 alerts cleared (2026-05-09)** —
   this PR removes the actionable error- and warning-level CodeQL
   findings that survived the prior security passes. Three classes:
@@ -27006,6 +27025,22 @@ See `docs/server/auth.md` for the full configuration guide.
   ADR cycle so the lockfile policy gets the deliberation it warrants.
 
 
+- **Scorecard and Code Scanning audit and cleanup (2026-09-04)** —
+  audited all remaining OpenSSF Scorecard and GitHub Code Scanning alerts.
+  (1) Added `osv-scanner.toml` to ignore informational advisory `GO-2026-5932`
+  for the unimported and unreachable `golang.org/x/crypto/openpgp` subpackage
+  (Scorecard Alert 4). Documented maintainer-only administrative requirements
+  for `CodeReviewID` (Alert 1) and `CIIBestPracticesID` (Alert 3).
+  (2) Fixed five actionable CodeQL findings: deleted unused `pytest` import
+  in `test_parity_argv.py` (Alert 965), added header guards to `core/tools/spinner.h`
+  (Alert 960), split `usage()` into non-variadic and variadic overloads in
+  `core/tools/cli_parse.cpp` (Alerts 938, 939), rephrased comment in
+  `test_model_feature_overload_ownership.c` (Alert 951), and removed redundant
+  lower-bound comparisons in `core/src/pdjson.c` (Alert 954).
+  (3) Published full audit report in `docs/security/scorecard-alerts-2026-09-04.md`
+  covering all resolved and reported-not-fixed items.
+
+
 - **Semgrep OSS warnings — 19/19 triaged (Research-0090)** — three real
   fixes plus sixteen line-level `# nosemgrep` suppressions, each citing
   the call-site reasoning. Fixed: (1) `python/vmaf/config.py`
@@ -27093,3 +27128,15 @@ See `docs/server/auth.md` for the full configuration guide.
   via the NVIDIA Container Toolkit (CUDA) or `--group-add video,render`
   (ROCm / oneAPI). `dev/Containerfile` keeps `USER root` — intentional
   dev sandbox. See ADR-0878.
+
+
+- **Strict input and path validation in extract_ugc_features subprocess (2026-09-04)** —
+  `ai/scripts/extract_ugc_features.py::_run_vmaf` now performs strict input validation
+  on video dimensions (`w > 0`, `h > 0`), thread counts (`n_threads > 0`), input/output
+  paths (rejection of empty/dot paths and null bytes), and `VMAF_TINY_AI_SCRATCH`
+  environment variable values (requiring absolute paths, non-empty, and verifying that
+  the generated temporary output file stays within the resolved scratch directory).
+  Replaces false-positive dismissal for Semgrep rule
+  `python.lang.security.audit.dangerous-subprocess-use-tainted-env-args` (Alert 372)
+  with active defensive validation. Regression tests added in
+  `ai/tests/test_extract_ugc_features.py`.

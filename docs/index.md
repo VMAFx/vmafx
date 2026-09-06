@@ -109,6 +109,7 @@ GPU / SIMD backend notes under [backends/](backends/index.md):
 - [IDE setup](development/ide-setup.md) – clangd / VS Code configuration for all backends
 - [FFmpeg patches refresh](development/ffmpeg-patches-refresh.md) – rebasing the `ffmpeg-patches/` series
 - [Upstream watchers](development/upstream-watchers.md) – tracking Netflix/vmaf divergence
+- [Security & Scorecard audit](security/scorecard-alerts-2026-09-04.md) – OpenSSF Scorecard and CodeQL alerts audit
 
 ## Reference
 

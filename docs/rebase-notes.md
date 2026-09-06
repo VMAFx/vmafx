@@ -207,6 +207,19 @@ No rebase impact: all touched files (`tools/vmaf-tune/src/vmaftune/`, `tools/vma
 - `tools/vmaf-tune/src/vmaftune/proxy.py`: added `load_proxy_sidecar` and `normalise_features` adhering to `fr_regressor_v2.json` StandardScaler parameters, aligned `ENCODER_VOCAB_V2` ordering, and mapped unrecognized encoders to `"unknown"` (slot 11) when `allow_unknown=True`.
 - `tools/vmaf-tune/src/vmaftune/score.py`: `parse_feature_aggregates` handles `integer_*` keys and falls back to per-frame averages when pooled metrics are absent.
 
+## fix/security-cleanup-1243 — widen integer index operands in convolve, moment, psnr (2026-09-04)
+
+- `core/src/feature/iqa/convolve.c`: upstream-mirror file. Widen `(ptrdiff_t)y * dst_w + x` in `dst[...]` vertical pass while preserving `float * float` single-rounded arithmetic for SIMD bit-exactness contract (ADR-0138). On upstream sync, preserve the widening.
+- `core/src/feature/moment.c`: upstream-mirror file. Widen `(ptrdiff_t)i * stride_ + j` in `compute_1st_moment` and `compute_2nd_moment` while preserving `pic_ * pic_` float multiplication for SIMD bit-exactness contract (ADR-0179). On upstream sync, preserve the widening.
+- `core/src/feature/psnr.c`: upstream-mirror file. Widen `(ptrdiff_t)i * ref_stride_ + j` and `(ptrdiff_t)i * dis_stride_ + j` in `compute_psnr` while preserving `diff * diff` float multiplication for SIMD bit-exactness. On upstream sync, preserve the widening.
+- `ai/scripts/extract_ugc_features.py`, `ai/tests/test_extract_ugc_features.py`: wholly fork-added tooling and test files with no upstream Netflix/vmaf counterpart. No rebase impact.
+- `core/tools/spinner.h`: upstream-mirror header. Added `#ifndef VMAF_SPINNER_H` / `#define VMAF_SPINNER_H` header guard. On upstream sync, preserve header guards.
+- `core/tools/cli_parse.cpp`: fork-added C++ translation unit (replacing `cli_parse.c`, ADR-0809 / ADR-1155). Added non-variadic `usage(app, reason)` overload alongside variadic template. No upstream counterpart.
+- `core/test/test_model_feature_overload_ownership.c`: fork-added test file. Rephrased comment text to avoid CodeQL commented-out code heuristic. No upstream counterpart.
+- `core/src/pdjson.c`: vendored third-party parser (`pdjson`). Removed redundant lower bound comparisons in UTF-8 sequence length validation. On upstream sync, preserve bounds cleanup.
+- `mcp-server/vmaf-mcp/tests/test_parity_argv.py`: fork-added test file. Removed unused `pytest` import. No rebase impact.
+- `osv-scanner.toml`: fork-added configuration file ignoring `GO-2026-5932` for unimported `openpgp` subpackage. No rebase impact.
+
 ## fix/sycl-adm-tidy-debt — SYCL ADM warning cleanup + tidy-lane scoping (2026-09-04)
 
 - `core/src/feature/sycl/integer_adm_sycl.cpp`: wholly fork-added (upstream Netflix has no SYCL

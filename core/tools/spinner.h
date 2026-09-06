@@ -16,6 +16,9 @@
  *
  */
 
+#ifndef VMAF_SPINNER_H
+#define VMAF_SPINNER_H
+
 /* ADR-0809: static gives internal linkage in both C and C++ so the header
  * can be included in a C++ TU without an ODR violation if ever included in
  * more than one translation unit. */
@@ -80,3 +83,5 @@ static inline const char *spinner_erase_eol(int vt_enabled)
 {
     return vt_enabled ? "\033[K" : "        ";
 }
+
+#endif // VMAF_SPINNER_H

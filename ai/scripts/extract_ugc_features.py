@@ -129,20 +129,55 @@ def _run_vmaf(
     model: Path,
 ) -> list[dict]:
     """Run vmaf with FULL_FEATURES + the v0.6.1 model. Return frames list."""
+    if not isinstance(w, int) or isinstance(w, bool) or w <= 0:
+        raise ValueError(f"w must be a positive integer, got {w!r}")
+    if not isinstance(h, int) or isinstance(h, bool) or h <= 0:
+        raise ValueError(f"h must be a positive integer, got {h!r}")
+    if not isinstance(n_threads, int) or isinstance(n_threads, bool) or n_threads <= 0:
+        raise ValueError(f"n_threads must be a positive integer, got {n_threads!r}")
+
+    for name, p in (("vmaf_bin", vmaf_bin), ("ref", ref), ("dis", dis), ("model", model)):
+        s = str(p).strip()
+        if not s or s == ".":
+            raise ValueError(f"{name} cannot be empty")
+        if "\0" in s:
+            raise ValueError(f"{name} cannot contain null bytes: {s!r}")
+
     # Per-pair scratch JSON: predictable /tmp paths leak username + invite
     # collisions on multi-tenant hosts; route through tempfile honouring
     # VMAF_TINY_AI_SCRATCH (same env-var convention as the BVI-DVC / KoNViD
     # full-feature scripts).
-    scratch_dir = Path(os.environ.get("VMAF_TINY_AI_SCRATCH", tempfile.gettempdir()))
+    raw_scratch = os.environ.get("VMAF_TINY_AI_SCRATCH")
+    if raw_scratch is not None:
+        if not raw_scratch.strip():
+            raise ValueError("VMAF_TINY_AI_SCRATCH cannot be empty")
+        if "\0" in raw_scratch:
+            raise ValueError("VMAF_TINY_AI_SCRATCH contains null byte")
+        scratch_path = Path(raw_scratch)
+        if not scratch_path.is_absolute():
+            raise ValueError(f"VMAF_TINY_AI_SCRATCH must be an absolute path: {raw_scratch!r}")
+        scratch_dir = scratch_path.resolve()
+    else:
+        scratch_dir = Path(tempfile.gettempdir()).resolve()
     scratch_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_ref = "".join(c for c in ref.stem if c.isalnum() or c in ("-", "_")) or "ref"
+    safe_dis = "".join(c for c in dis.stem if c.isalnum() or c in ("-", "_")) or "dis"
     with tempfile.NamedTemporaryFile(
         mode="w",
         suffix=".json",
-        prefix=f"ugc_vmaf_{ref.stem}_{dis.stem}_",
+        prefix=f"ugc_vmaf_{safe_ref}_{safe_dis}_",
         dir=scratch_dir,
         delete=False,
     ) as tmp_fh:
-        out = Path(tmp_fh.name)
+        out = Path(tmp_fh.name).resolve()
+
+    try:
+        out.relative_to(scratch_dir.resolve())
+    except ValueError as err:
+        out.unlink(missing_ok=True)
+        raise ValueError(f"Temporary file {out} escaped scratch directory {scratch_dir}") from err
+
     try:
         feature_args: list[str] = []
         for extractor in _extractors_for(FULL_FEATURES):
@@ -172,6 +207,14 @@ def _run_vmaf(
             str(out),
             "--json",
         ]
+        for arg in cmd:
+            if not isinstance(arg, str):
+                raise TypeError(
+                    f"Command argument must be a string, got {type(arg).__name__}: {arg!r}"
+                )
+            if "\0" in arg:
+                raise ValueError(f"Command argument contains null byte: {arg!r}")
+
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         with out.open() as f:
             doc = json.load(f)

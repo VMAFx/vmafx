@@ -304,16 +304,35 @@ void print_usage_options_part2(FILE *const out)
     exit(is_error ? 1 : 0);
 }
 
-template <typename... Args>
-[[noreturn]] void usage(const char *const app, const char *const reason, Args &&...args)
+[[noreturn]] void usage(const char *const app, const char *const reason)
 {
     FILE *const out = reason ? stderr : stdout;
     if (reason) {
-        if constexpr (sizeof...(args) > 0) {
-            (void)fprintf(stderr, reason, std::forward<Args>(args)...);
-        } else {
-            (void)fputs(reason, stderr);
-        }
+        (void)fputs(reason, stderr);
+        (void)fprintf(stderr, "\n\n");
+    }
+    print_usage_options_part1(out, app);
+    print_usage_options_part2(out);
+    usage_exit(reason != nullptr);
+}
+
+template <typename First, typename... Rest>
+[[noreturn]] void usage(const char *const app, const char *const reason, First &&first,
+                        Rest &&...rest)
+{
+    FILE *const out = reason ? stderr : stdout;
+    if (reason) {
+        /* cppcheck-suppress wrongPrintfScanfArgNum ; `reason` is a runtime format
+         * string and the arguments arrive as a template parameter pack, so
+         * cppcheck cannot pair them: it resolves neither the conversion count in
+         * `reason` nor `sizeof...(Rest)`, and reports a fixed mismatch. Every
+         * call site in this file passes a string literal whose conversions match
+         * its arguments, and the compiler checks those at the call site. This
+         * overload exists precisely because it is only ever selected when at
+         * least one argument is present -- the zero-argument case is the
+         * non-template overload above, which uses fputs and never treats
+         * `reason` as a format string. */
+        (void)fprintf(stderr, reason, std::forward<First>(first), std::forward<Rest>(rest)...);
         (void)fprintf(stderr, "\n\n");
     }
     print_usage_options_part1(out, app);

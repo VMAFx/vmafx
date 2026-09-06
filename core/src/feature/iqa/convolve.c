@@ -154,7 +154,7 @@ static void iqa_convolve_vertical_pass(const float *img_cache, int w, const stru
             for (int v = -vc; v <= vc - kh_even; ++v, ++k_offset) {
                 sum += img_cache[img_offset + (ptrdiff_t)v * w] * k->kernel_v[k_offset];
             }
-            dst[y * dst_w + x] = (float)(sum * scale);
+            dst[(ptrdiff_t)y * dst_w + x] = (float)(sum * scale);
         }
     }
 }
