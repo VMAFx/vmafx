@@ -48,6 +48,10 @@ fn pooling_method_variants_are_distinct() {
         PoolingMethod::Min,
         PoolingMethod::Max,
         PoolingMethod::HarmonicMean,
+        PoolingMethod::Median,
+        PoolingMethod::Perc5,
+        PoolingMethod::Perc10,
+        PoolingMethod::Perc20,
     ] {
         // Just touch the value; the conversion is internal-only.
         let _ = format!("{m:?}");

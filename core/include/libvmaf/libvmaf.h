@@ -119,17 +119,46 @@ enum VmafOutputFormat {
  *   - `VMAF_POOL_METHOD_HARMONIC_MEAN`  — harmonic mean (penalises outlier lows more
  *                                        than the arithmetic mean; typical for VMAF
  *                                        "phone" / 4K display reporting).
+ *   - `VMAF_POOL_METHOD_MEDIAN`         — 50th percentile of the per-frame scores.
+ *   - `VMAF_POOL_METHOD_PERC5`          — 5th percentile ("worst 5%" summary).
+ *   - `VMAF_POOL_METHOD_PERC10`         — 10th percentile.
+ *   - `VMAF_POOL_METHOD_PERC20`         — 20th percentile.
+ *
+ * The four order-statistic methods (`MEDIAN`, `PERC5`, `PERC10`, `PERC20`)
+ * sort the per-frame scores and interpolate linearly between the two
+ * neighbouring ranks, which is exactly `numpy.percentile(..., method=
+ * "linear")` — the rule the Python harness (`ListStats.perc10` and friends)
+ * already uses, so both surfaces report the same number for the same frames.
+ * Like `MIN` and `MAX` they are pure order statistics: perceptual spatial
+ * weighting (ADR-1118) cannot reorder the per-frame scores and therefore does
+ * not affect them. Unlike the four accumulator methods they need the whole
+ * per-frame score vector in memory, so a percentile pool allocates a buffer
+ * proportional to the number of pooled frames; the accumulator methods still
+ * run in O(1) space.
  *
  * Stable enumerator values — append-only across libvmaf releases for ABI
  * compatibility. `VMAF_POOL_METHOD_NB` is a count sentinel and NOT a stable
  * value; see its inline doc.
  */
+/**
+ * Feature macro: defined when the order-statistic pooling methods
+ * (`VMAF_POOL_METHOD_MEDIAN` / `_PERC5` / `_PERC10` / `_PERC20`) are present.
+ * Lets an integration that must build against both a pre-ADR-1188 libvmaf and
+ * this one select them with `#ifdef` instead of a version comparison — the
+ * in-tree `ffmpeg-patches/0018` mapper does exactly that.
+ */
+#define VMAF_HAVE_PERCENTILE_POOLING 1
+
 enum VmafPoolingMethod {
     VMAF_POOL_METHOD_UNKNOWN = 0,
     VMAF_POOL_METHOD_MIN,
     VMAF_POOL_METHOD_MAX,
     VMAF_POOL_METHOD_MEAN,
     VMAF_POOL_METHOD_HARMONIC_MEAN,
+    VMAF_POOL_METHOD_MEDIAN,
+    VMAF_POOL_METHOD_PERC5,
+    VMAF_POOL_METHOD_PERC10,
+    VMAF_POOL_METHOD_PERC20,
 /**
      * Count sentinel — retained for backwards compatibility only.
      *

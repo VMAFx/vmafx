@@ -94,6 +94,34 @@ No rebase impact: `scripts/ci/check-no-tracked-venv.sh` and its test are fork-ad
   leaving them untouched keeps the SIMD bit-exactness story unchanged. Do not
   "unify" them into the shared header without re-running
   `core/test/test_integer_adm_simd.c`.
+## fix/t-upstream-818-pooling-enum-no-percentil — percentile temporal pooling (2026-09-06)
+
+- `core/include/libvmaf/libvmaf.h`: upstream-mirrored public header. The fork appends
+  `VMAF_POOL_METHOD_MEDIAN` / `_PERC5` / `_PERC10` / `_PERC20` **after**
+  `VMAF_POOL_METHOD_HARMONIC_MEAN` and defines `VMAF_HAVE_PERCENTILE_POOLING` (ADR-1188).
+  Invariant: the growth is append-only — if upstream ever adds its own enumerator, append it
+  after the fork's four rather than renumbering, and never reorder the first five. On a sync
+  that touches this enum, re-check the `static_assert(VMAF_POOL_METHOD_NB == 9)` in
+  `core/src/output.cpp` and the value assertions in `core/test/test_pool_percentile.c`.
+- `core/src/libvmaf.c`: `pool_reduce()` keeps the upstream accumulator arithmetic; the fork
+  adds `pool_accumulate()`, `PoolSamples`, `pool_samples_push()` and
+  `pool_reduce_percentile()` around it. Invariant: percentiles must never be derived from the
+  accumulators, and the accumulator methods must never be derived from the sorted buffer
+  (ADR-1118 golden-gate isolation). Porting an upstream change to `vmaf_feature_score_pooled`
+  means porting it into `pool_accumulate()`'s loop body, which is where the upstream loop now
+  lives verbatim.
+- `core/src/percentile.h`: fork-added, header-only `static inline`. `core/src/predict.c` lost
+  its file-static `score_compare` / `percentile` to this header (identical expressions).
+  Invariant: keep them `static inline` in the header — moving them into a `.c` puts the
+  golden-asserted bootstrap `ci_p95` arithmetic behind a cross-TU call.
+- `core/src/output.cpp`: writers iterate the fork-added `pool_report_order[]` instead of
+  `[1, VMAF_POOL_METHOD_NB)`, so `pooled_metrics` keeps emitting exactly `min`, `max`, `mean`,
+  `harmonic_mean`. Invariant: an upstream diff that reintroduces the `NB`-bounded loop would
+  silently widen the report schema; keep the explicit table.
+- `ffmpeg-patches/0018-libvmaf-map-percentile-pool-methods.patch`: new tail patch against
+  `n9.0.1`, extends FFmpeg's stock `pool_method_map` (and maps `max`, which upstream FFmpeg
+  never did). Guarded by `#ifdef VMAF_HAVE_PERCENTILE_POOLING`, so it still builds against a
+  Netflix libvmaf. Verified: all 18 patches replay onto pristine `n9.0.1` via `git am --3way`.
 
 ## ci/release-artifacts-built-in-dev-container — native release artifacts built on self-hosted canonical runner (ADR-1178) (2026-09-05)
 

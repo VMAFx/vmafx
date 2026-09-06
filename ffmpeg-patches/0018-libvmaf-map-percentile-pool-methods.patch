@@ -1,0 +1,72 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lusoris <lusoris@pm.me>
+Date: Sat, 6 Sep 2026 12:00:00 +0200
+Subject: [PATCH] libvmaf: map percentile pool methods on the vmaf filters
+
+VMAFx libvmaf (ADR-1188) appends MEDIAN / PERC5 / PERC10 / PERC20 to
+VmafPoolingMethod, and defines VMAF_HAVE_PERCENTILE_POOLING when they are
+available. Map the matching pool= option strings so every vmaf filter
+variant (libvmaf, libvmaf_cuda, libvmaf_sycl, libvmaf_metal, ...) can
+report the "worst 10% of frames" summary the Python harness has always
+offered. Also map "max", which the enum has always had but the mapper
+never accepted. Unknown strings still fall back to mean.
+
+The percentile block is guarded by the feature macro so the filter still
+builds against an upstream Netflix libvmaf.
+---
+ doc/filters.texi         |  6 +++++-
+ libavfilter/vf_libvmaf.c | 17 +++++++++++++++++
+ 2 files changed, 22 insertions(+), 1 deletion(-)
+
+diff --git a/doc/filters.texi b/doc/filters.texi
+index 3534c87..489bd7e 100644
+--- a/doc/filters.texi
++++ b/doc/filters.texi
+@@ -17470,7 +17470,11 @@ Set the format of the log file (xml, json, csv, or sub).
+ 
+ @item pool
+ Set the pool method to be used for computing vmaf.
+-Options are @code{min}, @code{harmonic_mean} or @code{mean} (default).
++Options are @code{min}, @code{max}, @code{harmonic_mean} or @code{mean}
++(default). When built against a libvmaf that provides the order-statistic
++pooling methods (VMAFx >= 3.2), @code{median}, @code{perc5}, @code{perc10} and
++@code{perc20} select the corresponding percentile of the per-frame scores,
++interpolated linearly between ranks.
+ 
+ @item n_threads
+ Set number of threads to be used when initializing libvmaf.
+diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
+index 4ff00c6..ef28a74 100644
+--- a/libavfilter/vf_libvmaf.c
++++ b/libavfilter/vf_libvmaf.c
+@@ -940,13 +940,30 @@ static enum VmafOutputFormat log_fmt_map(const char *log_fmt)
+ 
+ static enum VmafPoolingMethod pool_method_map(const char *pool_method)
+ {
++    /* libvmaf >= 3.2 (fork ADR-1188) additionally exposes the order-statistic
++     * methods; "max" has always existed in the enum but was never mapped. The
++     * strings match the Python harness spellings so a pool= option means the
++     * same thing on both surfaces. Unknown strings keep falling back to mean,
++     * as upstream. */
+     if (pool_method) {
+         if (!strcmp(pool_method, "min"))
+             return VMAF_POOL_METHOD_MIN;
++        if (!strcmp(pool_method, "max"))
++            return VMAF_POOL_METHOD_MAX;
+         if (!strcmp(pool_method, "mean"))
+             return VMAF_POOL_METHOD_MEAN;
+         if (!strcmp(pool_method, "harmonic_mean"))
+             return VMAF_POOL_METHOD_HARMONIC_MEAN;
++#ifdef VMAF_HAVE_PERCENTILE_POOLING
++        if (!strcmp(pool_method, "median"))
++            return VMAF_POOL_METHOD_MEDIAN;
++        if (!strcmp(pool_method, "perc5"))
++            return VMAF_POOL_METHOD_PERC5;
++        if (!strcmp(pool_method, "perc10"))
++            return VMAF_POOL_METHOD_PERC10;
++        if (!strcmp(pool_method, "perc20"))
++            return VMAF_POOL_METHOD_PERC20;
++#endif
+     }
+ 
+     return VMAF_POOL_METHOD_MEAN;
