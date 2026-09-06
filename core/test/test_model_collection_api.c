@@ -330,7 +330,10 @@ static char *read_whole_file(const char *path, char **out, long *out_len)
     size_t got = fread(buf, 1, (size_t)len, in);
     (void)fclose(in);
     mu_assert("short read of model json", got == (size_t)len);
-    buf[len] = '\0'; // NOLINT(clang-analyzer-security.ArrayBound)
+    /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) — buf is
+     * malloc((size_t)len + 1), so index len is the terminator slot and
+     * is in bounds (ADR-0278) */
+    buf[len] = '\0';
     *out = buf;
     *out_len = len;
     return NULL;

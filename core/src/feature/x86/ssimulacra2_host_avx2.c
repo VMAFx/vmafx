@@ -78,11 +78,13 @@ static inline __m256 cbrtf_lane8(const __m256 v)
     return _mm256_load_ps(tmp);
 }
 
-/* ADR-0252 carve-out: matmul + per-lane cbrtf + XYB rescale stay together
- * for line-for-line diff against the host scalar reference in
- * ss2v_host_linear_rgb_to_xyb.  Splitting would break the bit-exact audit. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-0141 §2 /
-// ADR-0252 / ADR-0161 / ADR-0278: host XYB kernel kept whole for the bit-exact audit.
+/* ADR-0141 §2 / ADR-0252 / ADR-0161 / ADR-0278 carve-out: matmul + per-lane
+ * cbrtf + XYB rescale stay together for line-for-line diff against the host
+ * scalar reference in ss2v_host_linear_rgb_to_xyb.  Splitting would break the
+ * bit-exact audit.  The citation lives here rather than on the directive line
+ * below because that directive applies to the single line following it — a
+ * wrapped justification would suppress the comment, not the function. */
+// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-0141
 void ssimulacra2_host_linear_rgb_to_xyb_avx2(const float *lin, float *xyb, unsigned w, unsigned h,
                                              size_t plane_stride)
 {
