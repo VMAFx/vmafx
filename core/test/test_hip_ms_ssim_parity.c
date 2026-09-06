@@ -51,8 +51,12 @@
  * = 11 << 4 = 176 (float_ms_ssim.c:131).  256x192 satisfies both axes with
  * margin and keeps the smallest scale at 16x12 — above the 11x11 window.
  * A fixture shorter than 176 px returns -EINVAL from vmaf_read_pictures. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 192u
+#endif
 #define FIXTURE_BPC 8u
 #define PARITY_TOL 1e-3
 
