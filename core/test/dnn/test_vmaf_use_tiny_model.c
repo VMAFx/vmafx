@@ -38,6 +38,12 @@
 #include "libvmaf/dnn.h"
 #include "libvmaf/libvmaf.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* Path is relative to workdir = project root (set in meson.build). */
 #define SMOKE_FP32_MODEL "model/tiny/smoke_v0.onnx"
 #define SMOKE_MULTI_OUTPUT_MODEL "model/tiny/smoke_multi_output_v0.onnx"
@@ -449,3 +455,5 @@ char *run_tests(void)
     mu_run_test(test_rank5_model_closes_session_after_shape_reject);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

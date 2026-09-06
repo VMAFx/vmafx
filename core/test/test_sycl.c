@@ -37,10 +37,10 @@ static char *test_sycl_state_init(void)
     int err = vmaf_sycl_state_init(&sycl, cfg);
     if (err) {
         /* No SYCL GPU available — skip device-dependent tests */
-        fprintf(stderr,
-                "  [SKIP] SYCL state init failed (err=%d), "
-                "no GPU available — skipping device tests\n",
-                err);
+        (void)fprintf(stderr,
+                      "  [SKIP] SYCL state init failed (err=%d), "
+                      "no GPU available — skipping device tests\n",
+                      err);
         sycl_init_failed = 1;
         sycl = NULL;
         return NULL;
@@ -69,7 +69,7 @@ static char *test_sycl_state_init_invalid(void)
 static char *test_sycl_import_state(void)
 {
     if (sycl_init_failed) {
-        fprintf(stderr, "  [SKIP] test_sycl_import_state (no GPU)\n");
+        (void)fprintf(stderr, "  [SKIP] test_sycl_import_state (no GPU)\n");
         return NULL;
     }
 
@@ -117,7 +117,7 @@ static char *test_sycl_feature_extractor_lookup(void)
 static char *test_sycl_state_release(void)
 {
     if (sycl_init_failed || sycl == NULL) {
-        fprintf(stderr, "  [SKIP] test_sycl_state_release (no GPU)\n");
+        (void)fprintf(stderr, "  [SKIP] test_sycl_state_release (no GPU)\n");
         return NULL;
     }
 

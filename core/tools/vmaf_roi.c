@@ -35,6 +35,12 @@
 #include "libvmaf/dnn.h"
 #include "vmaf_roi_core.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* x265 / SVT-AV1 ROI sidecars use a small integer offset range. We clamp
  * to +-12 which is comfortably inside both encoders' accepted bands. */
 #define VMAF_ROI_QP_OFFSET_MAX VMAF_ROI_CORE_QP_OFFSET_MAX
@@ -644,3 +650,5 @@ int main(int argc, char **argv)
     }
     return (run_pipeline(&opts) == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

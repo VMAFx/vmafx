@@ -75,6 +75,12 @@
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* 64x64 satisfies the integer_motion minimum (w >= 3, h >= 3) and keeps
  * TSan shadow overhead well under 1 MB for the entire test run. */
 #define FRAME_W 64u
@@ -414,3 +420,5 @@ char *run_tests()
     mu_run_test(test_batch_two_prev_ref_extractors);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

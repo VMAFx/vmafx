@@ -57,6 +57,12 @@
 #include "feature/feature_extractor.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 #ifndef BRISQUE_TESTDATA_DIR
 #define BRISQUE_TESTDATA_DIR "."
 #endif
@@ -438,3 +444,5 @@ char *run_tests(void)
     mu_run_test(test_brisque_odd_dim);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
