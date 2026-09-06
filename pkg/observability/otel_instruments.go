@@ -40,8 +40,16 @@ const (
 	SpanFrameExtraction = "vmafx.frame.extraction"
 	// SpanScoring traces the end-to-end VMAF scoring pipeline.
 	SpanScoring = "vmafx.scoring"
-	// SpanONNXInference traces ONNX Runtime inference on vmafx-node.
+	// SpanONNXInference traces ONNX Runtime inference: in-process on
+	// vmafx-node, and the vmafx-ort-runner subprocess call in pkg/ai (the
+	// runner itself is OTel-exempt, ADR-1134 — its caller owns the span).
 	SpanONNXInference = "vmafx.onnx.inference"
+	// SpanMCPTool traces one MCP tool call on vmafx-mcp (stdio or HTTP
+	// transport); the tool name rides on AttrMCPTool.
+	SpanMCPTool = "vmafx.mcp.tool"
+	// SpanTuneCommand traces one vmafx-tune subcommand invocation end to end;
+	// the cobra command path rides on AttrTuneCommand.
+	SpanTuneCommand = "vmafx.tune.command"
 )
 
 // ---------------------------------------------------------------------------
@@ -55,6 +63,12 @@ var (
 	AttrNodeID  = attribute.Key("vmafx.node_id")
 	AttrVendor  = attribute.Key("vmafx.gpu_vendor")
 	AttrStatus  = attribute.Key("vmafx.status") // "ok" | "error"
+	// AttrMCPTool is the MCP tool name on SpanMCPTool (bounded: the tool
+	// list in cmd/vmafx-mcp/tools.go, ~15 values).
+	AttrMCPTool = attribute.Key("vmafx.mcp.tool")
+	// AttrTuneCommand is the cobra command path on SpanTuneCommand (bounded:
+	// the subcommand tree in cmd/vmafx-tune/cmd/root.go, ~20 values).
+	AttrTuneCommand = attribute.Key("vmafx.tune.command")
 )
 
 // ---------------------------------------------------------------------------

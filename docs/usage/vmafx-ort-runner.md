@@ -107,3 +107,17 @@ execs it today.
 - **One process per inference.** Every call opens and closes a session. The
   per-shot predictor path makes a handful of calls per clip, which is what
   this was sized for.
+
+## Observability
+
+`vmafx-ort-runner` is the one Go binary that does **not** initialise
+OpenTelemetry ([ADR-1134](../adr/1134-vmafx-ort-runner-in-tree.md): a
+millisecond-lived subprocess with no config, logger or lifecycle; an
+exporter would add a config load and an export flush to every predictor
+call, and argv carries no trace context to parent a span). The
+`vmafx.onnx.inference` span for a runner call is emitted by the caller,
+`pkg/ai.Registry.Infer`, inside whatever trace the calling `vmafx-tune`
+subcommand is in — so inference latency is visible in traces without the
+runner participating. Environment variables such as
+`OTEL_EXPORTER_OTLP_ENDPOINT` have no effect on the runner itself. See
+[docs/development/observability.md](../development/observability.md).

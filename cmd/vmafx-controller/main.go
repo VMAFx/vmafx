@@ -148,8 +148,9 @@ func productionOptions(envReplace fx.Option) []fx.Option {
 		bootstrap.FxLogger(),
 
 		// Server modules.
-		golusoris.HTTP, // chi *chi.Mux (as chi.Router) + graceful *http.Server.
-		grpcmod.Module, // *grpc.Server with OTel + logging + recovery interceptors.
+		golusoris.HTTP,        // chi *chi.Mux (as chi.Router) + graceful *http.Server.
+		bootstrap.HTTPTracing, // otelhttp server span on every HTTP route (ADR-0782 / ADR-1119).
+		grpcmod.Module,        // *grpc.Server with OTel + logging + recovery interceptors.
 
 		// #269: inject the JWT auth interceptors into the golusoris gRPC server
 		// via grpc.ProvideServerOptionFn — a constructor that receives the

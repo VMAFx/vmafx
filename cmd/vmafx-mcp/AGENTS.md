@@ -200,3 +200,16 @@ Key facts a future agent must keep straight:
    (`%.6f`, the documented C-CLI default). Do not reintroduce a `"17"` default
    on any single path: a client must get the same numeric format regardless of
    which server / transport / dispatch path served the request.
+
+15. **One `vmafx.mcp.tool` span per tool call, from `addRawTool`** (`tools.go`,
+    ADR-0782 / ADR-1119): the registration wrapper is the binary's only
+    per-request span site on both transports. It tags `AttrMCPTool` with the
+    tool name and records parse / handler / marshal failures on the span
+    status while the response keeps invariant #2's `IsError` contract (never a
+    non-nil error to the SDK). The HTTP transport's handler chain is
+    `bootstrap.TraceHTTPHandler(securityMiddleware(mcp handler))` — tracing
+    outermost so 401/413 rejections are traced too (`main.go`). OTel init
+    itself comes from `bootstrap.Base` (no-op without an endpoint; stdio
+    purity #11 is unaffected because OTel never writes to stdout).
+    `otel_test.go::TestToolCallEmitsSpan` and `TestOTelWiredThroughBootstrap`
+    lock this.

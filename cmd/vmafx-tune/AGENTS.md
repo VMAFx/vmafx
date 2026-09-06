@@ -272,3 +272,14 @@ during the migration; see Stage roadmap in
     `saliency_honesty_test.go` in the same commit. The retired Python CLI
     redirects in `compare`/`root`/`main` are gone; do not reintroduce
     "use vmaf-tune (Python)" hints for subcommands the Go binary implements.
+
+29. **One `vmafx.tune.command` span per invocation, from `withGolusoris`**
+    (`cmd/vmafx-tune/cmd/golusoris.go`, ADR-0782 / ADR-1119): the shared
+    one-shot fx adapter is the CLI's only OTel seam. It builds
+    `bootstrap.Base` (golusoris `otel.Module`, no-op without an OTLP endpoint,
+    flushed by `app.Stop`), starts the span with `AttrTuneCommand` =
+    `cmd.CommandPath()`, and ends it **before** `app.Stop` so the OnStop flush
+    exports it. Subcommands must not start their own root span or call
+    `InitOTel`; `deps.OTel` exists so `otel_test.go` can prove the wiring.
+    `TestWithGolusoris_CommandSpanWrapsRun` locks the span, its attribute and
+    its error status.

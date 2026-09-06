@@ -115,6 +115,16 @@ See [ADR-0714](../../docs/adr/0714-vmafx-operator-skeleton.md),
     of `app().Run()` so version verification does not require Kubernetes
     credentials or start the long-running manager.
 
+15. **The controller dial goes through golusoris's `ConnFactory`**
+    (`internal/controller/vmafxjob_controller.go::getRemoteJob`, ADR-0782 /
+    ADR-1095 / ADR-1119): `grpcmod.NewConnFactory().Dial` is `grpc.NewClient`
+    plus the `otelgrpc` client handler and insecure credentials, so every
+    `GetJob` poll carries a `traceparent` and joins the controller's server
+    span. Do not reintroduce a bare `grpc.DialContext` / `grpc.NewClient`.
+    OTel init is `bootstrap.Base` (`main_test.go::TestOTelWiredThroughBootstrap`
+    locks the no-op default and the `vmafx-operator` / `pkg/version` identity);
+    controller-runtime reconcile loops carry no span of their own.
+
 ## Test requirements
 
 ### Controller envtest (requires kubebuilder-envtest binaries)

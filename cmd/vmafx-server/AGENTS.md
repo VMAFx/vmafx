@@ -106,3 +106,13 @@ Go gRPC + HTTP scoring service. See [ADR-0703](../../docs/adr/0703-vmafx-server-
    `libvmaf-dev` builder or an architecture-specific library path: either can
    compile one binary against a different libvmaf from the one shipped at
    runtime.
+
+10. **`bootstrap.HTTPTracing` sits next to `golusoris.HTTP`** (`main.go`,
+    `app_test.go::productionGraph`, ADR-0782 / ADR-1119): it decorates the
+    `http.Handler` golusoris's server module serves with the `otelhttp` span
+    (`<METHOD> <path>`, probes and `/metrics` filtered), so every REST route
+    is traced without per-route code. gRPC spans come from `grpcmod.Module`'s
+    `otelgrpc` handler; OTel init from `bootstrap.Base` — the server has no
+    private OTel code. `app_test.go::TestHTTPRouteEmitsServerSpan` and
+    `TestOTelWiredThroughBootstrap` lock this; keep `productionGraph()` in
+    step with `main.go` when either option list changes.

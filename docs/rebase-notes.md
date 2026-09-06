@@ -133,6 +133,19 @@ no rebase impact: fork-local SYCL feature extractor and tests.
 `fence_for_read()` helper above `vmaf_feature_score_at_index()` and its two call sites. On rebase,
 keep the invariant that `vmaf_cuda_drain_batch_open()` takes the owning `VmafCudaState` — an
 upstream signature without the owner reintroduces the cross-context bleed.
+## feat/otel-init-all-go-binaries — finish the OpenTelemetry rollout across every Go binary (ADR-0782, ADR-1119; epic #1241) (2026-09-05)
+
+no rebase impact: every touched file is fork-added — the Go tree (`internal/app/bootstrap/`, `internal/oteltest/`, `cmd/vmafx-*`, `pkg/observability/otel_instruments.go`, `pkg/ai/infer.go`, `go.mod`/`go.sum`) and fork-added docs; upstream Netflix/vmaf has no Go code.
+
+- `internal/app/bootstrap/bootstrap.go`: `Base` gains `fx.Decorate(withServiceIdentity)` (service.version from `pkg/version`, `OTEL_SERVICE_NAME` honoured behind `VMAFX_OTEL_SERVICE_NAME`) and the package gains `HTTPTracing` / `TraceHTTPHandler` (otelhttp, `<METHOD> <path>`, probes filtered). Keep the decorator shape — it must not replace golusoris's own `otel.Options` provider.
+- `cmd/vmafx-server/main.go`, `cmd/vmafx-controller/main.go`: `bootstrap.HTTPTracing` next to `golusoris.HTTP`; the server's `app_test.go::productionGraph` mirrors it.
+- `cmd/vmafx-operator/internal/controller/vmafxjob_controller.go`: `grpc.DialContext` → `grpcmod.NewConnFactory().Dial` (otelgrpc client handler; drops the `staticcheck` nolint).
+- `cmd/vmafx-mcp/tools.go::addRawTool`: `vmafx.mcp.tool` span; `main.go` wraps the HTTP transport handler in `bootstrap.TraceHTTPHandler` outermost.
+- `cmd/vmafx-tune/cmd/golusoris.go`: `deps.OTel`, `vmafx.tune.command` span ended before `app.Stop`.
+- `pkg/ai/infer.go`: `Infer` has named results and a `vmafx.onnx.inference` span; `vmafx-ort-runner` intentionally untouched (ADR-1134 exemption).
+- `pkg/observability/otel_instruments.go`: additive constants `SpanMCPTool`, `SpanTuneCommand`, `AttrMCPTool`, `AttrTuneCommand`; `InitOTel` kept (ADR-0927) but documented as unused by binaries.
+- `go.mod`: `otelhttp` promoted from indirect to direct; no version change.
+- Docs: `docs/development/observability.md` rewritten for the golusoris reality (OTLP/gRPC :4317, `VMAFX_OTEL_*` keys, sample ratio 1.0, per-binary span table); `docs/observability/otel.md` refreshed; `cmd/AGENTS.md` and `internal/app/bootstrap/AGENTS.md` added.
 
 ## fix/gpu-init-leaks-and-hip-mirror — fix CUDA init error path leaks and close verified GPU state issues (2026-09-04)
 

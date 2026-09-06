@@ -30,9 +30,8 @@ import (
 	"os"
 	"time"
 
-	"google.golang.org/grpc"
+	grpcmod "github.com/golusoris/golusoris/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	grpcstatus "google.golang.org/grpc/status"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -138,16 +137,16 @@ func (r *VmafxJobReconciler) getRemoteJob(
 	dialCtx, cancel := context.WithTimeout(ctx, grpcDialTimeout)
 	defer cancel()
 
-	// grpc.WithBlock() is intentionally absent: for a Kubernetes reconciler,
-	// a non-blocking dial lets controller-runtime continue scheduling other
-	// objects while the background connection resolves.  The per-call overhead
-	// from creating a new connection each Reconcile is accepted; a shared cached
+	// The dial goes through golusoris's ConnFactory (grpc.NewClient underneath,
+	// so it never blocks: controller-runtime keeps scheduling other objects
+	// while the connection resolves in the background) so the outgoing GetJob
+	// carries the otelgrpc client handler and therefore a W3C traceparent —
+	// the operator→controller hop joins the same trace as the controller's
+	// server span (ADR-0782, ADR-1095, ADR-1119). Transport credentials are the
+	// factory's insecure default, as before. The per-call overhead from
+	// creating a new connection each Reconcile is accepted; a shared cached
 	// conn is out-of-scope for this PR (r5-scheduler-timer, ADR-1017).
-	conn, err := grpc.DialContext( //nolint:staticcheck // grpc.DialContext is the stable API in grpc v1.x
-		dialCtx,
-		addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	conn, err := grpcmod.NewConnFactory().Dial(dialCtx, addr)
 	if err != nil {
 		return nil, fmt.Errorf("dial %s: %w", addr, err)
 	}
