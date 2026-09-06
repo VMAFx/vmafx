@@ -46,8 +46,12 @@
 
 /* CAMBI requires ≥ 216 on at least one dimension. 256x256 is comfortably
  * above the threshold and still cheap to run in CI. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 256u
+#endif
 #define FIXTURE_BPC 8u
 
 #define PARITY_TOL 1e-4

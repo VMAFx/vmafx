@@ -132,6 +132,36 @@ tolerance and emits one JSON / Markdown report per CI run. See
 for the tolerance table, how to read failure output, and how to add
 a new feature to the matrix.
 
+### The parity tests are resolution-sensitive
+
+Several extractors change behaviour with picture size, so a parity test that
+pins one fixture cannot see the whole contract:
+
+- the shared SSIM / MS-SSIM auto-scale is
+  `max(1, round(min(w, h) / 256))`, which is always `1` below
+  `min(w, h) = 384`;
+- the ADM border crop is `(int)(dim * 0.1 - 0.5)`, which is `0` only for band
+  dimensions `<= 14`, and a zero crop is what pulls the first and last row and
+  column into the sum.
+
+Three separate defects hid behind that gap — the speed_chroma 4K launch bug
+([ADR-1202](../adr/1202-cuda-speed-chroma-4k-launch-bounds.md)), the float-ADM
+edge-indexing bug
+([ADR-1204](../adr/1204-adm-cm-edge-clamp-gpu-twins.md)) and the
+`float_ssim_cuda` scale=1-only limitation. Every CUDA parity test therefore
+also runs as a `*_large` variant against a 960x540 fixture
+([ADR-1206](../adr/1206-gpu-parity-large-fixture-variants.md)), which crosses
+the decimation boundary and is not a multiple of the kernel block width. When
+adding a parity test, add it to the large-fixture list in
+`core/test/meson.build` too.
+
+Note also that `float_ssim_cuda` is a v1 **scale=1-only** extractor: it rejects
+any resolution whose auto-detected decimation factor is not 1 — i.e.
+`min(w, h) >= 384`, which includes every common broadcast resolution — with
+`-EINVAL`. The CPU `float_ssim` has no such limit and decimates instead, so
+pinning `scale=1` on the GPU while leaving the CPU on `auto` compares two
+different quantities rather than two backends.
+
 ## Related
 
 - [../usage/cli.md](../usage/cli.md) — `--no_cuda` / `--no_sycl` /

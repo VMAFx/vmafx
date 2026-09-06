@@ -297,20 +297,27 @@ __device__ static __forceinline__ float fadm_read_csf_f_at(const float *csf_f_bu
                                                            int x, int half_w, int half_h,
                                                            int buf_stride)
 {
-    /* Edge mirror — matches the Vulkan kernel's `read_csf_f_at` and
-     * the CPU ADM_CM_THRESH_S_*_0 / *_W_M_1 / 0_* / H_M_1_* macro
-     * variants in adm_tools.h. The CPU treats (i±1, ±1) reads as
-     * **mirrored to col=1 / col=w-2**, NOT clamp-to-edge. The
-     * difference is small but systematic; clamp-to-edge over-counts
-     * the border CM contribution. */
+    /* Edge policy — must match the CPU closed form in
+     * `adm_cm_thresh3x3_s` (core/src/feature/adm_tools.c), which is
+     * asymmetric:
+     *     i_m1 = (i == 0)     ? 1     : i - 1;   // near edge MIRRORS to 1
+     *     i_p1 = (i == h - 1) ? h - 1 : i + 1;   // far  edge CLAMPS to h-1
+     * The near edge mirrors, the far edge clamps to the last index.
+     * This kernel previously mirrored the far edge as well
+     * (`2 * half_w - x - 2`, i.e. w-2), which silently diverged from the
+     * CPU reference whenever a scale's border crop collapsed to zero —
+     * `(int)(dim * ADM_BORDER_FACTOR - 0.5) == 0` for dim <= 14 — because
+     * only then do row 0 / row h-1 / col 0 / col w-1 enter the CM sum.
+     * Reads are only ever at +/-1, so clamping to the last index is the
+     * exact CPU semantics. See ADR-1204. */
     if (x < 0)
         x = -x;
     if (x >= half_w)
-        x = 2 * half_w - x - 2;
+        x = half_w - 1;
     if (y < 0)
         y = -y;
     if (y >= half_h)
-        y = 2 * half_h - y - 2;
+        y = half_h - 1;
     if (x < 0)
         x = 0;
     if (y < 0)

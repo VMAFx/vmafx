@@ -147,16 +147,18 @@ static inline void fadm_write_csf(device float *csf_buf, int band, int y, int x,
     csf_buf[band * slice + y * buf_stride + x] = val;
 }
 
-/* Edge mirror for csf_f reads — matches the CUDA twin's read_csf_f_at and
- * the CPU ADM_CM_THRESH_S_* macro variants: (i±1, ±1) reads mirror to
- * col=1 / col=w-2 (NOT clamp-to-edge). */
+/* Edge policy for csf_f reads — matches the CUDA twin's read_csf_f_at and
+ * the CPU `adm_cm_thresh3x3_s` closed form: the near edge MIRRORS to
+ * index 1, the far edge CLAMPS to the last index. Mirroring the far edge
+ * too diverged from the CPU reference whenever a scale's border crop
+ * collapsed to zero (dim <= 14). See ADR-1204. */
 static inline float fadm_read_csf_f_at(const device float *csf_f_buf, int band, int y, int x,
                                        int half_w, int half_h, int buf_stride)
 {
     if (x < 0) { x = -x; }
-    if (x >= half_w) { x = 2 * half_w - x - 2; }
+    if (x >= half_w) { x = half_w - 1; }
     if (y < 0) { y = -y; }
-    if (y >= half_h) { y = 2 * half_h - y - 2; }
+    if (y >= half_h) { y = half_h - 1; }
     if (x < 0) { x = 0; }
     if (y < 0) { y = 0; }
     if (x >= half_w) { x = half_w - 1; }

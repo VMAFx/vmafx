@@ -46,8 +46,12 @@
 #include "libvmaf/picture.h"
 
 /* Fixture geometry — large enough for the 4-scale ADM DWT pyramid. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 144u
+#endif
 #define FIXTURE_BPC 8u
 
 /* ADR-0214 cross-backend gate (places=4 → 1e-4). */

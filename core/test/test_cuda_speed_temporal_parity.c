@@ -42,8 +42,12 @@
 #include "libvmaf/picture.h"
 
 /* speed_temporal needs >=2 frames; same fixture geometry as the chroma test. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 768u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 432u
+#endif
 #define FIXTURE_BPC 8u
 #define NUM_FRAMES 3u
 

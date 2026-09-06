@@ -48,8 +48,12 @@
 
 /* The 5-level 11-tap MS-SSIM pyramid requires min(w,h) >= 11<<4 = 176.
  * 256x192 keeps both axes above the floor with a clean 16-px multiple. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 192u
+#endif
 #define FIXTURE_BPC 8u
 #define NUM_FRAMES 3u
 

@@ -300,14 +300,20 @@ __device__ static __forceinline__ float fadm_read_csf_f_at(const float *csf_f_bu
                                                            int x, int half_w, int half_h,
                                                            int buf_stride)
 {
+    /* Edge policy — must match the CPU closed form in
+     * `adm_cm_thresh3x3_s` (core/src/feature/adm_tools.c): the near edge
+     * MIRRORS to index 1, the far edge CLAMPS to the last index. Mirroring
+     * the far edge too (`2 * half_w - x - 2`) diverged from the CPU
+     * reference whenever a scale's border crop collapsed to zero
+     * (dim <= 14). See ADR-1204. */
     if (x < 0)
         x = -x;
     if (x >= half_w)
-        x = 2 * half_w - x - 2;
+        x = half_w - 1;
     if (y < 0)
         y = -y;
     if (y >= half_h)
-        y = 2 * half_h - y - 2;
+        y = half_h - 1;
     if (x < 0)
         x = 0;
     if (y < 0)
