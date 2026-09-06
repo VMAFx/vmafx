@@ -1,0 +1,1 @@
+| [ADR-1204](1204-adm-cm-edge-clamp-gpu-twins.md) | GPU ADM contrast-masking twins clamp the far edge instead of mirroring it | Proposed | cuda, sycl, hip, metal, correctness, feature-extractor, testing |

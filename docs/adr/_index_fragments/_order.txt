@@ -924,3 +924,6 @@
 1200-nv-codec-headers-mirror-fallback
 1202-cuda-speed-chroma-4k-launch-bounds
 1203-cuda-psnr-hvs-enable-chroma-default
+1204-adm-cm-edge-clamp-gpu-twins
+1205-ssimulacra2-fma-unification-scalar-and-gpu
+1206-gpu-parity-large-fixture-variants
