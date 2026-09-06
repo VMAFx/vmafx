@@ -1,8 +1,8 @@
 <!-- markdownlint-disable MD060 MD013 -->
 # ADR-0985: SYCL parity divergence investigation — float_ssim + ssimulacra2 on Arc A380
 
-- **Status**: Proposed
-- **Date**: 2026-06-03
+- **Status**: Accepted
+- **Date**: 2026-06-03 (updated 2026-09-05)
 - **Deciders**: Lusoris, Claude (Anthropic)
 - **Tags**: sycl, parity, ci, gpu, precision, arc
 
@@ -17,7 +17,7 @@ The cross-backend parity matrix run on Intel Arc A380 (Research-0730,
 | `ssimulacra2` | 8.72e-02 | 5.0e-03 | FAIL |
 | `float_ansnr` | 1.59e-04 | 5.0e-05 | FAIL |
 
-A follow-up investigation (Research-0985, 2026-06-03) found:
+A follow-up investigation (Research-0985, 2026-06-03) and subsequent resolution (2026-09-05) established:
 
 1. **`float_ansnr`**: Stale row. The extractor was removed in PR #38.
    No ANSNR code exists in the tree. This row is closed.
@@ -28,67 +28,62 @@ A follow-up investigation (Research-0985, 2026-06-03) found:
    This formula difference is intentional; the same divergence is present
    for CUDA and Vulkan. The secondary cause is Arc A380's lack of native
    fp64, which amplifies fp32 accumulation error over the full-frame
-   reduction (~566×314 pixels). The same SYCL kernel passes at places=4
-   on RTX 4090 and lavapipe.
+   reduction (~566×314 pixels). Calibrated at places=3 (`5.0e-4`) under
+   `arc:dg2-g10` in `scripts/ci/gpu_ulp_calibration.yaml` (PR #838 / ADR-0234).
 
-3. **`ssimulacra2`**: Arc A380 lacks native fp64. The 3-pole IIR
-   Charalampidis blur in `ssimulacra2_sycl.cpp` accumulates fp32
-   rounding over up to 329 rows of recurrence state per pyramid scale
-   (6 scales). The XYB + pooling + combine stages already run on host.
-   Divergence is ~17× over the places=2 contract on Arc A380;
-   RTX 4090 passes places=2. Cannot be fixed without hardware access.
+3. **`ssimulacra2`**: Arc A380 lacks native fp64 (ADR-0220). In PR #865 (commit
+   `8b7ae731a`), an attempt to reduce round-off added a pseudo-Kahan summation
+   block to `core/src/feature/sycl/ssimulacra2_sycl.cpp::launch_blur`. Because the
+   3-pole recursive Gaussian filter has no running accumulator ($o_k = n2_k \cdot \text{sum} - d1_k \cdot \text{prev1}_k - \text{prev2}_k$),
+   adding $\text{prev1}$ to $o$ altered the filter transfer function, making the poles
+   exponentially unstable ($o \sim 10^{25}$, causing NaN / score saturation at 100.0).
+   Reverting the pseudo-Kahan hunk restores numerical stability: unit test delta drops to
+   $4.98\times 10^{-5}$, checkerboard pairs produce bit-exact $0.0$, and the 48-frame `src01`
+   benchmark measures `max_abs_diff = 1.211e-02`. DoubleFloat EFT does not reduce this delta
+   because divergence compounds across the 6-scale pyramid (box downsample, XYB, blur, combine).
 
 ## Decision
 
-No kernel code change is made in this ADR. The decision is:
+1. **Revert pseudo-Kahan recurrence in `ssimulacra2_sycl.cpp`**:
+   Restore the standard Charalampidis recurrence matching CPU `fast_gaussian_1d`
+   and CUDA `ssimulacra2_blur.cu`.
 
-1. **Close the `float_ansnr` row** — extractor no longer exists.
+2. **Calibrate Arc A380 tolerance in `gpu_ulp_calibration.yaml`**:
+   Promote `sycl:0x8086:0x56a*` from `placeholder` to `calibrated` with
+   `ssimulacra2: 5.0e-2` (places=1), and add `ssimulacra2: 5.0e-2` to `arc:dg2-g10`.
+   The measured `max_abs_diff = 1.211e-02` on `src01` is safely bounded by this tolerance.
 
-2. **Add a `float_ssim_sycl` parity test** (`test_sycl_float_ssim_parity`)
-   with places=3 (5e-04) tolerance. This tolerance accommodates both the
-   intentional formula difference and Arc A380 fp32 accumulation drift.
-   fp64-capable hardware (RTX 4090, lavapipe) passes at places=4.
+3. **Retain standard GPU execution**:
+   Keep GPU execution for the 3-plane elementwise multiply and separable IIR blur.
+   Reject host-routing the blur for fp64-less devices, which would eliminate GPU acceleration.
 
-3. **Add a clarifying comment** to `integer_ssim_sycl.cpp` documenting
-   the Wang Eq.(13) combined formula and its divergence from the CPU
-   L×C×S path.
-
-4. **Add open tracking rows** to `docs/state.md` for the `float_ssim` and
-   `ssimulacra2` Arc A380 calibration gap, pointing to Research-0985 and
-   the required follow-up work (device-calibration YAML entries per
-   ADR-0234 / Research-0730 §6).
-
-The actual calibration entries and any kernel fix require hardware access
-and measurement-driven follow-up PRs. This ADR records the investigation
-findings and the immediate no-hardware-required deliverables.
+4. **CI Lane Gating (TODO)**:
+   A dedicated SYCL device CI workflow lane on Arc hardware remains gated on D4
+   self-hosted runner deployment.
 
 ## Alternatives considered
 
-| Option | Pros | Cons | Why not chosen |
+| Option | Pros | Cons | Why not chosen / Status |
 |---|---|---|---|
-| Change GPU float_ssim formula to match CPU L×C×S | Removes formula divergence | Changes GPU output for all hardware (CUDA, Vulkan, SYCL, HIP, Metal); requires matching changes in 5 TUs; adds `sqrt` per pixel to every kernel | Cannot be validated without full cross-backend re-measurement; high-blast-radius change |
-| Add Arc A380 device-calibration entry now | Closes the parity gate formally | Requires measurement of `scripts/ci/gpu_ulp_calibration.yaml` impact and a separate ADR with hardware evidence | Deferred to follow-up ADR; this PR cannot run the gate |
-| Move ssimulacra2 IIR blur to host | Trivially achieves places=4 | Defeats the purpose of the GPU kernel (all compute on CPU) | Not implemented in this ADR |
-| Kahan-compensated IIR summation | Potentially halves accumulation error | Adds 6 FP ops per output; cannot be validated without Arc A380 hardware | Deferred to follow-up with hardware access |
+| Kahan-compensated IIR recurrence | Intended to reduce fp32 round-off | Mathematically invalid for IIR recurrence (no accumulator); blew up to $10^{25}$ / NaN / saturation at 100.0 | **REJECTED & REVERTED** (PR #865 bug) |
+| DoubleFloat (EFT) arithmetic in `launch_blur` | fp64-equivalent precision in recurrence state | Increases kernel register pressure; does not reduce the 1.21e-2 delta because multi-scale pyramid dominates | **REJECTED** |
+| Move ssimulacra2 IIR blur to host on fp64-less hardware | Eliminates fp32 accumulation drift; achieves places=4 | Eliminates GPU acceleration for ssimulacra2 on Intel Arc; incurs heavy PCIe readback / host overhead | **REJECTED** |
+| Hardware calibration at places=1 (`5.0e-2`) in `gpu_ulp_calibration.yaml` | Honest, data-driven tolerance matching measured silicon behavior (`1.211e-02` on `src01`, `0.0` on checkerboard) | Relaxes tolerance from default places=2 (`5.0e-3`) to places=1 (`5.0e-2`) for Arc DG2-G10 | **ACCEPTED** (Research-0985 §4.4 Option C) |
 
 ## Consequences
 
-- **Positive**: `float_ssim_sycl` now has a unit test (previously
-  completely untested). The formula difference is documented in code.
-  The float_ansnr stale row is closed. Two open tracking rows in
-  `docs/state.md` prevent the Arc A380 calibration gap from being forgotten.
-- **Negative**: None — no kernel changes, no score changes.
-- **Neutral / follow-ups**: Follow-up ADR for device-calibration YAML
-  entries (Arc A380 `float_ssim` places=3, `ssimulacra2` places=1)
-  required before Arc A380 can be promoted to a required CI lane per
-  Research-0730 §6.1.
+- **Positive**: `ssimulacra2_sycl` no longer saturates at 100.0 / blows up to NaN.
+  Both unit tests and `cross_backend_parity_gate.py` pass against Arc A380 hardware.
+  `gpu_ulp_calibration.yaml` reflects verified hardware measurements.
+- **Negative**: None.
+- **Neutral / follow-ups**: Automated SYCL device CI lane gated on D4 self-hosted runner.
 
 ## References
 
 - `req` — task brief: "investigate SYCL parity failures for float_ssim (2.68e-4), ssimulacra2 (8.72e-2), float_ansnr (1.59e-4); verify float_ansnr fully gone; identify divergence source; patch if high-confidence"
-- Research-0985: SYCL parity divergence investigation (this companion document)
-- Research-0730: Cross-backend parity — Intel Arc A380 (2026-05-27) — original measurements
+- Research-0985: SYCL parity divergence investigation (companion document)
+- Research-0730: Cross-backend parity — Intel Arc A380 (2026-05-27)
 - ADR-0214: GPU-parity CI gate — tolerance table and promotion criteria
-- ADR-0188/ADR-0189: float_ssim GPU kernel, places=4 contract
-- ADR-0192/ADR-0201/ADR-0206: ssimulacra2 precision contracts and cbrt-on-host fix
-- ADR-0564: integer_ssim_sycl fp64-free precision, places=4-5
+- ADR-0234: GPU generation ULP calibration table
+- ADR-0192/ADR-0201/ADR-0206: ssimulacra2 precision contracts and GPU implementations
+- PR #865: commit `8b7ae731a` (introduced pseudo-Kahan recurrence)

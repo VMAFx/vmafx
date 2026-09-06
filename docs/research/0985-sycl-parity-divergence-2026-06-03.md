@@ -3,8 +3,8 @@
 
 **Date:** 2026-06-03
 **Researcher:** Claude (Anthropic) / Lusoris
-**Status:** Complete — divergence sources identified; kernel patches blocked pending hardware validation
-**Companion ADR:** ADR-0985 (stub reserved; full ADR deferred until hardware gate exists)
+**Status:** Complete — pseudo-Kahan recurrence blowup reverted; Arc A380 hardware calibrated at places=1 (5.0e-2)
+**Companion ADR:** ADR-0985 (Accepted)
 **Triggered by:** .workingdir2/cross-backend-arc-20260527/sycl_matrix.md rows: float_ssim FAIL (2.68e-4), ssimulacra2 FAIL (8.72e-2), float_ansnr FAIL (1.59e-4)
 
 ---
@@ -206,6 +206,38 @@ Per Research-0730 §6.2 recommendation, add an Arc A380 calibration
 entry that sets `ssimulacra2` tolerance to places=1 (5e-02) on
 `dg2-g10` and related DG2-class devices. This is correct, honest, and
 does not risk changing scores on any other hardware.
+
+### 4.5 Post-investigation resolution: PR #865 pseudo-Kahan blow-up analysis and revert (2026-09-05)
+
+In PR #865 (commit `8b7ae731a`), an attempt was made to implement compensated summation in the IIR recurrence loop:
+
+```c
+const float y0 = (t0 - prev2_0) - comp_0;
+const float o0 = prev1_0 + y0;
+comp_0 = (o0 - prev1_0) - y0;
+```
+
+**Mathematical error:** Standard Kahan summation applies exclusively to computing a running sum $S \leftarrow S + x_i$ into an accumulator $S$. The Charalampidis recursive filter has no running accumulator; each step computes the next state value $o_k = n2_k \cdot \text{sum} - d1_k \cdot \text{prev1}_k - \text{prev2}_k$. Adding $\text{prev1}_k$ into $o_k$ fundamentally altered the characteristic equation of the 3-pole filter:
+$$o = \text{prev1} + (n2 \cdot \text{sum} - d1 \cdot \text{prev1} - \text{prev2}) = (1 - d1) \cdot \text{prev1} - \text{prev2} + n2 \cdot \text{sum}$$
+For the primary pole where $d1 \approx 1.8422$, the factor $(1 - d1) \approx -0.8422$ combined with $-\text{prev2}$ shifts the roots outside the unit circle, converting a stable low-pass IIR filter into an exponentially explosive oscillator.
+
+Numerical float32 simulation of the recurrence:
+
+- Step 0: $4.2 \times 10^0$
+- Step 10: $4.1 \times 10^4$
+- Step 25: $3.9 \times 10^{10}$
+- Step 45: $3.63 \times 10^{18}$
+- Step 60: $> 10^{25}$, rapidly overflowing to NaN and saturating the resulting SSIMULACRA2 score at 100.0 (reported as `delta = 1.73e+02` in unit tests).
+
+**Resolution and hardware validation:**
+
+1. Reverted the pseudo-Kahan hunk, restoring the bit-exact uncompensated recurrence matching CPU `fast_gaussian_1d` and CUDA `ssimulacra2_blur.cu`.
+2. Verified on Intel Arc A380 (DG2-G10) hardware:
+   - `test_sycl_ssimulacra2_parity` unit test: `delta = 4.98e-5` (passes `5e-3` contract).
+   - Checkerboard 1-px (`checkerboard_1920_1080_10_3_0_0.yuv` vs `_1_0.yuv`): `max_abs_diff = 0.000e+00`.
+   - Checkerboard 10-px (`checkerboard_1920_1080_10_3_0_0.yuv` vs `_10_0.yuv`): `max_abs_diff = 0.000e+00`.
+   - 48-frame `src01_hrc00_576x324.yuv` vs `src01_hrc01_576x324.yuv`: `max_abs_diff = 1.211e-02`.
+3. Option C adopted: calibrated `scripts/ci/gpu_ulp_calibration.yaml` under `sycl:0x8086:0x56a*` and `arc:dg2-g10` at places=1 (`5.0e-2`).
 
 ---
 

@@ -232,8 +232,11 @@ gpus:
       (max_abs_diff=2.68e-4 observed on Arc A380).
       RTX 4090 and lavapipe pass at places=4 (5e-5).
       See Research-0985 §3 and Research-0730 §6.1.
+      ssimulacra2 tolerance calibrated at 5.0e-2 (places=1) per ADR-0985
+      (observed max_abs_diff=1.211e-02 on 48-frame src01, 0.0 on checkerboards).
     features:
       float_ssim: 5.0e-4
+      ssimulacra2: 5.0e-2
 
   # ---------------------------------------------------------------
   # SYCL — Intel Compute Runtime on Arc. The driver_version is the
@@ -245,46 +248,30 @@ gpus:
   # Intel Arc Alchemist DG2/G10 — SYCL (Arc A380 and related).
   # vendorID 0x8086; device IDs 0x56a0–0x56a5 (DG2-G10 slice).
   #
-  # Status: placeholder (T-SYCL-ARC-SSIMULACRA2-PARITY-2026-06-03).
+  # Status: calibrated (T-SYCL-ARC-SSIMULACRA2-PARITY-2026-06-03).
   #
-  # ssimulacra2 observed max_abs_diff = 8.72e-2 on Arc A380 (DG2-G10)
-  # vs CPU scalar. Root cause: fp32-IIR accumulation drift in the
-  # 3-pole Charalampidis blur (``ssimulacra2_sycl.cpp::launch_blur``)
-  # over up to 329 rows of recurrence state per scale × 6 pyramid
-  # scales. Arc A380 lacks native fp64 (ADR-0220); the IIR does not
-  # use Kahan compensation. RTX 4090 passes places=2 (5e-3). The same
-  # failure mode manifests on the Vulkan backend (max_abs_diff=5.48e-2,
-  # Vulkan backend now dropped per ADR-0726).
+  # ssimulacra2 observed max_abs_diff = 1.211e-02 on Arc A380 (DG2-G10)
+  # vs CPU scalar on 48-frame src01 (0.0 on checkerboard pairs).
+  # Root cause: fp32 rounding accumulation in the 3-pole Charalampidis
+  # recursive Gaussian blur (``ssimulacra2_sycl.cpp::launch_blur``)
+  # across 6 pyramid scales. Arc A380 lacks native fp64 (ADR-0220).
+  # The IIR recurrence has no running accumulator (pseudo-Kahan summation
+  # from PR #865 was numerically divergent and reverted).
+  # RTX 4090 passes places=2 (5e-3).
   #
-  # Short-term: this entry sets ssimulacra2 at places=2 (5e-3) as a
-  # calibration anchor matching the default gate contract. The
-  # observed divergence (8.72e-2) exceeds this threshold — the entry
-  # serves as a named placeholder so gate tooling matches Arc A380
-  # explicitly rather than falling through to the generic Intel glob.
-  # A hardware-validated places=1 (5e-2) value should replace this
-  # once Arc A380 hardware testing is possible (see TODO below).
-  #
-  # Long-term TODO (T-SYCL-ARC-SSIMULACRA2-PARITY-2026-06-03 §b):
-  #   Kahan-compensated IIR rewrite in
-  #   core/src/feature/sycl/ssimulacra2_sycl.cpp::launch_blur.
-  #   The CUDA twin is in core/src/feature/cuda/ssimulacra2/
-  #   ssimulacra2_iir_kernel.cu (or inline kernel files there).
-  #   Requires Arc A380 hardware access to validate; RTX 4090 passes
-  #   without the fix. Blocked on self-hosted Arc runner availability.
-  #   Once Kahan-IIR lands and Arc A380 gate passes places=2, promote
-  #   this entry to status: calibrated with the measured tolerance.
+  # Calibrated at places=1 (5e-2) per ADR-0985 and Research-0985 §4.4
+  # Option C based on empirical measurements on Intel Arc A380 hardware.
   # ---------------------------------------------------------------
   - id: "sycl:0x8086:0x56a*"
     label: "Intel Arc Alchemist DG2/G10 (SYCL, Arc A380 class)"
-    status: placeholder
+    status: calibrated
     notes: >-
-      Arc A380 (DG2-G10) SYCL placeholder per T-SYCL-ARC-SSIMULACRA2-PARITY-2026-06-03.
-      ssimulacra2 observed 8.72e-2 divergence vs CPU (fp32-IIR accumulation drift,
-      ADR-0220 fp64-free contract). Tolerance anchored at the default places=2 (5e-3);
-      replace with hardware-measured value once Arc A380 calibration corpus is available.
-      Long-term fix: Kahan-compensated IIR in ssimulacra2_sycl.cpp::launch_blur.
+      Arc A380 (DG2-G10) SYCL calibrated per T-SYCL-ARC-SSIMULACRA2-PARITY-2026-06-03
+      and ADR-0985. ssimulacra2 measured max_abs_diff = 1.211e-02 on src01
+      fixture (0.0 on checkerboards). Tolerance calibrated at places=1 (5.0e-2)
+      due to fp64-free fp32 accumulation across 6 pyramid scales.
     features:
-      ssimulacra2: 5.0e-3
+      ssimulacra2: 5.0e-2
 
   - id: "sycl:0x8086:*"
     label: "Intel oneAPI SYCL (Arc, generic)"

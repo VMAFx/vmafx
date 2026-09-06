@@ -451,7 +451,15 @@ the deviation:
 - **SSIMULACRA 2** — `ssimulacra2_sycl` shipped per
   [ADR-0206](../../adr/0206-ssimulacra2-cuda-sycl.md) (hybrid
   host/GPU pipeline, kernel lambdas held in IEEE-754 strict mode by
-  the existing `-fp-model=precise`).
+  the existing `-fp-model=precise`). The Charalampidis recursive blur is
+  pure float32 matching the CUDA twin; pseudo-Kahan recurrence attempts are
+  strictly forbidden as the 3-pole IIR filter has no running accumulator and
+  diverges exponentially when perturbed. Under Arc A-series (e.g. A380) and
+  other fp64-less hardware, cross-backend differences accumulate across the
+  6-scale pyramid, leading to ~1.2e-2 delta on natural video sequences.
+  This divergence is calibrated via `scripts/ci/gpu_ulp_calibration.yaml`
+  at places=1 (`5.0e-2`) per
+  [ADR-0985](../../adr/0985-sycl-parity-divergence-2026-06-03.md).
 - **dmabuf import is Linux-only.** The VA-API → dmabuf fast path is
   gated on `#ifndef _WIN32` in `sycl/dmabuf_import.cpp`; on Windows,
   `vmaf_sycl_dmabuf_import` and `vmaf_sycl_import_va_surface` return

@@ -227,6 +227,19 @@ HIP / Metal motion twins listed in the Twin-update table above) in the same PR.
   patch file too — see CLAUDE.md §12 r14 +
   [ADR-0183](../../../../docs/adr/0183-ffmpeg-libvmaf-sycl-filter.md).
 
+- **`ssimulacra2_sycl.cpp` IIR recurrence has no running accumulator —**
+  **never 'Kahan' it** (ADR-0985). The Charalampidis recursive blur is a 3-pole
+  autoregressive IIR filter
+  ($o_k = n2 \cdot \text{sum} - d1 \cdot \text{prev1} - \text{prev2}$), not a
+  cumulative summation. Adding an accumulator term $\text{prev1}$ into the
+  output shifts the poles outside the unit circle ($1 - d1 \approx -0.8422$),
+  causing geometric pole blow-up to $10^{25}$ / NaN / saturation at 100.0. The
+  recurrence must remain pure float32 matching the CUDA twin
+  `core/src/feature/cuda/ssimulacra2/ssimulacra2_blur.cu`. Device-level
+  fp64-less divergence on Arc A380 is calibrated via
+  `scripts/ci/gpu_ulp_calibration.yaml` at places=1 (`5.0e-2`), not compensated
+  via pseudo-Kahan recurrence.
+
 ## icpx-aware clang-tidy
 
 Stock LLVM `clang-tidy` cannot resolve `<sycl/sycl.hpp>`. Use
@@ -265,6 +278,8 @@ DPC++ toolchain with `icpx` on PATH.
   feature kernels are unconditionally fp64-free (T7-17).
 - [ADR-0243](../../../../docs/adr/0243-enable-lcs-gpu.md) — MS-SSIM
   `enable_lcs` GPU contract.
+- [ADR-0985](../../../../docs/adr/0985-sycl-parity-divergence-2026-06-03.md) —
+  SYCL SSIMULACRA 2 parity divergence and recurrence resolution.
 
 ## Per-kernel parity-test invariant (rounds 1–3)
 

@@ -168,6 +168,27 @@ no rebase impact: changes GitHub Actions workflow job display names (`.github/wo
   guard, matching the unclamped structure of CPU `get_best15_from32` and CUDA `adm_decouple_inline.cuh`.
   No code changes or numeric divergence.
 - `no rebase impact: SYCL integer ADM is a fork-added backend with no upstream Netflix counterpart.`
+
+## fix/sycl-ssimulacra2-blur-recurrence-and-arc-calibration — revert pseudo-Kahan recurrence and calibrate Arc A380 (2026-09-05)
+
+- `core/src/feature/sycl/ssimulacra2_sycl.cpp`: wholly fork-added (upstream
+  Netflix has no SYCL backend); no upstream sync conflict. Invariant
+  (ADR-0985): the Charalampidis 3-pole autoregressive IIR blur recurrence
+  ($o_k = n2 \cdot \text{sum} - d1 \cdot \text{prev1} - \text{prev2}$) has no
+  running accumulator; do NOT add pseudo-Kahan recurrence or modify the output
+  equation, as any additive feedback shifts the poles outside the unit circle
+  and causes geometric divergence ($> 10^{25}$ / NaN / saturation at 100.0).
+  Must remain bit-exact with the CUDA twin `ssimulacra2_blur.cu`.
+- `scripts/ci/gpu_ulp_calibration.yaml`: fork-added calibration database.
+  `sycl:0x8086:0x56a*` and `arc:dg2-g10` entries are calibrated to `5.0e-2`
+  (places=1) based on hardware measurement on Intel Arc A380 over 48-frame
+  `src01` sequences, capturing fp64-less accumulation across the 6-scale pyramid.
+- `docs/adr/0985-sycl-parity-divergence-2026-06-03.md`: ADR-0985 marked Accepted
+  with Option C decision matrix.
+- `docs/research/0985-sycl-parity-divergence-2026-06-03.md`: Research-0985 updated
+  with mathematical derivation of the pseudo-Kahan pole instability and
+  empirical hardware measurements.
+
 ## fix/cli-metal-define — define HAVE_METAL for the CLI so its Metal paths are compiled at all (2026-09-04)
 
 - `core/tools/meson.build`: added Metal branch (`if is_metal_enabled`) that appends `-DHAVE_METAL=1`
