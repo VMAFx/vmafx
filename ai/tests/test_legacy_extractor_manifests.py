@@ -91,6 +91,7 @@ def test_extract_ugc_manifest(tmp_path: Path) -> None:
     assert payload["schema"] == "ugc-full-feature-extraction-manifest-v1"
     assert payload["pair_count"] == 3
     assert payload["fail_count"] == 1
+    assert payload["teacher_model"] == mod.DEFAULT_MODEL
     assert "vmaf" in payload["feature_columns"]
     assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"
 

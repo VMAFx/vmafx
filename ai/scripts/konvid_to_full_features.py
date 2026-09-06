@@ -8,8 +8,8 @@ keeps the same synthetic-FR recipe:
 
 1. Decode each KoNViD-1k source MP4 to 8-bit 4:2:0 YUV as the reference.
 2. Encode a distorted side with libx264 at CRF 35 and decode it back to YUV.
-3. Run the fork libvmaf CLI once with ``FULL_FEATURES`` and
-   ``vmaf_v0.6.1`` attached.
+3. Run the fork libvmaf CLI once with ``FULL_FEATURES`` and the resolved
+   teacher model (ADR-1168 default, ``--model`` override; ADR-1173) attached.
 4. Write one parquet row per frame.
 
 Default outputs:
@@ -48,6 +48,7 @@ from ai.data.feature_extractor import (  # noqa: E402
     FULL_FEATURES,
     _extractors_for,
 )
+from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
 
 # isort: split
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
@@ -175,7 +176,7 @@ def _run_vmaf_full(
     width: int,
     height: int,
     out_json: Path,
-    model_path: Path,
+    model_arg: str,
 ) -> None:
     feat_args: list[str] = []
     for extractor in _extractors_for(FULL_FEATURES):
@@ -196,7 +197,7 @@ def _run_vmaf_full(
             "--bitdepth",
             "8",
             "--model",
-            f"path={model_path}",
+            model_arg,
             *feat_args,
             "--threads",
             "1",
@@ -217,10 +218,16 @@ def _lookup(metrics: dict, name: str) -> float | None:
     value = metrics.get(f"integer_{name}")
     if value is not None:
         return float(value)
+    prefix = f"integer_{name}_"
+    for k, val in metrics.items():
+        if k.startswith(prefix) and val is not None:
+            return float(val)
     return None
 
 
-def _frames_to_rows(key: str, vmaf_json: Path, codec: str) -> list[dict]:
+def _frames_to_rows(
+    key: str, vmaf_json: Path, codec: str, teacher_model: str = DEFAULT_MODEL
+) -> list[dict]:
     doc = json.loads(vmaf_json.read_text())
     rows: list[dict] = []
     for frame in doc.get("frames", []):
@@ -229,6 +236,7 @@ def _frames_to_rows(key: str, vmaf_json: Path, codec: str) -> list[dict]:
             "key": key,
             "frame_index": int(frame["frameNum"]),
             "codec": codec,
+            "teacher_model": teacher_model,
         }
         for feature in FULL_FEATURES:
             value = _lookup(metrics, feature)
@@ -239,15 +247,18 @@ def _frames_to_rows(key: str, vmaf_json: Path, codec: str) -> list[dict]:
     return rows
 
 
-def _cache_path(cache_dir: Path, key: str, crf: int) -> Path:
-    return cache_dir / f"features_{len(FULL_FEATURES)}" / f"crf_{crf}" / f"{key}.json"
+def _cache_path(cache_dir: Path, key: str, crf: int, teacher_model: str = DEFAULT_MODEL) -> Path:
+    return (
+        cache_dir / f"features_{len(FULL_FEATURES)}" / teacher_model / f"crf_{crf}" / f"{key}.json"
+    )
 
 
 def _process_clip(
     key: str,
     src_mp4: Path,
     vmaf_bin: Path,
-    model_path: Path,
+    teacher_arg: str,
+    teacher_name: str,
     crf: int,
     cache_dir: Path | None,
     scratch: Path,
@@ -255,10 +266,10 @@ def _process_clip(
     codec_from_source: bool,
 ) -> list[dict]:
     if cache_dir is not None:
-        cache_path = _cache_path(cache_dir, key, crf)
+        cache_path = _cache_path(cache_dir, key, crf, teacher_name)
         if cache_path.is_file():
             codec = _ffprobe_video(src_mp4)[2] if codec_from_source else codec_label
-            return _frames_to_rows(cache_path.stem, cache_path, codec)
+            return _frames_to_rows(cache_path.stem, cache_path, codec, teacher_model=teacher_name)
 
     ref_yuv = scratch / f"{key}_ref.yuv"
     dis_yuv = scratch / f"{key}_dis.yuv"
@@ -266,11 +277,11 @@ def _process_clip(
     try:
         width, height, source_codec = _decode_yuv(src_mp4, ref_yuv)
         _encode_dis(src_mp4, dis_yuv, crf)
-        _run_vmaf_full(vmaf_bin, ref_yuv, dis_yuv, width, height, vmaf_json, model_path)
+        _run_vmaf_full(vmaf_bin, ref_yuv, dis_yuv, width, height, vmaf_json, teacher_arg)
         codec = source_codec if codec_from_source else codec_label
-        rows = _frames_to_rows(key, vmaf_json, codec)
+        rows = _frames_to_rows(key, vmaf_json, codec, teacher_model=teacher_name)
         if cache_dir is not None:
-            cache_path = _cache_path(cache_dir, key, crf)
+            cache_path = _cache_path(cache_dir, key, crf, teacher_name)
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             write_text_atomic(cache_path, vmaf_json.read_text())
         return rows
@@ -331,12 +342,14 @@ def _write_manifest(
     rows: list[dict],
     folds_out: Path | None,
     elapsed_s: float,
+    teacher_model: str,
 ) -> None:
     clips_processed = len({str(row["key"]) for row in rows if "key" in row})
     write_manifest_json(
         path,
         {
             "schema": "konvid-full-features-manifest-v1",
+            "teacher_model": teacher_model,
             "features": list(FULL_FEATURES),
             "crf": args.crf,
             "codec": args.codec,
@@ -366,7 +379,7 @@ def _write_manifest(
                     "videos_dir": videos_dir,
                     "cache_dir": None if args.no_cache else args.cache_dir,
                     "vmaf_bin": args.vmaf_bin,
-                    "model": args.model,
+                    "model": teacher_model,
                 },
                 outputs={
                     "parquet": args.out,
@@ -398,9 +411,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--model",
-        type=Path,
-        default=REPO_ROOT / "model" / "vmaf_v0.6.1.json",
-        help="Path to the vmaf_v0.6.1 model JSON.",
+        default=None,
+        help="Path or version name for teacher VMAF model (default: single-source default model).",
     )
     parser.add_argument(
         "--out",
@@ -464,11 +476,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.manifest_out is None:
         args.manifest_out = args.out.with_suffix(".manifest.json")
 
+    resolved_teacher = resolve_teacher_model(args.model)
+
     if not args.vmaf_bin.is_file():
         print(f"error: vmaf binary not found at {args.vmaf_bin}", file=sys.stderr)
         return 2
-    if not args.model.is_file():
-        print(f"error: model not found at {args.model}", file=sys.stderr)
+    if resolved_teacher.is_path and not Path(resolved_teacher.resolved).is_file():
+        print(f"error: model not found at {resolved_teacher.resolved}", file=sys.stderr)
         return 2
 
     try:
@@ -503,7 +517,8 @@ def main(argv: list[str] | None = None) -> int:
                     key,
                     clip,
                     args.vmaf_bin,
-                    args.model,
+                    resolved_teacher.arg,
+                    resolved_teacher.name,
                     args.crf,
                     cache_dir,
                     args.scratch,
@@ -540,6 +555,7 @@ def main(argv: list[str] | None = None) -> int:
         rows=rows,
         folds_out=folds_out,
         elapsed_s=time.monotonic() - t0,
+        teacher_model=resolved_teacher.name,
     )
     print(f"[konvid-full] wrote manifest {args.manifest_out}", flush=True)
     return 0

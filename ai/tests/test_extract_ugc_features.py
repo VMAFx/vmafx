@@ -29,7 +29,7 @@ def _load_module():
 def test_schema_columns_track_full_features() -> None:
     mod = _load_module()
 
-    assert (*FULL_FEATURES, "vmaf") == mod.SCHEMA_COLS
+    assert (*FULL_FEATURES, "teacher_model", "vmaf") == mod.SCHEMA_COLS
 
 
 def test_frame_row_reads_full_features_and_speed_aliases() -> None:
@@ -42,6 +42,7 @@ def test_frame_row_reads_full_features_and_speed_aliases() -> None:
     row = mod._frame_row(metrics)
 
     assert set(FULL_FEATURES).issubset(row)
+    assert row["teacher_model"] == mod.DEFAULT_MODEL
     assert row["speed_temporal"] == 2.0
     assert row["vmaf"] == 88.0
 

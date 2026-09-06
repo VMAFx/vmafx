@@ -11,8 +11,8 @@ psnr_hvs, ADM, VIF, SSIM) measure "identity" — they return null / floor at the
 trivial value — while content-sensitive metrics (cambi, motion, vmaf teacher) remain
 informative.  The NaN columns are expected and documented in ADR-0362.
 
-``vmaf`` column: computed via the ``vmaf_v0.6.1`` model (SDR-trained).  The model
-is mis-calibrated on PQ HDR clips because it was trained on SDR content; scores from
+``vmaf`` column: computed via the teacher model (defaulting to the fork default
+model per ADR-1168/ADR-1173).  The model is SDR-trained and mis-calibrated on PQ HDR clips;
 HDR inputs should be interpreted as a relative comparison baseline only, not as an
 absolute quality prediction.  Replace with the Netflix HDR model when it ships.  The
 ~5–10 % CUDA wall-clock overhead of the model dispatch is acknowledged in
@@ -107,9 +107,11 @@ import numpy as np
 import pandas as pd
 from _script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True, include_vmaf_tune_src=True)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 DEFAULT_CHUG_SPLIT_SEED = "chug-hdr-v1"
+
+from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
 
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
@@ -205,6 +207,8 @@ FEATURE_NAMES: tuple[str, ...] = (
     "speed_chroma_u",
     "speed_chroma_v",
     "speed_chroma_uv",
+    # 2026-09-04 addition — adm3 required by v1 models (ADR-1173).
+    "adm3",
 )
 
 # Map feature names to their JSON key(s) in libvmaf output.  libvmaf may emit
@@ -249,6 +253,7 @@ _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
         "speed_chroma_uv",
         "Speed_chroma_feature_speed_chroma_uv_score",
     ),
+    "adm3": ("adm3", "integer_adm3"),
 }
 
 # ---------------------------------------------------------------------------
@@ -575,19 +580,15 @@ def _run_feature_passes(
     use_cuda: bool,
     is_hdr: bool = False,
     motion_fps_weight_value: float = 1.0,
+    teacher_model_arg: str | None = None,
 ) -> list[dict]:
     """Run vmaf feature extraction, splitting CUDA mode where required.
 
-    The ``vmaf_v0.6.1`` model is dispatched on every invocation so that the
-    ``vmaf`` JSON key is populated in the output.  The model is SDR-trained and
-    is mis-calibrated on PQ HDR clips; its score is kept as a relative
-    comparison baseline only.  See the module docstring and Research-0135 for
-    the rationale (Option B, supersedes PR #898 Option A).
+    The teacher model is dispatched on every invocation so that the
+    ``vmaf`` JSON key is populated in the output.
     """
-    # The --model arg causes libvmaf to run the vmaf_v0.6.1 model dispatch and
-    # emit a per-frame "vmaf" key.  Without this, the JSON contains only the
-    # raw feature values and no composite score.
-    _MODEL_ARGS: list[str] = ["--model", "version=vmaf_v0.6.1"]
+    m_arg = teacher_model_arg if teacher_model_arg is not None else f"version={DEFAULT_MODEL}"
+    model_args: list[str] = ["--model", m_arg]
 
     if not use_cuda:
         return _run_vmaf_json(
@@ -599,7 +600,7 @@ def _run_feature_passes(
             out_json,
             threads,
             EXTRACTOR_NAMES,
-            ["--no_cuda", "--no_sycl", *_MODEL_ARGS],
+            ["--no_cuda", "--no_sycl", *model_args],
             is_hdr=is_hdr,
             motion_fps_weight_value=motion_fps_weight_value,
         )
@@ -616,7 +617,7 @@ def _run_feature_passes(
             cuda_json,
             threads,
             CUDA_EXTRACTOR_NAMES,
-            ["--backend", "cuda", *_MODEL_ARGS],
+            ["--backend", "cuda", *model_args],
             is_hdr=is_hdr,
             motion_fps_weight_value=motion_fps_weight_value,
         )
@@ -666,6 +667,9 @@ def _lookup_metric(metrics: dict, feature: str) -> float:
         v = metrics.get(alias)
         if v is not None:
             return float(v)
+    for k, val in metrics.items():
+        if val is not None and (k.startswith(f"integer_{feature}_") or k.startswith(f"{feature}_")):
+            return float(val)
     return float("nan")
 
 
@@ -986,6 +990,7 @@ def _write_extraction_manifest(
             "rate_clip_per_second": float(ok / elapsed_seconds) if elapsed_seconds > 0 else 0.0,
         },
         "features": list(FEATURE_NAMES),
+        "teacher_model": resolve_teacher_model(getattr(args, "vmaf_model", None)).name,
         "extractors": {
             "cpu": list(EXTRACTOR_NAMES),
             "cuda_primary": list(CUDA_EXTRACTOR_NAMES),
@@ -1039,6 +1044,8 @@ def _process_clip(
     use_cuda: bool,
     worker_id: int,
     sidecar_meta: dict | None = None,
+    teacher_model_arg: str | None = None,
+    teacher_model_name: str | None = None,
 ) -> dict:
     """Decode one clip, score it, aggregate, and return the row dict.
 
@@ -1051,7 +1058,7 @@ def _process_clip(
     ``chug_framerate_manifest``), ffprobe is skipped for that clip (Win 2,
     Research-0135).
 
-    Returns a dict with keys: clip_name, mos, width, height, <feat>_mean/std.
+    Returns a dict with keys: clip_name, mos, width, height, teacher_model, <feat>_mean/std.
     Raises on any failure so the caller can log and skip.
     """
     mp4 = Path(mp4_str)
@@ -1094,6 +1101,7 @@ def _process_clip(
             use_cuda,
             is_hdr=is_hdr,
             motion_fps_weight_value=motion_w,
+            teacher_model_arg=teacher_model_arg,
         )
         if not frames:
             # A clip that decodes but yields zero scored frames aggregates to an
@@ -1114,6 +1122,7 @@ def _process_clip(
             "fps": fps,
             "is_hdr": is_hdr,
             "motion_fps_weight": motion_w,
+            "teacher_model": teacher_model_name or DEFAULT_MODEL,
             **agg,
         }
     finally:
@@ -1270,9 +1279,20 @@ def main() -> int:
             "ai/scripts/chug_extract_features.py instead. See ADR-0510."
         ),
     )
+    ap.add_argument(
+        "--vmaf-model",
+        type=str,
+        default=None,
+        help=(
+            "VMAF teacher model version string or JSON path. Defaults to fork "
+            f"default ({DEFAULT_MODEL} via ADR-1168/ADR-1173)."
+        ),
+    )
     args = ap.parse_args()
     if args.manifest_out is None:
         args.manifest_out = args.out.with_suffix(".manifest.json")
+
+    resolved_teacher = resolve_teacher_model(args.vmaf_model)
 
     # --flush-every is a legacy alias; --progress-every takes precedence.
     progress_every: int = args.progress_every
@@ -1516,6 +1536,8 @@ def main() -> int:
                 use_cuda,
                 idx % args.threads_cuda,
                 clip_sidecar,
+                resolved_teacher.arg,
+                resolved_teacher.name,
             )
             future_to_clip[fut] = clip_name
 

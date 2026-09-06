@@ -161,8 +161,9 @@ def test_frames_to_rows_keys_are_canonical_set(tmp_path: Path) -> None:
     p = tmp_path / "v.json"
     p.write_text(json.dumps(_vmaf_json(1)))
     rows = KVP._frames_to_rows("k", p)
-    expected_keys = {"key", "frame_index", "vmaf", *KVP.DEFAULT_FEATURES}
+    expected_keys = {"key", "frame_index", "teacher_model", "vmaf", *KVP.DEFAULT_FEATURES}
     assert set(rows[0].keys()) == expected_keys
+    assert rows[0]["teacher_model"] == KVP.DEFAULT_MODEL
 
 
 # ---------------------------------------------------------------------------

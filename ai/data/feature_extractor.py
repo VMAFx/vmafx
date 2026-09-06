@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Per-frame feature extraction via the libvmaf CLI.
 
-The extractor mirrors what ``vmaf_v0.6.1`` consumes::
+The extractor mirrors the canonical-6 student contract (the ``vmaf_v0.6.1``
+feature set; the teacher itself follows the ADR-1168 default, ADR-1173)::
 
     DEFAULT_FEATURES = ("adm2", "vif_scale0", "vif_scale1",
                         "vif_scale2", "vif_scale3", "motion2")
@@ -86,11 +87,12 @@ FULL_FEATURES: tuple[str, ...] = (
     # fork per ADR-0559).  Required by the anticipated Netflix HDR VMAF model.
     # GPU twins are tracked in ADR-0557 (CUDA) and ADR-0558 (HIP); until
     # those land these features are always extracted on the CPU residual pass.
-    # Appended at END to preserve parquet schema-version lock (ai/AGENTS.md).
     "speed_temporal",
     "speed_chroma_u",
     "speed_chroma_v",
     "speed_chroma_uv",
+    # ADM3 (1 feature) — integer_adm3 emitted by adm extractor; required by v1 models (ADR-1173).
+    "adm3",
 )
 
 # Predefined feature-set names for CLI / API ergonomics. Custom subsets
@@ -124,6 +126,7 @@ _METRIC_TO_EXTRACTOR: dict[str, str] = {
     "adm_scale1": "adm",
     "adm_scale2": "adm",
     "adm_scale3": "adm",
+    "adm3": "adm",
     # VIF
     "vif_scale0": "vif",
     "vif_scale1": "vif",
@@ -216,7 +219,14 @@ def _lookup(metrics: dict, name: str):
     """libvmaf may emit ``integer_<name>`` for fixed-point kernels."""
     if name in metrics:
         return metrics[name]
-    return metrics.get(f"integer_{name}")
+    val = metrics.get(f"integer_{name}")
+    if val is not None:
+        return val
+    prefix = f"integer_{name}_"
+    for k, v in metrics.items():
+        if k.startswith(prefix) and v is not None:
+            return v
+    return None
 
 
 def _run_vmaf_json(

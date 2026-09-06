@@ -289,6 +289,14 @@ no rebase impact: fork-only ai/ script
   `include/vcs_version.h` before analysis. Restoring a full `meson compile` there re-creates the
   scoping bug where any TU's compiler warning fails the lane regardless of the PR's diff.
 
+## feat/ai-teacher-single-source — AI teacher model follows default model single source (ADR-1173) (2026-09-04)
+
+- `ai/`: feature extractors (`extract_full_features.py`, `extract_k150k_features.py`, `bvi_dvc_to_full_features.py`, `extract_ugc_features.py`, `konvid_to_full_features.py`, `konvid_to_vmaf_pairs.py`, `bvi_dvc_to_corpus_jsonl.py`) and scoring helpers (`scores.py`) now dynamically resolve their teacher model from `ai.data.scores.resolve_teacher_model()` (backing `vmaftune.defaultmodel.DEFAULT_MODEL` per ADR-1168) instead of hardcoding `vmaf_v0.6.1`. They stamp `teacher_model` on every row and manifest. Upstream syncs touching these scripts should preserve `resolve_teacher_model()` and the row-level `teacher_model` column.
+- `ai/data/feature_extractor.py` and `ai/scripts/extract_k150k_features.py`: raw feature extraction lists append `"adm3"` to `FULL_FEATURES` and `FEATURE_NAMES`. The canonical-6 student features (`DEFAULT_FEATURES`) remain frozen.
+- `ai/scripts/combine_full_feature_parquets.py`, `ai/scripts/train_vmaf_tiny_v5.py`, `ai/scripts/eval_loso_vmaf_tiny_v5.py`: enforce intra-table and cross-table teacher model uniformity, refusing mixed-model datasets and unprovenanced tables without `--assume-teacher <name>`.
+- `scripts/ci/check-default-model-single-source.sh`: removed wholesale `^ai/` exemption from the gate's `allow_re`.
+- `ai/data/netflix_loader.py` (`load_or_compute(..., cache_valid=)`) and `ai/train/dataset.py`: the per-clip `$VMAF_TINY_AI_CACHE` entry is revalidated against the resolved teacher; a stale or unstamped entry is a cache miss. Keep the predicate when touching the loader — dropping it silently relabels pre-ADR-1173 `vmaf_v0.6.1` caches as the current teacher.
+
 ## docs/state-sweep-four-closed-rows — docs/state.md bookkeeping sweep (2026-09-04)
 
 no rebase impact: docs-only

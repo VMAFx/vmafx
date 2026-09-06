@@ -30,7 +30,12 @@ CANONICAL_6 = (
 )
 
 
-def _write_feature_parquet(path: Path, *, corpus: str | None = None) -> None:
+def _write_feature_parquet(
+    path: Path,
+    *,
+    corpus: str | None = None,
+    teacher_model: str | None = "vmaf_v1.0.16_3d0h",
+) -> None:
     import pandas as pd
 
     n_rows = 8
@@ -38,6 +43,8 @@ def _write_feature_parquet(path: Path, *, corpus: str | None = None) -> None:
         name: np.linspace(0.1 + idx, 1.1 + idx, n_rows) for idx, name in enumerate(CANONICAL_6)
     }
     data["vmaf"] = np.linspace(70.0, 93.0, n_rows)
+    if teacher_model is not None:
+        data["teacher_model"] = [teacher_model] * n_rows
     if corpus is not None:
         data["corpus"] = [corpus] * n_rows
     pd.DataFrame(data).to_parquet(path)
@@ -137,3 +144,61 @@ def test_vmaf_tiny_v5_train_stats_record_run_provenance(
     provenance = payload["run_provenance"]
     assert provenance["inputs"]["parquet_base"]["path"] == str(base)
     assert provenance["inputs"]["parquet_extra"]["path"] == str(extra)
+    assert payload["teacher_model"] == "vmaf_v1.0.16_3d0h"
+
+
+def test_vmaf_tiny_v5_refuses_conflicting_teacher_models(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "base.parquet"
+    extra = tmp_path / "extra.parquet"
+    _write_feature_parquet(base, corpus="base", teacher_model="vmaf_v1.0.16_3d0h")
+    _write_feature_parquet(extra, corpus="ugc", teacher_model="vmaf_v0.6.1")
+    argv = [
+        "train_vmaf_tiny_v5.py",
+        "--parquet-base",
+        str(base),
+        "--parquet-extra",
+        str(extra),
+        "--out-ckpt",
+        str(tmp_path / "m.pt"),
+        "--out-stats",
+        str(tmp_path / "s.json"),
+        "--epochs",
+        "0",
+    ]
+    monkeypatch.setattr(sys, "argv", argv)
+    with pytest.raises(SystemExit, match="conflicting teacher models"):
+        train_v5.main()
+
+
+def test_vmaf_tiny_v5_accepts_legacy_with_assume_teacher(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "base.parquet"
+    extra = tmp_path / "extra.parquet"
+    _write_feature_parquet(base, corpus="base", teacher_model=None)
+    _write_feature_parquet(extra, corpus="ugc", teacher_model=None)
+    ckpt = tmp_path / "model.pt"
+    stats = tmp_path / "stats.json"
+    argv = [
+        "train_vmaf_tiny_v5.py",
+        "--parquet-base",
+        str(base),
+        "--parquet-extra",
+        str(extra),
+        "--assume-teacher",
+        "vmaf_v0.6.1",
+        "--out-ckpt",
+        str(ckpt),
+        "--out-stats",
+        str(stats),
+        "--epochs",
+        "0",
+    ]
+    monkeypatch.setattr(sys, "argv", argv)
+    assert train_v5.main() == 0
+    payload = json.loads(stats.read_text(encoding="utf-8"))
+    assert payload["teacher_model"] == "vmaf_v0.6.1"

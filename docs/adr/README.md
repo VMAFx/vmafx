@@ -996,6 +996,7 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1168](1168-default-model-single-source.md) | The default VMAF model is defined in exactly one place | Accepted | model, ci-gate, c-api, go, python, single-source |
 | [ADR-1169](1169-default-model-v1-0-16.md) | The fork's default VMAF model is `vmaf_v1.0.16_3d0h` | Accepted | model, default, v1.0.16, breaking-scores, upstream-divergence |
 | [ADR-1166](1166-upstream-issue-harvest.md) | Harvest stale upstream Netflix/vmaf reports, verify each against the fork, fix what still bites | Accepted (Superseded-in-part by [ADR-1176](1176-metal-motion-v2-mirror-closeout.md)) | process, upstream, bug, build, windows, api, docs |
+| [ADR-1173](1173-ai-teacher-follows-default-model.md) | AI Teacher Model Follows Default Model Single Source | Accepted | ai, model, single-source, provenance, dataset |
 | [ADR-1178](1178-dev-container-image-publish.md) | Dev container image publication and release artifact container enforcement | Accepted | ci, release, supply-chain, container, dev-container, adr-1102, fork-local |
 | [ADR-1172](1172-bound-lto-link-parallelism.md) | Bound per-link LTO parallelism to four partitions by default | Accepted | build, meson, developer-experience, lto |
 | [ADR-1171](1171-release-please-credential-gate-warning.md) | release-please credential gate warns on push, errors on dispatch | Accepted | ci, release, release-please |
