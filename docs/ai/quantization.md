@@ -110,6 +110,15 @@ resolve which file to load using the exact same redirect logic:
    non-allowlisted op — the loader emits a `VMAF_LOG_LEVEL_DEBUG` line and
    loads the **fp32 baseline** instead. The session still reports the
    sidecar's `quant_mode`; only the weights are fp32.
+6. If the int8 file clears every gate in step 3 but `vmaf_ort_open()` still
+   fails on it, the loader retries the fp32 baseline once, on the same
+   rationale. This is not hypothetical: an ONNX Runtime build without a kernel
+   for one of the quantised ops fails session creation with `-EIO` and
+   `Could not find an implementation for ConvInteger(10)`, which is what
+   `model/tiny/nr_metric_v1.int8.onnx` (dynamic PTQ, `ConvInteger`) hits on
+   such a build. The allowlist scan cannot see this — it checks op *names*
+   against `core/src/dnn/op_allowlist.c`, not whether the local runtime has a
+   kernel for them.
 
 The redirect keys off `quant_mode != fp32` alone. It does not distinguish
 `dynamic` from `static` from `qat`, and neither the registry nor the sidecar
@@ -133,10 +142,11 @@ Two consequences an operator needs to know:
 - A quantised model whose int8 file is absent or rejected **still loads and
   still scores**, at fp32 weights and fp32 speed. Nothing fails, and the
   scores are the fp32 baseline's rather than the int8 model's.
-- That fallback is visible only at debug log level. Run with
-  `--log-level debug` (or set `VmafConfiguration.log_level` to
-  `VMAF_LOG_LEVEL_DEBUG`) and look for `int8 sidecar unavailable` to confirm
-  which weights a session actually loaded.
+- That fallback is visible only at debug log level, and the `vmaf` CLI has no
+  flag for it — the binary runs at `VMAF_LOG_LEVEL_INFO`. An API caller that
+  sets `VmafConfiguration.log_level` to `VMAF_LOG_LEVEL_DEBUG` sees
+  `int8 sidecar unavailable` (steps 3-5) or `int8 session open failed`
+  (step 6) and can confirm which weights a session actually loaded.
 
 This is a deliberate reversal of what
 [ADR-0174](../adr/0174-first-model-quantisation.md) §2 originally specified
