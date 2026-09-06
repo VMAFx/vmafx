@@ -2063,6 +2063,47 @@ test_cuda_ciede_parity = executable('test_cuda_ciede_parity',
 )
 test('test_cuda_ciede_parity', test_cuda_ciede_parity,
     suite : ['fast', 'gpu'])
+
+# ADR-1206 — large-fixture parity variants (resolution blind spot).
+#
+# Every CUDA parity test above pins a single small fixture (256x144 and
+# friends). min(w,h) < 384 there, so the shared SSIM/MS-SSIM auto-scale
+# formula `max(1, round(min(w,h) / 256))` always resolves to 1 and every
+# resolution-dependent branch in the GPU twins stays unreachable. Two real
+# divergences hid behind exactly that gap: the speed_chroma 4K bug and the
+# float_ssim scale asymmetry. These variants rebuild the same TUs against a
+# 960x540 fixture (min dim 540 -> auto-scale 2, and 540 is not a multiple of
+# the 16/32-wide kernel blocks, so tail-bound handling is exercised too).
+cuda_parity_large_fixture_tests = [
+    'test_cuda_adm_parity',
+    'test_cuda_cambi_parity',
+    'test_cuda_ciede_parity',
+    'test_cuda_float_adm_parity',
+    'test_cuda_float_moment_parity',
+    'test_cuda_float_motion_parity',
+    'test_cuda_float_ms_ssim_parity',
+    'test_cuda_float_psnr_parity',
+    'test_cuda_float_ssim_parity',
+    'test_cuda_float_vif_parity',
+    'test_cuda_motion3_parity',
+    'test_cuda_motion_v2_parity',
+    'test_cuda_psnr_hvs_parity',
+    'test_cuda_psnr_parity',
+    'test_cuda_ssim_parity',
+    'test_cuda_ssimulacra2_parity',
+]
+foreach parity_test : cuda_parity_large_fixture_tests
+    parity_large_exe = executable(parity_test + '_large',
+        ['test.c', parity_test + '.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        dependencies: [pthread_dependency, cuda_dependency, math_lib],
+        c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_W=960u', '-DFIXTURE_H=540u']
+    )
+    test(parity_test + '_large', parity_large_exe,
+        suite : ['fast', 'gpu'])
+endforeach
+
 endif
 
 # T6-2b / ADR-0247 — vmaf-roi sidecar core helpers (per-CTU mean reduce

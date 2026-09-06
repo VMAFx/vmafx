@@ -518,15 +518,19 @@ static sycl::event launch_aim_cm(sycl::queue &q, const float *ref_band, const fl
                              auto db_ = [&](int band, int y, int x) -> float {
                                  return e_dis[band * slice + y * (int)e_buf_stride + x];
                              };
+                             /* Edge policy: near edge MIRRORS to index 1, far
+                              * edge CLAMPS to the last index — matches the CPU
+                              * closed form in `adm_cm_thresh3x3_s`. See
+                              * ADR-1204. */
                              auto read_csf_f_aim = [&](int band, int y, int x) -> float {
                                  if (x < 0)
                                      x = -x;
                                  if (x >= (int)e_half_w)
-                                     x = 2 * (int)e_half_w - x - 2;
+                                     x = (int)e_half_w - 1;
                                  if (y < 0)
                                      y = -y;
                                  if (y >= (int)e_half_h)
-                                     y = 2 * (int)e_half_h - y - 2;
+                                     y = (int)e_half_h - 1;
                                  if (x < 0)
                                      x = 0;
                                  if (y < 0)
@@ -685,11 +689,11 @@ static sycl::event launch_csf_cm(sycl::queue &q, const float *ref_band, const fl
                                  if (x < 0)
                                      x = -x;
                                  if (x >= (int)e_half_w)
-                                     x = 2 * (int)e_half_w - x - 2;
+                                     x = (int)e_half_w - 1;
                                  if (y < 0)
                                      y = -y;
                                  if (y >= (int)e_half_h)
-                                     y = 2 * (int)e_half_h - y - 2;
+                                     y = (int)e_half_h - 1;
                                  if (x < 0)
                                      x = 0;
                                  if (y < 0)

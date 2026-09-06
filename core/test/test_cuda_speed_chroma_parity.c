@@ -44,8 +44,12 @@
 /* Fixture geometry: big enough for SpEED's 4x downscale + 5x5 blocking
  * (chroma at 4:2:0 = 384x216 -> ops at 24x13 -> 4x2 blocks), small
  * enough for CI. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 768u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 432u
+#endif
 #define FIXTURE_BPC 8u
 #define NUM_FRAMES 2u
 

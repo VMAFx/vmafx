@@ -48951,3 +48951,30 @@ Documentation only. One thing worth knowing:
    `test_iqa_convolve` fails the moment the scalar side is widened. CodeQL
    alert 1005 on that line is reported-not-fixed on purpose — see
    [research digest 2031](research/2031-codeql-float-widening-multiplication.md).
+
+## ADR-1204 / ADR-1205 — ADM CM edge policy and the ssimulacra2 FMA contract
+
+1. **The ADM contrast-masking edge policy is asymmetric on purpose.** The CPU
+   closed form in `core/src/feature/adm_tools.c::adm_cm_thresh3x3_s` mirrors the
+   *near* edge to index 1 (`i_m1 = (i == 0) ? 1 : i - 1`) and *clamps* the
+   *far* edge to the last index (`i_p1 = (i == h - 1) ? h - 1 : i + 1`). Every
+   GPU twin must reproduce both halves. A symmetric mirror
+   (`2 * half_w - x - 2`) looks tidier and is wrong; it only diverges when the
+   border crop `(int)(dim * 0.1 - 0.5)` is 0, i.e. band dimensions ≤ 14, so it
+   survives casual testing. If upstream ever rewrites the macro family, re-derive
+   the twins from the closed form rather than from the macros.
+
+2. **`ssimulacra2`'s YCbCr → linear-RGB conversion is a single-rounded FMA
+   everywhere.** ADR-0891 fixed the SIMD kernels; ADR-1205 extended the same
+   contract to the shipped scalar fallback and the four GPU host copies. There
+   are now six copies of these three lines (scalar, CUDA, HIP, Metal, SYCL, plus
+   the SIMD kernels and their tails) and they must stay `fmaf()`-based and in the
+   same order. The pipeline is ill-conditioned downstream — the edge-diff term is
+   `|img - blur(img)|` and pooling is a 4-norm — so a 1 ULP change here surfaces
+   as a ~1e-3 score change, not a ~1e-7 one.
+
+3. **`core/test/test_ssimulacra2_simd.c` validates against its own private
+   scalar reference, not against the shipped functions.** That is why the drift
+   in item 2 passed its bit-exactness assertion for as long as it did. When
+   touching the conversion, change the shipped copies and the test reference
+   together, or the test will keep agreeing with itself.
