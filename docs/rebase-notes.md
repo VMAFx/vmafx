@@ -48885,6 +48885,25 @@ Touches `core/src/libvmaf.c`, which is upstream-mirrored. Three invariants:
    load** — CPU load is not a stressor for this race (1/80 at load 22 versus
    56/60 with three concurrent CUDA processes), and two builds must be compared
    by interleaving runs, never sequentially.
+## fix/container-nv-codec-mirror-fallback — second source for nv-codec-headers (2026-09-06)
+
+Touches `dev/Containerfile` only. Two invariants:
+
+1. **Do not "simplify" the fallback back to a single `curl`.** The original
+   comment justified the single source with "GitHub mirror lags so use
+   code.ffmpeg.org", which is true for an unreleased commit and false for the
+   tag actually pinned — `n13.1.15.0` is published on both, and the GitHub
+   tarball carries the `cuStreamCreateWithPriority` declaration the pin exists
+   for. That host was unreachable for over six hours on 2026-09-06 and made the
+   container unbuildable. See [ADR-1200](adr/1200-nv-codec-headers-mirror-fallback.md).
+
+2. **Keep the content assertion and the `find`-based `cd`.** The build requires
+   `include/ffnvcodec/dynlink_cuda.h` and greps `dynlink_loader.h` for
+   `cuStreamCreateWithPriority` before `make install`; without it a fallback
+   could install the wrong headers silently, which is worse than the outage.
+   And the two archives unpack to DIFFERENT top-level directories
+   (`nv-codec-headers` vs `nv-codec-headers-<tag>`), so the hard-coded
+   `cd nv-codec-headers` that used to be here breaks on the mirror.
 ## docs/retrain-gate-status-1246 — measured retrain gate status (2026-09-06)
 
 Documentation only. One thing worth knowing:

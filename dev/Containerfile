@@ -529,14 +529,47 @@ USER vmaf
 # -Denable_metal=auto  → auto-disabled on Linux (no Metal SDK present).
 # -Denable_mcp_sse=auto → auto-disabled until POSIX socket impl is complete.
 USER root
-# Install nv-codec-headers (provides ffnvcodec/dynlink_cuda.h for CUDA backend)
-# Pinned to commit that has cuStreamCreateWithPriority; GitHub mirror lags so use code.ffmpeg.org.
+# Install nv-codec-headers (provides ffnvcodec/dynlink_cuda.h for CUDA backend).
+# Pinned to a tag that has cuStreamCreateWithPriority.
+#
+# Two sources, tried in order. code.ffmpeg.org is upstream's own host and stays
+# first; github.com/FFmpeg/nv-codec-headers is the fallback. The original comment
+# here said "GitHub mirror lags so use code.ffmpeg.org", which is true for an
+# unreleased commit but not for a TAG: n13.1.15.0 is published on both, and the
+# GitHub tarball carries the cuStreamCreateWithPriority declaration this pin
+# exists for (verified in include/ffnvcodec/dynlink_loader.h).
+#
+# The fallback is not hypothetical tidiness. On 2026-09-06 code.ffmpeg.org was
+# unreachable for over six hours -- `curl` returning HTTP 000 after a 30 s
+# timeout -- which stalled this layer and made the dev container, the canonical
+# build environment under CLAUDE.md rule 15, unbuildable for that whole window.
+# A single unreachable host should not be able to do that.
+#
+# The primary is given a deliberately short leash (--retry 1, --max-time 60):
+# with a working fallback behind it, spending minutes on an unreachable host is
+# pure latency. Measured with the first draft's generous settings (--retry 3,
+# --max-time 120), the layer took 487 s to fall through to GitHub and succeed;
+# the tightened values cut that to roughly two minutes while leaving the healthy
+# path -- one 0.5 s fetch -- untouched.
+#
+# Note the two archives unpack to DIFFERENT top-level directory names
+# (`nv-codec-headers` from code.ffmpeg.org, `nv-codec-headers-<tag>` from
+# GitHub), so the build cds into whatever was extracted rather than a fixed name.
 ARG NV_CODEC_HEADERS_REF=n13.1.15.0
 RUN cd /tmp \
-    && curl -fsSL "https://code.ffmpeg.org/FFmpeg/nv-codec-headers/archive/${NV_CODEC_HEADERS_REF}.tar.gz" -o nv-codec-headers.tgz \
+    && { curl -fsSL --retry 1 --retry-delay 2 --connect-timeout 10 --max-time 60 \
+           "https://code.ffmpeg.org/FFmpeg/nv-codec-headers/archive/${NV_CODEC_HEADERS_REF}.tar.gz" \
+           -o nv-codec-headers.tgz \
+         || { echo "nv-codec-headers: code.ffmpeg.org unreachable, falling back to the GitHub mirror" >&2; \
+              curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 120 \
+                "https://github.com/FFmpeg/nv-codec-headers/archive/refs/tags/${NV_CODEC_HEADERS_REF}.tar.gz" \
+                -o nv-codec-headers.tgz; }; } \
     && tar xzf nv-codec-headers.tgz \
-    && cd nv-codec-headers \
-    && make install PREFIX=/usr/local \
+    && src_dir="$(find /tmp -maxdepth 1 -type d -name 'nv-codec-headers*' -print -quit)" \
+    && test -n "$src_dir" \
+    && test -f "$src_dir/include/ffnvcodec/dynlink_cuda.h" \
+    && grep -q cuStreamCreateWithPriority "$src_dir/include/ffnvcodec/dynlink_loader.h" \
+    && make -C "$src_dir" install PREFIX=/usr/local \
     && cd / && find /tmp -maxdepth 1 -name 'nv-codec-headers*' -exec rm -rf {} +
 
 USER vmaf
