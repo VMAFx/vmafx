@@ -8,11 +8,23 @@ import json
 import pathlib
 import sys
 
+import pytest
+
+try:
+    import matplotlib.pyplot as plt
+
+    HAS_MATPLOTLIB = True
+except ImportError:
+    HAS_MATPLOTLIB = False
+
 # Make `vmaftune` importable for the in-tree test invocation.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
 from vmaftune.report import (
+    _CODEC_COLOURS,
+    _DASH,
     ENCODER_PROFILE_SCHEMA,
+    BisectSamplePoint,
     CodecRow,
     CodecSweepPoint,
     LadderRung,
@@ -20,6 +32,11 @@ from vmaftune.report import (
     ReportData,
     ShotRow,
     SourceInfo,
+    _bitrate_tick_label,
+    _codec_colour,
+    _codec_plot_fn,
+    _ladder_plot_fn,
+    _sweep_plot_fn,
     render_html,
     render_markdown,
 )
@@ -345,3 +362,289 @@ def test_sweep_report_has_human_guidance_status_and_profile():
     assert profile["run"]["pix_fmt"] == "yuv420p10le"
     assert profile["run"]["score_backend"] == "cuda"
     assert profile["codec_metadata"]["libsvtav1"]["url"]
+
+
+def _sample_compare_v1() -> ReportData:
+    src = SourceInfo(
+        path="/tmp/example.mp4",
+        width=1920,
+        height=1080,
+        fps=24.0,
+        duration_s=10.0,
+        frame_count=240,
+        codec="h264",
+        size_bytes=1_000_000,
+    )
+    return ReportData(
+        source=src,
+        target_vmaf=92.0,
+        codec_rows=(
+            CodecRow("libx264", "x264", 23, 2400.0, 4200.0, 92.4, True),
+            CodecRow("h264_videotoolbox", "vt", 24, 2600.0, 1100.0, 92.1, True),
+            CodecRow("libsvtav1", "SVT-AV1", 30, 1500.0, 7600.0, 92.6, True),
+            CodecRow("libvpx", "libvpx", 33, 0.0, 0.0, 0.0, False, "timeout"),
+        ),
+        generated_at_iso="2026-05-17T00:00:00+00:00",
+    )
+
+
+def _sample_compare_v2() -> ReportData:
+    src = SourceInfo(
+        path="/tmp/example.mp4",
+        width=1920,
+        height=1080,
+        fps=24.0,
+        duration_s=10.0,
+        frame_count=240,
+        codec="h264",
+        size_bytes=1_000_000,
+    )
+    return ReportData(
+        source=src,
+        target_vmaf=94.0,
+        sweep_targets=(94.0, 96.0),
+        sweep_points=(
+            CodecSweepPoint(
+                "libsvtav1",
+                "SVT-AV1",
+                94.0,
+                30,
+                1600.0,
+                120.0,
+                94.2,
+                True,
+                bisect_samples=(
+                    BisectSamplePoint(32, 1200.0, 91.5, 30.0),
+                    BisectSamplePoint(30, 1600.0, 94.2, 35.0),
+                    BisectSamplePoint(28, 2100.0, 95.8, 40.0),
+                ),
+            ),
+            CodecSweepPoint(
+                "libsvtav1",
+                "SVT-AV1",
+                96.0,
+                26,
+                2400.0,
+                140.0,
+                96.1,
+                True,
+                bisect_samples=(
+                    BisectSamplePoint(26, 2400.0, 96.1, 45.0),
+                    BisectSamplePoint(24, 3000.0, 97.2, 50.0),
+                ),
+            ),
+            CodecSweepPoint(
+                "libx265",
+                "x265",
+                94.0,
+                24,
+                2100.0,
+                100.0,
+                94.3,
+                True,
+                bisect_samples=(
+                    BisectSamplePoint(26, 1700.0, 92.0, 25.0),
+                    BisectSamplePoint(24, 2100.0, 94.3, 30.0),
+                ),
+            ),
+            CodecSweepPoint(
+                "libx265",
+                "x265",
+                96.0,
+                -1,
+                float("nan"),
+                0.0,
+                float("nan"),
+                False,
+                error="timeout",
+            ),
+        ),
+        generated_at_iso="2026-05-17T00:00:00+00:00",
+    )
+
+
+def _sample_ladder() -> ReportData:
+    src = SourceInfo(
+        path="/tmp/example.mp4",
+        width=1920,
+        height=1080,
+        fps=24.0,
+        duration_s=10.0,
+        frame_count=240,
+        codec="h264",
+        size_bytes=1_000_000,
+    )
+    return ReportData(
+        source=src,
+        target_vmaf=92.0,
+        ladder_samples=(
+            LadderSample(1920, 1080, 2400.0, 92.4, 23),
+            LadderSample(1280, 720, 1100.0, 86.5, 26),
+            LadderSample(960, 540, 600.0, 80.1, 28),
+        ),
+        ladder_rungs=(
+            LadderRung(1920, 1080, 2400.0, 92.4, 23),
+            LadderRung(1280, 720, 1100.0, 86.5, 26),
+        ),
+        generated_at_iso="2026-05-17T00:00:00+00:00",
+    )
+
+
+def _sample_per_shot() -> ReportData:
+    src = SourceInfo(
+        path="/tmp/example.mp4",
+        width=1920,
+        height=1080,
+        fps=24.0,
+        duration_s=10.0,
+        frame_count=240,
+        codec="h264",
+        size_bytes=1_000_000,
+    )
+    return ReportData(
+        source=src,
+        target_vmaf=92.0,
+        shots=(
+            ShotRow(0, 0, 120, 1920, 1080, 22, 94.2, 5800.0, 5.0),
+            ShotRow(1, 120, 240, 1920, 1080, 26, 91.7, 3200.0, 5.0),
+        ),
+        generated_at_iso="2026-05-17T00:00:00+00:00",
+    )
+
+
+def test_bitrate_units_and_axis_labels():
+    assert _bitrate_tick_label(1500) == "1.5 Mbps"
+    assert _bitrate_tick_label(800) == "800 kbps"
+    assert _bitrate_tick_label(0) == ""
+    assert _bitrate_tick_label(-10) == ""
+    assert _bitrate_tick_label(float("nan")) == ""
+
+    if not HAS_MATPLOTLIB:
+        pytest.skip("matplotlib unavailable")
+
+    fig, ax = plt.subplots()
+    _codec_plot_fn(_sample_compare_v1())(ax)
+    assert ax.get_ylabel() == "bitrate (kbps)"
+    plt.close(fig)
+
+    fig, ax = plt.subplots()
+    _sweep_plot_fn(_sample_compare_v2())(ax)
+    assert ax.get_xlabel() == "bitrate (kbps, log scale; left is smaller)"
+    plt.close(fig)
+
+    fig, ax = plt.subplots()
+    _ladder_plot_fn(_sample_ladder())(ax)
+    assert ax.get_xlabel() == "bitrate (kbps)"
+    plt.close(fig)
+
+
+def test_failed_row_numeric_zero_renders_as_dash():
+    data = _sample_compare_v1()
+    md = render_markdown(data)
+    html = render_html(data)
+
+    for line in md.splitlines():
+        if "libvpx" in line and "timeout" in line:
+            assert "0 kbps" not in line
+            assert " 0.00 " not in line
+            assert _DASH in line
+
+    assert "<tr class='failed'><td>" in html
+    failed_row_start = html.find("<tr class='failed'>")
+    failed_row_end = html.find("</tr>", failed_row_start)
+    failed_row_html = html[failed_row_start:failed_row_end]
+    assert f"<td class='num'>{_DASH}</td>" in failed_row_html
+    assert "<td class='num'>0 kbps</td>" not in failed_row_html
+    assert "<td class='num'>0.00</td>" not in failed_row_html
+
+
+def test_videotoolbox_distinct_palette_colours():
+    assert "h264_videotoolbox" in _CODEC_COLOURS
+    assert "hevc_videotoolbox" in _CODEC_COLOURS
+    assert "av1_videotoolbox" in _CODEC_COLOURS
+
+    assert _CODEC_COLOURS["h264_videotoolbox"] != _CODEC_COLOURS["libx264"]
+    assert _CODEC_COLOURS["hevc_videotoolbox"] != _CODEC_COLOURS["libx265"]
+    assert _CODEC_COLOURS["av1_videotoolbox"] != _CODEC_COLOURS["libsvtav1"]
+
+    assert _codec_colour("h264_videotoolbox", 0) != _codec_colour("libx264", 0)
+    assert _codec_colour("hevc_videotoolbox", 0) != _codec_colour("libx265", 0)
+    assert _codec_colour("av1_videotoolbox", 0) != _codec_colour("libsvtav1", 0)
+
+
+def test_pareto_frontier_deduplication_and_bitrate_annotation():
+    if not HAS_MATPLOTLIB:
+        pytest.skip("matplotlib unavailable")
+
+    data = _sample_compare_v2()
+    fig, ax = plt.subplots()
+    _sweep_plot_fn(data)(ax)
+
+    annot_texts = [child.get_text() for child in ax.texts]
+    svt_annots = [t for t in annot_texts if "libsvtav1" in t and "failed" not in t]
+    assert len(svt_annots) == 1
+    assert "libsvtav1 @ 1.60 Mbps" in svt_annots[0]
+    plt.close(fig)
+
+
+def test_sweep_chart_picked_crf_and_failed_target_legend():
+    if not HAS_MATPLOTLIB:
+        pytest.skip("matplotlib unavailable")
+
+    data = _sample_compare_v2()
+    fig, ax = plt.subplots()
+    _sweep_plot_fn(data)(ax)
+
+    _handles, labels = ax.get_legend_handles_labels()
+    assert "picked CRF" in labels
+    assert "failed target" in labels
+
+    annot_texts = [child.get_text() for child in ax.texts]
+    assert any("libx265 failed" in t for t in annot_texts)
+    plt.close(fig)
+
+
+def test_render_byte_determinism():
+    data = _sample_compare_v2()
+    html1 = render_html(data)
+    html2 = render_html(data)
+    assert html1 == html2
+
+    md1 = render_markdown(data)
+    md2 = render_markdown(data)
+    assert md1 == md2
+
+    data1 = _sample_compare_v1()
+    assert render_html(data1) == render_html(data1)
+
+
+def test_sidecar_json_round_trip():
+    fixtures = [
+        _sample_compare_v1(),
+        _sample_compare_v2(),
+        _sample_ladder(),
+        _sample_per_shot(),
+    ]
+    for data in fixtures:
+        d = data.to_dict()
+        raw_json = json.dumps(d)
+        parsed = json.loads(raw_json)
+        restored = ReportData.from_dict(parsed)
+
+        assert restored.source == data.source
+        assert restored.target_vmaf == data.target_vmaf
+        assert restored.sweep_targets == data.sweep_targets
+        assert len(restored.codec_rows) == len(data.codec_rows)
+        assert len(restored.sweep_points) == len(data.sweep_points)
+        assert len(restored.ladder_samples) == len(data.ladder_samples)
+        assert len(restored.ladder_rungs) == len(data.ladder_rungs)
+        assert len(restored.shots) == len(data.shots)
+
+        for orig_p, rest_p in zip(data.sweep_points, restored.sweep_points):
+            assert orig_p.codec == rest_p.codec
+            assert orig_p.target_vmaf == rest_p.target_vmaf
+            assert orig_p.best_crf == rest_p.best_crf
+            assert orig_p.ok == rest_p.ok
+            assert len(orig_p.bisect_samples) == len(rest_p.bisect_samples)
+            for orig_s, rest_s in zip(orig_p.bisect_samples, rest_p.bisect_samples):
+                assert orig_s == rest_s

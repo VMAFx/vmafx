@@ -9240,6 +9240,14 @@ baseline without changing the default `mean` behaviour.
   `suite : ['dnn', 'fast']`.
 
 
+- `docs/usage/vmaf-tune.md`, `docs/usage/vmaf-tune-codec-adapters.md`: document
+  the SVT-AV1-HDR runtime variant (`libsvtav1@svt-av1-hdr`, ADR-0644) with a
+  `-svtav1-params` knob table (ranges and defaults from
+  `juliobbv-p/svt-av1-hdr` `Docs/Parameters.md` @ `0033340`, 2026-09-01), the
+  three injection points for the string, and the ADR-0294 CRF/preset limits
+  that the variant inherits.
+
+
 ### `vmafx` binary and AI tool aliases (ADR-0690)
 
 - Install `vmafx` as a symlink to `vmaf` in the same `bindir` via Meson
@@ -26272,6 +26280,30 @@ closing the last untested surface from the 2026-05-16 coverage audit.
   the active constant to `"0.2.21"`, matching Netflix upstream commit
   `3dee9666`. The `QualityRunnerVersionTest::test_vmafexec_quality_runner_version`
   assertion was always correct; only the code was misaligned.
+
+
+- `tools/vmaf-tune/src/vmaftune/report.py`: resolve remaining 9 findings
+  (#2–#10) of profile-report audit
+  (`docs/research/vmaftune-profile-report-audit-2026-05-27.md`):
+  - Axis units: explicitly label bitrate axes as `bitrate (kbps)` on
+    compare bar chart and `bitrate (kbps, log scale; left is smaller)`
+    on sweep chart; unify tick formatting to `Mbps` / `kbps`.
+  - Failed rows: render CRF, bitrate, encode time, and VMAF as `—`
+    instead of `0 kbps` or `0.00` when `not row.ok`.
+  - Color palette: allocate slots 15–17 for `h264_videotoolbox`,
+    `hevc_videotoolbox`, and `av1_videotoolbox` to avoid hue collisions
+    with software encoders.
+  - Pareto frontier: deduplicate labels to only the lowest-bitrate
+    frontier point per codec, including bitrate context (`codec @ X Mbps`).
+  - Legend: add `picked CRF` label to scatter plots and deduplicate legend
+    entries.
+  - Determinism: strip creation timestamps and set `svg.hashsalt` to
+    guarantee byte-identical SVG and HTML output across repeated renders.
+  - Failed targets: render dashed indicator and failure annotation in
+    sweep chart.
+- `tools/vmaf-tune/src/vmaftune/cli.py`: add `--json-sidecar` flag to
+  `compare` and `report` subcommands to emit standalone `<output>.json`
+  alongside HTML/Markdown reports.
 
 
 - Fixed conflicting rate-control flags in `libx264` two-pass encoding (`T-VMAFTUNE-TWOPASS-CRF-INVALID-2026-08-30`).

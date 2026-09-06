@@ -241,6 +241,9 @@ no rebase impact: fork-only test wiring in `core/test/meson.build` and documenta
 ## fix/metal-motion-v2-mirror-closeout — Metal motion_v2 mirror closeout and test observability (2026-09-04)
 
 no rebase impact: fork-only Metal backend (`core/src/feature/metal/integer_motion_v2.metal`, `core/test/test_metal_motion_v2_parity.c`, `core/src/feature/metal/AGENTS.md`, ADR-1176). All touched files are fork-added surfaces with no upstream Netflix/vmaf counterpart.
+## fix/vmaf-tune-report-audit-and-svtav1-hdr-knob-docs — vmaf-tune report audit findings #2–#10 and SVT-AV1-HDR knob docs (2026-09-04)
+
+No rebase impact: fork-only tools/vmaf-tune and documentation surfaces (`tools/vmaf-tune/`, `docs/usage/vmaf-tune.md`, `docs/usage/vmaf-tune-codec-adapters.md`). No upstream Netflix/vmaf counterpart, no C engine files, and no Netflix golden test assertions touched.
 
 ## chore/drop-ansnr — remove ansnr feature extractor (ADR-0865) (2026-09-04)
 
