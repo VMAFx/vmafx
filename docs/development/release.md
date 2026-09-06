@@ -231,6 +231,37 @@ artifact, not a GitHub Release asset, and this workflow currently publishes no
 macOS native CLI or dylib. Use the production containers or build from source
 for those platforms until platform-specific release bundles are introduced.
 
+### Canonical build environment and runner execution (ADR-1178)
+
+Per [ADR-1178](../adr/1178-dev-container-image-publish.md) and
+[ADR-1102](../adr/1102-phase4b9-container-only-publishing.md), native release
+artifacts are compiled inside the canonical container environment:
+
+- **Runner**: The `build-artifacts` job in `.github/workflows/supply-chain.yml`
+  runs on the Arc A380 containerised self-hosted runner
+  (`runs-on: [self-hosted, linux, x64, sycl-arc]`, provisioned by ADR-1177 /
+  PR #1304). Compilation executes directly inside the runner container
+  (`vmaf-sycl-arc-runner:local`, built `FROM vmaf-dev-mcp:local`), using the
+  workstation's local image with zero network pull latency.
+- **Verification**: Staged artifacts are stamped with container-build
+  provenance (`container-build-provenance.txt`) via
+  `scripts/ci/check-container-build.sh --stamp`. The downstream
+  `verify-native-artifacts` job (running on `ubuntu-latest`) verifies the stamp
+  via `--verify`, and `scripts/release/verify-native-release-artifacts.sh` fails
+  closed if the provenance stamp is missing, empty, or a symlink. The stamp is
+  signed with Cosign and attached as an official release asset.
+- **Offline runner handling**: If the workstation runner is paused or offline
+  when a release is published, the `build-artifacts` job queues until the runner
+  is started. The maintainer can resume the runner using the operator runbook
+  ([`docs/development/ci-self-hosted-sycl.md`](ci-self-hosted-sycl.md)):
+
+  ```bash
+  docker compose -f dev/docker-compose.runner.yml up -d
+  ```
+
+  Job concurrency (`concurrency: group: release-artifacts-build`) ensures serial
+  execution.
+
 ### Release recovery dispatches
 
 Use the manual supply-chain and Docker dispatches only to recover an existing,

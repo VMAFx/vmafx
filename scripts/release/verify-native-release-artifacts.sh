@@ -37,11 +37,14 @@ done
 artifact_dir="$(realpath -- "$artifact_dir")"
 cli="$artifact_dir/vmaf"
 unversioned_library="$artifact_dir/libvmaf.so"
+container_provenance="$artifact_dir/container-build-provenance.txt"
 
 [[ -f "$cli" && ! -L "$cli" ]] || die "vmaf must be a regular staged file"
 [[ -x "$cli" ]] || die "vmaf is not executable: $cli"
 [[ -s "$unversioned_library" && ! -L "$unversioned_library" ]] ||
   die "libvmaf.so must be a non-empty regular staged file"
+[[ -s "$container_provenance" && ! -L "$container_provenance" ]] ||
+  die "staged container-build provenance is missing, empty, or a symlink"
 
 mapfile -t sonames < <(
   LC_ALL=C readelf --dynamic -- "$unversioned_library" |

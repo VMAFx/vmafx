@@ -105,29 +105,26 @@ not pinned and will diverge over time.
 ## CI integration
 
 There is no `release.yml` and no `cross-backend.yml`. The publishing pipeline
-is three workflows plus one job:
+is four workflows plus one job:
 
 | Workflow / job | Trigger | Produces | Builds in a container? |
 |---|---|---|---|
+| `.github/workflows/dev-container-publish.yml` | push to `master` (`dev/Containerfile`, `dev/scripts/**`) | `ghcr.io/vmafx/vmafx-dev-mcp:sha-<commit>`, `:master` | Yes — builds `libvmaf-build` stage |
 | `.github/workflows/release-please.yml` | push to `master` | the release PR and, on merge, the tag + GitHub release | n/a — no build |
-| `.github/workflows/supply-chain.yml` | `release: published` | `libvmaf.so` chain, the `vmaf` CLI, `models.tar.gz`, SBOMs, cosign signatures, SLSA provenance, the `vmaf-mcp` wheel | **No** — `build-artifacts` runs `meson`/`ninja` directly on `ubuntu-latest` |
+| `.github/workflows/supply-chain.yml` | `release: published` | `libvmaf.so` chain, the `vmaf` CLI, `models.tar.gz`, SBOMs, cosign signatures, SLSA provenance, the `vmaf-mcp` wheel | **Yes** — `build-artifacts` runs inside `ghcr.io/vmafx/vmafx-dev-mcp` |
 | `.github/workflows/docker-publish-production.yml` | `release: published` | `ghcr.io/vmafx/vmafx:*` (cpu / cuda13 / rocm7 / oneapi2025 / server) | Yes, inherently — `docker buildx` against `docker/Dockerfile.production*` |
 | `cross-backend` job in `.github/workflows/tests-and-quality-gates.yml` | Disabled (`if: false`, awaits self-hosted GPU runner) | backend-parity report (a gate, not an artifact) | **No** — `ubuntu-latest` host toolchain |
 
-Two consequences worth stating plainly, because the previous version of this
-page claimed the opposite:
+Consequences:
 
-- A local container build is **not** a reliable predictor of the CI gates.
-  Every CI job that compiles libvmaf does so with the runner's host toolchain;
-  the only `container:` job key anywhere in `.github/workflows/` is in
-  `security-scans.yml`, and it names a scanner image. When a container run and
-  a CI run disagree, the toolchain difference is a live hypothesis, not
-  something to rule out.
-- `supply-chain.yml` currently builds the native release artifacts on the
-  runner host, which is a live violation of the policy on this page. The
-  enforcement mechanism below exists; wiring it into that job is tracked as
-  `T-PUBLISH-NATIVE-RELEASE-NOT-CONTAINERISED-2026-09-03` in
-  [docs/state.md](../state.md).
+- Release native binaries (`libvmaf.so` SONAME chain, `vmaf` CLI, `models.tar.gz`)
+  are compiled directly within the canonical dev container environment (image
+  referenced by tag until the first GHCR publication, then digest-pinned by
+  Renovate), enforcing ADR-1102 and ADR-1178 (closing
+  `T-PUBLISH-NATIVE-RELEASE-NOT-CONTAINERISED-2026-09-03`).
+- Non-release PR CI gates (e.g. `tests-and-quality-gates.yml`) continue to run on
+  host runners for fast unit testing. When a container run and a CI host run
+  disagree, the toolchain difference remains a live hypothesis.
 
 Note that `docker/Dockerfile.production` and `docker/Dockerfile.production-gpu`
 are *not* `dev/Containerfile`. The published images are built from their own
@@ -202,17 +199,38 @@ the release pipeline, not malicious evasion.
 
 ### Where the gate runs today
 
-| Job | What it asserts |
+| Job / Script | What it asserts |
 |---|---|
 | `Dev Container Build (PR gate)` in `dev-container-build.yml` | the gate rejects the bare runner, accepts the built image, and a stamp made inside the image verifies outside it |
 | `Release Script Contract (ADR-1128)` in `rule-enforcement.yml` | the gate's hermetic unit suite (`scripts/ci/tests/test-check-container-build.sh`, no Docker needed) |
+| `build-artifacts` in `supply-chain.yml` | stamps `artifacts/` with `scripts/ci/check-container-build.sh --stamp` inside the Arc A380 containerised self-hosted runner (`vmaf-sycl-arc-runner`, derived from `vmaf-dev-mcp:local`) |
+| `verify-native-artifacts` in `supply-chain.yml` | verifies downloaded `artifacts/` with `scripts/ci/check-container-build.sh --verify` |
+| `scripts/release/verify-native-release-artifacts.sh` | verifies staged release bundle contains valid, non-empty, non-symlink `container-build-provenance.txt` |
+| `attach-to-release` in `supply-chain.yml` | requires `container-build-provenance.txt` as a required release asset and verifies cosign signature bundle |
 
-It is **not** yet wired into `supply-chain.yml`. Adding it there is not a
-one-line change: `build-artifacts` would first have to be converted to a
-container build, and `dev/Containerfile` is never pushed to a registry
-(`dev-container-build.yml` builds it as a gate and pushes no image), so a
-release job has no image to pull. Wiring the gate in before that conversion
-would fail every release. See the state.md row cited above.
+### Release compilation runner and offline handling
+
+Under [ADR-1178](../adr/1178-dev-container-image-publish.md), native release compilation is assigned to the Arc A380 containerised self-hosted runner:
+
+- **Which runner builds releases**: `.github/workflows/supply-chain.yml` runs `build-artifacts` on `runs-on: [self-hosted, linux, x64, sycl-arc]` (provisioned by ADR-1177 / PR #1304). The build executes directly inside the runner container (`vmaf-sycl-arc-runner:local`, built `FROM vmaf-dev-mcp:local`), which already contains the full canonical toolchain and the `/etc/vmafx-dev-container` marker without requiring any registry pull.
+- **How to verify the artifact came from the canonical environment**:
+  1. `build-artifacts` runs `scripts/ci/check-container-build.sh --stamp artifacts`, generating `artifacts/container-build-provenance.txt`.
+  2. The gate asserts `/etc/vmafx-dev-container` exists and contains `vmafx_dev_container=1` and a canonical image title (`vmaf-dev-mcp` or `vmaf-sycl-arc-runner`). Any bare host build (such as `ubuntu-latest` without the container) lacks the marker and is rejected with exit code 1.
+  3. `verify-native-artifacts` (on `ubuntu-latest`) runs `scripts/ci/check-container-build.sh --verify artifacts` and `scripts/release/verify-native-release-artifacts.sh`.
+  4. `attach-to-release` requires `container-build-provenance.txt` in `dist/release-artifacts/` and attaches Cosign keyless signatures.
+- **What happens when the runner is offline**:
+  If the self-hosted runner is stopped or paused, GitHub Actions queues the `build-artifacts` job until the runner comes online. The operator runbook ([`docs/development/ci-self-hosted-sycl.md`](ci-self-hosted-sycl.md)) details the pause/resume commands:
+
+  ```bash
+  # Check runner container status on workstation
+  docker compose -f dev/docker-compose.runner.yml ps
+  # Start or resume runner in background
+  docker compose -f dev/docker-compose.runner.yml up -d
+  ```
+
+  Once the runner is online, the job dispatches immediately. Concurrency (`concurrency: group: release-artifacts-build`) guarantees that only one release build runs at a time.
+- **Optional GHCR image publication**:
+  `.github/workflows/dev-container-publish.yml` continues to build and publish `ghcr.io/vmafx/vmafx-dev-mcp` on master pushes affecting container definitions, providing public supply-chain provenance and container availability for remote developers, decoupled from release artifact compilation.
 
 Run the unit suite locally with:
 
@@ -224,11 +242,8 @@ bash scripts/ci/tests/test-check-container-build.sh
 
 ## Related documents
 
-- [ADR-1102](../adr/1102-phase4b9-container-only-publishing.md) — policy
-  decision and rationale (note: its claim that `release.yml`/`cross-backend.yml`
-  run inside the container making local container builds reliable CI predictors
-  is superseded by observed CI reality, where neither workflow exists and CI
-  builds libvmaf on bare `ubuntu-latest` runners)
+- [ADR-1178](../adr/1178-dev-container-image-publish.md) — dev container publication and native release container enforcement
+- [ADR-1102](../adr/1102-phase4b9-container-only-publishing.md) — policy decision and rationale
 - [ADR-0496](../adr/0496-prefer-dev-mcp-container-rule.md) — default-to-container project rule (CLAUDE.md §15)
 - [ADR-0451](../adr/0451-local-dev-mcp-container.md) — initial dev-MCP container decision
 - [docs/development/dev-mcp.md](dev-mcp.md) — container operator guide

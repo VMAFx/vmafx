@@ -14365,6 +14365,9 @@ promoted to module scope as a side effect.
   fragments without the block being re-rendered.
 
 
+- **Native release artifacts built on self-hosted canonical runner (ADR-1178, Phase 4b.9).** Native release binaries (`libvmaf.so` SONAME chain, `vmaf` CLI binary, `models.tar.gz`) in `.github/workflows/supply-chain.yml` now build on the Arc A380 containerised self-hosted runner (`runs-on: [self-hosted, linux, x64, sycl-arc]`, provisioned by ADR-1177 / PR #1304) inside the local canonical dev container environment (`vmaf-sycl-arc-runner:local`, built `FROM vmaf-dev-mcp:local`) rather than on a bare `ubuntu-latest` runner host, bypassing the 29.5 GB layer pull blocker. Staged release artifacts are stamped with container-build provenance via `scripts/ci/check-container-build.sh --stamp`, verified in `verify-native-artifacts` on `ubuntu-latest` via `--verify`, and required fail-closed by `scripts/release/verify-native-release-artifacts.sh` and `attach-to-release`. `.github/workflows/dev-container-publish.yml` publishes and Cosign-signs the dev container image on master pushes touching `dev/Containerfile` or `dev/scripts/**` as optional provenance. Closes `T-PUBLISH-NATIVE-RELEASE-NOT-CONTAINERISED-2026-09-03`.
+
+
 - `release-please.yml` no longer fails every push to `master` while the release-bot
   App credentials are missing: the credential check emits a warning, skips every
   write step, and the run ends idle-green; a manual `workflow_dispatch` still fails.

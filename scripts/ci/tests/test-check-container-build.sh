@@ -79,6 +79,24 @@ vmafx_dev_container=0
 image_title=vmaf-dev-mcp
 EOF
 
+# A marker from the self-hosted canonical runner (vmaf-sycl-arc-runner).
+RUNNER_MARKER="${WORKDIR}/runner-marker"
+cat >"$RUNNER_MARKER" <<'EOF'
+vmafx_dev_container=1
+image_title=vmaf-sycl-arc-runner
+containerfile=dev/Containerfile.runner
+source=https://github.com/VMAFx/vmafx
+EOF
+
+# Our key set, but image_title is unauthorized.
+UNAUTHORIZED_TITLE_MARKER="${WORKDIR}/unauthorized-title-marker"
+cat >"$UNAUTHORIZED_TITLE_MARKER" <<'EOF'
+vmafx_dev_container=1
+image_title=unauthorized-runner
+containerfile=dev/Containerfile
+source=https://github.com/VMAFx/vmafx
+EOF
+
 # Our key set, but the marker is truncated (no image_title).
 TRUNCATED_MARKER="${WORKDIR}/truncated-marker"
 printf 'vmafx_dev_container=1\n' >"$TRUNCATED_MARKER"
@@ -110,6 +128,8 @@ run_case "assert with vmafx_dev_container=0" 1 "$NEGATED_MARKER"
 run_case "assert with a truncated marker" 1 "$TRUNCATED_MARKER"
 run_case "assert inside the dev container" 0 "$CONTAINER_MARKER"
 run_case "assert (explicit --assert), container" 0 "$CONTAINER_MARKER" --assert
+run_case "assert inside the self-hosted canonical runner" 0 "$RUNNER_MARKER"
+run_case "assert with unauthorized image_title" 1 "$UNAUTHORIZED_TITLE_MARKER"
 
 echo
 echo "=== --stamp: only a container build may stamp an artifact tree ==="
@@ -141,11 +161,33 @@ else
   sed 's/^/       | /' "$STAMP"
 fi
 
+RUNNER_ARTIFACTS="${WORKDIR}/runner-artifacts"
+mkdir -p "$RUNNER_ARTIFACTS"
+printf 'ELF-ish\n' >"${RUNNER_ARTIFACTS}/vmaf"
+run_case "stamp from inside the self-hosted canonical runner" 0 "$RUNNER_MARKER" --stamp "$RUNNER_ARTIFACTS"
+RUNNER_STAMP="${RUNNER_ARTIFACTS}/container-build-provenance.txt"
+if grep -qx 'schema=vmafx-container-build-provenance/1' "$RUNNER_STAMP" &&
+  grep -qx 'vmafx_dev_container=1' "$RUNNER_STAMP" &&
+  grep -qx 'image_title=vmaf-sycl-arc-runner' "$RUNNER_STAMP"; then
+  PASS=$((PASS + 1))
+  echo "ok   runner stamp carries schema, flag and runner image title"
+else
+  FAIL=$((FAIL + 1))
+  echo "FAIL runner stamp is malformed:"
+  sed 's/^/       | /' "$RUNNER_STAMP"
+fi
+
+UNAUTH_ARTIFACTS="${WORKDIR}/unauth-artifacts"
+mkdir -p "$UNAUTH_ARTIFACTS"
+printf 'ELF-ish\n' >"${UNAUTH_ARTIFACTS}/vmaf"
+run_case "stamp with unauthorized image_title fails" 1 "$UNAUTHORIZED_TITLE_MARKER" --stamp "$UNAUTH_ARTIFACTS"
+
 echo
 echo "=== --verify: fail-closed on anything but a valid stamp ==="
 # Deliberately verified with the HOST marker: verification must not depend on
 # the verifying job being containerised, only on the stamp.
 run_case "verify a container-stamped tree (from host)" 0 "$HOST_MARKER" --verify "$CONTAINER_ARTIFACTS"
+run_case "verify a runner-stamped tree (from host)" 0 "$HOST_MARKER" --verify "$RUNNER_ARTIFACTS"
 run_case "verify an unstamped tree" 1 "$HOST_MARKER" --verify "$HOST_ARTIFACTS"
 
 EMPTY_DIR="${WORKDIR}/empty-stamp"
@@ -171,6 +213,15 @@ image_title=vmaf-dev-mcp
 EOF
 run_case "verify a stamp that denies containerness" 1 "$HOST_MARKER" --verify "$FORGED_DIR"
 
+UNAUTH_TITLE_DIR="${WORKDIR}/unauth-title-stamp"
+mkdir -p "$UNAUTH_TITLE_DIR"
+cat >"${UNAUTH_TITLE_DIR}/container-build-provenance.txt" <<'EOF'
+schema=vmafx-container-build-provenance/1
+vmafx_dev_container=1
+image_title=unauthorized-runner
+EOF
+run_case "verify a stamp with an unauthorized image_title" 1 "$HOST_MARKER" --verify "$UNAUTH_TITLE_DIR"
+
 TITLELESS_DIR="${WORKDIR}/titleless-stamp"
 mkdir -p "$TITLELESS_DIR"
 cat >"${TITLELESS_DIR}/container-build-provenance.txt" <<'EOF'
@@ -179,6 +230,19 @@ vmafx_dev_container=1
 image_title=
 EOF
 run_case "verify a stamp with an empty image_title" 1 "$HOST_MARKER" --verify "$TITLELESS_DIR"
+
+echo
+echo "=== consumer verifier: verify-native-release-artifacts.sh fails closed ==="
+VERIFY_NATIVE="${SCRIPT_DIR}/../../release/verify-native-release-artifacts.sh"
+if [ -f "$VERIFY_NATIVE" ]; then
+  if bash "$VERIFY_NATIVE" "$HOST_ARTIFACTS" 3.2.1 >"${WORKDIR}/verify-native.log" 2>&1; then
+    FAIL=$((FAIL + 1))
+    echo "FAIL verify-native-release-artifacts.sh accepted an unstamped tree"
+  else
+    PASS=$((PASS + 1))
+    echo "ok   verify-native-release-artifacts.sh rejects an unstamped tree"
+  fi
+fi
 
 echo
 echo "=== invocation errors exit 2 (never 0) ==="
