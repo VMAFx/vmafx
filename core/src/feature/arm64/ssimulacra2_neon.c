@@ -325,15 +325,25 @@ void ssimulacra2_edge_diff_map_neon(const float *img1, const float *mu1, const f
             const float32x4_t a2 = vld1q_f32(r2 + i);
             const float32x4_t am1 = vld1q_f32(rm1 + i);
             const float32x4_t am2 = vld1q_f32(rm2 + i);
-            const float32x4_t d1 = vabsq_f32(vsubq_f32(a1, am1));
-            const float32x4_t d2 = vabsq_f32(vsubq_f32(a2, am2));
-            alignas(16) float d1f[4];
-            alignas(16) float d2f[4];
-            vst1q_f32(d1f, d1);
-            vst1q_f32(d2f, d2);
+            /* ADR-1208: the reference difference is taken in DOUBLE.
+             * `a` and `am` are floats, so `(double)a - (double)am` is exact,
+             * whereas subtracting in float rounds first. The scalar
+             * `edge_diff_map`, this function's own scalar tail, and the test's
+             * reference all promote before subtracting; vectorising the
+             * subtract in float made the ssimulacra2 score depend on whether
+             * the host had SIMD. The per-lane loop below is scalar anyway, so
+             * nothing is lost by folding the subtraction into it. */
+            alignas(16) float a1f[4];
+            alignas(16) float am1f[4];
+            alignas(16) float a2f[4];
+            alignas(16) float am2f[4];
+            vst1q_f32(a1f, a1);
+            vst1q_f32(am1f, am1);
+            vst1q_f32(a2f, a2);
+            vst1q_f32(am2f, am2);
             for (int k = 0; k < 4; k++) {
-                double ed1 = (double)d1f[k];
-                double ed2 = (double)d2f[k];
+                double ed1 = fabs((double)a1f[k] - (double)am1f[k]);
+                double ed2 = fabs((double)a2f[k] - (double)am2f[k]);
                 double d = (1.0 + ed2) / (1.0 + ed1) - 1.0;
                 double art = d > 0.0 ? d : 0.0;
                 double det = d < 0.0 ? -d : 0.0;

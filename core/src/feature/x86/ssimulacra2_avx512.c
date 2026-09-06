@@ -318,7 +318,6 @@ void ssimulacra2_edge_diff_map_avx512(const float *img1, const float *mu1, const
 {
     const size_t plane = (size_t)w * (size_t)h;
     const double one_per_pixels = 1.0 / (double)plane;
-    const __m512 vsignmask = _mm512_castsi512_ps(_mm512_set1_epi32(0x7FFFFFFF));
 
     for (int c = 0; c < 3; c++) {
         double s0 = 0.0;
@@ -336,15 +335,25 @@ void ssimulacra2_edge_diff_map_avx512(const float *img1, const float *mu1, const
             const __m512 a2 = _mm512_loadu_ps(r2 + i);
             const __m512 am1 = _mm512_loadu_ps(rm1 + i);
             const __m512 am2 = _mm512_loadu_ps(rm2 + i);
-            const __m512 d1 = _mm512_and_ps(vsignmask, _mm512_sub_ps(a1, am1));
-            const __m512 d2 = _mm512_and_ps(vsignmask, _mm512_sub_ps(a2, am2));
-            alignas(64) float d1f[16];
-            alignas(64) float d2f[16];
-            _mm512_store_ps(d1f, d1);
-            _mm512_store_ps(d2f, d2);
+            /* ADR-1208: the reference difference is taken in DOUBLE.
+             * `a` and `am` are floats, so `(double)a - (double)am` is exact,
+             * whereas subtracting in float rounds first. The scalar
+             * `edge_diff_map`, this function's own scalar tail, and the test's
+             * reference all promote before subtracting; vectorising the
+             * subtract in float made the ssimulacra2 score depend on whether
+             * the host had SIMD. The per-lane loop below is scalar anyway, so
+             * nothing is lost by folding the subtraction into it. */
+            alignas(64) float a1f[16];
+            alignas(64) float am1f[16];
+            alignas(64) float a2f[16];
+            alignas(64) float am2f[16];
+            _mm512_store_ps(a1f, a1);
+            _mm512_store_ps(am1f, am1);
+            _mm512_store_ps(a2f, a2);
+            _mm512_store_ps(am2f, am2);
             for (int k = 0; k < 16; k++) {
-                double ed1 = (double)d1f[k];
-                double ed2 = (double)d2f[k];
+                double ed1 = fabs((double)a1f[k] - (double)am1f[k]);
+                double ed2 = fabs((double)a2f[k] - (double)am2f[k]);
                 double d = (1.0 + ed2) / (1.0 + ed1) - 1.0;
                 double art = d > 0.0 ? d : 0.0;
                 double det = d < 0.0 ? -d : 0.0;
