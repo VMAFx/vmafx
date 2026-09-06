@@ -40,7 +40,7 @@ int compute_psnr(const float *ref, const float *dis, int w, int h, int ref_strid
             float ref_ = ref[(ptrdiff_t)i * ref_stride_ + j];
             float dis_ = dis[(ptrdiff_t)i * dis_stride_ + j];
             float diff = ref_ - dis_;
-            noise_ += diff * diff;
+            noise_ += (double)diff * diff;
         }
     }
     noise_ /= ((double)w * h);

@@ -18426,6 +18426,17 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   `executor_test.go` locks in the nil-logger guard for `Executor`.
 
 
+- `compute_psnr()` accumulated `diff * diff` in `float` before widening to its
+  `double` accumulator (CodeQL `cpp/integer-multiplication-cast-to-long`,
+  alert 1009). The multiply now happens in `double`. No score moves — the
+  function has no call sites and no SIMD twin, and all three Netflix golden
+  pairs are bit-identical at `--precision=max`. The sibling alert on
+  `iqa_convolve` (1005) is deliberately **not** fixed: its float multiply is the
+  bit-exactness contract AVX2 / AVX-512 / NEON mirror under ADR-0138, and
+  widening it fails `test_iqa_convolve`. See
+  [research digest 2031](docs/research/2031-codeql-float-widening-multiplication.md).
+
+
 - `local_explainer_test`: recalibrate `test_run_vmaf_runner_local_explainer_with_bootstrap_model`
   assertion to the post-NEON-fix value (`75.40974...`) and relax to `places=3`
   per ADR-0418 macOS-libm pattern; fixes macOS arm64 CI failure introduced by PR #834
