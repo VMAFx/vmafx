@@ -48703,3 +48703,22 @@ invariants are worth carrying forward anyway:
    looks like a build problem and is not. Link the directory in before running;
    never "fix" it by un-ignoring the YUVs — they are hundreds of MB and the
    4K pair is ~2.5 GB per file.
+
+## fix/cuda-adm-picture-ready-race — reproducer for the CUDA/FFmpeg nondeterminism (2026-09-06)
+
+Adds `scripts/test/repro-cuda-ffmpeg-nondeterminism.sh`; no library code is touched.
+Two things worth knowing before anyone tries to fix the underlying defect:
+
+1. **Measure by interleaving, never sequentially.** The corruption rate tracks host
+   load (0/60 idle, 14/60 at load ~33, 36/80 at load ~16, 50/50 at load ~69 where it
+   saturates and stops discriminating). Two 80-run samples taken one after another
+   produced an apparent 36→9 "improvement" from a change that an interleaved A/B then
+   showed to be 14/60 vs 14/60 — no effect at all. Run the two arms alternately.
+
+2. **Two plausible fixes are already ruled out**, by measurement rather than reasoning:
+   waiting on the pictures' `ready` events before the scale-0 DWT2 in
+   `integer_adm_cuda.c`, and fencing the shared `s->buf` against the previous frame's
+   `s->str` work. Both are theoretically sound gaps; neither moves the rate. Do not
+   re-propose them without an interleaved measurement. The live lead is
+   `collect_fex_cuda()` skipping `cuStreamSynchronize` on the ADR-0242 `drained` path
+   while `submit(N+1)` is already overwriting the shared `results_host`.
