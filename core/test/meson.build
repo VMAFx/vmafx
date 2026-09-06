@@ -3219,6 +3219,47 @@ test_hip_speed_temporal_parity = executable('test_hip_speed_temporal_parity',
 test('test_hip_speed_temporal_parity', test_hip_speed_temporal_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
+# ADR-1206 — large-fixture parity variants (resolution blind spot).
+# Same rationale as the CUDA and SYCL families. Verified on a gfx1030 once
+# ADR-1211 made the HIP ADM extractor able to run at all.
+# `test_hip_ssim_parity` is deliberately absent below. `integer_ssim_score.hip`
+# implements an 11-tap float Gaussian where the CPU uses a 9-tap int64 kernel, a
+# divergence formally deferred under ADR-0564 and tracked as
+# T-GAP-HIP-INTEGER-SSIM-FLOAT-KERNEL-DEFERRED-2026-09-02 (4.5e-3 vs a 1e-3
+# gate). A second fixture would only re-report that deferred gap at another
+# resolution; register it together with the int64 kernel port.
+hip_parity_large_fixture_tests = [
+    'test_hip_adm_parity',
+    'test_hip_cambi_parity',
+    'test_hip_ciede_parity',
+    'test_hip_float_adm_parity',
+    'test_hip_float_motion_parity',
+    'test_hip_float_psnr_parity',
+    'test_hip_float_ssim_parity',
+    'test_hip_motion3_parity',
+    'test_hip_motion_parity',
+    'test_hip_motion_v2_parity',
+    'test_hip_ms_ssim_parity',
+    'test_hip_psnr_hvs_parity',
+    'test_hip_psnr_parity',
+    'test_hip_speed_chroma_parity',
+    'test_hip_speed_temporal_parity',
+    'test_hip_ssimulacra2_parity',
+    'test_hip_vif_parity',
+]
+foreach parity_test : hip_parity_large_fixture_tests
+    parity_large_exe = executable(parity_test + '_large',
+        ['test.c', parity_test + '.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        dependencies: [pthread_dependency, hip_deps, math_lib],
+        c_args: ['-DHAVE_HIP=1', '-DFIXTURE_W=960u', '-DFIXTURE_H=540u']
+    )
+    test(parity_test + '_large', parity_large_exe,
+        suite : ['fast', 'gpu'],
+        timeout : 60)
+endforeach
+
 endif
 
 # ADR-0338 / T8-1: Metal (Apple Silicon) backend scaffold smoke. Same

@@ -54,8 +54,12 @@
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
 
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 144u
+#endif
 #define FIXTURE_BPC 8u
 #define PARITY_TOL 1e-3
 
@@ -143,6 +147,25 @@ static char *run_hip_float_ssim(double *score, int *skipped)
     err = feed_frame(vmaf);
     if (err == -ENOSYS) {
         (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS on feed] ");
+        *skipped = 1;
+        (void)vmaf_close(vmaf);
+        vmaf_hip_state_free(&hip_state);
+        return NULL;
+    }
+    /* `float_ssim_hip` is a v1 scale=1-only extractor: its init rejects any
+     * resolution whose auto-detected decimation factor
+     * `max(1, round(min(w, h) / 256))` is not 1 — i.e. min(w, h) >= 384 — with
+     * -EINVAL (core/src/feature/hip/float_ssim_hip.c). The CPU `float_ssim` has
+     * no such limit and silently decimates instead, so at those resolutions the
+     * two extractors do not compute the same quantity and there is no parity to
+     * assert. Treat the documented refusal as a skip; anything else is a real
+     * failure. Keeping the large-fixture variant registered means that if the
+     * twin ever stops refusing and starts returning a scale=1 score at a
+     * decimating resolution, this test fails instead of silently comparing two
+     * different metrics. See ADR-1206. */
+    if (err && ((FIXTURE_W < FIXTURE_H ? FIXTURE_W : FIXTURE_H) >= 384u)) {
+        (void)fprintf(stderr, "[skip: float_ssim_hip is scale=1-only; %ux%u auto-decimates] ",
+                      FIXTURE_W, FIXTURE_H);
         *skipped = 1;
         (void)vmaf_close(vmaf);
         vmaf_hip_state_free(&hip_state);

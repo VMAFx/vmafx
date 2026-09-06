@@ -47,8 +47,12 @@
 
 /* Wide enough for the ADM DWT2 pyramid (each scale halves the
  * dimensions, so >= 32x32 keeps scale 3 from collapsing). */
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 144u
+#endif
 #define FIXTURE_BPC 8u
 #define PARITY_TOL 1e-4
 
