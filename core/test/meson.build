@@ -413,8 +413,9 @@ test_pelorus_interop = executable('test_pelorus_interop',
      '../src/interop/pelorus_deband_params.c',
      '../src/interop/pelorus_denoise_params.c',
      '../src/interop/pelorus_qp_report_csv.c',
+     '../src/compat/path_utf8.c',
      '../src/interop/pelorus_version.c'],
-    include_directories : [libvmaf_inc, test_inc],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
 )
 
 # LPIPS registration tests — verify feature wiring without depending on a
@@ -2191,6 +2192,28 @@ test_score_pooled_eagain = executable('test_score_pooled_eagain',
     dependencies: [math_lib, pthread_dependency, thread_lib],
 )
 test('test_score_pooled_eagain', test_score_pooled_eagain, suite : ['fast'])
+
+# ADR-1181 — Percentile pooling methods (Netflix#818).
+test_pooling_percentile = executable('test_pooling_percentile',
+    ['test.c', 'test_pooling_percentile.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + [
+        '-DTESTDATA_YUV_DIR="' + join_paths(meson.project_source_root(), '../python/test/resource/yuv') + '"',
+    ],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [math_lib, pthread_dependency, thread_lib],
+)
+test('test_pooling_percentile', test_pooling_percentile, suite : ['fast'])
+
+# ADR-1182 — Windows UTF-8 path contract (Netflix#1568).
+test_path_utf8 = executable('test_path_utf8',
+    ['test.c', 'test_path_utf8.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [math_lib, pthread_dependency, thread_lib],
+)
+test('test_path_utf8', test_path_utf8, suite : ['fast'])
 
 # ADR-1118 — Pelorus perceptual spatial-pooling weighting. Golden-gate
 # isolation proof: pooling is bit-exact without side-data (and when only one of

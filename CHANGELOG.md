@@ -8223,6 +8223,19 @@ update.
   other end-to-end test. ADR-0912.
 
 
+- **Percentile pooling methods in core library** (`core/include/libvmaf/libvmaf.h`, `core/src/libvmaf.c`):
+  adds `VMAF_POOL_METHOD_MEDIAN`, `VMAF_POOL_METHOD_PERC5`, `VMAF_POOL_METHOD_PERC10`, and
+  `VMAF_POOL_METHOD_PERC20` to `enum VmafPoolingMethod` (Netflix#818, ADR-1181).
+  Evaluates linear-interpolated percentiles over frame score distributions with zero regression
+  on existing golden-data assertions.
+- **Go bindings & FFmpeg integration**:
+  surfaces `PoolMethod` in `pkg/libvmaf` (`ScoreDirectRequest`, `StreamConfig`) and
+  updates `pool_method_map` and filter options in FFmpeg patches (`0005`, `0006`, `0013`).
+- **Unit and regression tests** (`core/test/test_pooling_percentile.c`):
+  validates interpolation arithmetic and reproduces reference Python quality runner
+  results on `src01_hrc00_576x324.yuv` vs `src01_hrc01_576x324.yuv`.
+
+
 **libvmaf: add 2160p at 1.5H CSF support (port c2155d6cd)**
 
 `barten_watson_blend_csf{,_mae}` now accepts `adm_ref_display_height=2160,
@@ -26843,6 +26856,19 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   last one in its list failed. GitHub runs `shell: cmd` with `/V:OFF`, so the
   step reported only the final executable's exit code; each test is now
   checked with `|| exit /b 1`. `test_output` was also added to that list.
+
+
+- **Windows UTF-8 path contract** (`core/src/compat/path_utf8.{h,c}`):
+  resolves failures opening file paths containing non-ASCII UTF-8 characters on Windows
+  (Netflix#1568, ADR-1182). Implements `vmaf_fopen_utf8` and `vmaf_open_utf8` using
+  `MultiByteToWideChar` and wide-character runtime APIs (`_wfopen`, `_wopen`) on Windows
+  with bounded buffers (NASA/JPL Power of 10) and transparent pass-through on POSIX.
+- **Library and tools migration**:
+  replaces narrow `_open`/`open`/`fopen` calls in `core/src/libvmaf.c:3312` and fork-added
+  sites across CLI, model loader, and sidecar generators.
+- **Unit test suite** (`core/test/test_path_utf8.c`):
+  validates round-trip write and read-back for non-ASCII UTF-8 filenames, wide Win32
+  filesystem attributes, and error handling.
 
 
 - **`y4m_convert_411_422jpeg` 1-byte heap-buffer-overflow on

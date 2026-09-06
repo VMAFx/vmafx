@@ -37,6 +37,7 @@
 
 #include <assert.h>
 #include <libvmaf/model.h>
+#include "compat/path_utf8.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -185,7 +186,7 @@ static int vpl_decoder_open(VplDecoder *dec, const char *filename, const char *r
     }
 
     /* Open input file */
-    dec->fp = fopen(filename, "rb");
+    dec->fp = vmaf_fopen_utf8(filename, "rb");
     if (!dec->fp) {
         (void)fprintf(stderr, "Cannot open %s\n", filename);
         goto fail_session;

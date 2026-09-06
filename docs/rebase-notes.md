@@ -174,6 +174,21 @@ no rebase impact: fork-local SYCL feature extractor and tests.
   `core/src/feature/` wildcard glob, silently truncated the comment mid-file, and turned the
   header into parse errors). On a sync, keep the bracket balanced and do not "modernise" the
   header — every rewrite it suppresses breaks the C includers.
+## feat/core-percentile-pooling-and-utf8-path-shim — percentile pooling and Windows UTF-8 path contract (ADR-1181/1182) (2026-09-05)
+
+- `core/include/libvmaf/libvmaf.h`: added `VMAF_POOL_METHOD_MEDIAN`, `VMAF_POOL_METHOD_PERC5`,
+  `VMAF_POOL_METHOD_PERC10`, and `VMAF_POOL_METHOD_PERC20` to `enum VmafPoolingMethod`. Upstream
+  Netflix/vmaf tracks issue #818; on an upstream sync, preserve the append-only ordering before
+  `VMAF_POOL_METHOD_NB`.
+- `core/src/libvmaf.c`: `vmaf_feature_score_pooled` implements the sorting and percentile computation
+  using `pooling_percentile.h`, bypassing perceptual spatial weights (unweighted quantile contract).
+  `output_file_open()` uses `vmaf_open_utf8()` to ensure UTF-8 `--output` paths succeed on Windows.
+  Preserve both blocks when merging upstream changes to `libvmaf.c`.
+- `core/src/compat/path_utf8.{h,c}`: wholly fork-added compatibility layer. Provides `vmaf_fopen_utf8`
+  and `vmaf_open_utf8` for UTF-8 path handling on Windows (`_wfopen`/`_wopen`) with bounded buffers
+  (NASA/JPL Power of 10) and transparent pass-through on POSIX.
+- `ffmpeg-patches/`: patches `0005`, `0006`, and `0013` updated to support `median`, `perc5`,
+  `perc10`, and `perc20` pooling methods. Replay cleanly against FFmpeg n9.0.1 and n8.1.
 
 ## fix/cuda-drain-batch-per-state-lifetime — drain-batch ownership and the read fence (2026-09-05)
 

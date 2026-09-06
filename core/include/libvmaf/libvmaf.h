@@ -119,6 +119,10 @@ enum VmafOutputFormat {
  *   - `VMAF_POOL_METHOD_HARMONIC_MEAN`  — harmonic mean (penalises outlier lows more
  *                                        than the arithmetic mean; typical for VMAF
  *                                        "phone" / 4K display reporting).
+ *   - `VMAF_POOL_METHOD_MEDIAN`         — 50th percentile (linear interpolation).
+ *   - `VMAF_POOL_METHOD_PERC5`          — 5th percentile (linear interpolation).
+ *   - `VMAF_POOL_METHOD_PERC10`         — 10th percentile (linear interpolation).
+ *   - `VMAF_POOL_METHOD_PERC20`         — 20th percentile (linear interpolation).
  *
  * Stable enumerator values — append-only across libvmaf releases for ABI
  * compatibility. `VMAF_POOL_METHOD_NB` is a count sentinel and NOT a stable
@@ -130,6 +134,10 @@ enum VmafPoolingMethod {
     VMAF_POOL_METHOD_MAX,
     VMAF_POOL_METHOD_MEAN,
     VMAF_POOL_METHOD_HARMONIC_MEAN,
+    VMAF_POOL_METHOD_MEDIAN,
+    VMAF_POOL_METHOD_PERC5,
+    VMAF_POOL_METHOD_PERC10,
+    VMAF_POOL_METHOD_PERC20,
 /**
      * Count sentinel — retained for backwards compatibility only.
      *

@@ -43,6 +43,7 @@
  */
 
 #include "libvmaf/pelorus/interop.h"
+#include "compat/path_utf8.h"
 
 #include <errno.h>
 #include <math.h>
@@ -295,7 +296,7 @@ pel_result pel_x265_csv_parse(const char *path, PelorusX265Frame *out_frames, si
     }
     *out_count = 0;
 
-    fp = fopen(path, "r");
+    fp = vmaf_fopen_utf8(path, "r");
     if (fp == NULL) {
         return PEL_ERR_ABSENT;
     }

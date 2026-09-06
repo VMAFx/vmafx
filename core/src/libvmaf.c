@@ -58,10 +58,12 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "metadata_handler.h"
 #include "fex_ctx_vector.h"
 #include "libvmaf_priv.h"
+#include "compat/path_utf8.h"
 #include "log.h"
 #include "model.h"
 #include "output.h"
 #include "picture.h"
+#include "pooling_percentile.h"
 #include "predict.h"
 #include "thread_pool.h"
 #include "vcs_version.h"
@@ -3270,8 +3272,73 @@ static int pool_reduce(const PoolAccumulators *a, enum VmafPoolingMethod pool_me
         }
         return 0;
     default:
+        /* Everything else — including the ADR-1181 percentile methods
+         * (MEDIAN / PERC5 / PERC10 / PERC20), which ignore perceptual weights
+         * and need the full sorted score vector — is not expressible over the
+         * streaming accumulators. vmaf_feature_score_pooled() routes the
+         * percentile family to pool_percentile() before reaching this point. */
         return -EINVAL;
     }
+}
+
+/* Map an ADR-1181 percentile pooling method to its percentile in [0, 100]. */
+static double pool_method_percentile(enum VmafPoolingMethod pool_method)
+{
+    switch (pool_method) {
+    case VMAF_POOL_METHOD_PERC5:
+        return 5.;
+    case VMAF_POOL_METHOD_PERC10:
+        return 10.;
+    case VMAF_POOL_METHOD_PERC20:
+        return 20.;
+    default:
+        return 50.; /* VMAF_POOL_METHOD_MEDIAN */
+    }
+}
+
+static bool pool_method_is_percentile(enum VmafPoolingMethod pool_method)
+{
+    return (pool_method == VMAF_POOL_METHOD_MEDIAN) || (pool_method == VMAF_POOL_METHOD_PERC5) ||
+           (pool_method == VMAF_POOL_METHOD_PERC10) || (pool_method == VMAF_POOL_METHOD_PERC20);
+}
+
+/* ADR-1181 percentile pooling. Materialises the (subsample-filtered) per-frame
+ * scores in [index_low, index_high], sorts them ascending and interpolates
+ * linearly between the two neighbouring ranks — the same convention NumPy's
+ * `percentile` uses by default, which is what the Python harness compares
+ * against. Kept out of vmaf_feature_score_pooled() so neither function exceeds
+ * the Power-of-10 size budget. */
+static int pool_percentile(VmafContext *vmaf, const char *feature_name,
+                           enum VmafPoolingMethod pool_method, double *score, unsigned index_low,
+                           unsigned index_high)
+{
+    const unsigned capacity = index_high - index_low + 1;
+    double *scores = malloc((size_t)capacity * sizeof(*scores));
+    if (!scores)
+        return -ENOMEM;
+
+    unsigned pic_cnt = 0;
+    for (unsigned i = index_low; i <= index_high; i++) {
+        if ((vmaf->cfg.n_subsample > 1) && (i % vmaf->cfg.n_subsample))
+            continue;
+        double s = 0.;
+        const int err = vmaf_feature_score_at_index(vmaf, feature_name, &s, i);
+        if (err) {
+            free(scores);
+            return err;
+        }
+        scores[pic_cnt++] = s;
+    }
+
+    if (pic_cnt == 0) {
+        free(scores);
+        return -EINVAL;
+    }
+
+    qsort(scores, pic_cnt, sizeof(*scores), score_compare);
+    *score = percentile(scores, pic_cnt, pool_method_percentile(pool_method));
+    free(scores);
+    return 0;
 }
 
 int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
@@ -3282,10 +3349,16 @@ int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
         return -EINVAL;
     if (!feature_name)
         return -EINVAL;
+    if (!score)
+        return -EINVAL;
     if (index_low > index_high)
         return -EINVAL;
     if (!pool_method)
         return -EINVAL;
+
+    if (pool_method_is_percentile(pool_method)) {
+        return pool_percentile(vmaf, feature_name, pool_method, score, index_low, index_high);
+    }
 
     /* GOLDEN-GATE ISOLATION (ADR-1118): perceptual weighting only diverges from
      * the legacy arithmetic when it is enabled AND at least one frame carries a
@@ -3442,11 +3515,7 @@ const char *vmaf_version(void)
  * permission bits up front. Returns -errno of the failing call. */
 static int output_file_open(const char *output_path, FILE **outfile)
 {
-#ifdef _WIN32
-    const int outfd = _open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-#else
-    const int outfd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-#endif
+    const int outfd = vmaf_open_utf8(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (outfd < 0) {
         /* Capture errno immediately — it is clobbered by fprintf(3). */
         const int open_errno = errno;
