@@ -49615,3 +49615,17 @@ fork-added.
 4. **stdout belongs to JSON-RPC.** The Go server logs to stderr. Any change that
    sends log output to stdout corrupts the protocol stream and shows up as
    `mcp stdio returned empty response` rather than as a logging bug.
+## ADR-1214 — Watson-mode CSF rfactors and the float-ADM option aliases
+
+1. **`adm_csf_scale` / `adm_csf_diag_scale` are Barten-mode options.** In
+   `adm_tools.c::adm_csf_rfactor_s` they are consulted only when
+   `adm_csf_mode == ADM_CSF_MODE_BARTEN`; the Watson path is `1 / quant_step`.
+   Every float-ADM GPU twin must compute its Watson rfactor the same way. Do not
+   reintroduce `adm_csf_scale / f1` — it looks like a harmless default-1.0
+   multiplier and silently diverges from the CPU for any other value.
+
+2. **Option aliases are part of the cross-backend contract.** Feature names are
+   derived from `alias` + value (ADR-1183), so a twin whose option table spells
+   an alias differently from the CPU emits a different feature key for the same
+   request. `float_adm`'s aliases are `scf` / `scfd`; a sync that brings back
+   `cs` / `cds` reintroduces the split key.
