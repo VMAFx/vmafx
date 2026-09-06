@@ -240,3 +240,17 @@ Keep it that way — the golden-gate CLI invocations parse this stream.
 `goto cleanup` target**, which is what makes the restore run on the error
 paths. Moving its declaration below a jump target is ill-formed C++ and would
 silently leave the user's console in UTF-8 + VT mode after an error exit.
+
+## `parse_unsigned` rejects negatives on purpose (ADR-1209)
+
+`parse_unsigned` refuses a leading `'-'` before calling `strtoul`, because
+POSIX `strtoul` silently converts `"-1"` to `ULONG_MAX` without setting
+`errno`. Upstream relies on that wraparound — its own
+`test_vmaf_cuda_gpumask.sh` passes `--gpumask -1` and expects it to mean "all
+bits set". Do not loosen the check to make an inherited script pass; fix the
+caller instead. `--gpumask 1` means the same thing and says so.
+
+More generally, `--gpumask` is not a per-op bitmask despite the `$bitmask`
+placeholder: passing the flag opts into GPU backend selection, and any non-zero
+value then disables the GPU feature extractors, so the run falls back to CPU.
+`--gpumask 0` = use the GPU, `--gpumask 1` = use the CPU.
