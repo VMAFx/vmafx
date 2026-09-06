@@ -138,6 +138,8 @@ def build_vmaf_command(
         "--output",
         str(json_output),
     ]
+    if not _model_requests_vif(req.model):
+        cmd.extend(["--feature", "vif"])
     if backend:
         cmd.extend(["--backend", backend])
     # Sample-clip mode (ADR-0301): align reference window with the
@@ -148,6 +150,38 @@ def build_vmaf_command(
     if req.frame_cnt > 0:
         cmd.extend(["--frame_cnt", str(req.frame_cnt)])
     return cmd
+
+
+def _model_requests_vif(model: str) -> bool:
+    """Return True if the model already requests VIF features natively.
+
+    VMAF models in the v0.6 generation (e.g. vmaf_v0.6.1, vmaf_b_v0.6.3,
+    vmaf_4k_v0.6.1, vmaf_v0.6.1neg) natively include vif_scale0..3.
+    The default model since ADR-1168 (vmaf_v1.0.16_3d0h) and other v1
+    models do not include VIF, so --feature vif must be passed
+    explicitly to ensure canonical-6 features are populated.
+
+    For custom JSON model files, if the file exists on disk and is
+    readable, we inspect whether any feature name contains "vif".
+    """
+    if not model:
+        return False
+    val = model.split("=", 1)[1] if "=" in model else model
+    if "v0.6" in val:
+        return True
+    target_path = Path(val)
+    if target_path.is_file():
+        try:
+            with open(target_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            feature_names = data.get("model_dict", {}).get("feature_names", [])
+            return any("vif" in f.lower() for f in feature_names)
+        except Exception:
+            pass
+    return False
+
+
+model_requests_vif = _model_requests_vif
 
 
 def _model_arg(model: str) -> str:
@@ -241,6 +275,16 @@ def parse_feature_aggregates(
             # Also attempt the bare name in case the caller passed a
             # synthetic payload that does not use integer_* prefixes.
             block = pooled.get(name)
+        if not isinstance(block, dict):
+            # Fall back to prefix matching for options-suffixed keys
+            # (e.g. integer_adm2_csf_2_dlmw_0.7_..., integer_motion2_mmxv_18,
+            # integer_vif_scale0_...).
+            pref1 = f"{pooled_key}_"
+            pref2 = f"{name}_"
+            for k, v in pooled.items():
+                if isinstance(v, dict) and k.startswith((pref1, pref2)):
+                    block = v
+                    break
         if isinstance(block, dict):
             if "mean" in block:
                 try:

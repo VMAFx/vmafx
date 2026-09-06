@@ -48,6 +48,7 @@ func TestBuildVMAFCommand(t *testing.T) {
 				"--pixel_format", "420", "--bitdepth", "8",
 				"--model", "version=" + Model1080P,
 				"--json", "--output", "/tmp/vmaf.json",
+				"--feature", "vif",
 			},
 		},
 		{
@@ -63,6 +64,7 @@ func TestBuildVMAFCommand(t *testing.T) {
 				"--pixel_format", "420", "--bitdepth", "8",
 				"--model", "version=" + Model1080P,
 				"--json", "--output", "/tmp/vmaf.json",
+				"--feature", "vif",
 				"--backend", "cuda",
 			},
 		},
@@ -80,6 +82,7 @@ func TestBuildVMAFCommand(t *testing.T) {
 				"--pixel_format", "420", "--bitdepth", "10",
 				"--model", "path=/m/hdr.json",
 				"--json", "--output", "/tmp/vmaf.json",
+				"--feature", "vif",
 				"--frame_skip_ref", "12", "--frame_cnt", "240",
 			},
 		},
@@ -94,6 +97,35 @@ func TestBuildVMAFCommand(t *testing.T) {
 				"--width", "8", "--height", "8",
 				"--pixel_format", "444", "--bitdepth", "12",
 				"--model", "version=" + Model1080P,
+				"--json", "--output", "/tmp/vmaf.json",
+				"--feature", "vif",
+			},
+		},
+		{
+			name: "v0.6.1 model already has vif so --feature vif is omitted",
+			req: ScoreRequest{
+				Reference: "/refs/clip.yuv", Distorted: "/enc/out.yuv",
+				Width: 1920, Height: 1080, PixFmt: "yuv420p", Model: "vmaf_v0.6.1",
+			},
+			want: []string{
+				"vmaf", "--reference", "/refs/clip.yuv", "--distorted", "/enc/out.yuv",
+				"--width", "1920", "--height", "1080",
+				"--pixel_format", "420", "--bitdepth", "8",
+				"--model", "version=vmaf_v0.6.1",
+				"--json", "--output", "/tmp/vmaf.json",
+			},
+		},
+		{
+			name: "pre-formatted version=vmaf_v0.6.1 omits --feature vif",
+			req: ScoreRequest{
+				Reference: "/refs/clip.yuv", Distorted: "/enc/out.yuv",
+				Width: 1920, Height: 1080, PixFmt: "yuv420p", Model: "version=vmaf_v0.6.1",
+			},
+			want: []string{
+				"vmaf", "--reference", "/refs/clip.yuv", "--distorted", "/enc/out.yuv",
+				"--width", "1920", "--height", "1080",
+				"--pixel_format", "420", "--bitdepth", "8",
+				"--model", "version=vmaf_v0.6.1",
 				"--json", "--output", "/tmp/vmaf.json",
 			},
 		},
@@ -246,6 +278,26 @@ func TestParseFeatureAggregates(t *testing.T) {
 			payload:   `{"VMAF score": 88.0}`,
 			wantMeans: map[string]float64{},
 			wantStds:  map[string]float64{},
+		},
+		{
+			name: "options-suffixed keys resolve via prefix matching",
+			payload: `{"pooled_metrics": {
+				"integer_adm2_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02": {"mean": 0.961},
+				"integer_vif_scale0": {"mean": 0.505},
+				"integer_vif_scale1": {"mean": 0.879},
+				"integer_vif_scale2": {"mean": 0.938},
+				"integer_vif_scale3": {"mean": 0.964},
+				"integer_motion2_mmxv_18": {"mean": 1.25}
+			}}`,
+			wantMeans: map[string]float64{
+				"adm2":       0.961,
+				"vif_scale0": 0.505,
+				"vif_scale1": 0.879,
+				"vif_scale2": 0.938,
+				"vif_scale3": 0.964,
+				"motion2":    1.25,
+			},
+			wantStds: map[string]float64{},
 		},
 	}
 

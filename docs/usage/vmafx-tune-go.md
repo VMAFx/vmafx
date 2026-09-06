@@ -531,7 +531,11 @@ vmafx-tune-go corpus [flags]
 The JSONL schema (v3) is the API contract the Phase B target-VMAF bisect and the
 Phase C per-title CRF predictor consume — see
 [vmaf-tune.md](vmaf-tune.md#corpus-jsonl-schema) for the column
-reference. The Go writer emits the same bytes the Python writer does, including
+reference. When scoring with models that omit VIF (such as the default
+`vmaf_v1.0.16_3d0h` model, ADR-1168/1169), every Go libvmaf driver (`corpus`,
+`fast`, `scorecli`, `tune/executor`) automatically passes `--feature vif` to libvmaf and parses options-suffixed keys, ensuring
+canonical-6 columns (`adm2`, `vif_scale0..3`, `motion2`) are populated.
+The Go writer emits the same bytes the Python writer does, including
 the bare `NaN` tokens CPython's `json` module produces for columns libvmaf did
 not populate, so a corpus written by either binary is readable by the same
 trainers.

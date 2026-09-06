@@ -7,14 +7,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/VMAFx/vmafx/pkg/model"
 	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/VMAFx/vmafx/pkg/corpus"
 	"github.com/VMAFx/vmafx/pkg/encoder"
+	"github.com/VMAFx/vmafx/pkg/model"
 )
 
 // PipelineConfig carries the ffmpeg / libvmaf plumbing the production
@@ -168,6 +169,9 @@ func BuildVMAFCommand(
 		"--json",
 		"--output", jsonOutput,
 	}
+	if !corpus.ModelRequestsVIF(cfg.vmafModelOrDefault()) {
+		cmd = append(cmd, "--feature", "vif")
+	}
 	if backend != "" {
 		cmd = append(cmd, "--backend", backend)
 	}
@@ -278,21 +282,37 @@ func ParseCanonical6Means(raw []byte) ([]float64, error) {
 
 // pooledMean reads pooled_metrics[key].mean.
 func pooledMean(payload vmafPayload, key string) (float64, bool) {
-	block, ok := payload.PooledMetrics[key]
-	if !ok {
-		return 0, false
+	if block, ok := payload.PooledMetrics[key]; ok {
+		v, ok := block["mean"]
+		return v, ok
 	}
-	v, ok := block["mean"]
-	return v, ok
+	pref := key + "_"
+	for k, block := range payload.PooledMetrics {
+		if strings.HasPrefix(k, pref) {
+			if v, ok := block["mean"]; ok {
+				return v, true
+			}
+		}
+	}
+	return 0, false
 }
 
 // frameMean averages frames[].metrics[key].
 func frameMean(payload vmafPayload, key string) (float64, bool) {
 	sum, n := 0.0, 0
+	pref := key + "_"
 	for _, fr := range payload.Frames {
 		if v, ok := fr.Metrics[key]; ok {
 			sum += v
 			n++
+			continue
+		}
+		for k, v := range fr.Metrics {
+			if strings.HasPrefix(k, pref) {
+				sum += v
+				n++
+				break
+			}
 		}
 	}
 	if n == 0 {
