@@ -1059,6 +1059,30 @@ RUN vmafx-ort-runner --model /build/vmaf/model/predictor_libx264.onnx \
         --inputs '[51,1,1,1,1,0,0,0,0,0,1,1,16,16]' \
     | grep -Eq '^\[66\.1[0-9]+\]$'
 
+# Which source this image was actually built from (ADR-1195).
+#
+# The ADR-1102 marker above says "a container built this"; it cannot say WHICH
+# code. That gap is not theoretical: on 2026-09-06 the container was rebuilt to
+# pick up the GPU default-model fixes, the build context was 28 commits behind
+# master, and the image contained none of them while looking perfectly fresh by
+# timestamp. Anything measured inside such an image is confidently wrong.
+#
+# Deliberately in the LAST stage. In the first stage it would sit in a layer
+# that every rebuild reuses, so it would record the revision of whichever build
+# first populated the cache rather than this one.
+#
+# VMAFX_SOURCE_REV is supplied by dev/docker-compose.yml. A build that does not
+# pass it records `unknown`, and scripts/dev/check-container-source.sh treats
+# `unknown` as "cannot verify" rather than as a pass.
+ARG VMAFX_SOURCE_REV=unknown
+ARG VMAFX_SOURCE_REF=unknown
+RUN printf '%s\n' \
+    "source_rev=${VMAFX_SOURCE_REV}" \
+    "source_ref=${VMAFX_SOURCE_REF}" \
+    'source_repo=https://github.com/VMAFx/vmafx' \
+    > /etc/vmafx-dev-source \
+    && chmod 0644 /etc/vmafx-dev-source
+
 ENV PATH=/opt/vmaf-venv/bin:${PATH}
 ENV PYTHONPATH=/build/vmaf/python:${PYTHONPATH}
 

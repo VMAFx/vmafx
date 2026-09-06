@@ -48509,3 +48509,15 @@ reintroduce this. Two invariants:
 The guard that used to sit in `flush_context_cuda()` (`if (vmaf->thread_pool && TEMPORAL)
 continue;`) is intentionally **deleted**, not moved. A rebase that resurrects it alongside
 invariant 1 will skip the flush entirely for temporal GPU extractors.
+## ci/container-source-guard — record the container's source revision (2026-09-06)
+
+Fork-only tooling (`dev/`, `scripts/dev/`, `scripts/ci/tests/`). One invariant:
+
+1. **`/etc/vmafx-dev-source` must stay in the LAST stage of `dev/Containerfile`.**
+   It sits beside `ENV PATH=/opt/vmaf-venv/bin:...` in `dev-mcp`, deliberately
+   far from the ADR-1102 `/etc/vmafx-dev-container` marker written in the first
+   stage. Moving it up to keep the two markers together looks tidy and breaks
+   it: the first stage is reused by every rebuild, so the file would record the
+   revision of whichever build first populated the layer cache. A marker that
+   reports a stale revision authoritatively is worse than no marker. See
+   [ADR-1195](adr/1195-container-source-revision-guard.md).
