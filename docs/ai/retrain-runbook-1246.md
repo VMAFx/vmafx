@@ -128,7 +128,7 @@ teacher stamping and manifest generation before launching the multi-day run.
 ```bash
 docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract_k150k_features.py \
   --clips-dir /workspace/.corpus/konvid-150k/clips \
-  --scores /workspace/.corpus/konvid-150k/scores.csv \
+  --scores /workspace/.corpus/konvid-150k/k150ka_scores.csv \
   --vmaf-bin /usr/local/bin/vmaf \
   --vmaf-model version=vmaf_v1.0.16_3d0h \
   --out /tmp/k150k_smoke.parquet \
@@ -139,6 +139,25 @@ docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract
   --allow-fr-from-nr \
   --limit 5
 ```
+
+> **Corpus paths, checked against the workstation on 2026-09-06.** Both this
+> command and the §5.1 production extraction previously named
+> `--scores .../scores.csv`, which does not exist. KoNViD-150k ships its scores
+> split by part: the corpus holds `k150ka_scores.csv` and `k150kb_scores.csv`
+> (plus matching `*_votes.csv` and a `manifest.csv`). `k150ka_scores.csv` is also
+> what `extract_k150k_features.py` defaults to, and the script fails closed on a
+> missing file — `error: scores CSV not found` — so the old path would have
+> aborted the smoke on its first line, and the multi-day run with it.
+>
+> `--clips-dir` is left as `clips/`: a real directory of 153,841 files and a
+> superset of the script's own default `k150ka_extracted/` (152,265). Lookup is
+> by `video_name`, so either resolves. Verify both paths exist before committing
+> to the long run rather than discovering it hours in:
+>
+> ```bash
+> docker exec vmaf-dev-mcp ls -d /workspace/.corpus/konvid-150k/clips \
+>   /workspace/.corpus/konvid-150k/k150ka_scores.csv
+> ```
 
 ### 4.2 Validate Manifest Fields and Schema
 
@@ -202,7 +221,7 @@ mkdir -p runs/logs runs/shards
 ```bash
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract_k150k_features.py \
   --clips-dir /workspace/.corpus/konvid-150k/clips \
-  --scores /workspace/.corpus/konvid-150k/scores.csv \
+  --scores /workspace/.corpus/konvid-150k/k150ka_scores.csv \
   --vmaf-bin /usr/local/bin/vmaf \
   --vmaf-model version=vmaf_v1.0.16_3d0h \
   --out /workspace/runs/shards/k150k_v1_features.parquet \
