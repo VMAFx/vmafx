@@ -1938,6 +1938,19 @@ test_cuda_float_moment_parity = executable('test_cuda_float_moment_parity',
 test('test_cuda_float_moment_parity', test_cuda_float_moment_parity,
     suite : ['fast', 'gpu'])
 
+# ADR-1212 — the same TU at 10 bpc. Every parity fixture in this tree was 8-bit,
+# so a twin that accumulates the raw codeword instead of the bit-depth-normalised
+# sample the CPU uses could never be caught. This one was (4x / 16x too large).
+test_cuda_float_moment_parity_10bit = executable('test_cuda_float_moment_parity_10bit',
+    ['test.c', 'test_cuda_float_moment_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_BPC=10u']
+)
+test('test_cuda_float_moment_parity_10bit', test_cuda_float_moment_parity_10bit,
+    suite : ['fast', 'gpu'])
+
 test_cuda_ssimulacra2_parity = executable('test_cuda_ssimulacra2_parity',
     ['test.c', 'test_cuda_ssimulacra2_parity.c'],
     include_directories : [libvmaf_inc, test_inc],
@@ -2692,6 +2705,19 @@ test_sycl_float_moment_parity = executable('test_sycl_float_moment_parity',
 )
 test('test_sycl_float_moment_parity', test_sycl_float_moment_parity,
     suite : ['fast', 'gpu', 'sycl'])
+
+# ADR-1212 — the same TU at 10 bpc. Every parity fixture in this tree was 8-bit,
+# so a twin that accumulates the raw codeword instead of the bit-depth-normalised
+# sample the CPU uses could never be caught. This one was (4x / 16x too large).
+test_sycl_float_moment_parity_10bit = executable('test_sycl_float_moment_parity_10bit',
+    ['test.c', 'test_sycl_float_moment_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1', '-DFIXTURE_BPC=10u']
+)
+test('test_sycl_float_moment_parity_10bit', test_sycl_float_moment_parity_10bit,
+    suite : ['fast', 'gpu'])
 
 # ADR-0884 — SYCL kernel coverage round 2.
 # Five additional CPU-vs-SYCL parity gates: adm, ciede, integer_ssim,
