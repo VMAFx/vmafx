@@ -373,16 +373,24 @@ feature/
   `vmaf_fex_psnr` / `vmaf_fex_float_psnr` — the same cross-TU
   registry pattern as `cambi.c` and `float_ssim.c` — and their
   `provided_features[]` sentinels plus the `options[]`
-  terminator use `nullptr` (the tree is C23).
-  [`psnr_tools.cpp`](psnr_tools.cpp)'s `kFormatTable` uses
-  designated initialisers; the peak / psnr_max values are
-  byte-identical to upstream's `strcmp` ladder and must stay
-  so — the fork's `--feature psnr --precision=max` output on
-  the `src01` pair is asserted byte-identical across this
-  refactor. On rebase, convert an upstream hunk that re-adds
-  `NULL` here rather than accepting it verbatim; it re-opens
-  the ratchet. See
+  terminator keep upstream's `NULL` spelling: per
+  [ADR-1138](../../../docs/adr/1138-c-translation-units-keep-null.md) a C
+  translation unit never uses the C23 `nullptr` keyword,
+  because the required `Build — Windows MSVC + CUDA` lane
+  compiles these files with cl.exe and MSVC's documented
+  `/std:clatest` feature set does not include it. Both files
+  therefore carry a file-scoped
+  `/* NOLINTBEGIN(modernize-use-nullptr) … ADR-1138. */` …
+  `NOLINTEND` bracket instead — keep it spanning the whole
+  file, and do not "modernise" the `NULL`s inside it.
+  [`psnr_tools.cpp`](psnr_tools.cpp) is C++ and *does* use
+  `nullptr`/designated initialisers; its `kFormatTable` peak /
+  psnr_max values are byte-identical to upstream's `strcmp`
+  ladder and must stay so — the fork's
+  `--feature psnr --precision=max` output on the `src01` pair
+  is asserted byte-identical across this refactor. See
   [ADR-1142](../../../docs/adr/1142-whole-codebase-standards.md),
+  [ADR-1138](../../../docs/adr/1138-c-translation-units-keep-null.md),
   [ADR-0278](../../../docs/adr/0278-t7-5-nolint-sweep.md)
   and [`docs/rebase-notes.md`](../../../docs/rebase-notes.md).
 

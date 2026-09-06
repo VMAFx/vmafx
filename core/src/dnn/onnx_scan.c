@@ -20,6 +20,12 @@
 #include "onnx_scan.h"
 #include "op_allowlist.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* Protobuf wire types (see developers.google.com/protocol-buffers/docs/encoding). */
 enum {
     PB_WIRE_VARINT = 0,
@@ -72,9 +78,9 @@ enum {
  * success. Returns 0 on success, -EBADMSG on truncated / overlong varint. */
 static int pb_read_varint(const unsigned char *buf, size_t len, size_t *off, uint64_t *out)
 {
-    assert(buf != nullptr);
-    assert(off != nullptr);
-    assert(out != nullptr);
+    assert(buf != NULL);
+    assert(off != NULL);
+    assert(out != NULL);
 
     uint64_t value = 0;
     unsigned shift = 0;
@@ -106,8 +112,8 @@ static int pb_read_varint(const unsigned char *buf, size_t len, size_t *off, uin
  * the wire type. Advances *off. Returns 0 or -EBADMSG. */
 static int pb_skip_field(const unsigned char *buf, size_t len, size_t *off, unsigned wire_type)
 {
-    assert(buf != nullptr);
-    assert(off != nullptr);
+    assert(buf != NULL);
+    assert(off != NULL);
 
     switch (wire_type) {
     case PB_WIRE_VARINT: {
@@ -154,7 +160,7 @@ static int check_op_name(const char *op_name, size_t slen, char **first_bad)
     if (vmaf_dnn_op_allowed(op_name)) {
         return 0;
     }
-    if (first_bad && *first_bad == nullptr) {
+    if (first_bad && *first_bad == NULL) {
         char *copy = (char *)malloc(slen + 1u);
         if (!copy) {
             return -ENOMEM;
@@ -174,7 +180,7 @@ static int check_loop_budget(const char *op_name, size_t slen, unsigned *loop_co
     if (++(*loop_count) <= VMAF_DNN_MAX_LOOP_NODES) {
         return 0;
     }
-    if (first_bad && *first_bad == nullptr) {
+    if (first_bad && *first_bad == NULL) {
         /* Surface the rejection through the same channel as a
          * forbidden op — callers already log first_bad. */
         char *copy = (char *)malloc(slen + 1u);
@@ -241,7 +247,7 @@ static int read_domain(const unsigned char *buf, size_t len, size_t *off, char *
     }
     /* Reject pathologically long names before touching them. */
     if (slen > 127u) {
-        if (first_bad && *first_bad == nullptr) {
+        if (first_bad && *first_bad == NULL) {
             char *copy = (char *)malloc(sizeof("<custom-domain>"));
             if (copy) {
                 memcpy(copy, "<custom-domain>", sizeof("<custom-domain>"));
@@ -260,7 +266,7 @@ static int read_domain(const unsigned char *buf, size_t len, size_t *off, char *
         return 0;
     }
     /* Any other domain is a custom / third-party op set: reject. */
-    if (first_bad && *first_bad == nullptr) {
+    if (first_bad && *first_bad == NULL) {
         char *copy = (char *)malloc(slen + 1u);
         if (!copy) {
             return -ENOMEM;
@@ -412,10 +418,10 @@ int vmaf_dnn_scan_onnx(const unsigned char *buf, size_t len, char **first_bad)
     if (!buf || len == 0u) {
         return -EINVAL;
     }
-    assert(buf != nullptr);
+    assert(buf != NULL);
     assert(len > 0u);
     if (first_bad) {
-        *first_bad = nullptr;
+        *first_bad = NULL;
     }
 
     size_t off = 0;
@@ -460,3 +466,4 @@ int vmaf_dnn_scan_onnx(const unsigned char *buf, size_t len, char **first_bad)
     assert(off <= len);
     return graph_found ? 0 : -ENOENT;
 }
+/* NOLINTEND(modernize-use-nullptr) */

@@ -400,6 +400,25 @@ it are load-bearing for that; do not collapse them on rebase:
   deliberately **not** used here: the tiny-model tests `setenv()`
   `VMAF_TINY_MODEL_DIR` between cases and must observe each value.
 
+## Invariant — every `core/src/dnn/*.c` keeps `NULL` (ADR-1138)
+
+`dnn_api.c`, `dnn_attach_api.c`, `model_loader.c`, `onnx_scan.c`,
+`op_allowlist.c` and `ort_backend.c` each carry one file-scoped
+`/* NOLINTBEGIN(modernize-use-nullptr) … ADR-1138. */` …
+`/* NOLINTEND(modernize-use-nullptr) */` bracket. The bracket is not
+cosmetic: `Build — Windows MSVC + CUDA (build only)` is a required
+status check and compiles these translation units with `cl.exe`, whose
+documented `/std:clatest` C23 feature set does not include the `nullptr`
+keyword. Rewriting `NULL` to `nullptr` here therefore fails a required
+lane — PR #1192 had to be reverted for exactly that reason before
+ADR-1138 was written.
+
+Keep the bracket spanning the whole file (the `NOLINTEND` is the last
+line), keep the ADR citation in the comment, and add the same bracket to
+any new `.c` file in this directory rather than using the keyword.
+`psnr_tools.cpp` and the other C++ TUs are unaffected — ADR-0915's
+`modernize-use-nullptr` ratchet still applies to them in full.
+
 ## Invariant — test_cli.sh DNN probe must be a valid invocation
 
 `core/test/dnn/test_cli.sh` skips (exit 77) when the binary has no DNN
