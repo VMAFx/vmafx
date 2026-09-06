@@ -842,6 +842,44 @@ parity gate fires.  The `feature_extractor_list_audit()` function
 in `feature_extractor.c` catches duplicate registrations, not
 *missing* ones.
 
+### `matrix_mul` dispatches; `si_mat_mul` deliberately does not (ADR-1196)
+
+`speed.c`'s `matrix_mul()` no longer contains the multiply loop. It
+takes a `speed_matmul_fn` (declared in
+[`speed_matmul.h`](speed_matmul.h)) and forwards to
+`speed_matmul_scalar` / `speed_matmul_avx2` / `speed_matmul_avx512`,
+chosen in `speed_dispatch_cpu_kernel()` from `vmaf_get_cpu_flags()`.
+The pointer is threaded explicitly through
+`matrix_qr_decomposition()` and `solve_linear_system()`, which upstream
+Netflix does not do — expect a signature conflict there on the next
+`/sync-upstream`, and re-thread rather than dropping the parameter.
+
+**Two invariants hold that pointer's value:**
+
+1. **The kernels must stay bit-identical to the scalar reference.** The
+   argument is that `j` in `dst[i][j] += x[i][k] * y[k][j]` is an output
+   index, not a reduction axis, so vector width cannot reorder any single
+   element's accumulation over `k`. The only way to break that is FMA
+   contraction, which is why
+   `x86/speed_matmul_avx2.c` and `x86/speed_matmul_avx512.c` each compile
+   in their own `-ffp-contract=off` static library in
+   `core/src/meson.build`. **Do not move either file into
+   `x86_avx2_sources` / `x86_avx512_sources`** — those libraries are built
+   with `-mfma` and contraction on, and the `memcmp` cases in
+   `core/test/test_speed_simd.c` will start failing.
+2. **`speed_matmul_scalar` is intentionally non-`static`.** The parity
+   test compares the twins against the production reference itself, not
+   against a copy. Re-`static`-ing it breaks the test link.
+
+`si_mat_mul()` in `speed_internal.c` — the ADR-0964 duplicate of the same
+i-k-j loop, used by the host side of the GPU SpEED twins — is
+deliberately **left scalar**. That is not drift to "fix" opportunistically:
+it produces identical values today, and it was left alone because no GPU
+backend currently completes a scored run long enough to measure the change
+(`T-GPU-MOTION-FLUSH-DOUBLE-EMIT-2026-09-06` in
+[`docs/state.md`](../../../docs/state.md)). Wiring it to the same dispatch
+is bit-exact by the same argument once that clears.
+
 **Source-of-truth note**: `speed_internal.c` duplicates ~600 LOC
 of pure math (eigendecomp, QR, matrix helpers) from `speed.c`.
 This is deliberate (see ADR-0964 Alternatives) — keeping
