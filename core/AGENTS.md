@@ -818,3 +818,43 @@ Two things that are easy to get wrong:
   `KeyError('VMAFEXEC_vif_scale0_score')`. Resolve it by naming the model in
   that test, exactly as ADR-1169 did — **never** by editing an
   `assertAlmostEqual` value (ADR-0024).
+
+## GPU SpEED-chroma: singular is not an error (ADR-1202)
+
+`core/src/feature/speed.c` overloads a single `int` to mean *singular
+covariance matrix*: `solve_covariance_system()` returns `cannot_invert`,
+`speed_extract_score()` forwards it, and `extract_fex()` reads it to impute the
+`uv` score from whichever chroma channel inverted. That is the CPU contract and
+it is correct there.
+
+**The GPU twins do not work that way.** In
+`core/src/feature/cuda/speed_chroma_cuda.c`,
+`core/src/feature/sycl/speed_chroma_sycl.cpp` and
+`core/src/feature/hip/speed_chroma_hip.c`, the linear-algebra helper handles
+singularity itself (warn, zero the solution, return 0) and reserves its return
+value for hard API failures. Singularity travels out through an explicit
+`bool *singular_out`.
+
+Do not "simplify" that out-parameter away by keying the imputation off the
+return value again. That is what the code did before ADR-1202, and it meant a
+real device error was routed into the singular path: one channel failing
+imputed from the other, and both channels failing fell through to
+`(0 + 0) * 0.5`, appended three `0.0` scores and returned success. A
+`CUDA_ERROR_INVALID_VALUE` on every 4K frame therefore surfaced as a pooled
+VMAF 3.4 points off the CPU score on an exit-0 run, not as an error.
+
+Two related invariants in the same files:
+
+- **`SC_SOLVE_WARPS_PER_BLOCK` bounds the block size; the block count scales.**
+  The backward-substitution launch maps one warp per linear system. Deriving
+  the block size from the system count instead of the block count exceeds
+  CUDA's 1024-thread block limit above 256 systems — every 4K frame. The SYCL
+  and HIP twins already compute this correctly; keep the three consistent.
+- **A channel with exactly one singular side scores 0**, matching
+  `speed_extract_score()`. Averaging in a zeroed solution instead produces an
+  inflated score.
+
+The GPU parity tests in `meson test --suite=fast` all run below the 256-system
+threshold and cannot catch either invariant. Check 4K agreement against the CPU
+backend by hand. See `docs/rebase-notes.md` entry
+`fix/cuda-speed-chroma-4k-launch`.

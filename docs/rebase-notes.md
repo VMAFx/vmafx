@@ -48894,3 +48894,27 @@ Documentation only. One thing worth knowing:
    without re-running its verification command — the table this replaced had G3
    marked FAIL against "PR #1307 & fix/cambi-cuda-context unmerged" when both had
    already merged, which is exactly the drift the format is meant to prevent.
+
+## `fix/cuda-speed-chroma-4k-launch` — GPU SpEED-chroma singularity contract (2026-09-06)
+
+1. **A non-zero return from the GPU twins' linalg helpers means *hard failure*,
+   not *singular matrix*.** The CPU reference overloads one integer for both
+   (`solve_covariance_system()` returns `cannot_invert`, and `extract_fex()`
+   reads it to impute the `uv` score). The GPU twins handle singularity
+   internally and reserve the return value for device errors, so they carry an
+   explicit `bool *singular_out`. A rebase that "simplifies" that parameter away
+   by re-reading the return value restores a silent wrong-score bug: both
+   channels failing then averages `(0 + 0) * 0.5` and the run exits 0 with three
+   `0.0` scores. See [ADR-1202](adr/1202-cuda-speed-chroma-4k-launch-bounds.md).
+
+2. **`SC_SOLVE_WARPS_PER_BLOCK` bounds the block size; the block *count* is what
+   scales with the picture.** The pre-fix code had the two inverted, which put
+   every launch above 256 linear systems past CUDA's 1024-thread block limit —
+   i.e. every 4K frame. The SYCL and HIP twins already compute this correctly
+   (`local = SOLVE_WG * 8`, `hipModuleLaunchKernel(..., u_nb, ..., solve_warp)`);
+   keep all three consistent.
+
+3. **The existing GPU parity tests cannot catch this class.** They all run below
+   the 256-system threshold, so the launch bug was invisible to
+   `meson test --suite=fast`. Verify 4K parity by hand against the CPU backend
+   when touching these files.
