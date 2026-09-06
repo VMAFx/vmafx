@@ -304,8 +304,23 @@ jobs:
 
       - name: Install dependencies (mac)
         if: ${{ (matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
         run: |
-          brew install -q ninja nasm ccache llvm pkg-config
+          for attempt in 1 2 3; do
+            echo "Attempt ${attempt} of 3: installing dependencies via brew..."
+            if brew install -q ninja nasm ccache llvm pkg-config; then
+              break
+            fi
+            if [ "${attempt}" -eq 3 ]; then
+              echo "brew install failed after 3 attempts"
+              exit 1
+            fi
+            echo "Attempt ${attempt} failed; retrying in $((attempt * 10))s..."
+            sleep $((attempt * 10))
+            brew fetch --retry ninja nasm ccache llvm pkg-config || true
+          done
 
       - name: Install Metal compiler toolchain
         if: ${{ (contains(matrix.meson_extra, 'enable_metal=enabled')) && steps.impact.outputs.c_core == 'true' }}

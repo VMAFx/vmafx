@@ -167,10 +167,14 @@ void *vmaf_mcp_uds_thread_main(void *arg)
     struct VmafMcpServer *server = (struct VmafMcpServer *)arg;
     if (server == NULL)
         return NULL;
-    assert(server->uds_listen_fd >= 0);
+    if (atomic_load(&server->uds_running) != 1)
+        return NULL;
+    int listen_fd = server->uds_listen_fd;
+    if (listen_fd < 0)
+        return NULL;
 
     while (atomic_load(&server->uds_running) == 1) {
-        int client_fd = accept(server->uds_listen_fd, NULL, NULL);
+        int client_fd = accept(listen_fd, NULL, NULL);
         if (client_fd < 0) {
             if (errno == EINTR)
                 continue;

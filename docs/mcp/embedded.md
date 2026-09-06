@@ -156,13 +156,12 @@ fetch("http://127.0.0.1:7411/mcp/sse", {
 
 #### Listener-shutdown invariant
 
-On Linux, plain `close()` of a listening AF_INET fd from one
-thread does NOT unblock `accept()` on another thread (verified
-empirically; see also `accept(2)`). The SSE stop path therefore
-calls `shutdown(listen_fd, SHUT_RDWR)` before `close()` so the
-worker thread observes accept returning `-1` and exits cleanly.
-This differs from the UDS transport (AF_UNIX), where plain
-`close()` is sufficient.
+On Linux, plain `close()` of a listening socket (whether AF_INET
+or AF_UNIX) from one thread does NOT unblock `accept()` on another
+thread (verified empirically; see also `accept(2)`). Both the SSE
+and UDS stop paths therefore call `shutdown(listen_fd, SHUT_RDWR)`
+before `close()` so the worker thread observes accept returning
+`-1` (with `errno == EINVAL`) and exits cleanly before `pthread_join()`.
 
 ### UDS (Unix domain socket — fork extension)
 

@@ -417,10 +417,14 @@ static void stop_uds(VmafMcpServer *server)
     int expected = 1;
     if (!atomic_compare_exchange_strong(&server->uds_running, &expected, 2))
         return;
-    /* Close listener fd to unblock accept(); join the thread. The
+    /* shutdown + close listener fd to unblock accept(); join the
+     * thread. On Linux, plain close() of a listening AF_UNIX or AF_INET
+     * socket does NOT unblock accept() in another thread —
+     * shutdown(SHUT_RDWR) does (verified empirically). The
      * path file is unlinked so the next start_uds() with the same
      * path doesn't fail on stale-socket. */
     if (server->uds_listen_fd >= 0) {
+        (void)shutdown(server->uds_listen_fd, SHUT_RDWR);
         (void)close(server->uds_listen_fd);
         server->uds_listen_fd = -1;
     }
