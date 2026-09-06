@@ -386,10 +386,10 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         const double sse = (double)*s->h_sse[p];
         const double n_pixels = (double)s->width[p] * (double)s->height[p];
         const double mse = sse / n_pixels;
-        /* Match CPU integer_psnr.c::extract — clamp at psnr_max[p]
-         * via MIN(10*log10(peak^2 / max(mse, 1e-16)), psnr_max[p]).
-         * The 1e-16 floor guards against sse == 0 (trivially identical
-         * frames); the CPU path uses the same constant. */
+        /* Match CPU integer_psnr.c::psnr() — sse == 0 (byte-identical
+         * plane) reports the psnr_max[p] sentinel; otherwise the true
+         * logarithmic value is clamped to psnr_max[p] unless the
+         * `uncapped` option is set (ADR-1175). */
         const double peak_sq = (double)s->peak * (double)s->peak;
         double psnr = (sse == 0.0) ? s->psnr_max[p] : 10.0 * std::log10(peak_sq / mse);
         if (!s->uncapped && psnr > s->psnr_max[p])

@@ -236,8 +236,8 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
         }
     }
     const double n_pix = (double)s->frame_w * (double)s->frame_h;
-    double score = (mse_sum == 0.0) ? s->psnr_max
-                                    : 10.0 * log10((s->peak * s->peak) / mse);
+    const double mse   = (n_pix > 0.0) ? (mse_sum / n_pix) : 0.0;
+    double score = (mse == 0.0) ? s->psnr_max : 10.0 * log10((s->peak * s->peak) / mse);
     if (!s->uncapped && score > s->psnr_max) { score = s->psnr_max; }
 
     return vmaf_feature_collector_append_with_dict(
