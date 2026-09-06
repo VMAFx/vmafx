@@ -298,12 +298,14 @@ def test_e2e_score_cpu_with_tinyai_flags_and_error_path(monkeypatch: pytest.Monk
         )
     )
     import json
+
     data = json.loads(res[0].text)
     assert "pooled_metrics" in data
     assert "vmaf" in data["pooled_metrics"]
 
     # 2. Missing model error path exercises isError=True
     from types import SimpleNamespace
+
     from mcp.types import CallToolRequestParams
 
     ctx = SimpleNamespace(session=SimpleNamespace())
@@ -333,10 +335,12 @@ def test_e2e_score_cpu_with_tinyai_flags_and_error_path(monkeypatch: pytest.Monk
 def test_model_clip_transform_and_csv_sub_flags() -> None:
     """Verify model option flags and csv/sub output flags in Python server."""
     # 1. disable_clip and enable_transform append to model in _build_vmaf_argv
-    extras = srv._extras_from_args({
-        "disable_clip": True,
-        "enable_transform": True,
-    })
+    extras = srv._extras_from_args(
+        {
+            "disable_clip": True,
+            "enable_transform": True,
+        }
+    )
     assert not extras.is_empty()
     req = srv.ScoreRequest(
         ref=Path("/ref.yuv"),
