@@ -248,13 +248,16 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
     /* Match CPU float_psnr.c — a zero-noise pair reports psnr_max as the
      * infinity sentinel; the truncation applies only when `uncapped` is
      * false. See ADR-1193 / T-UPSTREAM-1109. */
+    const double noise = (mse < 1e-10) ? 1e-10 : mse;
     double score;
-    if (mse <= 0.0) {
-        score = s->psnr_max;
-    } else {
-        const double noise = (mse < 1e-10) ? 1e-10 : mse;
+    if (!s->uncapped) {
+        /* Pre-ADR-1193 expression verbatim — bit-identical default. */
         score = 10.0 * log10((s->peak * s->peak) / noise);
-        if (!s->uncapped && score > s->psnr_max) { score = s->psnr_max; }
+        if (score > s->psnr_max) { score = s->psnr_max; }
+    } else if (mse <= 0.0) {
+        score = s->psnr_max; /* infinity sentinel */
+    } else {
+        score = 10.0 * log10((s->peak * s->peak) / noise);
     }
 
     return vmaf_feature_collector_append_with_dict(

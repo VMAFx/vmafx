@@ -301,12 +301,14 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
          * psnr_max as the infinity sentinel; the truncation applies only
          * when `uncapped` is false. See ADR-1193 / T-UPSTREAM-1109. */
         double psnr;
-        if (mse <= 0.0) {
-            psnr = s->psnr_max;
+        if (!s->uncapped) {
+            /* Pre-ADR-1193 expression verbatim — bit-identical default. */
+            psnr = (mse <= 1e-16) ? s->psnr_max : 10.0 * log10(peak_sq / mse);
+            if (psnr > s->psnr_max) { psnr = s->psnr_max; }
+        } else if (mse <= 0.0) {
+            psnr = s->psnr_max; /* infinity sentinel */
         } else {
-            const double mse_clamped = (mse > 1e-16) ? mse : 1e-16;
-            psnr = 10.0 * log10(peak_sq / mse_clamped);
-            if (!s->uncapped && psnr > s->psnr_max) { psnr = s->psnr_max; }
+            psnr = 10.0 * log10(peak_sq / ((mse > 1e-16) ? mse : 1e-16));
         }
 
         int err = vmaf_feature_collector_append_with_dict(

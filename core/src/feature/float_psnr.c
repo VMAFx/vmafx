@@ -164,19 +164,18 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
 
     /* `psnr_max` is an infinity sentinel for a zero-noise pair and, before
      * ADR-1193, was also a hard truncation of every computed value above
-     * it. Split the two: the sentinel is unconditional, the truncation is
-     * opt-out via `uncapped`. With `uncapped == false` this is
-     * bit-identical to the pre-fix `MIN(..., s->psnr_max)` — a zero noise
-     * floored to `eps` yields >= 208 dB, which the MIN collapsed to
-     * `psnr_max` anyway. See T-UPSTREAM-1109 / Netflix/vmaf#1109. */
+     * it. Split the two: the truncation is opt-out via `uncapped`, the
+     * sentinel is not. The `!uncapped` arm is the pre-fix expression
+     * verbatim, so the default is bit-identical by construction. See
+     * T-UPSTREAM-1109 / Netflix/vmaf#1109. */
     double eps = 1e-10;
     double score;
-    if (noise_ <= 0.0) {
+    if (!s->uncapped) {
+        score = MIN(10 * log10(s->peak * s->peak / MAX(noise_, eps)), s->psnr_max);
+    } else if (noise_ <= 0.0) {
         score = s->psnr_max;
     } else {
         score = 10 * log10(s->peak * s->peak / MAX(noise_, eps));
-        if (!s->uncapped)
-            score = MIN(score, s->psnr_max);
     }
     err = vmaf_feature_collector_append(feature_collector, "float_psnr", score, index);
     if (err)

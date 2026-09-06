@@ -435,14 +435,17 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
      * infinity sentinel; the truncation at psnr_max applies only when
      * `uncapped` is false. See ADR-1193 / T-UPSTREAM-1109. */
     const double eps = 1e-10;
+    const double max_noise = noise > eps ? noise : eps;
     double score;
-    if (noise <= 0.0) {
-        score = s->psnr_max;
-    } else {
-        const double max_noise = noise > eps ? noise : eps;
+    if (!s->uncapped) {
+        /* Pre-ADR-1193 expression verbatim — bit-identical default. */
         score = 10.0 * log10(s->peak * s->peak / max_noise);
-        if (!s->uncapped && score > s->psnr_max)
+        if (score > s->psnr_max)
             score = s->psnr_max;
+    } else if (noise <= 0.0) {
+        score = s->psnr_max; /* infinity sentinel */
+    } else {
+        score = 10.0 * log10(s->peak * s->peak / max_noise);
     }
 
     return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,

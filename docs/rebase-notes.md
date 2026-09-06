@@ -48684,8 +48684,13 @@ invariants held:
    upstream hunk landing on `integer_psnr.c::psnr_from_mse()`,
    `float_psnr.c::extract()` or `psnr.c::compute_psnr()` silently
    reintroduces the bug. Resolve such a conflict by keeping the fork's
-   two-branch form and folding any upstream numeric change into the
-   *computed* branch only.
+   three-arm form and folding any upstream numeric change into **both**
+   the `!uncapped` arm and the `uncapped` computed arm. The `!uncapped`
+   arm is deliberately upstream's expression character-for-character,
+   including the `MAX(mse, 1e-16)` floor: with a `min_sse` below ~1.9e-11
+   the ceiling rises past the ~208 dB a floored zero MSE produces, so a
+   re-derived `mse == 0 -> psnr_max` default would not be bit-identical
+   there. Do not "simplify" the two computed arms into one.
 
 2. **The default must stay bit-identical.** `core/test/test_psnr_uncapped.c`
    carries no-change guards (`test_psnr_default_still_truncates`,

@@ -259,7 +259,12 @@ core/
   `MIN(10*log10(peak^2 / MAX(mse, 1e-16)), psnr_max)`, so a verbatim
   upstream hunk landing on `feature/integer_psnr.c::psnr_from_mse()`,
   `feature/float_psnr.c::extract()` or `feature/psnr.c::compute_psnr()`
-  silently reintroduces Netflix/vmaf#1109. The `uncapped` option name,
+  silently reintroduces Netflix/vmaf#1109. The `!uncapped` arm is that
+  upstream expression character-for-character and must stay that way:
+  with a `min_sse` below ~1.9e-11 the ceiling rises past the ~208 dB a
+  floored zero MSE produces, so a re-derived `mse == 0 -> psnr_max`
+  default would not be bit-identical there. Do not merge the two
+  computed arms. The `uncapped` option name,
   `VMAF_OPT_TYPE_BOOL` type and `false` default are mirrored across ten
   extractors — the two CPU ones plus all eight GPU twins — and must move
   together. It is deliberately **not**

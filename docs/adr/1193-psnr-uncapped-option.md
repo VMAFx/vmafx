@@ -41,10 +41,13 @@ clamp.
 
 We will add an opt-in boolean feature-extractor option `uncapped` (default
 `false`) to the `psnr` and `float_psnr` extractors and to all eight GPU
-twins, and split `psnr_max`'s two roles: the `mse == 0` infinity sentinel is
-applied unconditionally in both modes, while the truncation of computed
-values applies only when `uncapped` is `false`. The default path stays
-bit-identical to the shipped expression. The option is deliberately *not*
+twins, and split `psnr_max`'s two roles: on the `uncapped` path the
+`mse == 0` case reports `psnr_max` as the infinity sentinel and nothing else
+is truncated, while the default path keeps the shipped expression
+character-for-character rather than re-deriving it. Keeping it verbatim is
+what makes the default bit-identical *by construction* — a re-derived
+`mse == 0 -> psnr_max` default would differ wherever `min_sse` pushes the
+ceiling past the ~208 dB a floored zero MSE produces. The option is deliberately *not*
 flagged `VMAF_OPT_FLAG_FEATURE_PARAM`, so feature names (`psnr_y`,
 `float_psnr`, …) are unchanged whether or not it is set.
 

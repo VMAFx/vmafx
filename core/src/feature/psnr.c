@@ -43,14 +43,15 @@ int compute_psnr(const float *ref, const float *dis, int w, int h, int ref_strid
     noise_ /= ((double)w * h);
 
     /* Split `psnr_max`'s infinity-sentinel role from its truncation role —
-     * see psnr.h and ADR-1193. The `uncapped == false` path is
-     * bit-identical to the pre-fix expression. */
+     * see psnr.h and ADR-1193. The `!uncapped` arm is the pre-fix
+     * expression verbatim, so the default is bit-identical. */
     double eps = 1e-10;
-    if (noise_ <= 0.0) {
+    if (!uncapped) {
+        *score = MIN(10 * log10(peak * peak / MAX(noise_, eps)), psnr_max);
+    } else if (noise_ <= 0.0) {
         *score = psnr_max;
     } else {
-        const double psnr = 10 * log10(peak * peak / MAX(noise_, eps));
-        *score = uncapped ? psnr : MIN(psnr, psnr_max);
+        *score = 10 * log10(peak * peak / MAX(noise_, eps));
     }
 
     return 0;

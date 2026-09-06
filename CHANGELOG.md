@@ -8350,7 +8350,8 @@ YUV400P sources always produce luma-only output regardless of the option.
   `T-UPSTREAM-1109-PSNR-CAP-TRUNCATES-2026-09-03`). The option is
   mirrored under the same name and default on all eight GPU twins
   (CUDA / SYCL / HIP / Metal, integer and float). Default behaviour is
-  bit-identical to previous releases; the Netflix golden 60 / 84 /
+  bit-identical to previous releases — the `uncapped == false` arm is the
+  shipped expression character-for-character, not a re-derivation of it; the Netflix golden 60 / 84 /
   108 dB assertions pin `sse == 0` pairs and are untouched. New
   `docs/metrics/psnr.md` documents both `uncapped` and the
   pre-existing, previously undocumented `min_sse` escape hatch. See

@@ -400,14 +400,17 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
          * on any 0 < mse < 1e-16 input; the CPU path uses the same
          * constant. See ADR-1193 / T-UPSTREAM-1109. */
         const double peak_sq = (double)s->peak * (double)s->peak;
+        const double mse_clamped = (mse > 1e-16) ? mse : 1e-16;
         double psnr;
-        if (mse <= 0.0) {
-            psnr = s->psnr_max[p];
-        } else {
-            const double mse_clamped = (mse > 1e-16) ? mse : 1e-16;
+        if (!s->uncapped) {
+            /* Pre-ADR-1193 expression verbatim — bit-identical default. */
             psnr = 10.0 * std::log10(peak_sq / mse_clamped);
-            if (!s->uncapped && psnr > s->psnr_max[p])
+            if (psnr > s->psnr_max[p])
                 psnr = s->psnr_max[p];
+        } else if (mse <= 0.0) {
+            psnr = s->psnr_max[p]; /* infinity sentinel */
+        } else {
+            psnr = 10.0 * std::log10(peak_sq / mse_clamped);
         }
 
         const int e = vmaf_feature_collector_append_with_dict(

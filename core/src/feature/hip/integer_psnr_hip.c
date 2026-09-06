@@ -430,14 +430,17 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
         /* Match CPU integer_psnr.c::psnr_from_mse — `mse == 0` reports
          * psnr_max[p] as the infinity sentinel; the truncation applies
          * only when `uncapped` is false. See ADR-1193 / T-UPSTREAM-1109. */
+        const double mse_clamped = (mse > 1e-16) ? mse : 1e-16;
         double psnr;
-        if (mse <= 0.0) {
-            psnr = s->psnr_max[p];
-        } else {
-            const double mse_clamped = (mse > 1e-16) ? mse : 1e-16;
+        if (!s->uncapped) {
+            /* Pre-ADR-1193 expression verbatim — bit-identical default. */
             psnr = 10.0 * log10(peak_sq / mse_clamped);
-            if (!s->uncapped && psnr > s->psnr_max[p])
+            if (psnr > s->psnr_max[p])
                 psnr = s->psnr_max[p];
+        } else if (mse <= 0.0) {
+            psnr = s->psnr_max[p]; /* infinity sentinel */
+        } else {
+            psnr = 10.0 * log10(peak_sq / mse_clamped);
         }
         const int e = vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, psnr_name[p], psnr, index);

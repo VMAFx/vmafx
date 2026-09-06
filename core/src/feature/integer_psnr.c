@@ -197,19 +197,23 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
  *       luma step over 576x324 reported 60.000000 dB instead of its true
  *       100.840479 dB. `uncapped` drops role (b) only.
  *
- * With `uncapped == false` the expression is bit-identical to the
- * pre-fix `MIN(10 * log10(peak^2 / MAX(mse, 1e-16)), psnr_max)`: for
- * `mse == 0` the floored argument yields >= 208 dB, which the MIN
- * collapsed to `psnr_max` anyway. The 1e-16 floor is retained in the
- * computed branch so the two modes agree on any 0 < mse < 1e-16 input
- * (unreachable below ~1e16 pixels, since sse is a positive integer).
+ * The `uncapped == false` arm is the pre-fix expression verbatim rather
+ * than a re-derivation of it, so the default is bit-identical by
+ * construction. That matters in one corner: with a `min_sse` below
+ * ~1.9e-11 the ceiling rises past the ~208 dB that a zero MSE floored to
+ * 1e-16 produces, and a re-derived `mse == 0 -> psnr_max` arm would
+ * report the ceiling where the shipped code reports 208 dB. The 1e-16
+ * floor is kept in the `uncapped` arm too, so a denormal MSE cannot
+ * divide to infinity (unreachable below ~1e16 pixels anyway, since sse
+ * is a positive integer).
  */
 static double psnr_from_mse(double mse, double peak_sq, double psnr_max, bool uncapped)
 {
+    if (!uncapped)
+        return MIN(10. * log10(peak_sq / MAX(mse, 1e-16)), psnr_max);
     if (mse <= 0.)
         return psnr_max;
-    const double psnr = 10. * log10(peak_sq / MAX(mse, 1e-16));
-    return uncapped ? psnr : MIN(psnr, psnr_max);
+    return 10. * log10(peak_sq / MAX(mse, 1e-16));
 }
 
 static char *mse_name[3] = {"mse_y", "mse_cb", "mse_cr"};

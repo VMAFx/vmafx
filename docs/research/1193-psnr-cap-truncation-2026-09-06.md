@@ -31,6 +31,17 @@ sentinel as a side effect — a floored zero MSE yields ≥ 208 dB, which the
 `MIN` collapses to `psnr_max` — and truncates everything else at the same
 time. The two behaviours were never separable.
 
+That "collapses to `psnr_max`" step is *nearly* always true, and the near is
+why the fix is shaped the way it is. `min_sse` raises `psnr_max` to
+`ceil(10 * log10(peak^2 * n / min_sse))`; below `min_sse ≈ 1.9e-11` on a
+576x324 frame that ceiling passes 208 dB, and the shipped code then reports
+the floored 208 dB rather than the ceiling for an identical pair. A fix that
+re-derives the default as "`mse == 0` → `psnr_max`" would silently change that
+corner. So the `uncapped == false` arm in every one of the ten extractors is
+the pre-fix expression **verbatim**, not a re-derivation of it, and the
+`mse == 0` sentinel branch exists only on the `uncapped` side. The default is
+then bit-identical by construction rather than by argument.
+
 ## Measurement
 
 Fixture: the first frame of the Netflix golden reference
