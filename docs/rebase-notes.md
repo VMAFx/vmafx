@@ -48722,3 +48722,33 @@ Two things worth knowing before anyone tries to fix the underlying defect:
    re-propose them without an interleaved measurement. The live lead is
    `collect_fex_cuda()` skipping `cuStreamSynchronize` on the ADR-0242 `drained` path
    while `submit(N+1)` is already overwriting the shared `results_host`.
+
+## fix/cuda-adm-picture-ready-race — order caller-written CUDA pictures (2026-09-06)
+
+Touches `core/src/libvmaf.c`, which is upstream-mirrored. Three invariants:
+
+1. **The `cuCtxSynchronize()` at the top of `read_pictures_extractor_loop()` is
+   load-bearing, not defensive.** It orders this frame's device data against
+   whoever produced it. With `..._PREALLOCATION_METHOD_DEVICE` the caller copies
+   into a libvmaf-owned picture on a stream we never see, and libvmaf records a
+   picture's `ready` event only inside `vmaf_cuda_picture_upload_async()` — so in
+   that path every `cuStreamWaitEvent(..., ready)` in every extractor is vacuous.
+   Removing this barrier as "redundant with the per-extractor ready waits"
+   restores a silent wrong-score bug: 56 of 60 runs corrupted, measured. See
+   [ADR-1199](adr/1199-cuda-picture-handover-barrier.md).
+
+2. **It belongs at the dispatch point, not inside an extractor.** The corruption
+   was only ever *observed* in ADM because ADM reads the raw planes first. Moving
+   the barrier into `integer_adm_cuda.c` leaves every other CUDA extractor relying
+   on queue position; `test_cuda_float_moment_parity` was seen failing under the
+   same GPU contention.
+
+3. **Do not re-propose the three fixes already ruled out** without an interleaved
+   measurement: waiting on the pictures' `ready` events before the scale-0 DWT2,
+   fencing ADM's shared `s->buf` against the previous frame's `s->str`, and
+   dropping the `drained` shortcut in `collect_fex_cuda()`. Each measured 14/60
+   against 14/60 for control. Reproduce with
+   `scripts/test/repro-cuda-ffmpeg-nondeterminism.sh` under **concurrent CUDA
+   load** — CPU load is not a stressor for this race (1/80 at load 22 versus
+   56/60 with three concurrent CUDA processes), and two builds must be compared
+   by interleaving runs, never sequentially.

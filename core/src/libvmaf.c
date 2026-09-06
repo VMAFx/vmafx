@@ -2739,9 +2739,57 @@ static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, VmafPicture *ref
 }
 #endif /* HAVE_CUDA */
 
+#ifdef HAVE_CUDA
+/* Order this frame's device data against whoever produced it, ONCE, before any
+ * CUDA extractor reads it (ADR-1199).
+ *
+ * With VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_DEVICE the caller fetches a
+ * libvmaf-owned device picture and copies into it *itself*, on a stream libvmaf
+ * cannot see -- that is exactly what FFmpeg's `libvmaf_cuda` filter does via
+ * hwupload. libvmaf records a picture's `ready` event only when it performs the
+ * upload, so in that hand-over path the event is never recorded and every
+ * extractor's `cuStreamWaitEvent(..., ready)` is vacuous. Nothing ordered the
+ * kernels against the producer's write.
+ *
+ * Measured through the FFmpeg CUDA filter under concurrent CUDA load: 56 of 60
+ * runs returned a corrupted frame without this barrier and 0 of 60 with it,
+ * interleaved run-by-run so load hit both arms equally. The corruption was
+ * ADM-only because ADM reads the raw planes first; the other extractors were
+ * merely lucky, not synchronised.
+ *
+ * A full context barrier is the only construct that orders against a producer
+ * whose stream is not exposed to us. It runs once per frame pair rather than
+ * inside any one extractor, so a single host-side wait covers them all. Cost
+ * through the FFmpeg path is within noise -- 177 ms against 179 ms, median of
+ * 7, on an idle host -- because the work being waited for is the data these
+ * kernels were about to read. */
+static int cuda_order_pictures_against_producer(VmafContext *vmaf)
+{
+    if (!vmaf->cuda.state.ctx)
+        return 0;
+
+    CudaFunctions *const cu_f = vmaf->cuda.state.f;
+    int err = cu_f->cuCtxPushCurrent(vmaf->cuda.state.ctx);
+    if (!err) {
+        err = cu_f->cuCtxSynchronize();
+        (void)cu_f->cuCtxPopCurrent(NULL);
+    }
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "could not order picture data against its producer (%d)\n",
+                 err);
+        return -EINVAL;
+    }
+    return 0;
+}
+#endif /* HAVE_CUDA */
+
 static int read_pictures_extractor_loop(VmafContext *vmaf, ReadPicturesFrame *fr, unsigned index)
 {
 #ifdef HAVE_CUDA
+    const int sync_err = cuda_order_pictures_against_producer(vmaf);
+    if (sync_err)
+        return sync_err;
+
     /* T-GPU-OPT-1 (ADR-0242): CUDA extractors are dispatched together
      * so their per-frame ``finished`` events can be drained in one
      * host-side syscall. Vulkan / SYCL extractors fall through to the

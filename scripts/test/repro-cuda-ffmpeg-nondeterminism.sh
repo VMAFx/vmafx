@@ -3,11 +3,22 @@
 #
 # FFmpeg's `libvmaf_cuda` filter intermittently returns a pooled VMAF score that
 # is wrong by ~0.5-3 points. The defect is timing-dependent, which is why it was
-# originally recorded as an unexplained 10-in-40: on an idle host it does not
-# reproduce at all (0/60 observed), and under host load it reaches ~23%
-# (14/60 observed at load average ~33).
+# originally recorded as an unexplained 10-in-40.
 #
-# Run it with load, or it will tell you nothing:
+# What reproduces it is CONCURRENT CUDA WORK, not host CPU load. A CPU spinner
+# is a poor stressor: at load average 22 with pure CPU spin the rate was 1/80,
+# while three concurrent `vmaf --backend cuda` processes (GPU ~57-63% busy) put
+# it at 56-57/60. Generate GPU contention, or this script will report a clean
+# run and tell you nothing:
+#
+#   # in another shell, for the duration of the measurement
+#   for i in 1 2 3; do
+#     while :; do vmaf --reference REF --distorted DIS --width 576 --height 324 \
+#       --pixel_format 420 --bitdepth 8 --backend cuda --output /dev/null --json \
+#       >/dev/null 2>&1; done &
+#   done
+#
+# Then:
 #
 #   scripts/test/repro-cuda-ffmpeg-nondeterminism.sh 60          # measure
 #   scripts/test/repro-cuda-ffmpeg-nondeterminism.sh 60 /path/libvmaf.so.dir
