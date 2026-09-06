@@ -124,13 +124,15 @@ static inline int32x4_t od_mulrshift_neon(int32x4_t x, int32_t k, int32_t round,
 /*
  * Apply the scalar `od_bin_fdct8` butterfly network to 4 columns
  * in parallel. Signature mirrors the AVX2 variant (ADR-0159) with
- * `int32x4_t` substituted for `__m256i`. Per ADR-0141 the
- * 30-butterfly network is kept together — splitting it would
- * break the one-to-one scalar diff that the bit-exactness audit
- * depends on.
+ * `int32x4_t` substituted for `__m256i`. Per ADR-0141 §2 / ADR-0159 /
+ * ADR-0278 the 30-butterfly network is kept together — splitting it would
+ * break the one-to-one scalar diff that the bit-exactness audit depends on.
+ * The full citation lives in this comment, not on the directive line below:
+ * that directive applies to the single line following it, so a wrapped
+ * justification would point the suppression at the comment instead of the
+ * function.
  */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-0141 §2 /
-// ADR-0159 / ADR-0278: 30-butterfly network kept whole for the scalar bit-exact diff.
+// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-0141
 static inline void od_bin_fdct8_simd(int32x4_t in0, int32x4_t in1, int32x4_t in2, int32x4_t in3,
                                      int32x4_t in4, int32x4_t in5, int32x4_t in6, int32x4_t in7,
                                      int32x4_t *out0, int32x4_t *out1, int32x4_t *out2,
