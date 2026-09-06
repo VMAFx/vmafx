@@ -65,6 +65,16 @@ which is safe; but that stream is created/destroyed inside
 `vmaf_cuda_drain_batch_thread_destroy`, not under a lock, so two threads
 calling `vmaf_close` simultaneously would race on teardown.
 
+> **Update 2026-09-06 — this paragraph is historical.** The thread-local
+> batch was the second half of `T-UPSTREAM-1305`: thread scope is *wider*
+> than the CUevents and `bool *`s the batch stores, so an abandoned context
+> handed freed handles to the next context on the same thread. The batch now
+> lives in `VmafCudaState::drain_batch` and is destroyed with the state —
+> see [ADR-1187](../adr/1187-cuda-drain-batch-state-owned.md) and
+> [`2030-cuda-drain-batch-ownership-2026-09-06.md`](2030-cuda-drain-batch-ownership-2026-09-06.md).
+> The teardown race described above is dissolved rather than fixed: two
+> threads closing two contexts now touch two different batches.
+
 **SYCL:** `VmafSyclState` owns two `sycl::queue` objects (primary +
 copy queue, lines 67-68 of `common.cpp`) and one optional `combined_queue`
 created lazily in `vmaf_sycl_graph_register`.  SYCL queues are

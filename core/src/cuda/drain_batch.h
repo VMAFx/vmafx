@@ -2,7 +2,8 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
- *  CUDA fence-batching helpers (T-GPU-OPT-1, ADR-0242).
+ *  CUDA fence-batching helpers (T-GPU-OPT-1, PR #312; re-scoped to the
+ *  backend state by ADR-1187).
  *
  *  Background
  *  ----------
@@ -19,11 +20,11 @@
  *  This module batches those N round-trips into a single
  *  ``cuStreamSynchronize`` on a shared drain stream:
  *
- *      drain_open()                 — engine enters submit-all mode
- *      drain_register(lc) × N       — extractors join during submit()
- *      drain_flush(cu_state)        — engine waits all N events at once
- *                                     and marks each lifecycle drained
- *      drain_close()                — engine leaves the batch
+ *      drain_open(cu_state)                 — engine enters submit-all mode
+ *      drain_register(cu_state, lc) × N     — extractors join during submit()
+ *      drain_flush(cu_state)                — engine waits all N events at once
+ *                                             and marks each lifecycle drained
+ *      drain_close(cu_state)                — engine leaves the batch
  *
  *  After ``drain_flush``, ``vmaf_cuda_kernel_collect_wait`` skips its
  *  per-stream sync because the lifecycle's ``drained`` flag is set,
@@ -37,13 +38,36 @@
  *  ``cuStreamWaitEvent`` on each registered ``finished`` event before
  *  the single sync. Bit-exact tolerance: places=4 (fork-wide gate).
  *
+ *  Ownership and lifetime (ADR-1187)
+ *  ---------------------------------
+ *  The batch table and the drain stream live in
+ *  ``VmafCudaState::drain_batch`` — see ``common.h`` — so they are
+ *  owned by the backend state the registered handles belong to.
+ *  Every entry aliases a ``CUevent`` and a ``bool *`` owned by an
+ *  extractor bound to that state, so state-scoped storage is the
+ *  only scope where the batch cannot outlive its contents.
+ *
+ *  This replaces the original ``static _Thread_local`` batch, which
+ *  was keyed by OS thread: an abandoned or errored ``VmafContext``
+ *  left the batch open with destroyed events and freed flag pointers
+ *  in it, and the next ``VmafContext`` created on that thread flushed
+ *  them (T-UPSTREAM-1305, Netflix/vmaf#1305).
+ *
+ *  ``vmaf_cuda_import_state`` copies the caller's ``VmafCudaState``
+ *  into the ``VmafContext`` **by value**, so the batch the engine
+ *  drives is the context's own copy, and its drain stream is destroyed
+ *  with that copy in ``vmaf_close_backends``. The caller's original
+ *  state keeps an untouched (zeroed) batch, so two contexts importing
+ *  the same state never share batch storage.
+ *
  *  Concurrency
  *  -----------
- *  All state is **thread-local** — each orchestrator thread keeps
- *  its own batch. The library's frame loop is single-threaded for
- *  the GPU dispatch path (the ``thread_pool`` parallelisation is for
- *  CPU extractors only — see ``read_pictures_should_skip``), so the
- *  TLS scope matches the actual call graph.
+ *  A ``VmafCudaState`` is documented as not thread-safe (one state per
+ *  driver thread — see ``libvmaf_cuda.h``), and the library's frame
+ *  loop is single-threaded for the GPU dispatch path (the
+ *  ``thread_pool`` parallelisation is for CPU extractors only — see
+ *  ``read_pictures_should_skip``), so state-scoped storage needs no
+ *  locking.
  *
  *  Failure mode
  *  ------------
@@ -66,24 +90,19 @@ extern "C" {
 
 struct VmafCudaKernelLifecycle;
 
-/* Maximum number of extractor lifecycles per drain batch. The fork
- * never registers more than ~16 simultaneous CUDA extractors; the
- * cap is set to 32 to leave headroom for ``--feature``-stacked
- * runs. Static-cap rather than dynamic alloc keeps the hot path
- * allocation-free. Overflow is degraded (per-extractor sync), not
- * fatal. */
-#define VMAF_CUDA_DRAIN_BATCH_MAX 32
+/* ``VMAF_CUDA_DRAIN_BATCH_MAX`` and ``VmafCudaDrainBatch`` are declared
+ * in ``common.h`` — the batch is a member of ``VmafCudaState``. */
 
 /**
- * Open a drain batch on the calling thread.
+ * Open a drain batch on @p cu_state.
  *
  * Idempotent: a second open without an intervening close is a no-op
- * and keeps the existing batch.
+ * and keeps the existing batch. NULL @p cu_state is a no-op.
  */
-void vmaf_cuda_drain_batch_open(void);
+void vmaf_cuda_drain_batch_open(VmafCudaState *cu_state);
 
 /**
- * Register an extractor lifecycle into the open batch.
+ * Register an extractor lifecycle into @p cu_state's open batch.
  *
  * Called by template-based extractors at the end of submit() (after
  * ``cuEventRecord(lc->finished, lc->str)``). When no batch is open,
@@ -91,13 +110,14 @@ void vmaf_cuda_drain_batch_open(void);
  * orchestrator (e.g. unit tests) keep working unchanged.
  *
  * Returns 0 on success, 0 also when the batch is closed (no-op),
- * and -ENOSPC when the batch is full (lifecycle skipped, the caller
- * falls back to per-stream sync via ``vmaf_cuda_kernel_collect_wait``).
+ * -EINVAL for a NULL @p cu_state or @p lc, and -ENOSPC when the batch
+ * is full (lifecycle skipped, the caller falls back to per-stream sync
+ * via ``vmaf_cuda_kernel_collect_wait``).
  */
-int vmaf_cuda_drain_batch_register(struct VmafCudaKernelLifecycle *lc);
+int vmaf_cuda_drain_batch_register(VmafCudaState *cu_state, struct VmafCudaKernelLifecycle *lc);
 
 /**
- * Register a raw (event, drained-flag) pair into the open batch.
+ * Register a raw (event, drained-flag) pair into @p cu_state's batch.
  *
  * Companion to ``vmaf_cuda_drain_batch_register`` for legacy
  * extractors that pre-date ``VmafCudaKernelLifecycle`` (currently
@@ -108,10 +128,16 @@ int vmaf_cuda_drain_batch_register(struct VmafCudaKernelLifecycle *lc);
  * ``collect()`` checks to decide whether to skip its
  * cuStreamSynchronize.
  *
- * Returns 0 on success, 0 when the batch is closed (no-op), or
- * -ENOSPC on overflow (caller falls back to per-stream sync).
+ * The @p cu_state passed here must be the same state the extractor is
+ * bound to (``fex->cu_state``), i.e. the context's own copy — see the
+ * ownership note above.
+ *
+ * Returns 0 on success, 0 when the batch is closed (no-op), -EINVAL
+ * for a NULL @p cu_state or @p drained_out, or -ENOSPC on overflow
+ * (caller falls back to per-stream sync).
  */
-int vmaf_cuda_drain_batch_register_event(CUevent finished, bool *drained_out);
+int vmaf_cuda_drain_batch_register_event(VmafCudaState *cu_state, CUevent finished,
+                                         bool *drained_out);
 
 /**
  * Drain all registered lifecycles in one host-side wait.
@@ -127,28 +153,29 @@ int vmaf_cuda_drain_batch_register_event(CUevent finished, bool *drained_out);
  *
  * No-op when no lifecycles are registered or the batch is closed.
  *
- * Returns 0 on success or a negative errno from
- * ``vmaf_cuda_result_to_errno`` on the first CUDA failure.
+ * Returns 0 on success, -EINVAL for a NULL @p cu_state, or a negative
+ * errno from ``vmaf_cuda_result_to_errno`` on the first CUDA failure.
  */
 int vmaf_cuda_drain_batch_flush(VmafCudaState *cu_state);
 
 /**
- * Close the drain batch on the calling thread.
+ * Close @p cu_state's drain batch.
  *
- * Resets the registration list. Does not destroy the drain stream
- * — that lives until ``vmaf_cuda_drain_batch_thread_destroy`` (or
- * thread exit; the stream is owned by the persistent CUDA context
- * across calls and is reused on the next batch).
+ * Resets the registration list *and* clears the registered event /
+ * flag slots, so no handle owned by a torn-down extractor stays
+ * reachable. Does not destroy the drain stream — that lives until
+ * ``vmaf_cuda_drain_batch_destroy``. NULL @p cu_state is a no-op.
  */
-void vmaf_cuda_drain_batch_close(void);
+void vmaf_cuda_drain_batch_close(VmafCudaState *cu_state);
 
 /**
- * Tear down the calling thread's drain stream.
+ * Tear down @p cu_state's drain stream and empty its batch.
  *
- * Called from the engine on context shutdown. Safe on a thread that
- * never opened a batch.
+ * Called from the engine on context shutdown, before the CUcontext
+ * itself is released. Safe on a state that never opened a batch, and
+ * safe to call more than once. NULL @p cu_state is a no-op.
  */
-void vmaf_cuda_drain_batch_thread_destroy(VmafCudaState *cu_state);
+void vmaf_cuda_drain_batch_destroy(VmafCudaState *cu_state);
 
 #ifdef __cplusplus
 } /* extern "C" */

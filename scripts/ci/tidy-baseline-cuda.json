@@ -4,13 +4,13 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 47,
-  "total_warnings": 1598,
+  "total_warnings": 1596,
   "total_nolint_uncited": 3,
   "warnings": {
     "core/src/cuda/common.c": 65,
     "core/src/cuda/common.h": 3,
     "core/src/cuda/cuda_helper.cuh": 2,
-    "core/src/cuda/drain_batch.c": 11,
+    "core/src/cuda/drain_batch.c": 9,
     "core/src/cuda/kernel_template.h": 15,
     "core/src/cuda/picture_cuda.c": 40,
     "core/src/cuda/picture_cuda.h": 1,
@@ -64,5 +64,5 @@
     "core/src/feature/cuda/integer_vif_cuda.c": 1,
     "core/src/feature/cuda/ssimulacra2_cuda.c": 1
   },
-  "source": "converted 2026-09-02 from the agy gpu-debt measurement (clang-tidy 22.1.8, -p build-gpu, same (path,line,column,check) dedup); see docs/research/2027-lint-carveout-inventory-2026-09-02.md"
+  "source": "converted 2026-09-02 from the agy gpu-debt measurement (clang-tidy 22.1.8, -p build-gpu, same (path,line,column,check) dedup); see docs/research/2027-lint-carveout-inventory-2026-09-02.md | 2026-09-06: drain_batch.c tightened 11 -> 9 by ADR-1187 (measured with scripts/ci/tidy-ratchet.py --lane cuda --only core/src/cuda/drain_batch.c, clang-tidy 22.1.8); every other entry untouched."
 }

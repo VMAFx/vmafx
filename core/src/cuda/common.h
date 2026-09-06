@@ -36,12 +36,50 @@ typedef struct VmafCudaBuffer {
 
 typedef struct CudaFunctions CudaFunctions;
 
+/* Maximum number of extractor lifecycles per drain batch. The fork
+ * never registers more than ~16 simultaneous CUDA extractors; the
+ * cap is set to 32 to leave headroom for ``--feature``-stacked
+ * runs. Static-cap rather than dynamic alloc keeps the hot path
+ * allocation-free. Overflow is degraded (per-extractor sync), not
+ * fatal. See ``drain_batch.h`` (T-GPU-OPT-1, PR #312). */
+#define VMAF_CUDA_DRAIN_BATCH_MAX 32
+
+/**
+ * @struct VmafCudaDrainBatch
+ * @brief  Engine-scope CUDA fence batch (T-GPU-OPT-1, PR #312).
+ *
+ * Lives inside @ref VmafCudaState so its lifetime is the backend
+ * state's, not the OS thread's (ADR-1187). See ``drain_batch.h`` for
+ * the operation contract.
+ *
+ * - ``open``       : the engine entered submit-all mode.
+ * - ``n``          : number of registered entries in this batch.
+ * - ``finished[]`` : registered CUevent (lifecycle->finished or raw
+ *                    legacy s->finished) waited on as a group.
+ * - ``flags[]``    : pointer to the bool the extractor's collect()
+ *                    polls to decide whether to skip its sync.
+ * - ``drain_str``  : lazily-created shared drain stream, reused across
+ *                    batches and destroyed by
+ *                    ``vmaf_cuda_drain_batch_destroy``.
+ */
+typedef struct VmafCudaDrainBatch {
+    bool open;
+    unsigned n;
+    CUevent finished[VMAF_CUDA_DRAIN_BATCH_MAX];
+    bool *flags[VMAF_CUDA_DRAIN_BATCH_MAX];
+    CUstream drain_str;
+} VmafCudaDrainBatch;
+
 typedef struct VmafCudaState {
     CUcontext ctx;
     CUstream str;
     CUdevice dev;
     CudaFunctions *f;
     int release_ctx;
+    /* Fence batch for this backend state. Every entry holds handles and
+     * host pointers owned by extractors bound to THIS state, so the batch
+     * must not outlive it — ADR-1187 (T-UPSTREAM-1305). */
+    VmafCudaDrainBatch drain_batch;
 } VmafCudaState;
 
 #define VMAF_CUDA_THREADS_PER_WARP 32

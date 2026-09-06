@@ -909,3 +909,5 @@
 1171-release-please-credential-gate-warning
 1179-sycl-v1-model-crash-fix
 1183-model-options-gate-gpu-twin-selection
+1187-cuda-drain-batch-state-owned
+1189-score-at-index-eagain-contract

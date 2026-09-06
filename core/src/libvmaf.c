@@ -1471,21 +1471,48 @@ static int vmaf_ctx_dnn_run_frame(VmafContext *vmaf, const VmafPicture *ref, uns
     return vmaf_ctx_dnn_run_frame_nchw(vmaf, ref, index);
 }
 
+/* Retire any drain batch left open by an abandoned frame loop (ADR-1187,
+ * T-UPSTREAM-1305).
+ *
+ * `read_pictures_extractor_loop_cuda` deliberately returns with the batch
+ * open so the NEXT frame's Phase-1 flush can wait on the events it
+ * registered. A caller that abandons the context — an error return from
+ * `vmaf_read_pictures`, a decode failure, or simply `vmaf_close()` without
+ * the terminal `vmaf_read_pictures(NULL, NULL)` — never reaches that flush,
+ * so the batch still holds CUevents and `bool *`s owned by extractors that
+ * `feature_extractor_vector_destroy()` is about to free.
+ *
+ * Run the drain to completion here, BEFORE the extractors are destroyed, so
+ * the in-flight GPU work that reads their buffers has landed. Best effort:
+ * a CUDA error on the abandon path is not actionable and must not mask the
+ * caller's own error, so the status is deliberately discarded. */
+static void vmaf_close_cuda_drain_fence(VmafContext *vmaf)
+{
+#ifdef HAVE_CUDA
+    if (!vmaf->cuda.state.ctx)
+        return;
+    (void)vmaf_cuda_drain_batch_flush(&vmaf->cuda.state);
+    vmaf_cuda_drain_batch_close(&vmaf->cuda.state);
+#else
+    (void)vmaf; /* CPU-only build: no CUDA batch to retire. */
+#endif
+}
+
 /* Release the GPU backend state held by the context. CUDA resources are
- * context-owned (ring buffer, then the per-thread drain stream, then the
+ * context-owned (ring buffer, then the state's drain stream, then the
  * context itself — the drain-stream destroy needs the still-live context to
- * call cuStreamDestroy, T-GPU-OPT-1 / ADR-0242). SYCL / Metal / HIP state is
- * caller-owned: vmaf_<backend>_import_state() does not transfer ownership,
- * so only the SYCL picture pool is closed here and the state pointers are
- * cleared — the caller calls vmaf_<backend>_state_free() after vmaf_close()
- * (ADR-0519). */
+ * call cuStreamDestroy, T-GPU-OPT-1 / ADR-0242, ADR-1187). SYCL / Metal /
+ * HIP state is caller-owned: vmaf_<backend>_import_state() does not transfer
+ * ownership, so only the SYCL picture pool is closed here and the state
+ * pointers are cleared — the caller calls vmaf_<backend>_state_free() after
+ * vmaf_close() (ADR-0519). */
 static void vmaf_close_backends(VmafContext *vmaf)
 {
 #ifdef HAVE_CUDA
     if (vmaf->cuda.ring_buffer)
         vmaf_gpu_picture_pool_close(vmaf->cuda.ring_buffer);
     if (vmaf->cuda.state.ctx)
-        vmaf_cuda_drain_batch_thread_destroy(&vmaf->cuda.state);
+        vmaf_cuda_drain_batch_destroy(&vmaf->cuda.state);
     if (vmaf->cuda.state.ctx)
         vmaf_cuda_release(&vmaf->cuda.state);
 #endif
@@ -1524,6 +1551,7 @@ int vmaf_close(VmafContext *vmaf)
     const int framesync_err = vmaf_framesync_destroy(vmaf->framesync);
     if (!close_err)
         close_err = framesync_err;
+    vmaf_close_cuda_drain_fence(vmaf);
     feature_extractor_vector_destroy(&(vmaf->registered_feature_extractors));
     vmaf_feature_collector_destroy(vmaf->feature_collector);
     /* Both pool destroys return -EINVAL for a NULL pool (single-threaded
@@ -2153,7 +2181,7 @@ static int flush_context_cuda(VmafContext *vmaf)
      * see a clean state. The fall-through to vmaf_cuda_sync below
      * still catches any non-template-extractor stragglers. */
     err |= vmaf_cuda_drain_batch_flush(&vmaf->cuda.state);
-    vmaf_cuda_drain_batch_close();
+    vmaf_cuda_drain_batch_close(&vmaf->cuda.state);
     RegisteredFeatureExtractors rfe = vmaf->registered_feature_extractors;
     for (unsigned i = 0; i < rfe.cnt; i++) {
         if (rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA) {
@@ -2657,16 +2685,16 @@ static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, VmafPicture *ref
          * time collect() returns, so it is safe to drop the ref now. */
         fex_release_prev_ref(fex_ctx->fex);
         if (err) {
-            vmaf_cuda_drain_batch_close();
+            vmaf_cuda_drain_batch_close(&vmaf->cuda.state);
             return err;
         }
     }
-    vmaf_cuda_drain_batch_close();
+    vmaf_cuda_drain_batch_close(&vmaf->cuda.state);
 
     /* Phase 2: batched submit of the curr frame. The drain batch is
      * re-opened so each extractor's submit() registers its
      * ``finished`` event for the next frame's drain_flush. */
-    vmaf_cuda_drain_batch_open();
+    vmaf_cuda_drain_batch_open(&vmaf->cuda.state);
     for (unsigned i = 0; i < vmaf->registered_feature_extractors.cnt; i++) {
         VmafFeatureExtractorContext *fex_ctx = vmaf->registered_feature_extractors.fex_ctx[i];
         if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA)) {
@@ -2691,7 +2719,7 @@ static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, VmafPicture *ref
         if ((fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) && vmaf->prev_ref.ref) {
             err = vmaf_picture_ref(&fex_ctx->fex->prev_ref, &vmaf->prev_ref);
             if (err) {
-                vmaf_cuda_drain_batch_close();
+                vmaf_cuda_drain_batch_close(&vmaf->cuda.state);
                 return err;
             }
         }
@@ -2699,7 +2727,7 @@ static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, VmafPicture *ref
                                                     index);
         if (err) {
             fex_release_prev_ref(fex_ctx->fex);
-            vmaf_cuda_drain_batch_close();
+            vmaf_cuda_drain_batch_close(&vmaf->cuda.state);
             return err;
         }
         fex_ctx->gpu_pending = true;
@@ -3021,6 +3049,39 @@ int vmaf_register_metadata_handler(VmafContext *vmaf, VmafMetadataConfiguration 
     return vmaf_feature_collector_register_metadata(vmaf->feature_collector, cfg);
 }
 
+/* Asynchronous-write guard for the two `*_at_index` readers (ADR-1189,
+ * T-UPSTREAM-1305 / Netflix#1305).
+ *
+ * The GPU dispatch path is double-buffered: `read_pictures_extractor_loop`
+ * submits frame N and only collects it during frame N+1 (or at the terminal
+ * `vmaf_read_pictures(NULL, NULL)`). Between those two points the extractor's
+ * result for index N is not in the feature collector, and — on CUDA — the
+ * drain batch that fences the readback has not been flushed yet.
+ *
+ * Reading such an index is never a data race (`vmaf_feature_collector_get_score`
+ * takes the collector lock), but it IS a stale read: the model path in
+ * `vmaf_score_at_index` would fall through to `vmaf_predict_score_at_index`
+ * and predict from whatever subset of the frame's features happens to be
+ * written. Report the index as "not yet available" instead, so callers get a
+ * retryable -EAGAIN rather than a silently wrong score.
+ *
+ * Returns -EAGAIN when any registered extractor still has un-collected
+ * asynchronous work for exactly @p index, 0 otherwise. Indices other than the
+ * one in flight are unaffected — each extractor tracks a single pending
+ * submission (`gpu_pending_index`). */
+static int score_at_index_pending_guard(const VmafContext *vmaf, unsigned index)
+{
+    const RegisteredFeatureExtractors *rfe = &vmaf->registered_feature_extractors;
+    for (unsigned i = 0; i < rfe->cnt; i++) {
+        const VmafFeatureExtractorContext *fex_ctx = rfe->fex_ctx[i];
+        if (fex_ctx == NULL)
+            continue;
+        if (fex_ctx->gpu_pending && fex_ctx->gpu_pending_index == index)
+            return -EAGAIN;
+    }
+    return 0;
+}
+
 int vmaf_feature_score_at_index(VmafContext *vmaf, const char *feature_name, double *score,
                                 unsigned index)
 {
@@ -3030,6 +3091,10 @@ int vmaf_feature_score_at_index(VmafContext *vmaf, const char *feature_name, dou
         return -EINVAL;
     if (!score)
         return -EINVAL;
+
+    const int pending = score_at_index_pending_guard(vmaf, index);
+    if (pending)
+        return pending;
 
     return vmaf_feature_collector_get_score(vmaf->feature_collector, feature_name, score, index);
 }
@@ -3042,6 +3107,11 @@ int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsi
         return -EINVAL;
     if (!score)
         return -EINVAL;
+
+    /* ADR-1189: never predict from a frame whose GPU work is still in flight. */
+    const int pending = score_at_index_pending_guard(vmaf, index);
+    if (pending)
+        return pending;
 
     int err = vmaf_feature_collector_get_score(vmaf->feature_collector, model->name, score, index);
     /* Netflix#755 / ADR-0154: -EAGAIN from the *model* score vector means the
@@ -3073,6 +3143,11 @@ int vmaf_score_at_index_model_collection(VmafContext *vmaf, VmafModelCollection 
         return -EINVAL;
     if (!score)
         return -EINVAL;
+
+    /* ADR-1189: same in-flight guard as the single-model reader above. */
+    const int pending = score_at_index_pending_guard(vmaf, index);
+    if (pending)
+        return pending;
 
     return vmaf_predict_score_at_index_model_collection(model_collection, vmaf->feature_collector,
                                                         index, score);

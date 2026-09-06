@@ -246,7 +246,8 @@ static inline int vmaf_cuda_kernel_collect_wait(VmafCudaKernelLifecycle *lc,
  * submit()-side post-DtoH helper (T-GPU-OPT-1, ADR-0242).
  *
  *   1. cuEventRecord(lc->finished, lc->str)  — fence the readback.
- *   2. vmaf_cuda_drain_batch_register(lc)    — opt into the engine's
+ *   2. vmaf_cuda_drain_batch_register(cu_state, lc)
+ *                                            — opt into the engine's
  *                                              batched drain when one
  *                                              is open. No-op when the
  *                                              engine has not entered
@@ -260,7 +261,7 @@ static inline int vmaf_cuda_kernel_collect_wait(VmafCudaKernelLifecycle *lc,
  * register without touching their collect() paths. Forward declared:
  * the implementation lives in ``drain_batch.c``.
  */
-int vmaf_cuda_drain_batch_register(VmafCudaKernelLifecycle *lc);
+int vmaf_cuda_drain_batch_register(VmafCudaState *cu_state, VmafCudaKernelLifecycle *lc);
 
 static inline int vmaf_cuda_kernel_submit_post_record(VmafCudaKernelLifecycle *lc,
                                                       VmafCudaState *cu_state)
@@ -270,7 +271,7 @@ static inline int vmaf_cuda_kernel_submit_post_record(VmafCudaKernelLifecycle *l
     /* Best-effort: drain-batch registration failure (overflow, no
      * batch open) silently degrades to per-stream sync; never
      * propagated as an error — the extractor is still correct. */
-    (void)vmaf_cuda_drain_batch_register(lc);
+    (void)vmaf_cuda_drain_batch_register(cu_state, lc);
     return 0;
 }
 

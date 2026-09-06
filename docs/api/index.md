@@ -103,6 +103,18 @@ Every non-void function returns `int` with these conventions:
     a fatal error — the typical fix is either flushing
     (`vmaf_read_pictures(NULL, NULL, 0)`) before scoring, or polling
     until success.
+
+    The three per-index readers — `vmaf_score_at_index`,
+    `vmaf_score_at_index_model_collection` and
+    `vmaf_feature_score_at_index` — also return `-EAGAIN` for a frame
+    whose GPU work is still in flight. The GPU path is double-buffered:
+    frame N's kernels are submitted during `vmaf_read_pictures(…, N)`
+    and collected during `vmaf_read_pictures(…, N+1)` (or at the
+    terminal flush), so asking for the most recently submitted index
+    mid-stream is a "not yet" and not an error in your call. Flush, or
+    read the index once the double buffer has rotated past it. Earlier
+    indices are unaffected. See
+    [ADR-1189](../adr/1189-score-at-index-eagain-contract.md).
   - `-ENOMEM` — allocation failed.
   - `-ENOENT` — file not found (`vmaf_model_load_from_path` etc).
   - `-ENOSYS` — entry point compiled out (e.g. `vmaf_dnn_*` on a
@@ -196,9 +208,9 @@ typedef struct VmafConfiguration {
 | `vmaf_use_feature(ctx, "psnr", opts)` | 0 / -errno | Register an extra feature not required by any loaded model. Context takes ownership of `opts`; on success never free it yourself. |
 | `vmaf_import_feature_score(ctx, name, value, index)` | 0 / -errno | Inject a pre-computed feature value (e.g. from a different pipeline). |
 | `vmaf_read_pictures(ctx, ref, dist, index)` | 0 / -errno | Feed a frame pair. `ctx` takes ownership via `vmaf_picture_unref()`. `index` must be **strictly increasing** across successive calls — non-monotonic indices return `-EINVAL` (see [ADR-0152](../adr/0152-vmaf-read-pictures-monotonic-index.md)). Pass `NULL, NULL, 0` to flush after the last frame. |
-| `vmaf_score_at_index(ctx, model, *score, index)` | 0 / -errno | Per-frame VMAF score. |
-| `vmaf_score_at_index_model_collection(ctx, coll, *score, index)` | 0 / -errno | Per-frame bootstrap score (mean + stddev + 95% CI). |
-| `vmaf_feature_score_at_index(ctx, name, *score, index)` | 0 / -errno | Per-frame feature score (e.g. `"psnr_y"`). |
+| `vmaf_score_at_index(ctx, model, *score, index)` | 0 / -errno | Per-frame VMAF score. `-EAGAIN` while that index's GPU work is still in flight ([ADR-1189](../adr/1189-score-at-index-eagain-contract.md)). |
+| `vmaf_score_at_index_model_collection(ctx, coll, *score, index)` | 0 / -errno | Per-frame bootstrap score (mean + stddev + 95% CI). Same `-EAGAIN` contract. |
+| `vmaf_feature_score_at_index(ctx, name, *score, index)` | 0 / -errno | Per-frame feature score (e.g. `"psnr_y"`). Same `-EAGAIN` contract. |
 | `vmaf_score_pooled(ctx, model, method, *score, lo, hi)` | 0 / -errno | Pooled VMAF over `[lo, hi]`. |
 | `vmaf_score_pooled_model_collection(...)` | 0 / -errno | Pooled bootstrap. |
 | `vmaf_feature_score_pooled(ctx, name, method, *score, lo, hi)` | 0 / -errno | Pooled feature score. |

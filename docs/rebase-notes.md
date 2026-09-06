@@ -1,6 +1,34 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/t-upstream-1305-cuda-drain-batch-thread- — CUDA drain batch is owned by `VmafCudaState` (2026-09-06)
+
+- `core/src/cuda/drain_batch.{c,h}` and `core/src/cuda/common.h`: fork-added
+  (T-GPU-OPT-1, PR #312). Invariant: the fence batch (`VmafCudaDrainBatch`) is a
+  member of `VmafCudaState` and every drain entry point takes the owning
+  `VmafCudaState *`. Never reintroduce `static`/`_Thread_local` storage for it —
+  each entry aliases a `CUevent` and a `bool *` owned by an extractor bound to
+  that state, so any scope wider than the state is a use-after-free
+  (ADR-1187, T-UPSTREAM-1305). Registration sites must pass `fex->cu_state`, not
+  a by-value copy such as `VifStateCuda::cu_state`.
+- `core/src/libvmaf.c`: `vmaf_close()` runs `vmaf_close_cuda_drain_fence()`
+  **before** `feature_extractor_vector_destroy()`. Keep that ordering on rebase —
+  the fence exists precisely because the extractors own the handles the batch
+  holds. `vmaf_close_backends()` keeps calling
+  `vmaf_cuda_drain_batch_destroy()` before `vmaf_cuda_release()`, because
+  destroying the drain stream needs a live CUcontext.
+- `core/src/libvmaf.c` + `core/include/libvmaf/libvmaf.h`: the three
+  `*_score_at_index` readers return `-EAGAIN` when an extractor still has
+  un-collected work for exactly that index (ADR-1189). Upstream Netflix has no
+  such guard; a sync that reintroduces the unguarded body reopens the
+  fabricated-prediction path. The guard is `gpu_pending && gpu_pending_index ==
+  index` only — never widen it to "any pending work", which would break pooled
+  reads over earlier indices.
+- `core/src/cuda/common.c`: the compute stream's priority clamp is
+  `MIN(low, MAX(high, prio))`. CUDA's range is inverted; a rebase that restores
+  the upstream-shaped `MAX(low, MIN(high, prio))` silently requests the lowest
+  priority. Pinned by `test_cuda_stream_priority_is_greatest`.
+
 ## fix/tidy-lane-lto-flag — the tidy lane builds without LTO (2026-09-05)
 
 No rebase impact: `.github/workflows/lint-and-format.yml` is fork-added. Invariant: any build whose

@@ -70,9 +70,16 @@ static int init_with_primary_context(VmafCudaState *cu_state)
     int low, high;
     CHECK_CUDA_GOTO(cu_state->f, cuCtxGetStreamPriorityRange(&low, &high), fail);
     // Use highest priority for VMAF compute to preempt lower-priority
-    // work (e.g., NVENC/NVDEC) when sharing the GPU
+    // work (e.g., NVENC/NVDEC) when sharing the GPU.
+    //
+    // cuCtxGetStreamPriorityRange returns (leastPriority, greatestPriority)
+    // and CUDA's scale is INVERTED: a numerically smaller value is a higher
+    // priority, so `high <= low` always holds. The clamp therefore has to
+    // pin `prio` into [high, low] as MIN(low, MAX(high, prio)); the previous
+    // MAX(low, MIN(high, prio)) form collapsed to `low`, i.e. it silently
+    // requested the LOWEST priority — T-UPSTREAM-1305 nit, ADR-1187.
     const int prio = high;
-    const int prio2 = MAX(low, MIN(high, prio));
+    const int prio2 = MIN(low, MAX(high, prio));
     CHECK_CUDA_GOTO(cu_state->f,
                     cuStreamCreateWithPriority(&cu_state->str, CU_STREAM_NON_BLOCKING, prio2),
                     fail);

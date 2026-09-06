@@ -1247,7 +1247,7 @@ static int integer_compute_adm_cuda(VmafFeatureExtractor *fex, AdmStateCuda *s,
     /* Engine-scope fence batching opt-in (T-GPU-OPT-1, ADR-0242).
      * Best-effort: registration failure (overflow / no batch open)
      * silently degrades to the per-stream sync in collect(). */
-    (void)vmaf_cuda_drain_batch_register_event(s->finished, &s->drained);
+    (void)vmaf_cuda_drain_batch_register_event(fex->cu_state, s->finished, &s->drained);
     return 0;
 }
 

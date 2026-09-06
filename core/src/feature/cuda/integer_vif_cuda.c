@@ -659,7 +659,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                                                   sizeof(vif_accums) * 4, s->str));
         CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->finished, s->str));
         /* Engine-scope fence batching opt-in (T-GPU-OPT-1, ADR-0242). */
-        (void)vmaf_cuda_drain_batch_register_event(s->finished, &s->drained);
+        (void)vmaf_cuda_drain_batch_register_event(fex->cu_state, s->finished, &s->drained);
     }
     return 0;
 }

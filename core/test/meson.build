@@ -1646,6 +1646,28 @@ test_cuda_buffer_alloc_oom = executable('test_cuda_buffer_alloc_oom',
 )
 test('test_cuda_buffer_alloc_oom', test_cuda_buffer_alloc_oom, suite : ['fast', 'gpu'])
 
+# T-UPSTREAM-1305 / Netflix#1305 — the CUDA drain batch (T-GPU-OPT-1) used to be
+# `static _Thread_local`, so it was keyed by OS thread instead of by the
+# VmafCudaState owning the CUevents and flag pointers registered into it.
+# ADR-1187 moves it into VmafCudaState. This test pins the three observable
+# consequences: a flush through an unrelated state must not drain another
+# state's registrations, teardown must empty an abandoned open batch rather
+# than only dropping the drain stream, and the compute stream must be created
+# at CUDA's greatest (not least) priority. GPU-gated: skips cleanly when no
+# CUDA device is visible.
+# glibc >= 2.34 folds dlopen/dlsym into libc; keep the explicit -ldl for
+# older toolchains and musl.
+test_cuda_drain_batch_dl = cc.find_library('dl', required : false)
+test_cuda_drain_batch_state_scope = executable('test_cuda_drain_batch_state_scope',
+    ['test.c', 'test_cuda_drain_batch_state_scope.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, test_cuda_drain_batch_dl],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_drain_batch_state_scope', test_cuda_drain_batch_state_scope,
+    suite : ['fast', 'gpu'])
+
 # PR #850 — libvmaf.c CUDA-only NULL deref guard.
 # Before the fix, in CUDA-only mode (HW_FLAG_HOST not set) the
 # unconditional `ref = &ref_host` reassignment passed a zero-initialised

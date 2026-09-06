@@ -469,7 +469,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
      * false and collect() falls back to the legacy per-stream
      * cuStreamSynchronize via vmaf_cuda_kernel_collect_wait. */
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.finished, s->lc.str));
-    (void)vmaf_cuda_drain_batch_register(&s->lc);
+    (void)vmaf_cuda_drain_batch_register(fex->cu_state, &s->lc);
     return 0;
 
 free_tmp:

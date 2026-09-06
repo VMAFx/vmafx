@@ -356,6 +356,12 @@ VMAF_EXPORT int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPict
  *
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
+ *         `-EAGAIN` means the frame at @p index is still in flight: the GPU
+ *         path is double-buffered, so frame N's work is collected during
+ *         `vmaf_read_pictures(..., N + 1)` or at the terminal
+ *         `vmaf_read_pictures(NULL, NULL, 0)` flush. Flush (or read the index
+ *         once the double buffer has rotated past it) and retry — see
+ *         ADR-1189.
  *
  * @thread-safety Not thread-safe. Use one VmafContext per thread.
  */
@@ -375,6 +381,12 @@ VMAF_EXPORT int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double 
  *
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
+ *         `-EAGAIN` means the frame at @p index is still in flight: the GPU
+ *         path is double-buffered, so frame N's work is collected during
+ *         `vmaf_read_pictures(..., N + 1)` or at the terminal
+ *         `vmaf_read_pictures(NULL, NULL, 0)` flush. Flush (or read the index
+ *         once the double buffer has rotated past it) and retry — see
+ *         ADR-1189.
  *
  * @thread-safety Not thread-safe. Use one VmafContext per thread.
  */
@@ -396,6 +408,12 @@ VMAF_EXPORT int vmaf_score_at_index_model_collection(VmafContext *vmaf,
  *
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
+ *         `-EAGAIN` means the frame at @p index is still in flight: the GPU
+ *         path is double-buffered, so frame N's work is collected during
+ *         `vmaf_read_pictures(..., N + 1)` or at the terminal
+ *         `vmaf_read_pictures(NULL, NULL, 0)` flush. Flush (or read the index
+ *         once the double buffer has rotated past it) and retry — see
+ *         ADR-1189.
  *
  * @thread-safety Not thread-safe. Use one VmafContext per thread.
  */

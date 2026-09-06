@@ -144,6 +144,34 @@ cuda/
   (future T-GPU-OPT-N) depends on the no-per-frame-alloc invariant
   from this change.
 
+- **Drain-batch storage is `VmafCudaState`-scoped, never thread-scoped**
+  (fork-local, T-GPU-OPT-1 / T-UPSTREAM-1305 / ADR-1187):
+  `VmafCudaDrainBatch` is a member of `VmafCudaState`
+  ([`common.h`](common.h)) and every entry point in
+  [`drain_batch.h`](drain_batch.h) takes the owning `VmafCudaState *`.
+  Each registered entry aliases a `CUevent` and a `bool *` owned by a
+  feature extractor bound to that state, so **any** storage scope wider
+  than the state (`static`, `_Thread_local`, a process-wide map) makes
+  the batch outlive its contents. That is exactly the shape that let an
+  abandoned `VmafContext` hand destroyed events and freed flag pointers
+  to the next context on the same thread. **On rebase**: registration
+  sites must pass `fex->cu_state` — never a by-value copy such as
+  `VifStateCuda::cu_state` — and `vmaf_close()` must keep running
+  `vmaf_close_cuda_drain_fence()` *before*
+  `feature_extractor_vector_destroy()`, with
+  `vmaf_cuda_drain_batch_destroy()` still ahead of `vmaf_cuda_release()`
+  in `vmaf_close_backends()` (destroying the drain stream needs a live
+  CUcontext). Pinned by
+  [`test_cuda_drain_batch_state_scope.c`](../../test/test_cuda_drain_batch_state_scope.c).
+  See [ADR-1187](../../../docs/adr/1187-cuda-drain-batch-state-owned.md).
+
+- **Compute-stream priority uses CUDA's inverted scale**
+  (fork-local, ADR-1187): `cuCtxGetStreamPriorityRange` yields
+  `(leastPriority, greatestPriority)` where *smaller is higher*, so the
+  clamp in `common.c` is `MIN(low, MAX(high, prio))`. **On rebase**: a
+  `MAX(low, MIN(high, prio))` form looks equivalent and is not — it
+  collapses to the lowest priority.
+
 - **`integer_ms_ssim_cuda.c` per-scale partials topology**
   (fork-local, T-GPU-OPT-2 / ADR-0271): the file allocates
   **per-scale** device + pinned-host partials buffers
