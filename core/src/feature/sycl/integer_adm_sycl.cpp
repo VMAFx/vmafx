@@ -43,6 +43,7 @@
 #include <cstdio>
 
 #include "config.h"
+#include "feature/adm_angle_flag.h"
 #include "feature/adm_csf_fixed_point.h"
 #include "feature/barten_csf_tools.h"
 #include "feature/integer_adm.h"
@@ -705,8 +706,6 @@ launch_decouple_csf(sycl::queue &q, int scale, unsigned half_w, unsigned half_h,
     // module on non-fp64 hardware — even if the fp64 kernel is never submitted.
     GainLimitQ31 const e_gain_q31 = gain_limit_to_q31(adm_enhn_gain_limit);
 
-    constexpr float cos_1deg_sq = 0.99969541789740297f; // cos(pi/180)^2
-
     constexpr int WG_X = 16;
     constexpr int WG_Y = 16;
     sycl::range<2> global(((half_h + WG_Y - 1) / WG_Y) * WG_Y, ((half_w + WG_X - 1) / WG_X) * WG_X);
@@ -733,27 +732,18 @@ launch_decouple_csf(sycl::queue &q, int scale, unsigned half_w, unsigned half_h,
             int64_t const o_mag_sq = (int64_t)o[0] * o[0] + (int64_t)o[1] * o[1];
             int64_t const t_mag_sq = (int64_t)t[0] * t[0] + (int64_t)t[1] * t[1];
 
-            // CPU divides by 4096 before float conversion to
-            // avoid float precision issues with large int64 values.
-            // The pragma block disables FMA contraction so the
-            // comparison evaluates left-to-right (matching CPU's
-            // gcc -O2 default with -ffp-contract=off) — without it,
-            // icpx fuses the multiplications differently than gcc,
-            // producing a 2.4e-4 adm_scale2 drift on a single
-            // Netflix-normal frame at the cos(1deg)^2 boundary.
-            // The pragma must be at the head of a compound stmt;
-            // braces give it the right scope. T7-16.
-            bool angle_flag;
-            {
-#pragma clang fp contract(off)
-                float const ot_f = (float)ot_dp / 4096.0f;
-                float const om_f = (float)o_mag_sq / 4096.0f;
-                float const tm_f = (float)t_mag_sq / 4096.0f;
-                float const lhs = ot_f * ot_f;
-                float const rhs_step = cos_1deg_sq * om_f;
-                float const rhs = rhs_step * tm_f;
-                angle_flag = (ot_f >= 0.0f) && (lhs >= rhs);
-            }
+            // ADR-1194: the CPU narrows each operand to float and then
+            // evaluates the comparison in double. Doing the whole thing in
+            // float (as this kernel used to) is a *different* predicate — it
+            // rounds the squared dot product and the cos(1deg)^2 product to
+            // 24 bits each — and flipped angle_flag on ~3e-5 of near-parallel
+            // band quadruples. binary64 is not an option here: Intel Arc
+            // A-series and most iGPUs expose no fp64, and one fp64
+            // instruction anywhere in this TU makes the runtime reject the
+            // whole SPIR-V module (see the GainLimitQ31 note above). The
+            // shared helper reproduces the CPU's double-precision result
+            // bit-for-bit in int64 arithmetic instead.
+            bool const angle_flag = adm_angle_flag_i64(ot_dp, o_mag_sq, t_mag_sq) != 0;
 
             // Process each band
             for (int band = 0; band < 3; band++) {
@@ -1008,7 +998,6 @@ static sycl::event launch_csf_den_cm_3band(
     auto e_cm_shift_xcub2 = cm_shift_xcub[2];
     // decouple gain limit (Q31 fixed-point, same as in launch_decouple_csf)
     GainLimitQ31 e_gain_q31 = gain_limit_to_q31(adm_enhn_gain_limit);
-    constexpr float cos_1deg_sq = 0.99969541789740297f;
 
     constexpr int WG_SIZE = 256;
     constexpr int MAX_SUBGROUPS = 32;
@@ -1087,19 +1076,10 @@ static sycl::event launch_csf_den_cm_3band(
                     int64_t const o_mag_sq = (int64_t)o[0] * o[0] + (int64_t)o[1] * o[1];
                     int64_t const t_mag_sq =
                         (int64_t)th_all[0] * th_all[0] + (int64_t)th_all[1] * th_all[1];
-                    // No-contract block (T7-16): pragma must sit at
-                    // the head of a compound statement.
-                    bool angle_flag;
-                    {
-#pragma clang fp contract(off)
-                        float const ot_f = (float)ot_dp / 4096.0f;
-                        float const om_f = (float)o_mag_sq / 4096.0f;
-                        float const tm_f = (float)t_mag_sq / 4096.0f;
-                        float const lhs = ot_f * ot_f;
-                        float const rhs_step = cos_1deg_sq * om_f;
-                        float const rhs = rhs_step * tm_f;
-                        angle_flag = (ot_f >= 0.0f) && (lhs >= rhs);
-                    }
+                    // fp64-free replica of the CPU predicate (ADR-1194) —
+                    // see the scale-0 kernel above for why binary64 cannot
+                    // be used in this translation unit.
+                    bool const angle_flag = adm_angle_flag_i64(ot_dp, o_mag_sq, t_mag_sq) != 0;
 
                     // Decouple + CSF for each band → r_val[band], csf_a_val[band]
                     int32_t r_vals[3];

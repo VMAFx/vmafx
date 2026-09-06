@@ -1470,3 +1470,42 @@ survivors. Measured, one ULP in linear RGB became a **2.62e-03** score delta.
 **private** scalar reference, not against the shipped function, so it will not
 catch a shipped copy that drifts. Change the shipped copies and that reference
 together.
+
+## `angle_flag` has exactly one definition (ADR-1194)
+
+The integer-ADM 1-degree angle test lives in
+[`adm_angle_flag.h`](adm_angle_flag.h) and nowhere else. Do not re-inline it
+into a backend, and do not "improve" it.
+
+- `adm_angle_flag_fp64()` is the **golden-frozen** upstream expression: narrow
+  each int64 operand to `float`, then compare in `double`. The narrowing is
+  lossy past the 24-bit significand — that is not a bug to fix, it is the
+  value the Netflix golden assertions encode (CLAUDE.md rule 1). The scalar
+  CPU path, CUDA and HIP call it, at both scale 0 and scales 1-3.
+- `adm_angle_flag_i64()` returns the **bit-identical** result using only
+  64-bit integers. SYCL calls it because
+  [`sycl/integer_adm_sycl.cpp`](sycl/integer_adm_sycl.cpp) must contain no
+  binary64 instruction at all (one fp64 op anywhere in that translation unit
+  makes the runtime reject the whole SPIR-V module on Arc A-series and
+  iGPUs), and [`metal/integer_adm.metal`](metal/integer_adm.metal) mirrors it
+  by hand because MSL has no `double` type.
+
+Two consequences for anyone editing this area:
+
+1. **The MSL copy is a manual mirror.** `iadm_angle_flag()` in
+   `metal/integer_adm.metal` is a line-for-line translation of
+   `adm_angle_flag_i64()`. They must be edited together, in the same commit.
+   Nothing in the build catches a drift between them — Metal is not built on
+   Linux.
+2. **`ADM_ANGLE_FLAG_MC` / `ADM_ANGLE_FLAG_D` encode the constant.** The
+   integer form hard-codes the significand of `(float)cos(1deg)^2`
+   (`0x3F7FEC0A`, `MC = 16772106`, `D = 2^24 - MC = 5110`), and the MSL mirror
+   repeats `D`. If the constant ever changes, all three move together.
+   `core/test/test_adm_angle_flag.c` asserts the relationship, so a partial
+   edit fails the `fast` suite rather than silently shifting scores.
+
+A flipped `angle_flag` selects the other branch of `decouple()`'s enhancement
+gain limit, so it moves `adm` scores directly. The four historical spellings
+of this predicate disagreed on about 4e-5 of near-parallel scale-0 band
+quadruples; see
+[`docs/research/2030-adm-angle-flag-fp64-free.md`](../../../docs/research/2030-adm-angle-flag-fp64-free.md).
