@@ -380,7 +380,14 @@ is single-output by construction and would reopen T-DNN-MULTI-OUTPUT.
   companion sidecar declares `quant_mode != VMAF_QUANT_FP32`, the runtime
   redirects to load sibling `<basename>.int8.onnx` if present and valid; if
   absent or invalid, it gracefully falls back to the fp32 baseline per
-  ADR-1032 (`VMAF_LOG_LEVEL_DEBUG`).
+  ADR-1032 (`VMAF_LOG_LEVEL_DEBUG`). The fallback has **two** triggers and both
+  twins must implement both: the int8 file fails the size cap or the op
+  allowlist, *and* `vmaf_ort_open()` fails on the int8 path even though it
+  passed those gates (an ONNX Runtime build with no kernel for one of its
+  quantised ops — `ConvInteger` is the one seen in practice). The redirect must
+  never turn an invocation that worked against the fp32 baseline into a hard
+  failure; `core/test/dnn/test_cli.sh` covers this through
+  `--tiny-model model/tiny/nr_metric_v1.onnx`.
 - **`onnx_has_scaler` must match the graph**: If an int8 model's ONNX graph
   bakes in input normalisation / scaling ops (`Sub`/`Div` or scalar constants),
   its companion sidecar `.json` must declare `"onnx_has_scaler": true` so the

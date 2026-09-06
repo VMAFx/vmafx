@@ -227,6 +227,12 @@ no rebase impact: fork-local SYCL feature extractor and tests.
   into `vmaf_use_tiny_model()` when sidecar `quant_mode != VMAF_QUANT_FP32`.
 - `core/test/dnn/test_vmaf_use_tiny_model.c`: unit tests for int8 redirect, fp32 fallback,
   and missing external data error path.
+- `core/src/dnn/dnn_api.c` + `core/src/dnn/dnn_attach_api.c`: both twins retry the fp32
+  baseline once when `vmaf_ort_open()` fails on an int8 graph that already cleared the size
+  cap and the op allowlist. Without it `--tiny-model model/tiny/nr_metric_v1.onnx` regressed
+  to `-EIO` on any ONNX Runtime build lacking a `ConvInteger` kernel, which
+  `core/test/dnn/test_cli.sh` catches. The retry must stay in **both** twins — the
+  invariant note in `core/src/dnn/AGENTS.md` pins that.
 - `no rebase impact: fork-added tiny-AI DNN loader surface with no upstream Netflix counterpart.`
 
 ## fix/cuda-drain-batch-per-state-lifetime — drain-batch ownership and the read fence (2026-09-05)

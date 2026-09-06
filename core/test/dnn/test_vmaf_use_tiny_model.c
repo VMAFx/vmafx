@@ -431,6 +431,56 @@ static char *test_rank5_model_closes_session_after_shape_reject(void)
 }
 
 #ifndef _WIN32
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
+/* Stage a `<stem>.onnx` / `<stem>.int8.onnx` / `<stem>.json` triple in /tmp.
+ *
+ * Both ONNX copies are the same allowlisted smoke graph — the redirect under
+ * test picks a *path*, not a quantisation, so the int8 sibling only has to
+ * exist and pass the scanner. Split out of the test body to keep every
+ * function inside the `readability-function-size` branch budget. Returns a
+ * failure message on a staging error, NULL on success. */
+static char *stage_redirect_triple(char *tmpl, char *onnx, char *int8_onnx, char *sidecar,
+                                   size_t cap)
+{
+    const int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    (void)close(fd);
+
+    (void)snprintf(onnx, cap, "%s.onnx", tmpl);
+    (void)snprintf(int8_onnx, cap, "%s.int8.onnx", tmpl);
+    (void)snprintf(sidecar, cap, "%s.json", tmpl);
+
+    mu_assert("copy smoke onnx failed", copy_file_600(SMOKE_FP32_MODEL, onnx) == 0);
+    mu_assert("copy smoke int8 onnx failed", copy_file_600(SMOKE_FP32_MODEL, int8_onnx) == 0);
+
+    static const unsigned char json_dyn[] =
+        "{\"kind\":\"fr\",\"quant_mode\":\"dynamic\",\"name\":\"redir_test\"}\n";
+    mu_assert("write sidecar failed",
+              write_file_600(sidecar, json_dyn, sizeof(json_dyn) - 1u) == 0);
+    return NULL;
+}
+
+/* Attach @p path to a fresh context and assert the outcome, then close.
+ *
+ * @p expect_ok non-zero requires `vmaf_use_tiny_model() == 0`, zero requires a
+ * negative return. @p message is the failure text of the caller's case; it is
+ * plain `char *` because `mu_message_t` is `char *` in C and `mu_assert()`
+ * returns it straight out of the enclosing test. */
+static char *expect_tiny_attach(const char *path, int expect_ok, char *message)
+{
+    VmafContext *ctx = alloc_ctx();
+    mu_assert("alloc_ctx failed", ctx != NULL);
+    const int rc = vmaf_use_tiny_model(ctx, path, NULL);
+    mu_assert(message, expect_ok ? (rc == 0) : (rc < 0));
+    (void)vmaf_close(ctx);
+    return NULL;
+}
+
 static char *test_use_tiny_model_int8_redirect_and_fallback(void)
 {
     if (!vmaf_dnn_available())
@@ -439,46 +489,29 @@ static char *test_use_tiny_model_int8_redirect_and_fallback(void)
         return NULL;
 
     char tmpl[] = "/tmp/vmaf-tiny-redir-XXXXXX";
-    int fd = mkstemp(tmpl);
-    mu_assert("mkstemp failed", fd >= 0);
-    (void)close(fd);
-
     char onnx[1024];
     char int8_onnx[1024];
     char sidecar[1024];
-    (void)snprintf(onnx, sizeof(onnx), "%s.onnx", tmpl);
-    (void)snprintf(int8_onnx, sizeof(int8_onnx), "%s.int8.onnx", tmpl);
-    (void)snprintf(sidecar, sizeof(sidecar), "%s.json", tmpl);
+    char *err = stage_redirect_triple(tmpl, onnx, int8_onnx, sidecar, sizeof(onnx));
+    if (err)
+        return err;
 
-    mu_assert("copy smoke onnx failed", copy_file_600(SMOKE_FP32_MODEL, onnx) == 0);
-    mu_assert("copy smoke int8 onnx failed", copy_file_600(SMOKE_FP32_MODEL, int8_onnx) == 0);
-    static const unsigned char json_dyn[] =
-        "{\"kind\":\"fr\",\"quant_mode\":\"dynamic\",\"name\":\"redir_test\"}\n";
-    mu_assert("write sidecar failed",
-              write_file_600(sidecar, json_dyn, sizeof(json_dyn) - 1u) == 0);
+    /* 1. Both present: redirects to int8 and succeeds. */
+    err = expect_tiny_attach(onnx, 1, "redirect to int8 should succeed");
+    if (err)
+        return err;
 
-    /* 1. Both present: redirects to int8 and succeeds */
-    VmafContext *ctx = alloc_ctx();
-    mu_assert("alloc_ctx failed", ctx != NULL);
-    int rc = vmaf_use_tiny_model(ctx, onnx, NULL);
-    mu_assert("redirect to int8 should succeed", rc == 0);
-    (void)vmaf_close(ctx);
-
-    /* 2. int8 removed: falls back to fp32 per ADR-1032 and succeeds */
+    /* 2. int8 removed: falls back to fp32 per ADR-1032 and succeeds. */
     mu_assert("unlink int8 failed", unlink(int8_onnx) == 0);
-    ctx = alloc_ctx();
-    mu_assert("alloc_ctx failed", ctx != NULL);
-    rc = vmaf_use_tiny_model(ctx, onnx, NULL);
-    mu_assert("fallback to fp32 should succeed", rc == 0);
-    (void)vmaf_close(ctx);
+    err = expect_tiny_attach(onnx, 1, "fallback to fp32 should succeed");
+    if (err)
+        return err;
 
-    /* 3. Both removed: fails */
+    /* 3. Both removed: fails. */
     mu_assert("unlink fp32 failed", unlink(onnx) == 0);
-    ctx = alloc_ctx();
-    mu_assert("alloc_ctx failed", ctx != NULL);
-    rc = vmaf_use_tiny_model(ctx, onnx, NULL);
-    mu_assert("missing both should fail", rc < 0);
-    (void)vmaf_close(ctx);
+    err = expect_tiny_attach(onnx, 0, "missing both should fail");
+    if (err)
+        return err;
 
     (void)unlink(sidecar);
     (void)unlink(tmpl);
@@ -493,7 +526,7 @@ static char *test_use_tiny_model_missing_external_data_returns_error_not_abort(v
         return NULL;
 
     char tmpl[] = "/tmp/vmaf-tiny-ext-XXXXXX";
-    int fd = mkstemp(tmpl);
+    const int fd = mkstemp(tmpl);
     mu_assert("mkstemp failed", fd >= 0);
     (void)close(fd);
 
@@ -502,23 +535,25 @@ static char *test_use_tiny_model_missing_external_data_returns_error_not_abort(v
     (void)snprintf(onnx, sizeof(onnx), "%s.onnx", tmpl);
     (void)snprintf(sidecar, sizeof(sidecar), "%s.json", tmpl);
 
-    /* Copy ONNX with external data references without copying .data file */
+    /* Copy the ONNX that references external data without copying the
+     * companion `.data` file, so the load must fail cleanly. */
     mu_assert("copy vmaf_tiny_v1 failed", copy_file_600(TINY_V1_MODEL, onnx) == 0);
     static const unsigned char json_fp32[] = "{\"kind\":\"fr\",\"quant_mode\":\"fp32\"}\n";
     mu_assert("write sidecar failed",
               write_file_600(sidecar, json_fp32, sizeof(json_fp32) - 1u) == 0);
 
-    VmafContext *ctx = alloc_ctx();
-    mu_assert("alloc_ctx failed", ctx != NULL);
-    int rc = vmaf_use_tiny_model(ctx, onnx, NULL);
-    mu_assert("missing external data must return error < 0, not abort", rc < 0);
-    (void)vmaf_close(ctx);
+    char *err =
+        expect_tiny_attach(onnx, 0, "missing external data must return error < 0, not abort");
+    if (err)
+        return err;
 
     (void)unlink(sidecar);
     (void)unlink(onnx);
     (void)unlink(tmpl);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
 #endif
 
 /* -------------------------------------------------------------------------- */

@@ -97,6 +97,32 @@ static int resolve_quantised_load_path(const char *onnx_path, size_t max_bytes, 
 }
 
 /**
+ * Open @p load_path, falling back to @p fp32_path once when the two differ.
+ *
+ * The int8 graph can clear the size cap and the op allowlist and still fail
+ * session creation — an ONNX Runtime build without a kernel for one of its
+ * quantised ops reports exactly that ("Could not find an implementation for
+ * ConvInteger"). ADR-1032's "better degraded than dead" rule applies for the
+ * same reason it applies to a missing int8 file: the redirect must never turn
+ * a call that worked against the fp32 baseline into a hard failure.
+ *
+ * `vmaf_ort_open()` leaves @p sess untouched when it fails, so the retry
+ * cannot leak the failed session. Kept identical to the retry in
+ * `vmaf_dnn_session_open()` (dnn_api.c) — see `core/src/dnn/AGENTS.md`.
+ */
+static int open_session_with_fp32_retry(VmafOrtSession **sess, const char *load_path,
+                                        const char *fp32_path, const VmafDnnConfig *cfg)
+{
+    int rc = vmaf_ort_open(sess, load_path, cfg);
+    if (rc < 0 && load_path != fp32_path) {
+        vmaf_log(VMAF_LOG_LEVEL_DEBUG,
+                 "dnn: int8 session open failed (%s, rc=%d); retrying fp32 path\n", load_path, rc);
+        rc = vmaf_ort_open(sess, fp32_path, cfg);
+    }
+    return rc;
+}
+
+/**
  * Query the opened session's input shape and hand ownership to `libvmaf.c`.
  *
  * Split out of vmaf_use_tiny_model() so the entry point stays inside the
@@ -176,7 +202,7 @@ int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path, const VmafDnnCo
     }
 
     VmafOrtSession *sess = NULL;
-    rc = vmaf_ort_open(&sess, load_path, cfg);
+    rc = open_session_with_fp32_retry(&sess, load_path, onnx_path, cfg);
     if (rc < 0) {
         if (have_meta)
             vmaf_dnn_sidecar_free(&meta);
