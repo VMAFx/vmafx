@@ -242,19 +242,28 @@ def load_or_compute(
     compute_fn,  # type: ignore[no-untyped-def]
     *,
     use_cache: bool = True,
+    cache_valid=None,  # type: ignore[no-untyped-def]
 ) -> dict:
     """Read the per-clip JSON cache or call ``compute_fn(pair) -> dict``.
 
     The compute function is only invoked on cache miss. The result is
     written to ``cache_path_for(pair)`` atomically (write-then-rename).
+
+    ``cache_valid`` is an optional ``(payload) -> bool`` predicate applied
+    to a cache hit; a payload it rejects is treated as a miss and
+    overwritten by the fresh result.  The training dataset uses it to
+    recompute entries whose stamped teacher model is missing or differs
+    from the resolved teacher (ADR-1173).
     """
     cache_file = cache_path_for(pair)
     if use_cache and cache_file.is_file():
         try:
-            return json.loads(cache_file.read_text())
+            cached = json.loads(cache_file.read_text())
         except json.JSONDecodeError:
             # Corrupt cache — fall through to recompute and overwrite.
-            pass
+            cached = None
+        if cached is not None and (cache_valid is None or cache_valid(cached)):
+            return cached
     payload = compute_fn(pair)
     if use_cache:
         cache_file.parent.mkdir(parents=True, exist_ok=True)

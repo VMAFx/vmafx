@@ -57,7 +57,7 @@ expect "clean tree passes" 0 "$d"
 
 # 2. a Go mirror that disagrees with the C header must fail
 d=$(clone godrift)
-sed -i 's/^const DefaultVersion = ".*"$/const DefaultVersion = "vmaf_v1.0.16_3d0h"/' \
+sed -i 's/^const DefaultVersion = ".*"$/const DefaultVersion = "vmaf_v0.6.1"/' \
   "$d/pkg/model/default.go"
 git -C "$d" commit -aqm drift >/dev/null 2>&1
 expect "drifted Go mirror is caught" 1 "$d"
@@ -75,6 +75,13 @@ printf '\nfunc reintroducedDefault() string {\n\tif true {\n\t\treturn "vmaf_v0.
   >>"$d/pkg/fast/pipeline.go"
 git -C "$d" commit -aqm hardcode >/dev/null 2>&1
 expect "new hardcoded default is caught" 1 "$d"
+
+# 4b. a hardcoded default in ai/scripts/ must fail (verifying ai/ is no longer exempt)
+d=$(clone aihardcode)
+printf '\ndef _reintroduced_ai_default():\n    return "vmaf_v0.6.1"\n' \
+  >>"$d/ai/scripts/extract_full_features.py"
+git -C "$d" commit -aqm aihardcode >/dev/null 2>&1
+expect "ai script hardcoded default is caught" 1 "$d"
 
 # 5. a deliberate pin carrying the marker must NOT fail
 d=$(clone pinned)

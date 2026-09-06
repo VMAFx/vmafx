@@ -54,8 +54,12 @@
 #include "libvmaf/libvmaf_cuda.h"
 #include "libvmaf/picture.h"
 
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 144u
+#endif
 #define FIXTURE_BPC 8u
 #define NUM_FRAMES 3u
 
@@ -161,6 +165,19 @@ static char *run_cuda(double *out_score)
     err = vmaf_use_feature(vmaf, "float_ssim_cuda", NULL);
     mu_assert("CUDA: vmaf_use_feature(float_ssim_cuda) failed", !err);
 
+    /* `float_ssim_cuda` is a v1 scale=1-only extractor: its init rejects
+     * any resolution whose auto-detected decimation factor
+     * `max(1, round(min(w, h) / 256))` is not 1 — i.e. min(w, h) >= 384 —
+     * with -EINVAL (core/src/feature/cuda/integer_ssim_cuda.c). The CPU
+     * `float_ssim` has no such limit and silently decimates instead, so at
+     * those resolutions the two extractors do not compute the same
+     * quantity and there is no parity to assert. Treat the documented
+     * refusal as a skip; anything else is a real failure. Keeping the
+     * large-fixture variant registered means that if the GPU twin ever
+     * stops refusing and starts returning a scale=1 score at a
+     * decimating resolution, this test fails instead of silently
+     * comparing two different metrics. See ADR-1206. */
+    const unsigned auto_scale = (FIXTURE_W < FIXTURE_H ? FIXTURE_W : FIXTURE_H) < 384u ? 1u : 2u;
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         VmafPicture ref, dist;
         err = fill_ref(&ref, i);
@@ -168,6 +185,15 @@ static char *run_cuda(double *out_score)
         err = fill_dist(&dist, i);
         mu_assert("CUDA: fill_dist failed", !err);
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        if (err && auto_scale != 1u) {
+            (void)fprintf(stderr, "[skip: float_ssim_cuda is scale=1-only; %ux%u auto-decimates] ",
+                          FIXTURE_W, FIXTURE_H);
+            vmaf_picture_unref(&ref);
+            vmaf_picture_unref(&dist);
+            (void)vmaf_close(vmaf);
+            (void)vmaf_cuda_state_free(cu_state);
+            return NULL; /* *out_score stays NAN -> caller skips */
+        }
         mu_assert("CUDA: vmaf_read_pictures failed", !err);
     }
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);

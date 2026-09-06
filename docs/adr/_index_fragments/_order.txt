@@ -905,6 +905,7 @@
 1168-default-model-single-source
 1169-default-model-v1-0-16
 1166-upstream-issue-harvest
+1173-ai-teacher-follows-default-model
 1178-dev-container-image-publish
 1172-bound-lto-link-parallelism
 1171-release-please-credential-gate-warning
@@ -915,4 +916,14 @@
 1197-gpu-threaded-flush-ownership
 1192-netflix-bench-snapshot-drift-not-regenerated
 1195-container-source-revision-guard
+1193-psnr-uncapped-option
+1191-adm-csf-fixed-point-representability-guard
 1185-backend-perf-baseline-methodology
+1198-changelog-unknown-section-is-an-error
+1199-cuda-picture-handover-barrier
+1200-nv-codec-headers-mirror-fallback
+1202-cuda-speed-chroma-4k-launch-bounds
+1203-cuda-psnr-hvs-enable-chroma-default
+1204-adm-cm-edge-clamp-gpu-twins
+1205-ssimulacra2-fma-unification-scalar-and-gpu
+1206-gpu-parity-large-fixture-variants

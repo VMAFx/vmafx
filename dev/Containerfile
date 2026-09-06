@@ -529,14 +529,47 @@ USER vmaf
 # -Denable_metal=auto  → auto-disabled on Linux (no Metal SDK present).
 # -Denable_mcp_sse=auto → auto-disabled until POSIX socket impl is complete.
 USER root
-# Install nv-codec-headers (provides ffnvcodec/dynlink_cuda.h for CUDA backend)
-# Pinned to commit that has cuStreamCreateWithPriority; GitHub mirror lags so use code.ffmpeg.org.
+# Install nv-codec-headers (provides ffnvcodec/dynlink_cuda.h for CUDA backend).
+# Pinned to a tag that has cuStreamCreateWithPriority.
+#
+# Two sources, tried in order. code.ffmpeg.org is upstream's own host and stays
+# first; github.com/FFmpeg/nv-codec-headers is the fallback. The original comment
+# here said "GitHub mirror lags so use code.ffmpeg.org", which is true for an
+# unreleased commit but not for a TAG: n13.1.15.0 is published on both, and the
+# GitHub tarball carries the cuStreamCreateWithPriority declaration this pin
+# exists for (verified in include/ffnvcodec/dynlink_loader.h).
+#
+# The fallback is not hypothetical tidiness. On 2026-09-06 code.ffmpeg.org was
+# unreachable for over six hours -- `curl` returning HTTP 000 after a 30 s
+# timeout -- which stalled this layer and made the dev container, the canonical
+# build environment under CLAUDE.md rule 15, unbuildable for that whole window.
+# A single unreachable host should not be able to do that.
+#
+# The primary is given a deliberately short leash (--retry 1, --max-time 60):
+# with a working fallback behind it, spending minutes on an unreachable host is
+# pure latency. Measured with the first draft's generous settings (--retry 3,
+# --max-time 120), the layer took 487 s to fall through to GitHub and succeed;
+# the tightened values cut that to roughly two minutes while leaving the healthy
+# path -- one 0.5 s fetch -- untouched.
+#
+# Note the two archives unpack to DIFFERENT top-level directory names
+# (`nv-codec-headers` from code.ffmpeg.org, `nv-codec-headers-<tag>` from
+# GitHub), so the build cds into whatever was extracted rather than a fixed name.
 ARG NV_CODEC_HEADERS_REF=n13.1.15.0
 RUN cd /tmp \
-    && curl -fsSL "https://code.ffmpeg.org/FFmpeg/nv-codec-headers/archive/${NV_CODEC_HEADERS_REF}.tar.gz" -o nv-codec-headers.tgz \
+    && { curl -fsSL --retry 1 --retry-delay 2 --connect-timeout 10 --max-time 60 \
+           "https://code.ffmpeg.org/FFmpeg/nv-codec-headers/archive/${NV_CODEC_HEADERS_REF}.tar.gz" \
+           -o nv-codec-headers.tgz \
+         || { echo "nv-codec-headers: code.ffmpeg.org unreachable, falling back to the GitHub mirror" >&2; \
+              curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 120 \
+                "https://github.com/FFmpeg/nv-codec-headers/archive/refs/tags/${NV_CODEC_HEADERS_REF}.tar.gz" \
+                -o nv-codec-headers.tgz; }; } \
     && tar xzf nv-codec-headers.tgz \
-    && cd nv-codec-headers \
-    && make install PREFIX=/usr/local \
+    && src_dir="$(find /tmp -maxdepth 1 -type d -name 'nv-codec-headers*' -print -quit)" \
+    && test -n "$src_dir" \
+    && test -f "$src_dir/include/ffnvcodec/dynlink_cuda.h" \
+    && grep -q cuStreamCreateWithPriority "$src_dir/include/ffnvcodec/dynlink_loader.h" \
+    && make -C "$src_dir" install PREFIX=/usr/local \
     && cd / && find /tmp -maxdepth 1 -name 'nv-codec-headers*' -exec rm -rf {} +
 
 USER vmaf
@@ -1036,6 +1069,17 @@ USER root
 RUN python3.14 -m venv /opt/vmaf-venv \
     && /opt/vmaf-venv/bin/pip install --no-cache-dir --upgrade pip \
     && /opt/vmaf-venv/bin/pip install --no-cache-dir matplotlib \
+    # The Python harness (`python/pyproject.toml`, package name `vmaf`,
+    # re-exporting compat/python-vmaf per ADR-0700). The layout comment at the
+    # top of this stage has always described it as "pip-installed via the
+    # python/ shim", and the Netflix golden YUV fetch above exists, in its own
+    # words, "so that `pytest python/test/` passes inside the container" -- but
+    # nothing ever installed it, so that command died at import with
+    # `ModuleNotFoundError: No module named 'slugify'` and the fixture fetch
+    # served no reachable purpose. Installed FIRST among the editable packages
+    # so that the ai/ and vmaf-tune pins below are resolved last and win on any
+    # shared dependency (numpy in particular).
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir -e /build/vmaf/python \
     && /opt/vmaf-venv/bin/pip install --no-cache-dir -e /build/vmaf/mcp-server/vmaf-mcp \
     && /opt/vmaf-venv/bin/pip install --no-cache-dir -e '/build/vmaf/ai[dev]' \
     # Pin torchvision to the ABI-compatible wheel for torch 2.12.x.
@@ -1082,6 +1126,22 @@ RUN printf '%s\n' \
     'source_repo=https://github.com/VMAFx/vmafx' \
     > /etc/vmafx-dev-source \
     && chmod 0644 /etc/vmafx-dev-source
+# The Python harness must be importable, and the Netflix golden suite must
+# collect. Asserted at build time because the failure mode is silent: the YUV
+# fixtures above are fetched specifically to make `pytest python/test/` work,
+# and for a long time it could not run at all while the build stayed green.
+# `--collect-only` keeps this to an import + collection check (seconds); the
+# suite itself is a CI gate, not a container build step.
+# Explicit interpreter path: `ENV PATH=/opt/vmaf-venv/bin:...` is set BELOW
+# this line, so a bare `python3` here would be the system interpreter, which
+# does not have the harness installed.
+RUN cd /build/vmaf \
+    && /opt/vmaf-venv/bin/python -c 'import vmaf, slugify; print("harness import OK:", vmaf.__file__)' \
+    && /opt/vmaf-venv/bin/python -m pytest python/test/quality_runner_test.py --collect-only -q \
+        > /tmp/collect.log 2>&1 \
+    && tail -1 /tmp/collect.log \
+    || { echo "Netflix golden suite does not collect inside the container:"; \
+         tail -20 /tmp/collect.log; exit 1; }
 
 ENV PATH=/opt/vmaf-venv/bin:${PATH}
 ENV PYTHONPATH=/build/vmaf/python:${PYTHONPATH}

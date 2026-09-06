@@ -8,6 +8,8 @@
 
 #include <errno.h>
 #include <math.h>
+#include <stdbool.h>
+#include <stddef.h>
 #include <string.h>
 
 #include "common.h"
@@ -45,9 +47,37 @@ typedef struct FloatPsnrStateCuda {
     unsigned bpc;
     double peak;
     double psnr_max;
+    /* `uncapped` option: mirrors CPU float_psnr.c. When true, psnr_max
+     * keeps only its zero-noise infinity-sentinel role and stops
+     * truncating genuinely computed values. Default false keeps every
+     * shipped score unchanged. See ADR-1193 / T-UPSTREAM-1109. */
+    bool uncapped;
 
     VmafDictionary *feature_name_dict;
 } FloatPsnrStateCuda;
+
+/*
+ * Size the table explicitly and leave the terminator element out: C
+ * zero-initialises the trailing element, which is exactly the `.name == NULL`
+ * sentinel the option walker stops on. Written this way rather than with an
+ * explicit `{0}` / `{NULL}` terminator, because either spells a null pointer
+ * constant and adds a `modernize-use-nullptr` diagnostic that would push this
+ * file past its ADR-1142 clang-tidy baseline; and rather than with the C23
+ * empty initialiser `{}`, because MSVC's partial C23 mode (`/std:clatest`,
+ * documented as implementing `typeof` / `typeof_unqual`) is not documented to
+ * accept it, and this file builds on the required Windows MSVC leg.
+ */
+static const VmafOption options[2] = {
+    {
+        .name = "uncapped",
+        .help = "report the true PSNR instead of truncating at "
+                "the psnr_max ceiling (a zero-noise pair still "
+                "reports psnr_max)",
+        .offset = offsetof(FloatPsnrStateCuda, uncapped),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+};
 
 #define FPSNR_BX 16
 #define FPSNR_BY 16
@@ -225,11 +255,22 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
         total += (double)partials_host[i];
     const double n_pix = (double)s->frame_w * (double)s->frame_h;
     const double noise = total / n_pix;
+    /* Match CPU float_psnr.c — a zero-noise pair reports psnr_max as the
+     * infinity sentinel; the truncation at psnr_max applies only when
+     * `uncapped` is false. See ADR-1193 / T-UPSTREAM-1109. */
     const double eps = 1e-10;
     const double max_noise = noise > eps ? noise : eps;
-    double score = 10.0 * log10(s->peak * s->peak / max_noise);
-    if (score > s->psnr_max)
-        score = s->psnr_max;
+    double score;
+    if (!s->uncapped) {
+        /* Pre-ADR-1193 expression verbatim — bit-identical default. */
+        score = 10.0 * log10(s->peak * s->peak / max_noise);
+        if (score > s->psnr_max)
+            score = s->psnr_max;
+    } else if (noise <= 0.0) {
+        score = s->psnr_max; /* infinity sentinel */
+    } else {
+        score = 10.0 * log10(s->peak * s->peak / max_noise);
+    }
 
     return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "float_psnr", score, index);
@@ -268,6 +309,7 @@ static const char *provided_features[] = {"float_psnr", NULL};
 
 VmafFeatureExtractor vmaf_fex_float_psnr_cuda = {
     .name = "float_psnr_cuda",
+    .options = options,
     .init = init_fex_cuda,
     .submit = submit_fex_cuda,
     .collect = collect_fex_cuda,

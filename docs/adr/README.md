@@ -996,6 +996,7 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1168](1168-default-model-single-source.md) | The default VMAF model is defined in exactly one place | Accepted | model, ci-gate, c-api, go, python, single-source |
 | [ADR-1169](1169-default-model-v1-0-16.md) | The fork's default VMAF model is `vmaf_v1.0.16_3d0h` | Accepted | model, default, v1.0.16, breaking-scores, upstream-divergence |
 | [ADR-1166](1166-upstream-issue-harvest.md) | Harvest stale upstream Netflix/vmaf reports, verify each against the fork, fix what still bites | Accepted (Superseded-in-part by [ADR-1176](1176-metal-motion-v2-mirror-closeout.md)) | process, upstream, bug, build, windows, api, docs |
+| [ADR-1173](1173-ai-teacher-follows-default-model.md) | AI Teacher Model Follows Default Model Single Source | Accepted | ai, model, single-source, provenance, dataset |
 | [ADR-1178](1178-dev-container-image-publish.md) | Dev container image publication and release artifact container enforcement | Accepted | ci, release, supply-chain, container, dev-container, adr-1102, fork-local |
 | [ADR-1172](1172-bound-lto-link-parallelism.md) | Bound per-link LTO parallelism to four partitions by default | Accepted | build, meson, developer-experience, lto |
 | [ADR-1171](1171-release-please-credential-gate-warning.md) | release-please credential gate warns on push, errors on dispatch | Accepted | ci, release, release-please |
@@ -1006,4 +1007,14 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1197](1197-gpu-threaded-flush-ownership.md) | The threaded flush leaves GPU extractors to their own backend flush | Proposed | cuda, sycl, threading, cli, testing |
 | [ADR-1192](1192-netflix-bench-snapshot-drift-not-regenerated.md) | Keep the recorded Netflix benchmark snapshot; do not regenerate it while the GPU paths are broken | Accepted | benchmark, cuda, sycl, testdata, docs |
 | [ADR-1195](1195-container-source-revision-guard.md) | Record and verify which source revision the dev container was built from | Proposed | ci, build, testing, agents |
+| [ADR-1193](1193-psnr-uncapped-option.md) | Opt-in `uncapped` option splits the PSNR infinity sentinel from the truncation | Accepted | core, feature, psnr, options, cuda, sycl, hip, metal, gpu-twins, upstream |
+| [ADR-1191](1191-adm-csf-fixed-point-representability-guard.md) | Integer ADM rejects CSF configurations its fixed-point storage cannot represent | Accepted | metrics, adm, cuda, sycl, hip, correctness |
 | [ADR-1185](1185-backend-perf-baseline-methodology.md) | Per-backend performance baselines are median-of-N, one backend per build dir | Accepted | perf, benchmarks, cuda, sycl, hip, docs |
+| [ADR-1198](1198-changelog-unknown-section-is-an-error.md) | An unknown `changelog.d/` subdirectory fails the run instead of warning | Proposed | ci, release, docs, testing |
+| [ADR-1199](1199-cuda-picture-handover-barrier.md) | Order caller-written CUDA pictures once per frame, at the dispatch point | Proposed | cuda, correctness, api, testing |
+| [ADR-1200](1200-nv-codec-headers-mirror-fallback.md) | The dev container falls back to the GitHub mirror for nv-codec-headers | Proposed | build, supply-chain, ci |
+| [ADR-1202](1202-cuda-speed-chroma-4k-launch-bounds.md) | GPU SpEED-chroma twins report singularity separately from failure | Proposed | cuda, sycl, hip, correctness, feature-extractor |
+| [ADR-1203](1203-cuda-psnr-hvs-enable-chroma-default.md) | `psnr_hvs_cuda` defaults `enable_chroma` to true, matching every other backend | Proposed | cuda, correctness, feature-extractor, options |
+| [ADR-1204](1204-adm-cm-edge-clamp-gpu-twins.md) | GPU ADM contrast-masking twins clamp the far edge instead of mirroring it | Proposed | cuda, sycl, hip, metal, correctness, feature-extractor, testing |
+| [ADR-1205](1205-ssimulacra2-fma-unification-scalar-and-gpu.md) | The ssimulacra2 FMA unification extends to the scalar fallback and every GPU host copy | Proposed | cuda, sycl, hip, metal, simd, correctness, feature-extractor, reproducibility |
+| [ADR-1206](1206-gpu-parity-large-fixture-variants.md) | Every CUDA parity test also runs against a second, larger fixture | Proposed | testing, cuda, ci, correctness |

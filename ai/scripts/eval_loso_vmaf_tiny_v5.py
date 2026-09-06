@@ -24,6 +24,7 @@ import argparse
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -109,7 +110,34 @@ def _run_loso(df, label: str, epochs: int, batch_size: int, lr: float, seed: int
     return {"per_fold": fold_metrics, "aggregate": aggregate}
 
 
-def main() -> int:
+def _validate_and_stamp_teacher(df: Any, name: str, assume_teacher: str | None) -> str:
+    if "teacher_model" in df.columns:
+        distinct = [str(x) for x in df["teacher_model"].dropna().unique()]
+        if len(distinct) > 1:
+            raise SystemExit(f"[loso-v5] {name} parquet has mixed teacher_model values: {distinct}")
+        if len(distinct) == 0:
+            if not assume_teacher:
+                raise SystemExit(
+                    f"[loso-v5] {name} parquet has empty 'teacher_model'; pass --assume-teacher"
+                )
+            teacher = assume_teacher
+        else:
+            teacher = distinct[0]
+            if assume_teacher is not None and assume_teacher != teacher:
+                raise SystemExit(
+                    f"[loso-v5] {name} parquet teacher_model '{teacher}' conflicts with --assume-teacher '{assume_teacher}'"
+                )
+    else:
+        if assume_teacher is None:
+            raise SystemExit(
+                f"[loso-v5] {name} parquet missing 'teacher_model'; pass --assume-teacher <name> to ingest legacy tables"
+            )
+        teacher = assume_teacher
+    df["teacher_model"] = teacher
+    return teacher
+
+
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--parquet-base", type=Path, required=True, help="4-corpus parquet (NF+KV+BVI A+B+C+D)."
@@ -117,21 +145,32 @@ def main() -> int:
     ap.add_argument(
         "--parquet-extra", type=Path, required=True, help="UGC parquet (additional rows for v5)."
     )
+    ap.add_argument(
+        "--assume-teacher",
+        default=None,
+        help="Teacher model name to assume when ingesting legacy tables lacking a 'teacher_model' column.",
+    )
     ap.add_argument("--out-json", type=Path, required=True)
     ap.add_argument("--epochs", type=int, default=90)
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0)
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     import pandas as pd
 
     base = pd.read_parquet(args.parquet_base)
     extra = pd.read_parquet(args.parquet_extra)
+    teacher_base = _validate_and_stamp_teacher(base, "base", args.assume_teacher)
+    teacher_extra = _validate_and_stamp_teacher(extra, "extra", args.assume_teacher)
+    if teacher_base != teacher_extra:
+        raise SystemExit(
+            f"[loso-v5] conflicting teacher models: base={teacher_base} extra={teacher_extra}"
+        )
     if "corpus" not in extra.columns:
         extra["corpus"] = "ugc"
 
-    common_cols = [*list(CANONICAL_6), "vmaf", "corpus", "source"]
+    common_cols = [*list(CANONICAL_6), "teacher_model", "vmaf", "corpus", "source"]
     base = (
         base[[c for c in common_cols if c in base.columns]]
         .dropna(subset=[*list(CANONICAL_6), "vmaf"])
@@ -170,6 +209,7 @@ def main() -> int:
     from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
     report = {
+        "teacher_model": teacher_base,
         "arch": "mlp_small",
         "epochs": args.epochs,
         "lr": args.lr,

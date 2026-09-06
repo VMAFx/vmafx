@@ -101,10 +101,24 @@ warn_unknown_subdirs() {
     LC_ALL=C sort |
     awk -v known="$known_csv" 'BEGIN { n=split(known, k, ","); for (i=1; i<=n; i++) ok[k[i]]=1 } !($0 in ok) { print }')"
   if [[ -n "$unknown" ]]; then
+    # ADR-1198: this is an ERROR, not a warning. A fragment under an unknown
+    # subdirectory is silently dropped from the rendered Unreleased block, and a
+    # warning on stderr while still exiting 0 does not stop that: PR #1313's
+    # `changelog.d/docs/retrain-runbook-1246.md` sat on master rendering nothing,
+    # because `--check` compares the rendered output against CHANGELOG.md and both
+    # sides agreed the fragment did not exist. Failing closed is the only reading
+    # that makes the guard do what its own comment claims.
     while IFS= read -r d; do
-      printf 'WARNING: changelog.d/%s/ is not a Keep-a-Changelog section; fragments here are SKIPPED.\n' "$d" >&2
+      printf 'ERROR: changelog.d/%s/ is not a Keep-a-Changelog section.\n' "$d" >&2
+      printf '  Fragments here are NOT rendered and would be silently lost.\n' >&2
+      printf '  Move them into one of: %s\n' "$(printf '%s ' "${SECTIONS[@]}")" >&2
+      # Redirect order matters: `2>/dev/null >&2` would point stdout at the
+      # /dev/null stderr had just been sent to, swallowing the listing.
+      find "$FRAG_ROOT/$d" -type f -printf '    %p\n' >&2 2>/dev/null
     done <<<"$unknown"
+    return 1
   fi
+  return 0
 }
 
 render() {
@@ -115,7 +129,7 @@ render() {
   # have no fragments are silently skipped; fragments under unknown
   # subdirs trigger a stderr warning (per PR #384 / ADR-0892).
   local section title dir frag
-  warn_unknown_subdirs
+  warn_unknown_subdirs || return 1
   if [[ -f "$LEGACY" ]]; then
     cat "$LEGACY"
   fi

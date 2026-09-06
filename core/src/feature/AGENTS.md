@@ -1103,6 +1103,24 @@ after a port-upstream of any of these files.
   default or the `n_planes` clamp logic requires a coordinated update
   across all three GPU twins. See CUDA AGENTS.md / Vulkan AGENTS.md
   invariant notes and [ADR-0453](../../../docs/adr/0453-psnr-enable-chroma-gpu-parity.md).
+- **`psnr` / `float_psnr` cross-backend `uncapped` option parity
+  (ADR-1193)** — the integer `psnr` and `float_psnr` extractors on CPU and
+  all eight GPU twins (CUDA / SYCL / HIP / Metal x integer / float) carry an
+  opt-in `uncapped` boolean, default `false`. `psnr_max` has two roles: the
+  `mse == 0` infinity sentinel (unconditional, and what the Netflix golden
+  60 / 84 / 108 dB assertions pin) and the truncation of genuinely computed
+  values above it (dropped when `uncapped` is true). Two invariants: the
+  `!uncapped` arm must stay the pre-ADR-1193 expression **verbatim** rather
+  than a re-derivation, because with a `min_sse` below ~1.9e-11 the ceiling
+  rises past the ~208 dB a zero MSE floored to 1e-16 produces and a
+  re-derived `mse == 0 -> psnr_max` arm would move the default score; and
+  the option must **not** be `VMAF_OPT_FLAG_FEATURE_PARAM`, since the CPU
+  extractor appends without a name dict while the GPU twins append with
+  one, so flagging it would make the two backends emit different feature
+  keys for the same request. Adding it to one backend only is a silent
+  cross-backend divergence no CPU test catches. See
+  [ADR-1193](../../../docs/adr/1193-psnr-uncapped-option.md) and
+  `core/test/test_psnr_uncapped.c`.
 - **MobileSal saliency extractor (T6-2a, PR #208 open, ADR-0218
   placeholder)** — first half of T6-2 (encoder-side ROI bundle).
   DNN-backed; opens sessions through
@@ -1406,3 +1424,49 @@ unclamped. The Netflix golden `adm_min_val=0.98` case pins
 (1920.0 * 1080.0)` uses the picture dimensions, not the scale-3 dimensions the
 per-scale loop variables hold once the loop has run. All three GPU twins had
 inherited the post-loop values (a 256× too-small floor).
+
+## ADM contrast-masking edge policy is asymmetric (ADR-1204)
+
+`adm_cm_thresh3x3_s` in `adm_tools.c` is the CPU reference for the 3x3
+contrast-masking neighbourhood, and its edge handling is deliberately **not**
+symmetric:
+
+```c
+i_m1 = (i == 0)     ? 1     : i - 1;   /* near edge MIRRORS to index 1   */
+i_p1 = (i == h - 1) ? h - 1 : i + 1;   /* far  edge CLAMPS to last index */
+```
+
+Every GPU twin (`cuda/float_adm/`, `hip/float_adm/`, `metal/float_adm.metal`,
+`sycl/float_adm_sycl.cpp`) must reproduce **both** halves. A symmetric mirror
+(`2 * half_w - x - 2`) reads index `w - 2` where the CPU reads `w - 1`. It is
+tempting because it looks uniform, and it survives casual testing because the
+two only differ when the ADM border crop `(int)(dim * ADM_BORDER_FACTOR - 0.5)`
+collapses to 0 — band dimensions `<= 14` — since only a zero crop pulls the
+first and last row and column into the summation region.
+
+If upstream rewrites the `ADM_CM_THRESH_S_*` macro family, re-derive the twins
+from the closed form above, not from the macros.
+
+## ssimulacra2's YCbCr -> linear-RGB conversion is FMA everywhere (ADR-0891, ADR-1205)
+
+There are six copies of these three lines — the scalar fallback in
+`ssimulacra2.c`, the CUDA / HIP / Metal / SYCL host conversions, and the
+AVX2 / AVX-512 / NEON / SVE2 kernels with their scalar tails. All of them must
+use a single-rounded fused multiply-add, in this order:
+
+```c
+R = fmaf(cr_r, Vn, Yn);
+G = fmaf(cb_g, Un, Yn);
+G = fmaf(cr_g, Vn, G);
+B = fmaf(cb_b, Un, Yn);
+```
+
+Do not assume a 1 ULP deviation here is harmless. The pipeline is
+ill-conditioned downstream: the edge-diff term computes `|img - blur(img)|`, a
+catastrophic cancellation, and pooling takes a 4-norm dominated by the largest
+survivors. Measured, one ULP in linear RGB became a **2.62e-03** score delta.
+
+`core/test/test_ssimulacra2_simd.c` compares the SIMD kernels against a
+**private** scalar reference, not against the shipped function, so it will not
+catch a shipped copy that drifts. Change the shipped copies and that reference
+together.

@@ -711,6 +711,29 @@ test_integer_psnr_coverage = executable('test_integer_psnr_coverage',
     ] + wave8_opt_only_objects
 )
 
+# T-UPSTREAM-1109 / ADR-1193 — the `uncapped` option that splits the
+# `mse == 0` infinity sentinel from the psnr_max truncation, on both the
+# integer `psnr` and the float `float_psnr` extractor. Same link-recipe as
+# test_integer_psnr_coverage (float_psnr pulls in picture_copy.c).
+test_psnr_uncapped = executable('test_psnr_uncapped',
+    ['test.c', 'test_psnr_uncapped.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+        common_cuda_objects,
+      log_cpp23_test_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+
 # Coverage round 2 — drives integer_motion (v1) motion_force_zero +
 # three-frame default + moving-average + five-frame-under-min branches.
 test_integer_motion_coverage = executable('test_integer_motion_coverage',
@@ -780,6 +803,30 @@ test_ssim_coverage = executable('test_ssim_coverage',
 test_adm_coverage = executable('test_adm_coverage',
     ['test.c', 'test_adm_coverage.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
      '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+        common_cuda_objects,
+        log_cpp23_test_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+
+# ADR-1191 — integer-ADM CSF fixed-point representability guard: the
+# configurations init() must reject (adm_csf_mode=1 at the default
+# adm_csf_scale; a blend mode at an untabulated viewing geometry) and the
+# ones it must keep accepting (default, mode 1 with the fork's small scale
+# coefficients, modes 2 and 3 at 1080@3H).
+test_adm_csf_representable = executable('test_adm_csf_representable',
+    ['test.c', 'test_adm_csf_representable.c', '../src/mem.cpp', '../src/picture.c',
+     '../src/ref.cpp', '../src/dict.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
      dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
@@ -1111,7 +1158,28 @@ test_integer_adm_simd = executable('test_integer_adm_simd',
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
 )
+
+test_adm_dwt2_x86 = executable('test_adm_dwt2_x86',
+    ['test.c', 'test_adm_dwt2_x86.c',
+     '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects,
+)
 endif
+
 
 # Bit-exactness test for the AVX2 horizontal moment accumulation kernel (ADR-0784).
 # Mirrors test_integer_adm_simd in structure; only the 8bpc / 16bpc accumulate_row
@@ -1995,6 +2063,47 @@ test_cuda_ciede_parity = executable('test_cuda_ciede_parity',
 )
 test('test_cuda_ciede_parity', test_cuda_ciede_parity,
     suite : ['fast', 'gpu'])
+
+# ADR-1206 — large-fixture parity variants (resolution blind spot).
+#
+# Every CUDA parity test above pins a single small fixture (256x144 and
+# friends). min(w,h) < 384 there, so the shared SSIM/MS-SSIM auto-scale
+# formula `max(1, round(min(w,h) / 256))` always resolves to 1 and every
+# resolution-dependent branch in the GPU twins stays unreachable. Two real
+# divergences hid behind exactly that gap: the speed_chroma 4K bug and the
+# float_ssim scale asymmetry. These variants rebuild the same TUs against a
+# 960x540 fixture (min dim 540 -> auto-scale 2, and 540 is not a multiple of
+# the 16/32-wide kernel blocks, so tail-bound handling is exercised too).
+cuda_parity_large_fixture_tests = [
+    'test_cuda_adm_parity',
+    'test_cuda_cambi_parity',
+    'test_cuda_ciede_parity',
+    'test_cuda_float_adm_parity',
+    'test_cuda_float_moment_parity',
+    'test_cuda_float_motion_parity',
+    'test_cuda_float_ms_ssim_parity',
+    'test_cuda_float_psnr_parity',
+    'test_cuda_float_ssim_parity',
+    'test_cuda_float_vif_parity',
+    'test_cuda_motion3_parity',
+    'test_cuda_motion_v2_parity',
+    'test_cuda_psnr_hvs_parity',
+    'test_cuda_psnr_parity',
+    'test_cuda_ssim_parity',
+    'test_cuda_ssimulacra2_parity',
+]
+foreach parity_test : cuda_parity_large_fixture_tests
+    parity_large_exe = executable(parity_test + '_large',
+        ['test.c', parity_test + '.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        dependencies: [pthread_dependency, cuda_dependency, math_lib],
+        c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_W=960u', '-DFIXTURE_H=540u']
+    )
+    test(parity_test + '_large', parity_large_exe,
+        suite : ['fast', 'gpu'])
+endforeach
+
 endif
 
 # T6-2b / ADR-0247 — vmaf-roi sidecar core helpers (per-CTU mean reduce
@@ -3393,10 +3502,12 @@ if host_machine.system() != 'windows'
 endif
 test('test_psnr', test_psnr, suite : ['fast'])
 test('test_integer_psnr_coverage', test_integer_psnr_coverage, suite : ['fast'])
+test('test_psnr_uncapped', test_psnr_uncapped, suite : ['fast'])
 test('test_integer_motion_coverage', test_integer_motion_coverage, suite : ['fast'])
 test('test_integer_motion_v2_coverage', test_integer_motion_v2_coverage, suite : ['fast'])
 test('test_ssim_coverage', test_ssim_coverage, suite : ['fast'])
 test('test_adm_coverage', test_adm_coverage, suite : ['fast'])
+test('test_adm_csf_representable', test_adm_csf_representable, suite : ['fast'])
 test('test_psnr_hvs_coverage', test_psnr_hvs_coverage, suite : ['fast'])
 test('test_ssimulacra2_coverage', test_ssimulacra2_coverage, suite : ['fast'])
 test('test_niqe', test_niqe, suite : ['fast'])
@@ -3444,6 +3555,7 @@ endif
 
 if integer_adm_simd_test_archs.contains(host_machine.cpu_family())
 test('test_integer_adm_simd', test_integer_adm_simd, suite : ['fast', 'simd'])
+test('test_adm_dwt2_x86', test_adm_dwt2_x86, suite : ['fast', 'simd'])
 endif
 
 if integer_ssim_simd_test_archs.contains(host_machine.cpu_family())

@@ -1,0 +1,1 @@
+| [ADR-1205](1205-ssimulacra2-fma-unification-scalar-and-gpu.md) | The ssimulacra2 FMA unification extends to the scalar fallback and every GPU host copy | Proposed | cuda, sycl, hip, metal, simd, correctness, feature-extractor, reproducibility |

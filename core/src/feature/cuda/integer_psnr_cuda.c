@@ -26,8 +26,9 @@
  *      sse = sum_{i,j} (ref[i,j] - dis[i,j])^2;        (per channel)
  *      mse = sse / (w_p * h_p);
  *      psnr = (sse <= 0)
- *             ? psnr_max[p]
- *             : MIN(10 * log10(peak * peak / mse), psnr_max[p]);
+ *             ? psnr_max[p]                          (infinity sentinel)
+ *             : uncapped ? 10 * log10(peak * peak / mse)
+ *                        : MIN(10 * log10(peak * peak / mse), psnr_max[p]);
  *  Bit-exactness contract: int64 SSE accumulation → places=4 vs CPU.
  *
  *  4:0:0 (YUV400) handling: chroma planes are absent, so only the
@@ -88,6 +89,11 @@ typedef struct PsnrStateCuda {
     /* `enable_chroma` option: when false, only luma is dispatched.
      * Default true mirrors CPU integer_psnr.c — see ADR-0453. */
     bool enable_chroma;
+    /* `uncapped` option: mirrors CPU integer_psnr.c. When true, psnr_max
+     * keeps only its `sse == 0` infinity-sentinel role and stops
+     * truncating genuinely computed values. Default false keeps every
+     * shipped score unchanged. See ADR-1193 / T-UPSTREAM-1109. */
+    bool uncapped;
     /* Number of active planes (1 for YUV400, 3 otherwise). */
     unsigned n_planes;
     /* Per-plane psnr_max — `(6 * bpc) + 12` in the default branch
@@ -104,6 +110,15 @@ static const VmafOption options[] = {{
                                          .offset = offsetof(PsnrStateCuda, enable_chroma),
                                          .type = VMAF_OPT_TYPE_BOOL,
                                          .default_val.b = true,
+                                     },
+                                     {
+                                         .name = "uncapped",
+                                         .help = "report the true PSNR instead of truncating at "
+                                                 "the psnr_max ceiling (an all-zero SSE still "
+                                                 "reports psnr_max)",
+                                         .offset = offsetof(PsnrStateCuda, uncapped),
+                                         .type = VMAF_OPT_TYPE_BOOL,
+                                         .default_val.b = false,
                                      },
                                      {0}};
 
@@ -292,15 +307,25 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
         const double sse = (double)*(uint64_t *)s->rb[p].host_pinned;
         const double n_pixels = (double)s->width[p] * (double)s->height[p];
         const double mse = sse / n_pixels;
-        /* Match CPU integer_psnr.c::extract — clamp at psnr_max[p]
-         * via MIN(10*log10(peak^2 / max(mse, 1e-16)), psnr_max[p]).
-         * The 1e-16 floor guards against sse == 0 (trivially identical
-         * frames); the CPU path uses the same constant. */
+        /* Match CPU integer_psnr.c::psnr_from_mse — `mse == 0` reports
+         * psnr_max[p] as the infinity sentinel, and the truncation at
+         * psnr_max[p] applies only when `uncapped` is false. The 1e-16
+         * floor is kept in the computed branch so the two modes agree
+         * on any 0 < mse < 1e-16 input; the CPU path uses the same
+         * constant. See ADR-1193 / T-UPSTREAM-1109. */
         const double peak_sq = (double)s->peak * (double)s->peak;
         const double mse_clamped = (mse > 1e-16) ? mse : 1e-16;
-        double psnr = 10.0 * log10(peak_sq / mse_clamped);
-        if (psnr > s->psnr_max[p])
-            psnr = s->psnr_max[p];
+        double psnr;
+        if (!s->uncapped) {
+            /* Pre-ADR-1193 expression verbatim — bit-identical default. */
+            psnr = 10.0 * log10(peak_sq / mse_clamped);
+            if (psnr > s->psnr_max[p])
+                psnr = s->psnr_max[p];
+        } else if (mse <= 0.0) {
+            psnr = s->psnr_max[p]; /* infinity sentinel */
+        } else {
+            psnr = 10.0 * log10(peak_sq / mse_clamped);
+        }
 
         const int e = vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, psnr_name[p], psnr, index);

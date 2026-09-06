@@ -84,6 +84,7 @@ import sys
 from pathlib import Path
 
 from vmaftune.corpus import CorpusOptions
+from vmaftune.defaultmodel import DEFAULT_MODEL
 from vmaftune.fr_from_nr_adapter import NrInputRow, NrToFrAdapter
 
 input_path = Path(sys.argv[1])
@@ -102,7 +103,7 @@ adapter = NrToFrAdapter(
         encoder="libx264",
         encode_dir=encode_dir,
         keep_encodes=False,
-        vmaf_model="vmaf_v0.6.1",
+        vmaf_model=DEFAULT_MODEL,
     ),
 )
 

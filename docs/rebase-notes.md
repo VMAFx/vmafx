@@ -47,6 +47,54 @@ No rebase impact: `scripts/ci/check-no-tracked-venv.sh` and its test are fork-ad
   keys with `-EINVAL`. `vmaf_use_features_from_model` checks GPU twin option support
   against model requirements and dispatches unsupported twins to the CPU reference.
   Preserve this gating on rebase to prevent silent option drops.
+
+## fix/t-upstream-1494-adm-csf-mode-irfactor-ov — integer-ADM CSF representability guard (2026-09-06)
+
+- `core/src/feature/x86/adm_avx2.c`, `core/src/feature/x86/adm_avx512.c`: the horizontal
+  DWT2 tail bound is `half_w >= 2 ? half_w - 1 - ((half_w - 2) % N) : 1` (with
+  `half_w = (w + 1) / 2`) in all six kernels — `adm_dwt2_8_avx2`, `adm_dwt2_16_avx2`,
+  `adm_dwt2_s123_combined_avx2`, `adm_dwt2_8_avx512`, `adm_dwt2_16_avx512` and
+  `adm_dwt2_s123_combined_avx512`. Invariant: the last column `half_w - 1` must always
+  fall to the scalar tail loop, which is the only one that applies the `ind_x` mirror;
+  the upstream bound `half_w - ((half_w - 1) % N)` gave that column to the vector loop
+  whenever `half_w % N == 1`. This is the x86 twin of the NEON fix
+  (T-ADM-DWT2-NEON-PARITY-2026-08-30) and the residual (3) of
+  T-UPSTREAM-1564-ADM-CM-GPU-BORDER-AND-ROUNDING-2026-09-03. Upstream Netflix still
+  carries the unguarded bound, so on any upstream sync touching x86 DWT2 keep the
+  guarded expression and `core/test/test_adm_dwt2_x86.c`, which pins bit-exactness
+  against the scalar kernel at w in {34, 66, 130, 258} (half_w % N == 1) plus w=576.
+
+- `core/src/feature/adm_csf_fixed_point.h` is **fork-added**. It owns the
+  fixed-point exponents (2^21 / 2^23 at scale 0, 2^32 at scales 1-3), the
+  storage bounds, the tabulated-fast-path predicate, and the scale-0 narrowing
+  conversion. Invariant: the conversion must stay `double`-valued
+  (`(double)float_weight * pow(2, N)`), because that is exactly what the four
+  `(uint16_t)(rfactor1[k] * pow2_N)` expressions it replaced evaluated —
+  `float * double` promotes to `double`. Changing it to a `float` product
+  would move scores.
+- `core/src/feature/integer_adm.c`: `adm_csf_rfactor_scale0()` now delegates to
+  that header, and `adm_csf_config_check()` (called once from `init()`, cached
+  in `AdmState::csf_config_err`, returned by `extract()`) refuses weights the
+  storage cannot hold. On a rebase, keep the verdict in `extract()` beside the
+  pre-existing `nvd * rdh >= 3240` guard: `core/test/test_adm_coverage.c
+  ::test_adm_invalid_view_dist_returns_einval` pins that an unsupported ADM
+  configuration initialises and then fails at extract time. See ADR-1191.
+- `core/src/feature/cuda/integer_adm_cuda.c`,
+  `core/src/feature/hip/integer_adm_hip.c`,
+  `core/src/feature/sycl/integer_adm_sycl.cpp`: each keeps its own copy of
+  `adm_csf_factors()` / `adm_csf_rfactor_scale0()` (upstream parity, unchanged)
+  and gains an `adm_csf_config_check()` called from its own `init()`. Invariant:
+  all four backends must apply the **CPU** bounds from the shared header, even
+  where the twin's own storage is wider — the SYCL twin holds scale 0 in
+  `uint32_t`, but accepting a configuration the CPU rejects would break the
+  ADR-1183 option / feature-name parity contract.
+- `core/src/feature/x86/adm_avx2.c` and `adm_avx512.c` deliberately keep their
+  own byte-identical copies of the scale-0 conversion. They are unreachable
+  with an out-of-range weight now that `init()` gates the configuration, and
+  leaving them untouched keeps the SIMD bit-exactness story unchanged. Do not
+  "unify" them into the shared header without re-running
+  `core/test/test_integer_adm_simd.c`.
+
 ## ci/release-artifacts-built-in-dev-container — native release artifacts built on self-hosted canonical runner (ADR-1178) (2026-09-05)
 
 No rebase impact: all touched files (`.github/actionlint.yaml`, `.github/workflows/dev-container-publish.yml`, `.github/workflows/supply-chain.yml`, `scripts/release/verify-native-release-artifacts.sh`, `scripts/release/tests/test-verify-native-release-artifacts.sh`, `scripts/ci/check-container-build.sh`, `scripts/ci/tests/test-check-container-build.sh`, docs) are fork-local CI workflows, verification scripts, and documentation with no upstream Netflix/vmaf counterpart. No public C API, header, Meson option, or golden assertion is touched.
@@ -57,6 +105,7 @@ No rebase impact: `.github/workflows/lint-and-format.yml` is fork-added. Invaria
 only purpose is to emit `compile_commands.json` for clang-tidy must configure with `-Db_lto=false`,
 because the project default (`b_lto_threads=4`, ADR-1172) renders as a GCC-only `-flto=<n>` that
 clang rejects outright.
+
 ## fix/state-md-duplicate-rows — one row per bug id (2026-09-05)
 
 No rebase impact: `docs/state.md`, `scripts/ci/check-state-md-rows.sh` and its test are fork-added.
@@ -219,12 +268,14 @@ no rebase impact: changes GitHub Actions workflow job display names (`.github/wo
 ## docs/venv-recipe — replace impossible venv recipe with verified one (2026-09-04)
 
 - `docs/development/languages.md`: no rebase impact: docs/development/ is fork-added.
+
 ## fix/vmaf-tune-python-fast-path — Python fast-path probe decoding, feature parsing, and normalisation parity (2026-09-05)
 
 No rebase impact: all touched files (`tools/vmaf-tune/src/vmaftune/`, `tools/vmaf-tune/tests/`, `docs/`) are fork-added Python tuning tooling with no upstream Netflix/vmaf counterpart. No public C API, header, Meson option, or golden assertion is touched.
 - `tools/vmaf-tune/src/vmaftune/cli.py` & `fast.py`: probe distorted containers (`.mp4`) are decoded to temporary raw YUV before running libvmaf feature extraction (with guaranteed cleanup) and non-zero exit codes raise `RuntimeError` (no zero-fill).
 - `tools/vmaf-tune/src/vmaftune/proxy.py`: added `load_proxy_sidecar` and `normalise_features` adhering to `fr_regressor_v2.json` StandardScaler parameters, aligned `ENCODER_VOCAB_V2` ordering, and mapped unrecognized encoders to `"unknown"` (slot 11) when `allow_unknown=True`.
 - `tools/vmaf-tune/src/vmaftune/score.py`: `parse_feature_aggregates` handles `integer_*` keys and falls back to per-frame averages when pooled metrics are absent.
+
 ## fix/ai-ptq-static-pin-qdq — pin ONNX Runtime static-PTQ output format to QDQ (2026-09-05)
 
 no rebase impact: fork-only ai/ script
@@ -254,6 +305,14 @@ no rebase impact: fork-only ai/ script
   `include/vcs_version.h` before analysis. Restoring a full `meson compile` there re-creates the
   scoping bug where any TU's compiler warning fails the lane regardless of the PR's diff.
 
+## feat/ai-teacher-single-source — AI teacher model follows default model single source (ADR-1173) (2026-09-04)
+
+- `ai/`: feature extractors (`extract_full_features.py`, `extract_k150k_features.py`, `bvi_dvc_to_full_features.py`, `extract_ugc_features.py`, `konvid_to_full_features.py`, `konvid_to_vmaf_pairs.py`, `bvi_dvc_to_corpus_jsonl.py`) and scoring helpers (`scores.py`) now dynamically resolve their teacher model from `ai.data.scores.resolve_teacher_model()` (backing `vmaftune.defaultmodel.DEFAULT_MODEL` per ADR-1168) instead of hardcoding `vmaf_v0.6.1`. They stamp `teacher_model` on every row and manifest. Upstream syncs touching these scripts should preserve `resolve_teacher_model()` and the row-level `teacher_model` column.
+- `ai/data/feature_extractor.py` and `ai/scripts/extract_k150k_features.py`: raw feature extraction lists append `"adm3"` to `FULL_FEATURES` and `FEATURE_NAMES`. The canonical-6 student features (`DEFAULT_FEATURES`) remain frozen.
+- `ai/scripts/combine_full_feature_parquets.py`, `ai/scripts/train_vmaf_tiny_v5.py`, `ai/scripts/eval_loso_vmaf_tiny_v5.py`: enforce intra-table and cross-table teacher model uniformity, refusing mixed-model datasets and unprovenanced tables without `--assume-teacher <name>`.
+- `scripts/ci/check-default-model-single-source.sh`: removed wholesale `^ai/` exemption from the gate's `allow_re`.
+- `ai/data/netflix_loader.py` (`load_or_compute(..., cache_valid=)`) and `ai/train/dataset.py`: the per-clip `$VMAF_TINY_AI_CACHE` entry is revalidated against the resolved teacher; a stale or unstamped entry is a cache miss. Keep the predicate when touching the loader — dropping it silently relabels pre-ADR-1173 `vmaf_v0.6.1` caches as the current teacher.
+
 ## docs/state-sweep-four-closed-rows — docs/state.md bookkeeping sweep (2026-09-04)
 
 no rebase impact: docs-only
@@ -269,6 +328,7 @@ no rebase impact: fork-only test wiring in `core/test/meson.build` and documenta
 - `core/src/feature/sycl/speed_chroma_sycl.cpp`, `core/src/feature/sycl/speed_temporal_sycl.cpp`: Replaced `double` accumulators and workgroup local accessors with `float` to satisfy ADR-0220 on fp64-less Intel Arc devices.
 - `core/src/meson.build`: Passed `_x86_simd_strict_fp_extra` (`-fp-model=precise`) to `x86_avx2_static_lib` and `x86_avx512_static_lib` when compiling with `icx`.
 - `python/test/sycl_default_model_test.py`: Wholly fork-added regression test gating `--backend sycl` default model execution. No upstream rebase conflict.
+
 ## ci/sycl-arc-self-hosted-runner — containerised self-hosted GitHub Actions runner for Intel Arc SYCL CI (ADR-1177) (2026-09-04)
 
 - `dev/Containerfile.runner`: fork-added; derives from `vmaf-dev-mcp:local` with GitHub Actions runner v2.337.0 and non-root `runner` user (uid 1001). Preserves all oneAPI SYCL tools and Level-Zero runtime. No upstream counterpart.
@@ -281,9 +341,11 @@ no rebase impact: fork-only test wiring in `core/test/meson.build` and documenta
 - `scripts/ci/gpu_ulp_calibration.yaml`: added calibrated `float_ssim: 5.0e-4` entry for Arc A380 `sycl:0x8086:0x56a*`.
 - `core/test/meson.build`: tagged all 23 SYCL tests with `suite : ['fast', 'gpu', 'sycl']`. Upstream sync conflict resolution: preserve the `suite` additions on any upstream test additions.
 - Rebase impact: minimal. Upstream Netflix/vmaf has no SYCL backend, no self-hosted runner infrastructure, and no `required-aggregator.yml`. If upstream touches `core/test/meson.build`, keep the fork's SYCL test declarations and suite tags.
+
 ## fix/metal-motion-v2-mirror-closeout — Metal motion_v2 mirror closeout and test observability (2026-09-04)
 
 no rebase impact: fork-only Metal backend (`core/src/feature/metal/integer_motion_v2.metal`, `core/test/test_metal_motion_v2_parity.c`, `core/src/feature/metal/AGENTS.md`, ADR-1176). All touched files are fork-added surfaces with no upstream Netflix/vmaf counterpart.
+
 ## fix/vmaf-tune-report-audit-and-svtav1-hdr-knob-docs — vmaf-tune report audit findings #2–#10 and SVT-AV1-HDR knob docs (2026-09-04)
 
 No rebase impact: fork-only tools/vmaf-tune and documentation surfaces (`tools/vmaf-tune/`, `docs/usage/vmaf-tune.md`, `docs/usage/vmaf-tune-codec-adapters.md`). No upstream Netflix/vmaf counterpart, no C engine files, and no Netflix golden test assertions touched.
@@ -315,7 +377,9 @@ No rebase impact: fork-only tools/vmaf-tune and documentation surfaces (`tools/v
 - `.github/workflows/build.yml` and `.github/workflows/libvmaf-build-matrix.yml`: Homebrew
   installation on macOS uses a 3-attempt retry loop with backoff and `brew fetch --retry`, plus
   `HOMEBREW_NO_AUTO_UPDATE=1` and `HOMEBREW_NO_INSTALL_CLEANUP=1`. Wholly fork-added workflows.
+
 ## ci/release-artifacts-built-in-dev-container — native release artifacts built in canonical dev container (ADR-1178) (2026-09-04)
+
 ## ci/release-artifacts-built-in-dev-container — native release artifacts built on self-hosted canonical runner (ADR-1178) (2026-09-05)
 
 No rebase impact: all touched files (`.github/actionlint.yaml`, `.github/workflows/dev-container-publish.yml`, `.github/workflows/supply-chain.yml`, `scripts/release/verify-native-release-artifacts.sh`, `scripts/release/tests/test-verify-native-release-artifacts.sh`, `scripts/ci/check-container-build.sh`, `scripts/ci/tests/test-check-container-build.sh`, docs) are fork-local CI workflows, verification scripts, and documentation with no upstream Netflix/vmaf counterpart. No public C API, header, Meson option, or golden assertion is touched.
@@ -48642,6 +48706,7 @@ reintroduce this. Two invariants:
 The guard that used to sit in `flush_context_cuda()` (`if (vmaf->thread_pool && TEMPORAL)
 continue;`) is intentionally **deleted**, not moved. A rebase that resurrects it alongside
 invariant 1 will skip the flush entirely for temporal GPU extractors.
+
 ## RN-2026-09-06 — Netflix benchmark harness paths and flags are host-coupled
 
 `testdata/benchmark_netflix.py` and `testdata/bench_all.sh` are fork-added and
@@ -48667,6 +48732,7 @@ values inside them silently rot and are worth re-checking after any sync:
 `testdata/netflix_benchmark_results.json` is deliberately stale as of
 2026-09-06 — see [ADR-1192](adr/1192-netflix-bench-snapshot-drift-not-regenerated.md).
 Do not regenerate it as part of a rebase.
+
 ## ci/container-source-guard — record the container's source revision (2026-09-06)
 
 Fork-only tooling (`dev/`, `scripts/dev/`, `scripts/ci/tests/`). One invariant:
@@ -48679,6 +48745,60 @@ Fork-only tooling (`dev/`, `scripts/dev/`, `scripts/ci/tests/`). One invariant:
    revision of whichever build first populated the layer cache. A marker that
    reports a stale revision authoritatively is worse than no marker. See
    [ADR-1195](adr/1195-container-source-revision-guard.md).
+## fix/t-upstream-1109-psnr-cap-truncates — PSNR `uncapped` option (2026-09-06)
+
+**Rebase-sensitive files**: `core/src/feature/integer_psnr.c`,
+`core/src/feature/float_psnr.c`, `core/src/feature/psnr.{c,h}`,
+`core/src/feature/{cuda,sycl,hip,metal}/{integer,float}_psnr_*`,
+`core/src/feature/metal/{integer,float}_psnr.metal`,
+`core/test/test_psnr_uncapped.c`.
+
+`integer_psnr.c`, `float_psnr.c` and `psnr.{c,h}` are upstream-mirror files;
+the eight GPU twins are fork-local. ADR-1193 changed the same expression in
+all of them, so an upstream sync that touches PSNR needs the following
+invariants held:
+
+1. **`psnr_max` has exactly two roles and they are now separate.** Role (a),
+   the `mse == 0` infinity sentinel, is unconditional. Role (b), the
+   truncation of computed values, applies only when `uncapped == false`.
+   Upstream's expression conflates them
+   (`MIN(10*log10(peak^2 / MAX(mse, 1e-16)), psnr_max)`), so a verbatim
+   upstream hunk landing on `integer_psnr.c::psnr_from_mse()`,
+   `float_psnr.c::extract()` or `psnr.c::compute_psnr()` silently
+   reintroduces the bug. Resolve such a conflict by keeping the fork's
+   three-arm form and folding any upstream numeric change into **both**
+   the `!uncapped` arm and the `uncapped` computed arm. The `!uncapped`
+   arm is deliberately upstream's expression character-for-character,
+   including the `MAX(mse, 1e-16)` floor: with a `min_sse` below ~1.9e-11
+   the ceiling rises past the ~208 dB a floored zero MSE produces, so a
+   re-derived `mse == 0 -> psnr_max` default would not be bit-identical
+   there. Do not "simplify" the two computed arms into one.
+
+2. **The default must stay bit-identical.** `core/test/test_psnr_uncapped.c`
+   carries no-change guards (`test_psnr_default_still_truncates`,
+   `test_float_psnr_default_still_truncates`) next to the fix assertions.
+   Both directions have to keep passing; a rebase that moves the default 60 dB
+   value is wrong even if the uncapped value is right.
+
+3. **The option name, type and default are mirrored across ten extractors.**
+   `uncapped` / `VMAF_OPT_TYPE_BOOL` / `false` appears in `integer_psnr.c`,
+   `float_psnr.c` and each of the eight GPU twins. Adding it to one backend
+   only produces a cross-backend divergence that no CPU test catches. The
+   option is deliberately **not** `VMAF_OPT_FLAG_FEATURE_PARAM`: setting it
+   must not rename `psnr_y` / `float_psnr`, because the CPU extractor appends
+   without a name dict while the GPU twins append with one — flagging it would
+   make the two backends emit different keys for the same request.
+
+4. **`compute_psnr()` in `psnr.c` has no in-tree caller.** It is part of the
+   upstream float "tools" layer and is kept in sync deliberately. Its
+   signature grew a trailing `bool uncapped`; an upstream rebase that
+   reintroduces the three-argument form will compile (nothing calls it), so
+   the mismatch has to be caught by review rather than by the build.
+
+5. **Metal was not executed.** The two `.mm` twins and their `.metal` comment
+   blocks were changed by inspection only — no Apple GPU is available on the
+   fork's dev hardware. Treat the Metal hunks as unverified against silicon
+   when reconciling them.
 
 ### `docs/ai/retrain-runbook-1246.md`
 
@@ -48719,3 +48839,158 @@ invariants are worth carrying forward anyway:
    looks like a build problem and is not. Link the directory in before running;
    never "fix" it by un-ignoring the YUVs — they are hundreds of MB and the
    4K pair is ~2.5 GB per file.
+
+## fix/changelog-unknown-section-gate — unknown fragment dirs fail (2026-09-06)
+
+Fork-only release tooling. One invariant:
+
+1. **`warn_unknown_subdirs()` must return non-zero and its caller must propagate
+   it.** The function is named "warn" for history; since ADR-1198 it is an error
+   path, and `render()` calls it as `warn_unknown_subdirs || return 1`. Dropping
+   either half restores the silent-loss bug: a fragment under an unknown
+   directory renders nothing, and `--check` still passes because it compares
+   rendered output against `CHANGELOG.md` and both sides agree the entry does
+   not exist. That is not hypothetical — it hid PR #1313's runbook entry on
+   master. Also keep the `find ... >&2 2>/dev/null` redirect order in that
+   block; the reverse swallows the list of lost files.
+## fix/cuda-adm-picture-ready-race — reproducer for the CUDA/FFmpeg nondeterminism (2026-09-06)
+
+Adds `scripts/test/repro-cuda-ffmpeg-nondeterminism.sh`; no library code is touched.
+Two things worth knowing before anyone tries to fix the underlying defect:
+
+1. **Measure by interleaving, never sequentially.** The corruption rate tracks host
+   load (0/60 idle, 14/60 at load ~33, 36/80 at load ~16, 50/50 at load ~69 where it
+   saturates and stops discriminating). Two 80-run samples taken one after another
+   produced an apparent 36→9 "improvement" from a change that an interleaved A/B then
+   showed to be 14/60 vs 14/60 — no effect at all. Run the two arms alternately.
+
+2. **Two plausible fixes are already ruled out**, by measurement rather than reasoning:
+   waiting on the pictures' `ready` events before the scale-0 DWT2 in
+   `integer_adm_cuda.c`, and fencing the shared `s->buf` against the previous frame's
+   `s->str` work. Both are theoretically sound gaps; neither moves the rate. Do not
+   re-propose them without an interleaved measurement. The live lead is
+   `collect_fex_cuda()` skipping `cuStreamSynchronize` on the ADR-0242 `drained` path
+   while `submit(N+1)` is already overwriting the shared `results_host`.
+
+## fix/cuda-adm-picture-ready-race — order caller-written CUDA pictures (2026-09-06)
+
+Touches `core/src/libvmaf.c`, which is upstream-mirrored. Three invariants:
+
+1. **The `cuCtxSynchronize()` at the top of `read_pictures_extractor_loop()` is
+   load-bearing, not defensive.** It orders this frame's device data against
+   whoever produced it. With `..._PREALLOCATION_METHOD_DEVICE` the caller copies
+   into a libvmaf-owned picture on a stream we never see, and libvmaf records a
+   picture's `ready` event only inside `vmaf_cuda_picture_upload_async()` — so in
+   that path every `cuStreamWaitEvent(..., ready)` in every extractor is vacuous.
+   Removing this barrier as "redundant with the per-extractor ready waits"
+   restores a silent wrong-score bug: 56 of 60 runs corrupted, measured. See
+   [ADR-1199](adr/1199-cuda-picture-handover-barrier.md).
+
+2. **It belongs at the dispatch point, not inside an extractor.** The corruption
+   was only ever *observed* in ADM because ADM reads the raw planes first. Moving
+   the barrier into `integer_adm_cuda.c` leaves every other CUDA extractor relying
+   on queue position; `test_cuda_float_moment_parity` was seen failing under the
+   same GPU contention.
+
+3. **Do not re-propose the three fixes already ruled out** without an interleaved
+   measurement: waiting on the pictures' `ready` events before the scale-0 DWT2,
+   fencing ADM's shared `s->buf` against the previous frame's `s->str`, and
+   dropping the `drained` shortcut in `collect_fex_cuda()`. Each measured 14/60
+   against 14/60 for control. Reproduce with
+   `scripts/test/repro-cuda-ffmpeg-nondeterminism.sh` under **concurrent CUDA
+   load** — CPU load is not a stressor for this race (1/80 at load 22 versus
+   56/60 with three concurrent CUDA processes), and two builds must be compared
+   by interleaving runs, never sequentially.
+## fix/container-nv-codec-mirror-fallback — second source for nv-codec-headers (2026-09-06)
+
+Touches `dev/Containerfile` only. Two invariants:
+
+1. **Do not "simplify" the fallback back to a single `curl`.** The original
+   comment justified the single source with "GitHub mirror lags so use
+   code.ffmpeg.org", which is true for an unreleased commit and false for the
+   tag actually pinned — `n13.1.15.0` is published on both, and the GitHub
+   tarball carries the `cuStreamCreateWithPriority` declaration the pin exists
+   for. That host was unreachable for over six hours on 2026-09-06 and made the
+   container unbuildable. See [ADR-1200](adr/1200-nv-codec-headers-mirror-fallback.md).
+
+2. **Keep the content assertion and the `find`-based `cd`.** The build requires
+   `include/ffnvcodec/dynlink_cuda.h` and greps `dynlink_loader.h` for
+   `cuStreamCreateWithPriority` before `make install`; without it a fallback
+   could install the wrong headers silently, which is worse than the outage.
+   And the two archives unpack to DIFFERENT top-level directories
+   (`nv-codec-headers` vs `nv-codec-headers-<tag>`), so the hard-coded
+   `cd nv-codec-headers` that used to be here breaks on the mirror.
+## docs/retrain-gate-status-1246 — measured retrain gate status (2026-09-06)
+
+Documentation only. One thing worth knowing:
+
+1. **The gate table is a measurement log, not a plan.** Every cell states how it
+   was checked and on what date. Do not carry a status forward across a rebase
+   without re-running its verification command — the table this replaced had G3
+   marked FAIL against "PR #1307 & fix/cambi-cuda-context unmerged" when both had
+   already merged, which is exactly the drift the format is meant to prevent.
+
+## `fix/cuda-speed-chroma-4k-launch` — GPU SpEED-chroma singularity contract (2026-09-06)
+
+1. **A non-zero return from the GPU twins' linalg helpers means *hard failure*,
+   not *singular matrix*.** The CPU reference overloads one integer for both
+   (`solve_covariance_system()` returns `cannot_invert`, and `extract_fex()`
+   reads it to impute the `uv` score). The GPU twins handle singularity
+   internally and reserve the return value for device errors, so they carry an
+   explicit `bool *singular_out`. A rebase that "simplifies" that parameter away
+   by re-reading the return value restores a silent wrong-score bug: both
+   channels failing then averages `(0 + 0) * 0.5` and the run exits 0 with three
+   `0.0` scores. See [ADR-1202](adr/1202-cuda-speed-chroma-4k-launch-bounds.md).
+
+2. **`SC_SOLVE_WARPS_PER_BLOCK` bounds the block size; the block *count* is what
+   scales with the picture.** The pre-fix code had the two inverted, which put
+   every launch above 256 linear systems past CUDA's 1024-thread block limit —
+   i.e. every 4K frame. The SYCL and HIP twins already compute this correctly
+   (`local = SOLVE_WG * 8`, `hipModuleLaunchKernel(..., u_nb, ..., solve_warp)`);
+   keep all three consistent.
+
+3. **The existing GPU parity tests cannot catch this class.** They all run below
+   the 256-system threshold, so the launch bug was invisible to
+   `meson test --suite=fast`. Verify 4K parity by hand against the CPU backend
+   when touching these files.
+## `fix/codeql-float-widen-mult` — float-widening in the vendored PSNR path (2026-09-06)
+
+1. **`compute_psnr()`'s `(double)diff * diff` is a deliberate deviation from
+   upstream.** Upstream computes the product in `float`. The cast satisfies
+   CodeQL alert 1009 and is safe only because the function is unreachable; an
+   upstream sync that reverts it re-opens the alert but changes no score.
+
+2. **Do NOT apply the same cast to `core/src/feature/iqa/convolve.c`.** Its four
+   accumulation sites must keep the `float` multiply: the AVX2 / AVX-512 / NEON
+   twins widen *after* multiplying to stay bit-identical
+   ([ADR-0138](adr/0138-iqa-convolve-avx2-bitexact-double.md)), and
+   `test_iqa_convolve` fails the moment the scalar side is widened. CodeQL
+   alert 1005 on that line is reported-not-fixed on purpose — see
+   [research digest 2031](research/2031-codeql-float-widening-multiplication.md).
+
+## ADR-1204 / ADR-1205 — ADM CM edge policy and the ssimulacra2 FMA contract
+
+1. **The ADM contrast-masking edge policy is asymmetric on purpose.** The CPU
+   closed form in `core/src/feature/adm_tools.c::adm_cm_thresh3x3_s` mirrors the
+   *near* edge to index 1 (`i_m1 = (i == 0) ? 1 : i - 1`) and *clamps* the
+   *far* edge to the last index (`i_p1 = (i == h - 1) ? h - 1 : i + 1`). Every
+   GPU twin must reproduce both halves. A symmetric mirror
+   (`2 * half_w - x - 2`) looks tidier and is wrong; it only diverges when the
+   border crop `(int)(dim * 0.1 - 0.5)` is 0, i.e. band dimensions ≤ 14, so it
+   survives casual testing. If upstream ever rewrites the macro family, re-derive
+   the twins from the closed form rather than from the macros.
+
+2. **`ssimulacra2`'s YCbCr → linear-RGB conversion is a single-rounded FMA
+   everywhere.** ADR-0891 fixed the SIMD kernels; ADR-1205 extended the same
+   contract to the shipped scalar fallback and the four GPU host copies. There
+   are now six copies of these three lines (scalar, CUDA, HIP, Metal, SYCL, plus
+   the SIMD kernels and their tails) and they must stay `fmaf()`-based and in the
+   same order. The pipeline is ill-conditioned downstream — the edge-diff term is
+   `|img - blur(img)|` and pooling is a 4-norm — so a 1 ULP change here surfaces
+   as a ~1e-3 score change, not a ~1e-7 one.
+
+3. **`core/test/test_ssimulacra2_simd.c` validates against its own private
+   scalar reference, not against the shipped functions.** That is why the drift
+   in item 2 passed its bit-exactness assertion for as long as it did. When
+   touching the conversion, change the shipped copies and the test reference
+   together, or the test will keep agreeing with itself.

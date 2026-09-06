@@ -8340,6 +8340,24 @@ YUV400P sources always produce luma-only output regardless of the option.
   `psnr_vulkan` / ADR-0453 pattern. See ADR-0461.
 
 
+- `psnr` and `float_psnr` gained an opt-in `uncapped` option (bool,
+  default `false`) that stops the `psnr_max` ceiling from truncating
+  genuinely computed scores, while keeping it as the `mse == 0`
+  infinity sentinel. The ceiling used to serve both roles at once, so
+  an 8-bit 576x324 pair differing by a single luma step reported
+  `psnr_y = 60.000000` where the true value — and FFmpeg's own `psnr`
+  filter — is `100.840479` (Netflix/vmaf#1109,
+  `T-UPSTREAM-1109-PSNR-CAP-TRUNCATES-2026-09-03`). The option is
+  mirrored under the same name and default on all eight GPU twins
+  (CUDA / SYCL / HIP / Metal, integer and float). Default behaviour is
+  bit-identical to previous releases — the `uncapped == false` arm is the
+  shipped expression character-for-character, not a re-derivation of it; the Netflix golden 60 / 84 /
+  108 dB assertions pin `sse == 0` pairs and are untouched. New
+  `docs/metrics/psnr.md` documents both `uncapped` and the
+  pre-existing, previously undocumented `min_sse` escape hatch. See
+  [ADR-1193](docs/adr/1193-psnr-uncapped-option.md).
+
+
 - **test(libvmaf)**: add `test_public_api_score` covering three previously-untested public entry points: `vmaf_score_at_index()`, `vmaf_model_collection_load()`, and `vmaf_write_output()` — closes coverage gap identified in audit-test-coverage-2026-05-16.md §2.
 
 
@@ -8428,6 +8446,14 @@ Docs: `docs/usage/vmaf-tune-recommend.md`,
   caller always gets a result.
 
 
+- `scripts/test/repro-cuda-ffmpeg-nondeterminism.sh` reproduces
+  `T-CUDA-FFMPEG-FILTER-NONDETERMINISM-2026-09-06` — the FFmpeg `libvmaf_cuda` filter
+  intermittently returning a wrong pooled VMAF — and reports which frames and metrics
+  corrupted. The defect is timing-dependent: it does not reproduce on an idle host and
+  reaches ~23% under load, so the script prints the load average alongside its result and
+  documents why two builds must be compared by interleaving runs rather than sequentially.
+
+
 - **Research-0061: docs-only PR CI fast-track design.** Tracks the
   docs-only / research-only PR pattern where a small markdown change
   waits ~25 minutes for the full 23-required-check CI matrix. Documents
@@ -8478,6 +8504,12 @@ Docs: `docs/usage/vmaf-tune-recommend.md`,
   **Tier 3** revisits a `VK_KHR_video_encode_h266` adapter quarterly
   pending Khronos ratification. Pure docs + ADR change; zero code
   modifications.
+
+
+- **docs(ai)**: add operator runbook for the one-shot tiny-AI model retrain
+  against the `vmaf_v1.0.16_3d0h` teacher (epic #1246). Covers preconditions,
+  container rebuild, K150K smoke, per-corpus extraction, mixed-teacher refusal,
+  model retraining, static PTQ/QAT export, validation gates, and rollback.
 
 
 **Rust crate audit — TAD extractor and vmafx-sys bindings (Research-0760)**
@@ -11291,6 +11323,9 @@ Extract 5 common utility patterns from 18 `ai/scripts/` files into a reusable `a
 4. **`parquet_utils.write_parquet_atomic(df, output, **kwargs) -> None`** — Atomic Parquet writes using temp-file + rename. Extracted from `enrich_k150k_parquet_metadata.py`.
 
 Updated scripts import from `aiutils` instead of defining helpers locally. Net savings: ~160 LOC deleted (from 16 scripts), ~90 LOC added (aiutils modules + imports). See `ai/src/aiutils/AGENTS.md` for invariants for future scripts.
+
+
+- **AI teacher model follows ADR-1168 single source (ADR-1173).** AI training and feature extraction pipelines now resolve teacher model defaults dynamically from `vmaftune.defaultmodel.DEFAULT_MODEL` (derived from `core/include/libvmaf/model.h:VMAF_DEFAULT_MODEL_VERSION`) rather than hardcoding legacy `vmaf_v0.6.1`. Feature producers stamp `teacher_model` on every parquet row and manifest, combiners and training scripts strictly refuse mixed-teacher tables (and refuse legacy unprovenanced tables without `--assume-teacher <name>`), raw feature extraction tables append `adm3` to `FULL_FEATURES` and K150K `FEATURE_NAMES` while locking canonical-6 student features, the `NetflixFrameDataset` per-clip cache recomputes entries whose stamped teacher is missing or differs from the resolved teacher instead of relabelling them, and the CI single-source gate actively enforces `ai/`.
 
 
 **aiutils: extract `run_cmd` subprocess helper (ADR-0526)** — `ai/src/aiutils/subprocess_utils.py`
@@ -14446,6 +14481,24 @@ rename `0033-hip-applicability.md` → `0432-hip-applicability.md` and
 `0034-ci-pipeline-audit-2026-05.md` → `0433-ci-pipeline-audit-2026-05.md`,
 update all cross-references, and correct `# Research-NNNN` h1 headers to match
 the new filenames.
+
+
+- `docs/ai/retrain-runbook-1246.md` gate table now reflects measured status rather than the
+  state at authoring time. **G2** (master green) and **G3** (container rebuilt with the GPU
+  default-model fixes) move to **PASS** — G3 verified on all four backends, not just CUDA —
+  and **G1** and **G4** are sharpened with what specifically still blocks them. Each cell
+  now records how and when it was checked.
+- The runbook's K150K commands were corrected against an actual run: `--scores` named a
+  `scores.csv` that does not exist (KoNViD-150k splits scores into
+  `k150ka_scores.csv` / `k150kb_scores.csv`), `--cpu-vmaf-bin` was missing entirely and its
+  default path is absent from the container, and `--clips-dir` named `clips/`, whose
+  153,841 entries are symlinks to *host* paths that do not resolve inside the container —
+  every clip failed `ffprobe` in a way that reads like corrupt media but is a dangling
+  link. All three appeared in **both** the §4 smoke and the §5.1 multi-day extraction, so
+  each would have aborted. With them fixed the pipeline runs clean: `ok=5 fail=0` at
+  1.26 clip/s. The three §4.2 assertions that still fail — `teacher_model` in the manifest,
+  the `teacher_model` column, and `adm3_mean` — are all supplied by #1302, so G4 is blocked
+  on that PR alone.
 
 
 **Internal**
@@ -18284,6 +18337,54 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   macOS CPU + Metal build before Meson invokes `xcrun metal`.
 
 
+- **Integer ADM no longer emits wrapped scores for out-of-range CSF
+  configurations** (`core/src/feature/integer_adm.c` plus the CUDA, HIP and
+  SYCL twins). The fixed-point pipeline stores each scale's
+  contrast-sensitivity weight in a `uint16_t` (scale 0) or `uint32_t`
+  (scales 1-3), sized for the Watson97 weights. `--feature adm=adm_csf_mode=1`
+  (Barten) at the default `adm_csf_scale` produces weights 38x to 155x past
+  those ceilings; the narrowing casts wrapped silently and the extractor
+  emitted `integer_adm2_csf_1: null` with per-scale scores three orders of
+  magnitude below the float reference. The blended-CSF modes (`2` / `3`) had a
+  related defect: for viewing geometries their tables do not carry they return
+  `-EINVAL` *as a float*, which then hit an undefined negative-to-unsigned
+  conversion. Both configurations are now rejected with `-EINVAL` and a log
+  line naming the scale, band and offending weight. Configurations that fit
+  are unchanged, including `adm_csf_mode=1` with small `adm_csf_scale` /
+  `adm_csf_diag_scale` coefficients and `adm_csf_mode=2` as requested by the
+  default model `vmaf_v1.0.16_3d0h`; the Netflix golden gate is untouched.
+  Use `--feature float_adm` to run the Barten CSF at full scale.
+  ADR-1191, `docs/metrics/features.md` § Fixed-point CSF limits.
+
+
+- SpEED-chroma on the CUDA backend returned exactly `0.000000` for
+  `speed_chroma_u` / `_v` / `_uv` at 4K and above, pulling the default
+  model's pooled VMAF 3.42 points off the CPU score (63.733364 vs
+  67.150063 on a 3840x2160 pair) while the run still exited 0.
+  Two defects: the backward-substitution launch derived its block size
+  from the *block count*, so any picture with more than 256 linear
+  systems exceeded CUDA's 1024-thread block limit and the kernel never
+  ran; and all three GPU twins (CUDA, SYCL, HIP) conflated "singular
+  covariance matrix" with "hard device failure", so the launch error
+  was routed into the CPU twin's singular-matrix imputation and, with
+  both chroma channels failing, averaged to `0.0` and reported success.
+  Singularity is now reported separately from failure, device errors
+  fail the frame, and the twins adopt the CPU rule that a channel with
+  exactly one singular side scores 0. CPU, CUDA and SYCL now agree at
+  4K. See [ADR-1202](docs/adr/1202-cuda-speed-chroma-4k-launch-bounds.md).
+
+
+- `psnr_hvs_cuda` returned the luma-only score under the `psnr_hvs` name and
+  omitted `psnr_hvs_cb` / `psnr_hvs_cr` entirely, because its `enable_chroma`
+  option defaulted to `false` while the CPU and SYCL twins default it to `true`
+  and the HIP twin computes chroma unconditionally. `psnr_hvs` is defined as
+  `0.8*Y + 0.1*(Cb + Cr)`, so CUDA disagreed with CPU by ~4% on identical input
+  — 41.4866616015 vs 41.7803055708 on a 960x540 pair — and
+  `test_cuda_psnr_hvs_parity` had been failing on it by 4000x the tolerance.
+  The default now matches every other backend. See
+  [ADR-1203](docs/adr/1203-cuda-psnr-hvs-enable-chroma-default.md).
+
+
 - `vmafx-tune predict --use-saliency` now wires saliency moments into
   feature extraction via `pkg/saliency.ComputeMap` rather than returning an
   unimplemented error directing users to the retired Python binary (#1272).
@@ -18323,6 +18424,17 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   in `cmd/vmafx-node/online_feedback_test.go` cover the Close()
   contract and nil-logger guard; one new test in
   `executor_test.go` locks in the nil-logger guard for `Executor`.
+
+
+- `compute_psnr()` accumulated `diff * diff` in `float` before widening to its
+  `double` accumulator (CodeQL `cpp/integer-multiplication-cast-to-long`,
+  alert 1009). The multiply now happens in `double`. No score moves — the
+  function has no call sites and no SIMD twin, and all three Netflix golden
+  pairs are bit-identical at `--precision=max`. The sibling alert on
+  `iqa_convolve` (1005) is deliberately **not** fixed: its float multiply is the
+  bit-exactness contract AVX2 / AVX-512 / NEON mirror under ADR-0138, and
+  widening it fails `test_iqa_convolve`. See
+  [research digest 2031](docs/research/2031-codeql-float-widening-multiplication.md).
 
 
 - `local_explainer_test`: recalibrate `test_run_vmaf_runner_local_explainer_with_bootstrap_model`
@@ -18437,6 +18549,18 @@ Wire `adm_skip_scale0` and `adm_min_val` into `integer_adm_sycl`,
 accepted by the CPU, CUDA, and Vulkan extractors but silently ignored
 by the three remaining GPU paths; scale-0 was always accumulated and
 no score floor was applied.
+
+
+### Fixed
+
+- `core/src/feature/x86/adm_avx2.c`, `core/src/feature/x86/adm_avx512.c`: fix horizontal
+  DWT2 tail loop boundary condition for AVX2 and AVX-512 kernels. Previously,
+  the vector loop bound `((w + 1) / 2) - ((((w + 1) / 2) - 1) % N)` allowed the SIMD loop
+  to process the final column `(w + 1) / 2 - 1` when `(w + 1) / 2 % N == 1`, skipping
+  boundary reflection and causing scalar/SIMD divergence and potential out-of-bounds
+  loads. Guarded the vector loop bound to `half_w - 1 - ((half_w - 2) % N)` (with a minimum of 1),
+  ensuring the final column is always safely mirrored by the scalar tail loop.
+  Regression test added in `core/test/test_adm_dwt2_x86.c`.
 
 
 - Skip 9 Python `feature_extractor_test` cases that exercise `motion_five_frame_window=True`
@@ -19282,6 +19406,16 @@ The `cross_backend_vif_diff.py` per-feature lane already carried a `cambi` entry
   release-please `## [vX.Y.Z]` sections are preserved across re-renders.
   See [ADR-0913](docs/adr/0913-changelog-renderer-splice-contract.md)
   and [Research-0913](docs/research/0913-changelog-renderer-and-drift-2026-05-31.md).
+
+
+- A changelog fragment filed under a directory that is not a Keep-a-Changelog section now
+  **fails** the run instead of printing a warning and exiting 0. The old behaviour silently
+  dropped the entry: `changelog.d/docs/retrain-runbook-1246.md` had been on `master` since
+  PR #1313 and never rendered, and `--check` still passed because it compares rendered
+  output against `CHANGELOG.md` and both agreed the entry did not exist. That fragment is
+  restored to `changelog.d/added/`, so the retrain-runbook entry appears in the Unreleased
+  block for the first time. See
+  [ADR-1198](docs/adr/1198-changelog-unknown-section-is-an-error.md).
 
 
 - **CHUG sidecar `chug_bit_depth` not loaded** (`ai/scripts/extract_k150k_features.py`):
@@ -20514,6 +20648,17 @@ unblock each item.  No functional change.
   comment, matching the pattern of `vmaf_cuda_picture_get_stream` and sibling accessors.
 
 
+- The FFmpeg `libvmaf_cuda` filter no longer returns a different pooled VMAF from run to
+  run. With `VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_DEVICE` the caller copies frames into a
+  libvmaf-owned device picture on its own stream, and libvmaf records a picture's `ready`
+  event only when libvmaf itself performs the upload — so in that hand-over path nothing
+  ordered the CUDA kernels against the producer's write, and one frame per run came back
+  with corrupted ADM features. libvmaf now orders the frame once, at the CUDA dispatch
+  point, before any extractor reads it: 56 of 60 runs corrupted before, 0 of 60 after,
+  measured interleaved under concurrent CUDA load, at no measurable throughput cost. See
+  [ADR-1199](docs/adr/1199-cuda-picture-handover-barrier.md).
+
+
 - **CUDA `picture_cuda.c` integer-type precision fixes (round-5 clang-tidy
   `bugprone-*` sweep).** Five type-precision defects corrected in
   `core/src/cuda/picture_cuda.c`:
@@ -21692,6 +21837,45 @@ is addressed.
 - `core/src/meson.build`: correct the stale comment claiming
   `enable_rust_features` defaults to `true`; `core/meson_options.txt` sets
   `value: false`. The comment now matches the single source of truth.
+
+
+- **`float_adm` GPU twins read the wrong sample at the far edge of the
+  contrast-masking neighbourhood.** The CPU closed form
+  (`adm_cm_thresh3x3_s`) has an asymmetric edge policy — the near edge
+  mirrors to index 1, the far edge *clamps* to the last index — while
+  the CUDA, SYCL, HIP and Metal twins mirrored both edges
+  (`2 * half_w - x - 2`). The mismatch only shows when the ADM border
+  crop `(int)(dim * 0.1 - 0.5)` collapses to 0, i.e. for band
+  dimensions ≤ 14, because only then are the first and last row and
+  column inside the summation region. On an RTX 4090 that moved
+  `adm_scale3` by 8.58e-04 and `adm2` by 4.78e-04 against the places=4
+  (1e-4) cross-backend gate, so `test_cuda_float_adm_parity` was red on
+  any host with a GPU — and green in CI only because runners have no
+  CUDA device and the test skips. Fixed by clamping the far edge in all
+  four twins; `adm_scale3` agreement improves to 4.00e-08.
+
+- **`ssimulacra2` scored differently on hosts with and without SIMD, and
+  on every GPU backend.** The ADR-0891 FMA unification of the
+  YCbCr → linear-RGB conversion reached the AVX2 / AVX-512 / NEON / SVE2
+  kernels and the SIMD test's own private scalar reference, but not the
+  five shipped non-SIMD copies — `core/src/feature/ssimulacra2.c` and
+  the CUDA, HIP, Metal and SYCL host conversions — which kept plain
+  mul-then-add. Because the test compares the kernels against its
+  private reference rather than the shipped scalar function, it asserted
+  bit-exactness and still passed. The resulting ~1 ULP difference is
+  amplified by an ill-conditioned pipeline (the edge-diff term is a
+  catastrophic cancellation, and pooling takes a 4-norm) into a 2.62e-03
+  score delta against the same 1e-4 gate. Fixed by using `fmaf()` in the
+  ADR-0891 positions in all five copies: CPU-vs-CUDA agreement improves
+  from 2.62e-03 to ~2.8e-09, and the scalar fallback now matches the
+  SIMD paths. Scores on AVX2/AVX-512/NEON/SVE2 hosts are unchanged, so
+  no snapshot moved.
+
+- **CUDA parity tests now also run against a 960x540 fixture.** All of
+  them pinned one small size, which put the SSIM/MS-SSIM auto-scale
+  (`max(1, round(min(w, h) / 256))`) permanently at 1 and kept every
+  resolution-dependent branch unreachable. Both bugs above hid behind
+  that gap, as did the earlier speed_chroma 4K defect.
 
 
 - `integer_adm` GPU twins now honour the CPU option table instead of
@@ -23585,6 +23769,16 @@ Fix: created standalone tracking issue #827 ("tracking: nightly bisect-model-qua
 results") and updated `BISECT_TRACKER_ISSUE` to `"827"`. Also improved
 `_gh_with_stdin` in `post-bisect-comment.py` to surface `gh` stderr on failure,
 making future API errors diagnosable in CI logs.
+
+
+- The dev container no longer becomes unbuildable when `code.ffmpeg.org` is down. The
+  nv-codec-headers layer now falls back to `github.com/FFmpeg/nv-codec-headers` for the same
+  pinned tag, and asserts the archive actually carries `ffnvcodec/dynlink_cuda.h` and the
+  `cuStreamCreateWithPriority` declaration before installing it, so a fallback cannot
+  silently install the wrong headers. That host was unreachable for over six hours on
+  2026-09-06, stalling the layer with no symptom beyond an apparent hang — and under
+  CLAUDE.md rule 15 and ADR-1102 the container is the canonical build environment. See
+  [ADR-1200](docs/adr/1200-nv-codec-headers-mirror-fallback.md).
 
 
 **fix(build): error on `enable_nvtx=true` without `enable_cuda=true` (build-matrix audit §1a)**

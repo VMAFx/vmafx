@@ -46,6 +46,7 @@ SCRIPT_PATH = _SCRIPT_PATHS.script_path
 _REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from vmaftune import CANONICAL6_FEATURES, CORPUS_ROW_KEYS, SCHEMA_VERSION  # noqa: E402
+from vmaftune.defaultmodel import DEFAULT_MODEL  # noqa: E402
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
@@ -70,6 +71,7 @@ def _row_from_cache(
     preset: str,
     encoder: str,
     pix_fmt: str,
+    vmaf_model: str = DEFAULT_MODEL,
 ) -> dict:
     """Build one :data:`CORPUS_ROW_KEYS`-shaped row from a cached vmaf JSON."""
     payload = json.loads(cache_path.read_text())
@@ -116,7 +118,7 @@ def _row_from_cache(
         "bitrate_kbps": 0.0,
         "encode_time_ms": 0,
         "vmaf_score": vmaf_score,
-        "vmaf_model": "vmaf_v0.6.1",
+        "vmaf_model": vmaf_model,
         "score_time_ms": 0,
         "ffmpeg_version": "",
         "vmaf_binary_version": "",
@@ -173,6 +175,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--crf", type=int, default=35)
     ap.add_argument("--pix-fmt", default="yuv420p10le")
     ap.add_argument(
+        "--vmaf-model",
+        default=DEFAULT_MODEL,
+        help="Teacher VMAF model name recorded in rows (default: %(default)s).",
+    )
+    ap.add_argument(
         "--manifest-out",
         type=Path,
         default=None,
@@ -204,6 +211,7 @@ def main(argv: list[str] | None = None) -> int:
                 preset=args.preset,
                 encoder=args.encoder,
                 pix_fmt=args.pix_fmt,
+                vmaf_model=args.vmaf_model,
             )
             fp.write(json.dumps(row, sort_keys=True) + "\n")
             rows += 1
@@ -212,6 +220,7 @@ def main(argv: list[str] | None = None) -> int:
         {
             "schema": "bvi-dvc-corpus-jsonl-manifest-v1",
             "row_schema_version": SCHEMA_VERSION,
+            "vmaf_model": args.vmaf_model,
             "stats": {"cache_files": len(caches), "rows": rows},
             "encoder": args.encoder,
             "preset": args.preset,

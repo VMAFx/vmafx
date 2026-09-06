@@ -545,9 +545,20 @@ static void picture_to_linear_rgb(const Ssimu2State *s, const VmafPicture *pic, 
             float Un = (U - c_off) * c_scale;
             float Vn = (V - c_off) * c_scale;
 
-            float R = Yn + cr_r * Vn;
-            float G = Yn + cb_g * Un + cr_g * Vn;
-            float B = Yn + cb_b * Un;
+            /* ADR-0891 FMA unification: the AVX2 / AVX-512 / NEON / SVE2
+             * kernels and their scalar tails all use a single-rounded
+             * fused multiply-add here. This copy was missed when ADR-0891
+             * landed, so it produced a mul-then-add result that differs
+             * from the SIMD paths by ~1 ULP. The ssimulacra2 pipeline is
+             * ill-conditioned downstream (the edge-diff term takes
+             * |img - blur(img)|, a catastrophic cancellation, and the
+             * 4-norm pooling amplifies the survivors), so that 1 ULP grew
+             * into a 2.6e-3 score delta. Keep these three lines
+             * fmaf()-based and in this exact order. See ADR-1205. */
+            float R = fmaf(cr_r, Vn, Yn);
+            float G = fmaf(cb_g, Un, Yn);
+            G = fmaf(cr_g, Vn, G);
+            float B = fmaf(cb_b, Un, Yn);
 
             R = clampf(R, 0.0f, 1.0f);
             G = clampf(G, 0.0f, 1.0f);

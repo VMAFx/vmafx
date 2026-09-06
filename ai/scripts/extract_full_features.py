@@ -14,12 +14,12 @@ The output schema is one row per (pair, frame):
   dis_basename     : str   (e.g. "BigBuckBunny_30_384_550.yuv")
   frame_index      : int   (0-based per-pair frame number)
   codec            : str   (encoder family; ``"unknown"`` for this corpus)
-  vmaf             : float (vmaf_v0.6.1 teacher score)
-  <26 feature columns from FULL_FEATURES>
+  teacher_model    : str   (e.g. "vmaf_v1.0.16_3d0h")
+  vmaf             : float (teacher VMAF score)
+  <27 feature columns from FULL_FEATURES>
 
-(ADR-0559 extended FULL_FEATURES from 22 to 26 columns by appending
-speed_temporal and speed_chroma_u/v/uv.  The speed_* extractors are CPU-only;
-GPU twins are tracked in ADR-0557 and ADR-0558.)
+(ADR-0559 extended FULL_FEATURES to include speed features; ADR-1173 appended
+adm3 for v1 model compatibility.)
 
 The Netflix Public corpus ships pre-encoded distorted YUVs with no
 in-band codec metadata, so the ``codec`` column defaults to ``"unknown"``
@@ -54,7 +54,7 @@ from ai.data.feature_extractor import (  # noqa: E402
     extract_features,
 )
 from ai.data.netflix_loader import iter_pairs  # noqa: E402
-from ai.data.scores import teacher_scores  # noqa: E402
+from ai.data.scores import resolve_teacher_model, teacher_scores  # noqa: E402
 
 # isort: split
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
@@ -63,28 +63,36 @@ from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
-def _per_clip_cache_path(root: Path, source: str, dis_stem: str) -> Path:
+def _per_clip_cache_path(
+    root: Path, source: str, dis_stem: str, teacher_model: str | None = None
+) -> Path:
     # The feature-set count is baked into the filename so a cache produced
     # before FULL_FEATURES grew (22 -> 26 cols, ADR-0559) misses instead of
     # silently misaligning columns (R3-8).  Mirrors konvid_to_full_features,
     # which keys its cache "features_{len(FULL_FEATURES)}".
-    return root / source / f"{dis_stem}.f{len(FULL_FEATURES)}.json"
+    tm_suffix = f".{teacher_model}" if teacher_model else ""
+    return root / source / f"{dis_stem}.f{len(FULL_FEATURES)}{tm_suffix}.json"
 
 
 def _load_or_compute(
     pair,
     cache_dir: Path,
     vmaf_binary: Path,
+    vmaf_model: str | Path | None = None,
 ) -> dict:
+    resolved = resolve_teacher_model(vmaf_model)
     src = pair.source
     stem = pair.dis_path.stem
-    cache_path = _per_clip_cache_path(cache_dir, src, stem)
+    cache_path = _per_clip_cache_path(cache_dir, src, stem, resolved.name)
     if cache_path.is_file():
         payload = json.loads(cache_path.read_text())
         # Defence in depth on top of the feature-count-keyed filename: a cache
         # whose stored feature_names no longer match the current FULL_FEATURES
         # would silently misalign columns at zip time, so recompute instead.
-        if list(payload.get("feature_names", [])) == list(FULL_FEATURES):
+        if (
+            list(payload.get("feature_names", [])) == list(FULL_FEATURES)
+            and payload.get("teacher_model", resolved.name) == resolved.name
+        ):
             return payload
 
     feats = extract_features(
@@ -101,11 +109,14 @@ def _load_or_compute(
         pair.width,
         pair.height,
         vmaf_binary=vmaf_binary,
+        model=vmaf_model,
     )
+    teacher_name = getattr(teacher, "teacher_model", resolved.name)
     payload = {
         "feature_names": list(feats.feature_names),
         "per_frame": feats.per_frame.tolist(),
         "teacher_per_frame": teacher.per_frame.tolist(),
+        "teacher_model": teacher_name,
     }
     write_text_atomic(cache_path, json.dumps(payload))
     return payload
@@ -193,6 +204,15 @@ def main(argv: list[str] | None = None) -> int:
         "re-extracting against a manifest that does carry labels.",
     )
     ap.add_argument(
+        "--vmaf-model",
+        type=str,
+        default=None,
+        help=(
+            "Teacher model version string or JSON path. Defaults to fork "
+            "default (vmaf_v1.0.16_3d0h via ADR-1168/ADR-1173)."
+        ),
+    )
+    ap.add_argument(
         "--manifest-out",
         type=Path,
         default=None,
@@ -210,9 +230,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: vmaf binary not found at {args.vmaf_bin}", file=sys.stderr)
         return 2
 
+    resolved_teacher = resolve_teacher_model(args.vmaf_model)
     rows: list[dict] = []
     pairs = list(iter_pairs(args.data_root, max_pairs=args.max_pairs))
-    print(f"[extract] {len(pairs)} pairs; FULL_FEATURES = {len(FULL_FEATURES)} features")
+    print(
+        f"[extract] {len(pairs)} pairs; FULL_FEATURES = {len(FULL_FEATURES)} features; "
+        f"teacher = {resolved_teacher.name}"
+    )
     t0 = time.time()
     for i, pair in enumerate(pairs):
         wt = time.time() - t0
@@ -220,7 +244,7 @@ def main(argv: list[str] | None = None) -> int:
             f"[extract] {i + 1}/{len(pairs)} {pair.source}/{pair.dis_path.name} (elapsed {wt:.0f}s)"
         )
         try:
-            payload = _load_or_compute(pair, args.cache_dir, args.vmaf_bin)
+            payload = _load_or_compute(pair, args.cache_dir, args.vmaf_bin, args.vmaf_model)
             # Use the payload's own feature_names (not the global FULL_FEATURES)
             # so columns line up with the values that were actually computed;
             # _load_or_compute guarantees they equal FULL_FEATURES, so strict=True
@@ -229,6 +253,7 @@ def main(argv: list[str] | None = None) -> int:
             feature_names = list(payload.get("feature_names") or FULL_FEATURES)
             per_frame = np.asarray(payload["per_frame"], dtype=np.float32)
             teacher_per_frame = np.asarray(payload["teacher_per_frame"], dtype=np.float32)
+            teacher_model_name = payload.get("teacher_model", resolved_teacher.name)
             n = min(per_frame.shape[0], teacher_per_frame.shape[0])
             for fi in range(n):
                 row = {
@@ -236,6 +261,7 @@ def main(argv: list[str] | None = None) -> int:
                     "dis_basename": pair.dis_path.name,
                     "frame_index": fi,
                     "codec": args.codec,
+                    "teacher_model": teacher_model_name,
                     "vmaf": float(teacher_per_frame[fi]),
                 }
                 for col, val in zip(feature_names, per_frame[fi], strict=True):

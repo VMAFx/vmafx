@@ -14,8 +14,9 @@ For each clip, the script:
 
 1. Decodes the .mp4 to YUV (yuv420p, 8-bit) — the reference.
 2. Re-encodes via libx264 with a fixed CRF — the distorted variant.
-3. Runs the libvmaf CLI on (ref, dis) to extract the 6
-   ``vmaf_v0.6.1`` model features + per-frame VMAF teacher score.
+3. Runs the libvmaf CLI on (ref, dis) to extract the 6 canonical
+   student features + per-frame teacher VMAF score (teacher resolved from
+   the ADR-1168 default, ``--model`` override; ADR-1173).
 4. Appends one parquet row per frame.
 
 Closes the gap from Research-0023 §5: the existing 9-source Netflix
@@ -59,10 +60,12 @@ except ModuleNotFoundError:
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
+from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
+
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
-# vmaf_v0.6.1 model features — same set the LOSO trainer expects.
+# Canonical-6 student features — same set the LOSO trainer expects.
 DEFAULT_FEATURES = (
     "vif_scale0",
     "vif_scale1",
@@ -167,11 +170,12 @@ def _run_vmaf(
     w: int,
     h: int,
     out_json: Path,
-    model_path: Path,
+    model: Path | str | None = None,
 ) -> None:
     """Run libvmaf CLI on (ref_yuv, dis_yuv); auto-loaded model features
     (`vif`, `adm`, `motion`) emit `integer_*` keys in the JSON without
     needing explicit `--feature` flags."""
+    resolved = resolve_teacher_model(model)
     _run(
         [
             str(vmaf_bin),
@@ -188,7 +192,7 @@ def _run_vmaf(
             "--bitdepth",
             "8",
             "--model",
-            f"path={model_path}",
+            resolved.arg,
             "--threads",
             "1",
             "--no_cuda",
@@ -201,18 +205,32 @@ def _run_vmaf(
     )
 
 
-def _frames_to_rows(key: str, vmaf_json: Path) -> list[dict]:
-    """Extract one (key, frame, *features, vmaf) row per frame from libvmaf JSON."""
+def _lookup(metrics: dict, name: str) -> float:
+    for key in (name, f"integer_{name}"):
+        val = metrics.get(key)
+        if val is not None:
+            return float(val)
+    prefix = f"integer_{name}_"
+    for k, val in metrics.items():
+        if k.startswith(prefix) and val is not None:
+            return float(val)
+    raise KeyError(f"Metric {name!r} not found in frame metrics")
+
+
+def _frames_to_rows(key: str, vmaf_json: Path, teacher_model: str = DEFAULT_MODEL) -> list[dict]:
+    """Extract one (key, frame, teacher_model, *features, vmaf) row per frame from libvmaf JSON."""
     with vmaf_json.open() as f:
         d = json.load(f)
     rows = []
     for fr in d["frames"]:
         m = fr["metrics"]
-        row = {"key": key, "frame_index": fr["frameNum"]}
+        row = {
+            "key": key,
+            "frame_index": fr["frameNum"],
+            "teacher_model": teacher_model,
+        }
         for feat in DEFAULT_FEATURES:
-            # libvmaf's JSON keys map: vif_scale0 → integer_vif_scale0;
-            # adm2 → integer_adm2; motion2 → integer_motion2.
-            row[feat] = float(m[f"integer_{feat}"])
+            row[feat] = _lookup(m, feat)
         row["vmaf"] = float(m["vmaf"])
         rows.append(row)
     return rows
@@ -222,11 +240,12 @@ def _process_clip(
     key: str,
     src_mp4: Path,
     vmaf_bin: Path,
-    model_path: Path,
+    model: Path | str | None,
     crf: int,
     cache_dir: Path | None,
     scratch: Path,
 ) -> list[dict]:
+    resolved = resolve_teacher_model(model)
     if cache_dir is not None:
         cache_path = cache_dir / f"{key}.json"
         if cache_path.is_file():
@@ -238,8 +257,8 @@ def _process_clip(
     try:
         w, h, _n = _decode_yuv(src_mp4, ref_yuv)
         _encode_dis(src_mp4, dis_yuv, crf)
-        _run_vmaf(vmaf_bin, ref_yuv, dis_yuv, w, h, vmaf_json, model_path)
-        rows = _frames_to_rows(key, vmaf_json)
+        _run_vmaf(vmaf_bin, ref_yuv, dis_yuv, w, h, vmaf_json, resolved.arg)
+        rows = _frames_to_rows(key, vmaf_json, teacher_model=resolved.name)
     finally:
         for p in (ref_yuv, dis_yuv, vmaf_json):
             p.unlink(missing_ok=True)
@@ -271,9 +290,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument(
         "--model",
-        type=Path,
-        default=REPO_ROOT / "model" / "vmaf_v0.6.1.json",
-        help="Path to the vmaf_v0.6.1 model JSON.",
+        default=None,
+        help="Path or version name for teacher VMAF model (default: single-source default model).",
     )
     ap.add_argument(
         "--out",
@@ -330,12 +348,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.manifest_out is None:
         args.manifest_out = args.out.with_suffix(".manifest.json")
 
+    resolved_teacher = resolve_teacher_model(args.model)
+
     videos_dir = args.konvid_root / "KoNViD_1k_videos"
     if not videos_dir.is_dir():
         print(f"error: KoNViD videos not found at {videos_dir}", file=sys.stderr)
         return 2
     if not args.vmaf_bin.is_file() or not os.access(args.vmaf_bin, os.X_OK):
         print(f"error: libvmaf CLI not executable: {args.vmaf_bin}", file=sys.stderr)
+        return 2
+    if resolved_teacher.is_path and not Path(resolved_teacher.resolved).is_file():
+        print(f"error: model not found at {resolved_teacher.resolved}", file=sys.stderr)
         return 2
 
     cache_dir = None if args.no_cache else args.cache_dir
@@ -357,7 +380,7 @@ def main(argv: list[str] | None = None) -> int:
                 key,
                 src_mp4,
                 args.vmaf_bin,
-                args.model,
+                resolved_teacher.arg,
                 args.crf,
                 cache_dir,
                 args.scratch,
@@ -380,6 +403,7 @@ def main(argv: list[str] | None = None) -> int:
         args.manifest_out,
         {
             "schema": "konvid-vmaf-pairs-manifest-v1",
+            "teacher_model": resolved_teacher.name,
             "features": list(DEFAULT_FEATURES),
             "stats": {
                 "clips_selected": len(clips),
@@ -401,7 +425,7 @@ def main(argv: list[str] | None = None) -> int:
                     "videos_dir": videos_dir,
                     "cache_dir": cache_dir,
                     "vmaf_bin": args.vmaf_bin,
-                    "model": args.model,
+                    "model": resolved_teacher.name,
                 },
                 outputs={"parquet": args.out, "manifest": args.manifest_out},
             ),

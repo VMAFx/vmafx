@@ -23,7 +23,9 @@ from ai.scripts import eval_multiseed_v3_v4 as eval_ms  # noqa: E402
 FEATURES = ("adm2", "vif_scale0", "vif_scale1", "vif_scale2", "vif_scale3", "motion2")
 
 
-def _write_parquet(path: Path, *, with_corpus: bool = False) -> Path:
+def _write_parquet(
+    path: Path, *, with_corpus: bool = False, teacher_model: str | None = None
+) -> Path:
     rows: list[dict[str, Any]] = []
     for source_idx, source in enumerate(("src_a", "src_b")):
         for row_idx in range(3):
@@ -34,6 +36,8 @@ def _write_parquet(path: Path, *, with_corpus: bool = False) -> Path:
             row["vmaf"] = float(80 + source_idx + row_idx)
             if with_corpus:
                 row["corpus"] = "netflix"
+            if teacher_model is not None:
+                row["teacher_model"] = teacher_model
             rows.append(row)
     pd.DataFrame(rows).to_parquet(path)
     return path
@@ -104,8 +108,12 @@ def test_multiseed_report_records_run_provenance(monkeypatch, tmp_path: Path) ->
 
 
 def test_vmaf_tiny_v5_report_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
-    base = _write_parquet(tmp_path / "base.parquet", with_corpus=True)
-    extra = _write_parquet(tmp_path / "extra.parquet", with_corpus=True)
+    base = _write_parquet(
+        tmp_path / "base.parquet", with_corpus=True, teacher_model="vmaf_v1.0.16_3d0h"
+    )
+    extra = _write_parquet(
+        tmp_path / "extra.parquet", with_corpus=True, teacher_model="vmaf_v1.0.16_3d0h"
+    )
     out_json = tmp_path / "v5.json"
 
     def fake_run_loso(_df, label: str, *_args) -> dict[str, Any]:
@@ -143,3 +151,4 @@ def test_vmaf_tiny_v5_report_records_run_provenance(monkeypatch, tmp_path: Path)
     _assert_report(out_json, "ai/scripts/eval_loso_vmaf_tiny_v5.py", "parquet_base")
     report = json.loads(out_json.read_text(encoding="utf-8"))
     assert report["run_provenance"]["inputs"]["parquet_extra"]["kind"] == "file"
+    assert report["teacher_model"] == "vmaf_v1.0.16_3d0h"

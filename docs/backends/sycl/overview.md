@@ -533,3 +533,21 @@ Two CPU-parity corrections landed with the option work: `adm_min_val` no
 longer clamps `adm2` (the CPU floors the adm3 expression only), and the
 `numden_limit` precision floor scales with the full-frame area rather than the
 scale-3 area.
+
+## SpEED-chroma reports singularity separately from failure (ADR-1202, 2026-09-06)
+
+The SYCL SpEED-chroma twin previously treated any non-zero return from its
+linear-algebra helper as "singular covariance matrix" and imputed the `uv`
+score from the other chroma channel. That rule is correct for the CPU
+extractor, where a non-zero return does mean singular, but not here: this twin
+handles singularity internally (warn, zero the solution, return 0) and uses
+the return value for API errors only. A real device error was therefore fed
+into the imputation, and with both chroma channels failing it averaged to
+`0.0` and reported success.
+
+Singularity now travels in its own `bool *singular_out` and hard errors
+propagate, so a device failure inside SpEED-chroma fails the frame instead of
+emitting a `0.0` score. The twin also adopts the CPU rule that a channel with
+exactly one singular side (reference or distorted) scores 0 rather than an
+inflated value. The launch-geometry half of ADR-1202 was CUDA-only — this
+twin's solve launch was already correct.

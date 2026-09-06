@@ -32,6 +32,7 @@
 /* DEFAULT_ADM_NOISE_WEIGHT / DEFAULT_ADM_CSF_SCALE / DEFAULT_ADM_CSF_DIAG_SCALE and
  * enum ADM_CSF_MODE are pulled in transitively via cuda/integer_adm_cuda.h →
  * feature/integer_adm.h. No separate adm_options.h include is needed here. */
+#include "feature/adm_csf_fixed_point.h"
 #include "feature/barten_csf_tools.h"
 #include "drain_batch.h"
 #include "picture_cuda.h"
@@ -168,6 +169,32 @@ static void adm_csf_rfactor_scale0(const float rfactor1[3], double adm_norm_view
         i_rfactor[1] = (uint16_t)(rfactor1[1] * pow2_21);
         i_rfactor[2] = (uint16_t)(rfactor1[2] * pow2_23);
     }
+}
+
+/**
+ * Refuse a CSF configuration whose fixed-point weights would wrap
+ * (ADR-1191). Mirrors `adm_csf_config_check()` in
+ * core/src/feature/integer_adm.c so the CPU reference and this twin accept
+ * exactly the same set of configurations -- the bounds in
+ * adm_csf_fixed_point.h are the CPU pipeline's, deliberately applied here
+ * too, because a twin that accepted a configuration the CPU rejects would
+ * break the option / feature-name parity contract (ADR-1183). Returns 0 or
+ * -EINVAL.
+ */
+static int adm_csf_config_check(const AdmStateCuda *s)
+{
+    for (int scale = 0; scale < 4; ++scale) {
+        const AdmCsfFactors f =
+            adm_csf_factors(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
+                            s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+        const float rfactor1[3] = {f.factor1, f.factor1, f.factor2};
+        const int err = adm_csf_check_scale(scale, rfactor1, s->adm_norm_view_dist,
+                                            s->adm_ref_display_height, s->adm_csf_mode);
+        if (err) {
+            return err;
+        }
+    }
+    return 0;
 }
 
 static int dwt2_8_device(AdmStateCuda *s, const uint8_t *d_picture, cuda_adm_dwt_band_t *d_dst,
@@ -1369,6 +1396,18 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     (void)pix_fmt;
     (void)bpc;
+
+    /* ADR-1191: reject CSF configurations the fixed-point pipeline cannot
+     * represent before any device resource is claimed, so an unsupported
+     * adm_csf_mode / viewing geometry fails loudly instead of wrapping.
+     * Same accept/reject set as the CPU reference. */
+    {
+        const int csf_err = adm_csf_config_check(s);
+        if (csf_err) {
+            return csf_err;
+        }
+    }
+
     int ret = 0;
     CudaFunctions *cu_f = fex->cu_state->f;
     int _cuda_err = 0;

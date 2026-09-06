@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include "adm_csf_fixed_point.h"
 #include "barten_csf_tools.h"
 #include "compat_builtin.h"
 #include "cpu.h"
@@ -69,6 +70,10 @@ typedef struct AdmState {
     double adm_p_norm;
     int adm_ref_display_height;
     int adm_csf_mode;
+    /* ADR-1191: 0, or -EINVAL when the configured CSF weights do not fit the
+     * fixed-point pipeline. Evaluated once in init(), enforced in extract()
+     * beside the pre-existing viewing-geometry guard. */
+    int csf_config_err;
     void (*dwt2_8)(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w, int h,
                    int src_stride, int dst_stride);
     void (*dwt2_16)(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w, int h,
@@ -306,24 +311,49 @@ static AdmCsfFactors adm_csf_factors(int scale, double adm_norm_view_dist,
  * 2^21 and rfactor[2] by 2^23. For adm_norm_view_dist 3.0 and
  * adm_ref_display_height 1080 under ADM_CSF_MODE_WATSON97 the constants are
  * the upstream-tabulated { 36453, 36453, 49417 }.
+ *
+ * The narrowing conversion is unchecked here on purpose: `init()` has already
+ * refused every configuration whose weights do not fit (ADR-1191), so by the
+ * time a kernel runs the products are known to be in range.
  */
 static void adm_csf_rfactor_scale0(const float rfactor1[3], double adm_norm_view_dist,
                                    int adm_ref_display_height, int adm_csf_mode,
                                    uint16_t i_rfactor[3])
 {
-    if (fabs(adm_norm_view_dist * adm_ref_display_height -
-             DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) < 1.0e-8 &&
-        adm_csf_mode == ADM_CSF_MODE_WATSON97) {
-        i_rfactor[0] = 36453;
-        i_rfactor[1] = 36453;
-        i_rfactor[2] = 49417;
-    } else {
-        const double pow2_21 = pow(2, 21);
-        const double pow2_23 = pow(2, 23);
-        i_rfactor[0] = (uint16_t)(rfactor1[0] * pow2_21);
-        i_rfactor[1] = (uint16_t)(rfactor1[1] * pow2_21);
-        i_rfactor[2] = (uint16_t)(rfactor1[2] * pow2_23);
+    double fixed[3];
+    adm_csf_scale0_fixed(rfactor1, adm_norm_view_dist, adm_ref_display_height, adm_csf_mode, fixed);
+    for (unsigned band = 0; band < 3; ++band) {
+        i_rfactor[band] = (uint16_t)fixed[band];
     }
+}
+
+/**
+ * Refuse a CSF configuration whose fixed-point weights would wrap.
+ *
+ * `adm_csf_mode` 1 (Barten) at the default `adm_csf_scale` produces weights
+ * around 1.2 at scale 0 and 27 at scale 3, which overflow the `uint16_t` /
+ * `uint32_t` fixed-point storage by two orders of magnitude; the blended-CSF
+ * tables return `-EINVAL` as a float for viewing geometries they do not
+ * tabulate, which is worse still (a negative-to-unsigned conversion is UB).
+ * Both used to produce silently wrong scores. Returns 0 or -EINVAL; the
+ * per-scale helper logs which band and scale failed.
+ *
+ * See ADR-1191 and docs/metrics/adm.md.
+ */
+static int adm_csf_config_check(const AdmState *s)
+{
+    for (int scale = 0; scale < 4; ++scale) {
+        const AdmCsfFactors f =
+            adm_csf_factors(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
+                            s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+        const float rfactor1[3] = {f.factor1, f.factor1, f.factor2};
+        const int err = adm_csf_check_scale(scale, rfactor1, s->adm_norm_view_dist,
+                                            s->adm_ref_display_height, s->adm_csf_mode);
+        if (err) {
+            return err;
+        }
+    }
+    return 0;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -761,8 +791,10 @@ static void i4_adm_csf(AdmBuffer *buf, int scale, int w, int h, int stride,
                                             adm_csf_mode, adm_csf_scale, adm_csf_diag_scale);
     const float rfactor1[3] = {f.factor1, f.factor1, f.factor2};
 
-    //i_rfactor in fixed-point
-    const double pow2_32 = pow(2, 32);
+    /* i_rfactor in fixed-point. The narrowing conversion is unchecked
+     * because `init()` has already rejected every configuration whose
+     * weights exceed ADM_CSF_S123_LIMIT (ADR-1191). */
+    const double pow2_32 = pow(2, ADM_CSF_S123_EXP);
     const uint32_t i_rfactor[3] = {(uint32_t)(rfactor1[0] * pow2_32),
                                    (uint32_t)(rfactor1[1] * pow2_32),
                                    (uint32_t)(rfactor1[2] * pow2_32)};
@@ -2137,6 +2169,12 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         return -EINVAL;
     }
 
+    /* ADR-1191: evaluate once here whether the configured CSF weights fit
+     * the fixed-point pipeline; extract() turns a failure into -EINVAL. The
+     * verdict is cached because adm_csf_factors() runs pow()/log10() per
+     * scale and the answer cannot change after option parsing. */
+    s->csf_config_err = adm_csf_config_check(s);
+
     init_dispatch_scalar(s);
     init_dispatch_simd(s, w);
 
@@ -2206,6 +2244,15 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     if (s->adm_norm_view_dist * s->adm_ref_display_height <
         DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) {
         return -EINVAL;
+    }
+
+    /* ADR-1191: the same pipeline limit expressed on the CSF weights
+     * themselves, which the viewing-geometry test above does not cover --
+     * adm_csf_mode 1 overflows at the stock geometry, and the blended-CSF
+     * tables return a negative sentinel for geometries they do not carry.
+     * init() logged the offending band; this only propagates the verdict. */
+    if (s->csf_config_err) {
+        return s->csf_config_err;
     }
 
     AdmResult r;
