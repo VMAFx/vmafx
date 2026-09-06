@@ -118,20 +118,52 @@ static int feed_frame(VmafContext *vmaf)
     return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
 }
 
-static char *run_cpu_float_adm(double scores[NUM_ADM_FEATURES])
+/* ADR-1214 gate helper — see test_cuda_float_adm_parity.c for the rationale:
+ * once any option is non-default the derived feature name is
+ * <alias>_<opt alias>_<value>..., e.g. "adm2_scfd_0.5_scf_2". */
+static void adm_key(char *out, size_t n, const char *full, const char *suffix)
+{
+    static const char pfx[] = "VMAF_feature_";
+    static const char sfx[] = "_score";
+    const size_t pl = sizeof(pfx) - 1u;
+    const size_t sl = sizeof(sfx) - 1u;
+    const size_t fl = strlen(full);
+    if (!suffix[0]) {
+        (void)snprintf(out, n, "%s", full);
+    } else if (strncmp(full, pfx, pl) == 0 && fl > pl + sl && strcmp(full + fl - sl, sfx) == 0) {
+        (void)snprintf(out, n, "%.*s%s", (int)(fl - pl - sl), full + pl, suffix);
+    } else {
+        (void)snprintf(out, n, "%s%s", full, suffix);
+    }
+}
+
+static VmafFeatureDictionary *csf_scale_opts(void)
+{
+    VmafFeatureDictionary *d = NULL;
+    if (vmaf_feature_dictionary_set(&d, "adm_csf_scale", "2.0"))
+        return NULL;
+    if (vmaf_feature_dictionary_set(&d, "adm_csf_diag_scale", "0.5"))
+        return NULL;
+    return d;
+}
+
+static char *run_cpu_float_adm(double scores[NUM_ADM_FEATURES], VmafFeatureDictionary *opts,
+                               const char *suffix)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "float_adm", NULL);
+    err = vmaf_use_feature(vmaf, "float_adm", opts);
     mu_assert("CPU: vmaf_use_feature(float_adm) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
     for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
-        err = vmaf_feature_score_at_index(vmaf, kAdmFeatures[f], &scores[f], 0u);
+        char key[128];
+        adm_key(key, sizeof(key), kAdmFeatures[f], suffix);
+        err = vmaf_feature_score_at_index(vmaf, key, &scores[f], 0u);
         if (err)
             (void)fprintf(stderr, "CPU: feature %s missing (err=%d)\n", kAdmFeatures[f], err);
         mu_assert("CPU: vmaf_feature_score_at_index failed", !err);
@@ -141,7 +173,8 @@ static char *run_cpu_float_adm(double scores[NUM_ADM_FEATURES])
     return NULL;
 }
 
-static char *run_hip_float_adm(double scores[NUM_ADM_FEATURES], int *skipped)
+static char *run_hip_float_adm(double scores[NUM_ADM_FEATURES], int *skipped,
+                               VmafFeatureDictionary *opts, const char *suffix)
 {
     for (size_t f = 0; f < NUM_ADM_FEATURES; f++)
         scores[f] = NAN;
@@ -161,7 +194,7 @@ static char *run_hip_float_adm(double scores[NUM_ADM_FEATURES], int *skipped)
     mu_assert("HIP: vmaf_init failed", !err);
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "float_adm_hip", NULL);
+    err = vmaf_use_feature(vmaf, "float_adm_hip", opts);
     if (err == -ENOSYS) {
         (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS] ");
         *skipped = 1;
@@ -189,7 +222,9 @@ static char *run_hip_float_adm(double scores[NUM_ADM_FEATURES], int *skipped)
     }
     mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
     for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
-        err = vmaf_feature_score_at_index(vmaf, kAdmFeatures[f], &scores[f], 0u);
+        char key[128];
+        adm_key(key, sizeof(key), kAdmFeatures[f], suffix);
+        err = vmaf_feature_score_at_index(vmaf, key, &scores[f], 0u);
         if (err)
             (void)fprintf(stderr, "HIP: feature %s missing (err=%d)\n", kAdmFeatures[f], err);
         mu_assert("HIP: vmaf_feature_score_at_index failed", !err);
@@ -208,16 +243,17 @@ static char *test_float_adm_hip_registered(void)
     return NULL;
 }
 
-static char *test_float_adm_cpu_hip_parity(void)
+static char *compare_cpu_hip(VmafFeatureDictionary *cpu_opts, VmafFeatureDictionary *hip_opts,
+                             const char *suffix, const char *label)
 {
     double cpu_scores[NUM_ADM_FEATURES] = {0};
     double hip_scores[NUM_ADM_FEATURES] = {0};
     int skipped = 0;
 
-    char *msg = run_cpu_float_adm(cpu_scores);
+    char *msg = run_cpu_float_adm(cpu_scores, cpu_opts, suffix);
     if (msg)
         return msg;
-    msg = run_hip_float_adm(hip_scores, &skipped);
+    msg = run_hip_float_adm(hip_scores, &skipped, hip_opts, suffix);
     if (msg)
         return msg;
     if (skipped)
@@ -228,17 +264,36 @@ static char *test_float_adm_cpu_hip_parity(void)
         double d = fabs(cpu_scores[f] - hip_scores[f]);
         if (d > PARITY_TOL) {
             (void)fprintf(stderr,
-                          "\nfloat_adm parity FAIL: %s cpu=%.8f hip=%.8f delta=%.2e tol=%.2e\n",
-                          kAdmFeatures[f], cpu_scores[f], hip_scores[f], d, PARITY_TOL);
+                          "\nfloat_adm parity FAIL [%s]: %s%s cpu=%.8f hip=%.8f delta=%.2e "
+                          "tol=%.2e\n",
+                          label, kAdmFeatures[f], suffix, cpu_scores[f], hip_scores[f], d,
+                          PARITY_TOL);
         }
         mu_assert("float_adm CPU vs. HIP delta exceeds places=4 tolerance (1e-4)", d <= PARITY_TOL);
     }
     return NULL;
 }
 
+static char *test_float_adm_cpu_hip_parity(void)
+{
+    return compare_cpu_hip(NULL, NULL, "", "default");
+}
+
+/* ADR-1214: adm_csf_scale / adm_csf_diag_scale are Barten-mode options; in
+ * Watson mode the CPU ignores them and the twin must too, and both sides must
+ * derive the same feature key ("scf" / "scfd" aliases, not "cs" / "cds"). */
+static char *test_float_adm_cpu_hip_parity_csf_scale(void)
+{
+    VmafFeatureDictionary *cpu_opts = csf_scale_opts();
+    VmafFeatureDictionary *hip_opts = csf_scale_opts();
+    mu_assert("csf_scale_opts: dictionary build failed", cpu_opts && hip_opts);
+    return compare_cpu_hip(cpu_opts, hip_opts, "_scfd_0.5_scf_2", "adm_csf_scale=2");
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_float_adm_hip_registered);
     mu_run_test(test_float_adm_cpu_hip_parity);
+    mu_run_test(test_float_adm_cpu_hip_parity_csf_scale);
     return NULL;
 }
