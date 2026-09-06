@@ -28,6 +28,12 @@
 
 #include "libvmaf/dnn.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* DNN_OPEN_SKIP_RC — return codes that indicate a CI infrastructure gap rather
  * than a code bug.  Tests guard with:
  *
@@ -902,3 +908,5 @@ char *run_tests(void)
     mu_run_test(test_session_symbolic_batch_run_plane16_returns_notsup);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

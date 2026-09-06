@@ -30,6 +30,12 @@
 #include "cpu.h"
 #if ARCH_AARCH64
 #include "arm64/float_adm_neon.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #endif
 
 typedef adm_dwt_band_t_s adm_dwt_band_t;
@@ -390,3 +396,5 @@ fail:
     aligned_free(buf_x_orig);
     return ret;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
