@@ -82,7 +82,7 @@ Psycho-visual evidence suggests humans weigh the worst-quality frames more
 heavily, so mean is not necessarily optimal.
 
 Pooling can be changed on three surfaces, all of which now understand the same
-seven methods — `mean`, `harmonic_mean`, `median`, `min`, `max`, `perc5`,
+eight methods — `mean`, `harmonic_mean`, `median`, `min`, `max`, `perc5`,
 `perc10`, `perc20`:
 
 - **Python harness**: the `pool_method` argument to `run_vmaf`, `run_psnr`,
