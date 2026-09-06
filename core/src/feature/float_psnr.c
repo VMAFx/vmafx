@@ -41,6 +41,12 @@
 #include "arm64/float_psnr_neon.h"
 #endif
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
@@ -203,6 +209,7 @@ static int close(VmafFeatureExtractor *fex)
 
 static const char *provided_features[] = {"float_psnr", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_psnr = {
     .name = "float_psnr",
     .options = options,
@@ -212,3 +219,5 @@ VmafFeatureExtractor vmaf_fex_float_psnr = {
     .priv_size = sizeof(PsnrState),
     .provided_features = provided_features,
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

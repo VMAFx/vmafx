@@ -48607,6 +48607,40 @@ relative form only resolved when the build directory was a direct child of
 via `_LIBCPP_VERSION` rather than the compiler id. The three shell-driven tool
 tests now declare `depends` and `workdir`.
 
+### `core/src/feature/psnr_tools.cpp`, `psnr.c`, `integer_psnr.c`, `float_psnr.c` — ADR-1142 tidy ratchet
+
+These four files carry the Netflix upstream copyright header and still track
+upstream's PSNR implementation. The wave-2 lint pass on the psnr bucket touches
+them in ways a future `port-upstream-commit` has to be aware of:
+
+- `psnr_tools.cpp` — the `kFormatTable` rows are now written with designated
+  initialisers (`{.fmt = "yuv420p", .params = {.peak = 255.0, .psnr_max = 60.0}}`).
+  The table already diverged from upstream's `strcmp` ladder at ADR-0731; this
+  is a syntax-only change on top of that divergence. Peak / psnr_max values are
+  byte-identical to upstream's.
+- `psnr.c` — now includes its own `psnr.h`. Upstream does not; the include is
+  what tells clang-tidy that `compute_psnr()` legitimately has external
+  linkage. Keep it when replaying an upstream hunk that rewrites the include
+  block.
+- `integer_psnr.c` / `float_psnr.c` — both keep upstream's `NULL` spelling
+  (ADR-1138: C translation units never use the C23 `nullptr` keyword, because
+  the required `Build — Windows MSVC + CUDA` lane compiles them with cl.exe and
+  MSVC's documented `/std:clatest` feature set does not include it). Each file
+  therefore carries a file-scoped
+  `/* NOLINTBEGIN(modernize-use-nullptr) ... ADR-1138. */` … `NOLINTEND`
+  bracket instead, exactly like `core/src/feature/integer_adm.c`. An upstream
+  hunk that adds a pointer initialiser inside the bracket needs no adaptation;
+  a hunk that lands **outside** it (before the `NOLINTBEGIN` or after the
+  `NOLINTEND`) does — keep the bracket spanning the whole file.
+  The `VmafFeatureExtractor` definitions additionally carry the ADR-0278
+  `NOLINTNEXTLINE(misc-use-internal-linkage)` citation used by every other
+  extractor in the fork; an upstream hunk that rewrites those definitions must
+  keep the citation line.
+
+`core/src/dnn/*.c` are fork-local (no upstream counterpart). They carry the
+same ADR-1138 bracket for the same MSVC reason, and `model_loader.c`'s function
+split in this change carries no rebase risk.
+
 ## feat/gpu-adm-csf-mode-parity — GPU integer-ADM option-table parity (2026-09-05)
 
 **Rebase-sensitive files**: `core/src/feature/cuda/integer_adm_cuda.{c,h}`,

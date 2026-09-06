@@ -20,6 +20,12 @@
 #include "onnx_scan.h"
 #include "op_allowlist.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* Protobuf wire types (see developers.google.com/protocol-buffers/docs/encoding). */
 enum {
     PB_WIRE_VARINT = 0,
@@ -165,6 +171,28 @@ static int check_op_name(const char *op_name, size_t slen, char **first_bad)
     return -EPERM;
 }
 
+static int check_loop_budget(const char *op_name, size_t slen, unsigned *loop_count,
+                             char **first_bad)
+{
+    if (!loop_count || strcmp(op_name, "Loop") != 0) {
+        return 0;
+    }
+    if (++(*loop_count) <= VMAF_DNN_MAX_LOOP_NODES) {
+        return 0;
+    }
+    if (first_bad && *first_bad == NULL) {
+        /* Surface the rejection through the same channel as a
+         * forbidden op — callers already log first_bad. */
+        char *copy = (char *)malloc(slen + 1u);
+        if (!copy) {
+            return -ENOMEM;
+        }
+        memcpy(copy, op_name, slen + 1u);
+        *first_bad = copy;
+    }
+    return -EPERM;
+}
+
 /* Read the op_type string from a NodeProto field whose tag was already
  * consumed. Advances *off past the string on success. Increments
  * *loop_count when the op is "Loop" (ADR-0171 / T6-5b). */
@@ -192,22 +220,7 @@ static int read_op_type(const unsigned char *buf, size_t len, size_t *off, char 
     if (err != 0) {
         return err;
     }
-    if (loop_count && strcmp(op_name, "Loop") == 0) {
-        if (++(*loop_count) > VMAF_DNN_MAX_LOOP_NODES) {
-            if (first_bad && *first_bad == NULL) {
-                /* Surface the rejection through the same channel as a
-                 * forbidden op — callers already log first_bad. */
-                char *copy = (char *)malloc(slen + 1u);
-                if (!copy) {
-                    return -ENOMEM;
-                }
-                memcpy(copy, op_name, slen + 1u);
-                *first_bad = copy;
-            }
-            return -EPERM;
-        }
-    }
-    return 0;
+    return check_loop_budget(op_name, (size_t)slen, loop_count, first_bad);
 }
 
 /* Check a NodeProto.domain string extracted from a node field whose tag was
@@ -453,3 +466,4 @@ int vmaf_dnn_scan_onnx(const unsigned char *buf, size_t len, char **first_bad)
     assert(off <= len);
     return graph_found ? 0 : -ENOENT;
 }
+/* NOLINTEND(modernize-use-nullptr) */

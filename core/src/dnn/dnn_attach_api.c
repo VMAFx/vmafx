@@ -31,6 +31,46 @@
 #include "model_loader.h"
 #include "ort_backend.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
+#if defined(VMAF_HAVE_DNN) && VMAF_HAVE_DNN
+static int load_optional_sidecar(const char *onnx_path, VmafModelSidecar *meta, bool *have_meta)
+{
+    memset(meta, 0, sizeof(*meta));
+    *have_meta = false;
+    int rc = vmaf_dnn_sidecar_load(onnx_path, meta);
+    if (rc == 0) {
+        *have_meta = true;
+        return 0;
+    }
+    if (rc == -ENOENT)
+        return 0;
+    return rc;
+}
+
+static int open_session_and_probe_input(const char *onnx_path, const VmafDnnConfig *cfg,
+                                        VmafOrtSession **sess_out, int64_t in_shape[4],
+                                        size_t *in_rank)
+{
+    VmafOrtSession *sess = NULL;
+    int rc = vmaf_ort_open(&sess, onnx_path, cfg);
+    if (rc < 0)
+        return rc;
+
+    rc = vmaf_ort_input_shape(sess, in_shape, 4u, in_rank);
+    if (rc < 0) {
+        vmaf_ort_close(sess);
+        return rc;
+    }
+    *sess_out = sess;
+    return 0;
+}
+#endif
+
 int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path, const VmafDnnConfig *cfg)
 {
 #if defined(VMAF_HAVE_DNN) && VMAF_HAVE_DNN
@@ -47,30 +87,16 @@ int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path, const VmafDnnCo
         return rc;
 
     VmafModelSidecar meta;
-    memset(&meta, 0, sizeof(meta));
     bool have_meta = false;
-    rc = vmaf_dnn_sidecar_load(onnx_path, &meta);
-    /* Missing sidecar is not fatal — we only need it for NR/FR disambiguation
-     * and pretty-printing. Lack of a sidecar defaults to FR. */
-    if (rc < 0 && rc != -ENOENT) {
+    rc = load_optional_sidecar(onnx_path, &meta, &have_meta);
+    if (rc < 0)
         return rc;
-    }
-    if (rc == 0)
-        have_meta = true;
 
     VmafOrtSession *sess = NULL;
-    rc = vmaf_ort_open(&sess, onnx_path, cfg);
-    if (rc < 0) {
-        if (have_meta)
-            vmaf_dnn_sidecar_free(&meta);
-        return rc;
-    }
-
     int64_t in_shape[4] = {0};
     size_t in_rank = 0;
-    rc = vmaf_ort_input_shape(sess, in_shape, 4u, &in_rank);
+    rc = open_session_and_probe_input(onnx_path, cfg, &sess, in_shape, &in_rank);
     if (rc < 0) {
-        vmaf_ort_close(sess);
         if (have_meta)
             vmaf_dnn_sidecar_free(&meta);
         return rc;
@@ -138,7 +164,7 @@ int vmaf_dnn_set_resize_mode(VmafContext *ctx, VmafDnnResizeMode mode)
         mode != VMAF_DNN_RESIZE_BICUBIC && mode != VMAF_DNN_RESIZE_DISABLED) {
         return -EINVAL;
     }
-    /* ctx is non-NULL and mode is a valid enum value at this point. */
+    /* ctx is non-nullptr and mode is a valid enum value at this point. */
     assert(ctx != NULL);
     return vmaf_ctx_dnn_set_resize_mode(ctx, (int)mode);
 #else
@@ -147,3 +173,4 @@ int vmaf_dnn_set_resize_mode(VmafContext *ctx, VmafDnnResizeMode mode)
     return -ENOSYS;
 #endif
 }
+/* NOLINTEND(modernize-use-nullptr) */

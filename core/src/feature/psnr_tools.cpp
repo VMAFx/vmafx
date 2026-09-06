@@ -61,18 +61,18 @@ struct FormatEntry {
 
 // NOLINTNEXTLINE(cert-err58-cpp) — constexpr aggregate; no dynamic init
 constexpr std::array<FormatEntry, 12> kFormatTable{{
-    {"yuv420p", {255.0, 60.0}},
-    {"yuv422p", {255.0, 60.0}},
-    {"yuv444p", {255.0, 60.0}},
-    {"yuv420p10le", {255.75, 72.0}},
-    {"yuv422p10le", {255.75, 72.0}},
-    {"yuv444p10le", {255.75, 72.0}},
-    {"yuv420p12le", {255.9375, 84.0}},
-    {"yuv422p12le", {255.9375, 84.0}},
-    {"yuv444p12le", {255.9375, 84.0}},
-    {"yuv420p16le", {255.99609375, 108.0}},
-    {"yuv422p16le", {255.99609375, 108.0}},
-    {"yuv444p16le", {255.99609375, 108.0}},
+    {.fmt = "yuv420p", .params = {.peak = 255.0, .psnr_max = 60.0}},
+    {.fmt = "yuv422p", .params = {.peak = 255.0, .psnr_max = 60.0}},
+    {.fmt = "yuv444p", .params = {.peak = 255.0, .psnr_max = 60.0}},
+    {.fmt = "yuv420p10le", .params = {.peak = 255.75, .psnr_max = 72.0}},
+    {.fmt = "yuv422p10le", .params = {.peak = 255.75, .psnr_max = 72.0}},
+    {.fmt = "yuv444p10le", .params = {.peak = 255.75, .psnr_max = 72.0}},
+    {.fmt = "yuv420p12le", .params = {.peak = 255.9375, .psnr_max = 84.0}},
+    {.fmt = "yuv422p12le", .params = {.peak = 255.9375, .psnr_max = 84.0}},
+    {.fmt = "yuv444p12le", .params = {.peak = 255.9375, .psnr_max = 84.0}},
+    {.fmt = "yuv420p16le", .params = {.peak = 255.99609375, .psnr_max = 108.0}},
+    {.fmt = "yuv422p16le", .params = {.peak = 255.99609375, .psnr_max = 108.0}},
+    {.fmt = "yuv444p16le", .params = {.peak = 255.99609375, .psnr_max = 108.0}},
 }};
 
 [[nodiscard]] static std::optional<PsnrParams> lookup_format(std::string_view fmt) noexcept
