@@ -18641,6 +18641,15 @@ everything except grayscale.
   and `run_provenance` emission to `ai/lpips_export.py` (fixes `test_lpips_export` failure).
 
 
+- **Static PTQ format pinned to QDQ**: `ai/scripts/ptq_static.py` now explicitly
+  passes `quant_format=QuantFormat.QDQ` to `onnxruntime.quantization.quantize_static`,
+  preventing silent emission of QOperator (`QLinear*`) graphs that libvmaf's DNN op
+  allowlist (`core/src/dnn/op_allowlist.c`) rejects. Closes
+  `T-AI-PTQ-STATIC-QUANT-FORMAT-UNPINNED-2026-09-03` under ADR-0129/0174 policy.
+  Verified with end-to-end roundtrip test `test_ptq_static_full_roundtrip` asserting
+  QDQ allowlisted ops only.
+
+
 - **docs**: `docs/ai/quantization.md` now states the int8 **wire format**
   explicitly. The page previously never mentioned QOperator and documented no
   format for any shipped model, so a reader could not tell what the fork emits,
