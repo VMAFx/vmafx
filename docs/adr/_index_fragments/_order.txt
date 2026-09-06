@@ -967,3 +967,5 @@
 1209-cli-gpumask-negative-contract
 1211-hip-integer-adm-picture-staging
 1215-cuda-psnr-16bpc-plane-argument
+1212-gpu-moment-bit-depth-normalisation
+1213-hip-ciede-chroma-ceil-dimensions
