@@ -1580,3 +1580,11 @@ gain limit, so it moves `adm` scores directly. The four historical spellings
 of this predicate disagreed on about 4e-5 of near-parallel scale-0 band
 quadruples; see
 [`docs/research/2030-adm-angle-flag-fp64-free.md`](../../../docs/research/2030-adm-angle-flag-fp64-free.md).
+## Twin option tables mirror the CPU's aliases and semantics (ADR-1214)
+
+When a GPU twin copies an option from the CPU extractor, copy the `alias` and
+range too: ADR-1183 builds the emitted feature name from the alias and value of
+every non-default option, so `cs` on the twin and `scf` on the CPU means two
+different keys for one feature. And copy the *semantics* from the branch the
+twin actually implements — `adm_csf_scale` is a Barten-mode argument, so in the
+Watson-only twins it must be a no-op exactly as it is on the CPU.
