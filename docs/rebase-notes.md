@@ -50,6 +50,20 @@ No rebase impact: `scripts/ci/check-no-tracked-venv.sh` and its test are fork-ad
 
 ## fix/t-upstream-1494-adm-csf-mode-irfactor-ov — integer-ADM CSF representability guard (2026-09-06)
 
+- `core/src/feature/x86/adm_avx2.c`, `core/src/feature/x86/adm_avx512.c`: the horizontal
+  DWT2 tail bound is `half_w >= 2 ? half_w - 1 - ((half_w - 2) % N) : 1` (with
+  `half_w = (w + 1) / 2`) in all six kernels — `adm_dwt2_8_avx2`, `adm_dwt2_16_avx2`,
+  `adm_dwt2_s123_combined_avx2`, `adm_dwt2_8_avx512`, `adm_dwt2_16_avx512` and
+  `adm_dwt2_s123_combined_avx512`. Invariant: the last column `half_w - 1` must always
+  fall to the scalar tail loop, which is the only one that applies the `ind_x` mirror;
+  the upstream bound `half_w - ((half_w - 1) % N)` gave that column to the vector loop
+  whenever `half_w % N == 1`. This is the x86 twin of the NEON fix
+  (T-ADM-DWT2-NEON-PARITY-2026-08-30) and the residual (3) of
+  T-UPSTREAM-1564-ADM-CM-GPU-BORDER-AND-ROUNDING-2026-09-03. Upstream Netflix still
+  carries the unguarded bound, so on any upstream sync touching x86 DWT2 keep the
+  guarded expression and `core/test/test_adm_dwt2_x86.c`, which pins bit-exactness
+  against the scalar kernel at w in {34, 66, 130, 258} (half_w % N == 1) plus w=576.
+
 - `core/src/feature/adm_csf_fixed_point.h` is **fork-added**. It owns the
   fixed-point exponents (2^21 / 2^23 at scale 0, 2^32 at scales 1-3), the
   storage bounds, the tabulated-fast-path predicate, and the scale-0 narrowing
