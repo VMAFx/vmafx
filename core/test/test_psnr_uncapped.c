@@ -100,7 +100,7 @@ static void flip_one_luma_step(VmafPicture *pic, unsigned bpc)
 /*
  * Score one frame through `fex_name` with the given option dict and hand
  * back the value of `feature`. `identical` selects the sse == 0 pair.
- * Returns a mu_assert failure string, or nullptr with *out set.
+ * Returns a mu_assert failure string, or NULL with *out set.
  */
 static char *make_pair(VmafPicture *ref, VmafPicture *dist, unsigned bpc, int identical)
 {
@@ -111,7 +111,7 @@ static char *make_pair(VmafPicture *ref, VmafPicture *dist, unsigned bpc, int id
     if (!identical) {
         flip_one_luma_step(dist, bpc);
     }
-    return nullptr;
+    return NULL;
 }
 
 /* Create and init one extractor context with the given option dict. */
@@ -119,32 +119,32 @@ static char *make_ctx(VmafFeatureExtractorContext **ctx, const char *fex_name, V
                       unsigned bpc)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(fex_name);
-    mu_assert("feature extractor missing", fex != nullptr);
+    mu_assert("feature extractor missing", fex != NULL);
 
     int err = vmaf_feature_extractor_context_create(ctx, fex, opts);
-    mu_assert("context_create", err == 0 && *ctx != nullptr);
+    mu_assert("context_create", err == 0 && *ctx != NULL);
 
     err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, bpc, UNCAPPED_W,
                                               UNCAPPED_H);
     mu_assert("context_init", err == 0);
-    return nullptr;
+    return NULL;
 }
 
 /*
  * Score one frame through `fex_name` with the given option dict and hand
  * back the value of `feature`. `identical` selects the sse == 0 pair.
- * Returns a mu_assert failure string, or nullptr with *out set.
+ * Returns a mu_assert failure string, or NULL with *out set.
  */
 static char *score_one(const char *fex_name, const char *feature, VmafDictionary *opts,
                        unsigned bpc, int identical, double *out)
 {
-    VmafFeatureExtractorContext *ctx = nullptr;
+    VmafFeatureExtractorContext *ctx = NULL;
     char *fail = make_ctx(&ctx, fex_name, opts, bpc);
     if (fail) {
         return fail;
     }
 
-    VmafFeatureCollector *fc = nullptr;
+    VmafFeatureCollector *fc = NULL;
     int err = vmaf_feature_collector_init(&fc);
     mu_assert("collector_init", err == 0);
 
@@ -155,7 +155,7 @@ static char *score_one(const char *fex_name, const char *feature, VmafDictionary
         return fail;
     }
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, nullptr, &dist, nullptr, 0, fc);
+    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
     mu_assert("extract", err == 0);
 
     err = vmaf_feature_collector_get_score(fc, feature, out, 0);
@@ -168,14 +168,14 @@ static char *score_one(const char *fex_name, const char *feature, VmafDictionary
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
     /* `opts` ownership transferred to ctx and freed by context_destroy. */
-    return nullptr;
+    return NULL;
 }
 
 static char *make_uncapped_opts(VmafDictionary **opts)
 {
     const int err = vmaf_dictionary_set(opts, "uncapped", "true", 0);
     mu_assert("set uncapped opt", err == 0);
-    return nullptr;
+    return NULL;
 }
 
 /* ----------------------------------------------------------------- */
@@ -186,19 +186,19 @@ static char *make_uncapped_opts(VmafDictionary **opts)
 static char *test_psnr_default_still_truncates(void)
 {
     double score = 0.0;
-    char *fail = score_one("psnr", "psnr_y", nullptr, 8u, 0, &score);
+    char *fail = score_one("psnr", "psnr_y", NULL, 8u, 0, &score);
     if (fail) {
         return fail;
     }
     mu_assert("default psnr_y must stay at the 60 dB ceiling",
               fabs(score - UNCAPPED_PSNR_MAX_8BPC) < 1e-9);
-    return nullptr;
+    return NULL;
 }
 
 /* The fix: with `uncapped` the true 100.840479 dB is reported. */
 static char *test_psnr_uncapped_reports_true_value(void)
 {
-    VmafDictionary *opts = nullptr;
+    VmafDictionary *opts = NULL;
     char *fail = make_uncapped_opts(&opts);
     if (fail) {
         return fail;
@@ -211,14 +211,14 @@ static char *test_psnr_uncapped_reports_true_value(void)
     }
     mu_assert("uncapped psnr_y must report the true 100.840479 dB",
               fabs(score - UNCAPPED_TRUE_PSNR_Y) < 1e-9);
-    return nullptr;
+    return NULL;
 }
 
 /* The sentinel survives: an sse == 0 pair still reports psnr_max, which
  * is what the Netflix golden 60 / 84 / 108 dB assertions pin. */
 static char *test_psnr_uncapped_keeps_zero_sse_sentinel(void)
 {
-    VmafDictionary *opts = nullptr;
+    VmafDictionary *opts = NULL;
     char *fail = make_uncapped_opts(&opts);
     if (fail) {
         return fail;
@@ -231,7 +231,7 @@ static char *test_psnr_uncapped_keeps_zero_sse_sentinel(void)
     }
     mu_assert("uncapped psnr_y must keep psnr_max as the sse==0 sentinel",
               fabs(score - UNCAPPED_PSNR_MAX_8BPC) < 1e-9);
-    return nullptr;
+    return NULL;
 }
 
 /* The chroma planes of the flipped pair are byte-identical, so they must
@@ -239,7 +239,7 @@ static char *test_psnr_uncapped_keeps_zero_sse_sentinel(void)
  * inflate the sentinel the way `min_sse` does. */
 static char *test_psnr_uncapped_chroma_sentinel_not_inflated(void)
 {
-    VmafDictionary *opts = nullptr;
+    VmafDictionary *opts = NULL;
     char *fail = make_uncapped_opts(&opts);
     if (fail) {
         return fail;
@@ -252,14 +252,14 @@ static char *test_psnr_uncapped_chroma_sentinel_not_inflated(void)
     }
     mu_assert("uncapped psnr_cb must stay at psnr_max for identical chroma",
               fabs(score - UNCAPPED_PSNR_MAX_8BPC) < 1e-9);
-    return nullptr;
+    return NULL;
 }
 
 /* HBD: the 10-bit ceiling is 72 dB and one 10-bit luma step over the same
  * geometry is well above it. */
 static char *test_psnr_uncapped_hbd_exceeds_ceiling(void)
 {
-    VmafDictionary *opts = nullptr;
+    VmafDictionary *opts = NULL;
     char *fail = make_uncapped_opts(&opts);
     if (fail) {
         return fail;
@@ -275,7 +275,7 @@ static char *test_psnr_uncapped_hbd_exceeds_ceiling(void)
     mu_assert("uncapped 10-bit psnr_y must match 10*log10(peak^2 * n)",
               fabs(score - 10.0 * log10(1023.0 * 1023.0 * (double)(UNCAPPED_W * UNCAPPED_H))) <
                   1e-9);
-    return nullptr;
+    return NULL;
 }
 
 /* ----------------------------------------------------------------- */
@@ -285,18 +285,18 @@ static char *test_psnr_uncapped_hbd_exceeds_ceiling(void)
 static char *test_float_psnr_default_still_truncates(void)
 {
     double score = 0.0;
-    char *fail = score_one("float_psnr", "float_psnr", nullptr, 8u, 0, &score);
+    char *fail = score_one("float_psnr", "float_psnr", NULL, 8u, 0, &score);
     if (fail) {
         return fail;
     }
     mu_assert("default float_psnr must stay at the 60 dB ceiling",
               fabs(score - UNCAPPED_PSNR_MAX_8BPC) < 1e-9);
-    return nullptr;
+    return NULL;
 }
 
 static char *test_float_psnr_uncapped_reports_true_value(void)
 {
-    VmafDictionary *opts = nullptr;
+    VmafDictionary *opts = NULL;
     char *fail = make_uncapped_opts(&opts);
     if (fail) {
         return fail;
@@ -309,12 +309,12 @@ static char *test_float_psnr_uncapped_reports_true_value(void)
     }
     mu_assert("uncapped float_psnr must report the true 100.840479 dB",
               fabs(score - UNCAPPED_TRUE_PSNR_Y) < 1e-6);
-    return nullptr;
+    return NULL;
 }
 
 static char *test_float_psnr_uncapped_keeps_zero_noise_sentinel(void)
 {
-    VmafDictionary *opts = nullptr;
+    VmafDictionary *opts = NULL;
     char *fail = make_uncapped_opts(&opts);
     if (fail) {
         return fail;
@@ -327,7 +327,7 @@ static char *test_float_psnr_uncapped_keeps_zero_noise_sentinel(void)
     }
     mu_assert("uncapped float_psnr must keep psnr_max as the zero-noise sentinel",
               fabs(score - UNCAPPED_PSNR_MAX_8BPC) < 1e-9);
-    return nullptr;
+    return NULL;
 }
 
 static char *run_integer_psnr_tests(void)
@@ -337,7 +337,7 @@ static char *run_integer_psnr_tests(void)
     mu_run_test(test_psnr_uncapped_keeps_zero_sse_sentinel);
     mu_run_test(test_psnr_uncapped_chroma_sentinel_not_inflated);
     mu_run_test(test_psnr_uncapped_hbd_exceeds_ceiling);
-    return nullptr;
+    return NULL;
 }
 
 static char *run_float_psnr_tests(void)
@@ -345,7 +345,7 @@ static char *run_float_psnr_tests(void)
     mu_run_test(test_float_psnr_default_still_truncates);
     mu_run_test(test_float_psnr_uncapped_reports_true_value);
     mu_run_test(test_float_psnr_uncapped_keeps_zero_noise_sentinel);
-    return nullptr;
+    return NULL;
 }
 
 char *run_tests(void)
