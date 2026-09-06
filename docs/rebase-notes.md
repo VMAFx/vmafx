@@ -50376,3 +50376,24 @@ fork-local (ADR-0746). Conflict risk is against other fork branches touching
    the launch picks the wider instantiation rather than failing. Keep that
    fallback: it reproduces the pre-ADR-1226 behaviour on a device whose
    attributes cannot be read.
+## ADR-1209 — `--gpumask` and upstream's negative-value accident
+
+1. **Do not "restore" `--gpumask -1` during an upstream sync.** Upstream's
+   `parse_unsigned` calls `strtoul` directly, and POSIX `strtoul` silently
+   converts `"-1"` to `ULONG_MAX` without setting `errno`. This fork rejects a
+   leading `'-'` before calling `strtoul`
+   (`core/tools/cli_parse.cpp::parse_unsigned`) precisely to stop that. A sync
+   that pulls upstream's parser back in re-opens the hole for *every* unsigned
+   option, not just this one.
+
+2. **`core/tools/test/test_vmaf_cuda_gpumask.sh` diverges from upstream on
+   purpose.** It uses `--gpumask 1` where upstream writes `--gpumask -1`. Both
+   mean "disable the GPU feature extractors"; only the fork's spelling survives
+   the fork's argument validation. If a sync reverts those two lines, the test
+   goes back to failing on any host with a GPU while still passing CI on
+   GPU-less runners.
+
+3. **`--gpumask` is not a per-op bitmask.** Any non-zero value disables GPU
+   feature-extractor selection wholesale for CUDA and SYCL. The `$bitmask`
+   placeholder in the usage string is inherited and inaccurate; the reference
+   table in `docs/usage/cli.md` carries the real contract.
