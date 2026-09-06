@@ -48758,6 +48758,19 @@ invariants are worth carrying forward anyway:
    never "fix" it by un-ignoring the YUVs — they are hundreds of MB and the
    4K pair is ~2.5 GB per file.
 
+## fix/changelog-unknown-section-gate — unknown fragment dirs fail (2026-09-06)
+
+Fork-only release tooling. One invariant:
+
+1. **`warn_unknown_subdirs()` must return non-zero and its caller must propagate
+   it.** The function is named "warn" for history; since ADR-1198 it is an error
+   path, and `render()` calls it as `warn_unknown_subdirs || return 1`. Dropping
+   either half restores the silent-loss bug: a fragment under an unknown
+   directory renders nothing, and `--check` still passes because it compares
+   rendered output against `CHANGELOG.md` and both sides agree the entry does
+   not exist. That is not hypothetical — it hid PR #1313's runbook entry on
+   master. Also keep the `find ... >&2 2>/dev/null` redirect order in that
+   block; the reverse swallows the list of lost files.
 ## fix/cuda-adm-picture-ready-race — reproducer for the CUDA/FFmpeg nondeterminism (2026-09-06)
 
 Adds `scripts/test/repro-cuda-ffmpeg-nondeterminism.sh`; no library code is touched.

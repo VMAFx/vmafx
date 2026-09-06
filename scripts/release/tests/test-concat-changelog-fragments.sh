@@ -171,6 +171,51 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# ADR-1198: a fragment under an unknown subdirectory must FAIL the run, not warn.
+#
+# It used to print a stderr WARNING and exit 0, which silently dropped the
+# fragment: PR #1313's changelog.d/docs/retrain-runbook-1246.md sat on master
+# rendering nothing, and --check still passed because it compares the rendered
+# output against CHANGELOG.md and both sides agreed the entry did not exist.
+# ---------------------------------------------------------------------------
+TMPDIR_UNKNOWN="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR_HAPPY" "$TMPDIR_UNKNOWN"' EXIT
+
+mkdir -p "$TMPDIR_UNKNOWN/changelog.d/added" "$TMPDIR_UNKNOWN/changelog.d/docs"
+printf -- '- a real entry\n' >"$TMPDIR_UNKNOWN/changelog.d/added/ok.md"
+printf -- '- an entry that would be silently lost\n' >"$TMPDIR_UNKNOWN/changelog.d/docs/lost.md"
+cat >"$TMPDIR_UNKNOWN/CHANGELOG.md" <<'EOF'
+# Changelog
+
+## [Unreleased]
+
+## [3.0.0] - 2026-01-01
+
+### Added
+
+- initial release
+EOF
+
+unknown_rc=0
+(
+  cd "$TMPDIR_UNKNOWN"
+  patched_unknown="$TMPDIR_UNKNOWN/concat-patched.sh"
+  sed "s|REPO_ROOT=.*|REPO_ROOT=\"$TMPDIR_UNKNOWN\"|" "$CONCAT_SCRIPT" >"$patched_unknown"
+  bash "$patched_unknown" --check >/dev/null 2>"$TMPDIR_UNKNOWN/err.txt"
+) || unknown_rc=$?
+
+if [[ "$unknown_rc" -eq 0 ]]; then
+  check "an unknown changelog.d subdirectory fails the run" fail
+elif ! grep -q "not a Keep-a-Changelog section" "$TMPDIR_UNKNOWN/err.txt"; then
+  check "an unknown changelog.d subdirectory fails the run" fail
+elif ! grep -q "lost.md" "$TMPDIR_UNKNOWN/err.txt"; then
+  check "the failure lists the fragments that would be lost" fail
+else
+  check "an unknown changelog.d subdirectory fails the run" pass
+  check "the failure lists the fragments that would be lost" pass
+fi
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 printf '\n=== Results: %d passed, %d failed ===\n' "$pass" "$fail"

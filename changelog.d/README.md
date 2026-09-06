@@ -17,6 +17,11 @@ changelog.d/
                             section at the next release tag)
 ```
 
+A fragment under any other directory is an **error**, not a silent skip: the run fails
+and names the files that would be lost (ADR-1198). There is no `docs/` section either —
+a documentation change worth a release note is an `Added` or `Changed` entry describing
+the surface it documents.
+
 There is **no `perf/` or `performance/` directory** — the renderer
 warns on any non-Keep-a-Changelog subdirectory and skips its
 contents. Performance fragments live in `changed/` with a `perf-`
