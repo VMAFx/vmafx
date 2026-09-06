@@ -1470,3 +1470,14 @@ survivors. Measured, one ULP in linear RGB became a **2.62e-03** score delta.
 **private** scalar reference, not against the shipped function, so it will not
 catch a shipped copy that drifts. Change the shipped copies and that reference
 together.
+
+## High-bit-depth samples are normalised before accumulation (ADR-1212)
+
+`picture_copy()` divides every 10/12/16-bit sample by 4 / 16 / 256 before the
+float extractors see it, so a CPU "sum of samples" is a sum of *normalised*
+samples. A GPU twin that reads the raw plane and accumulates codewords must
+apply that scaler itself — on the host, to the exact integer sums, which is
+bit-identical to the CPU at 10 and 12 bpc. `float_moment` on CUDA, SYCL and HIP
+shipped without it and was 4x–256x off above 8 bpc; nothing caught it because
+every parity fixture was 8-bit. Register a `-DFIXTURE_BPC=10u` variant of any
+new parity test whose extractor consumes samples.
