@@ -350,8 +350,19 @@ static void free_sycl_state(SpeedChromaSyclState *s)
 /* GPU + CPU pipeline for one plane                                   */
 /* ------------------------------------------------------------------ */
 
+/* uv from u and v, imputing across a singular channel exactly as extract_fex()
+ * in speed.c does. */
+static float combine_chroma_uv(float score_u, float score_v, bool singular_u, bool singular_v)
+{
+    if (singular_u && !singular_v)
+        return score_v;
+    if (singular_v && !singular_u)
+        return score_u;
+    return (score_u + score_v) * 0.5f;
+}
+
 static int run_channel(SpeedChromaSyclState *s, float *h_plane, float *h_indterm, float *d_indterm,
-                       float *d_sol)
+                       float *d_sol, bool *singular_out)
 {
     sycl::queue &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
     const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
@@ -386,6 +397,10 @@ static int run_channel(SpeedChromaSyclState *s, float *h_plane, float *h_indterm
     speed_internal_compute_eigenvalues(s->h_cov_mat, s->h_eigenvalues, sz, s->h_eig_scratch);
     bool regular = speed_internal_is_matrix_regular(s->h_eigenvalues, SP_ELEMENTS);
 
+    /* A singular covariance matrix is NOT a failure: the CPU reference zeroes
+     * the solution and reports it separately so the caller can impute. The
+     * return value stays reserved for hard failures. See ADR-1202. */
+    *singular_out = !regular;
     if (!regular) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "speed_chroma_sycl: covariance matrix singular, zeroing solution\n");
@@ -680,6 +695,8 @@ static int extract_chroma_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     float score_v = 0.0f;
     int err_u = 0;
     int err_v = 0;
+    bool singular_u = false;
+    bool singular_v = false;
 
     for (int ch = 1; ch <= 2; ++ch) {
         float *h_plane = (ch == 1) ? s->h_plane_ref : s->h_plane_dis;
@@ -696,7 +713,9 @@ static int extract_chroma_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
         /* Reference channel: GPU pipeline + CPU linalg uploads ref eigenvalues
          * into the shared s->d_eigenvalues buffer. */
-        int e = run_channel(s, s->h_plane_ref, s->h_indterm_ref, s->d_indterm_ref, s->d_sol_ref);
+        bool singular_ref = false;
+        int e = run_channel(s, s->h_plane_ref, s->h_indterm_ref, s->d_indterm_ref, s->d_sol_ref,
+                            &singular_ref);
         if (e) {
             if (ch == 1)
                 err_u = e;
@@ -715,30 +734,40 @@ static int extract_chroma_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
         /* Distorted channel: keeps the DIS covariance in h_cov_mat (no
          * save/restore of the ref covariance) and uploads dis eigenvalues into
          * s->d_eigenvalues. */
-        e = run_channel(s, s->h_plane_dis, s->h_indterm_dis, s->d_indterm_dis, s->d_sol_dis);
+        bool singular_dis = false;
+        e = run_channel(s, s->h_plane_dis, s->h_indterm_dis, s->d_indterm_dis, s->d_sol_dis,
+                        &singular_dis);
 
+        /* Exactly one side numerically unstable: report 0 rather than the
+         * inflated score a zeroed solution on one side produces. Verbatim the
+         * CPU rule in speed_extract_score() (speed.c), which this twin matches. */
         float sc = 0.0f;
-        if (!e)
+        if (!e && singular_ref == singular_dis)
             e = score_aggregate(s, &sc);
 
         if (ch == 1) {
             err_u = e;
             score_u = sc;
+            singular_u = singular_ref || singular_dis;
         } else {
             err_v = e;
             score_v = sc;
+            singular_v = singular_ref || singular_dis;
         }
     }
 
     aligned_free(tmp_filter);
 
-    float score_uv;
-    if (err_u && !err_v)
-        score_uv = score_v;
-    else if (err_v && !err_u)
-        score_uv = score_u;
-    else
-        score_uv = (score_u + score_v) * 0.5f;
+    /* A hard failure (SYCL error, allocation failure) fails the frame, and is NOT
+     * the singular-matrix condition -- conflating the two is what made ADR-1202's
+     * CUDA launch failure surface as three silent 0.0 scores on an exit-0 run.
+     * Singularity arrives via `singular_u` / `singular_v`. */
+    if (err_u)
+        return err_u;
+    if (err_v)
+        return err_v;
+
+    const float score_uv = combine_chroma_uv(score_u, score_v, singular_u, singular_v);
 
     const double mxv = s->speed_chroma_max_val;
     int err = 0;

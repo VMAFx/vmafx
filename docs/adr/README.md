@@ -1012,3 +1012,4 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1185](1185-backend-perf-baseline-methodology.md) | Per-backend performance baselines are median-of-N, one backend per build dir | Accepted | perf, benchmarks, cuda, sycl, hip, docs |
 | [ADR-1198](1198-changelog-unknown-section-is-an-error.md) | An unknown `changelog.d/` subdirectory fails the run instead of warning | Proposed | ci, release, docs, testing |
 | [ADR-1199](1199-cuda-picture-handover-barrier.md) | Order caller-written CUDA pictures once per frame, at the dispatch point | Proposed | cuda, correctness, api, testing |
+| [ADR-1202](1202-cuda-speed-chroma-4k-launch-bounds.md) | GPU SpEED-chroma twins report singularity separately from failure | Proposed | cuda, sycl, hip, correctness, feature-extractor |

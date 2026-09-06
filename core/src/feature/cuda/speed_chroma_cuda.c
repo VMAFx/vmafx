@@ -75,6 +75,9 @@ extern const char speed_score_ptx[];
 #define SC_INDTERM_BLOCK (256u)
 #define SC_SCORE_BLOCK (256u)
 #define SC_SOLVE_WARP (32u)
+/* Warps per backward-substitution block. 8 x 32 = 256 threads, comfortably
+ * inside CUDA's 1024-thread block limit at every picture size. */
+#define SC_SOLVE_WARPS_PER_BLOCK (8u)
 
 #define SC_DEFAULT_SIGMA_NN (0.29)
 #define SC_DEFAULT_MAX_VAL (1000.0)
@@ -409,12 +412,51 @@ fail:
     return _cuda_err;
 }
 
+/* GPU Kernel 4: backward substitution, one warp per linear system and
+ * SC_SOLVE_WARPS_PER_BLOCK warps per block.
+ *
+ * The BLOCK COUNT scales with the picture; the block size is fixed. Deriving
+ * the block size from the system count instead pushes any launch above 256
+ * systems past CUDA's 1024-thread block limit -- every 4K frame -- and the
+ * kernel then never runs. See ADR-1202. */
+static int launch_backward_substitution(SpeedChromaCudaState *s, CudaFunctions *cu_f,
+                                        CUdeviceptr d_sol, uint32_t u_nb)
+{
+    int _cuda_err = 0;
+    const uint32_t warps_per_block =
+        (u_nb < SC_SOLVE_WARPS_PER_BLOCK) ? (u_nb ? u_nb : 1u) : SC_SOLVE_WARPS_PER_BLOCK;
+    const uint32_t threads = warps_per_block * SC_SOLVE_WARP;
+    const uint32_t blocks = (u_nb + warps_per_block - 1u) / warps_per_block;
+    void *args[] = {(void *)&s->d_R, (void *)&d_sol, (void *)&u_nb};
+
+    CHECK_CUDA_GOTO(
+        cu_f,
+        cuLaunchKernel(s->func_solve, blocks, 1u, 1u, threads, 1u, 1u, 0u, s->stream, args, NULL),
+        fail);
+    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->stream), fail);
+    return 0;
+
+fail:
+    return _cuda_err;
+}
+
+/* uv from u and v, imputing across a singular channel exactly as extract_fex()
+ * in speed.c does. */
+static float combine_chroma_uv(float score_u, float score_v, bool singular_u, bool singular_v)
+{
+    if (singular_u && !singular_v)
+        return score_v;
+    if (singular_v && !singular_u)
+        return score_u;
+    return (score_u + score_v) * 0.5f;
+}
+
 /* ------------------------------------------------------------------ */
 /* CPU eigendecomp + QR-factorize + Qt multiply for one plane         */
 /* ------------------------------------------------------------------ */
 
 static int run_cpu_linalg(SpeedChromaCudaState *s, CudaFunctions *cu_f, float *h_indterm,
-                          CUdeviceptr d_sol, CUdeviceptr *d_indterm_ptr)
+                          CUdeviceptr d_sol, bool *singular_out)
 {
     const int sz = (int)SC_ELEMENTS;
     const int nb = (int)s->dim.num_blocks;
@@ -425,6 +467,10 @@ static int run_cpu_linalg(SpeedChromaCudaState *s, CudaFunctions *cu_f, float *h
 
     /* Check regularity — if singular, zero out the solution. */
     bool regular = speed_internal_is_matrix_regular(s->h_eigenvalues, (size_t)sz);
+    /* A singular covariance matrix is NOT a failure: the CPU reference zeroes
+     * the solution and reports it separately so the caller can impute. The
+     * return value stays reserved for hard failures. See ADR-1202. */
+    *singular_out = !regular;
     if (!regular) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "speed_chroma_cuda: covariance matrix singular, zeroing solution\n");
@@ -447,16 +493,9 @@ static int run_cpu_linalg(SpeedChromaCudaState *s, CudaFunctions *cu_f, float *h
             fail);
 
         /* GPU Kernel 4: backward substitution. */
-        const uint32_t u_nb = (uint32_t)nb;
-        const uint32_t warps_per_block = (u_nb + 7u) / 8u;
-        const uint32_t threads = warps_per_block * SC_SOLVE_WARP;
-        const uint32_t blocks = (u_nb + (threads / SC_SOLVE_WARP) - 1u) / (threads / SC_SOLVE_WARP);
-        void *args[] = {(void *)&s->d_R, (void *)&d_sol, (void *)&u_nb};
-        CHECK_CUDA_GOTO(cu_f,
-                        cuLaunchKernel(s->func_solve, blocks, 1u, 1u, threads, 1u, 1u, 0u,
-                                       s->stream, args, NULL),
-                        fail);
-        CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->stream), fail);
+        _cuda_err = launch_backward_substitution(s, cu_f, d_sol, (uint32_t)nb);
+        if (_cuda_err)
+            goto fail;
     }
 
     /* Upload eigenvalues to device for score kernel. */
@@ -465,7 +504,6 @@ static int run_cpu_linalg(SpeedChromaCudaState *s, CudaFunctions *cu_f, float *h
                                       (size_t)sz * sizeof(float), s->stream),
                     fail);
 
-    (void)d_indterm_ptr; /* unused but kept for symmetry */
     return 0;
 
 fail:
@@ -565,7 +603,7 @@ fail:
 /* ------------------------------------------------------------------ */
 
 static int extract_channel(SpeedChromaCudaState *s, CudaFunctions *cu_f, VmafPicture *ref_pic,
-                           VmafPicture *dist_pic, int channel, float *score_out)
+                           VmafPicture *dist_pic, int channel, float *score_out, bool *singular_out)
 {
     /* Allocate a local tmp buffer for filter_and_downscale. */
     const size_t stride_px = s->float_stride / sizeof(float);
@@ -631,7 +669,8 @@ static int extract_channel(SpeedChromaCudaState *s, CudaFunctions *cu_f, VmafPic
 
     /* CPU eigendecomp + QR for reference. Uploads ref eigenvalues into the
      * shared s->d_eigenvalues buffer. */
-    err = run_cpu_linalg(s, cu_f, s->h_indterm_ref, s->d_sol_ref, NULL);
+    bool singular_ref = false;
+    err = run_cpu_linalg(s, cu_f, s->h_indterm_ref, s->d_sol_ref, &singular_ref);
     if (err)
         return err;
 
@@ -654,9 +693,20 @@ static int extract_channel(SpeedChromaCudaState *s, CudaFunctions *cu_f, VmafPic
 
     /* CPU eigendecomp + QR for distorted (uses the DIS cov_mat). Uploads dis
      * eigenvalues into s->d_eigenvalues. */
-    err = run_cpu_linalg(s, cu_f, s->h_indterm_dis, s->d_sol_dis, NULL);
+    bool singular_dis = false;
+    err = run_cpu_linalg(s, cu_f, s->h_indterm_dis, s->d_sol_dis, &singular_dis);
     if (err)
         return err;
+
+    *singular_out = singular_ref || singular_dis;
+
+    /* Exactly one side numerically unstable: report 0 rather than the inflated
+     * score a zeroed solution on one side produces. Verbatim the CPU rule in
+     * speed_extract_score() (speed.c), which this twin has to match. */
+    if (singular_ref != singular_dis) {
+        *score_out = 0.0f;
+        return 0;
+    }
 
     /* GPU score kernel → aggregate → score_out. The kernel reads
      * d_eigenvalues_ref for the ref entropy and d_eigenvalues (now holding the
@@ -872,19 +922,23 @@ static int extract_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     float score_u = 0.0f;
     float score_v = 0.0f;
-    int err_u = extract_channel(s, cu_f, ref_pic, dist_pic, 1, &score_u);
-    int err_v = extract_channel(s, cu_f, ref_pic, dist_pic, 2, &score_v);
+    bool singular_u = false;
+    bool singular_v = false;
+    int err_u = extract_channel(s, cu_f, ref_pic, dist_pic, 1, &score_u, &singular_u);
+    int err_v = extract_channel(s, cu_f, ref_pic, dist_pic, 2, &score_v, &singular_v);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_push);
 
-    /* Singular-matrix imputation: if one channel is singular, use the other. */
-    float score_uv;
-    if (err_u && !err_v)
-        score_uv = score_v;
-    else if (err_v && !err_u)
-        score_uv = score_u;
-    else
-        score_uv = (score_u + score_v) * 0.5f;
+    /* A hard failure (CUDA API error, allocation failure) fails the frame, and
+     * is NOT the singular-matrix condition -- conflating the two is what made
+     * ADR-1202's 4K launch failure surface as three silent 0.0 scores on an
+     * exit-0 run. Singularity arrives via `singular_u` / `singular_v`. */
+    if (err_u)
+        return err_u;
+    if (err_v)
+        return err_v;
+
+    const float score_uv = combine_chroma_uv(score_u, score_v, singular_u, singular_v);
 
     const double mxv = s->speed_chroma_max_val;
 #define CLIP(x) ((double)(x) < (mxv) ? (double)(x) : (mxv))

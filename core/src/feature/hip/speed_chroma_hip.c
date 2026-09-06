@@ -423,8 +423,20 @@ static int run_gpu_pipeline_sc(SpeedChromaHipState *s, const float *h_plane, voi
     return hip_rc(rc);
 }
 
+/* uv from u and v, imputing across a singular channel exactly as extract_fex()
+ * in speed.c does. */
+static float combine_chroma_uv(float score_u, float score_v, bool singular_u, bool singular_v)
+{
+    if (singular_u && !singular_v)
+        return score_v;
+    if (singular_v && !singular_u)
+        return score_u;
+    return (score_u + score_v) * 0.5f;
+}
+
 /* CPU linear algebra + upload R/solution + K4 solve. */
-static int run_cpu_linalg_sc(SpeedChromaHipState *s, float *h_indterm, void *d_sol)
+static int run_cpu_linalg_sc(SpeedChromaHipState *s, float *h_indterm, void *d_sol,
+                             bool *singular_out)
 {
     const int sz = (int)SC_ELEMENTS;
     const int nb = (int)s->dim.num_blocks;
@@ -434,6 +446,10 @@ static int run_cpu_linalg_sc(SpeedChromaHipState *s, float *h_indterm, void *d_s
     bool regular = speed_internal_is_matrix_regular(s->h_eigenvalues, (size_t)sz);
 
     hipError_t rc = hipSuccess;
+    /* A singular covariance matrix is NOT a failure: the CPU reference zeroes
+     * the solution and reports it separately so the caller can impute. The
+     * return value stays reserved for hard failures. See ADR-1202. */
+    *singular_out = !regular;
     if (!regular) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "speed_chroma_hip: covariance matrix singular, zeroing solution\n");
@@ -719,6 +735,8 @@ static int extract_chroma_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     float score_v = 0.0f;
     int err_u = 0;
     int err_v = 0;
+    bool singular_u = false;
+    bool singular_v = false;
 
     for (int ch = 1; ch <= 2; ++ch) {
         /* Reuse h_plane_ref/dis for ref/dis of each chroma channel. */
@@ -736,7 +754,8 @@ static int extract_chroma_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
             (ch == 1) ? (err_u = e) : (err_v = e);
             continue;
         }
-        e = run_cpu_linalg_sc(s, s->h_indterm_ref, s->d_sol_ref);
+        bool singular_ref = false;
+        e = run_cpu_linalg_sc(s, s->h_indterm_ref, s->d_sol_ref, &singular_ref);
         if (e) {
             (ch == 1) ? (err_u = e) : (err_v = e);
             continue;
@@ -757,32 +776,41 @@ static int extract_chroma_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
         /* Distorted: means → cov → indterm (keeps the DIS covariance in
          * h_cov_mat — no save/restore of the ref covariance), then eigendecomp
          * + QR. Uploads dis eigenvalues into d_eigenvalues. */
+        bool singular_dis = false;
         e = run_gpu_pipeline_sc(s, s->h_plane_dis, s->d_indterm_dis, s->h_indterm_dis);
         if (!e)
-            e = run_cpu_linalg_sc(s, s->h_indterm_dis, s->d_sol_dis);
+            e = run_cpu_linalg_sc(s, s->h_indterm_dis, s->d_sol_dis, &singular_dis);
 
+        /* Exactly one side numerically unstable: report 0 rather than the
+         * inflated score a zeroed solution on one side produces. Verbatim the
+         * CPU rule in speed_extract_score() (speed.c), which this twin matches. */
         float sc = 0.0f;
-        if (!e)
+        if (!e && singular_ref == singular_dis)
             e = run_score_sc(s, &sc);
 
         if (ch == 1) {
             err_u = e;
             score_u = sc;
+            singular_u = singular_ref || singular_dis;
         } else {
             err_v = e;
             score_v = sc;
+            singular_v = singular_ref || singular_dis;
         }
     }
 
     aligned_free(tmp_filter);
 
-    float score_uv;
-    if (err_u && !err_v)
-        score_uv = score_v;
-    else if (err_v && !err_u)
-        score_uv = score_u;
-    else
-        score_uv = (score_u + score_v) * 0.5f;
+    /* A hard failure (HIP error, allocation failure) fails the frame, and is NOT
+     * the singular-matrix condition -- conflating the two is what made ADR-1202's
+     * CUDA launch failure surface as three silent 0.0 scores on an exit-0 run.
+     * Singularity arrives via `singular_u` / `singular_v`. */
+    if (err_u)
+        return err_u;
+    if (err_v)
+        return err_v;
+
+    const float score_uv = combine_chroma_uv(score_u, score_v, singular_u, singular_v);
 
     const double mxv = s->speed_chroma_max_val;
     int err = 0;

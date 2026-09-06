@@ -921,3 +921,4 @@
 1185-backend-perf-baseline-methodology
 1198-changelog-unknown-section-is-an-error
 1199-cuda-picture-handover-barrier
+1202-cuda-speed-chroma-4k-launch-bounds

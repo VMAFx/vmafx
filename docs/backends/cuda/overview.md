@@ -511,3 +511,45 @@ Run it with:
   --reference ref.yuv --distorted dis.yuv \
   --width 576 --height 324 --pixel_format 420 --bitdepth 8 --json
 ```
+
+## SpEED-chroma: 4K launch bounds and the singular-vs-failure contract (ADR-1202, 2026-09-06)
+
+Before this fix, `speed_chroma_u`, `speed_chroma_v` and `speed_chroma_uv`
+came back as exactly `0.000000` from the CUDA backend at 3840x2160 and above,
+and the run still exited 0. With the default model that moved pooled VMAF by
+about 3.4 points against the CPU score. 1920x1080 and 2560x1440 were correct;
+the threshold is 256 linear systems, which a 4K chroma plane exceeds.
+
+The backward-substitution kernel launch maps one warp to one linear system
+and packs `SC_SOLVE_WARPS_PER_BLOCK` (8) warps into a block. The block size is
+therefore fixed at 256 threads and the *block count* is what scales with the
+picture. Getting that the other way round puts the launch past CUDA's
+1024-thread block limit on any large picture; it fails with
+`CUDA_ERROR_INVALID_VALUE` and the output buffer keeps whatever was in it.
+
+**A device failure now fails the frame.** All three GPU twins previously
+treated any non-zero return from their linear-algebra helper as "singular
+covariance matrix" and imputed the `uv` score from the other chroma channel —
+a rule borrowed from the CPU extractor, where a non-zero return really does
+mean singular. In the GPU twins it never did: they handle singularity
+internally (warn, zero the solution, return 0) and use the return value for
+API errors only. So a real device error was fed into the imputation, and with
+both chroma channels failing it averaged to `0.0` and reported success.
+
+Singularity now travels in its own `bool *singular_out` and hard errors
+propagate. Two consequences for callers:
+
+- A CUDA, SYCL or HIP failure inside SpEED-chroma surfaces as a non-zero exit
+  instead of a `0.0` score. If you have hardware that was already failing,
+  you will now see the error rather than a plausible-looking number.
+- The singular-matrix imputation documented for the CPU extractor is now
+  actually in effect on the GPU backends, along with the CPU rule that a
+  channel with exactly one singular side (reference or distorted) scores 0
+  rather than an inflated value.
+
+Measured on a 3840x2160 pair after the fix: CPU 67.150063, CUDA 67.150063,
+SYCL 67.150065. The Netflix 576x324 pair is unchanged.
+
+Note that the GPU parity tests in `meson test --suite=fast` all run below the
+256-system threshold, so they cannot catch this class of defect. Check 4K
+agreement against the CPU backend by hand when changing these kernels.
