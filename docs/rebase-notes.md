@@ -48653,6 +48653,22 @@ Fork-only tooling (`dev/`, `scripts/dev/`, `scripts/ci/tests/`). One invariant:
    revision of whichever build first populated the layer cache. A marker that
    reports a stale revision authoritatively is worse than no marker. See
    [ADR-1195](adr/1195-container-source-revision-guard.md).
+
+## docs/ms-ssim-gpu-chroma-accuracy — per-backend option-table reality (2026-09-06)
+
+Documentation only; no code is touched. One invariant for whoever closes
+`T-MS-SSIM-GPU-CHROMA-OPTION-DRIFT-2026-09-06`:
+
+1. **HIP's `enable_chroma` is a dead branch, not a working option.**
+   `init_fex_hip` in `core/src/feature/hip/integer_ms_ssim_hip.c` assigns
+   `n_planes = 1u` on both arms of its `if (pix_fmt == VMAF_PIX_FMT_YUV400P ||
+   !s->enable_chroma)`. A rebase that "tidies" that into a single assignment
+   loses the marker for the unimplemented path, and one that assumes the else-arm
+   already computes chroma will ship luma-only numbers under a chroma-enabled
+   model. The safety net today is `provided_features`, which deliberately lists
+   only `float_ms_ssim`, so `_cb` / `_cr` route to the CPU twin (ADR-0530). Do
+   not add those names to the array without implementing the planes.
+
 ## perf/backend-baselines-1245 — per-backend baseline harness (2026-09-06)
 
 Fork-local only; nothing here touches an upstream-mirrored file, so a
