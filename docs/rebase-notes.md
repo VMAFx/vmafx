@@ -49013,4 +49013,14 @@ one line with a preceding `NOLINTNEXTLINE`) and `core/src/ref.cpp` /
 `core/src/opt.cpp` (same conversion). All three are fork-local files, so no
 upstream rebase is affected.
 
+Four fork-local SIMD kernels — `core/src/feature/x86/psnr_hvs_avx2.c`,
+`core/src/feature/x86/ssimulacra2_host_avx2.c` and their
+`core/src/feature/arm64/` twins — keep the `NOLINTNEXTLINE(...)` directive on a
+single line with a short `— ADR-0141` suffix, with the full citation in the
+block comment above it. Do not "tidy" that by wrapping the justification onto a
+second `//` line: the directive then applies to the comment instead of the
+function, `readability-function-size` comes back, and the ratchet's citation
+scan still reports the marker as cited, so nothing but a clang-tidy run against
+the merge base catches it.
+
 No upstream identifier, kernel body, or numeric expression was modified.

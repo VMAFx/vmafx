@@ -10724,7 +10724,14 @@ core internal headers (`framesync.h`, `thread_pool.h`, `picture_pool.h`,
   mentions of the word "NOLINT" (`core/src/log.cpp`,
   `core/src/mcp/dispatcher.c`, `core/test/test_iqa_helpers.c`) that the
   ratchet regex counted as bare markers are reworded to "suppression
-  justification". (ADR-0141, ADR-0278)
+  justification". Four `NOLINTNEXTLINE(readability-function-size, …)`
+  directives in the PSNR-HVS and SSIMULACRA2 host SIMD kernels
+  (`core/src/feature/{x86,arm64}/`) keep their justification on one line: a
+  wrapped directive applies to the following comment rather than to the
+  function and silently un-suppresses the diagnostic.
+  `scripts/ci/tidy-baseline-cpu.json` is tightened to the measured
+  `total_nolint_uncited: 0`; its `warnings` map is untouched. (ADR-0141,
+  ADR-0278, ADR-1142)
 
 
 - **SHA-pin every GitHub Actions reference in `.github/workflows/*.yml`

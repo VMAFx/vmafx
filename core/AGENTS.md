@@ -882,6 +882,18 @@ Three mechanics bite when you add or move a suppression:
   a preceding `// NOLINTNEXTLINE(...) — ADR-NNNN` instead of letting
   clang-format re-wrap. `core/src/ref.cpp`, `core/src/opt.cpp` and
   `core/src/dnn/model_loader.c` are in that form for this reason.
+- **A `NOLINTNEXTLINE` justification must never wrap onto a second comment
+  line.** The directive applies to the line that immediately follows it, so
+  `// NOLINTNEXTLINE(readability-function-size) — ADR-0141 §2 /` followed by
+  `// ADR-0159 …: reason` points the suppression at the *comment*, not at the
+  function, and the diagnostic comes back. The ratchet still counts the marker
+  as cited, so the citation gate stays green while the warning count regresses —
+  the only thing that catches it is `clang-tidy -p build <file>` against the
+  merge base. Keep the directive on one line (a short `— ADR-NNNN` suffix fits
+  inside 100 columns) and put the prose in the block comment above it;
+  `core/src/feature/{x86,arm64}/psnr_hvs_*.c` and
+  `core/src/feature/{x86,arm64}/ssimulacra2_host_*.c` are in that form for this
+  reason.
 - **The word "NOLINT" in prose is counted as a marker.** `NOLINT_RE` matches the
   bare token, so a comment that says "NOLINT justification: …" registers as an
   uncited suppression even when no directive exists. Write "suppression
