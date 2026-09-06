@@ -3159,6 +3159,21 @@ test_hip_float_vif_parity = executable('test_hip_float_vif_parity',
 test('test_hip_float_vif_parity', test_hip_float_vif_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
+# ADR-1212 — float_moment CPU vs. HIP parity, at 8 bpc and (via
+# -DFIXTURE_BPC=10u) at 10 bpc. The HIP twin had no cross-backend gate at all,
+# which is how it shipped accumulating the raw high-bit-depth codeword.
+foreach variant : [['', []], ['_10bit', ['-DFIXTURE_BPC=10u']]]
+    hip_moment_exe = executable('test_hip_float_moment_parity' + variant[0],
+        ['test.c', 'test_hip_float_moment_parity.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        dependencies: [pthread_dependency, hip_deps, math_lib],
+        c_args: ['-DHAVE_HIP=1'] + variant[1]
+    )
+    test('test_hip_float_moment_parity' + variant[0], hip_moment_exe,
+        suite : ['fast', 'gpu'],
+        timeout : 60)
+endforeach
 
 # ADR-0883 round-2 — HIP kernel parity gap-fill (5 extractors).
 # Closes the gaps left after PR #351 (psnr_hip + vif_hip) and the
@@ -3176,6 +3191,21 @@ test_hip_ciede_parity = executable('test_hip_ciede_parity',
     c_args: ['-DHAVE_HIP=1']
 )
 test('test_hip_ciede_parity', test_hip_ciede_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+# ADR-1213 — the same TU at an odd luma width. `ciede_hip` sized its chroma
+# staging with floor(w/2) where picture.c allocates ceil, so at 577 the last
+# chroma column was never uploaded and the kernel read past the staged row.
+# Every ciede parity fixture was even-sized, which is how that survived.
+test_hip_ciede_parity_oddw = executable('test_hip_ciede_parity_oddw',
+    ['test.c', 'test_hip_ciede_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1', '-DFIXTURE_W=577u', '-DFIXTURE_H=325u']
+)
+test('test_hip_ciede_parity_oddw', test_hip_ciede_parity_oddw,
     suite : ['fast', 'gpu'],
     timeout : 60)
 
