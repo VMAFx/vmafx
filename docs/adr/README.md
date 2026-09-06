@@ -1059,3 +1059,5 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1209](1209-cli-gpumask-negative-contract.md) | `--gpumask` keeps rejecting negative values; the test script uses a positive mask | Proposed | cli, testing, upstream-divergence, correctness |
 | [ADR-1211](1211-hip-integer-adm-picture-staging.md) | `integer_adm_hip` stages the luma plane onto the device before launching | Proposed | hip, correctness, feature-extractor, adm |
 | [ADR-1215](1215-cuda-psnr-16bpc-plane-argument.md) | The 16-bpc CUDA PSNR kernel takes the plane index the host has always passed | Proposed | cuda, correctness, feature-extractor, bit-depth |
+| [ADR-1212](1212-gpu-moment-bit-depth-normalisation.md) | The GPU `float_moment` twins normalise by the bit-depth scaler on the host | Proposed | cuda, sycl, hip, correctness, feature-extractor, bit-depth |
+| [ADR-1213](1213-hip-ciede-chroma-ceil-dimensions.md) | `ciede_hip` sizes its chroma staging with the picture's ceil dimensions | Proposed | hip, correctness, feature-extractor, memory-safety |
