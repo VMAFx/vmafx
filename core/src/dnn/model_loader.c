@@ -34,6 +34,12 @@
 #include "model_loader.h"
 #include "onnx_scan.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* Portable realpath wrapper: POSIX realpath() on Linux/macOS, _fullpath()
  * on MinGW/Windows. Both resolve symlinks and canonicalise the path in
  * place, returning NULL on failure. */
@@ -62,7 +68,7 @@ static int enforce_tiny_model_jail(const char *resolved_model, const char *jail_
         return 0;
 
     char jail_resolved[PATH_MAX];
-    if (resolve_path(jail_dir, jail_resolved) == nullptr)
+    if (resolve_path(jail_dir, jail_resolved) == NULL)
         return -EACCES;
 
     struct stat jst;
@@ -138,7 +144,7 @@ int vmaf_dnn_sniff_kind(const char *path)
 static const char *find_key_in_doc(const char *doc, const char *needle, size_t needle_len)
 {
     const char *cursor = doc;
-    while ((cursor = strstr(cursor, needle)) != nullptr) {
+    while ((cursor = strstr(cursor, needle)) != NULL) {
         const char *after = cursor + needle_len;
         /* Skip whitespace after the needle. */
         while (*after && json_is_space(*after))
@@ -151,7 +157,7 @@ static const char *find_key_in_doc(const char *doc, const char *needle, size_t n
         /* This occurrence is inside a value string — skip past it. */
         cursor++;
     }
-    return nullptr;
+    return NULL;
 }
 
 /* Ultra-small JSON-value extractor: supports "key": "value" and "key": number.
@@ -162,22 +168,22 @@ static char *extract_string(const char *doc, const char *key)
     char needle[64];
     int n = snprintf(needle, sizeof(needle), "\"%s\"", key);
     if (n < 0 || (size_t)n >= sizeof(needle))
-        return nullptr;
+        return NULL;
     const char *p = find_key_in_doc(doc, needle, (size_t)n);
     if (!p)
-        return nullptr;
+        return NULL;
     while (*p && json_is_space(*p))
         p++;
     if (*p != '"')
-        return nullptr;
+        return NULL;
     p++;
     const char *q = strchr(p, '"');
     if (!q)
-        return nullptr;
+        return NULL;
     size_t len = (size_t)(q - p);
     char *out = (char *)malloc(len + 1);
     if (!out)
-        return nullptr;
+        return NULL;
     memcpy(out, p, len);
     out[len] = '\0';
     return out;
@@ -197,7 +203,7 @@ static void free_partial_string_array(char **out, size_t cnt)
 {
     for (size_t i = 0; i < cnt; ++i) {
         free(out[i]);
-        out[i] = nullptr;
+        out[i] = NULL;
     }
 }
 
@@ -257,7 +263,7 @@ static int extract_string_array(const char *doc, const char *key, char **out, si
      * error fired. */
     *out_n = 0u;
 
-    const char *p = nullptr;
+    const char *p = NULL;
     const int rc = json_array_begin(doc, key, &p);
     if (rc != 0)
         return rc;
@@ -309,7 +315,7 @@ static int extract_string_array(const char *doc, const char *key, char **out, si
 static int extract_float_array(const char *doc, const char *key, float *out, size_t max,
                                size_t *out_n)
 {
-    const char *p = nullptr;
+    const char *p = NULL;
     const int rc = json_array_begin(doc, key, &p);
     if (rc != 0)
         return rc;
@@ -322,7 +328,7 @@ static int extract_float_array(const char *doc, const char *key, float *out, siz
             *out_n = cnt;
             return 0;
         }
-        char *endp = nullptr;
+        char *endp = NULL;
         errno = 0;
         const double v = strtod(p, &endp);
         if (endp == p)
@@ -360,7 +366,7 @@ static int extract_int(const char *doc, const char *key, int *out)
     while (*p && json_is_space(*p))
         p++;
     errno = 0;
-    char *endp = nullptr;
+    char *endp = NULL;
     long v = strtol(p, &endp, 10);
     if (endp == p)
         return -EINVAL;
@@ -595,8 +601,8 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
 {
     if (!onnx_path || !out)
         return -EINVAL;
-    assert(onnx_path != nullptr);
-    assert(out != nullptr);
+    assert(onnx_path != NULL);
+    assert(out != NULL);
     memset(out, 0, sizeof(*out));
     out->kind = VMAF_MODEL_KIND_DNN_FR;
 
@@ -606,11 +612,11 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
         return rc;
     assert(sidecar[0] != '\0');
 
-    char *buf = nullptr;
+    char *buf = NULL;
     rc = slurp_sidecar_json(sidecar, &buf);
     if (rc != 0)
         return rc;
-    assert(buf != nullptr);
+    assert(buf != NULL);
 
     parse_sidecar_kind(buf, out);
     out->name = extract_string(buf, "name");
@@ -645,7 +651,7 @@ typedef struct PresetOrdinal {
 } PresetOrdinal;
 
 /* One encoder family: the encoder names that share @presets. Both arrays are
- * nullptr-terminated. */
+ * NULL-terminated. */
 typedef struct EncoderPresetTable {
     const char *const *encoders;
     const PresetOrdinal *presets;
@@ -658,66 +664,66 @@ typedef struct EncoderPresetTable {
 #define PRESET_DEFAULT_ORD 5.0f
 
 /* libx264 / libx265 share the same preset vocabulary. */
-static const char *const kEncX26x[] = {"libx264", "libx265", nullptr};
+static const char *const kEncX26x[] = {"libx264", "libx265", NULL};
 static const PresetOrdinal kPresetsX26x[] = {
     {"ultrafast", 0.0f}, {"superfast", 1.0f}, {"veryfast", 2.0f}, {"faster", 3.0f},
     {"fast", 4.0f},      {"medium", 5.0f},    {"slow", 6.0f},     {"slower", 7.0f},
-    {"veryslow", 8.0f},  {"placebo", 9.0f},   {nullptr, 0.0f},
+    {"veryslow", 8.0f},  {"placebo", 9.0f},   {NULL, 0.0f},
 };
 
-static const char *const kEncVvenc[] = {"libvvenc", nullptr};
+static const char *const kEncVvenc[] = {"libvvenc", NULL};
 static const PresetOrdinal kPresetsVvenc[] = {
     {"faster", 1.0f}, {"fast", 3.0f},   {"medium", 5.0f},
-    {"slow", 7.0f},   {"slower", 8.0f}, {nullptr, 0.0f},
+    {"slow", 7.0f},   {"slower", 8.0f}, {NULL, 0.0f},
 };
 
 /* libvpx-vp9 deadline strings. */
-static const char *const kEncVp9[] = {"libvpx-vp9", nullptr};
+static const char *const kEncVp9[] = {"libvpx-vp9", NULL};
 static const PresetOrdinal kPresetsVp9[] = {
     {"realtime", 0.0f},
     {"good", 5.0f},
     {"best", 9.0f},
-    {nullptr, 0.0f},
+    {NULL, 0.0f},
 };
 
 /* NVENC p1..p7. */
-static const char *const kEncNvenc[] = {"h264_nvenc", "hevc_nvenc", "av1_nvenc", nullptr};
+static const char *const kEncNvenc[] = {"h264_nvenc", "hevc_nvenc", "av1_nvenc", NULL};
 static const PresetOrdinal kPresetsNvenc[] = {
     {"p1", 0.0f}, {"p2", 2.0f}, {"p3", 3.0f}, {"p4", 5.0f},
-    {"p5", 6.0f}, {"p6", 7.0f}, {"p7", 9.0f}, {nullptr, 0.0f},
+    {"p5", 6.0f}, {"p6", 7.0f}, {"p7", 9.0f}, {NULL, 0.0f},
 };
 
 /* Intel QSV (h264_qsv / hevc_qsv / av1_qsv). */
-static const char *const kEncQsv[] = {"h264_qsv", "hevc_qsv", "av1_qsv", nullptr};
+static const char *const kEncQsv[] = {"h264_qsv", "hevc_qsv", "av1_qsv", NULL};
 static const PresetOrdinal kPresetsQsv[] = {
     {"veryfast", 2.0f}, {"faster", 3.0f}, {"fast", 4.0f},     {"medium", 5.0f},
-    {"slow", 6.0f},     {"slower", 7.0f}, {"veryslow", 8.0f}, {nullptr, 0.0f},
+    {"slow", 6.0f},     {"slower", 7.0f}, {"veryslow", 8.0f}, {NULL, 0.0f},
 };
 
 static const EncoderPresetTable kPresetTables[] = {
     {kEncX26x, kPresetsX26x},   {kEncVvenc, kPresetsVvenc}, {kEncVp9, kPresetsVp9},
-    {kEncNvenc, kPresetsNvenc}, {kEncQsv, kPresetsQsv},     {nullptr, nullptr},
+    {kEncNvenc, kPresetsNvenc}, {kEncQsv, kPresetsQsv},     {NULL, NULL},
 };
 
-/* True when @p enc_lc appears in the nullptr-terminated @p encoders list. */
+/* True when @p enc_lc appears in the NULL-terminated @p encoders list. */
 static bool encoder_in_family(const char *const *encoders, const char *enc_lc)
 {
-    for (size_t i = 0; encoders[i] != nullptr; ++i) {
+    for (size_t i = 0; encoders[i] != NULL; ++i) {
         if (strcmp(encoders[i], enc_lc) == 0)
             return true;
     }
     return false;
 }
 
-/* Return the preset vocabulary for @p enc_lc, or nullptr when the encoder has
+/* Return the preset vocabulary for @p enc_lc, or NULL when the encoder has
  * no string preset table (unknown encoder, or libsvtav1's numeric presets). */
 static const PresetOrdinal *preset_table_for(const char *enc_lc)
 {
-    for (size_t t = 0; kPresetTables[t].encoders != nullptr; ++t) {
+    for (size_t t = 0; kPresetTables[t].encoders != NULL; ++t) {
         if (encoder_in_family(kPresetTables[t].encoders, enc_lc))
             return kPresetTables[t].presets;
     }
-    return nullptr;
+    return NULL;
 }
 
 /* libsvtav1 uses numeric presets 0..13; the trainer squashes them to 0..9.
@@ -725,7 +731,7 @@ static const PresetOrdinal *preset_table_for(const char *enc_lc)
  * number in range. */
 static float svtav1_preset_ordinal(const char *preset_lc)
 {
-    char *endp = nullptr;
+    char *endp = NULL;
     errno = 0;
     const long v = strtol(preset_lc, &endp, 10);
     if (endp != preset_lc && errno == 0 && v >= 0 && v <= 13) {
@@ -747,10 +753,10 @@ static float codec_block_preset_ordinal(const char *enc_lc, const char *preset_l
         return svtav1_preset_ordinal(preset_lc) / PRESET_MAX_ORD;
 
     const PresetOrdinal *table = preset_table_for(enc_lc);
-    if (table == nullptr)
+    if (table == NULL)
         return PRESET_DEFAULT_ORD / PRESET_MAX_ORD;
 
-    for (size_t i = 0; table[i].preset != nullptr; ++i) {
+    for (size_t i = 0; table[i].preset != NULL; ++i) {
         if (strcmp(table[i].preset, preset_lc) == 0)
             return table[i].ordinal / PRESET_MAX_ORD;
     }
@@ -791,14 +797,14 @@ static const char *resolve_codec_alias(const char *name_lc)
 }
 
 /* Copy @p src into @p dst (capacity @p dst_sz) lower-cased.
- * Returns @p dst, or nullptr when @p src is absent/empty or does not fit. */
+ * Returns @p dst, or NULL when @p src is absent/empty or does not fit. */
 static const char *lower_copy(char *dst, size_t dst_sz, const char *src)
 {
     if (!src || src[0] == '\0')
-        return nullptr;
+        return NULL;
     const size_t len = strlen(src);
     if (len >= dst_sz)
-        return nullptr;
+        return NULL;
     memcpy(dst, src, len + 1u);
     str_to_lower(dst, len);
     return dst;
@@ -847,7 +853,7 @@ int vmaf_dnn_codec_block_fill(float *buf, size_t buf_len, const char *const *voc
             found = 1;
         }
     } else if (!codec_name || codec_name[0] == '\0') {
-        /* nullptr or empty codec name is a legitimate "unknown" tag. */
+        /* NULL or empty codec name is a legitimate "unknown" tag. */
         found = 1;
     }
 
@@ -930,7 +936,7 @@ int vmaf_dnn_validate_onnx(const char *path, size_t max_bytes)
 {
     if (!path)
         return -EINVAL;
-    assert(path != nullptr);
+    assert(path != NULL);
     if (max_bytes == 0)
         max_bytes = VMAF_DNN_DEFAULT_MAX_BYTES;
     assert(max_bytes > 0u);
@@ -940,7 +946,7 @@ int vmaf_dnn_validate_onnx(const char *path, size_t max_bytes)
      * regular file; resolve_path() dereferences the symlink so the
      * subsequent S_ISREG check reflects the actual target. */
     char resolved[PATH_MAX];
-    if (resolve_path(path, resolved) == nullptr)
+    if (resolve_path(path, resolved) == NULL)
         return -errno;
     assert(resolved[0] != '\0');
 
@@ -970,16 +976,16 @@ int vmaf_dnn_validate_onnx(const char *path, size_t max_bytes)
     if (sz == 0)
         return -EBADMSG;
 
-    unsigned char *buf = nullptr;
+    unsigned char *buf = NULL;
     err = slurp_file(resolved, sz, &buf);
     if (err != 0)
         return err;
-    assert(buf != nullptr);
+    assert(buf != NULL);
 
     /* Deep op-allowlist walk: parse the ONNX protobuf for NodeProto.op_type
      * strings and reject any that are not in the allowlist. This runs
      * before ORT's CreateSession, so a disallowed op short-circuits load. */
-    err = vmaf_dnn_scan_onnx(buf, sz, nullptr);
+    err = vmaf_dnn_scan_onnx(buf, sz, NULL);
     free(buf);
     return err;
 }
@@ -1026,7 +1032,7 @@ static int find_bundle_for_onnx(const char *registry_doc, const char *onnx_basen
      * occurs within the same JSON object (i.e. before the next `"onnx"`
      * or end-of-doc). */
     const char *cursor = registry_doc;
-    while ((cursor = strstr(cursor, "\"onnx\"")) != nullptr) {
+    while ((cursor = strstr(cursor, "\"onnx\"")) != NULL) {
         const char *colon = strchr(cursor, ':');
         if (!colon)
             return -ENOENT;
@@ -1166,7 +1172,7 @@ static int locate_cosign(const char *path_env, char *out, size_t out_sz)
     return -EACCES;
 }
 
-/* Registry path used when the caller passes registry_path == nullptr:
+/* Registry path used when the caller passes registry_path == NULL:
  * <dirname(onnx_path)>/registry.json, or model/tiny/registry.json when
  * @p onnx_path carries no directory component. */
 static int default_registry_path(const char *onnx_path, char *out, size_t out_sz)
@@ -1242,11 +1248,11 @@ static int run_cosign_verify(const char *cosign_path, const char *bundle_abs, co
         (char *)"--certificate-oidc-issuer",
         (char *)"https://token.actions.githubusercontent.com",
         (char *)onnx_path,
-        nullptr,
+        NULL,
     };
 
     pid_t pid = 0;
-    const int sp = posix_spawnp(&pid, cosign_path, nullptr, nullptr, argv, environ);
+    const int sp = posix_spawnp(&pid, cosign_path, NULL, NULL, argv, environ);
     if (sp != 0)
         return -sp;
 
@@ -1261,7 +1267,7 @@ static int run_cosign_verify(const char *cosign_path, const char *bundle_abs, co
 }
 
 /* Look @p onnx_path's basename up in the registry (defaulting to
- * <dirname(onnx_path)>/registry.json when @p registry_path is nullptr) and
+ * <dirname(onnx_path)>/registry.json when @p registry_path is NULL) and
  * write the absolute path of its cosign bundle into @p out. */
 static int lookup_bundle_abs(const char *onnx_path, const char *registry_path, char *out,
                              size_t out_sz)
@@ -1275,16 +1281,16 @@ static int lookup_bundle_abs(const char *onnx_path, const char *registry_path, c
             return prc;
         reg_path = default_reg;
     }
-    assert(reg_path != nullptr);
+    assert(reg_path != NULL);
 
-    char *reg_buf = nullptr;
+    char *reg_buf = NULL;
     int err = slurp_registry(reg_path, &reg_buf);
     if (err != 0)
         return err;
-    assert(reg_buf != nullptr);
+    assert(reg_buf != NULL);
 
     const char *base = path_basename(onnx_path);
-    assert(base != nullptr);
+    assert(base != NULL);
     char bundle_rel[PATH_MAX];
     err = find_bundle_for_onnx(reg_buf, base, bundle_rel, sizeof(bundle_rel));
     free(reg_buf);
@@ -1299,7 +1305,7 @@ int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path)
 {
     if (!onnx_path)
         return -EINVAL;
-    assert(onnx_path != nullptr);
+    assert(onnx_path != NULL);
 
     char bundle_abs[PATH_MAX];
     int err = lookup_bundle_abs(onnx_path, registry_path, bundle_abs, sizeof(bundle_abs));
@@ -1333,3 +1339,5 @@ int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path)
     return run_cosign_verify(cosign_path, bundle_abs, onnx_path);
 }
 #endif /* !_WIN32 */
+
+/* NOLINTEND(modernize-use-nullptr) */

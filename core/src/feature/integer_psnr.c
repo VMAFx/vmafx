@@ -39,6 +39,12 @@
 #include "arm64/psnr_neon.h"
 #endif
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 typedef struct PsnrState {
     bool enable_chroma;
     bool enable_mse;
@@ -106,7 +112,7 @@ static const VmafOption options[] = {
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
     },
-    {nullptr}};
+    {NULL}};
 
 static uint32_t sse_line_8_c(const uint8_t *ref, const uint8_t *dis, unsigned w)
 {
@@ -350,7 +356,7 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
     return (err < 0) ? err : !err;
 }
 
-static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", nullptr};
+static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", NULL};
 
 // NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_psnr = {
@@ -374,3 +380,5 @@ VmafFeatureExtractor vmaf_fex_psnr = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

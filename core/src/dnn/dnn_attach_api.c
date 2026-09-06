@@ -31,6 +31,12 @@
 #include "model_loader.h"
 #include "ort_backend.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #if defined(VMAF_HAVE_DNN) && VMAF_HAVE_DNN
 static int load_optional_sidecar(const char *onnx_path, VmafModelSidecar *meta, bool *have_meta)
 {
@@ -50,7 +56,7 @@ static int open_session_and_probe_input(const char *onnx_path, const VmafDnnConf
                                         VmafOrtSession **sess_out, int64_t in_shape[4],
                                         size_t *in_rank)
 {
-    VmafOrtSession *sess = nullptr;
+    VmafOrtSession *sess = NULL;
     int rc = vmaf_ort_open(&sess, onnx_path, cfg);
     if (rc < 0)
         return rc;
@@ -70,8 +76,8 @@ int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path, const VmafDnnCo
 #if defined(VMAF_HAVE_DNN) && VMAF_HAVE_DNN
     if (!ctx || !onnx_path)
         return -EINVAL;
-    assert(ctx != nullptr);
-    assert(onnx_path != nullptr);
+    assert(ctx != NULL);
+    assert(onnx_path != NULL);
 
     /* T7-12: the historical VMAF_MAX_MODEL_BYTES env override has been
      * removed; see dnn_api.c for the rationale. */
@@ -86,7 +92,7 @@ int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path, const VmafDnnCo
     if (rc < 0)
         return rc;
 
-    VmafOrtSession *sess = nullptr;
+    VmafOrtSession *sess = NULL;
     int64_t in_shape[4] = {0};
     size_t in_rank = 0;
     rc = open_session_and_probe_input(onnx_path, cfg, &sess, in_shape, &in_rank);
@@ -99,8 +105,7 @@ int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path, const VmafDnnCo
     const char *feature_name =
         (have_meta && meta.name && *meta.name) ? meta.name : "vmaf_tiny_model";
 
-    rc = vmaf_ctx_dnn_attach(ctx, sess, have_meta ? &meta : nullptr, in_shape, in_rank,
-                             feature_name);
+    rc = vmaf_ctx_dnn_attach(ctx, sess, have_meta ? &meta : NULL, in_shape, in_rank, feature_name);
     if (rc < 0) {
         vmaf_ort_close(sess);
         if (have_meta)
@@ -160,7 +165,7 @@ int vmaf_dnn_set_resize_mode(VmafContext *ctx, VmafDnnResizeMode mode)
         return -EINVAL;
     }
     /* ctx is non-nullptr and mode is a valid enum value at this point. */
-    assert(ctx != nullptr);
+    assert(ctx != NULL);
     return vmaf_ctx_dnn_set_resize_mode(ctx, (int)mode);
 #else
     (void)ctx;
@@ -168,3 +173,4 @@ int vmaf_dnn_set_resize_mode(VmafContext *ctx, VmafDnnResizeMode mode)
     return -ENOSYS;
 #endif
 }
+/* NOLINTEND(modernize-use-nullptr) */

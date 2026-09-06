@@ -48622,15 +48622,24 @@ them in ways a future `port-upstream-commit` has to be aware of:
   what tells clang-tidy that `compute_psnr()` legitimately has external
   linkage. Keep it when replaying an upstream hunk that rewrites the include
   block.
-- `integer_psnr.c` / `float_psnr.c` — the `provided_features[]` sentinels and
-  the `options[]` terminator use `nullptr` (the tree is C23, ADR-0692), and the
-  `VmafFeatureExtractor` definitions carry the ADR-0278
+- `integer_psnr.c` / `float_psnr.c` — both keep upstream's `NULL` spelling
+  (ADR-1138: C translation units never use the C23 `nullptr` keyword, because
+  the required `Build — Windows MSVC + CUDA` lane compiles them with cl.exe and
+  MSVC's documented `/std:clatest` feature set does not include it). Each file
+  therefore carries a file-scoped
+  `/* NOLINTBEGIN(modernize-use-nullptr) ... ADR-1138. */` … `NOLINTEND`
+  bracket instead, exactly like `core/src/feature/integer_adm.c`. An upstream
+  hunk that adds a pointer initialiser inside the bracket needs no adaptation;
+  a hunk that lands **outside** it (before the `NOLINTBEGIN` or after the
+  `NOLINTEND`) does — keep the bracket spanning the whole file.
+  The `VmafFeatureExtractor` definitions additionally carry the ADR-0278
   `NOLINTNEXTLINE(misc-use-internal-linkage)` citation used by every other
-  extractor in the fork. An upstream hunk that re-adds `NULL` here will
-  re-open the ratchet; convert it rather than accepting it verbatim.
+  extractor in the fork; an upstream hunk that rewrites those definitions must
+  keep the citation line.
 
-`core/src/dnn/model_loader.c` is fork-local (no upstream counterpart) — its
-function split in the same change carries no rebase risk.
+`core/src/dnn/*.c` are fork-local (no upstream counterpart). They carry the
+same ADR-1138 bracket for the same MSVC reason, and `model_loader.c`'s function
+split in this change carries no rebase risk.
 
 ## feat/gpu-adm-csf-mode-parity — GPU integer-ADM option-table parity (2026-09-05)
 
