@@ -48776,6 +48776,30 @@ invariants held:
    fork's dev hardware. Treat the Metal hunks as unverified against silicon
    when reconciling them.
 
+### `cmd/vmafx-mcp/`, `mcp-server/vmaf-mcp/`, `pkg/libvmaf/paths.go` — MCP sidecar + gRPC bridge (#1240)
+
+All fork-added; no upstream counterpart, so an upstream sync cannot conflict
+here. Two invariants a rebase must not quietly break:
+
+1. **The sidecar argv builders are twins.** `buildPerShotArgv` / `buildRoiArgv` /
+   `buildBenchArgv` / `buildVplArgv` (`cmd/vmafx-mcp/impl_sidecar.go`) and
+   `_build_per_shot_argv` / `_build_roi_argv` / `_build_bench_argv` /
+   `_build_vpl_argv` (`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`) must emit the
+   same bytes; `cmd/vmafx-mcp/sidecar_parity_test.go` runs both and compares.
+   Resolving a conflict on one side without the other silently breaks the gate.
+   The same applies to float formatting: Go's
+   `strconv.FormatFloat(v, 'f', -1, 64)` is mirrored by `server.py::_fmt_float`,
+   never by `repr`.
+2. **The five gRPC bridge tools are Go-only on purpose** ([ADR-1184](adr/1184-mcp-grpc-bridge-go-only.md)).
+   A future "restore parity" sweep must not add them to the Python server or
+   delete them from Go.
+
+The argument bounds in both servers are copied from the C parsers in
+`core/tools/vmaf_per_shot.c`, `vmaf_roi.c`, `vmaf_bench.c` and `vmaf_vpl.c`. If a
+sidecar's CLI grammar changes, the two MCP servers and `docs/mcp/tools.md` change
+with it — the bounds are duplicated by design (the MCP layer rejects early so the
+caller gets a structured error), so the duplication has to be maintained.
+
 ### `docs/ai/retrain-runbook-1246.md`
 
 no rebase impact: fork-added operator runbook for the one-shot v1.0.16 teacher retrain (epic #1246); no upstream-mirrored files touched.

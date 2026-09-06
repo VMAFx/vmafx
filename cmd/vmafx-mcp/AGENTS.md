@@ -1,6 +1,6 @@
 # AGENTS.md — cmd/vmafx-mcp
 
-Go MCP server that exposes 15 tools (vmaf_score, list_models, ...) to MCP
+Go MCP server that exposes 24 tools (vmaf_score, list_models, ...) to MCP
 clients (Claude Desktop, Cursor, the in-tree gRPC server). Wraps the libvmaf
 C library via two paths: the legacy `exec.Command(vmaf, ...)` subprocess
 path (default) and the direct cgo path introduced by ADR-0931 (opt-in via
@@ -135,7 +135,8 @@ Key facts a future agent must keep straight:
    required-ness, including device selectors `--cpumask`, `--gpumask`,
    `--sycl_device`, `--hip_device`, `--metal_device`, `output_fmt`,
    `subsample`, and tiny-AI flags) AND build the same `vmaf` CLI argv for a
-   given input. A client must get the same result from either server. When you
+   given input. A client must get the same result from either server — with the
+   one documented exception in invariant #15. When you
    add or change a scoring param, change BOTH sides and keep the canonical
    argv ORDER identical (e.g. `--subsample` only when `>1`, emitted before the
    extras). `TestGoAndPythonArgvParity` (Go) and `test_parity_argv.py` (Python)
@@ -200,3 +201,44 @@ Key facts a future agent must keep straight:
    (`%.6f`, the documented C-CLI default). Do not reintroduce a `"17"` default
    on any single path: a client must get the same numeric format regardless of
    which server / transport / dispatch path served the request.
+
+15. **Sidecar parity is required** (ADR-1184, #1240). The 15 classic tools and
+   the 4 sidecar tools (`vmaf_per_shot`, `vmaf_roi`, `vmaf_bench`, `vmaf_vpl`)
+   have byte-compatible Python twins. `impl_sidecar.go`'s `buildPerShotArgv` /
+   `buildRoiArgv` / `buildBenchArgv` / `buildVplArgv` MUST produce the same
+   argv as `server.py`'s `_build_per_shot_argv` / `_build_roi_argv` /
+   `_build_bench_argv` / `_build_vpl_argv`, and the schemas (names, enums,
+   defaults, bounds) must match.
+   `sidecar_parity_test.go::TestSidecarArgvParity` drives both sides and
+   compares. The argv builders are split out of the handlers specifically so
+   that test can run without a sidecar binary on disk — do not fold them back
+   into the handlers. Float arguments are formatted with
+   `strconv.FormatFloat(v, 'f', -1, 64)` on the Go side and
+   `server.py::_fmt_float` on the Python side; Python's `repr` alone is NOT
+   equivalent, because it keeps a trailing `.0` on integral values and switches
+   to exponent notation for small magnitudes, both of which change the argv
+   bytes. A new float parameter must go through `_fmt_float`.
+
+16. **The gRPC bridge is deliberately Go-only** (ADR-1184). The 5 control-plane
+   tools (`submit_job`, `get_job`, `cancel_job`, `list_jobs`,
+   `vmaf_score_remote`) have NO Python twin: the Python server ships no gRPC
+   stack and the Phase-4b architecture names the Go binary as the controller's
+   MCP client. This is legal under invariant #1 because the parity test asserts
+   that Go is a superset of Python. Do not "restore parity" by deleting these
+   tools, and do not add `grpcio` to `mcp-server/vmaf-mcp` without superseding
+   ADR-1184. Their connection targets and credentials are environment-only
+   (`VMAFX_CONTROLLER_ADDR`, `VMAFX_SERVER_ADDR`, `VMAFX_CONTROLLER_TOKEN`,
+   `VMAFX_GRPC_TIMEOUT`) — a tool argument naming a host would make the MCP
+   server an SSRF pivot.
+   `impl_grpc_test.go::TestGRPCTargetsComeFromEnv` pins this, and
+   `validateRemotePath` (shape-only: absolute, no `..`, no control characters)
+   is the ONLY guard on the remote path arguments, because
+   `libvmaf.ValidatePath` cannot apply to a file that lives on a worker node.
+
+17. **Sidecar binary resolution goes through `libvmaf.FindSidecarBinary`**
+   (`pkg/libvmaf/paths.go`). Its second candidate — a sibling of the resolved
+   `vmaf` binary — is load-bearing: it is what makes a single `VMAF_BIN`
+   resolve the whole family, which the vmaf-dev-mcp container relies on after
+   `make install`. `server.py::_sidecar_binary` mirrors the same order. Adding
+   a sidecar means adding it to `SidecarBinaryEnv` AND to
+   `_SIDECAR_BINARY_ENV`.

@@ -165,3 +165,87 @@ func ValidatePath(p string) (string, error) {
 	}
 	return "", fmt.Errorf("path %s is not under an allowlisted root; set VMAF_MCP_ALLOW to extend", resolved)
 }
+
+// ---------------------------------------------------------------------------
+// Sidecar binaries (vmaf-perShot / vmaf_roi / vmaf_bench / vmaf_vpl)
+// ---------------------------------------------------------------------------
+
+// SidecarBinaryEnv maps each sidecar tool's on-disk binary name to the
+// environment variable that overrides its location.
+//
+// The names are the meson target names in core/tools/meson.build — note the
+// deliberate camelCase of "vmaf-perShot", which is the installed binary name.
+var SidecarBinaryEnv = map[string]string{
+	"vmaf-perShot": "VMAF_PER_SHOT_BIN",
+	"vmaf_roi":     "VMAF_ROI_BIN",
+	"vmaf_bench":   "VMAF_BENCH_BIN",
+	"vmaf_vpl":     "VMAF_VPL_BIN",
+}
+
+// FindSidecarBinary returns the path to one of the sidecar CLI binaries built
+// alongside the main `vmaf` tool.
+//
+// Resolution order:
+//  1. The tool's own environment override (see SidecarBinaryEnv).
+//  2. A sibling of the resolved `vmaf` binary (FindBinary). This is what makes
+//     VMAF_BIN=<somewhere>/tools/vmaf resolve the whole family, and it is the
+//     case in the vmaf-dev-mcp container after `make install`.
+//  3. /usr/local/bin/<name>.
+//  4. <repoRoot>/core/build/tools/<name> (in-tree build after ADR-0700).
+//  5. <repoRoot>/build/tools/<name> (legacy build-dir name).
+//
+// Returns the first path that exists on disk; when none exist the last
+// candidate is returned so the caller can emit a clear "build first" error.
+// An unknown name returns "" — callers must treat that as a programming error.
+func FindSidecarBinary(name string) string {
+	env, known := SidecarBinaryEnv[name]
+	if !known {
+		return ""
+	}
+	if v := os.Getenv(env); v != "" {
+		return v
+	}
+	root := RepoRoot()
+	candidates := []string{
+		filepath.Join(filepath.Dir(FindBinary()), name),
+		filepath.Join("/usr/local/bin", name),
+		filepath.Join(root, "core", "build", "tools", name),
+		filepath.Join(root, "build", "tools", name),
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return candidates[len(candidates)-1]
+}
+
+// ValidateDir is the directory-shaped counterpart of ValidatePath: it resolves
+// p, confirms it is under one of the AllowedRoots, and confirms it is a
+// directory. Used by tool handlers that take a data-directory argument
+// (vmaf_bench --data-dir) where ValidatePath's "must be a regular file" check
+// would reject every legitimate value.
+func ValidateDir(p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve path %q: %w", p, err)
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", fmt.Errorf("directory not found: %s", abs)
+	}
+	for _, root := range AllowedRoots() {
+		rootClean := filepath.Clean(root) + string(filepath.Separator)
+		if strings.HasPrefix(filepath.Clean(resolved)+string(filepath.Separator), rootClean) {
+			fi, err := os.Stat(resolved)
+			if err != nil {
+				return "", fmt.Errorf("directory not found: %s", resolved)
+			}
+			if !fi.IsDir() {
+				return "", fmt.Errorf("path is a file, not a directory: %s", resolved)
+			}
+			return resolved, nil
+		}
+	}
+	return "", fmt.Errorf("path %s is not under an allowlisted root; set VMAF_MCP_ALLOW to extend", resolved)
+}

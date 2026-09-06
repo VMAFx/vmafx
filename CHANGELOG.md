@@ -7414,6 +7414,30 @@ targeting residual gaps in `server.py` and `http_transport.py`:
   Closes previously uncovered lines: TLS-enabled `_build_ssl_context` branch, `_handle_score` path-validation 400 error path, `_serve` startup warning branches and cleanup finally-block, `run_http_server` CancelledError/KeyboardInterrupt/finally paths, and `make_score_handler` factory return.
 
 
+- **Nine new MCP tools** on both `vmafx-mcp` (Go) and `vmaf-mcp` (Python), closing
+  the remaining items of epic #1240.
+  - **Sidecar-binary bridge (both servers)**: `vmaf_per_shot`, `vmaf_roi`,
+    `vmaf_bench` and `vmaf_vpl` expose the four CLI binaries meson builds next to
+    `vmaf` in `core/tools/`. Every numeric and enum bound is taken from the
+    corresponding C parser, so an out-of-range value returns a readable MCP error
+    instead of a `usage()` dump; structured output is parsed (the per-shot JSON
+    plan, the VPL score summary) and the ROI sidecar comes back as qpfile text for
+    x265 or base64 for the SVT-AV1 `int8` map. Binaries resolve from a per-tool
+    env override (`VMAF_PER_SHOT_BIN`, `VMAF_ROI_BIN`, `VMAF_BENCH_BIN`,
+    `VMAF_VPL_BIN`), then a sibling of the resolved `vmaf` binary, then
+    `/usr/local/bin`, then the in-tree build dirs.
+  - **Phase-4b gRPC control-plane bridge (Go only, ADR-1184)**: `submit_job`,
+    `get_job`, `cancel_job`, `list_jobs` and `vmaf_score_remote` drive the
+    `vmafx-controller` job API and the `vmafx-server` scoring API. Connection
+    targets and credentials are environment-only — `VMAFX_CONTROLLER_ADDR`,
+    `VMAFX_SERVER_ADDR`, `VMAFX_CONTROLLER_TOKEN`, `VMAFX_GRPC_TIMEOUT` — so no
+    tool argument can name a host.
+  - Documented per tool and per parameter in `docs/mcp/tools.md`.
+- **`pkg/libvmaf.FindSidecarBinary` and `pkg/libvmaf.ValidateDir`**: sidecar
+  binary resolution, and the directory-shaped counterpart of `ValidatePath` that
+  `vmaf_bench --data-dir` needs (`ValidatePath` requires a regular file).
+
+
 - **MCP tiny-AI scoring surface and strict input validation**:
   Expose the full tiny-AI scoring flag suite (`tiny_model`, `tiny_device`,
   `dnn_ep` alias, `tiny_threads`, `tiny_fp16`, `tiny_model_verify`,
@@ -22799,6 +22823,15 @@ Affected files: `float_moment_metal.mm`, `float_motion_metal.mm`,
   `_list_backends()` reports all six as a host-probe of `vmaf --version`.
   Pre-PR, MCP clients passing `backend="vulkan"` (etc.) silently fell
   through to `auto`. Tests cover every backend selector.
+
+
+- **`cmd/vmafx-mcp`: `floatArg` ignored Go `int` values.** Only `float64` and
+  `json.Number` were handled, so an integral argument arriving from an in-process
+  caller (a test, or a dispatch path that does not round-trip through JSON)
+  silently fell back to the parameter's default and skipped its bounds check —
+  e.g. `target_vmaf: 101` was accepted and became 90. `intArg` had always handled
+  the mirror-image case. No JSON-RPC client was affected, because JSON decoding
+  produces `float64`.
 
 
 **Fixed: MCP HTTP transport `POST /v1/score` body-validation edge cases (ADR-1075)**
