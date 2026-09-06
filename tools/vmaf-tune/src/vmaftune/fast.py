@@ -192,6 +192,7 @@ def _proxy_score(
         encoder=encoder,
         preset_norm=preset_norm,
         crf_norm=crf_norm,
+        allow_unknown=True,
     )
 
 
@@ -369,7 +370,8 @@ def _build_production_sample_extractor(
     from . import CANONICAL6_FEATURES
     from .encode import EncodeRequest, bitrate_kbps, run_encode
     from .predictor_features import _probe_video_geometry
-    from .score import ScoreRequest, run_score
+    from .proxy import normalise_features
+    from .score import ScoreRequest, maybe_decode_distorted, run_score
 
     class _Cfg:
         ffprobe_bin: str = "ffprobe"
@@ -422,16 +424,28 @@ def _build_production_sample_extractor(
                     enc_req.sample_clip_start_s * fps if enc_req.sample_clip_start_s > 0 else 0
                 ),
                 frame_cnt=int(duration_s * fps),
+                duration_s=duration_s,
             )
+            score_req, decode_rc = maybe_decode_distorted(
+                score_req,
+                workdir=tmpdir,
+                ffmpeg_bin=ffmpeg_bin,
+            )
+            if decode_rc != 0:
+                raise RuntimeError(
+                    f"fast sample_extractor: failed to decode distorted container {dist} to raw YUV (rc={decode_rc})"
+                )
+
             score_result = run_score(score_req, vmaf_bin=vmaf_bin, backend=_score_backend)
             if score_result.exit_status != 0:
                 raise RuntimeError(
                     f"fast sample_extractor: score failed: {score_result.stderr_tail[-300:]}"
                 )
 
-            features = [
+            raw_features = [
                 score_result.feature_means.get(f, float("nan")) for f in CANONICAL6_FEATURES
             ]
+            features = normalise_features(raw_features)
             return features, observed_kbps
 
     return _extract
@@ -452,7 +466,7 @@ def _build_production_encode_runner(
     """
     from .encode import EncodeRequest, bitrate_kbps, run_encode
     from .predictor_features import _probe_video_geometry
-    from .score import ScoreRequest, run_score
+    from .score import ScoreRequest, maybe_decode_distorted, run_score
 
     class _Cfg:
         ffprobe_bin: str = "ffprobe"
@@ -497,6 +511,16 @@ def _build_production_encode_runner(
                 height=height,
                 pix_fmt=pix_fmt,
             )
+            score_req, decode_rc = maybe_decode_distorted(
+                score_req,
+                workdir=tmpdir,
+                ffmpeg_bin=ffmpeg_bin,
+            )
+            if decode_rc != 0:
+                raise RuntimeError(
+                    f"fast encode_runner: failed to decode distorted container {dist} to raw YUV (rc={decode_rc})"
+                )
+
             score_result = run_score(
                 score_req,
                 vmaf_bin=vmaf_bin,

@@ -199,6 +199,12 @@ no rebase impact: changes GitHub Actions workflow job display names (`.github/wo
 ## docs/venv-recipe — replace impossible venv recipe with verified one (2026-09-04)
 
 - `docs/development/languages.md`: no rebase impact: docs/development/ is fork-added.
+## fix/vmaf-tune-python-fast-path — Python fast-path probe decoding, feature parsing, and normalisation parity (2026-09-05)
+
+No rebase impact: all touched files (`tools/vmaf-tune/src/vmaftune/`, `tools/vmaf-tune/tests/`, `docs/`) are fork-added Python tuning tooling with no upstream Netflix/vmaf counterpart. No public C API, header, Meson option, or golden assertion is touched.
+- `tools/vmaf-tune/src/vmaftune/cli.py` & `fast.py`: probe distorted containers (`.mp4`) are decoded to temporary raw YUV before running libvmaf feature extraction (with guaranteed cleanup) and non-zero exit codes raise `RuntimeError` (no zero-fill).
+- `tools/vmaf-tune/src/vmaftune/proxy.py`: added `load_proxy_sidecar` and `normalise_features` adhering to `fr_regressor_v2.json` StandardScaler parameters, aligned `ENCODER_VOCAB_V2` ordering, and mapped unrecognized encoders to `"unknown"` (slot 11) when `allow_unknown=True`.
+- `tools/vmaf-tune/src/vmaftune/score.py`: `parse_feature_aggregates` handles `integer_*` keys and falls back to per-frame averages when pooled metrics are absent.
 
 ## fix/sycl-adm-tidy-debt — SYCL ADM warning cleanup + tidy-lane scoping (2026-09-04)
 

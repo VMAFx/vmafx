@@ -163,6 +163,20 @@ func TestProbePipelineExtractsRealFeatures(t *testing.T) {
 		t.Errorf("motion2 = %v, want >= 0", gotFeatures[5])
 	}
 	t.Logf("canonical-6 at CRF %d: %v (%.1f kbps)", crf, gotFeatures, sample.PredictedKbps)
+
+	// Also emit the StandardScaler-normalised vector from the in-tree sidecar
+	// so the Python twin's parity test
+	// (tools/vmaf-tune/tests/test_fast_parity.py) can pin both the raw means
+	// and the normalisation against this exact run.
+	model, loadErr := LoadProxyModel("", "")
+	if loadErr != nil {
+		t.Fatalf("LoadProxyModel: %v", loadErr)
+	}
+	normalised, normErr := model.NormaliseFeatures(gotFeatures)
+	if normErr != nil {
+		t.Fatalf("NormaliseFeatures: %v", normErr)
+	}
+	t.Logf("normalised canonical-6 at CRF %d: %v", crf, normalised)
 }
 
 // TestVerifyPipelineScoresRealEncode drives the mandatory verify pass end to

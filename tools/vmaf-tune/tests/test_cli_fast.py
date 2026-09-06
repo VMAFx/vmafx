@@ -387,3 +387,275 @@ def test_parse_canonical6_means_per_frame_fallback() -> None:
     assert means[0] == pytest.approx(0.85)
     assert means[1] == pytest.approx(0.75)
     assert means[2:] == [0.0, 0.0, 0.0, 0.0]
+
+
+def test_parse_canonical6_means_integer_pipeline_keys() -> None:
+    """Modern libvmaf integer_* pooled keys are resolved in canonical order."""
+    payload = {
+        "pooled_metrics": {
+            "integer_adm2": {"mean": 0.98},
+            "integer_vif_scale0": {"mean": 0.82},
+            "integer_vif_scale1": {"mean": 0.86},
+            "integer_vif_scale2": {"mean": 0.89},
+            "integer_vif_scale3": {"mean": 0.92},
+            "integer_motion2": {"mean": 4.50},
+        }
+    }
+    means = cli_module._parse_canonical6_means(payload)
+    assert means == [0.98, 0.82, 0.86, 0.89, 0.92, 4.50]
+
+
+def test_parse_canonical6_means_normalise_flag() -> None:
+    """normalise=True normalises the raw features using sidecar stats."""
+    from vmaftune.proxy import load_proxy_sidecar
+
+    sidecar = load_proxy_sidecar()
+    mean = sidecar["feature_mean"]
+    std = sidecar["feature_std"]
+    # Feature vector exactly equal to mean -> normalised must be all zeros
+    payload = {
+        "pooled_metrics": {
+            "integer_adm2": {"mean": mean[0]},
+            "integer_vif_scale0": {"mean": mean[1]},
+            "integer_vif_scale1": {"mean": mean[2]},
+            "integer_vif_scale2": {"mean": mean[3]},
+            "integer_vif_scale3": {"mean": mean[4]},
+            "integer_motion2": {"mean": mean[5]},
+        }
+    }
+    norm_means = cli_module._parse_canonical6_means(payload, normalise=True)
+    for v in norm_means:
+        assert v == pytest.approx(0.0, abs=1e-6)
+
+    # Feature vector equal to mean + std -> normalised must be all ones
+    payload_plus_std = {
+        "pooled_metrics": {
+            "integer_adm2": {"mean": mean[0] + std[0]},
+            "integer_vif_scale0": {"mean": mean[1] + std[1]},
+            "integer_vif_scale1": {"mean": mean[2] + std[2]},
+            "integer_vif_scale2": {"mean": mean[3] + std[3]},
+            "integer_vif_scale3": {"mean": mean[4] + std[4]},
+            "integer_motion2": {"mean": mean[5] + std[5]},
+        }
+    }
+    norm_means_std = cli_module._parse_canonical6_means(payload_plus_std, normalise=True)
+    for v in norm_means_std:
+        assert v == pytest.approx(1.0, abs=1e-6)
+
+
+def test_parse_canonical6_means_per_frame_integer_fallback() -> None:
+    """Per-frame integer_* metrics fall back to a mean when pooled is absent."""
+    payload = {
+        "frames": [
+            {"metrics": {"integer_adm2": 0.9, "integer_vif_scale0": 0.8}},
+            {"metrics": {"integer_adm2": 0.8, "integer_vif_scale0": 0.7}},
+        ]
+    }
+    means = cli_module._parse_canonical6_means(payload)
+    assert means[0] == pytest.approx(0.85)
+    assert means[1] == pytest.approx(0.75)
+    assert means[2:] == [0.0, 0.0, 0.0, 0.0]
+
+
+def test_build_fast_sample_extractor_decodes_distorted_mp4_and_cleans_up(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_build_fast_sample_extractor decodes container to raw YUV before vmaf."""
+    import argparse
+    from unittest.mock import MagicMock
+
+    import vmaftune.cli as cli_mod
+    from vmaftune.encode import EncodeResult
+
+    args = argparse.Namespace(
+        width=576,
+        height=324,
+        pix_fmt="yuv420p",
+        framerate=24.0,
+        preset="medium",
+        sample_chunk_seconds=2.0,
+        ffmpeg_bin="ffmpeg",
+        vmaf_bin="vmaf",
+        vmaf_model="version=vmaf_v0.6.1",
+    )
+    workdir = tmp_path / "probes"
+
+    def _fake_run_encode(req, ffmpeg_bin="ffmpeg"):
+        req.output.write_bytes(b"dummy mp4 container")
+        return EncodeResult(
+            request=req,
+            exit_status=0,
+            encode_time_ms=10.0,
+            encode_size_bytes=5000,
+            encoder_version="libx264-enabled",
+            ffmpeg_version="n9.0.1",
+            stderr_tail="",
+        )
+
+    monkeypatch.setattr("vmaftune.encode.run_encode", _fake_run_encode)
+
+    decoded_file = tmp_path / "decoded_probe.yuv"
+    decode_called = []
+
+    def _fake_maybe_decode_distorted(score_req, workdir, ffmpeg_bin="ffmpeg"):
+        decode_called.append(score_req.distorted)
+        decoded_file.write_bytes(b"dummy raw yuv")
+        import dataclasses
+
+        return dataclasses.replace(score_req, distorted=decoded_file), 0
+
+    monkeypatch.setattr("vmaftune.score.maybe_decode_distorted", _fake_maybe_decode_distorted)
+
+    vmaf_commands = []
+
+    def _fake_build_vmaf_command(score_req, json_path, vmaf_bin="vmaf", backend=None):
+        vmaf_commands.append(score_req.distorted)
+        return ["echo", "vmaf", "--output", str(json_path)]
+
+    monkeypatch.setattr("vmaftune.score.build_vmaf_command", _fake_build_vmaf_command)
+
+    def _sub_run_writing_json(cmd, capture_output=True, text=True, check=False):
+        if "--output" in cmd:
+            out_idx = cmd.index("--output") + 1
+            out_path = Path(cmd[out_idx])
+            payload = {
+                "pooled_metrics": {
+                    "integer_adm2": {"mean": 0.9550306797027588},
+                    "integer_vif_scale0": {"mean": 0.5178422331809998},
+                    "integer_vif_scale1": {"mean": 0.8622183203697205},
+                    "integer_vif_scale2": {"mean": 0.9155327677726746},
+                    "integer_vif_scale3": {"mean": 0.9446256160736084},
+                    "integer_motion2": {"mean": 8.946569442749023},
+                }
+            }
+            out_path.write_text(json.dumps(payload), encoding="utf-8")
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("subprocess.run", _sub_run_writing_json)
+
+    extractor = cli_mod._build_fast_sample_extractor(args, workdir)
+
+    src = tmp_path / "ref.yuv"
+    src.write_bytes(b"")
+    features, kbps = extractor(src, 28, "libx264")
+
+    # Verify decode was called with probe .mp4
+    assert len(decode_called) == 1
+    assert decode_called[0].name == "probe_libx264_crf28.mp4"
+
+    # Verify build_vmaf_command received the decoded raw YUV, not .mp4
+    assert len(vmaf_commands) == 1
+    assert vmaf_commands[0] == decoded_file
+
+    # Verify decoded file was cleaned up in finally
+    assert not decoded_file.exists()
+
+    # Verify features are normalised (since raw matched mean, normalised should be ~0.0)
+    for f in features:
+        assert f == pytest.approx(0.0, abs=1e-6)
+    assert kbps > 0.0
+
+
+def test_build_fast_sample_extractor_raises_on_nonzero_vmaf_exit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_build_fast_sample_extractor raises RuntimeError on non-zero vmaf exit."""
+    import argparse
+    from unittest.mock import MagicMock
+
+    import vmaftune.cli as cli_mod
+    from vmaftune.encode import EncodeResult
+
+    args = argparse.Namespace(
+        width=576,
+        height=324,
+        pix_fmt="yuv420p",
+        framerate=24.0,
+        preset="medium",
+        sample_chunk_seconds=2.0,
+        ffmpeg_bin="ffmpeg",
+        vmaf_bin="vmaf",
+        vmaf_model="version=vmaf_v0.6.1",
+    )
+    workdir = tmp_path / "probes"
+
+    def _fake_run_encode(req, ffmpeg_bin="ffmpeg"):
+        req.output.write_bytes(b"dummy mp4")
+        return EncodeResult(
+            request=req,
+            exit_status=0,
+            encode_time_ms=10.0,
+            encode_size_bytes=5000,
+            encoder_version="libx264-enabled",
+            ffmpeg_version="n9.0.1",
+            stderr_tail="",
+        )
+
+    monkeypatch.setattr("vmaftune.encode.run_encode", _fake_run_encode)
+
+    def _fake_maybe_decode_distorted(score_req, workdir, ffmpeg_bin="ffmpeg"):
+        decoded_file = tmp_path / "decoded.yuv"
+        decoded_file.write_bytes(b"dummy yuv")
+        import dataclasses
+
+        return dataclasses.replace(score_req, distorted=decoded_file), 0
+
+    monkeypatch.setattr("vmaftune.score.maybe_decode_distorted", _fake_maybe_decode_distorted)
+
+    def _fake_sub_run(cmd, capture_output=True, text=True, check=False):
+        return MagicMock(returncode=255, stdout="", stderr="Error reading YUV frame data")
+
+    monkeypatch.setattr("subprocess.run", _fake_sub_run)
+
+    extractor = cli_mod._build_fast_sample_extractor(args, workdir)
+
+    src = tmp_path / "ref.yuv"
+    src.write_bytes(b"")
+    with pytest.raises(RuntimeError, match="vmaf score failed.*rc=255"):
+        extractor(src, 28, "libx264")
+
+
+def test_build_fast_sample_extractor_raises_on_encode_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_build_fast_sample_extractor raises RuntimeError on non-zero encode exit."""
+    import argparse
+
+    import vmaftune.cli as cli_mod
+    from vmaftune.encode import EncodeResult
+
+    args = argparse.Namespace(
+        width=576,
+        height=324,
+        pix_fmt="yuv420p",
+        framerate=24.0,
+        preset="medium",
+        sample_chunk_seconds=2.0,
+        ffmpeg_bin="ffmpeg",
+        vmaf_bin="vmaf",
+        vmaf_model="version=vmaf_v0.6.1",
+    )
+    workdir = tmp_path / "probes"
+
+    def _fake_run_encode(req, ffmpeg_bin="ffmpeg"):
+        return EncodeResult(
+            request=req,
+            exit_status=1,
+            encode_time_ms=0.0,
+            encode_size_bytes=0,
+            encoder_version="libx264-enabled",
+            ffmpeg_version="n9.0.1",
+            stderr_tail="Encoder error",
+        )
+
+    monkeypatch.setattr("vmaftune.encode.run_encode", _fake_run_encode)
+
+    extractor = cli_mod._build_fast_sample_extractor(args, workdir)
+
+    src = tmp_path / "ref.yuv"
+    src.write_bytes(b"")
+    with pytest.raises(RuntimeError, match="encode failed"):
+        extractor(src, 28, "libx264")

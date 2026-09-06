@@ -35,15 +35,15 @@ ENCODER_VOCAB_V2: tuple[str, ...] = (
     "libx264",
     "libx265",
     "libsvtav1",
-    "libaom-av1",
-    "libvpx-vp9",
     "libvvenc",
+    "libvpx-vp9",
     "h264_nvenc",
     "hevc_nvenc",
     "av1_nvenc",
     "h264_qsv",
     "hevc_qsv",
     "av1_qsv",
+    "unknown",
 )
 
 #: Default registry id (matches `model/tiny/registry.json`).
@@ -104,25 +104,81 @@ def _load_session(model_id: str, model_path: str) -> Any:
     return ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
 
 
+@lru_cache(maxsize=4)
+def load_proxy_sidecar(model_id: str = DEFAULT_PROXY_MODEL_ID) -> dict[str, Any]:
+    """Load and parse the `model/tiny/<model_id>.json` sidecar.
+
+    Cached per model_id to avoid reading JSON on every prediction.
+    """
+    import json
+
+    model_path = _resolve_model_path(model_id)
+    sidecar_path = model_path.with_suffix(".json")
+    if not sidecar_path.exists():
+        raise ProxyError(f"proxy sidecar not found: {sidecar_path}")
+    try:
+        return json.loads(sidecar_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ProxyError(f"failed to parse proxy sidecar {sidecar_path}: {exc}") from exc
+
+
+def normalise_features(
+    features: Sequence[float],
+    model_id: str = DEFAULT_PROXY_MODEL_ID,
+) -> list[float]:
+    """Apply the sidecar's StandardScaler to a canonical-6 feature vector.
+
+    Calculates ``(x - feature_mean) / feature_std`` elementwise using the
+    scaler parameters exported into the model sidecar (ADR-0291).
+    A zero or missing std leaves the feature unscaled (mirrors ``pkg/fast``).
+    """
+    import math
+
+    if len(features) != 6:
+        raise ProxyError(f"features must be the canonical-6 vector; got length {len(features)}")
+    sidecar = load_proxy_sidecar(model_id)
+    mean = sidecar.get("feature_mean", [])
+    std = sidecar.get("feature_std", [])
+    out: list[float] = []
+    for i, v in enumerate(features):
+        val = float(v)
+        if i < len(mean):
+            val -= float(mean[i])
+        if i < len(std):
+            s = float(std[i])
+            if s != 0.0 and not math.isnan(s):
+                val /= s
+        out.append(val)
+    return out
+
+
 def encode_codec_block(
     encoder: str,
     preset_norm: float,
     crf_norm: float,
+    *,
+    allow_unknown: bool = False,
 ) -> Any:
     """Build the 14-D codec block: 12-way one-hot + preset_norm + crf_norm.
 
-    Encoder names outside ENCODER_VOCAB_V2 raise `ProxyError`; this is
-    a hard contract check rather than a silent zero-vector to surface
-    OOD codecs early. Preset and CRF are caller-normalised to `[0, 1]`.
+    Encoder names outside ENCODER_VOCAB_V2 raise `ProxyError` unless
+    `allow_unknown=True` is set and `unknown` is in the vocabulary, in
+    which case the `unknown` slot is activated (mirrors `pkg/fast`).
+    Preset and CRF are caller-normalised to `[0, 1]`.
     """
     np = _import_numpy()
     if encoder not in ENCODER_VOCAB_V2:
-        raise ProxyError(
-            f"encoder {encoder!r} not in ENCODER_VOCAB_V2 (frozen by "
-            f"ADR-0291). Allowed: {', '.join(ENCODER_VOCAB_V2)}."
-        )
+        if allow_unknown and "unknown" in ENCODER_VOCAB_V2:
+            idx = ENCODER_VOCAB_V2.index("unknown")
+        else:
+            raise ProxyError(
+                f"encoder {encoder!r} not in ENCODER_VOCAB_V2 (frozen by "
+                f"ADR-0291). Allowed: {', '.join(ENCODER_VOCAB_V2)}."
+            )
+    else:
+        idx = ENCODER_VOCAB_V2.index(encoder)
     one_hot = np.zeros(len(ENCODER_VOCAB_V2), dtype=np.float32)
-    one_hot[ENCODER_VOCAB_V2.index(encoder)] = 1.0
+    one_hot[idx] = 1.0
     block = np.concatenate(
         [one_hot, np.asarray([preset_norm, crf_norm], dtype=np.float32)],
         axis=0,
@@ -139,6 +195,8 @@ def run_proxy(
     crf_norm: float,
     model_id: str = DEFAULT_PROXY_MODEL_ID,
     session_factory: Any | None = None,
+    allow_unknown: bool = False,
+    normalise: bool = False,
 ) -> float:
     """Run `fr_regressor_v2` over `(features, codec_block)` → scalar VMAF.
 
@@ -147,11 +205,11 @@ def run_proxy(
     features
         Six canonical libvmaf features in the canonical-6 order:
         ``(adm2, vif_scale0, vif_scale1, vif_scale2, vif_scale3, motion2)``.
-        Caller is responsible for StandardScaler normalisation; this
-        helper does NOT re-normalise (the trained scaler lives in the
-        ai/ training tree).
+        If ``normalise=True``, :func:`normalise_features` is applied first.
+        Otherwise, caller is responsible for StandardScaler normalisation.
     encoder
-        Codec name; must be in :data:`ENCODER_VOCAB_V2`.
+        Codec name; must be in :data:`ENCODER_VOCAB_V2` (or maps to
+        ``unknown`` when ``allow_unknown=True``).
     preset_norm
         Preset axis normalised to ``[0, 1]`` (caller-mapped).
     crf_norm
@@ -163,6 +221,11 @@ def run_proxy(
         and must return an object with the onnxruntime ``InferenceSession``
         ``.run(output_names, input_feed)`` interface. Production callers
         leave this default.
+    allow_unknown
+        When True, an unknown encoder is mapped to the ``unknown`` one-hot slot.
+    normalise
+        When True, applies the model sidecar's StandardScaler normalisation
+        to ``features``.
 
     Returns
     -------
@@ -176,10 +239,18 @@ def run_proxy(
     """
     np = _import_numpy()
     if len(features) != 6:
-        raise ProxyError(f"features must be the canonical-6 vector; got length " f"{len(features)}")
+        raise ProxyError(f"features must be the canonical-6 vector; got length {len(features)}")
+
+    if normalise:
+        features = normalise_features(features, model_id=model_id)
 
     feat = np.asarray(features, dtype=np.float32).reshape(1, 6)
-    codec_block = encode_codec_block(encoder, preset_norm, crf_norm).reshape(1, 14)
+    codec_block = encode_codec_block(
+        encoder,
+        preset_norm,
+        crf_norm,
+        allow_unknown=allow_unknown,
+    ).reshape(1, 14)
     # The v2 ONNX graph was exported with two *separate* named inputs —
     # "features" (shape [N, 6]) and "codec" (shape [N, 14]) — matching the
     # FRRegressor.forward(features, codec_onehot) signature in
@@ -212,5 +283,7 @@ __all__ = [
     "ENCODER_VOCAB_V2",
     "ProxyError",
     "encode_codec_block",
+    "load_proxy_sidecar",
+    "normalise_features",
     "run_proxy",
 ]
