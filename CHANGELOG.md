@@ -26085,6 +26085,17 @@ Fix the CI scoping defect in `.github/workflows/lint-and-format.yml`:
   filed its scores under names nothing else looks for. `test_sycl_vif_parity`
   gains `test_vif_skip_scale0_score_is_zero`, verified on an Arc A380 to fail
   before the fix and pass after.
+- **The SYCL integer-ADM contrast-masking kernel read the wrong sample at the
+  near edge.** The CPU rule is asymmetric — the near edge mirrors to index 1,
+  the far edge clamps to the last index — and the SYCL twin clamped both, so
+  row/column 0 was read twice and the mirrored sample dropped. It only
+  diverges once a scale's ADM border crop collapses to 0 (band dimensions
+  <= 14), which is exactly what the shipped 256x144 fixture hits at scale 3.
+  `test_sycl_adm_parity` had been failing on real Intel hardware at
+  `integer_adm_scale3_csf_2`: cpu=0.58175555 sycl=0.58191226, delta 1.57e-04
+  against a 1e-4 gate. CUDA, HIP and Metal all already carried this fix
+  (ADR-1167 / PR #1224); SYCL was the only twin that missed it. The shipped
+  SYCL parity suite goes 17/1 to 18/0 on an Arc A380.
 
 
 **fix(sycl): clip integer_motion2 score to motion_max_val (1080p checkerboard drift)**
@@ -26099,6 +26110,19 @@ Fix: append `motion2_clipped` and `last_motion2` to the feature collector, match
 Deprecate `VMAF_SYCL_NO_GRAPH`: now emits a stderr warning directing users to
 `VMAF_SYCL_USE_GRAPH=false` (ADR-0841).  The variable continues to function
 for one release; removal is scheduled for v4.0.
+
+
+- **The SYCL parity tests now also run against a 960x540 fixture.** Same
+  resolution blind spot as the CUDA family (ADR-1206): every SYCL parity test
+  pinned one small fixture, which held the shared SSIM/MS-SSIM auto-scale
+  `max(1, round(min(w, h) / 256))` at 1 and the ADM border crop at 0, leaving
+  every resolution-dependent branch unreachable. Verified on an Arc A380: 16
+  variants pass, and the sweep surfaced two things worth knowing — the
+  `float_ssim_sycl` twin is a documented v1 scale=1-only extractor and now
+  records that contract as a skip rather than a failure, and
+  `motion_add_uv` needs a separately derived tolerance at that resolution
+  because it compares float CPU against fixed-point SYCL rather than two
+  implementations of the same arithmetic.
 
 
 Corrected the generic GPU API documentation for SYCL picture
