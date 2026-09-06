@@ -18,6 +18,9 @@
 
 #include <math.h>
 #include <stdbool.h>
+/* ptrdiff_t, used by the widened index casts the CodeQL cast fix added
+ * to the inner loop below. Do not prune. */
+#include <stddef.h>
 
 #include "psnr.h"
 
