@@ -14,9 +14,35 @@ The fork ships one CPU MS-SSIM extractor:
 |---|---|---|
 | `float_ms_ssim` | Floating-point IQA library, 5-scale Gaussian pyramid | `enable_lcs`, `enable_db`, `clip_db`, `enable_chroma` |
 
-GPU twins (`float_ms_ssim_cuda`, `float_ms_ssim_sycl`, `integer_ms_ssim_hip`)
-currently expose only `enable_lcs`; `enable_chroma` support for GPU backends
-is a planned follow-up. (The Vulkan backend was removed in ADR-0726.)
+GPU twins do **not** all expose the same options, and the difference is
+user-visible. Read from the twins' own `options[]` tables:
+
+| Twin | `enable_lcs` | `enable_db` | `clip_db` | `enable_chroma` |
+|---|---|---|---|---|
+| `float_ms_ssim_cuda` | yes | yes | yes | **no** |
+| `float_ms_ssim_sycl` | yes | yes | yes | yes — fully implemented (3 planes) |
+| `integer_ms_ssim_hip` | yes | yes | yes | yes — **accepted but a no-op** |
+
+What that means when a model requests `enable_chroma`:
+
+- **SYCL** computes it. `n_planes` becomes 3 and `_cb` / `_cr` are produced on
+  the GPU.
+- **HIP** accepts the option and clamps to luma only; its own option help says
+  so. It does not advertise `float_ms_ssim_cb` / `_cr` in `provided_features`,
+  so those two features route to the CPU twin by name (the ADR-0530 fallback).
+  The score is correct; the chroma planes simply are not GPU-accelerated.
+- **CUDA** does not accept the option at all. `vmaf_fex_ctx_parse_options()`
+  rejects it with `feature extractor 'float_ms_ssim_cuda': unknown option
+  'enable_chroma'` and returns `-EINVAL`, so the run fails loudly rather than
+  silently dropping chroma.
+
+Note that `--feature float_ms_ssim=enable_chroma=true` does **not** exercise any
+of this: `--feature` selects the CPU extractor, so all three backends return
+identical CPU numbers for that command line. The twins are reached only through
+a model that names the feature. (The Vulkan backend was removed in ADR-0726.)
+
+Tracked as `T-MS-SSIM-GPU-CHROMA-OPTION-DRIFT-2026-09-06` in
+[docs/state.md](../state.md).
 
 ## `float_ms_ssim` extractor
 
