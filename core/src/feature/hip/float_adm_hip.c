@@ -166,22 +166,22 @@ static const VmafOption options[] = {
      .max = 9,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_csf_scale",
-     .alias = "cs",
+     .alias = "scf",
      .help = "CSF band-scale multiplier for h/v bands (default 1.0 = no scaling)",
      .offset = offsetof(FloatAdmStateHip, adm_csf_scale),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val.d = DEFAULT_ADM_CSF_SCALE,
      .min = 0.0,
-     .max = 100.0,
+     .max = 50.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_csf_diag_scale",
-     .alias = "cds",
+     .alias = "scfd",
      .help = "CSF band-scale multiplier for diagonal bands (default 1.0 = no scaling)",
      .offset = offsetof(FloatAdmStateHip, adm_csf_diag_scale),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val.d = DEFAULT_ADM_CSF_DIAG_SCALE,
      .min = 0.0,
-     .max = 100.0,
+     .max = 50.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_noise_weight",
      .alias = "nw",
@@ -589,9 +589,16 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
             fadm_dwt_quant_step(scale, 1, s->adm_norm_view_dist, s->adm_ref_display_height);
         const float f2 =
             fadm_dwt_quant_step(scale, 2, s->adm_norm_view_dist, s->adm_ref_display_height);
-        s->rfactor[scale * 3 + 0] = (float)s->adm_csf_scale / f1;
-        s->rfactor[scale * 3 + 1] = (float)s->adm_csf_scale / f1;
-        s->rfactor[scale * 3 + 2] = (float)s->adm_csf_diag_scale / f2;
+        /* ADR-1214: match the CPU reference exactly. In the Watson-97 mode this
+         * twin supports (adm_csf_mode == 0) `adm_tools.c::adm_csf_rfactor_s`
+         * sets rfactor = 1 / dwt_quant_step(...) and does NOT consult
+         * adm_csf_scale / adm_csf_diag_scale — those two options only enter the
+         * Barten branch (mode 1). Multiplying them in here made a non-default
+         * scale change the GPU score while the CPU ignored it, and the comment
+         * that used to sit here claimed the opposite of what adm_tools.c does. */
+        s->rfactor[scale * 3 + 0] = 1.0f / f1;
+        s->rfactor[scale * 3 + 1] = 1.0f / f1;
+        s->rfactor[scale * 3 + 2] = 1.0f / f2;
     }
 
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
