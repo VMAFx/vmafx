@@ -2055,6 +2055,43 @@ static int validate_pic_params(VmafContext *vmaf, const VmafPicture *ref, const 
     return 0;
 }
 
+/* The non-temporal, CPU-side half of the threaded flush.  Split out of
+ * flush_context_threaded() to keep that function inside the ADR-0141
+ * function-size budget after the GPU-ownership fix (ADR-1197) added its
+ * skip condition. */
+static int flush_non_temporal_cpu_extractors(VmafContext *vmaf)
+{
+    int err = 0;
+    RegisteredFeatureExtractors rfe = vmaf->registered_feature_extractors;
+    for (unsigned i = 0; i < rfe.cnt; i++) {
+        VmafFeatureExtractorContext *fex_ctx = rfe.fex_ctx[i];
+        VmafFeatureExtractor *fex = fex_ctx->fex;
+        if (fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL)
+            continue;
+        if (fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA)
+            continue;
+        if (!fex->flush)
+            continue;
+        /* flush() is called directly on the shared fex (not a per-thread
+         * deep copy) and may lazily allocate state in fex->priv (e.g.
+         * integer_motion::flush allocates s->feature_name_dict when it
+         * was never set by init).  Mark the shared context as initialised
+         * so that vmaf_feature_extractor_context_close - called from
+         * feature_extractor_vector_destroy at teardown - actually invokes
+         * fex->close and frees whatever flush allocated.  Without this,
+         * is_initialized == false causes close to return -EINVAL early,
+         * leaking the dict (detected as a memory leak by ASan with
+         * detect_leaks=1; root cause of ADR-1073 residual failure). */
+        fex_ctx->is_initialized = true;
+        int flush_err = 0;
+        while (!(flush_err = fex->flush(fex, vmaf->feature_collector)))
+            ;
+        if (flush_err < 0)
+            err |= flush_err;
+    }
+    return err;
+}
+
 static int flush_context_threaded(VmafContext *vmaf)
 {
     int err = 0;
@@ -2064,39 +2101,26 @@ static int flush_context_threaded(VmafContext *vmaf)
         for (unsigned i = 0; i < rfe.cnt; i++) {
             if (!(rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL))
                 continue;
+            /* Leave GPU extractors entirely to flush_context_cuda /
+             * flush_context_sycl, which run collect-then-flush in the same
+             * order the serial path uses.  The second loop below already
+             * skips CUDA deliberately; this loop did not, and that asymmetry
+             * was the bug.  Flushing a temporal GPU extractor here ran its
+             * tail-batch drain BEFORE the pending boundary collect, so the
+             * last batch-boundary frame was emitted without the min() against
+             * the following frame that motion2/motion3 are defined by, and
+             * the subsequent collect in flush_context_cuda then hit a
+             * duplicate write.  That duplicate surfaced as -EINVAL and was
+             * misreported as "context could not be synchronized", which is
+             * why `vmaf --threads N` failed on every GPU backend for every N. */
+            if (rfe.fex_ctx[i]->fex->flags &
+                (VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL))
+                continue;
             err |= vmaf_feature_extractor_context_flush(rfe.fex_ctx[i], vmaf->feature_collector);
         }
     }
 
-    {
-        RegisteredFeatureExtractors rfe = vmaf->registered_feature_extractors;
-        for (unsigned i = 0; i < rfe.cnt; i++) {
-            VmafFeatureExtractorContext *fex_ctx = rfe.fex_ctx[i];
-            VmafFeatureExtractor *fex = fex_ctx->fex;
-            if (fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL)
-                continue;
-            if (fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA)
-                continue;
-            if (!fex->flush)
-                continue;
-            /* flush() is called directly on the shared fex (not a per-thread
-             * deep copy) and may lazily allocate state in fex->priv (e.g.
-             * integer_motion::flush allocates s->feature_name_dict when it
-             * was never set by init).  Mark the shared context as initialised
-             * so that vmaf_feature_extractor_context_close — called from
-             * feature_extractor_vector_destroy at teardown — actually invokes
-             * fex->close and frees whatever flush allocated.  Without this,
-             * is_initialized == false causes close to return -EINVAL early,
-             * leaking the dict (detected as a memory leak by ASan with
-             * detect_leaks=1; root cause of ADR-1073 residual failure). */
-            fex_ctx->is_initialized = true;
-            int flush_err = 0;
-            while (!(flush_err = fex->flush(fex, vmaf->feature_collector)))
-                ;
-            if (flush_err < 0)
-                err |= flush_err;
-        }
-    }
+    err |= flush_non_temporal_cpu_extractors(vmaf);
 
     /* NB: vmaf->flushed is intentionally NOT set here.  The terminal-flush
      * decision is centralised in flush_context() so it can only flip true
@@ -2165,26 +2189,30 @@ static int flush_context_cuda(VmafContext *vmaf)
                     rfe.fex_ctx[i], rfe.fex_ctx[i]->gpu_pending_index, vmaf->feature_collector);
                 rfe.fex_ctx[i]->gpu_pending = false;
             }
-            /* flush_context_threaded already called
-             * vmaf_feature_extractor_context_flush() on every TEMPORAL
-             * extractor (including those also flagged CUDA) via its first
-             * loop (lines ~1896-1899).  Calling flush a second time on the
-             * same feature_collector index produces a duplicate-write
-             * -EINVAL and leaves cuCtxSynchronize in an error state.
-             * Skip the flush here for temporal-CUDA extractors when the
-             * thread pool was active. */
-            if (vmaf->thread_pool && (rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL))
-                continue;
+            /* No thread-pool special case: flush_context_threaded no longer
+             * flushes GPU extractors, so this path owns them in both modes and
+             * runs the same collect-then-flush order the serial path does. */
             err |= vmaf_feature_extractor_context_flush(rfe.fex_ctx[i], vmaf->feature_collector);
         }
     }
+    /* Keep the extractor result and the CUDA result apart.  Folding both into
+     * one variable made every extractor-side failure announce itself as a
+     * synchronization failure, sending debugging at the context and the driver
+     * while all four calls below were returning success. */
+    const int extractor_err = err;
+    int cuda_err = 0;
     CudaFunctions *cu_f = vmaf->cuda.state.f;
-    err |= cu_f->cuCtxPushCurrent(vmaf->cuda.state.ctx);
-    err |= cu_f->cuStreamSynchronize(vmaf->cuda.state.str);
-    err |= cu_f->cuCtxSynchronize();
-    err |= cu_f->cuCtxPopCurrent(NULL);
-    if (err) {
+    cuda_err |= cu_f->cuCtxPushCurrent(vmaf->cuda.state.ctx);
+    cuda_err |= cu_f->cuStreamSynchronize(vmaf->cuda.state.str);
+    cuda_err |= cu_f->cuCtxSynchronize();
+    cuda_err |= cu_f->cuCtxPopCurrent(NULL);
+    if (cuda_err) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "context could not be synchronized\n");
+        return -EINVAL;
+    }
+    if (extractor_err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "a CUDA feature extractor failed during flush (%d)\n",
+                 extractor_err);
         return -EINVAL;
     }
     return 0;
