@@ -57,11 +57,17 @@ the verification command for each gate and confirm a passing result.
 
 | Gate | Requirement | Verification Command | Gate Status Today |
 |---|---|---|---|
-| **G1** | Every other 1.0.0 epic closed | `gh issue list --milestone "1.0.0 — First release" --state open` | **FAIL** (Epics #1235–#1245 remain open) |
-| **G2** | `master` fully green across CI matrix | `gh run list --branch master --limit 5` | **FAIL** (release-please failure on master) |
-| **G3** | Container rebuilt with GPU default-model fixes | See §3 for container rebuild & CUDA verification command | **FAIL** (PR #1307 & fix/cambi-cuda-context unmerged) |
-| **G4** | K150K re-smoke verified with zero disk leak | See §4 for 5-clip smoke & manifest validation command | **FAIL** (Requires PR #1302; smoke pending) |
+| **G1** | Every other 1.0.0 epic closed | `gh issue list --milestone "1.0.0 — First release" --state open` | **FAIL** — 12 open besides this one: #1235, #1236, #1237, #1238, #1240, #1241, #1242, #1243, #1244, #1245, #1270, #1272. Note the epic bodies are snapshots and several items in them have already shipped, so the count overstates the remaining work; each needs auditing against the code before it is treated as outstanding. |
+| **G2** | `master` fully green across CI matrix | `gh run list --branch master --limit 20 --json conclusion,name --jq '[.[]\|select(.conclusion=="failure")]'` | **PASS** as of 2026-09-06 — zero failing runs on `master` HEAD. The release-please failure this row was written for is gone: it was the missing release-bot App credential, warned-not-errored on push by ADR-1171, and the workflow now reports success. |
+| **G3** | Container rebuilt with GPU default-model fixes | See §3 for container rebuild & CUDA verification command | **PASS** as of 2026-09-06 — #1307, #1312 and #1324 are all on `master`, the container was rebuilt from `cd52f2670` and the default model was verified on **all four** backends, not just CUDA: CPU 82.816062, CUDA 82.814062, SYCL 82.814061, HIP 82.816061, every one exiting 0. Evidence and container digest in [issue #1246 comment](https://github.com/VMAFx/vmafx/issues/1246#issuecomment-5555646084). |
+| **G4** | K150K re-smoke verified with zero disk leak | See §4 for 5-clip smoke & manifest validation command | **FAIL** — still blocked on [#1302](https://github.com/VMAFx/vmafx/pull/1302), which adds the `--vmaf-model` flag and the row-level `teacher_model` stamping §4.2 asserts. Confirmed absent from `master`: `git show origin/master:ai/scripts/extract_k150k_features.py \| grep -c vmaf.model` returns 0. #1302 itself has **no failing check** — its only red mark is the aggregator's draft guard ("Draft PRs must not satisfy Required Checks Aggregator"), and its ADR-0108 deliverables validator passes six of six. It needs promotion, not repair. |
 | **G5** | Explicit maintainer authorization | `gh issue view 1246 --comments` | **FAIL** (Awaiting maintainer sign-off) |
+
+> **Gate status is a measurement, not a plan.** Every cell above says how it was
+> checked and when. G2 and G3 moved to PASS on 2026-09-06 because they were
+> re-run, not because the work was assumed done; G1 and G4 stayed FAIL for the
+> same reason. Re-run the verification command before trusting any row — the
+> table this replaced had G3 failing on two PRs that had already merged.
 
 ---
 

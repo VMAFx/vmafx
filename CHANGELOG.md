@@ -14480,6 +14480,13 @@ update all cross-references, and correct `# Research-NNNN` h1 headers to match
 the new filenames.
 
 
+- `docs/ai/retrain-runbook-1246.md` gate table now reflects measured status rather than the
+  state at authoring time. **G2** (master green) and **G3** (container rebuilt with the GPU
+  default-model fixes) move to **PASS** — G3 verified on all four backends, not just CUDA —
+  and **G1** and **G4** are sharpened with what specifically still blocks them. Each cell
+  now records how and when it was checked.
+
+
 **Internal**
 
 - Bump ROCm pin from 7.2.3 to 7.2.4 in `dev/Containerfile`, `build.yml`, and
