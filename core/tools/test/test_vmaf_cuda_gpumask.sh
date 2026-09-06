@@ -27,13 +27,21 @@ nvidia-smi -L >/dev/null 2>&1 || exit 77
   --frame_cnt 2 \
   --gpumask 0
 
-# gpumask: use cpu
+# gpumask: use cpu.
+#
+# Any NON-ZERO mask disables GPU feature-extractor selection and falls back to
+# the CPU implementation (see the `gpumask` docs in libvmaf.h). Upstream writes
+# `-1` here, which only ever worked because POSIX strtoul() silently converts
+# "-1" to ULONG_MAX; this fork rejects a leading '-' before calling strtoul
+# (core/tools/cli_parse.cpp::parse_unsigned) rather than accept a value the
+# caller did not mean. `1` expresses the same intent without relying on
+# unsigned wraparound. See ADR-1209.
 ./tools/vmaf \
   --reference /dev/zero \
   --distorted /dev/zero \
   --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
   --frame_cnt 2 \
-  --gpumask -1
+  --gpumask 1
 
 # no gpumask: use cuda for vmaf features, cpu for psnr
 ./tools/vmaf \
@@ -45,11 +53,11 @@ nvidia-smi -L >/dev/null 2>&1 || exit 77
   --feature psnr \
   --output /dev/stdout
 
-# gpumask: use cpu for vmaf features and psnr
+# gpumask: use cpu for vmaf features and psnr (non-zero mask; see above)
 ./tools/vmaf \
   --reference /dev/zero \
   --distorted /dev/zero \
   --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
   --frame_cnt 2 \
-  --gpumask -1 \
+  --gpumask 1 \
   --feature psnr
