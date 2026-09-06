@@ -1,7 +1,8 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1166: Harvest stale upstream Netflix/vmaf reports, verify each against the fork, fix what still bites
 
-- **Status**: Accepted
+- **Status**: Accepted (Superseded-in-part 2026-09-04 by [ADR-1176](1176-metal-motion-v2-mirror-closeout.md) for Metal motion_v2 mirror deferral)
+- **Superseded-in-part (2026-09-04)**: Metal motion_v2 mirror deferral superseded by [ADR-1176](1176-metal-motion-v2-mirror-closeout.md) (landed in PR #1223, 71da046db).
 - **Date**: 2026-09-03
 - **Deciders**: Lusoris
 - **Tags**: process, upstream, bug, build, windows, api, docs

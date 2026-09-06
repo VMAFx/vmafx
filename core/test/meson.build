@@ -3202,7 +3202,12 @@ test_metal_motion_v2_parity = executable('test_metal_motion_v2_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_motion_v2_parity', test_metal_motion_v2_parity, suite : ['fast', 'gpu'])
+test('test_metal_motion_v2_parity', test_metal_motion_v2_parity,
+    suite : ['fast', 'gpu'],
+    should_fail : false,
+    protocol : 'exitcode',
+    verbose : true,
+)
 
 # integer_ssim_metal — fixed-point SSIM (feature "ssim") on Metal; CPU vs.
 # Metal parity at places=4 (1e-4), skips cleanly when no Metal device.

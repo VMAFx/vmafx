@@ -165,6 +165,7 @@ a real kernel lands; they are removed from `metal_sources` in
 
 ## Governing ADRs
 
+- [ADR-1176](../../../../docs/adr/1176-metal-motion-v2-mirror-closeout.md) — Metal motion_v2 mirror closeout and reflect-101 parity
 - [ADR-0490](../../../../docs/adr/0490-float-ms-ssim-metal-port.md) — T8-2b: float_ms_ssim_metal port
 - [ADR-0421](../../../../docs/adr/0421-metal-first-kernel-motion-v2.md) — T8-1c through T8-1k batch specification
 - [ADR-0420](../../../../docs/adr/0420-metal-backend-runtime-t8-1b.md) — runtime (T8-1b), prerequisite
@@ -182,3 +183,11 @@ a real kernel lands; they are removed from `metal_sources` in
   flush blend/clip/seed/average logic must be mirrored into all four GPU
   twins (cuda/sycl/hip/metal) in the same PR to keep the `places=4`
   `test_metal_motion_v2_parity` gate green.
+
+## mv2_mirror cross-twin invariant (ADR-1176)
+
+- **mv2_mirror is reflect-101, identical across backends**: `integer_motion_v2.metal::mv2_mirror`
+  uses iterated reflect-101 `idx = (idx < 0) ? -idx : 2 * (sup - 1) - idx`, bit-identical
+  to CPU `integer_motion_v2.c::mirror`, CUDA `motion_v2_score.cu::mv2_mirror`,
+  SYCL `integer_motion_v2_sycl.cpp::dev_mirror_mv2`, and HIP `motion_v2_score.hip::mv2_mirror`.
+  Do not revert to the single-bounce or `- 1` edge-replicating form.

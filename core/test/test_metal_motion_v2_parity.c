@@ -40,8 +40,9 @@
  * also asserts motion3_v2 is finite on both paths.
  *
  * Skip behaviour: when `vmaf_metal_state_init` returns -ENODEV (Linux,
- * Windows, Intel Mac), the test emits "[skip: no Metal device]" and passes
- * cleanly. Mirrors the test_sycl_motion3_parity.c skip pattern.
+ * Windows, Intel Mac), the test sets `mu_skipped = 1`, emits
+ * "[skip: no Metal device]" to stderr, and exits 77 (meson skip).
+ * On Apple Silicon with a Metal device, it executes and exits 0 on pass.
  *
  * Cross-references:
  *   - core/test/test_cuda_motion_v2_parity.c (motion3_v2 parity, CUDA twin)
@@ -160,8 +161,12 @@ static char *run_metal_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
     if (err != 0 || mstate == NULL) {
         /* No Apple-Family-7+ Metal device — skip cleanly. */
         (void)fprintf(stderr, "[skip: no Metal device] ");
+        mu_skipped = 1;
         return NULL;
     }
+
+    (void)fprintf(stdout, "[metal device active: motion_v2 parity run on device]\n");
+    (void)fflush(stdout);
 
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;

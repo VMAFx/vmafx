@@ -193,6 +193,9 @@ no rebase impact: fork-only test wiring in `core/test/meson.build` and documenta
 - `core/src/feature/sycl/speed_chroma_sycl.cpp`, `core/src/feature/sycl/speed_temporal_sycl.cpp`: Replaced `double` accumulators and workgroup local accessors with `float` to satisfy ADR-0220 on fp64-less Intel Arc devices.
 - `core/src/meson.build`: Passed `_x86_simd_strict_fp_extra` (`-fp-model=precise`) to `x86_avx2_static_lib` and `x86_avx512_static_lib` when compiling with `icx`.
 - `python/test/sycl_default_model_test.py`: Wholly fork-added regression test gating `--backend sycl` default model execution. No upstream rebase conflict.
+## fix/metal-motion-v2-mirror-closeout — Metal motion_v2 mirror closeout and test observability (2026-09-04)
+
+no rebase impact: fork-only Metal backend (`core/src/feature/metal/integer_motion_v2.metal`, `core/test/test_metal_motion_v2_parity.c`, `core/src/feature/metal/AGENTS.md`, ADR-1176). All touched files are fork-added surfaces with no upstream Netflix/vmaf counterpart.
 
 ## fix/vmaftune-state-bugs — libx264 two-pass CRF conflict fix (2026-09-03)
 
