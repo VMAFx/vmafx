@@ -1938,6 +1938,19 @@ test_cuda_float_moment_parity = executable('test_cuda_float_moment_parity',
 test('test_cuda_float_moment_parity', test_cuda_float_moment_parity,
     suite : ['fast', 'gpu'])
 
+# ADR-1212 — the same TU at 10 bpc. Every parity fixture in this tree was 8-bit,
+# so a twin that accumulates the raw codeword instead of the bit-depth-normalised
+# sample the CPU uses could never be caught. This one was (4x / 16x too large).
+test_cuda_float_moment_parity_10bit = executable('test_cuda_float_moment_parity_10bit',
+    ['test.c', 'test_cuda_float_moment_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_BPC=10u']
+)
+test('test_cuda_float_moment_parity_10bit', test_cuda_float_moment_parity_10bit,
+    suite : ['fast', 'gpu'])
+
 test_cuda_ssimulacra2_parity = executable('test_cuda_ssimulacra2_parity',
     ['test.c', 'test_cuda_ssimulacra2_parity.c'],
     include_directories : [libvmaf_inc, test_inc],
@@ -2693,6 +2706,19 @@ test_sycl_float_moment_parity = executable('test_sycl_float_moment_parity',
 test('test_sycl_float_moment_parity', test_sycl_float_moment_parity,
     suite : ['fast', 'gpu', 'sycl'])
 
+# ADR-1212 — the same TU at 10 bpc. Every parity fixture in this tree was 8-bit,
+# so a twin that accumulates the raw codeword instead of the bit-depth-normalised
+# sample the CPU uses could never be caught. This one was (4x / 16x too large).
+test_sycl_float_moment_parity_10bit = executable('test_sycl_float_moment_parity_10bit',
+    ['test.c', 'test_sycl_float_moment_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1', '-DFIXTURE_BPC=10u']
+)
+test('test_sycl_float_moment_parity_10bit', test_sycl_float_moment_parity_10bit,
+    suite : ['fast', 'gpu'])
+
 # ADR-0884 — SYCL kernel coverage round 2.
 # Five additional CPU-vs-SYCL parity gates: adm, ciede, integer_ssim,
 # float_ms_ssim, motion_v2. Round 1 (ADR-0868 / PR #351) added psnr +
@@ -3091,6 +3117,22 @@ test('test_hip_float_psnr_parity', test_hip_float_psnr_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
 
+# ADR-1212 — float_moment CPU vs. HIP parity, at 8 bpc and (via
+# -DFIXTURE_BPC=10u) at 10 bpc. The HIP twin had no cross-backend gate at all,
+# which is how it shipped accumulating the raw high-bit-depth codeword.
+foreach variant : [['', []], ['_10bit', ['-DFIXTURE_BPC=10u']]]
+    hip_moment_exe = executable('test_hip_float_moment_parity' + variant[0],
+        ['test.c', 'test_hip_float_moment_parity.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        dependencies: [pthread_dependency, hip_deps, math_lib],
+        c_args: ['-DHAVE_HIP=1'] + variant[1]
+    )
+    test('test_hip_float_moment_parity' + variant[0], hip_moment_exe,
+        suite : ['fast', 'gpu'],
+        timeout : 60)
+endforeach
+
 # ADR-0883 round-2 — HIP kernel parity gap-fill (5 extractors).
 # Closes the gaps left after PR #351 (psnr_hip + vif_hip) and the
 # pre-existing adm/motion3 tests.  Each test follows the same template:
@@ -3107,6 +3149,21 @@ test_hip_ciede_parity = executable('test_hip_ciede_parity',
     c_args: ['-DHAVE_HIP=1']
 )
 test('test_hip_ciede_parity', test_hip_ciede_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+# ADR-1213 — the same TU at an odd luma width. `ciede_hip` sized its chroma
+# staging with floor(w/2) where picture.c allocates ceil, so at 577 the last
+# chroma column was never uploaded and the kernel read past the staged row.
+# Every ciede parity fixture was even-sized, which is how that survived.
+test_hip_ciede_parity_oddw = executable('test_hip_ciede_parity_oddw',
+    ['test.c', 'test_hip_ciede_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1', '-DFIXTURE_W=577u', '-DFIXTURE_H=325u']
+)
+test('test_hip_ciede_parity_oddw', test_hip_ciede_parity_oddw,
     suite : ['fast', 'gpu'],
     timeout : 60)
 

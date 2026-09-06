@@ -48978,3 +48978,25 @@ Documentation only. One thing worth knowing:
    in item 2 passed its bit-exactness assertion for as long as it did. When
    touching the conversion, change the shipped copies and the test reference
    together, or the test will keep agreeing with itself.
+
+## ADR-1212 / ADR-1213 — bit-depth normalisation in GPU moment twins, HIP chroma geometry
+
+1. **The CPU `float_moment` normalises before it accumulates.** `float_moment.c`
+   calls `picture_copy()`, which divides high-bit-depth samples by 4 / 16 / 256,
+   and only then does `moment.c` sum them. A GPU twin that accumulates the raw
+   codeword must divide its sums by the scaler (first moment) and scaler squared
+   (second moment) on the host — see the `moment_scaler` block in
+   `cuda/integer_moment_cuda.c`, `sycl/integer_moment_sycl.cpp` and
+   `hip/float_moment_hip.c`. Dropping that block reintroduces a 4x–256x error
+   that no 8-bit test can see.
+
+2. **Parity fixtures must include a >8 bpc case.** `FIXTURE_BPC` is
+   `#ifndef`-guarded in the `float_moment` parity TUs and meson registers a
+   `_10bit` variant per backend. When adding a twin for any extractor that
+   consumes samples, register a 10-bit variant too; an 8-bit-only fixture has a
+   scaler of 1 and proves nothing about bit-depth handling.
+
+3. **Chroma geometry comes from `picture.c`, not from `w >> 1`.** Subsampled
+   planes are `(w + ss) >> ss` wide (ceil). Any per-backend staging code that
+   re-derives the size must use that formula; `ciede_hip` is the example of what
+   floor does on odd widths.
