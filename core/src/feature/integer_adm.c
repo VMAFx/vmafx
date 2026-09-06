@@ -2185,6 +2185,44 @@ static int extract_debug_features(const AdmState *s, VmafFeatureCollector *featu
     return err;
 }
 
+/* ADR-1174: the scale-0 CSF factors are packed into `uint16_t i_rfactor[]` as
+ * `factor1 * 2^21` / `factor2 * 2^23`. A CSF configuration whose factors do not
+ * fit that 16-bit budget wrapped silently and corrupted every ADM score, so it
+ * is rejected up front. Kept out of `extract()` so that function stays inside
+ * the readability-function-size threshold (ADR-0141). */
+static int check_csf_scale0_budget(const AdmState *s)
+{
+    static const char *const csf_mode_names[] = {
+        "WATSON97",
+        "BARTEN",
+        "BARTEN_WATSON_BLEND",
+        "BARTEN_WATSON_BLEND_MAE",
+    };
+    const double pow2_21 = 2097152.0;
+    const double pow2_23 = 8388608.0;
+
+    const AdmCsfFactors csf_f0 =
+        adm_csf_factors(0, s->adm_norm_view_dist, s->adm_ref_display_height, s->adm_csf_mode,
+                        s->adm_csf_scale, s->adm_csf_diag_scale);
+    const double budget1 = (double)csf_f0.factor1 * pow2_21;
+    const double budget2 = (double)csf_f0.factor2 * pow2_23;
+
+    if (budget1 < 65536.0 && budget2 < 65536.0) {
+        return 0;
+    }
+
+    const char *mode_name =
+        (s->adm_csf_mode >= 0 &&
+         s->adm_csf_mode < (int)(sizeof(csf_mode_names) / sizeof(csf_mode_names[0]))) ?
+            csf_mode_names[s->adm_csf_mode] :
+            "UNKNOWN";
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "integer_adm: csf_mode %d (%s) scale-0 factor overflows 16-bit fixed-point budget "
+             "(factor1*2^21=%.1f, factor2*2^23=%.1f >= 65536.0)\n",
+             s->adm_csf_mode, mode_name, budget1, budget2);
+    return -EINVAL;
+}
+
 /* `ref_pic` / `dist_pic` are only read here, but the prototype is
  * `VmafFeatureExtractor::extract` (feature_extractor.h), shared with every
  * extractor including the GPU twins that upload from mutable pictures.
@@ -2208,28 +2246,9 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
         return -EINVAL;
     }
 
-    const AdmCsfFactors csf_f0 =
-        adm_csf_factors(0, s->adm_norm_view_dist, s->adm_ref_display_height, s->adm_csf_mode,
-                        s->adm_csf_scale, s->adm_csf_diag_scale);
-    const double pow2_21 = 2097152.0;
-    const double pow2_23 = 8388608.0;
-    if ((double)csf_f0.factor1 * pow2_21 >= 65536.0 ||
-        (double)csf_f0.factor2 * pow2_23 >= 65536.0) {
-        static const char *const csf_mode_names[] = {
-            "WATSON97",
-            "BARTEN",
-            "BARTEN_WATSON_BLEND",
-            "BARTEN_WATSON_BLEND_MAE",
-        };
-        const char *mode_name = (s->adm_csf_mode >= 0 && s->adm_csf_mode < 4) ?
-                                    csf_mode_names[s->adm_csf_mode] :
-                                    "UNKNOWN";
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "integer_adm: csf_mode %d (%s) scale-0 factor overflows 16-bit fixed-point budget "
-                 "(factor1*2^21=%.1f, factor2*2^23=%.1f >= 65536.0)\n",
-                 s->adm_csf_mode, mode_name, (double)csf_f0.factor1 * pow2_21,
-                 (double)csf_f0.factor2 * pow2_23);
-        return -EINVAL;
+    err = check_csf_scale0_budget(s);
+    if (err) {
+        return err;
     }
 
     AdmResult r;
