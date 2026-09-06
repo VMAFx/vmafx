@@ -103,6 +103,39 @@ covariance matrices (more accurate but more expensive than `speed_qa`'s
 simpler local-variance estimator). `speed_qa` is a lightweight alternative
 that does not require float compilation.
 
+## CPU SIMD dispatch (speed_chroma / speed_temporal)
+
+Two parts of the CPU SpEED path pick a vector kernel at runtime from the
+instruction sets the host actually reports:
+
+| Kernel | Scalar | AVX2 | AVX-512 |
+| --- | --- | --- | --- |
+| Block covariance sum | yes | yes | yes |
+| Dense matrix product (QR factorisation and the `QᵀB` solve) | yes | yes | yes |
+
+Nothing has to be enabled: the widest supported kernel is chosen when the
+extractor initialises. `--cpumask` restricts the choice, because its bits name
+the instruction sets to *disable* — `--cpumask 16` forbids AVX-512 and falls
+back to AVX2, `--cpumask 24` forbids AVX2 as well and falls back to scalar.
+
+**The scores do not depend on which kernel runs.** The vectorised axis of the
+matrix product is an output index rather than an accumulation axis, so widening
+it cannot reorder any element's arithmetic, and the two translation units are
+compiled with floating-point contraction disabled so no multiply/add pair
+collapses into a differently-rounded FMA. `vmaf --precision=max` output is
+byte-identical across all three settings; `core/test/test_speed_simd`
+enforces that with exact binary comparison against the scalar reference. Use
+`--cpumask` when you want to compare timings, not to chase a score difference
+— there is not one to find.
+
+Picking the widest kernel is worth roughly 1.2x on the whole default-model
+run (`vmaf_v1.0.16_3d0h`) on an AVX-512 host; see
+[ADR-1196](../adr/1196-speed-matmul-simd-dispatch.md) and
+[research digest 2030](../research/2030-speed-matmul-and-cambi-cpu-hot-path.md)
+for the profile and the measurement method. Models that do not carry a SpEED
+feature — `vmaf_v0.6.1.json`, for instance — never reach these kernels and are
+unaffected either way.
+
 ## GPU backend parity (speed_chroma / speed_temporal)
 
 `speed_chroma` and `speed_temporal` carry CUDA, HIP, and SYCL implementations
@@ -136,7 +169,7 @@ both full-reference SpEED extractors, ported from Netflix upstream per the
 Research-0732 audit (PR #22):
 
 | Class | Module | Feature flag |
-|---|---|---|
+| --- | --- | --- |
 | `SpeedChromaFeatureExtractor` | `vmaf.core.feature_extractor` | `speed_chroma` |
 | `SpeedTemporalFeatureExtractor` | `vmaf.core.feature_extractor` | `speed_temporal` |
 | `SpeedChromaQualityRunner` | `vmaf.core.quality_runner` | via `speed_chroma_uv` |

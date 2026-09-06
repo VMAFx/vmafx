@@ -938,6 +938,21 @@ if is_asm_enabled
       )
       platform_specific_cpu_objects += x86_float_adm_avx2_lib.extract_all_objects(recursive: true)
 
+      # SpEED dense matrix product AVX2 twin — own `-ffp-contract=off`
+      # carve-out for the same reason as x86_ssim_avx2 above. The kernel is
+      # required to be bit-identical to speed_matmul_scalar() in speed.c,
+      # which compiles without -mfma and therefore emits a separate
+      # multiply and add per accumulation step. Under -mfma the compiler
+      # would fuse the intrinsic pair into VFMADD213PS, round once instead
+      # of twice, and break the memcmp gate in test_speed_simd.
+      x86_speed_matmul_avx2_lib = static_library(
+          'x86_speed_matmul_avx2',
+          feature_src_dir + 'x86/speed_matmul_avx2.c',
+          include_directories : vmaf_base_include,
+          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + _x86_simd_strict_fp_extra + vmaf_cflags_common,
+      )
+      platform_specific_cpu_objects += x86_speed_matmul_avx2_lib.extract_all_objects(recursive: true)
+
       if is_avx512_enabled and is_avx512_supported
         x86_avx512_sources = [
             feature_src_dir + 'x86/motion_avx512.c',
@@ -999,6 +1014,18 @@ if is_asm_enabled
                      _x86_simd_strict_fp_extra + vmaf_cflags_common,
         )
         platform_specific_cpu_objects += x86_float_adm_avx512_lib.extract_all_objects(recursive: true)
+
+        # SpEED dense matrix product AVX-512 twin — same
+        # `-ffp-contract=off` carve-out as the AVX2 sibling above.
+        x86_speed_matmul_avx512_lib = static_library(
+            'x86_speed_matmul_avx512',
+            feature_src_dir + 'x86/speed_matmul_avx512.c',
+            include_directories : vmaf_base_include,
+            c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
+                      '-mavx512vbmi', '-mavx512vl', '-ffp-contract=off'] +
+                     _x86_simd_strict_fp_extra + vmaf_cflags_common,
+        )
+        platform_specific_cpu_objects += x86_speed_matmul_avx512_lib.extract_all_objects(recursive: true)
       endif
 
     endif
