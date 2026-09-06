@@ -8446,6 +8446,17 @@ Docs: `docs/usage/vmaf-tune-recommend.md`,
   caller always gets a result.
 
 
+- The release pipeline can now cut `v1.0.0-rc.N` release candidates before the final
+  `v1.0.0`. Six separate guards previously refused or mishandled a prerelease — the version
+  verifier's tag regex and its release-marker extractor, two checks in `supply-chain.yml`,
+  and one each in the production and operator-node image workflows. Each blanket rejection
+  is replaced by a **consistency** check: an `-rc.N` tag must be published as a prerelease
+  and a final tag must not, because the mismatched states are the dangerous ones. A release
+  candidate can never take the `latest` image tag. The accepted suffix is deliberately
+  narrow — `rc` only, dotted integer, no leading zero. See
+  [ADR-1201](docs/adr/1201-release-candidates-before-1-0-0.md).
+
+
 - `scripts/test/repro-cuda-ffmpeg-nondeterminism.sh` reproduces
   `T-CUDA-FFMPEG-FILTER-NONDETERMINISM-2026-09-06` — the FFmpeg `libvmaf_cuda` filter
   intermittently returning a wrong pooled VMAF — and reports which frames and metrics

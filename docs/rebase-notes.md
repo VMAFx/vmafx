@@ -49142,3 +49142,24 @@ Fork-only CI. One invariant:
    identities are the App (preferred) and `RELEASE_BOT_TOKEN`; both are masked
    through the single `Resolve the release-bot token` step so no downstream step
    has to know which is active.
+## feat/release-candidates — rc.N prereleases before 1.0.0 (2026-09-06)
+
+Fork-only release tooling and CI. Three invariants:
+
+1. **The prerelease pattern is narrow on purpose.**
+   `^v<major>.<minor>.<patch>(-rc\.<n>)?$` — `rc` only, dotted integer, no
+   leading zero. Widening it to full SemVer accepts `-beta`, `-rc` bare,
+   `-rc.01` and `-alpha.1+build`, none of which this project ships; each is a
+   way to mis-tag a release. See [ADR-1201](adr/1201-release-candidates-before-1-0-0.md).
+
+2. **Publishing workflows check tag/flag CONSISTENCY, not absence.** Three
+   workflows used to `exit 1` on `prerelease == true`. They now require an
+   `-rc.N` tag to be marked prerelease and a final tag not to be. Restoring the
+   blanket rejection blocks the whole RC line; dropping the check entirely
+   allows an RC published as stable, which takes the `latest` image tag.
+
+3. **The ADR-1151 contract gate must test the prerelease suffix BEFORE its
+   `sort -V` comparison.** `printf '1.0.0\n1.0.0-rc.1\n' | sort -V | head -1`
+   returns `1.0.0`, so a naive comparison concludes the RC line has already
+   reached 1.0.0 and fails every RC build while `release-as` is legitimately
+   still present. The `*-*` early return is load-bearing, not cosmetic.
