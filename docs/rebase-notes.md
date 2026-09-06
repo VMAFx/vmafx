@@ -50415,3 +50415,15 @@ fork-local (ADR-0746). Conflict risk is against other fork branches touching
 3. **Staged rows are tightly packed**, so the element stride passed to the
    kernel is the plane width, NOT `pic->stride[i]`. Reusing the picture's
    stride against a staged buffer reads past the end of each row.
+## ADR-1215 — per-plane CUDA kernels must take the plane index
+
+1. **`psnr_cuda_dispatch` passes `plane` for both bit depths; both kernels must
+   declare it.** `cuLaunchKernel` ignores a surplus trailing argument, so a
+   kernel that omits the parameter compiles, launches and silently reads
+   `data[0]`. When adding or syncing a per-plane CUDA kernel, check the kernel
+   signature against the `kernelParams` array by count, not by whether it runs.
+
+2. **A flat-chroma fixture cannot see a wrong-plane chroma read.** Both sides
+   report the `psnr_max` sentinel for identical chroma. The 10-bit variant of
+   `test_cuda_psnr_parity` therefore carries non-flat, ref/dist-different
+   chroma; keep it that way.
