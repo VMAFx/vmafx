@@ -69,8 +69,12 @@
 /* SpEED needs >= 4× downscale room plus 5×5 blocks; 768x432 gives
  * 192×108 after 2× prescale → 48×27 operating resolution → 9×5 blocks.
  * Matches test_cuda_speed_chroma_parity.c for cross-backend comparability. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 768u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 432u
+#endif
 #define FIXTURE_BPC 8u
 #define NUM_FRAMES 2u
 

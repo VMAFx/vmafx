@@ -57,8 +57,12 @@
 
 /* 320×240 clears CAMBI_MIN_WIDTH_HEIGHT (216) on both dims for cambi.c
  * and CAMBI_HIP_MIN_WIDTH_HEIGHT (216) for integer_cambi_hip.c. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 320u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 240u
+#endif
 #define FIXTURE_BPC 8u
 
 /* Filtered feature with multi-scale pooling — places=3 per ADR-0214. */

@@ -47,8 +47,12 @@
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
 
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 144u
+#endif
 #define FIXTURE_BPC 8u
 /* ADR-0568: mirror2_i boundary fix brings integer_vif_hip to places=6 on real
  * content (max |HIP−CPU| ≈ 1e-6 on the Netflix src01 576×324 pair, all 48
