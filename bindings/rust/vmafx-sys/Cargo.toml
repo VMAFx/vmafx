@@ -28,7 +28,7 @@ build = "build.rs"
 doctest = false
 
 [build-dependencies]
-bindgen = "0.72.1"
+bindgen = "0.73.1"
 
 [dev-dependencies]
 
