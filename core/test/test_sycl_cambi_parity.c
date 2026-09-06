@@ -64,8 +64,12 @@
 
 /* CAMBI minimum: 216×216.  Use 256×256 so both dimensions clear the
  * threshold and the cost stays small for CI. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 256u
+#endif
 #define FIXTURE_BPC 8u
 /* places=4 — ADR-0214 default for integer kernels. */
 #define PARITY_TOL 1e-4

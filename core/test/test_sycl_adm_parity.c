@@ -54,8 +54,12 @@
 /* Fixture geometry — large enough to clear ADM's 5-tap filter and
  * 4-scale dyadic pyramid (min 32x32 after scale-3 decimation), small
  * enough for fast CI. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 144u
+#endif
 #define FIXTURE_BPC 8u
 #define PARITY_TOL 1e-4
 
