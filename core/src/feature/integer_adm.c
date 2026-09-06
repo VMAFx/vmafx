@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include "adm_angle_flag.h"
 #include "adm_csf_fixed_point.h"
 #include "barten_csf_tools.h"
 #include "compat_builtin.h"
@@ -499,9 +500,11 @@ static void dwt2_src_indices_filt(int *const *src_ind_y, int *const *src_ind_x, 
 static inline int adm_angle_flag(int64_t ot_dp, int64_t o_mag_sq, int64_t t_mag_sq,
                                  float cos_1deg_sq)
 {
-    return (((float)ot_dp / 4096.0) >= 0.0f) &&
-           (((float)ot_dp / 4096.0) * ((float)ot_dp / 4096.0) >=
-            cos_1deg_sq * ((float)o_mag_sq / 4096.0) * ((float)t_mag_sq / 4096.0));
+    /* The expression itself lives in adm_angle_flag.h so that the CUDA, HIP,
+     * SYCL and Metal twins evaluate the same predicate instead of four
+     * near-misses (ADR-1194). This wrapper is kept so the call sites below
+     * read unchanged. */
+    return adm_angle_flag_fp64(ot_dp, o_mag_sq, t_mag_sq, cos_1deg_sq);
 }
 
 /**

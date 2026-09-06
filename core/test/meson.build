@@ -74,6 +74,20 @@ test_hip_wavefront_reduce = executable('test_hip_wavefront_reduce',
 )
 test('test_hip_wavefront_reduce', test_hip_wavefront_reduce, suite : ['fast'])
 
+# T-UPSTREAM-930 / ADR-1194 — integer-ADM angle_flag predicate parity.
+# Pins the two evaluations in core/src/feature/adm_angle_flag.h against each
+# other and against the golden-frozen CPU expression, on the band quadruples
+# where the four legacy per-backend spellings disagreed. Host-only: exercises
+# the header the CUDA / HIP / SYCL / Metal kernels now include, so no GPU or
+# device runtime is needed.
+test_adm_angle_flag = executable('test_adm_angle_flag',
+    ['test.c', 'test_adm_angle_flag.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_adm_angle_flag', test_adm_angle_flag, suite : ['fast'])
+
 test_context = executable('test_context',
     ['test.c', 'test_context.c'],
     include_directories : [libvmaf_inc, test_inc],

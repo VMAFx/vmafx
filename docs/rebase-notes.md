@@ -48783,6 +48783,60 @@ invariants held:
    blocks were changed by inspection only — no Apple GPU is available on the
    fork's dev hardware. Treat the Metal hunks as unverified against silicon
    when reconciling them.
+## fix/t-upstream-930-adm-angle-flag — one `angle_flag` predicate for every backend (2026-09-06)
+
+Branch: `fix/t-upstream-930-adm-angle-flag-predicate-`.
+ADR: [ADR-1194](adr/1194-adm-angle-flag-single-source.md).
+Digest: [`docs/research/2030-adm-angle-flag-fp64-free.md`](research/2030-adm-angle-flag-fp64-free.md).
+
+### `core/src/feature/adm_angle_flag.h` (new) — the frozen predicate, once
+
+Upstream spells the 1-degree `angle_flag` test inline in every ADM
+implementation, and the spellings had drifted apart (T-UPSTREAM-930). The
+expression now lives in one fork-added header with two entry points:
+
+- `adm_angle_flag_fp64()` holds the upstream expression **verbatim**. It is
+  golden-frozen (CLAUDE.md rule 1): if an upstream rebase changes the
+  expression, change it here and nowhere else. Do not "simplify" the
+  `(float)x / 4096.0` narrowing away — the lossy narrowing *is* the contract.
+- `adm_angle_flag_i64()` is fork-local: a bit-identical evaluation in 64-bit
+  integers for backends that cannot execute binary64. It hard-codes the
+  significand of `cos(1deg)^2` as `ADM_ANGLE_FLAG_MC` / `ADM_ANGLE_FLAG_D`; if
+  the constant ever moves, both must move with it, and
+  `core/test/test_adm_angle_flag.c` fails loudly if they do not.
+
+`core/src/feature/integer_adm.c` keeps its `adm_angle_flag()` wrapper so the
+two call sites read as before; the wrapper is a one-line forward. A rebase
+conflict inside that wrapper should be resolved toward the header, not by
+re-inlining the expression.
+
+### `core/src/feature/cuda/integer_adm/adm_decouple_inline.cuh`, `hip/integer_adm/adm_decouple_inline.hip`
+
+Both `decouple_angle_flag_s0` and `decouple_angle_flag_s123` now forward to
+`adm_angle_flag_fp64()`. Upstream's `s0` compares the exact int64 products —
+that is a *more accurate* angle test than the CPU's, and therefore the wrong
+one. If an upstream cherry-pick reintroduces the exact-product form, keep the
+fork's forwarding call; `test_adm_angle_flag` documents which quadruples the
+two forms disagree on. The `.hip` file remains a byte-for-byte port of the
+`.cuh` for this helper: edit both.
+
+### `core/src/feature/sycl/integer_adm_sycl.cpp`
+
+Both angle-flag sites call `adm_angle_flag_i64()`. The `#pragma clang fp
+contract(off)` blocks that used to guard the float form are gone with it —
+there is no floating-point arithmetic left to contract. **The fp64-free
+property of this translation unit is load-bearing**: one binary64 instruction
+anywhere in it makes the SYCL runtime reject the whole SPIR-V module on
+non-fp64 devices (Arc A-series, most iGPUs), so never resolve a conflict here
+toward `adm_angle_flag_fp64()`.
+
+### `core/src/feature/metal/integer_adm.metal`
+
+`iadm_angle_flag()` is a hand-written MSL mirror of `adm_angle_flag_i64()`
+(MSL cannot `#include` the C header, and has no `double` type). The C header
+is the source of truth — any edit to `adm_angle_flag_i64()` must be copied
+across in the same commit. `IADM_COS_1DEG_SQ` is gone; the MSL side now needs
+only `IADM_AF_D`.
 
 ### `docs/ai/retrain-runbook-1246.md`
 
