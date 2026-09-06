@@ -487,6 +487,16 @@ Expected `scores.xml` head:
 </VMAF>
 ```
 
+Since [ADR-1181](../adr/1181-percentile-pooling-methods.md) every `<metric>` row
+(and the matching JSON object) also carries the percentile pooling methods —
+`median`, `perc5`, `perc10` and `perc20` — next to `min` / `max` / `mean` /
+`harmonic_mean`. Every registered pooling method is emitted for every metric;
+there is no flag to select a subset. Readers that iterate the attributes of a
+`<metric>` element must therefore tolerate new attribute names appearing, and
+readers that look one up by name are unaffected. For this pair the VMAF row
+reads `median="76.091664"`, `perc5="72.351853"`, `perc10="72.717340"`,
+`perc20="73.357468"`.
+
 Pooled-mean VMAF for this pair is **76.668905…**. This is one of the three Netflix
 CPU goldens preserved verbatim as a required CI gate — see
 [ADR-0024](../adr/0024-netflix-golden-preserved.md) and

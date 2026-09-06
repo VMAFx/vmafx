@@ -3271,18 +3271,74 @@ static int pool_reduce(const PoolAccumulators *a, enum VmafPoolingMethod pool_me
             *score = (a->i_sum > 0.) ? ((double)a->pic_cnt / a->i_sum - 1.0) : 0.;
         }
         return 0;
-    case VMAF_POOL_METHOD_MEDIAN:
-    case VMAF_POOL_METHOD_PERC5:
-    case VMAF_POOL_METHOD_PERC10:
-    case VMAF_POOL_METHOD_PERC20:
-        /* Percentile pooling methods ignore perceptual weights (identical
-         * to MIN/MAX) and require the full sorted score vector, so they are
-         * handled directly in vmaf_feature_score_pooled rather than via
-         * stream accumulators. */
-        return -EINVAL;
     default:
+        /* Everything else — including the ADR-1181 percentile methods
+         * (MEDIAN / PERC5 / PERC10 / PERC20), which ignore perceptual weights
+         * and need the full sorted score vector — is not expressible over the
+         * streaming accumulators. vmaf_feature_score_pooled() routes the
+         * percentile family to pool_percentile() before reaching this point. */
         return -EINVAL;
     }
+}
+
+/* Map an ADR-1181 percentile pooling method to its percentile in [0, 100]. */
+static double pool_method_percentile(enum VmafPoolingMethod pool_method)
+{
+    switch (pool_method) {
+    case VMAF_POOL_METHOD_PERC5:
+        return 5.;
+    case VMAF_POOL_METHOD_PERC10:
+        return 10.;
+    case VMAF_POOL_METHOD_PERC20:
+        return 20.;
+    default:
+        return 50.; /* VMAF_POOL_METHOD_MEDIAN */
+    }
+}
+
+static bool pool_method_is_percentile(enum VmafPoolingMethod pool_method)
+{
+    return (pool_method == VMAF_POOL_METHOD_MEDIAN) || (pool_method == VMAF_POOL_METHOD_PERC5) ||
+           (pool_method == VMAF_POOL_METHOD_PERC10) || (pool_method == VMAF_POOL_METHOD_PERC20);
+}
+
+/* ADR-1181 percentile pooling. Materialises the (subsample-filtered) per-frame
+ * scores in [index_low, index_high], sorts them ascending and interpolates
+ * linearly between the two neighbouring ranks — the same convention NumPy's
+ * `percentile` uses by default, which is what the Python harness compares
+ * against. Kept out of vmaf_feature_score_pooled() so neither function exceeds
+ * the Power-of-10 size budget. */
+static int pool_percentile(VmafContext *vmaf, const char *feature_name,
+                           enum VmafPoolingMethod pool_method, double *score, unsigned index_low,
+                           unsigned index_high)
+{
+    const unsigned capacity = index_high - index_low + 1;
+    double *scores = malloc((size_t)capacity * sizeof(*scores));
+    if (!scores)
+        return -ENOMEM;
+
+    unsigned pic_cnt = 0;
+    for (unsigned i = index_low; i <= index_high; i++) {
+        if ((vmaf->cfg.n_subsample > 1) && (i % vmaf->cfg.n_subsample))
+            continue;
+        double s = 0.;
+        const int err = vmaf_feature_score_at_index(vmaf, feature_name, &s, i);
+        if (err) {
+            free(scores);
+            return err;
+        }
+        scores[pic_cnt++] = s;
+    }
+
+    if (pic_cnt == 0) {
+        free(scores);
+        return -EINVAL;
+    }
+
+    qsort(scores, pic_cnt, sizeof(*scores), score_compare);
+    *score = percentile(scores, pic_cnt, pool_method_percentile(pool_method));
+    free(scores);
+    return 0;
 }
 
 int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
@@ -3300,44 +3356,8 @@ int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
     if (!pool_method)
         return -EINVAL;
 
-    if (pool_method == VMAF_POOL_METHOD_MEDIAN || pool_method == VMAF_POOL_METHOD_PERC5 ||
-        pool_method == VMAF_POOL_METHOD_PERC10 || pool_method == VMAF_POOL_METHOD_PERC20) {
-        const unsigned capacity = (index_high - index_low + 1);
-        double *scores = (double *)malloc(capacity * sizeof(double));
-        if (!scores)
-            return -ENOMEM;
-
-        unsigned pic_cnt = 0;
-        for (unsigned i = index_low; i <= index_high; i++) {
-            if ((vmaf->cfg.n_subsample > 1) && (i % vmaf->cfg.n_subsample))
-                continue;
-            double s;
-            int err = vmaf_feature_score_at_index(vmaf, feature_name, &s, i);
-            if (err) {
-                free(scores);
-                return err;
-            }
-            scores[pic_cnt++] = s;
-        }
-
-        if (pic_cnt == 0) {
-            free(scores);
-            return -EINVAL;
-        }
-
-        qsort(scores, pic_cnt, sizeof(double), score_compare);
-
-        double perc = 50.0;
-        if (pool_method == VMAF_POOL_METHOD_PERC5)
-            perc = 5.0;
-        else if (pool_method == VMAF_POOL_METHOD_PERC10)
-            perc = 10.0;
-        else if (pool_method == VMAF_POOL_METHOD_PERC20)
-            perc = 20.0;
-
-        *score = percentile(scores, pic_cnt, perc);
-        free(scores);
-        return 0;
+    if (pool_method_is_percentile(pool_method)) {
+        return pool_percentile(vmaf, feature_name, pool_method, score, index_low, index_high);
     }
 
     /* GOLDEN-GATE ISOLATION (ADR-1118): perceptual weighting only diverges from
