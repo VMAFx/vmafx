@@ -3,8 +3,8 @@
   "lane": "cpu",
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
-  "tus": 285,
-  "total_warnings": 2951,
+  "tus": 286,
+  "total_warnings": 2950,
   "total_nolint_uncited": 58,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
@@ -62,7 +62,6 @@
     "core/src/feature/offset.c": 1,
     "core/src/feature/perceptual_weight.c": 5,
     "core/src/feature/picture_copy.cpp": 1,
-    "core/src/feature/psnr.c": 1,
     "core/src/feature/psnr_tools.cpp": 24,
     "core/src/feature/pu21.c": 4,
     "core/src/feature/pu21_ssim.c": 15,
