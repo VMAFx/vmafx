@@ -110,7 +110,18 @@ static const VmafOption options[] = {
         .help = "enable calculation for chroma channels",
         .offset = offsetof(PsnrHvsStateCuda, enable_chroma),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
+        /* Mirrors the CPU twin's default (third_party/xiph/psnr_hvs.c), which
+         * documents `true` as the upstream-equivalent setting: Netflix computes
+         * the YCbCr-weighted 0.8*Y + 0.1*(Cb + Cr) score unconditionally, and
+         * `enable_chroma` is a fork-added opt-OUT for callers that want Y-only
+         * for speed. This defaulted to `false`, so `psnr_hvs_cuda` silently
+         * returned the luma-only score under the same feature name, omitted
+         * `psnr_hvs_cb` / `psnr_hvs_cr` entirely, and disagreed with the CPU
+         * twin by ~4% on identical input -- which is what
+         * test_cuda_psnr_hvs_parity has been failing on. The SYCL twin already
+         * defaults to `true` and the HIP twin computes chroma unconditionally,
+         * so CUDA was the sole outlier. See ADR-1203. */
+        .default_val.b = true,
     },
     {0},
 };

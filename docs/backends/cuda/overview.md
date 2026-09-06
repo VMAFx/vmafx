@@ -553,3 +553,25 @@ SYCL 67.150065. The Netflix 576x324 pair is unchanged.
 Note that the GPU parity tests in `meson test --suite=fast` all run below the
 256-system threshold, so they cannot catch this class of defect. Check 4K
 agreement against the CPU backend by hand when changing these kernels.
+
+## `psnr_hvs_cuda` computes chroma by default (ADR-1203, 2026-09-06)
+
+`psnr_hvs` is the YCbCr-weighted score `0.8*Y + 0.1*(Cb + Cr)`. The fork's
+`enable_chroma` option is an opt-*out* for callers who want the cheaper
+luma-only value, and every backend defaults it to on — the CPU and SYCL twins
+default it to `true`, and the HIP twin computes chroma unconditionally.
+
+Before this fix the CUDA twin alone defaulted it to `false`. `--feature
+psnr_hvs_cuda` therefore returned the luma-only number under the `psnr_hvs`
+name and emitted no `psnr_hvs_cb` / `psnr_hvs_cr` at all, despite both being
+listed in its `provided_features[]` and in
+[the feature table](../../metrics/features.md). On a 960x540 pair that put CUDA
+about 4% away from CPU — 41.4866616015 against 41.7803055708 — which is what
+`test_cuda_psnr_hvs_parity` had been failing on.
+
+Two consequences for callers:
+
+- `psnr_hvs_cuda` scores change. If you were relying on the old default you
+  were getting luma-only; pass `psnr_hvs_cuda=enable_chroma=false` to keep it.
+- The extractor now dispatches three planes instead of one, so it costs more
+  GPU time than before.
