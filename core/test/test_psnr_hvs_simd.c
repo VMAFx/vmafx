@@ -68,7 +68,7 @@ typedef int32_t od_coeff_ref;
 #define OD_UNBIASED_RSHIFT32_REF(a, b) (((int32_t)(((uint32_t)(a) >> (32 - (b))) + (a))) >> (b))
 #define OD_DCT_RSHIFT_REF(a, b) OD_UNBIASED_RSHIFT32_REF(a, b)
 
-// NOLINTNEXTLINE(readability-function-size) load-bearing upstream scalar copy.
+// NOLINTNEXTLINE(readability-function-size) — load-bearing upstream scalar copy (ADR-0138 / ADR-0141 / ADR-0278).
 static void ref_od_bin_fdct8_hvs(od_coeff_ref y[8], const od_coeff_ref *x, int xstride)
 {
     const ptrdiff_t xs = (ptrdiff_t)xstride;
@@ -229,7 +229,7 @@ static double ref_calc_psnrhvs(const unsigned char *src, int systride, const uns
             /* ADR-0138 key expression: (double) cast before multiply → double sqrt. */
             // NOLINTNEXTLINE(performance-type-promotion-in-math-fn)
             s_mask = (float)(sqrt((double)s_mask * s_gvar) / 32.0);
-            // NOLINTNEXTLINE(performance-type-promotion-in-math-fn)
+            // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) — ADR-0138
             d_mask = (float)(sqrt((double)d_mask * d_gvar) / 32.0);
             if (d_mask > s_mask)
                 s_mask = d_mask;

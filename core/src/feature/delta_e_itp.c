@@ -205,7 +205,7 @@ static int read_yuv_sample(const VmafPicture *pic, unsigned i, unsigned j, doubl
     case 10:
     case 12:
     case 16:
-        // NOLINTBEGIN(bugprone-integer-division): `stride / 2` is the byte->element
+        // NOLINTBEGIN(bugprone-integer-division) — ADR-0141 / ADR-0278: `stride / 2` is the byte->element
         // step for the uint16_t plane index, not a value flowing into the double
         // `yuv[*]` destinations. The index arithmetic itself is exact integer math
         // (mirrors the ciede.c HBD read pattern).

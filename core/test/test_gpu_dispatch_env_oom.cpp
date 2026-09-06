@@ -114,7 +114,7 @@ static mu_message_t test_env_oom_does_not_poison_slot(void)
 #else
     const char *const var = "VMAFX_TEST_DISPATCH_OOM_R2_9";
     const char *const want = "vif:graph,adm:direct";
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup (ADR-0141 / ADR-0278). */
     (void)setenv(var, want, 1);
 
     /* Arm the allocation-failure toggle, then attempt the first snapshot.

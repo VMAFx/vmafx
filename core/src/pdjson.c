@@ -2,7 +2,7 @@
 /* Copyright: pdjson authors (https://github.com/skeeto/pdjson), Unlicense */
 /* Fork integration: Copyright 2026 Lusoris */
 /* SPDX-License-Identifier: Unlicense */
-// NOLINTBEGIN
+// NOLINTBEGIN — ADR-0141 / ADR-0278: vendored 3rd-party pdjson parser
 
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200112L

@@ -59,7 +59,7 @@ struct FormatEntry {
     PsnrParams params;
 };
 
-// NOLINTNEXTLINE(cert-err58-cpp) — constexpr aggregate; no dynamic init
+// NOLINTNEXTLINE(cert-err58-cpp) — constexpr aggregate; no dynamic init (ADR-0141 / ADR-0278)
 constexpr std::array<FormatEntry, 12> kFormatTable{{
     {"yuv420p", {255.0, 60.0}},
     {"yuv422p", {255.0, 60.0}},

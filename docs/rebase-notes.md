@@ -48978,3 +48978,49 @@ Documentation only. One thing worth knowing:
    in item 2 passed its bit-exactness assertion for as long as it did. When
    touching the conversion, change the shipped copies and the test reference
    together, or the test will keep agreeing with itself.
+
+## refactor/nolint-citations-cpu-lane — CPU-lane NOLINT citation sweep (2026-09-05)
+
+### Upstream-mirror files carrying inline NOLINT citations — ADR-0141 §2 / ADR-0278
+
+The CPU-lane NOLINT-citation sweep (epic #1237) touched the following
+upstream-mirror or vendored files. Every hunk is **comment-only** — the
+appended `ADR-NNNN` reference lives inside the existing `// NOLINT…` /
+`/* … */` comment, so a `git am` of an upstream commit conflicts only when
+upstream itself rewrites the same comment line:
+
+- `core/src/feature/integer_ssim.c` — two `NOLINTBEGIN(clang-analyzer-security.ArrayBound)`
+  brackets around the upstream kernel-offset clamps.
+- `core/src/feature/iqa/ssim_tools.c` — `readability-non-const-parameter` on the
+  `pthread_once` guard.
+- `core/src/feature/offset.c` — `misc-use-internal-linkage` on `offset_image_s`.
+- `core/src/feature/third_party/xiph/psnr_hvs.c` — the Xiph `NOLINTBEGIN` block
+  gained one preceding citation line; the `NOLINTBEGIN(...)` list itself is
+  byte-for-byte unchanged.
+- `core/src/feature/x86/vif_avx2.c`, `core/src/feature/x86/vif_avx512.c` — the
+  `clang-analyzer-deadcode.DeadStores` comments on the upstream-verbatim
+  accumulator zero-init chains.
+- `core/src/libvmaf.c` — the glibc `__libc_single_threaded` weak-symbol comment.
+- `core/src/picture.c`, `core/src/read_json_model.c`, `core/src/output.cpp`,
+  `core/src/mem.cpp`, `core/src/pdjson.c` (vendored, Unlicense) — trailing
+  comment text only.
+- `core/tools/yuv_input.c` — trailing comment text only.
+
+Two files changed **code layout** rather than only comment text, because the
+lengthened trailing comment would otherwise push clang-format past the
+100-column budget: `core/src/dnn/model_loader.c` (`buf[sz] = '\0';` reverts to
+one line with a preceding `NOLINTNEXTLINE`) and `core/src/ref.cpp` /
+`core/src/opt.cpp` (same conversion). All three are fork-local files, so no
+upstream rebase is affected.
+
+Four fork-local SIMD kernels — `core/src/feature/x86/psnr_hvs_avx2.c`,
+`core/src/feature/x86/ssimulacra2_host_avx2.c` and their
+`core/src/feature/arm64/` twins — keep the `NOLINTNEXTLINE(...)` directive on a
+single line with a short `— ADR-0141` suffix, with the full citation in the
+block comment above it. Do not "tidy" that by wrapping the justification onto a
+second `//` line: the directive then applies to the comment instead of the
+function, `readability-function-size` comes back, and the ratchet's citation
+scan still reports the marker as cited, so nothing but a clang-tidy run against
+the merge base catches it.
+
+No upstream identifier, kernel body, or numeric expression was modified.

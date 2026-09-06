@@ -157,7 +157,7 @@ static unsigned count_written_at(VmafFeatureCollector *fc, unsigned i)
 
 /* Writers rely on a final ferror() check to detect I/O failure rather than
  * propagating per-call errors — there is no recoverable action mid-stream. */
-// NOLINTBEGIN(cert-err33-c)
+// NOLINTBEGIN(cert-err33-c) — ADR-0141 / ADR-0278: writer ferror pattern
 static void xml_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample,
                              std::string_view sf)
 {

@@ -359,12 +359,12 @@ static char *test_decimate_odd_dimension(void)
 static float kernel_gauss11[11] = {0.001028f, 0.007599f, 0.036001f, 0.109361f, 0.213006f, 0.266012f,
                                    0.213006f, 0.109361f, 0.036001f, 0.007599f, 0.001028f};
 
-/* NOLINTBEGIN(clang-analyzer-unix.Malloc)
+/* NOLINTBEGIN(clang-analyzer-unix.Malloc) — ADR-0138 / ADR-0141 / ADR-0278
  * The malloc-failure mu_assert path returns the error string without
  * freeing the partial allocation. The analyzer can't see that
  * mu_assert-on-fail terminates the test process via the runner's
  * top-level return — the leak is bounded to that exit path. Same
- * pattern as test_iqa_convolve.c (file-level NOLINT for the same
+ * pattern as test_iqa_convolve.c (file-level suppression for the same
  * reason). */
 static char *test_iqa_ssim_identical_frames(void)
 {

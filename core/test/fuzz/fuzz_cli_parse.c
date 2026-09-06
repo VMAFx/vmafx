@@ -71,9 +71,9 @@ extern int optind;
  * override symbol (see compiler-rt/lib/asan/asan_flags.cpp). The
  * `__` prefix is mandated by that ABI; the
  * `bugprone-reserved-identifier` warning is load-bearing-wrong. */
-/* NOLINTNEXTLINE(misc-use-internal-linkage,bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ASan weak-symbol ABI */
+/* NOLINTNEXTLINE(misc-use-internal-linkage,bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ASan weak-symbol ABI (ADR-0141 / ADR-0278) */
 const char *__asan_default_options(void);
-/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ASan weak-symbol ABI */
+/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ASan weak-symbol ABI (ADR-0141 / ADR-0278) */
 const char *__asan_default_options(void)
 {
     return "detect_leaks=0:allocator_may_return_null=1";
@@ -98,9 +98,9 @@ static int g_exit_jmp_armed;
  * `__wrap_exit`, and exposes the original symbol as
  * `__real_exit`. The `__` prefix is mandated by that ABI; the
  * `bugprone-reserved-identifier` warning is load-bearing-wrong. */
-/* NOLINTNEXTLINE(misc-use-internal-linkage,bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — linker --wrap=exit ABI */
+/* NOLINTNEXTLINE(misc-use-internal-linkage,bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — linker --wrap=exit ABI (ADR-0141 / ADR-0278) */
 _Noreturn void __wrap_exit(int code);
-/* NOLINTNEXTLINE(misc-use-internal-linkage,bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — linker --wrap=exit ABI */
+/* NOLINTNEXTLINE(misc-use-internal-linkage,bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — linker --wrap=exit ABI (ADR-0141 / ADR-0278) */
 void __wrap_exit(int code)
 {
     if (g_exit_jmp_armed) {
@@ -112,7 +112,7 @@ void __wrap_exit(int code)
     /* If we somehow get here without an arm (e.g. a static-init
      * exit before LLVMFuzzerTestOneInput runs), call the real
      * exit so the process actually terminates. */
-    /* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — linker --wrap=exit ABI */
+    /* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — linker --wrap=exit ABI (ADR-0141 / ADR-0278) */
     extern _Noreturn void __real_exit(int);
     __real_exit(code);
 }
@@ -161,11 +161,6 @@ static unsigned tokenise_argv(uint8_t *buf, size_t size, char **argv, unsigned a
     return argc;
 }
 
-/* libFuzzer's contract requires `LLVMFuzzerTestOneInput` to have
- * external linkage; the runtime resolves it by name at link time
- * (`-fsanitize=fuzzer`). Cannot be static — the
- * `misc-use-internal-linkage` warning is load-bearing-wrong. */
-/* NOLINTNEXTLINE(misc-use-internal-linkage) — libFuzzer entry-point ABI */
 /* Free the per-feature / per-model `VmafFeatureDictionary`
  * allocations that `cli_free` does not release. Pre-existing
  * cli_parse.c fork-mirror leak; mirroring an audited cleanup
@@ -209,6 +204,11 @@ static void drive_parse(int argc, char **argv)
     cli_free(&settings);
 }
 
+/* `LLVMFuzzerTestOneInput` is the libFuzzer entry point. It MUST have
+ * external linkage; the runtime resolves it by name at link time
+ * (`-fsanitize=fuzzer`). Cannot be static — the
+ * `misc-use-internal-linkage` warning is load-bearing-wrong. */
+/* NOLINTNEXTLINE(misc-use-internal-linkage) — libFuzzer entry-point ABI (ADR-0141 / ADR-0278) */
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     if (size == 0u || size > FUZZ_MAX_INPUT_BYTES)

@@ -37,7 +37,7 @@ static int almost_equal(double a, double b)
  * trivial diff-and-merge — splitting the list into helpers would break
  * the upstream-parity invariant that makes the file rebase-safe.
  * See docs/adr/0141-touched-file-cleanup-rule.md. */
-// NOLINTNEXTLINE(readability-function-size)
+// NOLINTNEXTLINE(readability-function-size) — ADR-0141 §2 upstream-parity invariant; ADR-0278
 static char *test_barten_csf()
 {
     mu_assert("barten rod/cone sensitivity mismatch",

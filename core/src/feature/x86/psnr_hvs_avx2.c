@@ -120,11 +120,15 @@ static inline __m256i od_mulrshift_avx2(__m256i x, int32_t k, int32_t round, int
  * one-to-one; line comments mirror the scalar source so that a
  * reviewer can diff them side-by-side.
  *
- * ADR-0141: the 30-butterfly network must be kept together — splitting
- * it would break the one-to-one scalar diff that the bit-exactness
- * audit depends on. The scalar `od_bin_fdct8` has the same structure.
+ * ADR-0141 §2 / ADR-0159 / ADR-0278: the 30-butterfly network must be kept
+ * together — splitting it would break the one-to-one scalar diff that the
+ * bit-exactness audit depends on. The scalar `od_bin_fdct8` has the same
+ * structure. The full citation lives in this comment, not on the directive
+ * line below: that directive applies to the single line following it, so
+ * wrapping the justification onto a second `//` line would point the
+ * suppression at the comment and let the diagnostic through.
  */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size)
+// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — ADR-0141
 static inline void od_bin_fdct8_simd(__m256i in0, __m256i in1, __m256i in2, __m256i in3,
                                      __m256i in4, __m256i in5, __m256i in6, __m256i in7,
                                      __m256i *out0, __m256i *out1, __m256i *out2, __m256i *out3,

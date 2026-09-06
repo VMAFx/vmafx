@@ -118,7 +118,7 @@ int feature_extractor_vector_init(RegisteredFeatureExtractors *rfe)
     rfe->capacity = kInitialCapacity;
     const size_t sz = sizeof(*(rfe->fex_ctx)) * rfe->capacity;
     rfe->fex_ctx = static_cast<VmafFeatureExtractorContext **>(
-        malloc(sz)); // NOLINT(cppcoreguidelines-no-malloc) — C ABI struct
+        malloc(sz)); // NOLINT(cppcoreguidelines-no-malloc) — C ABI struct (ADR-0141 / ADR-0278)
     if (!rfe->fex_ctx)
         return -ENOMEM;
     memset(static_cast<void *>(rfe->fex_ctx), 0, sz);
@@ -167,8 +167,8 @@ int feature_extractor_vector_append(RegisteredFeatureExtractors *rfe,
             int ret = 1;
             if (feature_a && feature_b)
                 ret = strcmp(feature_a, feature_b);
-            free(feature_a); // NOLINT(cppcoreguidelines-no-malloc) — C ABI string
-            free(feature_b); // NOLINT(cppcoreguidelines-no-malloc) — C ABI string
+            free(feature_a); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0141 C ABI string
+            free(feature_b); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0141 C ABI string
             if (ret == 0)
                 return vmaf_feature_extractor_context_destroy(fex_ctx);
         }
@@ -183,7 +183,7 @@ int feature_extractor_vector_append(RegisteredFeatureExtractors *rfe,
         assert(rfe->capacity <= (SIZE_MAX / 2u) / sizeof(*rfe->fex_ctx));
         const size_t new_capacity = static_cast<size_t>(rfe->capacity) * 2u;
         auto *fex_ctx_new = static_cast<VmafFeatureExtractorContext **>(realloc(
-            static_cast<void *>(rfe->fex_ctx), // NOLINT(cppcoreguidelines-no-malloc) — C ABI grow
+            static_cast<void *>(rfe->fex_ctx), // NOLINT(cppcoreguidelines-no-malloc) — ADR-0141
             sizeof(*(rfe->fex_ctx)) * new_capacity));
         if (!fex_ctx_new)
             return -ENOMEM;
@@ -216,5 +216,5 @@ void feature_extractor_vector_destroy(RegisteredFeatureExtractors *rfe)
         (void)vmaf_feature_extractor_context_close(rfe->fex_ctx[i]);
         (void)vmaf_feature_extractor_context_destroy(rfe->fex_ctx[i]);
     }
-    free(static_cast<void *>(rfe->fex_ctx)); // NOLINT(cppcoreguidelines-no-malloc) — C ABI struct
+    free(static_cast<void *>(rfe->fex_ctx)); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0141
 }
