@@ -25,6 +25,7 @@
 #include "test.h"
 
 #include "cli_parse.h"
+#include "dict.h"
 #include <string.h>
 
 static int cli_free_dicts(CLISettings *settings)
@@ -567,6 +568,187 @@ static char *run_vmafx_tests(void)
     return NULL;
 }
 
+/* ---------------------------------------------------------------------------
+ * T-UPSTREAM-766 / ADR-1190 — `--model` / `--feature` option-string delimiters.
+ *
+ * Before the fix every split used raw strsep(), so a ':' or '=' inside a value
+ * was always a separator: `path=/a/dir=eq/m.json` was silently truncated to
+ * `/a/dir` and `path=C:\models\m.json` died with `bad option string
+ * "\models\m.json"` (which exits the process through usage(), so these cases
+ * killed the test binary outright before the fix rather than just failing an
+ * assertion).
+ * ------------------------------------------------------------------------- */
+
+static void parse_one_opt(const char *flag, const char *spec, CLISettings *settings)
+{
+    char *argv[7];
+    argv[0] = "vmaf";
+    argv[1] = "-r";
+    argv[2] = "ref.y4m";
+    argv[3] = "-d";
+    argv[4] = "dis.y4m";
+    argv[5] = (char *)flag;
+    argv[6] = (char *)spec;
+    optind = 1;
+    cli_parse(7, argv, settings);
+}
+
+static const char *opt_value(VmafFeatureDictionary *opts, const char *key)
+{
+    VmafDictionary *dict = (VmafDictionary *)opts;
+    const VmafDictionaryEntry *entry = vmaf_dictionary_get(&dict, key, 0);
+    if (!entry) {
+        // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+        return NULL;
+    }
+    return entry->val;
+}
+
+static int str_eq(const char *a, const char *b)
+{
+    return a && b && strcmp(a, b) == 0;
+}
+
+static char *test_model_path_keeps_inner_equals(void)
+{
+    CLISettings settings;
+    parse_one_opt("-m", "path=/a/dir=eq/m.json", &settings);
+    mu_assert("T-UPSTREAM-766: everything after the FIRST unescaped '=' is the value; "
+              "`path=/a/dir=eq/m.json` used to be truncated to \"/a/dir\"",
+              str_eq(settings.model_config[0].path, "/a/dir=eq/m.json"));
+    cli_free(&settings);
+    cli_free_dicts(&settings);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+static char *test_model_path_windows_drive_letter(void)
+{
+    CLISettings settings;
+    parse_one_opt("-m", "path=C:\\models\\vmaf_v0.6.1.json", &settings);
+    mu_assert("ADR-1190: a drive-letter ':' is data, and a backslash that does not "
+              "escape a delimiter is data too, so `path=C:\\models\\...` round-trips",
+              str_eq(settings.model_config[0].path, "C:\\models\\vmaf_v0.6.1.json"));
+    cli_free(&settings);
+    cli_free_dicts(&settings);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+static char *test_model_path_escaped_colon(void)
+{
+    CLISettings settings;
+    parse_one_opt("-m", "path=/a/dir\\:colon/m.json", &settings);
+    mu_assert("ADR-1190: `\\:` is a literal colon, not the key/value separator",
+              str_eq(settings.model_config[0].path, "/a/dir:colon/m.json"));
+    cli_free(&settings);
+    cli_free_dicts(&settings);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+static char *test_model_escaped_equals_and_backslash(void)
+{
+    CLISettings settings;
+    parse_one_opt("-m", "version=vmaf_v0.6.1:name=a\\=b\\\\c", &settings);
+    mu_assert("ADR-1190: `\\=` is a literal '=' and `\\\\` a literal backslash",
+              str_eq(settings.model_config[0].cfg.name, "a=b\\c"));
+    mu_assert("ADR-1190: the preceding key/value pair is unaffected",
+              str_eq(settings.model_config[0].version, "vmaf_v0.6.1"));
+    cli_free(&settings);
+    cli_free_dicts(&settings);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+/* No-change regression: the documented forms must parse exactly as before. */
+static char *test_model_plain_options_unchanged(void)
+{
+    CLISettings settings;
+    parse_one_opt("-m", "version=vmaf_v0.6.1:name=custom:disable_clip", &settings);
+    mu_assert("ADR-1190: version= must still parse",
+              str_eq(settings.model_config[0].version, "vmaf_v0.6.1"));
+    mu_assert("ADR-1190: name= must still parse",
+              str_eq(settings.model_config[0].cfg.name, "custom"));
+    mu_assert("ADR-1190: the valueless disable_clip flag must still set its bit",
+              (settings.model_config[0].cfg.flags & VMAF_MODEL_FLAG_DISABLE_CLIP) != 0);
+    cli_free(&settings);
+    cli_free_dicts(&settings);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+static char *test_model_feature_overload_unchanged(void)
+{
+    CLISettings settings;
+    parse_one_opt("-m", "version=vmaf_v0.6.1:adm.adm_enhn_gain_limit=1.2", &settings);
+    mu_assert("ADR-1190: `<feature>.<option>=<value>` overloads must still split on '.'",
+              settings.model_config[0].overload_cnt == 1 &&
+                  str_eq(settings.model_config[0].feature_overload[0].name, "adm"));
+    mu_assert("ADR-1190: the overloaded option must reach the dictionary",
+              str_eq(opt_value(settings.model_config[0].feature_overload[0].opts_dict,
+                               "adm_enhn_gain_limit"),
+                     "1.2"));
+    vmaf_feature_dictionary_free(&settings.model_config[0].feature_overload[0].opts_dict);
+    cli_free(&settings);
+    cli_free_dicts(&settings);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+static char *test_feature_value_keeps_windows_path(void)
+{
+    CLISettings settings;
+    parse_one_opt("--feature", "psnr=some_path=C:\\x", &settings);
+    mu_assert("T-UPSTREAM-766: the feature name must survive",
+              str_eq(settings.feature_cfg[0].name, "psnr"));
+    mu_assert("T-UPSTREAM-766: `some_path=C:\\x` used to abort with "
+              "`bad option string \"\\x\"`",
+              str_eq(opt_value(settings.feature_cfg[0].opts_dict, "some_path"), "C:\\x"));
+    cli_free(&settings);
+    cli_free_dicts(&settings);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+/* No-change regression over the exact option string --aom_ctc v1.0 builds. */
+static char *test_feature_plain_options_unchanged(void)
+{
+    CLISettings settings;
+    parse_one_opt("--feature", "psnr=reduced_hbd_peak=true:enable_apsnr=true:min_sse=0.5",
+                  &settings);
+    mu_assert("ADR-1190: colon-separated feature options must still split",
+              str_eq(settings.feature_cfg[0].name, "psnr") &&
+                  str_eq(opt_value(settings.feature_cfg[0].opts_dict, "reduced_hbd_peak"), "true"));
+    mu_assert("ADR-1190: every pair must still land in the dictionary",
+              str_eq(opt_value(settings.feature_cfg[0].opts_dict, "enable_apsnr"), "true") &&
+                  str_eq(opt_value(settings.feature_cfg[0].opts_dict, "min_sse"), "0.5"));
+    cli_free(&settings);
+    cli_free_dicts(&settings);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+static char *run_model_delimiter_tests(void)
+{
+    mu_run_test(test_model_path_keeps_inner_equals);
+    mu_run_test(test_model_path_windows_drive_letter);
+    mu_run_test(test_model_path_escaped_colon);
+    mu_run_test(test_model_escaped_equals_and_backslash);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+static char *run_feature_delimiter_tests(void)
+{
+    mu_run_test(test_model_plain_options_unchanged);
+    mu_run_test(test_model_feature_overload_unchanged);
+    mu_run_test(test_feature_value_keeps_windows_path);
+    mu_run_test(test_feature_plain_options_unchanged);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
 char *run_tests()
 {
     char *result = run_aom_ctc_tests();
@@ -579,6 +761,12 @@ char *run_tests()
     if (result)
         return result;
     result = run_vmafx_tests();
+    if (result)
+        return result;
+    result = run_model_delimiter_tests();
+    if (result)
+        return result;
+    result = run_feature_delimiter_tests();
     if (result)
         return result;
     return NULL;

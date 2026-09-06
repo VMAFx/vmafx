@@ -56,6 +56,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/VMAFx/vmafx/pkg/cliopt"
 	"github.com/VMAFx/vmafx/pkg/model"
 	"log/slog"
 	"os"
@@ -151,7 +152,9 @@ func (s *Scorer) Score(ctx context.Context, ref, dis, modelName string) (float64
 	args := []string{
 		"-r", ref,
 		"-d", dis,
-		"-m", "path=" + modelPath,
+		// ADR-1190: the CLI splits option strings on ":" and "=", so a model
+		// path containing either has to be escaped or it is truncated/rejected.
+		"-m", "path=" + cliopt.EscapeValue(modelPath),
 		"-o", tmpOut.Name(),
 		"--json",
 	}

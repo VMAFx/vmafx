@@ -95,6 +95,33 @@ No rebase impact: `scripts/ci/check-no-tracked-venv.sh` and its test are fork-ad
   "unify" them into the shared header without re-running
   `core/test/test_integer_adm_simd.c`.
 
+## fix/t-upstream-766-cli-option-string-delimit — escape-aware `--model` / `--feature` splitting (2026-09-06)
+
+- `core/tools/cli_parse.cpp`: upstream Netflix carries this file (as `cli_parse.c`) and still
+  splits the option strings with `strsep`. The fork replaced all nine split sites with
+  `cli_split()` / `cli_unescape()` (ADR-1190) and **deleted** the `vmaf_cli_strsep`
+  shim together with the `#ifndef HAVE_STRSEP` fork. Invariants to preserve on a sync:
+  splitting and unescaping are two passes (`cli_split` must leave backslashes in place so an
+  escape written for the `:` pass survives into the `=` pass, and `cli_unescape` must run
+  exactly once, on a token that will not be split again — unescaping twice would eat a
+  user's literal backslash); a key/value pair's value is the whole remainder after the first
+  unescaped `=`, never a second `strsep` (that second split is the silent-truncation bug);
+  and the model-overload key must be split on `.` *before* it is unescaped. If an upstream
+  commit reintroduces a `strsep` call here, port its intent onto `cli_split`, do not restore
+  the call.
+- `core/test/test_cli_parse.c`: the eight `T-UPSTREAM-766` cases are fork-added and are
+  registered through `run_model_delimiter_tests` / `run_feature_delimiter_tests` rather than
+  a single runner, because more than about seven `mu_run_test` expansions trip
+  `readability-function-size` (ADR-0141). Keep the per-`return NULL` cited
+  `NOLINTNEXTLINE(modernize-use-nullptr)` markers (ADR-1138) — this TU must keep spelling
+  the null pointer constant `NULL` for the MSVC C lane.
+- `pkg/cliopt`: fork-added, no upstream counterpart. Invariant: `EscapeValue` and
+  `cli_unescape()` are one grammar in two languages — a change to the C escape set must change
+  the Go escaper (and its round-trip test) in the same commit.
+- `ffmpeg-patches/`: deliberately unchanged. The `libvmaf_tune` filter's `load_model()`
+  takes the whole remainder after the first `=` and never splits on `:`, and ffmpeg's own
+  filtergraph parser owns escaping at that layer, so teaching it the CLI grammar would
+  double-unescape.
 ## ci/release-artifacts-built-in-dev-container — native release artifacts built on self-hosted canonical runner (ADR-1178) (2026-09-05)
 
 No rebase impact: all touched files (`.github/actionlint.yaml`, `.github/workflows/dev-container-publish.yml`, `.github/workflows/supply-chain.yml`, `scripts/release/verify-native-release-artifacts.sh`, `scripts/release/tests/test-verify-native-release-artifacts.sh`, `scripts/ci/check-container-build.sh`, `scripts/ci/tests/test-check-container-build.sh`, docs) are fork-local CI workflows, verification scripts, and documentation with no upstream Netflix/vmaf counterpart. No public C API, header, Meson option, or golden assertion is touched.

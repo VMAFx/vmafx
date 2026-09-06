@@ -456,34 +456,85 @@ void error(const char *const app, const char *const optarg, const int option,
     return pix_fmt;
 }
 
-/* Renamed from `strsep`: MSVC's UCRT declares `strsep` as `extern "C"`, so an
- * anonymous-namespace definition of that name does not hide the declaration and
- * every call bound to the undecorated CRT symbol instead, failing the link with
- * "unresolved external symbol strsep referenced in function main". The
- * pre-rework code used a file-scope `static` redeclaration, which did hide it.
- * A distinct name cannot collide on any platform. HAVE_STRSEP still selects the
- * platform implementation where one exists. */
-#ifndef HAVE_STRSEP
-char *vmaf_cli_strsep(char **sp, const char *sep)
+/* ADR-1190 — escape-aware splitting of the `--model` / `--feature` option
+ * strings (Netflix/vmaf#766).
+ *
+ * Every split site used to call `strsep`, so any ':' or '=' inside a value was
+ * a separator no matter what the user meant: `-m 'path=C:\models\m.json'` died
+ * with `bad option string "\models\m.json"`, and `-m 'path=/a/dir=eq/m.json'`
+ * was silently truncated to `/a/dir` — a phantom path nobody typed.
+ *
+ * `cli_split()` replaces `strsep` at all nine sites. It breaks on the first
+ * UNESCAPED separator and leaves backslash sequences intact, so a `\:` written
+ * for the ':' pass is still literal when the '=' pass runs; the leaf token is
+ * unescaped exactly once, by `cli_unescape()`, after the last split. A ':' that
+ * spells a Windows drive letter is data rather than a separator, so the common
+ * `path=C:\...` form needs no escaping at all.
+ *
+ * The `strsep` shim is gone with the call sites: it existed only as a
+ * POSIX/MSVC portability wrapper (MSVC's UCRT declares `strsep` as `extern
+ * "C"`, which is why it needed a distinct name), and `cli_split` is
+ * self-contained on every platform. */
+
+/* True when s[i] — known to be ':' — is the drive-letter colon of a Windows
+ * path: exactly one ASCII letter precedes it, that letter starts the segment
+ * (string start, or immediately after a '=' or ':'), and a path separator
+ * follows. `path=C:\models\m.json` therefore parses as one key/value pair. */
+[[nodiscard]] bool cli_is_drive_colon(const char *const s, const size_t i)
 {
-    char *p = nullptr;
-    char *s = nullptr;
-    if (!sp || !*sp || !**sp)
+    if (i == 0U)
+        return false;
+    if ((i > 1U) && (s[i - 2U] != '=') && (s[i - 2U] != ':'))
+        return false;
+    const char letter = s[i - 1U];
+    const bool is_alpha =
+        ((letter >= 'A') && (letter <= 'Z')) || ((letter >= 'a') && (letter <= 'z'));
+    return is_alpha && ((s[i + 1U] == '\\') || (s[i + 1U] == '/'));
+}
+
+/* strsep() semantics — returns the token, advances *sp past the separator or to
+ * nullptr when the token runs to the end — except that a backslash-escaped
+ * separator and a Windows drive-letter colon are literal. Backslashes are
+ * preserved here; cli_unescape() removes them at the leaf. */
+char *cli_split(char **sp, const char sep)
+{
+    if (!sp || !*sp)
         return nullptr;
-    s = *sp;
-    p = s + strcspn(s, sep);
-    if (*p != '\0')
-        *p++ = '\0';
-    *sp = p;
+    char *const s = *sp;
+    for (size_t i = 0U; s[i] != '\0'; i++) {
+        if ((s[i] == '\\') && (s[i + 1U] != '\0')) {
+            i++; /* skip the escaped byte; cli_unescape() drops the backslash */
+            continue;
+        }
+        if (s[i] != sep)
+            continue;
+        if ((sep == ':') && cli_is_drive_colon(s, i))
+            continue;
+        s[i] = '\0';
+        *sp = s + i + 1U;
+        return s;
+    }
+    *sp = nullptr;
     return s;
 }
-#else
-/* The platform provides strsep; forward to it so the call sites stay uniform. */
-char *vmaf_cli_strsep(char **sp, const char *sep)
+
+/* In-place removal of the escaping backslash in `\:`, `\=`, `\.` and `\\`.
+ * Every other backslash is data, so `C:\models\m.json` survives verbatim.
+ * Call once, on a token that will not be split again. */
+void cli_unescape(char *const s)
 {
-    return strsep(sp, sep);
+    if (!s)
+        return;
+    char *w = s;
+    for (const char *r = s; *r != '\0'; r++) {
+        const char nxt = r[1];
+        if ((*r == '\\') && ((nxt == ':') || (nxt == '=') || (nxt == '.') || (nxt == '\\')))
+            r++;
+        *w = *r;
+        w++;
+    }
+    *w = '\0';
 }
-#endif
 
 void apply_model_opt(CLIModelConfig &model_cfg, char *key, char *val, const char *const app)
 {
@@ -504,9 +555,14 @@ void apply_model_opt(CLIModelConfig &model_cfg, char *key, char *val, const char
                   " are supported\n",
                   CLI_SETTINGS_STATIC_ARRAY_LEN);
         }
-        char *name = vmaf_cli_strsep(&key, ".");
+        /* The overload key is `<feature>.<option>`; split before unescaping so
+         * a `\.` inside either half stays data instead of becoming the
+         * separator. */
+        char *const name = cli_split(&key, '.');
+        char *const opt = cli_split(&key, '.');
+        cli_unescape(name);
+        cli_unescape(opt);
         model_cfg.feature_overload[model_cfg.overload_cnt].name = name;
-        const char *const opt = vmaf_cli_strsep(&key, ".");
         const int err = vmaf_feature_dictionary_set(
             &model_cfg.feature_overload[model_cfg.overload_cnt].opts_dict, opt, val);
         if (err)
@@ -540,9 +596,13 @@ CLIModelConfig parse_model_config(const char *const optarg, const char *const ap
     };
 
     char *key_val = nullptr;
-    while ((key_val = vmaf_cli_strsep(&optarg_copy, ":")) != nullptr) {
-        char *key = vmaf_cli_strsep(&key_val, "=");
-        char *val = vmaf_cli_strsep(&key_val, "=");
+    while ((key_val = cli_split(&optarg_copy, ':')) != nullptr) {
+        char *const key = cli_split(&key_val, '=');
+        /* Everything after the first unescaped '=' is the value, so a second
+         * '=' inside a path no longer truncates it. The key keeps its
+         * backslashes: apply_model_opt() may still split it on '.'. */
+        char *val = key_val;
+        cli_unescape(val);
         if (!val) {
             if (!strcmp(key, "disable_clip") || !strcmp(key, "enable_transform")) {
                 val = const_cast<char *>("true");
@@ -587,8 +647,11 @@ CLIFeatureConfig parse_feature_config(const char *const optarg, const char *cons
     (void)strncpy(optarg_copy, optarg, optarg_sz);
     void *buf = optarg_copy;
 
+    char *const feature_name = cli_split(&optarg_copy, '=');
+    cli_unescape(feature_name);
+
     CLIFeatureConfig feature_cfg = {
-        .name = vmaf_cli_strsep(&optarg_copy, "="),
+        .name = feature_name,
         .opts_dict = nullptr,
         .buf = buf,
     };
@@ -604,9 +667,12 @@ CLIFeatureConfig parse_feature_config(const char *const optarg, const char *cons
     }
 
     char *key_val = nullptr;
-    while ((key_val = vmaf_cli_strsep(&optarg_copy, ":")) != nullptr) {
-        const char *const key = vmaf_cli_strsep(&key_val, "=");
-        const char *const val = vmaf_cli_strsep(&key_val, "=");
+    while ((key_val = cli_split(&optarg_copy, ':')) != nullptr) {
+        char *const key = cli_split(&key_val, '=');
+        /* Value = the whole remainder after the first unescaped '='. */
+        char *const val = key_val;
+        cli_unescape(key);
+        cli_unescape(val);
         if (!val) {
             usage(app,
                   "Problem parsing feature \"%s\", "
