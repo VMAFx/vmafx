@@ -1580,3 +1580,13 @@ gain limit, so it moves `adm` scores directly. The four historical spellings
 of this predicate disagreed on about 4e-5 of near-parallel scale-0 band
 quadruples; see
 [`docs/research/2030-adm-angle-flag-fp64-free.md`](../../../docs/research/2030-adm-angle-flag-fp64-free.md).
+## High-bit-depth samples are normalised before accumulation (ADR-1212)
+
+`picture_copy()` divides every 10/12/16-bit sample by 4 / 16 / 256 before the
+float extractors see it, so a CPU "sum of samples" is a sum of *normalised*
+samples. A GPU twin that reads the raw plane and accumulates codewords must
+apply that scaler itself — on the host, to the exact integer sums, which is
+bit-identical to the CPU at 10 and 12 bpc. `float_moment` on CUDA, SYCL and HIP
+shipped without it and was 4x–256x off above 8 bpc; nothing caught it because
+every parity fixture was 8-bit. Register a `-DFIXTURE_BPC=10u` variant of any
+new parity test whose extractor consumes samples.
