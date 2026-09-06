@@ -57,8 +57,12 @@
 
 /* Fixture must be ≥ 64x64 for the 4-scale Gaussian footprint;
  * 256x144 matches the round-1 / round-2 fixture sizing. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 144u
+#endif
 #define FIXTURE_BPC 8u
 #define PARITY_TOL 1e-4
 
