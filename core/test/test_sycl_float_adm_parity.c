@@ -94,6 +94,7 @@ static int feed_frame(VmafContext *vmaf)
     return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
 }
 
+<<<<<<< HEAD
 /* ADR-1220 — `adm_p_norm` is a VMAF_OPT_FLAG_FEATURE_PARAM, so setting it
  * changes the key the score is filed under (ADR-1183): the alias base plus
  * `_apn_<%g value>`. */
@@ -124,34 +125,81 @@ static int adm_opts_build(VmafFeatureDictionary **opts, const char *name, const 
 // NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_cpu(const char *opt_name, const char *opt_val, const char *const *keys,
                      double *scores)
+=======
+/* ADR-1214 gate helper — see test_cuda_float_adm_parity.c for the rationale:
+ * once any option is non-default the derived feature name is
+ * <alias>_<opt alias>_<value>..., e.g. "adm2_scfd_0.5_scf_2". */
+static void adm_key(char *out, size_t n, const char *full, const char *suffix)
+{
+    static const char pfx[] = "VMAF_feature_";
+    static const char sfx[] = "_score";
+    const size_t pl = sizeof(pfx) - 1u;
+    const size_t sl = sizeof(sfx) - 1u;
+    const size_t fl = strlen(full);
+    if (!suffix[0]) {
+        (void)snprintf(out, n, "%s", full);
+    } else if (strncmp(full, pfx, pl) == 0 && fl > pl + sl && strcmp(full + fl - sl, sfx) == 0) {
+        (void)snprintf(out, n, "%.*s%s", (int)(fl - pl - sl), full + pl, suffix);
+    } else {
+        (void)snprintf(out, n, "%s%s", full, suffix);
+    }
+}
+
+static VmafFeatureDictionary *csf_scale_opts(void)
+{
+    VmafFeatureDictionary *d = NULL;
+    if (vmaf_feature_dictionary_set(&d, "adm_csf_scale", "2.0"))
+        return NULL;
+    if (vmaf_feature_dictionary_set(&d, "adm_csf_diag_scale", "0.5"))
+        return NULL;
+    return d;
+}
+
+static char *run_cpu(double *score, VmafFeatureDictionary *opts, const char *suffix)
+>>>>>>> 6c37871af (test(sycl,hip): gate float_adm parity with adm_csf_scale set, and on the derived feature name)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
+<<<<<<< HEAD
     VmafFeatureDictionary *opts = NULL;
     err = adm_opts_build(&opts, opt_name, opt_val);
     mu_assert("CPU: adm_opts_build failed", !err);
     err = vmaf_use_feature(vmaf, "float_adm", opts);
     if (err)
         (void)vmaf_feature_dictionary_free(&opts);
+=======
+    err = vmaf_use_feature(vmaf, "float_adm", opts);
+>>>>>>> 6c37871af (test(sycl,hip): gate float_adm parity with adm_csf_scale set, and on the derived feature name)
     mu_assert("CPU: vmaf_use_feature(float_adm) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
+<<<<<<< HEAD
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
         err = vmaf_feature_score_at_index(vmaf, keys[m], &scores[m], 0u);
         mu_assert("CPU: float_adm score missing", !err);
     }
+=======
+    char key[128];
+    adm_key(key, sizeof(key), "VMAF_feature_adm2_score", suffix);
+    err = vmaf_feature_score_at_index(vmaf, key, score, 0u);
+    mu_assert("CPU: VMAF_feature_adm2_score missing", !err);
+>>>>>>> 6c37871af (test(sycl,hip): gate float_adm parity with adm_csf_scale set, and on the derived feature name)
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
     return NULL;
 }
 
+<<<<<<< HEAD
 // NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_sycl(const char *opt_name, const char *opt_val, const char *const *keys,
                       double *scores)
+=======
+static char *run_sycl(double *score, VmafFeatureDictionary *opts, const char *suffix)
+>>>>>>> 6c37871af (test(sycl,hip): gate float_adm parity with adm_csf_scale set, and on the derived feature name)
 {
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++)
         scores[m] = NAN;
@@ -168,21 +216,32 @@ static char *run_sycl(const char *opt_name, const char *opt_val, const char *con
     mu_assert("SYCL: vmaf_init failed", !err);
     err = vmaf_sycl_import_state(vmaf, sycl_state);
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
+<<<<<<< HEAD
     VmafFeatureDictionary *opts = NULL;
     err = adm_opts_build(&opts, opt_name, opt_val);
     mu_assert("SYCL: adm_opts_build failed", !err);
     err = vmaf_use_feature(vmaf, "float_adm_sycl", opts);
     if (err)
         (void)vmaf_feature_dictionary_free(&opts);
+=======
+    err = vmaf_use_feature(vmaf, "float_adm_sycl", opts);
+>>>>>>> 6c37871af (test(sycl,hip): gate float_adm parity with adm_csf_scale set, and on the derived feature name)
     mu_assert("SYCL: vmaf_use_feature(float_adm_sycl) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("SYCL: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
+<<<<<<< HEAD
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
         err = vmaf_feature_score_at_index(vmaf, keys[m], &scores[m], 0u);
         mu_assert("SYCL: float_adm score missing", !err);
     }
+=======
+    char key[128];
+    adm_key(key, sizeof(key), "VMAF_feature_adm2_score", suffix);
+    err = vmaf_feature_score_at_index(vmaf, key, score, 0u);
+    mu_assert("SYCL: VMAF_feature_adm2_score missing", !err);
+>>>>>>> 6c37871af (test(sycl,hip): gate float_adm parity with adm_csf_scale set, and on the derived feature name)
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
     vmaf_sycl_state_free(&sycl_state);
@@ -197,18 +256,29 @@ static char *test_float_adm_sycl_registered(void)
     return NULL;
 }
 
-static char *test_float_adm_cpu_sycl_parity(void)
+static char *compare_cpu_sycl(VmafFeatureDictionary *cpu_opts, VmafFeatureDictionary *sycl_opts,
+                              const char *suffix, const char *label)
 {
+<<<<<<< HEAD
     double cpu_scores[NUM_ADM_FEATURES] = {0};
     double sycl_scores[NUM_ADM_FEATURES] = {0};
     char *msg = run_cpu(NULL, NULL, kAdmFeatures, cpu_scores);
     if (msg)
         return msg;
     msg = run_sycl(NULL, NULL, kAdmFeatures, sycl_scores);
+=======
+    double cpu_score = 0.0;
+    double sycl_score = NAN;
+    char *msg = run_cpu(&cpu_score, cpu_opts, suffix);
+    if (msg)
+        return msg;
+    msg = run_sycl(&sycl_score, sycl_opts, suffix);
+>>>>>>> 6c37871af (test(sycl,hip): gate float_adm parity with adm_csf_scale set, and on the derived feature name)
     if (msg)
         return msg;
     if (isnan(sycl_scores[0]))
         return NULL;
+<<<<<<< HEAD
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
         const double delta = fabs(cpu_scores[m] - sycl_scores[m]);
         if (delta > PARITY_TOL) {
@@ -250,15 +320,42 @@ static char *test_float_adm_p_norm_reaches_kernel(void)
         }
         mu_assert("float_adm with a non-default adm_p_norm drifts from the CPU reference",
                   delta <= PARITY_TOL);
+=======
+    double delta = fabs(cpu_score - sycl_score);
+    if (delta > PARITY_TOL) {
+        (void)fprintf(stderr,
+                      "\nfloat_adm2 parity FAIL [%s]: cpu=%.8f sycl=%.8f delta=%.2e tol=%.2e\n",
+                      label, cpu_score, sycl_score, delta, PARITY_TOL);
+>>>>>>> 6c37871af (test(sycl,hip): gate float_adm parity with adm_csf_scale set, and on the derived feature name)
     }
     return NULL;
+}
+
+static char *test_float_adm_cpu_sycl_parity(void)
+{
+    return compare_cpu_sycl(NULL, NULL, "", "default");
+}
+
+/* ADR-1214: adm_csf_scale / adm_csf_diag_scale are Barten-mode options; in
+ * Watson mode the CPU ignores them and the twin must too, and both sides must
+ * derive the same feature key ("scf" / "scfd" aliases, not "cs" / "cds"). */
+static char *test_float_adm_cpu_sycl_parity_csf_scale(void)
+{
+    VmafFeatureDictionary *cpu_opts = csf_scale_opts();
+    VmafFeatureDictionary *sycl_opts = csf_scale_opts();
+    mu_assert("csf_scale_opts: dictionary build failed", cpu_opts && sycl_opts);
+    return compare_cpu_sycl(cpu_opts, sycl_opts, "_scfd_0.5_scf_2", "adm_csf_scale=2");
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_float_adm_sycl_registered);
     mu_run_test(test_float_adm_cpu_sycl_parity);
+<<<<<<< HEAD
     mu_run_test(test_float_adm_p_norm_reaches_kernel);
+=======
+    mu_run_test(test_float_adm_cpu_sycl_parity_csf_scale);
+>>>>>>> 6c37871af (test(sycl,hip): gate float_adm parity with adm_csf_scale set, and on the derived feature name)
     return NULL;
 }
 
