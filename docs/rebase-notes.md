@@ -50468,3 +50468,28 @@ fork-local (ADR-0746). Conflict risk is against other fork branches touching
    twins are v1 scale=1-only and reject `min(w, h) >= 384` with `-EINVAL`,
    while the CPU decimates. The large variant stays registered and treats that
    specific refusal as a skip; any other failure is real.
+## ADR-1207 / ADR-1208 — ISA invariance and the edge-diff subtraction
+
+1. **`edge_diff_map`'s per-pixel difference is taken in `double`, in every
+   implementation.** `ed = fabs((double)a - (double)am)` — both operands are
+   `float`, so the double subtraction is exact, whereas subtracting in float
+   rounds first. All four SIMD kernels (AVX2, AVX-512, NEON, SVE2) originally
+   vectorised the subtract in float and promoted afterwards, while their own
+   scalar tails used the correct form. Do not "optimise" the subtraction back
+   into vector float: the per-lane loop is scalar anyway, so the vector
+   subtract buys nothing and costs bit-exactness.
+
+2. **`test_ssimulacra2_simd::test_edge` cannot catch item 1.** It compares the
+   kernel against a scalar reference defined inside the test TU, at 33x21,
+   where the float subtraction happens to be exact. It passed both before and
+   after the fix. The gate that covers this is
+   `core/test/test_feature_isa_invariance.c`.
+
+3. **`test_feature_isa_invariance` asserts bit-identity, deliberately.** It
+   runs each feature twice through the public API, once with the host ISA and
+   once with `cpumask` disabling every SIMD flag, and `memcmp`s the two
+   `double` scores. If an upstream sync adds a feature with a SIMD path, add it
+   to the `CASES` table. If it makes a feature reject the 256x192 fixture, fix
+   the fixture rather than removing the feature — the size is chosen so
+   `float_ms_ssim` (>= 176 px) and `float_ssim` (auto-scale 1 below 384 px)
+   both run.

@@ -1062,3 +1062,5 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1212](1212-gpu-moment-bit-depth-normalisation.md) | The GPU `float_moment` twins normalise by the bit-depth scaler on the host | Proposed | cuda, sycl, hip, correctness, feature-extractor, bit-depth |
 | [ADR-1213](1213-hip-ciede-chroma-ceil-dimensions.md) | `ciede_hip` sizes its chroma staging with the picture's ceil dimensions | Proposed | hip, correctness, feature-extractor, memory-safety |
 | [ADR-1210](1210-sycl-integer-adm-cm-near-edge-mirror.md) | The SYCL integer-ADM contrast-masking kernel mirrors its near edge | Proposed | sycl, correctness, feature-extractor, adm |
+| [ADR-1207](1207-feature-isa-invariance-gate.md) | A test gates every feature's score against the host instruction set | Proposed | testing, simd, correctness, ci, reproducibility |
+| [ADR-1208](1208-ssimulacra2-edge-diff-double-subtract.md) | The ssimulacra2 edge-diff SIMD loops take their difference in double | Proposed | simd, correctness, feature-extractor, reproducibility |
