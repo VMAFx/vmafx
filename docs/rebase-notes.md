@@ -48978,3 +48978,17 @@ Documentation only. One thing worth knowing:
    in item 2 passed its bit-exactness assertion for as long as it did. When
    touching the conversion, change the shipped copies and the test reference
    together, or the test will keep agreeing with itself.
+
+## ci/release-bot-pat-fallback — second release-bot identity (2026-09-06)
+
+Fork-only CI. One invariant:
+
+1. **Never fall back to `GITHUB_TOKEN`.** The `mode=none` branch must stay: it
+   leaves the pipeline idle (warning on `push`, error on `workflow_dispatch`,
+   ADR-1171) rather than opening a release PR that can never be merged. A PR
+   opened by `GITHUB_TOKEN` receives zero check runs — that is a GitHub
+   loop-breaker, not a misconfiguration — so "just use the default token" is the
+   one resolution that recreates the original bug (ADR-1151). The two acceptable
+   identities are the App (preferred) and `RELEASE_BOT_TOKEN`; both are masked
+   through the single `Resolve the release-bot token` step so no downstream step
+   has to know which is active.

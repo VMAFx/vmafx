@@ -14403,6 +14403,15 @@ promoted to module scope as a side effect.
 - **Native release artifacts built on self-hosted canonical runner (ADR-1178, Phase 4b.9).** Native release binaries (`libvmaf.so` SONAME chain, `vmaf` CLI binary, `models.tar.gz`) in `.github/workflows/supply-chain.yml` now build on the Arc A380 containerised self-hosted runner (`runs-on: [self-hosted, linux, x64, sycl-arc]`, provisioned by ADR-1177 / PR #1304) inside the local canonical dev container environment (`vmaf-sycl-arc-runner:local`, built `FROM vmaf-dev-mcp:local`) rather than on a bare `ubuntu-latest` runner host, bypassing the 29.5 GB layer pull blocker. Staged release artifacts are stamped with container-build provenance via `scripts/ci/check-container-build.sh --stamp`, verified in `verify-native-artifacts` on `ubuntu-latest` via `--verify`, and required fail-closed by `scripts/release/verify-native-release-artifacts.sh` and `attach-to-release`. `.github/workflows/dev-container-publish.yml` publishes and Cosign-signs the dev container image on master pushes touching `dev/Containerfile` or `dev/scripts/**` as optional provenance. Closes `T-PUBLISH-NATIVE-RELEASE-NOT-CONTAINERISED-2026-09-03`.
 
 
+- `release-please.yml` now accepts a `RELEASE_BOT_TOKEN` PAT as an alternative release-bot
+  identity when the GitHub App secrets are absent. PRs opened by `GITHUB_TOKEN` never
+  receive check runs, so the release PR could never satisfy branch protection — and the
+  App, which was the only accepted identity, has no API path to create. The pipeline is no
+  longer blocked on a browser-only step. The App remains preferred and is still used when
+  its secrets exist; the resolved token is masked either way. See
+  [docs/development/release.md](docs/development/release.md) § Release-bot identity.
+
+
 - `release-please.yml` no longer fails every push to `master` while the release-bot
   App credentials are missing: the credential check emits a warning, skips every
   write step, and the run ends idle-green; a manual `workflow_dispatch` still fails.
