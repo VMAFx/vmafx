@@ -1612,8 +1612,23 @@ test_cuda_pic_preallocation = executable('test_cuda_pic_preallocation',
     c_args: ['-DHAVE_CUDA=1']
 )
 
+# Owner scoping of the ADR-0242 drain batch
+# (docs/state.md T-UPSTREAM-1305-CUDA-DRAIN-BATCH-THREAD-GLOBAL-2026-09-03).
+# Exercises only the bookkeeping paths — a foreign owner short-circuits the
+# flush and the destroy path returns as soon as it sees a NULL drain stream —
+# so it needs nvcc to compile but no live device, and is deliberately NOT in
+# the 'gpu' suite.
+test_cuda_drain_batch = executable('test_cuda_drain_batch',
+    ['test.c', 'test_cuda_drain_batch.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency],
+    c_args: ['-DHAVE_CUDA=1']
+)
+
 test('test_gpu_picture_pool', test_gpu_picture_pool, suite : ['fast', 'gpu'])
 test('test_cuda_pic_preallocation', test_cuda_pic_preallocation, suite : ['fast', 'gpu'])
+test('test_cuda_drain_batch', test_cuda_drain_batch, suite : ['fast'])
 
 # The flush drain loop must terminate (T-CUDA-SINGLE-FRAME-HANG-2026-09-05).
 # Stub-driven, so it needs no CUDA device and no nvcc.
