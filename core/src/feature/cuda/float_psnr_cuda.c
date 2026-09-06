@@ -56,20 +56,28 @@ typedef struct FloatPsnrStateCuda {
     VmafDictionary *feature_name_dict;
 } FloatPsnrStateCuda;
 
-static const VmafOption options[] = {{
-                                         .name = "uncapped",
-                                         .help = "report the true PSNR instead of truncating at "
-                                                 "the psnr_max ceiling (a zero-noise pair still "
-                                                 "reports psnr_max)",
-                                         .offset = offsetof(FloatPsnrStateCuda, uncapped),
-                                         .type = VMAF_OPT_TYPE_BOOL,
-                                         .default_val.b = false,
-                                     },
-                                     /* Terminator. `{}` rather than `{0}`: the C23 empty
-                                      * initialiser zero-fills without spelling a null pointer
-                                      * constant as `0`, which keeps this file at its ADR-1142
-                                      * clang-tidy baseline. */
-                                     {}};
+/*
+ * Size the table explicitly and leave the terminator element out: C
+ * zero-initialises the trailing element, which is exactly the `.name == NULL`
+ * sentinel the option walker stops on. Written this way rather than with an
+ * explicit `{0}` / `{NULL}` terminator, because either spells a null pointer
+ * constant and adds a `modernize-use-nullptr` diagnostic that would push this
+ * file past its ADR-1142 clang-tidy baseline; and rather than with the C23
+ * empty initialiser `{}`, because MSVC's partial C23 mode (`/std:clatest`,
+ * documented as implementing `typeof` / `typeof_unqual`) is not documented to
+ * accept it, and this file builds on the required Windows MSVC leg.
+ */
+static const VmafOption options[2] = {
+    {
+        .name = "uncapped",
+        .help = "report the true PSNR instead of truncating at "
+                "the psnr_max ceiling (a zero-noise pair still "
+                "reports psnr_max)",
+        .offset = offsetof(FloatPsnrStateCuda, uncapped),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+};
 
 #define FPSNR_BX 16
 #define FPSNR_BY 16
