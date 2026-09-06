@@ -51,7 +51,7 @@ static int g_fail;
 #define CHECK(cond)                                                                                \
     do {                                                                                           \
         if (!(cond)) {                                                                             \
-            fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                        \
+            (void)fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                  \
             g_fail++;                                                                              \
         }                                                                                          \
     } while (0)
@@ -676,11 +676,11 @@ int main(void)
     test_deband_params();
 
     if (g_fail != 0) {
-        fprintf(stderr, "%d check(s) failed\n", g_fail);
+        (void)fprintf(stderr, "%d check(s) failed\n", g_fail);
         return EXIT_FAILURE;
     }
-    printf("interop: all checks passed (libpelorus %s, ABI %u.%u)\n", pelorus_version_string(),
-           PELORUS_ABI_MAJOR, PELORUS_ABI_MINOR);
+    (void)printf("interop: all checks passed (libpelorus %s, ABI %u.%u)\n",
+                 pelorus_version_string(), PELORUS_ABI_MAJOR, PELORUS_ABI_MINOR);
     return EXIT_SUCCESS;
 }
 

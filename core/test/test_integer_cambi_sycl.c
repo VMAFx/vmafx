@@ -55,10 +55,10 @@ static char *test_cambi_sycl_setup(void)
     VmafSyclConfiguration cfg = {.device_index = -1};
     int err = vmaf_sycl_state_init(&sycl, cfg);
     if (err) {
-        fprintf(stderr,
-                "  [SKIP] SYCL state init failed (err=%d), "
-                "no GPU available — skipping cambi_sycl tests\n",
-                err);
+        (void)fprintf(stderr,
+                      "  [SKIP] SYCL state init failed (err=%d), "
+                      "no GPU available — skipping cambi_sycl tests\n",
+                      err);
         sycl_init_failed = 1;
         sycl = NULL;
         return NULL;
@@ -88,7 +88,7 @@ static char *test_cambi_sycl_registration(void)
 static char *test_cambi_sycl_smoke(void)
 {
     if (sycl_init_failed) {
-        fprintf(stderr, "  [SKIP] test_cambi_sycl_smoke (no GPU)\n");
+        (void)fprintf(stderr, "  [SKIP] test_cambi_sycl_smoke (no GPU)\n");
         return NULL;
     }
 

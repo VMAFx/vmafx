@@ -212,7 +212,7 @@ static char *test_model_load_and_destroy(void)
 
     /*
     for (unsigned i = 0; i < model->n_features; i++)
-        fprintf(stderr, "feature name: %s slope: %f intercept: %f\n",
+        (void)fprintf(stderr, "feature name: %s slope: %f intercept: %f\n",
                 model->feature[i].name,
                 model->feature[i].slope,
                 model->feature[i].intercept
