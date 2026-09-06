@@ -27,6 +27,12 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "opt.h"
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file is an
+ * upstream-mirror source whose pointer initialisers must stay conflict-free on
+ * the next Netflix/vmaf sync. ADR-1138. */
 
 #if ARCH_X86
 #include "x86/psnr_avx2.h"
@@ -317,6 +323,7 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
 
 static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_psnr` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_psnr = {
     .name = "psnr",
     .options = options,
@@ -338,3 +345,5 @@ VmafFeatureExtractor vmaf_fex_psnr = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

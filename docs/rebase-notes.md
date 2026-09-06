@@ -314,6 +314,17 @@ No rebase impact: fork-only tools/vmaf-tune and documentation surfaces (`tools/v
 - `core/test/test_integer_psnr_coverage.c` and `core/test/test_float_psnr_coverage.c`: fork-added test files.
   Extended with uncapped vs capped tests asserting 100.840479 dB / 112.907188 dB / 72.213264 dB on single-sample diffs and identical-frame sentinel equivalence.
 - `docs/metrics/psnr.md`, `docs/metrics/features.md`, `docs/adr/1175-psnr-uncapped-option.md`: fork documentation.
+- ADR-0141 touched-file cleanup, discharged in the same PR: `integer_psnr.c` and `float_psnr.c`
+  each gained the ADR-1138 file-scoped `NOLINTBEGIN(modernize-use-nullptr)` / `NOLINTEND`
+  bracket and the ADR-0278 `misc-use-internal-linkage` marker above the exported
+  `vmaf_fex_psnr` / `vmaf_fex_float_psnr` registry symbol. Both markers are fork-local
+  comments around unmodified upstream code; drop or re-add them wholesale on a sync rather
+  than resolving them hunk by hunk.
+- `core/test/test_integer_psnr_coverage.c` and `core/test/test_float_psnr_coverage.c` were
+  restructured around `PsnrFixture` / `UncappedPair` helpers and grouped `run_*_tests()`
+  runners to stay inside `readability-function-size`; the four touched files are now at zero
+  clang-tidy findings and their entries were removed from `scripts/ci/tidy-baseline-cpu.json`
+  (ADR-1142 ratchet, total 2951 -> 2902).
 
 ## ci/release-artifacts-built-in-dev-container — native release artifacts built in canonical dev container (ADR-1178) (2026-09-04)
 ## ci/release-artifacts-built-in-dev-container — native release artifacts built on self-hosted canonical runner (ADR-1178) (2026-09-05)

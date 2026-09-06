@@ -27,6 +27,11 @@
 #include "feature/feature_collector.h"
 #include "feature/feature_extractor.h"
 #include "libvmaf/picture.h"
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 
 #define FP_W (16u)
 #define FP_H (16u)
@@ -45,9 +50,10 @@ static int alloc_grey(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned b
         } else {
             uint16_t *row = (uint16_t *)pic->data[p];
             ptrdiff_t s = (ptrdiff_t)(pic->stride[p] / 2u);
-            for (unsigned i = 0; i < pic->h[p]; ++i)
+            for (unsigned i = 0; i < pic->h[p]; ++i) {
                 for (unsigned j = 0; j < pic->w[p]; ++j)
                     row[i * s + (ptrdiff_t)j] = (uint16_t)grey;
+            }
         }
     }
     return 0;
@@ -190,92 +196,102 @@ static char *test_float_psnr_invalid_bpc(void)
     return NULL;
 }
 
+/* The uncapped case needs the same three pictures in both modes; grouping them
+ * keeps every helper below the readability-function-size budget (ADR-0141). */
+typedef struct FloatPsnrPair {
+    VmafPicture ref;
+    VmafPicture dist_diff;  /* one luma sample differs from ref by +1 */
+    VmafPicture dist_ident; /* byte-identical to ref */
+} FloatPsnrPair;
+
+static char *float_psnr_pair_alloc(FloatPsnrPair *pair)
+{
+    int err = alloc_grey(&pair->ref, VMAF_PIX_FMT_YUV420P, 8u, 128u);
+    mu_assert("alloc ref", err == 0);
+    err = alloc_grey(&pair->dist_diff, VMAF_PIX_FMT_YUV420P, 8u, 128u);
+    mu_assert("alloc dist_diff", err == 0);
+    err = alloc_grey(&pair->dist_ident, VMAF_PIX_FMT_YUV420P, 8u, 128u);
+    mu_assert("alloc dist_ident", err == 0);
+
+    ((uint8_t *)pair->dist_diff.data[0])[0] = 129u;
+    return NULL;
+}
+
+static void float_psnr_pair_free(FloatPsnrPair *pair)
+{
+    vmaf_picture_unref(&pair->ref);
+    vmaf_picture_unref(&pair->dist_diff);
+    vmaf_picture_unref(&pair->dist_ident);
+}
+
+/* Runs one extraction pass with `opts`: the differing pair at index 0 and the
+ * identical pair at index 1, reporting both float_psnr scores. */
+static char *extract_float_psnr_pair(VmafFeatureExtractor *fex, VmafDictionary *opts,
+                                     FloatPsnrPair *pair, double *diff_score, double *ident_score)
+{
+    VmafFeatureExtractorContext *ctx = NULL;
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
+    mu_assert("ctx create", err == 0);
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, FP_W, FP_H);
+    mu_assert("ctx init", err == 0);
+
+    VmafFeatureCollector *fc = NULL;
+    err = vmaf_feature_collector_init(&fc);
+    mu_assert("fc init", err == 0);
+
+    err = vmaf_feature_extractor_context_extract(ctx, &pair->ref, NULL, &pair->dist_diff, NULL, 0,
+                                                 fc);
+    mu_assert("extract diff", err == 0);
+    err = vmaf_feature_collector_get_score(fc, "float_psnr", diff_score, 0);
+    mu_assert("get score diff", err == 0);
+
+    err = vmaf_feature_extractor_context_extract(ctx, &pair->ref, NULL, &pair->dist_ident, NULL, 1,
+                                                 fc);
+    mu_assert("extract ident", err == 0);
+    err = vmaf_feature_collector_get_score(fc, "float_psnr", ident_score, 1);
+    mu_assert("get score ident", err == 0);
+
+    (void)vmaf_feature_extractor_context_close(ctx);
+    (void)vmaf_feature_extractor_context_destroy(ctx);
+    vmaf_feature_collector_destroy(fc);
+    return NULL;
+}
+
+/* `tol == 0.0` asserts bit-exact equality. */
+static char *check_float_psnr_pair(VmafFeatureExtractor *fex, VmafDictionary *opts,
+                                   FloatPsnrPair *pair, double expect_diff, double expect_ident,
+                                   double tol)
+{
+    double diff_score = 0.0;
+    double ident_score = 0.0;
+    char *fail = extract_float_psnr_pair(fex, opts, pair, &diff_score, &ident_score);
+    mu_assert("extraction pass", fail == NULL);
+    mu_assert("differing-pair float_psnr", fabs(diff_score - expect_diff) <= tol);
+    mu_assert("identical-pair float_psnr", ident_score == expect_ident);
+    return NULL;
+}
+
 static char *test_float_psnr_uncapped(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_psnr");
     mu_assert("float_psnr extractor present", fex != NULL);
 
-    VmafPicture ref;
-    VmafPicture dist_diff;
-    VmafPicture dist_ident;
-
-    int err = alloc_grey(&ref, VMAF_PIX_FMT_YUV420P, 8u, 128u);
-    mu_assert("alloc ref", err == 0);
-    err = alloc_grey(&dist_diff, VMAF_PIX_FMT_YUV420P, 8u, 128u);
-    mu_assert("alloc dist_diff", err == 0);
-    err = alloc_grey(&dist_ident, VMAF_PIX_FMT_YUV420P, 8u, 128u);
-    mu_assert("alloc dist_ident", err == 0);
-
-    /* Differ in one luma sample by +1 */
-    ((uint8_t *)dist_diff.data[0])[0] = 129u;
+    FloatPsnrPair pair;
+    char *fail = float_psnr_pair_alloc(&pair);
+    mu_assert("pair alloc", fail == NULL);
 
     /* 1. Default (capped): differing -> 60.0, identical -> 60.0 */
-    {
-        VmafFeatureExtractorContext *ctx = NULL;
-        err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
-        mu_assert("ctx create default", err == 0);
-        err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, FP_W, FP_H);
-        mu_assert("ctx init default", err == 0);
+    fail = check_float_psnr_pair(fex, NULL, &pair, 60.0, 60.0, 0.0);
+    mu_assert("capped mode", fail == NULL);
 
-        VmafFeatureCollector *fc = NULL;
-        err = vmaf_feature_collector_init(&fc);
-        mu_assert("fc init", err == 0);
-        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist_diff, NULL, 0, fc);
-        mu_assert("extract default diff", err == 0);
+    /* 2. Uncapped: differing -> 72.213264 dB (16x16, sse == 1), identical -> 60.0 */
+    VmafDictionary *opts = NULL;
+    int err = vmaf_dictionary_set(&opts, "uncapped", "true", 0);
+    mu_assert("set uncapped opt", err == 0);
+    fail = check_float_psnr_pair(fex, opts, &pair, 72.213264, 60.0, 1e-4);
+    mu_assert("uncapped mode", fail == NULL);
 
-        double score = 0.0;
-        err = vmaf_feature_collector_get_score(fc, "float_psnr", &score, 0);
-        mu_assert("get score default diff", err == 0);
-        mu_assert("default score == 60.0", score == 60.0);
-
-        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist_ident, NULL, 1, fc);
-        mu_assert("extract default ident", err == 0);
-        err = vmaf_feature_collector_get_score(fc, "float_psnr", &score, 1);
-        mu_assert("get score default ident", err == 0);
-        mu_assert("default identical score == 60.0", score == 60.0);
-
-        (void)vmaf_feature_extractor_context_close(ctx);
-        (void)vmaf_feature_extractor_context_destroy(ctx);
-        vmaf_feature_collector_destroy(fc);
-    }
-
-    /* 2. Uncapped: differing -> > 60.0 (exact 72.213264 dB for 16x16 with sse=1), identical -> 60.0 */
-    {
-        VmafDictionary *opts = NULL;
-        err = vmaf_dictionary_set(&opts, "uncapped", "true", 0);
-        mu_assert("set uncapped opt", err == 0);
-
-        VmafFeatureExtractorContext *ctx = NULL;
-        err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
-        mu_assert("ctx create uncapped", err == 0);
-        err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, FP_W, FP_H);
-        mu_assert("ctx init uncapped", err == 0);
-
-        VmafFeatureCollector *fc = NULL;
-        err = vmaf_feature_collector_init(&fc);
-        mu_assert("fc init", err == 0);
-        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist_diff, NULL, 0, fc);
-        mu_assert("extract uncapped diff", err == 0);
-
-        double score = 0.0;
-        err = vmaf_feature_collector_get_score(fc, "float_psnr", &score, 0);
-        mu_assert("get score uncapped diff", err == 0);
-        mu_assert("uncapped |score - 72.213264| < 1e-4", fabs(score - 72.213264) < 1e-4);
-
-        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist_ident, NULL, 1, fc);
-        mu_assert("extract uncapped ident", err == 0);
-        err = vmaf_feature_collector_get_score(fc, "float_psnr", &score, 1);
-        mu_assert("get score uncapped ident", err == 0);
-        mu_assert("uncapped identical score == 60.0", score == 60.0);
-
-        (void)vmaf_feature_extractor_context_close(ctx);
-        (void)vmaf_feature_extractor_context_destroy(ctx);
-        vmaf_feature_collector_destroy(fc);
-    }
-
-    vmaf_picture_unref(&ref);
-    vmaf_picture_unref(&dist_diff);
-    vmaf_picture_unref(&dist_ident);
+    float_psnr_pair_free(&pair);
     return NULL;
 }
 
@@ -290,3 +306,5 @@ char *run_tests(void)
     mu_run_test(test_float_psnr_uncapped);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
