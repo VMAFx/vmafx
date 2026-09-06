@@ -76,44 +76,81 @@ static int import_scores(VmafContext *vmaf, const char *name, const double *scor
     return err;
 }
 
+/* Element count of a PoolCase table literal. */
+#define POOL_CASE_CNT(t) ((unsigned)(sizeof(t) / sizeof((t)[0])))
+
+/* Propagate a helper's failure message. Mirrors mu_assert for helpers that
+ * already return "nullptr on success, or the message to fail with". */
+#define mu_assert_msg(expr)                                                                        \
+    do {                                                                                           \
+        char *mu_helper_msg = (expr);                                                              \
+        if (mu_helper_msg)                                                                         \
+            return mu_helper_msg;                                                                  \
+    } while (0)
+
+/* One pooled-score expectation: pool `name` over [0, last] with `method` and
+ * compare against `expect` within `tol`. Returns nullptr on success or `msg`,
+ * so callers can drive a table of cases through a single mu_assert instead of
+ * one per case (readability-function-size caps a test body at 15 branches and
+ * every mu_assert expands to two). */
+typedef struct PoolCase {
+    enum VmafPoolingMethod method;
+    double expect;
+    double tol;
+    char *msg;
+} PoolCase;
+
+static char *check_pool_cases(VmafContext *vmaf, const char *name, unsigned last,
+                              const PoolCase *cases, unsigned cnt)
+{
+    for (unsigned i = 0; i < cnt; i++) {
+        double score = 0.;
+        if (vmaf_feature_score_pooled(vmaf, name, cases[i].method, &score, 0, last))
+            return cases[i].msg;
+        if (fabs(score - cases[i].expect) > cases[i].tol)
+            return cases[i].msg;
+    }
+    return nullptr;
+}
+
+/* Open a context with `n_subsample` and import `cnt` per-frame scores under
+ * `name`. Returns nullptr on success or a static failure message. */
+static char *open_with_scores(VmafContext **vmaf, const char *name, const double *score,
+                              unsigned cnt, unsigned n_subsample)
+{
+    VmafConfiguration cfg = {0};
+    cfg.n_subsample = n_subsample;
+
+    if (vmaf_init(vmaf, cfg))
+        return "problem during vmaf_init";
+    if (import_scores(*vmaf, name, score, cnt))
+        return "problem during vmaf_import_feature_score";
+    return nullptr;
+}
+
 /* Percentile pooling over the golden pair's real per-frame scores reproduces
  * numpy.percentile exactly, and lands on the Python harness's golden perc10
  * within the tolerance that assertion uses. */
 static char *test_percentile_matches_python_harness(void)
 {
-    VmafContext *vmaf = NULL;
-    VmafConfiguration cfg = {0};
+    VmafContext *vmaf = nullptr;
+    mu_assert_msg(open_with_scores(&vmaf, "vmaf", golden_src01_vmaf, GOLDEN_CNT, 0u));
 
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("problem during vmaf_init", !err);
-    mu_assert("problem during vmaf_import_feature_score",
-              !import_scores(vmaf, "vmaf", golden_src01_vmaf, GOLDEN_CNT));
-
-    double score = 0.;
-    err =
-        vmaf_feature_score_pooled(vmaf, "vmaf", VMAF_POOL_METHOD_PERC10, &score, 0, GOLDEN_CNT - 1);
-    mu_assert("PERC10 pooling failed", !err);
-    mu_assert("PERC10 does not match numpy.percentile(q=10)", fabs(score - golden_perc10) < 1e-12);
-    mu_assert("PERC10 does not match the Python harness golden perc10",
-              fabs(score - harness_perc10) < harness_places2);
-
-    err =
-        vmaf_feature_score_pooled(vmaf, "vmaf", VMAF_POOL_METHOD_PERC5, &score, 0, GOLDEN_CNT - 1);
-    mu_assert("PERC5 pooling failed", !err);
-    mu_assert("PERC5 does not match numpy.percentile(q=5)", fabs(score - golden_perc5) < 1e-12);
-
-    err =
-        vmaf_feature_score_pooled(vmaf, "vmaf", VMAF_POOL_METHOD_PERC20, &score, 0, GOLDEN_CNT - 1);
-    mu_assert("PERC20 pooling failed", !err);
-    mu_assert("PERC20 does not match numpy.percentile(q=20)", fabs(score - golden_perc20) < 1e-12);
-
-    err =
-        vmaf_feature_score_pooled(vmaf, "vmaf", VMAF_POOL_METHOD_MEDIAN, &score, 0, GOLDEN_CNT - 1);
-    mu_assert("MEDIAN pooling failed", !err);
-    mu_assert("MEDIAN does not match numpy.percentile(q=50)", fabs(score - golden_median) < 1e-12);
+    static const PoolCase cases[] = {
+        {VMAF_POOL_METHOD_PERC10, golden_perc10, 1e-12,
+         "PERC10 does not match numpy.percentile(q=10)"},
+        {VMAF_POOL_METHOD_PERC10, harness_perc10, harness_places2,
+         "PERC10 does not match the Python harness golden perc10"},
+        {VMAF_POOL_METHOD_PERC5, golden_perc5, 1e-12, "PERC5 does not match numpy.percentile(q=5)"},
+        {VMAF_POOL_METHOD_PERC20, golden_perc20, 1e-12,
+         "PERC20 does not match numpy.percentile(q=20)"},
+        {VMAF_POOL_METHOD_MEDIAN, golden_median, 1e-12,
+         "MEDIAN does not match numpy.percentile(q=50)"},
+    };
+    mu_assert_msg(check_pool_cases(vmaf, "vmaf", GOLDEN_CNT - 1, cases, POOL_CASE_CNT(cases)));
 
     mu_assert("problem during vmaf_close", !vmaf_close(vmaf));
-    return NULL;
+    return nullptr;
 }
 
 /* The interpolation rule itself, on a vector whose percentiles are trivially
@@ -122,30 +159,20 @@ static char *test_percentile_matches_python_harness(void)
  * instead of interpolating would return 1.0 / 1.0 / 2.0 / 2.0 here. */
 static char *test_percentile_interpolates_between_ranks(void)
 {
-    VmafContext *vmaf = NULL;
-    VmafConfiguration cfg = {0};
+    VmafContext *vmaf = nullptr;
     static const double v[] = {1., 2., 3., 4.};
+    mu_assert_msg(open_with_scores(&vmaf, "f", v, 4u, 0u));
 
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("problem during vmaf_init", !err);
-    mu_assert("problem during vmaf_import_feature_score", !import_scores(vmaf, "f", v, 4u));
-
-    double score = 0.;
-    mu_assert("PERC5 pooling failed",
-              !vmaf_feature_score_pooled(vmaf, "f", VMAF_POOL_METHOD_PERC5, &score, 0, 3));
-    mu_assert("PERC5 is not the interpolated 1.15", fabs(score - 1.15) < 1e-12);
-    mu_assert("PERC10 pooling failed",
-              !vmaf_feature_score_pooled(vmaf, "f", VMAF_POOL_METHOD_PERC10, &score, 0, 3));
-    mu_assert("PERC10 is not the interpolated 1.3", fabs(score - 1.3) < 1e-12);
-    mu_assert("PERC20 pooling failed",
-              !vmaf_feature_score_pooled(vmaf, "f", VMAF_POOL_METHOD_PERC20, &score, 0, 3));
-    mu_assert("PERC20 is not the interpolated 1.6", fabs(score - 1.6) < 1e-12);
-    mu_assert("MEDIAN pooling failed",
-              !vmaf_feature_score_pooled(vmaf, "f", VMAF_POOL_METHOD_MEDIAN, &score, 0, 3));
-    mu_assert("MEDIAN is not the interpolated 2.5", fabs(score - 2.5) < 1e-12);
+    static const PoolCase cases[] = {
+        {VMAF_POOL_METHOD_PERC5, 1.15, 1e-12, "PERC5 is not the interpolated 1.15"},
+        {VMAF_POOL_METHOD_PERC10, 1.3, 1e-12, "PERC10 is not the interpolated 1.3"},
+        {VMAF_POOL_METHOD_PERC20, 1.6, 1e-12, "PERC20 is not the interpolated 1.6"},
+        {VMAF_POOL_METHOD_MEDIAN, 2.5, 1e-12, "MEDIAN is not the interpolated 2.5"},
+    };
+    mu_assert_msg(check_pool_cases(vmaf, "f", 3, cases, POOL_CASE_CNT(cases)));
 
     mu_assert("problem during vmaf_close", !vmaf_close(vmaf));
-    return NULL;
+    return nullptr;
 }
 
 /* Percentiles are order statistics over the frames that pooling actually
@@ -153,25 +180,22 @@ static char *test_percentile_interpolates_between_ranks(void)
  * itself for every rank. */
 static char *test_percentile_order_and_single_frame(void)
 {
-    VmafContext *vmaf = NULL;
-    VmafConfiguration cfg = {0};
+    VmafContext *vmaf = nullptr;
     static const double shuffled[] = {4., 1., 3., 2.};
+    mu_assert_msg(open_with_scores(&vmaf, "f", shuffled, 4u, 0u));
 
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("problem during vmaf_init", !err);
-    mu_assert("problem during vmaf_import_feature_score", !import_scores(vmaf, "f", shuffled, 4u));
+    static const PoolCase cases[] = {
+        {VMAF_POOL_METHOD_MEDIAN, 2.5, 1e-12, "MEDIAN depends on arrival order"},
+    };
+    mu_assert_msg(check_pool_cases(vmaf, "f", 3, cases, POOL_CASE_CNT(cases)));
 
     double score = 0.;
-    mu_assert("MEDIAN pooling failed",
-              !vmaf_feature_score_pooled(vmaf, "f", VMAF_POOL_METHOD_MEDIAN, &score, 0, 3));
-    mu_assert("MEDIAN depends on arrival order", fabs(score - 2.5) < 1e-12);
-
     mu_assert("single-frame PERC5 pooling failed",
               !vmaf_feature_score_pooled(vmaf, "f", VMAF_POOL_METHOD_PERC5, &score, 2, 2));
     mu_assert("single-frame PERC5 is not that frame's score", fabs(score - 3.) < 1e-12);
 
     mu_assert("problem during vmaf_close", !vmaf_close(vmaf));
-    return NULL;
+    return nullptr;
 }
 
 /* n_subsample must skip the same frames for percentiles as for the
@@ -179,84 +203,95 @@ static char *test_percentile_order_and_single_frame(void)
  * so the median of [1..4] becomes the median of {1, 3} = 2.0, not 2.5. */
 static char *test_percentile_honours_n_subsample(void)
 {
-    VmafContext *vmaf = NULL;
-    VmafConfiguration cfg = {0};
+    VmafContext *vmaf = nullptr;
     static const double v[] = {1., 2., 3., 4.};
-    cfg.n_subsample = 2;
+    mu_assert_msg(open_with_scores(&vmaf, "f", v, 4u, 2u));
 
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("problem during vmaf_init", !err);
-    mu_assert("problem during vmaf_import_feature_score", !import_scores(vmaf, "f", v, 4u));
-
-    double score = 0.;
-    mu_assert("MEDIAN pooling failed",
-              !vmaf_feature_score_pooled(vmaf, "f", VMAF_POOL_METHOD_MEDIAN, &score, 0, 3));
-    mu_assert("MEDIAN ignored n_subsample", fabs(score - 2.) < 1e-12);
-
-    double mean = 0.;
-    mu_assert("MEAN pooling failed",
-              !vmaf_feature_score_pooled(vmaf, "f", VMAF_POOL_METHOD_MEAN, &mean, 0, 3));
-    mu_assert("MEAN and MEDIAN disagree about which frames were pooled", fabs(mean - 2.) < 1e-12);
+    static const PoolCase cases[] = {
+        {VMAF_POOL_METHOD_MEDIAN, 2., 1e-12, "MEDIAN ignored n_subsample"},
+        {VMAF_POOL_METHOD_MEAN, 2., 1e-12,
+         "MEAN and MEDIAN disagree about which frames were pooled"},
+    };
+    mu_assert_msg(check_pool_cases(vmaf, "f", 3, cases, POOL_CASE_CNT(cases)));
 
     mu_assert("problem during vmaf_close", !vmaf_close(vmaf));
-    return NULL;
+    return nullptr;
 }
 
+/* An out-of-range discriminant a future ABI might carry. Reproducing exactly
+ * this call — a caller built against a newer header handing an older library a
+ * pooling method it has never heard of — is the whole point of
+ * test_invalid_pool_methods_still_rejected (ADR-1188: the enum grows
+ * append-only, so the guard that rejects unknown discriminants is what keeps
+ * that growth safe). The cast therefore cannot be refactored away, and
+ * clang-analyzer flags it by construction. */
+static enum VmafPoolingMethod future_abi_pool_method(void)
+{
+    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) — ADR-1188 */
+    return (enum VmafPoolingMethod)99;
+}
 /* The append-only enum growth must not weaken the discriminant guards: the
  * UNKNOWN sentinel and any out-of-range value are still rejected, and the
- * legacy accumulator methods keep their values and results. */
+ * legacy accumulator methods keep their values and results. (The
+ * VMAF_POOL_METHOD_NB count sentinel is deliberately not referenced here — it
+ * is deprecated in the public header; core/src/output.cpp static_asserts its
+ * value instead.) */
 static char *test_invalid_pool_methods_still_rejected(void)
 {
-    VmafContext *vmaf = NULL;
-    VmafConfiguration cfg = {0};
+    VmafContext *vmaf = nullptr;
     static const double v[] = {1., 2., 3., 4.};
-
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("problem during vmaf_init", !err);
-    mu_assert("problem during vmaf_import_feature_score", !import_scores(vmaf, "f", v, 4u));
+    mu_assert_msg(open_with_scores(&vmaf, "f", v, 4u, 0u));
 
     double score = 0.;
     mu_assert("UNKNOWN pool method was accepted",
               vmaf_feature_score_pooled(vmaf, "f", VMAF_POOL_METHOD_UNKNOWN, &score, 0, 3) ==
                   -EINVAL);
-    /* An out-of-range discriminant a future ABI might carry. The cast is the
-     * point of the test: it reproduces what a caller built against a newer
-     * header would pass to an older library. */
     mu_assert("out-of-range pool method was accepted",
-              vmaf_feature_score_pooled(vmaf, "f", (enum VmafPoolingMethod)99, &score, 0, 3) ==
+              vmaf_feature_score_pooled(vmaf, "f", future_abi_pool_method(), &score, 0, 3) ==
                   -EINVAL);
-    mu_assert("NULL score pointer was accepted",
-              vmaf_feature_score_pooled(vmaf, "f", VMAF_POOL_METHOD_MEDIAN, NULL, 0, 3) == -EINVAL);
+    mu_assert("null score pointer was accepted",
+              vmaf_feature_score_pooled(vmaf, "f", VMAF_POOL_METHOD_MEDIAN, nullptr, 0, 3) ==
+                  -EINVAL);
 
-    mu_assert("MIN pooling failed",
-              !vmaf_feature_score_pooled(vmaf, "f", VMAF_POOL_METHOD_MIN, &score, 0, 3));
-    mu_assert("MIN changed", fabs(score - 1.) < 1e-12);
-    mu_assert("MAX pooling failed",
-              !vmaf_feature_score_pooled(vmaf, "f", VMAF_POOL_METHOD_MAX, &score, 0, 3));
-    mu_assert("MAX changed", fabs(score - 4.) < 1e-12);
-    mu_assert("MEAN pooling failed",
-              !vmaf_feature_score_pooled(vmaf, "f", VMAF_POOL_METHOD_MEAN, &score, 0, 3));
-    mu_assert("MEAN changed", fabs(score - 2.5) < 1e-12);
+    static const PoolCase cases[] = {
+        {VMAF_POOL_METHOD_MIN, 1., 1e-12, "MIN changed"},
+        {VMAF_POOL_METHOD_MAX, 4., 1e-12, "MAX changed"},
+        {VMAF_POOL_METHOD_MEAN, 2.5, 1e-12, "MEAN changed"},
+    };
+    mu_assert_msg(check_pool_cases(vmaf, "f", 3, cases, POOL_CASE_CNT(cases)));
 
     mu_assert("problem during vmaf_close", !vmaf_close(vmaf));
-    return NULL;
+    return nullptr;
 }
 
 /* Enumerator values are append-only: every pre-existing discriminant keeps the
- * integer an already-compiled consumer baked in. */
+ * integer an already-compiled consumer baked in. Driven off a table so the
+ * body stays inside the branch budget. */
 static char *test_enum_values_are_append_only(void)
 {
-    mu_assert("VMAF_POOL_METHOD_UNKNOWN moved", VMAF_POOL_METHOD_UNKNOWN == 0);
-    mu_assert("VMAF_POOL_METHOD_MIN moved", VMAF_POOL_METHOD_MIN == 1);
-    mu_assert("VMAF_POOL_METHOD_MAX moved", VMAF_POOL_METHOD_MAX == 2);
-    mu_assert("VMAF_POOL_METHOD_MEAN moved", VMAF_POOL_METHOD_MEAN == 3);
-    mu_assert("VMAF_POOL_METHOD_HARMONIC_MEAN moved", VMAF_POOL_METHOD_HARMONIC_MEAN == 4);
-    mu_assert("VMAF_POOL_METHOD_MEDIAN is not appended after HARMONIC_MEAN",
-              VMAF_POOL_METHOD_MEDIAN == 5);
-    mu_assert("VMAF_POOL_METHOD_PERC5 is not appended after MEDIAN", VMAF_POOL_METHOD_PERC5 == 6);
-    mu_assert("VMAF_POOL_METHOD_PERC10 is not appended after PERC5", VMAF_POOL_METHOD_PERC10 == 7);
-    mu_assert("VMAF_POOL_METHOD_PERC20 is not appended after PERC10", VMAF_POOL_METHOD_PERC20 == 8);
-    return NULL;
+    static const struct {
+        enum VmafPoolingMethod method;
+        int value;
+        char *msg;
+    } expected[] = {
+        {VMAF_POOL_METHOD_UNKNOWN, 0, "VMAF_POOL_METHOD_UNKNOWN moved"},
+        {VMAF_POOL_METHOD_MIN, 1, "VMAF_POOL_METHOD_MIN moved"},
+        {VMAF_POOL_METHOD_MAX, 2, "VMAF_POOL_METHOD_MAX moved"},
+        {VMAF_POOL_METHOD_MEAN, 3, "VMAF_POOL_METHOD_MEAN moved"},
+        {VMAF_POOL_METHOD_HARMONIC_MEAN, 4, "VMAF_POOL_METHOD_HARMONIC_MEAN moved"},
+        {VMAF_POOL_METHOD_MEDIAN, 5, "VMAF_POOL_METHOD_MEDIAN is not appended after HARMONIC_MEAN"},
+        {VMAF_POOL_METHOD_PERC5, 6, "VMAF_POOL_METHOD_PERC5 is not appended after MEDIAN"},
+        {VMAF_POOL_METHOD_PERC10, 7, "VMAF_POOL_METHOD_PERC10 is not appended after PERC5"},
+        {VMAF_POOL_METHOD_PERC20, 8, "VMAF_POOL_METHOD_PERC20 is not appended after PERC10"},
+    };
+
+    char *failure = nullptr;
+    for (unsigned i = 0; i < (unsigned)(sizeof(expected) / sizeof(expected[0])); i++) {
+        if ((int)expected[i].method != expected[i].value)
+            failure = expected[i].msg;
+    }
+    mu_assert_msg(failure);
+    return nullptr;
 }
 
 mu_message_t run_tests(void)
@@ -267,5 +302,5 @@ mu_message_t run_tests(void)
     mu_run_test(test_percentile_honours_n_subsample);
     mu_run_test(test_invalid_pool_methods_still_rejected);
     mu_run_test(test_enum_values_are_append_only);
-    return NULL;
+    return nullptr;
 }
