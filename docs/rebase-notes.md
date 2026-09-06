@@ -48757,3 +48757,52 @@ invariants are worth carrying forward anyway:
    looks like a build problem and is not. Link the directory in before running;
    never "fix" it by un-ignoring the YUVs — they are hundreds of MB and the
    4K pair is ~2.5 GB per file.
+
+## fix/cuda-adm-picture-ready-race — reproducer for the CUDA/FFmpeg nondeterminism (2026-09-06)
+
+Adds `scripts/test/repro-cuda-ffmpeg-nondeterminism.sh`; no library code is touched.
+Two things worth knowing before anyone tries to fix the underlying defect:
+
+1. **Measure by interleaving, never sequentially.** The corruption rate tracks host
+   load (0/60 idle, 14/60 at load ~33, 36/80 at load ~16, 50/50 at load ~69 where it
+   saturates and stops discriminating). Two 80-run samples taken one after another
+   produced an apparent 36→9 "improvement" from a change that an interleaved A/B then
+   showed to be 14/60 vs 14/60 — no effect at all. Run the two arms alternately.
+
+2. **Two plausible fixes are already ruled out**, by measurement rather than reasoning:
+   waiting on the pictures' `ready` events before the scale-0 DWT2 in
+   `integer_adm_cuda.c`, and fencing the shared `s->buf` against the previous frame's
+   `s->str` work. Both are theoretically sound gaps; neither moves the rate. Do not
+   re-propose them without an interleaved measurement. The live lead is
+   `collect_fex_cuda()` skipping `cuStreamSynchronize` on the ADR-0242 `drained` path
+   while `submit(N+1)` is already overwriting the shared `results_host`.
+
+## fix/cuda-adm-picture-ready-race — order caller-written CUDA pictures (2026-09-06)
+
+Touches `core/src/libvmaf.c`, which is upstream-mirrored. Three invariants:
+
+1. **The `cuCtxSynchronize()` at the top of `read_pictures_extractor_loop()` is
+   load-bearing, not defensive.** It orders this frame's device data against
+   whoever produced it. With `..._PREALLOCATION_METHOD_DEVICE` the caller copies
+   into a libvmaf-owned picture on a stream we never see, and libvmaf records a
+   picture's `ready` event only inside `vmaf_cuda_picture_upload_async()` — so in
+   that path every `cuStreamWaitEvent(..., ready)` in every extractor is vacuous.
+   Removing this barrier as "redundant with the per-extractor ready waits"
+   restores a silent wrong-score bug: 56 of 60 runs corrupted, measured. See
+   [ADR-1199](adr/1199-cuda-picture-handover-barrier.md).
+
+2. **It belongs at the dispatch point, not inside an extractor.** The corruption
+   was only ever *observed* in ADM because ADM reads the raw planes first. Moving
+   the barrier into `integer_adm_cuda.c` leaves every other CUDA extractor relying
+   on queue position; `test_cuda_float_moment_parity` was seen failing under the
+   same GPU contention.
+
+3. **Do not re-propose the three fixes already ruled out** without an interleaved
+   measurement: waiting on the pictures' `ready` events before the scale-0 DWT2,
+   fencing ADM's shared `s->buf` against the previous frame's `s->str`, and
+   dropping the `drained` shortcut in `collect_fex_cuda()`. Each measured 14/60
+   against 14/60 for control. Reproduce with
+   `scripts/test/repro-cuda-ffmpeg-nondeterminism.sh` under **concurrent CUDA
+   load** — CPU load is not a stressor for this race (1/80 at load 22 versus
+   56/60 with three concurrent CUDA processes), and two builds must be compared
+   by interleaving runs, never sequentially.

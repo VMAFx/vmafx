@@ -8446,6 +8446,14 @@ Docs: `docs/usage/vmaf-tune-recommend.md`,
   caller always gets a result.
 
 
+- `scripts/test/repro-cuda-ffmpeg-nondeterminism.sh` reproduces
+  `T-CUDA-FFMPEG-FILTER-NONDETERMINISM-2026-09-06` — the FFmpeg `libvmaf_cuda` filter
+  intermittently returning a wrong pooled VMAF — and reports which frames and metrics
+  corrupted. The defect is timing-dependent: it does not reproduce on an idle host and
+  reaches ~23% under load, so the script prints the load average alongside its result and
+  documents why two builds must be compared by interleaving runs rather than sequentially.
+
+
 - **Research-0061: docs-only PR CI fast-track design.** Tracks the
   docs-only / research-only PR pattern where a small markdown change
   waits ~25 minutes for the full 23-required-check CI matrix. Documents
@@ -20530,6 +20538,17 @@ unblock each item.  No functional change.
   in extractor code that used the accessor would fail to link against a CUDA build.
   Restored with the original `return pic->pix_fmt;` implementation and Doxygen doc
   comment, matching the pattern of `vmaf_cuda_picture_get_stream` and sibling accessors.
+
+
+- The FFmpeg `libvmaf_cuda` filter no longer returns a different pooled VMAF from run to
+  run. With `VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_DEVICE` the caller copies frames into a
+  libvmaf-owned device picture on its own stream, and libvmaf records a picture's `ready`
+  event only when libvmaf itself performs the upload — so in that hand-over path nothing
+  ordered the CUDA kernels against the producer's write, and one frame per run came back
+  with corrupted ADM features. libvmaf now orders the frame once, at the CUDA dispatch
+  point, before any extractor reads it: 56 of 60 runs corrupted before, 0 of 60 after,
+  measured interleaved under concurrent CUDA load, at no measurable throughput cost. See
+  [ADR-1199](docs/adr/1199-cuda-picture-handover-barrier.md).
 
 
 - **CUDA `picture_cuda.c` integer-type precision fixes (round-5 clang-tidy

@@ -1008,3 +1008,4 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1195](1195-container-source-revision-guard.md) | Record and verify which source revision the dev container was built from | Proposed | ci, build, testing, agents |
 | [ADR-1193](1193-psnr-uncapped-option.md) | Opt-in `uncapped` option splits the PSNR infinity sentinel from the truncation | Accepted | core, feature, psnr, options, cuda, sycl, hip, metal, gpu-twins, upstream |
 | [ADR-1185](1185-backend-perf-baseline-methodology.md) | Per-backend performance baselines are median-of-N, one backend per build dir | Accepted | perf, benchmarks, cuda, sycl, hip, docs |
+| [ADR-1199](1199-cuda-picture-handover-barrier.md) | Order caller-written CUDA pictures once per frame, at the dispatch point | Proposed | cuda, correctness, api, testing |
