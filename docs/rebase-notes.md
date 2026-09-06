@@ -5,6 +5,27 @@
 
 No rebase impact: `scripts/ci/check-no-tracked-venv.sh` and its test are fork-added.
 
+## perf/hot-path-1245 — SpEED `matrix_mul` gains a kernel-pointer parameter (2026-09-06)
+
+- `core/src/feature/speed.c`: upstream Netflix's `matrix_mul(Matrix *dst, const Matrix *x,
+  const Matrix *y)` is now `matrix_mul(..., speed_matmul_fn matmul)`, and the pointer is
+  threaded through `matrix_qr_decomposition()` and `solve_linear_system()` from
+  `SpeedState::matmul` (ADR-1196). The multiply loop itself moved out of `matrix_mul` into
+  the exported `speed_matmul_scalar()` in the same file. An upstream commit that touches
+  any of those three signatures will conflict: re-thread the parameter rather than
+  reverting to the three-argument form, and keep `speed_matmul_scalar` non-`static` —
+  `core/test/test_speed_simd.c` links against it directly so the SIMD twins are gated
+  against the production reference rather than a copy of it.
+- `core/src/feature/x86/speed_matmul_avx2.c`, `x86/speed_matmul_avx512.c`: fork-added.
+  Invariant: both must stay in their own `-ffp-contract=off` static libraries
+  (`x86_speed_matmul_avx2` / `x86_speed_matmul_avx512` in `core/src/meson.build`). Folding
+  them into `x86_avx2_sources` / `x86_avx512_sources` puts them under `-mfma` with
+  contraction enabled, the compiler fuses the explicit `_mm*_mul_ps` / `_mm*_add_ps` pairs
+  into a single-rounding FMA, and the scores drift from the scalar reference. Same
+  carve-out rationale as `x86_ssim_avx2` and `x86_float_adm_avx2`.
+- `core/src/feature/speed_internal.c`: **not** touched. Its `si_mat_mul()` is the ADR-0964
+  duplicate of the same loop for the GPU twins' host side and stays scalar on purpose; do
+  not "resync" it to `speed.c` as if the difference were drift.
 ## fix/gpu-cambi-parity-drift — align the CUDA/SYCL CAMBI twins with `cambi.c` (2026-09-05)
 
 - `core/src/feature/cuda/integer_cambi/cambi_score.cu`,

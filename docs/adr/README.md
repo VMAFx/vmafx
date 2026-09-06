@@ -1012,6 +1012,7 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1190](1190-cli-option-string-escape-grammar.md) | Backslash escapes (`\:`, `\=`, `\.`, `\\`) and a Windows drive-letter affordance in the `--model` / `--feature` option-string grammar; a pair's value is everything after the first unescaped `=`, so an inner `=` no longer silently truncates a path | Accepted | cli, parser, windows, upstream, bug |
 | [ADR-1184](1184-mcp-grpc-bridge-go-only.md) | The MCP gRPC control-plane bridge is Go-only | Accepted | mcp, go, grpc, agents, docs |
 | [ADR-1188](1188-percentile-pooling-methods.md) | Percentile temporal pooling in the public C API | Accepted | core, api, pooling, abi, output-schema, golden-gate |
+| [ADR-1196](1196-speed-matmul-simd-dispatch.md) | Dispatch the SpEED dense matrix product through bit-exact AVX2 / AVX-512 kernels | Accepted | simd, feature, performance, testing |
 | [ADR-1185](1185-backend-perf-baseline-methodology.md) | Per-backend performance baselines are median-of-N, one backend per build dir | Accepted | perf, benchmarks, cuda, sycl, hip, docs |
 | [ADR-1198](1198-changelog-unknown-section-is-an-error.md) | An unknown `changelog.d/` subdirectory fails the run instead of warning | Proposed | ci, release, docs, testing |
 | [ADR-1199](1199-cuda-picture-handover-barrier.md) | Order caller-written CUDA pictures once per frame, at the dispatch point | Proposed | cuda, correctness, api, testing |
