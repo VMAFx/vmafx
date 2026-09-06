@@ -103,6 +103,17 @@ typedef struct AdmStateHip {
     hipFunction_t func_adm_cm_reduce_line_kernel_4;
     hipFunction_t func_adm_cm_line_kernel_8;
     hipFunction_t func_i4_adm_cm_line_kernel;
+
+    /* ADR-1211: device staging for the scale-0 luma plane.
+     * The HIP backend is host-pic (ADR-0530): `VmafPicture::data[]` points at
+     * HOST memory. The DWT2 kernel is a device kernel, so the plane has to be
+     * copied across before it can be read — the CUDA twin gets a device
+     * picture from the pool and needs no equivalent. Mirrors the staging
+     * `integer_psnr_hip.c` already does with `ref_in` / `dis_in`. */
+    void *d_ref_luma;
+    void *d_dis_luma;
+    size_t luma_pitch; /* bytes per staged row = width * bytes-per-sample */
+    unsigned luma_h;
 #endif /* HAVE_HIPCC */
 
     VmafDictionary *feature_name_dict;
@@ -987,36 +998,56 @@ static int integer_compute_adm_hip(AdmStateHip *s, VmafPicture *ref_pic, VmafPic
     int32_t *i4_curr_ref_scale = NULL;
     int32_t *i4_curr_dis_scale = NULL;
 
-    if (ref_pic->bpc == 8) {
-        curr_ref_stride = ref_pic->stride[0];
-        curr_dis_stride = dis_pic->stride[0];
-    } else {
-        curr_ref_stride = ref_pic->stride[0] >> 1;
-        curr_dis_stride = dis_pic->stride[0] >> 1;
+    /* ADR-1211: stage the host-resident luma plane onto the device.
+     * `VmafPicture::data[]` is HOST memory under the host-pic HIP backend
+     * (ADR-0530), so handing it straight to the DWT2 kernel faults the GPU
+     * ("Memory access fault ... Page not present"). Copy it across first and
+     * point the kernel at the device buffer. Rows are tightly packed on the
+     * device side, so the element stride below is `w`, not the picture's. */
+    {
+        const size_t bpp = (ref_pic->bpc > 8) ? sizeof(uint16_t) : sizeof(uint8_t);
+        const size_t row_bytes = (size_t)w * bpp;
+        hipError_t crc = hipMemcpy2DAsync(s->d_ref_luma, s->luma_pitch, ref_pic->data[0],
+                                          (size_t)ref_pic->stride[0], row_bytes, (size_t)h,
+                                          hipMemcpyHostToDevice, s->str);
+        if (crc != hipSuccess)
+            return hip_rc(crc);
+        crc = hipMemcpy2DAsync(s->d_dis_luma, s->luma_pitch, dis_pic->data[0],
+                               (size_t)dis_pic->stride[0], row_bytes, (size_t)h,
+                               hipMemcpyHostToDevice, s->str);
+        if (crc != hipSuccess)
+            return hip_rc(crc);
+        crc = hipStreamSynchronize(s->str);
+        if (crc != hipSuccess)
+            return hip_rc(crc);
     }
+
+    /* Strides are in ELEMENTS and refer to the staged, tightly-packed copy. */
+    curr_ref_stride = (size_t)w;
+    curr_dis_stride = (size_t)w;
 
     int err = 0;
     for (unsigned scale = 0; scale < 4; ++scale) {
         if (scale == 0) {
             if (ref_pic->bpc == 8) {
-                err = dwt2_8_device_hip(s, (const uint8_t *)ref_pic->data[0], &buf->ref_dwt2,
+                err = dwt2_8_device_hip(s, (const uint8_t *)s->d_ref_luma, &buf->ref_dwt2,
                                         buf->i4_ref_dwt2, w, h, (int)curr_ref_stride,
                                         (int)buf_stride, &p, /* pic_stream */ 0);
                 if (err)
                     return err;
-                err = dwt2_8_device_hip(s, (const uint8_t *)dis_pic->data[0], &buf->dis_dwt2,
+                err = dwt2_8_device_hip(s, (const uint8_t *)s->d_dis_luma, &buf->dis_dwt2,
                                         buf->i4_dis_dwt2, w, h, (int)curr_dis_stride,
                                         (int)buf_stride, &p, /* pic_stream */ 0);
                 if (err)
                     return err;
             } else {
-                err = dwt2_16_device_hip(s, (const uint16_t *)ref_pic->data[0], &buf->ref_dwt2,
+                err = dwt2_16_device_hip(s, (const uint16_t *)s->d_ref_luma, &buf->ref_dwt2,
                                          buf->i4_ref_dwt2, w, h, (int)curr_ref_stride,
                                          (int)buf_stride, (int)ref_pic->bpc, &p,
                                          /* pic_stream */ 0);
                 if (err)
                     return err;
-                err = dwt2_16_device_hip(s, (const uint16_t *)dis_pic->data[0], &buf->dis_dwt2,
+                err = dwt2_16_device_hip(s, (const uint16_t *)s->d_dis_luma, &buf->dis_dwt2,
                                          buf->i4_dis_dwt2, w, h, (int)curr_dis_stride,
                                          (int)buf_stride, (int)dis_pic->bpc, &p,
                                          /* pic_stream */ 0);
@@ -1253,6 +1284,18 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (hip_err != hipSuccess)
         goto fail_tmp_res;
 
+    /* ADR-1211: staging buffers for the host-resident luma plane. Sized for the
+     * full frame at this bit depth; the staged rows are tightly packed, so the
+     * element stride handed to the kernel is `w`, not the picture's stride. */
+    s->luma_pitch = (size_t)w * ((bpc > 8u) ? sizeof(uint16_t) : sizeof(uint8_t));
+    s->luma_h = h;
+    hip_err = hipMalloc(&s->d_ref_luma, s->luma_pitch * (size_t)h);
+    if (hip_err != hipSuccess)
+        goto fail_host;
+    hip_err = hipMalloc(&s->d_dis_luma, s->luma_pitch * (size_t)h);
+    if (hip_err != hipSuccess)
+        goto fail_ref_luma;
+
     /* Slice the backing buffer into band pointers — mirrors init_dwt_band_cuda logic */
     {
         uint8_t *top = (uint8_t *)s->buf.data_buf;
@@ -1317,6 +1360,9 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 
     return 0;
 
+fail_ref_luma:
+    (void)hipFree(s->d_ref_luma);
+    s->d_ref_luma = NULL;
 fail_host:
     (void)hipHostFree(s->buf.results_host);
     s->buf.results_host = NULL;
@@ -1459,6 +1505,14 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
     if (s->adm_dwt_module != NULL) {
         (void)hipModuleUnload(s->adm_dwt_module);
         s->adm_dwt_module = NULL;
+    }
+    if (s->d_ref_luma != NULL) {
+        (void)hipFree(s->d_ref_luma);
+        s->d_ref_luma = NULL;
+    }
+    if (s->d_dis_luma != NULL) {
+        (void)hipFree(s->d_dis_luma);
+        s->d_dis_luma = NULL;
     }
     if (s->buf.results_host != NULL) {
         (void)hipHostFree(s->buf.results_host);
