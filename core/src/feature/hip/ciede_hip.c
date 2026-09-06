@@ -136,8 +136,16 @@ static int ciede_hip_bufs_alloc(CiedeStateHip *s, unsigned w, unsigned h, unsign
 {
     const size_t bpp = (bpc <= 8u) ? 1u : 2u;
     const size_t luma_bytes = (size_t)w * h * bpp;
-    s->chroma_w = ss_hor ? (w >> 1) : w;
-    s->chroma_h = ss_ver ? (h >> 1) : h;
+    /* ADR-1213: chroma plane dimensions are CEIL(w / 2^ss), exactly as
+     * core/src/picture.c allocates them (`(w + ss_hor) >> ss_hor`). Plain
+     * `w >> 1` under-sizes the staging buffer by one column/row on odd luma
+     * dimensions, so the last chroma column is never uploaded and the
+     * kernel's `cx = x >> 1` for the last luma column reads one element past
+     * the staged row — into the next row, and past the allocation on the last
+     * row. CPU, CUDA, SYCL and Metal all consume the picture's real
+     * `w[1]`/`h[1]`; this twin was the only one re-deriving them with floor. */
+    s->chroma_w = (w + ss_hor) >> ss_hor;
+    s->chroma_h = (h + ss_ver) >> ss_ver;
     const size_t chroma_bytes = (size_t)s->chroma_w * s->chroma_h * bpp;
 
     void **bufs[6] = {&s->ref_y, &s->ref_u, &s->ref_v, &s->dis_y, &s->dis_u, &s->dis_v};
