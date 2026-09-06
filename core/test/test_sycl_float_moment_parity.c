@@ -66,29 +66,59 @@
  * test under the fast-suite budget. */
 #define FIXTURE_W 256u
 #define FIXTURE_H 144u
+#ifndef FIXTURE_BPC
 #define FIXTURE_BPC 8u
+#endif
 #define PARITY_TOL 1e-4
+
+/* ADR-1212: the fixture is bit-depth generic. Below 8 bpc it writes bytes as
+ * before; above it writes uint16 samples with the 8-bit pattern in the high
+ * bits and a second pattern in the low (bpc - 8) bits, so a twin that forgets
+ * to divide by the bit-depth scaler — or that only looks at the high bits —
+ * cannot match the CPU by accident. */
+static void put_luma(VmafPicture *pic, unsigned row, unsigned col, unsigned v8, unsigned low_seed)
+{
+#if FIXTURE_BPC > 8u
+    uint16_t *y = (uint16_t *)((uint8_t *)pic->data[0] + (size_t)row * pic->stride[0]);
+    const unsigned low_mask = (1u << (FIXTURE_BPC - 8u)) - 1u;
+    y[col] = (uint16_t)(((v8 & 0xFFu) << (FIXTURE_BPC - 8u)) | (low_seed & low_mask));
+#else
+    uint8_t *y = (uint8_t *)pic->data[0] + (size_t)row * pic->stride[0];
+    (void)low_seed;
+    y[col] = (uint8_t)(v8 & 0xFFu);
+#endif
+}
+
+static void fill_chroma_grey(VmafPicture *pic)
+{
+    for (unsigned p = 1; p < 3; p++) {
+        for (unsigned row = 0; row < pic->h[p]; row++) {
+            uint8_t *rowp = (uint8_t *)pic->data[p] + (size_t)row * pic->stride[p];
+#if FIXTURE_BPC > 8u
+            uint16_t *r16 = (uint16_t *)rowp;
+            for (unsigned col = 0; col < pic->w[p]; col++)
+                r16[col] = (uint16_t)(1u << (FIXTURE_BPC - 1u));
+#else
+            memset(rowp, 128, pic->w[p]);
+#endif
+        }
+    }
+}
 
 static int fill_pic(VmafPicture *pic, unsigned salt)
 {
     int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
     if (err)
         return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
     for (unsigned row = 0; row < pic->h[0]; row++) {
         for (unsigned col = 0; col < pic->w[0]; col++) {
             /* XOR-based pattern with frame-dependent salt — gives a
              * non-trivial distribution for both the 1st-moment (sum)
              * and 2nd-moment (sum of squares) accumulators. */
-            y[row * pic->stride[0] + col] = (uint8_t)(((row ^ col) + salt * 13u) & 0xFFu);
+            put_luma(pic, row, col, ((row ^ col) + salt * 13u) & 0xFFu, row * 7u + col + salt);
         }
     }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
-        }
-    }
+    fill_chroma_grey(pic);
     return 0;
 }
 
