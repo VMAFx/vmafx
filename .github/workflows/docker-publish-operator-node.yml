@@ -68,8 +68,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease || false }}
         run: |
-          if [[ "$RELEASE_IS_PRERELEASE" == "true" ]]; then
-            echo "ERROR: prerelease publication is not supported: $PUBLISH_TAG" >&2
+          # ADR-1201: release candidates publish too; the tag and the release
+          # flag must agree rather than prereleases being refused outright.
+          case "$PUBLISH_TAG" in
+            *-rc.*) tag_is_rc=true ;;
+            *)      tag_is_rc=false ;;
+          esac
+          if [[ "$RELEASE_IS_PRERELEASE" != "$tag_is_rc" ]]; then
+            echo "ERROR: $PUBLISH_TAG has prerelease=$RELEASE_IS_PRERELEASE but the tag says rc=$tag_is_rc" >&2
             exit 1
           fi
           expected_ref="refs/tags/$PUBLISH_TAG"
@@ -86,7 +92,7 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PUBLISH_TAG" > "$release_json"
           if [[ "$(jq -r '.tag_name' "$release_json")" != "$PUBLISH_TAG" || \
                 "$(jq -r '.draft' "$release_json")" != "false" || \
-                "$(jq -r '.prerelease' "$release_json")" != "false" || \
+                "$(jq -r '.prerelease' "$release_json")" != "$tag_is_rc" || \
                 "$(jq -r '.published_at != null' "$release_json")" != "true" ]]; then
             echo "ERROR: $PUBLISH_TAG must name a published, non-prerelease release" >&2
             exit 1
