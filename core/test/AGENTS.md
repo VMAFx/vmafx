@@ -383,3 +383,31 @@ adding a NOLINT.
   or worker threads (such as stdio, UDS, or SSE MCP transports), synchronize on
   real readiness signals or poll readiness endpoints with a timeout rather than
   using fixed `sleep()` calls.
+
+## Large-fixture parity variants (ADR-1206)
+
+Every CUDA and SYCL parity test is registered twice: once at its own small
+fixture and once as `<name>_large` against 960x540, built from the same TU with
+`-DFIXTURE_W=960u -DFIXTURE_H=540u`. The fixture macros are `#ifndef`-guarded
+for exactly this reason — do not un-guard them.
+
+960x540 is not arbitrary: `min(w, h) = 540` puts the shared SSIM/MS-SSIM
+auto-scale `max(1, round(min(w, h) / 256))` at 2, and 540 is not a multiple of
+the 16/32-wide kernel blocks, so tail bounds are exercised too. Below 384 px
+that auto-scale is always 1 and the whole resolution-dependent half of these
+extractors is unreachable — which is where ADR-1202, ADR-1204 and the
+`float_ssim` scale=1-only limitation all hid.
+
+When adding a parity test, add it to the matching `*_parity_large_fixture_tests`
+list too. Two deliberate exceptions, both documented in ADR-1206:
+
+- `test_*_float_ssim_parity` stays registered but treats the twin's
+  `-EINVAL` at a decimating resolution as a **skip**, because the GPU twins are
+  v1 scale=1-only while the CPU decimates — there is no parity to assert. The
+  variant is kept so that a twin which stops refusing and starts returning a
+  scale=1 score fails loudly instead of silently comparing two metrics.
+- `test_sycl_motion_add_uv_parity` is not registered at all: it compares float
+  CPU against fixed-point SYCL, so its tolerance is a per-fixture budget rather
+  than a bit-exactness bound.
+
+HIP and Metal are not registered yet — unverifiable on the current workstation.

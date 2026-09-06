@@ -49259,3 +49259,23 @@ Invariants a future rebase must not undo:
 5. **`HSA_OVERRIDE_GFX_VERSION` stays out of `dev/docker-compose.yml`.**
    ROCm 10 supports `gfx1036` natively; re-adding the `10.3.0` alias would map
    the agent to `gfx1030` while meson compiles `gfx1036` code objects.
+## ADR-1206 (SYCL) — which parity tests get a large-fixture variant
+
+1. **`test_sycl_motion_add_uv_parity` is deliberately absent from
+   `sycl_parity_large_fixture_tests`.** It compares the CPU float
+   `float_motion` against the fixed-point `motion_sycl`, so its 2e-4 tolerance
+   is a quantisation budget calibrated for one fixture, not a bit-exactness
+   bound. At 960x540 it lands at 2.30e-04. Adding it to the list without first
+   deriving a resolution-aware tolerance turns the lane red for a reason the
+   test was never designed to detect
+   (`T-SYCL-MOTION-ADD-UV-TOLERANCE-RESOLUTION-2026-09-06`).
+
+2. **HIP and Metal have no large-fixture variants yet, on purpose.** The
+   `#ifndef FIXTURE_W` guards were deliberately *not* applied to their parity
+   TUs either, so there is nothing half-wired to trip over. Register them only
+   together with a run on real hardware.
+
+3. **The `float_ssim` skip is a contract assertion, not a workaround.** The GPU
+   twins are v1 scale=1-only and reject `min(w, h) >= 384` with `-EINVAL`,
+   while the CPU decimates. The large variant stays registered and treats that
+   specific refusal as a skip; any other failure is real.

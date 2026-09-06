@@ -56,8 +56,12 @@
 /* Use a slightly larger fixture than the static-image parity tests
  * so the motion SAD has enough block-aligned area for the SYCL
  * tile-aligned reduction to converge with the CPU scalar path. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 144u
+#endif
 #define FIXTURE_BPC 8u
 #define NUM_FRAMES 2u
 #define PARITY_TOL 1e-4
