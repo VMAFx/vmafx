@@ -598,15 +598,20 @@ not as fixed constants.
      Always add `[[nodiscard]]` to the header declaration (inside the `extern "C"` block
      — C compilers silently ignore the attribute).
 
-  7. **`gpu_dispatch_env.cpp` isolated lib pattern (ADR-0858)**: `gpu_dispatch_env.cpp`
-     is compiled as `gpu_dispatch_env_cpp23_lib` with `override_options: ['cpp_std=c++23']`
-     and linked into `libvmaf` via `extract_all_objects`. The project default is now
-     `cpp_std=c++23` (ADR-1003), so the isolated-lib `override_options` are redundant but
-     harmless; cleanup is deferred. Do NOT collapse the isolated libs back into
-     `libvmaf_sources` until the redundancy cleanup PR lands, to preserve a clean git
-     history for the `extract_all_objects` pattern. Always follow the
-     `metadata_handler_cpp20_lib` (ADR-0708) pattern for any further `.c → .cpp`
-     conversions.
+  7. **Isolated C++ static libs carry NO `cpp_std` override (epic #1241 cleanup)**:
+     `gpu_dispatch_env_cpp23_lib` (ADR-0858), `metadata_handler_cpp20_lib` (ADR-0708),
+     `log_cpp23_lib`, `opt_cpp23_lib`, `picture_pool_cpp23_lib`, `gpu_picture_pool_cpp23_lib`,
+     `read_json_model_cpp23_lib`, `libvmaf_cpu_static_lib`, the `vmaf` / `vmafx` tools, the
+     `test_cli_parse*` / `test_picture_pool_cpp_error_paths` tests and `fuzz_cli_parse` are all
+     compiled at the project-wide C++ standard that `core/meson.build` injects through
+     `add_project_arguments` (ADR-1003 / ADR-1056). That flag is emitted *after* any
+     per-target `cpp_std=` option, so the former `override_options : ['cpp_std=...']`
+     entries (and the `libvmaf_cpu_cpp_std` token variable) never changed the effective
+     standard — `compile_commands.json` showed `-std=c++23 ... -std=c++26` on every
+     overridden TU, last flag wins. Do NOT re-add per-target `cpp_std` overrides for new
+     `.c → .cpp` conversions; do keep the isolated-lib + `extract_all_objects` link pattern
+     (it is what the test targets consume). The only `override_options` that remain are the
+     `b_lto=false` ones (AVX-512 symbol visibility, macOS `test_output`) and those are real.
 
 - **Required-aggregator invariant — `float_ansnr` removal (PR #38 / ADR-0865):**
   `float_ansnr` was deliberately removed from all backends (CPU, CUDA, HIP, SYCL,

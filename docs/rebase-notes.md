@@ -126,6 +126,32 @@ no rebase impact: fork-local SYCL feature extractor and tests.
   header into parse errors). On a sync, keep the bracket balanced and do not "modernise" the
   header — every rewrite it suppresses breaks the C includers.
 
+## chore/modernization-leftovers-1241 — redundant cpp_std override_options cleanup (2026-09-05)
+
+- `core/src/meson.build`, `core/test/meson.build`, `core/tools/meson.build`: upstream-mirror
+  files (Netflix/vmaf `libvmaf/src|test|tools/meson.build`, renamed under ADR-0700). The hunks
+  removed here are fork-only: the `libvmaf_cpu_cpp_std` token block and every
+  `override_options : ['cpp_std=...']` on the fork's isolated `*_cpp23_lib` /
+  `metadata_handler_cpp20_lib` static libs, `libvmaf_cpu_static_lib`, the `vmaf` / `vmafx`
+  tools and the `test_cli_parse*` / `test_picture_pool_cpp_error_paths` targets. Upstream has
+  no C++ TUs there, so a sync cannot re-introduce them; if a future upstream hunk lands next to
+  one of these targets, do not resurrect a per-target `cpp_std` override — the standard is
+  project-wide via `add_project_arguments` in `core/meson.build` (ADR-1003 / ADR-1056). The
+  `b_lto=false` overrides in `core/src/meson.build` (AVX-512) and `core/test/meson.build`
+  (`test_output_lto_override`, macOS) are intentional and must survive.
+- `core/test/fuzz/meson.build`, `core/AGENTS.md`, `docs/development/cpp23-extractor-pattern.md`:
+  fork-added; no rebase impact.
+
+## chore/modernization-leftovers-1241 — rebrand residual scrub (2026-09-05)
+
+no rebase impact: every touched file is fork-added (`.claude/`, `ai/scripts/`, `dev-llm/`,
+`mcp-server/`, `docs/development/`, the root and `python/` `pyproject.toml`, `CLAUDE.md`);
+upstream Netflix/vmaf has no counterpart for any of them. Deliberately NOT renamed — keep them
+on any sync: the `libvmaf.so` soname, the `libvmaf` ffmpeg filter name, the version scheme,
+the `lusoris.*` ONNX metadata keys asserted by `ai/tests/test_export_u2netp_mirror.py`, and
+`model/tiny/transnet_v2.onnx` (its baked-in `producer_name` only changes at the next
+re-export).
+
 ## fix/cuda-drain-batch-per-state-lifetime — drain-batch ownership and the read fence (2026-09-05)
 
 `core/src/cuda/drain_batch.{c,h}` and `core/test/test_cuda_drain_batch.c` are fork-added (ADR-0242);

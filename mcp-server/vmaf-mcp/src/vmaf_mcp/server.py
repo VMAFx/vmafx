@@ -1,6 +1,6 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
-"""MCP server for the Lusoris VMAF fork.
+"""MCP server for the VMAFx fork.
 
 Exposes fifteen tools over the Model Context Protocol (stdio transport).
 The ten core tools are listed below; the P1 tools ``list_extractors``,

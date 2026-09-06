@@ -22,15 +22,15 @@ gpu_all_deps = [
 libvmaf_public_link = get_option('default_library') == 'both' ? libvmaf.get_shared_lib() : libvmaf
 test_output_lto_override = host_machine.system() == 'darwin' ? ['b_lto=false'] : []
 
-# ADR-0708 Wave 1: log is compiled in log_cpp23_lib (cpp_std=c++23 override).
+# ADR-0708 Wave 1: log is compiled in log_cpp23_lib (isolated C++ static lib).
 # Every test executable that previously direct-compiled '../src/log.c' must
 # now pick up the log symbols via this object aggregate so that
 # vmaf_log / vmaf_set_log_level resolve at link time.
 log_cpp23_test_objects = log_cpp23_lib.extract_all_objects(recursive: true)
 # ADR-0761: opt.cpp and predict.cpp are compiled as isolated C++23 static libs
 # in src/meson.build. Tests that previously listed these files as direct sources
-# now pull them in via extract_all_objects() so the compilation honours
-# cpp_std=c++23 instead of the project-wide c++11 default.
+# now pull them in via extract_all_objects() so they are compiled exactly once,
+# at the project-wide C++ standard (ADR-1003).
 wave8_cpp23_objects = [
     opt_cpp23_lib.extract_all_objects(recursive: true),
     read_json_model_cpp23_lib.extract_all_objects(recursive: true),
@@ -613,12 +613,6 @@ test_cli_parse = executable('test_cli_parse',
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : [compat_cflags],
     cpp_args : [compat_cflags],
-    # libvmaf_cpu_cpp_std (core/src/meson.build): 'vc++latest' on MSVC,
-    # 'c++latest' on clang-cl / icx-cl, 'c++23' elsewhere. The plain 'c++23'
-    # spelling is REJECTED by MSVC's meson and fails configure on all three
-    # Windows MSVC legs with "None of values ['c++23'] are supported by the
-    # CPP compiler" — the same trap ADR-0755 / ADR-0860 documents for cpu.cpp.
-    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     dependencies: [pthread_dependency, getopt_dependency, sycl_dependency],
 )
 
@@ -658,12 +652,6 @@ if host_machine.system() != 'windows'
         link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
         c_args : [compat_cflags],
         cpp_args : [compat_cflags],
-        # libvmaf_cpu_cpp_std (core/src/meson.build): 'vc++latest' on MSVC,
-    # 'c++latest' on clang-cl / icx-cl, 'c++23' elsewhere. The plain 'c++23'
-    # spelling is REJECTED by MSVC's meson and fails configure on all three
-    # Windows MSVC legs with "None of values ['c++23'] are supported by the
-    # CPP compiler" — the same trap ADR-0755 / ADR-0860 documents for cpu.cpp.
-    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
         dependencies: [pthread_dependency, getopt_dependency, sycl_dependency],
     )
 
@@ -2048,7 +2036,6 @@ test_picture_pool_cpp_error_paths = executable('test_picture_pool_cpp_error_path
     ['test.c', 'test_picture_pool_error_paths.c',
      '../src/picture_pool.cpp', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     dependencies: [stdatomic_dependency, pthread_dependency, thread_lib],
 )
 test('test_picture_pool_cpp_error_paths', test_picture_pool_cpp_error_paths, suite : ['fast'])
