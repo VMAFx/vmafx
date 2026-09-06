@@ -163,6 +163,31 @@ a real kernel lands; they are removed from `metal_sources` in
   the `places=4` gate must pass. Any future change to the weight
   application math must span all motion-family GPU twins in the same PR.
 
+## Per-feature option-table sync invariant
+
+- **GPU twins must mirror the CPU option table for model-configured features.**
+  When a model (such as the default model `vmaf_v1.0.16_3d0h`) provides feature options,
+  `vmaf_use_features_from_model` checks that the selected backend's feature extractor
+  supports every option present in the model's options dictionary. If any option is missing
+  from the GPU twin's `options[]` table, dispatch rejects the twin and falls back to CPU.
+  For CAMBI (`integer_cambi_metal`), `cambi_high_res_speedup` (alias `hrs`, default 0, min 0, max 2160)
+  must be present in the option table and honored during processing (adjusting window size and
+  subsampling post-spatial-mask for resolutions >= 1080p, matching `cambi.c`).
+- **Do not re-declare shared CAMBI constants.** The resolution thresholds
+  (`CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1080p` / `_1440p` / `_2160p`) and
+  `CAMBI_WINDOW_DIVISOR` live in `core/src/feature/cambi_internal.h`, which
+  `integer_cambi_metal.mm` already includes. A Metal-local copy of a shared
+  constant is how a twin silently drifts from `cambi.c` on the next upstream
+  sync.
+- **`submit_fex_metal` must leave `s->d_image` / `s->d_mask` / `s->d_tmp` pointing at the
+  allocations `init_fex_metal` made.** The per-scale pipeline rotates the three scratch
+  buffers via pointer swaps; every exit path restores the originals so the next frame
+  starts from a known state and `close_fex_metal` releases the handles it owns.
+- **`vmaf_use_feature()` consumes the option dictionary.** It takes ownership of the
+  `VmafFeatureDictionary` on every path except the argument-validation guards, so a
+  CPU-vs-Metal parity test must build a fresh dictionary per call. Sharing one across
+  the two runners is a use-after-free; freeing it afterwards is a double free.
+
 ## Governing ADRs
 
 - [ADR-1176](../../../../docs/adr/1176-metal-motion-v2-mirror-closeout.md) — Metal motion_v2 mirror closeout and reflect-101 parity

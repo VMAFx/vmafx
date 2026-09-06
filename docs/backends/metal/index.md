@@ -194,6 +194,16 @@ vmaf --backend metal \
      --json --output /tmp/output.json
 ```
 
+### `integer_cambi_metal`
+
+`integer_cambi_metal` supports CAMBI configuration options required by model
+configurations (such as the default model `vmaf_v1.0.16_3d0h`):
+
+- `cambi_high_res_speedup` (alias `hrs`, int, default `0`, min `0`, max `2160`)
+  — Speed up CAMBI processing by downsampling post-spatial-mask for resolutions
+  >= 1080p (possible values: `1080`, `1440`, `2160`, `0`). Matches CPU `cambi`
+  and CUDA twins.
+
 ## Coordination with NEON
 
 The Metal backend targets the GPU on Apple Silicon. The NEON SIMD

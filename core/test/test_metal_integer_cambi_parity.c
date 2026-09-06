@@ -59,6 +59,7 @@
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_metal.h"
 #include "libvmaf/picture.h"
+#include "feature/feature_extractor.h"
 
 /* CAMBI requires >= 216 on at least one dimension; 256x256 is safely above. */
 #define FIXTURE_W 256u
@@ -91,7 +92,8 @@ static int fill_fixture(VmafPicture *pic, unsigned salt)
 
 static char *feed_one_frame(VmafContext *vmaf)
 {
-    VmafPicture ref, dist;
+    VmafPicture ref;
+    VmafPicture dist;
     int err = fill_fixture(&ref, 0u);
     mu_assert("fill_fixture(ref) failed", !err);
     err = fill_fixture(&dist, 1u);
@@ -103,28 +105,80 @@ static char *feed_one_frame(VmafContext *vmaf)
     return NULL;
 }
 
-static char *run_cpu_cambi(double *out_score)
+/* Exact mirror of the `cambi_high_res_speedup` row in `core/src/feature/cambi.c`
+ * and `core/src/feature/cuda/integer_cambi_cuda.c`. Split out of the caller so
+ * neither function trips the `readability-function-size` branch threshold. */
+static char *assert_hrs_option_mirrors_cpu(const VmafOption *opt)
 {
+    mu_assert("hrs alias mismatch", opt->alias && !strcmp(opt->alias, "hrs"));
+    mu_assert("hrs type mismatch", opt->type == VMAF_OPT_TYPE_INT);
+    mu_assert("hrs default mismatch", opt->default_val.i == 0);
+    mu_assert("hrs min mismatch", opt->min == 0.0);
+    mu_assert("hrs max mismatch", opt->max == 2160.0);
+    mu_assert("hrs flags mismatch", (opt->flags & VMAF_OPT_FLAG_FEATURE_PARAM) != 0);
+    return NULL;
+}
+
+static char *test_cambi_metal_registered(void)
+{
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("integer_cambi_metal");
+    mu_assert("integer_cambi_metal extractor missing", fex != NULL);
+    mu_assert("integer_cambi_metal has no option table", fex->options != NULL);
+
+    const VmafOption *hrs = NULL;
+    for (unsigned i = 0; fex->options[i].name; i++) {
+        if (!strcmp(fex->options[i].name, "cambi_high_res_speedup")) {
+            hrs = &fex->options[i];
+            break;
+        }
+    }
+    mu_assert("cambi_high_res_speedup option missing from integer_cambi_metal", hrs != NULL);
+    return assert_hrs_option_mirrors_cpu(hrs);
+}
+
+/* `vmaf_use_feature()` takes ownership of the dictionary on every path except
+ * the argument-validation guards (see the contract in <libvmaf/libvmaf.h>), so
+ * each runner builds its own — handing the same dictionary to both backends
+ * would be a use-after-free on the second call, and freeing it afterwards a
+ * double free. `hrs_val == NULL` means "no options". */
+static int build_hrs_opts(VmafFeatureDictionary **opts, const char *hrs_val)
+{
+    *opts = NULL;
+    if (hrs_val == NULL)
+        return 0;
+    return vmaf_feature_dictionary_set(opts, "cambi_high_res_speedup", hrs_val);
+}
+
+static char *run_cpu_cambi_opts(const char *hrs_val, const char *feature_score_name,
+                                double *out_score)
+{
+    VmafFeatureDictionary *opts = NULL;
+    int err = build_hrs_opts(&opts, hrs_val);
+    mu_assert("CPU: vmaf_feature_dictionary_set(cambi_high_res_speedup) failed", !err);
+
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
+    err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "cambi", NULL);
+    err = vmaf_use_feature(vmaf, "cambi", opts);
     mu_assert("CPU: vmaf_use_feature(cambi) failed", !err);
 
     char *msg = feed_one_frame(vmaf);
-    if (msg)
+    if (msg) {
+        (void)vmaf_close(vmaf);
         return msg;
+    }
 
-    err = vmaf_feature_score_at_index(vmaf, "Cambi_feature_cambi_score", out_score, 0u);
+    err = vmaf_feature_score_at_index(vmaf, feature_score_name, out_score, 0u);
     mu_assert("CPU: vmaf_feature_score_at_index(cambi) failed", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
     return NULL;
 }
 
-static char *run_metal_cambi(double *out_score, int *skipped)
+static char *run_metal_cambi_opts(const char *hrs_val, const char *feature_score_name,
+                                  double *out_score, int *skipped)
 {
     *skipped = 0;
     *out_score = NAN;
@@ -138,6 +192,13 @@ static char *run_metal_cambi(double *out_score, int *skipped)
         return NULL;
     }
 
+    VmafFeatureDictionary *opts = NULL;
+    err = build_hrs_opts(&opts, hrs_val);
+    if (err) {
+        vmaf_metal_state_free(&mstate);
+        return "Metal: vmaf_feature_dictionary_set(cambi_high_res_speedup) failed";
+    }
+
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
     err = vmaf_init(&vmaf, cfg);
@@ -146,20 +207,33 @@ static char *run_metal_cambi(double *out_score, int *skipped)
     err = vmaf_metal_import_state(vmaf, mstate);
     mu_assert("Metal: vmaf_metal_import_state failed", !err);
 
-    err = vmaf_use_feature(vmaf, "integer_cambi_metal", NULL);
+    err = vmaf_use_feature(vmaf, "integer_cambi_metal", opts);
     mu_assert("Metal: vmaf_use_feature(integer_cambi_metal) failed", !err);
 
     char *msg = feed_one_frame(vmaf);
-    if (msg)
+    if (msg) {
+        (void)vmaf_close(vmaf);
+        vmaf_metal_state_free(&mstate);
         return msg;
+    }
 
-    err = vmaf_feature_score_at_index(vmaf, "Cambi_feature_cambi_score", out_score, 0u);
+    err = vmaf_feature_score_at_index(vmaf, feature_score_name, out_score, 0u);
     mu_assert("Metal: vmaf_feature_score_at_index(cambi) failed", !err);
     err = vmaf_close(vmaf);
     mu_assert("Metal: vmaf_close failed", !err);
 
     vmaf_metal_state_free(&mstate);
     return NULL;
+}
+
+static char *run_cpu_cambi(double *out_score)
+{
+    return run_cpu_cambi_opts(NULL, "Cambi_feature_cambi_score", out_score);
+}
+
+static char *run_metal_cambi(double *out_score, int *skipped)
+{
+    return run_metal_cambi_opts(NULL, "Cambi_feature_cambi_score", out_score, skipped);
 }
 
 static char *test_cambi_cpu_metal_parity(void)
@@ -186,8 +260,51 @@ static char *test_cambi_cpu_metal_parity(void)
     return NULL;
 }
 
+/* Option-table plumbing test for `cambi_high_res_speedup`.
+ *
+ * What this covers: `cambi_high_res_speedup` is a VMAF_OPT_FLAG_FEATURE_PARAM,
+ * so setting it renames the collector key from `cambi` to `cambi_hrs_1080`.
+ * That key is exactly what `vmaf_use_features_from_model()` looks up for the
+ * default model, and it is what the Metal twin could not emit before this
+ * change. Both backends must accept the option and land on the same key and
+ * the same score.
+ *
+ * What this does NOT cover: the fixture is 256x256, far below the 1920*1080
+ * pixel threshold, so `hrs=1080` resolves to *inactive* in both `cambi.c` and
+ * the Metal twin — the halved window and the extra pre-scale-0 decimation are
+ * not exercised here. The sibling CUDA/SYCL parity tests have the same limit
+ * (`core/test/test_cuda_cambi_parity.c`); real >= 1080p hrs parity is covered
+ * by the cross-backend sweep, not by this unit test. */
+static char *test_cambi_cpu_metal_hrs_parity(void)
+{
+    double cpu_score = 0.0;
+    double metal_score = NAN;
+    int skipped = 0;
+
+    const char *feature_score_name = "cambi_hrs_1080";
+    char *msg = run_cpu_cambi_opts("1080", feature_score_name, &cpu_score);
+    if (msg)
+        return msg;
+    msg = run_metal_cambi_opts("1080", feature_score_name, &metal_score, &skipped);
+    if (msg)
+        return msg;
+    if (skipped)
+        return NULL;
+
+    const double delta = fabs(cpu_score - metal_score);
+    if (delta > PARITY_TOL) {
+        (void)fprintf(stderr, "\ncambi hrs parity FAIL: cpu=%.8f metal=%.8f delta=%.2e tol=%.2e\n",
+                      cpu_score, metal_score, delta, PARITY_TOL);
+    }
+    mu_assert("cambi hrs CPU vs. Metal delta exceeds places=4 tolerance (1e-4)",
+              delta <= PARITY_TOL);
+    return NULL;
+}
+
 char *run_tests(void)
 {
+    mu_run_test(test_cambi_metal_registered);
     mu_run_test(test_cambi_cpu_metal_parity);
+    mu_run_test(test_cambi_cpu_metal_hrs_parity);
     return NULL;
 }

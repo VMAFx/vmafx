@@ -175,6 +175,22 @@ no rebase impact: fork-local SYCL feature extractor and tests.
   header into parse errors). On a sync, keep the bracket balanced and do not "modernise" the
   header — every rewrite it suppresses breaks the C includers.
 
+## fix/metal-cambi-hrs-option — option-table sync for the Metal cambi twin (2026-09-05)
+
+- `core/src/feature/metal/integer_cambi_metal.mm`: fork-added (upstream Netflix has no Metal
+  backend); no upstream sync conflict. Preserves the option table parity requirement: `cambi_high_res_speedup`
+  (alias `hrs`, int, default 0, min 0, max 2160) must be retained so model dispatch using
+  default model `vmaf_v1.0.16_3d0h` selects the Metal twin rather than falling back to CPU.
+  Also preserves the decimation and window size adjustments for resolutions >= 1080p.
+  The >= 1080p / 1440p / 2160p pixel-count thresholds are taken from the shared
+  `CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_*` macros in `core/src/feature/cambi_internal.h` — do not
+  reintroduce a Metal-local copy, that is exactly how the twins drift apart.
+- `core/test/test_metal_integer_cambi_parity.c`: fork-added unit test. Asserts option table registration
+  and parity between CPU and Metal extractors with `cambi_high_res_speedup`. Rebase-sensitive
+  invariant: `vmaf_use_feature()` takes ownership of the `VmafFeatureDictionary` on every path
+  except the argument-validation guards, so each runner must build its own dictionary — handing
+  one dictionary to both backends is a use-after-free.
+
 ## fix/cuda-drain-batch-per-state-lifetime — drain-batch ownership and the read fence (2026-09-05)
 
 `core/src/cuda/drain_batch.{c,h}` and `core/test/test_cuda_drain_batch.c` are fork-added (ADR-0242);
