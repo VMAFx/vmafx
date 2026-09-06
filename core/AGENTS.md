@@ -319,7 +319,7 @@ core/
   `picture_copy()` / `picture_copy_hbd()` signature in
   [`src/feature/picture_copy.{c,h}`](src/feature/picture_copy.h) gained a
   trailing `int channel` parameter (upstream d3647c73 prerequisite); every
-  fork-local caller (`float_adm.c`, `float_ansnr.c`, `float_moment.c`,
+  fork-local caller (`float_adm.c`, `float_moment.c`,
   `float_ms_ssim.c`, `float_psnr.c`, `float_ssim.c`, `float_vif.c`,
   `cuda/integer_ms_ssim_cuda.c`, `sycl/integer_ms_ssim_sycl.cpp`,
   `sycl/integer_ssim_sycl.cpp`, `vulkan/ms_ssim_vulkan.c`,
@@ -600,7 +600,7 @@ not as fixed constants.
      `metadata_handler_cpp20_lib` (ADR-0708) pattern for any further `.c → .cpp`
      conversions.
 
-- **Required-aggregator invariant — `float_ansnr` removal (PR #38 / ADR-0720):**
+- **Required-aggregator invariant — `float_ansnr` removal (PR #38 / ADR-0865):**
   `float_ansnr` was deliberately removed from all backends (CPU, CUDA, HIP, SYCL,
   Metal, Vulkan) in PR #38. The following must remain consistent on any rebase
   or upstream-sync that touches these files:

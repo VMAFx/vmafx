@@ -15,7 +15,7 @@ description: Scaffold a new SIMD implementation for an existing feature. Creates
 
 - `<isa>` ∈ `avx2`, `avx512`, `avx512icl`, `neon`.
 - `<feature>` ∈ the set of feature names under `core/src/feature/` (e.g. `vif`,
-  `adm`, `ansnr`, `motion`, `ciede`, `ssim`, `convolve`, `ssimulacra2`).
+  `adm`, `motion`, `ciede`, `ssim`, `convolve`, `ssimulacra2`).
 - `--kernel-spec=<spec>` (optional) — one of:
   - `widen-add-f32-f64` — single-rounded `float * float` → widen to
     double → double add. See ADR-0138 + `simd_dx.h` macros

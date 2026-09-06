@@ -265,7 +265,7 @@ class TestTrainOnDatasetJsonFormat(unittest.TestCase):
 
     def test_train_test_on_dataset_with_dis1st_thr(self):
         pytest.skip(
-            "sunset per ADR-0709 / PR #38: float_ansnr dropped from C library; "
+            "sunset per ADR-0865 / PR #38: legacy metric dropped from C library; "
             "v1 model + dis1st training paths depend on it. Tests cannot run "
             "without restoring the dropped feature."
         )
@@ -308,7 +308,7 @@ class TestTrainOnDataset(unittest.TestCase):
 
     def test_train_test_on_dataset_with_dis1st_thr(self):
         pytest.skip(
-            "sunset per ADR-0709 / PR #38: float_ansnr dropped from C library; "
+            "sunset per ADR-0865 / PR #38: legacy metric dropped from C library; "
             "v1 model + dis1st training paths depend on it. Tests cannot run "
             "without restoring the dropped feature."
         )
@@ -357,7 +357,7 @@ class TestTrainOnDataset(unittest.TestCase):
 
     def test_train_test_on_raw_dataset_with_dis1st_thr(self):
         pytest.skip(
-            "sunset per ADR-0709 / PR #38: float_ansnr dropped from C library; "
+            "sunset per ADR-0865 / PR #38: legacy metric dropped from C library; "
             "v1 model + dis1st training paths depend on it. Tests cannot run "
             "without restoring the dropped feature."
         )
@@ -643,7 +643,7 @@ class TestTrainOnDataset(unittest.TestCase):
 
     def test_train_test_on_dataset_with_dis1st_thr_with_feature_optional_dict_good(self):
         pytest.skip(
-            "sunset per ADR-0709 / PR #38: float_ansnr dropped from C library; "
+            "sunset per ADR-0865 / PR #38: legacy metric dropped from C library; "
             "v1 model + dis1st training paths depend on it. Tests cannot run "
             "without restoring the dropped feature."
         )

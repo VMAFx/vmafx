@@ -200,7 +200,7 @@ static char *test_dispatch_rejects_phantom_metal_names_or_skip(void)
      * deliberately non-existent names that no .mm registers. */
     static const char *const phantoms[] = {
         "lpips_metal",                         /* LPIPS is a DNN feature; no Metal kernel */
-        "ansnr_metal",                         /* ANSNR Metal backend dropped (ADR-0720) */
+        "ansnr_metal",                         /* ANSNR Metal backend dropped (ADR-0865) */
         "vmaf_metal",                          /* the VMAF aggregate is not an extractor */
         "motion3_metal",                       /* standalone motion3 is unimplemented on Metal */
         "definitely_not_a_metal_kernel_metal", /* obvious non-name */

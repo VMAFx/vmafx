@@ -242,6 +242,22 @@ no rebase impact: fork-only test wiring in `core/test/meson.build` and documenta
 
 no rebase impact: fork-only Metal backend (`core/src/feature/metal/integer_motion_v2.metal`, `core/test/test_metal_motion_v2_parity.c`, `core/src/feature/metal/AGENTS.md`, ADR-1176). All touched files are fork-added surfaces with no upstream Netflix/vmaf counterpart.
 
+## chore/drop-ansnr — remove ansnr feature extractor (ADR-0865) (2026-09-04)
+
+- Cleanly finalized removal of the legacy ANSNR feature extractor (ADR-0865).
+- Removed residual dead configuration entries in CI parity tooling:
+  `scripts/ci/cross_backend_parity_gate.py` (`float_ansnr` metric tuple and tolerance entry),
+  `scripts/ci/cross_backend_vif_diff.py` (`float_ansnr` tuple), and
+  `scripts/ci/gpu_ulp_calibration.yaml` (`float_ansnr` ULP entry).
+- Recorded feature deprecation row in `docs/development/deprecations.md`.
+- Added rebase-sensitive invariant in `core/src/feature/AGENTS.md`.
+- Rebase impact: Upstream Netflix/vmaf still carries `ansnr` / `float_ansnr` in its C tree
+  (`libvmaf/src/feature/ansnr.c`, `libvmaf/src/feature/ansnr.h`, `libvmaf/src/feature/ansnr_options.h`,
+  `libvmaf/src/feature/ansnr_tools.c`, `libvmaf/src/feature/ansnr_tools.h`,
+  `libvmaf/src/feature/float_ansnr.c`, and x86/arm64 SIMD paths `ansnr_avx2.c`, `ansnr_avx512.c`, `ansnr_neon.c`).
+  On rebase or upstream sync, re-drop any restored ansnr files and do not allow `ansnr` registrations
+  back into `feature_extractor.cpp`.
+
 ## fix/vmaftune-state-bugs — libx264 two-pass CRF conflict fix (2026-09-03)
 
 No rebase impact: all touched files (`pkg/codecadapter/`, `pkg/ffencode/`, `pkg/corpus/`, `tools/vmaf-tune/`) are fork-added Go and Python tuning tooling with no upstream Netflix/vmaf counterpart. No public C API, header, Meson option, or golden assertion is touched.

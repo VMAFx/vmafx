@@ -6,6 +6,29 @@ deprecated or removed. Entries are ordered newest-first.
 
 ---
 
+## 2026-05-28 — `ansnr` / `float_ansnr` feature extractor (ADR-0865)
+
+**Status**: Removed
+
+The `ansnr` and `float_ansnr` feature extractors were removed from all backends
+(CPU scalar, AVX2, AVX-512, NEON, CUDA, HIP, SYCL, Metal). ANSNR is a legacy
+pre-VMAF metric (circa 2001) that Netflix never adopted in any production VMAF
+model. Shipped models (such as `vmaf_v0.6.1.json`) do not reference ANSNR, and
+empirical feature importance analysis (Research-0733) confirmed zero contribution
+to modern VMAF scoring.
+
+**Migration**: Callers requesting distortion-energy metrics should use PSNR
+(`psnr_y`, `psnr_cb`, `psnr_cr`) or PSNR-HVS (`psnr_hvs`), both of which remain
+actively maintained across CPU and GPU backends. For quality assessment, use
+`VmafQualityRunner` with standard models (`vmaf_v0.6.1.json`).
+
+**References**: [ADR-0865](../adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md),
+[ADR-0749](../adr/0749-sunset-legacy-vmaf-feature-extractor.md),
+[Research-0733](../research/0733-feature-importance-audit-2026-05-28.md),
+PR #38
+
+---
+
 ## 2026-05-28 — `VmafLegacyQualityRunner` (ADR-0749)
 
 **Status**: Removed (stub retained for import compatibility)
