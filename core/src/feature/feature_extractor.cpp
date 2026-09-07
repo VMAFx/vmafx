@@ -135,24 +135,23 @@ extern VmafFeatureExtractor vmaf_fex_speed_chroma_sycl;
 extern VmafFeatureExtractor vmaf_fex_speed_temporal_sycl;
 #endif
 #if HAVE_HIP
-/* HIP first-consumer kernel — T7-10 / ADR-0241. Registration succeeds
- * but `init()` returns -ENOSYS until the runtime PR (T7-10b) replaces
- * the kernel-template helper bodies with real HIP calls. */
+/* HIP first-consumer kernel — T7-10 / ADR-0241. With `enable_hipcc=true`
+ * the kernel runs on device; without it submit() returns -ENOSYS. */
 extern VmafFeatureExtractor vmaf_fex_psnr_hip;
 /* HIP second-consumer kernel — T7-10b / ADR-0254. First real kernel:
  * float_psnr_hip. With `enable_hipcc=true` the HSACO is embedded and
  * the kernel runs on device; without it init() returns -ENOSYS. */
 extern VmafFeatureExtractor vmaf_fex_float_psnr_hip;
-/* HIP third-consumer kernel — T7-10b follow-up / ADR-0257. Same
- * scaffold posture as the first consumer: registration succeeds,
- * `init()` returns -ENOSYS until T7-10b. Mirrors
- * `vmaf_fex_ciede_cuda` field-for-field. */
+/* HIP third-consumer kernel — T7-10b follow-up / ADR-0257. With
+ * `enable_hipcc=true` the kernel runs on device; without it submit()
+ * returns -ENOSYS. Mirrors `vmaf_fex_ciede_cuda` field-for-field. */
 extern VmafFeatureExtractor vmaf_fex_ciede_hip;
-/* HIP fourth-consumer kernel — T7-10b follow-up / ADR-0258. Same
- * scaffold posture; emits four `float_moment_*` features. */
+/* HIP fourth-consumer kernel — T7-10b follow-up / ADR-0258. With
+ * `enable_hipcc=true` the kernel runs on device; without it init()
+ * returns -ENOSYS. Emits four `float_moment_*` features. */
 extern VmafFeatureExtractor vmaf_fex_float_moment_hip;
-/* HIP sixth consumer — ADR-0267. Same posture as the first consumer:
- * registration succeeds, `init()` returns -ENOSYS until T7-10b. */
+/* HIP sixth consumer — ADR-0267. With `enable_hipcc=true` the kernel
+ * runs on device; without it submit() returns -ENOSYS. */
 extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_hip;
 /* HIP integer_motion consumer — ADR-0468 scaffold, registration
  * landed in ADR-0523 (PR #1283), promoted to real kernel with
@@ -161,15 +160,18 @@ extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_hip;
  * `compute_fex_flags()` selects it when a HIP state is imported
  * (otherwise the CPU twin wins by tie-break order). Emits
  * VMAF_integer_feature_motion_score, _motion2_score, and
- * _motion3_score (mirrors `vmaf_fex_integer_motion_cuda`). */
+ * _motion3_score (mirrors `vmaf_fex_integer_motion_cuda`). Without
+ * `enable_hipcc=true`, submit() returns -ENOSYS. */
 extern VmafFeatureExtractor vmaf_fex_integer_motion_hip;
-/* HIP seventh-consumer kernel — T7-10b follow-up / ADR-0273. Same
- * scaffold posture; mirrors the CUDA twin
+/* HIP seventh-consumer kernel — T7-10b follow-up / ADR-0273. With
+ * `enable_hipcc=true` the kernel runs on device; without it submit()
+ * returns -ENOSYS. Mirrors the CUDA twin
  * `feature/cuda/float_motion_cuda.c` and pins the temporal-extractor
  * shape with a raw-pixel cache + blurred-frame ping-pong slot pair. */
 extern VmafFeatureExtractor vmaf_fex_float_motion_hip;
-/* HIP eighth-consumer kernel — T7-10b follow-up / ADR-0274. Same
- * scaffold posture; mirrors the CUDA twin
+/* HIP eighth-consumer kernel — T7-10b follow-up / ADR-0274. With
+ * `enable_hipcc=true` the kernel runs on device; without it init()
+ * returns -ENOSYS. Mirrors the CUDA twin
  * `feature/cuda/integer_ssim_cuda.c` and pins the two-dispatch +
  * five intermediate float buffers shape. v1: scale=1 only. */
 extern VmafFeatureExtractor vmaf_fex_float_ssim_hip;
@@ -190,18 +192,14 @@ extern VmafFeatureExtractor vmaf_fex_integer_vif_hip;
 /* HIP twelfth-consumer kernel — T7-10b batch-2 / ADR-0468. Mirrors
  * `feature/cuda/float_adm_cuda.c` — 4-stage DWT+CSF+CM pipeline,
  * 16 launches per frame, host double-precision reduction. With
- * `enable_hipcc=true` the HSACO runs on device; without it init()
- * returns -ENOSYS (scaffold posture). */
+ * `enable_hipcc=true` the HSACO runs on device; without it submit()
+ * returns -ENOSYS. */
 extern VmafFeatureExtractor vmaf_fex_float_adm_hip;
 /* ADR-0533: full HIP-extractor registration sweep. Each of the symbols
  * below already lived in libvmaf/src/feature/hip/ mirroring its
- * CUDA twin, but the TUs were never compiled into the HIP runtime
- * archive and never declared in this file. The companion meson edit
- * adds the source files to `hip_sources`; the entries below make
- * `vmaf_get_feature_extractor_by_name(<name>)` resolve. Scaffold
- * posture: `init()` returns -ENOSYS unless the kernel TU carries a real
- * HSACO blob compiled under `enable_hipcc=true` (matches the prior
- * consumers' contract — psnr_hip / ciede_hip / etc.). */
+ * CUDA twin, and their HSACO blobs are compiled into the HIP runtime
+ * archive. With `enable_hipcc=true` the kernels run on device;
+ * without it init() or submit() returns -ENOSYS. */
 extern VmafFeatureExtractor vmaf_fex_float_vif_hip;
 extern VmafFeatureExtractor vmaf_fex_integer_adm_hip;
 extern VmafFeatureExtractor vmaf_fex_integer_ms_ssim_hip;
@@ -211,8 +209,8 @@ extern VmafFeatureExtractor vmaf_fex_ssimulacra2_hip;
 /* ADR-0964 / ADR-0852: speed_{chroma,temporal} HIP twins. Same hybrid
  * GPU/CPU split as the CUDA twins; wavefront-64 adaptations, host-side
  * eigendecomp + QR via feature/speed_internal.c. Real on-device kernels
- * under enable_hipcc=true; otherwise init() returns -ENOSYS (scaffold
- * posture). Restored after the PR #875 .c→.cpp split orphaned them. */
+ * under enable_hipcc=true; otherwise init() returns -ENOSYS.
+ * Restored after the PR #875 .c→.cpp split orphaned them. */
 extern VmafFeatureExtractor vmaf_fex_speed_chroma_hip;
 extern VmafFeatureExtractor vmaf_fex_speed_temporal_hip;
 #endif
@@ -327,28 +325,27 @@ VmafFeatureExtractor *feature_extractor_list[] = {
     &vmaf_fex_speed_chroma_cuda, &vmaf_fex_speed_temporal_cuda,
 #endif
 #if HAVE_HIP
-    /* T7-10 first consumer (ADR-0241): registration succeeds even on
-     * the scaffold-only build so a caller asking for `psnr_hip` gets
-     * the cleaner "extractor found, runtime not ready (-ENOSYS)"
-     * surface instead of "no such extractor". The runtime PR
-     * (T7-10b) keeps this row verbatim and adds its siblings. */
+    /* T7-10 first consumer (ADR-0241): integer PSNR on HIP. With
+     * `enable_hipcc=true` the kernel runs on device; without it
+     * submit() returns -ENOSYS. */
     &vmaf_fex_psnr_hip,
-    /* T7-10b second consumer (ADR-0254): first real kernel. With
-     * `enable_hipcc=true` the HSACO is loaded and the kernel runs
-     * on device; without it init() returns -ENOSYS (scaffold posture).
+    /* T7-10b second consumer (ADR-0254): first real kernel: float_psnr_hip.
+     * With `enable_hipcc=true` the HSACO is loaded and the kernel runs
+     * on device; without it init() returns -ENOSYS.
      * Emits `float_psnr` (luma-only, same as the CUDA twin). */
     &vmaf_fex_float_psnr_hip,
     /* Third consumer (ADR-0257): `ciede_hip` mirrors
-     * `integer_ciede_cuda.c`'s call graph. Same scaffold-only
-     * registration posture — registers, `init()` returns -ENOSYS
-     * until T7-10b. */
+     * `integer_ciede_cuda.c`'s call graph. Real on-device kernel
+     * under enable_hipcc=true; otherwise submit() returns -ENOSYS. */
     &vmaf_fex_ciede_hip,
     /* Fourth consumer (ADR-0258): `float_moment_hip` mirrors
-     * `integer_moment_cuda.c`'s call graph; emits four
-     * `float_moment_*` features once the runtime kernel arrives. */
+     * `integer_moment_cuda.c`'s call graph. Real on-device kernel
+     * under enable_hipcc=true; otherwise init() returns -ENOSYS.
+     * Emits four `float_moment_*` features. */
     &vmaf_fex_float_moment_hip,
-    /* T7-10b sixth consumer (ADR-0267): same scaffold-posture registration
-     * as the first consumer. */
+    /* T7-10b sixth consumer (ADR-0267): integer motion_v2 on HIP. Real
+     * on-device kernel under enable_hipcc=true; otherwise submit()
+     * returns -ENOSYS. */
     &vmaf_fex_integer_motion_v2_hip,
     /* integer_motion_hip — ADR-0468 scaffold, registration landed
      * in ADR-0523 (PR #1283), promoted to real HIP-flagged
@@ -362,14 +359,16 @@ VmafFeatureExtractor *feature_extractor_list[] = {
      * `float_motion_cuda.c`'s call graph (TEMPORAL flag,
      * raw-pixel cache + blurred-frame ping-pong, `flush()`
      * tail-frame motion2 emission); emits two features
-     * (`VMAF_feature_motion_score`, `VMAF_feature_motion2_score`)
-     * once the runtime kernel arrives. */
+     * (`VMAF_feature_motion_score`, `VMAF_feature_motion2_score`).
+     * Real on-device kernel under enable_hipcc=true; otherwise
+     * submit() returns -ENOSYS. */
     &vmaf_fex_float_motion_hip,
     /* Eighth consumer (ADR-0274): `float_ssim_hip` mirrors
      * `integer_ssim_cuda.c`'s call graph (two-dispatch separable
      * Gaussian, five intermediate float buffers, per-block
-     * float-partial readback); emits one feature (`float_ssim`)
-     * once the runtime kernel arrives. v1 is scale=1 only. */
+     * float-partial readback); emits one feature (`float_ssim`).
+     * Real on-device kernel under enable_hipcc=true; otherwise
+     * init() returns -ENOSYS. v1 is scale=1 only. */
     &vmaf_fex_float_ssim_hip,
     /* HIP CAMBI banding-detector (ADR-0360 port): Strategy II hybrid,
      * three GPU kernels + CPU residual via cambi_internal.h. Bit-exact
@@ -389,37 +388,28 @@ VmafFeatureExtractor *feature_extractor_list[] = {
      * mirrors a CUDA twin that has been a long-standing extractor in
      * `feature_extractor_list[]` (float_vif_cuda / integer_adm_cuda /
      * integer_ms_ssim_cuda / psnr_hvs_cuda / integer_ssim_cuda /
-     * ssimulacra2_cuda). The HIP TUs already shipped the
-     * `VmafFeatureExtractor vmaf_fex_*_hip` symbols and pinned the
-     * extractor-name strings; the entries here wire the name lookup so
-     * the registry surface matches what `libvmaf/src/feature/hip/` ships.
-     * Scaffold posture preserved — `init()` returns -ENOSYS unless the
-     * TU's kernel half is real (ssimulacra2 + integer_ms_ssim ship full
-     * HSACO blobs; the rest stay scaffold-only until the next batch). */
+     * ssimulacra2_cuda). Real on-device kernels under enable_hipcc=true;
+     * otherwise init() or submit() returns -ENOSYS. */
     &vmaf_fex_float_vif_hip, &vmaf_fex_integer_adm_hip, &vmaf_fex_integer_ms_ssim_hip,
     &vmaf_fex_psnr_hvs_hip, &vmaf_fex_integer_ssim_hip, &vmaf_fex_ssimulacra2_hip,
     /* ADR-0964 / ADR-0852: speed_{chroma,temporal} HIP twins. Real on-device
-     * kernels under enable_hipcc=true; otherwise init() returns -ENOSYS
-     * (scaffold posture mirroring the other HIP consumers). CPU-side
-     * eigendecomp + QR via feature/speed_internal.c. */
+     * kernels under enable_hipcc=true; otherwise init() returns -ENOSYS.
+     * CPU-side eigendecomp + QR via feature/speed_internal.c. */
     &vmaf_fex_speed_chroma_hip, &vmaf_fex_speed_temporal_hip,
 #endif
 #if HAVE_METAL
-    /* T8-1 first consumer (ADR-0361): registration succeeds even on
-     * the scaffold-only build so a caller asking for `motion_v2_metal`
-     * gets the cleaner "extractor found, runtime not ready (-ENOSYS)"
-     * surface instead of "no such extractor". The runtime PR (T8-1b /
-     * T8-1c) keeps this row verbatim and adds its siblings. */
+    /* T8-1 first consumer (ADR-0361 / ADR-0421): integer motion_v2 on Metal
+     * with real MTLComputePipelineState dispatch. */
     &vmaf_fex_integer_motion_v2_metal,
     /* T8-1 batch-1 additional consumers (ADR-0361). */
     &vmaf_fex_integer_psnr_metal, &vmaf_fex_float_ssim_metal, &vmaf_fex_integer_motion_metal,
     /* T8-1 batch-2 additional consumers (ADR-0361): 3 float features. */
     &vmaf_fex_float_psnr_metal, &vmaf_fex_float_motion_metal, &vmaf_fex_float_moment_metal,
     /* T8-2a: float_ms_ssim_metal — 5-scale MS-SSIM pyramid on Metal
-     * (ADR-0435). Real kernel dispatch replacing the -ENOSYS scaffold. */
+     * (ADR-0435). Real kernel dispatch on Metal compute pipeline. */
     &vmaf_fex_float_ms_ssim_metal,
     /* integer_ssim_metal — fixed-point SSIM (feature "ssim") on Metal,
-     * mirroring float_ssim_metal's two-pass separable scaffold; completes
+     * mirroring float_ssim_metal's two-pass separable structure; completes
      * the integer_ssim cross-backend set (cuda/sycl/hip already present). */
     &vmaf_fex_integer_ssim_metal,
     /* float_vif_metal — 4-scale VIF Gaussian pyramid (feature "float_vif")

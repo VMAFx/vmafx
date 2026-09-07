@@ -18838,6 +18838,15 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   the top of every pipeline run. See ADR-1218.
 
 
+- Corrected stale scaffold comments in `core/src/feature/feature_extractor.cpp`
+  for HIP and Metal extractors (#1272). Multiple extractors previously carried
+  comments claiming scaffold posture and that `init()` returns `-ENOSYS` until
+  runtime PRs arrive. All HIP kernels now run on device when compiled under
+  `enable_hipcc=true` (`HAVE_HIPCC`) while falling back to `-ENOSYS` via `init()`
+  or `submit()` without it, and all Metal extractors are fully implemented with
+  `MTLComputePipelineState` dispatch.
+
+
 - `vmafx-tune predict --use-saliency` now wires saliency moments into
   feature extraction via `pkg/saliency.ComputeMap` rather than returning an
   unimplemented error directing users to the retired Python binary (#1272).
