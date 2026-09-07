@@ -130,9 +130,9 @@ static sycl::event launch_motion_v2(sycl::queue &q, const void *prev, const void
     sycl::range<2> local(MV2_WG_Y, MV2_WG_X);
 
     return q.submit([&](sycl::handler &cgh) {
-        sycl::local_accessor<int32_t, 2> s_diff(sycl::range<2>(MV2_TILE_H, MV2_TILE_W), cgh);
+        sycl::local_accessor<int32_t, 2> const s_diff(sycl::range<2>(MV2_TILE_H, MV2_TILE_W), cgh);
         constexpr int MAX_SUBGROUPS = 32;
-        sycl::local_accessor<int64_t, 1> lmem(sycl::range<1>(MAX_SUBGROUPS), cgh);
+        sycl::local_accessor<int64_t, 1> const lmem(sycl::range<1>(MAX_SUBGROUPS), cgh);
 
         cgh.parallel_for(
             sycl::nd_range<2>(global, local),
@@ -188,7 +188,7 @@ static sycl::event launch_motion_v2(sycl::queue &q, const void *prev, const void
                         /* int64 accumulator: at bpc=16 the diff range
                          * is ±65535 and filter[k] up to 26386 — the
                          * 5-tap sum overflows int32. */
-                        int64_t vsum =
+                        int64_t const vsum =
                             (int64_t)MV2_FILTER[0] * (s_diff[ly + 0][tcol] + s_diff[ly + 4][tcol]) +
                             (int64_t)MV2_FILTER[1] * (s_diff[ly + 1][tcol] + s_diff[ly + 3][tcol]) +
                             (int64_t)MV2_FILTER[2] * s_diff[ly + 2][tcol];
@@ -203,7 +203,7 @@ static sycl::event launch_motion_v2(sycl::queue &q, const void *prev, const void
                 }
 
                 /* --- Phase 3: subgroup + cross-subgroup SAD reduction --- */
-                sycl::sub_group sg = item.get_sub_group();
+                sycl::sub_group const sg = item.get_sub_group();
                 const int64_t sg_sum = sycl::reduce_over_group(sg, abs_h, sycl::plus<int64_t>{});
                 const uint32_t sg_id = sg.get_group_linear_id();
                 const uint32_t sg_lid = sg.get_local_linear_id();
@@ -216,10 +216,9 @@ static sycl::event launch_motion_v2(sycl::queue &q, const void *prev, const void
                     int64_t total = 0;
                     for (uint32_t s = 0; s < n_subgroups; s++)
                         total += lmem[s];
-                    sycl::atomic_ref<int64_t, sycl::memory_order::relaxed,
-                                     sycl::memory_scope::device,
-                                     sycl::access::address_space::global_space>
-                        ref(*sad_accum);
+                    sycl::atomic_ref<
+                        int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
+                        sycl::access::address_space::global_space> const ref(*sad_accum);
                     ref.fetch_add(total);
                 }
             });
@@ -425,7 +424,7 @@ static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
     /* Resolve the (possibly renamed, for sfr/hfr co-schedule) SAD feature
      * name from the dict — mirrors integer_motion_v2.c::flush and the CUDA
      * twin flush_fex_cuda. */
-    VmafDictionaryEntry *e_sad =
+    VmafDictionaryEntry const *e_sad =
         vmaf_dictionary_get(&s->feature_name_dict, "VMAF_integer_feature_motion_v2_sad_score", 0);
     const char *sad_name = e_sad ? e_sad->val : "VMAF_integer_feature_motion_v2_sad_score";
 
@@ -486,7 +485,7 @@ static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
             motion3 = stamp_value;
             prev_processed = stamp_value;
         } else {
-            double processed =
+            double const processed =
                 MIN(motion_blend(motion2, s->motion_blend_factor, s->motion_blend_offset),
                     s->motion_max_val);
             motion3 = s->motion_moving_average ? (processed + prev_processed) / 2.0 : processed;

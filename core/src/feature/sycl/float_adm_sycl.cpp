@@ -366,9 +366,9 @@ static sycl::event launch_decouple_csf(sycl::queue &q, const float *ref_band, co
                 const float rhs = FADM_COS_1DEG_SQ * (o_mag * t_mag);
                 const bool angle_flag = (ot_dp >= 0.0f) && (lhs >= rhs);
 
-                float oarr[3] = {oh, ov, od};
-                float tarr[3] = {th, tv, td};
-                float rfac[3] = {e_rfh, e_rfv, e_rfd};
+                float const oarr[3] = {oh, ov, od};
+                float const tarr[3] = {th, tv, td};
+                float const rfac[3] = {e_rfh, e_rfv, e_rfd};
                 for (int b = 0; b < FADM_NUM_BANDS; b++) {
                     float k = tarr[b] / (oarr[b] + FADM_EPS);
                     k = sycl::fmax(0.0f, sycl::fmin(k, 1.0f));
@@ -439,9 +439,9 @@ static sycl::event launch_csf_r(sycl::queue &q, const float *ref_band, const flo
                 const float rhs = FADM_COS_1DEG_SQ * (o_mag * t_mag);
                 const bool angle_flag = (ot_dp >= 0.0f) && (lhs >= rhs);
 
-                float oarr[3] = {oh, ov, od};
-                float tarr[3] = {th, tv, td};
-                float rfac[3] = {e_rfh, e_rfv, e_rfd};
+                float const oarr[3] = {oh, ov, od};
+                float const tarr[3] = {th, tv, td};
+                float const rfac[3] = {e_rfh, e_rfv, e_rfd};
                 for (int b = 0; b < FADM_NUM_BANDS; b++) {
                     /* Compute decouple_r[b] = k * o, same logic as stage 2. */
                     float k = tarr[b] / (oarr[b] + FADM_EPS);
@@ -499,7 +499,7 @@ static sycl::event launch_aim_cm(sycl::queue &q, const float *ref_band, const fl
     float *e_accum = accum_out;
 
     return q.submit([&](sycl::handler &cgh) {
-        sycl::local_accessor<float, 1> s_aim(sycl::range<1>(WG_SIZE / 32), cgh);
+        sycl::local_accessor<float, 1> const s_aim(sycl::range<1>(WG_SIZE / 32), cgh);
         cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(global_x), sycl::range<1>(WG_SIZE)),
                          [=](sycl::nd_item<1> item) VMAF_SYCL_REQD_SG_SIZE(32) {
                              const unsigned wg_id = (unsigned)item.get_group(0);
@@ -570,8 +570,8 @@ static sycl::event launch_aim_cm(sycl::queue &q, const float *ref_band, const fl
                                  const float rhs = FADM_COS_1DEG_SQ * (o_mag * t_mag);
                                  const bool angle_flag = (ot_dp >= 0.0f) && (lhs >= rhs);
 
-                                 float oarr[3] = {oh, ov, od};
-                                 float tarr[3] = {th, tv, td};
+                                 float const oarr[3] = {oh, ov, od};
+                                 float const tarr[3] = {th, tv, td};
                                  float k = tarr[band_idx] / (oarr[band_idx] + FADM_EPS);
                                  k = sycl::fmax(0.0f, sycl::fmin(k, 1.0f));
                                  float r_val = k * oarr[band_idx];
@@ -608,7 +608,7 @@ static sycl::event launch_aim_cm(sycl::queue &q, const float *ref_band, const fl
                                  local_aim_cm += xa * xa * xa;
                              }
 
-                             sycl::sub_group sg = item.get_sub_group();
+                             sycl::sub_group const sg = item.get_sub_group();
                              const float wn_aim =
                                  sycl::reduce_over_group(sg, local_aim_cm, sycl::plus<float>{});
                              const uint32_t sg_id = sg.get_group_linear_id();
@@ -665,8 +665,8 @@ static sycl::event launch_csf_cm(sycl::queue &q, const float *ref_band, const fl
     float *e_accum = accum_out;
 
     return q.submit([&](sycl::handler &cgh) {
-        sycl::local_accessor<float, 1> s_csf(sycl::range<1>(WG_SIZE / 32), cgh);
-        sycl::local_accessor<float, 1> s_cm(sycl::range<1>(WG_SIZE / 32), cgh);
+        sycl::local_accessor<float, 1> const s_csf(sycl::range<1>(WG_SIZE / 32), cgh);
+        sycl::local_accessor<float, 1> const s_cm(sycl::range<1>(WG_SIZE / 32), cgh);
         cgh.parallel_for(sycl::nd_range<1>(sycl::range<1>(global_x), sycl::range<1>(WG_SIZE)),
                          [=](sycl::nd_item<1> item) VMAF_SYCL_REQD_SG_SIZE(32) {
                              const unsigned wg_id = (unsigned)item.get_group(0);
@@ -738,8 +738,8 @@ static sycl::event launch_csf_cm(sycl::queue &q, const float *ref_band, const fl
                                  const float rhs = FADM_COS_1DEG_SQ * (o_mag * t_mag);
                                  const bool angle_flag = (ot_dp >= 0.0f) && (lhs >= rhs);
 
-                                 float oarr[3] = {oh, ov, od};
-                                 float tarr[3] = {th, tv, td};
+                                 float const oarr[3] = {oh, ov, od};
+                                 float const tarr[3] = {th, tv, td};
                                  float k = tarr[band_idx] / (oarr[band_idx] + FADM_EPS);
                                  k = sycl::fmax(0.0f, sycl::fmin(k, 1.0f));
                                  float r_val = k * oarr[band_idx];
@@ -772,7 +772,7 @@ static sycl::event launch_csf_cm(sycl::queue &q, const float *ref_band, const fl
                                  local_cm_sum += xa * xa * xa;
                              }
 
-                             sycl::sub_group sg = item.get_sub_group();
+                             sycl::sub_group const sg = item.get_sub_group();
                              const float wn_csf =
                                  sycl::reduce_over_group(sg, local_csf_sum, sycl::plus<float>{});
                              const float wn_cm =
@@ -1233,9 +1233,9 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index, VmafFeatu
                                                        score_num, index);
         err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, "adm_den",
                                                        score_den, index);
-        const char *names[8] = {"adm_num_scale0", "adm_den_scale0", "adm_num_scale1",
-                                "adm_den_scale1", "adm_num_scale2", "adm_den_scale2",
-                                "adm_num_scale3", "adm_den_scale3"};
+        const char const *names[8] = {"adm_num_scale0", "adm_den_scale0", "adm_num_scale1",
+                                      "adm_den_scale1", "adm_num_scale2", "adm_den_scale2",
+                                      "adm_num_scale3", "adm_den_scale3"};
         for (int i = 0; i < 8 && !err; i++) {
             err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, names[i],
                                                            scores[i], index);

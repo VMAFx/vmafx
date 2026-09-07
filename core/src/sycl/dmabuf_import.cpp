@@ -217,8 +217,8 @@ static sycl::event launch_p010_normalize(sycl::queue *q, void *buf, unsigned w, 
                                          unsigned bpc)
 {
     assert(bpc > 8 && bpc < 16);
-    unsigned shift = 16u - bpc; /* 6 for bpc=10; 4 for bpc=12 */
-    size_t num_pixels = (size_t)w * h;
+    unsigned const shift = 16u - bpc; /* 6 for bpc=10; 4 for bpc=12 */
+    size_t const num_pixels = (size_t)w * h;
     uint16_t *pixels = static_cast<uint16_t *>(buf);
 
     return q->parallel_for(sycl::range<1>(num_pixels),
@@ -235,15 +235,15 @@ static int vmaf_sycl_import_va_surface_readback(VmafSyclState *state, void *va_d
                                                 unsigned h, unsigned bpc)
 {
     VADisplay va_dpy = (VADisplay)va_display_handle;
-    VASurfaceID va_surf = (VASurfaceID)va_surface_id;
+    VASurfaceID const va_surf = (VASurfaceID)va_surface_id;
 
-    unsigned bytes_per_pixel = (bpc + 7) / 8;
+    unsigned const bytes_per_pixel = (bpc + 7) / 8;
     VAImageFormat y_fmt;
     memset(&y_fmt, 0, sizeof(y_fmt));
 
     /* Find a suitable image format (NV12 for 8-bit, P010 for 10-bit) */
     {
-        int num_fmts = vaMaxNumImageFormats(va_dpy);
+        int const num_fmts = vaMaxNumImageFormats(va_dpy);
         if (num_fmts <= 0) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR, "vaMaxNumImageFormats returned %d\n", num_fmts);
             return -EIO;
@@ -252,14 +252,14 @@ static int vmaf_sycl_import_va_surface_readback(VmafSyclState *state, void *va_d
         if (!fmts)
             return -ENOMEM;
         int actual = 0;
-        VAStatus qst = vaQueryImageFormats(va_dpy, fmts, &actual);
+        VAStatus const qst = vaQueryImageFormats(va_dpy, fmts, &actual);
         if (qst != VA_STATUS_SUCCESS) {
             free(fmts);
             vmaf_log(VMAF_LOG_LEVEL_ERROR, "vaQueryImageFormats failed: %s\n", vaErrorStr(qst));
             return -EIO;
         }
 
-        uint32_t target_fourcc = (bpc <= 8) ? VA_FOURCC_NV12 : VA_FOURCC_P010;
+        uint32_t const target_fourcc = (bpc <= 8) ? VA_FOURCC_NV12 : VA_FOURCC_P010;
         int found = 0;
         for (int i = 0; i < actual; i++) {
             if (fmts[i].fourcc == target_fourcc) {
@@ -302,8 +302,8 @@ static int vmaf_sycl_import_va_surface_readback(VmafSyclState *state, void *va_d
     }
 
     uint8_t *y_plane = (uint8_t *)img_data + va_img.offsets[0];
-    uint32_t y_pitch = va_img.pitches[0];
-    size_t y_row_bytes = (size_t)w * bytes_per_pixel;
+    uint32_t const y_pitch = va_img.pitches[0];
+    size_t const y_row_bytes = (size_t)w * bytes_per_pixel;
 
     void *target_buf =
         is_ref ? vmaf_sycl_get_shared_ref_upload(state) : vmaf_sycl_get_shared_dis_upload(state);
@@ -323,7 +323,7 @@ static int vmaf_sycl_import_va_surface_readback(VmafSyclState *state, void *va_d
         if (y_pitch == y_row_bytes) {
             q->memcpy(target_buf, y_plane, y_row_bytes * h);
         } else {
-            uint8_t *src = y_plane;
+            uint8_t const *src = y_plane;
             uint8_t *dst = (uint8_t *)target_buf;
             for (unsigned row = 0; row < h; row++) {
                 q->memcpy(dst, src, y_row_bytes);
@@ -368,7 +368,7 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
         return -EINVAL;
 
     VADisplay va_dpy = (VADisplay)va_display_handle;
-    VASurfaceID va_surf = (VASurfaceID)va_surface_id;
+    VASurfaceID const va_surf = (VASurfaceID)va_surface_id;
 
     /* Sync the VA surface to ensure decode is complete */
     VAStatus va_st = vaSyncSurface(va_dpy, va_surf);
@@ -399,13 +399,13 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
     }
 
     /* Extract Y plane metadata from the first layer */
-    uint32_t y_obj_idx = desc.layers[0].object_index[0];
-    int y_fd = desc.objects[y_obj_idx].fd;
-    uint32_t y_size = desc.objects[y_obj_idx].size;
-    uint64_t modifier = desc.objects[y_obj_idx].drm_format_modifier;
-    uint32_t y_offset = desc.layers[0].offset[0];
-    uint32_t y_pitch = desc.layers[0].pitch[0];
-    unsigned bpp = (bpc + 7) / 8;
+    uint32_t const y_obj_idx = desc.layers[0].object_index[0];
+    int const y_fd = desc.objects[y_obj_idx].fd;
+    uint32_t const y_size = desc.objects[y_obj_idx].size;
+    uint64_t const modifier = desc.objects[y_obj_idx].drm_format_modifier;
+    uint32_t const y_offset = desc.layers[0].offset[0];
+    uint32_t const y_pitch = desc.layers[0].pitch[0];
+    unsigned const bpp = (bpc + 7) / 8;
 
     vmaf_log(VMAF_LOG_LEVEL_DEBUG,
              "[%s] DRM PRIME: fd=%d size=%u modifier=0x%" PRIx64 " "
@@ -423,7 +423,7 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
     /* Import the DMA-BUF fd into Level Zero as device memory.
      * This wraps the SAME GPU memory — no copy happens here. */
     void *imported_ptr = nullptr;
-    int err = vmaf_sycl_dmabuf_import(state, y_fd, y_size, &imported_ptr);
+    int const err = vmaf_sycl_dmabuf_import(state, y_fd, y_size, &imported_ptr);
 
     /* Close all exported DMA-BUF fds (our API: caller retains ownership) */
     for (uint32_t i = 0; i < desc.num_objects; i++)
@@ -457,7 +457,7 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
     }
 
     sycl::queue *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(state);
-    size_t row_bytes = (size_t)w * bpp;
+    size_t const row_bytes = (size_t)w * bpp;
 
     /* Log the zero-copy path once (first successful import) */
     static bool logged_zero_copy = false;
@@ -518,10 +518,10 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
 
         const uint8_t *src = (const uint8_t *)imported_ptr + y_offset;
         uint8_t *dst = (uint8_t *)target_buf;
-        unsigned tiles_per_row = y_pitch / 128;
+        unsigned const tiles_per_row = y_pitch / 128;
 
-        unsigned words_per_tile_row = 128 / 4; /* = 32 */
-        unsigned words_per_row = tiles_per_row * words_per_tile_row;
+        unsigned const words_per_tile_row = 128 / 4; /* = 32 */
+        unsigned const words_per_row = tiles_per_row * words_per_tile_row;
 
         /* Fuse the P010/P012 MSB→LSB normalization into the de-tile store: each
          * 4-byte word is two uint16 samples (dst_off is 4-aligned), shifted by
@@ -532,46 +532,46 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
         const unsigned shift = do_shift ? (16u - bpc) : 0u;
 
         sycl::event ev = q->parallel_for(sycl::range<2>(h, words_per_row), [=](sycl::id<2> id) {
-            unsigned py = id[0];
-            unsigned word_x = id[1];
+            unsigned const py = id[0];
+            unsigned const word_x = id[1];
 
             /* Tile address */
-            unsigned tc = word_x / words_per_tile_row;
-            unsigned wt = word_x % words_per_tile_row;
-            unsigned tr = py / 32;
-            unsigned ity = py % 32;
+            unsigned const tc = word_x / words_per_tile_row;
+            unsigned const wt = word_x % words_per_tile_row;
+            unsigned const tr = py / 32;
+            unsigned const ity = py % 32;
 
             /* Tile4 intra-tile swizzle */
-            unsigned x_byte = wt * 4;
-            unsigned swizzled = (x_byte & 0x0F)              /* [3:0]  = x[3:0] */
-                                | ((ity & 3) << 4)           /* [5:4]  = y[1:0] */
-                                | (((x_byte >> 4) & 3) << 6) /* [7:6]  = x[5:4] */
-                                | (((ity >> 2) & 1) << 8)    /* [8]    = y[2]   */
-                                | (((x_byte >> 6) & 1) << 9) /* [9]    = x[6]   */
-                                | (((ity >> 3) & 1) << 10)   /* [10]   = y[3]   */
-                                | (((ity >> 4) & 1) << 11);  /* [11]   = y[4]   */
+            unsigned const x_byte = wt * 4;
+            unsigned const swizzled = (x_byte & 0x0F)              /* [3:0]  = x[3:0] */
+                                      | ((ity & 3) << 4)           /* [5:4]  = y[1:0] */
+                                      | (((x_byte >> 4) & 3) << 6) /* [7:6]  = x[5:4] */
+                                      | (((ity >> 2) & 1) << 8)    /* [8]    = y[2]   */
+                                      | (((x_byte >> 6) & 1) << 9) /* [9]    = x[6]   */
+                                      | (((ity >> 3) & 1) << 10)   /* [10]   = y[3]   */
+                                      | (((ity >> 4) & 1) << 11);  /* [11]   = y[4]   */
 
-            size_t src_off = (size_t)(tr * tiles_per_row + tc) * 4096 + swizzled;
+            size_t const src_off = (size_t)(tr * tiles_per_row + tc) * 4096 + swizzled;
 
             /* Linear destination */
-            size_t dst_off = (size_t)py * row_bytes + tc * 128 + wt * 4;
-            size_t row_end = (size_t)(py + 1) * row_bytes;
+            size_t const dst_off = (size_t)py * row_bytes + tc * 128 + wt * 4;
+            size_t const row_end = (size_t)(py + 1) * row_bytes;
 
             /* Bounds check — last tile column may exceed frame width */
             if (dst_off + 4 <= row_end) {
                 uint32_t v = *(const uint32_t *)(src + src_off);
                 if (do_shift) {
-                    uint16_t s0 = (uint16_t)((uint16_t)(v & 0xFFFFu) >> shift);
-                    uint16_t s1 = (uint16_t)((uint16_t)(v >> 16) >> shift);
+                    uint16_t const s0 = (uint16_t)((uint16_t)(v & 0xFFFFu) >> shift);
+                    uint16_t const s1 = (uint16_t)((uint16_t)(v >> 16) >> shift);
                     v = (uint32_t)s0 | ((uint32_t)s1 << 16);
                 }
                 *(uint32_t *)(dst + dst_off) = v;
             } else if (dst_off < row_end) {
-                size_t remain = row_end - dst_off;
+                size_t const remain = row_end - dst_off;
                 if (do_shift && remain == 2) {
-                    uint16_t raw = (uint16_t)((uint16_t)src[src_off] |
-                                              (uint16_t)((uint16_t)src[src_off + 1] << 8));
-                    uint16_t s = (uint16_t)(raw >> shift);
+                    uint16_t const raw = (uint16_t)((uint16_t)src[src_off] |
+                                                    (uint16_t)((uint16_t)src[src_off + 1] << 8));
+                    uint16_t const s = (uint16_t)(raw >> shift);
                     dst[dst_off] = (uint8_t)(s & 0xFFu);
                     dst[dst_off + 1] = (uint8_t)(s >> 8);
                 } else {
@@ -596,49 +596,49 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
 
         const uint8_t *src = (const uint8_t *)imported_ptr + y_offset;
         uint8_t *dst = (uint8_t *)target_buf;
-        unsigned tiles_per_row = y_pitch / 128;
+        unsigned const tiles_per_row = y_pitch / 128;
 
-        unsigned words_per_tile_row = 128 / 4;
-        unsigned words_per_row = tiles_per_row * words_per_tile_row;
+        unsigned const words_per_tile_row = 128 / 4;
+        unsigned const words_per_row = tiles_per_row * words_per_tile_row;
 
         /* P010/P012 MSB→LSB fused into the de-tile store (see Tile4 above). */
         const bool do_shift = (bpc > 8);
         const unsigned shift = do_shift ? (16u - bpc) : 0u;
 
         sycl::event ev = q->parallel_for(sycl::range<2>(h, words_per_row), [=](sycl::id<2> id) {
-            unsigned py = id[0];
-            unsigned word_x = id[1];
+            unsigned const py = id[0];
+            unsigned const word_x = id[1];
 
-            unsigned tc = word_x / words_per_tile_row;
-            unsigned wt = word_x % words_per_tile_row;
-            unsigned tr = py / 32;
-            unsigned ity = py % 32;
+            unsigned const tc = word_x / words_per_tile_row;
+            unsigned const wt = word_x % words_per_tile_row;
+            unsigned const tr = py / 32;
+            unsigned const ity = py % 32;
 
             /* Y-tiled address: OWord column-major */
-            unsigned in_tile_byte_x = wt * 4;
-            unsigned oword_col = in_tile_byte_x / 16;
-            unsigned oword_byte = in_tile_byte_x % 16;
+            unsigned const in_tile_byte_x = wt * 4;
+            unsigned const oword_col = in_tile_byte_x / 16;
+            unsigned const oword_byte = in_tile_byte_x % 16;
 
-            size_t src_off = (size_t)(tr * tiles_per_row + tc) * 4096 + (size_t)oword_col * 512 +
-                             (size_t)ity * 16 + oword_byte;
+            size_t const src_off = (size_t)(tr * tiles_per_row + tc) * 4096 +
+                                   (size_t)oword_col * 512 + (size_t)ity * 16 + oword_byte;
 
-            size_t dst_off = (size_t)py * row_bytes + tc * 128 + wt * 4;
-            size_t row_end = (size_t)(py + 1) * row_bytes;
+            size_t const dst_off = (size_t)py * row_bytes + tc * 128 + wt * 4;
+            size_t const row_end = (size_t)(py + 1) * row_bytes;
 
             if (dst_off + 4 <= row_end) {
                 uint32_t v = *(const uint32_t *)(src + src_off);
                 if (do_shift) {
-                    uint16_t s0 = (uint16_t)((uint16_t)(v & 0xFFFFu) >> shift);
-                    uint16_t s1 = (uint16_t)((uint16_t)(v >> 16) >> shift);
+                    uint16_t const s0 = (uint16_t)((uint16_t)(v & 0xFFFFu) >> shift);
+                    uint16_t const s1 = (uint16_t)((uint16_t)(v >> 16) >> shift);
                     v = (uint32_t)s0 | ((uint32_t)s1 << 16);
                 }
                 *(uint32_t *)(dst + dst_off) = v;
             } else if (dst_off < row_end) {
-                size_t remain = row_end - dst_off;
+                size_t const remain = row_end - dst_off;
                 if (do_shift && remain == 2) {
-                    uint16_t raw = (uint16_t)((uint16_t)src[src_off] |
-                                              (uint16_t)((uint16_t)src[src_off + 1] << 8));
-                    uint16_t s = (uint16_t)(raw >> shift);
+                    uint16_t const raw = (uint16_t)((uint16_t)src[src_off] |
+                                                    (uint16_t)((uint16_t)src[src_off + 1] << 8));
+                    uint16_t const s = (uint16_t)(raw >> shift);
                     dst[dst_off] = (uint8_t)(s & 0xFFu);
                     dst[dst_off + 1] = (uint8_t)(s >> 8);
                 } else {

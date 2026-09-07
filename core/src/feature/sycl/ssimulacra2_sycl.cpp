@@ -292,10 +292,10 @@ inline float ss2s_clampf(float v, float lo, float hi)
 
 inline float ss2s_read_plane(const VmafPicture *pic, int plane, int x, int y)
 {
-    unsigned pw = pic->w[plane];
-    unsigned ph = pic->h[plane];
-    unsigned lw = pic->w[0];
-    unsigned lh = pic->h[0];
+    unsigned const pw = pic->w[plane];
+    unsigned const ph = pic->h[plane];
+    unsigned const lw = pic->w[0];
+    unsigned const lh = pic->h[0];
     int sx = (pw == lw)     ? x :
              (pw * 2 == lw) ? (x >> 1) :
                               (int)((int64_t)x * (int64_t)pw / (int64_t)lw);
@@ -368,12 +368,12 @@ void ss2s_picture_to_linear_rgb(const Ssimu2StateSycl *s, const VmafPicture *pic
 
     for (unsigned y = 0; y < h; y++) {
         for (unsigned x = 0; x < w; x++) {
-            float Y = ss2s_read_plane(pic, 0, (int)x, (int)y) * inv_peak;
-            float U = ss2s_read_plane(pic, 1, (int)x, (int)y) * inv_peak;
-            float V = ss2s_read_plane(pic, 2, (int)x, (int)y) * inv_peak;
-            float Yn = (Y - y_off) * y_scale;
-            float Un = (U - c_off) * c_scale;
-            float Vn = (V - c_off) * c_scale;
+            float const Y = ss2s_read_plane(pic, 0, (int)x, (int)y) * inv_peak;
+            float const U = ss2s_read_plane(pic, 1, (int)x, (int)y) * inv_peak;
+            float const V = ss2s_read_plane(pic, 2, (int)x, (int)y) * inv_peak;
+            float const Yn = (Y - y_off) * y_scale;
+            float const Un = (U - c_off) * c_scale;
+            float const Vn = (V - c_off) * c_scale;
             /* ADR-0891 FMA unification: the AVX2 / AVX-512 / NEON / SVE2
              * kernels and their scalar tails all use a single-rounded
              * fused multiply-add here. This copy was missed when ADR-0891
@@ -424,9 +424,9 @@ void ss2s_host_linear_rgb_to_xyb(const float *lin, float *xyb, unsigned w, unsig
 
     const size_t scale_pixels = (size_t)w * (size_t)h;
     for (size_t i = 0; i < scale_pixels; i++) {
-        float r = rp[i];
-        float g = gp[i];
-        float b = bp[i];
+        float const r = rp[i];
+        float const g = gp[i];
+        float const b = bp[i];
         float l = kM00 * r + m01 * g + kM02 * b + kOpsinBias;
         float m = kM10 * r + m11 * g + kM12 * b + kOpsinBias;
         float s2 = kM20 * r + kM21 * g + m22 * b + kOpsinBias;
@@ -436,9 +436,9 @@ void ss2s_host_linear_rgb_to_xyb(const float *lin, float *xyb, unsigned w, unsig
             m = 0.0f;
         if (s2 < 0.0f)
             s2 = 0.0f;
-        float L = vmaf_ss2_cbrtf(l) - cbrt_bias;
-        float M = vmaf_ss2_cbrtf(m) - cbrt_bias;
-        float S = vmaf_ss2_cbrtf(s2) - cbrt_bias;
+        float const L = vmaf_ss2_cbrtf(l) - cbrt_bias;
+        float const M = vmaf_ss2_cbrtf(m) - cbrt_bias;
+        float const S = vmaf_ss2_cbrtf(s2) - cbrt_bias;
         float X = 0.5f * (L - M);
         float Y = 0.5f * (L + M);
         float B = S;
@@ -686,9 +686,9 @@ double ss2s_pool_score(const double avg_ssim[6][6], const double avg_ed[6][12], 
     for (int c = 0; c < 3; c++) {
         for (int scale = 0; scale < 6; scale++) {
             for (int n = 0; n < 2; n++) {
-                double s_term = scale < num_scales ? avg_ssim[scale][c * 2 + n] : 0.0;
-                double r_term = scale < num_scales ? avg_ed[scale][c * 4 + n] : 0.0;
-                double b_term = scale < num_scales ? avg_ed[scale][c * 4 + n + 2] : 0.0;
+                double const s_term = scale < num_scales ? avg_ssim[scale][c * 2 + n] : 0.0;
+                double const r_term = scale < num_scales ? avg_ed[scale][c * 4 + n] : 0.0;
+                double const b_term = scale < num_scales ? avg_ed[scale][c * 4 + n + 2] : 0.0;
                 ssim += g_weights[i++] * std::fabs(s_term);
                 ssim += g_weights[i++] * std::fabs(r_term);
                 ssim += g_weights[i++] * std::fabs(b_term);

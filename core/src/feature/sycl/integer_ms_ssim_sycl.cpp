@@ -126,7 +126,7 @@ struct MsSsimStateSycl {
 /* Period-2n mirror — matches ms_ssim_decimate.c::ms_ssim_decimate_mirror. */
 static inline int mirror_idx(int idx, int n)
 {
-    int period = 2 * n;
+    int const period = 2 * n;
     int r = idx % period;
     if (r < 0)
         r += period;
@@ -138,7 +138,7 @@ static inline int mirror_idx(int idx, int n)
 static void launch_decimate(sycl::queue &q, const float *src, float *dst, unsigned w, unsigned h,
                             unsigned w_out, unsigned h_out)
 {
-    sycl::range<2> global{(size_t)h_out, (size_t)w_out};
+    sycl::range<2> const global{(size_t)h_out, (size_t)w_out};
     const unsigned e_w = w;
     const unsigned e_h = h;
     const unsigned e_w_out = w_out;
@@ -152,14 +152,14 @@ static void launch_decimate(sycl::queue &q, const float *src, float *dst, unsign
             const size_t x_out = id[1];
             if (x_out >= (size_t)e_w_out || y_out >= (size_t)e_h_out)
                 return;
-            int x_src = (int)x_out * 2;
-            int y_src = (int)y_out * 2;
+            int const x_src = (int)x_out * 2;
+            int const y_src = (int)y_out * 2;
             float acc = 0.0f;
             for (int kv = 0; kv < LPF_LEN; ++kv) {
-                int yi = mirror_idx(y_src + kv - LPF_HALF, (int)e_h);
+                int const yi = mirror_idx(y_src + kv - LPF_HALF, (int)e_h);
                 float row_acc = 0.0f;
                 for (int ku = 0; ku < LPF_LEN; ++ku) {
-                    int xi = mirror_idx(x_src + ku - LPF_HALF, (int)e_w);
+                    int const xi = mirror_idx(x_src + ku - LPF_HALF, (int)e_w);
                     row_acc += e_src[yi * (int)e_w + xi] * LPF[ku];
                 }
                 acc += row_acc * LPF[kv];
@@ -173,7 +173,7 @@ static void launch_horiz(sycl::queue &q, const float *ref, const float *cmp, flo
                          float *h_cmp_mu, float *h_ref_sq, float *h_cmp_sq, float *h_refcmp,
                          unsigned width, unsigned w_horiz, unsigned h_horiz)
 {
-    sycl::range<2> global{(size_t)h_horiz, (size_t)w_horiz};
+    sycl::range<2> const global{(size_t)h_horiz, (size_t)w_horiz};
     const unsigned e_w = width;
     const unsigned e_w_horiz = w_horiz;
     const unsigned e_h_horiz = h_horiz;
@@ -222,7 +222,7 @@ static void launch_vert_lcs(sycl::queue &q, const float *h_ref_mu, const float *
     const size_t global_x = ((w_final + WG_X - 1) / WG_X) * WG_X;
     const size_t global_y = ((h_final + WG_Y - 1) / WG_Y) * WG_Y;
     const size_t wg_count_x = global_x / WG_X;
-    sycl::nd_range<2> ndr{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
+    sycl::nd_range<2> const ndr{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
     const unsigned e_w_horiz = w_horiz;
     const unsigned e_w_final = w_final;
     const unsigned e_h_final = h_final;
@@ -266,9 +266,9 @@ static void launch_vert_lcs(sycl::queue &q, const float *h_ref_mu, const float *
                 my_s = (clamped_covar + e_c3) / (sigma_xy_geom + e_c3);
             }
 
-            float wg_l = sycl::reduce_over_group(it.get_group(), my_l, sycl::plus<float>{});
-            float wg_c = sycl::reduce_over_group(it.get_group(), my_c, sycl::plus<float>{});
-            float wg_s = sycl::reduce_over_group(it.get_group(), my_s, sycl::plus<float>{});
+            float const wg_l = sycl::reduce_over_group(it.get_group(), my_l, sycl::plus<float>{});
+            float const wg_c = sycl::reduce_over_group(it.get_group(), my_c, sycl::plus<float>{});
+            float const wg_s = sycl::reduce_over_group(it.get_group(), my_s, sycl::plus<float>{});
             if (it.get_local_id(0) == 0 && it.get_local_id(1) == 0) {
                 const size_t wg_idx = it.get_group(0) * e_wg_count_x + it.get_group(1);
                 e_l[wg_idx] = wg_l;

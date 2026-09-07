@@ -109,9 +109,9 @@ static inline void yuv_to_lab(float y_lim, float u_lim, float v_lim, unsigned bp
         scale = 16.0f;
     else if (bpc == 16)
         scale = 256.0f;
-    float y = (y_lim - 16.0f * scale) * (1.0f / (219.0f * scale));
-    float u = (u_lim - 128.0f * scale) * (1.0f / (224.0f * scale));
-    float v = (v_lim - 128.0f * scale) * (1.0f / (224.0f * scale));
+    float const y = (y_lim - 16.0f * scale) * (1.0f / (219.0f * scale));
+    float const u = (u_lim - 128.0f * scale) * (1.0f / (224.0f * scale));
+    float const v = (v_lim - 128.0f * scale) * (1.0f / (224.0f * scale));
     float r = y + 1.28033f * v;
     float g = y - 0.21482f * u - 0.38059f * v;
     float b = y + 2.12798f * u;
@@ -119,13 +119,13 @@ static inline void yuv_to_lab(float y_lim, float u_lim, float v_lim, unsigned bp
     g = srgb_to_linear(g);
     b = srgb_to_linear(b);
     float x = r * 0.4124564390896921f + g * 0.357576077643909f + b * 0.18043748326639894f;
-    float yy = r * 0.21267285140562248f + g * 0.715152155287818f + b * 0.07217499330655958f;
+    float const yy = r * 0.21267285140562248f + g * 0.715152155287818f + b * 0.07217499330655958f;
     float z = r * 0.019333895582329317f + g * 0.119192025881303f + b * 0.9503040785363677f;
     x *= 1.0f / 0.95047f;
     z *= 1.0f / 1.08883f;
-    float lx = xyz_to_lab_map(x);
-    float ly = xyz_to_lab_map(yy);
-    float lz = xyz_to_lab_map(z);
+    float const lx = xyz_to_lab_map(x);
+    float const ly = xyz_to_lab_map(yy);
+    float const lz = xyz_to_lab_map(z);
     L = 116.0f * ly - 16.0f;
     A = 500.0f * (lx - ly);
     B = 200.0f * (ly - lz);
@@ -145,7 +145,7 @@ static inline float get_delta_h_prime_dev(float c1, float c2, float h1, float h2
 {
     if (c1 * c2 == 0.0f)
         return 0.0f;
-    float diff = h2 - h1;
+    float const diff = h2 - h1;
     if (sycl::fabs(diff) <= 180.0f)
         return diff * 3.141592653589793f / 180.0f;
     if (diff > 180.0f)
@@ -155,7 +155,7 @@ static inline float get_delta_h_prime_dev(float c1, float c2, float h1, float h2
 
 static inline float get_upcase_h_bar_prime_dev(float h1, float h2)
 {
-    float diff = sycl::fabs(h1 - h2);
+    float const diff = sycl::fabs(h1 - h2);
     if (diff > 180.0f)
         return ((h1 + h2 + 360.0f) / 2.0f) * 3.141592653589793f / 180.0f;
     return ((h1 + h2) / 2.0f) * 3.141592653589793f / 180.0f;
@@ -171,9 +171,9 @@ static inline float get_upcase_t_dev(float h_bar)
 
 static inline float get_r_sub_t_dev(float c_bar, float h_bar)
 {
-    float exponent = -sycl::pow((h_bar * 180.0f / 3.141592653589793f - 275.0f) / 25.0f, 2.0f);
-    float c7 = sycl::pow(c_bar, 7.0f);
-    float r_c = 2.0f * sycl::sqrt(c7 / (c7 + sycl::pow(25.0f, 7.0f)));
+    float const exponent = -sycl::pow((h_bar * 180.0f / 3.141592653589793f - 275.0f) / 25.0f, 2.0f);
+    float const c7 = sycl::pow(c_bar, 7.0f);
+    float const r_c = 2.0f * sycl::sqrt(c7 / (c7 + sycl::pow(25.0f, 7.0f)));
     return -sycl::sin(60.0f * 3.141592653589793f / 180.0f * sycl::exp(exponent)) * r_c;
 }
 
@@ -182,33 +182,33 @@ static inline float ciede2000_dev(float l1, float a1, float b1, float l2, float 
     const float k_l = 0.65f;
     const float k_c = 1.0f;
     const float k_h = 4.0f;
-    float dl_p = l2 - l1;
-    float l_bar = 0.5f * (l1 + l2);
-    float c1 = sycl::sqrt(a1 * a1 + b1 * b1);
-    float c2 = sycl::sqrt(a2 * a2 + b2 * b2);
-    float c_bar = 0.5f * (c1 + c2);
-    float c_bar_7 = sycl::pow(c_bar, 7.0f);
-    float g_factor = 1.0f - sycl::sqrt(c_bar_7 / (c_bar_7 + sycl::pow(25.0f, 7.0f)));
-    float a1_p = a1 + 0.5f * a1 * g_factor;
-    float a2_p = a2 + 0.5f * a2 * g_factor;
-    float c1_p = sycl::sqrt(a1_p * a1_p + b1 * b1);
-    float c2_p = sycl::sqrt(a2_p * a2_p + b2 * b2);
-    float c_bar_p = 0.5f * (c1_p + c2_p);
-    float dc_p = c2_p - c1_p;
-    float dl2 = (l_bar - 50.0f) * (l_bar - 50.0f);
-    float s_l = 1.0f + (0.015f * dl2) / sycl::sqrt(20.0f + dl2);
-    float s_c = 1.0f + 0.045f * c_bar_p;
-    float h1_p = get_h_prime_dev(b1, a1_p);
-    float h2_p = get_h_prime_dev(b2, a2_p);
-    float dh_p = get_delta_h_prime_dev(c1, c2, h1_p, h2_p);
-    float dH_p = 2.0f * sycl::sqrt(c1_p * c2_p) * sycl::sin(dh_p / 2.0f);
-    float H_bar_p = get_upcase_h_bar_prime_dev(h1_p, h2_p);
-    float t_term = get_upcase_t_dev(H_bar_p);
-    float s_h = 1.0f + 0.015f * c_bar_p * t_term;
-    float r_t = get_r_sub_t_dev(c_bar_p, H_bar_p);
-    float lightness = dl_p / (k_l * s_l);
-    float chroma = dc_p / (k_c * s_c);
-    float hue = dH_p / (k_h * s_h);
+    float const dl_p = l2 - l1;
+    float const l_bar = 0.5f * (l1 + l2);
+    float const c1 = sycl::sqrt(a1 * a1 + b1 * b1);
+    float const c2 = sycl::sqrt(a2 * a2 + b2 * b2);
+    float const c_bar = 0.5f * (c1 + c2);
+    float const c_bar_7 = sycl::pow(c_bar, 7.0f);
+    float const g_factor = 1.0f - sycl::sqrt(c_bar_7 / (c_bar_7 + sycl::pow(25.0f, 7.0f)));
+    float const a1_p = a1 + 0.5f * a1 * g_factor;
+    float const a2_p = a2 + 0.5f * a2 * g_factor;
+    float const c1_p = sycl::sqrt(a1_p * a1_p + b1 * b1);
+    float const c2_p = sycl::sqrt(a2_p * a2_p + b2 * b2);
+    float const c_bar_p = 0.5f * (c1_p + c2_p);
+    float const dc_p = c2_p - c1_p;
+    float const dl2 = (l_bar - 50.0f) * (l_bar - 50.0f);
+    float const s_l = 1.0f + (0.015f * dl2) / sycl::sqrt(20.0f + dl2);
+    float const s_c = 1.0f + 0.045f * c_bar_p;
+    float const h1_p = get_h_prime_dev(b1, a1_p);
+    float const h2_p = get_h_prime_dev(b2, a2_p);
+    float const dh_p = get_delta_h_prime_dev(c1, c2, h1_p, h2_p);
+    float const dH_p = 2.0f * sycl::sqrt(c1_p * c2_p) * sycl::sin(dh_p / 2.0f);
+    float const H_bar_p = get_upcase_h_bar_prime_dev(h1_p, h2_p);
+    float const t_term = get_upcase_t_dev(H_bar_p);
+    float const s_h = 1.0f + 0.015f * c_bar_p * t_term;
+    float const r_t = get_r_sub_t_dev(c_bar_p, H_bar_p);
+    float const lightness = dl_p / (k_l * s_l);
+    float const chroma = dc_p / (k_c * s_c);
+    float const hue = dH_p / (k_h * s_h);
     return sycl::sqrt(lightness * lightness + chroma * chroma + hue * hue + r_t * chroma * hue);
 }
 
@@ -223,10 +223,10 @@ static void upscale_plane(unsigned p, const VmafPicture *pic, void *dst, unsigne
     const ptrdiff_t in_stride_t = pic->stride[p] / static_cast<ptrdiff_t>(sizeof(T));
     for (unsigned i = 0; i < out_h; i++) {
         for (unsigned j = 0; j < out_w; j++) {
-            unsigned in_x = ss_hor ? (j >> 1) : j;
+            unsigned const in_x = ss_hor ? (j >> 1) : j;
             out_buf[j] = in_buf[in_x];
         }
-        unsigned in_row_step = ss_ver ? (i & 1u) : 1u;
+        unsigned const in_row_step = ss_ver ? (i & 1u) : 1u;
         in_buf += in_row_step * in_stride_t;
         out_buf += out_w;
     }
@@ -251,18 +251,18 @@ static void launch_ciede(sycl::queue &q, void *ref_y, void *ref_u, void *ref_v, 
     const size_t global_x = ((width + CIEDE_SYCL_WG_X - 1) / CIEDE_SYCL_WG_X) * CIEDE_SYCL_WG_X;
     const size_t global_y = ((height + CIEDE_SYCL_WG_Y - 1) / CIEDE_SYCL_WG_Y) * CIEDE_SYCL_WG_Y;
     const size_t wg_count_x = global_x / CIEDE_SYCL_WG_X;
-    sycl::nd_range<2> ndr{sycl::range<2>{global_y, global_x},
-                          sycl::range<2>{CIEDE_SYCL_WG_Y, CIEDE_SYCL_WG_X}};
+    sycl::nd_range<2> const ndr{sycl::range<2>{global_y, global_x},
+                                sycl::range<2>{CIEDE_SYCL_WG_Y, CIEDE_SYCL_WG_X}};
     const unsigned e_w = width;
     const unsigned e_h = height;
     const unsigned e_bpc = bpc;
     const size_t e_wg_count_x = wg_count_x;
-    void *e_ref_y = ref_y;
-    void *e_ref_u = ref_u;
-    void *e_ref_v = ref_v;
-    void *e_dis_y = dis_y;
-    void *e_dis_u = dis_u;
-    void *e_dis_v = dis_v;
+    void const *e_ref_y = ref_y;
+    void const *e_ref_u = ref_u;
+    void const *e_ref_v = ref_v;
+    void const *e_dis_y = dis_y;
+    void const *e_dis_u = dis_u;
+    void const *e_dis_v = dis_v;
 
     q.submit([=](sycl::handler &h) {
         h.parallel_for(ndr, [=](sycl::nd_item<2> it) {
@@ -293,7 +293,8 @@ static void launch_ciede(sycl::queue &q, void *ref_y, void *ref_u, void *ref_v, 
                 my_de = ciede2000_dev(l1, a1, b1, l2, a2, b2);
             }
             /* Reduce within the WG via reduce_over_group. */
-            float wg_sum = sycl::reduce_over_group(it.get_group(), my_de, sycl::plus<float>{});
+            float const wg_sum =
+                sycl::reduce_over_group(it.get_group(), my_de, sycl::plus<float>{});
             if (it.get_local_id(0) == 0 && it.get_local_id(1) == 0) {
                 const size_t wg_idx = it.get_group(0) * e_wg_count_x + it.get_group(1);
                 d_partials[wg_idx] = wg_sum;

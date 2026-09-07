@@ -140,15 +140,17 @@ static sycl::event launch_compute(sycl::queue &q, const void *ref_raw, const voi
         local_coeff[i] = coeff[i];
 
     return q.submit([&](sycl::handler &cgh) {
-        sycl::local_accessor<float, 1> s_ref(sycl::range<1>(MAX_TILE_W * MAX_TILE_W), cgh);
-        sycl::local_accessor<float, 1> s_dis(sycl::range<1>(MAX_TILE_W * MAX_TILE_W), cgh);
-        sycl::local_accessor<float, 1> s_v_mu1(sycl::range<1>(FVIF_BY * MAX_TILE_W), cgh);
-        sycl::local_accessor<float, 1> s_v_mu2(sycl::range<1>(FVIF_BY * MAX_TILE_W), cgh);
-        sycl::local_accessor<float, 1> s_v_xx(sycl::range<1>(FVIF_BY * MAX_TILE_W), cgh);
-        sycl::local_accessor<float, 1> s_v_yy(sycl::range<1>(FVIF_BY * MAX_TILE_W), cgh);
-        sycl::local_accessor<float, 1> s_v_xy(sycl::range<1>(FVIF_BY * MAX_TILE_W), cgh);
-        sycl::local_accessor<float, 1> s_num_warps(sycl::range<1>(FVIF_BX * FVIF_BY / 32), cgh);
-        sycl::local_accessor<float, 1> s_den_warps(sycl::range<1>(FVIF_BX * FVIF_BY / 32), cgh);
+        sycl::local_accessor<float, 1> const s_ref(sycl::range<1>(MAX_TILE_W * MAX_TILE_W), cgh);
+        sycl::local_accessor<float, 1> const s_dis(sycl::range<1>(MAX_TILE_W * MAX_TILE_W), cgh);
+        sycl::local_accessor<float, 1> const s_v_mu1(sycl::range<1>(FVIF_BY * MAX_TILE_W), cgh);
+        sycl::local_accessor<float, 1> const s_v_mu2(sycl::range<1>(FVIF_BY * MAX_TILE_W), cgh);
+        sycl::local_accessor<float, 1> const s_v_xx(sycl::range<1>(FVIF_BY * MAX_TILE_W), cgh);
+        sycl::local_accessor<float, 1> const s_v_yy(sycl::range<1>(FVIF_BY * MAX_TILE_W), cgh);
+        sycl::local_accessor<float, 1> const s_v_xy(sycl::range<1>(FVIF_BY * MAX_TILE_W), cgh);
+        sycl::local_accessor<float, 1> const s_num_warps(sycl::range<1>(FVIF_BX * FVIF_BY / 32),
+                                                         cgh);
+        sycl::local_accessor<float, 1> const s_den_warps(sycl::range<1>(FVIF_BX * FVIF_BY / 32),
+                                                         cgh);
         cgh.parallel_for(
             sycl::nd_range<2>(sycl::range<2>(global_y, global_x), sycl::range<2>(FVIF_BY, FVIF_BX)),
             [=](sycl::nd_item<2> item) VMAF_SYCL_REQD_SG_SIZE(32) {
@@ -264,7 +266,7 @@ static sycl::event launch_compute(sycl::queue &q, const void *ref_raw, const voi
 
                     float sigma1_sq = xx - mu1 * mu1;
                     float sigma2_sq = yy - mu2 * mu2;
-                    float sigma12 = xy - mu1 * mu2;
+                    float const sigma12 = xy - mu1 * mu2;
                     sigma1_sq = sycl::fmax(sigma1_sq, 0.0f);
                     sigma2_sq = sycl::fmax(sigma2_sq, 0.0f);
                     float g = sigma12 / (sigma1_sq + eps);
@@ -299,7 +301,7 @@ static sycl::event launch_compute(sycl::queue &q, const void *ref_raw, const voi
                 }
 
                 /* Phase 4: subgroup + cross-subgroup reduction. */
-                sycl::sub_group sg = item.get_sub_group();
+                sycl::sub_group const sg = item.get_sub_group();
                 const float wn = sycl::reduce_over_group(sg, my_num, sycl::plus<float>{});
                 const float wd = sycl::reduce_over_group(sg, my_den, sycl::plus<float>{});
                 const uint32_t sg_id = sg.get_group_linear_id();
@@ -705,11 +707,11 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
 
     if (s->debug && !err) {
         /* Exclude scale-0 from aggregate when vif_skip_scale0 is set. */
-        double score_num =
+        double const score_num =
             (s->vif_skip_scale0 ? 0.0 : scores[0]) + scores[2] + scores[4] + scores[6];
-        double score_den =
+        double const score_den =
             (s->vif_skip_scale0 ? 0.0 : scores[1]) + scores[3] + scores[5] + scores[7];
-        double score = score_den == 0.0 ? 1.0 : score_num / score_den;
+        double const score = score_den == 0.0 ? 1.0 : score_num / score_den;
         err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                        "vif", score, index);
         err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
@@ -723,8 +725,8 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         err |= vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, "vif_den_scale0",
             s->vif_skip_scale0 ? -1.0 : scores[1], index);
-        const char *names[6] = {"vif_num_scale1", "vif_den_scale1", "vif_num_scale2",
-                                "vif_den_scale2", "vif_num_scale3", "vif_den_scale3"};
+        const char const *names[6] = {"vif_num_scale1", "vif_den_scale1", "vif_num_scale2",
+                                      "vif_den_scale2", "vif_num_scale3", "vif_den_scale3"};
         for (int i = 0; i < 6; i++) {
             err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                            names[i], scores[i + 2], index);

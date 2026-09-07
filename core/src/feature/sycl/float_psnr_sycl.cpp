@@ -78,7 +78,7 @@ static sycl::event launch_float_psnr(sycl::queue &q, const void *ref, const void
 
     return q.submit([&](sycl::handler &cgh) {
         constexpr int MAX_SUBGROUPS = FPSNR_WG_X * FPSNR_WG_Y;
-        sycl::local_accessor<float, 1> s_partials(sycl::range<1>(MAX_SUBGROUPS), cgh);
+        sycl::local_accessor<float, 1> const s_partials(sycl::range<1>(MAX_SUBGROUPS), cgh);
 
         cgh.parallel_for(sycl::nd_range<2>(sycl::range<2>(global_y, global_x),
                                            sycl::range<2>(FPSNR_WG_Y, FPSNR_WG_X)),
@@ -117,7 +117,7 @@ static sycl::event launch_float_psnr(sycl::queue &q, const void *ref, const void
                                  my_noise = diff * diff;
                              }
 
-                             sycl::sub_group sg = item.get_sub_group();
+                             sycl::sub_group const sg = item.get_sub_group();
                              const float sg_sum =
                                  sycl::reduce_over_group(sg, my_noise, sycl::plus<float>{});
                              const uint32_t sg_id = sg.get_group_linear_id();

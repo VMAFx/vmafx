@@ -101,7 +101,7 @@ static void launch_cov(sycl::queue &q, const float *plane, const float *means, f
     /* 625 work-groups of COV_WG threads, one per (x_index, y_index) pair. */
     const size_t total_wg = SP_ELEMENTS * SP_ELEMENTS;
     q.submit([&](sycl::handler &cgh) {
-        sycl::local_accessor<float, 1> s_partial(sycl::range<1>(COV_WG), cgh);
+        sycl::local_accessor<float, 1> const s_partial(sycl::range<1>(COV_WG), cgh);
         cgh.parallel_for(sycl::nd_range<1>(total_wg * COV_WG, COV_WG), [=](sycl::nd_item<1> it) {
             const uint32_t x_index = (uint32_t)(it.get_group(0) / SP_ELEMENTS);
             const uint32_t y_index = (uint32_t)(it.get_group(0) % SP_ELEMENTS);
@@ -222,8 +222,8 @@ static void launch_score(sycl::queue &q, const float *ref_eigenvalues, const flo
             float re = 0.0f;
             float de = 0.0f;
             for (uint32_t k = 0; k < SP_ELEMENTS; ++k) {
-                float ref_lk = ref_eigenvalues[k] < 0.0f ? 0.0f : ref_eigenvalues[k];
-                float dis_lk = dis_eigenvalues[k] < 0.0f ? 0.0f : dis_eigenvalues[k];
+                float const ref_lk = ref_eigenvalues[k] < 0.0f ? 0.0f : ref_eigenvalues[k];
+                float const dis_lk = dis_eigenvalues[k] < 0.0f ? 0.0f : dis_eigenvalues[k];
                 re += sycl::log2(ref_lk * rv + sigma_nn) + log2e_2pi;
                 de += sycl::log2(dis_lk * dv + sigma_nn) + log2e_2pi;
             }
@@ -297,7 +297,7 @@ struct SpeedTemporalSyclState {
 
 static void free_sycl_state_st(SpeedTemporalSyclState *s)
 {
-    sycl::queue *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
+    sycl::queue const *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
 #define FREE_D(p)                                                                                  \
     do {                                                                                           \
         if ((p)) {                                                                                 \
@@ -396,7 +396,7 @@ static int run_channel_st(SpeedTemporalSyclState *s, float *h_plane, float *h_in
     const int sz = (int)SP_ELEMENTS;
     const int nb = (int)num_blocks;
     speed_internal_compute_eigenvalues(s->h_cov_mat, s->h_eigenvalues, sz, s->h_eig_scratch);
-    bool regular = speed_internal_is_matrix_regular(s->h_eigenvalues, SP_ELEMENTS);
+    bool const regular = speed_internal_is_matrix_regular(s->h_eigenvalues, SP_ELEMENTS);
     *singular_out = !regular;
 
     if (!regular) {
@@ -458,8 +458,8 @@ static int score_aggregate_st(SpeedTemporalSyclState *s, float *score_out)
         const float rv = s->h_ref_var[i];
         const float dv = s->h_dis_var[i];
         /* speed_temporal uses weight_var_mode = 0. */
-        float spatial_ref = re * std::log2f(1.0f + rv);
-        float spatial_dis = de * std::log2f(1.0f + dv);
+        float const spatial_ref = re * std::log2f(1.0f + rv);
+        float const spatial_dis = de * std::log2f(1.0f + dv);
         total += std::fabs(spatial_ref - spatial_dis);
     }
     *score_out = total / (float)num_blocks;
@@ -567,12 +567,12 @@ static int init_temporal_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pi
         .speed_weight_var_mode = 0,
     };
 
-    int err = speed_internal_init_dimensions(&s->dim, (int)w, (int)h, s->opt.speed_prescale);
+    int const err = speed_internal_init_dimensions(&s->dim, (int)w, (int)h, s->opt.speed_prescale);
     if (err)
         return err;
     s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
 
-    sycl::queue &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
+    sycl::queue const &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
     const size_t stride_px = s->float_stride / sizeof(float);
     const size_t nb = s->dim.num_blocks;
     const size_t plane_bytes = s->dim.alloc_height * stride_px * sizeof(float);

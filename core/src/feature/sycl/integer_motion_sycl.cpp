@@ -289,9 +289,9 @@ static sycl::event launch_blur_sad_fused(sycl::queue &q, const void *input, int3
     sycl::range<2> local(WG_Y, WG_X);
 
     return q.submit([&](sycl::handler &cgh) {
-        sycl::local_accessor<int32_t, 2> s_tile(sycl::range<2>(TILE_H, TILE_W), cgh);
+        sycl::local_accessor<int32_t, 2> const s_tile(sycl::range<2>(TILE_H, TILE_W), cgh);
         constexpr int MAX_SUBGROUPS = 32;
-        sycl::local_accessor<int64_t, 1> lmem(sycl::range<1>(MAX_SUBGROUPS), cgh);
+        sycl::local_accessor<int64_t, 1> const lmem(sycl::range<1>(MAX_SUBGROUPS), cgh);
 
         cgh.parallel_for(
             sycl::nd_range<2>(global, local),
@@ -304,8 +304,8 @@ static sycl::event launch_blur_sad_fused(sycl::queue &q, const void *input, int3
                 const bool valid = (gx < (int)e_w && gy < (int)e_h);
 
                 // --- Phase 1: Cooperative 2D tile load ---
-                int tile_origin_y = (int)(item.get_group(0) * WG_Y) - HALF_FW;
-                int tile_origin_x = (int)(item.get_group(1) * WG_X) - HALF_FW;
+                int const tile_origin_y = (int)(item.get_group(0) * WG_Y) - HALF_FW;
+                int const tile_origin_x = (int)(item.get_group(1) * WG_X) - HALF_FW;
 
                 constexpr unsigned tile_elems = TILE_H * TILE_W; // 432
 
@@ -354,8 +354,8 @@ static sycl::event launch_blur_sad_fused(sycl::queue &q, const void *input, int3
 
 #pragma unroll
                     for (int hx = 0; hx < 5; hx++) {
-                        unsigned tcol = lx + (unsigned)hx;
-                        int32_t vsum =
+                        unsigned const tcol = lx + (unsigned)hx;
+                        int32_t const vsum =
                             blur_filter[0] * (s_tile[ly + 0][tcol] + s_tile[ly + 4][tcol]) +
                             blur_filter[1] * (s_tile[ly + 1][tcol] + s_tile[ly + 3][tcol]) +
                             blur_filter[2] * s_tile[ly + 2][tcol];
@@ -372,7 +372,7 @@ static sycl::event launch_blur_sad_fused(sycl::queue &q, const void *input, int3
 
                     // SAD with previous frame
                     if (e_sad) {
-                        int32_t prev = prev_blur[gy * e_w + gx];
+                        int32_t const prev = prev_blur[gy * e_w + gx];
                         int32_t const diff = blurred - prev;
                         abs_diff = (diff < 0) ? -(int64_t)diff : (int64_t)diff;
                     }
@@ -380,8 +380,9 @@ static sycl::event launch_blur_sad_fused(sycl::queue &q, const void *input, int3
 
                 // --- Phase 3: Subgroup reduction for SAD ---
                 if (e_sad) {
-                    sycl::sub_group sg = item.get_sub_group();
-                    int64_t sg_sum = sycl::reduce_over_group(sg, abs_diff, sycl::plus<int64_t>{});
+                    sycl::sub_group const sg = item.get_sub_group();
+                    int64_t const sg_sum =
+                        sycl::reduce_over_group(sg, abs_diff, sycl::plus<int64_t>{});
 
                     const uint32_t sg_id = sg.get_group_linear_id();
                     const uint32_t sg_lid = sg.get_local_linear_id();
@@ -398,10 +399,9 @@ static sycl::event launch_blur_sad_fused(sycl::queue &q, const void *input, int3
                         for (uint32_t s = 0; s < n_subgroups; s++)
                             total += lmem[s];
 
-                        sycl::atomic_ref<int64_t, sycl::memory_order::relaxed,
-                                         sycl::memory_scope::device,
-                                         sycl::access::address_space::global_space>
-                            ref(*sad_accum);
+                        sycl::atomic_ref<
+                            int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
+                            sycl::access::address_space::global_space> const ref(*sad_accum);
                         ref.fetch_add(total);
                     }
                 }
@@ -651,7 +651,7 @@ static void enqueue_motion_work(void *queue_ptr, void *priv, void *shared_ref, v
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<MotionStateSycl *>(priv);
 
-    bool compute_sad = (s->frame_index > 0);
+    bool const compute_sad = (s->frame_index > 0);
     int const cur = s->cur_blur;
     int const prev = 1 - cur;
 
@@ -736,10 +736,10 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
             // Strided — copy one row at a time
             size_t const row_bytes = s->chroma_w * bpp;
             for (unsigned row = 0; row < s->chroma_h; row++) {
-                int eu = vmaf_sycl_memcpy_h2d_async(state, u_dst + row * row_bytes,
-                                                    u_src + row * ref_pic->stride[1], row_bytes);
-                int ev = vmaf_sycl_memcpy_h2d_async(state, v_dst + row * row_bytes,
-                                                    v_src + row * ref_pic->stride[2], row_bytes);
+                int const eu = vmaf_sycl_memcpy_h2d_async(
+                    state, u_dst + row * row_bytes, u_src + row * ref_pic->stride[1], row_bytes);
+                int const ev = vmaf_sycl_memcpy_h2d_async(
+                    state, v_dst + row * row_bytes, v_src + row * ref_pic->stride[2], row_bytes);
                 if (eu || ev)
                     return eu ? eu : ev;
             }

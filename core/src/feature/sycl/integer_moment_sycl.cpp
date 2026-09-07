@@ -64,11 +64,11 @@ struct MomentStateSycl {
 static void launch_moment(sycl::queue &q, void *shared_ref, void *shared_dis, int64_t *d_sums,
                           unsigned width, unsigned height, unsigned bpc)
 {
-    sycl::range<2> global{(size_t)height, (size_t)width};
+    sycl::range<2> const global{(size_t)height, (size_t)width};
     const unsigned e_w = width;
     const unsigned e_bpc = bpc;
-    void *ref_in = shared_ref;
-    void *dis_in = shared_dis;
+    void const *ref_in = shared_ref;
+    void const *dis_in = shared_dis;
 
     q.submit([=](sycl::handler &h) {
         h.parallel_for(global, [=](sycl::id<2> id) {

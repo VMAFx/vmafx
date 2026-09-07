@@ -136,8 +136,8 @@ static void launch_horiz(sycl::queue &q, const float *d_ref, const float *d_cmp,
          * Size = SSIM_WG_Y rows × SSIM_TILE_W cols = 8 × 26 floats each.
          * Total SLM per WG = 2 × 208 × 4 B = 1664 B — well within Arc A380
          * local-memory limits (64 KB per compute unit). */
-        sycl::local_accessor<float, 1> s_ref(sycl::range<1>(SSIM_WG_Y * SSIM_TILE_W), cgh);
-        sycl::local_accessor<float, 1> s_cmp(sycl::range<1>(SSIM_WG_Y * SSIM_TILE_W), cgh);
+        sycl::local_accessor<float, 1> const s_ref(sycl::range<1>(SSIM_WG_Y * SSIM_TILE_W), cgh);
+        sycl::local_accessor<float, 1> const s_cmp(sycl::range<1>(SSIM_WG_Y * SSIM_TILE_W), cgh);
 
         cgh.parallel_for(ndr, [=](sycl::nd_item<2> it) {
             const size_t gx = it.get_global_id(1);
@@ -217,7 +217,8 @@ static void launch_vert_combine(sycl::queue &q, const float *d_ref_mu, const flo
     const size_t global_x = ((w_final + SSIM_WG_X - 1) / SSIM_WG_X) * SSIM_WG_X;
     const size_t global_y = ((h_final + SSIM_WG_Y - 1) / SSIM_WG_Y) * SSIM_WG_Y;
     const size_t wg_count_x = global_x / SSIM_WG_X;
-    sycl::nd_range<2> ndr{sycl::range<2>{global_y, global_x}, sycl::range<2>{SSIM_WG_Y, SSIM_WG_X}};
+    sycl::nd_range<2> const ndr{sycl::range<2>{global_y, global_x},
+                                sycl::range<2>{SSIM_WG_Y, SSIM_WG_X}};
     const unsigned e_w_horiz = w_horiz;
     const unsigned e_w_final = w_final;
     const unsigned e_h_final = h_final;
@@ -267,7 +268,8 @@ static void launch_vert_combine(sycl::queue &q, const float *d_ref_mu, const flo
                     (ref_mu * ref_mu + cmp_mu * cmp_mu + e_c1) * (ref_var + cmp_var + e_c2);
                 my_ssim = num / den;
             }
-            float wg_sum = sycl::reduce_over_group(it.get_group(), my_ssim, sycl::plus<float>{});
+            float const wg_sum =
+                sycl::reduce_over_group(it.get_group(), my_ssim, sycl::plus<float>{});
             if (it.get_local_id(0) == 0 && it.get_local_id(1) == 0) {
                 const size_t wg_idx = it.get_group(0) * e_wg_count_x + it.get_group(1);
                 e_partials[wg_idx] = wg_sum;
@@ -292,7 +294,7 @@ static int compute_scale(unsigned w, unsigned h, int override_)
 {
     if (override_ > 0)
         return override_;
-    int scaled = round_to_int((float)min_int((int)w, (int)h) / 256.0f);
+    int const scaled = round_to_int((float)min_int((int)w, (int)h) / 256.0f);
     return scaled < 1 ? 1 : scaled;
 }
 
@@ -316,7 +318,7 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     (void)pix_fmt;
     auto *s = static_cast<SsimStateSycl *>(fex->priv);
 
-    int scale = compute_scale(w, h, s->scale_override);
+    int const scale = compute_scale(w, h, s->scale_override);
     if (scale != 1) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "ssim_sycl: v1 supports scale=1 only (auto-detected scale=%d at %ux%u). "

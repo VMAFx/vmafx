@@ -118,7 +118,7 @@ struct PsnrStateSycl {
 static void launch_sse(sycl::queue &q, const void *ref_buf, const void *dis_buf, int64_t *d_sse,
                        unsigned width, unsigned height, unsigned bpc)
 {
-    sycl::range<2> global{(size_t)height, (size_t)width};
+    sycl::range<2> const global{(size_t)height, (size_t)width};
     const unsigned e_w = width;
     const unsigned e_bpc = bpc;
     const void *ref_in = ref_buf;
@@ -141,8 +141,7 @@ static void launch_sse(sycl::queue &q, const void *ref_buf, const void *dis_buf,
             const int64_t diff = r - d;
             const int64_t se = diff * diff;
             sycl::atomic_ref<int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
-                             sycl::access::address_space::global_space>
-                accum(*d_sse);
+                             sycl::access::address_space::global_space> const accum(*d_sse);
             accum.fetch_add(se);
         });
     });

@@ -228,7 +228,7 @@ static void launch_psnr_hvs(sycl::queue &q, const float *ref, const float *dist,
                             unsigned width, unsigned height, unsigned num_blocks_x,
                             unsigned num_blocks_y, int plane, int bpc)
 {
-    sycl::nd_range<2> ndr{
+    sycl::nd_range<2> const ndr{
         sycl::range<2>{(size_t)num_blocks_y * WG_DIM, (size_t)num_blocks_x * WG_DIM},
         sycl::range<2>{WG_DIM, WG_DIM}};
     const unsigned e_w = width;
@@ -242,8 +242,8 @@ static void launch_psnr_hvs(sycl::queue &q, const float *ref, const float *dist,
     float *e_partials = partials;
 
     q.submit([=](sycl::handler &h_) {
-        sycl::local_accessor<int, 1> s_ref(sycl::range<1>(64), h_);
-        sycl::local_accessor<int, 1> s_dist(sycl::range<1>(64), h_);
+        sycl::local_accessor<int, 1> const s_ref(sycl::range<1>(64), h_);
+        sycl::local_accessor<int, 1> const s_dist(sycl::range<1>(64), h_);
 
         h_.parallel_for(ndr, [=](sycl::nd_item<2> it) {
             const size_t blk_y = it.get_group(0);
@@ -576,8 +576,8 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     }
 
     int err = 0;
-    static const char *plane_features[PSNR_HVS_NUM_PLANES] = {"psnr_hvs_y", "psnr_hvs_cb",
-                                                              "psnr_hvs_cr"};
+    static const char const *plane_features[PSNR_HVS_NUM_PLANES] = {"psnr_hvs_y", "psnr_hvs_cb",
+                                                                    "psnr_hvs_cr"};
     for (int p = 0; p < (int)s->n_active_planes; p++) {
         const double db = 10.0 * (-1.0 * std::log10(plane_score[p]));
         err |= vmaf_feature_collector_append(feature_collector, plane_features[p], db, index);
