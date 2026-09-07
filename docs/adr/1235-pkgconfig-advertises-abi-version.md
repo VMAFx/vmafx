@@ -49,6 +49,38 @@ The two numbers exist precisely because the fork wants to stay a drop-in
 libvmaf while renumbering its own product line. Handing the product number to
 the field consumers use for interface gating discards that.
 
+### Not the 2026-05-27 symptom
+
+`docs/research/0730-ffmpeg-libvmaf-smoke-20260527.md` records the *same message*
+— `libvmaf >= 2.0.0 not found` — from a different cause: a system `libvmaf.so`
+built against oneAPI 2025.0 failed configure's **link** test on a host that had
+moved to 2026.0, so pkg-config's own check never ran. The two are told apart by
+the line above the error. A link failure prints nothing about versions; this one
+prints pkg-config's version comparison verbatim:
+
+```text
+Package 'libvmaf' has version '1.0.0-rc.1', required version is '>= 2.0.0'
+```
+
+Do not treat a future `libvmaf >= 2.0.0 not found` as settled by this ADR without
+checking which of the two lines precedes it.
+
+### Sweep for the rest of the class
+
+The same product-version renumber was checked against every other version-coupled
+surface in the tree, since a 3.2.1 -> 1.0.0 move breaks anything holding a lower
+bound or comparing spellings:
+
+| Surface | Verdict |
+| --- | --- |
+| `python/test/setup_metadata_test.py` | **Broke** — PEP 440 vs SemVer string compare; fixed separately (`T-RELEASE-RC-PEP440-VERSION-MISMATCH-2026-09-07`) |
+| `libvmaf.pc` `Version:` | **Broke** — this ADR |
+| `ai/`, `dev-llm/`, `mcp-server/vmaf-mcp/` (hatchling) | Safe — hatchling accepts `1.0.0-rc.1` and normalises to `1.0.0rc1` in the wheel; no test asserts the raw spelling |
+| `scripts/release/verify-release-version.sh` | Safe — tag and marker regexes both already accept `-rc.N` |
+| `vmaf_version()` / `vcs_version.h` | Safe — descriptive `git describe` output, never compared |
+| MCP `_get_version` banner parse | Safe — regex extraction, no comparison |
+| Rust crates (`0.1.0`), Helm `version:`, `ARG VMAFX_VERSION` | Safe — deliberately uncoordinated, documented as such |
+
 ## Decision
 
 `libvmaf.pc`'s `Version:` is the **library interface version** and is generated
