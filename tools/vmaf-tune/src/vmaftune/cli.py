@@ -2155,6 +2155,12 @@ def _run_predict(args: argparse.Namespace) -> int:
     pix_fmt = "yuv420p"  # canonical reference format; matches saliency.py + the corpus loop
 
     predictor = Predictor(model_path=args.model)
+    if predictor.is_stub:
+        print(
+            f"warning: predictor model '{args.model}' is a synthetic stub "
+            "(not authoritative for production CRF picks)",
+            file=sys.stderr,
+        )
 
     def _features(shot):
         return extract_features(
@@ -4884,6 +4890,12 @@ def _build_sidecar_predictor(args: argparse.Namespace):
         cfg_kwargs["cache_dir"] = args.cache_dir
     cfg = SidecarConfig(**cfg_kwargs)
     predictor = Predictor(model_path=args.model)
+    if predictor.is_stub:
+        print(
+            f"warning: predictor model '{args.model}' is a synthetic stub "
+            "(not authoritative for production CRF picks)",
+            file=sys.stderr,
+        )
     return SidecarPredictor.for_codec(predictor, codec=args.codec, config=cfg)
 
 

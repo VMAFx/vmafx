@@ -1,5 +1,16 @@
 # DISTS-Sq Extractor
 
+> **Status — smoke placeholder / not for production.**
+> `model/tiny/dists_sq.onnx` is a synthetic smoke placeholder (3-op MSE graph:
+> `Sub` + `Mul` + `ReduceMean`). It validates extractor plumbing, ImageNet-RGB
+> tensor conversion, and ONNX Runtime integration, but computes only mean
+> squared distance between normalised RGB tensors. It does **not** implement
+> Ding et al.'s learned multi-scale texture/structure feature stack and is
+> **not for production use** or codec-tuning decisions. At point of use,
+> `feature_dists.c` logs a warning when loading this placeholder model.
+> Production DISTS weights remain tracked as `T7-DISTS-followup` (see
+> `docs/state.md` row `T-DISTS-PLACEHOLDER-CHECKPOINT-2026-09-08`).
+
 `dists_sq` is the fork's DISTS-shaped full-reference deep perceptual
 extractor. It mirrors the existing `lpips` tiny-AI surface: libvmaf converts
 each reference/distorted frame pair to ImageNet-normalised RGB tensors, runs a

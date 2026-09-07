@@ -8,6 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/VMAFx/vmafx/pkg/ai"
 )
@@ -23,20 +26,16 @@ import (
 // failure once through SessionFailed and the optional Log.
 //
 // This is the one ORT adapter in the tree (ADR-1137): the `predict`, `auto`
-// and `sidecar` subcommands all attach it through NewORTSession or
-// NewWithModel. It used to live in cmd/vmafx-tune/cmd next to a second,
-// registry-based ONNX path inside the deleted pkg/tune/predictor.
+// and `sidecar` subcommands all route through it rather than reimplementing
+// the bridge.
+
 type ORTSession struct {
 	ctx       context.Context
 	registry  *ai.Registry
 	modelPath string
 }
 
-// NewORTSession returns a Session for the model at modelPath, or nil when no
-// model was requested, so `WithSession(NewORTSession(ctx, ""))` is the
-// analytical predictor.
-//
-// It does NOT probe for the runner here: the Python constructor is equally
+// NewORTSession constructs the ORT bridge for modelPath. The subprocess is
 // lazy, and probing would make `--model` fail on hosts where the runner
 // appears later in the run. The first Infer call surfaces the problem, and
 // PredictVMAF falls back to the analytical curve on any inference error.
@@ -49,6 +48,43 @@ func NewORTSession(ctx context.Context, modelPath string) Session {
 		registry:  ai.NewRegistry(""),
 		modelPath: modelPath,
 	}
+}
+
+// IsStubPredictorModel reports whether modelPath points to a synthetic-stub model.
+//
+// Software models (libx264, libx265, libsvtav1, libaom-av1, libvvenc) and AMF models
+// (h264_amf, hevc_amf, av1_amf) ship synthetic stubs trained on the analytical curve
+// (ADR-0325). They are not authoritative for production CRF picks.
+func IsStubPredictorModel(modelPath string) bool {
+	if modelPath == "" {
+		return false
+	}
+	base := filepath.Base(modelPath)
+	if strings.Contains(strings.ToLower(base), "stub") {
+		return true
+	}
+	ext := filepath.Ext(modelPath)
+	stem := strings.TrimSuffix(modelPath, ext)
+	cardPath := stem + "_card.md"
+	if data, err := os.ReadFile(cardPath); err == nil {
+		cardText := string(data)
+		if strings.Contains(cardText, "synthetic-stub") {
+			return true
+		}
+		if strings.Contains(cardText, "real-N=") {
+			return false
+		}
+	}
+	knownStubCodecs := []string{
+		"libx264", "libx265", "libsvtav1", "libaom-av1", "libvvenc",
+		"h264_amf", "hevc_amf", "av1_amf",
+	}
+	for _, codec := range knownStubCodecs {
+		if strings.Contains(base, codec) {
+			return true
+		}
+	}
+	return false
 }
 
 // NewWithModel builds the predictor a `--model`-bearing subcommand runs on:
@@ -65,6 +101,12 @@ func NewWithModel(ctx context.Context, modelPath string, log *slog.Logger) (*Pre
 	}
 	if _, err := ai.NewRegistry("").ModelPath(modelPath); err != nil {
 		return nil, err
+	}
+	if IsStubPredictorModel(modelPath) {
+		if log != nil {
+			log.Warn("predictor: loading synthetic-stub model; not authoritative for production CRF picks",
+				"model", modelPath)
+		}
 	}
 	pred := WithSession(NewORTSession(ctx, modelPath))
 	pred.Log = log

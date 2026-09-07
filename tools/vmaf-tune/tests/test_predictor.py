@@ -417,3 +417,28 @@ def test_compute_saliency_extracts_raw_yuv_before_model(tmp_path, monkeypatch):
     assert seen["height"] == 4
     assert seen["model_path"] == model
     assert seen["frame_samples"] == 3
+
+
+def test_predictor_synthetic_stub_detection_and_warning(tmp_path):
+    # Stub model card
+    card = tmp_path / "predictor_libx264_card.md"
+    card.write_text("- **Corpus kind**: `synthetic-stub-N=100`\n", encoding="utf-8")
+    model = tmp_path / "predictor_libx264.onnx"
+    model.write_bytes(b"dummy")
+
+    with pytest.warns(UserWarning, match="synthetic-stub model"):
+        p = Predictor(model_path=model)
+    assert p.is_stub is True
+
+    # Real model card
+    real_card = tmp_path / "predictor_h264_nvenc_card.md"
+    real_card.write_text("- **Corpus kind**: `real-N=2592`\n", encoding="utf-8")
+    real_model = tmp_path / "predictor_h264_nvenc.onnx"
+    real_model.write_bytes(b"dummy")
+
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        p_real = Predictor(model_path=real_model)
+    assert p_real.is_stub is False

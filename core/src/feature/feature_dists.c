@@ -100,6 +100,13 @@ static int dists_sq_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (!path)
         return -EINVAL;
 
+    if (strstr(path, "dists_sq.onnx") != NULL || strstr(path, "placeholder") != NULL) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "dists_sq: loading placeholder model '%s' (synthetic smoke MSE weights; "
+                 "not for production / lacks learned DISTS feature stack)\n",
+                 path);
+    }
+
     rc = vmaf_tiny_ai_open_session("dists_sq", path, &s->sess);
     if (rc < 0)
         return rc;

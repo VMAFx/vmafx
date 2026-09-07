@@ -1,6 +1,29 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/ai-1270-blockers — DISTS, MobileSal, and predictor stub triage (2026-09-08)
+
+Triage and point-of-use guards for issue #1270 blockers:
+
+1. **`core/src/feature/feature_dists.c` logs a point-of-use warning when loading placeholder checkpoint.**
+   `model/tiny/dists_sq.onnx` is a 3-op synthetic MSE smoke placeholder (`vmaf_tiny_dists_sq_placeholder_v0`),
+   not the learned Ding et al. multi-scale backbone. Point-of-use `VMAF_LOG_LEVEL_WARNING` added
+   to `dists_sq_init` when loading `dists_sq.onnx` or any placeholder graph. Do not silence this
+   warning until real learned DISTS weights and the feature extractor stack are implemented.
+   Tracked in `docs/state.md` under `T-DISTS-PLACEHOLDER-CHECKPOINT-2026-09-08`.
+
+2. **`docs/ai/models/mobilesal.md` and `core/src/feature/feature_mobilesal.c` updated for production saliency.**
+   `mobilesal.onnx` is the legacy smoke placeholder (`vmaf_tiny_mobilesal_placeholder_v0`). Production
+   saliency uses `model/tiny/saliency_student_v2.onnx` (ADR-0444) or `saliency_student_v1.onnx`
+   (ADR-0286). `mobilesal_init` warns at `VMAF_LOG_LEVEL_WARNING` when loading `mobilesal.onnx`,
+   recommending `saliency_student_v2.onnx`.
+
+3. **Software and AMF predictor models are synthetic stubs, guarded at point of use.**
+   `Predictor` (`tools/vmaf-tune/src/vmaftune/predictor.py`), CLI `vmaf-tune predict`
+   (`tools/vmaf-tune/src/vmaftune/cli.py`), and Go session (`pkg/predictor/ortsession.go`) detect
+   and warn on synthetic-stub predictor models (`synthetic-stub-N=100`, ADR-0325). Real-corpus models
+   exist only for NVENC and QSV. Tracked in `docs/state.md` under `T-PREDICTOR-SOFTWARE-AMF-STUB-MODELS-2026-09-08`.
+
 ## fix/venv-gate-basename-false-positive — tracked-venv gate pattern (2026-09-05)
 
 No rebase impact: `scripts/ci/check-no-tracked-venv.sh` and its test are fork-added.
