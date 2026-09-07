@@ -302,6 +302,9 @@ EOF_INC
   done | head -5)
   if [ -n "$c_math" ]; then
     printf '     %s\n' 'M_* math macro without the _USE_MATH_DEFINES / #ifndef guard — MinGW64 C2065'
+    printf '     %s\n' '  (the _USE_MATH_DEFINES define needs a cited NOLINTNEXTLINE for'
+    printf '     %s\n' '   bugprone-reserved-identifier — put it on its OWN line above the'
+    printf '     %s\n' '   #define, not inside a multi-line comment; see core/src/libvmaf.c)'
     printf '%s\n' "$c_math" | sed 's/^/       /'
     msvc_fail=1
   fi
