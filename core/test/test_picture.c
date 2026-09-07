@@ -25,6 +25,12 @@
 #include "libvmaf/picture.h"
 #include "ref.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 // NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — explicitly walks every alloc / fill / ref / unref state to keep failures localised; splitting hides the assertion that fired.
 static char *test_picture_alloc_ref_and_unref()
 {
@@ -227,3 +233,5 @@ char *run_tests()
     mu_run_test(test_picture_unref_null_error_paths);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
