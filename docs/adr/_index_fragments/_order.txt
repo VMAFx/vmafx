@@ -972,3 +972,4 @@
 1210-sycl-integer-adm-cm-near-edge-mirror
 1207-feature-isa-invariance-gate
 1208-ssimulacra2-edge-diff-double-subtract
+1222-code-scanning-alert-triage-and-scope
