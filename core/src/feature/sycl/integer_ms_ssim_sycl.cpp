@@ -77,7 +77,8 @@ struct MsSsimStateSycl {
     /* Option-parity with CPU float_ms_ssim.c and CUDA/HIP twins. */
     bool enable_lcs; /* emit per-scale L/C/S triples (ADR-0243 pattern) */
     bool enable_db;  /* return dB-domain score: -10*log10(1 - ms_ssim) */
-    bool clip_db;    /* clip linear ms_ssim to [0, 1] before dB conversion */
+    bool clip_db;    /* cap the dB output at the geometry-derived max_db */
+    double max_db;   /* ADR-1221: dB ceiling, INFINITY when !clip_db */
 
     unsigned width;
     unsigned height;
@@ -316,6 +317,17 @@ static const VmafOption options_ms_ssim_sycl[] = {
     {0},
 };
 
+/* Mirrors float_ms_ssim.c::convert_to_db exactly. ADR-1221. */
+static double ms_ssim_convert_to_db(double score, double max_db)
+{
+    /* score >= 1.0 makes log10(1-score) undefined (log10 of zero or negative)
+     * yielding -Inf / NaN.  Return max_db directly for perfect similarity.  */
+    if (score >= 1.0)
+        return max_db;
+    const double db = -10. * std::log10(1.0 - score);
+    return db < max_db ? db : max_db;
+}
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -341,6 +353,26 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->width = w;
     s->height = h;
     s->bpc = bpc;
+
+    /* ADR-1221 — `clip_db` is a CEILING on the dB output, not a clamp on the
+     * linear score. float_ms_ssim.c derives it from the frame geometry:
+     *
+     *     mse    = 0.5 / (w * h);
+     *     max_db = ceil(10. * log10(peak * peak / mse));
+     *
+     * and `convert_to_db()` returns `MIN(-10*log10(1 - score), max_db)`, with
+     * `score >= 1.0` short-circuiting to `max_db`. The twin used to clamp the
+     * linear score into [0, 1] and then convert with no ceiling, which returns
+     * +Inf for an identical reference/distorted pair. */
+    {
+        const unsigned peak = (1u << bpc) - 1u;
+        if (s->clip_db) {
+            const double mse = 0.5 / (w * h);
+            s->max_db = std::ceil(10. * std::log10(peak * peak / mse));
+        } else {
+            s->max_db = INFINITY;
+        }
+    }
     s->scale_w[0] = w;
     s->scale_h[0] = h;
     for (int i = 1; i < MS_SSIM_SCALES; i++) {
@@ -493,12 +525,8 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
 
     /* dB conversion — mirrors CPU float_ms_ssim.c exactly. */
     double score = msssim;
-    if (s->enable_db) {
-        if (s->clip_db) {
-            score = score < 0.0 ? 0.0 : (score > 1.0 ? 1.0 : score);
-        }
-        score = -10.0 * std::log10(1.0 - score);
-    }
+    if (s->enable_db)
+        score = ms_ssim_convert_to_db(score, s->max_db);
 
     int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "float_ms_ssim", score, index);

@@ -35,6 +35,7 @@
  */
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -76,14 +77,16 @@ static int fill_pic(VmafPicture *pic, unsigned salt)
     return 0;
 }
 
-static int feed_frame(VmafContext *vmaf)
+static int feed_frame(VmafContext *vmaf, bool identical)
 {
     VmafPicture ref;
     VmafPicture dist;
     int err = fill_pic(&ref, 0u);
     if (err)
         return err;
-    err = fill_pic(&dist, 1u);
+    /* An identical pair drives ms_ssim to 1.0, which is where the ADR-1221
+     * dB ceiling actually binds. */
+    err = fill_pic(&dist, identical ? 0u : 1u);
     if (err) {
         vmaf_picture_unref(&ref);
         return err;
@@ -91,15 +94,33 @@ static int feed_frame(VmafContext *vmaf)
     return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
 }
 
-static char *run_cpu_ms_ssim(double *score)
+/* ADR-1221 — `enable_db` / `clip_db` opt into the dB-domain score with a
+ * geometry-derived ceiling. Neither is a VMAF_OPT_FLAG_FEATURE_PARAM, so the
+ * collector key stays `float_ms_ssim`. */
+static int ms_ssim_db_opts(VmafFeatureDictionary **opts)
+{
+    int err = vmaf_feature_dictionary_set(opts, "enable_db", "true");
+    if (err)
+        return err;
+    return vmaf_feature_dictionary_set(opts, "clip_db", "true");
+}
+
+static char *run_cpu_ms_ssim(bool db, bool identical, double *score)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "float_ms_ssim", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    if (db) {
+        err = ms_ssim_db_opts(&opts);
+        mu_assert("CPU: ms_ssim_db_opts failed", !err);
+    }
+    err = vmaf_use_feature(vmaf, "float_ms_ssim", opts);
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CPU: vmaf_use_feature(float_ms_ssim) failed", !err);
-    err = feed_frame(vmaf);
+    err = feed_frame(vmaf, identical);
     mu_assert("CPU: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
@@ -110,7 +131,7 @@ static char *run_cpu_ms_ssim(double *score)
     return NULL;
 }
 
-static char *run_hip_ms_ssim(double *score)
+static char *run_hip_ms_ssim(bool db, bool identical, double *score)
 {
     *score = NAN;
     VmafHipState *hip_state = NULL;
@@ -126,9 +147,16 @@ static char *run_hip_ms_ssim(double *score)
     mu_assert("HIP: vmaf_init failed", !err);
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "integer_ms_ssim_hip", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    if (db) {
+        err = ms_ssim_db_opts(&opts);
+        mu_assert("HIP: ms_ssim_db_opts failed", !err);
+    }
+    err = vmaf_use_feature(vmaf, "integer_ms_ssim_hip", opts);
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("HIP: vmaf_use_feature(integer_ms_ssim_hip) failed", !err);
-    err = feed_frame(vmaf);
+    err = feed_frame(vmaf, identical);
     mu_assert("HIP: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
@@ -152,10 +180,10 @@ static char *test_ms_ssim_cpu_hip_parity(void)
 {
     double cpu = 0.0;
     double gpu = NAN;
-    char *msg = run_cpu_ms_ssim(&cpu);
+    char *msg = run_cpu_ms_ssim(false, false, &cpu);
     if (msg)
         return msg;
-    msg = run_hip_ms_ssim(&gpu);
+    msg = run_hip_ms_ssim(false, false, &gpu);
     if (msg)
         return msg;
     if (isnan(gpu))
@@ -170,9 +198,47 @@ static char *test_ms_ssim_cpu_hip_parity(void)
     return NULL;
 }
 
+/* ADR-1221 — clip_db is a CEILING on the dB output, not a clamp on the linear
+ * score. float_ms_ssim.c derives `max_db = ceil(10*log10(peak*peak/mse))` with
+ * `mse = 0.5/(w*h)` and returns `MIN(-10*log10(1 - score), max_db)`,
+ * short-circuiting to `max_db` when score >= 1.0. This twin used to clamp the
+ * LINEAR score into [0, 1] and then convert with no ceiling, which returns
+ * +Inf on an identical reference/distorted pair — an ordinary thing to score.
+ * The default-options test above cannot see it: with enable_db off, neither
+ * path converts at all. */
+static char *test_ms_ssim_clip_db_ceiling(void)
+{
+    double cpu = 0.0;
+    double gpu = NAN;
+
+    char *msg = run_cpu_ms_ssim(true, true, &cpu);
+    if (msg)
+        return msg;
+    msg = run_hip_ms_ssim(true, true, &gpu);
+    if (msg)
+        return msg;
+    if (isnan(gpu))
+        return NULL;
+
+    mu_assert("CPU float_ms_ssim dB score is non-finite", isfinite(cpu));
+    mu_assert("HIP float_ms_ssim dB score is non-finite -- clip_db must cap it at max_db",
+              isfinite(gpu));
+
+    const double delta = fabs(cpu - gpu);
+    if (delta > PARITY_TOL) {
+        (void)fprintf(stderr,
+                      "\nfloat_ms_ssim enable_db+clip_db parity FAIL: cpu=%.8f hip=%.8f "
+                      "delta=%.2e tol=%.2e\n",
+                      cpu, gpu, delta, PARITY_TOL);
+    }
+    mu_assert("float_ms_ssim dB score drifts from the CPU reference", delta <= PARITY_TOL);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_ms_ssim_hip_registered);
     mu_run_test(test_ms_ssim_cpu_hip_parity);
+    mu_run_test(test_ms_ssim_clip_db_ceiling);
     return NULL;
 }
