@@ -49615,3 +49615,37 @@ fork-added.
 4. **stdout belongs to JSON-RPC.** The Go server logs to stderr. Any change that
    sends log output to stdout corrupts the protocol stream and shows up as
    `mcp stdio returned empty response` rather than as a logging bug.
+## ADR-1226 — the CUDA AIM CM launch is sized by SM count (2026-09-07)
+
+**Files touched**: `core/src/feature/cuda/integer_adm/adm_cm.cu`,
+`core/src/feature/cuda/integer_adm_cuda.c`.
+
+**Rebase impact**: none against upstream Netflix — the AIM CM GPU kernels are
+fork-local (ADR-0746). Conflict risk is against other fork branches touching
+`integer_adm_cuda.c`.
+
+1. **`adm_cm_aim_line_kernel_8` no longer exists.** The macro now instantiates
+   `_2` and `_4`, and the host picks between them per launch from the device's
+   SM count. A rebase that reinstates a `cuModuleGetFunction(...,
+   "adm_cm_aim_line_kernel_8")` will fail at init with
+   `CUDA_ERROR_NOT_FOUND`, which is the good outcome; a rebase that reinstates
+   the fixed `rows_per_thread = 8` while keeping the new module lookups will
+   silently launch the wrong grid for the instantiation it got.
+
+2. **`__launch_bounds__` is absent on purpose.** The kernel still reports 255
+   registers with spill, so it looks like an obvious oversight. It was
+   measured: `(128, 5)` cuts registers to 96 and spill to 8 B — and changes
+   runtime by 0.6%, because the kernel is grid-limited, not occupancy-limited.
+   On top of the `rows_per_thread` fix it is a 3.4% regression. The comment
+   above `ADM_CM_AIM_LINE` records this; do not delete it and do not add the
+   attribute without re-running the sweep in ADR-1226.
+
+3. **`rows_per_thread` may not be raised back to 8 "for efficiency".** It is
+   what decides how much of the GPU the launch uses. There is no
+   x-decomposition to compensate, and adding one would change where the
+   `>> shift_inner_accum` rounding happens and break CPU bit-exactness.
+
+4. **`sm_count == 0` is a supported state.** If `cuDeviceGetAttribute` fails,
+   the launch picks the wider instantiation rather than failing. Keep that
+   fallback: it reproduces the pre-ADR-1226 behaviour on a device whose
+   attributes cannot be read.
