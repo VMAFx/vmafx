@@ -144,7 +144,7 @@ The gate is wired into:
 | `docker-publish-production.yml` | `Build + push CPU image (amd64 + arm64)` | `Publish CPU image` | 17 | No |
 | `docker-publish-production.yml` | `Build + push CUDA 13 image (amd64)` | `Publish CUDA 13 image` | 21 | No |
 | `docker-publish-production.yml` | `Build + push ROCm 7 image (amd64)` | `Publish ROCm 7 image` | 19 | No |
-| `docker-publish-production.yml` | `Build + push oneAPI 2025 image (amd64)` | `Publish oneAPI 2025 image` | 24 | No |
+| `docker-publish-production.yml` | `Build + push oneAPI 2026 image (amd64)` | `Publish oneAPI 2026 image` | 24 | No |
 | `docker-publish-production.yml` | `Smoke-test GPU image entrypoints` | `Smoke-test GPU images` | 21 | No |
 | `docker-publish-production.yml` | `Build + push MCP server image (amd64 + arm64)` | `Publish MCP server image` | 24 | No |
 | `docker-publish-production.yml` | `All production images published` | `Images published` | 16 | No |

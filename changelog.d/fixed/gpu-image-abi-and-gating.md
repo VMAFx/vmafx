@@ -10,7 +10,7 @@
   mismatch inverted.
 - Published tags no longer lie about their contents: `-cuda12` shipped CUDA
   13.3.1 and `-rocm6` shipped ROCm 7.2.4. The job names, Docker targets, SBOM
-  filenames and tag suffixes are renamed to `cuda13` / `rocm7` / `oneapi2025`.
+  filenames and tag suffixes are renamed to `cuda13` / `rocm7` / `oneapi2026`.
   The CUDA runtime `COPY --from` also moves off a stray `ubuntu22.04` base to
   `ubuntu24.04`, matching its siblings.
 - **The GPU image builds were never gated.** `docker-publish-production.yml`'s

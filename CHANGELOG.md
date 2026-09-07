@@ -13761,14 +13761,46 @@ Total NOLINT count before and after: 180 (unchanged).
   merge-train upstream settles. (ADR-0141 §2 / ADR-0278)
 
 
-- Build the `-oneapi2025` production container from Intel's oneAPI Base Toolkit
-  image tagged 2025.3.2 while retaining Intel's latest published 2025.3.1 runtime image;
-  both inputs remain digest-pinned and the final image is runtime-smoked. The
-  Ubuntu 24.04 GPU builders now install a checksum-pinned Meson 1.12.0 wheel
+- The Ubuntu 24.04 GPU builders install a checksum-pinned Meson 1.12.0 wheel
   because the distribution's Meson 1.3.2 is below the source tree's floor.
   Production CPU and GPU images also place bundled model files directly under
   the documented `/usr/local/share/vmafx/model` directory instead of an
-  unintended nested `model/` subdirectory.
+  unintended nested `model/` subdirectory. (The oneAPI builder/runtime pins this
+  fragment originally described were superseded before release by the move to
+  oneAPI 2026.1 — see the `-oneapi2026` entry.)
+
+
+- The SYCL toolchain moves to **Intel oneAPI 2026.1.1**, installed from Intel's
+  apt repository onto Debian 13 rather than pulled as an Intel container image.
+  The published tag is now `-oneapi2026` (was `-oneapi2025`). Compiler and
+  runtime are pinned to the same version because the SYCL soname changed across
+  the 2025/2026 boundary (`libsycl.so.8` → `libsycl.so.9`), which is a hard ABI
+  break rather than the usual backward-compatible case — a 2025-built binary
+  cannot load against a 2026 runtime at all.
+- The oneAPI runtime image now ships on Debian 13 like every other release
+  image. Intel publishes for Ubuntu only, and Ubuntu 26.04's glibc 2.43 is newer
+  than Debian 13's 2.41, so binaries built in Intel's image could not have run
+  on the runtime this project ships. The image also installs the Intel NEO
+  compute driver explicitly: Intel's runtime image bundles it and Debian does
+  not package it, so omitting it produces an image where SYCL loads and every
+  device query then fails.
+- **The dev container was silently frozen on oneAPI 2025.3.2.** It installed the
+  unversioned `intel-basekit` meta-package precisely because Intel used to bump
+  it — but Intel has retired the kit meta-packages (`intel-basekit` and
+  `intel-oneapi-base-toolkit` both stop at 2025.3.2) and only ships 2026 as
+  component packages. apt reported no error. The dev container now installs the
+  same pinned component package as the release images and fails the build if
+  `icpx` is not the 2026 compiler.
+- `docker/dev/ubuntu-26.04-sycl.Dockerfile` actually builds on Ubuntu 26.04 now.
+  It was pinned to 24.04 under a comment claiming Intel published no 26.04
+  variant; Intel does, under the `intel/oneapi` repository that replaced the
+  retired `intel/oneapi-basekit`.
+- **The published oneAPI image gains zero-copy DMA-BUF import.** It never had
+  it: Intel's basekit builder carried Level Zero but not VA-API, so
+  `HAVE_SYCL_DMABUF` was undefined and the path compiled out to its stub, while
+  the dev container built it in. The release image was quietly less capable than
+  the container it was developed in. The builder now installs `libva-dev` and
+  asserts at configure time that both Level Zero and VA-API are present.
 
 
 - Scaffolding for ADR-0457 offloading of large `model/tiny/*.onnx`
@@ -22160,7 +22192,7 @@ is addressed.
   mismatch inverted.
 - Published tags no longer lie about their contents: `-cuda12` shipped CUDA
   13.3.1 and `-rocm6` shipped ROCm 7.2.4. The job names, Docker targets, SBOM
-  filenames and tag suffixes are renamed to `cuda13` / `rocm7` / `oneapi2025`.
+  filenames and tag suffixes are renamed to `cuda13` / `rocm7` / `oneapi2026`.
   The CUDA runtime `COPY --from` also moves off a stray `ubuntu22.04` base to
   `ubuntu24.04`, matching its siblings.
 - **The GPU image builds were never gated.** `docker-publish-production.yml`'s

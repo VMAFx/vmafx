@@ -119,14 +119,14 @@ jobs:
           sudo -E apt-get -yq install ninja-build gcc g++ nasm gpg-agent libvpl-dev
 
       - name: Install Intel oneAPI
-        # Pinned to oneAPI 2025.3 + Level Zero v1.28.0. See libvmaf-build-matrix.yml.
+        # Pinned to oneAPI 2026.1 + Level Zero v1.28.0. See libvmaf-build-matrix.yml.
         run: |
           wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
             | sudo gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
           sudo apt-get update
-          sudo -E apt-get -yq install intel-oneapi-compiler-dpcpp-cpp-2025.3 cmake
+          sudo -E apt-get -yq install intel-oneapi-compiler-dpcpp-cpp-2026.1 cmake
           git clone --depth=1 --branch v1.28.0 \
             https://github.com/oneapi-src/level-zero.git /tmp/level-zero
           cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr

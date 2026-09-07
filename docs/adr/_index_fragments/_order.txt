@@ -933,3 +933,4 @@
 1227-short-workflow-display-names
 1201-release-candidates-before-1-0-0
 1231-base-image-single-source
+1232-oneapi-2026-apt-on-debian

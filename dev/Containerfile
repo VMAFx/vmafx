@@ -219,11 +219,19 @@ ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=${CUDA_HOME}/bin:${PATH}
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64
 
-# ---------- Intel oneAPI latest (icpx / Level Zero) -------------------------
-# Intel apt repo. Use the unversioned `intel-basekit` meta-package — Intel
-# does not publish year-quarter-versioned meta-packages (e.g.,
-# `intel-basekit-2025.3` does not exist in the apt repo); the versioning is
-# tracked internally by the component packages the meta-package pulls in.
+ARG ONEAPI_VERSION="2026.1.1-325"
+
+# ---------- Intel oneAPI (icpx / Level Zero) --------------------------------
+# Pinned to the SAME ONEAPI_VERSION the release images install, so the dev
+# container and the shipped artifact use one compiler.
+#
+# Do NOT go back to the unversioned `intel-basekit` meta-package. Intel RETIRED
+# the kit meta-packages: `intel-basekit` and `intel-oneapi-base-toolkit` both
+# stop at 2025.3.2, and only the component packages continue into 2026. Because
+# apt happily installs the newest *available* version of a retired package, the
+# unversioned form silently froze this container on 2025.3.2 with no error and
+# no warning, while the tree moved on. Depend on the component package and pin
+# it. ADR-1232.
 RUN curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
         | gpg --dearmor \
         | tee /usr/share/keyrings/intel-sw-products.gpg > /dev/null \
@@ -234,7 +242,14 @@ RUN curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-P
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
-    intel-basekit
+    "intel-oneapi-compiler-dpcpp-cpp=${ONEAPI_VERSION}"
+
+# Fail loudly if the pin ever resolves to something other than what was asked
+# for -- a silent 2025 fallback is exactly what this replaced.
+RUN . /opt/intel/oneapi/setvars.sh > /dev/null 2>&1 \
+    && icpx --version | head -1 \
+    && icpx --version | grep -qE '\b2026\.' \
+        || (echo "FATAL: icpx is not the pinned 2026 compiler" && exit 1)
 
 # ---------- Intel GPU compute-runtime (Arc / Xe dispatch via Level Zero) ----
 # Intel's "compute-runtime" stack (NEO) is what makes Arc / Xe / Gen12 GPUs
@@ -268,16 +283,22 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # clinfo is installed in the same layer as the NEO .debs to avoid a
 # separate apt-get update/install round (saves one image layer). ADR-0790.
 # The matched set of Intel NEO runtime, gmmlib, and IGC packages is derived
-# dynamically from the pinned NEO_VER release metadata at build time. ADR-1145.
-ARG NEO_VER=26.31.39395.13
-ARG GITHUB_TOKEN=""
+# dynamically from the pinned INTEL_NEO_VERSION release metadata at build time
+# (ADR-1145). The name matches build-config.env so the single-source gate can
+# check the two agree. The GitHub token is optional -- it only raises the
+# anonymous API rate limit -- and arrives as a BuildKit secret rather than an
+# ARG so it never lands in image metadata.
+ARG INTEL_NEO_VERSION=26.31.39395.13
 COPY dev/scripts/fetch-intel-neo.py /tmp/fetch-intel-neo.py
 # hadolint ignore=DL3003,DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=secret,id=github_token \
     apt-get update && apt-get install -y --no-install-recommends clinfo \
     && mkdir -p /tmp/neo && cd /tmp/neo \
-    && python3 /tmp/fetch-intel-neo.py --neo-ver "${NEO_VER}" ${GITHUB_TOKEN:+--github-token "${GITHUB_TOKEN}"} \
+    && GH_TOK="$(cat /run/secrets/github_token 2>/dev/null || true)" \
+    && python3 /tmp/fetch-intel-neo.py --neo-ver "${INTEL_NEO_VERSION}" \
+         ${GH_TOK:+--github-token "${GH_TOK}"} \
     && apt-get update \
     && apt-get install -y --no-install-recommends ./*.deb \
     && cd / && rm -rf /tmp/neo /tmp/fetch-intel-neo.py

@@ -49,7 +49,9 @@ ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:9baa6b4187bbb98d240372a8a235ac0bb
 ARG RELEASE_RUNTIME_CC="gcr.io/distroless/cc-debian13:nonroot@sha256:c31ff9abcb1910f3ab25c7957bdaf0bfe12a01eb546e8df2282f1c8f682b606c"
 ARG CUDA_RUNTIME="nvidia/cuda:13.3.1-runtime-ubuntu26.04@sha256:71b55b93449973f2ee6d8024d6dd34853d338a1f007fe07adaaf9a35fd591794"
 ARG ROCM_RUNTIME="rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054"
-ARG ONEAPI_RUNTIME="intel/oneapi-runtime:2025.3.1-0-devel-ubuntu24.04@sha256:8942e89b6e6e0cd9a4ca26f12fd4b32a2f0dd1de7e631ea59101a183878d660f"
+ARG ONEAPI_VERSION="2026.1.1-325"
+ARG ONEAPI_APT_REPO="https://apt.repos.intel.com/oneapi"
+ARG ONEAPI_APT_GPG_URL="https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB"
 
 FROM ${RELEASE_BUILDER_BASE} AS vmaf-builder
 
@@ -288,7 +290,26 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
 # FROM lines. BuildKit prunes whichever the selected target does not use.
 FROM ${CUDA_RUNTIME} AS cuda-runtime-libs
 FROM ${ROCM_RUNTIME} AS rocm-runtime-libs
-FROM ${ONEAPI_RUNTIME} AS oneapi-runtime-libs
+# oneAPI runtime libraries, installed from Intel's apt repo onto the same
+# Debian 13 base the node images ship on. Intel's runtime image is Ubuntu-only
+# with a newer glibc, and stops at 2026.0.0 -- older than the compiler that
+# builds libvmaf. ADR-1232.
+FROM ${RELEASE_BUILDER_BASE} AS oneapi-runtime-libs
+ARG DEBIAN_FRONTEND=noninteractive
+ARG ONEAPI_VERSION
+ARG ONEAPI_APT_REPO
+ARG ONEAPI_APT_GPG_URL
+# hadolint ignore=DL3008,DL3009
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl gpg ca-certificates \
+    && curl -fsSL "${ONEAPI_APT_GPG_URL}" | gpg --dearmor \
+         > /usr/share/keyrings/intel-sw-products.gpg \
+    && printf 'deb [signed-by=/usr/share/keyrings/intel-sw-products.gpg] %s all main\n' \
+         "${ONEAPI_APT_REPO}" > /etc/apt/sources.list.d/intel-oneapi.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+         "intel-oneapi-runtime-dpcpp-cpp=${ONEAPI_VERSION}" \
+    && test -e /opt/intel/oneapi/redist/lib/libsycl.so.9
 
 FROM ${RELEASE_RUNTIME_CC} AS runtime-base
 
@@ -391,8 +412,8 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libsw*.so*  /usr/local/lib/
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
 
 # Intel oneAPI SYCL + Level Zero runtime
-COPY --from=oneapi-runtime-libs /opt/intel/oneapi/compiler/latest/lib/libsycl.so*   /usr/local/lib/
-COPY --from=oneapi-runtime-libs /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
+COPY --from=oneapi-runtime-libs /opt/intel/oneapi/redist/lib/libsycl.so*   /usr/local/lib/
+COPY --from=oneapi-runtime-libs /opt/intel/oneapi/redist/lib/libOpenCL.so* /usr/local/lib/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 

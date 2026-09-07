@@ -36,7 +36,7 @@ docker run --rm --entrypoint /usr/local/bin/ffmpeg \
 | `node-cpu` | none | software only | Development, CI, low-volume workloads |
 | `node-cuda` | NVIDIA (CUDA 13.3.1) | software only | GPU-accelerated VMAF scoring on NVIDIA pools |
 | `node-rocm` | AMD (ROCm 7.2.4) | software only | GPU-accelerated VMAF scoring on AMD pools |
-| `node-sycl` | Intel (oneAPI 2025.3.1) | software only | GPU-accelerated VMAF scoring on Intel Arc / Xe pools |
+| `node-sycl` | Intel (oneAPI 2026.1.1) | software only | GPU-accelerated VMAF scoring on Intel Arc / Xe pools |
 
 All four variants carry **the same ffmpeg binary** (built in the shared
 `ffmpeg-builder-cpu` stage). The CUDA / ROCm / SYCL variants differ only in

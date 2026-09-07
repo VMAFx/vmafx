@@ -36,7 +36,7 @@ docker run --rm \
 | `vX.Y.Z-server` | amd64, arm64 | CPU CLI + vmaf-mcp MCP server + vmaf-tune | ~350 MB |
 | `vX.Y.Z-cuda13` | amd64 | CUDA 13 runtime added | ~500 MB |
 | `vX.Y.Z-rocm7` | amd64 | ROCm 7 HIP runtime added | ~600 MB |
-| `vX.Y.Z-oneapi2025` | amd64 | Intel oneAPI 2025 SYCL runtime added | ~500 MB |
+| `vX.Y.Z-oneapi2026` | amd64 | Intel oneAPI 2026.1 SYCL runtime + NEO GPU driver | ~500 MB |
 
 The CPU CLI uses `gcr.io/distroless/cc-debian13:nonroot`, matching its Debian 13
 builder ABI. The server uses the official Python 3.14 slim image (also Debian 13)
@@ -87,20 +87,33 @@ docker run --rm \
 
 Requires: amdgpu kernel module loaded and `/dev/kfd` + `/dev/dri/renderD<N>` accessible.
 
-### oneAPI 2025.3 (SYCL / Intel Arc)
+### oneAPI 2026.1 (SYCL / Intel Arc)
 
-The image is compiled in Intel's oneAPI Base Toolkit container tagged 2025.3.2
-and runs on Intel's oneAPI Runtime 2025.3.1 image. Intel has not published a matching
-`oneapi-runtime:2025.3.2-0-devel-ubuntu24.04` tag, so the release keeps the
-runtime on the latest available 2025.3 patch and verifies the resulting image's
-driver-independent `vmaf --version` entrypoint during publication.
+Both the compiler and the runtime are Intel oneAPI **2026.1.1**, installed from
+Intel's apt repository onto Debian 13 — the same base every other release image
+uses. They are pinned to the identical version rather than merely compatible
+versions, because the SYCL soname changed across the 2025/2026 boundary
+(`libsycl.so.8` → `libsycl.so.9`): that is a hard ABI break, so a binary built
+by one generation cannot load against the other's runtime at all.
+
+The image is *not* built from Intel's container images. `intel/oneapi-runtime`
+stops at 2026.0.0, which is older than the 2026.1 compiler, and Intel publishes
+for Ubuntu only — Ubuntu 26.04 carries glibc 2.43 against Debian 13's 2.41, so
+binaries built inside Intel's image could not run on the image we ship.
+
+The image also installs the Intel NEO compute driver explicitly. Intel's runtime
+image bundles it and Debian does not package it; without it SYCL loads perfectly
+and every device query then fails with *"No device of requested type
+available"*. The build fails rather than shipping an image in that state.
+
+See [ADR-1232](../adr/1232-oneapi-2026-apt-on-debian.md).
 
 ```bash
-docker pull ghcr.io/vmafx/vmafx:vX.Y.Z-oneapi2025
+docker pull ghcr.io/vmafx/vmafx:vX.Y.Z-oneapi2026
 docker run --rm \
   --device /dev/dri \
   --group-add render \
-  ghcr.io/vmafx/vmafx:vX.Y.Z-oneapi2025 \
+  ghcr.io/vmafx/vmafx:vX.Y.Z-oneapi2026 \
   --version
 ```
 

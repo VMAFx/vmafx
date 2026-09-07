@@ -67,7 +67,7 @@ fi
 # Config keys that name an image, i.e. everything but the version knobs.
 mapfile -t image_keys < <(
   grep -oE '^[A-Z][A-Z0-9_]*=' "$config" | tr -d '=' |
-    grep -vE '^(RELEASE_DEBIAN|DEV_UBUNTU|GO_VERSION|PYTHON_VERSION|CUDA_VERSION|ROCM_VERSION|ONEAPI_VERSION|ONEAPI_APT_REPO|ONEAPI_APT_KEY)$' || true
+    grep -vE '^(RELEASE_DEBIAN|DEV_UBUNTU|GO_VERSION|PYTHON_VERSION|CUDA_VERSION|ROCM_VERSION|ONEAPI_VERSION|ONEAPI_APT_REPO|ONEAPI_APT_GPG_URL|INTEL_NEO_VERSION)$' || true
 )
 
 # ------------------------------------------------- rule 1: no literal FROMs --
@@ -148,6 +148,24 @@ PY
   done
 done
 
+# --------------------------------------- rule 2b: no orphaned image ARGs --
+# An ARG holding a digest-pinned image whose name is NOT a key in the config is
+# a pin that escaped. This is the failure mode that removing a config key
+# creates: rule 1 sees `FROM ${SOME_ARG}` and is satisfied, rule 2 never checks
+# a key it does not know, and the stale value ships. It happened during the
+# oneAPI 2026 migration -- dropping ONEAPI_RUNTIME from the config left
+# Dockerfile.node quietly building against the 2025 runtime.
+for f in "${files[@]}"; do
+  while IFS=: read -r lineno line; do
+    name=$(printf '%s' "$line" | sed -E 's/^[[:space:]]*ARG[[:space:]]+([A-Za-z0-9_]+)=.*/\1/')
+    case " ${image_keys[*]} " in
+      *" $name "*) continue ;;
+    esac
+    bad "$f:$lineno ARG $name pins an image but is not defined in $config"
+    note "       Either add $name to $config or stop pinning an image here."
+  done < <(grep -nE '^[[:space:]]*ARG[[:space:]]+[A-Za-z0-9_]+="[^"]*@sha256:' "$f")
+done
+
 # ------------------------------------ rule 3: pins carry the claimed version --
 expect_in() {
   local key="$1" needle="$2" why="$3" val="${!1:-}"
@@ -170,23 +188,36 @@ expect_in CUDA_RUNTIME ":${CUDA_VERSION}-" "CUDA_VERSION=$CUDA_VERSION"
 expect_in ROCM_BUILDER ":${ROCM_VERSION}" "ROCM_VERSION=$ROCM_VERSION"
 expect_in ROCM_RUNTIME ":${ROCM_VERSION}" "ROCM_VERSION=$ROCM_VERSION"
 
+# oneAPI is installed from apt rather than pulled as an image, so its knob is
+# checked against the version the Dockerfiles actually ask apt for.
+for f in "${files[@]}"; do
+  while IFS=: read -r lineno pinned; do
+    [ "$pinned" = "$ONEAPI_VERSION" ] && continue
+    bad "$f:$lineno pins oneAPI $pinned but $config says $ONEAPI_VERSION"
+  done < <(grep -nE 'ARG ONEAPI_VERSION="[^"]+"' "$f" |
+    sed -E 's/^([0-9]+):.*ARG ONEAPI_VERSION="([^"]*)".*/\1:\2/')
+done
+
+# The Intel NEO GPU driver is the same story: apt-installed, and the dev
+# container and the release images must agree or the dev box tests a different
+# driver than users get.
+for f in "${files[@]}"; do
+  while IFS=: read -r lineno pinned; do
+    [ "$pinned" = "$INTEL_NEO_VERSION" ] && continue
+    bad "$f:$lineno pins Intel NEO $pinned but $config says $INTEL_NEO_VERSION"
+  done < <(grep -nE 'ARG INTEL_NEO_VERSION=' "$f" |
+    sed -E 's/^([0-9]+):.*ARG INTEL_NEO_VERSION="?([^"]*)"?.*/\1:\2/')
+done
+
 # No release image may sit on a distro the release track has moved off.
 #
-# ONEAPI_BUILDER / ONEAPI_RUNTIME are exempt for exactly one PR. Crossing them
-# to 2026 is a restructure rather than a pin swap -- the SYCL soname goes
-# .so.8 -> .so.9 so both sides must move together, Intel's 2026 images are
-# Ubuntu-only and their glibc is newer than Debian 13's, and Intel's runtime
-# image carries the NEO GPU driver that Debian does not package. The follow-up
-# moves both to Intel's apt repo on Debian 13 with NEO from
-# dev/scripts/fetch-intel-neo.py, and deletes this exemption. See the oneAPI
-# block in build-config.env for the measurements.
 #
 # ROCM_BUILDER / ROCM_RUNTIME are exempt for the same reason and with the same
 # deadline: PR #1386 carries the 7.2.4 -> 10.0.0 migration together with the
 # HIP-side changes it needs. rocm/dev-ubuntu-26.04:10.0.0-full is the target.
 # Moving the pin here without that PR's code would bump a major GPU SDK with no
 # matching source changes.
-distro_exempt=" ONEAPI_BUILDER ONEAPI_RUNTIME ROCM_BUILDER ROCM_RUNTIME "
+distro_exempt=" ROCM_BUILDER ROCM_RUNTIME "
 for key in "${image_keys[@]}"; do
   val="${!key:-}"
   case "$distro_exempt" in

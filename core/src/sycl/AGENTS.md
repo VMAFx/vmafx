@@ -184,3 +184,16 @@ See
 [`docs/development/sycl-toolchains.md`](../../../docs/development/sycl-toolchains.md)
 for the per-toolchain capability matrix and numerical conformance
 notes.
+
+## The DMA-BUF path is compile-gated and fails silently (ADR-1232)
+
+`dmabuf_import.cpp` is wrapped in `#if HAVE_SYCL_DMABUF`, which
+`core/src/meson.build` defines only when VA-API (`libva` + `libva-drm`) is
+found. Without those dev packages the file still compiles, still links, and
+still runs — it just uses the stub, and zero-copy import is gone with no
+diagnostic.
+
+Every published `-oneapi` image before ADR-1232 was in exactly that state,
+because Intel's basekit builder image ships `ze_loader` but not libva. If you
+change the oneAPI builder stage in `docker/Dockerfile.production-gpu`, keep
+`libva-dev` and the `pkg-config --exists libva libva-drm` assertion.

@@ -376,9 +376,12 @@ jobs:
           echo "PKG_CONFIG_PATH=${ORT_PREFIX}/lib/pkgconfig" >> $GITHUB_ENV
 
       # ---------- Intel oneAPI (SYCL) ----------
-      # Pinned to oneAPI 2025.3 (icpx 2025.3.x) and Level Zero v1.28.0.
-      # 2025.0 was an ABI-breaking release, so pin to the 2025.3 minor meta
-      # package rather than the unversioned 'latest' to avoid silent bumps.
+      # Pinned to oneAPI 2026.1 (icpx 2026.1.x) and Level Zero v1.28.0, matching
+      # the ONEAPI_VERSION the release images ship so CI validates the compiler
+      # users actually get. Pin the versioned component package, never the
+      # unversioned `intel-basekit` meta-package: Intel retired the kit
+      # meta-packages at 2025.3.2, so the unversioned form silently pins to 2025
+      # with no error (ADR-1232).
       - name: Install Intel oneAPI
         if: ${{ (matrix.sycl) && steps.impact.outputs.c_core == 'true' }}
         # Override the matrix-level CC=icx / CXX=icpx for *this* step only:
@@ -399,7 +402,7 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
           sudo apt-get update
-          sudo -E apt-get -yq install intel-oneapi-compiler-dpcpp-cpp-2025.3 cmake
+          sudo -E apt-get -yq install intel-oneapi-compiler-dpcpp-cpp-2026.1 cmake
           # Level Zero headers + loader library, pinned to stable tag.
           git clone --depth=1 --branch v1.28.0 \
             https://github.com/oneapi-src/level-zero.git /tmp/level-zero
@@ -832,8 +835,12 @@ jobs:
   # extract + run bootstrapper). We tried `rscohn2/setup-oneapi@v0`
   # first (Linux-only — all install URLs `.sh`) and Chocolatey's
   # `intel-oneapi-basekit` (not on the community feed); neither
-  # works on `windows-2025`. Pinned to oneAPI 2025.3.0.372 to
-  # match the Linux SYCL leg's `intel-oneapi-compiler-dpcpp-cpp-2025.3`.
+  # works on `windows-2025`. Pinned to oneAPI 2025.3.0.372, which now LAGS the
+  # Linux SYCL leg (`intel-oneapi-compiler-dpcpp-cpp-2026.1`). Intel addresses
+  # the Windows offline installer by an opaque GUID URL rather than a
+  # predictable version path, so bumping it needs the new URL looked up and
+  # verified rather than string-substituted. Tracked in docs/state.md as
+  # T-ONEAPI-WINDOWS-CI-LAG-2026-09-07.
   # Both legs additionally inject `/experimental:c11atomics` into
   # `CFLAGS` / `CXXFLAGS` because libvmaf uses C11 atomics that
   # MSVC's `<stdatomic.h>` refuses without that flag.
@@ -944,8 +951,8 @@ jobs:
       # Toolkit installer, extract its bootstrapper, run with
       # `--components=intel.oneapi.win.cpp-dpcpp-common --eula=accept`
       # plus `NEED_VS*_INTEGRATION=0` so we skip the (very slow) VS
-      # IDE plug-in steps. Pinned to oneAPI 2025.3 to match the
-      # Linux SYCL leg's `intel-oneapi-compiler-dpcpp-cpp-2025.3`.
+      # IDE plug-in steps. Pinned to oneAPI 2025.3, which LAGS the Linux SYCL
+      # leg (2026.1) — see the note on this job above.
       # Chocolatey was tried first but `intel-oneapi-basekit` is
       # not on the community feed (verified 2026-04-19).
       - name: Install Intel oneAPI (windows)

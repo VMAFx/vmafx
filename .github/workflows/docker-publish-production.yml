@@ -9,7 +9,7 @@
 #   ghcr.io/vmafx/vmafx:latest          (same)
 #   ghcr.io/vmafx/vmafx:<tag>-cuda13    (amd64 only — CUDA not portable to arm64)
 #   ghcr.io/vmafx/vmafx:<tag>-rocm7     (amd64 only)
-#   ghcr.io/vmafx/vmafx:<tag>-oneapi2025 (amd64 only)
+#   ghcr.io/vmafx/vmafx:<tag>-oneapi2026 (amd64 only)
 #
 
 # Post-push steps: cosign keyless sign + syft SBOM (CycloneDX JSON) via cosign attest.
@@ -466,10 +466,10 @@ jobs:
           retention-days: 90
 
   # -----------------------------------------------------------------------
-  # GPU variant: oneAPI 2025 (amd64 only)
+  # GPU variant: oneAPI 2026 (amd64 only)
   # -----------------------------------------------------------------------
-  build-oneapi2025:
-    name: Publish oneAPI 2025 image
+  build-oneapi2026:
+    name: Publish oneAPI 2026 image
     needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -506,7 +506,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ env.PUBLISH_TAG }}-oneapi2025
+            type=raw,value=${{ env.PUBLISH_TAG }}-oneapi2026
 
       - name: Build and push
         id: push
@@ -514,11 +514,16 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.production-gpu
-          target: final-oneapi2025
+          target: final-oneapi2026
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # The Intel NEO driver is resolved from a GitHub release. Anonymous
+          # API access is rate-limited to 60/hour per IP, which a busy runner
+          # pool exhausts; the token only raises that limit.
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -547,17 +552,17 @@ jobs:
           syft \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}" \
             --output cyclonedx-json \
-            --file sbom-oneapi2025.cdx.json
+            --file sbom-oneapi2026.cdx.json
           cosign attest --yes \
-            --predicate sbom-oneapi2025.cdx.json \
+            --predicate sbom-oneapi2026.cdx.json \
             --type cyclonedx \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
 
       - name: Upload SBOM as workflow artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: sbom-oneapi2025
-          path: sbom-oneapi2025.cdx.json
+          name: sbom-oneapi2026
+          path: sbom-oneapi2026.cdx.json
           retention-days: 90
 
   # -----------------------------------------------------------------------
@@ -568,7 +573,7 @@ jobs:
     needs:
       - build-cuda13
       - build-rocm7
-      - build-oneapi2025
+      - build-oneapi2026
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -593,7 +598,7 @@ jobs:
           for digest in \
             "${{ needs.build-cuda13.outputs.digest }}" \
             "${{ needs.build-rocm7.outputs.digest }}" \
-            "${{ needs.build-oneapi2025.outputs.digest }}"; do
+            "${{ needs.build-oneapi2026.outputs.digest }}"; do
             cosign verify \
               --certificate-identity \
                 "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/tags/${PUBLISH_TAG}" \
@@ -606,7 +611,7 @@ jobs:
           for digest in \
             "${{ needs.build-cuda13.outputs.digest }}" \
             "${{ needs.build-rocm7.outputs.digest }}" \
-            "${{ needs.build-oneapi2025.outputs.digest }}"; do
+            "${{ needs.build-oneapi2026.outputs.digest }}"; do
             image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${digest}"
             docker pull "${image}"
             docker run --rm "${image}" --version
@@ -795,7 +800,7 @@ jobs:
       - smoke-test
       - build-cuda13
       - build-rocm7
-      - build-oneapi2025
+      - build-oneapi2026
       - smoke-gpu
       - build-server
       - smoke-server
@@ -827,11 +832,11 @@ jobs:
           # exist, and a ROCm 6.4 runtime against a 7.2.4 build toolchain.
           # They gate now.
           fail=0
-          for job in build-cuda13 build-rocm7 build-oneapi2025 build-server; do
+          for job in build-cuda13 build-rocm7 build-oneapi2026 build-server; do
             case "$job" in
               build-cuda13)      r="${{ needs.build-cuda13.result }}" ;;
               build-rocm7)       r="${{ needs.build-rocm7.result }}" ;;
-              build-oneapi2025)  r="${{ needs.build-oneapi2025.result }}" ;;
+              build-oneapi2026)  r="${{ needs.build-oneapi2026.result }}" ;;
               build-server)      r="${{ needs.build-server.result }}" ;;
             esac
             if [[ "$r" != "success" ]]; then

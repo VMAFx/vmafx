@@ -8,12 +8,20 @@ the upgrade procedure when a newer Intel release ships.
 CI installs oneAPI via the official `intel/oneapi-runtime-toolkit`
 GitHub Action; this page covers the **local developer machine** path.
 
+> **Do not install the `intel-basekit` / `intel-oneapi-base-toolkit`
+> meta-packages.** Intel retired them: both stop at 2025.3.2, and only the
+> component packages continue into 2026. Because apt installs the newest
+> *available* version of a retired package, the unversioned form pins you to
+> 2025 silently, with no error — which is exactly how this project's dev
+> container froze. Install the component package and pin it.
+
 ## Pinned version
 
 | Component | Pinned version | Notes |
 | --- | --- | --- |
-| Intel oneAPI Base Toolkit | **2025.3.1** | Bumped from 2025.0.4 (2026-04-25, T7-8). |
-| `icpx` (DPC++/C++ compiler) | shipped with the basekit | LLVM 20 base. |
+| `intel-oneapi-compiler-dpcpp-cpp` | **2026.1.1-325** | Single source: `ONEAPI_VERSION` in `build-config.env` (ADR-1232). |
+| `icpx` (DPC++/C++ compiler) | shipped with that package | Emits `DT_NEEDED libsycl.so.9`. |
+| Intel NEO compute driver | **26.31.39395.13** | `INTEL_NEO_VERSION` in `build-config.env`; the GPU driver itself, separate from oneAPI. |
 | Compute runtime (`level-zero-loader`) | distro package | Arch / CachyOS: `pacman -S level-zero-loader`. |
 
 ## Install paths

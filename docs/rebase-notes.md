@@ -49212,3 +49212,49 @@ Rebase-sensitive invariants introduced by this change:
    pin Alpine / Arch / Fedora precisely because they are *not* the release
    distro. Unifying their bases would defeat the portability matrix they exist
    to run.
+
+## ADR-1232 — oneAPI 2026.1 from apt on Debian 13 (2026-09-07)
+
+Rebase-sensitive invariants:
+
+1. **Never reintroduce the `intel-basekit` / `intel-oneapi-base-toolkit` apt
+   meta-packages.** Intel retired them at 2025.3.2 and continues only the
+   component packages. Because apt resolves a retired package to its newest
+   *available* version, the unversioned form pins the toolchain to 2025 with no
+   error — which is exactly how this container silently froze. Depend on
+   `intel-oneapi-compiler-dpcpp-cpp` / `intel-oneapi-runtime-dpcpp-cpp` and pin
+   the version.
+
+2. **`intel/oneapi-basekit` is a retired *repository*, not a stale tag.** Its
+   last tag is 2025.3.2. The live repository is `intel/oneapi`. A freshness
+   audit pointed at the old name will report "already latest" forever.
+
+3. **The compiler and runtime versions must stay equal.** The SYCL soname
+   changed (`libsycl.so.8` → `.so.9`) across the 2025/2026 boundary, so this is
+   a hard ABI break rather than the usual backward-compatible
+   runtime ≥ compiler case. `scripts/ci/check-base-image-single-source.sh`
+   checks every `ARG ONEAPI_VERSION` against `build-config.env` for this reason.
+
+4. **Do not "simplify" the runtime stage back onto an Intel image.** Intel
+   publishes for Ubuntu only, and its glibc is newer than Debian 13's (2.43 vs
+   2.41), so binaries built for the Debian runtime will not load there.
+   `intel/oneapi-runtime` is also stuck at 2026.0.0, older than the compiler.
+
+5. **`libva-dev` in the oneAPI builder is load-bearing, not incidental.**
+   `core/src/meson.build` defines `HAVE_SYCL_DMABUF` only when VA-API is found;
+   without it `core/src/sycl/dmabuf_import.cpp` compiles to its `#else` stub and
+   the image loses zero-copy import *silently* — it still builds, links and
+   runs. That is precisely what every published `-oneapi` image did before this
+   change. The `pkg-config --exists libva libva-drm` step exists to make that
+   failure loud; do not drop it as redundant.
+
+6. **The NEO driver must be installed in the runtime image.** Intel's runtime
+   image bundled it; Debian does not package it. Omitting it yields an image
+   where `libsycl` loads perfectly and every device query fails with "No device
+   of requested type available". The `dpkg -l intel-opencl-icd libze-intel-gpu1`
+   assertion is the guard.
+
+7. **Image build jobs are matched by prefix now.** `build-rocm*` /
+   `build-oneapi*` in `scripts/release/tests/test-docker-publish-source-binding.sh`
+   — an SDK rename must not fail the Release Script Contract on the rename
+   itself.

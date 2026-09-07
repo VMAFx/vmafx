@@ -8,13 +8,13 @@
 #   final-cpu        — Debian 13 builder + distroless Debian 13 runtime
 #   final-cuda13     — NVIDIA CUDA 13.3.1 devel + runtime images
 #   final-rocm7      — AMD ROCm 7.2.4 dev/application image
-#   final-oneapi2025 — Intel oneAPI 2025.3.2 basekit + 2025.3.1 runtime image
+#   final-oneapi2026 — Intel oneAPI 2026.1 (apt) on Debian 13 + NEO driver
 #
 # Tag matrix (built by CI):
 #   ghcr.io/vmafx/vmafx:<tag>          (cpu default, same as Dockerfile.production)
 #   ghcr.io/vmafx/vmafx:<tag>-cuda13
 #   ghcr.io/vmafx/vmafx:<tag>-rocm7
-#   ghcr.io/vmafx/vmafx:<tag>-oneapi2025
+#   ghcr.io/vmafx/vmafx:<tag>-oneapi2026
 #
 # ADR-0698: vmafx-production-dockerfile
 # ADR-1129: release-container-runtime-alignment
@@ -32,8 +32,10 @@ ARG ROCM_BUILDER="rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c
 ARG RELEASE_RUNTIME_CC="gcr.io/distroless/cc-debian13:nonroot@sha256:c31ff9abcb1910f3ab25c7957bdaf0bfe12a01eb546e8df2282f1c8f682b606c"
 ARG CUDA_RUNTIME="nvidia/cuda:13.3.1-runtime-ubuntu26.04@sha256:71b55b93449973f2ee6d8024d6dd34853d338a1f007fe07adaaf9a35fd591794"
 ARG ROCM_RUNTIME="rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054"
-ARG ONEAPI_BUILDER="intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04@sha256:79a5e333ff6f773793d124b78047001c51cbcd53035e5100313abf2f771af95a"
-ARG ONEAPI_RUNTIME="intel/oneapi-runtime:2025.3.1-0-devel-ubuntu24.04@sha256:8942e89b6e6e0cd9a4ca26f12fd4b32a2f0dd1de7e631ea59101a183878d660f"
+ARG ONEAPI_VERSION="2026.1.1-325"
+ARG ONEAPI_APT_REPO="https://apt.repos.intel.com/oneapi"
+ARG ONEAPI_APT_GPG_URL="https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB"
+ARG INTEL_NEO_VERSION="26.31.39395.13"
 
 FROM scratch AS meson-wheel
 ADD --checksum=sha256:71f133147fa0fcfe8f4df49fa1045771064947834538409e5d97b3613aac8b4e \
@@ -209,40 +211,55 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-rocm7
     && cp /src/core/build/tools/vmaf /dist/bin/ \
     && cp -r model/. /dist/model/
 
-# --- oneAPI 2025.3.2 build ---
-FROM ${ONEAPI_BUILDER} AS builder-oneapi2025
+# --- oneAPI 2026.1 build ---
+# Built on the same Debian 13 base as every other release stage, with the
+# compiler installed from Intel's apt repo rather than from an Intel image.
+# That is a hard requirement, not a preference: Intel publishes for Ubuntu only,
+# Ubuntu 26.04 carries glibc 2.43 and Debian 13 carries 2.41, so a binary
+# compiled inside Intel's image cannot load on the runtime stage below.
+# Compiler and runtime are pinned to the SAME ONEAPI_VERSION because the SYCL
+# soname moved (libsycl.so.8 -> .so.9 across the 2025/2026 boundary), which is a
+# hard ABI break rather than the usual backward-compatible runtime >= compiler
+# case. See build-config.env and docs/research/1231-base-image-single-source.md.
+FROM builder-base AS builder-oneapi2026
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG VMAF_BUILD_JOBS=4
-ARG MESON_VERSION=1.12.0
+ARG ONEAPI_VERSION
+ARG ONEAPI_APT_REPO
+ARG ONEAPI_APT_GPG_URL
 
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \
+    && apt-get install -y --no-install-recommends curl gpg \
+    && curl -fsSL "${ONEAPI_APT_GPG_URL}" | gpg --dearmor \
+         > /usr/share/keyrings/intel-sw-products.gpg \
+    && printf 'deb [signed-by=/usr/share/keyrings/intel-sw-products.gpg] %s all main\n' \
+         "${ONEAPI_APT_REPO}" > /etc/apt/sources.list.d/intel-oneapi.list \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        ccache \
-        gcc \
-        g++ \
-        nasm \
-        ninja-build \
-        pkg-config \
-        python3-pip
+         "intel-oneapi-compiler-dpcpp-cpp=${ONEAPI_VERSION}" \
+         libze-dev libze1 \
+         libva-dev libva-drm2
 
-RUN --mount=type=bind,from=meson-wheel,source=/meson-1.12.0-py3-none-any.whl,\
-target=/tmp/meson-1.12.0-py3-none-any.whl \
-    python3 -m pip install --break-system-packages --no-cache-dir --no-deps \
-        /tmp/meson-1.12.0-py3-none-any.whl \
-    && test "$(meson --version)" = "${MESON_VERSION}"
+# `ze_loader` is a hard requirement of the SYCL backend (core/src/meson.build:
+# common.cpp calls zeMemFree / get_native<ext_oneapi_level_zero>), and VA-API
+# is what enables the zero-copy DMA-BUF import path. Intel's oneAPI apt repo
+# ships neither, and Intel's basekit image -- which this stage replaced --
+# carried ze_loader but NOT libva, so every published oneAPI image until now had
+# HAVE_SYCL_DMABUF undefined and the zero-copy path compiled out to its stub.
+# Assert both, so the capability cannot silently disappear again.
+RUN pkg-config --exists libva libva-drm \
+    && test -e /usr/lib/x86_64-linux-gnu/libze_loader.so
 
 ENV ONEAPI_ROOT=/opt/intel/oneapi
 ENV PATH="${ONEAPI_ROOT}/compiler/latest/bin:${PATH}"
 
 WORKDIR /src
-COPY . .
 
-RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-oneapi2025 \
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-oneapi2026 \
     CCACHE_DIR=/root/.cache/ccache \
     CC=icx CXX=icpx meson setup /src/core/build core \
         --buildtype=release \
@@ -322,19 +339,93 @@ COPY --from=builder-rocm7 /dist/model/ /usr/local/share/vmafx/model/
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/vmaf"]
 
-FROM ${ONEAPI_RUNTIME} AS final-oneapi2025
+# Intel oneAPI 2026.1 runtime on the same Debian 13 base as every other release
+# image, rather than intel/oneapi-runtime. Two measured reasons: Intel's runtime
+# image stops at 2026.0.0, which is OLDER than the 2026.1 compiler above and so
+# inverts the runtime >= compiler rule, and it is Ubuntu-only with a newer glibc
+# than the binaries built above target.
+#
+# The NEO compute stack must be installed explicitly here. Intel's own runtime
+# image bundles it; Debian does not package it. Without it libsycl loads
+# perfectly and every device query then fails with "No device of requested type
+# available" -- a silent fall off the GPU. ADR-1145 / ADR-1232.
+FROM ${RELEASE_BUILDER_BASE} AS final-oneapi2026
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG ONEAPI_VERSION
+ARG ONEAPI_APT_REPO
+ARG ONEAPI_APT_GPG_URL
+ARG INTEL_NEO_VERSION
+
 LABEL org.opencontainers.image.title="vmafx"
-LABEL org.opencontainers.image.description="VMAFX oneAPI 2025.3.1 runtime built from basekit 2025.3.2"
+LABEL org.opencontainers.image.description="VMAFX oneAPI 2026.1 runtime on Debian 13"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
+
+COPY dev/scripts/fetch-intel-neo.py /tmp/fetch-intel-neo.py
+# The GitHub token is optional and only raises the anonymous API rate limit for
+# the NEO release lookup. It arrives as a BuildKit secret rather than an ARG so
+# it never lands in the image metadata.
+# hadolint ignore=DL3003,DL3008,DL3009
+RUN --mount=type=secret,id=github_token \
+    apt-get update \
+    && apt-get install -y --no-install-recommends curl gpg python3 ca-certificates \
+    && curl -fsSL "${ONEAPI_APT_GPG_URL}" | gpg --dearmor \
+         > /usr/share/keyrings/intel-sw-products.gpg \
+    && printf 'deb [signed-by=/usr/share/keyrings/intel-sw-products.gpg] %s all main\n' \
+         "${ONEAPI_APT_REPO}" > /etc/apt/sources.list.d/intel-oneapi.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+         "intel-oneapi-runtime-dpcpp-cpp=${ONEAPI_VERSION}" \
+         intel-oneapi-umf \
+         libze1 libva2 libva-drm2 intel-media-va-driver \
+    && mkdir -p /tmp/neo && cd /tmp/neo \
+    && GH_TOK="$(cat /run/secrets/github_token 2>/dev/null || true)" \
+    && python3 /tmp/fetch-intel-neo.py --neo-ver "${INTEL_NEO_VERSION}" \
+         ${GH_TOK:+--github-token "${GH_TOK}"} \
+    && apt-get install -y --no-install-recommends ./*.deb \
+    && cd / \
+    && find /opt/intel/oneapi/umf -maxdepth 2 -type d -name lib \
+         > /etc/ld.so.conf.d/intel-oneapi-umf.conf \
+    && ldconfig \
+    && apt-get purge -y curl gpg python3 && apt-get autoremove -y \
+    && rm -rf "/tmp/neo" "/tmp/fetch-intel-neo.py" "/var/lib/apt/lists"
+
+# Fail the build rather than ship an image that silently falls back to CPU.
+#
+# The package checks alone are not enough. `intel-oneapi-runtime-dpcpp-cpp` does
+# NOT depend on `intel-oneapi-umf`, so libumf.so.1 goes missing and the Level
+# Zero UR adapter fails to load -- with every NEO package correctly installed
+# and every file present. The only symptom at runtime is "No device of requested
+# type available", which reads like a driver or permissions problem and is not.
+#
+# The adapter-load check below reproduces that failure without a GPU: loading
+# the adapter is what needs libumf, and it happens before any device is
+# enumerated. `--version` is enough to trigger it.
+COPY --from=builder-oneapi2026 /dist/bin/vmaf /tmp/vmaf-probe
+RUN for pkg in intel-opencl-icd libze-intel-gpu1 intel-oneapi-umf; do \
+        dpkg -l "${pkg}" 2>/dev/null | grep -q "^ii" \
+            || (echo "FATAL: ${pkg} was not installed" && exit 1); \
+    done \
+    && test -e /opt/intel/oneapi/redist/lib/libsycl.so.9 \
+    && ldconfig -p | grep -q libumf.so.1 \
+    && SYCL_UR_TRACE=1 /tmp/vmaf-probe --version 2>&1 \
+         | tee /tmp/ur.log | head -1 \
+    && if grep -q "failed to load adapter" /tmp/ur.log; then \
+           echo "FATAL: a SYCL adapter failed to load:"; \
+           grep "failed to load adapter" /tmp/ur.log; \
+           exit 1; \
+       fi \
+    && rm -f /tmp/vmaf-probe /tmp/ur.log
+
 ENV LD_LIBRARY_PATH="/usr/local/lib:/opt/intel/oneapi/redist/lib"
 ENV VMAF_MODEL_PATH="/usr/local/share/vmafx/model"
-COPY --from=builder-oneapi2025 /dist/lib/   /usr/local/lib/
-COPY --from=builder-oneapi2025 /dist/bin/   /usr/local/bin/
-COPY --from=builder-oneapi2025 /dist/model/ /usr/local/share/vmafx/model/
+COPY --from=builder-oneapi2026 /dist/lib/   /usr/local/lib/
+COPY --from=builder-oneapi2026 /dist/bin/   /usr/local/bin/
+COPY --from=builder-oneapi2026 /dist/model/ /usr/local/share/vmafx/model/
 # Drop privileges. Intel GPU access via /dev/dri/renderD* — group `render`
-# (GID 110/993 on Debian) needs to be passed via `--group-add` on `docker run`.
+# needs to be passed via `--group-add` on `docker run`.
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/vmaf"]
 

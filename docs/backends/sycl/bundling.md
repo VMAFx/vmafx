@@ -93,18 +93,20 @@ Any "not found" entries need to be bundled.
 
 Built and validated against:
 
-- **Intel oneAPI DPC++ 2025.3** (package `intel-oneapi-compiler-dpcpp-cpp-2025.3`, icpx 2025.3.x).
+- **Intel oneAPI DPC++ 2026.1** (package `intel-oneapi-compiler-dpcpp-cpp`, pinned to `2026.1.1-325` by `ONEAPI_VERSION` in `build-config.env`; icpx 2026.1.x, emitting `DT_NEEDED libsycl.so.9`).
 - **Level Zero loader v1.28.0** (`oneapi-src/level-zero`, tag `v1.28.0`, Feb 2026).
 - **Intel Compute Runtime 26.09+** on target systems with Xe2 / Battlemage.
 - **SYCL 2020 Rev 11** spec.
 
 oneAPI 2025.0 was an ABI-breaking release; any object files / shared libraries built
 against earlier toolchains must be rebuilt. CI pins the minor meta-package
-`-2025.3` rather than the unversioned `latest` to prevent silent bumps.
+an exact version rather than the unversioned meta-package. Intel retired the
+`intel-basekit` / `intel-oneapi-base-toolkit` meta-packages at 2025.3.2, so the
+unversioned form silently pins to 2025 with no error (ADR-1232).
 
 ### Level Zero v2 adapter (enabled by default on Xe2 / Battlemage)
 
-oneAPI 2025.3 enables the refactored Unified Runtime L0 v2 adapter by default on
+oneAPI 2026.1 enables the refactored Unified Runtime L0 v2 adapter by default on
 Arc B-Series and other Xe2-based GPUs. On **Arc A-Series / DG2 / Flex** you may
 observe a perf regression under L0 v2's immediate command lists; the escape hatch is:
 
