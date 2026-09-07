@@ -107,3 +107,11 @@ wired into the fx graph.
     smoke executes `vmafx-node --version`. Keep this exact early exit ahead of
     `fx.New(...).Run()` so version verification never starts the long-running
     gRPC listener or requires scoring assets.
+
+12. **OTel init is `bootstrap.Base`, spans are `grpcmod` + `executor.go`**
+    (ADR-0782 / ADR-1119): the node has no HTTP server, so it carries no
+    `bootstrap.HTTPTracing`; its gRPC server spans come from `grpcmod.Module`'s
+    `otelgrpc` handler and its job spans (`vmafx.scoring`,
+    `vmafx.frame.extraction`, `vmafx.onnx.inference`) from `executor.go` via
+    `observability.StartSpan`. `app_test.go::TestOTelWiredThroughBootstrap`
+    locks the no-op default and the `vmafx-node` / `pkg/version` identity.

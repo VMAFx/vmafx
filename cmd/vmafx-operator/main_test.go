@@ -19,7 +19,12 @@ import (
 
 	"github.com/golusoris/golusoris/config"
 	"github.com/golusoris/golusoris/k8s/operator"
+	"github.com/golusoris/golusoris/otel"
 	"go.uber.org/fx"
+
+	"github.com/VMAFx/vmafx/internal/app/bootstrap"
+	"github.com/VMAFx/vmafx/internal/oteltest"
+	buildversion "github.com/VMAFx/vmafx/pkg/version"
 )
 
 func TestVersionRequest(t *testing.T) {
@@ -148,5 +153,44 @@ func TestWithOperatorDefaults(t *testing.T) {
 	})
 	if explicit.MetricsAddr != ":7000" || explicit.HealthProbeAddr != ":7001" || explicit.LeaderElectionID != "custom" {
 		t.Errorf("explicit values not preserved: %+v", explicit)
+	}
+}
+
+// TestOTelWiredThroughBootstrap proves the operator's composition inherits
+// OpenTelemetry from bootstrap.Base (ADR-0782 / ADR-1119) with the operator's
+// own VMAFX_ env contract: without an OTLP endpoint golusoris's otel.Module
+// yields no-op providers, and the resource identity is service.name
+// "vmafx-operator" (derived from the binary) with service.version from
+// pkg/version. operator.Module is deliberately left out — its manager
+// constructor needs a cluster; TestOptionsGraphValidates covers that Base is
+// part of the production option list.
+func TestOTelWiredThroughBootstrap(t *testing.T) {
+	oteltest.NoopEnv(t)
+	t.Setenv("VMAFX_LOG_LEVEL", "error")
+	t.Setenv("OTEL_SERVICE_NAME", "")
+	t.Setenv("VMAFX_OTEL_SERVICE_NAME", "")
+	t.Setenv("VMAFX_OTEL_SERVICE_VERSION", "")
+
+	var (
+		providers *otel.Providers
+		opts      otel.Options
+	)
+	app := fx.New(
+		bootstrap.Base,
+		fx.Replace(operatorEnvOptions()),
+		fx.NopLogger,
+		fx.Populate(&providers, &opts),
+	)
+	if err := app.Err(); err != nil {
+		t.Fatalf("bootstrap graph with operator env options: %v", err)
+	}
+	if providers == nil || providers.Tracer != nil || providers.Meter != nil || providers.Logger != nil {
+		t.Fatalf("expected no-op OTel providers without an endpoint, got %+v", providers)
+	}
+	if opts.Service.Name != "vmafx-operator" {
+		t.Errorf("service.name = %q, want vmafx-operator", opts.Service.Name)
+	}
+	if opts.Service.Version != buildversion.Version() {
+		t.Errorf("service.version = %q, want %q", opts.Service.Version, buildversion.Version())
 	}
 }

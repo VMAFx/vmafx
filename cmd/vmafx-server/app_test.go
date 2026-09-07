@@ -32,6 +32,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,9 +49,11 @@ import (
 	grpcmod "github.com/golusoris/golusoris/grpc"
 	"github.com/golusoris/golusoris/k8s/health"
 	"github.com/golusoris/golusoris/observability/statuspage"
+	"github.com/golusoris/golusoris/otel"
 
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
+	"github.com/VMAFx/vmafx/internal/oteltest"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 )
 
@@ -87,6 +90,7 @@ func productionGraph() fx.Option {
 		bootstrap.Base,
 		fx.Replace(serverEnvOptions(false)),
 		golusoris.HTTP,
+		bootstrap.HTTPTracing,
 		grpcmod.Module,
 		fx.Provide(
 			provideScorer,
@@ -250,5 +254,64 @@ func TestRegisterHealthChecksReady(t *testing.T) {
 	results = regNotReady.RunTagged(context.Background(), health.TagReadiness)
 	if len(results) != 1 || results[0].Status != statuspage.StatusDown {
 		t.Errorf("expected scorer readiness check Down for nil scorer, got %+v", results)
+	}
+}
+
+// TestOTelWiredThroughBootstrap asserts the OTel contract vmafx-server inherits
+// from bootstrap.Base (ADR-0782 / ADR-1119): golusoris's otel.Module is in the
+// production graph, is a silent no-op without an OTLP endpoint, and the
+// resource identity is service.name "vmafx-server" (derived from the binary)
+// with service.version from pkg/version.
+func TestOTelWiredThroughBootstrap(t *testing.T) {
+	writeVmafStubForApp(t)
+	oteltest.NoopEnv(t)
+	t.Setenv("OTEL_SERVICE_NAME", "")
+	t.Setenv("VMAFX_OTEL_SERVICE_NAME", "")
+	t.Setenv("VMAFX_OTEL_SERVICE_VERSION", "")
+
+	var (
+		providers *otel.Providers
+		opts      otel.Options
+	)
+	app := fxtest.New(t, productionGraph(), fx.Populate(&providers, &opts))
+	app.RequireStart()
+	defer app.RequireStop()
+
+	if providers == nil || providers.Tracer != nil || providers.Meter != nil || providers.Logger != nil {
+		t.Fatalf("expected no-op OTel providers without an endpoint, got %+v", providers)
+	}
+	if opts.Service.Name != "vmafx-server" {
+		t.Errorf("service.name = %q, want vmafx-server", opts.Service.Name)
+	}
+	if opts.Service.Version != version() {
+		t.Errorf("service.version = %q, want %q", opts.Service.Version, version())
+	}
+}
+
+// TestHTTPRouteEmitsServerSpan drives a request through the *http.Server
+// golusoris.HTTP built for the production graph and asserts the otelhttp span
+// bootstrap.HTTPTracing adds (ADR-0782 follow-up), plus the probe filter.
+func TestHTTPRouteEmitsServerSpan(t *testing.T) {
+	writeVmafStubForApp(t)
+	sr := oteltest.Recorder(t)
+
+	var srv *http.Server
+	app := fxtest.New(t, productionGraph(), fx.Populate(&srv))
+	app.RequireStart()
+	defer app.RequireStop()
+
+	rec := httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/health", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /v1/health: status %d", rec.Code)
+	}
+	if got := oteltest.Ended(sr, "GET /v1/health"); len(got) != 1 {
+		t.Fatalf("want one server span for GET /v1/health, got %v", oteltest.Names(sr))
+	}
+
+	rec = httptest.NewRecorder()
+	srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if got := oteltest.Ended(sr, "GET /healthz"); len(got) != 0 {
+		t.Errorf("probe endpoint must not be traced, got %v", oteltest.Names(sr))
 	}
 }

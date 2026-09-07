@@ -159,3 +159,17 @@ logging + panic-recovery interceptors), and signal handling / graceful shutdown.
    `Close`. There is no longer an `observability.NewShutdownContext()` /
    `errgroup` / `runHTTP`/`runGRPC` path — those were removed. `TestStopOrder`
    is the regression guard.
+
+### observability
+
+1. **OTel comes from `bootstrap.Base` + `bootstrap.HTTPTracing`, spans from
+   golusoris and `grpc_server.go`** (`main.go::productionOptions`, ADR-0782 /
+   ADR-1119): `bootstrap.HTTPTracing` sits next to `golusoris.HTTP` so
+   `POST /v1/score` gets an `otelhttp` server span; gRPC server spans come
+   from `grpcmod.Module`'s `otelgrpc` handler (the auth interceptors chain
+   after it, so rejected RPCs are traced too); `vmafx.job.submit` is the
+   child span `SubmitJob` opens via `observability.StartSpan`. The controller
+   has no private OTel code — `app_test.go::TestOTelWiredThroughBootstrap`
+   locks the no-op default and the `vmafx-controller` / `pkg/version`
+   identity, and `TestGRPCHealthEmitsLinkedSpans` is the fleet's gRPC
+   propagation proof (client span and server span share one trace).

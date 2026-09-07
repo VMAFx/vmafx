@@ -38,6 +38,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/VMAFx/vmafx/pkg/observability"
 )
 
 // DefaultModelDir is the filesystem location searched for ONNX model files
@@ -116,11 +118,20 @@ func (r *Registry) ModelPath(modelName string) (string, error) {
 //
 // When vmafx-ort-runner is not found on PATH, returns ErrORTRunnerNotFound
 // so callers can fall back gracefully.
-func (r *Registry) Infer(ctx context.Context, modelName string, inputs []float64) ([]float64, error) {
+//
+// The whole attempt runs inside one SpanONNXInference span tagged with the
+// model name (ADR-0782 hot path #5). vmafx-ort-runner itself is OTel-exempt
+// (ADR-1134: a millisecond-lived subprocess with nothing to inject), so its
+// caller owns the span; the span status carries the runner's failure.
+func (r *Registry) Infer(ctx context.Context, modelName string, inputs []float64) (outputs []float64, err error) {
 	modelPath, err := r.ModelPath(modelName)
 	if err != nil {
 		return nil, err
 	}
+
+	ctx, span := observability.StartSpan(ctx, observability.SpanONNXInference,
+		observability.AttrModel.String(modelName))
+	defer observability.EndSpan(span, &err)
 
 	runnerPath, lookErr := exec.LookPath("vmafx-ort-runner")
 	if lookErr != nil {
@@ -168,7 +179,6 @@ func (r *Registry) Infer(ctx context.Context, modelName string, inputs []float64
 		return nil, fmt.Errorf("ai: vmafx-ort-runner failed: %w", runErr)
 	}
 
-	var outputs []float64
 	if err := json.Unmarshal(out, &outputs); err != nil {
 		return nil, fmt.Errorf("ai: parse ort-runner output: %w; raw=%s", err, string(out))
 	}

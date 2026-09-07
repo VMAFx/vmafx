@@ -67,21 +67,31 @@ Additional invariants locked in by `coverage_gaps_test.go`:
 
 ## OTel rollout discipline
 
-When wiring OTel into a new service (Phase 2+), the call site is **always**:
+The rollout is complete (epic #1241, ADR-0782): every Go binary initialises
+OpenTelemetry through `internal/app/bootstrap` — `bootstrap.Base` carries
+golusoris's `otel.Module` (ADR-1119) plus the `service.name` /
+`service.version` decorator — and nowhere else. See `cmd/AGENTS.md` #1.
 
-```go
-shutdown := observability.InitOTel(ctx, "<service-name>", log)
-defer func() {
-    shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
-    if err := shutdown(shutdownCtx); err != nil {
-        log.Warn("otel: shutdown returned error", "error", err)
-    }
-}()
-```
+`InitOTel` in this package is the ADR-0927 Phase 1 helper that predates the
+golusoris migration. **No `cmd/` binary calls it any more** (ADR-1119 replaced
+the per-binary "InitOTel + shutdown dance" with `bootstrap.Base`); it remains
+because ADR-0927 is Accepted and its contract (invariants 1–3 above) is still
+tested. Do not wire it into a binary next to `bootstrap.Base` — two global
+providers cannot coexist (golusoris `otel/AGENTS.md`: "Don't wire two OTel
+modules"). Retiring it is a superseding-ADR decision, not a cleanup.
 
-The 5 s bound is mandatory — without it, a misconfigured collector
-hangs process exit forever.
+What a new service or a new request path does instead:
+
+- fx service: start from `bootstrap.Base`; add `bootstrap.HTTPTracing` next
+  to `golusoris.HTTP`; gRPC spans come with `grpc.Module`.
+- one-shot CLI: build `bootstrap.Base` per invocation
+  (`cmd/vmafx-tune/cmd/golusoris.go::withGolusoris` is the template).
+- application spans: `observability.StartSpan` / `EndSpan` with a name from
+  `otel_instruments.go` (`SpanJobSubmit`, `SpanScoring`, `SpanFrameExtraction`,
+  `SpanONNXInference`, `SpanMCPTool`, `SpanTuneCommand`) — add the constant
+  here first; never inline a string.
+- tests: `internal/oteltest.Recorder` installs an in-memory recorder as the
+  global provider (no collector needed); such tests must not be parallel.
 
 ## `ObserveScoreLatency` context requirement (ADR-1095)
 

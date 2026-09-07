@@ -28,6 +28,8 @@ import (
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/VMAFx/vmafx/pkg/observability"
 )
 
 // schemaObj is a shorthand for a raw JSON object used as inputSchema.
@@ -542,18 +544,34 @@ func registerTools(srv *mcp.Server) {
 }
 
 // addRawTool adds a tool with a raw JSON inputSchema.
+//
+// Every registered tool call runs inside one SpanMCPTool span (ADR-0782)
+// tagged with the tool name — this wrapper is the single per-request span
+// site for the MCP binary on both transports. The span records the tool's
+// failure (argument parse, handler error, marshal error) on the span status
+// while the MCP response keeps its IsError contract (a non-nil error is never
+// returned to the SDK; see errorResult). The tracer is the global one that
+// bootstrap.Base's otel.Module installs, so this is inert when OTel is off.
 func addRawTool(srv *mcp.Server, tool *mcp.Tool, handler func(context.Context, map[string]any) (any, error)) {
 	srv.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		ctx, span := observability.StartSpan(ctx, observability.SpanMCPTool,
+			observability.AttrMCPTool.String(tool.Name))
+		var spanErr error
+		defer observability.EndSpan(span, &spanErr)
+
 		args, err := parseArgs(req)
 		if err != nil {
+			spanErr = err
 			return errorResult(fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
 		result, err := handler(ctx, args)
 		if err != nil {
+			spanErr = err
 			return errorResult(err.Error()), nil
 		}
 		text, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
+			spanErr = err
 			return errorResult(fmt.Sprintf("failed to marshal result: %v", err)), nil
 		}
 		return &mcp.CallToolResult{

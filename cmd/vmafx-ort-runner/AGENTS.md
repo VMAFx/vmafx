@@ -39,10 +39,16 @@ array line. User docs: [docs/usage/vmafx-ort-runner.md](../../docs/usage/vmafx-o
    `[51,1,1,1,1,0,0,0,0,0,1,1,16,16]`; realistic rows saturate at `100.0` and
    cannot distinguish a correct pass from a mis-bound tensor.
 
-5. **No framework.** The runner is stdlib `flag` only — no cobra, no
-   golusoris/fx (ADR-1119 §5). It is spawned once per inference and has no
-   config, logger or lifecycle to inject; wrapping it would add startup cost
-   to every predictor call for nothing.
+5. **No framework, and no OpenTelemetry init.** The runner is stdlib `flag`
+   only — no cobra, no golusoris/fx (ADR-1119 §5, ADR-1134). It is spawned
+   once per inference and has no config, logger or lifecycle to inject;
+   wrapping it would add startup cost to every predictor call for nothing.
+   That exemption extends to OTel (ADR-0782 rollout, `cmd/AGENTS.md` #5): an
+   exporter here would add a config load and an export flush to every
+   predictor call, and argv carries no trace context to parent the span
+   anyway. The `vmafx.onnx.inference` span is emitted by the caller,
+   `pkg/ai.Registry.Infer` (`pkg/ai/infer_otel_test.go`); do not add an
+   `otel.New` / `InitOTel` call to `main.go`.
 
 6. **Session per call, closed on every path** (`main.go::infer`): `defer
    sess.Close()` runs on the error path too; `TestRun_InferenceFailureIsExit1`
