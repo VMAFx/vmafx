@@ -11,6 +11,57 @@ and earlier models. Historical runs were produced by `make bench`
 pinned commit. Contribute new numbers via a
 PR that updates this file alongside the commit that motivates the rerun.
 
+## Upstream A/B (ADR-1228)
+
+Every other table on this page compares the fork against itself. This one
+compares it against **upstream Netflix/vmaf at a pinned tag**, which is the only
+measurement that answers whether the fork is worth using on throughput grounds —
+and whether it stayed exact while getting there.
+
+Harness: [`testdata/bench_upstream_ab.py`](../testdata/bench_upstream_ab.py).
+It clones and builds upstream, then runs both binaries over the same fixtures
+with the ADR-1185 discipline (one discarded warmup, `--runs` timed repetitions
+reported as the median, spread and load average recorded).
+
+```bash
+meson setup core/build core -Denable_cuda=false -Denable_sycl=false -Denable_float=true
+ninja -C core/build
+testdata/bench_upstream_ab.py --runs 5 --json /tmp/ab.json
+```
+
+**CPU path only.** Upstream has no SYCL, HIP or Metal backend and its CUDA
+backend covers a different feature set, so a GPU comparison would measure the
+hardware rather than the work. Per-backend numbers stay in
+[`backend-perf-baselines.md`](development/backend-perf-baselines.md).
+
+### 2026-09-07 — fork `257ac1ec4` vs upstream `v3.2.0`, `ryzen-4090-arc`, single-threaded
+
+| Fixture | Upstream | Fork | Speedup | Score delta |
+| --- | --- | --- | --- | --- |
+| 48f 1920x1080 (concatenated checkerboard) | 0.756 s | 0.764 s | **0.989x** | `+5.0e-06` |
+| `src01_576x324`, 48f | 0.073 s | 0.072 s | 1.01x † | `0` |
+| `checkerboard_1px`, 3f | 0.053 s | 0.054 s | 0.97x † | `+4.0e-06` |
+| `checkerboard_10px`, 3f | 0.053 s | 0.054 s | 0.98x † | `0` |
+
+† **Startup-dominated — do not quote these.** Every tracked fixture runs in well
+under a second, so process startup, model parse and JSON emit dominate the wall
+clock and the ratio sits near 1.00x by construction. Two consecutive runs of
+identical code produced geomeans of 1.05x and 0.99x. The harness warns when this
+is the case; `MIN_USEFUL_SECONDS` encodes the threshold. The first row is the
+only one long enough to mean anything, and it needs a locally built fixture
+because the 4K pair is untracked.
+
+**Reading the result honestly:** the fork is **at parity** with upstream on the
+single-threaded CPU path, not ahead of it. Its advantage is the GPU backends and
+the added feature surface. Any claim of CPU speedup over upstream was unmeasured
+before this table existed.
+
+**The score delta is a tracked bug,** not a rounding artefact: see
+`T-UPSTREAM-AB-SCORE-DELTA-2026-09-07` in [`state.md`](state.md). All fourteen
+pooled features agree exactly at the resolution the output format exposes; only
+the final prediction moves, by up to `8e-6` per frame in both directions. It
+sits under the Netflix golden gate's `places=4`, which is why nothing caught it.
+
 ## Hardware profiles
 
 |Profile|CPU|GPUs|Memory|OS|
