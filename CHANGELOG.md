@@ -11711,6 +11711,12 @@ No code changes — docs-only.
   Dockerfile mirror in one PR. Its built-in `dockerfile` manager understands
   `ARG X=image` + `FROM $X` and would otherwise have updated only the mirrors,
   failing the new gate on Renovate's own pull requests.
+- ROCm images move to the Ubuntu 26.04 variant of 10.0.0. The libraries are
+  copied out of the vendor image into a Debian 13 runtime, so this was checked
+  rather than assumed: the `/opt/rocm/core-10.0/lib` layout is identical in both
+  variants and the copied closure needs at most `GLIBC_2.28` against Debian 13's
+  2.41. No release image is on Ubuntu 24.04 any more except oneAPI, whose
+  migration is tracked separately.
 
 
 - **refactor(predict,libvmaf)**: extract bootstrap score-name suffix constants
@@ -14005,6 +14011,23 @@ Total NOLINT count before and after: 180 (unchanged).
   Production CPU and GPU images also place bundled model files directly under
   the documented `/usr/local/share/vmafx/model` directory instead of an
   unintended nested `model/` subdirectory.
+
+
+- **The Linux SYCL toolchain version lives in one place, and moves to 2026.1.**
+  Three workflows (`build.yml`, `ffmpeg-integration.yml`,
+  `libvmaf-build-matrix.yml`) each spelled
+  `intel-oneapi-compiler-dpcpp-cpp-2025.3` inline, so the version could only be
+  bumped by editing every one and the tree drifted from the toolchain actually
+  installed on the workstation. They now source `build-config.env` — which they
+  already did for `LEVEL_ZERO_VERSION` — and install `${ONEAPI_APT_PACKAGE}`.
+  `ONEAPI_VERSION` is `2026.1`. The config also records
+  `ONEAPI_RUNTIME_APT_PACKAGES`, which names `intel-oneapi-umf` explicitly
+  because `intel-oneapi-runtime-dpcpp-cpp` does not depend on it: without it
+  `libumf.so.1` is missing and the adapter fails to load, which presents as
+  "No device of requested type available" rather than as a link error. The
+  Windows leg stays on 2025.3.0.372 — its offline-installer URL carries an
+  opaque per-build GUID that cannot be derived from a version number — and is
+  tracked as `T-ONEAPI-WINDOWS-CI-LAG-2026-09-07`.
 
 
 - Scaffolding for ADR-0457 offloading of large `model/tiny/*.onnx`

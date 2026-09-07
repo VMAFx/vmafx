@@ -404,7 +404,8 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
           sudo apt-get update
-          sudo -E apt-get -yq install intel-oneapi-compiler-dpcpp-cpp-2025.3 cmake
+          set -a; . ./build-config.env; set +a
+          sudo -E apt-get -yq install "${ONEAPI_APT_PACKAGE}" cmake
           # Level Zero headers + loader, pinned by LEVEL_ZERO_VERSION in
           # build-config.env. Three different versions used to be in the tree at
           # once (v1.28.0 here, 1.32.0 in dev/Containerfile, the distro package
@@ -845,7 +846,7 @@ jobs:
   # first (Linux-only — all install URLs `.sh`) and Chocolatey's
   # `intel-oneapi-basekit` (not on the community feed); neither
   # works on `windows-2025`. Pinned to oneAPI 2025.3.0.372 to
-  # match the Linux SYCL leg's `intel-oneapi-compiler-dpcpp-cpp-2025.3`.
+  # lag the Linux SYCL leg, which now follows ONEAPI_APT_PACKAGE.
   # Both legs additionally inject `/experimental:c11atomics` into
   # `CFLAGS` / `CXXFLAGS` because libvmaf uses C11 atomics that
   # MSVC's `<stdatomic.h>` refuses without that flag.
@@ -959,7 +960,7 @@ jobs:
       # `--components=intel.oneapi.win.cpp-dpcpp-common --eula=accept`
       # plus `NEED_VS*_INTEGRATION=0` so we skip the (very slow) VS
       # IDE plug-in steps. Pinned to oneAPI 2025.3 to match the
-      # Linux SYCL leg's `intel-oneapi-compiler-dpcpp-cpp-2025.3`.
+      # Linux SYCL leg, which now follows ONEAPI_APT_PACKAGE in build-config.env.
       # Chocolatey was tried first but `intel-oneapi-basekit` is
       # not on the community feed (verified 2026-04-19).
       - name: Install Intel oneAPI (windows)

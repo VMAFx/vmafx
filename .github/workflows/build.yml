@@ -243,8 +243,8 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
           sudo apt-get update
-          sudo -E apt-get -yq install intel-oneapi-compiler-dpcpp-cpp-2025.3
           set -a; . ./build-config.env; set +a
+          sudo -E apt-get -yq install "${ONEAPI_APT_PACKAGE}"
           git clone --depth=1 --branch "v${LEVEL_ZERO_VERSION}" \
             https://github.com/oneapi-src/level-zero.git /tmp/level-zero
           cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr
