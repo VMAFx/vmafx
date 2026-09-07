@@ -65,8 +65,12 @@
 
 /* 256x144 matches the round-2 / round-3 fixture footprint and stays
  * comfortably above the 8x8 ssimulacra2 minimum. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 144u
+#endif
 #define FIXTURE_BPC 8u
 /* ADR-0214 `FEATURE_TOLERANCE['ssimulacra2'] = 5e-3` — the multi-
  * stage XYB + IIR + SSIM-combine pipeline accumulates per-stage

@@ -54,8 +54,12 @@
 /* Fixture must be ≥ 11x11 for the Gaussian footprint; 256x144 is the
  * smallest size that still gives stable mean-reduction sub-group
  * coverage on Intel Arc. */
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 144u
+#endif
 #define FIXTURE_BPC 8u
 #define PARITY_TOL 1e-4
 

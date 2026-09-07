@@ -63,8 +63,12 @@
 
 /* Two frames are the minimum to exercise the ping-pong diff path
  * (frame 0 always emits 0.0; the meaningful score is at frame 1). */
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 144u
+#endif
 #define FIXTURE_BPC 8u
 #define NUM_FRAMES 2u
 #define PARITY_TOL 1e-4
