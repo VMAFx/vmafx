@@ -52,18 +52,38 @@ jobs:
         env:
           RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
           RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          RELEASE_BOT_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
+          # Two acceptable identities, both of which are NOT the default
+          # GITHUB_TOKEN -- that is the whole point (ADR-1151): a PR opened by
+          # GITHUB_TOKEN never receives check runs, so it can never satisfy
+          # branch protection. The App is preferred because its installation
+          # token is short-lived and scoped to this repository; a PAT is
+          # accepted as a fallback so the pipeline is not blocked on an action
+          # that has no API path (App registration is browser-only, its private
+          # key downloadable once at creation).
           missing=()
           [[ -n "${RELEASE_BOT_APP_ID}" ]] || missing+=("RELEASE_BOT_APP_ID")
           [[ -n "${RELEASE_BOT_PRIVATE_KEY}" ]] || missing+=("RELEASE_BOT_PRIVATE_KEY")
           if [[ ${#missing[@]} -eq 0 ]]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "mode=app" >> "$GITHUB_OUTPUT"
             echo "release-bot App credentials present."
             exit 0
           fi
+          if [[ -n "${RELEASE_BOT_TOKEN}" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "mode=pat" >> "$GITHUB_OUTPUT"
+            echo "::notice title=release-bot identity::App credentials absent;"\
+                 "using RELEASE_BOT_TOKEN. Works, but a PAT is broader-scoped"\
+                 "and longer-lived than an App installation token -- prefer the"\
+                 "App when it exists (docs/development/release.md)."
+            exit 0
+          fi
           echo "present=false" >> "$GITHUB_OUTPUT"
+          echo "mode=none" >> "$GITHUB_OUTPUT"
           level=warning
           [[ "${EVENT_NAME}" == "workflow_dispatch" ]] && level=error
           echo "::${level} title=ADR-1151 release-bot credentials missing::${missing[*]}"
@@ -82,17 +102,36 @@ jobs:
           echo "credentials exist (ADR-1171)." >&2
 
       - name: Mint the release-bot installation token
-        if: steps.creds.outputs.present == 'true'
+        if: steps.creds.outputs.mode == 'app'
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
         with:
           app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+      # One place that decides which identity the rest of the job speaks as,
+      # so no downstream step has to know which mode is active.
+      - name: Resolve the release-bot token
+        if: steps.creds.outputs.present == 'true'
+        id: token
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          PAT: ${{ secrets.RELEASE_BOT_TOKEN }}
+          MODE: ${{ steps.creds.outputs.mode }}
+        run: |
+          set -euo pipefail
+          if [[ "$MODE" == "app" ]]; then
+            printf '::add-mask::%s\n' "$APP_TOKEN"
+            echo "token=$APP_TOKEN" >> "$GITHUB_OUTPUT"
+          else
+            printf '::add-mask::%s\n' "$PAT"
+            echo "token=$PAT" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Detect an unpublished ordinary-SemVer draft
         if: steps.creds.outputs.present == 'true'
         id: draft
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}
         run: |
           releases="$RUNNER_TEMP/releases.json"
           gh api --paginate --slurp \
@@ -119,7 +158,7 @@ jobs:
         if: steps.creds.outputs.present == 'true'
         id: cut
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}
         run: |
           # release-please force-recreates `release-please--branches--...` on
           # every push to master: the branch always carries exactly one commit,
@@ -162,7 +201,7 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ steps.token.outputs.token }}
           skip-github-pull-request: true
 
       - name: Open or update the release PR
@@ -175,7 +214,7 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ steps.token.outputs.token }}
           skip-github-release: true
 
       - name: Dump outputs

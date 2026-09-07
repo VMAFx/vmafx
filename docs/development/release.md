@@ -115,11 +115,30 @@ runs. That is a GitHub loop-breaker, not a configuration mistake, and it is why
 release PRs used to land as `action_required` with zero jobs: the sole required
 context could never report and the PR sat `BLOCKED` behind an admin bypass.
 
-`release-please.yml` therefore authenticates as a GitHub App installation, not
-as `GITHUB_TOKEN`. Every step in the job — both release-please invocations and
-both read-only `gh api` probes — uses the token minted by
-`actions/create-github-app-token`, so the job's own `GITHUB_TOKEN` keeps the
-workflow default `contents: read` and holds no write scope at all.
+`release-please.yml` therefore authenticates as something other than
+`GITHUB_TOKEN`. Every step in the job — both release-please invocations and both
+read-only `gh api` probes — uses the token resolved by the `Resolve the
+release-bot token` step, so the job's own `GITHUB_TOKEN` keeps the workflow
+default `contents: read` and holds no write scope at all.
+
+Two identities are accepted, in this order:
+
+| Mode | Credential | When it is used |
+| --- | --- | --- |
+| `app` | `RELEASE_BOT_APP_ID` + `RELEASE_BOT_PRIVATE_KEY` | Preferred. Minted per run by `actions/create-github-app-token`, short-lived, scoped to this repository. |
+| `pat` | `RELEASE_BOT_TOKEN` | Fallback when the App secrets are absent. Needs `repo` + `workflow`. |
+| `none` | — | Pipeline stays idle: warning on `push`, error on `workflow_dispatch` (ADR-1171). |
+
+**Prefer the App.** A PAT is broader-scoped and longer-lived than an App
+installation token, and it carries whatever scopes its owner granted rather than
+only the two this workflow needs (Contents, Pull requests). The PAT path exists
+because registering a GitHub App has **no API path** — it is a browser flow and
+its private key is downloadable only once, at creation — so requiring the App
+made the whole release pipeline block on a manual step. The fallback keeps the
+pipeline runnable; swap to the App when it exists and delete the PAT secret.
+
+Whichever mode is active, the resolved token is masked with `::add-mask::`
+before it reaches any later step.
 
 **One-time maintainer setup.** Until this exists the workflow never falls back
 to `GITHUB_TOKEN` (that would recreate an unmergeable release PR). On every push
