@@ -25,10 +25,11 @@
 #include <assert.h>
 #include "stdio.h"
 #include "feature/common/macros.h"
+#include "feature/x86/vif_avx512.h"
 #include "feature/integer_vif.h"
 
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
-#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#define MIN(x, y) ((((x)) < ((y))) ? ((x)) : ((y)))
+#define MAX(x, y) ((((x)) > ((y))) ? ((x)) : ((y)))
 
 /*
  * Portable noinline attribute.
@@ -80,8 +81,10 @@ static inline void decimate_and_pad(const VifBuffer *buf, unsigned w, unsigned h
 
     for (unsigned i = 0; i < h / 2; ++i) {
         for (unsigned j = 0; j < w / 2; ++j) {
-            ref[i * stride + j] = buf->mu1[(i * 2) * mu_stride + (j * 2)];
-            dis[i * stride + j] = buf->mu2[(i * 2) * mu_stride + (j * 2)];
+            ref[(ptrdiff_t)i * stride + j] =
+                buf->mu1[((ptrdiff_t)i * 2) * mu_stride + ((ptrdiff_t)j * 2)];
+            dis[(ptrdiff_t)i * stride + j] =
+                buf->mu2[((ptrdiff_t)i * 2) * mu_stride + ((ptrdiff_t)j * 2)];
         }
     }
     pad_top_and_bottom(buf, h / 2, vif_filter1d_width[scale]);
@@ -95,6 +98,11 @@ typedef struct Residuals512 {
 } Residuals512;
 
 // compute VIF on a 16 pixel block from xx (ref variance), yy (clamped dis variance), xy (ref dis covariance)
+/* A fully unrolled AVX-512 kernel. Splitting it changes register allocation
+ * and scheduling, which is what the bit-exactness contracts in ADR-0138 /
+ * ADR-0139 pin down; the size is the unrolling, not accidental
+ * complexity. ADR-0141 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 static inline void vif_statistic_avx512(Residuals512 *out, __m512i xx, __m512i xy, __m512i yy,
                                         const uint16_t *log2_table, double vif_enhn_gain_limit)
 {
@@ -133,7 +141,7 @@ static inline void vif_statistic_avx512(Residuals512 *out, __m512i xx, __m512i x
         mden_val =
             _mm512_and_si512(mden_val, _mm512_set1_epi64(0xffff)); // we took 64 bits, we need 16
         mden_val = _mm512_add_epi64(mden_val, _mm512_slli_epi64(mnorm, 11));
-        mden_val = _mm512_sub_epi64(mden_val, _mm512_set1_epi64(2048 * 17));
+        mden_val = _mm512_sub_epi64(mden_val, _mm512_set1_epi64(2048LL * 17));
         __mmask8 msigma1_mask = _mm512_cmpgt_epi64_mask(_mm512_set1_epi64(sigma_nsq), msigma1);
         __mmask8 msigma2_mask = _mm512_cmpgt_epi64_mask(msigma2, _mm512_setzero_si512());
         __mmask8 msigma12_mask = _mm512_cmpgt_epi64_mask(msigma12, _mm512_setzero_si512());
@@ -192,6 +200,11 @@ static inline void vif_statistic_avx512(Residuals512 *out, __m512i xx, __m512i x
     out->maccum_den_non_log = maccum_den_non_log;
 }
 
+/* A fully unrolled AVX-512 kernel. Splitting it changes register allocation
+ * and scheduling, which is what the bit-exactness contracts in ADR-0138 /
+ * ADR-0139 pin down; the size is the unrolling, not accidental
+ * complexity. ADR-0141 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 void vif_statistic_8_avx512(struct VifPublicState *s, float *num, float *den, unsigned w,
                             unsigned h)
 {
@@ -593,6 +606,11 @@ void vif_statistic_8_avx512(struct VifPublicState *s, float *num, float *den, un
     den[0] = accum_den_log / 2048.0 + accum_den_non_log;
 }
 
+/* A fully unrolled AVX-512 kernel. Splitting it changes register allocation
+ * and scheduling, which is what the bit-exactness contracts in ADR-0138 /
+ * ADR-0139 pin down; the size is the unrolling, not accidental
+ * complexity. ADR-0141 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 void vif_statistic_16_avx512(struct VifPublicState *s, float *num, float *den, unsigned w,
                              unsigned h, int bpc, int scale)
 {
@@ -803,8 +821,8 @@ void vif_statistic_16_avx512(struct VifPublicState *s, float *num, float *den, u
             for (unsigned fi = 0; fi < fwidth; ++fi) {
                 int ii_check = ii + fi;
                 const uint16_t fcoeff = vif_filt[fi];
-                uint16_t imgcoeff_ref = ref[ii_check * stride + j];
-                uint16_t imgcoeff_dis = dis[ii_check * stride + j];
+                uint16_t imgcoeff_ref = ref[(ptrdiff_t)ii_check * stride + j];
+                uint16_t imgcoeff_dis = dis[(ptrdiff_t)ii_check * stride + j];
                 uint32_t img_coeff_ref = fcoeff * (uint32_t)imgcoeff_ref;
                 uint32_t img_coeff_dis = fcoeff * (uint32_t)imgcoeff_dis;
                 accum_mu1 += img_coeff_ref;
@@ -1059,7 +1077,11 @@ typedef struct VifHorizCoeffs8 {
  * The accumulation order (s0/s1 via f0, s2/s3 via f1, …, g0/g1 via f0, …)
  * is identical to the original monolithic loop (ADR-0138 / ADR-0139).
  */
-/* NOLINTNEXTLINE(readability-function-size): ADR-0503 noinline helper; size is load-bearing for register-pressure isolation */
+/* A fully unrolled AVX-512 kernel. Splitting it changes register allocation
+ * and scheduling, which is what the bit-exactness contracts in ADR-0138 /
+ * ADR-0139 pin down; the size is the unrolling, not accidental
+ * complexity. ADR-0141 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_vert_j(const uint8_t *ref, const uint8_t *dis,
                                                             ptrdiff_t stride_bytes, int ii, int j,
                                                             const VifVertCoeffs8 *c,
@@ -1185,7 +1207,11 @@ static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_vert_j(const uint8_t *ref, 
  * The accumulation order (refconvol via fcoeff, refconvol1 via fcoeff1, …)
  * is identical to the original monolithic loop (ADR-0138 / ADR-0139).
  */
-/* NOLINTNEXTLINE(readability-function-size): ADR-0503 noinline helper; size is load-bearing for register-pressure isolation */
+/* A fully unrolled AVX-512 kernel. Splitting it changes register allocation
+ * and scheduling, which is what the bit-exactness contracts in ADR-0138 /
+ * ADR-0139 pin down; the size is the unrolling, not accidental
+ * complexity. ADR-0141 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_horiz_j(const uint32_t *ref_convol,
                                                              const uint32_t *dis_convol,
                                                              int jj_check, const VifHorizCoeffs8 *c,
@@ -1202,7 +1228,10 @@ static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_horiz_j(const uint32_t *ref
      * accumulation order for each accumulator is identical to the original: tap
      * 0 (fcoeff), tap 1 (fcoeff1), …, tap 8 (fcoeff). ADR-0138 / ADR-0139. */
     {
-        __m512i rv, rlo, dv, dlo;
+        __m512i rv;
+        __m512i rlo;
+        __m512i dv;
+        __m512i dlo;
 
         rv = _mm512_loadu_si512((__m512i *)(ref_convol + jj_check));
         dv = _mm512_loadu_si512((__m512i *)(dis_convol + jj_check));
@@ -1342,6 +1371,11 @@ static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_horiz_j(const uint32_t *ref
  * `buf.dis` are 8-bit Y planes, output written half-resolution into
  * `buf.mu*` / `buf.*_sq` / `buf.ref_dis`.
  */
+/* A fully unrolled AVX-512 kernel. Splitting it changes register allocation
+ * and scheduling, which is what the bit-exactness contracts in ADR-0138 /
+ * ADR-0139 pin down; the size is the unrolling, not accidental
+ * complexity. ADR-0141 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 void vif_subsample_rd_8_avx512(const VifBuffer *buf, unsigned w, unsigned h)
 {
     assert(buf != NULL);
@@ -1417,7 +1451,8 @@ void vif_subsample_rd_8_avx512(const VifBuffer *buf, unsigned w, unsigned h)
             int jj = j - fwidth_half;
             int jj_check = jj;
             vif_subsample_rd_8_horiz_j(buf->tmp.ref_convol, buf->tmp.dis_convol, jj_check, &hc,
-                                       buf->mu1 + i * stride + j, buf->mu2 + i * stride + j);
+                                       buf->mu1 + (ptrdiff_t)i * stride + j,
+                                       buf->mu2 + (ptrdiff_t)i * stride + j);
         }
 
         for (unsigned j = n << 4; j < w; ++j) {
@@ -1430,13 +1465,18 @@ void vif_subsample_rd_8_avx512(const VifBuffer *buf, unsigned w, unsigned h)
                 accum_ref += fcoeff_scalar * buf->tmp.ref_convol[jj_check];
                 accum_dis += fcoeff_scalar * buf->tmp.dis_convol[jj_check];
             }
-            buf->mu1[i * stride + j] = (uint16_t)((accum_ref + 32768) >> 16);
-            buf->mu2[i * stride + j] = (uint16_t)((accum_dis + 32768) >> 16);
+            buf->mu1[(ptrdiff_t)i * stride + j] = (uint16_t)((accum_ref + 32768) >> 16);
+            buf->mu2[(ptrdiff_t)i * stride + j] = (uint16_t)((accum_dis + 32768) >> 16);
         }
     }
     decimate_and_pad(buf, w, h, 0);
 }
 
+/* A fully unrolled AVX-512 kernel. Splitting it changes register allocation
+ * and scheduling, which is what the bit-exactness contracts in ADR-0138 /
+ * ADR-0139 pin down; the size is the unrolling, not accidental
+ * complexity. ADR-0141 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 void vif_subsample_rd_16_avx512(const VifBuffer *buf, unsigned w, unsigned h, int scale, int bpc)
 {
     assert(buf != NULL);
@@ -1528,8 +1568,8 @@ void vif_subsample_rd_16_avx512(const VifBuffer *buf, unsigned w, unsigned h, in
             int ii_check = ii;
             for (unsigned fi = 0; fi < fwidth; ++fi, ii_check = ii + fi) {
                 const uint16_t fcoeff = vif_filt[fi];
-                accum_ref += fcoeff * ((uint32_t)ref[ii_check * stride + j]);
-                accum_dis += fcoeff * ((uint32_t)dis[ii_check * stride + j]);
+                accum_ref += fcoeff * ((uint32_t)ref[(ptrdiff_t)ii_check * stride + j]);
+                accum_dis += fcoeff * ((uint32_t)dis[(ptrdiff_t)ii_check * stride + j]);
             }
             buf->tmp.ref_convol[j] = (uint16_t)((accum_ref + add_shift_round_VP) >> shift_VP);
             buf->tmp.dis_convol[j] = (uint16_t)((accum_dis + add_shift_round_VP) >> shift_VP);
@@ -1599,8 +1639,8 @@ void vif_subsample_rd_16_avx512(const VifBuffer *buf, unsigned w, unsigned h, in
                 accum_ref += fcoeff * ((uint32_t)buf->tmp.ref_convol[jj_check]);
                 accum_dis += fcoeff * ((uint32_t)buf->tmp.dis_convol[jj_check]);
             }
-            buf->mu1[i * stride16 + j] = (uint16_t)((accum_ref + 32768) >> 16);
-            buf->mu2[i * stride16 + j] = (uint16_t)((accum_dis + 32768) >> 16);
+            buf->mu1[(ptrdiff_t)i * stride16 + j] = (uint16_t)((accum_ref + 32768) >> 16);
+            buf->mu2[(ptrdiff_t)i * stride16 + j] = (uint16_t)((accum_dis + 32768) >> 16);
         }
     }
     decimate_and_pad(buf, w, h, scale);

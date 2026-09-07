@@ -262,6 +262,12 @@ static void ssim_reduce_row_range(ssim_moments *const *lines, int line_mask, int
     }
 }
 
+/* Kept whole for upstream parity. This file is Xiph.Org code (see the
+ * copyright header) and calc_ssim is a verbatim transliteration of its
+ * scalar SSIM accumulate -- the same reason the ArrayBound suppressions
+ * above cite upstream parity. Restructuring it would break the rebase story
+ * this file exists to preserve. ADR-0141 §2 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 static double calc_ssim(const unsigned char *_src, int _systride, const unsigned char *_dst,
                         int _dystride, double _par, int depth, int _w, int _h,
                         ssim_accum_row_fn_8 accum8, ssim_accum_row_fn_16 accum16)
