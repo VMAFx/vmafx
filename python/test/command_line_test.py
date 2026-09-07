@@ -229,7 +229,7 @@ class VmafexecCommandLineTest(MyTestCase):
         with open(self.output_file_path, "rt") as fo:
             fc = fo.read()
             self.assertTrue(
-                '<metric name="psnr_y" min="29.640688" max="34.760779" mean="30.755064" harmonic_mean="30.727905" median="30.526752" perc5="29.843079" perc10="29.903105" perc20="30.025991" />'
+                '<metric name="psnr_y" min="29.640688" max="34.760779" mean="30.755064" harmonic_mean="30.727905" />'
                 in fc
             )
 
@@ -255,7 +255,7 @@ class VmafexecCommandLineTest(MyTestCase):
         with open(self.output_file_path, "rt") as fo:
             fc = fo.read()
             self.assertTrue(
-                '<metric name="psnr_y" min="29.640688" max="33.788213" mean="30.643458" harmonic_mean="30.626214" median="30.478446" perc5="29.841844" perc10="29.890531" perc20="30.006161" />'
+                '<metric name="psnr_y" min="29.640688" max="33.788213" mean="30.643458" harmonic_mean="30.626214" />'
                 in fc
             )
 
@@ -281,7 +281,7 @@ class VmafexecCommandLineTest(MyTestCase):
         with open(self.output_file_path, "rt") as fo:
             fc = fo.read()
             self.assertTrue(
-                '<metric name="psnr_y" min="19.019327" max="21.084954" mean="20.269606" harmonic_mean="20.258113" median="20.425559" perc5="19.283249" perc10="19.509704" perc20="19.937514" />'
+                '<metric name="psnr_y" min="19.019327" max="21.084954" mean="20.269606" harmonic_mean="20.258113" />'
                 in fc
             )
 
