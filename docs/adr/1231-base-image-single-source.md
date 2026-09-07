@@ -90,12 +90,21 @@ drift fatal.
   are above 1024, so nothing needs a capability.
 - **Negative**: a base image value exists in two places (config and ARG
   default). The gate is what makes that safe, so the gate is now load-bearing.
-- **Neutral / follow-ups**: ROCm and oneAPI keep their Ubuntu 24.04 pins under
-  an explicit, self-closing exemption in the gate. ROCm 7.2.4 → 10.0.0 is
-  PR #1386, which carries the matching HIP changes. oneAPI 2025 → 2026.1 is the
-  immediate follow-up to this ADR and is a restructure, not a pin swap — see
+- **Positive**: ROCm moved to the Ubuntu 26.04 variant of 10.0.0. That was
+  verified rather than assumed, because these libraries are *copied* out of the
+  vendor image into a Debian 13 runtime, where a libc mismatch fails at load
+  rather than at build: the `/opt/rocm/core-10.0/lib` layout is identical in
+  both variants and the whole copied closure requires at most `GLIBC_2.28`,
+  against Debian 13's 2.41. Worth noting this is the **opposite** of the oneAPI
+  result — Intel's Ubuntu 26.04 image needs glibc 2.43 and genuinely cannot be
+  copied onto Debian 13 — so the question has to be asked per vendor rather than
+  answered once.
+- **Neutral / follow-ups**: oneAPI keeps its Ubuntu 24.04 pins under an
+  explicit, self-closing exemption in the gate. oneAPI 2025 → 2026.1 is a
+  restructure, not a pin swap — see
   [the research digest](../research/1231-base-image-single-source.md) for the
-  soname, glibc and GPU-driver measurements that determine its shape.
+  soname, glibc and GPU-driver measurements that determine its shape. Its two
+  entries are the only ones left in the exemption list.
 
 ## Supply-chain impact
 

@@ -63,7 +63,7 @@
 # stage it follows, so `FROM ${ROCM_BUILDER}` above would expand to nothing.
 ARG DEV_BASE="ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b"
 ARG DEV_GO_BASE="golang:1.27-trixie@sha256:9baa6b4187bbb98d240372a8a235ac0bb6b5ddd52bba1431dc2f7c0705862728"
-ARG ROCM_BUILDER="rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374"
+ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.0.0-full@sha256:8ebc02ee1aefb6b7c0e952b4088542133bad8805d19730db92cc61be673421d1"
 
 FROM ${ROCM_BUILDER} AS rocm-src
 
