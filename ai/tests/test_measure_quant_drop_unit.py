@@ -240,3 +240,106 @@ def test_main_targeted_returns_2_for_unknown_path(
     # An ONNX path outside model/tiny → returns 2 (input must live under model/tiny).
     rc = MQD.main([str(tmp_path / "outsider.onnx")])
     assert rc == 2
+
+
+# ---------------------------------------------------------------------------
+# --fp32 / --int8 registry-free overrides (Research-2029 gap 5)
+# ---------------------------------------------------------------------------
+
+
+def _touch_pair(tmp_path: Path) -> tuple[Path, Path]:
+    fp32 = tmp_path / "scratch_model.onnx"
+    int8 = tmp_path / "scratch_model.int8.onnx"
+    fp32.write_bytes(b"\x00")
+    int8.write_bytes(b"\x00")
+    return fp32, int8
+
+
+def test_override_requires_both_flags(tmp_path: Path) -> None:
+    fp32, _int8 = _touch_pair(tmp_path)
+    assert MQD.main(["--fp32", str(fp32)]) == 2
+    assert MQD.main(["--int8", str(fp32)]) == 2
+
+
+def test_override_rejects_combination_with_all_or_positional(tmp_path: Path) -> None:
+    fp32, int8 = _touch_pair(tmp_path)
+    assert MQD.main(["--all", "--fp32", str(fp32), "--int8", str(int8)]) == 2
+    assert MQD.main([str(fp32), "--fp32", str(fp32), "--int8", str(int8)]) == 2
+
+
+def test_override_bypasses_registry_entirely(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The override path must not touch registry.json — that is its whole point."""
+
+    def bust():
+        raise AssertionError("_load_registry must not be called on the override path")
+
+    monkeypatch.setattr(MQD, "_load_registry", bust)
+    fp32, int8 = _touch_pair(tmp_path)
+    with patch.object(MQD, "_measure", return_value=(0.9999, 0.0001, 0.01)) as measured:
+        rc = MQD.main(["--fp32", str(fp32), "--int8", str(int8)])
+    assert rc == 0
+    assert measured.call_args[0][0] == fp32.resolve()
+    assert measured.call_args[0][1] == int8.resolve()
+
+
+def test_override_accepts_paths_outside_model_tiny(tmp_path: Path) -> None:
+    """The positional form rejects anything outside model/tiny; the override does not."""
+    fp32, int8 = _touch_pair(tmp_path)
+    assert MQD.main([str(fp32)]) == 2
+    with patch.object(MQD, "_measure", return_value=(0.9999, 0.0001, 0.01)):
+        assert MQD.main(["--fp32", str(fp32), "--int8", str(int8)]) == 0
+
+
+def test_override_budget_flag_gates_the_drop(tmp_path: Path) -> None:
+    fp32, int8 = _touch_pair(tmp_path)
+    # drop = 0.005: inside the 0.01 default, outside an explicit 0.002.
+    with patch.object(MQD, "_measure", return_value=(0.995, 0.005, 0.1)):
+        assert MQD.main(["--fp32", str(fp32), "--int8", str(int8)]) == 0
+        assert MQD.main(["--fp32", str(fp32), "--int8", str(int8), "--budget", "0.002"]) == 1
+
+
+def test_override_missing_file_fails_without_measuring(tmp_path: Path) -> None:
+    fp32, int8 = _touch_pair(tmp_path)
+    int8.unlink()
+    with patch.object(MQD, "_measure", side_effect=AssertionError("must not measure")):
+        assert MQD.main(["--fp32", str(fp32), "--int8", str(int8)]) == 1
+
+
+def test_override_out_json_records_id_budget_and_provenance(tmp_path: Path) -> None:
+    fp32, int8 = _touch_pair(tmp_path)
+    out = tmp_path / "override_report.json"
+    with patch.object(MQD, "_measure", return_value=(0.9999, 0.0001, 0.02)):
+        rc = MQD.main(
+            [
+                "--fp32",
+                str(fp32),
+                "--int8",
+                str(int8),
+                "--budget",
+                "0.002",
+                "--id",
+                "scratch_ptq",
+                "--out-json",
+                str(out),
+            ]
+        )
+    assert rc == 0
+    payload = json.loads(out.read_text())
+    assert payload["gate_pass"] is True
+    entry = payload["models"][0]
+    assert entry["id"] == "scratch_ptq"
+    assert entry["quant_mode"] == "override"
+    assert entry["budget"] == pytest.approx(0.002)
+    assert entry["fp32_path"] == str(fp32.resolve())
+    assert "run_provenance" in payload
+
+
+def test_override_default_id_is_the_fp32_stem(tmp_path: Path) -> None:
+    fp32, int8 = _touch_pair(tmp_path)
+    out = tmp_path / "r.json"
+    with patch.object(MQD, "_measure", return_value=(0.9999, 0.0001, 0.02)):
+        MQD.main(["--fp32", str(fp32), "--int8", str(int8), "--out-json", str(out)])
+    assert json.loads(out.read_text())["models"][0]["id"] == "scratch_model"
