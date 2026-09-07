@@ -52,6 +52,9 @@
 #include "opt.h"
 
 /* Custom deleter for VmafDictionary* owned in this TU. */
+namespace
+{
+
 struct DictDeleter {
     void operator()(VmafDictionary *d) const noexcept
     {
@@ -60,7 +63,13 @@ struct DictDeleter {
 };
 using DictPtr = std::unique_ptr<VmafDictionary, DictDeleter>;
 
-static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
+/* A printf-style accumulating concatenator. cert-dcl50-cpp objects to the
+ * C-style ellipsis, but the whole point is to forward a caller-supplied
+ * printf format to vsnprintf; a parameter pack cannot do that without
+ * reimplementing format parsing, and the format strings here are all
+ * in-tree literals. ADR-0141 / ADR-0278. */
+// NOLINTNEXTLINE(cert-dcl50-cpp)
+size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
 {
     va_list args;
     const size_t len = strnlen(buf, buf_sz);
@@ -72,9 +81,38 @@ static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
 
 #define VMAF_FEATURE_NAME_DEFAULT_BUFFER_SIZE 256
 
-[[nodiscard]] static char *vmaf_feature_name_from_opts_dict(const char *name,
-                                                            const VmafOption *opts,
-                                                            VmafDictionary *opts_dict)
+/* Append the "_key" / "_key_value" suffix for every option that is both
+ * present in the sorted dictionary and marked VMAF_OPT_FLAG_FEATURE_PARAM.
+ * Split out of vmaf_feature_name_from_opts_dict so that function stays inside
+ * the readability-function-size budget (ADR-1142). The iteration order, the
+ * break-on-null-name sentinel and the bool-vs-value formatting are unchanged,
+ * so the generated feature names are byte-identical. */
+void append_option_suffixes(char *buf, size_t buf_sz, const VmafOption *opts,
+                            const VmafDictionary *sorted)
+{
+    for (unsigned i = 0; i < sorted->cnt; i++) {
+        const VmafOption *opt = nullptr;
+        for (unsigned j = 0; (opt = &opts[j]); j++) {
+            if (!opt->name)
+                break;
+            if (strcmp(opt->name, sorted->entry[i].key) != 0)
+                continue;
+            if (!(opt->flags & VMAF_OPT_FLAG_FEATURE_PARAM))
+                continue;
+            const char *key = opt->alias ? opt->alias : opt->name;
+            const char *val = sorted->entry[i].val;
+
+            if (opt->type == VMAF_OPT_TYPE_BOOL) {
+                snprintfcat(buf, buf_sz, "_%s", key);
+            } else {
+                snprintfcat(buf, buf_sz, "_%s_%s", key, val);
+            }
+        }
+    }
+}
+
+[[nodiscard]] char *vmaf_feature_name_from_opts_dict(const char *name, const VmafOption *opts,
+                                                     VmafDictionary *opts_dict)
 {
     VmafDictionary *sorted_raw = nullptr;
     /* vmaf_dictionary_copy returns -EINVAL when *src is null, which is the
@@ -88,7 +126,7 @@ static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
     if (copy_err != 0 && copy_err != -EINVAL)
         return nullptr;
     vmaf_dictionary_alphabetical_sort(sorted_raw);
-    DictPtr sorted(sorted_raw); /* freed by DictPtr destructor on any exit */
+    const DictPtr sorted(sorted_raw); /* freed by DictPtr destructor on any exit */
 
     const size_t buf_sz = VMAF_FEATURE_NAME_DEFAULT_BUFFER_SIZE;
     char buf[VMAF_FEATURE_NAME_DEFAULT_BUFFER_SIZE + 1] = {0};
@@ -98,25 +136,7 @@ static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
     } else {
         snprintfcat(buf, buf_sz, "%s", vmaf_feature_name_alias(name));
 
-        for (unsigned i = 0; i < sorted->cnt; i++) {
-            const VmafOption *opt = nullptr;
-            for (unsigned j = 0; (opt = &opts[j]); j++) {
-                if (!opt->name)
-                    break;
-                if (strcmp(opt->name, sorted->entry[i].key) != 0)
-                    continue;
-                if (!(opt->flags & VMAF_OPT_FLAG_FEATURE_PARAM))
-                    continue;
-                const char *key = opt->alias ? opt->alias : opt->name;
-                const char *val = sorted->entry[i].val;
-
-                if (opt->type == VMAF_OPT_TYPE_BOOL) {
-                    snprintfcat(buf, buf_sz, "_%s", key);
-                } else {
-                    snprintfcat(buf, buf_sz, "_%s_%s", key, val);
-                }
-            }
-        }
+        append_option_suffixes(buf, buf_sz, opts, sorted.get());
     }
 
     /* sorted freed automatically here by DictPtr */
@@ -130,7 +150,7 @@ static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
     return dst;
 }
 
-[[nodiscard]] static int option_is_default(const VmafOption *opt, const void *data) noexcept
+[[nodiscard]] int option_is_default(const VmafOption *opt, const void *data) noexcept
 {
     if (!opt)
         return -EINVAL;
@@ -151,6 +171,8 @@ static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
         return -EINVAL;
     }
 }
+
+} // namespace
 
 [[nodiscard]] char *vmaf_feature_name_from_options(const char *name, const VmafOption *opts,
                                                    void *obj)
@@ -209,7 +231,7 @@ static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
     }
 
     /* Now safe to adopt into RAII guard: opts_raw is stable after the loop. */
-    DictPtr opts_guard(opts_raw);
+    const DictPtr opts_guard(opts_raw);
     char *output = vmaf_feature_name_from_opts_dict(name, opts, opts_guard.get());
     /* opts_guard destructor frees opts_raw on scope exit (success or failure). */
     return output;

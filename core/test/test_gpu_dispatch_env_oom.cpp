@@ -78,7 +78,10 @@ extern "C" {
 /* When armed, the next operator new call throws std::bad_alloc.  A plain bool
  * suffices (single-threaded test); std::atomic keeps it tidy and avoids any
  * tearing concern under sanitizers. */
-static std::atomic<bool> g_fail_next_new{false};
+namespace
+{
+std::atomic<bool> g_fail_next_new{false};
+} // namespace
 
 void *operator new(std::size_t n)
 {
@@ -104,7 +107,9 @@ void operator delete(void *p, std::size_t) noexcept
 #endif /* !VMAF_OOM_TEST_SANITIZED */
 
 /* R2-9: a transient OOM on the value snapshot must not poison the slot. */
-static mu_message_t test_env_oom_does_not_poison_slot(void)
+namespace
+{
+mu_message_t test_env_oom_does_not_poison_slot()
 {
 #ifdef VMAF_OOM_TEST_SANITIZED
     /* Skip under sanitizers: the global-new override that arms the fault is
@@ -159,6 +164,7 @@ static mu_message_t test_env_oom_does_not_poison_slot(void)
     return nullptr;
 #endif /* VMAF_OOM_TEST_SANITIZED */
 }
+} // namespace
 
 extern "C" mu_message_t run_tests(void)
 {
