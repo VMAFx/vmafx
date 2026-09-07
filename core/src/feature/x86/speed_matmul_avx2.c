@@ -85,18 +85,7 @@ void speed_matmul_avx2(float *dst, int dst_stride, const float *x, int x_stride,
             _mm256_storeu_ps(drow + j, a0);
         }
 
-        /* Scalar tail, kept in SSE scalar ops rather than plain C for the same
-         * reason the bodies above use separate mul/add intrinsics: `acc += a * b`
-         * is a source-level multiply-add, so the frontend may emit it as
-         * llvm.fmuladd and the backend then rounds once instead of twice. The
-         * `-ffp-contract=off` on this TU is meant to forbid that, but it is only
-         * as good as the flag order (see core/src/meson.build) -- icx's
-         * `-fp-model=precise` re-enables contraction when it lands later on the
-         * command line, which is exactly how this loop diverged from
-         * speed_matmul_scalar at column 24 of the 25-wide QR shape. Intrinsics
-         * are not routed through llvm.fmuladd, so the rounding is pinned by
-         * construction on every compiler and every flag order.
-         * ADR-0138 / ADR-0139. */
+        /* Scalar tail pinned by SSE intrinsics (ADR-0138 / ADR-0139). */
         for (; j < cols; j++) {
             __m128 acc = _mm_setzero_ps();
             for (int k = 0; k < inner; k++) {
