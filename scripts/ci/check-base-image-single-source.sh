@@ -64,10 +64,20 @@ if [ "${#files[@]}" -eq 0 ]; then
   exit 1
 fi
 
-# Config keys that name an image, i.e. everything but the version knobs.
+# Config keys that name a container image, detected by the SHAPE of the value
+# rather than by a list of names. An image reference always carries a registry
+# path or a tag separator; a bare version ("7.2.4", "2026.1.1-325") carries
+# neither, and a URL is excluded explicitly. A denylist of version-knob names
+# would need editing every time a knob is added, and would silently mis-classify
+# the one somebody forgot.
 mapfile -t image_keys < <(
-  grep -oE '^[A-Z][A-Z0-9_]*=' "$config" | tr -d '=' |
-    grep -vE '^(RELEASE_DEBIAN|DEV_UBUNTU|GO_VERSION|PYTHON_VERSION|CUDA_VERSION|ROCM_VERSION|ONEAPI_VERSION|ONEAPI_APT_REPO|ONEAPI_APT_KEY)$' || true
+  while IFS= read -r key; do
+    val="${!key-}"
+    case "$val" in
+      http*) continue ;;
+      */* | *:*) printf '%s\n' "$key" ;;
+    esac
+  done < <(grep -oE '^[A-Z][A-Z0-9_]*=' "$config" | tr -d '=' | sort -u)
 )
 
 # ------------------------------------------------- rule 1: no literal FROMs --
@@ -216,6 +226,18 @@ for key in "${image_keys[@]}"; do
       ;;
   esac
 done
+
+# ------------------------------- rule 4: workflows must not hardcode versions --
+# Dockerfiles are only half the problem. The same versions live in CI workflows
+# and drifted there too: ROCm was 7.2.4 in build.yml and 7.2.3 in
+# libvmaf-build-matrix.yml, and Level Zero existed at four different versions at
+# once. Workflow `run:` steps source build-config.env directly; this catches
+# anyone who goes back to a literal. Split out because the Level Zero clone puts
+# the version and the repository URL on different lines, which a line-oriented
+# grep cannot see.
+if ! python3 scripts/ci/check-workflow-versions.py; then
+  fail=1
+fi
 
 if [ "$fail" -eq 0 ]; then
   echo "check-base-image-single-source: OK (${#files[@]} Dockerfiles, ${#image_keys[@]} pinned bases)"

@@ -54,7 +54,18 @@
 # it to emit .hsaco), the HIP / HSA / comgr runtimes, the amdgcn device
 # bitcode, the headers -- and `librocprofiler-register`, which despite the
 # name is a hard link-time dependency of libamdhip64.so.
-FROM rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 AS rocm-src
+# Base images come from build-config.env -- the single source of truth for
+# every container base in this repository. These defaults are mirrors kept in
+# sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
+# these lines, then run `make base-images-sync`.
+#
+# They must precede the FIRST FROM: an ARG declared after one is scoped to the
+# stage it follows, so `FROM ${ROCM_BUILDER}` above would expand to nothing.
+ARG DEV_BASE="ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b"
+ARG DEV_GO_BASE="golang:1.27-trixie@sha256:9baa6b4187bbb98d240372a8a235ac0bb6b5ddd52bba1431dc2f7c0705862728"
+ARG ROCM_BUILDER="rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374"
+
+FROM ${ROCM_BUILDER} AS rocm-src
 
 ARG RL=/opt/rocm/core-10.0/lib
 RUN rm -rf \
@@ -99,12 +110,7 @@ RUN for entry in /opt/rocm/*; do \
 # ---------------------------------------------------------------------------
 # Stage 1 — build-deps
 # ---------------------------------------------------------------------------
-# Base images come from build-config.env -- the single source of truth for
 # every container base in this repository. These defaults are mirrors kept in
-# sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
-# these lines, then run that script with --write.
-ARG DEV_BASE="ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b"
-ARG DEV_GO_BASE="golang:1.27-trixie@sha256:9baa6b4187bbb98d240372a8a235ac0bb6b5ddd52bba1431dc2f7c0705862728"
 
 FROM ${DEV_BASE} AS build-deps
 

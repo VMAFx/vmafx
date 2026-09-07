@@ -254,6 +254,23 @@
         "dependencies",
         "dev-image"
       ]
+    },
+    {
+      "description": "Let the base-image custom manager own the wired Dockerfiles. Renovate's dockerfile manager also understands `ARG X=image` + `FROM $X`, so without this both managers would update the same pin and could land the Dockerfile and build-config.env halves in separate PRs -- which is exactly the drift ADR-1231 exists to stop. docker/dev/*.Dockerfile is deliberately NOT listed: those pin Alpine / Arch / Fedora on purpose and stay with the built-in manager.",
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "matchFileNames": [
+        "Dockerfile",
+        "Dockerfile.go-server",
+        "dev/Containerfile",
+        "docker/Dockerfile.controller",
+        "docker/Dockerfile.node",
+        "docker/Dockerfile.operator",
+        "docker/Dockerfile.production",
+        "docker/Dockerfile.production-gpu"
+      ],
+      "enabled": false
     }
   ],
   "customManagers": [
@@ -383,6 +400,25 @@
       ],
       "datasourceTemplate": "github-tags",
       "depNameTemplate": "GPUOpen-LibrariesAndSDKs/AMF"
+    },
+    {
+      "customType": "regex",
+      "description": "Container base images (ADR-1231). Every base is defined once in build-config.env and mirrored into each Dockerfile as an ARG default, so a bump has to touch every copy in ONE PR or scripts/ci/check-base-image-single-source.sh fails the build. Matching both the config line and the ARG form in a single manager is what keeps them in step -- same approach as the FFmpeg manager above.",
+      "managerFilePatterns": [
+        "//^build-config\\.env$//",
+        "//^Dockerfile$//",
+        "//^Dockerfile\\.go-server$//",
+        "//^dev/Containerfile$//",
+        "//^docker/Dockerfile\\.controller$//",
+        "//^docker/Dockerfile\\.node$//",
+        "//^docker/Dockerfile\\.operator$//",
+        "//^docker/Dockerfile\\.production$//",
+        "//^docker/Dockerfile\\.production-gpu$//"
+      ],
+      "matchStrings": [
+        "(?:ARG\\s+)?[A-Z][A-Z0-9_]*=\"(?<depName>[^\"\\s:@]+):(?<currentValue>[^\"@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
+      ],
+      "datasourceTemplate": "docker"
     }
   ],
   "vulnerabilityAlerts": {
