@@ -49068,3 +49068,37 @@ Branch: `fix/gpu-float-vif-options`.
    *integer* `vif_hip` twin — a name close enough to look like coverage. The new
    `test_hip_float_vif_parity.c` fills the gap. When adding a HIP twin, check
    that the parity test named after it actually targets it.
+## ADR-1218 — SpEED singular-covariance contract on the GPU twins (2026-09-07)
+
+Branch: `fix/gpu-speed-singular-solution`.
+
+1. **A singular covariance matrix is a routine condition, not an error.**
+   `speed.c` zeroes the solution and reports the singularity *separately* from
+   the return code, because the caller still emits a score. The GPU twins have
+   to keep those two channels apart: the function return stays reserved for hard
+   CUDA/HIP/SYCL failures, and `singular_out` carries the numerical condition.
+   ADR-1202 established this for the three chroma twins; ADR-1218 extends it to
+   the three temporal twins. If upstream changes
+   `speed_extract_score()`'s one-sided rule, all six twins move together.
+
+2. **Zero the DEVICE solution, never the host staging buffer.** The score kernel
+   reads `d_sol`; `h_indterm` is re-downloaded from `d_indterm` at the top of
+   every pipeline run, so a host `memset` on the singular path is dead code that
+   reads as if it did something. Use `cuMemsetD8Async` / `hipMemsetAsync` /
+   `q.memset` on the stream or queue that the score kernel will use.
+
+3. **The existing SpEED parity fixtures cannot reach the regular path.** They
+   are 768x432, whose chroma planes give 4x2 = 8 blocks for a 25x25 covariance —
+   rank-deficient by construction, so `is_matrix_regular()` is false on every
+   frame. Any new SpEED test that needs a *regular* frame must be at least
+   960x960 (36 chroma blocks, 144 luma). This is easy to get wrong: the test
+   looks like it is exercising the normal path and is not.
+
+4. **A flat plane is the wrong singular fixture.** SpEED subtracts 128 in
+   `picture_copy`, so a plane flat at the neutral level zeroes the independent
+   term as well, and `sum(sol * indterm)` vanishes whatever the solution holds.
+   A plane flat at any other level gives an all-zero covariance, every entropy
+   collapses below `base_entropy`, and `get_speed_score()` returns exactly 0.
+   Use a COLUMN-CONSTANT plane: singular (20 zero eigenvalues) with five large
+   ones and a non-zero independent term. Better still, make exactly one side
+   singular — that is the case with an observable score difference.

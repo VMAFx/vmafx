@@ -361,8 +361,13 @@ static void subtract_plane(float *a, const float *b, int w, int h, size_t stride
 /* GPU + CPU pipeline for one temporal-diff plane                     */
 /* ------------------------------------------------------------------ */
 
+/* `singular_out` reports a singular covariance matrix, which is NOT a failure:
+ * the CPU reference zeroes the solution and reports it separately so the caller
+ * can apply the one-sided-zero rule in speed_extract_score(). The return value
+ * stays reserved for hard failures. Mirrors the chroma twin (ADR-1202) and
+ * ADR-1218. */
 static int run_channel_st(SpeedTemporalSyclState *s, float *h_plane, float *h_indterm,
-                          float *d_indterm, float *d_sol)
+                          float *d_indterm, float *d_sol, bool *singular_out)
 {
     sycl::queue &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
     const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
@@ -392,11 +397,19 @@ static int run_channel_st(SpeedTemporalSyclState *s, float *h_plane, float *h_in
     const int nb = (int)num_blocks;
     speed_internal_compute_eigenvalues(s->h_cov_mat, s->h_eigenvalues, sz, s->h_eig_scratch);
     bool regular = speed_internal_is_matrix_regular(s->h_eigenvalues, SP_ELEMENTS);
+    *singular_out = !regular;
 
     if (!regular) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "speed_temporal_sycl: covariance matrix singular, zeroing solution\n");
-        memset(h_indterm, 0, indterm_bytes);
+        /* Zero the DEVICE solution, not the host staging buffer. The score
+         * kernel reads `d_sol`; `h_indterm` is re-downloaded from `d_indterm`
+         * at the top of every pipeline run, so zeroing it changed nothing.
+         * `sycl::malloc_device` memory is explicitly uninitialised, so without
+         * this the first singular frame scored against whatever the allocator
+         * handed back. ADR-1218. */
+        q.memset(d_sol, 0, indterm_bytes);
+        q.wait();
     } else {
         speed_internal_qr_factorize(s->h_cov_mat, sz, s->h_Q, s->h_R, s->h_qr_scratch);
         speed_internal_qt_multiply(s->h_Q, h_indterm, sz, nb, s->h_qt_scratch);
@@ -673,7 +686,9 @@ static int extract_temporal_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic
 
     /* GPU pipeline: reference diff. run_channel_st uploads ref eigenvalues into
      * the shared s->d_eigenvalues buffer. */
-    int err = run_channel_st(s, s->h_ref[other], s->h_indterm_ref, s->d_indterm_ref, s->d_sol_ref);
+    bool singular_ref = false;
+    int err = run_channel_st(s, s->h_ref[other], s->h_indterm_ref, s->d_indterm_ref, s->d_sol_ref,
+                             &singular_ref);
     if (err)
         return err;
 
@@ -688,14 +703,26 @@ static int extract_temporal_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic
     /* GPU pipeline: distorted diff — keeps the DIS covariance in h_cov_mat (no
      * save/restore of the ref covariance) and uploads dis eigenvalues into
      * s->d_eigenvalues. */
-    err = run_channel_st(s, s->h_dis[other], s->h_indterm_dis, s->d_indterm_dis, s->d_sol_dis);
+    bool singular_dis = false;
+    err = run_channel_st(s, s->h_dis[other], s->h_indterm_dis, s->d_indterm_dis, s->d_sol_dis,
+                         &singular_dis);
     if (err)
         return err;
 
+    /* Exactly one side numerically unstable: report 0 rather than the inflated
+     * score a zeroed solution on one side produces. Verbatim the CPU rule in
+     * speed_extract_score() (speed.c), which this twin has to match. When BOTH
+     * sides are singular the CPU still scores, from two zeroed solutions — so
+     * do we, which is why the singular branch above zeroes `d_sol` on the
+     * device. ADR-1218. */
     float score = 0.0f;
-    err = score_aggregate_st(s, &score);
-    if (err)
-        return err;
+    if (singular_ref != singular_dis) {
+        score = 0.0f;
+    } else {
+        err = score_aggregate_st(s, &score);
+        if (err)
+            return err;
+    }
 
     const double mxv = s->speed_temporal_max_val;
     const double clipped = (double)score < mxv ? (double)score : mxv;

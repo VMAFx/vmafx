@@ -437,3 +437,31 @@ the `args[]` array must be changed together. The guard is
 which pins `egl=1.0 snsq=1.5` and asserts parity on the derived
 `vif_scale0_egl_1_snsq_1.5` key — the default-options test cannot see
 this class of defect, because the hardcoded values *were* the defaults.
+
+## SpEED singular-covariance contract (ADR-1202, ADR-1218)
+
+A 25x25 SpEED covariance matrix is regular only if **every** eigenvalue
+is at least `1e-6`. The CPU treats a singular one as a routine numerical
+condition, not a failure, and `speed_chroma_hip.c` /
+`speed_temporal_hip.c` must match it on two counts.
+
+1. **Zero the DEVICE solution.** The score kernel reads `d_sol`;
+   `h_indterm` is re-downloaded from `d_indterm` at the top of every
+   pipeline run, so `memset`-ing the host buffer is dead code that
+   leaves `d_sol` holding the previous frame's solution — or raw
+   allocator memory on the first frame. Use
+   `hipMemsetAsync(d_sol, 0, indterm_bytes, s->stream)`.
+2. **Report singularity out-of-band.** `run_cpu_linalg_sc()` and
+   `run_cpu_linalg_st()` take a `bool *singular_out`; the `int` return
+   stays reserved for hard HIP failures. Conflating the two makes the
+   caller abort the channel without emitting a score, where the CPU
+   emits one — the regression ADR-1202 had to undo. The caller then
+   applies the CPU rule from `speed_extract_score()`: score `0` when
+   exactly one of ref/dis was singular, and for chroma impute
+   `speed_chroma_uv` from the surviving channel.
+
+Guarded by `core/test/test_hip_speed_singular_parity.c`. The older
+`test_hip_speed_{chroma,temporal}_parity.c` fixtures are 768x432, whose
+chroma planes give 4x2 = 8 blocks for a 25x25 covariance — singular on
+every frame — so they never exercise the regular path. A SpEED test that
+needs a regular frame must be at least 960x960.

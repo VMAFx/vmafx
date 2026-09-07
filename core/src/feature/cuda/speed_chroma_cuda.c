@@ -41,7 +41,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "common.h"
 #include "feature_collector.h"
@@ -474,7 +473,15 @@ static int run_cpu_linalg(SpeedChromaCudaState *s, CudaFunctions *cu_f, float *h
     if (!regular) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "speed_chroma_cuda: covariance matrix singular, zeroing solution\n");
-        (void)memset(h_indterm, 0, (size_t)sz * (size_t)nb * sizeof(float));
+        /* Zero the DEVICE solution, not the host staging buffer. The score
+         * kernel reads `d_sol`; the host `h_indterm` is re-downloaded from
+         * `d_indterm` at the top of every pipeline run, so zeroing it changed
+         * nothing. Without this, a singular frame scored against the previous
+         * frame's solution — or, on the first frame, against whatever the
+         * device allocator handed back. ADR-1218. */
+        CHECK_CUDA_GOTO(
+            cu_f, cuMemsetD8Async(d_sol, 0, (size_t)sz * (size_t)nb * sizeof(float), s->stream),
+            fail);
     } else {
         /* QR factorize cov_mat → Q, R. */
         (void)speed_internal_qr_factorize(s->h_cov_mat, sz, s->h_Q, s->h_R, s->h_qr_scratch);

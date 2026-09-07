@@ -709,6 +709,29 @@ kernel variants at runtime. The current policy table is in ADR-0753.
   `../hip/float_vif/float_vif_score.hip`). Guarded by the
   `test_float_vif_options_reach_kernel` variant in each backend's
   float-VIF parity test.
+- **SpEED's singular-covariance path has TWO obligations** (ADR-1202 for
+  chroma, ADR-1218 for both families) — a 25x25 SpEED covariance is
+  regular only if EVERY eigenvalue is >= 1e-6, and the CPU treats a
+  singular one as a routine numerical condition, not a failure. Twins
+  must therefore: (1) zero the **DEVICE** solution `d_sol`, never the
+  host `h_indterm` staging buffer — the score kernel reads `d_sol`, and
+  `h_indterm` is re-downloaded from `d_indterm` at the top of every
+  pipeline run, so a host memset is dead code that leaves the device
+  solution holding the previous frame's result (or, on the first frame,
+  raw allocator memory); and (2) report singularity through a
+  `singular_out` out-parameter, keeping the return value reserved for
+  hard device failures, so the caller can apply the CPU's rule in
+  `speed_extract_score()` — score `0` when exactly one of ref/dis was
+  singular — and, for chroma, impute `speed_chroma_uv` from the
+  surviving channel. Twins in scope: `speed_chroma_cuda.c`,
+  `speed_temporal_cuda.c`, `../sycl/speed_chroma_sycl.cpp`,
+  `../sycl/speed_temporal_sycl.cpp`, `../hip/speed_chroma_hip.c`,
+  `../hip/speed_temporal_hip.c`. Guarded by
+  `test_{cuda,sycl,hip}_speed_singular_parity`. Note that the *existing*
+  `test_*_speed_{chroma,temporal}_parity` fixtures are 768x432, whose
+  chroma planes give 4x2 = 8 blocks for a 25x25 covariance — singular on
+  every frame, so they never reach the regular path at all. Any new
+  SpEED test that needs a regular frame must be at least 960x960.
 
 - **`integer_vif_cuda.c::filter1d_8` picks `filter1d_8_horizontal_kernel_2_17_9_no_bounds`
   at `WS_SMALL` and the bounded variant at `WS_MEDIUM`/`WS_LARGE`** (ADR-0753 extended
