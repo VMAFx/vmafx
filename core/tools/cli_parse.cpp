@@ -501,15 +501,20 @@ char *cli_split(char **sp, const char sep)
     if (!sp || !*sp)
         return nullptr;
     char *const s = *sp;
-    for (size_t i = 0U; s[i] != '\0'; i++) {
+    size_t i = 0U;
+    while (s[i] != '\0') {
         if ((s[i] == '\\') && (s[i + 1U] != '\0')) {
-            i++; /* skip the escaped byte; cli_unescape() drops the backslash */
+            i += 2U; /* skip the escaped byte; cli_unescape() drops the backslash */
             continue;
         }
-        if (s[i] != sep)
+        if (s[i] != sep) {
+            i++;
             continue;
-        if ((sep == ':') && cli_is_drive_colon(s, i))
+        }
+        if ((sep == ':') && cli_is_drive_colon(s, i)) {
+            i++;
             continue;
+        }
         s[i] = '\0';
         *sp = s + i + 1U;
         return s;
@@ -526,12 +531,14 @@ void cli_unescape(char *const s)
     if (!s)
         return;
     char *w = s;
-    for (const char *r = s; *r != '\0'; r++) {
+    const char *r = s;
+    while (*r != '\0') {
         const char nxt = r[1];
         if ((*r == '\\') && ((nxt == ':') || (nxt == '=') || (nxt == '.') || (nxt == '\\')))
             r++;
         *w = *r;
         w++;
+        r++;
     }
     *w = '\0';
 }
