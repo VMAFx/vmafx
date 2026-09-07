@@ -370,28 +370,6 @@ def _validate_media_path(p: str) -> str:
 # Tool implementations
 # ---------------------------------------------------------------------------
 
-_VALID_AOM_CTCS = {"v1.0", "v2.0", "v3.0", "v4.0", "v5.0", "v6.0", "v7.0"}
-_VALID_NFLX_CTCS = {"v1.0"}
-_VALID_TINY_DEVICES = {
-    "auto",
-    "cpu",
-    "cuda",
-    "openvino",
-    "openvino-npu",
-    "openvino-cpu",
-    "openvino-gpu",
-    "coreml",
-    "coreml-ane",
-    "coreml-gpu",
-    "coreml-cpu",
-    "rocm",
-}
-_VALID_TINY_RESIZES = {"bilinear", "nearest", "bicubic", "disabled"}
-_VALID_OUTPUT_FMTS = {"json", "xml", "csv", "sub"}
-_VALID_BACKENDS = {"auto", "cpu", "cuda", "sycl", "hip", "metal"}
-_VALID_PIXFMTS = {"420", "422", "444"}
-_VALID_BITDEPTHS = {8, 10, 12, 16}
-
 
 @dataclass(frozen=True)
 class ScoreExtras:
@@ -521,6 +499,7 @@ _VALID_NFLX_CTC: set[str] = {"v1.0"}
 _VALID_PIXFMTS: set[str] = {"420", "422", "444"}
 _VALID_BITDEPTHS: set[int] = {8, 10, 12, 16}
 _VALID_BACKENDS: set[str] = {"auto", "cpu", "cuda", "sycl", "hip", "metal"}
+_VALID_OUTPUT_FMTS: set[str] = {"json", "xml", "csv", "sub"}
 
 
 def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
