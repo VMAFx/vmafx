@@ -54,6 +54,9 @@ namespace
 {
 
 /* Custom deleter for VmafDictionary* owned in this TU. */
+namespace
+{
+
 struct DictDeleter {
     void operator()(VmafDictionary *d) const noexcept
     {

@@ -123,6 +123,15 @@ struct video_input_info {
     int depth;
 };
 
+/* The two concrete input backends. Declared here rather than with a bare
+ * `extern` inside vidinput.c so both the definition and the use see one
+ * declaration: without it clang-tidy sees a definition with no prior
+ * declaration and proposes internal linkage (misc-use-internal-linkage), which
+ * would break the link. The local externs also spelled the type WITHOUT const
+ * while both definitions are const -- a type mismatch on the same symbol. */
+extern const video_input_vtbl Y4M_INPUT_VTBL;
+extern const video_input_vtbl YUV_INPUT_VTBL;
+
 #if defined(__cplusplus)
 } // extern "C"
 #endif

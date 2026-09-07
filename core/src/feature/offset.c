@@ -28,6 +28,10 @@ int offset_image_s(float *buf, float off, int width, int height, int stride)
     int j;
 
     for (i = 0; i < height; ++i) {
+        /* The double cast through void* is the C spelling for a
+         * pointer-type change; bugprone-casting-through-void proposes
+         * reinterpret_cast, which does not exist in C. ADR-0141 / ADR-0278. */
+        // NOLINTNEXTLINE(bugprone-casting-through-void)
         float *row_ptr = (float *)(void *)byte_ptr;
 
         for (j = 0; j < width; ++j) {
