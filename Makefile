@@ -117,6 +117,7 @@ cythonize-deps: $(VENV_PIP)
 # ============================================================================
 
 .PHONY: lint lint-c lint-py lint-sh lint-md lint-go tidy-ratchet tidy-ratchet-write \
+	base-images-sync \
 	format format-check sec sbom \
         test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
         coverage coverage-html coverage-check assertion-density pr-check
@@ -187,6 +188,12 @@ tidy-ratchet-write:
 	python3 scripts/ci/tidy-ratchet.py --lane $(LANE) --write \
 	    --build-dir $(TIDY_RATCHET_BUILD_DIR) $(TIDY_RATCHET_EXTRA_$(LANE)) $(TIDY_RATCHET_ARGS)
 
+# Rewrite every Dockerfile's base-image ARG defaults from build-config.env.
+# Edit the config, run this, commit both.
+base-images-sync:
+	scripts/ci/check-base-image-single-source.sh --write
+	scripts/ci/check-base-image-single-source.sh
+
 lint-py:
 	$(call require-tool,ruff,pip install ruff==0.15.17)
 	ruff check python/ ai/ scripts/
@@ -209,6 +216,7 @@ lint-sh:
 	@scripts/ci/check-no-tracked-venv.sh
 	@scripts/ci/check-aggregator-names.sh
 	@scripts/ci/check-state-md-rows.sh
+	@scripts/ci/check-base-image-single-source.sh
 
 # Markdown lint (ADR-0866). Default scope is the touched-file delta vs
 # origin/master so the ~6.2k pre-existing-warning tail (ADR-0864) doesn't

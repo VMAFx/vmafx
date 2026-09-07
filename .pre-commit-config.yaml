@@ -207,6 +207,13 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: check-base-image-single-source
+        name: Container base images come from build-config.env
+        entry: scripts/ci/check-base-image-single-source.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+
       - id: check-no-tracked-venv
         name: No virtualenv path is tracked (dir or symlink)
         entry: scripts/ci/check-no-tracked-venv.sh
