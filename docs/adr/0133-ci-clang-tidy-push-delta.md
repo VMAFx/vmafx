@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-20
-- **Deciders**: @lusoris, Claude
+- **Deciders**: @lusoris
 - **Tags**: ci, lint, clang-tidy
 
 ## Context

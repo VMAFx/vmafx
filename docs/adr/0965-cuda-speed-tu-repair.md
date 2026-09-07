@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-31
-- **Deciders**: lusoris, Claude (CUDA TU repair)
+- **Deciders**: lusoris
 - **Tags**: `cuda`, `feature-extractor`, `cross-backend-parity`, `speed`, `fork-local`
 
 ## Context

@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-11
-- **Deciders**: kilian, Claude (Anthropic)
+- **Deciders**: kilian
 - **Tags**: metal, ffmpeg-patches, gpu, t8-ios
 
 ## Context

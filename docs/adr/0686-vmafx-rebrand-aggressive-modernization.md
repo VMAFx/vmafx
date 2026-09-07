@@ -3,7 +3,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-05-27
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: rebrand, fork-policy, modernization, license, vmafx, build, ci, cli, docs
 
 ## Context

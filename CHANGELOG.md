@@ -12551,6 +12551,16 @@ and docs now carry `Copyright 2026 Lusoris` (single notice) per ADR-0861.
 **Copyright headers**: removed "and Claude (Anthropic)" from all `Copyright 2026 Lusoris` notices across `core/`, `ai/`, and `mcp-server/`; added missing headers to 52 Python files in `ai/` and `mcp-server/`; added vendor attribution to vendored `pdjson.c`/`.h`. See ADR-0776.
 
 
+- **Removed the remaining "Anthropic Claude" co-authorship claims.** ADR-0861
+  dropped `and Claude (Anthropic)` from every per-file copyright notice but two
+  surfaces were missed: the README's **Maintainers** line, which sat directly
+  under the License bullet and so read as a rights claim, and the
+  `- **Deciders**:` header line in 461 ADRs. Both now name the maintainer only.
+  References to Claude as a *product* (for example ADR-0618's evaluation of the
+  Claude Vision API) are technical citations, not attribution, and are
+  untouched.
+
+
 - **`vmaf-tune` corpus schema v2 → v3 — canonical-6 per-feature
   aggregates land as first-class columns.** Adds 12 new corpus row
   fields (`adm2_mean`, `vif_scale[0..3]_mean`, `motion2_mean` plus

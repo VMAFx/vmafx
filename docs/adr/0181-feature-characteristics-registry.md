@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-26
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: gpu, cuda, sycl, vulkan, architecture, fork-local
 
 ## Context

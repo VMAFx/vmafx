@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-28
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: vmafx, rebrand, cli, build, ai, mcp
 
 ## Context

@@ -3,7 +3,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-05-31
-- **Deciders**: lusoris, Claude Code
+- **Deciders**: lusoris
 - **Tags**: api, abi, gpu, cuda, sycl, hip, metal, ffmpeg, rust, fork-local, vmafx-rebrand
 
 ## Context

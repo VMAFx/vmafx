@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, Claude Code agent
+- **Deciders**: lusoris
 - **Tags**: ai, feature-extraction, speed, hdr, corpus, fork-local
 
 ## Context

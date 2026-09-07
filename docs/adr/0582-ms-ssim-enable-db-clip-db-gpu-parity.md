@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-16
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: cuda, sycl, ms_ssim, option-parity, bug
 
 ## Context

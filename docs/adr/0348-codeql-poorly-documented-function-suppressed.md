@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-09
-- **Deciders**: Lusoris, Claude
+- **Deciders**: Lusoris
 - **Tags**: `ci`, `security`, `codeql`, `policy`, `fork-local`
 
 ## Context

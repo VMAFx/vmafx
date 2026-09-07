@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-02
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: `ai`, `tiny-ai`, `model`, `inference`
 
 ## Context

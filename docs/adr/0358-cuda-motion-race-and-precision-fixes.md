@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-09
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `cuda`, `motion`, `correctness`, `precision`
 
 ## Context

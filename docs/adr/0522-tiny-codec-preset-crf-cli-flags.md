@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, Claude
+- **Deciders**: lusoris
 - **Tags**: `cli`, `ai`, `dnn`, `tiny-model`
 
 ## Context

@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-24
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: simd, avx2, avx512, neon, ssimulacra2, bit-exact, iir-blur, performance
 
 ## Context

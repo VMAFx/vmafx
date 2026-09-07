@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-08
-- **Deciders**: lusoris, Claude
+- **Deciders**: lusoris
 - **Tags**: vmaf-tune, corpus, predictor, x264
 
 ## Context

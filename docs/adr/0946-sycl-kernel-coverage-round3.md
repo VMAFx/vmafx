@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-31
-- **Deciders**: lusoris, Claude
+- **Deciders**: lusoris
 - **Tags**: sycl, test, gpu, parity, kernel-coverage
 
 ## Context

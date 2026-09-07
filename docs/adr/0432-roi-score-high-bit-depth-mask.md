@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-15
-- **Deciders**: Lusoris, Codex
+- **Deciders**: Lusoris
 - **Tags**: roi, tiny-ai, hdr, tooling, fork-local
 
 ## Context

@@ -247,8 +247,7 @@ truth for that address). The same content, browsable in-tree, lives under
   remain the intellectual property of Netflix.
 - **License**: [BSD-2-Clause-Patent](LICENSE) — preserved from upstream
   Netflix/vmaf. Fork additions are licensed under identical terms.
-- **Maintainers**: Co-authored by [Lusoris](https://github.com/Lusoris)
-  and Anthropic Claude.
+- **Maintainers**: [Lusoris](https://github.com/Lusoris).
 
 ---
 

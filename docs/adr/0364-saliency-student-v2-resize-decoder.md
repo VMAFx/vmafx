@@ -2,7 +2,7 @@
 
 - **Status**: Accepted (gate passed: v2 IoU 0.7105 ≥ v1 0.6558)
 - **Date**: 2026-05-09
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ai, dnn, mobilesal, saliency, training, fork-local, docs
 
 ## Context

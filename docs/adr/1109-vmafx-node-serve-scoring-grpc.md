@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-06-13
-- **Deciders**: lusoris, Claude (Phase-4b RC build-out)
+- **Deciders**: lusoris
 - **Tags**: go, node, grpc, scoring, streaming, phase4b, fork-local
 
 ## Context

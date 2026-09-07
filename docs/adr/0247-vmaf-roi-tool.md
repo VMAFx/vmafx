@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-29
-- **Deciders**: lusoris, Claude
+- **Deciders**: lusoris
 - **Tags**: `tools`, `ai`, `roi`, `encoder`
 
 ## Context

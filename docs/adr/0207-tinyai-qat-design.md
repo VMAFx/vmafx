@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-28
-- **Deciders**: <lusoris@pm.me>, Claude (Anthropic)
+- **Deciders**: <lusoris@pm.me>
 - **Tags**: ai, quantization, dnn, tiny-ai, fork-local
 
 ## Context

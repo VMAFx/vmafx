@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: container, dev-experience, gpu, sycl, vulkan, hip, cuda, fork-local
 
 ## Context

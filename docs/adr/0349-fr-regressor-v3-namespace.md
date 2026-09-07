@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-09
-- **Deciders**: lusoris, Claude (planning agent)
+- **Deciders**: lusoris
 - **Tags**: `ai`, `docs`, `naming`
 
 ## Context

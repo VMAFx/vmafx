@@ -3,7 +3,7 @@
 
 - **Status**: Superseded by [ADR-0107](0107-tinyai-wave1-scope-expansion.md)
 - **Date**: 2026-04-17
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ai, dnn, cli, framework, mcp
 
 ## Context

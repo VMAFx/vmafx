@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-29
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: `ai`, `dnn`, `refactor`, `dx`, `fork-local`
 
 ## Context

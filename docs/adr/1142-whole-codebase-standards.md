@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-02
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ci, process, code-quality, agents, cuda, sycl, hip, metal, simd
 
 ## Context

@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-20
-- **Deciders**: Lusoris, Claude
+- **Deciders**: Lusoris
 - **Tags**: port, libvmaf, i18n, thread-safety, upstream-port
 
 ## Context

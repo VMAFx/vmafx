@@ -3,7 +3,7 @@
 - **Status**: Accepted
 - **Supersedes**: [ADR-0028](0028-adr-maintenance-rule.md)
 - **Date**: 2026-04-18
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: docs, planning, agents
 
 ## Context

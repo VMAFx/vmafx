@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-22
-- **Deciders**: Lusoris, Codex
+- **Deciders**: Lusoris
 - **Tags**: ai, cli, provenance, agents
 
 ## Context

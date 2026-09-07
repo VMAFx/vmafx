@@ -6,7 +6,7 @@
   directory present with `run.sh` wrappers and `compare.py`
   orchestrator; wrapper-only architecture active.
 - **Date**: 2026-05-08
-- **Deciders**: Lusoris, Claude
+- **Deciders**: Lusoris
 - **Tags**: ai, testing, license, tooling, fork-local
 
 ## Context

@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, claude
+- **Deciders**: lusoris
 - **Tags**: `dev-container`, `cuda`, `vulkan`, `sycl`, `hip`, `rocm`
 
 ## Context

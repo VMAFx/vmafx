@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-05
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Companion research digest**: [Research-0075](../research/0075-fr-regressor-v2-ensemble-prod-flip.md)
 - **Tags**: ai, fr-regressor, ensemble, probabilistic, loso, ci-gate, fork-local
 - **Related**: [ADR-0291](0291-fr-regressor-v2-prod-ship.md) (v2 deterministic

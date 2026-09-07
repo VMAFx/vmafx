@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-03
-- **Deciders**: Lusoris, Claude
+- **Deciders**: Lusoris
 - **Tags**: `ai`, `dnn`, `tiny-ai`, `fr-regressor`, `codec-aware`,
   `vmaf-tune`, `fork-local`
 

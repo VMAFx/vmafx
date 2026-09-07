@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-04
-- **Deciders**: Lusoris (maintainer), Claude Code session d0961a83
+- **Deciders**: Lusoris (maintainer)
 - **Tags**: `ci`, `release`, `release-please`, `supersedes-partial`
 
 ## Context

@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, claude
+- **Deciders**: lusoris
 - **Tags**: hip, gpu, parity, build
 
 ## Context

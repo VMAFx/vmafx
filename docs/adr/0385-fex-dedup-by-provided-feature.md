@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-10
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `correctness`, `cuda`, `gpu`, `feature-extractor`, `fork-local`
 
 ## Context

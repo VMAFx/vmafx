@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-04
-- **Deciders**: Lusoris, Claude
+- **Deciders**: Lusoris
 - **Tags**: cuda, gpu, perf, fork-local
 
 ## Context

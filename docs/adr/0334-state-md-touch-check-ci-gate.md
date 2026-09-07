@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-08
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ci, process, state-hygiene, claude-rule, fork-local
 
 ## Context

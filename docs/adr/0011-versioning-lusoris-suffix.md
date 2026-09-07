@@ -3,7 +3,7 @@
 
 - **Status**: Superseded by [ADR-1127](1127-single-semver-release-stream.md)
 - **Date**: 2026-04-17
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: release, framework
 
 ## Context

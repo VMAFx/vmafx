@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-05
-- **Deciders**: lusoris, Claude
+- **Deciders**: lusoris
 - **Tags**: ai, vmaf-tune, research, encoder, pareto, fork-local
 
 ## Context

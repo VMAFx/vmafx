@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-06
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ai, fr-regressor, ensemble, loso, fork-local
 - **Related**: [ADR-0303](0303-fr-regressor-v2-ensemble-prod-flip.md)
   (gate definition + LOSO trainer scaffold),

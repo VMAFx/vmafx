@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-29
-- **Deciders**: lusoris, Claude
+- **Deciders**: lusoris
 - **Tags**: simd, arm64, sve2, ssimulacra2, qemu, ci
 
 ## Context

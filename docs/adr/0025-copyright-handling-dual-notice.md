@@ -3,7 +3,7 @@
 
 - **Status**: Superseded by [ADR-0105](0105-copyright-handling-dual-notice.md)
 - **Date**: 2026-04-17
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: license, docs
 
 ## Context

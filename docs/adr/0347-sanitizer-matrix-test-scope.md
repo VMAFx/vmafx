@@ -6,7 +6,7 @@
   `.github/workflows/tests-and-quality-gates.yml`; per-sanitizer
   deselect lists tracked in `docs/state.md`.
 - **Date**: 2026-05-09
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ci, testing, sanitizer, asan, ubsan, tsan, fork-local
 
 ## Context

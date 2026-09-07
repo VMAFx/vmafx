@@ -3,7 +3,7 @@
 
 - **Status**: Accepted (decision: defer — no `vmaf_tiny_v5.onnx` shipped)
 - **Date**: 2026-05-03
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ai, dnn, tiny-ai, training-data, research, fork-local
 
 ## Context

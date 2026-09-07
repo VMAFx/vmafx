@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-21
-- **Deciders**: Lusoris, Codex
+- **Deciders**: Lusoris
 - **Tags**: ai, dnn, u2netp, saliency, onnx, provenance, fork-local
 
 ## Context

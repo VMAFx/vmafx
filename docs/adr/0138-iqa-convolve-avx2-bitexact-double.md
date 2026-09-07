@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-21
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: simd, performance
 
 ## Context

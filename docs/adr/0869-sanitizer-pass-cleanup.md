@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-30
-- **Deciders**: lusoris, Claude (sanitizer audit)
+- **Deciders**: lusoris
 - **Tags**: `c`, `simd`, `sanitizer`, `correctness`, `cambi`, `adm`
 
 ## Context

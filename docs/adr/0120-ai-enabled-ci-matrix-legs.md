@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-19
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ci, ai, dnn, ort, build, github-actions
 
 ## Context

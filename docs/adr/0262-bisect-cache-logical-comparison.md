@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-03
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ai, ci, tiny-ai, framework
 - **Supersedes**: relaxes the byte-equality clause from
   [ADR-0109](0109-nightly-bisect-model-quality.md) §Decision (parquet

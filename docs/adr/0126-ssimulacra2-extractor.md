@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-20
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: metrics, feature-extractor, docs, agents
 
 ## Context

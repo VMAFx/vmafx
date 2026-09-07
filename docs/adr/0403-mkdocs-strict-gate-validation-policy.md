@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-09
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: docs, ci, mkdocs, fork-local
 
 ## Context

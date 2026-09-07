@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: container, dev-experience, ffmpeg, codecs, av1, vvc, nvenc, qsv, amf, fork-local
 
 ## Context

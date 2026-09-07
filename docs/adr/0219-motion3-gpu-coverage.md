@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-29
-- **Deciders**: Lusoris, Claude (Opus 4.7)
+- **Deciders**: Lusoris
 - **Tags**: gpu, vulkan, cuda, sycl, motion, feature-extractor, fork-local, t3-15c, places-4
 
 ## Context

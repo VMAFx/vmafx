@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-05
-- **Deciders**: Lusoris, Claude
+- **Deciders**: Lusoris
 - **Tags**: ai, vmaf-tune, codec-adapters, knob-sweep, fork-local
 
 ## Context

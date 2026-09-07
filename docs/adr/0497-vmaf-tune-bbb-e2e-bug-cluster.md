@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-17
-- **Deciders**: lusoris, Claude (Opus 4.7)
+- **Deciders**: lusoris
 - **Tags**: `vmaf-tune`, `cli`, `bugfix`, `docs`
 
 ## Context

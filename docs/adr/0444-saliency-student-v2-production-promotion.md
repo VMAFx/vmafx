@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-15
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `ai`, `dnn`, `saliency`, `tiny-ai`, `fork-local`
 
 ## Context

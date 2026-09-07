@@ -6,7 +6,7 @@
   `core/include/libvmaf/libvmaf_mcp.h` and `core/src/mcp/`
   present on master; `vmaf_mcp_start()` symbol in tree.
 - **Date**: 2026-04-20
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: mcp, agents, api, build, docs
 
 ## Context

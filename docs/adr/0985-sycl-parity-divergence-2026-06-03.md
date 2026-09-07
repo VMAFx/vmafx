@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-06-03 (updated 2026-09-05)
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: sycl, parity, ci, gpu, precision, arc
 
 ## Context

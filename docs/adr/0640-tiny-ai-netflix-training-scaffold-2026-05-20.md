@@ -3,7 +3,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-05-20
-- **Deciders**: Lusoris / Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: `ai`, `docs`, `workspace`, `mcp`
 
 ## Context

@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-27
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: cuda, sycl, gpu, feature-extractor, fork-local, places-4
 
 ## Context

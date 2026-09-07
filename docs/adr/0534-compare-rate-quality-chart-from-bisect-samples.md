@@ -3,7 +3,7 @@
 
 - **Status**: Accepted (target-VMAF defaults superseded by [ADR-0538](0538-premium-vmaf-target-defaults-and-bisect.md))
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, Claude
+- **Deciders**: lusoris
 - **Tags**: vmaf-tune, compare, report, chart, ux
 
 ## Context

@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-29
-- **Deciders**: Lusoris, Claude
+- **Deciders**: Lusoris
 - **Tags**: gpu, cuda, vulkan, refactor, fork-local
 
 ## Context

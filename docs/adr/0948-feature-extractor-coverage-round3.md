@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-31
-- **Deciders**: @lusoris, Claude Opus 4.7 (agent)
+- **Deciders**: @lusoris
 - **Tags**: `test`, `coverage`, `feature`
 
 ## Context

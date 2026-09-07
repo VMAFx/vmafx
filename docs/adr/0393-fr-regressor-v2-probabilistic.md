@@ -6,7 +6,7 @@
   conformal quantile scaffold present on master. Production training
   gated on Phase A corpus completion.
 - **Date**: 2026-05-03
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ai, fr-regressor, probabilistic, ensemble, conformal, fork-local
 
 ## Context

@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-23
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: simd, neon, motion, bit-exact, performance
 
 ## Context

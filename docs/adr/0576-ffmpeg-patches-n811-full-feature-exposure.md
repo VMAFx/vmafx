@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: `ffmpeg`, `build`, `ci`, `cuda`, `sycl`, `hip`, `vulkan`, `metal`
 
 ## Context

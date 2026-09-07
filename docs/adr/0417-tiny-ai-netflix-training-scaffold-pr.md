@@ -6,7 +6,7 @@
   `ai/data/netflix_loader.py` + `test_netflix_loader.py` present on
   master; Netflix corpus integration scaffolded (commit e7f524c44).
 - **Date**: 2026-05-11
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: `ai`, `training`, `mcp`, `fork-local`, `onnx`, `docs`
 
 ## Context

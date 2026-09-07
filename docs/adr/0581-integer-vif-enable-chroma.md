@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-16
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `feature`, `vif`, `chroma`
 
 ## Context

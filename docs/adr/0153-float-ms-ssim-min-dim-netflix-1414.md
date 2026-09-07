@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-24
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: correctness, ms-ssim, netflix-upstream
 
 ## Context

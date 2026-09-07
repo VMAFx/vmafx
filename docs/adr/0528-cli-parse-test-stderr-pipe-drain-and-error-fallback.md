@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, Claude (Opus 4.7, 1M-context, picked up from a Sonnet pre-context handoff)
+- **Deciders**: lusoris, 1M-context
 - **Tags**: cli, test, regression, fork-local, bugfix
 
 ## Context

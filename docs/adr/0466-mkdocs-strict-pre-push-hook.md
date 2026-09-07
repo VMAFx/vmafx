@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-15
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: `docs`, `ci`, `git`, `hooks`, `mkdocs`
 
 ## Context

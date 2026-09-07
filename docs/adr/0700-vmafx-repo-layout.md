@@ -5,7 +5,7 @@ Move `libvmaf/` → `core/` and `python/vmaf/` →
 
 - **Status**: Accepted
 - **Date**: 2026-05-28
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `build`, `workspace`, `meta`, `vmafx`
 
 ## Context

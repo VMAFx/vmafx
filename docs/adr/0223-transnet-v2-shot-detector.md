@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-29
-- **Deciders**: Lusoris, Claude (Opus 4.7)
+- **Deciders**: Lusoris
 - **Tags**: `ai`, `dnn`, `feature-extractor`, `wave-1`, `shot-detection`, `fork-local`
 
 ## Context

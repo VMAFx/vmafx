@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-31 (Phase 1); accepted 2026-06-13 (Phase 2 implemented)
-- **Deciders**: lusoris, Claude (modernization #18)
+- **Deciders**: lusoris
 - **Tags**: grpc, server, api, streaming, fork-local
 
 > **Phase 2 update (2026-06-13)**: the design below was implemented as

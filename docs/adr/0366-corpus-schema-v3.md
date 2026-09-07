@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-08
-- **Deciders**: lusoris, claude
+- **Deciders**: lusoris
 - **Tags**: `ai`, `tools`, `vmaf-tune`, `corpus`, `schema`
 
 ## Context

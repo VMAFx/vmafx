@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-30
-- **Deciders**: lusoris, Claude
+- **Deciders**: lusoris
 - **Tags**: ci, security, fuzzing, dnn
 
 ## Context

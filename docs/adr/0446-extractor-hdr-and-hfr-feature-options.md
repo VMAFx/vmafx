@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-15
-- **Deciders**: Lusoris, Claude (Anthropic), lawrence (Slack 2026-05-15)
+- **Deciders**: Lusoris, lawrence (Slack 2026-05-15)
 - **Tags**: ai, hdr, hfr, training, corpus, fork-local
 
 ## Context

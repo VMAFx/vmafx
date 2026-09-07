@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-19
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: cli, testing, python, golden-gate
 - **Supersedes**: [ADR-0006](0006-cli-precision-17g-default.md)
 

@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-09
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `vmaf-tune`, `saliency`, `codec-adapter`, `roi`, `fork-local`
 
 ## Context

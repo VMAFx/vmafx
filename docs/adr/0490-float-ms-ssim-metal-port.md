@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-17
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `metal`, `ms-ssim`, `float`, `apple-silicon`, `fork-local`
 
 ## Context

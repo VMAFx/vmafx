@@ -2,7 +2,7 @@
 
 - **Status**: Superseded by [ADR-0111](0111-coverage-gate-gcovr-with-ort.md)
 - **Date**: 2026-04-18
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ci, build, simd, testing
 - **Note**: The two race fixes documented here (`-fprofile-update=atomic`
   and `meson test --num-processes 1`) remain in force; ADR-0111 layers

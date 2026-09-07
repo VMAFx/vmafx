@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-31
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: dnn, sidecar, cleanup, leak, security
 
 ## Context

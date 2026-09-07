@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-06
-- **Deciders**: lusoris, Claude
+- **Deciders**: lusoris
 - **Tags**: cli, security, fork-local, fuzzing
 
 ## Context

@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-16
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: ms-ssim, float-ms-ssim, option-parity, metrics, correctness, fork-local
 
 ## Context

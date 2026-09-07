@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-03
-- **Deciders**: Lusoris, Claude (T7-10b follow-up)
+- **Deciders**: Lusoris
 - **Tags**: `hip`, `gpu`, `feature-extractor`, `kernel-template`, `temporal`, `fork-local`
 
 ## Context

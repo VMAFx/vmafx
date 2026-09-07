@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-24
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: api, correctness, motion, netflix-upstream
 
 ## Context

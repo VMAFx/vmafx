@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-30
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `ai`, `pipeline`, `durability`, `k150k`
 
 ## Context

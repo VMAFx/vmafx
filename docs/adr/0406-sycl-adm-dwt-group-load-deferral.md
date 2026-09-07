@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-08
-- **Deciders**: lusoris, Claude (Opus 4.7)
+- **Deciders**: lusoris
 - **Tags**: sycl, adm, perf, deferred, fork-local
 
 ## Context

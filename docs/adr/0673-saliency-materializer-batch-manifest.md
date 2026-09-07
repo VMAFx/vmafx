@@ -40,7 +40,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-21
-- **Deciders**: Lusoris, Codex
+- **Deciders**: Lusoris
 - **Tags**: ai, saliency, materializer, provenance, fork-local
 
 ## Context

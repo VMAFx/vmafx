@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-06
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ai, fr-regressor, codec-aware, encoder-vocab, loso, fork-local
 - **Related**:
   [ADR-0302](0302-encoder-vocab-v3-schema-expansion.md) (v3 16-slot

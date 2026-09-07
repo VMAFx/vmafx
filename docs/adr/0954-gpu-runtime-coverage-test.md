@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-31
-- **Deciders**: Lusoris (with Claude Code agent)
+- **Deciders**: Lusoris
 - **Tags**: `test`, `gpu`, `cuda`, `hip`, `sycl`, `runtime`
 
 ## Context

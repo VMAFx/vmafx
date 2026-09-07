@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-19
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: `mcp`, `vmaf-tune`, `api`, `docs`
 
 ## Context

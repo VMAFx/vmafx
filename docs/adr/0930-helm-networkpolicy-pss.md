@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-31
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: helm, kubernetes, security, networkpolicy, podsecurity, fork-local
 
 ## Context

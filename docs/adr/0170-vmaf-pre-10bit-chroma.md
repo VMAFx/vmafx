@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-25
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: tiny-ai, ffmpeg, dnn, api, fork-local
 
 ## Context

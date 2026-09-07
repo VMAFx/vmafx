@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-04
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: lint, cleanup, touched-file-rule, t7-5
 
 ## Context

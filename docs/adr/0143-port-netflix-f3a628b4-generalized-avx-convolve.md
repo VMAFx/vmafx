@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-22
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: upstream-port, simd, avx2, vif, convolve
 
 ## Context

@@ -4,7 +4,7 @@
 - **Status**: Accepted (2026-05-03 — calibration-table tier landed; ONNX-head
   tier remains scoped per "Decision" §)
 - **Date**: 2026-05-01 (proposed) / 2026-05-03 (accepted)
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ai, gpu, vulkan, cuda, sycl, cross-backend, fork-local, t7-gpu-ulp-cal
 
 ## Context

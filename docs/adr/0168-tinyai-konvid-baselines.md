@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-25
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: tiny-ai, training, onnx, konvid-1k, c2, c3, fork-local
 
 ## Context

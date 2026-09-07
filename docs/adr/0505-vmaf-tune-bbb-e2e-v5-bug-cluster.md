@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, claude
+- **Deciders**: lusoris
 - **Tags**: vmaf-tune, ladder, corpus, encode, vmaf-cli, docs
 
 ## Context

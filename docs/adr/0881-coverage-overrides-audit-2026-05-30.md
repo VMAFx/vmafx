@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-30
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ci, coverage, dnn, gate, audit, adr-0114
 
 ## Context

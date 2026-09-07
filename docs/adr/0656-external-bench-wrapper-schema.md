@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-20
-- **Deciders**: Lusoris, Codex
+- **Deciders**: Lusoris
 - **Tags**: ai, testing, tooling, fork-local
 
 ## Context

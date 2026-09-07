@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-31
-- **Deciders**: lusoris, Claude (agent run)
+- **Deciders**: lusoris
 - **Tags**: test, coverage, vendored, security, libsvm, iqa
 
 ## Context

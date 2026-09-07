@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-04
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ffmpeg, fork-local, maintenance, patches
 
 ## Context

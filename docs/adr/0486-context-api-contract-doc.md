@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-16
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `docs`, `gpu`, `hip`, `metal`, `vulkan`, `cuda`, `api`, `fork-local`
 
 ## Context

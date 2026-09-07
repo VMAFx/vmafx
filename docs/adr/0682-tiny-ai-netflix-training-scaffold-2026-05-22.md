@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-22
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: `ai`, `training`, `fork-local`, `onnx`, `mcp`, `docs`
 
 ## Context

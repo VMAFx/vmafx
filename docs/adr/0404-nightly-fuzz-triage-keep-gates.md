@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-09
-- **Deciders**: lusoris, Claude
+- **Deciders**: lusoris
 - **Tags**: ci, testing, fuzzing, security
 
 ## Context
