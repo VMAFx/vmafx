@@ -105,12 +105,29 @@ def graph_bakes_scaler(onnx_path: Path) -> bool:
     back to a length-prefixed protobuf byte scan for the ``Sub`` / ``Div``
     ``op_type`` strings (``0x22`` = field 4 ``op_type``, ``0x03`` = length).
     """
+
+    def _byte_scan() -> bool:
+        raw = onnx_path.read_bytes()
+        return (b"\x22\x03Sub" in raw) and (b"\x22\x03Div" in raw)
+
     try:
         import onnx  # type: ignore[import-not-found]
     except ImportError:
-        raw = onnx_path.read_bytes()
-        return (b"\x22\x03Sub" in raw) and (b"\x22\x03Div" in raw)
-    model = onnx.load(str(onnx_path), load_external_data=False)
+        return _byte_scan()
+
+    try:
+        model = onnx.load(str(onnx_path), load_external_data=False)
+    except Exception:
+        # A file that is not parseable as ONNX is a registry error in its own
+        # right, but it is not THIS function's error to raise: the caller is
+        # mid-way through collecting every consistency problem, and an
+        # exception here throws away the rest of the report -- including the
+        # sha256 mismatch that is usually the real reason the file is wrong.
+        # Degrade to the same byte scan the no-onnx-installed path uses; on
+        # arbitrary bytes it simply finds no Sub/Div markers and answers False,
+        # letting _consistency_check finish and report the actual mismatch.
+        return _byte_scan()
+
     ops = {node.op_type for node in model.graph.node}
     return "Sub" in ops and "Div" in ops
 
