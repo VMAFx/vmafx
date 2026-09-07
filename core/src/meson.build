@@ -828,6 +828,29 @@ if is_asm_enabled
       # bit-exact with the scalar reference even under the icx optimizer.
       # GCC and vanilla Clang do not recognise -fp-model=precise; we detect
       # icx via cc.get_id() and append the flag only for that compiler.
+      #
+      # ORDER HAZARD, measured -- do not "tidy" the flag lists below.
+      # `-fp-model=precise` implies `-ffp-contract=on`, so when it lands AFTER
+      # `-ffp-contract=off` on the command line it silently re-enables FMA
+      # contraction, which is the opposite of why it is here. icx 2026.0, on
+      # the speed_matmul_avx2 scalar tail:
+      #     -mfma                                        ->  7 vfmadd
+      #     -mfma -ffp-contract=off                      ->  0 vfmadd
+      #     -mfma -ffp-contract=off -fp-model=precise    ->  9 vfmadd   (!)
+      #     -mfma -fp-model=precise -ffp-contract=off    ->  0 vfmadd
+      # Every carve-out below therefore has contraction ENABLED under icx today,
+      # despite asking for it off. Reordering the flags is NOT a safe blanket
+      # fix: it was tried and it breaks test_ssimulacra2_simd
+      # (`picture_to_linear_rgb SIMD not bit-identical to scalar`), because that
+      # kernel's agreement with its scalar reference currently depends on
+      # contraction being on. Each carve-out has to be re-validated against its
+      # own reference before its flags move -- tracked as
+      # T-ICX-FP-CONTRACT-FLAG-ORDER-2026-09-07 in docs/state.md.
+      #
+      # The durable fix for any individual kernel is to stop depending on the
+      # flag at all and spell the multiply and the add as separate intrinsics,
+      # which are not routed through llvm.fmuladd. speed_matmul_avx2.c does that
+      # for both its vector bodies and its scalar tail.
       _cc_id_x86 = cc.get_id()
       _x86_simd_strict_fp_extra = []
       if _cc_id_x86 == 'intel-llvm' or _cc_id_x86 == 'intel-llvm-cl'
