@@ -55,6 +55,12 @@
 #include "opt.h"
 #include "picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #define DEFAULT_DEITP_TRANSFER ("pq")
 #define DEFAULT_DEITP_MATRIX ("bt2020")
 #define DEFAULT_DEITP_RANGE ("limited")
@@ -205,7 +211,7 @@ static int read_yuv_sample(const VmafPicture *pic, unsigned i, unsigned j, doubl
     case 10:
     case 12:
     case 16:
-        // NOLINTBEGIN(bugprone-integer-division): `stride / 2` is the byte->element
+        // NOLINTBEGIN(bugprone-integer-division) — ADR-0141 / ADR-0278: `stride / 2` is the byte->element
         // step for the uint16_t plane index, not a value flowing into the double
         // `yuv[*]` destinations. The index arithmetic itself is exact integer math
         // (mirrors the ciede.c HBD read pattern).
@@ -441,3 +447,5 @@ VmafFeatureExtractor vmaf_fex_delta_e_itp = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

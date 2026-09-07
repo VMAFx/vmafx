@@ -54,6 +54,13 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #endif
 
 /* Per-shot accumulators kept in a static-size array; no dynamic resizing. */
@@ -319,7 +326,7 @@ static int per_shot_parse_args(int argc, char **argv, struct vmaf_per_shot_setti
     /* getopt_long flagged concurrency-mt-unsafe by clang-tidy; same
      * baseline applies in libvmaf/tools/cli_parse.c — every C CLI
      * uses it, and the binary is single-threaded by construction. */
-    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    // NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0141 / ADR-0278: CLI single-threaded option parsing via getopt_long
     while ((c = getopt_long(argc, argv, "r:w:h:p:b:o:t:m:M:d:f:H", per_shot_long_opts, &idx)) !=
            -1) {
         if (c == 'H') {
@@ -831,3 +838,5 @@ int main(int argc, char **argv)
     free(shots);
     return EXIT_SUCCESS;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

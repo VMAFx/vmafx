@@ -41,7 +41,7 @@
 #define vmaf_mcp_compute_vmaf vmaf_mcp_compute_vmaf__allowlist_test_dup
 /* White-box include of the CU under test to reach the static validate_path();
  * established pattern, see test_feature_collector.c. */
-/* NOLINTNEXTLINE(bugprone-suspicious-include) — white-box test, see above. */
+/* NOLINTNEXTLINE(bugprone-suspicious-include) — white-box test, see above (ADR-0141 / ADR-0278). */
 #include "mcp/compute_vmaf.c"
 #undef vmaf_mcp_compute_vmaf
 
@@ -144,7 +144,7 @@ static char *test_vmaf_mcp_allow_extends_roots(void)
     (void)fclose(f);
 
     /* Without the env var the path is rejected. */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup (ADR-0141 / ADR-0278). */
     (void)unsetenv("VMAF_MCP_ALLOW");
     char real[PATH_MAX];
     char *err = NULL;
@@ -153,7 +153,7 @@ static char *test_vmaf_mcp_allow_extends_roots(void)
     mu_assert("tmp path must be rejected without VMAF_MCP_ALLOW", rc_before == -EACCES);
 
     /* With the env var pointing at the temp dir the path is accepted. */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup (ADR-0141 / ADR-0278). */
     int se = setenv("VMAF_MCP_ALLOW", dir, 1);
     mu_assert("setenv VMAF_MCP_ALLOW failed", se == 0);
     err = NULL;
@@ -161,7 +161,7 @@ static char *test_vmaf_mcp_allow_extends_roots(void)
     free(err);
     mu_assert("tmp path must be accepted with VMAF_MCP_ALLOW", rc_after == 0);
 
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup (ADR-0141 / ADR-0278). */
     (void)unsetenv("VMAF_MCP_ALLOW");
     (void)unlink(file_path);
     (void)rmdir(dir);

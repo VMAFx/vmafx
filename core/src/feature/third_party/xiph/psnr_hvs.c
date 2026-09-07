@@ -45,6 +45,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 #if ARCH_AARCH64
 #include "feature/arm64/psnr_hvs_neon.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #endif
 
 typedef int32_t od_coeff;
@@ -64,6 +71,7 @@ typedef int32_t od_coeff;
  * reference implementation the AVX2 TU diffs against line-for-line).
  * Suppressions are scoped to the upstream block only; fork-local
  * dispatch code below uses full lint hygiene. */
+// ADR-0141 §2 / ADR-0159 / ADR-0278: upstream-parity carve-out (see the block above).
 // NOLINTBEGIN(readability-function-size,google-readability-function-size,
 // bugprone-implicit-widening-of-multiplication-result,
 // readability-braces-around-statements,
@@ -482,7 +490,7 @@ static const char *provided_features[] = {"psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs
 
 /* External linkage is required — the extractor registry iterates over
  * `vmaf_fex_*` externs in libvmaf/src/feature/feature_extractor.c. */
-// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables)
+// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables) — ADR-0141 / ADR-0278: extractor registry external linkage
 VmafFeatureExtractor vmaf_fex_psnr_hvs = {
     .name = "psnr_hvs",
     .init = init,
@@ -491,3 +499,5 @@ VmafFeatureExtractor vmaf_fex_psnr_hvs = {
     .priv_size = sizeof(PsnrHvsState),
     .provided_features = provided_features,
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

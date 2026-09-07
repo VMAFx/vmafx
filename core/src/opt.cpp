@@ -32,7 +32,10 @@
 // The C ABI boundary (vmaf_option_set) converts nullopt → -EINVAL.
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] static std::optional<bool> parse_bool(std::string_view sv) noexcept
+namespace
+{
+
+[[nodiscard]] std::optional<bool> parse_bool(std::string_view sv) noexcept
 {
     if (sv == "true")
         return true;
@@ -41,20 +44,19 @@
     return std::nullopt;
 }
 
-[[nodiscard]] static std::optional<int> parse_int(std::string_view sv, int min_val,
-                                                  int max_val) noexcept
+/* Takes `const char *`, not string_view: strtol needs NUL termination, and
+ * every caller is the C ABI entry point below, which already holds one. A
+ * string_view would only be NUL-terminated by convention -- exactly what
+ * bugprone-suspicious-stringview-data-usage flags. */
+[[nodiscard]] std::optional<int> parse_int(const char *s, int min_val, int max_val) noexcept
 {
-    if (sv.empty())
+    if (!s || *s == '\0')
         return std::nullopt;
 
-    /* strtol requires a NUL-terminated string; sv may not be NUL-terminated in
-     * general, but in practice vmaf_option_set is always called with a C string
-     * literal or argv element, so sv.data() is NUL-terminated. We still
-     * validate *end == '\0' which covers the sv-is-a-slice case. */
     char *end = nullptr;
     errno = 0;
-    const long n = std::strtol(sv.data(), &end, 10);
-    if (end == sv.data() || *end != '\0')
+    const long n = std::strtol(s, &end, 10);
+    if (end == s || *end != '\0')
         return std::nullopt;
     if (errno == ERANGE)
         return std::nullopt;
@@ -63,16 +65,17 @@
     return static_cast<int>(n);
 }
 
-[[nodiscard]] static std::optional<double> parse_double(std::string_view sv, double min_val,
-                                                        double max_val) noexcept
+/* `const char *` for the same reason as parse_int above. */
+[[nodiscard]] std::optional<double> parse_double(const char *s, double min_val,
+                                                 double max_val) noexcept
 {
-    if (sv.empty())
+    if (!s || *s == '\0')
         return std::nullopt;
 
     char *end = nullptr;
     errno = 0;
-    const double n = std::strtod(sv.data(), &end);
-    if (end == sv.data() || *end != '\0')
+    const double n = std::strtod(s, &end);
+    if (end == s || *end != '\0')
         return std::nullopt;
     if (errno == ERANGE)
         return std::nullopt;
@@ -86,6 +89,72 @@
         return std::nullopt;
     return n;
 }
+
+/* One helper per option type. Each keeps the exact three-step contract the
+ * switch had: write the default, treat a null value as "default only", then
+ * parse and reject on failure with -EINVAL. Split out so vmaf_option_set stays
+ * inside the readability-function-size budget (ADR-1142); no return code,
+ * errno interaction or write order changes. */
+[[nodiscard]] int set_bool(const VmafOption *opt, uint8_t *base, const char *val) noexcept
+{
+    bool *dst = reinterpret_cast<bool *>(base);
+    *dst = opt->default_val.b;
+    if (!val)
+        return 0;
+    const auto result = parse_bool(val);
+    if (!result)
+        return -EINVAL;
+    *dst = *result;
+    return 0;
+}
+
+[[nodiscard]] int set_int(const VmafOption *opt, uint8_t *base, const char *val) noexcept
+{
+    int *dst = reinterpret_cast<int *>(base);
+    *dst = opt->default_val.i;
+    if (!val)
+        return 0;
+    const auto result = parse_int(val, static_cast<int>(opt->min), static_cast<int>(opt->max));
+    if (!result)
+        return -EINVAL;
+    *dst = *result;
+    return 0;
+}
+
+[[nodiscard]] int set_double(const VmafOption *opt, uint8_t *base, const char *val) noexcept
+{
+    double *dst = reinterpret_cast<double *>(base);
+    *dst = opt->default_val.d;
+    if (!val)
+        return 0;
+    const auto result = parse_double(val, opt->min, opt->max);
+    if (!result)
+        return -EINVAL;
+    *dst = *result;
+    return 0;
+}
+
+[[nodiscard]] int set_string(const VmafOption *opt, uint8_t *base, const char *val) noexcept
+{
+    char **dst = reinterpret_cast<char **>(base);
+    /* opt.h changed default_val.s to const char* (prevents write-to-rodata).
+     * The public char** ABI is preserved per ADR-0721; const_cast is the
+     * approved bridge. The pointer is stored but never written through. */
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) — ADR-0721 / ADR-0278
+    *dst = const_cast<char *>(opt->default_val.s);
+    if (!val)
+        return 0;
+    /* String options store a borrowed pointer — lifetime owned by the caller;
+     * no allocation here, matching the original C behaviour. ADR-0721: the
+     * public VmafOption API exposes `char *`, so removing this const_cast would
+     * be a public ABI change; the original opt.c performed the identical
+     * implicit cast. */
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) — ADR-0721 / ADR-0278
+    *dst = const_cast<char *>(val);
+    return 0;
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // C ABI entry point — identity preserved exactly (same signature, same errno
@@ -113,57 +182,14 @@ extern "C" [[nodiscard]] int vmaf_option_set(const VmafOption *opt, void *obj, c
     int type_raw;
     memcpy(&type_raw, &opt->type, sizeof(type_raw));
     switch (type_raw) {
-    case VMAF_OPT_TYPE_BOOL: {
-        bool *dst = reinterpret_cast<bool *>(base);
-        *dst = opt->default_val.b;
-        if (!val)
-            return 0;
-        auto result = parse_bool(val);
-        if (!result)
-            return -EINVAL;
-        *dst = *result;
-        return 0;
-    }
-    case VMAF_OPT_TYPE_INT: {
-        int *dst = reinterpret_cast<int *>(base);
-        *dst = opt->default_val.i;
-        if (!val)
-            return 0;
-        auto result = parse_int(val, static_cast<int>(opt->min), static_cast<int>(opt->max));
-        if (!result)
-            return -EINVAL;
-        *dst = *result;
-        return 0;
-    }
-    case VMAF_OPT_TYPE_DOUBLE: {
-        double *dst = reinterpret_cast<double *>(base);
-        *dst = opt->default_val.d;
-        if (!val)
-            return 0;
-        auto result = parse_double(val, opt->min, opt->max);
-        if (!result)
-            return -EINVAL;
-        *dst = *result;
-        return 0;
-    }
-    case VMAF_OPT_TYPE_STRING: {
-        char **dst = reinterpret_cast<char **>(base);
-        /* opt.h changed default_val.s to const char* (prevents write-to-rodata).
-         * The public char** ABI is preserved per ADR-0721; const_cast is the
-         * approved bridge. The pointer is stored but never written through. */
-        *dst =
-            const_cast<char *>(opt->default_val.s); // NOLINT(cppcoreguidelines-pro-type-const-cast)
-        if (!val)
-            return 0;
-        /* String options store a borrowed pointer — lifetime owned by the
-         * caller; no allocation here, matching the original C behaviour. */
-        *dst = const_cast<char *>(val); // NOLINT(cppcoreguidelines-pro-type-const-cast)
-        // ADR-0721: the public VmafOption API exposes `char *` (not `const char *`)
-        // for string values. Removing the const_cast would require a public ABI
-        // change (VmafOption.default_val.s type). Preserved verbatim for ABI
-        // stability; the original opt.c performed the identical implicit cast.
-        return 0;
-    }
+    case VMAF_OPT_TYPE_BOOL:
+        return set_bool(opt, base, val);
+    case VMAF_OPT_TYPE_INT:
+        return set_int(opt, base, val);
+    case VMAF_OPT_TYPE_DOUBLE:
+        return set_double(opt, base, val);
+    case VMAF_OPT_TYPE_STRING:
+        return set_string(opt, base, val);
     default:
         return -EINVAL;
     }

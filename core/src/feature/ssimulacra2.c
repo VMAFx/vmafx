@@ -40,7 +40,7 @@
  * and ADR-0206 (CUDA + SYCL).
  */
 
-// NOLINTNEXTLINE(misc-include-cleaner) — ENOMEM at line ~979 in init() bailouts.
+// NOLINTNEXTLINE(misc-include-cleaner) — ENOMEM at line ~979 in init() bailouts (ADR-0141 / ADR-0278).
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
@@ -72,6 +72,13 @@
 #include "feature/arm64/ssimulacra2_neon.h"
 #if HAVE_SVE2
 #include "feature/arm64/ssimulacra2_sve2.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #endif
 #endif
 
@@ -1153,7 +1160,7 @@ static const char *provided_features[] = {"ssimulacra2", NULL};
 
 /* External linkage is required — the extractor registry iterates over
  * `vmaf_fex_*` externs in libvmaf/src/feature/feature_extractor.c. */
-// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables)
+// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables) — ADR-0141 / ADR-0278: extractor registry external linkage
 VmafFeatureExtractor vmaf_fex_ssimulacra2 = {
     .name = "ssimulacra2",
     .init = init,
@@ -1167,3 +1174,5 @@ VmafFeatureExtractor vmaf_fex_ssimulacra2 = {
      * field landed; see ADR-0181). */
     .chars = {0},
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

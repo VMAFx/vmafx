@@ -35,6 +35,12 @@
 #include "libvmaf/dnn.h"
 #include "vmaf_roi_core.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* x265 / SVT-AV1 ROI sidecars use a small integer offset range. We clamp
  * to +-12 which is comfortably inside both encoders' accepted bands. */
 #define VMAF_ROI_QP_OFFSET_MAX VMAF_ROI_CORE_QP_OFFSET_MAX
@@ -542,7 +548,7 @@ static int parse_args(int argc, char **argv, struct vmaf_roi_opts *o)
      * warning is inherent to CLI option parsing and matches upstream
      * libvmaf/tools/cli_parse.c. CLI parsing happens before any threads
      * are spawned, so this is safe. */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0141 / ADR-0278: CLI single-threaded option parsing via getopt_long */
     while ((c = getopt_long(argc, argv, "h", g_long_opts, NULL)) != -1) {
         if (c == 'h') {
             print_usage(stdout);
@@ -644,3 +650,5 @@ int main(int argc, char **argv)
     }
     return (run_pipeline(&opts) == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

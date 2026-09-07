@@ -21,12 +21,18 @@
 #include <string.h>
 
 #include "test.h"
-// NOLINTNEXTLINE(bugprone-suspicious-include): the test deliberately includes the .c to exercise the static per-pixel ITP helpers (rgb_pq_to_itp / delta_e_itp_pair) against the BT.2124-0 oracle — the same pattern as test_ciede.c.
+// NOLINTNEXTLINE(bugprone-suspicious-include): the test deliberately includes the .c to exercise the static per-pixel ITP helpers (rgb_pq_to_itp / delta_e_itp_pair) against the BT.2124-0 oracle (ADR-0141 / ADR-0278) — the same pattern as test_ciede.c.
 #include "feature/delta_e_itp.c"
 
 #include "dict.h"
 #include "feature/feature_collector.h"
 #include "libvmaf/picture.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 #define DEITP_W (16u)
 #define DEITP_H (16u)
@@ -263,3 +269,5 @@ char *run_tests(void)
     mu_run_test(test_delta_e_itp_rejects_non_pq_transfer);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

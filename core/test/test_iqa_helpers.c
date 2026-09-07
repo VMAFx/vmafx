@@ -52,6 +52,12 @@
 #include "feature/iqa/ssim_tools.h"
 #include "test.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* ------------------------------------------------------------------ */
 /*  math_utils.c                                                       */
 /* ------------------------------------------------------------------ */
@@ -359,12 +365,12 @@ static char *test_decimate_odd_dimension(void)
 static float kernel_gauss11[11] = {0.001028f, 0.007599f, 0.036001f, 0.109361f, 0.213006f, 0.266012f,
                                    0.213006f, 0.109361f, 0.036001f, 0.007599f, 0.001028f};
 
-/* NOLINTBEGIN(clang-analyzer-unix.Malloc)
+/* NOLINTBEGIN(clang-analyzer-unix.Malloc) — ADR-0138 / ADR-0141 / ADR-0278
  * The malloc-failure mu_assert path returns the error string without
  * freeing the partial allocation. The analyzer can't see that
  * mu_assert-on-fail terminates the test process via the runner's
  * top-level return — the leak is bounded to that exit path. Same
- * pattern as test_iqa_convolve.c (file-level NOLINT for the same
+ * pattern as test_iqa_convolve.c (file-level suppression for the same
  * reason). */
 static char *test_iqa_ssim_identical_frames(void)
 {
@@ -505,3 +511,5 @@ char *run_tests(void)
         return msg;
     return run_ssim_tests();
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

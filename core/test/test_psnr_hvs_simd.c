@@ -53,6 +53,13 @@
 
 #if ARCH_X86
 #include "feature/x86/psnr_hvs_avx2.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #endif
 
 /* -----------------------------------------------------------------------
@@ -68,13 +75,21 @@ typedef int32_t od_coeff_ref;
 #define OD_UNBIASED_RSHIFT32_REF(a, b) (((int32_t)(((uint32_t)(a) >> (32 - (b))) + (a))) >> (b))
 #define OD_DCT_RSHIFT_REF(a, b) OD_UNBIASED_RSHIFT32_REF(a, b)
 
-// NOLINTNEXTLINE(readability-function-size) load-bearing upstream scalar copy.
+// NOLINTNEXTLINE(readability-function-size) — load-bearing upstream scalar copy (ADR-0138 / ADR-0141 / ADR-0278).
 static void ref_od_bin_fdct8_hvs(od_coeff_ref y[8], const od_coeff_ref *x, int xstride)
 {
     const ptrdiff_t xs = (ptrdiff_t)xstride;
-    int t0 = x[0 * xs], t4 = x[1 * xs], t2 = x[2 * xs], t6 = x[3 * xs];
-    int t7 = x[4 * xs], t3 = x[5 * xs], t5 = x[6 * xs], t1 = x[7 * xs];
-    int t1h, t4h, t6h;
+    int t0 = x[0 * xs];
+    int t4 = x[1 * xs];
+    int t2 = x[2 * xs];
+    int t6 = x[3 * xs];
+    int t7 = x[4 * xs];
+    int t3 = x[5 * xs];
+    int t5 = x[6 * xs];
+    int t1 = x[7 * xs];
+    int t1h;
+    int t4h;
+    int t6h;
     t1 = t0 - t1;
     t1h = OD_DCT_RSHIFT_REF(t1, 1);
     t0 -= t1h;
@@ -124,7 +139,7 @@ static void ref_od_bin_fdct8x8_hvs(od_coeff_ref *y, int ystride, const od_coeff_
     od_coeff_ref z[64];
     const ptrdiff_t ys = (ptrdiff_t)ystride;
     for (int i = 0; i < 8; i++) {
-        ref_od_bin_fdct8_hvs(z + 8 * i, x + i, xstride);
+        ref_od_bin_fdct8_hvs(z + (ptrdiff_t)8 * i, x + i, xstride);
     }
     for (int i = 0; i < 8; i++) {
         ref_od_bin_fdct8_hvs(y + ys * i, z + i, 8);
@@ -140,6 +155,12 @@ static void ref_od_bin_fdct8x8_hvs(od_coeff_ref *y, int ystride, const od_coeff_
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
+/* Kept as one function on purpose. This is a transliteration of the upstream
+ * scalar PSNR-HVS that the AVX2 kernel is checked against, so its structure
+ * IS the contract -- an attempt to split the per-block body out changed the
+ * accumulation and produced scalar=inf. ADR-0138 (the double-cast before the
+ * multiply is called out inline below) / ADR-0141 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 static double ref_calc_psnrhvs(const unsigned char *src, int systride, const unsigned char *dst,
                                int dystride, double par, int depth, int w, int h, int step,
                                float csf[8][8])
@@ -158,14 +179,18 @@ static double ref_calc_psnrhvs(const unsigned char *src, int systride, const uns
 
     for (int y = 0; y < h - 7; y += step) {
         for (int x = 0; x < w - 7; x += step) {
-            od_coeff_ref dct_s[64], dct_d[64];
+            od_coeff_ref dct_s[64];
+            od_coeff_ref dct_d[64];
             float s_means[4] = {0, 0, 0, 0};
             float d_means[4] = {0, 0, 0, 0};
             float s_vars[4] = {0, 0, 0, 0};
             float d_vars[4] = {0, 0, 0, 0};
-            float s_gmean = 0.0f, d_gmean = 0.0f;
-            float s_gvar = 0.0f, d_gvar = 0.0f;
-            float s_mask = 0.0f, d_mask = 0.0f;
+            float s_gmean = 0.0f;
+            float d_gmean = 0.0f;
+            float s_gvar = 0.0f;
+            float d_gvar = 0.0f;
+            float s_mask = 0.0f;
+            float d_mask = 0.0f;
 
             for (int i = 0; i < 8; i++) {
                 for (int j = 0; j < 8; j++) {
@@ -219,17 +244,21 @@ static double ref_calc_psnrhvs(const unsigned char *src, int systride, const uns
             ref_od_bin_fdct8x8_hvs(dct_s, 8, dct_s, 8);
             ref_od_bin_fdct8x8_hvs(dct_d, 8, dct_d, 8);
 
-            for (int i = 0; i < 8; i++)
-                for (int j = (i == 0); j < 8; j++)
+            for (int i = 0; i < 8; i++) {
+                for (int j = (i == 0); j < 8; j++) {
                     s_mask += (float)(dct_s[i * 8 + j] * dct_s[i * 8 + j]) * mask[i][j];
-            for (int i = 0; i < 8; i++)
-                for (int j = (i == 0); j < 8; j++)
+                }
+            }
+            for (int i = 0; i < 8; i++) {
+                for (int j = (i == 0); j < 8; j++) {
                     d_mask += (float)(dct_d[i * 8 + j] * dct_d[i * 8 + j]) * mask[i][j];
+                }
+            }
 
             /* ADR-0138 key expression: (double) cast before multiply → double sqrt. */
             // NOLINTNEXTLINE(performance-type-promotion-in-math-fn)
             s_mask = (float)(sqrt((double)s_mask * s_gvar) / 32.0);
-            // NOLINTNEXTLINE(performance-type-promotion-in-math-fn)
+            // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) — ADR-0138
             d_mask = (float)(sqrt((double)d_mask * d_gvar) / 32.0);
             if (d_mask > s_mask)
                 s_mask = d_mask;
@@ -371,3 +400,5 @@ char *run_tests(void)
 #endif
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

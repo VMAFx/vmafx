@@ -59,6 +59,13 @@
 #if HAVE_SVE2
 #include "feature/arm64/moment_sve2.h"
 #include "cpu.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #endif
 #endif
 
@@ -380,7 +387,7 @@ static char *test_sve2_tiny(void)
 
 /* Per-arch registration extracted into helpers so run_tests() itself stays
  * under the readability-function-size threshold (matches the sibling
- * test_*_simd.c convention; no NOLINT). */
+ * test_*_simd.c convention; no suppression needed). */
 #if ARCH_X86
 #if HAVE_AVX512
 static char *run_tests_avx512(void)
@@ -445,3 +452,5 @@ char *run_tests(void)
     return NULL;
 #endif
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

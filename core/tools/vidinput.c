@@ -26,14 +26,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 #include <stdlib.h>
 #include <string.h>
 
-extern video_input_vtbl Y4M_INPUT_VTBL;
-extern video_input_vtbl YUV_INPUT_VTBL;
-
 int raw_input_open(video_input *_vid, FILE *_fin, unsigned width, unsigned height, int pix_fmt,
                    unsigned bitdepth)
 {
-    void *ctx;
-    if ((ctx = YUV_INPUT_VTBL.open_raw(_fin, width, height, pix_fmt, bitdepth)) != NULL) {
+    void *ctx = YUV_INPUT_VTBL.open_raw(_fin, width, height, pix_fmt, bitdepth);
+    if (ctx != NULL) {
         _vid->vtbl = &YUV_INPUT_VTBL;
         _vid->ctx = ctx;
         _vid->fin = _fin;
@@ -46,8 +43,8 @@ int raw_input_open(video_input *_vid, FILE *_fin, unsigned width, unsigned heigh
 
 int video_input_open(video_input *_vid, FILE *_fin)
 {
-    void *ctx;
-    if ((ctx = Y4M_INPUT_VTBL.open(_fin)) != NULL) {
+    void *ctx = Y4M_INPUT_VTBL.open(_fin);
+    if (ctx != NULL) {
         _vid->vtbl = &Y4M_INPUT_VTBL;
         _vid->ctx = ctx;
         _vid->fin = _fin;

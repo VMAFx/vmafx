@@ -46,7 +46,6 @@
  */
 
 #include <cassert>
-#include <climits>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -83,8 +82,15 @@ extern "C" {
  * Returns false when either extractor has a NULL provided_features pointer
  * (extractors that do not declare what they emit are not considered twins).
  */
-[[nodiscard]] static bool provided_features_overlap(const VmafFeatureExtractor *a,
-                                                    const VmafFeatureExtractor *b) noexcept
+namespace
+{
+
+/* Reserve the same initial capacity the C implementation used (8). File scope
+ * so the growth path can fall back to it; see grow_capacity(). */
+constexpr unsigned kInitialCapacity = 8u;
+
+[[nodiscard]] bool provided_features_overlap(const VmafFeatureExtractor *a,
+                                             const VmafFeatureExtractor *b) noexcept
 {
     if (!a->provided_features || !b->provided_features)
         return false;
@@ -98,6 +104,8 @@ extern "C" {
     return false;
 }
 
+} // namespace
+
 int feature_extractor_vector_init(RegisteredFeatureExtractors *rfe)
 {
     if (!rfe)
@@ -108,8 +116,6 @@ int feature_extractor_vector_init(RegisteredFeatureExtractors *rfe)
      * is identical.  The vector manages the underlying storage; we
      * write back the raw pointer and counts so the C-visible layout
      * stays coherent after every mutating call. */
-    static constexpr unsigned kInitialCapacity = 8u;
-
     /* The original try/catch + dead vector were removed: the vector was
      * constructed and immediately discarded without any observable effect.
      * malloc below is the actual allocating path (adversarial review
@@ -118,23 +124,59 @@ int feature_extractor_vector_init(RegisteredFeatureExtractors *rfe)
     rfe->capacity = kInitialCapacity;
     const size_t sz = sizeof(*(rfe->fex_ctx)) * rfe->capacity;
     rfe->fex_ctx = static_cast<VmafFeatureExtractorContext **>(
-        malloc(sz)); // NOLINT(cppcoreguidelines-no-malloc) — C ABI struct
+        malloc(sz)); // NOLINT(cppcoreguidelines-no-malloc) — C ABI struct (ADR-0141 / ADR-0278)
     if (!rfe->fex_ctx)
         return -ENOMEM;
     memset(static_cast<void *>(rfe->fex_ctx), 0, sz);
     return 0;
 }
 
-int feature_extractor_vector_append(RegisteredFeatureExtractors *rfe,
-                                    VmafFeatureExtractorContext *fex_ctx, uint64_t flags)
+/* Capacity-doubling growth, preserved from the original C implementation so
+ * that any test relying on the realloc pattern or the resulting capacity values
+ * stays correct. Split out of feature_extractor_vector_append to keep that
+ * function inside the readability-function-size budget (ADR-1142). */
+namespace
 {
-    if (!rfe)
-        return -EINVAL;
-    if (!fex_ctx)
-        return -EINVAL;
 
-    (void)flags;
+[[nodiscard]] int grow_capacity(RegisteredFeatureExtractors *rfe) noexcept
+{
+    /* Guard the doubling against size_t overflow (CERT INT30-C; adversarial
+     * review 2026-05-28 finding #6). This is a runtime check on purpose: on
+     * LP64 an `unsigned` capacity can never reach SIZE_MAX/2/sizeof(ptr), but
+     * on a 32-bit target it can -- SIZE_MAX/2/4 is about 536M against a
+     * UINT_MAX of about 4.29e9 -- so the bound is genuinely reachable there.
+     * It replaces an assert(), which compiled out entirely in release builds
+     * and so guarded nothing where it mattered. */
+    if (rfe->capacity > (SIZE_MAX / 2u) / sizeof(*rfe->fex_ctx))
+        return -ENOMEM;
 
+    /* A zero capacity would make the doubling a no-op and hand realloc a size
+     * of 0, whose behaviour is implementation-defined. That only happens if a
+     * caller skipped feature_extractor_vector_init(), which the initial
+     * capacity below then repairs rather than propagating. */
+    const size_t new_capacity =
+        rfe->capacity ? static_cast<size_t>(rfe->capacity) * 2u : kInitialCapacity;
+
+    auto *fex_ctx_new = static_cast<VmafFeatureExtractorContext **>(
+        realloc(static_cast<void *>(rfe->fex_ctx), // NOLINT(cppcoreguidelines-no-malloc) — ADR-0141
+                sizeof(*(rfe->fex_ctx)) * new_capacity));
+    if (!fex_ctx_new)
+        return -ENOMEM;
+    rfe->fex_ctx = fex_ctx_new;
+    rfe->capacity = static_cast<unsigned>(new_capacity);
+    for (unsigned i = rfe->cnt; i < rfe->capacity; i++)
+        rfe->fex_ctx[i] = nullptr;
+    return 0;
+}
+
+/* Returns true when `fex_ctx` duplicates an already-registered extractor, in
+ * which case it has been destroyed and the caller must not register it.
+ * `*out_rc` carries the destroy result. Split out of
+ * feature_extractor_vector_append for the readability-function-size budget
+ * (ADR-1142); the matching rules and their order are unchanged. */
+[[nodiscard]] bool duplicate_registration(RegisteredFeatureExtractors *rfe,
+                                          VmafFeatureExtractorContext *fex_ctx, int *out_rc)
+{
     for (unsigned i = 0; i < rfe->cnt; i++) {
         /* Deduplicate by provided-feature names rather than extractor name.
          * CPU/GPU twins (e.g. "adm" vs "adm_cuda") have different extractor
@@ -152,7 +194,8 @@ int feature_extractor_vector_append(RegisteredFeatureExtractors *rfe,
                      "feature extractor \"%s\" skipped: provided features already covered "
                      "by registered extractor \"%s\"\n",
                      fex_ctx->fex->name, rfe->fex_ctx[i]->fex->name);
-            return vmaf_feature_extractor_context_destroy(fex_ctx);
+            *out_rc = vmaf_feature_extractor_context_destroy(fex_ctx);
+            return true;
         }
 
         /* Legacy path: both extractors omit provided_features — fall back to
@@ -167,30 +210,37 @@ int feature_extractor_vector_append(RegisteredFeatureExtractors *rfe,
             int ret = 1;
             if (feature_a && feature_b)
                 ret = strcmp(feature_a, feature_b);
-            free(feature_a); // NOLINT(cppcoreguidelines-no-malloc) — C ABI string
-            free(feature_b); // NOLINT(cppcoreguidelines-no-malloc) — C ABI string
+            free(feature_a); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0141 C ABI string
+            free(feature_b); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0141 C ABI string
             if (ret == 0)
-                return vmaf_feature_extractor_context_destroy(fex_ctx);
+                *out_rc = vmaf_feature_extractor_context_destroy(fex_ctx);
+            return true;
         }
     }
 
+    return false;
+}
+
+} // namespace
+
+int feature_extractor_vector_append(RegisteredFeatureExtractors *rfe,
+                                    VmafFeatureExtractorContext *fex_ctx, uint64_t flags)
+{
+    if (!rfe)
+        return -EINVAL;
+    if (!fex_ctx)
+        return -EINVAL;
+
+    (void)flags;
+
+    int dup_rc = 0;
+    if (duplicate_registration(rfe, fex_ctx, &dup_rc))
+        return dup_rc;
+
     if (rfe->cnt >= rfe->capacity) {
-        /* Capacity-doubling growth strategy — preserved exactly from the
-         * original C implementation so that any test that relies on the
-         * realloc pattern or resulting capacity values stays correct. */
-        /* Guard against size_t overflow in capacity doubling
-         * (CERT INT30-C; adversarial review 2026-05-28 finding #6). */
-        assert(rfe->capacity <= (SIZE_MAX / 2u) / sizeof(*rfe->fex_ctx));
-        const size_t new_capacity = static_cast<size_t>(rfe->capacity) * 2u;
-        auto *fex_ctx_new = static_cast<VmafFeatureExtractorContext **>(realloc(
-            static_cast<void *>(rfe->fex_ctx), // NOLINT(cppcoreguidelines-no-malloc) — C ABI grow
-            sizeof(*(rfe->fex_ctx)) * new_capacity));
-        if (!fex_ctx_new)
-            return -ENOMEM;
-        rfe->fex_ctx = fex_ctx_new;
-        rfe->capacity = static_cast<unsigned>(new_capacity);
-        for (unsigned i = rfe->cnt; i < rfe->capacity; i++)
-            rfe->fex_ctx[i] = nullptr;
+        const int grow_err = grow_capacity(rfe);
+        if (grow_err != 0)
+            return grow_err;
     }
 
     const unsigned cnt = fex_ctx->opts_dict ? fex_ctx->opts_dict->cnt : 0u;
@@ -216,5 +266,5 @@ void feature_extractor_vector_destroy(RegisteredFeatureExtractors *rfe)
         (void)vmaf_feature_extractor_context_close(rfe->fex_ctx[i]);
         (void)vmaf_feature_extractor_context_destroy(rfe->fex_ctx[i]);
     }
-    free(static_cast<void *>(rfe->fex_ctx)); // NOLINT(cppcoreguidelines-no-malloc) — C ABI struct
+    free(static_cast<void *>(rfe->fex_ctx)); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0141
 }

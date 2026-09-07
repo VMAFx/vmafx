@@ -78,7 +78,10 @@ extern "C" {
 /* When armed, the next operator new call throws std::bad_alloc.  A plain bool
  * suffices (single-threaded test); std::atomic keeps it tidy and avoids any
  * tearing concern under sanitizers. */
-static std::atomic<bool> g_fail_next_new{false};
+namespace
+{
+std::atomic<bool> g_fail_next_new{false};
+} // namespace
 
 void *operator new(std::size_t n)
 {
@@ -104,17 +107,19 @@ void operator delete(void *p, std::size_t) noexcept
 #endif /* !VMAF_OOM_TEST_SANITIZED */
 
 /* R2-9: a transient OOM on the value snapshot must not poison the slot. */
-static mu_message_t test_env_oom_does_not_poison_slot(void)
+namespace
+{
+mu_message_t test_env_oom_does_not_poison_slot()
 {
 #ifdef VMAF_OOM_TEST_SANITIZED
     /* Skip under sanitizers: the global-new override that arms the fault is
      * compiled out (it duplicates the sanitizer allocator symbols), so the
      * injection point does not exist here. Returning NULL signals a pass. */
-    return NULL;
+    return nullptr;
 #else
     const char *const var = "VMAFX_TEST_DISPATCH_OOM_R2_9";
     const char *const want = "vif:graph,adm:direct";
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup (ADR-0141 / ADR-0278). */
     (void)setenv(var, want, 1);
 
     /* Arm the allocation-failure toggle, then attempt the first snapshot.
@@ -154,14 +159,15 @@ static mu_message_t test_env_oom_does_not_poison_slot(void)
     static char msg_not_cached[] =
         "set var must not be permanently cached as unset after a transient OOM";
     static char msg_value_match[] = "recovered snapshot value matches the env";
-    mu_assert(msg_not_cached, recovered != NULL);
+    mu_assert(msg_not_cached, recovered != nullptr);
     mu_assert(msg_value_match, strcmp(recovered, want) == 0);
-    return NULL;
+    return nullptr;
 #endif /* VMAF_OOM_TEST_SANITIZED */
 }
+} // namespace
 
 extern "C" mu_message_t run_tests(void)
 {
     mu_run_test(test_env_oom_does_not_poison_slot);
-    return NULL;
+    return nullptr;
 }

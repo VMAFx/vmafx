@@ -19,6 +19,12 @@
 #include "test.h"
 #include "feature/barten_csf_tools.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #define EPS 0.00001
 
 /* Test support function. `static` (vs. upstream's external linkage) is a
@@ -37,7 +43,7 @@ static int almost_equal(double a, double b)
  * trivial diff-and-merge — splitting the list into helpers would break
  * the upstream-parity invariant that makes the file rebase-safe.
  * See docs/adr/0141-touched-file-cleanup-rule.md. */
-// NOLINTNEXTLINE(readability-function-size)
+// NOLINTNEXTLINE(readability-function-size) — ADR-0141 §2 upstream-parity invariant; ADR-0278
 static char *test_barten_csf()
 {
     mu_assert("barten rod/cone sensitivity mismatch",
@@ -132,3 +138,5 @@ char *run_tests()
     mu_run_test(test_barten_csf);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

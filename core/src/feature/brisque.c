@@ -69,6 +69,12 @@
 #include "mem.h"
 #include "svm.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #define BRISQUE_FEATPERSCALE 18
 #define BRISQUE_SCALENUM 2
 #define BRISQUE_FEAT_DIM (BRISQUE_FEATPERSCALE * BRISQUE_SCALENUM) /* 36 */
@@ -547,7 +553,7 @@ static const VmafOption options[] = {
 
 /* External linkage is required — the extractor registry iterates over
  * `vmaf_fex_*` externs in core/src/feature/feature_extractor.cpp. */
-// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables)
+// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables) — ADR-0141 / ADR-0278: extractor registry external linkage
 VmafFeatureExtractor vmaf_fex_brisque = {
     .name = "brisque",
     .init = init,
@@ -557,3 +563,5 @@ VmafFeatureExtractor vmaf_fex_brisque = {
     .priv_size = sizeof(BrisqueState),
     .provided_features = provided_features,
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

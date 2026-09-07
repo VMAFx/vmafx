@@ -40,7 +40,7 @@
  * test_y4m_411_oob gating.
  */
 
-/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — POSIX feature-test macro */
+/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — POSIX feature-test macro (ADR-0141 / ADR-0278) */
 #define _POSIX_C_SOURCE 200809L
 
 #include <stdio.h>
@@ -50,6 +50,12 @@
 
 #include "test.h"
 #include "vidinput.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 /* "YUV4MPEG2 W65535 H65535 F30:1 Ip C444p12\n" + "FRAME\n"
  * Parser accepts (no upper-bound check on W/H); dst_buf_sz computes to
@@ -137,3 +143,5 @@ int main(void)
     }
     return msg != NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
