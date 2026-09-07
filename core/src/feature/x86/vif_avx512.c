@@ -29,8 +29,8 @@
 /* ADR-1138: retain NULL for Windows C and upstream C compatibility. */
 // NOLINTBEGIN(modernize-use-nullptr)
 
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
-#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#define MIN(x, y) ((((x)) < ((y))) ? ((x)) : ((y)))
+#define MAX(x, y) ((((x)) > ((y))) ? ((x)) : ((y)))
 
 /*
  * Portable noinline attribute.
@@ -159,6 +159,11 @@ static FORCE_INLINE __m512i vif_log_numerator512(__m512i msigma1, __m512i msigma
 }
 
 // compute VIF on a 16 pixel block from xx (ref variance), yy (clamped dis variance), xy (ref dis covariance)
+/* A fully unrolled AVX-512 kernel. Splitting it changes register allocation
+ * and scheduling, which is what the bit-exactness contracts in ADR-0138 /
+ * ADR-0139 pin down; the size is the unrolling, not accidental
+ * complexity. ADR-0141 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 static inline void vif_statistic_avx512(Residuals512 *out, __m512i xx, __m512i xy, __m512i yy,
                                         const uint16_t *log2_table, double vif_enhn_gain_limit)
 {
@@ -846,7 +851,11 @@ typedef struct VifHorizCoeffs8 {
  * The accumulation order (s0/s1 via f0, s2/s3 via f1, …, g0/g1 via f0, …)
  * is identical to the original monolithic loop (ADR-0138 / ADR-0139).
  */
-/* NOLINTNEXTLINE(readability-function-size): ADR-0503 noinline helper; size is load-bearing for register-pressure isolation */
+/* A fully unrolled AVX-512 kernel. Splitting it changes register allocation
+ * and scheduling, which is what the bit-exactness contracts in ADR-0138 /
+ * ADR-0139 pin down; the size is the unrolling, not accidental
+ * complexity. ADR-0141 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_vert_j(const uint8_t *ref, const uint8_t *dis,
                                                             ptrdiff_t stride_bytes, int ii, int j,
                                                             const VifVertCoeffs8 *c,
@@ -972,7 +981,11 @@ static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_vert_j(const uint8_t *ref, 
  * The accumulation order (refconvol via fcoeff, refconvol1 via fcoeff1, …)
  * is identical to the original monolithic loop (ADR-0138 / ADR-0139).
  */
-/* NOLINTNEXTLINE(readability-function-size): ADR-0503 noinline helper; size is load-bearing for register-pressure isolation */
+/* A fully unrolled AVX-512 kernel. Splitting it changes register allocation
+ * and scheduling, which is what the bit-exactness contracts in ADR-0138 /
+ * ADR-0139 pin down; the size is the unrolling, not accidental
+ * complexity. ADR-0141 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_horiz_j(const uint32_t *ref_convol,
                                                              const uint32_t *dis_convol,
                                                              int jj_check, const VifHorizCoeffs8 *c,
