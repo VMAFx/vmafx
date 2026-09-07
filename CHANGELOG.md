@@ -7238,8 +7238,10 @@ annotations required to leave the touched files lint-clean.
   translation unit (MSVC C2065, [ADR-1138](docs/adr/1138-c-translation-units-keep-null.md))
   and a `static const double` initialising a `static` aggregate (MSVC C2099 —
   a construct no locally available compiler diagnoses at any warning level,
-  not even under `-std=c23 -pedantic-errors -Weverything`). Each of the five
-  now fails locally in seconds. `--list` shows which CI context each stage
+  not even under `-std=c23 -pedantic-errors -Weverything`), and the next PR's
+  new test used `M_PI`, which glibc exposes only because meson passes
+  `-D_GNU_SOURCE` and which the required `Windows MinGW64` lane therefore could
+  not compile. Each of the six now fails locally in seconds. `--list` shows which CI context each stage
   mirrors and `--stage NAME` re-runs one. See
   [ADR-1234](docs/adr/1234-local-preflight-gate.md).
 

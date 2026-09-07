@@ -239,6 +239,40 @@ if want msvcism; then
     msvc_fail=1
   fi
 
+  # `M_PI` and friends are POSIX/X-Open, not ISO C. glibc exposes them only
+  # under __USE_MISC/__USE_XOPEN, which `-std=c23` disables by defining
+  # __STRICT_ANSI__; the Linux lanes see them anyway because meson passes
+  # -D_GNU_SOURCE. MinGW64 does not honour _GNU_SOURCE, so a file that just
+  # includes <math.h> and uses M_PI compiles everywhere except the required
+  # `Windows MinGW64` lane. The tree's convention is _USE_MATH_DEFINES before
+  # <math.h> plus an `#ifndef M_PI` fallback (adm_csf_tools.h, adm_tools.h).
+  m_macros='\bM_(PI|E|SQRT2|LN2|LN10|PI_2|PI_4|1_PI|2_PI|SQRT1_2|LOG2E|LOG10E)\b'
+  # A file counts as guarded when it carries the two-step itself OR includes an
+  # in-tree header that does -- integer_adm.c, adm_avx2.c and friends get M_PI
+  # from integer_adm.h / barten_csf_tools.h and are correct as written.
+  c_math=$(changed_sources | while read -r f; do
+    grep -qE "$m_macros" "$f" 2>/dev/null || continue
+    grep -qE '_USE_MATH_DEFINES|#ifndef M_PI' "$f" 2>/dev/null && continue
+    guarded_by_include=0
+    while read -r h; do
+      [ -n "$h" ] || continue
+      if find core -name "$(basename "$h")" -exec \
+        grep -lE '_USE_MATH_DEFINES|#ifndef M_PI' {} + 2>/dev/null | grep -q .; then
+        guarded_by_include=1
+        break
+      fi
+    done <<EOF_INC
+$(grep -oE '#include "[^"]+"' "$f" 2>/dev/null | sed 's|#include "||; s|"||')
+EOF_INC
+    [ "$guarded_by_include" -eq 1 ] && continue
+    grep -nE "$m_macros" "$f" | head -2 | sed "s|^|$f:|"
+  done | head -5)
+  if [ -n "$c_math" ]; then
+    printf '     %s\n' 'M_* math macro without the _USE_MATH_DEFINES / #ifndef guard — MinGW64 C2065'
+    printf '%s\n' "$c_math" | sed 's/^/       /'
+    msvc_fail=1
+  fi
+
   # A `static const double x = 1.0;` is a const-qualified OBJECT in C, not a
   # constant expression, so it may not initialise a `static` aggregate (MSVC
   # C2099, then cascading C2440s as the remaining initialisers shift into the
