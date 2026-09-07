@@ -1051,3 +1051,4 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1247](1247-scorecard-exact-head-gates.md) | Bind Scorecard gates to their measured source and scope | Accepted | ci, security, supply-chain |
 | [ADR-1219](1219-gpu-cambi-tvi-shared-bisection.md) | The HIP and Metal CAMBI twins use the shared TVI bisection and the CPU's border rules | Proposed | hip, metal, correctness, feature-extractor, testing |
 | [ADR-1220](1220-gpu-float-adm-options-reach-kernels.md) | The GPU float-ADM kernels honour `adm_p_norm`, `adm_bypass_cm` and `adm_skip_scale0` | Proposed | cuda, sycl, hip, metal, correctness, feature-extractor, testing |
+| [ADR-1221](1221-gpu-ms-ssim-db-ceiling.md) | `clip_db` is a ceiling on the MS-SSIM dB output, not a clamp on the linear score | Proposed | cuda, sycl, hip, correctness, feature-extractor, testing |
