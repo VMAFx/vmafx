@@ -246,7 +246,7 @@ serviceAccount:
 # Pod security
 # ---------------------------------------------------------------------------
 # UID/GID 65532 matches the `nonroot` user baked into
-# gcr.io/distroless/cc-debian12, which is the runtime base for every
+# gcr.io/distroless/cc-debian13, which is the runtime base for every
 # production VMAFX image (see ADR-0878 / PR #367).  Together with the
 # container-level securityContext below, this satisfies the
 # Pod Security Admission "restricted" profile.
