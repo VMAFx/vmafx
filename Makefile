@@ -117,7 +117,7 @@ cythonize-deps: $(VENV_PIP)
 # ============================================================================
 
 .PHONY: lint lint-c lint-py lint-sh lint-md lint-go tidy-ratchet tidy-ratchet-write \
-	base-images-sync \
+	base-images-sync python-deps-sync \
 	format format-check sec sbom \
         test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
         coverage coverage-html coverage-check assertion-density pr-check
@@ -198,7 +198,13 @@ base-images-sync:
 	scripts/ci/check-base-image-single-source.sh --write
 	scripts/ci/check-base-image-single-source.sh
 
+# Rewrite python/requirements.txt from python/pyproject.toml [project].dependencies.
+python-deps-sync:
+	scripts/ci/check-python-requirements-single-source.sh --write
+	scripts/ci/check-python-requirements-single-source.sh
+
 lint-py:
+	@scripts/ci/check-python-requirements-single-source.sh
 	$(call require-tool,ruff,pip install ruff==0.15.17)
 	ruff check python/ ai/ scripts/
 	$(call require-tool,black,pip install black==26.5.1)

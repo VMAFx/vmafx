@@ -46,7 +46,8 @@
         { "type": "generic", "path": "dev-llm/src/vmaf_dev_llm/__init__.py" },
         { "type": "generic", "path": "mcp-server/vmaf-mcp/pyproject.toml" },
         { "type": "generic", "path": "mcp-server/vmaf-mcp/src/vmaf_mcp/__init__.py" },
-        { "type": "generic", "path": "deploy/helm/vmafx/Chart.yaml" }
+        { "type": "generic", "path": "deploy/helm/vmafx/Chart.yaml" },
+        { "type": "generic", "path": "build-config.env" }
       ]
     }
   },
