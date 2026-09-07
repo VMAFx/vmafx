@@ -15,12 +15,18 @@ import sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
+# Job names carry the SDK generation ("build-rocm7" -> "build-rocm10",
+# "build-oneapi2025" -> "build-oneapi2026"), so they change every time a vendor
+# SDK is bumped. Matching the exact name made this test fail on the rename
+# rather than on anything it is actually checking. Match the stable prefix and
+# resolve the real job name from the workflow instead; the assertion that
+# matters is that exactly one such build job exists and is source-bound.
 workflows = {
     ".github/workflows/docker-publish-production.yml": (
         "build-cpu",
-        "build-cuda13",
-        "build-rocm7",
-        "build-oneapi2025",
+        "build-cuda",
+        "build-rocm",
+        "build-oneapi",
         "build-server",
     ),
     ".github/workflows/docker-publish-operator-node.yml": (
@@ -40,14 +46,20 @@ validation_snippets = (
 )
 
 
-def job_block(jobs_text: str, job: str) -> str:
-    match = re.search(
-        rf"(?ms)^  {re.escape(job)}:\n(.*?)(?=^  [a-z0-9-]+:\n|\Z)",
-        jobs_text,
+def job_block(jobs_text: str, job_prefix: str) -> str:
+    """Return the body of the single job whose name starts with job_prefix."""
+    matches = list(
+        re.finditer(
+            rf"(?ms)^  ({re.escape(job_prefix)}[a-z0-9-]*):\n(.*?)(?=^  [a-z0-9-]+:\n|\Z)",
+            jobs_text,
+        )
     )
-    if match is None:
-        raise AssertionError(f"missing job {job}")
-    return match.group(1)
+    if not matches:
+        raise AssertionError(f"missing job matching {job_prefix}*")
+    if len(matches) > 1:
+        found = ", ".join(m.group(1) for m in matches)
+        raise AssertionError(f"{job_prefix}* is ambiguous: matched {found}")
+    return matches[0].group(2)
 
 
 for relative_path, build_jobs in workflows.items():
