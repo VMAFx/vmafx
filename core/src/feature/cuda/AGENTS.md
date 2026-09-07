@@ -688,6 +688,28 @@ kernel variants at runtime. The current policy table is in ADR-0753.
 | `filter1d` | `filter1d_8_horizontal_kernel_2_17_9` | `filter1d_8_horizontal_kernel_2_17_9_no_bounds` | MEDIUM + LARGE |
 | `ssim_vert_combine` | `calculate_ssim_vert_combine` | `calculate_ssim_vert_combine_no_bounds` | MEDIUM + LARGE |
 
+- **`float_vif` options must be kernel ARGUMENTS, never kernel-local
+  constants** (ADR-1217) — `vif_sigma_nsq` and `vif_enhn_gain_limit`
+  are `VMAF_OPT_FLAG_FEATURE_PARAM` options on every float-VIF twin.
+  Until ADR-1217 all three GPU compute kernels declared
+  `const float vif_sigma_nsq = 2.0f; const float vif_egl = 100.0f;`
+  locally, so a non-default value was accepted, folded into the derived
+  feature name, and then discarded — including the
+  `vif_enhn_gain_limit = 1.0` that `model/vmaf_float_v0.6.1neg.json`
+  sets on all four VIF scales, which published non-NEG scores under NEG
+  keys. Pass both plus the host-derived `sigma_max_inv` in; a missing
+  kernel argument is a compile error, a shadowing local is not.
+  `sigma_max_inv` is derived on the host exactly as
+  `vif_tools.c::vif_statistic_s` derives it —
+  `powf(nsq, 2.0f)` in `float`, divided by `255.0 * 255.0` in `double`,
+  narrowed to `float` — so the default path stays bit-identical; do not
+  recompute it in device code. Twins in scope: `float_vif_cuda.c` (+
+  `float_vif/float_vif_score.cu`, TWO `func_compute` launch sites),
+  `../sycl/float_vif_sycl.cpp`, `../hip/float_vif_hip.c` (+
+  `../hip/float_vif/float_vif_score.hip`). Guarded by the
+  `test_float_vif_options_reach_kernel` variant in each backend's
+  float-VIF parity test.
+
 - **`integer_vif_cuda.c::filter1d_8` picks `filter1d_8_horizontal_kernel_2_17_9_no_bounds`
   at `WS_SMALL` and the bounded variant at `WS_MEDIUM`/`WS_LARGE`** (ADR-0753 extended
   scope). `VifStateCuda` carries `func_filter1d_8_horizontal_kernel_2_17_9_no_bounds`.

@@ -126,6 +126,27 @@ The `core/test/test_integer_vif_cpu_cuda_parity.c` smoke test (suite
 agreement within `1e-5` on the Netflix `src01_hrc00_576x324` reference pair
 — making the luma-only parity claim a regression gate.
 
+### `vif_sigma_nsq` and `vif_enhn_gain_limit` on the GPU backends
+
+Both options are honoured on every backend. Up to and including v3.2.1 the
+CUDA, SYCL and HIP `float_vif` compute kernels hardcoded the two defaults
+(`vif_sigma_nsq = 2.0`, `vif_enhn_gain_limit = 100.0`) as local constants: a
+non-default value was accepted, range-checked, folded into the derived feature
+name, and then **silently ignored**. Because
+[`model/vmaf_float_v0.6.1neg.json`](https://github.com/VMAFx/vmafx/blob/master/model/vmaf_float_v0.6.1neg.json)
+sets `vif_enhn_gain_limit = 1.0` on all four VIF scales — that setting *is* what
+makes it the NEG model — running it on a GPU backend produced non-NEG scores
+published under the NEG feature keys. If you scored with the NEG model on CUDA,
+SYCL or HIP before this fix, re-score: those numbers were the ordinary
+enhancement-gain-enabled VIF.
+
+Fixed per [ADR-1217](../adr/1217-gpu-float-vif-options-reach-kernel.md). The
+per-backend `test_{cuda,sycl,hip}_float_vif_parity` tests now each carry a
+variant that pins the NEG option set and asserts parity on the derived
+`vif_scale0_egl_1_snsq_1.5` key, so the default-options run can no longer hide a
+kernel that ignores its options. `float_vif_hip` had no parity test before this
+change; it has one now.
+
 ## See also
 
 - [Features](features.md) - full feature extractor reference

@@ -39,6 +39,7 @@
  */
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -67,6 +68,20 @@ static const char *const VIF_SCALE_FEATURES[] = {
     "VMAF_feature_vif_scale3_score",
 };
 #define NUM_VIF_SCALES 4u
+
+/* ADR-1217 — the values model/vmaf_float_v0.6.1neg.json actually ships
+ * (`vif_enhn_gain_limit = 1.0` on all four VIF scales), plus a non-default
+ * neural-noise variance.  Both are VMAF_OPT_FLAG_FEATURE_PARAM, so the score
+ * is filed under a derived key: alias base + `_<alias>_<%g value>` per option,
+ * sorted by option NAME (`vif_enhn_gain_limit` before `vif_sigma_nsq`). */
+#define NEG_EGL "1.0"
+#define NEG_SNSQ "1.5"
+static const char *const VIF_SCALE_FEATURES_NEG[] = {
+    "vif_scale0_egl_1_snsq_1.5",
+    "vif_scale1_egl_1_snsq_1.5",
+    "vif_scale2_egl_1_snsq_1.5",
+    "vif_scale3_egl_1_snsq_1.5",
+};
 
 static int fill_ref(VmafPicture *pic, unsigned frame_idx)
 {
@@ -119,7 +134,7 @@ static int fill_dist(VmafPicture *pic, unsigned frame_idx)
     return 0;
 }
 
-static char *run_cpu(double *out_scores)
+static char *run_cpu(bool neg_opts, const char *const *keys, double *out_scores)
 {
     int err = 0;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
@@ -127,7 +142,17 @@ static char *run_cpu(double *out_scores)
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "float_vif", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    if (neg_opts) {
+        err = vmaf_feature_dictionary_set(&opts, "vif_enhn_gain_limit", NEG_EGL);
+        mu_assert("CPU: dictionary_set(vif_enhn_gain_limit) failed", !err);
+        err = vmaf_feature_dictionary_set(&opts, "vif_sigma_nsq", NEG_SNSQ);
+        mu_assert("CPU: dictionary_set(vif_sigma_nsq) failed", !err);
+    }
+
+    err = vmaf_use_feature(vmaf, "float_vif", opts);
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CPU: vmaf_use_feature(float_vif) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
@@ -143,7 +168,7 @@ static char *run_cpu(double *out_scores)
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
     for (unsigned s = 0; s < NUM_VIF_SCALES; s++) {
-        err = vmaf_feature_score_at_index(vmaf, VIF_SCALE_FEATURES[s], &out_scores[s], 1u);
+        err = vmaf_feature_score_at_index(vmaf, keys[s], &out_scores[s], 1u);
         mu_assert("CPU: vmaf_feature_score_at_index(vif_scale[i], idx=1) failed", !err);
     }
 
@@ -152,7 +177,7 @@ static char *run_cpu(double *out_scores)
     return NULL;
 }
 
-static char *run_cuda(double *out_scores, int *skipped)
+static char *run_cuda(bool neg_opts, const char *const *keys, double *out_scores, int *skipped)
 {
     *skipped = 0;
     for (unsigned s = 0; s < NUM_VIF_SCALES; s++)
@@ -176,7 +201,17 @@ static char *run_cuda(double *out_scores, int *skipped)
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
 
-    err = vmaf_use_feature(vmaf, "float_vif_cuda", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    if (neg_opts) {
+        err = vmaf_feature_dictionary_set(&opts, "vif_enhn_gain_limit", NEG_EGL);
+        mu_assert("CUDA: dictionary_set(vif_enhn_gain_limit) failed", !err);
+        err = vmaf_feature_dictionary_set(&opts, "vif_sigma_nsq", NEG_SNSQ);
+        mu_assert("CUDA: dictionary_set(vif_sigma_nsq) failed", !err);
+    }
+
+    err = vmaf_use_feature(vmaf, "float_vif_cuda", opts);
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CUDA: vmaf_use_feature(float_vif_cuda) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
@@ -192,7 +227,7 @@ static char *run_cuda(double *out_scores, int *skipped)
     mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
 
     for (unsigned s = 0; s < NUM_VIF_SCALES; s++) {
-        err = vmaf_feature_score_at_index(vmaf, VIF_SCALE_FEATURES[s], &out_scores[s], 1u);
+        err = vmaf_feature_score_at_index(vmaf, keys[s], &out_scores[s], 1u);
         mu_assert("CUDA: vmaf_feature_score_at_index(vif_scale[i], idx=1) failed", !err);
     }
 
@@ -209,10 +244,10 @@ static char *test_float_vif_cpu_cuda_parity(void)
     double cuda_scores[NUM_VIF_SCALES] = {0};
     int skipped = 0;
 
-    char *msg = run_cpu(cpu_scores);
+    char *msg = run_cpu(false, VIF_SCALE_FEATURES, cpu_scores);
     if (msg)
         return msg;
-    msg = run_cuda(cuda_scores, &skipped);
+    msg = run_cuda(false, VIF_SCALE_FEATURES, cuda_scores, &skipped);
     if (msg)
         return msg;
     if (skipped)
@@ -235,8 +270,50 @@ static char *test_float_vif_cpu_cuda_parity(void)
     return NULL;
 }
 
+/* ------------------------------------------------------------------ */
+/* ADR-1217 — vif_enhn_gain_limit / vif_sigma_nsq must reach the kernel.*/
+/*                                                                     */
+/* The CUDA compute kernel hardcoded both to their defaults, so a       */
+/* non-default value was accepted, folded into the derived feature      */
+/* name, and then silently ignored — the NEG model's                    */
+/* vif_enhn_gain_limit = 1.0 published un-clamped scores under NEG      */
+/* feature keys. The default-options test above cannot see this.        */
+/* ------------------------------------------------------------------ */
+static char *test_float_vif_options_reach_kernel(void)
+{
+    double cpu_scores[NUM_VIF_SCALES] = {0};
+    double cuda_scores[NUM_VIF_SCALES] = {0};
+    int skipped = 0;
+
+    char *msg = run_cpu(true, VIF_SCALE_FEATURES_NEG, cpu_scores);
+    if (msg)
+        return msg;
+    msg = run_cuda(true, VIF_SCALE_FEATURES_NEG, cuda_scores, &skipped);
+    if (msg)
+        return msg;
+    if (skipped)
+        return NULL;
+
+    for (unsigned s = 0; s < NUM_VIF_SCALES; s++) {
+        mu_assert("CPU float_vif NEG score is non-finite", isfinite(cpu_scores[s]));
+        mu_assert("CUDA float_vif NEG score is non-finite", isfinite(cuda_scores[s]));
+
+        const double delta = fabs(cpu_scores[s] - cuda_scores[s]);
+        if (delta > PARITY_TOL) {
+            (void)fprintf(stderr,
+                          "\nfloat_vif egl=%s snsq=%s parity FAIL scale=%u: cpu=%.8f cuda=%.8f "
+                          "delta=%.2e tol=%.2e\n",
+                          NEG_EGL, NEG_SNSQ, s, cpu_scores[s], cuda_scores[s], delta, PARITY_TOL);
+        }
+        mu_assert("float_vif with non-default egl/snsq drifts from the CPU reference",
+                  delta <= PARITY_TOL);
+    }
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_float_vif_cpu_cuda_parity);
+    mu_run_test(test_float_vif_options_reach_kernel);
     return NULL;
 }

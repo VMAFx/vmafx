@@ -140,7 +140,8 @@ __global__ void float_vif_compute(int scale, const uint8_t *ref_raw, const uint8
                                   ptrdiff_t raw_stride, const float *ref_f, const float *dis_f,
                                   ptrdiff_t f_stride_floats, float *num_partials,
                                   float *den_partials, unsigned width, unsigned height,
-                                  unsigned bpc, unsigned grid_x_count)
+                                  unsigned bpc, unsigned grid_x_count, float vif_sigma_nsq,
+                                  float vif_egl, float sigma_max_inv)
 {
     const int fw  = fvif_fw(scale);
     const int hfw = fw / 2;
@@ -227,9 +228,11 @@ __global__ void float_vif_compute(int scale, const uint8_t *ref_raw, const uint8
             xy  += c_k * s_v_xy [ly * MAX_TILE_W + (lx + k)];
         }
         const float eps           = 1.0e-10f;
-        const float vif_sigma_nsq = 2.0f;
-        const float vif_egl       = 100.0f;
-        const float sigma_max_inv = (2.0f * 2.0f) / (255.0f * 255.0f);
+        /* vif_sigma_nsq / vif_egl / sigma_max_inv arrive as kernel arguments;
+         * they used to be hardcoded to the option defaults here, which silently
+         * ignored every non-default value — including the
+         * `vif_enhn_gain_limit = 1.0` that model/vmaf_float_v0.6.1neg.json sets
+         * on all four VIF scales.  ADR-1217. */
 
         float sigma1_sq = xx - mu1 * mu1;
         float sigma2_sq = yy - mu2 * mu2;

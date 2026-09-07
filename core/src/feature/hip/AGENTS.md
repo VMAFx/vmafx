@@ -405,3 +405,35 @@ HtoD picture staging buffers (~350 LOC) or the HIP device picture pool (T7-10c,
 pictures arrive with host pointers; passing host pointers directly to device
 kernels causes GPU memory faults. Float ADM (`float_adm_hip.c`) manages its
 own staging buffers and runs actively on GPU.
+
+## float_vif options must be kernel arguments (ADR-1217)
+
+`vif_sigma_nsq` and `vif_enhn_gain_limit` are
+`VMAF_OPT_FLAG_FEATURE_PARAM` options that `float_vif_hip` declares in
+its option table. Until ADR-1217 the compute kernel in
+`float_vif/float_vif_score.hip` declared them as kernel-local constants
+at their default values, so a non-default value was accepted,
+range-checked, folded into the derived feature name (ADR-1183), and then
+discarded. That included the `vif_enhn_gain_limit = 1.0` that
+`model/vmaf_float_v0.6.1neg.json` sets on all four VIF scales, so a HIP
+run of the NEG model published ordinary enhancement-gain-enabled scores
+under the NEG feature keys.
+
+Invariant: `float_vif_compute` takes `vif_sigma_nsq`, `vif_egl` and
+`sigma_max_inv` as trailing kernel arguments, and
+`fvif_launch_compute()` derives all three from `FloatVifStateHip`.
+`sigma_max_inv` is computed host-side exactly as the CPU computes it in
+`vif_tools.c::vif_statistic_s` — `powf(nsq, 2.0f)` in `float`, divided
+by `255.0 * 255.0` in `double`, narrowed to `float` — so the default
+path stays bit-identical to the pre-ADR-1217 constant. Do not recompute
+it in device code: device `powf` is not guaranteed to round like the
+host's, and the value feeds the `sigma1_sq < vif_sigma_nsq` branch that
+writes `num_val` directly.
+
+`hipModuleLaunchKernel` silently ignores surplus `kernelParams` entries
+and reads uninitialised memory for missing ones, so the signature and
+the `args[]` array must be changed together. The guard is
+`test_hip_float_vif_parity.c::test_float_vif_options_reach_kernel`,
+which pins `egl=1.0 snsq=1.5` and asserts parity on the derived
+`vif_scale0_egl_1_snsq_1.5` key — the default-options test cannot see
+this class of defect, because the hardcoded values *were* the defaults.
