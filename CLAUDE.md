@@ -77,6 +77,10 @@ make test-netflix-golden                # the 3 Netflix CPU golden-data tests (s
 ## 4. How to lint
 
 ```bash
+make preflight   # the CI compiler matrix locally: clang, 32-bit,
+                 # sanitizers, MSVC-hostile constructs, tidy, cppcheck.
+                 # Run this before pushing — `make lint` builds with ONE
+                 # compiler and misses portability breaks (ADR-1234).
 make lint        # clang-tidy + cppcheck + iwyu + ruff + semgrep
 make format      # clang-format + black + ruff (write)
 make format-check  # same, no writes (pre-commit / CI)
