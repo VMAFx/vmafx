@@ -232,12 +232,16 @@ fi
 
 # ------------------------------------------------------------- sanitizers --
 if want sanitizers; then
+  # -Db_lundef=false drops -Wl,--no-undefined. Clang links the sanitizer
+  # runtime into executables, not shared libraries, so libvmaf.so is left with
+  # undefined __asan_report_* / __ubsan_handle_* and --no-undefined rejects the
+  # link. The repo's own fuzz workflow pairs the same two options.
   say "ASan + UBSan build" "mirrors: Sanitizers (address) / (undefined)"
   if ! command -v clang >/dev/null; then
     skipped sanitizers "clang not installed"
   elif [ -d build-asan ] || CC=clang CXX=clang++ meson setup build-asan core \
     -Denable_cuda=false -Denable_sycl=false -Db_lto=false \
-    -Db_sanitize=address,undefined >/dev/null 2>&1; then
+    -Db_sanitize=address,undefined -Db_lundef=false >/dev/null 2>&1; then
     if ninja -C build-asan >/tmp/preflight-asan.log 2>&1 &&
       meson test -C build-asan --suite=fast >>/tmp/preflight-asan.log 2>&1; then
       ok sanitizers

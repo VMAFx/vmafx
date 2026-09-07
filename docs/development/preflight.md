@@ -50,6 +50,13 @@ you are about to commit is exactly what you want checked. (The first version of
 this script did not, and cheerfully passed against a deliberately planted
 break.)
 
+**`sanitizers` needs `-Db_lundef=false`.** Clang links the sanitizer runtime
+into executables, not shared libraries, so `libvmaf.so` is left with undefined
+`__asan_report_*` / `__ubsan_handle_*` symbols and `-Wl,--no-undefined` refuses
+the link. The repo's own `fuzz.yml` pairs the same two options. Without it the
+stage fails on every branch, including ones that change no code at all — and a
+stage that cries wolf is a stage people learn to ignore.
+
 **`m32` needs a configured build.** It compiles `-fsyntax-only` with
 `-I build/src` so the generated `config.h` resolves. Without that the compile
 aborts at the first `#include` and the stage silently becomes a no-op — run the
