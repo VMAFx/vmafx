@@ -63,6 +63,15 @@ class Measurement:
     compile_failures: list[str] = field(default_factory=list)
     clang_tidy_version: str = ""
     sources: list[str] = field(default_factory=list)
+    # clang-tidy parses each TU against the system headers the *C compiler*
+    # provides, so the counts depend on gcc's version as much as on
+    # clang-tidy's. Recording only one of the two made a ratchet delta
+    # impossible to reproduce off the CI image -- see ADR-1230.
+    cc_version: str = ""
+    # Diagnostics behind the counts. Counts alone tell you a file regressed
+    # but not why, which turns any delta you cannot reproduce locally into a
+    # dead end (PR #1392).
+    diagnostics: list[str] = field(default_factory=list)
 
     @property
     def total_warnings(self) -> int:
@@ -72,12 +81,20 @@ class Measurement:
     def total_nolint_uncited(self) -> int:
         return sum(self.nolint_uncited.values())
 
-    def to_json(self) -> dict[str, Any]:
-        return {
+    def to_json(self, *, with_diagnostics: bool = False) -> dict[str, Any]:
+        """Serialise the measurement.
+
+        `with_diagnostics` is for the CI report artifact only. The baseline
+        deliberately stores counts, so it stays reviewable and does not churn
+        on every line number that shifts; the report is where you look when a
+        delta needs explaining.
+        """
+        doc: dict[str, Any] = {
             "schema": BASELINE_SCHEMA,
             "lane": self.lane,
             "generator": "scripts/ci/tidy-ratchet.py",
             "clang_tidy_version": self.clang_tidy_version,
+            "cc_version": self.cc_version,
             "tus": self.tus,
             "measured_sources": self.sources,
             "compile_failures": sorted(self.compile_failures),
@@ -86,6 +103,9 @@ class Measurement:
             "warnings": dict(sorted(self.warnings.items())),
             "nolint_uncited": dict(sorted(self.nolint_uncited.items())),
         }
+        if with_diagnostics:
+            doc["diagnostics"] = list(self.diagnostics)
+        return doc
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> Measurement:
@@ -99,6 +119,7 @@ class Measurement:
             warnings={str(k): int(v) for k, v in data.get("warnings", {}).items()},
             nolint_uncited={str(k): int(v) for k, v in data.get("nolint_uncited", {}).items()},
             clang_tidy_version=str(data.get("clang_tidy_version", "")),
+            cc_version=str(data.get("cc_version", "")),
         )
 
 
@@ -229,6 +250,20 @@ def load_compile_commands(build_dir: Path, repo_root: Path) -> list[tuple[Path, 
     return sorted(units)
 
 
+def cc_version(build_dir: Path) -> str:
+    """Return the C compiler version meson configured for *build_dir*.
+
+    Read from the build directory rather than $CC so the recorded value is
+    the compiler that actually produced compile_commands.json.
+    """
+    try:
+        data = json.loads((build_dir / "meson-info" / "intro-compilers.json").read_text())
+        host_c = data.get("host", {}).get("c", {})
+        return str(host_c.get("full_version") or host_c.get("version") or "")
+    except (OSError, ValueError, KeyError):
+        return ""
+
+
 def clang_tidy_version(binary: str) -> str:
     """Return the LLVM version string of *binary*, or "" when unavailable."""
     try:
@@ -276,6 +311,7 @@ def measure(
     result = Measurement(lane=lane, tus=len(units))
     result.sources = sorted(source.relative_to(repo_root).as_posix() for source, _ in units)
     result.clang_tidy_version = clang_tidy_version(binary)
+    result.cc_version = cc_version(build_dir)
     diags: set[tuple[str, int, int, str]] = set()
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
         futures = {
@@ -296,8 +332,10 @@ def measure(
                 rel = relpath(str(source), repo_root, directory) or str(source)
                 result.compile_failures.append(rel)
             diags |= unit_diags
-    for path, _line, _col, _check in diags:
+    for path, line, col, check in diags:
         result.warnings[path] = result.warnings.get(path, 0) + 1
+        result.diagnostics.append(f"{path}:{line}:{col}: [{check}]")
+    result.diagnostics.sort()
     result.nolint_uncited = scan_nolints(repo_root, units, lane)
     return result
 
@@ -379,6 +417,13 @@ def report(baseline: Measurement, measured: Measurement, allow_slack: bool) -> i
             "warning",
             f"clang-tidy {measured.clang_tidy_version} differs from baseline "
             f"{baseline.clang_tidy_version}; counts may not be comparable",
+        )
+    if baseline.cc_version and measured.cc_version != baseline.cc_version:
+        annotate(
+            "warning",
+            f"C compiler {measured.cc_version} differs from baseline "
+            f"{baseline.cc_version}; system headers differ, so counts may not "
+            f"be comparable",
         )
     for delta in regressions:
         annotate(
@@ -634,8 +679,11 @@ def main(argv: list[str] | None = None) -> int:
             args.only,
         )
         if args.report:
+            # ADR-1230: the report artifact carries the diagnostics behind the
+            # counts; the baseline deliberately stays counts-only.
             args.report.write_text(
-                json.dumps(measured.to_json(), indent=2) + "\n", encoding="utf-8"
+                json.dumps(measured.to_json(with_diagnostics=True), indent=2) + "\n",
+                encoding="utf-8",
             )
         if measured.compile_failures:
             for path in sorted(measured.compile_failures):
