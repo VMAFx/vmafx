@@ -46,7 +46,6 @@
  */
 
 #include <cassert>
-#include <climits>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -141,14 +140,15 @@ namespace
 
 [[nodiscard]] int grow_capacity(RegisteredFeatureExtractors *rfe) noexcept
 {
-    /* The doubling cannot overflow size_t: capacity is `unsigned`, so its
-     * maximum times two times the element size still fits. This is a property
-     * of the types, not of any particular value, so it belongs at compile time
-     * -- the previous runtime assert() could never fire (CERT INT30-C;
-     * adversarial review 2026-05-28 finding #6). */
-    static_assert(static_cast<size_t>(UINT_MAX) <=
-                      (SIZE_MAX / 2u) / sizeof(VmafFeatureExtractorContext *),
-                  "capacity doubling must not overflow size_t");
+    /* Guard the doubling against size_t overflow (CERT INT30-C; adversarial
+     * review 2026-05-28 finding #6). This is a runtime check on purpose: on
+     * LP64 an `unsigned` capacity can never reach SIZE_MAX/2/sizeof(ptr), but
+     * on a 32-bit target it can -- SIZE_MAX/2/4 is about 536M against a
+     * UINT_MAX of about 4.29e9 -- so the bound is genuinely reachable there.
+     * It replaces an assert(), which compiled out entirely in release builds
+     * and so guarded nothing where it mattered. */
+    if (rfe->capacity > (SIZE_MAX / 2u) / sizeof(*rfe->fex_ctx))
+        return -ENOMEM;
 
     /* A zero capacity would make the doubling a no-op and hand realloc a size
      * of 0, whose behaviour is implementation-defined. That only happens if a
