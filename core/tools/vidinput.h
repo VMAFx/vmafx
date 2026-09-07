@@ -22,6 +22,13 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 
+/* NOLINTBEGIN(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp):
+ * this header is Daala/Theora-derived (see the copyright above). The leading
+ * underscore parameter names (_fin, _ctx, _ti, ...) and the _vidinput_H guard
+ * are the upstream spellings; renaming them would break parity with the code
+ * this was ported from and churn every caller. _LARGEFILE_SOURCE and
+ * _LARGEFILE64_SOURCE are the standard feature-test macros, reserved by
+ * definition. ADR-0141 §2 / ADR-0278. */
 #if !defined(_vidinput_H)
 #define _vidinput_H (1)
 #if !defined(_LARGEFILE_SOURCE)
@@ -137,3 +144,5 @@ extern const video_input_vtbl YUV_INPUT_VTBL;
 #endif
 
 #endif
+
+/* NOLINTEND(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp) */

@@ -188,6 +188,11 @@ void ssimulacra2_host_linear_rgb_to_xyb_avx2(const float *lin, float *xyb, unsig
     }
 }
 
+/* A fully unrolled AVX2 kernel. Splitting it changes register allocation and
+ * scheduling, which is what the bit-exactness contracts in ADR-0138 /
+ * ADR-0139 pin down; the size is the unrolling, not accidental complexity.
+ * ADR-0141 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 void ssimulacra2_host_downsample_2x2_avx2(const float *in, unsigned iw, unsigned ih, float *out,
                                           unsigned ow, unsigned oh, size_t plane_stride)
 {

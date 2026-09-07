@@ -373,7 +373,9 @@ static char *run_aom_ctc_tests(void)
     return NULL;
 }
 
-static char *run_backend_tests(void)
+/* Split in two: every mu_run_test expands to a branch, and the combined runner
+ * exceeded the readability-function-size branch budget (ADR-1142). */
+static char *run_backend_selection_tests(void)
 {
     mu_run_test(test_backend_cpu);
     mu_run_test(test_backend_cuda_engages_cuda);
@@ -382,10 +384,22 @@ static char *run_backend_tests(void)
     /* test_backend_vulkan removed — ADR-0726 */
     mu_run_test(test_backend_hip);
     mu_run_test(test_backend_metal);
+    return NULL;
+}
+
+static char *run_backend_device_tests(void)
+{
     mu_run_test(test_hip_device_explicit);
     mu_run_test(test_metal_device_explicit);
     mu_run_test(test_no_hip_no_metal_flags);
     mu_run_test(test_cpumask_short_opt);
+    return NULL;
+}
+
+static char *run_backend_tests(void)
+{
+    mu_run_test(run_backend_selection_tests);
+    mu_run_test(run_backend_device_tests);
     return NULL;
 }
 

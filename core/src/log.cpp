@@ -105,6 +105,20 @@ static constexpr std::array<std::string_view, 4> level_str_color = {{
     /* VMAF_LOG_LEVEL_DEBUG   (4) */ "\x1B[34m",
 }};
 
+/* Every entry above is a string literal, so data()[size()] is the literal's
+ * terminating NUL. Proving it for the whole table at compile time is stronger
+ * than the runtime assert it replaces, which could only check whichever level
+ * happened to be logged. This is what makes the .data() pointers below safe to
+ * hand to fprintf (bugprone-suspicious-stringview-data-usage). */
+static_assert(level_str[0].data()[level_str[0].size()] == '\0');
+static_assert(level_str[1].data()[level_str[1].size()] == '\0');
+static_assert(level_str[2].data()[level_str[2].size()] == '\0');
+static_assert(level_str[3].data()[level_str[3].size()] == '\0');
+static_assert(level_str_color[0].data()[level_str_color[0].size()] == '\0');
+static_assert(level_str_color[1].data()[level_str_color[1].size()] == '\0');
+static_assert(level_str_color[2].data()[level_str_color[2].size()] == '\0');
+static_assert(level_str_color[3].data()[level_str_color[3].size()] == '\0');
+
 extern "C" {
 
 void vmaf_set_log_level(enum VmafLogLevel level)
@@ -151,8 +165,8 @@ void vmaf_log(enum VmafLogLevel level, const char *fmt, ...)
      * These views are constructed from string literals so the byte at
      * data()[size()] is always '\0'.  The asserts make the contract explicit
      * and auditable (Power of 10 #5; adversarial review 2026-05-28 finding #7). */
-    assert(level_str[idx].data()[level_str[idx].size()] == '\0');
-    assert(level_str_color[idx].data()[level_str_color[idx].size()] == '\0');
+    /* The NUL-termination invariant is proved for every entry at compile time
+     * next to the tables above, so there is nothing left to check here. */
     /* Suppression justification (bugprone-suspicious-stringview-data-usage): the
      * two asserts above prove the .data() pointer is NUL-terminated. The
      * string_views are constructed from string literals; their backing storage
