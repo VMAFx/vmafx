@@ -20,7 +20,7 @@
 [![C23](https://img.shields.io/badge/C-C23-00599C?logo=c&logoColor=white)](core/meson.build)
 [![C++23](https://img.shields.io/badge/C%2B%2B-C%2B%2B23-00599C?logo=cplusplus&logoColor=white)](core/meson.build)
 [![CUDA](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2FVMAFx%2Fvmafx%2Fmaster%2FDockerfile&search=nvidia%2Fcuda%3A%28%5Cd%2B%5C.%5Cd%2B%5C.%5Cd%2B%29&replace=%241&label=CUDA&color=76B900&logo=nvidia&logoColor=white)](Dockerfile)
-[![ROCm](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2FVMAFx%2Fvmafx%2Fmaster%2Fdev%2FContainerfile&search=ARG%20ROCM_VER%3D%28%5Cd%2B%5C.%5Cd%2B%28%5C.%5Cd%2B%29%3F%29&replace=%241&label=ROCm&color=ED1C24&logo=amd&logoColor=white)](dev/Containerfile)
+[![ROCm](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2FVMAFx%2Fvmafx%2Fmaster%2Fdev%2FContainerfile&search=rocm%2Fdev-ubuntu-24%5C.04%3A%28%5Cd%2B%5C.%5Cd%2B%5C.%5Cd%2B%29-full&replace=%241&label=ROCm&color=ED1C24&logo=amd&logoColor=white)](dev/Containerfile)
 
 <!-- Hardware capability badges -->
 [![GPU: CUDA · SYCL · HIP · Metal](https://img.shields.io/badge/GPU-CUDA%20%C2%B7%20SYCL%20%C2%B7%20HIP%20%C2%B7%20Metal-76B900?logo=nvidia&logoColor=white)](docs/backends/)

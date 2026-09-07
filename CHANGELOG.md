@@ -10739,19 +10739,6 @@ core internal headers (`framesync.h`, `thread_pool.h`, `picture_pool.h`,
   (62-run `--precision max` output matrix, 21 396 metric values). (ADR-1141)
 
 
-- **CI workflow display names are short again** (ADR-1227). GitHub's
-  `badge.svg` endpoint paints the workflow `name:` into the badge, so names
-  like `Tests & Quality Gates — Netflix Golden / Sanitizers / Tiny AI /
-  Coverage` (72 characters) rendered the README's seven status badges as
-  60-to-70-character banners that wrapped the header across several lines.
-  Fourteen workflows are relabelled — `Tests`, `Security`, `Builds`, `FFmpeg`,
-  `E2E`, `Fuzz`, `SYCL Parity`, `Dev Container`, the two publish workflows and
-  the three upstream watchers — bringing them under the ≤30-character budget
-  `docs/development/ci-job-names.md` already applied to job names. The four the
-  README badges point at now match their badge link labels exactly. The axis
-  list each name used to carry moved to a comment under the `name:` line.
-  Filenames are unchanged, so no badge URL churn and no branch-protection
-  re-pin.
 - **ROCm 10.0.0 across every HIP consumer, installed from digest-pinned
   container images** (ADR-1225). AMD froze the `repo.radeon.com/rocm/apt/`
   channel at 7.2.4 when ROCm moved to the "TheRock" build/release system at
@@ -10778,6 +10765,26 @@ core internal headers (`framesync.h`, `thread_pool.h`, `picture_pool.h`,
   `libhsa-runtime64.so*` would have produced an image whose every HIP binary
   died at load. The stage now copies the verified 397 MB closure with its
   `$ORIGIN`-relative directory layout intact.
+- **The README ROCm badge follows the image pin.** It scraped
+  `ARG ROCM_VER=` out of `dev/Containerfile`, which ADR-1225 removes; it now
+  reads the version out of the digest-pinned
+  `rocm/dev-ubuntu-24.04:<version>-full` reference in the same file, so it
+  keeps reporting a live value instead of going blank.
+
+
+- **CI workflow display names are short again** (ADR-1227). GitHub's
+  `badge.svg` endpoint paints the workflow `name:` into the badge, so names
+  like `Tests & Quality Gates — Netflix Golden / Sanitizers / Tiny AI /
+  Coverage` (72 characters) rendered the README's seven status badges as
+  60-to-70-character banners that wrapped the header across several lines.
+  Fourteen workflows are relabelled — `Tests`, `Security`, `Builds`, `FFmpeg`,
+  `E2E`, `Fuzz`, `SYCL Parity`, `Dev Container`, the two publish workflows and
+  the three upstream watchers — bringing them under the ≤30-character budget
+  `docs/development/ci-job-names.md` already applied to job names. The four the
+  README badges point at now match their badge link labels exactly. The axis
+  list each name used to carry moved to a comment under the `name:` line.
+  Filenames are unchanged, so no badge URL churn and no branch-protection
+  re-pin.
 
 
 - **build(meson):** Remove the redundant per-target

@@ -24,3 +24,8 @@
   `libhsa-runtime64.so*` would have produced an image whose every HIP binary
   died at load. The stage now copies the verified 397 MB closure with its
   `$ORIGIN`-relative directory layout intact.
+- **The README ROCm badge follows the image pin.** It scraped
+  `ARG ROCM_VER=` out of `dev/Containerfile`, which ADR-1225 removes; it now
+  reads the version out of the digest-pinned
+  `rocm/dev-ubuntu-24.04:<version>-full` reference in the same file, so it
+  keeps reporting a live value instead of going blank.
