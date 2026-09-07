@@ -49633,7 +49633,13 @@ fork-added.
    `origin/master...HEAD`. Narrowing it to committed changes makes the script
    useless for its main job.
 
-4. **A missing toolchain skips, it does not fail.** Do not "fix" that into a
+4. **The sanitizer stage's `-Db_lundef=false` is required, not optional.**
+   Clang puts the sanitizer runtime in executables, not shared libraries, so
+   without it `libvmaf.so` fails to link on undefined `__asan_report_*` and the
+   stage reports failure on every branch — including ones with no code changes.
+   `fuzz.yml` pairs the same two options.
+
+5. **A missing toolchain skips, it does not fail.** Do not "fix" that into a
    hard error: the script is meant to run on partially provisioned machines,
    and a stage that fails for want of `gcc-multilib` trains people to ignore
    the output.
