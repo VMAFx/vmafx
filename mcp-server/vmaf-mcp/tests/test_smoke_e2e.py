@@ -94,7 +94,14 @@ async def test_list_tools_returns_expected_names() -> None:
         "run_ladder",
         "run_tune_per_shot",
     }
-    expected = original | p1
+    # Sidecar-binary bridge (#1240 item b).
+    sidecars = {
+        "vmaf_per_shot",
+        "vmaf_roi",
+        "vmaf_bench",
+        "vmaf_vpl",
+    }
+    expected = original | p1 | sidecars
     assert expected == names, f"unexpected tool names: {names ^ expected}"
 
 

@@ -45,6 +45,7 @@ from __future__ import annotations
 # rules, re-evaluate these sites deliberately rather than silencing
 # with line-level suppression markers.
 import asyncio
+import base64
 import contextlib
 import json
 import logging
@@ -57,6 +58,7 @@ import sys
 import tempfile
 from contextvars import ContextVar
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -428,6 +430,8 @@ class ScoreExtras:
     hip_device: int | None = None  # --hip_device
     metal_device: int | None = None  # --metal_device
     output_fmt: str = "json"  # --json | --xml | --csv | --sub
+    disable_clip: bool = False  # :disable_clip on model
+    enable_transform: bool = False  # :enable_transform on model
 
     def is_empty(self) -> bool:
         """Return True when no extra flag is set."""
@@ -557,8 +561,7 @@ def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
     tiny_resize = _opt_str("tiny_resize")
     if tiny_resize is not None and tiny_resize not in _VALID_TINY_RESIZES:
         raise ValueError(
-            f"invalid tiny_resize '{tiny_resize}': must be one of "
-            "bilinear|nearest|bicubic|disabled"
+            f"invalid tiny_resize '{tiny_resize}': must be one of bilinear|nearest|bicubic|disabled"
         )
 
     tiny_crf = _opt_int("tiny_crf")
@@ -615,11 +618,28 @@ def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
     if metal_device is not None and metal_device < 0:
         raise ValueError(f"invalid metal_device {metal_device}: must be non-negative")
 
-    output_fmt = _opt_str("output_fmt") or _opt_str("format") or "json"
+    output_fmt = _opt_str("output_fmt") or _opt_str("format")
+    csv_flag = bool(arguments.get("csv", False))
+    sub_flag = bool(arguments.get("sub", False))
+    if csv_flag and sub_flag:
+        raise ValueError("conflicting csv and sub flags: cannot specify both")
+    if csv_flag:
+        if output_fmt and output_fmt != "csv":
+            raise ValueError(
+                f"conflicting output format: csv flag cannot be used with output_fmt '{output_fmt}'"
+            )
+        output_fmt = "csv"
+    elif sub_flag:
+        if output_fmt and output_fmt != "sub":
+            raise ValueError(
+                f"conflicting output format: sub flag cannot be used with output_fmt '{output_fmt}'"
+            )
+        output_fmt = "sub"
+    elif not output_fmt:
+        output_fmt = "json"
+
     if output_fmt not in _VALID_OUTPUT_FMTS:
-        raise ValueError(
-            f"invalid output_fmt '{output_fmt}': must be one of json|xml|csv|sub"
-        )
+        raise ValueError(f"invalid output_fmt '{output_fmt}': must be one of json|xml|csv|sub")
 
     return ScoreExtras(
         features=features,
@@ -646,6 +666,8 @@ def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
         hip_device=hip_device,
         metal_device=metal_device,
         output_fmt=output_fmt,
+        disable_clip=bool(arguments.get("disable_clip", False)),
+        enable_transform=bool(arguments.get("enable_transform", False)),
     )
 
 
@@ -866,6 +888,11 @@ def _build_vmaf_argv(
     # one. Mirrors the Go server's conditional -r (ADR-1117).
     if req.ref is not None:
         argv += ["-r", str(req.ref)]
+    model = req.model
+    if req.extras.disable_clip and ":disable_clip" not in model:
+        model = f"{model}:disable_clip"
+    if req.extras.enable_transform and ":enable_transform" not in model:
+        model = f"{model}:enable_transform"
     argv += [
         "-d",
         str(req.dis),
@@ -878,7 +905,7 @@ def _build_vmaf_argv(
         "-b",
         str(req.bitdepth),
         "-m",
-        req.model,
+        model,
         "--precision",
         req.precision,
         "-q",
@@ -2040,6 +2067,467 @@ async def _run_benchmark(
     return payload
 
 
+# ---------------------------------------------------------------------------
+# Sidecar-binary bridge (#1240 item b)
+# ---------------------------------------------------------------------------
+#
+# The four CLI binaries built next to `vmaf` in core/tools/ get one MCP tool
+# each.  Every handler is the byte-compatible twin of its Go counterpart in
+# cmd/vmafx-mcp/impl_sidecar.go: same tool name, same argument names, same
+# bounds, same argv order, same response keys.  See the parity invariant in
+# mcp-server/AGENTS.md and cmd/vmafx-mcp/AGENTS.md #15.
+
+# Maps each sidecar binary's on-disk name to its environment override.  The
+# camelCase of "vmaf-perShot" is the installed binary name (core/tools/meson.build).
+_SIDECAR_BINARY_ENV: dict[str, str] = {
+    "vmaf-perShot": "VMAF_PER_SHOT_BIN",
+    "vmaf_roi": "VMAF_ROI_BIN",
+    "vmaf_bench": "VMAF_BENCH_BIN",
+    "vmaf_vpl": "VMAF_VPL_BIN",
+}
+
+# Fixed resolution table from core/tools/vmaf_bench.c; --resolution takes one.
+_BENCH_RESOLUTIONS = ("576x324", "640x480", "1280x720", "1920x1080", "3840x2160")
+
+_SIDECAR_PIXFMTS = frozenset({"420", "422", "444"})
+
+# --render-node is handed straight to open(2) by vmaf_vpl.c, so it is bounded
+# to an actual DRM node rather than an arbitrary host path.
+_VPL_RENDER_NODE_RE = re.compile(r"^/dev/dri/(renderD[0-9]+|card[0-9]+)$")
+_VPL_SCORE_RE = re.compile(r"^VMAF:\s+([0-9.eE+-]+)\s+\(mean\)", re.MULTILINE)
+_VPL_FRAMES_RE = re.compile(r"^Frames:\s+([0-9]+)", re.MULTILINE)
+
+
+def _fmt_float(value: float) -> str:
+    """Render a float exactly as Go's ``strconv.FormatFloat(v, 'f', -1, 64)``.
+
+    Both servers must build a byte-identical argv (cmd/vmafx-mcp/AGENTS.md #15),
+    and Python's ``repr`` differs from Go's shortest-round-trip 'f' form in two
+    ways: it keeps a trailing ``.0`` on integral values and switches to
+    exponent notation for small magnitudes, which Go's 'f' verb never does.
+    """
+    text = repr(float(value))
+    if "e" in text or "E" in text:
+        text = format(Decimal(text), "f")
+    if text.endswith(".0"):
+        text = text[:-2]
+    return text
+
+
+def _sidecar_binary(name: str) -> Path:
+    """Return the on-disk path of a sidecar binary.
+
+    Resolution order mirrors ``pkg/libvmaf.FindSidecarBinary``:
+    1. the tool's own env override (see ``_SIDECAR_BINARY_ENV``),
+    2. a sibling of the resolved ``vmaf`` binary (so ``VMAF_BIN`` resolves the
+       whole family, which is what the vmaf-dev-mcp container relies on),
+    3. ``/usr/local/bin/<name>``,
+    4. ``<repo>/core/build/tools/<name>``,
+    5. ``<repo>/build/tools/<name>``.
+
+    Returns the first candidate that exists, else the last one so the caller
+    can emit a clear "build first" error.
+    """
+    env = _SIDECAR_BINARY_ENV.get(name)
+    if env is None:
+        raise ValueError(f"unknown sidecar binary {name!r}")
+    override = os.environ.get(env)
+    if override:
+        return Path(override)
+    candidates = [
+        _vmaf_binary().parent / name,
+        Path("/usr/local/bin") / name,
+        _repo_root() / "core" / "build" / "tools" / name,
+        _repo_root() / "build" / "tools" / name,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[-1]
+
+
+def _resolve_sidecar(name: str) -> Path:
+    """Return the sidecar path, raising a build hint when it is absent."""
+    binary = _sidecar_binary(name)
+    if not binary.exists():
+        raise FileNotFoundError(
+            f"{name} binary not found at {binary}. Build first: "
+            f"meson compile -C core/build {name} (or point "
+            f"{_SIDECAR_BINARY_ENV[name]} at an existing build)"
+        )
+    return binary
+
+
+def _validate_dir(p: str) -> Path:
+    """Directory-shaped counterpart of :func:`_validate_path`.
+
+    ``_validate_path`` requires a regular file, which rejects every legitimate
+    ``--data-dir`` value; this variant applies the same allowlist and then
+    requires a directory.
+    """
+    path = Path(p).resolve()
+    if not any(path.is_relative_to(root) for root in _allowed_roots()):
+        raise ValueError(
+            f"path {path} not under an allowlisted root; set VMAF_MCP_ALLOW to extend."
+        )
+    if not path.is_dir():
+        raise NotADirectoryError(str(path))
+    return path
+
+
+def _valid_sidecar_bitdepth(value: int) -> bool:
+    return value in (8, 10, 12, 16)
+
+
+async def _run_sidecar(argv: list[str]) -> tuple[str, str, int]:
+    """Run a sidecar binary and return ``(stdout, stderr, returncode)``.
+
+    argv is always a list (never a shell string).  A non-zero exit is returned
+    to the caller rather than raised, because ``vmaf_bench --validate`` exits 1
+    to report a GPU/CPU delta, which is a legitimate result.
+    """
+    proc = await asyncio.create_subprocess_exec(
+        *argv,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    stdout, stderr = await _communicate_with_timeout(proc)
+    return (
+        stdout.decode(errors="replace"),
+        stderr.decode(errors="replace"),
+        proc.returncode if proc.returncode is not None else -1,
+    )
+
+
+def _sidecar_failure(name: str, code: int, stdout: str, stderr: str) -> RuntimeError:
+    detail = stderr.strip() or stdout.strip() or "no output"
+    return RuntimeError(f"{name} exited {code}: {detail}")
+
+
+def _build_per_shot_argv(binary: str, arguments: dict[str, Any]) -> tuple[list[str], str]:
+    """Validate arguments and return ``(argv, format)`` for vmaf-perShot.
+
+    Split out of the handler so the Go/Python argv-parity test can exercise it
+    without a binary on disk. Byte-identical to
+    ``cmd/vmafx-mcp/impl_sidecar.go::buildPerShotArgv``.
+    """
+    reference = _validate_path(str(arguments["reference"]))
+    # per_shot_apply_opt bounds: width/height 16..65535.
+    width = int(arguments["width"])
+    height = int(arguments["height"])
+    if not (16 <= width <= 65535) or not (16 <= height <= 65535):
+        raise ValueError("width and height must be between 16 and 65535")
+    pixfmt = str(arguments.get("pixel_format", "420"))
+    if pixfmt not in _SIDECAR_PIXFMTS:
+        raise ValueError(f"invalid pixel_format '{pixfmt}': must be one of 420|422|444")
+    bitdepth = int(arguments.get("bitdepth", 8))
+    if not _valid_sidecar_bitdepth(bitdepth):
+        raise ValueError(f"invalid bitdepth {bitdepth}: must be one of 8|10|12|16")
+    target_vmaf = float(arguments.get("target_vmaf", 90.0))
+    if not (0.0 <= target_vmaf <= 100.0):
+        raise ValueError("target_vmaf must be between 0 and 100")
+    crf_min = int(arguments.get("crf_min", 18))
+    crf_max = int(arguments.get("crf_max", 35))
+    if not (0 <= crf_min <= 63) or not (0 <= crf_max <= 63):
+        raise ValueError("crf_min and crf_max must be between 0 and 63")
+    if crf_min > crf_max:
+        raise ValueError(f"crf_min ({crf_min}) must not exceed crf_max ({crf_max})")
+    fmt = str(arguments.get("format", "json"))
+    if fmt not in ("json", "csv"):
+        raise ValueError(f"invalid format '{fmt}': must be json or csv")
+
+    argv = [
+        binary,
+        "--reference",
+        str(reference),
+        "--width",
+        str(width),
+        "--height",
+        str(height),
+        "--pixel_format",
+        pixfmt,
+        "--bitdepth",
+        str(bitdepth),
+        "--output",
+        "-",
+        "--target-vmaf",
+        _fmt_float(target_vmaf),
+        "--crf-min",
+        str(crf_min),
+        "--crf-max",
+        str(crf_max),
+    ]
+    if "diff_threshold" in arguments:
+        diff_threshold = float(arguments["diff_threshold"])
+        if not (0.0 <= diff_threshold <= 255.0):
+            raise ValueError("diff_threshold must be between 0 and 255")
+        argv += ["--diff-threshold", _fmt_float(diff_threshold)]
+    argv += ["--format", fmt]
+    return argv, fmt
+
+
+async def _vmaf_per_shot(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Bridge core/tools/vmaf_per_shot.c — per-shot CRF plan from a raw YUV."""
+    binary = _resolve_sidecar("vmaf-perShot")
+    argv, fmt = _build_per_shot_argv(str(binary), arguments)
+
+    stdout, stderr, code = await _run_sidecar(argv)
+    if code != 0:
+        raise _sidecar_failure("vmaf-perShot", code, stdout, stderr)
+    payload: dict[str, Any] = {"format": fmt, "exit_code": code, "stderr": stderr}
+    if fmt == "json":
+        try:
+            payload["plan"] = json.loads(stdout)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"failed to parse vmaf-perShot JSON plan: {exc}") from exc
+    else:
+        payload["output"] = stdout
+    return payload
+
+
+def _build_roi_argv(
+    binary: str, out_path: str, arguments: dict[str, Any]
+) -> tuple[list[str], dict[str, Any]]:
+    """Validate arguments and return ``(argv, params)`` for vmaf_roi.
+
+    ``params`` carries the validated values the response shape needs. Split out
+    of the handler for the argv-parity test; byte-identical to
+    ``cmd/vmafx-mcp/impl_sidecar.go::buildRoiArgv``.
+    """
+    reference = _validate_path(str(arguments["reference"]))
+    width = int(arguments["width"])
+    height = int(arguments["height"])
+    if not (1 <= width <= 16384) or not (1 <= height <= 16384):
+        raise ValueError("width and height must be between 1 and 16384")
+    frame = int(arguments["frame"])
+    if not (0 <= frame <= 1000000):
+        raise ValueError("frame must be between 0 and 1000000")
+    pixfmt = str(arguments.get("pixel_format", "420"))
+    if pixfmt not in _SIDECAR_PIXFMTS:
+        raise ValueError(f"invalid pixel_format '{pixfmt}': must be one of 420|422|444")
+    bitdepth = int(arguments.get("bitdepth", 8))
+    if not _valid_sidecar_bitdepth(bitdepth):
+        raise ValueError(f"invalid bitdepth {bitdepth}: must be one of 8|10|12|16")
+    ctu_size = int(arguments.get("ctu_size", 64))
+    if not (8 <= ctu_size <= 128):
+        raise ValueError("ctu_size must be between 8 and 128")
+    encoder = str(arguments.get("encoder", "x265"))
+    if encoder not in ("x265", "svt-av1"):
+        raise ValueError(f"invalid encoder '{encoder}': must be x265 or svt-av1")
+    strength = float(arguments.get("strength", 6.0))
+    if not (0.0 <= strength <= 64.0):
+        raise ValueError("strength must be between 0 and 64")
+    saliency = ""
+    if arguments.get("saliency_model"):
+        saliency = str(_validate_path(str(arguments["saliency_model"])))
+
+    argv = [
+        binary,
+        "--reference",
+        str(reference),
+        "--width",
+        str(width),
+        "--height",
+        str(height),
+        "--frame",
+        str(frame),
+        "--output",
+        out_path,
+        "--pixel_format",
+        pixfmt,
+        "--bitdepth",
+        str(bitdepth),
+        "--ctu-size",
+        str(ctu_size),
+        "--encoder",
+        encoder,
+        "--strength",
+        _fmt_float(strength),
+    ]
+    if saliency:
+        argv += ["--saliency-model", saliency]
+    params = {
+        "encoder": encoder,
+        "ctu_size": ctu_size,
+        "frame": frame,
+        "width": width,
+        "height": height,
+        "saliency": bool(saliency),
+    }
+    return argv, params
+
+
+async def _vmaf_roi(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Bridge core/tools/vmaf_roi.c — per-CTU saliency ROI sidecar for one frame."""
+    binary = _resolve_sidecar("vmaf_roi")
+    # The svt-av1 emitter writes a raw int8 grid, so stdout is not text-safe.
+    # Always route through a temp file and pick the response encoding from the
+    # emitter, keeping both encoders on one code path.
+    fd, out_path = tempfile.mkstemp(prefix="vmaf-mcp-roi-", suffix=".bin")
+    os.close(fd)
+    try:
+        argv, params = _build_roi_argv(str(binary), out_path, arguments)
+        stdout, stderr, code = await _run_sidecar(argv)
+        if code != 0:
+            raise _sidecar_failure("vmaf-roi", code, stdout, stderr)
+        data = Path(out_path).read_bytes()
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(out_path)
+
+    encoder = params["encoder"]
+    ctu_size = params["ctu_size"]
+    payload: dict[str, Any] = {
+        "encoder": encoder,
+        "exit_code": code,
+        "stderr": stderr,
+        "ctu_size": ctu_size,
+        "frame": params["frame"],
+        "bytes": len(data),
+        "grid_cols": (params["width"] + ctu_size - 1) // ctu_size,
+        "grid_rows": (params["height"] + ctu_size - 1) // ctu_size,
+        "saliency": "onnx" if params["saliency"] else "placeholder",
+        "sidecar_fmt": "qpfile" if encoder == "x265" else "roi_map_int8",
+    }
+    if encoder == "x265":
+        payload["qpfile"] = data.decode(errors="replace")
+    else:
+        payload["roi_map_base64"] = base64.b64encode(data).decode("ascii")
+    return payload
+
+
+def _build_bench_argv(binary: str, arguments: dict[str, Any]) -> tuple[list[str], bool]:
+    """Validate arguments and return ``(argv, validate_mode)`` for vmaf_bench.
+
+    Byte-identical to ``cmd/vmafx-mcp/impl_sidecar.go::buildBenchArgv``.
+    """
+    argv = [binary]
+
+    if "frames" in arguments:
+        frames = int(arguments["frames"])
+        # The C parser silently clamps <2 up to 2 and >48 down to
+        # MAX_TEST_FRAMES; reject instead so the caller never gets a
+        # different run than the one they asked for.
+        if not (2 <= frames <= 48):
+            raise ValueError("frames must be between 2 and 48 (MAX_TEST_FRAMES)")
+        argv += ["--frames", str(frames)]
+    if "resolution" in arguments:
+        resolution = str(arguments["resolution"])
+        if resolution not in _BENCH_RESOLUTIONS:
+            raise ValueError(
+                f"invalid resolution '{resolution}': must be one of "
+                + ", ".join(_BENCH_RESOLUTIONS)
+            )
+        argv += ["--resolution", resolution]
+    if "bpc" in arguments:
+        bpc = int(arguments["bpc"])
+        if not _valid_sidecar_bitdepth(bpc):
+            raise ValueError(f"invalid bpc {bpc}: must be one of 8|10|12|16")
+        argv += ["--bpc", str(bpc)]
+    if arguments.get("data_dir"):
+        argv += ["--data-dir", str(_validate_dir(str(arguments["data_dir"])))]
+    if bool(arguments.get("device_list", False)):
+        argv.append("--list-devices")
+    if bool(arguments.get("gpu_only", False)):
+        argv.append("--gpu-only")
+    validate = bool(arguments.get("validate", False))
+    if validate:
+        argv.append("--validate")
+    return argv, validate
+
+
+async def _vmaf_bench(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Bridge core/tools/vmaf_bench.c — per-feature micro-benchmark / GPU validation."""
+    binary = _resolve_sidecar("vmaf_bench")
+    argv, validate = _build_bench_argv(str(binary), arguments)
+
+    stdout, stderr, code = await _run_sidecar(argv)
+    payload: dict[str, Any] = {
+        "exit_code": code,
+        "stdout": stdout,
+        "stderr": stderr,
+        "mode": "validate" if validate else "benchmark",
+    }
+    # --validate exits 1 to report "the GPU/CPU comparison found deltas"; that
+    # is a legitimate answer, not a tool error.  Every other non-zero exit is.
+    if validate:
+        payload["validation_failed"] = code != 0
+        return payload
+    if code != 0:
+        raise _sidecar_failure("vmaf_bench", code, stdout, stderr)
+    return payload
+
+
+def _build_vpl_argv(binary: str, arguments: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
+    """Validate arguments and return ``(argv, params)`` for vmaf_vpl.
+
+    Byte-identical to ``cmd/vmafx-mcp/impl_sidecar.go::buildVplArgv``.
+    """
+    ref = _validate_path(str(arguments["ref"]))
+    dis = _validate_path(str(arguments["dis"]))
+    # The sidecar, not this server, chooses this value.
+    model = str(arguments.get("model", "vmaf_v0.6.1"))  # vmaf-model-pin: vmaf_vpl.c default
+    if any(ch in model for ch in "/\\ \t"):
+        raise ValueError("model must be a bare model name (e.g. vmaf_v0.6.1), not a path")
+    frames = int(arguments.get("frames", 0))
+    if frames < 0:
+        raise ValueError("frames must be >= 0 (0 = all frames)")
+    device = int(arguments.get("device", 0))
+    if device < 0:
+        raise ValueError("device must be >= 0")
+    render_node = str(arguments.get("render_node", "/dev/dri/renderD128"))
+    if not _VPL_RENDER_NODE_RE.match(render_node):
+        raise ValueError(
+            f"invalid render_node '{render_node}': must match "
+            "/dev/dri/renderD<N> or /dev/dri/card<N>"
+        )
+
+    argv = [
+        binary,
+        "--ref",
+        str(ref),
+        "--dis",
+        str(dis),
+        "--model",
+        model,
+        "--frames",
+        str(frames),
+        "--device",
+        str(device),
+        "--render-node",
+        render_node,
+    ]
+    if bool(arguments.get("fallback", False)):
+        argv.append("--fallback")
+    params = {"model": model, "device": device, "render_node": render_node}
+    return argv, params
+
+
+async def _vmaf_vpl(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Bridge core/tools/vmaf_vpl.c — oneVPL zero-copy decode + SYCL scoring."""
+    binary = _resolve_sidecar("vmaf_vpl")
+    argv, params = _build_vpl_argv(str(binary), arguments)
+
+    stdout, stderr, code = await _run_sidecar(argv)
+    if code != 0:
+        raise _sidecar_failure("vmaf_vpl", code, stdout, stderr)
+    payload: dict[str, Any] = {
+        "exit_code": code,
+        "stdout": stdout,
+        "stderr": stderr,
+        "model": params["model"],
+        "device": params["device"],
+        "render_node": params["render_node"],
+    }
+    score_match = _VPL_SCORE_RE.search(stdout)
+    if score_match:
+        payload["vmaf_score"] = float(score_match.group(1))
+    frames_match = _VPL_FRAMES_RE.search(stdout)
+    if frames_match:
+        payload["frames_processed"] = int(frames_match.group(1))
+    return payload
+
+
 # probe_backend — runtime health check (ADR-0608 / C-P0-1)
 # ---------------------------------------------------------------------------
 
@@ -2635,6 +3123,23 @@ def _scoring_extra_properties() -> dict[str, Any]:
             "default": "json",
             "description": "Score output format (--json, --xml, --csv, --sub). Default: json.",
         },
+        # --- Model flags & score-param leftovers ---
+        "disable_clip": {
+            "type": "boolean",
+            "description": "Disable score clipping to [0, 100] on the model (--model ...:disable_clip).",
+        },
+        "enable_transform": {
+            "type": "boolean",
+            "description": "Enable score transform on the model (--model ...:enable_transform).",
+        },
+        "csv": {
+            "type": "boolean",
+            "description": "Write output file as CSV (--csv). Equivalent to output_fmt='csv'.",
+        },
+        "sub": {
+            "type": "boolean",
+            "description": "Write output file as subtitle-style per-frame scores (--sub). Equivalent to output_fmt='sub'.",
+        },
     }
 
 
@@ -3032,6 +3537,268 @@ async def _list_tools() -> list[Tool]:
                 },
             },
         ),
+        # ── Sidecar-binary bridge (#1240 item b) ────────────────────────
+        # Byte-compatible twins of cmd/vmafx-mcp/tools.go; keep the
+        # descriptions, enums, defaults and bounds identical.
+        Tool(
+            name="vmaf_per_shot",
+            description=(
+                "Wrap the 'vmaf-perShot' sidecar binary: scan a raw YUV reference, "
+                "detect shot boundaries from luma complexity + motion energy, and "
+                "return a per-shot CRF plan targeting a VMAF score. Returns the "
+                "parsed JSON plan by default (format='csv' returns the raw CSV "
+                "text instead). ADR-0222."
+            ),
+            inputSchema={
+                "type": "object",
+                "required": ["reference", "width", "height"],
+                "properties": {
+                    "reference": {
+                        "type": "string",
+                        "description": (
+                            "Reference raw planar YUV path (must be under an allowlisted root)."
+                        ),
+                    },
+                    "width": {"type": "integer", "minimum": 16, "maximum": 65535},
+                    "height": {"type": "integer", "minimum": 16, "maximum": 65535},
+                    "pixel_format": {
+                        "type": "string",
+                        "enum": ["420", "422", "444"],
+                        "default": "420",
+                        "description": "Planar YUV subsampling (--pixel_format).",
+                    },
+                    "bitdepth": {
+                        "type": "integer",
+                        "enum": [8, 10, 12, 16],
+                        "default": 8,
+                        "description": "Planar YUV bit depth (--bitdepth).",
+                    },
+                    "target_vmaf": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "default": 90,
+                        "description": (
+                            "Target VMAF score the CRF predictor aims at (--target-vmaf)."
+                        ),
+                    },
+                    "crf_min": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 63,
+                        "default": 18,
+                        "description": "Lower CRF clamp (--crf-min). Must not exceed crf_max.",
+                    },
+                    "crf_max": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 63,
+                        "default": 35,
+                        "description": "Upper CRF clamp (--crf-max).",
+                    },
+                    "diff_threshold": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 255,
+                        "description": (
+                            "Shot-detector frame-diff cutoff (--diff-threshold; C default 12)."
+                        ),
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["json", "csv"],
+                        "default": "json",
+                        "description": (
+                            "Plan encoding (--format). The MCP tool defaults to json "
+                            "(the C CLI defaults to csv) so the plan comes back structured."
+                        ),
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="vmaf_roi",
+            description=(
+                "Wrap the 'vmaf_roi' sidecar binary: compute a per-CTU saliency grid "
+                "for one frame of a raw YUV file and emit an encoder ROI sidecar. "
+                "encoder='x265' returns the qpfile text in 'qpfile'; encoder='svt-av1' "
+                "returns the raw int8 ROI map base64-encoded in 'roi_map_base64'. "
+                "Without saliency_model a centre-weighted radial placeholder is used "
+                "(smoke-test quality only)."
+            ),
+            inputSchema={
+                "type": "object",
+                "required": ["reference", "width", "height", "frame"],
+                "properties": {
+                    "reference": {
+                        "type": "string",
+                        "description": (
+                            "Reference raw planar YUV path (must be under an allowlisted root)."
+                        ),
+                    },
+                    "width": {"type": "integer", "minimum": 1, "maximum": 16384},
+                    "height": {"type": "integer", "minimum": 1, "maximum": 16384},
+                    "frame": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1000000,
+                        "description": "0-based frame index to score (--frame).",
+                    },
+                    "pixel_format": {
+                        "type": "string",
+                        "enum": ["420", "422", "444"],
+                        "default": "420",
+                    },
+                    "bitdepth": {"type": "integer", "enum": [8, 10, 12, 16], "default": 8},
+                    "ctu_size": {
+                        "type": "integer",
+                        "minimum": 8,
+                        "maximum": 128,
+                        "default": 64,
+                        "description": "CTU grid cell size (--ctu-size; x265 max-ctu).",
+                    },
+                    "encoder": {
+                        "type": "string",
+                        "enum": ["x265", "svt-av1"],
+                        "default": "x265",
+                        "description": "Sidecar dialect (--encoder).",
+                    },
+                    "strength": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 64,
+                        "default": 6.0,
+                        "description": (
+                            "QP-offset gain applied to the saliency grid (--strength)."
+                        ),
+                    },
+                    "saliency_model": {
+                        "type": "string",
+                        "description": (
+                            "Optional ONNX [1,1,H,W] luma->[0,1] saliency model "
+                            "(--saliency-model). Must be under an allowlisted root."
+                        ),
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="vmaf_bench",
+            description=(
+                "Wrap the 'vmaf_bench' sidecar binary: per-feature micro-benchmark "
+                "over the built-in synthetic fixtures, or (validate=true) a GPU-vs-CPU "
+                "correctness comparison. Distinct from run_benchmark, which runs the "
+                "end-to-end bench_all.sh harness over real YUV fixtures. In validate "
+                "mode a non-zero exit is reported as validation_failed=true rather "
+                "than as a tool error."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "frames": {
+                        "type": "integer",
+                        "minimum": 2,
+                        "maximum": 48,
+                        "description": "Frames per benchmark (--frames; C default 10, max 48).",
+                    },
+                    "resolution": {
+                        "type": "string",
+                        "enum": [
+                            "576x324",
+                            "640x480",
+                            "1280x720",
+                            "1920x1080",
+                            "3840x2160",
+                        ],
+                        "description": (
+                            "Single resolution to test (--resolution). Omit to test all."
+                        ),
+                    },
+                    "bpc": {
+                        "type": "integer",
+                        "enum": [8, 10, 12, 16],
+                        "description": "Bits per component (--bpc; C default 8).",
+                    },
+                    "data_dir": {
+                        "type": "string",
+                        "description": (
+                            "Test-data directory (--data-dir). Must be a directory under "
+                            "an allowlisted root."
+                        ),
+                    },
+                    "validate": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "GPU-vs-CPU correctness comparison (--validate).",
+                    },
+                    "gpu_only": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Skip the CPU targets (--gpu-only).",
+                    },
+                    "device_list": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": (
+                            "List the available GPU devices and exit (--list-devices)."
+                        ),
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="vmaf_vpl",
+            description=(
+                "Wrap the 'vmaf_vpl' sidecar binary: decode an encoded (reference, "
+                "distorted) pair with Intel oneVPL, import the VA surfaces zero-copy "
+                "into SYCL via DMA-BUF, and score them. Only built when the oneVPL + "
+                "libva + SYCL toolchain is present; otherwise the tool reports the "
+                "missing binary. Returns the parsed vmaf_score and frames_processed "
+                "alongside the raw stdout."
+            ),
+            inputSchema={
+                "type": "object",
+                "required": ["ref", "dis"],
+                "properties": {
+                    "ref": {"type": "string", "description": "Reference encoded video path."},
+                    "dis": {"type": "string", "description": "Distorted encoded video path."},
+                    "model": {
+                        # The sidecar chooses this value, not this server.
+                        "type": "string",
+                        "default": "vmaf_v0.6.1",  # vmaf-model-pin: vmaf_vpl.c default
+                        "description": "Bare VMAF model name (--model). Paths are rejected.",
+                    },
+                    "frames": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 0,
+                        "description": "Max frames to process (--frames; 0 = all).",
+                    },
+                    "device": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 0,
+                        "description": "SYCL device index (--device).",
+                    },
+                    "render_node": {
+                        "type": "string",
+                        "default": "/dev/dri/renderD128",
+                        "description": (
+                            "VA-API render node (--render-node). Restricted to "
+                            "/dev/dri/renderD<N> or /dev/dri/card<N>."
+                        ),
+                    },
+                    "fallback": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": (
+                            "Fall back to a host upload when the zero-copy import "
+                            "fails (--fallback)."
+                        ),
+                    },
+                },
+            },
+        ),
     ]
 
 
@@ -3279,6 +4046,15 @@ async def _call_tool_dispatch(
             format=str(arguments.get("format", "json")),
             progress_token=progress_token,
         )
+    # ── Sidecar-binary bridge (#1240 item b) ────────────────────────────
+    elif name == "vmaf_per_shot":
+        result = await _vmaf_per_shot(arguments)
+    elif name == "vmaf_roi":
+        result = await _vmaf_roi(arguments)
+    elif name == "vmaf_bench":
+        result = await _vmaf_bench(arguments)
+    elif name == "vmaf_vpl":
+        result = await _vmaf_vpl(arguments)
     else:
         raise ValueError(f"unknown tool: {name}")
     return [TextContent(type="text", text=_dumps_strict(result))]

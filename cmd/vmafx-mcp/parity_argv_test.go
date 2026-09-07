@@ -281,6 +281,38 @@ except Exception:
 				"output_fmt":      "csv",
 			},
 		},
+		{
+			name: "model_clip_transform_and_csv_flag",
+			args: map[string]any{
+				"ref":              "/data/ref.yuv",
+				"dis":              "/data/dis.yuv",
+				"width":            float64(1920),
+				"height":           float64(1080),
+				"pixfmt":           "420",
+				"bitdepth":         float64(8),
+				"model":            "version=vmaf_v0.6.1",
+				"backend":          "cpu",
+				"precision":        "legacy",
+				"disable_clip":     true,
+				"enable_transform": true,
+				"csv":              true,
+			},
+		},
+		{
+			name: "sub_flag_output",
+			args: map[string]any{
+				"ref":       "/data/ref.yuv",
+				"dis":       "/data/dis.yuv",
+				"width":     float64(1920),
+				"height":    float64(1080),
+				"pixfmt":    "420",
+				"bitdepth":  float64(8),
+				"model":     "version=vmaf_v0.6.1",
+				"backend":   "cpu",
+				"precision": "legacy",
+				"sub":       true,
+			},
+		},
 	}
 
 	pyRunnerScript := fmt.Sprintf(`
@@ -294,7 +326,7 @@ extras = _extras_from_args(args)
 
 ref_arg = args.get("ref")
 ref_path = Path(ref_arg) if ref_arg else None
-output_fmt = args.get("output_fmt") or args.get("format") or "json"
+output_fmt = extras.output_fmt
 
 req = ScoreRequest(
     ref=ref_path,
