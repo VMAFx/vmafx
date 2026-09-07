@@ -34,6 +34,13 @@
 #include "test.h"
 #include "libvmaf/libvmaf.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe — an earlier revision of
+ * this file used the keyword and cl.exe rejected all 19 sites with C2065.
+ * ADR-1138. */
+
 /* The 48 per-frame VMAF scores of the Netflix golden pair
  * (src01_hrc00_576x324.yuv vs src01_hrc01_576x324.yuv, vmaf_v0.6.1),
  * captured with `vmaf ... --json --precision=max` from this build. */
@@ -55,18 +62,18 @@ static const double golden_src01_vmaf[] = {
 #define GOLDEN_CNT ((unsigned)(sizeof(golden_src01_vmaf) / sizeof(golden_src01_vmaf[0])))
 
 /* numpy.percentile(golden_src01_vmaf, q) for q = 5, 10, 20, 50. */
-static const double golden_perc5 = 72.351853083385384;
-static const double golden_perc10 = 72.717340155042217;
-static const double golden_perc20 = 73.357468139344396;
-static const double golden_median = 76.091664004240072;
+#define GOLDEN_PERC5 (72.351853083385384)
+#define GOLDEN_PERC10 (72.717340155042217)
+#define GOLDEN_PERC20 (73.357468139344396)
+#define GOLDEN_MEDIAN (76.091664004240072)
 
 /* python/test/quality_runner_test.py:679 pins the Python harness's perc10 of
  * the same clip pair at this value with places=2 (tolerance 5e-3). The C
  * engine's per-frame scores differ from the harness's in the last few
  * decimals, so the pooled percentile is compared at the same tolerance the
  * golden assertion itself uses. */
-static const double harness_perc10 = 72.71845922683059;
-static const double harness_places2 = 5e-3;
+#define HARNESS_PERC10 (72.71845922683059)
+#define HARNESS_PLACES2 (5e-3)
 
 static int import_scores(VmafContext *vmaf, const char *name, const double *score, unsigned cnt)
 {
@@ -80,7 +87,7 @@ static int import_scores(VmafContext *vmaf, const char *name, const double *scor
 #define POOL_CASE_CNT(t) ((unsigned)(sizeof(t) / sizeof((t)[0])))
 
 /* Propagate a helper's failure message. Mirrors mu_assert for helpers that
- * already return "nullptr on success, or the message to fail with". */
+ * already return "NULL on success, or the message to fail with". */
 #define mu_assert_msg(expr)                                                                        \
     do {                                                                                           \
         char *mu_helper_msg = (expr);                                                              \
@@ -89,7 +96,7 @@ static int import_scores(VmafContext *vmaf, const char *name, const double *scor
     } while (0)
 
 /* One pooled-score expectation: pool `name` over [0, last] with `method` and
- * compare against `expect` within `tol`. Returns nullptr on success or `msg`,
+ * compare against `expect` within `tol`. Returns NULL on success or `msg`,
  * so callers can drive a table of cases through a single mu_assert instead of
  * one per case (readability-function-size caps a test body at 15 branches and
  * every mu_assert expands to two). */
@@ -110,11 +117,11 @@ static char *check_pool_cases(VmafContext *vmaf, const char *name, unsigned last
         if (fabs(score - cases[i].expect) > cases[i].tol)
             return cases[i].msg;
     }
-    return nullptr;
+    return NULL;
 }
 
 /* Open a context with `n_subsample` and import `cnt` per-frame scores under
- * `name`. Returns nullptr on success or a static failure message. */
+ * `name`. Returns NULL on success or a static failure message. */
 static char *open_with_scores(VmafContext **vmaf, const char *name, const double *score,
                               unsigned cnt, unsigned n_subsample)
 {
@@ -125,7 +132,7 @@ static char *open_with_scores(VmafContext **vmaf, const char *name, const double
         return "problem during vmaf_init";
     if (import_scores(*vmaf, name, score, cnt))
         return "problem during vmaf_import_feature_score";
-    return nullptr;
+    return NULL;
 }
 
 /* Percentile pooling over the golden pair's real per-frame scores reproduces
@@ -133,24 +140,24 @@ static char *open_with_scores(VmafContext **vmaf, const char *name, const double
  * within the tolerance that assertion uses. */
 static char *test_percentile_matches_python_harness(void)
 {
-    VmafContext *vmaf = nullptr;
+    VmafContext *vmaf = NULL;
     mu_assert_msg(open_with_scores(&vmaf, "vmaf", golden_src01_vmaf, GOLDEN_CNT, 0u));
 
     static const PoolCase cases[] = {
-        {VMAF_POOL_METHOD_PERC10, golden_perc10, 1e-12,
+        {VMAF_POOL_METHOD_PERC10, GOLDEN_PERC10, 1e-12,
          "PERC10 does not match numpy.percentile(q=10)"},
-        {VMAF_POOL_METHOD_PERC10, harness_perc10, harness_places2,
+        {VMAF_POOL_METHOD_PERC10, HARNESS_PERC10, HARNESS_PLACES2,
          "PERC10 does not match the Python harness golden perc10"},
-        {VMAF_POOL_METHOD_PERC5, golden_perc5, 1e-12, "PERC5 does not match numpy.percentile(q=5)"},
-        {VMAF_POOL_METHOD_PERC20, golden_perc20, 1e-12,
+        {VMAF_POOL_METHOD_PERC5, GOLDEN_PERC5, 1e-12, "PERC5 does not match numpy.percentile(q=5)"},
+        {VMAF_POOL_METHOD_PERC20, GOLDEN_PERC20, 1e-12,
          "PERC20 does not match numpy.percentile(q=20)"},
-        {VMAF_POOL_METHOD_MEDIAN, golden_median, 1e-12,
+        {VMAF_POOL_METHOD_MEDIAN, GOLDEN_MEDIAN, 1e-12,
          "MEDIAN does not match numpy.percentile(q=50)"},
     };
     mu_assert_msg(check_pool_cases(vmaf, "vmaf", GOLDEN_CNT - 1, cases, POOL_CASE_CNT(cases)));
 
     mu_assert("problem during vmaf_close", !vmaf_close(vmaf));
-    return nullptr;
+    return NULL;
 }
 
 /* The interpolation rule itself, on a vector whose percentiles are trivially
@@ -159,7 +166,7 @@ static char *test_percentile_matches_python_harness(void)
  * instead of interpolating would return 1.0 / 1.0 / 2.0 / 2.0 here. */
 static char *test_percentile_interpolates_between_ranks(void)
 {
-    VmafContext *vmaf = nullptr;
+    VmafContext *vmaf = NULL;
     static const double v[] = {1., 2., 3., 4.};
     mu_assert_msg(open_with_scores(&vmaf, "f", v, 4u, 0u));
 
@@ -172,7 +179,7 @@ static char *test_percentile_interpolates_between_ranks(void)
     mu_assert_msg(check_pool_cases(vmaf, "f", 3, cases, POOL_CASE_CNT(cases)));
 
     mu_assert("problem during vmaf_close", !vmaf_close(vmaf));
-    return nullptr;
+    return NULL;
 }
 
 /* Percentiles are order statistics over the frames that pooling actually
@@ -180,7 +187,7 @@ static char *test_percentile_interpolates_between_ranks(void)
  * itself for every rank. */
 static char *test_percentile_order_and_single_frame(void)
 {
-    VmafContext *vmaf = nullptr;
+    VmafContext *vmaf = NULL;
     static const double shuffled[] = {4., 1., 3., 2.};
     mu_assert_msg(open_with_scores(&vmaf, "f", shuffled, 4u, 0u));
 
@@ -195,7 +202,7 @@ static char *test_percentile_order_and_single_frame(void)
     mu_assert("single-frame PERC5 is not that frame's score", fabs(score - 3.) < 1e-12);
 
     mu_assert("problem during vmaf_close", !vmaf_close(vmaf));
-    return nullptr;
+    return NULL;
 }
 
 /* n_subsample must skip the same frames for percentiles as for the
@@ -203,7 +210,7 @@ static char *test_percentile_order_and_single_frame(void)
  * so the median of [1..4] becomes the median of {1, 3} = 2.0, not 2.5. */
 static char *test_percentile_honours_n_subsample(void)
 {
-    VmafContext *vmaf = nullptr;
+    VmafContext *vmaf = NULL;
     static const double v[] = {1., 2., 3., 4.};
     mu_assert_msg(open_with_scores(&vmaf, "f", v, 4u, 2u));
 
@@ -215,7 +222,7 @@ static char *test_percentile_honours_n_subsample(void)
     mu_assert_msg(check_pool_cases(vmaf, "f", 3, cases, POOL_CASE_CNT(cases)));
 
     mu_assert("problem during vmaf_close", !vmaf_close(vmaf));
-    return nullptr;
+    return NULL;
 }
 
 /* An out-of-range discriminant a future ABI might carry. Reproducing exactly
@@ -238,7 +245,7 @@ static enum VmafPoolingMethod future_abi_pool_method(void)
  * value instead.) */
 static char *test_invalid_pool_methods_still_rejected(void)
 {
-    VmafContext *vmaf = nullptr;
+    VmafContext *vmaf = NULL;
     static const double v[] = {1., 2., 3., 4.};
     mu_assert_msg(open_with_scores(&vmaf, "f", v, 4u, 0u));
 
@@ -250,8 +257,7 @@ static char *test_invalid_pool_methods_still_rejected(void)
               vmaf_feature_score_pooled(vmaf, "f", future_abi_pool_method(), &score, 0, 3) ==
                   -EINVAL);
     mu_assert("null score pointer was accepted",
-              vmaf_feature_score_pooled(vmaf, "f", VMAF_POOL_METHOD_MEDIAN, nullptr, 0, 3) ==
-                  -EINVAL);
+              vmaf_feature_score_pooled(vmaf, "f", VMAF_POOL_METHOD_MEDIAN, NULL, 0, 3) == -EINVAL);
 
     static const PoolCase cases[] = {
         {VMAF_POOL_METHOD_MIN, 1., 1e-12, "MIN changed"},
@@ -261,7 +267,7 @@ static char *test_invalid_pool_methods_still_rejected(void)
     mu_assert_msg(check_pool_cases(vmaf, "f", 3, cases, POOL_CASE_CNT(cases)));
 
     mu_assert("problem during vmaf_close", !vmaf_close(vmaf));
-    return nullptr;
+    return NULL;
 }
 
 /* Enumerator values are append-only: every pre-existing discriminant keeps the
@@ -285,13 +291,13 @@ static char *test_enum_values_are_append_only(void)
         {VMAF_POOL_METHOD_PERC20, 8, "VMAF_POOL_METHOD_PERC20 is not appended after PERC10"},
     };
 
-    char *failure = nullptr;
+    char *failure = NULL;
     for (unsigned i = 0; i < (unsigned)(sizeof(expected) / sizeof(expected[0])); i++) {
         if ((int)expected[i].method != expected[i].value)
             failure = expected[i].msg;
     }
     mu_assert_msg(failure);
-    return nullptr;
+    return NULL;
 }
 
 mu_message_t run_tests(void)
@@ -302,5 +308,7 @@ mu_message_t run_tests(void)
     mu_run_test(test_percentile_honours_n_subsample);
     mu_run_test(test_invalid_pool_methods_still_rejected);
     mu_run_test(test_enum_values_are_append_only);
-    return nullptr;
+    return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
