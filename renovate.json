@@ -13,7 +13,7 @@
   ],
   "timezone": "Europe/Vienna",
   "prHourlyLimit": 0,
-  "prConcurrentLimit": 10,
+  "prConcurrentLimit": 3,
   "rangeStrategy": "bump",
   "commitMessagePrefix": "chore(deps):",
   "branchPrefix": "renovate/",
@@ -52,7 +52,7 @@
       "automerge": false
     },
     {
-      "description": "Group GitHub Actions minor+patch+digest bumps; auto-merge — digest-only is mechanical and CI catches drift.",
+      "description": "Group GitHub Actions minor+patch+digest bumps; auto-merge \u2014 digest-only is mechanical and CI catches drift.",
       "matchManagers": [
         "github-actions"
       ],
@@ -69,7 +69,7 @@
       ]
     },
     {
-      "description": "Major Action upgrades require human review — breaking changes possible.",
+      "description": "Major Action upgrades require human review \u2014 breaking changes possible.",
       "matchManagers": [
         "github-actions"
       ],
@@ -80,7 +80,7 @@
       "automerge": false
     },
     {
-      "description": "Group pre-commit hook rev bumps; auto-merge — mechanical, lint catches drift.",
+      "description": "Group pre-commit hook rev bumps; auto-merge \u2014 mechanical, lint catches drift.",
       "matchManagers": [
         "pre-commit"
       ],
@@ -91,7 +91,9 @@
       "description": "Python patch updates auto-merge; minor + major need review.",
       "matchManagers": [
         "pep621",
-        "pip_requirements"
+        "pip_requirements",
+        "pip_setup",
+        "setup-cfg"
       ],
       "matchUpdateTypes": [
         "patch"
@@ -119,7 +121,9 @@
       "description": "Python minor grouped, manual review.",
       "matchManagers": [
         "pep621",
-        "pip_requirements"
+        "pip_requirements",
+        "pip_setup",
+        "setup-cfg"
       ],
       "matchUpdateTypes": [
         "minor"
@@ -152,7 +156,7 @@
       ]
     },
     {
-      "description": "Go major upgrades travel individually and require human review — module path and API changes.",
+      "description": "Go major upgrades travel individually and require human review \u2014 module path and API changes.",
       "matchManagers": [
         "gomod"
       ],
@@ -163,7 +167,7 @@
       "automerge": false
     },
     {
-      "description": "Group all Cargo (Rust) minor + patch updates; auto-merge — Rust's semantic versioning is reliable and CI catches UB/breakage.",
+      "description": "Group all Cargo (Rust) minor + patch updates; auto-merge \u2014 Rust's semantic versioning is reliable and CI catches UB/breakage.",
       "matchManagers": [
         "cargo"
       ],
@@ -179,7 +183,7 @@
       ]
     },
     {
-      "description": "Cargo major upgrades require human review — breaking API changes, unsafe code review.",
+      "description": "Cargo major upgrades require human review \u2014 breaking API changes, unsafe code review.",
       "matchManagers": [
         "cargo"
       ],
@@ -202,7 +206,7 @@
       "automerge": true
     },
     {
-      "description": "Renovate's own action — manual review on bumps to retain auditability of the dep-bot itself.",
+      "description": "Renovate's own action \u2014 manual review on bumps to retain auditability of the dep-bot itself.",
       "matchPackageNames": [
         "renovatebot/github-action"
       ],
@@ -210,7 +214,7 @@
       "automerge": false
     },
     {
-      "description": "FFmpeg release tag — manual review; drives the ffmpeg-patches/ rebase story.",
+      "description": "FFmpeg release tag \u2014 manual review; drives the ffmpeg-patches/ rebase story.",
       "matchPackageNames": [
         "FFmpeg/FFmpeg"
       ],
@@ -222,7 +226,7 @@
       ]
     },
     {
-      "description": "ROCm image version bump — manual review required. ROCm major-version bumps carry KFD ioctl ABI risk; validate kernel compat, and re-check the prune list in the rocm-src stage, before merging (ADR-1225, ADR-0604, ADR-0603).",
+      "description": "ROCm image version bump \u2014 manual review required. ROCm major-version bumps carry KFD ioctl ABI risk; validate kernel compat, and re-check the prune list in the rocm-src stage, before merging (ADR-1225, ADR-0604, ADR-0603).",
       "matchPackageNames": [
         "rocm/dev-ubuntu-24.04"
       ],
@@ -235,7 +239,7 @@
       ]
     },
     {
-      "description": "dev-image deps (CUDA-adjacent, Intel NEO/LZ0, ONNX Runtime, SVT-AV1, VVenC, AMF) — manual review required. Container rebuild has large blast radius; validate GPU compatibility before merging. See ADR-0605, ADR-1145.",
+      "description": "dev-image deps (CUDA-adjacent, Intel NEO/LZ0, ONNX Runtime, SVT-AV1, VVenC, AMF) \u2014 manual review required. Container rebuild has large blast radius; validate GPU compatibility before merging. See ADR-0605, ADR-1145.",
       "matchPackageNames": [
         "intel/compute-runtime",
         "oneapi-src/level-zero",
@@ -402,5 +406,8 @@
     "managerFilePatterns": [
       "//deploy/helm/.*/templates/.*\\.ya?ml$//"
     ]
-  }
+  },
+  "draftPR": true,
+  "branchConcurrentLimit": 5,
+  "dependencyDashboard": true
 }
