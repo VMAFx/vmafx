@@ -183,7 +183,7 @@ and teardown.
   [`test_gpu_dispatch_runtime.c`](test_gpu_dispatch_runtime.c) calls
   `setenv()` on `VMAFX_TEST_DISPATCH_RUNTIME_*` keys + the real
   `VMAF_CUDA_DISPATCH` to exercise the once-snapshot semantics. The
-  snapshot table is a process-wide singleton (ADR-0461) so the first
+  snapshot table is a process-wide singleton (ADR-0488) so the first
   `vmaf_gpu_dispatch_env_get(key)` call wins permanently — tests must
   pre-set the env BEFORE the first selector call. The test executable
   is fork-local (no upstream coupling); namespaced `VMAFX_TEST_*` keys

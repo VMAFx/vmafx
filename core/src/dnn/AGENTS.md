@@ -373,7 +373,7 @@ because it changes report schema cardinality. Also do not revert the
 rank-2 / rank-4 frame runners back to `vmaf_ort_infer()` — that helper
 is single-output by construction and would reopen T-DNN-MULTI-OUTPUT.
 
-## Invariant — model_loader.c lint shape (ADR-1142 / ADR-0461)
+## Invariant — model_loader.c lint shape (ADR-1142 / ADR-0488)
 
 `model_loader.c` is measured by the whole-tree clang-tidy ratchet
 (`scripts/ci/tidy-baseline-cpu.json`) and sits at zero. Three shapes in
@@ -394,7 +394,7 @@ it are load-bearing for that; do not collapse them on rebase:
   parentheses.
 - **Two `NOLINTNEXTLINE(concurrency-mt-unsafe)` on `getenv()`**, in
   `vmaf_dnn_validate_onnx()` (`VMAF_TINY_MODEL_DIR`) and
-  `vmaf_dnn_verify_signature()` (`PATH`). These cite the ADR-0461
+  `vmaf_dnn_verify_signature()` (`PATH`). These cite the ADR-0488
   caller-contract, the same posture as `gpu_dispatch_env.cpp` and
   `core/src/mcp/compute_vmaf.c`. A `pthread_once` snapshot is
   deliberately **not** used here: the tiny-model tests `setenv()`

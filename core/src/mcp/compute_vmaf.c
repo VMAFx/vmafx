@@ -179,10 +179,10 @@ static void append_canonical_root(const char *candidate, char roots[][PATH_MAX],
 static void append_env_roots(char roots[][PATH_MAX], unsigned *count, unsigned cap)
 {
     /* The MCP compute call resolves the env once per request and the
-     * ADR-0461 caller-contract bans concurrent setenv on the MCP path, so
+     * ADR-0488 caller-contract bans concurrent setenv on the MCP path, so
      * the concurrency-mt-unsafe getenv is safe here (same posture as
      * gpu_dispatch_env). */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0461 caller-contract. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0488 caller-contract. */
     const char *extra = getenv("VMAF_MCP_ALLOW");
     if (extra == NULL || extra[0] == '\0')
         return;

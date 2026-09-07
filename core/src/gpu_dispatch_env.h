@@ -14,7 +14,7 @@
  *  to snapshot the variable at first call. This header extracts
  *  that pattern into one reusable helper so Vulkan and SYCL (and
  *  any future backend) can adopt the same posture without copying
- *  the boilerplate. See ADR-0461.
+ *  the boilerplate. See ADR-0488.
  *
  *  Contract:
  *    • Call vmaf_gpu_dispatch_env_get("VMAF_FOO_DISPATCH") from any

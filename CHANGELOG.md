@@ -4667,7 +4667,7 @@ extractor assertion coverage from ~25 % to ~53 %. See ADR-0886.
 - **`core/test/test_gpu_dispatch_runtime.c`** — host-only unit test
   (CPU-only, no GPU SDK required, runs on every CI matrix lane) that
   pins the previously-uncovered shared GPU dispatch runtime: the
-  `gpu_dispatch_env.c` thread-safe once-snapshot helper (ADR-0461),
+  `gpu_dispatch_env.c` thread-safe once-snapshot helper (ADR-0488),
   the `gpu_dispatch_parse.h` shared inline tokeniser (ADR-0483), the
   `core/src/cuda/dispatch_strategy.c` selector (ADR-0181), and the
   `core/src/hip/dispatch_strategy.c` support stub (ADR-0212). 11
@@ -8464,7 +8464,7 @@ YUV400P sources always produce luma-only output regardless of the option.
 - `psnr_hvs_vulkan`: add `enable_chroma` option (default `true`). When set
   to `false`, only the luma plane is dispatched and only `psnr_hvs_y` is
   emitted; the combined `psnr_hvs` score is suppressed. Mirrors the
-  `psnr_vulkan` / ADR-0453 pattern. See ADR-0461.
+  `psnr_vulkan` / ADR-0453 pattern. See ADR-0585.
 
 
 - `psnr` and `float_psnr` gained an opt-in `uncapped` option (bool,
@@ -13475,7 +13475,7 @@ No code changes in this PR — research only.
 - **ci: Promote `coverage-gpu` CI job from advisory to required**: the two-week stability window (2026-05-19 → 2026-06-02) elapsed with no advisory-fail runs on the self-hosted `gpu-full` runner. Removed `continue-on-error: true` and renamed the job display name from `(Advisory)` to required. Closes T-GPU-COVERAGE-STABLE-WEEKS.
 
 
-- **GPU dispatch env thread safety** (ADR-0461): introduce
+- **GPU dispatch env thread safety** (ADR-0488): introduce
   `core/src/gpu_dispatch_env.{h,c}` — a single once-snapshot helper for
   `VMAF_*_DISPATCH` env variables. The Vulkan and SYCL `dispatch_strategy`
   modules now snapshot their respective env variables once at first call (via a
@@ -19026,6 +19026,20 @@ no score floor was applied.
   binary exits 234, causing spurious CI failures. Tests are marked
   `@unittest.skip("ADR-0337: ...")` so they remain visible and can be re-enabled once the
   feature is plumbed through the C integer-motion path.
+
+
+- **ADR cross-reference corrections**: 33 inline citations pointed at
+  ADR-0461 ("CLI validates positive dimensions and chroma-alignment on
+  input videos") for decisions it does not record. The `gpu_dispatch_env`
+  once-snapshot caller-contract that every `concurrency-mt-unsafe` NOLINT
+  cites is [ADR-0488](docs/adr/0488-gpu-dispatch-env-shared-snapshot.md);
+  the `psnr_hvs_vulkan` `enable_chroma` option is
+  [ADR-0585](docs/adr/0585-psnr-hvs-vulkan-enable-chroma.md); the
+  `float_ms_ssim` `enable_chroma` option is
+  [ADR-0583](docs/adr/0583-float-ms-ssim-enable-chroma.md). ADR-0858's
+  `## References` also linked `0461-gpu-dispatch-env-centralised-snapshot.md`,
+  a file that has never existed. The four citations that genuinely refer to
+  ADR-0461's CLI validation are unchanged.
 
 
 - **Vulkan-01**: `vmaf_get_feature_extractor_by_name("integer_motion_vulkan")` now

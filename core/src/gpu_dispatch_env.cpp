@@ -3,7 +3,7 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  C++23 implementation of the once-snapshotted GPU dispatch env helper.
- *  See gpu_dispatch_env.h for the public contract and ADR-0461 for rationale.
+ *  See gpu_dispatch_env.h for the public contract and ADR-0488 for rationale.
  *  ADR-0858 records the .c → .cpp conversion decision.
  *  ADR-1068 records the fast-path data-race fix.
  *
@@ -84,11 +84,11 @@ constinit std::array<EnvRow, kTableCap> g_rows{};
  * after the throwing region completes successfully. */
 const char *snapshot_into_slot(EnvRow *slot, std::string_view key, const char *var_name)
 {
-    /* ADR-0461 caller-contract: no other thread calls setenv("VMAF_*")
+    /* ADR-0488 caller-contract: no other thread calls setenv("VMAF_*")
      * concurrently with getenv here; the lock serialises only multiple
      * vmaf_gpu_dispatch_env_get callers, not hypothetical concurrent setenv
      * from user code. */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0461 contract above. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0488 contract above. */
     const char *const val = std::getenv(var_name);
     std::optional<std::string> snapshot{};
     try {
@@ -157,7 +157,7 @@ extern "C" {
     if (!slot) {
         /* Table exhausted — fall back to a raw getenv.  Should never
          * happen in production (8 slots, at most 4 backends).
-         * NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0461 caller-contract. */
+         * NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0488 caller-contract. */
         return std::getenv(var_name);
     }
 

@@ -1227,7 +1227,7 @@ after a port-upstream of any of these files.
   [ADR-0161](../../../docs/adr/0161-ssimulacra2-simd-bitexact.md)
   / [ADR-0162](../../../docs/adr/0162-ssimulacra2-iir-blur-simd.md)
   / [ADR-0163](../../../docs/adr/0163-ssimulacra2-ptlr-simd.md).
-- **`float_ms_ssim` `enable_chroma` (ADR-0461, PR opened 2026-05-16)**:
+- **`float_ms_ssim` `enable_chroma` (ADR-0583, PR opened 2026-05-16)**:
   `float_ms_ssim.c` has a `bool enable_chroma` field in `MsSsimState`
   and a per-plane loop in `extract()` emitting `float_ms_ssim_cb` /
   `float_ms_ssim_cr`. The default is `false` (luma-only, backward-

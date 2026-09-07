@@ -953,11 +953,11 @@ int vmaf_dnn_validate_onnx(const char *path, size_t max_bytes)
     /* Cache environment variables once per function call to avoid repeated
      * unsafe getenv() calls in multithreaded contexts (getenv is not required
      * to be thread-safe by C99, and glibc's implementation is known to race).
-     * ADR-0461 caller-contract: no other thread calls setenv("VMAF_*")
+     * ADR-0488 caller-contract: no other thread calls setenv("VMAF_*")
      * concurrently with this read. A pthread_once snapshot (the
      * gpu_dispatch_env posture) is deliberately NOT used here — the tiny-model
      * tests setenv() this variable between cases and must observe each value. */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0461 caller-contract. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0488 caller-contract. */
     const char *jail_dir = getenv("VMAF_TINY_MODEL_DIR");
 
     /* Optional chroot-style path jail via VMAF_TINY_MODEL_DIR. Applied
@@ -1325,9 +1325,9 @@ int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path)
     /* Cache environment variables once per function call to avoid repeated
      * unsafe getenv() calls in multithreaded contexts (getenv is not required
      * to be thread-safe by C99, and glibc's implementation is known to race).
-     * ADR-0461 caller-contract: no other thread calls setenv("PATH")
+     * ADR-0488 caller-contract: no other thread calls setenv("PATH")
      * concurrently with this read. */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0461 caller-contract. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0488 caller-contract. */
     const char *path_env = getenv("PATH");
 
     char cosign_path[PATH_MAX];

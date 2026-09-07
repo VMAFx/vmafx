@@ -67,7 +67,7 @@ that follow.
 ## References
 
 - ADR-0858: original gpu_dispatch_env.cpp C++23 conversion decision
-- ADR-0461: caller-contract banning concurrent `setenv("VMAF_*")` during GPU dispatch
+- ADR-0488: caller-contract banning concurrent `setenv("VMAF_*")` during GPU dispatch
 - r13 thread-safety audit (2026-06-06): fast-path data race identified
 - CWE-362 / SEI CERT CON43-C: "Do not allow data races in multithreaded code"
 - C++ standard [atomics.order] §3: release/acquire synchronisation

@@ -4187,7 +4187,7 @@ upstream sync.
 **Rebase impact:** Low. The new test executable is fork-local —
 upstream Netflix/vmaf does not ship the `gpu_dispatch_env`,
 `gpu_dispatch_parse`, or per-backend `dispatch_strategy` TUs targeted
-by the test (those are all ADR-0181 / ADR-0461 / ADR-0483 fork
+by the test (those are all ADR-0181 / ADR-0488 / ADR-0483 fork
 additions). The wiring in `core/test/meson.build` lives in the
 fork-added test region near other `test_*` entries; no upstream
 collision is possible. If upstream ever adds dispatch-strategy
@@ -6946,7 +6946,7 @@ No upstream-shared files are touched; no rebase action required.
 
 ## fix/saliency-per-mb-eval-2026-05-15 — integer_vif enable_chroma
 
-## refactor/gpu-dispatch-env-pthread-once (ADR-0461)
+## refactor/gpu-dispatch-env-pthread-once (ADR-0488)
 
 No rebase impact: adds `core/src/gpu_dispatch_env.{h,c}` (new fork-local
 files) and modifies `cuda/dispatch_strategy.c`, `vulkan/dispatch_strategy.c`,
@@ -42369,7 +42369,7 @@ python -m pytest ai/tests/test_extract_k150k_no_ssimulacra2.py -v
 # Expected: 3/3 PASS
 ```
 
-### feat/psnr-hvs-vulkan-enable-chroma-2026-05-16 — `enable_chroma` option for `psnr_hvs_vulkan` (ADR-0461)
+### feat/psnr-hvs-vulkan-enable-chroma-2026-05-16 — `enable_chroma` option for `psnr_hvs_vulkan` (ADR-0585)
 
 - **Touches**: `core/src/feature/vulkan/psnr_hvs_vulkan.c`
 - **Invariant**: `enable_chroma` defaults to `true`; do not flip. When

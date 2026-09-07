@@ -9,7 +9,7 @@
 
 `core/src/gpu_dispatch_env.c` (~132 LOC, 0 gotos) implements a once-snapshotted
 thread-safe env-var lookup table shared by all GPU backends (CUDA, Vulkan, SYCL,
-HIP, Metal). ADR-0461 specifies the contract; the original C implementation uses
+HIP, Metal). ADR-0488 specifies the contract; the original C implementation uses
 `pthread_mutex_t` on POSIX and an `INIT_ONCE` / `CRITICAL_SECTION` pair on Windows,
 with manual `lock_acquire` / `lock_release` helpers and a nullable `char *` to
 represent "variable unset at snapshot time".
@@ -42,7 +42,7 @@ exactly. Remove the `.c` entry from `libvmaf_sources`.
 | Option | Pros | Cons | Why not chosen |
 | --- | --- | --- | --- |
 | Keep `.c`, patch Windows path separately | Zero risk | Platform-branch boilerplate stays; missed RAII opportunity | The C++23 path is strictly simpler and already validated by ADR-0708 |
-| Inline into each GPU backend dispatch_strategy.c | Eliminates a TU | Duplication; defeats ADR-0461 centralised-snapshot rationale | Contradicts ADR-0461 design |
+| Inline into each GPU backend dispatch_strategy.c | Eliminates a TU | Duplication; defeats ADR-0488 centralised-snapshot rationale | Contradicts ADR-0488 design |
 | Use C11 `_Generic` + `pthread_once` refactor | Stays in C | No `std::optional`, no `string_view`, Windows shim remains | C cannot express the RAII semantics that make the conversion worthwhile |
 
 ## Consequences
@@ -52,12 +52,12 @@ exactly. Remove the `.c` entry from `libvmaf_sources`.
   enforced by the compiler.
 - **Negative**: Adds one more C++ TU to the build; negligible compile overhead.
 - **Neutral / follow-ups**: The `.c` source file is deleted; the `.cpp` file
-  carries forward the same ADR-0461 NOLINT citations for the two `std::getenv`
+  carries forward the same ADR-0488 NOLINT citations for the two `std::getenv`
   calls in the table-exhausted and slow-path branches.
 
 ## References
 
-- [ADR-0461](0461-gpu-dispatch-env-centralised-snapshot.md) — original C
+- [ADR-0488](0488-gpu-dispatch-env-shared-snapshot.md) — original C
   implementation contract.
 - [ADR-0708](0708-vmafx-cpp23-internals-pilot.md) — C++23 internals pilot.
 - Source: user direction (task brief 2026-05-29).
