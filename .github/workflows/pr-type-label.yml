@@ -1,0 +1,89 @@
+# Derive a `type:*` label from a pull request's Conventional-Commit prefix.
+#
+# GitHub generates release-note sections BY LABEL (see .github/release.yml), and
+# this repository labelled almost nothing: 32 of the last 40 merged PRs carried
+# no label at all, so a label-grouped release body would have put ~80% of the
+# work under "Other changes". The Conventional-Commit prefix is already
+# mandatory here (the commit-msg hook enforces it), so the type is derivable and
+# nobody has to remember to label anything. ADR-1233.
+name: PR type label
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: write
+
+concurrency:
+  group: pr-type-label-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    name: Label PR by commit type
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply type label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # `type(scope)!: subject` -> type, and note the breaking-change bang.
+          type="${PR_TITLE%%(*}"
+          type="${type%%:*}"
+          type="${type%!}"
+          type="$(printf '%s' "$type" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+
+          case "$type" in
+            feat)     label="type:feature" ;;
+            fix)      label="type:bug" ;;
+            perf)     label="type:perf" ;;
+            refactor) label="type:refactor" ;;
+            docs)     label="type:docs" ;;
+            test)     label="type:test" ;;
+            build)    label="type:build" ;;
+            ci)       label="type:ci" ;;
+            chore)    label="type:chore" ;;
+            revert)   label="type:revert" ;;
+            security) label="type:security" ;;
+            style)    label="type:style" ;;
+            port)     label="type:port" ;;
+            sycl)     label="type:sycl" ;;
+            cuda)     label="type:cuda" ;;
+            simd)     label="type:simd" ;;
+            *)
+              echo "::notice::'$type' is not a known Conventional-Commit type; no type label applied."
+              exit 0
+              ;;
+          esac
+
+          # Replace any previously-derived type label: the title can be edited,
+          # and a PR carrying two type labels would appear twice in the release
+          # notes, once under each section.
+          current=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
+                      --json labels --jq '.labels[].name' || true)
+          while IFS= read -r existing; do
+            case "$existing" in
+              type:*)
+                [ "$existing" = "$label" ] && continue
+                gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "$existing" || true
+                ;;
+            esac
+          done <<< "$current"
+
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "$label"
+          echo "Applied $label (from '$type')."
+
+          # A `!` before the colon, or a BREAKING CHANGE footer, is the
+          # Conventional-Commit breaking marker. It gets its own section.
+          if printf '%s' "$PR_TITLE" | grep -qE '^[a-z]+(\([^)]*\))?!:' \
+             || printf '%s' "$PR_BODY" | grep -qE '^BREAKING[ -]CHANGE:'; then
+            gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "breaking-change"
+            echo "Applied breaking-change."
+          fi
