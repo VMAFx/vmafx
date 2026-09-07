@@ -24,9 +24,20 @@ if [[ $# -ne 1 ]]; then
 fi
 
 tag="$1"
-if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-  printf 'ERROR: release tag must be ordinary SemVer vMAJOR.MINOR.PATCH: %s\n' "$tag" >&2
+# ADR-1201: release candidates precede the final 1.0.0, so an `-rc.N` suffix is
+# accepted alongside the plain triple. The suffix is deliberately NARROW -- only
+# `rc` and only a dotted integer with no leading zero -- so that `v1.0.0-rc.1`
+# passes while `v1.0.0-beta`, `v1.0.0-rc`, `v1.0.0-rc.01` and `v1.0.0-rc.1.2` do
+# not. SemVer would allow all of those; this fork ships exactly one prerelease
+# channel and a looser pattern only creates ways to mis-tag a release.
+if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.(0|[1-9][0-9]*))?$ ]]; then
+  printf 'ERROR: release tag must be vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-rc.N: %s\n' "$tag" >&2
   exit 64
+fi
+# Everything downstream compares against the manifest, which carries the same
+# string including the suffix, so no separate stripping is needed.
+if [[ "$tag" == *-rc.* ]]; then
+  printf 'note: %s is a release candidate (prerelease)\n' "$tag" >&2
 fi
 version="${tag#v}"
 
@@ -61,7 +72,11 @@ for relative_path in "${marker_files[@]}"; do
   fi
   marker_count="$(grep -Ec 'x-release-please-version' "$marker_path" || true)"
   marker_line="$(grep -E 'x-release-please-version' "$marker_path" || true)"
-  marker_version="$(printf '%s\n' "$marker_line" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' || true)"
+  # ADR-1201: the marker carries the full version including any `-rc.N`
+  # suffix, so the extractor must match it too. Without the optional group this
+  # reads 1.0.0-rc.1 as "1.0.0" and then reports the marker as mismatched
+  # against the tag it actually agrees with.
+  marker_version="$(printf '%s\n' "$marker_line" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?' || true)"
   if [[ "$marker_count" -ne 1 || "$marker_version" != "$version" ]]; then
     printf 'ERROR: %s does not contain exactly one %s release marker\n' \
       "$relative_path" "$version" >&2

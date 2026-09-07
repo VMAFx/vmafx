@@ -44,17 +44,29 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name || github.event.inputs.tag }}
           persist-credentials: false
-      - name: Reject prereleases and verify every coordinated version
+      - name: Verify the tag, the release flags and every coordinated version
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease || false }}
         run: |
-          if [[ "$RELEASE_IS_PRERELEASE" == "true" ]]; then
-            echo "ERROR: prerelease publication is not supported: $RELEASE_TAG" >&2
+          # ADR-1201: release candidates are published, so a prerelease is no
+          # longer rejected outright. What IS enforced is that the tag and the
+          # GitHub release agree: an `-rc.N` tag must be marked prerelease and a
+          # final tag must not. A mismatch either way is the dangerous case --
+          # an RC marked stable becomes "latest" for every consumer, and a final
+          # marked prerelease silently never does.
+          case "$RELEASE_TAG" in
+            *-rc.*) tag_is_rc=true ;;
+            *)      tag_is_rc=false ;;
+          esac
+          if [[ "$RELEASE_IS_PRERELEASE" != "$tag_is_rc" ]]; then
+            echo "ERROR: $RELEASE_TAG has prerelease=$RELEASE_IS_PRERELEASE but the tag says rc=$tag_is_rc" >&2
+            echo "  An -rc.N tag must be published as a prerelease; a final tag must not." >&2
             exit 1
           fi
+          echo "is_prerelease=$tag_is_rc" >> "$GITHUB_OUTPUT"
           expected_ref="refs/tags/$RELEASE_TAG"
           if [[ "$GITHUB_REF" != "$expected_ref" ]]; then
             echo "ERROR: run this workflow at $expected_ref, not $GITHUB_REF" >&2
@@ -69,9 +81,9 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$release_json"
           if [[ "$(jq -r '.tag_name' "$release_json")" != "$RELEASE_TAG" || \
                 "$(jq -r '.draft' "$release_json")" != "false" || \
-                "$(jq -r '.prerelease' "$release_json")" != "false" || \
+                "$(jq -r '.prerelease' "$release_json")" != "$tag_is_rc" || \
                 "$(jq -r '.published_at != null' "$release_json")" != "true" ]]; then
-            echo "ERROR: $RELEASE_TAG must name a published, non-prerelease GitHub release" >&2
+            echo "ERROR: $RELEASE_TAG must name a published GitHub release with prerelease=$tag_is_rc" >&2
             exit 1
           fi
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"

@@ -66,8 +66,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease || false }}
         run: |
-          if [[ "$RELEASE_IS_PRERELEASE" == "true" ]]; then
-            echo "ERROR: prerelease publication is not supported: $PUBLISH_TAG" >&2
+          # ADR-1201: release candidates are published as images too, so a
+          # prerelease is no longer rejected. The tag and the release flag must
+          # AGREE: an -rc.N tag must be marked prerelease and a final tag must
+          # not. The dangerous case is an RC published as a stable release,
+          # which would make it eligible for the `latest` moving tag.
+          case "$PUBLISH_TAG" in
+            *-rc.*) tag_is_rc=true ;;
+            *)      tag_is_rc=false ;;
+          esac
+          if [[ "$RELEASE_IS_PRERELEASE" != "$tag_is_rc" ]]; then
+            echo "ERROR: $PUBLISH_TAG has prerelease=$RELEASE_IS_PRERELEASE but the tag says rc=$tag_is_rc" >&2
             exit 1
           fi
           expected_ref="refs/tags/$PUBLISH_TAG"
@@ -84,9 +93,9 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PUBLISH_TAG" > "$release_json"
           if [[ "$(jq -r '.tag_name' "$release_json")" != "$PUBLISH_TAG" || \
                 "$(jq -r '.draft' "$release_json")" != "false" || \
-                "$(jq -r '.prerelease' "$release_json")" != "false" || \
+                "$(jq -r '.prerelease' "$release_json")" != "$tag_is_rc" || \
                 "$(jq -r '.published_at != null' "$release_json")" != "true" ]]; then
-            echo "ERROR: $PUBLISH_TAG must name a published, non-prerelease release" >&2
+            echo "ERROR: $PUBLISH_TAG must name a published release with prerelease=$tag_is_rc" >&2
             exit 1
           fi
           echo "tag=$PUBLISH_TAG" >> "$GITHUB_OUTPUT"
@@ -97,6 +106,19 @@ jobs:
           # original run had pushed. Resolve it from the repository's actual
           # newest published release instead, which makes the guard identical
           # on both trigger paths.
+          # ADR-1201 belt-and-braces: a release candidate must never take the
+          # `latest` moving tag. GitHub's /releases/latest already excludes
+          # prereleases, so an -rc.N tag can never match below -- but `latest`
+          # pointing at an RC is severe and silent for every consumer that pulls
+          # it, so the suffix is also refused explicitly rather than relying on
+          # one endpoint's semantics staying that way.
+          case "$PUBLISH_TAG" in
+            *-rc.*)
+              echo "is_latest=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::$PUBLISH_TAG is a release candidate; never tagged 'latest'"
+              exit 0
+              ;;
+          esac
           latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" \
             --jq '.tag_name' 2>/dev/null || true)"
           if [[ "$latest_tag" == "$PUBLISH_TAG" ]]; then
