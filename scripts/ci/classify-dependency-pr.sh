@@ -144,6 +144,7 @@ is_allowed_dependency_path() {
       go.mod | go.sum | \
       Cargo.toml | Cargo.lock | deny.toml | \
       pyproject.toml | poetry.lock | uv.lock | tox.ini | \
+      setup.py | setup.cfg | \
       requirements*.txt | constraints*.txt | \
       Dockerfile* | *.Dockerfile | \
       Chart.yaml | Chart.lock | \
