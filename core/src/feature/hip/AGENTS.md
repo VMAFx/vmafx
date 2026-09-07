@@ -465,3 +465,28 @@ Guarded by `core/test/test_hip_speed_singular_parity.c`. The older
 chroma planes give 4x2 = 8 blocks for a 25x25 covariance — singular on
 every frame — so they never exercise the regular path. A SpEED test that
 needs a regular frame must be at least 960x960.
+## float_adm options must reach the kernels (ADR-1220)
+
+`adm_p_norm` (alias `apn`) is a `VMAF_OPT_FLAG_FEATURE_PARAM` that
+`float_adm_hip` declares with the CPU's name, alias, default and range.
+Until ADR-1220 `float_adm/float_adm_score.hip` hardcoded the cube sum
+and `float_adm_hip.c` hardcoded the `1.0f / 3.0f` pooling root, so the
+option moved only the AIM exponent and produced a hybrid quantity.
+
+Invariants:
+
+- `adm_p_norm` has **four** application points in `adm_tools.c` — the
+  DLM numerator sum, the CSF denominator sum, the pooling root
+  `powf(accum, 1.0f / adm_p_norm)`, and
+  `get_noise_constant(w, h, weight, p)`. Change them together.
+- Keep the CPU's `p == 3` literal-cube fast path in the kernel
+  (`fadm_pnorm_term`). Device `powf(x, 3.0f)` is not guaranteed to equal
+  `x * x * x`, and the default path is what every shipped model uses.
+- `hipModuleLaunchKernel` silently ignores surplus `kernelParams` and
+  reads uninitialised memory for missing ones, so the kernel signature
+  and the `args[]` arrays for **both** `func_csf_cm` and `func_aim_cm`
+  change together.
+
+This twin does not declare `adm_bypass_cm` and rejects it; that is
+deliberate, and adding it is tracked in `docs/state.md`. Guarded by
+`test_hip_float_adm_parity.c::test_float_adm_p_norm_reaches_kernel`.

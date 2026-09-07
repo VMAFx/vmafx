@@ -110,8 +110,10 @@ struct FadmCsf {
     float gain_limit;
     float scaler;       /* >8bpc raw divisor (informational here) */
     float pixel_offset; /* -128 */
-    uint _pad0;
-    uint _pad1;
+    /* ADR-1220: the two former padding slots now carry adm_p_norm and
+     * adm_bypass_cm, so the struct size and alignment are unchanged. */
+    float p_norm;
+    uint bypass_cm;
 };
 
 /* Both axes use `2*sup - idx - 1` for the over-range mirror and `-idx`
@@ -451,6 +453,14 @@ static inline float fadm_tg_reduce(float v, threadgroup float *scratch, uint lid
 /*    band_idx = wg / num_active_rows                                   */
 /*    row_idx  = wg % num_active_rows                                   */
 /* ------------------------------------------------------------------ */
+/* p-norm accumulation, mirroring adm_tools.c exactly: the CPU special-cases
+ * p == 3 to a literal cube and only falls back to pow() otherwise, so the
+ * default path stays bit-identical. ADR-1220. */
+static inline float fadm_pnorm_term(float x, float p_norm)
+{
+    return (p_norm == 3.0f) ? (x * x * x) : metal::pow(x, p_norm);
+}
+
 kernel void float_adm_csf_cm(const device float *ref_band [[buffer(0)]],
                              const device float *dis_band [[buffer(1)]],
                              const device float *csf_a [[buffer(2)]],
@@ -486,7 +496,7 @@ kernel void float_adm_csf_cm(const device float *ref_band [[buffer(0)]],
         const float src_ref =
             fadm_read_band_at(ref_band, (int)band_idx + 1, row, col, d.buf_stride, d.half_h);
         const float csf_o = fabs(rfactor_band * src_ref);
-        local_csf_sum += csf_o * csf_o * csf_o;
+        local_csf_sum += fadm_pnorm_term(csf_o, c.p_norm);
 
         /* Re-derive decouple_r for the band (cheaper than reading csf_a). */
         const float oh = fadm_read_band_at(ref_band, 1, row, col, d.buf_stride, d.half_h);
@@ -505,26 +515,33 @@ kernel void float_adm_csf_cm(const device float *ref_band [[buffer(0)]],
         /* CM threshold: csf_f 8-neighbours over all 3 bands +
          * (1/15)·|csf_a centre| per band — matches the CPU 3-band aggregate. */
         float thr = 0.0f;
-        for (int b = 0; b < FADM_NUM_BANDS; ++b) {
-            for (int dy = -1; dy <= 1; ++dy) {
-                for (int dx = -1; dx <= 1; ++dx) {
-                    if (dx == 0 && dy == 0) { continue; }
-                    thr += fadm_read_csf_f_at(csf_f, b, row + dy, col + dx, d.half_w, d.half_h,
-                                              d.buf_stride);
+        /* adm_bypass_cm skips the masking threshold entirely, exactly as
+         * adm_tools.c::adm_cm_accum_px_s does. ADR-1220. */
+        if (c.bypass_cm == 0u) {
+            for (int b = 0; b < FADM_NUM_BANDS; ++b) {
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        if (dx == 0 && dy == 0) { continue; }
+                        thr += fadm_read_csf_f_at(csf_f, b, row + dy, col + dx, d.half_w, d.half_h,
+                                                  d.buf_stride);
+                    }
                 }
             }
+            const float own_h =
+                fadm_read_csf_a_at(csf_a, 0, row, col, d.half_w, d.half_h, d.buf_stride);
+            const float own_v =
+                fadm_read_csf_a_at(csf_a, 1, row, col, d.half_w, d.half_h, d.buf_stride);
+            const float own_d =
+                fadm_read_csf_a_at(csf_a, 2, row, col, d.half_w, d.half_h, d.buf_stride);
+            thr += FADM_ONE_BY_15 * fabs(own_h);
+            thr += FADM_ONE_BY_15 * fabs(own_v);
+            thr += FADM_ONE_BY_15 * fabs(own_d);
         }
-        const float own_h = fadm_read_csf_a_at(csf_a, 0, row, col, d.half_w, d.half_h, d.buf_stride);
-        const float own_v = fadm_read_csf_a_at(csf_a, 1, row, col, d.half_w, d.half_h, d.buf_stride);
-        const float own_d = fadm_read_csf_a_at(csf_a, 2, row, col, d.half_w, d.half_h, d.buf_stride);
-        thr += FADM_ONE_BY_15 * fabs(own_h);
-        thr += FADM_ONE_BY_15 * fabs(own_v);
-        thr += FADM_ONE_BY_15 * fabs(own_d);
 
         const float x_val = rfactor_band * r_val;
         float xa = fabs(x_val) - thr;
         if (xa < 0.0f) { xa = 0.0f; }
-        local_cm_sum += xa * xa * xa;
+        local_cm_sum += fadm_pnorm_term(xa, c.p_norm);
     }
 
     threadgroup float scratch_csf[32];
@@ -592,29 +609,33 @@ kernel void float_adm_aim_cm(const device float *ref_band [[buffer(0)]],
         const float a_val = tarr[band_idx] - r_val;
 
         float thr = 0.0f;
-        for (int b = 0; b < FADM_NUM_BANDS; ++b) {
-            for (int dy = -1; dy <= 1; ++dy) {
-                for (int dx = -1; dx <= 1; ++dx) {
-                    if (dx == 0 && dy == 0) { continue; }
-                    thr += fadm_read_csf_f_at(csf_f_aim, b, row + dy, col + dx, d.half_w, d.half_h,
-                                              d.buf_stride);
+        /* adm_bypass_cm applies to the AIM CM too: adm.c passes it to both
+         * adm_cm() calls. ADR-1220. */
+        if (c.bypass_cm == 0u) {
+            for (int b = 0; b < FADM_NUM_BANDS; ++b) {
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        if (dx == 0 && dy == 0) { continue; }
+                        thr += fadm_read_csf_f_at(csf_f_aim, b, row + dy, col + dx, d.half_w,
+                                                  d.half_h, d.buf_stride);
+                    }
                 }
             }
+            const float own_h =
+                fadm_read_csf_a_at(csf_a_aim, 0, row, col, d.half_w, d.half_h, d.buf_stride);
+            const float own_v =
+                fadm_read_csf_a_at(csf_a_aim, 1, row, col, d.half_w, d.half_h, d.buf_stride);
+            const float own_d =
+                fadm_read_csf_a_at(csf_a_aim, 2, row, col, d.half_w, d.half_h, d.buf_stride);
+            thr += FADM_ONE_BY_15 * fabs(own_h);
+            thr += FADM_ONE_BY_15 * fabs(own_v);
+            thr += FADM_ONE_BY_15 * fabs(own_d);
         }
-        const float own_h =
-            fadm_read_csf_a_at(csf_a_aim, 0, row, col, d.half_w, d.half_h, d.buf_stride);
-        const float own_v =
-            fadm_read_csf_a_at(csf_a_aim, 1, row, col, d.half_w, d.half_h, d.buf_stride);
-        const float own_d =
-            fadm_read_csf_a_at(csf_a_aim, 2, row, col, d.half_w, d.half_h, d.buf_stride);
-        thr += FADM_ONE_BY_15 * fabs(own_h);
-        thr += FADM_ONE_BY_15 * fabs(own_v);
-        thr += FADM_ONE_BY_15 * fabs(own_d);
 
         const float x_val = rfactor_band * a_val;
         float xa = fabs(x_val) - thr;
         if (xa < 0.0f) { xa = 0.0f; }
-        local_aim_cm += xa * xa * xa;
+        local_aim_cm += fadm_pnorm_term(xa, c.p_norm);
     }
 
     threadgroup float scratch_aim[32];

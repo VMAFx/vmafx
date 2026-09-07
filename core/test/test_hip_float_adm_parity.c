@@ -59,6 +59,22 @@ static const char *const kAdmFeatures[] = {
 };
 #define NUM_ADM_FEATURES (sizeof(kAdmFeatures) / sizeof(kAdmFeatures[0]))
 
+/* ADR-1220 — derived feature keys for the adm_p_norm variant.
+ *
+ * `adm_p_norm` is a VMAF_OPT_FLAG_FEATURE_PARAM, so setting it changes the key
+ * the score is filed under (ADR-1183): the alias base plus `_apn_<%g value>`. */
+static const char *const kAdmFeaturesApn[] = {
+    "adm2_apn_2", "adm_scale0_apn_2", "adm_scale1_apn_2", "adm_scale2_apn_2", "adm_scale3_apn_2",
+};
+
+/* Build the option dictionary for a variant, or leave it NULL for defaults. */
+static int adm_opts_build(VmafFeatureDictionary **opts, const char *name, const char *val)
+{
+    if (!name)
+        return 0;
+    return vmaf_feature_dictionary_set(opts, name, val);
+}
+
 static int fill_ref(VmafPicture *pic)
 {
     int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
@@ -118,20 +134,26 @@ static int feed_frame(VmafContext *vmaf)
     return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
 }
 
-static char *run_cpu_float_adm(double scores[NUM_ADM_FEATURES])
+static char *run_cpu_float_adm(const char *opt_name, const char *opt_val, const char *const *keys,
+                               double scores[NUM_ADM_FEATURES])
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "float_adm", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    err = adm_opts_build(&opts, opt_name, opt_val);
+    mu_assert("CPU: adm_opts_build failed", !err);
+    err = vmaf_use_feature(vmaf, "float_adm", opts);
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CPU: vmaf_use_feature(float_adm) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
     for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
-        err = vmaf_feature_score_at_index(vmaf, kAdmFeatures[f], &scores[f], 0u);
+        err = vmaf_feature_score_at_index(vmaf, keys[f], &scores[f], 0u);
         if (err)
             (void)fprintf(stderr, "CPU: feature %s missing (err=%d)\n", kAdmFeatures[f], err);
         mu_assert("CPU: vmaf_feature_score_at_index failed", !err);
@@ -141,7 +163,8 @@ static char *run_cpu_float_adm(double scores[NUM_ADM_FEATURES])
     return NULL;
 }
 
-static char *run_hip_float_adm(double scores[NUM_ADM_FEATURES], int *skipped)
+static char *run_hip_float_adm(const char *opt_name, const char *opt_val, const char *const *keys,
+                               double scores[NUM_ADM_FEATURES], int *skipped)
 {
     for (size_t f = 0; f < NUM_ADM_FEATURES; f++)
         scores[f] = NAN;
@@ -161,7 +184,10 @@ static char *run_hip_float_adm(double scores[NUM_ADM_FEATURES], int *skipped)
     mu_assert("HIP: vmaf_init failed", !err);
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "float_adm_hip", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    err = adm_opts_build(&opts, opt_name, opt_val);
+    mu_assert("HIP: adm_opts_build failed", !err);
+    err = vmaf_use_feature(vmaf, "float_adm_hip", opts);
     if (err == -ENOSYS) {
         (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS] ");
         *skipped = 1;
@@ -189,7 +215,7 @@ static char *run_hip_float_adm(double scores[NUM_ADM_FEATURES], int *skipped)
     }
     mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
     for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
-        err = vmaf_feature_score_at_index(vmaf, kAdmFeatures[f], &scores[f], 0u);
+        err = vmaf_feature_score_at_index(vmaf, keys[f], &scores[f], 0u);
         if (err)
             (void)fprintf(stderr, "HIP: feature %s missing (err=%d)\n", kAdmFeatures[f], err);
         mu_assert("HIP: vmaf_feature_score_at_index failed", !err);
@@ -214,10 +240,10 @@ static char *test_float_adm_cpu_hip_parity(void)
     double hip_scores[NUM_ADM_FEATURES] = {0};
     int skipped = 0;
 
-    char *msg = run_cpu_float_adm(cpu_scores);
+    char *msg = run_cpu_float_adm(NULL, NULL, kAdmFeatures, cpu_scores);
     if (msg)
         return msg;
-    msg = run_hip_float_adm(hip_scores, &skipped);
+    msg = run_hip_float_adm(NULL, NULL, kAdmFeatures, hip_scores, &skipped);
     if (msg)
         return msg;
     if (skipped)
@@ -236,9 +262,45 @@ static char *test_float_adm_cpu_hip_parity(void)
     return NULL;
 }
 
+/* ADR-1220 — adm_p_norm must reach the kernels. The twin declares it with the
+ * CPU's name, alias, default and range, but its kernels hardcoded the cube sum
+ * and its host pooling hardcoded the 1/3 root, so a non-default `apn` moved
+ * only the AIM exponent and produced a hybrid quantity. The default-options
+ * test above cannot see it, because p = 3 IS the hardcoded exponent. */
+static char *test_float_adm_p_norm_reaches_kernel(void)
+{
+    double cpu_scores[NUM_ADM_FEATURES] = {0};
+    double hip_scores[NUM_ADM_FEATURES] = {0};
+    int skipped = 0;
+
+    char *msg = run_cpu_float_adm("adm_p_norm", "2.0", kAdmFeaturesApn, cpu_scores);
+    if (msg)
+        return msg;
+    msg = run_hip_float_adm("adm_p_norm", "2.0", kAdmFeaturesApn, hip_scores, &skipped);
+    if (msg)
+        return msg;
+    if (skipped)
+        return NULL;
+    for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
+        if (isnan(hip_scores[f]))
+            return NULL;
+        const double d = fabs(cpu_scores[f] - hip_scores[f]);
+        if (d > PARITY_TOL) {
+            (void)fprintf(stderr,
+                          "\nfloat_adm apn=2.0 parity FAIL: %s cpu=%.8f hip=%.8f delta=%.2e "
+                          "tol=%.2e\n",
+                          kAdmFeaturesApn[f], cpu_scores[f], hip_scores[f], d, PARITY_TOL);
+        }
+        mu_assert("float_adm with a non-default adm_p_norm drifts from the CPU reference",
+                  d <= PARITY_TOL);
+    }
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_float_adm_hip_registered);
     mu_run_test(test_float_adm_cpu_hip_parity);
+    mu_run_test(test_float_adm_p_norm_reaches_kernel);
     return NULL;
 }

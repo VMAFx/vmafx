@@ -95,28 +95,65 @@ static int feed_frame(VmafContext *vmaf)
     return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
 }
 
-static char *run_cpu(double *score)
+/* ADR-1220 — `adm_p_norm` is a VMAF_OPT_FLAG_FEATURE_PARAM, so setting it
+ * changes the key the score is filed under (ADR-1183): the alias base plus
+ * `_apn_<%g value>`. */
+#define APN_VAL "2.0"
+
+/* Compare all five ADM features, not just the aggregate: the per-scale
+ * sub-scores are where a kernel-vs-CPU divergence shows first, and on this
+ * fixture the aggregate alone is not sensitive enough to see the p-norm
+ * defect at all. */
+#define NUM_ADM_FEATURES 5u
+static const char *const kAdmFeatures[NUM_ADM_FEATURES] = {
+    "VMAF_feature_adm2_score",       "VMAF_feature_adm_scale0_score",
+    "VMAF_feature_adm_scale1_score", "VMAF_feature_adm_scale2_score",
+    "VMAF_feature_adm_scale3_score",
+};
+static const char *const kAdmFeaturesApn[NUM_ADM_FEATURES] = {
+    "adm2_apn_2", "adm_scale0_apn_2", "adm_scale1_apn_2", "adm_scale2_apn_2", "adm_scale3_apn_2",
+};
+
+/* Build the option dictionary for a variant, or leave it NULL for defaults. */
+static int adm_opts_build(VmafFeatureDictionary **opts, const char *name, const char *val)
+{
+    if (!name)
+        return 0;
+    return vmaf_feature_dictionary_set(opts, name, val);
+}
+
+static char *run_cpu(const char *opt_name, const char *opt_val, const char *const *keys,
+                     double *scores)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "float_adm", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    err = adm_opts_build(&opts, opt_name, opt_val);
+    mu_assert("CPU: adm_opts_build failed", !err);
+    err = vmaf_use_feature(vmaf, "float_adm", opts);
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CPU: vmaf_use_feature(float_adm) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "VMAF_feature_adm2_score", score, 0u);
-    mu_assert("CPU: VMAF_feature_adm2_score missing", !err);
+    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
+        err = vmaf_feature_score_at_index(vmaf, keys[m], &scores[m], 0u);
+        mu_assert("CPU: float_adm score missing", !err);
+    }
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
     return NULL;
 }
 
-static char *run_sycl(double *score)
+static char *run_sycl(const char *opt_name, const char *opt_val, const char *const *keys,
+                      double *scores)
 {
-    *score = NAN;
+    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++)
+        scores[m] = NAN;
     VmafSyclState *sycl_state = NULL;
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
     int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
@@ -130,14 +167,21 @@ static char *run_sycl(double *score)
     mu_assert("SYCL: vmaf_init failed", !err);
     err = vmaf_sycl_import_state(vmaf, sycl_state);
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "float_adm_sycl", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    err = adm_opts_build(&opts, opt_name, opt_val);
+    mu_assert("SYCL: adm_opts_build failed", !err);
+    err = vmaf_use_feature(vmaf, "float_adm_sycl", opts);
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("SYCL: vmaf_use_feature(float_adm_sycl) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("SYCL: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "VMAF_feature_adm2_score", score, 0u);
-    mu_assert("SYCL: VMAF_feature_adm2_score missing", !err);
+    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
+        err = vmaf_feature_score_at_index(vmaf, keys[m], &scores[m], 0u);
+        mu_assert("SYCL: float_adm score missing", !err);
+    }
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
     vmaf_sycl_state_free(&sycl_state);
@@ -154,23 +198,58 @@ static char *test_float_adm_sycl_registered(void)
 
 static char *test_float_adm_cpu_sycl_parity(void)
 {
-    double cpu_score = 0.0;
-    double sycl_score = NAN;
-    char *msg = run_cpu(&cpu_score);
+    double cpu_scores[NUM_ADM_FEATURES] = {0};
+    double sycl_scores[NUM_ADM_FEATURES] = {0};
+    char *msg = run_cpu(NULL, NULL, kAdmFeatures, cpu_scores);
     if (msg)
         return msg;
-    msg = run_sycl(&sycl_score);
+    msg = run_sycl(NULL, NULL, kAdmFeatures, sycl_scores);
     if (msg)
         return msg;
-    if (isnan(sycl_score))
+    if (isnan(sycl_scores[0]))
         return NULL;
-    double delta = fabs(cpu_score - sycl_score);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr, "\nfloat_adm2 parity FAIL: cpu=%.8f sycl=%.8f delta=%.2e tol=%.2e\n",
-                      cpu_score, sycl_score, delta, PARITY_TOL);
+    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
+        const double delta = fabs(cpu_scores[m] - sycl_scores[m]);
+        if (delta > PARITY_TOL) {
+            (void)fprintf(stderr,
+                          "\nfloat_adm parity FAIL: %s cpu=%.8f sycl=%.8f delta=%.2e tol=%.2e\n",
+                          kAdmFeatures[m], cpu_scores[m], sycl_scores[m], delta, PARITY_TOL);
+        }
+        mu_assert("float_adm CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)",
+                  delta <= PARITY_TOL);
     }
-    mu_assert("float_adm2 CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)",
-              delta <= PARITY_TOL);
+    return NULL;
+}
+
+/* ADR-1220 — adm_p_norm must reach the kernels. The twin declares it with the
+ * CPU's name, alias, default and range, but its kernels hardcoded the cube sum
+ * and its host pooling hardcoded the 1/3 root, so a non-default `apn` moved
+ * only the AIM exponent and produced a hybrid quantity. The default-options
+ * test above cannot see it, because p = 3 IS the hardcoded exponent. */
+static char *test_float_adm_p_norm_reaches_kernel(void)
+{
+    double cpu_scores[NUM_ADM_FEATURES] = {0};
+    double sycl_scores[NUM_ADM_FEATURES] = {0};
+    char *msg = run_cpu("adm_p_norm", APN_VAL, kAdmFeaturesApn, cpu_scores);
+    if (msg)
+        return msg;
+    msg = run_sycl("adm_p_norm", APN_VAL, kAdmFeaturesApn, sycl_scores);
+    if (msg)
+        return msg;
+    if (isnan(sycl_scores[0]))
+        return NULL;
+    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
+        const double delta = fabs(cpu_scores[m] - sycl_scores[m]);
+        if (delta > PARITY_TOL) {
+            (void)fprintf(stderr,
+                          "\nfloat_adm apn=%s parity FAIL: %s cpu=%.8f sycl=%.8f delta=%.2e "
+                          "tol=%.2e\n",
+                          APN_VAL, kAdmFeaturesApn[m], cpu_scores[m], sycl_scores[m], delta,
+                          PARITY_TOL);
+        }
+        mu_assert("float_adm with a non-default adm_p_norm drifts from the CPU reference",
+                  delta <= PARITY_TOL);
+    }
     return NULL;
 }
 
@@ -178,5 +257,6 @@ char *run_tests(void)
 {
     mu_run_test(test_float_adm_sycl_registered);
     mu_run_test(test_float_adm_cpu_sycl_parity);
+    mu_run_test(test_float_adm_p_norm_reaches_kernel);
     return NULL;
 }
