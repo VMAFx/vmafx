@@ -77,6 +77,26 @@ static const char *const ADM_FEATURES[NUM_ADM_FEATURES] = {
     "VMAF_feature_adm_scale3_score",
 };
 
+/* ADR-1220 — derived feature keys for the two option variants.
+ *
+ * Both options are VMAF_OPT_FLAG_FEATURE_PARAM, so setting one changes the key
+ * the score is filed under (ADR-1183): the alias base plus `_<alias>_<%g
+ * value>`. `adm_p_norm` aliases to `apn`, `adm_bypass_cm` to `bcm`. */
+static const char *const ADM_FEATURES_APN[NUM_ADM_FEATURES] = {
+    "adm2_apn_2", "adm_scale0_apn_2", "adm_scale1_apn_2", "adm_scale2_apn_2", "adm_scale3_apn_2",
+};
+static const char *const ADM_FEATURES_BCM[NUM_ADM_FEATURES] = {
+    "adm2_bcm_1", "adm_scale0_bcm_1", "adm_scale1_bcm_1", "adm_scale2_bcm_1", "adm_scale3_bcm_1",
+};
+
+/* Build the option dictionary for a variant, or leave it NULL for defaults. */
+static int adm_opts_build(VmafFeatureDictionary **opts, const char *name, const char *val)
+{
+    if (!name)
+        return 0;
+    return vmaf_feature_dictionary_set(opts, name, val);
+}
+
 static int fill_ref(VmafPicture *pic, unsigned frame_idx)
 {
     int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
@@ -121,7 +141,8 @@ static int fill_dist(VmafPicture *pic, unsigned frame_idx)
     return 0;
 }
 
-static char *run_cpu(double *out_scores)
+static char *run_cpu(const char *opt_name, const char *opt_val, const char *const *keys,
+                     double *out_scores)
 {
     int err = 0;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
@@ -129,7 +150,12 @@ static char *run_cpu(double *out_scores)
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "float_adm", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    err = adm_opts_build(&opts, opt_name, opt_val);
+    mu_assert("CPU: adm_opts_build failed", !err);
+    err = vmaf_use_feature(vmaf, "float_adm", opts);
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CPU: vmaf_use_feature(float_adm) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
@@ -145,7 +171,7 @@ static char *run_cpu(double *out_scores)
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
-        err = vmaf_feature_score_at_index(vmaf, ADM_FEATURES[m], &out_scores[m], 1u);
+        err = vmaf_feature_score_at_index(vmaf, keys[m], &out_scores[m], 1u);
         mu_assert("CPU: vmaf_feature_score_at_index(adm[i], idx=1) failed", !err);
     }
 
@@ -154,7 +180,8 @@ static char *run_cpu(double *out_scores)
     return NULL;
 }
 
-static char *run_cuda(double *out_scores, int *skipped)
+static char *run_cuda(const char *opt_name, const char *opt_val, const char *const *keys,
+                      double *out_scores, int *skipped)
 {
     *skipped = 0;
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++)
@@ -178,7 +205,12 @@ static char *run_cuda(double *out_scores, int *skipped)
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
 
-    err = vmaf_use_feature(vmaf, "float_adm_cuda", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    err = adm_opts_build(&opts, opt_name, opt_val);
+    mu_assert("CUDA: adm_opts_build failed", !err);
+    err = vmaf_use_feature(vmaf, "float_adm_cuda", opts);
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CUDA: vmaf_use_feature(float_adm_cuda) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
@@ -194,7 +226,7 @@ static char *run_cuda(double *out_scores, int *skipped)
     mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
 
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
-        err = vmaf_feature_score_at_index(vmaf, ADM_FEATURES[m], &out_scores[m], 1u);
+        err = vmaf_feature_score_at_index(vmaf, keys[m], &out_scores[m], 1u);
         mu_assert("CUDA: vmaf_feature_score_at_index(adm[i], idx=1) failed", !err);
     }
 
@@ -211,10 +243,10 @@ static char *test_float_adm_cpu_cuda_parity(void)
     double cuda_scores[NUM_ADM_FEATURES] = {0};
     int skipped = 0;
 
-    char *msg = run_cpu(cpu_scores);
+    char *msg = run_cpu(NULL, NULL, ADM_FEATURES, cpu_scores);
     if (msg)
         return msg;
-    msg = run_cuda(cuda_scores, &skipped);
+    msg = run_cuda(NULL, NULL, ADM_FEATURES, cuda_scores, &skipped);
     if (msg)
         return msg;
     if (skipped)
@@ -236,8 +268,63 @@ static char *test_float_adm_cpu_cuda_parity(void)
     return NULL;
 }
 
+/* ------------------------------------------------------------------ */
+/* ADR-1220 — adm_p_norm and adm_bypass_cm must reach the kernels.     */
+/*                                                                     */
+/* Both are VMAF_OPT_FLAG_FEATURE_PARAM options the twin declares with */
+/* the CPU's names, aliases, defaults and ranges. The kernels          */
+/* hardcoded the cube sum and the host pooling hardcoded the 1/3 root, */
+/* so `apn` moved only the AIM exponent and produced a hybrid          */
+/* quantity, and `bcm` was accepted and then read by nothing at all.   */
+/* The default-options test above cannot see either, because p = 3 IS  */
+/* the hardcoded exponent and bypass = 0 IS the hardcoded behaviour.   */
+/* ------------------------------------------------------------------ */
+static char *assert_opt_parity(const char *opt_name, const char *opt_val, const char *const *keys,
+                               const char *label)
+{
+    double cpu_scores[NUM_ADM_FEATURES] = {0};
+    double gpu_scores[NUM_ADM_FEATURES] = {0};
+    int skipped = 0;
+
+    char *msg = run_cpu(opt_name, opt_val, keys, cpu_scores);
+    if (msg)
+        return msg;
+    msg = run_cuda(opt_name, opt_val, keys, gpu_scores, &skipped);
+    if (msg)
+        return msg;
+    if (skipped)
+        return NULL;
+
+    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
+        mu_assert("CPU float_adm score is non-finite", isfinite(cpu_scores[m]));
+        mu_assert("CUDA float_adm score is non-finite", isfinite(gpu_scores[m]));
+        const double delta = fabs(cpu_scores[m] - gpu_scores[m]);
+        if (delta > PARITY_TOL) {
+            (void)fprintf(stderr,
+                          "\nfloat_adm %s parity FAIL key=%s: cpu=%.8f cuda=%.8f delta=%.2e "
+                          "tol=%.2e\n",
+                          label, keys[m], cpu_scores[m], gpu_scores[m], delta, PARITY_TOL);
+        }
+        mu_assert("float_adm with a non-default option drifts from the CPU reference",
+                  delta <= PARITY_TOL);
+    }
+    return NULL;
+}
+
+static char *test_float_adm_p_norm_reaches_kernel(void)
+{
+    return assert_opt_parity("adm_p_norm", "2.0", ADM_FEATURES_APN, "apn=2.0");
+}
+
+static char *test_float_adm_bypass_cm_reaches_kernel(void)
+{
+    return assert_opt_parity("adm_bypass_cm", "1", ADM_FEATURES_BCM, "bcm=1");
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_float_adm_cpu_cuda_parity);
+    mu_run_test(test_float_adm_p_norm_reaches_kernel);
+    mu_run_test(test_float_adm_bypass_cm_reaches_kernel);
     return NULL;
 }

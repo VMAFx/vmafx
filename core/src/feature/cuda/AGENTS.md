@@ -732,6 +732,26 @@ kernel variants at runtime. The current policy table is in ADR-0753.
   chroma planes give 4x2 = 8 blocks for a 25x25 covariance — singular on
   every frame, so they never reach the regular path at all. Any new
   SpEED test that needs a regular frame must be at least 960x960.
+- **`float_adm` options must reach the KERNELS, not just the option
+  table** (ADR-1220) — `adm_p_norm` (`apn`), `adm_bypass_cm` (`bcm`)
+  and, on Metal, `adm_skip_scale0` (`ssz`) are
+  `VMAF_OPT_FLAG_FEATURE_PARAM` options the twins declare with the
+  CPU's names, aliases, defaults and ranges. Until ADR-1220 the
+  kernels hardcoded the cube sum and the host pooling hardcoded the
+  `1.0f / 3.0f` root, so `apn` moved only the AIM exponent and produced
+  a hybrid quantity, and `bcm` was read by nothing at all (`grep`
+  returned only the struct field and the option entry). Three rules:
+  (1) `adm_p_norm` has FOUR application points — the DLM numerator sum,
+  the CSF denominator sum, the pooling root, and
+  `get_noise_constant()` — change them together; (2) keep the CPU's
+  `p == 3` literal-cube fast path in the kernel, because device
+  `powf(x, 3.0f)` is not guaranteed to equal `x * x * x` and the
+  default path must not move; (3) `adm_bypass_cm` gates BOTH the DLM
+  and the AIM `adm_cm()` call. Guarded by the
+  `test_float_adm_*_reaches_kernel` variants in each backend's
+  float-ADM parity test, which read the ADR-1183-derived
+  `adm2_apn_2` / `adm2_bcm_1` keys — the default-options test cannot
+  see any of this, because `p = 3` IS the hardcoded exponent.
 
 - **`integer_vif_cuda.c::filter1d_8` picks `filter1d_8_horizontal_kernel_2_17_9_no_bounds`
   at `WS_SMALL` and the bounded variant at `WS_MEDIUM`/`WS_LARGE`** (ADR-0753 extended
