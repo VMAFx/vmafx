@@ -5084,11 +5084,14 @@ and `docs/api/perceptual-weight.md`.
   purpose is performance — with hardware-generation retuning (target-arch lists,
   occupancy assumptions, ISA dispatch) treated as part of the milestone rather
   than opportunistic work.
-- **First measured result, recorded in `docs/benchmarks.md`:** on a 48-frame
-  1920x1080 pair, single-threaded CPU, the fork measures **0.989x** against
-  upstream `v3.2.0` — parity, not a win. The fork's advantage is its GPU backends
-  and added feature surface, not CPU throughput; the previous absence of this
-  comparison meant no claim either way had been measured.
+- **First measured result, recorded in `docs/benchmarks.md`:** on the inherited
+  `vmaf_v0.6.1` path the fork measures **0.989x** against upstream `v3.2.0` —
+  parity, which is the right result there since those four features are exactly
+  the ones upstream already ships AVX2/AVX-512 for. Across the surface the fork
+  *added* SIMD to, it wins substantially: `float_ms_ssim` **4.47x** (upstream has
+  no `ms_ssim_decimate` SIMD at all), `psnr_hvs` **1.47x**, `float_ssim`
+  **1.46x**. The table reports per-feature rows rather than one geomean,
+  precisely because a single number over one model hides both facts.
 - **New tracked bug found by the first run** (`T-UPSTREAM-AB-SCORE-DELTA-2026-09-07`):
   the fork's pooled VMAF differs from upstream's by ~`5e-6` using a byte-identical
   model file. All fourteen pooled features agree exactly at the resolution `%.6f`

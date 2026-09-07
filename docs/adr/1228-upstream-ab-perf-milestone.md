@@ -34,9 +34,16 @@ pooled vmaf       upstream 39.582252   fork 39.582257   delta +5.0e-06
 
 Two findings, both of which only exist because the comparison was made:
 
-- **The fork is at parity with upstream on the single-threaded CPU path**, not
-  ahead of it. Its advantage is the GPU backends and the added feature surface,
-  not CPU throughput. Any claim otherwise was unmeasured.
+- **On the inherited path the fork is at parity**, which is the right result
+  there — it says the fork has not regressed the code it inherited. But that
+  path is `vmaf_v0.6.1`, whose four features are exactly the four upstream
+  already ships AVX2/AVX-512 for, so it is the one workload where both projects
+  are equally optimised. Measuring only it would have been a misleading answer:
+  across the surface the fork *added* SIMD to, it wins substantially —
+  `float_ms_ssim` **4.47x**, `psnr_hvs` **1.47x**, `float_ssim` **1.46x**,
+  because upstream runs those scalar. The milestone therefore reports
+  per-feature rows, not a single geomean over one model, which would have
+  hidden both facts.
 - **The fork's VMAF score differs from upstream's by ~5e-6.** All fourteen
   pooled features agree exactly at the 6 decimals the output format exposes;
   only the final score moves, by up to 8e-6 per frame, in both directions. That
@@ -54,6 +61,11 @@ next, and a tuning decision taken once decays silently.
 We will run an **upstream A/B milestone** on a recurring trigger, gated on
 numerical parity, and treat hardware-generation retuning as part of it rather
 than as occasional opportunistic work.
+
+**0. Report per-feature, never a single number.** A geomean over one model
+answers neither question honestly: the inherited model hides the fork's SIMD
+work, and a fork-only feature has no upstream counterpart at all. The table
+carries one row per feature plus an explicit "absent upstream" marker.
 
 **1. The A/B harness.** `testdata/bench_upstream_ab.py` clones and builds
 upstream at a pinned tag, runs both binaries over the same fixtures with the
