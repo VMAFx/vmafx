@@ -226,8 +226,12 @@ static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 /* ------------------------------------------------------------------ */
 static double motion3_postprocess_cuda(MotionStateCuda *s, double score2)
 {
-    double const weighted = score2 * s->motion_fps_weight;
-    double const blended = motion_blend(weighted, s->motion_blend_factor, s->motion_blend_offset);
+    /* ``score2`` already carries ``motion_fps_weight`` and the
+     * ``motion_max_val`` clip: every caller applies both before handing the
+     * value over, exactly as the CPU reference does once in extract()
+     * (integer_motion.c:372).  Re-weighting here would square the factor
+     * whenever ``motion_fps_weight != 1.0``.  ADR-1216. */
+    double const blended = motion_blend(score2, s->motion_blend_factor, s->motion_blend_offset);
     double const clipped = MIN(blended, s->motion_max_val);
     double const previous_unaveraged = s->prev_motion3_blended;
     s->prev_motion3_blended = clipped;

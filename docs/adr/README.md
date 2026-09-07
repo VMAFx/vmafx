@@ -1018,3 +1018,4 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1204](1204-adm-cm-edge-clamp-gpu-twins.md) | GPU ADM contrast-masking twins clamp the far edge instead of mirroring it | Proposed | cuda, sycl, hip, metal, correctness, feature-extractor, testing |
 | [ADR-1205](1205-ssimulacra2-fma-unification-scalar-and-gpu.md) | The ssimulacra2 FMA unification extends to the scalar fallback and every GPU host copy | Proposed | cuda, sycl, hip, metal, simd, correctness, feature-extractor, reproducibility |
 | [ADR-1206](1206-gpu-parity-large-fixture-variants.md) | Every CUDA parity test also runs against a second, larger fixture | Proposed | testing, cuda, ci, correctness |
+| [ADR-1216](1216-gpu-motion3-fps-weight-applied-once.md) | The GPU motion3 twins apply `motion_fps_weight` exactly once | Proposed | cuda, sycl, hip, correctness, feature-extractor, testing |
