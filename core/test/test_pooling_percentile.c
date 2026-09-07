@@ -110,6 +110,27 @@ static int feed_one_frame(VmafContext *vmaf, FILE *f_ref, FILE *f_dis, unsigned 
     return vmaf_read_pictures(vmaf, &ref, &dis, index);
 }
 
+/* The Netflix golden YUVs are deliberately untracked (see .gitignore: they are
+ * fetched by scripts/test/fetch-test-yuvs.sh because of their size), so a job
+ * that runs the C unit tests without fetching them -- the sanitizer legs, the
+ * coverage gate, the ARM leg -- has no fixture to open. Report that as a skip
+ * rather than a failure: "the fixture is not here" and "the pooling maths is
+ * wrong" are different facts and must not share an exit code. */
+static int reference_pair_available(void)
+{
+    FILE *probe = fopen(TESTDATA_YUV_DIR "/src01_hrc00_576x324.yuv", "rb");
+    if (!probe) {
+        return 0;
+    }
+    (void)fclose(probe);
+    probe = fopen(TESTDATA_YUV_DIR "/src01_hrc01_576x324.yuv", "rb");
+    if (!probe) {
+        return 0;
+    }
+    (void)fclose(probe);
+    return 1;
+}
+
 /* Feed the Netflix 576x324 reference pair through @p vmaf and flush EOS. Both
  * YUV streams are closed on every exit path before the first assertion that can
  * return, so a mid-loop failure cannot leak them (clang-analyzer-unix.Stream). */
@@ -198,6 +219,12 @@ static char *test_pooling_percentile_yuv(void)
     const unsigned n_frames = 48;
     assert(w > 0 && h > 0 && n_frames > 0);
 
+    if (!reference_pair_available()) {
+        (void)fprintf(stderr, "[skip: Netflix golden YUVs not fetched] ");
+        mu_skipped = 1;
+        return NULL;
+    }
+
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
     int err = vmaf_init(&vmaf, cfg);
@@ -206,34 +233,41 @@ static char *test_pooling_percentile_yuv(void)
     VmafModelConfig mcfg = {0};
     VmafModel *model = NULL;
     err = vmaf_model_load(&model, &mcfg, "vmaf_v0.6.1");
+    if (err != 0) {
+        (void)vmaf_close(vmaf);
+    }
     mu_assert("vmaf_model_load failed", err == 0);
     err = vmaf_use_features_from_model(vmaf, model);
+    if (err != 0) {
+        (void)vmaf_close(vmaf);
+        vmaf_model_destroy(model);
+    }
     mu_assert("vmaf_use_features_from_model failed", err == 0);
 
+    /* Every check below returns a message on failure. Releasing the context and
+     * the model on those paths is not tidiness: this test runs under
+     * LeakSanitizer, so a leaked model turns one failed assertion into a second,
+     * unrelated-looking LSan error that buries it. */
     char *msg = feed_reference_pair(vmaf, w, h, n_frames);
-    if (msg) {
-        return msg;
-    }
-
-    double p5 = 0.0;
-    double p10 = 0.0;
-    double p20 = 0.0;
-    msg = check_percentile_oracles(vmaf, model, n_frames, &p5, &p10, &p20);
-    if (msg) {
-        return msg;
-    }
-    msg = check_central_oracles(vmaf, model, n_frames, p5, p10, p20);
-    if (msg) {
-        return msg;
-    }
-    msg = check_pooled_error_paths(vmaf, model, n_frames);
-    if (msg) {
-        return msg;
+    if (!msg) {
+        double p5 = 0.0;
+        double p10 = 0.0;
+        double p20 = 0.0;
+        msg = check_percentile_oracles(vmaf, model, n_frames, &p5, &p10, &p20);
+        if (!msg) {
+            msg = check_central_oracles(vmaf, model, n_frames, p5, p10, p20);
+        }
+        if (!msg) {
+            msg = check_pooled_error_paths(vmaf, model, n_frames);
+        }
     }
 
     err = vmaf_close(vmaf);
-    mu_assert("vmaf_close failed", err == 0);
     vmaf_model_destroy(model);
+    if (msg) {
+        return msg;
+    }
+    mu_assert("vmaf_close failed", err == 0);
     return NULL;
 }
 
