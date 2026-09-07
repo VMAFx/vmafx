@@ -94,6 +94,12 @@ No rebase impact: `scripts/ci/check-no-tracked-venv.sh` and its test are fork-ad
   leaving them untouched keeps the SIMD bit-exactness story unchanged. Do not
   "unify" them into the shared header without re-running
   `core/test/test_integer_adm_simd.c`.
+## build/union-merge-append-only-docs — union merge for the bookkeeping files (2026-09-06)
+
+No rebase impact on upstream code: `.gitattributes` is fork-owned. Note the mechanic: a merge driver
+is read from the **merge base**, so this only helps branches whose base already contains the
+attribute — every branch open when it lands still conflicts once more, then stops. `docs/state.md` is
+excluded on purpose (moved rows must not be duplicated).
 
 ## ci/release-artifacts-built-in-dev-container — native release artifacts built on self-hosted canonical runner (ADR-1178) (2026-09-05)
 
