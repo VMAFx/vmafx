@@ -239,18 +239,19 @@ integer_ssim_vert_combine(const int64_t *__restrict__ d_mux_h, const int64_t *__
         warp_ssim += __shfl_down_sync(0xffffffffu, warp_ssim, off);
 
     /* Warp-level reduce for weight (int64). CUDA has no int64 shuffle
-     * intrinsic pre-sm70; use a pair of int32 shuffles. */
-    int64_t warp_wgt = my_weight;
-    {
-        /* Split int64 into lo/hi halves, shuffle each, then recombine. */
-        int32_t lo = (int32_t)(warp_wgt & 0xffffffffLL);
-        int32_t hi = (int32_t)((warp_wgt >> 32) & 0xffffffffLL);
-        for (int off = 16; off > 0; off >>= 1) {
-            lo += __shfl_down_sync(0xffffffffu, lo, off);
-            hi += __shfl_down_sync(0xffffffffu, hi, off);
-        }
-        warp_wgt = ((int64_t)(uint32_t)hi << 32) | (int64_t)(uint32_t)lo;
-    }
+     * intrinsic, so each step shuffles the two 32-bit halves separately —
+     * but the halves must be REASSEMBLED into an int64 before adding.
+     *
+     * This previously summed `lo` and `hi` as two independent int32
+     * accumulators and only recombined at the end, so a carry out of the low
+     * half was silently dropped and `lo` itself could overflow a signed
+     * int32 (undefined behaviour). It is not reachable today — the per-pixel
+     * weight sum over a 9-tap window stays far below 2^31 — but it is wrong,
+     * and it is wrong in a way that only shows up at large frame sizes or a
+     * future weight scaling. `warp_reduce(int64_t)` in cuda_helper.cuh
+     * already does this correctly; use it rather than keeping a second,
+     * subtly different copy. ADR-1224. */
+    const int64_t warp_wgt = warp_reduce(my_weight);
 
     const int tid = threadIdx.y * (int)blockDim.x + threadIdx.x;
     const int lane = tid % 32;
