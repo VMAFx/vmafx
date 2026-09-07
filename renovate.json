@@ -26,6 +26,7 @@
   "prCreation": "immediate",
   "minimumReleaseAge": "3 days",
   "ignorePaths": [
+    "python/requirements.txt",
     "subprojects/**",
     "python/test/resource/**",
     ".workingdir2/**",
