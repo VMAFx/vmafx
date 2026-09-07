@@ -75,7 +75,17 @@
 
 ## Building
 
-ROCm 7.0 or later is required; 7.2.4 is the version tested in CI and the dev container.
+ROCm 7.0 or later is required; **10.0.0** is the version tested in CI, in the
+dev container, and in the published GPU images (ADR-1225).
+
+ROCm 10 has no apt channel — since ROCm 7.14 AMD builds and releases through
+"TheRock", and `repo.radeon.com/rocm/apt/` tops out at 7.2.4. The fork
+therefore installs ROCm from the digest-pinned
+`rocm/dev-ubuntu-24.04:10.0.0-full` container image. On a workstation, either
+use your distribution's ROCm packages (any 7.0+ release builds this fork) or
+run the dev container; CI uses `scripts/ci/install-rocm-from-image.sh`, which
+streams the image's `/opt/rocm` out of the registry without a 29 GB
+`docker pull`.
 
 ```bash
 meson setup build -Denable_cuda=false -Denable_sycl=false \
@@ -112,11 +122,13 @@ Inside a no-GPU build sandbox (BuildKit, CI) both probes return
 empty and the build falls through to step 4. The fallback was
 `gfx90a` only until [ADR-0546](../../adr/0546-audit-cleanup-bundle.md);
 that narrow fallback shipped libvmaf.so binaries that failed at
-runtime on the fork's own dev host (AMD Raphael APU `gfx1036`,
-override-mapped to `gfx1030` via `HSA_OVERRIDE_GFX_VERSION=10.3.0`)
-with `hip_fatbin.cpp: No compatible code objects found for:
-gfx1030`. Widening the fallback closed that failure mode without
-changing what an operator with a configured GPU sees.
+runtime on the fork's own dev host (AMD Raphael APU `gfx1036`) with
+`hip_fatbin.cpp: No compatible code objects found for: gfx1030`.
+(That host needed `HSA_OVERRIDE_GFX_VERSION=10.3.0` to alias `gfx1036`
+onto the allowlisted `gfx1030` under ROCm 6.x/7.x. ROCm 10 supports
+`gfx1036` natively, so the override is gone — ADR-1225.) Widening the
+fallback closed that failure mode without changing what an operator with a
+configured GPU sees.
 
 Operators that need a smaller fat binary (image size, build time)
 can pin a single target:

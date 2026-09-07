@@ -222,9 +222,9 @@
       ]
     },
     {
-      "description": "ROCm apt-repo version bump — manual review required. ROCm major-version bumps carry KFD ioctl ABI risk; validate kernel compat before merging (ADR-0604, ADR-0603).",
+      "description": "ROCm image version bump — manual review required. ROCm major-version bumps carry KFD ioctl ABI risk; validate kernel compat, and re-check the prune list in the rocm-src stage, before merging (ADR-1225, ADR-0604, ADR-0603).",
       "matchPackageNames": [
-        "rocm"
+        "rocm/dev-ubuntu-24.04"
       ],
       "groupName": "ROCm (hip runtime)",
       "automerge": false,
@@ -274,19 +274,17 @@
     },
     {
       "customType": "regex",
-      "description": "ROCm pin in dev/Containerfile. Matches both the ARG ROCM_VER line and the repo URL path so both stay in sync on bumps. Queries the AMD apt directory listing via the html datasource. See ADR-0604.",
+      "description": "ROCm image pin. ADR-1225 moved the fork off the repo.radeon.com apt channel (frozen at 7.2.4 since AMD switched to TheRock) onto the digest-pinned rocm/dev-ubuntu-24.04 image. The Dockerfiles are covered by the built-in dockerfile manager; this manager catches the same pin where it appears in CI workflows and helper scripts.",
       "managerFilePatterns": [
-        "//^dev/Containerfile$//",
-        "//^docker/Dockerfile\\.node$//",
-        "//^Dockerfile$//",
-        "//^Dockerfile\\.ffmpeg$//"
+        "//^\\.github/workflows/build\\.yml$//",
+        "//^\\.github/workflows/libvmaf-build-matrix\\.yml$//",
+        "//^scripts/ci/install-rocm-from-image\\.sh$//"
       ],
       "matchStrings": [
-        "ARG ROCM_VER=(?<currentValue>[0-9.]+)",
-        "rocm/apt/(?<currentValue>[0-9.]+)/"
+        "rocm/dev-ubuntu-24\\.04:(?<currentValue>[^@\"'\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
       ],
-      "datasourceTemplate": "custom.rocm",
-      "depNameTemplate": "rocm"
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "rocm/dev-ubuntu-24.04"
     },
     {
       "customType": "regex",
@@ -383,12 +381,6 @@
       "depNameTemplate": "GPUOpen-LibrariesAndSDKs/AMF"
     }
   ],
-  "customDatasources": {
-    "rocm": {
-      "defaultRegistryUrlTemplate": "https://repo.radeon.com/rocm/apt/",
-      "format": "html"
-    }
-  },
   "vulnerabilityAlerts": {
     "labels": [
       "security",

@@ -36,6 +36,66 @@
 # See docs/development/dev-mcp.md for full usage.
 
 # ---------------------------------------------------------------------------
+# Stage 0 — rocm-src (ROCm 10.0.0 payload, pruned)
+# ---------------------------------------------------------------------------
+# **Why an image and not apt (ADR-1225).** Since ROCm 7.14 AMD builds and
+# releases through "TheRock". The legacy apt channel at repo.radeon.com/rocm/apt/
+# tops out at 7.2.4 — its own `latest` resolves there, and both apt/7.14 and
+# apt/10.0.0 return 404. The manylinux channel stops at rocm-rel-7.2.4 and the
+# TheRock wheel index carries only 7.14.0 alphas, so the official container
+# image is the only stable, digest-pinnable ROCm 10.0.0 artifact today.
+#
+# The -full image carries 19 GB under /opt/rocm, ~13.5 GB of which is math
+# libraries libvmaf never links: hipBLASLt, hipSPARSELt, rocBLAS, MIOpen's
+# per-gfx convolution kernels, Composable Kernel's device-op archives, RCCL,
+# rocFFT / rocSPARSE / rocSOLVER / rocRAND and the profiler runtimes. Pruning
+# them takes the COPY below from 19 GB to 5.5 GB. Keep lib/llvm (hipcc needs
+# it to emit .hsaco), the HIP / HSA / comgr runtimes, the amdgcn device
+# bitcode, the headers -- and `librocprofiler-register`, which despite the
+# name is a hard link-time dependency of libamdhip64.so.
+FROM rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 AS rocm-src
+
+ARG RL=/opt/rocm/core-10.0/lib
+RUN rm -rf \
+        ${RL}/hipblaslt ${RL}/hipsparselt ${RL}/rocblas ${RL}/rdc \
+        ${RL}/rocprofiler-systems ${RL}/rocprofiler-compute \
+        ${RL}/libdevice_*_operations.a ${RL}/librocshmem.a \
+        ${RL}/librocroller.so* ${RL}/librocjitsu.so* \
+        ${RL}/libMIOpen*.so* ${RL}/librocsparse* ${RL}/librocsolver* \
+        ${RL}/librocfft* ${RL}/librocrand* ${RL}/librocblas* \
+        ${RL}/libhipblas* ${RL}/libhipfft* ${RL}/libhipsparse* \
+        ${RL}/libhipsolver* ${RL}/libhiprand* ${RL}/librccl* \
+        ${RL}/librocprof-sys* ${RL}/librocprofiler-sdk* \
+        /opt/rocm/core-10.0/share/miopen \
+    && du -sh /opt/rocm
+
+# ROCm 10 puts the real tree under /opt/rocm/core-10.0/ and makes
+# /opt/rocm/{bin,lib,include,llvm,share,libexec,amdgcn} symlinks into
+# /etc/alternatives/rocm-*. A `COPY --from` of /opt/rocm alone would land a
+# directory of dangling symlinks in the consuming stage, because
+# /etc/alternatives is not copied with it -- and copying that instead would
+# collide with the consuming image's own alternatives. Repoint each link at
+# the core directory relative to /opt/rocm so the tree is self-contained.
+#
+# The hipcc smoke check gates the prune list above: `librocprofiler-register`
+# in particular must NOT be pruned (libamdhip64.so links it), and an
+# over-wide glob here fails the build rather than shipping an image whose
+# HIP binaries die at load.
+RUN for entry in /opt/rocm/*; do \
+        [ -L "$entry" ] || continue; \
+        case "$(readlink "$entry")" in /etc/alternatives/*) ;; *) continue ;; esac; \
+        name="$(basename "$entry")"; \
+        if [ -e "/opt/rocm/core-10.0/$name" ]; then \
+            ln -sfn "core-10.0/$name" "$entry"; \
+        else \
+            ln -sfn "core-10.0" "$entry"; \
+        fi; \
+    done \
+    && test -x /opt/rocm/bin/hipcc \
+    && test -e /opt/rocm/lib/libamdhip64.so \
+    && /opt/rocm/bin/hipconfig --version
+
+# ---------------------------------------------------------------------------
 # Stage 1 — build-deps
 # ---------------------------------------------------------------------------
 FROM ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b AS build-deps
@@ -354,81 +414,51 @@ ENV PATH=${DPCPP_ROOT}/bin:${PATH}
 ENV LD_LIBRARY_PATH=${DPCPP_ROOT}/lib:${ONEAPI_ROOT}/umf/latest/lib:${ONEAPI_ROOT}/tcm/latest/lib:${ONEAPI_ROOT}/tbb/latest/lib:${LD_LIBRARY_PATH}
 ENV PKG_CONFIG_PATH=${ONEAPI_ROOT}/tbb/latest/lib/pkgconfig
 
-# ---------- ROCm 7.2.x (HIP toolchain + runtime) ---------------------------
-# AMD apt repo.
+# ---------- ROCm 10.0.0 (HIP toolchain + runtime) --------------------------
 # NOTE: HIP kernel dispatch on AMD hardware requires /dev/kfd and
 # /dev/dri/renderD<N> (AMD node) to be passed into the container at runtime.
-# rocm-hip-runtime-dev already brings libhsa-runtime64.so (via hsa-rocr) and
-# libamdhip64.so, so no additional host-side ROCm userspace install is needed.
 # On a host with no AMD GPU the HIP runtime returns an error for device ops;
 # the container is still useful for build-regression catching and static
 # analysis. See docs/development/dev-mcp.md §Known Limitations.
 #
-# **Why ROCm 7.2.3 (ADR-0541).** ROCm userspace (libhsa-runtime64 + libamdhip64)
-# uses the kernel's KFD ioctl ABI to enumerate AMD agents. The ABI revs across
-# ROCm major versions. Linux ≥ 7.0 ships the KFD ioctls aligned with ROCm 7.x;
-# ROCm 6.4 userspace running against a 7.x kernel returns
-# `Unable to open /dev/kfd read-write: Invalid argument` from rocminfo and
-# vmaf --backend hip silently falls back to CPU. Pinning to ROCm 7.2.3 (the
-# same release Arch packages on the dev host) restores agent visibility.
-ARG ROCM_VER=7.2.4
-# AMD's apt repo only publishes a `noble` (Ubuntu 24.04) channel as of
-# 2026-05-18; there is no `resolute` (Ubuntu 26.04) channel yet.  The
-# `noble` packages install correctly on Ubuntu 26.04 — ROCm userspace
-# .debs are glibc-backward-compatible and the KFD ioctl ABI they depend
-# on is determined by the host kernel version (7.x here), not the
-# container's libc version.  When AMD publishes a `resolute` channel,
-# replace `noble` with `resolute` in the URL below.  ADR-0603.
-RUN curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key \
-        | gpg --dearmor \
-        | tee /usr/share/keyrings/rocm-archive-keyring.gpg > /dev/null \
-    && printf 'deb [arch=amd64 signed-by=/usr/share/keyrings/rocm-archive-keyring.gpg] https://repo.radeon.com/rocm/apt/%s noble main\n' "${ROCM_VER}" \
-        > /etc/apt/sources.list.d/rocm.list \
-    && printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' \
-        > /etc/apt/preferences.d/rocm-pin-600
+# The payload comes from the digest-pinned `rocm-src` stage above rather than
+# from repo.radeon.com — see that stage's comment for why (ADR-1225).
+#
+# **KFD ABI (supersedes the ADR-0541 6.4 pin).** ROCm userspace talks to the
+# kernel's KFD ioctl ABI, and a mismatch surfaces as
+# `Unable to open /dev/kfd read-write: Invalid argument` plus a silent CPU
+# fallback — which is what ROCm 6.4 did against a 7.x kernel. ROCm 10.0.0 was
+# verified end-to-end on the dev host (Linux 7.2.3, gfx1036): the agent
+# enumerates, `amdgpu-arch` reports gfx1036 natively, and a HIP-backend VMAF
+# score matches the CPU exactly. HSA_OVERRIDE_GFX_VERSION is no longer needed.
+#
+# **Layout.** ROCm 10 installs under /opt/rocm/core-10.0 and makes
+# /opt/rocm/lib a Debian-alternatives symlink onto it, so the ROCM_PATH /
+# PATH / LD_LIBRARY_PATH settings below are unchanged from the 7.x layout.
+# Note that the image self-reports HIP 7.15.x — the HIP component version is
+# not the ROCm release version.
+COPY --from=rocm-src /opt/rocm /opt/rocm
 
-# Package selection rationale:
-#   rocm-hip-runtime-dev — HIP runtime (libamdhip64.so) + HSA runtime
-#                          (libhsa-runtime64.so via hsa-rocr) + hipcc + dev
-#                          headers. Sufficient for dispatch: hipcc embeds .co
-#                          fat-binaries at compile time; libamdhip64 dispatches
-#                          them via the HSA agent (gfx1036 on the dev host).
-#   hipcc                — HIP compiler driver (explicit, in case
-#                          rocm-hip-runtime-dev dependency changes).
-#   rocm-cmake           — CMake helpers used by the meson HIP backend.
-#
-# Why NOT rocm-hip-sdk: it pulls rccl (multi-GPU collectives) which depends on
-# libdrm-amdgpu-amdgpu1 + libdrm2-amdgpu, packages absent from the ROCm noble
-# apt repo as of 2026-05-18. libvmaf HIP feature kernels use one GPU per
-# worker and need no multi-GPU collective stack.
-#
-# libxml2-16 + symlink: Ubuntu 26.04 (Resolute) renamed the libxml2 shared
-# library from libxml2.so.2 (Ubuntu 24.04, shipped by `libxml2` package) to
-# libxml2.so.16 (shipped by the new `libxml2-16` package). ROCm 7.2.3's
-# bundled LLD (/opt/rocm-7.2.3/lib/llvm/bin/lld) was linked against the old
-# soname (libxml2.so.2) and fails at .hsaco link time with:
-#   error while loading shared libraries: libxml2.so.2: cannot open shared
-#   object file: No such file or directory
-# The compat symlink `libxml2.so.2 -> libxml2.so.16.1.2` satisfies the
-# dynamic linker without installing any additional ROCm packages. The ABI is
-# backward-compatible (libxml2 major bumped only for packaging reasons, the
-# C API is the same). ADR-0603.
+# ROCm's bundled LLD links against libxml2; Ubuntu 26.04 (Resolute) renamed the
+# shared library from libxml2.so.2 to libxml2.so.16. The compat symlink
+# satisfies the dynamic linker at .hsaco link time. The ABI is backward
+# compatible — the soname major was bumped for packaging reasons, the C API is
+# unchanged. ADR-0603.
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
-    rocm-hip-runtime-dev \
-    hipcc \
-    rocm-cmake \
     libxml2-16 \
     && ln -sf /usr/lib/x86_64-linux-gnu/libxml2.so.16.1.2 \
               /usr/lib/x86_64-linux-gnu/libxml2.so.2
 
-# Verify ROCm packages were actually installed.
-RUN for pkg in rocm-hip-runtime-dev hipcc; do \
-        dpkg -l "${pkg}" 2>/dev/null | grep -q "^ii" \
-            || (echo "FATAL: ${pkg} was not installed" && exit 1); \
-    done
+# Fail the build here rather than at `meson setup -Denable_hip=true` if the
+# copy landed short.
+RUN test -x /opt/rocm/bin/hipcc \
+        || (echo "FATAL: hipcc missing from /opt/rocm" && exit 1) \
+    && test -e /opt/rocm/lib/libamdhip64.so \
+        || (echo "FATAL: libamdhip64.so missing from /opt/rocm" && exit 1) \
+    && /opt/rocm/bin/hipconfig --version
 
 ENV ROCM_PATH=/opt/rocm
 ENV PATH=${ROCM_PATH}/bin:${ROCM_PATH}/llvm/bin:${PATH}

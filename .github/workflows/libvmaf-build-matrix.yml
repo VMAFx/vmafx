@@ -442,44 +442,41 @@ jobs:
           sudo apt-get update
           sudo -E apt-get -yq install ccache ninja-build nasm gcc g++
 
-      # ---------- ROCm / HIP runtime (T7-10b) ----------
-      # Installs `rocm-hip-runtime-dev` from the official AMD apt repo
-      # at `repo.radeon.com/rocm/apt/<ver>`. ROCm 7.2.3 matches the
-      # version under test on the maintainer's local box; the apt URL
-      # carries the version path component, so bumping ROCm here is a
-      # one-line change. The ROCm install uses `lsb_release -cs` to
-      # detect the codename dynamically (plucky for ubuntu-26.04).
-      # Pin priority 600
-      # keeps Ubuntu base packages preferred where versions overlap so
-      # the HIP install doesn't drag in a parallel toolchain.
+      # ---------- ROCm / HIP toolchain (T7-10b) ----------
+      # ROCm 10.0.0 has no apt channel. Since ROCm 7.14 AMD builds and
+      # releases through "TheRock"; repo.radeon.com/rocm/apt/ tops out at
+      # 7.2.4 (its own `latest` resolves there, and apt/7.14 and apt/10.0.0
+      # both 404), the manylinux channel stops at rocm-rel-7.2.4, and the
+      # TheRock wheel index carries only 7.14.0 alphas. The official
+      # container image is the only stable, digest-pinnable ROCm 10.0.0
+      # artifact -- see ADR-1225.
       #
-      # Cost: ~200 MB download + ~3-5 min wall-clock per HIP-lane run.
-      # Acceptable because HIP is opt-in (`-Denable_hip=true`) and the
-      # lane runs only when its matrix row is selected.
-      - name: Install ROCm / HIP runtime
+      # `docker pull` is not viable here: the image is 8.2 GB compressed /
+      # 29 GB extracted and this leg already carries the CUDA toolkit and
+      # oneAPI on the same runner. `install-rocm-from-image.sh` instead
+      # streams each layer blob from the registry straight into tar,
+      # extracting only /opt/rocm and skipping the math libraries libvmaf
+      # never links, so peak disk is the ~5.5 GB result rather than the
+      # 29 GB image.
+      #
+      # Cost: ~8 GB download + ~3-5 min wall-clock per HIP-lane run,
+      # comparable to the apt install it replaces.
+      - name: Install ROCm / HIP toolchain
         if: ${{ (matrix.hip) && steps.impact.outputs.c_core == 'true' }}
         env:
-          ROCM_VERSION: "7.2.3"
+          ROCM_IMAGE: "rocm/dev-ubuntu-24.04@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374"
         run: |
           sudo apt-get update
-          sudo -E apt-get -yq install ccache ninja-build nasm libomp-dev \
-            pkg-config gcc g++ wget gnupg lsb-release
-          sudo install -d -m 0755 /etc/apt/keyrings
-          wget -qO- https://repo.radeon.com/rocm/rocm.gpg.key \
-            | gpg --dearmor \
-            | sudo tee /etc/apt/keyrings/rocm.gpg > /dev/null
-          UBUNTU_CODENAME="$(lsb_release -cs)"
-          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/${ROCM_VERSION} ${UBUNTU_CODENAME} main" \
-            | sudo tee /etc/apt/sources.list.d/rocm.list
-          printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' \
-            | sudo tee /etc/apt/preferences.d/rocm-pin-600
-          sudo apt-get update
-          sudo -E apt-get -yq install --no-install-recommends rocm-hip-runtime-dev
-          # Surface the ROCm tooling on PATH / pkg-config / ld so
-          # meson's `dependency('hip-lang')` and the link of
-          # `amdhip64` resolve without per-step exports.
-          echo "/opt/rocm/bin"                          | sudo tee -a "$GITHUB_PATH"
-          echo "/opt/rocm/lib"                          | sudo tee /etc/ld.so.conf.d/rocm.conf
+          sudo -E apt-get -yq install --no-install-recommends \
+            ccache ninja-build nasm libomp-dev pkg-config gcc g++ jq
+          ./scripts/ci/install-rocm-from-image.sh \
+            --image "$ROCM_IMAGE" --dest /opt/rocm
+          # Surface the ROCm tooling on PATH / pkg-config / ld so meson's
+          # `dependency('hip-lang')` and the link of `amdhip64` resolve
+          # without per-step exports.
+          echo "ROCM_PATH=/opt/rocm" | sudo tee -a "$GITHUB_ENV"
+          echo "/opt/rocm/bin" | sudo tee -a "$GITHUB_PATH"
+          echo "/opt/rocm/lib" | sudo tee /etc/ld.so.conf.d/rocm.conf
           echo "PKG_CONFIG_PATH=/opt/rocm/lib/pkgconfig:${PKG_CONFIG_PATH:-}" \
             | sudo tee -a "$GITHUB_ENV"
           sudo ldconfig

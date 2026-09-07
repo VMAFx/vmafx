@@ -7,13 +7,13 @@
 # Targets use matching, digest-pinned build/runtime families:
 #   final-cpu        — Debian 13 builder + distroless Debian 13 runtime
 #   final-cuda13     — NVIDIA CUDA 13.3.1 devel + runtime images
-#   final-rocm7      — AMD ROCm 7.2.4 dev/application image
+#   final-rocm10      — AMD ROCm 10.0.0 dev/application image
 #   final-oneapi2025 — Intel oneAPI 2025.3.2 basekit + 2025.3.1 runtime image
 #
 # Tag matrix (built by CI):
 #   ghcr.io/vmafx/vmafx:<tag>          (cpu default, same as Dockerfile.production)
 #   ghcr.io/vmafx/vmafx:<tag>-cuda13
-#   ghcr.io/vmafx/vmafx:<tag>-rocm7
+#   ghcr.io/vmafx/vmafx:<tag>-rocm10
 #   ghcr.io/vmafx/vmafx:<tag>-oneapi2025
 #
 # ADR-0698: vmafx-production-dockerfile
@@ -145,8 +145,14 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-cuda1
     && cp /src/core/build/tools/vmaf /dist/bin/ \
     && cp -r model/. /dist/model/
 
-# --- ROCm 7.2.4 build ---
-FROM rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054 AS builder-rocm7
+# --- ROCm 10.0.0 build (ADR-1225) ---
+# ROCm 10.0.0 ships only as a container image: since ROCm 7.14 AMD builds and
+# releases through "TheRock", and the legacy apt channel at
+# repo.radeon.com/rocm/apt/ tops out at 7.2.4 (its own `latest` resolves there).
+# Note the image reports HIP 7.15.26333 and installs under /opt/rocm/core-10.0,
+# with /opt/rocm/lib a Debian-alternatives symlink onto it -- so
+# LD_LIBRARY_PATH=/opt/rocm/lib keeps working unchanged.
+FROM rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 AS builder-rocm10
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG VMAF_BUILD_JOBS=4
@@ -176,7 +182,7 @@ target=/tmp/meson-1.12.0-py3-none-any.whl \
 WORKDIR /src
 COPY . .
 
-RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-rocm7 \
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-rocm10 \
     CCACHE_DIR=/root/.cache/ccache \
     meson setup /src/core/build core \
         --buildtype=release \
@@ -292,17 +298,17 @@ COPY --from=builder-cuda13 /dist/model/ /usr/local/share/vmafx/model/
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/vmaf"]
 
-FROM rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054 AS final-rocm7
+FROM rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 AS final-rocm10
 LABEL org.opencontainers.image.title="vmafx"
-LABEL org.opencontainers.image.description="VMAFX production ROCm 7.2.4 runtime"
+LABEL org.opencontainers.image.description="VMAFX production ROCm 10.0.0 runtime"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
 ENV LD_LIBRARY_PATH="/usr/local/lib:/opt/rocm/lib:/opt/rocm/lib64"
 ENV VMAF_MODEL_PATH="/usr/local/share/vmafx/model"
-COPY --from=builder-rocm7 /dist/lib/   /usr/local/lib/
-COPY --from=builder-rocm7 /dist/bin/   /usr/local/bin/
-COPY --from=builder-rocm7 /dist/model/ /usr/local/share/vmafx/model/
+COPY --from=builder-rocm10 /dist/lib/   /usr/local/lib/
+COPY --from=builder-rocm10 /dist/bin/   /usr/local/bin/
+COPY --from=builder-rocm10 /dist/model/ /usr/local/share/vmafx/model/
 # Drop privileges. ROCm requires the host user to be a member of the
 # `render` and `video` groups; the runtime image inherits this from the
 # host group-mapping when `--group-add video,render` is passed.

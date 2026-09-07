@@ -182,8 +182,11 @@ endif
 # no-GPU build-sandbox case — BuildKit, CI). See
 # ADR-0546 (audit-cleanup-bundle): a previous `gfx90a`-only fallback
 # shipped HSACO blobs that failed at runtime on dev hosts with
-# consumer iGPUs such as the AMD Raphael APU `gfx1036`
-# (override-mapped to `gfx1030` via `HSA_OVERRIDE_GFX_VERSION=10.3.0`).
+# consumer iGPUs such as the AMD Raphael APU `gfx1036`. Under ROCm 10
+# `gfx1036` is a natively supported target (ADR-1225) -- it no longer
+# needs the `HSA_OVERRIDE_GFX_VERSION=10.3.0` gfx1030 aliasing that
+# ROCm 6.x/7.x required, so the arch in the fat binary is the arch the
+# runtime reports.
 if is_hipcc_enabled and is_hip_enabled
     cdata.set10('HAVE_HIPCC', true)
     vmaf_cflags_common += '-DHAVE_HIPCC'
@@ -214,8 +217,8 @@ if is_hipcc_enabled and is_hip_enabled
         # No GPU visible (no-GPU build sandbox) AND no operator override:
         # widen the fat-binary to cover the four most common targets so
         # the resulting .so works on CDNA2 servers, RDNA2/3 desktops, and
-        # the AMD Raphael APU iGPU (`gfx1036`, override-mapped to
-        # `gfx1030` via `HSA_OVERRIDE_GFX_VERSION=10.3.0`) used as one of
+        # the AMD Raphael APU iGPU (`gfx1036`, natively supported since
+        # ROCm 10 -- ADR-1225) used as one of
         # this fork's dev hosts. Operators that want a single-target
         # build for size or speed should pass `-Dhip_gfx_targets=<list>`
         # explicitly. See ADR-0546.

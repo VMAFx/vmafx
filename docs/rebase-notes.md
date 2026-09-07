@@ -49210,3 +49210,52 @@ Fork-only release tooling and CI. Three invariants:
    returns `1.0.0`, so a naive comparison concludes the RC line has already
    reached 1.0.0 and fails every RC build while `release-as` is legitimately
    still present. The `*-*` early return is load-bearing, not cosmetic.
+## feat/rocm-10-migration (ADR-1225)
+
+**Files touched**: `dev/Containerfile`, `dev/docker-compose.yml`,
+`dev/AGENTS.md`, `docker/Dockerfile.production-gpu`, `docker/Dockerfile.node`,
+`.github/workflows/build.yml`,
+`.github/workflows/libvmaf-build-matrix.yml`,
+`.github/workflows/docker-publish-production.yml`,
+`.github/workflows/docker-publish-operator-node.yml`,
+`core/src/meson.build` (comments only), `renovate.json`,
+`scripts/ci/install-rocm-from-image.sh` (new), `AGENTS.md`,
+`docs/backends/hip/overview.md`, `docs/development/dev-mcp.md`.
+
+**Rebase impact**: none against upstream Netflix — every file here is
+fork-local. The conflict risk is against *other fork branches* that touch the
+GPU-SDK layer of `dev/Containerfile` or either CI HIP lane.
+
+Invariants a future rebase must not undo:
+
+1. **Do not restore the `repo.radeon.com` apt path.** `ARG ROCM_VER=` and the
+   `rocm/apt/<ver>` source line are gone on purpose: AMD froze that channel at
+   7.2.4 when ROCm moved to TheRock at 7.14, so re-adding it silently pins the
+   toolchain back to ROCm 7. A rebase that resurrects the apt block from an
+   older branch will still *build* — which is exactly why it needs saying.
+
+2. **`librocprofiler-register` is not a profiler component.** It is a hard
+   link-time dependency of `libamdhip64.so` and `libhsa-runtime64.so`. Any
+   widening of the `rocm-src` prune list — for instance back to a tidy-looking
+   `librocprof*` glob — makes every HIP binary fail at load with
+   `librocprofiler-register.so.0: cannot open shared object file`. The stage's
+   hipcc smoke compile is the guard; keep it.
+
+3. **`/opt/rocm/{bin,lib,include,llvm,…}` are `/etc/alternatives` symlinks in
+   the ROCm 10 image.** Copying or extracting `/opt/rocm` alone yields dangling
+   links, so both the `rocm-src` stage and
+   `scripts/ci/install-rocm-from-image.sh` repoint them at `core-10.0/<name>`
+   relative to `/opt/rocm`. Do not "simplify" either loop away, and do not
+   solve it by copying `/etc/alternatives` — that directory is shared with the
+   consuming image's own packages.
+
+4. **`node-rocm` needs the whole closure, laid out as it was.** ROCm 10's
+   `libamdhip64.so` pulls `libLLVM` / `libclang-cpp` / `libamd_comgr` /
+   `librocm_kpack` / `librocprofiler-register` plus the `rocm_sysdeps` bundle,
+   wired by `$ORIGIN`-relative RPATHs. Reverting to the old two-library flat
+   copy into `/usr/local/lib` produces an image whose every HIP binary dies at
+   load. Verify with `ldd` in a scratch stage carrying only the copied files.
+
+5. **`HSA_OVERRIDE_GFX_VERSION` stays out of `dev/docker-compose.yml`.**
+   ROCm 10 supports `gfx1036` natively; re-adding the `10.3.0` alias would map
+   the agent to `gfx1030` while meson compiles `gfx1036` code objects.

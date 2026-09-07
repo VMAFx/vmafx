@@ -440,10 +440,13 @@ linked AGENTS.md before resolving conflicts.
   ([ADR-0435](docs/adr/0435-local-dev-mcp-container.md)):
   `dev/Containerfile` pins `cuda-toolkit-13-3`, the unversioned
   `intel-basekit` meta-package (Intel does not publish a
-  `intel-basekit-2025.3` apt package), and `ROCM_VER=7.2.4` apt
-  repos. If SDK versions are bumped (routine security
-  maintenance), update the version pins and the apt repo URL paths in
-  `dev/Containerfile` before merging.
+  `intel-basekit-2025.3` apt package), and the digest-pinned
+  `rocm/dev-ubuntu-24.04:10.0.0-full` image in the `rocm-src` stage
+  (ADR-1225 — ROCm has no apt channel past 7.2.4). If SDK versions are
+  bumped (routine security maintenance), update the version pins and the
+  apt repo URL paths in `dev/Containerfile` before merging; a ROCm bump
+  additionally means re-validating the `rocm-src` prune list against its
+  hipcc smoke check.
   `dev/scripts/smoke-probe-loop.sh` assumes the golden pair lives at
   `${VMAF_TESTDATA_PATH}/ref_576x324_48f.yuv` / `dis_576x324_48f.yuv`
   — do not rename these files. The probe JSON schema fields (`ts`,
