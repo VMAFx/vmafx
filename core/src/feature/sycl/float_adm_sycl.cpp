@@ -466,12 +466,20 @@ static sycl::event launch_csf_r(sycl::queue &q, const float *ref_band, const flo
 /* Mirrors stage 3 but uses csf_a_aim/csf_f_aim (from decouple_r)     */
 /* and accumulates decouple_a into slots 6..8.                         */
 /* ------------------------------------------------------------------ */
+/* p-norm accumulation, mirroring adm_tools.c exactly: the CPU special-cases
+ * p == 3 to a literal cube and only falls back to pow() otherwise, so the
+ * default path stays bit-identical. ADR-1220. */
+static inline float fadm_pnorm_term(float x, float p_norm)
+{
+    return (p_norm == 3.0f) ? (x * x * x) : sycl::pow(x, p_norm);
+}
+
 static sycl::event launch_aim_cm(sycl::queue &q, const float *ref_band, const float *dis_band,
                                  const float *csf_a_aim, const float *csf_f_aim, float *accum_out,
                                  unsigned half_w, unsigned half_h, unsigned buf_stride,
                                  int active_left, int active_top, int active_right,
                                  int active_bottom, float rfactor_h, float rfactor_v,
-                                 float rfactor_d, float gain_limit)
+                                 float rfactor_d, float gain_limit, float p_norm)
 {
     const int active_h = active_bottom - active_top;
     const int active_w = active_right - active_left;
@@ -491,6 +499,7 @@ static sycl::event launch_aim_cm(sycl::queue &q, const float *ref_band, const fl
     const float e_rfv = rfactor_v;
     const float e_rfd = rfactor_d;
     const float e_gl = gain_limit;
+    const float e_pnorm = p_norm;
     const unsigned e_active_h = (unsigned)active_h;
     const float *e_ref = ref_band;
     const float *e_dis = dis_band;
@@ -605,7 +614,7 @@ static sycl::event launch_aim_cm(sycl::queue &q, const float *ref_band, const fl
                                  float xa = sycl::fabs(x_val) - thr;
                                  if (xa < 0.0f)
                                      xa = 0.0f;
-                                 local_aim_cm += xa * xa * xa;
+                                 local_aim_cm += fadm_pnorm_term(xa, e_pnorm);
                              }
 
                              sycl::sub_group sg = item.get_sub_group();
@@ -637,7 +646,7 @@ static sycl::event launch_csf_cm(sycl::queue &q, const float *ref_band, const fl
                                  unsigned half_w, unsigned half_h, unsigned buf_stride,
                                  int active_left, int active_top, int active_right,
                                  int active_bottom, float rfactor_h, float rfactor_v,
-                                 float rfactor_d, float gain_limit)
+                                 float rfactor_d, float gain_limit, float p_norm)
 {
     const int active_h = active_bottom - active_top;
     const int active_w = active_right - active_left;
@@ -657,6 +666,7 @@ static sycl::event launch_csf_cm(sycl::queue &q, const float *ref_band, const fl
     const float e_rfv = rfactor_v;
     const float e_rfd = rfactor_d;
     const float e_gl = gain_limit;
+    const float e_pnorm = p_norm;
     const unsigned e_active_h = (unsigned)active_h;
     const float *e_ref = ref_band;
     const float *e_dis = dis_band;
@@ -721,7 +731,7 @@ static sycl::event launch_csf_cm(sycl::queue &q, const float *ref_band, const fl
                              for (int col = e_left + (int)lid; col < e_right; col += (int)WG_SIZE) {
                                  const float src_ref = rb((int)band_idx + 1, row, col);
                                  const float csf_o = sycl::fabs(rfactor_band * src_ref);
-                                 local_csf_sum += csf_o * csf_o * csf_o;
+                                 local_csf_sum += fadm_pnorm_term(csf_o, e_pnorm);
 
                                  const float oh = rb(1, row, col);
                                  const float ov = rb(2, row, col);
@@ -769,7 +779,7 @@ static sycl::event launch_csf_cm(sycl::queue &q, const float *ref_band, const fl
                                  float xa = sycl::fabs(x_val) - thr;
                                  if (xa < 0.0f)
                                      xa = 0.0f;
-                                 local_cm_sum += xa * xa * xa;
+                                 local_cm_sum += fadm_pnorm_term(xa, e_pnorm);
                              }
 
                              sycl::sub_group sg = item.get_sub_group();
@@ -1101,7 +1111,8 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         launch_csf_cm(q, s->d_ref_band[scale], s->d_dis_band[scale], s->d_csf_a, s->d_csf_f,
                       s->d_accum[scale], half_w, half_h, s->buf_stride, left, top, right, bottom,
                       s->rfactor[scale * 3 + 0], s->rfactor[scale * 3 + 1],
-                      s->rfactor[scale * 3 + 2], (float)s->adm_enhn_gain_limit);
+                      s->rfactor[scale * 3 + 2], (float)s->adm_enhn_gain_limit,
+                      (float)s->adm_p_norm);
         /* Stage 2b — CSF on decouple_r (ADR-0574). */
         launch_csf_r(q, s->d_ref_band[scale], s->d_dis_band[scale], s->d_csf_a_aim, s->d_csf_f_aim,
                      half_w, half_h, s->buf_stride, s->rfactor[scale * 3 + 0],
@@ -1111,7 +1122,8 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         launch_aim_cm(q, s->d_ref_band[scale], s->d_dis_band[scale], s->d_csf_a_aim, s->d_csf_f_aim,
                       s->d_accum[scale], half_w, half_h, s->buf_stride, left, top, right, bottom,
                       s->rfactor[scale * 3 + 0], s->rfactor[scale * 3 + 1],
-                      s->rfactor[scale * 3 + 2], (float)s->adm_enhn_gain_limit);
+                      s->rfactor[scale * 3 + 2], (float)s->adm_enhn_gain_limit,
+                      (float)s->adm_p_norm);
     }
 
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
@@ -1167,13 +1179,17 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index, VmafFeatu
             top = 0;
         const int right = hw - left;
         const int bottom = hh - top;
-        const float area_cbrt = std::pow(
-            (float)((bottom - top) * (right - left)) * (float)s->adm_noise_weight, 1.0f / 3.0f);
+        /* The pooling root and the noise constant are 1/adm_p_norm, not a
+         * hardcoded 1/3: adm_tools.c uses powf(accum, 1.0f / adm_p_norm) and
+         * get_noise_constant(..., adm_p_norm). ADR-1220. */
+        const float inv_p = 1.0f / (float)s->adm_p_norm;
+        const float area_cbrt =
+            std::pow((float)((bottom - top) * (right - left)) * (float)s->adm_noise_weight, inv_p);
         float num_scale = 0.0f;
         float den_scale = 0.0f;
         for (int b = 0; b < FADM_NUM_BANDS; b++) {
-            num_scale += std::pow((float)cm_totals[scale][b], 1.0f / 3.0f) + area_cbrt;
-            den_scale += std::pow((float)csf_totals[scale][b], 1.0f / 3.0f) + area_cbrt;
+            num_scale += std::pow((float)cm_totals[scale][b], inv_p) + area_cbrt;
+            den_scale += std::pow((float)csf_totals[scale][b], inv_p) + area_cbrt;
         }
         scores[2 * scale + 0] = num_scale;
         scores[2 * scale + 1] = den_scale;
@@ -1183,7 +1199,7 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index, VmafFeatu
         /* ADR-0574: AIM accumulation — same CSF denominator as adm2 (den_scale). */
         float aim_num_scale = 0.0f;
         for (int b = 0; b < FADM_NUM_BANDS; b++)
-            aim_num_scale += std::pow((float)aim_cm_totals[scale][b], 1.0f / (float)s->adm_p_norm);
+            aim_num_scale += std::pow((float)aim_cm_totals[scale][b], inv_p);
         aim_den += den_scale;
         aim_num += aim_num_scale;
     }

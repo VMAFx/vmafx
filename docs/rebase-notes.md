@@ -49413,3 +49413,44 @@ Invariants a future rebase must not undo:
 5. **`HSA_OVERRIDE_GFX_VERSION` stays out of `dev/docker-compose.yml`.**
    ROCm 10 supports `gfx1036` natively; re-adding the `10.3.0` alias would map
    the agent to `gfx1030` while meson compiles `gfx1036` code objects.
+## ADR-1220 — float-ADM options must reach the GPU kernels (2026-09-07)
+
+Branch: `fix/gpu-float-adm-options`.
+
+1. **`adm_p_norm` has FOUR application points, not one.** `adm_tools.c` applies
+   it in the DLM numerator sum and the CSF denominator sum (each special-casing
+   `p == 3` to a literal cube), in the pooling root
+   `powf(accum, 1.0f / adm_p_norm)`, and inside
+   `get_noise_constant(w, h, weight, p) = powf(w * h * weight, 1.0f / p)`. A
+   twin that honours only the last of these — as all four did, and only for the
+   AIM term — produces a hybrid quantity: a sum of cubes raised to `1/p`. When
+   touching the ADM pooling, change all four together.
+
+2. **Keep the CPU's `p == 3` fast path in the kernel.** Device `powf(x, 3.0f)`
+   is not guaranteed to equal `x * x * x`, so replacing the cube unconditionally
+   would move the DEFAULT path — every shipped model — for no benefit. The
+   kernels carry `fadm_pnorm_term(x, p) = (p == 3.0f) ? x*x*x : powf(x, p)`,
+   mirroring `adm_tools.c` exactly.
+
+3. **`adm_bypass_cm` applies to BOTH `adm_cm()` calls.** `adm.c` passes it to
+   the DLM CM and to the AIM CM. A twin that gates only the DLM kernel is still
+   wrong.
+
+4. **`adm_skip_scale0` is a POOLING rule, not a reporting rule.** `adm.c` sets
+   `num_scale = 0` and `den_scale = 1e-10` for scale 0, so scale 0 drops out of
+   the pooled `adm2` and `aim`. Zeroing only the reported `adm_scale0`
+   sub-score — what the Metal twin did — leaves the pooled score wrong on every
+   frame. No kernel change is needed for it: `adm_dwt2_lo_s` writes only
+   `band_a`, which `adm_dwt2` computes identically, so scales 1..3 are
+   unaffected.
+
+5. **On Metal, the CM uniform's two padding slots now carry the options.**
+   `FadmCsf` in `float_adm.metal` and `FadmCsfHost` in `float_adm_metal.mm` must
+   stay byte-identical; `_pad0` / `_pad1` became `p_norm` (float) and
+   `bypass_cm` (uint), so the size and alignment are unchanged. If you add
+   another option, add it to both structs in the same commit.
+
+6. **The SYCL float-ADM parity test compared only `adm2`.** On its fixture the
+   aggregate alone could not see the p-norm defect at all — the per-scale
+   sub-scores could (`adm_scale0` drifts by `3.09e-03` where `adm2` stays inside
+   the gate). An ADM parity test must read all five features.

@@ -358,6 +358,9 @@ static int fadm_hip_launch(FloatAdmStateHip *s, uintptr_t pic_stream_handle)
             return fadm_hip_rc(rc);
     }
 
+    /* adm_p_norm is a VMAF_OPT_FLAG_FEATURE_PARAM the twin advertises; until
+     * ADR-1220 the kernels hardcoded p = 3 and it moved only the AIM exponent. */
+    const float pnorm_f = (float)s->adm_p_norm;
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
         const int cur_w = (int)s->scale_w[scale];
         const int cur_h = (int)s->scale_h[scale];
@@ -484,7 +487,8 @@ static int fadm_hip_launch(FloatAdmStateHip *s, uintptr_t pic_stream_handle)
                             &rfh,
                             &rfv,
                             &rfd,
-                            &gl};
+                            &gl,
+                            &pnorm_f};
             rc = hipModuleLaunchKernel(s->func_csf_cm, gx, 1u, 1u, FADM_BX, FADM_BY, 1u, 0u, pstr,
                                        args, NULL);
             if (rc != hipSuccess)
@@ -542,7 +546,8 @@ static int fadm_hip_launch(FloatAdmStateHip *s, uintptr_t pic_stream_handle)
                             &rfh,
                             &rfv,
                             &rfd,
-                            &gl};
+                            &gl,
+                            &pnorm_f};
             rc = hipModuleLaunchKernel(s->func_aim_cm, gx, 1u, 1u, FADM_BX, FADM_BY, 1u, 0u, pstr,
                                        args, NULL);
             if (rc != hipSuccess)
@@ -892,13 +897,17 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index, VmafFeatur
             top = 0;
         const int right = hw - left;
         const int bottom = hh - top;
-        const float area_cbrt = powf(
-            (float)((bottom - top) * (right - left)) * (float)s->adm_noise_weight, 1.0f / 3.0f);
+        /* The pooling root and the noise constant are 1/adm_p_norm, not a
+         * hardcoded 1/3: adm_tools.c uses powf(accum, 1.0f / adm_p_norm) and
+         * get_noise_constant(..., adm_p_norm). ADR-1220. */
+        const float inv_p = 1.0f / (float)s->adm_p_norm;
+        const float area_cbrt =
+            powf((float)((bottom - top) * (right - left)) * (float)s->adm_noise_weight, inv_p);
         float num_scale = 0.0f;
         float den_scale = 0.0f;
         for (int b = 0; b < FADM_NUM_BANDS; b++) {
-            num_scale += powf((float)cm_totals[scale][b], 1.0f / 3.0f) + area_cbrt;
-            den_scale += powf((float)csf_totals[scale][b], 1.0f / 3.0f) + area_cbrt;
+            num_scale += powf((float)cm_totals[scale][b], inv_p) + area_cbrt;
+            den_scale += powf((float)csf_totals[scale][b], inv_p) + area_cbrt;
         }
         scores[2 * scale + 0] = num_scale;
         scores[2 * scale + 1] = den_scale;
@@ -908,7 +917,7 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index, VmafFeatur
         /* ADR-0574: AIM accumulation — same CSF denominator as adm2 (den_scale). */
         float aim_num_scale = 0.0f;
         for (int b = 0; b < FADM_NUM_BANDS; b++)
-            aim_num_scale += powf((float)aim_cm_totals[scale][b], 1.0f / (float)s->adm_p_norm);
+            aim_num_scale += powf((float)aim_cm_totals[scale][b], inv_p);
         aim_den += den_scale;
         aim_num += aim_num_scale;
     }

@@ -342,11 +342,19 @@ __device__ static __forceinline__ float fadm_read_csf_a_at(const float *csf_a_bu
     return csf_a_buf[band * slice + y * buf_stride + x];
 }
 
+/* p-norm accumulation, mirroring adm_tools.c exactly: the CPU special-cases
+ * p == 3 to a literal cube and only falls back to powf() otherwise, so the
+ * default path stays bit-identical. ADR-1220. */
+__device__ static __forceinline__ float fadm_pnorm_term(float x, float p_norm)
+{
+    return (p_norm == 3.0f) ? (x * x * x) : powf(x, p_norm);
+}
+
 __global__ void float_adm_csf_cm(const float *ref_band, const float *dis_band, const float *csf_a,
                                  const float *csf_f, float *accum_out, int half_w, int half_h,
                                  int buf_stride, int active_left, int active_top, int active_right,
                                  int active_bottom, float rfactor_h, float rfactor_v,
-                                 float rfactor_d, float gain_limit)
+                                 float rfactor_d, float gain_limit, float p_norm)
 {
     const int active_h = active_bottom - active_top;
     const int active_w = active_right - active_left;
@@ -375,7 +383,7 @@ __global__ void float_adm_csf_cm(const float *ref_band, const float *dis_band, c
         const float src_ref =
             fadm_read_band_at(ref_band, (int)band_idx + 1, row, col, buf_stride, half_h);
         const float csf_o = fabsf(rfactor_band * src_ref);
-        local_csf_sum += csf_o * csf_o * csf_o;
+        local_csf_sum += fadm_pnorm_term(csf_o, p_norm);
 
         const float oh = fadm_read_band_at(ref_band, 1, row, col, buf_stride, half_h);
         const float ov = fadm_read_band_at(ref_band, 2, row, col, buf_stride, half_h);
@@ -430,7 +438,7 @@ __global__ void float_adm_csf_cm(const float *ref_band, const float *dis_band, c
         float xa = fabsf(x_val) - thr;
         if (xa < 0.0f)
             xa = 0.0f;
-        local_cm_sum += xa * xa * xa;
+        local_cm_sum += fadm_pnorm_term(xa, p_norm);
     }
 
     /* Warp + cross-warp reduction. FADM_WARPS_PER_BLOCK = 8 (wave32 worst case). */
@@ -537,7 +545,7 @@ __global__ void float_adm_aim_cm(const float *ref_band, const float *dis_band,
                                  float *accum_out, int half_w, int half_h, int buf_stride,
                                  int active_left, int active_top, int active_right,
                                  int active_bottom, float rfactor_h, float rfactor_v,
-                                 float rfactor_d, float gain_limit)
+                                 float rfactor_d, float gain_limit, float p_norm)
 {
     const int active_h = active_bottom - active_top;
     const int active_w = active_right - active_left;
@@ -617,7 +625,7 @@ __global__ void float_adm_aim_cm(const float *ref_band, const float *dis_band,
         float xa = fabsf(x_val) - thr;
         if (xa < 0.0f)
             xa = 0.0f;
-        local_aim_cm += xa * xa * xa;
+        local_aim_cm += fadm_pnorm_term(xa, p_norm);
     }
 
     /* Warp + cross-warp reduction — same pattern as stage 3. */

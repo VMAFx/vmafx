@@ -237,6 +237,13 @@ HIP / Metal motion twins listed in the Twin-update table above) in the same PR.
   `sycl::malloc_device` memory is explicitly uninitialised, so a missing
   device zero is a genuine uninitialised read on the first singular
   frame. ADR-1218.
+- **`float_adm_sycl.cpp` options must be captured, not hardcoded**
+  (ADR-1220) — see the canonical note in
+  [`../cuda/AGENTS.md`](../cuda/AGENTS.md). `launch_csf_cm` and
+  `launch_aim_cm` capture `adm_p_norm`; the host pooling uses
+  `1.0f / adm_p_norm` for the root and the noise constant. This twin
+  does not declare `adm_bypass_cm` and rejects it, which is
+  deliberate — adding it is a feature, tracked in `docs/state.md`.
 
 - **VAAPI / dmabuf zero-copy import** — the FFmpeg `libvmaf_sycl`
   filter (`ffmpeg-patches/0005-*.patch`) consumes
