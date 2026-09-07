@@ -10881,6 +10881,17 @@ core internal headers (`framesync.h`, `thread_pool.h`, `picture_pool.h`,
   never blocked by it. See ADR-1223.
 
 
+- New `nvcc_threads` build option (default `4`) passes `--threads` to the
+  per-kernel CUDA fatbin compiles. nvcc parallelises across the six
+  gencode architectures, so this shortens the critical-path kernel:
+  `adm_cm.cu` 8.5 s → 2.1 s, serial wall 41.9 s → 14.2 s. Verified
+  byte-identical: all **22/22** fatbins compare equal (`cmp`) between
+  `--threads 4` and `--threads 1`, so it cannot move a score. ninja
+  already builds the 22 fatbin targets concurrently, so the effective
+  thread count is this value times the ninja job count — lower it on a
+  small runner. See ADR-1224.
+
+
 - **ROCm 10.0.0 across every HIP consumer, installed from digest-pinned
   container images** (ADR-1225). AMD froze the `repo.radeon.com/rocm/apt/`
   channel at 7.2.4 when ROCm moved to the "TheRock" build/release system at
@@ -18880,6 +18891,29 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   `sycl::malloc_device` memory is explicitly uninitialised. The host
   `memset` was dead code: the buffer is re-downloaded from the device at
   the top of every pipeline run. See ADR-1218.
+
+
+- `docs/backends/cuda/overview.md` contradicted itself about the default
+  model's ADM: one bullet said `integer_adm_cuda` lacks `adm_csf_mode: 2`
+  and that libvmaf falls back to the CPU extractor, while a later section
+  dated the same day said the whole ADM family runs on the device. The
+  code and a live run agree with the later section —
+  `integer_adm_cuda.c:840` declares `adm_csf_mode`,
+  `T-GPU-ADM-CSF-MODE-NOT-PORTED-2026-09-05` is closed, and a CUDA run of
+  the default model emits no CPU-fallback notice. The stale bullet is
+  corrected. See ADR-1224.
+
+
+- Fixed a dropped carry in the CUDA integer-SSIM weight reduction.
+  `integer_ssim_score.cu` split the `int64_t` per-pixel weight into two
+  32-bit halves and summed each **independently** across the warp,
+  recombining only at the end — so a carry out of the low half was lost,
+  and `lo` itself could overflow a signed `int32` (undefined behaviour).
+  Not reachable today (the 9-tap weight sum stays far below 2^31), but
+  wrong in a way that would only appear at large frame sizes or a future
+  weight scaling. Replaced with the existing `warp_reduce(int64_t)`
+  helper in `cuda_helper.cuh`, which reassembles the halves before
+  adding. See ADR-1224.
 
 
 - **JSON model parser C and C++23 twins brought into full lockstep.**
