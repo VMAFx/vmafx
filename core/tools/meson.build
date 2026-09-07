@@ -1,7 +1,9 @@
+# Portability defines shared by the tool binaries and the tool-linked unit
+# tests. The `strsep` probe that used to live here is gone with ADR-1190:
+# `cli_parse.cpp` now splits option strings with its own escape-aware
+# `cli_split()`, so nothing reads `HAVE_STRSEP` any more. The (empty) variable
+# stays because core/test/meson.build passes it to every tool-linked target.
 compat_cflags = []
-if cc.has_function('strsep', args : test_args)
-  compat_cflags += '-DHAVE_STRSEP'
-endif
 
 if not get_option('enable_tools')
     subdir_done()

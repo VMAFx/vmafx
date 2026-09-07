@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/VMAFx/vmafx/pkg/cliopt"
 	"github.com/VMAFx/vmafx/pkg/codecadapter"
 	"github.com/VMAFx/vmafx/pkg/pyjson"
 )
@@ -235,7 +236,8 @@ func resolveHDRScoreModel(info *HdrInfo, sdrModel string, warned *bool) string {
 		return sdrModel
 	}
 	if hdrModel := SelectHDRVMAFModel("", info.Transfer); hdrModel != "" {
-		return "path=" + hdrModel
+		// ADR-1190: escape ":"/"="/"\\" so the CLI parser reads the path back whole.
+		return "path=" + cliopt.EscapeValue(hdrModel)
 	}
 	if !*warned {
 		slog.Warn("vmaf-tune: HDR source detected but no HDR VMAF model is shipped; "+

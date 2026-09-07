@@ -217,6 +217,32 @@ tools/
   - In `vmaf.cpp`, `ModelArrays` is encapsulated with private members and RAII
     accessors; all internal helpers reside in an anonymous namespace.
 
+- [ADR-1190](../../docs/adr/1190-cli-option-string-escape-grammar.md) —
+  **Escape-aware `--model` / `--feature` option-string splitting.**
+  `cli_parse.cpp` no longer contains `strsep` (nor the `vmaf_cli_strsep`
+  shim or its `#ifndef HAVE_STRSEP` fork); the nine split sites all go
+  through `cli_split()` plus `cli_unescape()`.
+  **Rebase invariants**:
+  - Splitting and unescaping are two passes. `cli_split()` must leave
+    backslash sequences intact so an escape written for the `:` pass is
+    still literal at the `=` pass, and `cli_unescape()` must run exactly
+    once per token, after the last split that token will undergo.
+    Unescaping earlier eats a user's literal backslash; unescaping twice
+    eats it again.
+  - A key/value pair's value is the whole remainder after the first
+    unescaped `=` — never a second split. The removed second split is the
+    silent-truncation bug (`path=/a/dir=eq/m.json` became `/a/dir`), so if
+    `/sync-upstream` restores a `strsep(&key_val, "=")` pair, drop it.
+  - `apply_model_opt()` splits the overload key on `.` **before**
+    unescaping it, and compares the *raw* key against `path` / `name` /
+    `version` / `disable_clip` / `enable_transform` (none of which contain
+    an escapable byte, so the comparison is unambiguous).
+  - `cli_is_drive_colon()` is an ergonomics affordance, not an
+    optimisation: dropping it makes every Windows `path=C:\...` require
+    `C\:`, which is the user-visible complaint Netflix/vmaf#766 filed.
+  - The Go escaper `pkg/cliopt.EscapeValue` is the same grammar in another
+    language; change both (and its round-trip test) together.
+
 ## Progress-line rendering is console-capability-driven (ADR-1166)
 
 `spinner.h` now carries two glyph tables and two selectors, and `vmaf.cpp`

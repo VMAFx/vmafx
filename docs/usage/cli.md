@@ -57,9 +57,54 @@ no `--xml|--json|--csv|--sub` is passed: XML.
 If any of `--width`, `--height`, `--pixel_format`, `--bitdepth` is supplied
 the input is treated as raw YUV and **all four** become mandatory.
 
+## Option-string grammar
+
+`--model` and `--feature` both take a **colon-delimited list of `key=value`
+pairs**. `:` separates pairs, the *first* `=` in a pair separates the key from
+the value, and `.` separates the feature name from the option name in a model
+feature overload (`--model version=...:adm.adm_enhn_gain_limit=1.2`).
+
+Everything after that first `=` belongs to the value, so a path may contain
+further `=` characters without being cut short. To put one of the three
+delimiters — or a literal backslash — *inside* a key or a value, escape it with
+a backslash:
+
+| You want | Write |
+| --- | --- |
+| `:` inside a value | `\:` |
+| `=` inside a key or value | `\=` |
+| `.` inside an overload's feature/option name | `\.` |
+| a literal `\` | `\\` |
+
+Any other backslash is data and is passed through unchanged, so Windows paths
+need no escaping in the common case:
+
+```shell
+vmaf -r ref.y4m -d dist.y4m --model 'path=C:\models\vmaf_v0.6.1.json'
+vmaf -r ref.y4m -d dist.y4m --model 'path=/srv/models=2026/vmaf.json'
+vmaf -r ref.y4m -d dist.y4m --model 'path=/srv/odd\:name/vmaf.json'
+```
+
+A `:` that spells a Windows drive letter — a single ASCII letter at the start of
+a key or a value, followed by `:` and then `\` or `/` — is treated as data, not
+as a pair separator. Two caveats follow from the table above:
+
+- A UNC prefix (`\\server\share`) *does* start with an escapable `\\`, so it must
+  be written `\\\\server\share` or with forward slashes (`//server/share`).
+- Quote the whole option string in your shell (single quotes above), otherwise
+  the shell eats the backslashes before `vmaf` ever sees them.
+
+The rules are identical for `--model`, `--feature` and the `vmafx` alias. Before
+[ADR-1190](../adr/1190-cli-option-string-escape-grammar.md) there was no escape
+mechanism at all: `path=C:\models\m.json` was rejected with `bad option string
+"\models\m.json"`, and `path=/a/dir=eq/m.json` was silently truncated to
+`/a/dir`.
+
 ## Models
 
-The `--model / -m` flag takes a colon-delimited key/value string:
+The `--model / -m` flag takes a colon-delimited key/value string (see
+[Option-string grammar](#option-string-grammar) for how to escape a `:`, `=` or
+`.` inside a path):
 
 ```text
 --model path=<file>         # load a .json model from disk
@@ -103,7 +148,8 @@ vmaf -r ref.y4m -d dist.y4m \
 ## Additional features
 
 The `--feature` flag enables extra metrics (beyond whatever the model already
-consumes). Syntax is the same colon-delimited key/value form as `--model`:
+consumes). Syntax is the same colon-delimited key/value form as `--model`, with
+the same escaping rules — see [Option-string grammar](#option-string-grammar):
 
 ```shell
 --feature psnr
