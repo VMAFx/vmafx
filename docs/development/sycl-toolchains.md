@@ -65,7 +65,7 @@ string. Common values:
 |---|---|
 | `generic` | Single-source SPIR-V — runs on any SPIR-V-capable runtime. **Recommended default.** |
 | `omp` | OpenMP CPU only — useful for CI runners without GPUs. |
-| `omp;cuda:sm_75` | CPU + NVIDIA CUDA (Turing). |
+| `omp;cuda:sm_80` | CPU + NVIDIA CUDA (Ampere; sm_75 and older are unsupported per ADR-1223). |
 | `omp;hip:gfx1100` | CPU + AMD HIP (RDNA3). |
 
 ## Quickstart — Intel oneAPI (default)

@@ -1214,13 +1214,17 @@ if is_cuda_enabled
         cuda_version = nvcc_ver_out.stdout().strip().split('release ')[1].split(',')[0]
         message('Found CUDA version = @0@'.format(cuda_version))
 
-        # Gencode coverage: explicit cubins for every currently-shipping
-        # consumer Nvidia generation from Turing (sm_75, RTX 20xx) through
-        # Blackwell (sm_120, RTX 50xx) whenever the host nvcc supports them.
-        # A compute_80 PTX is always emitted as the backward-JIT fallback
-        # so any sm_80+ GPU missing a native cubin (future minor revisions,
-        # headless Tegra variants) can still JIT a compatible kernel at
-        # load time.
+        # Gencode coverage: explicit cubins for every supported Nvidia
+        # generation from Ampere (sm_80) through Blackwell (sm_120, RTX 50xx)
+        # whenever the host nvcc supports them. A compute_80 PTX is always
+        # emitted as the backward-JIT fallback so any sm_80+ GPU missing a
+        # native cubin (future minor revisions, headless Tegra variants) can
+        # still JIT a compatible kernel at load time.
+        #
+        # ADR-1223 raised the floor to compute capability 8.0 and dropped
+        # Turing (sm_75, RTX 20xx / GTX 16xx / Tesla T4). `vmaf_cuda_state_init`
+        # rejects a sub-8.0 device with an explicit diagnostic rather than
+        # letting cuModuleLoadData fail with CUDA_ERROR_NO_BINARY_FOR_GPU.
         #
         # Upstream Netflix meson.build only shipped cubins at the Txx major
         # boundaries (sm_75, sm_80, sm_90, sm_100, sm_120) plus a PTX at the
@@ -1238,7 +1242,6 @@ if is_cuda_enabled
         # was updated from the old experimental-flag framing.
         gencode = [
             '--fatbin',
-            '-gencode=arch=compute_75,code=sm_75',
             '-gencode=arch=compute_80,code=sm_80',
             # PTX at compute_80 is the JIT floor for every sm_80+ GPU that
             # might be missing a native cubin. Keep it unconditional.
@@ -1246,9 +1249,6 @@ if is_cuda_enabled
             '-gencode=arch=compute_86,code=sm_86',
             '-gencode=arch=compute_89,code=sm_89',
         ]
-        if cuda_version.version_compare('<13')
-            gencode += '-gencode=arch=compute_50,code=compute_50'
-        endif
         # always compile device code to enable quick startup on newer GPUs, for the last supported GPU also generate PTX for future compatibility
         if cuda_version.version_compare('>11.8')
             gencode += '-gencode=arch=compute_90,code=sm_90'
@@ -1268,7 +1268,8 @@ if is_cuda_enabled
     else
         nvcc_exe = find_program('clang')
         gencode = [
-            '--cuda-gpu-arch=sm_75',
+            # ADR-1223: matches the nvcc path's compute-capability 8.0 floor.
+            '--cuda-gpu-arch=sm_80',
             '--cuda-device-only',
             '-S'
             # many complaints about device intrinsics when compiling without CTK and the ffmpeg cuda runtime header

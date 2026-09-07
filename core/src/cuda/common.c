@@ -19,6 +19,7 @@
 
 #include <errno.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "common.h"
@@ -32,6 +33,49 @@ static int is_cudastate_empty(VmafCudaState *cu_state)
         return 1;
 
     return 0;
+}
+
+bool vmaf_cuda_arch_supported(int major, int minor)
+{
+    if (major != VMAF_CUDA_MIN_COMPUTE_MAJOR)
+        return major > VMAF_CUDA_MIN_COMPUTE_MAJOR;
+    return minor >= VMAF_CUDA_MIN_COMPUTE_MINOR;
+}
+
+/* Reject a device below the ADR-1223 compute-capability floor with an
+ * actionable message. Returns 0 when the device is supported, -ENOTSUP when it
+ * is not, and -EINVAL when the capability could not be queried at all. */
+static int check_device_arch(VmafCudaState *cu_state, CUdevice dev)
+{
+    int major = 0;
+    int minor = 0;
+    CUresult res = cu_state->f->cuDeviceGetAttribute(
+        &major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, dev);
+    res |= cu_state->f->cuDeviceGetAttribute(&minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
+                                             dev);
+    if (res != CUDA_SUCCESS) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "CUDA: could not query the device compute capability.\n");
+        return -EINVAL;
+    }
+
+    if (vmaf_cuda_arch_supported(major, minor))
+        return 0;
+
+    char name[128] = {0};
+    if (cu_state->f->cuDeviceGetName(name, (int)sizeof(name) - 1, dev) != CUDA_SUCCESS)
+        (void)snprintf(name, sizeof(name), "<unknown>");
+
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "CUDA: device \"%s\" has compute capability %d.%d, below the "
+             "minimum %d.%d (Ampere).\n"
+             "      libvmaf ships no cubin or PTX below sm_%d%d, so no kernel "
+             "can be loaded on this GPU.\n"
+             "      Turing (sm_75) and older were dropped in ADR-1223. Use an "
+             "Ampere or newer GPU, or build with -Denable_cuda=false and run "
+             "on the CPU backend.\n",
+             name, major, minor, VMAF_CUDA_MIN_COMPUTE_MAJOR, VMAF_CUDA_MIN_COMPUTE_MINOR,
+             VMAF_CUDA_MIN_COMPUTE_MAJOR, VMAF_CUDA_MIN_COMPUTE_MINOR);
+    return -ENOTSUP;
 }
 
 static int init_with_primary_context(VmafCudaState *cu_state)
@@ -52,6 +96,17 @@ static int init_with_primary_context(VmafCudaState *cu_state)
     }
 
     res |= cu_state->f->cuDeviceGet(&cu_device, device_id);
+    if (res != CUDA_SUCCESS) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "Error: failed to initialize CUDA\n");
+        return -EINVAL;
+    }
+
+    /* ADR-1223 — check before retaining a primary context, so an unsupported
+     * device costs nothing to unwind. */
+    const int arch_err = check_device_arch(cu_state, cu_device);
+    if (arch_err)
+        return arch_err;
+
     res |= cu_state->f->cuDevicePrimaryCtxRetain(&cu_context, cu_device);
     if (res != CUDA_SUCCESS) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "Error: failed to initialize CUDA\n");
@@ -117,6 +172,14 @@ static int init_with_provided_context(VmafCudaState *cu_state, CUcontext cu_cont
     if (err) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "failed to get CUDA device\n");
         _cuda_err = -EINVAL;
+        goto fail;
+    }
+
+    /* ADR-1223 — the caller supplied the context, but the device behind it
+     * still has to clear the compute-capability floor. */
+    const int arch_err = check_device_arch(cu_state, cu_device);
+    if (arch_err) {
+        _cuda_err = arch_err;
         goto fail;
     }
 

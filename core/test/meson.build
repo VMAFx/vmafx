@@ -1751,6 +1751,18 @@ test_cuda_buffer_alloc_oom = executable('test_cuda_buffer_alloc_oom',
 )
 test('test_cuda_buffer_alloc_oom', test_cuda_buffer_alloc_oom, suite : ['fast', 'gpu'])
 
+# ADR-1223 — the compute-capability floor predicate. Pure function of
+# (major, minor), so it runs in the `fast` suite with no GPU: the architectures
+# it most needs to pin (Turing and older) are exactly the ones no runner has.
+test_cuda_arch_floor = executable('test_cuda_arch_floor',
+    ['test.c', 'test_cuda_arch_floor.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_arch_floor', test_cuda_arch_floor, suite : ['fast', 'gpu'])
+
 # PR #850 — libvmaf.c CUDA-only NULL deref guard.
 # Before the fix, in CUDA-only mode (HW_FLAG_HOST not set) the
 # unconditional `ref = &ref_host` reassignment passed a zero-initialised

@@ -47,6 +47,28 @@ typedef struct VmafCudaState {
 #define VMAF_CUDA_THREADS_PER_WARP 32
 #define VMAF_CUDA_CACHE_LINE_SIZE 128
 
+/* ADR-1223 — minimum supported compute capability.
+ *
+ * The fatbin ships cubins for sm_80 / sm_86 / sm_89 (and sm_90 / sm_100 /
+ * sm_120 when the host nvcc supports them) plus a compute_80 PTX as the
+ * backward-JIT floor. Nothing below 8.0 is emitted, so a Turing or older
+ * device would fail at `cuModuleLoadData` with CUDA_ERROR_NO_BINARY_FOR_GPU
+ * (222) inside whichever feature extractor happened to load first. The guard
+ * below turns that into one clear message at init. */
+#define VMAF_CUDA_MIN_COMPUTE_MAJOR 8
+#define VMAF_CUDA_MIN_COMPUTE_MINOR 0
+
+/**
+ * Whether a device's compute capability is at or above the supported floor.
+ *
+ * Pure predicate, split out so it can be unit-tested without a GPU.
+ *
+ * @param major Device compute-capability major version.
+ * @param minor Device compute-capability minor version.
+ * @return true when the device is supported.
+ */
+bool vmaf_cuda_arch_supported(int major, int minor);
+
 /**
  * Synchronize a CUcontext from a VmafCudaState object.
  *

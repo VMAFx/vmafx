@@ -10870,6 +10870,17 @@ core internal headers (`framesync.h`, `thread_pool.h`, `picture_pool.h`,
   (62-run `--precision max` output matrix, 21 396 metric values). (ADR-1141)
 
 
+- Every CI lane now installs **CUDA 13.3.1**, matching the dev container
+  and `build.yml`'s Linux leg. The Windows leg of `build.yml` and both
+  legs of `libvmaf-build-matrix.yml` were still on 13.2.0; the matrix
+  pinned itself there citing `T-CI-JIMVER-CUDA-133-NOT-AVAILABLE`
+  ("Jimver/cuda-toolkit does not publish a 13.3.0 build"), which was
+  true of action v0.2.35 and stale at v0.2.36 — the version already
+  used to install 13.3.1 on the Linux leg. The Windows legs never used
+  Jimver at all; they fetch NVIDIA's network installer directly and were
+  never blocked by it. See ADR-1223.
+
+
 - **ROCm 10.0.0 across every HIP consumer, installed from digest-pinned
   container images** (ADR-1225). AMD froze the `repo.radeon.com/rocm/apt/`
   channel at 7.2.4 when ROCm moved to the "TheRock" build/release system at
@@ -15993,6 +16004,20 @@ See [ADR-0356](docs/adr/0356-vulkan-two-level-gpu-reduction.md) and
 Delete the 80 orphan Vulkan source files (15 in `core/src/vulkan/`, 35 in `core/src/feature/vulkan/` covering GLSL + .c TUs + AGENTS.md, 1 public header `libvmaf_vulkan.h`, 7 test files, and `.claude/agents/vulkan-reviewer.md`). Completes ADR-0726 by removing the dead-code tree that was bypassed by all build rules but still cluttered the source layout. Net `-80` files / `-9000+` LOC.
 
 No build/test/runtime impact — the `enable_vulkan` meson option was already removed and the kernel registration entries (`vmaf_fex_*_vulkan`) were already dropped from `feature_extractor.cpp`. ADR-0726 is the design rationale; this PR is the cleanup.
+
+
+- **Breaking (GPU hardware):** the CUDA backend now requires **compute
+  capability 8.0 (Ampere) or newer**. Turing (`sm_75` — RTX 20xx,
+  GTX 16xx, Tesla T4) and older are no longer supported: the `sm_75`
+  cubin and the CUDA-12-only `compute_50` PTX are gone, and the
+  `clang`-CUDA fallback path targets `sm_80`. CUDA 13.x had already
+  dropped Maxwell, Pascal and Volta, so Turing was the last pre-Ampere
+  architecture still receiving a cubin. Affected users can run the CPU
+  backend (`-Denable_cuda=false`) or stay on v3.2.1. `vmaf_cuda_state_init()`
+  now returns `-ENOTSUP` with an explicit message naming the device, its
+  capability and the required floor, instead of letting `cuModuleLoadData`
+  fail with `CUDA_ERROR_NO_BINARY_FOR_GPU` inside a feature extractor.
+  See ADR-1223.
 
 
 **Removed**

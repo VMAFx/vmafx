@@ -49528,3 +49528,43 @@ Invariants a future rebase must not undo:
   PKG_CONFIG_PATH=$(dirname "$PC") pkg-config --exists 'libvmaf >= 2.0.0'   # must succeed
   PKG_CONFIG_PATH=$(dirname "$PC") pkg-config --exists 'libvmaf >= 3.0.0'   # must succeed
   ```
+## ADR-1223 — CUDA floor at compute capability 8.0, CI on 13.3.1 (2026-09-07)
+
+Branch: `feat/cuda-ampere-floor-and-133`.
+
+1. **The gencode list has a floor now, and it is enforced twice.** `sm_75` and
+   the CUDA-12-only `compute_50` PTX are gone from `core/src/meson.build`, and
+   the `clang`-CUDA fallback targets `sm_80`. Dropping a gencode entry alone is
+   not enough: without a runtime check the failure surfaces as
+   `CUDA_ERROR_NO_BINARY_FOR_GPU` (222) from `cuModuleLoadData`, inside whichever
+   feature extractor loaded first. `check_device_arch()` in
+   `core/src/cuda/common.c` rejects a sub-8.0 device at init on BOTH paths —
+   `init_with_primary_context` (before retaining a context, so the unwind is
+   free) and `init_with_provided_context` (the caller's context still has to
+   clear the floor). If a future ADR moves the floor again, move
+   `VMAF_CUDA_MIN_COMPUTE_MAJOR` / `_MINOR` in `core/src/cuda/common.h` and the
+   gencode list together.
+
+2. **The capability predicate is lexicographic, not `major*10 + minor`.**
+   `vmaf_cuda_arch_supported()` compares major first and only falls through to
+   minor on a tie. A naive `major >= 8` would admit a hypothetical 8.x below the
+   floor; a naive minor comparison would admit 7.9. Both edges are pinned in
+   `core/test/test_cuda_arch_floor.c`, which is a pure-function test precisely
+   because no runner in the fleet has a Turing GPU to test the rejection on.
+
+3. **Upstream Netflix still ships `sm_75`.** A rebase that takes upstream's
+   `meson.build` gencode block wholesale will silently reintroduce it. Keep the
+   fork's block.
+
+4. **The `Jimver/cuda-toolkit` 13.3 blocker is closed and its comment was
+   stale.** `T-CI-JIMVER-CUDA-133-NOT-AVAILABLE` was real at action v0.2.35;
+   v0.2.36 serves 13.3.1, which `build.yml`'s Linux leg already used while the
+   build matrix stayed pinned at 13.2.0 citing the old ticket. The Windows legs
+   never used Jimver at all — they fetch NVIDIA's network installer directly
+   (`cuda_<version>_windows_network.exe`) and were never blocked. Verify an
+   installer URL resolves before bumping it: 13.3.0 and 13.3.1 return HTTP 200,
+   13.3.2 does not exist.
+
+5. **Windows lanes export a versioned env var.** `CUDA_PATH_V13_2` became
+   `CUDA_PATH_V13_3`; it is derived from `$cudaMajorMinor` by hand in two
+   separate workflow files, so both move together with the version.
