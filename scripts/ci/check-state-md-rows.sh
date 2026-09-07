@@ -48,6 +48,10 @@ if [[ -n "$dupes" ]]; then
   echo "" >&2
   echo "A keep-both rebase resolution usually caused this: keep the row that" >&2
   echo "matches the bug's real state and delete the other (ADR-0165)." >&2
+  echo "" >&2
+  echo "Mid-rebase, this resolves the common case for you:" >&2
+  echo "  python3 scripts/dev/resolve-state-md-conflict.py docs/state.md" >&2
+  echo "then re-run this check before 'git rebase --continue'." >&2
   exit 1
 fi
 
