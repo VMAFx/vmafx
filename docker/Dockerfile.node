@@ -6,7 +6,7 @@
 # Multi-stage build producing four targets:
 #   --target node-cpu    : CPU-only node worker (explicit target; smallest image)
 #   --target node-cuda   : CUDA 13 node worker (NVENC + GPU scoring)
-#   --target node-rocm   : ROCm 7 node worker  (AMF + HIP scoring)
+#   --target node-rocm   : ROCm 10 node worker (AMF + HIP scoring)
 #   --target node-sycl   : Intel oneAPI 2025 node worker (QSV + SYCL scoring)
 #
 # Every target includes:
@@ -339,7 +339,7 @@ USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmafx-node"]
 
 # ---------------------------------------------------------------------------
-# Stage 8 (target: node-rocm) — ROCm 7 node worker
+# Stage 8 (target: node-rocm) — ROCm 10 node worker
 # ---------------------------------------------------------------------------
 FROM runtime-base AS node-rocm
 
@@ -349,9 +349,45 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libav*.so*  /usr/local/lib/
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libsw*.so*  /usr/local/lib/
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
 
-# ROCm HIP runtime libs
-COPY --from=rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054 /opt/rocm/lib/libamdhip64.so*      /usr/local/lib/
-COPY --from=rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054 /opt/rocm/lib/libhsa-runtime64.so* /usr/local/lib/
+# ROCm 10.0.0 HIP runtime libs (ADR-1225).
+#
+# Two things changed versus the flat `libamdhip64.so* + libhsa-runtime64.so*`
+# copy this stage used under ROCm 7:
+#
+#  1. **The closure is wider.** ROCm 10's `libamdhip64.so` links
+#     `librocprofiler-register`, `librocm_kpack`, `libamd_comgr` and the
+#     bundled `libLLVM` / `libclang-cpp`, plus a `rocm_sysdeps` bundle of
+#     vendored zlib/zstd/elf/drm/numa. Copying only the two old libraries
+#     produces an image whose every HIP binary dies at load with "cannot
+#     open shared object file". The full transitive closure is 19 libraries
+#     totalling 234 MB — small enough to ship whole.
+#  2. **Layout matters.** Those libraries resolve each other through
+#     `$ORIGIN`-relative RPATHs (`$ORIGIN`, `$ORIGIN/llvm/lib`,
+#     `$ORIGIN/rocm_sysdeps/lib`), so they must keep their directory
+#     structure rather than being flattened into /usr/local/lib.
+#
+# Source paths use the real `/opt/rocm/core-10.0/` prefix rather than
+# `/opt/rocm/`: ROCm 10 makes `/opt/rocm/lib` a Debian-alternatives symlink,
+# and BuildKit resolves a `COPY --from` source against the source image's
+# filesystem without following that indirection reliably.
+COPY --from=rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 \
+     /opt/rocm/core-10.0/lib/libamdhip64.so*            /opt/rocm/lib/
+COPY --from=rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 \
+     /opt/rocm/core-10.0/lib/libhsa-runtime64.so*       /opt/rocm/lib/
+COPY --from=rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 \
+     /opt/rocm/core-10.0/lib/libamd_comgr.so*           /opt/rocm/lib/
+COPY --from=rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 \
+     /opt/rocm/core-10.0/lib/librocm_kpack.so*          /opt/rocm/lib/
+COPY --from=rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 \
+     /opt/rocm/core-10.0/lib/librocprofiler-register.so* /opt/rocm/lib/
+COPY --from=rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 \
+     /opt/rocm/core-10.0/lib/rocm_sysdeps/lib/          /opt/rocm/lib/rocm_sysdeps/lib/
+COPY --from=rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 \
+     /opt/rocm/core-10.0/lib/llvm/lib/libLLVM.so.*      /opt/rocm/lib/llvm/lib/
+COPY --from=rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 \
+     /opt/rocm/core-10.0/lib/llvm/lib/libclang-cpp.so.* /opt/rocm/lib/llvm/lib/
+
+ENV LD_LIBRARY_PATH="/usr/local/lib:/opt/rocm/lib"
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 

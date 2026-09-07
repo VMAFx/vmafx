@@ -68,8 +68,19 @@ falls back to CPU. Two hard pins live in `dev/Containerfile`:
   reintroduce `GMMLIB_VER` or `IGC_VER` ARGs. The matching `gmmlib` and `IGC`
   deb packages are dynamically derived and verified against published sha256
   checksums at build time by `dev/scripts/fetch-intel-neo.py`.
-- **`ARG ROCM_VER=7.2.4`** for `https://repo.radeon.com/rocm/apt/${ROCM_VER}`.
-  ROCm 6.x KFD ioctls do not match kernel ≥ 7.0.
+- **The digest-pinned `rocm-src` stage** (`rocm/dev-ubuntu-24.04:10.0.0-full`)
+  replaces the old `ARG ROCM_VER` + `repo.radeon.com/rocm/apt/` install.
+  **Invariant (ADR-1225)**: do not "restore" the apt path. Since ROCm 7.14
+  AMD builds and releases through TheRock; the apt channel tops out at 7.2.4
+  (its own `latest` resolves there, and `apt/7.14` and `apt/10.0.0` both 404),
+  the manylinux channel stops at `rocm-rel-7.2.4`, and the TheRock wheel index
+  carries only 7.14.0 alphas. The container image is the only stable,
+  digest-pinnable ROCm 10 artifact.
+  **Invariant**: keep the prune list in the `rocm-src` stage, but never prune
+  `librocprofiler-register` — `libamdhip64.so` links it, and dropping it makes
+  every HIP binary fail at load with "cannot open shared object file".
+  ROCm 6.x KFD ioctls do not match kernel ≥ 7.0; 10.0.0 does (verified on
+  Linux 7.2.3 with `gfx1036`).
 
 When CI / a maintainer's host runs a newer kernel that breaks these pins,
 the `dev-mcp-entrypoint.sh` runtime-visibility probe (also ADR-0541)
@@ -171,17 +182,19 @@ corresponds to a backend that would otherwise land on CPU / lavapipe
    VK_DRIVER_FILES=…` in the Containerfile — operators on CPU-only
    hosts (no real ICD visible) need lavapipe to remain the fallback;
    the entrypoint's "if any real ICD exists" guard preserves that.
-2. **`HSA_OVERRIDE_GFX_VERSION=10.3.0` must stay in
-   `dev/docker-compose.yml` `common-env`.** AMD `gfx1036` (Raphael
-   iGPU, RDNA2 IP rev 10.3.6) is not on the ROCm 6.x supported-GPU
-   allowlist. Without the override, `hsa_init()` returns
-   `HSA_STATUS_ERROR_OUT_OF_RESOURCES` and `rocminfo` reports "Unable
-   to open /dev/kfd read-write: Invalid argument" even though
-   `/dev/kfd` is bind-mounted via the `devices:` block and the
-   video / render groups are joined. `HSA_ENABLE_SDMA=0` (RDNA2 iGPU
-   SDMA-fault mitigation) and `ROCR_VISIBLE_DEVICES=0` (pin HIP to
-   the single AMD adapter) accompany the override and should not be
-   trimmed.
+2. **`HSA_OVERRIDE_GFX_VERSION` must NOT be reintroduced in
+   `dev/docker-compose.yml` `common-env` (ADR-1225).** Under ROCm 6.x
+   the override was mandatory: AMD `gfx1036` (Raphael iGPU, RDNA2 IP
+   rev 10.3.6) was not on the supported-GPU allowlist, so `hsa_init()`
+   returned `HSA_STATUS_ERROR_OUT_OF_RESOURCES` and `rocminfo` reported
+   "Unable to open /dev/kfd read-write: Invalid argument" even with
+   `/dev/kfd` bind-mounted and the video / render groups joined. ROCm 10
+   supports `gfx1036` natively, so the override is now actively harmful —
+   it would alias the agent to `gfx1030` while meson compiles `gfx1036`
+   code objects for the arch `rocm_agent_enumerator` reports.
+   `HSA_ENABLE_SDMA=0` (RDNA2 iGPU SDMA-fault mitigation) and
+   `ROCR_VISIBLE_DEVICES=0` (pin HIP to the single AMD adapter) stay and
+   should not be trimmed.
 3. **`intel-media-va-driver-non-free` + `mesa-va-drivers` must stay
    in the stage-1 apt list.** The Intel compute-runtime
    (`libze_intel_gpu.so.1`) dlopens
@@ -306,7 +319,8 @@ the runtime is usable.
    `onnxruntime-linux-x64-${ORT_VERSION}.tgz` from the microsoft/onnxruntime
    GitHub releases. The C API is stable across the 1.x line; however,
    the ROCm EP and CUDA EP are only available from ORT 1.26+ (matching the
-   container's ROCm 7.2.3 + CUDA 13.x stack set in ADR-0541/ADR-0542).
+   container's ROCm 10.0.0 + CUDA 13.x stack — ADR-0541/ADR-0542, ROCm
+   bumped by ADR-1225).
    When bumping ORT_VERSION: verify the new version's tarball exists at the
    GitHub releases URL before updating the ARG, and update this note.
 

@@ -34,23 +34,29 @@ x-common-env: &common-env
   NVIDIA_VISIBLE_DEVICES: all
   NVIDIA_DRIVER_CAPABILITIES: compute,graphics,utility,video
 
-  # ROCm / HSA dispatch knobs (ADR-0541). The host's AMD iGPU (Raphael
-  # `gfx1036`, RDNA2 IP rev 10.3.6) is **not** on the ROCm 6.x supported-GPU
-  # allowlist that `libhsa-runtime64.so` consults at `hsa_init()`. Without
-  # the override, `rocminfo` returns "Unable to open /dev/kfd read-write:
-  # Invalid argument" / `hsa_init() = HSA_STATUS_ERROR_OUT_OF_RESOURCES`
-  # even though `/dev/kfd` is bind-mounted and the `video` + `render`
-  # groups are joined. Setting `HSA_OVERRIDE_GFX_VERSION=10.3.0` lies to
-  # the runtime: "treat this device as gfx1030 (RDNA2 desktop, on the
-  # allowlist)" — gfx1036 is binary-compatible enough with gfx1030 for the
-  # libvmaf HIP feature kernels (verified with the integer-VIF / motion
-  # extractors in ADR-0530 / ADR-0538). `HSA_ENABLE_SDMA=0` disables the
-  # SDMA copy engine; on RDNA2 iGPUs the SDMA path triggers VM faults on
-  # small device→host transfers (the libvmaf collect path is dominated by
-  # such transfers). `ROCR_VISIBLE_DEVICES=0` pins HIP to the single AMD
-  # adapter so multi-iGPU + dGPU hosts cannot accidentally dispatch onto a
-  # non-RDNA2 device that needs a different override.
-  HSA_OVERRIDE_GFX_VERSION: "10.3.0"
+  # ROCm / HSA dispatch knobs (ADR-0541, revised by ADR-1225).
+  #
+  # `HSA_OVERRIDE_GFX_VERSION=10.3.0` used to be mandatory here: the host's
+  # AMD iGPU (Raphael `gfx1036`, RDNA2 IP rev 10.3.6) was not on the ROCm 6.x
+  # supported-GPU allowlist that `libhsa-runtime64.so` consults at
+  # `hsa_init()`, so without the lie ("treat this device as the allowlisted
+  # desktop `gfx1030`") `rocminfo` returned "Unable to open /dev/kfd
+  # read-write: Invalid argument" even with `/dev/kfd` bind-mounted and the
+  # `video` + `render` groups joined.
+  #
+  # ROCm 10.0.0 supports `gfx1036` natively -- verified on this host
+  # (Linux 7.2.3): `amdgpu-arch` reports `gfx1036`, `hipcc
+  # --offload-arch=gfx1036` produces a kernel that dispatches, and a
+  # HIP-backend VMAF score matches the CPU exactly. The override is therefore
+  # not just unnecessary but wrong: it would map the agent to `gfx1030` while
+  # meson compiles `gfx1036` code objects for the arch `rocm_agent_enumerator`
+  # actually reports.
+  #
+  # `HSA_ENABLE_SDMA=0` disables the SDMA copy engine; on RDNA2 iGPUs the SDMA
+  # path triggers VM faults on small device->host transfers (the libvmaf
+  # collect path is dominated by such transfers). `ROCR_VISIBLE_DEVICES=0`
+  # pins HIP to the single AMD adapter so multi-iGPU + dGPU hosts cannot
+  # dispatch onto a device that needs different settings.
   HSA_ENABLE_SDMA: "0"
   ROCR_VISIBLE_DEVICES: "0"
 

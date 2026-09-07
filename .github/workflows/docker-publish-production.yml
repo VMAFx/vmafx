@@ -8,7 +8,7 @@
 #   ghcr.io/vmafx/vmafx:<tag>           (cpu, amd64+arm64)
 #   ghcr.io/vmafx/vmafx:latest          (same)
 #   ghcr.io/vmafx/vmafx:<tag>-cuda13    (amd64 only — CUDA not portable to arm64)
-#   ghcr.io/vmafx/vmafx:<tag>-rocm7     (amd64 only)
+#   ghcr.io/vmafx/vmafx:<tag>-rocm10     (amd64 only)
 #   ghcr.io/vmafx/vmafx:<tag>-oneapi2025 (amd64 only)
 #
 
@@ -371,10 +371,10 @@ jobs:
           retention-days: 90
 
   # -----------------------------------------------------------------------
-  # GPU variant: ROCm 7 (amd64 only)
+  # GPU variant: ROCm 10 (amd64 only)
   # -----------------------------------------------------------------------
-  build-rocm7:
-    name: Publish ROCm 7 image
+  build-rocm10:
+    name: Publish ROCm 10 image
     needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -411,7 +411,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ env.PUBLISH_TAG }}-rocm7
+            type=raw,value=${{ env.PUBLISH_TAG }}-rocm10
 
       - name: Build and push
         id: push
@@ -419,7 +419,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.production-gpu
-          target: final-rocm7
+          target: final-rocm10
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -452,17 +452,17 @@ jobs:
           syft \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}" \
             --output cyclonedx-json \
-            --file sbom-rocm7.cdx.json
+            --file sbom-rocm10.cdx.json
           cosign attest --yes \
-            --predicate sbom-rocm7.cdx.json \
+            --predicate sbom-rocm10.cdx.json \
             --type cyclonedx \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
 
       - name: Upload SBOM as workflow artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: sbom-rocm7
-          path: sbom-rocm7.cdx.json
+          name: sbom-rocm10
+          path: sbom-rocm10.cdx.json
           retention-days: 90
 
   # -----------------------------------------------------------------------
@@ -567,7 +567,7 @@ jobs:
     name: Smoke-test GPU images
     needs:
       - build-cuda13
-      - build-rocm7
+      - build-rocm10
       - build-oneapi2025
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -592,7 +592,7 @@ jobs:
         run: |
           for digest in \
             "${{ needs.build-cuda13.outputs.digest }}" \
-            "${{ needs.build-rocm7.outputs.digest }}" \
+            "${{ needs.build-rocm10.outputs.digest }}" \
             "${{ needs.build-oneapi2025.outputs.digest }}"; do
             cosign verify \
               --certificate-identity \
@@ -605,7 +605,7 @@ jobs:
         run: |
           for digest in \
             "${{ needs.build-cuda13.outputs.digest }}" \
-            "${{ needs.build-rocm7.outputs.digest }}" \
+            "${{ needs.build-rocm10.outputs.digest }}" \
             "${{ needs.build-oneapi2025.outputs.digest }}"; do
             image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${digest}"
             docker pull "${image}"
@@ -794,7 +794,7 @@ jobs:
       - build-cpu
       - smoke-test
       - build-cuda13
-      - build-rocm7
+      - build-rocm10
       - build-oneapi2025
       - smoke-gpu
       - build-server
@@ -824,13 +824,13 @@ jobs:
           # could fail on every publish without anyone noticing. That is how
           # docker/Dockerfile.production-gpu kept a CUDA 12.0 pin, an
           # intel/oneapi-basekit:2026.0 reference to an image that does not
-          # exist, and a ROCm 6.4 runtime against a 7.2.4 build toolchain.
+          # exist, and a ROCm 6.4 runtime against a 10.0.0 build toolchain.
           # They gate now.
           fail=0
-          for job in build-cuda13 build-rocm7 build-oneapi2025 build-server; do
+          for job in build-cuda13 build-rocm10 build-oneapi2025 build-server; do
             case "$job" in
               build-cuda13)      r="${{ needs.build-cuda13.result }}" ;;
-              build-rocm7)       r="${{ needs.build-rocm7.result }}" ;;
+              build-rocm10)       r="${{ needs.build-rocm10.result }}" ;;
               build-oneapi2025)  r="${{ needs.build-oneapi2025.result }}" ;;
               build-server)      r="${{ needs.build-server.result }}" ;;
             esac

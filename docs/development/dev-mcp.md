@@ -301,7 +301,7 @@ backends in earlier image versions:
 | `VK_ICD_FILENAMES` | Unset (deprecated by Khronos in favour of `VK_DRIVER_FILES`). | Setting it overrides the loader's allowlist semantics; the prior `lvp_icd.x86_64.json` typo (ADR-0509 / Research-0138) hid every real GPU. |
 | `LD_LIBRARY_PATH` | Includes `${ONEAPI_ROOT}/{compiler,umf,tcm}/latest/lib`. | `tcm/latest/lib` carries `libhwloc.so.15` — the level-zero UR adapter dlopens it at load time. Dropping it causes SYCL "Platforms: 0" on Intel Arc. |
 | `NVIDIA_DRIVER_CAPABILITIES` | `compute,graphics,utility,video` (set in `dev/docker-compose.yml` common-env). | `graphics` is what makes the NVIDIA Container Toolkit bind-mount `nvidia_icd.json` into `/etc/vulkan/icd.d/`. Dropping `graphics` hides NVIDIA from Vulkan while leaving CUDA + nvidia-smi working — a hard regression to spot. |
-| `HSA_OVERRIDE_GFX_VERSION` | Pinned to `10.3.0` in `common-env`. | AMD `gfx1036` (Raphael iGPU, RDNA2 IP rev 10.3.6) is not on the ROCm 6.x supported-GPU allowlist. Without the override, `hsa_init()` returns `HSA_STATUS_ERROR_OUT_OF_RESOURCES` and `rocminfo` reports "Unable to open /dev/kfd read-write: Invalid argument" even though `/dev/kfd` is bind-mounted. `gfx1036` is binary-compatible enough with `gfx1030` for the libvmaf HIP feature kernels (ADR-0530 / ADR-0538). ADR-0542. |
+| `HSA_OVERRIDE_GFX_VERSION` | **Removed** (was `10.3.0`). | AMD `gfx1036` (Raphael iGPU, RDNA2 IP rev 10.3.6) was not on the ROCm 6.x/7.x supported-GPU allowlist, so without the override `hsa_init()` returned `HSA_STATUS_ERROR_OUT_OF_RESOURCES` and `rocminfo` reported "Unable to open /dev/kfd read-write: Invalid argument" even with `/dev/kfd` bind-mounted. ROCm 10 supports `gfx1036` natively, so the alias is not merely unnecessary but wrong — it would map the agent to `gfx1030` while meson compiles `gfx1036` code objects. ADR-0542, superseded on this point by ADR-1225. |
 | `HSA_ENABLE_SDMA` | Pinned to `0` in `common-env`. | On RDNA2 iGPUs sharing system RAM with the CPU, the SDMA copy engine triggers VM faults on small device→host transfers (libvmaf collect path is dominated by such transfers). ADR-0543. |
 | `ROCR_VISIBLE_DEVICES` | Pinned to `0` in `common-env`. | Pins HIP to the single AMD adapter on multi-iGPU + dGPU hosts so kernels cannot accidentally dispatch onto a non-RDNA2 device that needs a different `HSA_OVERRIDE_GFX_VERSION`. ADR-0542. |
 
@@ -401,13 +401,15 @@ A mismatch silently degrades `vmaf --backend sycl|hip` to CPU.
 | Pin | Current value | Why pinned |
 |---|---|---|
 | `ARG NEO_VER` | `26.31.39395.13` | Intel's `noble/unified` APT repo's newest as of 2026-05-18 is `25.18.x`, too old for kernel ≥ 7.0. NEO 25.18 returns `ZE_RESULT_ERROR_UNINITIALIZED` from `zeInit()` against kernel-7.x i915/xe. Pulled from `github.com/intel/compute-runtime/releases`. The matching `gmmlib` and `IGC` deb packages and checksums are dynamically derived at build time by `dev/scripts/fetch-intel-neo.py` (ADR-1145). |
-| `ARG ROCM_VER` | `7.2.4` | Matches Arch host `hsa-rocr 7.2.4`. ROCm 6.x KFD userspace returns `Unable to open /dev/kfd read-write: Invalid argument` against kernel-7.x KFD ioctls. |
+| `rocm-src` stage image | `rocm/dev-ubuntu-24.04:10.0.0-full` (digest-pinned) | Replaces the old `ARG ROCM_VER` apt install: ROCm >= 7.14 ships only as a container image (ADR-1225). ROCm 6.x KFD userspace returns `Unable to open /dev/kfd read-write: Invalid argument` against kernel-7.x KFD ioctls; 10.0.0 was verified against Linux 7.2.3 on `gfx1036`. The stage prunes ~13 GB of math libraries libvmaf never links — but never `librocprofiler-register`, which `libamdhip64.so` needs at load. |
 
 `dev-mcp-entrypoint.sh` emits a runtime visibility probe on container
 start (ADR-0543): `WARN: SYCL level_zero:gpu NOT detected` or `WARN: HIP
 HSA agent NOT detected` means the host kernel has revved past the pinned
 userspace ABI — bump the ARG and rebuild rather than working around the
 fallback (CLAUDE.md §12 r15 sub-rule 4). The latest NEO release tag is at
-`https://github.com/intel/compute-runtime/releases/latest`; the latest
-ROCm noble channel is listed under
-`https://repo.radeon.com/rocm/apt/`.
+`https://github.com/intel/compute-runtime/releases/latest`; ROCm releases are
+listed at `https://rocm.docs.amd.com/en/latest/about/release-notes.html` and
+the images at `https://hub.docker.com/r/rocm/dev-ubuntu-24.04/tags`. Do not
+consult `https://repo.radeon.com/rocm/apt/` for the current version — that
+channel has been frozen at 7.2.4 since AMD moved to TheRock.
