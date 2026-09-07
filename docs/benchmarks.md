@@ -51,10 +51,45 @@ is the case; `MIN_USEFUL_SECONDS` encodes the threshold. The first row is the
 only one long enough to mean anything, and it needs a locally built fixture
 because the 4K pair is untracked.
 
-**Reading the result honestly:** the fork is **at parity** with upstream on the
-single-threaded CPU path, not ahead of it. Its advantage is the GPU backends and
-the added feature surface. Any claim of CPU speedup over upstream was unmeasured
-before this table existed.
+**Reading the result honestly:** on the *inherited* path — the `vmaf_v0.6.1`
+model, whose four features are `integer_adm`, `integer_vif`, `integer_motion`
+and `integer_aim` — the fork is at parity with upstream. That is the right
+result to want there: it says the fork has not regressed the code it inherited.
+It is **not** a statement about the fork's speed in general, because upstream
+already ships AVX2 and AVX-512 for exactly those four features. Picking that
+model picks the one workload where both projects are equally optimised.
+
+### Where the fork actually wins: features upstream left scalar
+
+The fork adds 25 x86 SIMD sources upstream does not have. Same 48-frame
+1920x1080 pair, single-threaded, `--feature X --no_prediction`:
+
+| Feature | Upstream | Fork | Speedup |
+| --- | --- | --- | --- |
+| `float_ms_ssim` | 5.894 s | 1.318 s | **4.47x** |
+| `psnr_hvs` | 1.182 s | 0.801 s | **1.47x** |
+| `float_ssim` | 0.358 s | 0.246 s | **1.46x** |
+| `ciede` | 13.300 s | 12.816 s | 1.04x |
+| `float_moment` | 0.191 s | 0.191 s | 1.00x |
+| `float_adm` | 0.715 s | 0.738 s | 0.97x |
+| `cambi` | 1.012 s | 1.117 s | 0.91x |
+| `psnr` | 0.024 s | 0.026 s | 0.91x † |
+
+† startup-dominated at 24 ms; not a real measurement.
+
+`float_ms_ssim` is the headline: upstream has no `ms_ssim_decimate` SIMD at all,
+so it runs the decimation scalar. `psnr_hvs` and `float_ssim` are the same story
+at smaller scale. The rows near 1.00x are where upstream is already vectorised or
+where the kernel is memory-bound.
+
+Features that exist only in the fork — `ssimulacra2`, `speed_qa`, `pu21`,
+`delta_e_itp`, `niqe`, `brisque`, the tiny-AI extractors — have no upstream
+counterpart to compare against and are therefore absent from both tables.
+
+**So both statements are true, and neither alone is the answer:** the fork has
+not made the inherited integer path faster, and the fork is substantially faster
+across the surface it added SIMD to. A single geomean over one model would have
+hidden both facts, which is why this section reports per-feature rows.
 
 **The score delta is a tracked bug,** not a rounding artefact: see
 `T-UPSTREAM-AB-SCORE-DELTA-2026-09-07` in [`state.md`](state.md). All fourteen
