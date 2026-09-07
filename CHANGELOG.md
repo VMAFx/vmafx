@@ -13008,6 +13008,10 @@ Three follow-up items filed: (1) document per-session thread-safety contract in
 (3) propagate `GetTensorElementType` failure instead of silent UNDEFINED default.
 
 
+- **docs(state): Audit open bugs in `docs/state.md` and reconcile with master (#1238)**:
+  Moved four confirmed-resolved bug tracking rows (`T-UPSTREAM-818-POOLING-ENUM-NO-PERCENTILES-2026-09-03`, `T-AI-PTQ-STATIC-QUANT-FORMAT-UNPINNED-2026-09-03`, `T-SVTAV1-HDR-ADAPTER-2026-05-20`, and `T-VMAFTUNE-PROFILE-REPORT-AUDIT-2026-05-20`) from Open bugs to Recently closed with PR citations; restored accidentally dropped rows for `T-METAL-MOTION-V2-MIRROR-OFF-BY-ONE-2026-09-03` and `T-UPSTREAM-1564-ADM-CM-GPU-BORDER-AND-ROUNDING-2026-09-03`; deduplicated tombstone comments in Open bugs.
+
+
 **Close the three `docs/ai/` gaps of epic #1242** — factual state, not promises
 
 - [`docs/ai/sidecar-online-training.md`](../../docs/ai/sidecar-online-training.md):
