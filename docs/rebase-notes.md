@@ -49413,3 +49413,35 @@ Invariants a future rebase must not undo:
 5. **`HSA_OVERRIDE_GFX_VERSION` stays out of `dev/docker-compose.yml`.**
    ROCm 10 supports `gfx1036` natively; re-adding the `10.3.0` alias would map
    the agent to `gfx1030` while meson compiles `gfx1036` code objects.
+
+## fix/pkgconfig-advertises-abi-version — `libvmaf.pc` `Version:` is the ABI version (ADR-1235)
+
+- **Touches**: `core/src/meson.build` (the `pkg_mod.generate()` call),
+  `core/meson.build` (the SONAME comment only).
+- **Invariant**: `pkg_mod.generate(version:)` takes `vmaf_soname_version`, never
+  `meson.project_version()`. The two numbers are deliberately independent
+  (ADR-1151): release-please owns the product line, which starts at 1.0.0, while
+  the C API stays on the 3.x line that ships `libvmaf.so.3`. `libvmaf.pc` must
+  advertise the **C API** number, because that is what consumers gate on —
+  unpatched upstream FFmpeg requires `libvmaf >= 2.0.0` and this fork's own
+  `ffmpeg-patches/0004` / `0005` require `libvmaf >= 3.0.0`. Restoring
+  `meson.project_version()` here re-breaks every FFmpeg consumer the moment the
+  product version goes below 2.0.0, which it already has.
+- **Rebase impact**: Low, but sharp. Upstream Netflix's `core/src/meson.build`
+  spells this line `version: meson.project_version()` and their product version
+  *is* their ABI version, so the two agree upstream and the line looks like an
+  ordinary upstream hunk. A sync that takes theirs silently reintroduces the
+  bug, and it will not show up in any unit test — only in the FFmpeg lanes and
+  `Docker Image Build`, and only once the product version is below 2.0.0.
+  **Always keep ours.** The guard is the comment block immediately above the
+  call; if a merge drops the comment, the resolution was wrong.
+- **Verify after any sync**: configure with a 1.x product version and check the
+  generated `.pc` against the bounds downstream actually uses —
+
+  ```bash
+  meson setup build core -Denable_cuda=false -Denable_sycl=false
+  PC=$(find build -name libvmaf.pc | head -1)
+  grep '^Version:' "$PC"                                    # expect 3.0.0
+  PKG_CONFIG_PATH=$(dirname "$PC") pkg-config --exists 'libvmaf >= 2.0.0'   # must succeed
+  PKG_CONFIG_PATH=$(dirname "$PC") pkg-config --exists 'libvmaf >= 3.0.0'   # must succeed
+  ```

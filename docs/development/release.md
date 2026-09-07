@@ -45,14 +45,21 @@ These are two different numbers and only the first one moves at release time.
 
 | Number | Owner | Value today | Moves when |
 | --- | --- | --- | --- |
-| **Product version** | release-please | `1.0.0` at the first cut | Every release. Covers the `vX.Y.Z` tag, `core/meson.build`'s `project(version:)` (and therefore `libvmaf.pc`), `compat/python-vmaf`, the three fork-local Python distributions (`ai/`, `dev-llm/`, `mcp-server/vmaf-mcp/`), and the Helm chart's `appVersion`. |
-| **ABI SONAME** | hand-maintained | `vmaf_soname_version = '3.0.0'` at `core/meson.build:19`, shipping `libvmaf.so.3` | Only on an ABI break. **The 1.0.0 cut does not reset it.** |
+| **Product version** | release-please | `1.0.0` at the first cut | Every release. Covers the `vX.Y.Z` tag, `core/meson.build`'s `project(version:)`, `compat/python-vmaf`, the three fork-local Python distributions (`ai/`, `dev-llm/`, `mcp-server/vmaf-mcp/`), and the Helm chart's `appVersion`. It does **not** reach `libvmaf.pc` — see ADR-1235. |
+| **ABI SONAME / interface version** | hand-maintained | `vmaf_soname_version = '3.0.0'` at `core/meson.build:19`, shipping `libvmaf.so.3` **and advertised as `libvmaf.pc`'s `Version:`** | Only on a C API change. **The 1.0.0 cut does not reset it.** |
 
-So `libvmaf.so` keeps its 3.x SONAME while the product goes to 1.0.0. The one
-visible effect is that `libvmaf.pc` advertises `1.0.0` where master previously
-said `3.2.1` — a version no release ever shipped, so nothing can be pinned to
-it. Do not "align" the two numbers; the comment at `core/meson.build:19` says so
-at the source.
+So `libvmaf.so` keeps its 3.x SONAME while the product goes to 1.0.0, and
+`libvmaf.pc` advertises that same 3.x interface version rather than the product
+version. That coupling is deliberate and load-bearing: unpatched upstream
+FFmpeg's `configure` requires `libvmaf >= 2.0.0`, and the fork's own
+`ffmpeg-patches/` require `libvmaf >= 3.0.0` for the SYCL, Vulkan and DNN entry
+points. A `.pc` advertising `1.0.0` satisfies neither, which is exactly how the
+first release candidate failed the three FFmpeg lanes and `Docker Image Build`
+(`Package 'libvmaf' has version '1.0.0-rc.1', required version is '>= 2.0.0'`).
+See [ADR-1235](../adr/1235-pkgconfig-advertises-abi-version.md).
+
+Do not "align" the two numbers; the comments at `core/meson.build:19` and at the
+`pkg_mod.generate()` call in `core/src/meson.build` say so at the source.
 
 ### Coordinated version markers
 
