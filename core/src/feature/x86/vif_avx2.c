@@ -25,6 +25,7 @@
 #include <assert.h>
 #include "vif_avx2.h"
 #include "feature/common/macros.h"
+#include "feature/x86/vif_avx2.h"
 
 /* Preserve Netflix NULL spelling and avoid relying on undocumented MSVC C
  * nullptr support (ADR-1138); the C++ nullptr ratchet remains unchanged. */
@@ -34,9 +35,9 @@
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 
 #if defined(__GNUC__)
-#define ALIGNED(x) __attribute__((aligned(x)))
+#define ALIGNED(x) __attribute__((aligned((x))))
 #elif defined(_MSC_VER)
-#define ALIGNED(x) __declspec(align(x))
+#define ALIGNED(x) __declspec(align((x)))
 #else
 #define ALIGNED(x)
 #endif
@@ -66,8 +67,8 @@ static FORCE_INLINE void copy_and_pad(const VifBuffer *buf, unsigned w, unsigned
 
     for (unsigned i = 0; i < h / 2; ++i) {
         for (unsigned j = 0; j < w / 2; ++j) {
-            ref[i * stride + j] = buf->mu1[i * mu_stride + j];
-            dis[i * stride + j] = buf->mu2[i * mu_stride + j];
+            ref[(ptrdiff_t)i * stride + j] = buf->mu1[i * mu_stride + j];
+            dis[(ptrdiff_t)i * stride + j] = buf->mu2[i * mu_stride + j];
         }
     }
     pad_top_and_bottom(buf, h / 2, vif_filter1d_width[scale]);
@@ -91,7 +92,7 @@ static FORCE_INLINE void copy_and_pad(const VifBuffer *buf, unsigned w, unsigned
 // compute r0 * r1 * f and set 32-bit accumulators (shuffled 0 1 2 3 8 9 10 11 / 4 5 6 7 12 13 14 15)
 #define multiply3(accum_ref_left, accum_ref_right, r0, r1, f)                                      \
     {                                                                                              \
-        __m256i mul = _mm256_mullo_epi16(r0, r1);                                                  \
+        __m256i mul = _mm256_mullo_epi16((r0), r1);                                                \
         __m256i lo = _mm256_mullo_epi16(mul, f);                                                   \
         __m256i hi = _mm256_mulhi_epu16(mul, f);                                                   \
         (accum_ref_left) = _mm256_unpacklo_epi16(lo, hi);                                          \
@@ -101,7 +102,7 @@ static FORCE_INLINE void copy_and_pad(const VifBuffer *buf, unsigned w, unsigned
 // compute r0 * r1 * f and add to 32-bit accumulators (shuffled 0 1 2 3 8 9 10 11 / 4 5 6 7 12 13 14 15)
 #define multiply3_and_accumulate(accum_ref_left, accum_ref_right, r0, r1, f)                       \
     {                                                                                              \
-        __m256i mul = _mm256_mullo_epi16(r0, r1);                                                  \
+        __m256i mul = _mm256_mullo_epi16((r0), r1);                                                \
         __m256i lo = _mm256_mullo_epi16(mul, f);                                                   \
         __m256i hi = _mm256_mulhi_epu16(mul, f);                                                   \
         __m256i left = _mm256_unpacklo_epi16(lo, hi);                                              \
@@ -112,10 +113,10 @@ static FORCE_INLINE void copy_and_pad(const VifBuffer *buf, unsigned w, unsigned
 
 #define shuffle_and_save(addr, x, y)                                                               \
     {                                                                                              \
-        __m256i left = _mm256_permute2x128_si256(x, y, 0x20);                                      \
-        __m256i right = _mm256_permute2x128_si256(x, y, 0x31);                                     \
-        _mm256_storeu_si256((__m256i *)(addr), left);                                              \
-        _mm256_storeu_si256(((__m256i *)(addr)) + 1, right);                                       \
+        __m256i left = _mm256_permute2x128_si256((x), ((y)), 0x20);                                \
+        __m256i right = _mm256_permute2x128_si256((x), ((y)), 0x31);                               \
+        _mm256_storeu_si256((__m256i *)((addr)), left);                                            \
+        _mm256_storeu_si256(((__m256i *)((addr))) + 1, right);                                     \
     }
 
 typedef struct VifVertical256 {
