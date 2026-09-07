@@ -81,8 +81,8 @@ test_pool_percentile = executable('test_pool_percentile',
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [math_lib, stdatomic_dependency, pthread_dependency, gpu_all_deps],
-
 )
+
 # T-UPSTREAM-930 / ADR-1194 — integer-ADM angle_flag predicate parity.
 # Pins the two evaluations in core/src/feature/adm_angle_flag.h against each
 # other and against the golden-frozen CPU expression, on the band quadruples

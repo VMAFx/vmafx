@@ -1496,7 +1496,6 @@ unclamped. The Netflix golden `adm_min_val=0.98` case pins
 per-scale loop variables hold once the loop has run. All three GPU twins had
 inherited the post-loop values (a 256× too-small floor).
 
-<<<<<<< HEAD
 ## ADM contrast-masking edge policy is asymmetric (ADR-1204)
 
 `adm_cm_thresh3x3_s` in `adm_tools.c` is the CPU reference for the 3x3
@@ -1542,7 +1541,7 @@ survivors. Measured, one ULP in linear RGB became a **2.62e-03** score delta.
 **private** scalar reference, not against the shipped function, so it will not
 catch a shipped copy that drifts. Change the shipped copies and that reference
 together.
-=======
+
 ## `angle_flag` has exactly one definition (ADR-1194)
 
 The integer-ADM 1-degree angle test lives in
@@ -1581,4 +1580,3 @@ gain limit, so it moves `adm` scores directly. The four historical spellings
 of this predicate disagreed on about 4e-5 of near-parallel scale-0 band
 quadruples; see
 [`docs/research/2030-adm-angle-flag-fp64-free.md`](../../../docs/research/2030-adm-angle-flag-fp64-free.md).
->>>>>>> 15abed377 (fix(gpu): collapse the four divergent ADM angle_flag predicates onto one)

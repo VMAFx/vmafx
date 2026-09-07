@@ -43,11 +43,8 @@
 #include <cstdio>
 
 #include "config.h"
-<<<<<<< HEAD
-#include "feature/adm_csf_fixed_point.h"
-=======
 #include "feature/adm_angle_flag.h"
->>>>>>> 15abed377 (fix(gpu): collapse the four divergent ADM angle_flag predicates onto one)
+#include "feature/adm_csf_fixed_point.h"
 #include "feature/barten_csf_tools.h"
 #include "feature/integer_adm.h"
 #include "feature_collector.h"
