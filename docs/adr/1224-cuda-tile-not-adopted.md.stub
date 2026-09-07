@@ -1,0 +1,36 @@
+<!-- ADR-1224 stub — claimed by scripts/adr/next-free.sh --claim cuda-tile-not-adopted on 2026-09-07T07:53:55Z -->
+<!-- Replace this file with the real ADR and rename to 1224-cuda-tile-not-adopted.md before committing. -->
+<!-- To abandon this claim run: scripts/adr/next-free.sh --release 1224 -->
+
+# ADR-1224: <fill in title>
+
+- **Status**: Proposed
+- **Date**: 2026-09-07
+- **Deciders**: <fill in>
+- **Tags**: <fill in>
+
+## Context
+
+<fill in>
+
+## Decision
+
+<fill in>
+
+## Alternatives considered
+
+| Option | Pros | Cons | Why not chosen |
+|---|---|---|---|
+| | | | |
+
+## Consequences
+
+- **Positive**: <fill in>
+- **Negative**: <fill in>
+- **Neutral / follow-ups**: <fill in>
+
+## References
+
+- See [ADR-0535](0535-adr-atomic-allocator.md) for the original allocator design.
+- See [ADR-0628](0628-adr-allocator-remote-aware.md) for the remote-aware extension.
+- Source: <req or Q<round>.<q>>
