@@ -25,11 +25,13 @@ afternoon. All three were green under local gcc:
 | `nullptr` in a `.c` file | gcc and clang accept it under `-std=c23` | `Windows MSVC+CUDA` → C2065 at every site; ADR-1138 keeps C TUs on `NULL` |
 | `static const double` used in a `static` aggregate initialiser | no diagnostic at all, even with `-pedantic-errors -Weverything` | `Windows MSVC+CUDA` → C2099, then cascading C2440s as the members shift |
 | `M_PI` in a new test file | glibc exposes it because meson passes `-D_GNU_SOURCE` | `Windows MinGW64` → `'M_PI' undeclared`; MinGW ignores `_GNU_SOURCE` and `-std=c23` sets `__STRICT_ANSI__` |
+| `const ulong half = ...` in a `.metal` shader | the C / CUDA / HIP twins it was ported from have no such reserved name | `macOS Clang+Metal` → `cannot combine with previous 'type-name' declaration specifier`; `half` is MSL's 16-bit float type |
 
 The last three are from the same evening: PR #1340's new test file carried the
 first two (21 errors on `Windows MSVC+CUDA`), and PR #1342's carried the third.
-All three are new *test* files, which is the pattern — a test is the easiest
-place to write portable-looking C that only one lane rejects.
+All are new files added by a PR, which is the pattern: fresh code is where
+portable-looking constructs that exactly one lane rejects get written. The
+fourth arrived on the same branch as the third.
 
 Each cost a full CI round-trip. Because only one PR is in flight at a time,
 that is queue time for every other PR too — the branch held the merge window
