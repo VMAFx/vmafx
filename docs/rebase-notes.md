@@ -49036,3 +49036,35 @@ Branch: `fix/gpu-motion3-fps-weight-double`.
    pre-existing, consistent across all four backends, and described in
    `docs/metrics/motion.md`. `float_motion` on every backend already applies the
    weight once, at the emission site. Neither was touched by ADR-1216.
+## ADR-1217 — GPU float-VIF options must reach the kernel (2026-09-07)
+
+Branch: `fix/gpu-float-vif-options`.
+
+1. **Kernel-local constants that shadow an option are invisible to review.**
+   The CUDA / SYCL / HIP `float_vif` compute kernels each declared
+   `const float vif_sigma_nsq = 2.0f; const float vif_egl = 100.0f;` inside the
+   per-pixel block. The names matched the options exactly, so the arithmetic
+   below them read as correct; nothing at the declaration site said "this is a
+   hardcoded default". When touching these kernels, keep the values as *kernel
+   arguments*: a missing argument is a compile error, a shadowing local is not.
+
+2. **`sigma_max_inv` must be derived on the host, the CPU's way.**
+   `vif_tools.c::vif_statistic_s` computes
+   `powf(vif_sigma_nsq, 2.0f) / (255.0 * 255.0)` — `powf` in `float`, the
+   division in `double`, narrowed to `float` on assignment. The host copies
+   reproduce that expression exactly. Do not "simplify" it to `nsq * nsq` or
+   move it into device code: device `powf` is not guaranteed to round like the
+   host's, and this value feeds the `sigma1_sq < vif_sigma_nsq` branch that sets
+   `num_val` directly.
+
+3. **`cuLaunchKernel` / `hipModuleLaunchKernel` silently ignore surplus
+   `kernelParams` entries.** Adding an argument to the kernel signature without
+   adding it to *every* launch site reads uninitialised parameter memory instead
+   of failing. `float_vif_cuda.c` has two `func_compute` launch sites (scale 0
+   and the scale 1..3 loop) and `float_vif_hip.c` funnels all four through one
+   helper; both were updated together.
+
+4. **`float_vif_hip` had no parity test.** `test_hip_vif_parity.c` covers the
+   *integer* `vif_hip` twin — a name close enough to look like coverage. The new
+   `test_hip_float_vif_parity.c` fills the gap. When adding a HIP twin, check
+   that the parity test named after it actually targets it.

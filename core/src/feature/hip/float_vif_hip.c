@@ -33,6 +33,7 @@
  */
 
 #include <errno.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -375,11 +376,20 @@ static int fvif_launch_compute(FloatVifStateHip *s, hipStream_t str, int scale, 
     const float *dis_fp = is_raw ? NULL : (const float *)dis_f_d;
     ptrdiff_t used_stride = is_raw ? nf_stride : f_stride;
 
+    /* vif_sigma_nsq / vif_enhn_gain_limit are VMAF_OPT_FLAG_FEATURE_PARAM
+     * options; the compute kernel used to hardcode their defaults, which
+     * silently ignored every non-default value (ADR-1217).  sigma_max_inv is
+     * derived exactly as the CPU does in vif_tools.c::vif_statistic_s:
+     * powf(nsq, 2.0f) in float, divided in double, narrowed to float. */
+    const float vif_nsq_f = (float)s->vif_sigma_nsq;
+    const float vif_egl_f = (float)s->vif_enhn_gain_limit;
+    const float sigma_max_inv = (float)(powf((float)s->vif_sigma_nsq, 2.0f) / (255.0 * 255.0));
+
     void *args[] = {
         (void *)&scale,  (void *)&ref_raw_d, (void *)&dis_raw_d,   (void *)&raw_stride,
         (void *)&ref_fp, (void *)&dis_fp,    (void *)&used_stride, (void *)&num_d,
         (void *)&den_d,  (void *)&w,         (void *)&h,           (void *)&s->bpc,
-        (void *)&gx,
+        (void *)&gx,     (void *)&vif_nsq_f, (void *)&vif_egl_f,   (void *)&sigma_max_inv,
     };
     rc = hipModuleLaunchKernel(s->func_compute, gx, gy, 1, FVIF_BX, FVIF_BY, 1, 0, str, args, NULL);
     return fvif_hip_rc(rc);

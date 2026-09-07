@@ -104,7 +104,8 @@ static sycl::event launch_compute(sycl::queue &q, const void *ref_raw, const voi
                                   unsigned raw_stride_bytes, const float *ref_f, const float *dis_f,
                                   unsigned f_stride_floats, float *num_partials,
                                   float *den_partials, unsigned width, unsigned height,
-                                  unsigned bpc, unsigned grid_x_count)
+                                  unsigned bpc, unsigned grid_x_count, float vif_sigma_nsq,
+                                  float vif_egl, float sigma_max_inv)
 {
     constexpr int FW = (SCALE == 0) ? 17 : (SCALE == 1) ? 9 : (SCALE == 2) ? 5 : 3;
     constexpr int HFW = FW / 2;
@@ -122,6 +123,9 @@ static sycl::event launch_compute(sycl::queue &q, const void *ref_raw, const voi
     const unsigned e_raw_stride = raw_stride_bytes;
     const unsigned e_f_stride = f_stride_floats;
     const unsigned e_grid_x = grid_x_count;
+    const float e_nsq = vif_sigma_nsq;
+    const float e_egl = vif_egl;
+    const float e_sigma_max_inv = sigma_max_inv;
     const void *e_ref_raw = ref_raw;
     const void *e_dis_raw = dis_raw;
     const float *e_ref_f = ref_f;
@@ -251,9 +255,12 @@ static sycl::event launch_compute(sycl::queue &q, const void *ref_raw, const voi
                         xy += c_k * s_v_xy[ly * MAX_TILE_W + (lx + k)];
                     }
                     const float eps = 1.0e-10f;
-                    const float vif_sigma_nsq = 2.0f;
-                    const float vif_egl = 100.0f;
-                    const float sigma_max_inv = (2.0f * 2.0f) / (255.0f * 255.0f);
+                    /* Captured from the extractor's options; these used to be
+                     * hardcoded to the defaults, silently ignoring every
+                     * non-default value. ADR-1217. */
+                    const float vif_sigma_nsq = e_nsq;
+                    const float vif_egl = e_egl;
+                    const float sigma_max_inv = e_sigma_max_inv;
 
                     float sigma1_sq = xx - mu1 * mu1;
                     float sigma2_sq = yy - mu2 * mu2;
@@ -593,12 +600,21 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         q.memset(s->d_den[i], 0, (size_t)s->wg_count[i] * sizeof(float));
     }
 
+    /* vif_sigma_nsq / vif_enhn_gain_limit are VMAF_OPT_FLAG_FEATURE_PARAM
+     * options; the compute kernel used to hardcode their defaults, which
+     * silently ignored every non-default value (ADR-1217).  sigma_max_inv is
+     * derived exactly as the CPU does in vif_tools.c::vif_statistic_s:
+     * powf(nsq, 2.0f) in float, divided in double, narrowed to float. */
+    const float vif_nsq_f = (float)s->vif_sigma_nsq;
+    const float vif_egl_f = (float)s->vif_enhn_gain_limit;
+    const float sigma_max_inv = (float)(std::pow((float)s->vif_sigma_nsq, 2.0f) / (255.0 * 255.0));
+
     /* Scale 0 compute. */
     {
         const unsigned grid_x = (s->scale_w[0] + FVIF_BX - 1u) / FVIF_BX;
         launch_compute<0>(q, s->d_ref_raw, s->d_dis_raw, raw_stride_bytes, nullptr, nullptr,
                           s->scale_w[0], s->d_num[0], s->d_den[0], s->scale_w[0], s->scale_h[0],
-                          s->bpc, grid_x);
+                          s->bpc, grid_x, vif_nsq_f, vif_egl_f, sigma_max_inv);
     }
 
     /* Scales 1, 2, 3: decimate then compute. */
@@ -629,13 +645,16 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         const unsigned grid_x = (s->scale_w[n] + FVIF_BX - 1u) / FVIF_BX;
         if (n == 1)
             launch_compute<1>(q, nullptr, nullptr, 0, ref_out, dis_out, s->scale_w[n], s->d_num[n],
-                              s->d_den[n], s->scale_w[n], s->scale_h[n], s->bpc, grid_x);
+                              s->d_den[n], s->scale_w[n], s->scale_h[n], s->bpc, grid_x, vif_nsq_f,
+                              vif_egl_f, sigma_max_inv);
         else if (n == 2)
             launch_compute<2>(q, nullptr, nullptr, 0, ref_out, dis_out, s->scale_w[n], s->d_num[n],
-                              s->d_den[n], s->scale_w[n], s->scale_h[n], s->bpc, grid_x);
+                              s->d_den[n], s->scale_w[n], s->scale_h[n], s->bpc, grid_x, vif_nsq_f,
+                              vif_egl_f, sigma_max_inv);
         else
             launch_compute<3>(q, nullptr, nullptr, 0, ref_out, dis_out, s->scale_w[n], s->d_num[n],
-                              s->d_den[n], s->scale_w[n], s->scale_h[n], s->bpc, grid_x);
+                              s->d_den[n], s->scale_w[n], s->scale_h[n], s->bpc, grid_x, vif_nsq_f,
+                              vif_egl_f, sigma_max_inv);
     }
 
     for (int i = 0; i < 4; i++) {

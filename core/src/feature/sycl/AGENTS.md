@@ -224,6 +224,13 @@ HIP / Metal motion twins listed in the Twin-update table above) in the same PR.
   `motion3_postprocess_sycl()` must not re-apply the weight its callers
   have already applied.
 
+- **`float_vif_sycl.cpp` options must be captured, not hardcoded**
+  (ADR-1217) — see the canonical note in
+  [`../cuda/AGENTS.md`](../cuda/AGENTS.md). The compute kernel captures
+  `vif_sigma_nsq`, `vif_enhn_gain_limit` and the host-derived
+  `sigma_max_inv` from `launch_compute`'s parameters; it must not
+  re-declare them as kernel-local constants.
+
 - **VAAPI / dmabuf zero-copy import** — the FFmpeg `libvmaf_sycl`
   filter (`ffmpeg-patches/0005-*.patch`) consumes
   `vmaf_sycl_import_va_surface`. Public-surface change touches the

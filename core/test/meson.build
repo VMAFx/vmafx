@@ -3091,6 +3091,17 @@ test('test_hip_float_psnr_parity', test_hip_float_psnr_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
 
+test_hip_float_vif_parity = executable('test_hip_float_vif_parity',
+    ['test.c', 'test_hip_float_vif_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_float_vif_parity', test_hip_float_vif_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
 # ADR-0883 round-2 — HIP kernel parity gap-fill (5 extractors).
 # Closes the gaps left after PR #351 (psnr_hip + vif_hip) and the
 # pre-existing adm/motion3 tests.  Each test follows the same template:

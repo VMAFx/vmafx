@@ -44,6 +44,7 @@
  */
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -99,26 +100,45 @@ static int feed_frame(VmafContext *vmaf)
     return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
 }
 
-static char *run_cpu(double *score)
+/* ADR-1217 — the values model/vmaf_float_v0.6.1neg.json actually ships
+ * (`vif_enhn_gain_limit = 1.0` on all four VIF scales), plus a non-default
+ * neural-noise variance.  Both are VMAF_OPT_FLAG_FEATURE_PARAM, so the score is
+ * filed under a derived key: the alias base plus `_<alias>_<%g value>` per
+ * option, sorted by option NAME (`vif_enhn_gain_limit` before
+ * `vif_sigma_nsq`). */
+#define NEG_EGL "1.0"
+#define NEG_SNSQ "1.5"
+#define NEG_SCALE0_KEY "vif_scale0_egl_1_snsq_1.5"
+
+static char *run_cpu(bool neg_opts, const char *key, double *score)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "float_vif", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    if (neg_opts) {
+        err = vmaf_feature_dictionary_set(&opts, "vif_enhn_gain_limit", NEG_EGL);
+        mu_assert("CPU: dictionary_set(vif_enhn_gain_limit) failed", !err);
+        err = vmaf_feature_dictionary_set(&opts, "vif_sigma_nsq", NEG_SNSQ);
+        mu_assert("CPU: dictionary_set(vif_sigma_nsq) failed", !err);
+    }
+    err = vmaf_use_feature(vmaf, "float_vif", opts);
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CPU: vmaf_use_feature(float_vif) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "VMAF_feature_vif_scale0_score", score, 0u);
-    mu_assert("CPU: VMAF_feature_vif_scale0_score missing", !err);
+    err = vmaf_feature_score_at_index(vmaf, key, score, 0u);
+    mu_assert("CPU: vif_scale0 score missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
     return NULL;
 }
 
-static char *run_sycl(double *score)
+static char *run_sycl(bool neg_opts, const char *key, double *score)
 {
     *score = NAN;
     VmafSyclState *sycl_state = NULL;
@@ -134,14 +154,23 @@ static char *run_sycl(double *score)
     mu_assert("SYCL: vmaf_init failed", !err);
     err = vmaf_sycl_import_state(vmaf, sycl_state);
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "float_vif_sycl", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    if (neg_opts) {
+        err = vmaf_feature_dictionary_set(&opts, "vif_enhn_gain_limit", NEG_EGL);
+        mu_assert("SYCL: dictionary_set(vif_enhn_gain_limit) failed", !err);
+        err = vmaf_feature_dictionary_set(&opts, "vif_sigma_nsq", NEG_SNSQ);
+        mu_assert("SYCL: dictionary_set(vif_sigma_nsq) failed", !err);
+    }
+    err = vmaf_use_feature(vmaf, "float_vif_sycl", opts);
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("SYCL: vmaf_use_feature(float_vif_sycl) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("SYCL: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "VMAF_feature_vif_scale0_score", score, 0u);
-    mu_assert("SYCL: VMAF_feature_vif_scale0_score missing", !err);
+    err = vmaf_feature_score_at_index(vmaf, key, score, 0u);
+    mu_assert("SYCL: vif_scale0 score missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
     vmaf_sycl_state_free(&sycl_state);
@@ -160,10 +189,10 @@ static char *test_float_vif_cpu_sycl_parity(void)
 {
     double cpu_score = 0.0;
     double sycl_score = NAN;
-    char *msg = run_cpu(&cpu_score);
+    char *msg = run_cpu(false, "VMAF_feature_vif_scale0_score", &cpu_score);
     if (msg)
         return msg;
-    msg = run_sycl(&sycl_score);
+    msg = run_sycl(false, "VMAF_feature_vif_scale0_score", &sycl_score);
     if (msg)
         return msg;
     if (isnan(sycl_score))
@@ -179,9 +208,43 @@ static char *test_float_vif_cpu_sycl_parity(void)
     return NULL;
 }
 
+/* ------------------------------------------------------------------ */
+/* ADR-1217 — vif_enhn_gain_limit / vif_sigma_nsq must reach the kernel.*/
+/*                                                                     */
+/* The SYCL compute kernel hardcoded both to their defaults, so a       */
+/* non-default value was accepted, folded into the derived feature      */
+/* name, and then silently ignored — the NEG model's                    */
+/* vif_enhn_gain_limit = 1.0 published un-clamped scores under NEG      */
+/* feature keys. The default-options test above cannot see this.        */
+/* ------------------------------------------------------------------ */
+static char *test_float_vif_options_reach_kernel(void)
+{
+    double cpu_score = 0.0;
+    double sycl_score = NAN;
+    char *msg = run_cpu(true, NEG_SCALE0_KEY, &cpu_score);
+    if (msg)
+        return msg;
+    msg = run_sycl(true, NEG_SCALE0_KEY, &sycl_score);
+    if (msg)
+        return msg;
+    if (isnan(sycl_score))
+        return NULL;
+    const double delta = fabs(cpu_score - sycl_score);
+    if (delta > PARITY_TOL) {
+        (void)fprintf(stderr,
+                      "\nfloat_vif egl=%s snsq=%s parity FAIL: cpu=%.8f sycl=%.8f delta=%.2e "
+                      "tol=%.2e\n",
+                      NEG_EGL, NEG_SNSQ, cpu_score, sycl_score, delta, PARITY_TOL);
+    }
+    mu_assert("float_vif with non-default egl/snsq drifts from the CPU reference",
+              delta <= PARITY_TOL);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_float_vif_sycl_registered);
     mu_run_test(test_float_vif_cpu_sycl_parity);
+    mu_run_test(test_float_vif_options_reach_kernel);
     return NULL;
 }

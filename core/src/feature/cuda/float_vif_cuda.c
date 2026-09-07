@@ -290,6 +290,15 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CUdeviceptr dis_buf1 = (CUdeviceptr)s->dis_buf[1]->data;
     CUdeviceptr null_dptr = 0;
 
+    /* vif_sigma_nsq / vif_enhn_gain_limit are VMAF_OPT_FLAG_FEATURE_PARAM
+     * options; the compute kernel used to hardcode their defaults, which
+     * silently ignored every non-default value (ADR-1217).  sigma_max_inv is
+     * derived exactly as the CPU does in vif_tools.c::vif_statistic_s:
+     * powf(nsq, 2.0f) in float, divided in double, narrowed to float. */
+    const float vif_nsq_f = (float)s->vif_sigma_nsq;
+    const float vif_egl_f = (float)s->vif_enhn_gain_limit;
+    const float sigma_max_inv = (float)(powf((float)s->vif_sigma_nsq, 2.0f) / (255.0 * 255.0));
+
     /* Helper for compute: pass scale, raw or float input via the
      * appropriate set of args; the kernel selects via `is_raw =
      * (scale == 0)`. */
@@ -302,10 +311,11 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         unsigned h = s->scale_h[0];
         unsigned grid_x = (w + FVIF_BX - 1u) / FVIF_BX;
         unsigned grid_y = (h + FVIF_BY - 1u) / FVIF_BY;
-        void *args[] = {&scale,         &ref_raw_d, &dis_raw_d,        (void *)&raw_stride,
-                        &null_dptr,     &null_dptr, (void *)&f_stride, &num_d,
-                        &den_d,         (void *)&w, (void *)&h,        (void *)&s->bpc,
-                        (void *)&grid_x};
+        void *args[] = {
+            &scale,          &ref_raw_d,         &dis_raw_d,         (void *)&raw_stride,
+            &null_dptr,      &null_dptr,         (void *)&f_stride,  &num_d,
+            &den_d,          (void *)&w,         (void *)&h,         (void *)&s->bpc,
+            (void *)&grid_x, (void *)&vif_nsq_f, (void *)&vif_egl_f, (void *)&sigma_max_inv};
         CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_compute, grid_x, grid_y, 1, FVIF_BX, FVIF_BY,
                                                1, 0, pic_stream, args, NULL));
     }
@@ -368,7 +378,10 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                          (void *)&w,
                          (void *)&h,
                          (void *)&s->bpc,
-                         (void *)&grid_x};
+                         (void *)&grid_x,
+                         (void *)&vif_nsq_f,
+                         (void *)&vif_egl_f,
+                         (void *)&sigma_max_inv};
         CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_compute, grid_x, grid_y, 1, FVIF_BX, FVIF_BY,
                                                1, 0, pic_stream, cargs, NULL));
     }
