@@ -642,3 +642,42 @@ The upstream Netflix release process (manual version bump, manual CHANGELOG
 editing, draft-a-release on GitHub) is documented at
 [Netflix/vmaf — release.md](https://github.com/Netflix/vmaf/blob/master/resource/doc/release.md).
 It does not apply to this fork.
+
+## Release notes and the changelog archive (ADR-1233)
+
+Two different surfaces, produced two different ways:
+
+| Surface | Produced by | Grouped by |
+| --- | --- | --- |
+| GitHub Release body | GitHub, from merged pull requests | Labels, via [`.github/release.yml`](../../.github/release.yml) |
+| `CHANGELOG.md` | `scripts/release/concat-changelog-fragments.sh`, from `changelog.d/` | `changelog.d/` subdirectory |
+
+Because GitHub groups the release body **by label**,
+[`.github/workflows/pr-type-label.yml`](../../.github/workflows/pr-type-label.yml)
+derives a `type:*` label from each PR's Conventional-Commit prefix. If a release
+body shows a large "Other changes" section, that labeler is not running — the
+prefix is mandatory, so the label should always be derivable.
+
+### Archiving an oversized release section
+
+`rollover-changelog-fragments.sh --archive-over N` (default 400) keeps
+`CHANGELOG.md` readable. When the rendered body exceeds N lines it is written to
+`docs/changelog-archive/X.Y.Z.md` and the version section keeps a per-section
+index linking to it:
+
+```markdown
+## [1.0.0] - 2026-09-07
+
+This release collects 2345 changelog entries.
+They are recorded in full, unedited, in
+[`docs/changelog-archive/1.0.0.md`](docs/changelog-archive/1.0.0.md) — too long to read inline here.
+
+| Section | Entries |
+| --- | --- |
+| Fixed | 1227 |
+| Changed | 559 |
+```
+
+Nothing is discarded: the archive is tracked, and the rollover receipt still
+records the sha256 of the complete rendered body. Pass `--archive-over 0` to
+force the old inline behaviour.

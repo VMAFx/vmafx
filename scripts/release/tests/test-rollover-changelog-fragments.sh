@@ -227,5 +227,52 @@ else
   check 'empty release is rejected without mutation' fail
 fi
 
+# T12: A body longer than --archive-over moves to docs/changelog-archive/ and
+# CHANGELOG.md keeps a per-section index. The first release renders ~27,500
+# lines from ~1,660 fragments; pasting that inline makes CHANGELOG.md unusable.
+big="$scratch/archived"
+fixture "$big"
+for i in $(seq 1 60); do
+  printf '%s\n' "- fixed entry $i" >"$big/changelog.d/fixed/fix$i.md"
+done
+VMAFX_REPO_ROOT="$big" "$big/scripts/release/concat-changelog-fragments.sh" \
+  --write >/dev/null 2>&1
+if VMAFX_REPO_ROOT="$big" "$big/scripts/release/rollover-changelog-fragments.sh" \
+  --version 3.2.1 --date 2026-08-02 --archive-over 20 >/dev/null 2>&1; then
+  archive="$big/docs/changelog-archive/3.2.1.md"
+  # The index replaces the body, the archive holds every entry, and the count
+  # in the index is the number actually archived.
+  if [[ -f "$archive" ]] &&
+    grep -q '^## \[3.2.1\] - 2026-08-02$' "$big/CHANGELOG.md" &&
+    grep -q 'docs/changelog-archive/3.2.1.md' "$big/CHANGELOG.md" &&
+    # The fixture already ships one "- fixed entry", so 60 more makes 61.
+    grep -q '^| Fixed | 61 |$' "$big/CHANGELOG.md" &&
+    [[ "$(grep -c '^- fixed entry' "$archive")" -eq 61 ]] &&
+    [[ "$(grep -c '^- fixed entry' "$big/CHANGELOG.md")" -eq 0 ]] &&
+    grep -q '^## \[3.2.0\] - 2026-08-01$' "$big/CHANGELOG.md"; then
+    check "long body is archived and indexed, prior release intact" pass
+  else
+    check "long body is archived and indexed, prior release intact" fail
+  fi
+else
+  check "long body is archived and indexed, prior release intact" fail
+fi
+
+# T13: Under the threshold the body still lands inline, so ordinary releases
+# are unaffected by the archive path.
+small="$scratch/inline"
+fixture "$small"
+if VMAFX_REPO_ROOT="$small" "$small/scripts/release/rollover-changelog-fragments.sh" \
+  --version 3.2.1 --date 2026-08-02 --archive-over 400 >/dev/null 2>&1; then
+  if [[ ! -d "$small/docs/changelog-archive" ]] &&
+    grep -q '^- fixed entry$' "$small/CHANGELOG.md"; then
+    check "short body stays inline and writes no archive" pass
+  else
+    check "short body stays inline and writes no archive" fail
+  fi
+else
+  check "short body stays inline and writes no archive" fail
+fi
+
 printf '\n=== Results: %d passed, %d failed ===\n' "$pass" "$fail"
 [[ "$fail" -eq 0 ]]
