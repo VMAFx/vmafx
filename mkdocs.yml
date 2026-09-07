@@ -323,6 +323,7 @@ nav:
       - Engineering principles: principles.md
       - Build flags: development/build-flags.md
       - Container base images: development/base-images.md
+      - Preflight (local CI gate): development/preflight.md
       - Default model: development/default-model.md
       - Release: development/release.md
       - CI: development/ci.md

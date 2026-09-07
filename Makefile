@@ -118,6 +118,7 @@ cythonize-deps: $(VENV_PIP)
 
 .PHONY: lint lint-c lint-py lint-sh lint-md lint-go tidy-ratchet tidy-ratchet-write \
 	base-images-sync python-deps-sync \
+	preflight \
 	format format-check sec sbom \
         test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
         coverage coverage-html coverage-check assertion-density pr-check
@@ -196,6 +197,13 @@ base-images-sync:
 python-deps-sync:
 	scripts/ci/check-python-requirements-single-source.sh --write
 	scripts/ci/check-python-requirements-single-source.sh
+
+# Run the CI lanes that a single-compiler local build cannot catch: clang,
+# 32-bit, sanitizers, MSVC-hostile constructs, clang-tidy, cppcheck (ADR-1234).
+# `make preflight` before pushing; `scripts/dev/preflight.sh --list` explains
+# which CI context each stage stands in for.
+preflight:
+	scripts/dev/preflight.sh
 
 lint-py:
 	@scripts/ci/check-python-requirements-single-source.sh
