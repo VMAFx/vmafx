@@ -26,7 +26,9 @@
 /* Inline decouple helpers — shared between adm_csf.hip and adm_cm.hip to
  * eliminate d_decouple_r, d_decouple_a and d_csf_a intermediate buffers. */
 
-static constexpr float COS_1DEG_SQ = 0.99969541f; // cosf(M_PI/180)^2
+#include "adm_angle_flag.h"
+
+static constexpr float COS_1DEG_SQ = ADM_ANGLE_FLAG_COS_1DEG_SQ; // cos(1 deg)^2
 
 __device__ __forceinline__ uint16_t get_best15_from32(uint32_t temp, int *x)
 {
@@ -78,15 +80,21 @@ __device__ __forceinline__ int16_t decouple_r_s0(int16_t oh, int16_t ov, int16_t
     return (int16_t)rst;
 }
 
-/* Scale-0 angle flag test from H,V ref/dis bands. */
+/* Scale-0 angle flag test from H,V ref/dis bands.
+ *
+ * ADR-1194: this used to compare the *exact* int64 products in double, which
+ * is a strictly more accurate angle test than the CPU's — and therefore a
+ * different one. The golden-frozen CPU expression narrows each operand to
+ * float first, so scale-0 bands past the 24-bit significand flipped the flag
+ * (and with it the enhancement-gain-limited branch of decouple) relative to
+ * the CPU. Route through the shared predicate instead. */
 __device__ __forceinline__ int decouple_angle_flag_s0(int16_t oh, int16_t ov, int16_t th,
                                                       int16_t tv)
 {
     int32_t ot_dp = (int32_t)oh * th + (int32_t)ov * tv;
     int32_t o_mag_sq = (int32_t)oh * oh + (int32_t)ov * ov;
     int32_t t_mag_sq = (int32_t)th * th + (int32_t)tv * tv;
-    return (ot_dp >= 0) &&
-           double(int64_t(ot_dp) * ot_dp) >= double(int64_t(o_mag_sq) * t_mag_sq) * COS_1DEG_SQ;
+    return adm_angle_flag_fp64(ot_dp, o_mag_sq, t_mag_sq, COS_1DEG_SQ);
 }
 
 /* Scales 1-3 decouple: int32_t bands, returns r_val for a single band component. */
@@ -142,9 +150,7 @@ __device__ __forceinline__ int decouple_angle_flag_s123(int32_t oh, int32_t ov, 
     int64_t ot_dp = (int64_t)oh * th + (int64_t)ov * tv;
     int64_t o_mag_sq = (int64_t)oh * oh + (int64_t)ov * ov;
     int64_t t_mag_sq = (int64_t)th * th + (int64_t)tv * tv;
-    return (((float)ot_dp / 4096.0) >= 0.0f) &&
-           (((float)ot_dp / 4096.0) * ((float)ot_dp / 4096.0) >=
-            COS_1DEG_SQ * ((float)o_mag_sq / 4096.0) * ((float)t_mag_sq / 4096.0));
+    return adm_angle_flag_fp64(ot_dp, o_mag_sq, t_mag_sq, COS_1DEG_SQ);
 }
 
 #endif /* ADM_DECOUPLE_INLINE_HIP_ */
