@@ -50493,3 +50493,33 @@ fork-local (ADR-0746). Conflict risk is against other fork branches touching
    the fixture rather than removing the feature — the size is chosen so
    `float_ms_ssim` (>= 176 px) and `float_ssim` (auto-scale 1 below 384 px)
    both run.
+## ADR-1222 — code-scanning scope, not code-scanning annotations (2026-09-07)
+
+Branch: `fix/code-scanning-alert-sweep`.
+
+1. **`# nosemgrep` cannot close a GitHub code-scanning alert.** Semgrep's docs:
+   a `nosemgrep` comment "still generates findings records that are
+   automatically set to Ignored triage state, rather than excluding code from
+   scanning entirely." That state lives on the Semgrep platform; this workflow
+   writes SARIF and uploads it, so GitHub keeps the alert. Do not add more
+   `nosemgrep` directives expecting alerts to clear — they are documentation for
+   humans only.
+
+2. **`paths` / `paths-ignore` are INERT for the built C/C++ analysis.** GitHub
+   limits them to interpreted languages and to compiled languages analysed
+   without building. The CodeQL job builds with meson + ninja, so every TU it
+   compiles is extracted. `core/test` is in `paths-ignore` and still produces
+   alerts. Scope for C/C++ is controlled by what the build compiles, or by
+   `query-filters` on rule ids.
+
+3. **A bare directory name in `paths-ignore` matches only at the top level.**
+   `build` does not match `core/build`; `**/build` does. `**` must be its own
+   path segment (`**foo` is invalid), and `?`, `+`, `[`, `]`, `!` are matched
+   literally.
+
+4. **Follow an "unused variable" note upstream before deleting the name.** The
+   `py/unused-global-variable` alert on `_VALID_AOM_CTCS` turned out to be one
+   visible symptom of a duplicated constant block: five further `_VALID_*` names
+   were defined twice in `mcp-server/.../server.py`, the second silently
+   shadowing the first. The query cannot flag those because the name *is* used —
+   just not the first binding.
