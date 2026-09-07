@@ -373,6 +373,64 @@ because it changes report schema cardinality. Also do not revert the
 rank-2 / rank-4 frame runners back to `vmaf_ort_infer()` — that helper
 is single-output by construction and would reopen T-DNN-MULTI-OUTPUT.
 
+## Invariant — model_loader.c lint shape (ADR-1142 / ADR-0461)
+
+`model_loader.c` is measured by the whole-tree clang-tidy ratchet
+(`scripts/ci/tidy-baseline-cpu.json`) and sits at zero. Three shapes in
+it are load-bearing for that; do not collapse them on rebase:
+
+- **The `parse_sidecar_*()` split.** `vmaf_dnn_sidecar_load()` used to be
+  one 202-line / 167-statement / 37-branch function. It is now a
+  fixed-order driver over `sidecar_json_path()`, `slurp_sidecar_json()`
+  and one `parse_sidecar_<field group>()` helper. The call order is the
+  parse order of the original function and is what keeps the "later
+  field wins" behaviour of a malformed sidecar identical. Merging a
+  helper back inline re-opens `readability-function-size`.
+- **`str_to_lower()` calls `(tolower)` parenthesised.** glibc's
+  `<ctype.h>` defines `tolower` as a five-level nested macro, and the
+  expansion — not the loop — is what tripped the nesting-depth budget.
+  The parenthesised form suppresses expansion and calls the library
+  function; it is behaviourally identical. Do not "clean up" the
+  parentheses.
+- **Two `NOLINTNEXTLINE(concurrency-mt-unsafe)` on `getenv()`**, in
+  `vmaf_dnn_validate_onnx()` (`VMAF_TINY_MODEL_DIR`) and
+  `vmaf_dnn_verify_signature()` (`PATH`). These cite the ADR-0461
+  caller-contract, the same posture as `gpu_dispatch_env.cpp` and
+  `core/src/mcp/compute_vmaf.c`. A `pthread_once` snapshot is
+  deliberately **not** used here: the tiny-model tests `setenv()`
+  `VMAF_TINY_MODEL_DIR` between cases and must observe each value.
+
+## Invariant — every `core/src/dnn/*.c` keeps `NULL` (ADR-1138)
+
+`dnn_api.c`, `dnn_attach_api.c`, `model_loader.c`, `onnx_scan.c`,
+`op_allowlist.c` and `ort_backend.c` each carry one file-scoped
+`/* NOLINTBEGIN(modernize-use-nullptr) … ADR-1138. */` …
+`/* NOLINTEND(modernize-use-nullptr) */` bracket. The bracket is not
+cosmetic: `Build — Windows MSVC + CUDA (build only)` is a required
+status check and compiles these translation units with `cl.exe`, whose
+documented `/std:clatest` C23 feature set does not include the `nullptr`
+keyword. Rewriting `NULL` to `nullptr` here therefore fails a required
+lane — PR #1192 had to be reverted for exactly that reason before
+ADR-1138 was written.
+
+Keep the bracket spanning the whole file (the `NOLINTEND` is the last
+line), keep the ADR citation in the comment, and add the same bracket to
+any new `.c` file in this directory rather than using the keyword.
+`psnr_tools.cpp` and the other C++ TUs are unaffected — ADR-0915's
+`modernize-use-nullptr` ratchet still applies to them in full.
+
+## Invariant — test_cli.sh DNN probe must be a valid invocation
+
+`core/test/dnn/test_cli.sh` skips (exit 77) when the binary has no DNN
+support. The probe has to be an *otherwise valid* `vmaf` command line:
+`configure_tiny_model()` in `core/tools/vmaf.cpp` runs after argument
+validation and after the inputs are opened, so a bare
+`vmaf --tiny-model /dev/null` dies on the reference-required gate and
+never reaches the availability check. The probe therefore feeds the real
+`src01_hrc01` fixture through `--no-reference`. If the availability
+check ever moves earlier in `vmaf.cpp`, the probe may be simplified —
+until then, keep the full command line.
+
 ## Testing
 
 ```bash

@@ -361,6 +361,39 @@ feature/
   [ADR-0148](../../../docs/adr/0148-iqa-rename-and-cleanup.md)
   and [rebase-notes 0041](../../../docs/rebase-notes.md).
 
+- **psnr bucket lint shape** (ADR-1142 ratchet, ADR-0278
+  citations): [`psnr.c`](psnr.c) includes its own
+  [`psnr.h`](psnr.h) — upstream does not, and the include is
+  what declares `compute_psnr()`'s external linkage to
+  clang-tidy (the alternative used for `compute_ssim` /
+  `compute_ms_ssim` is a NOLINT; psnr has a real header, so it
+  uses it). [`integer_psnr.c`](integer_psnr.c) and
+  [`float_psnr.c`](float_psnr.c) carry
+  `NOLINTNEXTLINE(misc-use-internal-linkage)` on
+  `vmaf_fex_psnr` / `vmaf_fex_float_psnr` — the same cross-TU
+  registry pattern as `cambi.c` and `float_ssim.c` — and their
+  `provided_features[]` sentinels plus the `options[]`
+  terminator keep upstream's `NULL` spelling: per
+  [ADR-1138](../../../docs/adr/1138-c-translation-units-keep-null.md) a C
+  translation unit never uses the C23 `nullptr` keyword,
+  because the required `Build — Windows MSVC + CUDA` lane
+  compiles these files with cl.exe and MSVC's documented
+  `/std:clatest` feature set does not include it. Both files
+  therefore carry a file-scoped
+  `/* NOLINTBEGIN(modernize-use-nullptr) … ADR-1138. */` …
+  `NOLINTEND` bracket instead — keep it spanning the whole
+  file, and do not "modernise" the `NULL`s inside it.
+  [`psnr_tools.cpp`](psnr_tools.cpp) is C++ and *does* use
+  `nullptr`/designated initialisers; its `kFormatTable` peak /
+  psnr_max values are byte-identical to upstream's `strcmp`
+  ladder and must stay so — the fork's
+  `--feature psnr --precision=max` output on the `src01` pair
+  is asserted byte-identical across this refactor. See
+  [ADR-1142](../../../docs/adr/1142-whole-codebase-standards.md),
+  [ADR-1138](../../../docs/adr/1138-c-translation-units-keep-null.md),
+  [ADR-0278](../../../docs/adr/0278-t7-5-nolint-sweep.md)
+  and [`docs/rebase-notes.md`](../../../docs/rebase-notes.md).
+
 - **`integer_adm.c` i4_adm_cm int32 rounding overflow**
   (fork-inherited, ADR-0155): both `add_bef_shift_flt[]`
   initialiser loops in

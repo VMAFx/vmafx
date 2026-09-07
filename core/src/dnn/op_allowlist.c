@@ -7,6 +7,12 @@
 
 #include "op_allowlist.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 static const char *const ALLOWED_OPS[] = {
     /* structural / shape */
     "Identity",
@@ -135,3 +141,4 @@ bool vmaf_dnn_op_allowed(const char *op_type)
     }
     return false;
 }
+/* NOLINTEND(modernize-use-nullptr) */

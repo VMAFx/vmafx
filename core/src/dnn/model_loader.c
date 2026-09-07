@@ -34,6 +34,12 @@
 #include "model_loader.h"
 #include "onnx_scan.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* Portable realpath wrapper: POSIX realpath() on Linux/macOS, _fullpath()
  * on MinGW/Windows. Both resolve symlinks and canonicalise the path in
  * place, returning NULL on failure. */
@@ -201,6 +207,50 @@ static void free_partial_string_array(char **out, size_t cnt)
     }
 }
 
+/* Position @p *out_p just past the '[' of the JSON array bound to @p key.
+ * Returns 0 on success, -ENOENT when the key is absent, -EINVAL when the key
+ * name is too long or its value is not an array. Shared by
+ * extract_string_array() and extract_float_array(). */
+static int json_array_begin(const char *doc, const char *key, const char **out_p)
+{
+    char needle[64];
+    const int n = snprintf(needle, sizeof(needle), "\"%s\"", key);
+    if (n < 0 || (size_t)n >= sizeof(needle))
+        return -EINVAL;
+    const char *p = find_key_in_doc(doc, needle, (size_t)n);
+    if (!p)
+        return -ENOENT;
+    while (*p && json_is_space(*p))
+        p++;
+    if (*p != '[')
+        return -EINVAL;
+    *out_p = p + 1;
+    return 0;
+}
+
+/* Parse one `"..."` array element at *pp: duplicate it into *out_s and advance
+ * *pp past the closing quote. Returns 0, -EINVAL when the element is not a
+ * terminated string, or -ENOMEM. */
+static int json_dup_string_elem(const char **pp, char **out_s)
+{
+    const char *p = *pp;
+    if (*p != '"')
+        return -EINVAL;
+    ++p;
+    const char *q = strchr(p, '"');
+    if (!q)
+        return -EINVAL;
+    const size_t len = (size_t)(q - p);
+    char *s = (char *)malloc(len + 1u);
+    if (!s)
+        return -ENOMEM;
+    memcpy(s, p, len);
+    s[len] = '\0';
+    *out_s = s;
+    *pp = q + 1;
+    return 0;
+}
+
 static int extract_string_array(const char *doc, const char *key, char **out, size_t max,
                                 size_t *out_n)
 {
@@ -213,18 +263,10 @@ static int extract_string_array(const char *doc, const char *key, char **out, si
      * error fired. */
     *out_n = 0u;
 
-    char needle[64];
-    int n = snprintf(needle, sizeof(needle), "\"%s\"", key);
-    if (n < 0 || (size_t)n >= sizeof(needle))
-        return -EINVAL;
-    const char *p = find_key_in_doc(doc, needle, (size_t)n);
-    if (!p)
-        return -ENOENT;
-    while (*p && json_is_space(*p))
-        p++;
-    if (*p != '[')
-        return -EINVAL;
-    p++;
+    const char *p = NULL;
+    const int rc = json_array_begin(doc, key, &p);
+    if (rc != 0)
+        return rc;
 
     size_t cnt = 0u;
     while (*p) {
@@ -238,26 +280,16 @@ static int extract_string_array(const char *doc, const char *key, char **out, si
             free_partial_string_array(out, cnt);
             return -EINVAL;
         }
-        ++p;
-        const char *q = strchr(p, '"');
-        if (!q) {
-            free_partial_string_array(out, cnt);
-            return -EINVAL;
-        }
-        const size_t len = (size_t)(q - p);
         if (cnt >= max) {
             free_partial_string_array(out, cnt);
             return -ERANGE;
         }
-        char *s = (char *)malloc(len + 1u);
-        if (!s) {
+        const int erc = json_dup_string_elem(&p, &out[cnt]);
+        if (erc != 0) {
             free_partial_string_array(out, cnt);
-            return -ENOMEM;
+            return erc;
         }
-        memcpy(s, p, len);
-        s[len] = '\0';
-        out[cnt++] = s;
-        p = q + 1;
+        ++cnt;
         while (*p && json_is_space(*p))
             p++;
         if (*p == ',') {
@@ -283,18 +315,10 @@ static int extract_string_array(const char *doc, const char *key, char **out, si
 static int extract_float_array(const char *doc, const char *key, float *out, size_t max,
                                size_t *out_n)
 {
-    char needle[64];
-    int n = snprintf(needle, sizeof(needle), "\"%s\"", key);
-    if (n < 0 || (size_t)n >= sizeof(needle))
-        return -EINVAL;
-    const char *p = find_key_in_doc(doc, needle, (size_t)n);
-    if (!p)
-        return -ENOENT;
-    while (*p && json_is_space(*p))
-        p++;
-    if (*p != '[')
-        return -EINVAL;
-    p++;
+    const char *p = NULL;
+    const int rc = json_array_begin(doc, key, &p);
+    if (rc != 0)
+        return rc;
 
     size_t cnt = 0u;
     while (*p) {
@@ -352,26 +376,29 @@ static int extract_int(const char *doc, const char *key, int *out)
     return 0;
 }
 
-int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
+/* Derive the sidecar JSON path from @p onnx_path: ".onnx" is replaced by
+ * ".json", any other suffix gets ".json" appended. Returns 0, or
+ * -ENAMETOOLONG when the result does not fit in @p out_sz. */
+static int sidecar_json_path(const char *onnx_path, char *out, size_t out_sz)
 {
-    if (!onnx_path || !out)
-        return -EINVAL;
-    memset(out, 0, sizeof(*out));
-    out->kind = VMAF_MODEL_KIND_DNN_FR;
-
-    char sidecar[4096];
-    size_t len = strlen(onnx_path);
-    if (len + 6 > sizeof(sidecar))
+    const size_t len = strlen(onnx_path);
+    if (len + 6 > out_sz)
         return -ENAMETOOLONG;
-    memcpy(sidecar, onnx_path, len);
+    memcpy(out, onnx_path, len);
     /* replace ".onnx" with ".json" */
     if (len >= 5 && strcmp(onnx_path + len - 5, ".onnx") == 0) {
-        memcpy(sidecar + len - 5, ".json", 5);
-        sidecar[len] = '\0';
+        memcpy(out + len - 5, ".json", 5);
+        out[len] = '\0';
     } else {
-        memcpy(sidecar + len, ".json", 6);
+        memcpy(out + len, ".json", 6);
     }
+    return 0;
+}
 
+/* Read the whole sidecar JSON into a NUL-terminated heap buffer owned by the
+ * caller. Returns 0 on success, or a negative errno. */
+static int slurp_sidecar_json(const char *sidecar, char **out_buf)
+{
     struct stat st;
     if (stat(sidecar, &st) == 0) {
         if (!S_ISREG(st.st_mode))
@@ -387,7 +414,7 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
         (void)fclose(f);
         return -EIO;
     }
-    long sz_raw = ftell(f);
+    const long sz_raw = ftell(f);
     if (sz_raw < 0 || (size_t)sz_raw > DNN_SIDECAR_JSON_MAX) {
         (void)fclose(f);
         return -EFBIG;
@@ -402,156 +429,205 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
         (void)fclose(f);
         return -ENOMEM;
     }
-    size_t r = fread(buf, 1u, sz, f);
+    const size_t r = fread(buf, 1u, sz, f);
     (void)fclose(f);
     if (r != sz) {
         free(buf);
         return -EIO;
     }
     assert(sz <= DNN_SIDECAR_JSON_MAX);
-    /* buf was allocated as sz + 1u bytes (line ~115), so buf[sz] is valid. The
+    /* buf was allocated as sz + 1u bytes just above, so buf[sz] is valid. The
      * analyzer loses this relationship across the fread path. */
     buf[sz] = '\0'; // NOLINT(clang-analyzer-security.ArrayBound)
+    *out_buf = buf;
+    return 0;
+}
 
-    char *kind_str = extract_string(buf, "kind");
-    if (kind_str) {
-        if (strcmp(kind_str, "nr") == 0) {
-            out->kind = VMAF_MODEL_KIND_DNN_NR;
-        } else if (strcmp(kind_str, "fr") == 0) {
-            out->kind = VMAF_MODEL_KIND_DNN_FR;
-        } else if (strcmp(kind_str, "filter") == 0) {
-            out->kind = VMAF_MODEL_KIND_DNN_FILTER;
-        }
-        free(kind_str);
+/* "kind": "nr" | "fr" | "filter" — anything else keeps the caller's default. */
+static void parse_sidecar_kind(const char *doc, VmafModelSidecar *out)
+{
+    char *kind_str = extract_string(doc, "kind");
+    if (!kind_str)
+        return;
+    if (strcmp(kind_str, "nr") == 0) {
+        out->kind = VMAF_MODEL_KIND_DNN_NR;
+    } else if (strcmp(kind_str, "fr") == 0) {
+        out->kind = VMAF_MODEL_KIND_DNN_FR;
+    } else if (strcmp(kind_str, "filter") == 0) {
+        out->kind = VMAF_MODEL_KIND_DNN_FILTER;
     }
-    out->name = extract_string(buf, "name");
-    out->input_name = extract_string(buf, "input_name");
-    out->output_name = extract_string(buf, "output_name");
+    free(kind_str);
+}
+
+/* Optional "output_names" array. A malformed array is non-fatal: the partial
+ * allocations are wiped and the model stays single-output. */
+static void parse_sidecar_output_names(const char *doc, VmafModelSidecar *out)
+{
     out->n_output_names = 0u;
     size_t n_output_names = 0u;
-    int orc = extract_string_array(buf, "output_names", out->output_names,
-                                   VMAF_DNN_MAX_OUTPUT_NAMES, &n_output_names);
+    const int orc = extract_string_array(doc, "output_names", out->output_names,
+                                         VMAF_DNN_MAX_OUTPUT_NAMES, &n_output_names);
     if (orc == 0 && n_output_names > 0u) {
         out->n_output_names = n_output_names;
     } else if (orc != -ENOENT && orc != 0) {
-        for (size_t i = 0; i < n_output_names; ++i) {
-            free(out->output_names[i]);
-            out->output_names[i] = NULL;
-        }
+        free_partial_string_array(out->output_names, n_output_names);
         out->n_output_names = 0u;
     }
-    (void)extract_int(buf, "onnx_opset", &out->opset);
+}
 
-    /* ADR-0173 / T5-3: optional quant_mode field (default fp32). */
+/* ADR-0173 / T5-3: optional quant_mode field (default fp32). */
+static void parse_sidecar_quant_mode(const char *doc, VmafModelSidecar *out)
+{
     out->quant_mode = VMAF_QUANT_FP32;
-    char *quant_str = extract_string(buf, "quant_mode");
-    if (quant_str) {
-        if (strcmp(quant_str, "dynamic") == 0) {
-            out->quant_mode = VMAF_QUANT_DYNAMIC;
-        } else if (strcmp(quant_str, "static") == 0) {
-            out->quant_mode = VMAF_QUANT_STATIC;
-        } else if (strcmp(quant_str, "qat") == 0) {
-            out->quant_mode = VMAF_QUANT_QAT;
-        }
-        /* Anything else (including "fp32" or junk) keeps the default. */
-        free(quant_str);
+    char *quant_str = extract_string(doc, "quant_mode");
+    if (!quant_str)
+        return;
+    if (strcmp(quant_str, "dynamic") == 0) {
+        out->quant_mode = VMAF_QUANT_DYNAMIC;
+    } else if (strcmp(quant_str, "static") == 0) {
+        out->quant_mode = VMAF_QUANT_STATIC;
+    } else if (strcmp(quant_str, "qat") == 0) {
+        out->quant_mode = VMAF_QUANT_QAT;
     }
+    /* Anything else (including "fp32" or junk) keeps the default. */
+    free(quant_str);
+}
 
-    /* ADR-0518: feature-vector tiny models carry their feature schema in
-     * the sidecar — feature names (in input-tensor order), per-feature
-     * scaler mean, per-feature scaler std. Two field-name conventions
-     * are accepted:
-     *
-     *   - ``feature_order`` / ``feature_mean`` / ``feature_std`` —
-     *     written by ``ai/scripts/train_fr_regressor_v2.py`` and the
-     *     v1 trainer.
-     *   - ``features`` / ``input_mean`` / ``input_std`` — written by
-     *     the ``vmaf_tiny_v*`` trainers (the scaler is baked into the
-     *     ONNX graph as Constant nodes, but the sidecar still echoes
-     *     the per-feature values for downstream tooling).
-     *
-     * Missing schema is non-fatal: the loader treats the model as a
-     * rank-4 NCHW image model and ``vmaf_ctx_dnn_attach`` enforces
-     * the rank-4 contract. */
+/* Per-feature scaler arrays for the schema parsed by
+ * parse_sidecar_feature_schema(). Sets out->has_feature_scaler when both
+ * arrays are present and their lengths match @p n_names. */
+static void parse_sidecar_feature_scaler(const char *doc, VmafModelSidecar *out, size_t n_names)
+{
+    size_t n_mean = 0u;
+    size_t n_std = 0u;
+    int mrc = extract_float_array(doc, "feature_mean", out->feature_mean,
+                                  VMAF_DNN_MAX_FEATURE_NAMES, &n_mean);
+    if (mrc == -ENOENT) {
+        mrc = extract_float_array(doc, "input_mean", out->feature_mean, VMAF_DNN_MAX_FEATURE_NAMES,
+                                  &n_mean);
+    }
+    int src = extract_float_array(doc, "feature_std", out->feature_std, VMAF_DNN_MAX_FEATURE_NAMES,
+                                  &n_std);
+    if (src == -ENOENT) {
+        src = extract_float_array(doc, "input_std", out->feature_std, VMAF_DNN_MAX_FEATURE_NAMES,
+                                  &n_std);
+    }
+    if (mrc == 0 && src == 0 && n_mean == n_names && n_std == n_names)
+        out->has_feature_scaler = true;
+}
+
+/* ADR-0518: feature-vector tiny models carry their feature schema in
+ * the sidecar — feature names (in input-tensor order), per-feature
+ * scaler mean, per-feature scaler std. Two field-name conventions
+ * are accepted:
+ *
+ *   - ``feature_order`` / ``feature_mean`` / ``feature_std`` —
+ *     written by ``ai/scripts/train_fr_regressor_v2.py`` and the
+ *     v1 trainer.
+ *   - ``features`` / ``input_mean`` / ``input_std`` — written by
+ *     the ``vmaf_tiny_v*`` trainers (the scaler is baked into the
+ *     ONNX graph as Constant nodes, but the sidecar still echoes
+ *     the per-feature values for downstream tooling).
+ *
+ * Missing schema is non-fatal: the loader treats the model as a
+ * rank-4 NCHW image model and ``vmaf_ctx_dnn_attach`` enforces
+ * the rank-4 contract. */
+static void parse_sidecar_feature_schema(const char *doc, VmafModelSidecar *out)
+{
     out->n_features = 0u;
     out->has_feature_scaler = false;
-    out->onnx_has_scaler = false;
     size_t n_names = 0u;
-    int frc = extract_string_array(buf, "feature_order", out->feature_names,
+    int frc = extract_string_array(doc, "feature_order", out->feature_names,
                                    VMAF_DNN_MAX_FEATURE_NAMES, &n_names);
     if (frc == -ENOENT) {
-        frc = extract_string_array(buf, "features", out->feature_names, VMAF_DNN_MAX_FEATURE_NAMES,
+        frc = extract_string_array(doc, "features", out->feature_names, VMAF_DNN_MAX_FEATURE_NAMES,
                                    &n_names);
     }
     if (frc == 0 && n_names > 0u) {
         out->n_features = n_names;
-        size_t n_mean = 0u;
-        size_t n_std = 0u;
-        int mrc = extract_float_array(buf, "feature_mean", out->feature_mean,
-                                      VMAF_DNN_MAX_FEATURE_NAMES, &n_mean);
-        if (mrc == -ENOENT) {
-            mrc = extract_float_array(buf, "input_mean", out->feature_mean,
-                                      VMAF_DNN_MAX_FEATURE_NAMES, &n_mean);
-        }
-        int src = extract_float_array(buf, "feature_std", out->feature_std,
-                                      VMAF_DNN_MAX_FEATURE_NAMES, &n_std);
-        if (src == -ENOENT) {
-            src = extract_float_array(buf, "input_std", out->feature_std,
-                                      VMAF_DNN_MAX_FEATURE_NAMES, &n_std);
-        }
-        if (mrc == 0 && src == 0 && n_mean == n_names && n_std == n_names) {
-            out->has_feature_scaler = true;
-        }
+        parse_sidecar_feature_scaler(doc, out, n_names);
     } else if (frc != -ENOENT && frc != 0) {
         /* Malformed array — wipe partial allocations to keep the
          * sidecar consistent. */
-        for (size_t i = 0; i < n_names; ++i) {
-            free(out->feature_names[i]);
-            out->feature_names[i] = NULL;
-        }
+        free_partial_string_array(out->feature_names, n_names);
         out->n_features = 0u;
     }
+}
 
-    /* "onnx_has_scaler": true — the ONNX graph already applies the
-     * StandardScaler as baked Constant nodes (ADR-0244 / vmaf_tiny_v2..v4).
-     * When present, the C runtime must skip re-applying has_feature_scaler to
-     * avoid double-scaling. The field is parsed as a bare JSON boolean; any
-     * non-"false" token in the value position is treated as true (the only
-     * value the trainers ever write is "true"). */
-    {
-        const char *p_os = strstr(buf, "\"onnx_has_scaler\"");
-        if (p_os) {
-            const char *colon_os = strchr(p_os, ':');
-            if (colon_os) {
-                const char *v_os = colon_os + 1;
-                while (*v_os && json_is_space(*v_os))
-                    v_os++;
-                if (strncmp(v_os, "true", 4) == 0)
-                    out->onnx_has_scaler = true;
-            }
-        }
-    }
+/* "onnx_has_scaler": true — the ONNX graph already applies the
+ * StandardScaler as baked Constant nodes (ADR-0244 / vmaf_tiny_v2..v4).
+ * When present, the C runtime must skip re-applying has_feature_scaler to
+ * avoid double-scaling. The field is parsed as a bare JSON boolean; any
+ * non-"false" token in the value position is treated as true (the only
+ * value the trainers ever write is "true"). */
+static void parse_sidecar_onnx_has_scaler(const char *doc, VmafModelSidecar *out)
+{
+    out->onnx_has_scaler = false;
+    const char *p_os = strstr(doc, "\"onnx_has_scaler\"");
+    if (!p_os)
+        return;
+    const char *colon_os = strchr(p_os, ':');
+    if (!colon_os)
+        return;
+    const char *v_os = colon_os + 1;
+    while (*v_os && json_is_space(*v_os))
+        v_os++;
+    if (strncmp(v_os, "true", 4) == 0)
+        out->onnx_has_scaler = true;
+}
 
-    /* ADR-0519: codec-aware models carry an encoder vocabulary in the
-     * sidecar so the CLI can validate --tiny-codec names and build the
-     * correct one-hot block. Missing = not codec-aware (non-fatal). */
+/* ADR-0519: codec-aware models carry an encoder vocabulary in the
+ * sidecar so the CLI can validate --tiny-codec names and build the
+ * correct one-hot block. Missing = not codec-aware (non-fatal). */
+static void parse_sidecar_encoder_vocab(const char *doc, VmafModelSidecar *out)
+{
     out->n_encoder_vocab = 0u;
     out->codec_aware = false;
     size_t n_vocab = 0u;
-    int vrc = extract_string_array(buf, "encoder_vocab", out->encoder_vocab,
-                                   VMAF_DNN_MAX_ENCODER_VOCAB, &n_vocab);
+    const int vrc = extract_string_array(doc, "encoder_vocab", out->encoder_vocab,
+                                         VMAF_DNN_MAX_ENCODER_VOCAB, &n_vocab);
     if (vrc == 0 && n_vocab > 0u) {
         out->n_encoder_vocab = n_vocab;
         out->codec_aware = true;
     } else if (vrc != -ENOENT && vrc != 0) {
         /* Malformed array — wipe partial allocations to keep the
          * sidecar consistent. */
-        for (size_t i = 0; i < n_vocab; ++i) {
-            free(out->encoder_vocab[i]);
-            out->encoder_vocab[i] = NULL;
-        }
+        free_partial_string_array(out->encoder_vocab, n_vocab);
         out->n_encoder_vocab = 0u;
     }
+}
+
+int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
+{
+    if (!onnx_path || !out)
+        return -EINVAL;
+    assert(onnx_path != NULL);
+    assert(out != NULL);
+    memset(out, 0, sizeof(*out));
+    out->kind = VMAF_MODEL_KIND_DNN_FR;
+
+    char sidecar[4096];
+    int rc = sidecar_json_path(onnx_path, sidecar, sizeof(sidecar));
+    if (rc != 0)
+        return rc;
+    assert(sidecar[0] != '\0');
+
+    char *buf = NULL;
+    rc = slurp_sidecar_json(sidecar, &buf);
+    if (rc != 0)
+        return rc;
+    assert(buf != NULL);
+
+    parse_sidecar_kind(buf, out);
+    out->name = extract_string(buf, "name");
+    out->input_name = extract_string(buf, "input_name");
+    out->output_name = extract_string(buf, "output_name");
+    parse_sidecar_output_names(buf, out);
+    (void)extract_int(buf, "onnx_opset", &out->opset);
+    parse_sidecar_quant_mode(buf, out);
+    parse_sidecar_feature_schema(buf, out);
+    parse_sidecar_onnx_has_scaler(buf, out);
+    parse_sidecar_encoder_vocab(buf, out);
 
     free(buf);
     return 0;
@@ -568,122 +644,136 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
  * note under libvmaf/src/dnn/.
  * ============================================================ */
 
+/* One (preset name → raw ordinal) row of an encoder's preset vocabulary. */
+typedef struct PresetOrdinal {
+    const char *preset; /* lower-case preset token */
+    float ordinal;      /* raw ordinal in [0, PRESET_MAX_ORD] */
+} PresetOrdinal;
+
+/* One encoder family: the encoder names that share @presets. Both arrays are
+ * NULL-terminated. */
+typedef struct EncoderPresetTable {
+    const char *const *encoders;
+    const PresetOrdinal *presets;
+} EncoderPresetTable;
+
+/* Highest ordinal in the normalised [0, 1] preset scale (see the trainer's
+ * `train_fr_regressor_v2.py::_preset_ordinal`). */
+#define PRESET_MAX_ORD 9.0f
+/* "medium" — the ordinal used whenever the encoder or the preset is unknown. */
+#define PRESET_DEFAULT_ORD 5.0f
+
+/* libx264 / libx265 share the same preset vocabulary. */
+static const char *const kEncX26x[] = {"libx264", "libx265", NULL};
+static const PresetOrdinal kPresetsX26x[] = {
+    {"ultrafast", 0.0f}, {"superfast", 1.0f}, {"veryfast", 2.0f}, {"faster", 3.0f},
+    {"fast", 4.0f},      {"medium", 5.0f},    {"slow", 6.0f},     {"slower", 7.0f},
+    {"veryslow", 8.0f},  {"placebo", 9.0f},   {NULL, 0.0f},
+};
+
+static const char *const kEncVvenc[] = {"libvvenc", NULL};
+static const PresetOrdinal kPresetsVvenc[] = {
+    {"faster", 1.0f}, {"fast", 3.0f},   {"medium", 5.0f},
+    {"slow", 7.0f},   {"slower", 8.0f}, {NULL, 0.0f},
+};
+
+/* libvpx-vp9 deadline strings. */
+static const char *const kEncVp9[] = {"libvpx-vp9", NULL};
+static const PresetOrdinal kPresetsVp9[] = {
+    {"realtime", 0.0f},
+    {"good", 5.0f},
+    {"best", 9.0f},
+    {NULL, 0.0f},
+};
+
+/* NVENC p1..p7. */
+static const char *const kEncNvenc[] = {"h264_nvenc", "hevc_nvenc", "av1_nvenc", NULL};
+static const PresetOrdinal kPresetsNvenc[] = {
+    {"p1", 0.0f}, {"p2", 2.0f}, {"p3", 3.0f}, {"p4", 5.0f},
+    {"p5", 6.0f}, {"p6", 7.0f}, {"p7", 9.0f}, {NULL, 0.0f},
+};
+
+/* Intel QSV (h264_qsv / hevc_qsv / av1_qsv). */
+static const char *const kEncQsv[] = {"h264_qsv", "hevc_qsv", "av1_qsv", NULL};
+static const PresetOrdinal kPresetsQsv[] = {
+    {"veryfast", 2.0f}, {"faster", 3.0f}, {"fast", 4.0f},     {"medium", 5.0f},
+    {"slow", 6.0f},     {"slower", 7.0f}, {"veryslow", 8.0f}, {NULL, 0.0f},
+};
+
+static const EncoderPresetTable kPresetTables[] = {
+    {kEncX26x, kPresetsX26x},   {kEncVvenc, kPresetsVvenc}, {kEncVp9, kPresetsVp9},
+    {kEncNvenc, kPresetsNvenc}, {kEncQsv, kPresetsQsv},     {NULL, NULL},
+};
+
+/* True when @p enc_lc appears in the NULL-terminated @p encoders list. */
+static bool encoder_in_family(const char *const *encoders, const char *enc_lc)
+{
+    for (size_t i = 0; encoders[i] != NULL; ++i) {
+        if (strcmp(encoders[i], enc_lc) == 0)
+            return true;
+    }
+    return false;
+}
+
+/* Return the preset vocabulary for @p enc_lc, or NULL when the encoder has
+ * no string preset table (unknown encoder, or libsvtav1's numeric presets). */
+static const PresetOrdinal *preset_table_for(const char *enc_lc)
+{
+    for (size_t t = 0; kPresetTables[t].encoders != NULL; ++t) {
+        if (encoder_in_family(kPresetTables[t].encoders, enc_lc))
+            return kPresetTables[t].presets;
+    }
+    return NULL;
+}
+
+/* libsvtav1 uses numeric presets 0..13; the trainer squashes them to 0..9.
+ * Returns the raw ordinal, or PRESET_DEFAULT_ORD when @p preset_lc is not a
+ * number in range. */
+static float svtav1_preset_ordinal(const char *preset_lc)
+{
+    char *endp = NULL;
+    errno = 0;
+    const long v = strtol(preset_lc, &endp, 10);
+    if (endp != preset_lc && errno == 0 && v >= 0 && v <= 13) {
+        const long clamped = v < 9 ? v : 9;
+        return (float)clamped;
+    }
+    return PRESET_DEFAULT_ORD;
+}
+
 /* Per-encoder preset table. Keys are lower-case; lookup returns the
  * normalised value in [0, 1]. Falls back to ordinal 5 (medium) when
  * either the encoder or the preset string is not known. */
 static float codec_block_preset_ordinal(const char *enc_lc, const char *preset_lc)
 {
-    static const float default_norm = 5.0f / 9.0f;
-    static const float max_ord = 9.0f;
-
     if (!enc_lc || !preset_lc)
-        return default_norm;
+        return PRESET_DEFAULT_ORD / PRESET_MAX_ORD;
 
-    /* libx264 / libx265 share the same preset vocabulary. */
-    if (strcmp(enc_lc, "libx264") == 0 || strcmp(enc_lc, "libx265") == 0) {
-        if (strcmp(preset_lc, "ultrafast") == 0)
-            return 0.0f / max_ord;
-        if (strcmp(preset_lc, "superfast") == 0)
-            return 1.0f / max_ord;
-        if (strcmp(preset_lc, "veryfast") == 0)
-            return 2.0f / max_ord;
-        if (strcmp(preset_lc, "faster") == 0)
-            return 3.0f / max_ord;
-        if (strcmp(preset_lc, "fast") == 0)
-            return 4.0f / max_ord;
-        if (strcmp(preset_lc, "medium") == 0)
-            return 5.0f / max_ord;
-        if (strcmp(preset_lc, "slow") == 0)
-            return 6.0f / max_ord;
-        if (strcmp(preset_lc, "slower") == 0)
-            return 7.0f / max_ord;
-        if (strcmp(preset_lc, "veryslow") == 0)
-            return 8.0f / max_ord;
-        if (strcmp(preset_lc, "placebo") == 0)
-            return 9.0f / max_ord;
-        return default_norm;
+    if (strcmp(enc_lc, "libsvtav1") == 0)
+        return svtav1_preset_ordinal(preset_lc) / PRESET_MAX_ORD;
+
+    const PresetOrdinal *table = preset_table_for(enc_lc);
+    if (table == NULL)
+        return PRESET_DEFAULT_ORD / PRESET_MAX_ORD;
+
+    for (size_t i = 0; table[i].preset != NULL; ++i) {
+        if (strcmp(table[i].preset, preset_lc) == 0)
+            return table[i].ordinal / PRESET_MAX_ORD;
     }
-    /* libsvtav1 uses numeric presets 0..13; trainer squashes to 0..9. */
-    if (strcmp(enc_lc, "libsvtav1") == 0) {
-        char *endp = NULL;
-        errno = 0;
-        const long v = strtol(preset_lc, &endp, 10);
-        if (endp != preset_lc && errno == 0 && v >= 0 && v <= 13) {
-            const long clamped = v < 9 ? v : 9;
-            return (float)clamped / max_ord;
-        }
-        return default_norm;
-    }
-    /* libvvenc */
-    if (strcmp(enc_lc, "libvvenc") == 0) {
-        if (strcmp(preset_lc, "faster") == 0)
-            return 1.0f / max_ord;
-        if (strcmp(preset_lc, "fast") == 0)
-            return 3.0f / max_ord;
-        if (strcmp(preset_lc, "medium") == 0)
-            return 5.0f / max_ord;
-        if (strcmp(preset_lc, "slow") == 0)
-            return 7.0f / max_ord;
-        if (strcmp(preset_lc, "slower") == 0)
-            return 8.0f / max_ord;
-        return default_norm;
-    }
-    /* libvpx-vp9 deadline strings */
-    if (strcmp(enc_lc, "libvpx-vp9") == 0) {
-        if (strcmp(preset_lc, "realtime") == 0)
-            return 0.0f / max_ord;
-        if (strcmp(preset_lc, "good") == 0)
-            return 5.0f / max_ord;
-        if (strcmp(preset_lc, "best") == 0)
-            return 9.0f / max_ord;
-        return default_norm;
-    }
-    /* NVENC p1..p7 */
-    if (strcmp(enc_lc, "h264_nvenc") == 0 || strcmp(enc_lc, "hevc_nvenc") == 0 ||
-        strcmp(enc_lc, "av1_nvenc") == 0) {
-        if (strcmp(preset_lc, "p1") == 0)
-            return 0.0f / max_ord;
-        if (strcmp(preset_lc, "p2") == 0)
-            return 2.0f / max_ord;
-        if (strcmp(preset_lc, "p3") == 0)
-            return 3.0f / max_ord;
-        if (strcmp(preset_lc, "p4") == 0)
-            return 5.0f / max_ord;
-        if (strcmp(preset_lc, "p5") == 0)
-            return 6.0f / max_ord;
-        if (strcmp(preset_lc, "p6") == 0)
-            return 7.0f / max_ord;
-        if (strcmp(preset_lc, "p7") == 0)
-            return 9.0f / max_ord;
-        return default_norm;
-    }
-    /* Intel QSV (h264_qsv / hevc_qsv / av1_qsv) */
-    if (strcmp(enc_lc, "h264_qsv") == 0 || strcmp(enc_lc, "hevc_qsv") == 0 ||
-        strcmp(enc_lc, "av1_qsv") == 0) {
-        if (strcmp(preset_lc, "veryfast") == 0)
-            return 2.0f / max_ord;
-        if (strcmp(preset_lc, "faster") == 0)
-            return 3.0f / max_ord;
-        if (strcmp(preset_lc, "fast") == 0)
-            return 4.0f / max_ord;
-        if (strcmp(preset_lc, "medium") == 0)
-            return 5.0f / max_ord;
-        if (strcmp(preset_lc, "slow") == 0)
-            return 6.0f / max_ord;
-        if (strcmp(preset_lc, "slower") == 0)
-            return 7.0f / max_ord;
-        if (strcmp(preset_lc, "veryslow") == 0)
-            return 8.0f / max_ord;
-        return default_norm;
-    }
-    return default_norm;
+    return PRESET_DEFAULT_ORD / PRESET_MAX_ORD;
 }
 
-/* Lower-case @p n bytes of @p s in place. */
+/* Lower-case @p n bytes of @p s in place.
+ *
+ * `(tolower)` is deliberately parenthesised: glibc's <ctype.h> defines
+ * `tolower` as a five-level nested macro, which pushes this loop past the
+ * ADR-1142 readability-function-size nesting budget purely as an artefact of
+ * the expansion. The parenthesised form suppresses macro expansion and calls
+ * the library function, which is behaviourally identical. */
 static void str_to_lower(char *s, size_t n)
 {
     for (size_t i = 0; i < n; ++i) {
-        s[i] = (char)tolower((unsigned char)s[i]);
+        s[i] = (char)(tolower)((unsigned char)s[i]);
     }
 }
 
@@ -704,6 +794,31 @@ static const char *resolve_codec_alias(const char *name_lc)
     if (strcmp(name_lc, "vvc") == 0 || strcmp(name_lc, "h266") == 0)
         return "libvvenc";
     return name_lc;
+}
+
+/* Copy @p src into @p dst (capacity @p dst_sz) lower-cased.
+ * Returns @p dst, or NULL when @p src is absent/empty or does not fit. */
+static const char *lower_copy(char *dst, size_t dst_sz, const char *src)
+{
+    if (!src || src[0] == '\0')
+        return NULL;
+    const size_t len = strlen(src);
+    if (len >= dst_sz)
+        return NULL;
+    memcpy(dst, src, len + 1u);
+    str_to_lower(dst, len);
+    return dst;
+}
+
+/* Find the one-hot slot for the alias-resolved codec key @p codec_lc.
+ * Returns the vocab index, or @p n_vocab when no slot matches. */
+static size_t codec_vocab_index(const char *const *vocab, size_t n_vocab, const char *codec_lc)
+{
+    for (size_t i = 0; i < n_vocab; ++i) {
+        if (vocab[i] && strcmp(vocab[i], codec_lc) == 0)
+            return i;
+    }
+    return n_vocab;
 }
 
 int vmaf_dnn_codec_block_fill(float *buf, size_t buf_len, const char *const *vocab, size_t n_vocab,
@@ -728,26 +843,16 @@ int vmaf_dnn_codec_block_fill(float *buf, size_t buf_len, const char *const *voc
     int found = 0;
 
     char name_lc[64];
-    const char *codec_lc = NULL;
+    const char *codec_lc = lower_copy(name_lc, sizeof(name_lc), codec_name);
 
-    if (codec_name && codec_name[0] != '\0') {
-        size_t nlen = strlen(codec_name);
-        if (nlen < sizeof(name_lc)) {
-            memcpy(name_lc, codec_name, nlen + 1u);
-            str_to_lower(name_lc, nlen);
-            codec_lc = resolve_codec_alias(name_lc);
-
-            for (size_t i = 0; i < n_vocab; ++i) {
-                if (!vocab[i])
-                    continue;
-                if (strcmp(vocab[i], codec_lc) == 0) {
-                    codec_idx = i;
-                    found = 1;
-                    break;
-                }
-            }
+    if (codec_lc) {
+        codec_lc = resolve_codec_alias(codec_lc);
+        const size_t hit = codec_vocab_index(vocab, n_vocab, codec_lc);
+        if (hit != n_vocab) {
+            codec_idx = hit;
+            found = 1;
         }
-    } else {
+    } else if (!codec_name || codec_name[0] == '\0') {
         /* NULL or empty codec name is a legitimate "unknown" tag. */
         found = 1;
     }
@@ -756,20 +861,13 @@ int vmaf_dnn_codec_block_fill(float *buf, size_t buf_len, const char *const *voc
 
     /* preset_norm: encoder-specific ordinal table, normalised by 9.0. */
     char preset_lc[64];
-    const char *preset_ptr = NULL;
-    if (preset && preset[0] != '\0') {
-        size_t plen = strlen(preset);
-        if (plen < sizeof(preset_lc)) {
-            memcpy(preset_lc, preset, plen + 1u);
-            str_to_lower(preset_lc, plen);
-            preset_ptr = preset_lc;
-        }
-    }
+    const char *preset_ptr = lower_copy(preset_lc, sizeof(preset_lc), preset);
+
     const char *enc_key = codec_lc ? codec_lc : "";
     buf[n_vocab] = codec_block_preset_ordinal(enc_key, preset_ptr);
 
     /* crf_norm: clamp to [0, 63] then divide. */
-    int crf_clamped = crf < 0 ? 0 : (crf > 63 ? 63 : crf);
+    const int crf_clamped = crf < 0 ? 0 : (crf > 63 ? 63 : crf);
     buf[n_vocab + 1u] = (float)crf_clamped / 63.0f;
 
     return found ? 0 : -ENOENT;
@@ -854,7 +952,12 @@ int vmaf_dnn_validate_onnx(const char *path, size_t max_bytes)
 
     /* Cache environment variables once per function call to avoid repeated
      * unsafe getenv() calls in multithreaded contexts (getenv is not required
-     * to be thread-safe by C99, and glibc's implementation is known to race). */
+     * to be thread-safe by C99, and glibc's implementation is known to race).
+     * ADR-0461 caller-contract: no other thread calls setenv("VMAF_*")
+     * concurrently with this read. A pthread_once snapshot (the
+     * gpu_dispatch_env posture) is deliberately NOT used here — the tiny-model
+     * tests setenv() this variable between cases and must observe each value. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0461 caller-contract. */
     const char *jail_dir = getenv("VMAF_TINY_MODEL_DIR");
 
     /* Optional chroot-style path jail via VMAF_TINY_MODEL_DIR. Applied
@@ -1069,99 +1172,66 @@ static int locate_cosign(const char *path_env, char *out, size_t out_sz)
     return -EACCES;
 }
 
-int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path)
+/* Registry path used when the caller passes registry_path == NULL:
+ * <dirname(onnx_path)>/registry.json, or model/tiny/registry.json when
+ * @p onnx_path carries no directory component. */
+static int default_registry_path(const char *onnx_path, char *out, size_t out_sz)
 {
-    if (!onnx_path)
-        return -EINVAL;
-    assert(onnx_path != NULL);
-
-    /* Default registry: <dirname(onnx_path)>/registry.json. */
-    char default_reg[PATH_MAX];
-    const char *reg_path = registry_path;
-    if (!reg_path) {
-        const char *slash = strrchr(onnx_path, '/');
-        if (slash) {
-            const size_t dlen = (size_t)(slash - onnx_path);
-            if (dlen + sizeof("/registry.json") > sizeof(default_reg))
-                return -ENAMETOOLONG;
-            assert(dlen < sizeof(default_reg));
-            memcpy(default_reg, onnx_path, dlen);
-            (void)snprintf(default_reg + dlen, sizeof(default_reg) - dlen, "/registry.json");
-        } else {
-            const int n = snprintf(default_reg, sizeof(default_reg), "model/tiny/registry.json");
-            if (n < 0 || (size_t)n >= sizeof(default_reg))
-                return -ENAMETOOLONG;
-        }
-        reg_path = default_reg;
+    const char *slash = strrchr(onnx_path, '/');
+    if (slash) {
+        const size_t dlen = (size_t)(slash - onnx_path);
+        if (dlen + sizeof("/registry.json") > out_sz)
+            return -ENAMETOOLONG;
+        assert(dlen < out_sz);
+        memcpy(out, onnx_path, dlen);
+        (void)snprintf(out + dlen, out_sz - dlen, "/registry.json");
+        return 0;
     }
-    assert(reg_path != NULL);
+    const int n = snprintf(out, out_sz, "model/tiny/registry.json");
+    if (n < 0 || (size_t)n >= out_sz)
+        return -ENAMETOOLONG;
+    return 0;
+}
 
-    char *reg_buf = NULL;
-    int err = slurp_registry(reg_path, &reg_buf);
-    if (err != 0)
-        return err;
-    assert(reg_buf != NULL);
-
-    const char *base = path_basename(onnx_path);
-    assert(base != NULL);
-    char bundle_rel[PATH_MAX];
-    err = find_bundle_for_onnx(reg_buf, base, bundle_rel, sizeof(bundle_rel));
-    free(reg_buf);
-    if (err != 0)
-        return err;
-    assert(bundle_rel[0] != '\0');
-
-    /* Resolve the bundle path relative to the registry's directory.
-     *
-     * We use memcpy() instead of snprintf("%s", ...) for the rel-component
-     * copy: gcc's -Wformat-truncation cannot prove the destination is wide
-     * enough (it sees `bundle_rel` as a PATH_MAX-sized buffer and the
-     * destination tail as up to `sizeof(bundle_abs) - 1`, then warns about
-     * a theoretical 4095-byte truncation even though the explicit
-     * length-precondition above rules it out at runtime). memcpy + an
-     * explicit NUL keeps the bounds check load-bearing without the false
-     * positive. */
-    char bundle_abs[PATH_MAX];
+/* Resolve @p bundle_rel against the directory of @p reg_path.
+ *
+ * We use memcpy() instead of snprintf("%s", ...) for the rel-component
+ * copy: gcc's -Wformat-truncation cannot prove the destination is wide
+ * enough (it sees `bundle_rel` as a PATH_MAX-sized buffer and the
+ * destination tail as up to `out_sz - 1`, then warns about a theoretical
+ * 4095-byte truncation even though the explicit length-precondition here
+ * rules it out at runtime). memcpy + an explicit NUL keeps the bounds check
+ * load-bearing without the false positive. */
+static int resolve_bundle_abs(const char *reg_path, const char *bundle_rel, char *out,
+                              size_t out_sz)
+{
+    const size_t blen = strlen(bundle_rel);
     const char *reg_slash = strrchr(reg_path, '/');
-    if (reg_slash) {
-        const size_t dlen = (size_t)(reg_slash - reg_path);
-        const size_t blen = strlen(bundle_rel);
-        if (dlen + 1u + blen + 1u > sizeof(bundle_abs))
+    if (!reg_slash) {
+        if (blen + 1u > out_sz)
             return -ENAMETOOLONG;
-        assert(dlen < sizeof(bundle_abs));
-        memcpy(bundle_abs, reg_path, dlen);
-        bundle_abs[dlen] = '/';
-        memcpy(bundle_abs + dlen + 1u, bundle_rel, blen);
-        bundle_abs[dlen + 1u + blen] = '\0';
-    } else {
-        const size_t blen = strlen(bundle_rel);
-        if (blen + 1u > sizeof(bundle_abs))
-            return -ENAMETOOLONG;
-        memcpy(bundle_abs, bundle_rel, blen);
-        bundle_abs[blen] = '\0';
+        memcpy(out, bundle_rel, blen);
+        out[blen] = '\0';
+        return 0;
     }
-    assert(bundle_abs[0] != '\0');
+    const size_t dlen = (size_t)(reg_slash - reg_path);
+    if (dlen + 1u + blen + 1u > out_sz)
+        return -ENAMETOOLONG;
+    assert(dlen < out_sz);
+    memcpy(out, reg_path, dlen);
+    out[dlen] = '/';
+    memcpy(out + dlen + 1u, bundle_rel, blen);
+    out[dlen + 1u + blen] = '\0';
+    return 0;
+}
 
-    /* The bundle file must exist before we even invoke cosign — otherwise
-     * cosign's error message is opaque. Fail-closed: missing bundle = no
-     * trust. */
-    struct stat bst;
-    if (stat(bundle_abs, &bst) != 0)
-        return -ENOENT;
-    if (!S_ISREG(bst.st_mode))
-        return -ENOENT;
-
-    /* Cache environment variables once per function call to avoid repeated
-     * unsafe getenv() calls in multithreaded contexts (getenv is not required
-     * to be thread-safe by C99, and glibc's implementation is known to race). */
-    const char *path_env = getenv("PATH");
-
-    char cosign_path[PATH_MAX];
-    err = locate_cosign(path_env, cosign_path, sizeof(cosign_path));
-    if (err != 0)
-        return err;
-    assert(cosign_path[0] != '\0');
-
+/* Spawn `cosign verify-blob` on @p onnx_path with @p bundle_abs and wait for
+ * it. Returns 0 only when cosign exits 0 (fail-closed).
+ *
+ * The certificate-identity-regexp + oidc-issuer mirror docs/ai/security.md;
+ * they pin verification to VMAFx/vmafx's supply-chain workflow identity. */
+static int run_cosign_verify(const char *cosign_path, const char *bundle_abs, const char *onnx_path)
+{
     /* Build the --bundle=<path> argument. */
     char bundle_arg[PATH_MAX + 16];
     const int n = snprintf(bundle_arg, sizeof(bundle_arg), "--bundle=%s", bundle_abs);
@@ -1169,9 +1239,6 @@ int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path)
         return -ENAMETOOLONG;
     assert((size_t)n < sizeof(bundle_arg));
 
-    /* posix_spawnp argv. The certificate-identity-regexp + oidc-issuer
-     * mirror docs/ai/security.md; they pin verification to
-     * VMAFx/vmafx's supply-chain workflow identity. */
     char *argv[] = {
         (char *)"cosign",
         (char *)"verify-blob",
@@ -1198,4 +1265,79 @@ int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path)
         return -EPROTO;
     return 0;
 }
+
+/* Look @p onnx_path's basename up in the registry (defaulting to
+ * <dirname(onnx_path)>/registry.json when @p registry_path is NULL) and
+ * write the absolute path of its cosign bundle into @p out. */
+static int lookup_bundle_abs(const char *onnx_path, const char *registry_path, char *out,
+                             size_t out_sz)
+{
+    /* Default registry: <dirname(onnx_path)>/registry.json. */
+    char default_reg[PATH_MAX];
+    const char *reg_path = registry_path;
+    if (!reg_path) {
+        const int prc = default_registry_path(onnx_path, default_reg, sizeof(default_reg));
+        if (prc != 0)
+            return prc;
+        reg_path = default_reg;
+    }
+    assert(reg_path != NULL);
+
+    char *reg_buf = NULL;
+    int err = slurp_registry(reg_path, &reg_buf);
+    if (err != 0)
+        return err;
+    assert(reg_buf != NULL);
+
+    const char *base = path_basename(onnx_path);
+    assert(base != NULL);
+    char bundle_rel[PATH_MAX];
+    err = find_bundle_for_onnx(reg_buf, base, bundle_rel, sizeof(bundle_rel));
+    free(reg_buf);
+    if (err != 0)
+        return err;
+    assert(bundle_rel[0] != '\0');
+
+    return resolve_bundle_abs(reg_path, bundle_rel, out, out_sz);
+}
+
+int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path)
+{
+    if (!onnx_path)
+        return -EINVAL;
+    assert(onnx_path != NULL);
+
+    char bundle_abs[PATH_MAX];
+    int err = lookup_bundle_abs(onnx_path, registry_path, bundle_abs, sizeof(bundle_abs));
+    if (err != 0)
+        return err;
+    assert(bundle_abs[0] != '\0');
+
+    /* The bundle file must exist before we even invoke cosign — otherwise
+     * cosign's error message is opaque. Fail-closed: missing bundle = no
+     * trust. */
+    struct stat bst;
+    if (stat(bundle_abs, &bst) != 0)
+        return -ENOENT;
+    if (!S_ISREG(bst.st_mode))
+        return -ENOENT;
+
+    /* Cache environment variables once per function call to avoid repeated
+     * unsafe getenv() calls in multithreaded contexts (getenv is not required
+     * to be thread-safe by C99, and glibc's implementation is known to race).
+     * ADR-0461 caller-contract: no other thread calls setenv("PATH")
+     * concurrently with this read. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0461 caller-contract. */
+    const char *path_env = getenv("PATH");
+
+    char cosign_path[PATH_MAX];
+    err = locate_cosign(path_env, cosign_path, sizeof(cosign_path));
+    if (err != 0)
+        return err;
+    assert(cosign_path[0] != '\0');
+
+    return run_cosign_verify(cosign_path, bundle_abs, onnx_path);
+}
 #endif /* !_WIN32 */
+
+/* NOLINTEND(modernize-use-nullptr) */

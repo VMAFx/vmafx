@@ -16,14 +16,26 @@ fi
 
 # Probe whether the binary was compiled with DNN support. When
 # -Denable_dnn=disabled (or auto resolves to disabled because ORT was not
-# found at configure time), `vmaf --tiny-model /dev/null` emits "built
-# without DNN support" to stderr and exits non-zero. Detect that here and
-# skip rather than fail — the test exercises the DNN surface and has nothing
-# meaningful to assert when DNN is absent.
-dnn_probe="$("$VMAF_BIN" --tiny-model /dev/null 2>&1 || true)"
-if printf '%s\n' "$dnn_probe" | grep -q 'without DNN support'; then
-  echo "libvmaf built without DNN support; skipping DNN CLI smoke" >&2
-  exit 77 # meson's "skipped"
+# found at configure time), the CLI emits "built without DNN support" and
+# exits non-zero. Detect that here and skip rather than fail — the test
+# exercises the DNN surface and has nothing meaningful to assert when DNN is
+# absent.
+#
+# The probe must be an otherwise *valid* invocation: `configure_tiny_model()`
+# in core/tools/vmaf.cpp runs after argument validation and after the input
+# files are opened, so a bare `vmaf --tiny-model /dev/null` dies on
+# "Reference .y4m or .yuv (-r/--reference) is required" and never reaches the
+# DNN-availability check. The probe therefore feeds the real distorted fixture
+# through `--no-reference` and only points `--tiny-model` at /dev/null.
+DIST_YUV="python/test/resource/yuv/src01_hrc01_576x324.yuv"
+if [[ -f "$DIST_YUV" ]]; then
+  dnn_probe="$("$VMAF_BIN" --no-reference --tiny-model /dev/null \
+    --distorted "$DIST_YUV" --width 576 --height 324 \
+    --pixel_format 420 --bitdepth 8 --frame_cnt 1 2>&1 || true)"
+  if printf '%s\n' "$dnn_probe" | grep -q 'without DNN support'; then
+    echo "libvmaf built without DNN support; skipping DNN CLI smoke" >&2
+    exit 77 # meson's "skipped"
+  fi
 fi
 
 # `vmaf --help` exits with 1 by convention, so capture the output first
@@ -112,7 +124,6 @@ fi
 # (a) the legacy reference-required diagnostic does NOT fire, (b) the
 # loader-side error does NOT surface, and (c) the JSON output carries
 # the NR model's feature column.
-DIST_YUV="python/test/resource/yuv/src01_hrc01_576x324.yuv"
 if [[ -f "$DIST_YUV" && -f model/tiny/nr_metric_v1.onnx ]]; then
   json_out="$(mktemp -t vmaf_nr_smoke_XXXXXX.json)"
   if ! nr_dist_out="$("$VMAF_BIN" --no-reference --tiny-model model/tiny/nr_metric_v1.onnx \
