@@ -84,26 +84,37 @@ static int feed_frame(VmafContext *vmaf)
     return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
 }
 
-static char *run_cpu_vif(double *scale0)
+static char *run_cpu_vif(double *scale0, int skip_scale0)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "vif", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    if (skip_scale0) {
+        err = vmaf_feature_dictionary_set(&opts, "vif_skip_scale0", "true");
+        mu_assert("CPU: dictionary_set(vif_skip_scale0) failed", !err);
+    }
+    err = vmaf_use_feature(vmaf, "vif", opts);
     mu_assert("CPU: vmaf_use_feature(vif) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("CPU: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_vif_scale0_score", scale0, 0u);
+    /* With vif_skip_scale0 set, the score is filed under the derived key: the
+     * alias of "VMAF_integer_feature_vif_scale0_score" is "integer_vif_scale0"
+     * and the option alias "ssclz" is appended. Same spelling
+     * core/test/test_vif_skip_scale0.c uses for the CPU ground truth. */
+    err = vmaf_feature_score_at_index(
+        vmaf, skip_scale0 ? "integer_vif_scale0_ssclz" : "VMAF_integer_feature_vif_scale0_score",
+        scale0, 0u);
     mu_assert("CPU: vif_scale0 missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
     return NULL;
 }
 
-static char *run_sycl_vif(double *scale0)
+static char *run_sycl_vif(double *scale0, int skip_scale0)
 {
     *scale0 = NAN;
     VmafSyclState *sycl_state = NULL;
@@ -119,13 +130,24 @@ static char *run_sycl_vif(double *scale0)
     mu_assert("SYCL: vmaf_init failed", !err);
     err = vmaf_sycl_import_state(vmaf, sycl_state);
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "vif_sycl", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    if (skip_scale0) {
+        err = vmaf_feature_dictionary_set(&opts, "vif_skip_scale0", "true");
+        mu_assert("SYCL: dictionary_set(vif_skip_scale0) failed", !err);
+    }
+    err = vmaf_use_feature(vmaf, "vif_sycl", opts);
     mu_assert("SYCL: vmaf_use_feature(vif_sycl) failed", !err);
     err = feed_frame(vmaf);
     mu_assert("SYCL: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_vif_scale0_score", scale0, 0u);
+    /* With vif_skip_scale0 set, the score is filed under the derived key: the
+     * alias of "VMAF_integer_feature_vif_scale0_score" is "integer_vif_scale0"
+     * and the option alias "ssclz" is appended. Same spelling
+     * core/test/test_vif_skip_scale0.c uses for the CPU ground truth. */
+    err = vmaf_feature_score_at_index(
+        vmaf, skip_scale0 ? "integer_vif_scale0_ssclz" : "VMAF_integer_feature_vif_scale0_score",
+        scale0, 0u);
     mu_assert("SYCL: vif_scale0 missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
@@ -145,10 +167,10 @@ static char *test_vif_cpu_sycl_parity(void)
 {
     double cpu = 0.0;
     double gpu = NAN;
-    char *msg = run_cpu_vif(&cpu);
+    char *msg = run_cpu_vif(&cpu, 0);
     if (msg)
         return msg;
-    msg = run_sycl_vif(&gpu);
+    msg = run_sycl_vif(&gpu, 0);
     if (msg)
         return msg;
     if (isnan(gpu))
@@ -163,9 +185,42 @@ static char *test_vif_cpu_sycl_parity(void)
     return NULL;
 }
 
+/* vif_skip_scale0 must reach the emission site, not just the aggregate.
+ *
+ * The CPU never computes scale 0 in this mode and publishes 0.0 for its score
+ * (integer_vif.c::write_scale_scores, which is not debug-gated). The SYCL
+ * kernel computes all four scales regardless -- the flag only excludes scale 0
+ * from the aggregate -- so without an explicit check at the emission site it
+ * publishes a real ratio under a key the CPU, CUDA, HIP and Metal twins all
+ * report as 0. The default-only parity test above cannot see this: with the
+ * option unset both sides emit the same real ratio. */
+static char *test_vif_skip_scale0_score_is_zero(void)
+{
+    double cpu = 0.0;
+    double gpu = 0.0;
+
+    char *msg = run_cpu_vif(&cpu, 1);
+    if (msg)
+        return msg;
+    msg = run_sycl_vif(&gpu, 1);
+    if (msg)
+        return msg;
+    if (isnan(gpu))
+        return NULL; /* no SYCL device — run_sycl_vif already reported the skip */
+
+    if (cpu != 0.0 || gpu != 0.0)
+        (void)fprintf(stderr,
+                      "\nvif_skip_scale0 scale0_score: cpu=%.8f sycl=%.8f (both must be 0)\n", cpu,
+                      gpu);
+    mu_assert("vif_skip_scale0: CPU scale0_score must be exactly 0.0", cpu == 0.0);
+    mu_assert("vif_skip_scale0: SYCL scale0_score must be exactly 0.0", gpu == 0.0);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_vif_sycl_registered);
     mu_run_test(test_vif_cpu_sycl_parity);
+    mu_run_test(test_vif_skip_scale0_score_is_zero);
     return NULL;
 }
