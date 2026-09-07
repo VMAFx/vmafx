@@ -353,11 +353,19 @@ __device__ static __forceinline__ float fadm_warp_reduce(float v)
     return v;
 }
 
+/* p-norm accumulation, mirroring adm_tools.c exactly: the CPU special-cases
+ * p == 3 to a literal cube and only falls back to powf() otherwise, so the
+ * default path stays bit-identical. ADR-1220. */
+__device__ static __forceinline__ float fadm_pnorm_term(float x, float p_norm)
+{
+    return (p_norm == 3.0f) ? (x * x * x) : powf(x, p_norm);
+}
+
 __global__ void float_adm_csf_cm(const float *ref_band, const float *dis_band, const float *csf_a,
                                  const float *csf_f, float *accum_out, int half_w, int half_h,
                                  int buf_stride, int active_left, int active_top, int active_right,
                                  int active_bottom, float rfactor_h, float rfactor_v,
-                                 float rfactor_d, float gain_limit)
+                                 float rfactor_d, float gain_limit, float p_norm, int bypass_cm)
 {
     const int active_h = active_bottom - active_top;
     const int active_w = active_right - active_left;
@@ -387,7 +395,7 @@ __global__ void float_adm_csf_cm(const float *ref_band, const float *dis_band, c
         const float src_ref =
             fadm_read_band_at(ref_band, (int)band_idx + 1, row, col, buf_stride, half_h);
         const float csf_o = fabsf(rfactor_band * src_ref);
-        local_csf_sum += csf_o * csf_o * csf_o;
+        local_csf_sum += fadm_pnorm_term(csf_o, p_norm);
 
         /* Re-derive decoupled-r value inline (cheaper than reading
          * csf_a back and reconstructing — see Vulkan kernel for the
@@ -423,31 +431,35 @@ __global__ void float_adm_csf_cm(const float *ref_band, const float *dis_band, c
          * (1/15)·|csf_a centre| for each of the 3 bands — matches the
          * CPU `ADM_CM_THRESH_S_I_J` macro's 3-band aggregate. */
         float thr = 0.0f;
+        /* adm_bypass_cm skips the masking threshold entirely, exactly as
+         * adm_tools.c::adm_cm_accum_px_s does. ADR-1220. */
+        if (bypass_cm == 0) {
 #pragma unroll
-        for (int b = 0; b < FADM_NUM_BANDS; b++) {
+            for (int b = 0; b < FADM_NUM_BANDS; b++) {
 #pragma unroll
-            for (int dy = -1; dy <= 1; dy++) {
+                for (int dy = -1; dy <= 1; dy++) {
 #pragma unroll
-                for (int dx = -1; dx <= 1; dx++) {
-                    if (dx == 0 && dy == 0)
-                        continue;
-                    thr += fadm_read_csf_f_at(csf_f, b, row + dy, col + dx, half_w, half_h,
-                                              buf_stride);
+                    for (int dx = -1; dx <= 1; dx++) {
+                        if (dx == 0 && dy == 0)
+                            continue;
+                        thr += fadm_read_csf_f_at(csf_f, b, row + dy, col + dx, half_w, half_h,
+                                                  buf_stride);
+                    }
                 }
             }
+            const float own_h = fadm_read_csf_a_at(csf_a, 0, row, col, half_w, half_h, buf_stride);
+            const float own_v = fadm_read_csf_a_at(csf_a, 1, row, col, half_w, half_h, buf_stride);
+            const float own_d = fadm_read_csf_a_at(csf_a, 2, row, col, half_w, half_h, buf_stride);
+            thr += FADM_ONE_BY_15 * fabsf(own_h);
+            thr += FADM_ONE_BY_15 * fabsf(own_v);
+            thr += FADM_ONE_BY_15 * fabsf(own_d);
         }
-        const float own_h = fadm_read_csf_a_at(csf_a, 0, row, col, half_w, half_h, buf_stride);
-        const float own_v = fadm_read_csf_a_at(csf_a, 1, row, col, half_w, half_h, buf_stride);
-        const float own_d = fadm_read_csf_a_at(csf_a, 2, row, col, half_w, half_h, buf_stride);
-        thr += FADM_ONE_BY_15 * fabsf(own_h);
-        thr += FADM_ONE_BY_15 * fabsf(own_v);
-        thr += FADM_ONE_BY_15 * fabsf(own_d);
 
         const float x_val = rfactor_band * r_val;
         float xa = fabsf(x_val) - thr;
         if (xa < 0.0f)
             xa = 0.0f;
-        local_cm_sum += xa * xa * xa;
+        local_cm_sum += fadm_pnorm_term(xa, p_norm);
     }
 
     /* Warp + cross-warp reduction. */
@@ -556,7 +568,7 @@ __global__ void float_adm_aim_cm(const float *ref_band, const float *dis_band,
                                  int half_w, int half_h, int buf_stride, int active_left,
                                  int active_top, int active_right, int active_bottom,
                                  float rfactor_h, float rfactor_v, float rfactor_d,
-                                 float gain_limit)
+                                 float gain_limit, float p_norm, int bypass_cm)
 {
     const int active_h = active_bottom - active_top;
     const int active_w = active_right - active_left;
@@ -613,25 +625,32 @@ __global__ void float_adm_aim_cm(const float *ref_band, const float *dis_band,
         /* AIM CM threshold: cross-band aggregate using aim csf buffers
          * (derived from decouple_r) — identical structure to stage 3. */
         float thr = 0.0f;
+        /* adm_bypass_cm applies to the AIM CM too: adm.c passes it to both
+         * adm_cm() calls. ADR-1220. */
+        if (bypass_cm == 0) {
 #pragma unroll
-        for (int b = 0; b < FADM_NUM_BANDS; b++) {
+            for (int b = 0; b < FADM_NUM_BANDS; b++) {
 #pragma unroll
-            for (int dy = -1; dy <= 1; dy++) {
+                for (int dy = -1; dy <= 1; dy++) {
 #pragma unroll
-                for (int dx = -1; dx <= 1; dx++) {
-                    if (dx == 0 && dy == 0)
-                        continue;
-                    thr += fadm_read_csf_f_at(csf_f_aim, b, row + dy, col + dx, half_w, half_h,
-                                              buf_stride);
+                    for (int dx = -1; dx <= 1; dx++) {
+                        if (dx == 0 && dy == 0)
+                            continue;
+                        thr += fadm_read_csf_f_at(csf_f_aim, b, row + dy, col + dx, half_w, half_h,
+                                                  buf_stride);
+                    }
                 }
             }
+            const float own_h =
+                fadm_read_csf_a_at(csf_a_aim, 0, row, col, half_w, half_h, buf_stride);
+            const float own_v =
+                fadm_read_csf_a_at(csf_a_aim, 1, row, col, half_w, half_h, buf_stride);
+            const float own_d =
+                fadm_read_csf_a_at(csf_a_aim, 2, row, col, half_w, half_h, buf_stride);
+            thr += FADM_ONE_BY_15 * fabsf(own_h);
+            thr += FADM_ONE_BY_15 * fabsf(own_v);
+            thr += FADM_ONE_BY_15 * fabsf(own_d);
         }
-        const float own_h = fadm_read_csf_a_at(csf_a_aim, 0, row, col, half_w, half_h, buf_stride);
-        const float own_v = fadm_read_csf_a_at(csf_a_aim, 1, row, col, half_w, half_h, buf_stride);
-        const float own_d = fadm_read_csf_a_at(csf_a_aim, 2, row, col, half_w, half_h, buf_stride);
-        thr += FADM_ONE_BY_15 * fabsf(own_h);
-        thr += FADM_ONE_BY_15 * fabsf(own_v);
-        thr += FADM_ONE_BY_15 * fabsf(own_d);
 
         /* CM: (|rfactor * a_val| - thr)_+^3; noise_weight=0 so no
          * noise constant — mirrors `adm_cm_s` with noise_weight=0. */
@@ -639,7 +658,7 @@ __global__ void float_adm_aim_cm(const float *ref_band, const float *dis_band,
         float xa = fabsf(x_val) - thr;
         if (xa < 0.0f)
             xa = 0.0f;
-        local_aim_cm += xa * xa * xa;
+        local_aim_cm += fadm_pnorm_term(xa, p_norm);
     }
 
     /* Warp + cross-warp reduction — same pattern as stage 3. */
