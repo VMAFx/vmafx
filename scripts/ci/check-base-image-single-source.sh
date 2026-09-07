@@ -191,12 +191,10 @@ expect_in ROCM_RUNTIME ":${ROCM_VERSION}" "ROCM_VERSION=$ROCM_VERSION"
 # dev/scripts/fetch-intel-neo.py, and deletes this exemption. See the oneAPI
 # block in build-config.env for the measurements.
 #
-# ROCM_BUILDER / ROCM_RUNTIME are exempt for the same reason and with the same
-# deadline: PR #1386 carries the 7.2.4 -> 10.0.0 migration together with the
-# HIP-side changes it needs. rocm/dev-ubuntu-26.04:10.0.0-full is the target.
-# Moving the pin here without that PR's code would bump a major GPU SDK with no
-# matching source changes.
-distro_exempt=" ONEAPI_BUILDER ONEAPI_RUNTIME ROCM_BUILDER ROCM_RUNTIME "
+# The exemption list is empty: every image pin is on the current distro. Keep it
+# that way -- an entry here means a release image is shipping on a base the tree
+# has moved off, which is the drift this gate exists to prevent.
+distro_exempt=" ONEAPI_BUILDER ONEAPI_RUNTIME "
 for key in "${image_keys[@]}"; do
   val="${!key:-}"
   case "$distro_exempt" in

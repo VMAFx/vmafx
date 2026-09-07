@@ -68,7 +68,7 @@ falls back to CPU. Two hard pins live in `dev/Containerfile`:
   reintroduce `GMMLIB_VER` or `IGC_VER` ARGs. The matching `gmmlib` and `IGC`
   deb packages are dynamically derived and verified against published sha256
   checksums at build time by `dev/scripts/fetch-intel-neo.py`.
-- **The digest-pinned `rocm-src` stage** (`rocm/dev-ubuntu-24.04:10.0.0-full`)
+- **The digest-pinned `rocm-src` stage** (`rocm/dev-ubuntu-26.04:10.0.0-full`)
   replaces the old `ARG ROCM_VER` + `repo.radeon.com/rocm/apt/` install.
   **Invariant (ADR-1225)**: do not "restore" the apt path. Since ROCm 7.14
   AMD builds and releases through TheRock; the apt channel tops out at 7.2.4

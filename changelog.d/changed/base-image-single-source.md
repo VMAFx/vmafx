@@ -26,3 +26,9 @@
   Dockerfile mirror in one PR. Its built-in `dockerfile` manager understands
   `ARG X=image` + `FROM $X` and would otherwise have updated only the mirrors,
   failing the new gate on Renovate's own pull requests.
+- ROCm images move to the Ubuntu 26.04 variant of 10.0.0. The libraries are
+  copied out of the vendor image into a Debian 13 runtime, so this was checked
+  rather than assumed: the `/opt/rocm/core-10.0/lib` layout is identical in both
+  variants and the copied closure needs at most `GLIBC_2.28` against Debian 13's
+  2.41. No release image is on Ubuntu 24.04 any more except oneAPI, whose
+  migration is tracked separately.
