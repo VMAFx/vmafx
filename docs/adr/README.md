@@ -1065,3 +1065,4 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1207](1207-feature-isa-invariance-gate.md) | A test gates every feature's score against the host instruction set | Proposed | testing, simd, correctness, ci, reproducibility |
 | [ADR-1208](1208-ssimulacra2-edge-diff-double-subtract.md) | The ssimulacra2 edge-diff SIMD loops take their difference in double | Proposed | simd, correctness, feature-extractor, reproducibility |
 | [ADR-1222](1222-code-scanning-alert-triage-and-scope.md) | In-code suppressions do not close code-scanning alerts; scope the scan instead | Proposed | ci, security, docs, mcp |
+| [ADR-1224](1224-cuda-tile-not-adopted.md) | CUDA Tile C++ is not adopted; the audit's incidental findings are | Proposed | cuda, performance, build, correctness |
