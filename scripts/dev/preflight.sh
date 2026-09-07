@@ -103,6 +103,21 @@ changed_sources() {
   } | sort -u
 }
 
+# Same selection as changed_sources, for Metal shaders. Kept separate because
+# every other stage compiles C/C++ and would choke on a .metal path.
+changed_metal() {
+  if [ "$MODE" = full ]; then
+    git ls-files '*.metal'
+    return
+  fi
+  {
+    git diff --name-only --diff-filter=d "$BASE"...HEAD -- '*.metal'
+    git diff --name-only --diff-filter=d -- '*.metal'
+    git diff --name-only --diff-filter=d --cached -- '*.metal'
+    git ls-files --others --exclude-standard -- '*.metal'
+  } | sort -u
+}
+
 if [ "$MODE" = list ]; then
   cat <<'EOF'
 stage          mirrors CI context            catches
@@ -236,6 +251,24 @@ if want msvcism; then
   if [ -n "$c_nullptr" ]; then
     printf '     %s\n' 'nullptr in a C translation unit — MSVC C2065; ADR-1138 keeps C on NULL'
     printf '%s\n' "$c_nullptr" | sed 's/^/       /'
+    msvc_fail=1
+  fi
+
+  # Metal Shading Language predefines `half` (16-bit float) and the vector type
+  # names, so a `.metal` file that declares a variable with one of those names
+  # is a redeclaration -- "cannot combine with previous 'type-name' declaration
+  # specifier", plus a parse error at every later use. The C / CUDA / HIP twins
+  # these kernels are ported from have no such reservation, which is how the
+  # name travels. The macOS Metal lanes are not in the required set, so this is
+  # otherwise only caught after merge.
+  msl_reserved='(half|float2|float3|float4|int2|int3|int4|uint2|uint3|uint4|bool2|bool3|bool4|sampler)'
+  msl_hits=$(changed_metal | while read -r f; do
+    grep -nE "\b(ulong|uint|int|float|bool|long|short|auto|char) +$msl_reserved\b" "$f" 2>/dev/null |
+      head -2 | sed "s|^|$f:|"
+  done | head -5)
+  if [ -n "$msl_hits" ]; then
+    printf '     %s\n' 'MSL reserved type name used as a variable — macOS Metal redeclaration error'
+    printf '%s\n' "$msl_hits" | sed 's/^/       /'
     msvc_fail=1
   fi
 
