@@ -287,7 +287,7 @@ would fail to compile:
 
 The `dev-mcp` service healthcheck must match the entrypoint transport.
 The entrypoint exposes MCP over stdio (`docker exec -i vmaf-dev-mcp
-/opt/vmaf-venv/bin/vmaf-mcp`) and does not create
+vmafx-mcp` — the Go binary, ADR-1229) and does not create
 `/sockets/vmaf-mcp.sock` by default. Therefore the compose healthcheck
 must remain a CLI check (`vmaf --version`). Reverting it to
 `test -S /sockets/vmaf-mcp.sock` leaves the container permanently

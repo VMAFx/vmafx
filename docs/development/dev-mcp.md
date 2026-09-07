@@ -162,7 +162,8 @@ Both services write probe files to `.workingdir/dev-mcp-probes/` on the host.
 Inside the container the full environment is initialised:
 
 - `vmaf` CLI — `/usr/local/bin/vmaf`
-- `vmaf-mcp-server` — `/opt/vmaf-venv/bin/vmaf-mcp-server`
+- `vmafx-mcp` — `/usr/local/bin/vmafx-mcp` (Go; ADR-1229 replaced the
+  Python `mcp-server/vmaf-mcp` package, which is deprecated)
 - GPU SDKs — `nvcc`, `icpx`, `hipcc` in `PATH`
 - testdata — `/workspace/testdata/` (read-only bind mount from host repo)
 - models — `/workspace/model/` (read-only)
@@ -238,7 +239,7 @@ Each probe file follows this schema:
 | --- | --- | --- |
 | `ENOSYS: no CUDA device` | No NVIDIA GPU or Container Toolkit not installed | Install Container Toolkit and set `NVIDIA_VISIBLE_DEVICES=all` |
 | `ENOSYS: no SYCL device` | No Intel GPU / oneAPI runtime | Expected on non-Intel hosts; not a regression |
-| `mcp stdio returned empty response` | `vmaf-mcp-server` not in PATH or build failed | Rebuild container; check `docker compose logs dev-mcp` |
+| `mcp stdio returned empty response` | `vmafx-mcp` not in PATH or the go-build stage failed | Rebuild container; check `docker compose logs dev-mcp`. The binary comes from `cmd/vmafx-mcp` via the `go-build` stage, not from the venv. |
 | Score drift >0.1 from baseline | Code regression or model change | Run `/validate-scores` skill; check recent commits |
 
 ---
