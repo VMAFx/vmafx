@@ -105,7 +105,7 @@ setup(
     package_data={"vmaf": ["py.typed"]},
     include_package_data=True,
     install_requires=[
-        "numpy>=2.5.2",
+        "numpy>=2.5.3",
         "scipy>=1.18.1",
         "matplotlib>=3.11.1",
         "pandas>=3.0.5",
