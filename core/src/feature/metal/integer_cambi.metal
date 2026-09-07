@@ -190,6 +190,17 @@ kernel void cambi_filter_mode_kernel(const device ushort *in [[buffer(0)]],
         return;
     }
 
+    /* Vertical pass mirrors cambi.c::filter_mode: its `if (i > 1)` writeback
+     * covers output rows 1 .. H-2 only, so rows 0 and H-1 keep the ORIGINAL
+     * pre-filter pixels — not the horizontally-filtered ones, which live in
+     * the CPU's 3-row ring buffer and are never written back for those rows.
+     * `out` still holds the pre-filter image here, so returning early
+     * reproduces that exactly. The CUDA and SYCL twins already carry this
+     * guard; this one was missing. ADR-1219. */
+    if (axis == 1 && (y == 0 || y >= H - 1)) {
+        return;
+    }
+
     ushort a, b, c;
     if (axis == 0) {
         const int xl = (x > 0) ? x - 1 : 0;

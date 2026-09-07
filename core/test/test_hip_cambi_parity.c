@@ -57,30 +57,44 @@
 
 /* 320×240 clears CAMBI_MIN_WIDTH_HEIGHT (216) on both dims for cambi.c
  * and CAMBI_HIP_MIN_WIDTH_HEIGHT (216) for integer_cambi_hip.c. */
-#define FIXTURE_W 320u
-#define FIXTURE_H 240u
-#define FIXTURE_BPC 8u
+#define FIXTURE_W 640u
+#define FIXTURE_H 480u
+#define FIXTURE_BPC 10u
 
 /* Filtered feature with multi-scale pooling — places=3 per ADR-0214. */
 #define PARITY_TOL 1e-3
 
+/* 10-bit banding gradient: one code level every two columns, held in the
+ * 200..900 range so the whole plane sits inside the TVI luma band that CAMBI
+ * actually scores.
+ *
+ * The previous fixture was an 8-bit gradient stepping 32 levels every 32
+ * columns. CAMBI only counts neighbour differences of 1..num_diffs (4 at the
+ * default max_log_contrast = 2), so a 32-level step is an edge, not banding:
+ * that fixture scored **exactly 0.0 on both the CPU and the twin**, and the
+ * parity assertion was `0 == 0`. It is why the twin's TVI-table defect — which
+ * collapses the score to zero — survived. This fixture scores 5.846154 on the
+ * CPU; the assertion below refuses to run against a degenerate score so the
+ * gate cannot silently rot back. ADR-1219. */
 static int fill_pic(VmafPicture *pic, unsigned salt)
 {
     int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
     if (err)
         return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
-    /* 8-step quantised gradient — classic banding artefact pattern. */
+    uint16_t *y = (uint16_t *)pic->data[0];
+    const unsigned ystride = pic->stride[0] / 2u;
     for (unsigned row = 0; row < pic->h[0]; row++) {
         for (unsigned col = 0; col < pic->w[0]; col++) {
-            const unsigned base = (col / 32u) * 32u + salt * 4u;
-            y[row * pic->stride[0] + col] = (uint8_t)(base & 0xFFu);
+            const unsigned base = 200u + (col / 2u) + salt;
+            y[row * ystride + col] = (uint16_t)(base > 900u ? 900u : base);
         }
     }
     for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
+        uint16_t *plane = (uint16_t *)pic->data[p];
+        const unsigned cstride = pic->stride[p] / 2u;
         for (unsigned row = 0; row < pic->h[p]; row++)
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
+            for (unsigned col = 0; col < pic->w[p]; col++)
+                plane[row * cstride + col] = 512u;
     }
     return 0;
 }
@@ -192,6 +206,10 @@ static char *test_cambi_cpu_hip_parity(void)
     msg = run_hip_cambi(&gpu, &skipped);
     if (msg)
         return msg;
+    /* Guard against the degenerate fixture this test used to carry: a CAMBI
+     * score of 0 makes the parity assertion vacuous. ADR-1219. */
+    mu_assert("CPU CAMBI score is degenerate — the fixture no longer produces banding", cpu > 1.0);
+
     if (skipped || isnan(gpu))
         return NULL;
     double delta = fabs(cpu - gpu);
