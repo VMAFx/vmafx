@@ -49449,3 +49449,30 @@ Rebase-sensitive invariants introduced by this change:
    pin Alpine / Arch / Fedora precisely because they are *not* the release
    distro. Unifying their bases would defeat the portability matrix they exist
    to run.
+
+## ADR-1236 — version single-sourcing and Python dependency unification (2026-09-08)
+
+Rebase-sensitive invariants introduced by this change:
+
+1. **`python/pyproject.toml` is the single owner of Python runtime dependencies.**
+   `python/setup.py` intentionally removes duplicate `install_requires=[...]`.
+   Setuptools natively loads dependencies from `python/pyproject.toml`.
+   If an upstream merge reintroduces `install_requires` in `python/setup.py`,
+   delete the block so dependencies remain single-sourced.
+
+2. **`python/requirements.txt` is mechanically generated — never hand-edit.**
+   `python/requirements.txt` is derived from `python/pyproject.toml` using
+   `scripts/ci/check-python-requirements-single-source.sh --write` (or `make python-deps-sync`).
+   Any manual edits will fail `scripts/ci/check-python-requirements-single-source.sh`
+   in CI and pre-commit hooks.
+
+3. **Renovate must ignore `python/requirements.txt`.**
+   `renovate.json` includes `"python/requirements.txt"` in `ignorePaths`.
+   Renovate should only manage `python/pyproject.toml` to prevent competing PRs.
+
+4. **Package version disagreements follow the newest-version policy.**
+   Divergent version pins across submodules or dev requirements (e.g. `numpy`, `scipy`,
+   `matplotlib`, `pyarrow`) must never be downgraded to resolve a merge conflict.
+   The floor is `>=2.5.2` for numpy, `>=1.18.1` for scipy, `>=3.11.1` for matplotlib,
+   and `>=25.0.1` for pyarrow. Package version definitions across `pyproject.toml`
+   and `__init__.py` files must remain synchronized.
