@@ -397,7 +397,7 @@ only.
 | `adm_skip_aim`           | —      | bool   | `false`   | —           | Skip the AIM (Additive Impairment Metric) sub-band calculation entirely; forces AIM contribution to zero                                                  |
 | `adm_skip_scale0`        | `ssz`  | bool   | `false`   | —           | Skip scale-0 (finest wavelet level) calculation; scale-0 outputs forced to `0.0` and excluded from the fused score. Matches GPU-backend parity mode.      |
 | `adm_min_val`            | `min`  | double | `0.0`     | `0.0–1.0`   | Floor value: fused ADM scores below this threshold are clipped up to it                                                                                   |
-| `adm_p_norm`             | `apn`  | double | `3.0`     | `1.0–20.0`  | p-norm exponent for the contrast-measure finalisation (`x^(1/p)` pooling in `adm_cm`). Honoured by CPU `adm` / `float_adm`, the x86 AVX2 / AVX-512 `adm` paths, and the CUDA / SYCL / HIP `integer_adm` twins.                 |
+| `adm_p_norm`             | `apn`  | double | `3.0`     | `1.0–20.0`  | p-norm exponent for the contrast-measure finalisation (`x^(1/p)` pooling in `adm_cm`). Honoured by CPU `adm` / `float_adm`, the x86 AVX2 / AVX-512 `adm` paths, and the CUDA / SYCL / HIP / Metal `integer_adm` twins. Applies to the numerator only: the CPU denominator (`adm_den_scale_finalise`) is a fixed cube root, and every twin mirrors that.                 |
 
 ##### Fixed-point CSF limits
 
