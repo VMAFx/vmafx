@@ -465,3 +465,19 @@ Guarded by `core/test/test_hip_speed_singular_parity.c`. The older
 chroma planes give 4x2 = 8 blocks for a 25x25 covariance — singular on
 every frame — so they never exercise the regular path. A SpEED test that
 needs a regular frame must be at least 960x960.
+## MS-SSIM clip_db is a dB ceiling (ADR-1221)
+
+`float_ms_ssim.c` derives `max_db = ceil(10 * log10(peak * peak / mse))`
+with `mse = 0.5 / (w * h)` at `init()`, and `convert_to_db()` returns
+`MIN(-10*log10(1 - score), max_db)`, short-circuiting to `max_db` when
+`score >= 1.0`. Until ADR-1221 `integer_ms_ssim_hip.c` clamped the
+LINEAR score into `[0, 1]` and converted with no ceiling, and had no
+`max_db` field: an identical reference/distorted pair returned `+Inf`,
+and every high-similarity pair returned an uncapped dB value.
+
+`max_db` is derived once in `init_fex_hip` right after
+`ms_ssim_hip_init_dims()`, using the CPU's exact expression and integer
+types, and the dB conversion goes through `ms_ssim_convert_to_db()`.
+The guard is `test_hip_ms_ssim_parity.c::test_ms_ssim_clip_db_ceiling`,
+which feeds an IDENTICAL pair — on a merely high-similarity fixture the
+ceiling never binds and the variant passes against the unfixed twin.
