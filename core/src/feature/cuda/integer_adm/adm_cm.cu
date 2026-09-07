@@ -755,6 +755,18 @@ adm_cm_aim_line_kernel(AdmBufferCuda buf, int h, int w, int top, int bottom, int
     }
 }
 
+/* The AIM CM kernel is the fork's most register-hungry CUDA kernel: three
+ * theta planes x ten reflected rows of `inline_s0_csf_r` results, live across
+ * an int64 accumulator per row. At `rows_per_thread = 8` ptxas takes all 255
+ * registers and still spills 412/404 bytes.
+ *
+ * `__launch_bounds__` is deliberately absent. It was measured: `(128, 5)` caps
+ * the allocator at 96 registers and — counter-intuitively — spills *less*
+ * (8 B stack vs 344 B), lifting theoretical occupancy from 16.7% to 41.7% on
+ * sm_89. It bought nothing (0.808 ms vs 0.803 ms per call), because this
+ * kernel is not occupancy-limited but grid-limited, and stacking it on top of
+ * the `rows_per_thread` fix below made things slower (0.572 ms vs 0.553 ms).
+ * See ADR-1226 for the full sweep before re-adding it. */
 #define ADM_CM_AIM_LINE(rows_per_thread)                                                           \
     __global__ void adm_cm_aim_line_kernel_##rows_per_thread(                                      \
         AdmBufferCuda buf, int h, int w, int top, int bottom, int left, int right, int start_row,  \
@@ -769,6 +781,14 @@ adm_cm_aim_line_kernel(AdmBufferCuda buf, int h, int w, int top, int bottom, int
             accum_global, ws, shift_inner_accum, add_shift_inner_accum);                           \
     }
 
+/* Two instantiations, picked at launch by SM occupancy (see
+ * `integer_adm_cuda.c::adm_cm_aim_line`). The kernel emits one block per
+ * `BLOCKY * rows_per_thread` rows of a `buffer_h`-row band, times three
+ * orientation bands, and nothing else parallelises it — so `rows_per_thread`
+ * is what decides whether the launch fills the GPU. At the previous fixed
+ * value of 8, a 1080p frame produced 42 blocks total against an RTX 4090's
+ * 128 SMs: two thirds of the device idle by construction. See ADR-1226. */
 extern "C" {
-ADM_CM_AIM_LINE(8); /* adm_cm_aim_line_kernel_8 */
+ADM_CM_AIM_LINE(2); /* adm_cm_aim_line_kernel_2 */
+ADM_CM_AIM_LINE(4); /* adm_cm_aim_line_kernel_4 */
 }
