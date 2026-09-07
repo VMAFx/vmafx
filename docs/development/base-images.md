@@ -1,9 +1,10 @@
 <!-- markdownlint-disable MD013 MD041 -->
 
-# Container base images
+# Container bases and toolchain versions
 
-Every container base image in this repository is defined in one file:
-[`build-config.env`](../../build-config.env) at the repository root.
+Every container base image **and toolchain version** in this repository is
+defined in one file: [`build-config.env`](../../build-config.env) at the
+repository root.
 
 If you have forked VMAFx and want it to build on a different Debian, a
 different Go, or a different GPU SDK, that file is the only thing you edit.
@@ -111,3 +112,41 @@ six months later is the whole point. The gate rejects any entry without
 
 If two Dockerfiles want the same image, they share one entry. That collapsing
 is the point: 25 `FROM` lines in this repo resolve to 13 pins.
+
+## CI workflows read the same file
+
+Version pins are not only in Dockerfiles. Before this file, ROCm was `7.2.4` in
+`build.yml` and `7.2.3` in `libvmaf-build-matrix.yml`, and the Level Zero loader
+existed at four versions at once. GitHub Actions cannot `source` a file at
+parse time, so `run:` steps source it at run time:
+
+```yaml
+      - name: Install ROCm / HIP runtime
+        run: |
+          set -a; . ./build-config.env; set +a
+          ...  https://repo.radeon.com/rocm/apt/${ROCM_APT_VERSION} ...
+```
+
+For a value needed by a later step or by a `with:` block, use the loader, which
+writes `KEY=value` lines for every knob:
+
+```yaml
+      - name: Load build config
+        run: scripts/ci/load-build-config.sh >> "$GITHUB_ENV"
+```
+
+`scripts/ci/check-workflow-versions.py` fails the build if a literal version
+reappears in a workflow. The Windows SYCL leg runs under `cmd` and cannot source
+the config, so it mirrors the value by hand — and that check is what keeps the
+mirror honest.
+
+## Renovate
+
+Renovate's built-in `dockerfile` manager understands `ARG X=image` + `FROM $X`,
+so if it owned the Dockerfiles it would bump the `ARG` mirrors and leave
+`build-config.env` behind — failing the gate on Renovate's own PRs. Instead a
+single custom manager in `renovate.json` matches **both** the config line and
+the `ARG` form across every wired file, so one PR updates all 41 copies of the
+affected pin together, and a `packageRule` disables the built-in manager on
+those files. `docker/dev/*.Dockerfile` keeps the built-in manager, because those
+pins are deliberately independent.
