@@ -42,6 +42,11 @@
  * literal matches adm_tools.h so this test computes cos(1deg) from exactly
  * the constant integer_adm.c uses. */
 #ifndef _USE_MATH_DEFINES
+/* The leading underscore is not ours to choose: `_USE_MATH_DEFINES` is the name
+ * MSVC's and MinGW's <math.h> look for, so renaming it defeats the whole point
+ * of defining it. Same posture as the feature-test macro in
+ * core/src/libvmaf.c. ADR-1142 rule 12: a NOLINT cites what forces it. */
+/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
 #define _USE_MATH_DEFINES
 #endif
 #include <math.h>
