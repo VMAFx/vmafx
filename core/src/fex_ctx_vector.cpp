@@ -25,6 +25,7 @@
 #include "fex_ctx_vector.h"
 #include "fex_ctx_vector_internal.h"
 
+#include <cassert>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
