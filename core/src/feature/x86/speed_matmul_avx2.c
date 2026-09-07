@@ -22,12 +22,14 @@
  * Bit-exactness: the `j` axis is an output index, so widening it to 8
  * lanes changes nothing about the order in which any single dst element
  * accumulates over `k`.  The multiply and the add are kept as separate
- * _mm256_mul_ps / _mm256_add_ps operations and the translation unit is
- * compiled with `-ffp-contract=off` (x86_speed_matmul_avx2 static lib in
- * core/src/meson.build) so the compiler cannot fuse them into a VFMADD,
+ * _mm256_mul_ps / _mm256_add_ps operations -- and the scalar tail as
+ * _mm_mul_ss / _mm_add_ss -- so the compiler cannot fuse them into a VFMADD,
  * which would round once instead of twice and diverge from the scalar
- * reference.  test_speed_simd asserts memcmp-equality against that
- * reference.
+ * reference.  Intrinsics, not the `-ffp-contract=off` carve-out on this TU,
+ * are what pin that: the flag is order-sensitive under icx (see
+ * core/src/meson.build) and was being silently overridden, which is how the
+ * plain-C tail this replaced came to diverge.  test_speed_simd asserts
+ * memcmp-equality against that reference.
  */
 
 #include <assert.h>
@@ -83,11 +85,26 @@ void speed_matmul_avx2(float *dst, int dst_stride, const float *x, int x_stride,
             _mm256_storeu_ps(drow + j, a0);
         }
 
+        /* Scalar tail, kept in SSE scalar ops rather than plain C for the same
+         * reason the bodies above use separate mul/add intrinsics: `acc += a * b`
+         * is a source-level multiply-add, so the frontend may emit it as
+         * llvm.fmuladd and the backend then rounds once instead of twice. The
+         * `-ffp-contract=off` on this TU is meant to forbid that, but it is only
+         * as good as the flag order (see core/src/meson.build) -- icx's
+         * `-fp-model=precise` re-enables contraction when it lands later on the
+         * command line, which is exactly how this loop diverged from
+         * speed_matmul_scalar at column 24 of the 25-wide QR shape. Intrinsics
+         * are not routed through llvm.fmuladd, so the rounding is pinned by
+         * construction on every compiler and every flag order.
+         * ADR-0138 / ADR-0139. */
         for (; j < cols; j++) {
-            float acc = 0.0f;
-            for (int k = 0; k < inner; k++)
-                acc += xrow[k] * y[(size_t)k * (size_t)y_stride + (size_t)j];
-            drow[j] = acc;
+            __m128 acc = _mm_setzero_ps();
+            for (int k = 0; k < inner; k++) {
+                const __m128 xv = _mm_load_ss(&xrow[k]);
+                const __m128 yv = _mm_load_ss(&y[(size_t)k * (size_t)y_stride + (size_t)j]);
+                acc = _mm_add_ss(acc, _mm_mul_ss(xv, yv));
+            }
+            _mm_store_ss(&drow[j], acc);
         }
     }
 }
