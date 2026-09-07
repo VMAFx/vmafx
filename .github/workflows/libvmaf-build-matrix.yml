@@ -1,4 +1,7 @@
-name: libvmaf Build Matrix — Linux/macOS/Windows/ARM × CPU/SYCL/CUDA
+name: Builds
+# Builds — Linux/macOS/Windows/ARM x CPU/SYCL/CUDA.
+# The display name is deliberately short: GitHub's badge.svg paints it
+# into the README status badge. See ADR-1227.
 on:
   push:
     branches: [master]

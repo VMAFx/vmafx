@@ -13,7 +13,7 @@
 #
 # No image is pushed — this is a pure build-verification gate.
 
-name: Dev Container Build (PR gate)
+name: Dev Container
 
 on:
   pull_request:
