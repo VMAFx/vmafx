@@ -921,6 +921,7 @@
 1190-cli-option-string-escape-grammar
 1184-mcp-grpc-bridge-go-only
 1188-percentile-pooling-methods
+1196-speed-matmul-simd-dispatch
 1185-backend-perf-baseline-methodology
 1198-changelog-unknown-section-is-an-error
 1199-cuda-picture-handover-barrier

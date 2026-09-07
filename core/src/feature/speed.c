@@ -46,13 +46,16 @@
 #include "opt.h"
 #include "picture.h"
 #include "picture_copy.h"
+#include "speed_matmul.h"
 #include "vif_tools.h"
 #include "cpu.h"
 #if ARCH_X86
 #include "x86/cpu.h"
 #include "x86/speed_avx2.h"
+#include "x86/speed_matmul_avx2.h"
 #if HAVE_AVX512
 #include "x86/speed_avx512.h"
+#include "x86/speed_matmul_avx512.h"
 #endif
 #endif
 
@@ -112,6 +115,7 @@ typedef struct SpeedState {
     SpeedBuffers buffers;
     size_t float_stride;
     compute_cov_kernel_fn compute_cov_kernel;
+    speed_matmul_fn matmul;
 } SpeedState;
 
 #define DEFAULT_BLOCK_SIZE (5)
@@ -180,17 +184,51 @@ static void matrix_copy(Matrix *dst, const Matrix *src)
     }
 }
 
-static void matrix_mul(Matrix *dst, const Matrix *x, const Matrix *y)
+/*
+ * Portable reference for the SpEED dense matrix product.  Exported (not
+ * static) so core/test/test_speed_simd.c can assert memcmp-equality of the
+ * AVX2 / AVX-512 twins against exactly this code rather than a copy of it.
+ * The accumulation order over `k` is the bit-exactness contract — see
+ * feature/speed_matmul.h.
+ */
+void speed_matmul_scalar(float *dst, int dst_stride, const float *x, int x_stride, const float *y,
+                         int y_stride, int rows, int inner, int cols)
 {
-    assert(x->cols == y->rows);
-    matrix_zero(dst);
-    for (int i = 0; i < x->rows; i++) {
-        for (int k = 0; k < x->cols; k++) {
-            for (int j = 0; j < y->cols; j++) {
-                dst->data[i * dst->cols + j] += x->data[i * x->cols + k] * y->data[k * y->cols + j];
-            }
+    assert(dst != NULL);
+    assert(x != NULL);
+    assert(y != NULL);
+    assert(rows >= 0);
+    assert(inner >= 0);
+    assert(cols >= 0);
+    assert(dst_stride >= cols);
+    assert(x_stride >= inner);
+    assert(y_stride >= cols);
+
+    for (int i = 0; i < rows; i++) {
+        float *drow = dst + (size_t)i * (size_t)dst_stride;
+        for (int j = 0; j < cols; j++)
+            drow[j] = 0.0f;
+        for (int k = 0; k < inner; k++) {
+            const float xv = x[(size_t)i * (size_t)x_stride + (size_t)k];
+            const float *yr = y + (size_t)k * (size_t)y_stride;
+            for (int j = 0; j < cols; j++)
+                drow[j] += xv * yr[j];
         }
     }
+}
+
+static void matrix_mul(Matrix *dst, const Matrix *x, const Matrix *y, speed_matmul_fn matmul)
+{
+    assert(x->cols == y->rows);
+    assert(dst->rows >= x->rows);
+    assert(dst->cols >= y->cols);
+    assert(matmul != NULL);
+    /* The kernel writes every element of the leading x->rows by y->cols
+     * block; only a strictly larger destination still needs the zero fill
+     * the original implementation applied unconditionally. */
+    if (dst->rows != x->rows || dst->cols != y->cols)
+        matrix_zero(dst);
+    matmul(dst->data, dst->cols, x->data, x->cols, y->data, y->cols, x->rows, x->cols, y->cols);
 }
 
 static void matrix_minor(Matrix *mat, int d)
@@ -573,7 +611,8 @@ static void compute_eigenvalues(float *A_immutable, float *eigenvalues, int size
 // Implementation of the QR decomposition algorithm with Householder
 // reflections for an arbitrary square matrix
 // https://www.cs.utexas.edu/users/flame/Notes/NotesOnHouseholderQR.pdf
-static void matrix_qr_decomposition(Matrix *A, Matrix *Q, Matrix *R, Matrix *tmp_q, Matrix *tmp_z)
+static void matrix_qr_decomposition(Matrix *A, Matrix *Q, Matrix *R, Matrix *tmp_q, Matrix *tmp_z,
+                                    speed_matmul_fn matmul)
 {
     assert(A->rows == A->cols);
     int size = A->rows;
@@ -601,13 +640,13 @@ static void matrix_qr_decomposition(Matrix *A, Matrix *Q, Matrix *R, Matrix *tmp
         vector_div(vec, vector_norm(vec, size), vec, size);
         matrix_identity_minus_v_vt(tmp_q, vec);
 
-        matrix_mul(tmp_mul, tmp_q, tmp_z);
+        matrix_mul(tmp_mul, tmp_q, tmp_z, matmul);
         matrix_copy(tmp_z, tmp_mul);
-        matrix_mul(tmp_mul, tmp_q, Q);
+        matrix_mul(tmp_mul, tmp_q, Q, matmul);
         matrix_copy(Q, tmp_mul);
     }
 
-    matrix_mul(R, Q, A);
+    matrix_mul(R, Q, A, matmul);
     matrix_transpose(Q);
 }
 
@@ -638,7 +677,7 @@ static int solve_triangular_system(const Matrix *R, Matrix *X, const Matrix *B)
 
 // Solves the linear system A X = B, using the QR decomposition of A
 static int solve_linear_system(float *A_data, int A_size, float *B_data, int B_cols,
-                               float *output_data, float *tmp_buffer)
+                               float *output_data, float *tmp_buffer, speed_matmul_fn matmul)
 {
     float *A_buffer = tmp_buffer;
     tmp_buffer += (size_t)A_size * (size_t)A_size;
@@ -678,9 +717,9 @@ static int solve_linear_system(float *A_data, int A_size, float *B_data, int B_c
 
     // A = Q R, where Q^{-1} = Q^T and R is upper triangular
     // A X = B  ==>  Q R X = B  ==>  R X = Q^T B
-    matrix_qr_decomposition(&A, &Q, &R, &tmp1, &tmp2);
+    matrix_qr_decomposition(&A, &Q, &R, &tmp1, &tmp2, matmul);
     matrix_transpose(&Q);
-    matrix_mul(&tmp_rect, &Q, &B_immutable);
+    matrix_mul(&tmp_rect, &Q, &B_immutable, matmul);
     int err = solve_triangular_system(&R, &X, &tmp_rect);
     return err;
 }
@@ -833,6 +872,8 @@ static bool solve_covariance_system(SpeedState *s, const float *data, const Spee
     // tests that construct SpeedState via struct literal).
     compute_cov_kernel_fn kernel =
         s->compute_cov_kernel ? s->compute_cov_kernel : compute_cov_kernel_scalar;
+    /* Same struct-literal fallback as the covariance kernel above. */
+    speed_matmul_fn matmul = s->matmul ? s->matmul : speed_matmul_scalar;
     compute_covariance_matrix(dim, data, s->buffers.cov_mat, s->buffers.eigenvalues, stride_px,
                               kernel);
 
@@ -850,7 +891,7 @@ static bool solve_covariance_system(SpeedState *s, const float *data, const Spee
     if (regular) {
         err = solve_linear_system(s->buffers.cov_mat, dim->elements_in_block,
                                   s->buffers.independent_term, dim->num_blocks,
-                                  s->buffers.linear_system_sol, s->buffers.tmp_buffer);
+                                  s->buffers.linear_system_sol, s->buffers.tmp_buffer, matmul);
     }
 
     bool cannot_invert = !regular || err;
@@ -1113,14 +1154,17 @@ static int speed_alloc_buffers(SpeedState *s, const SpeedDimensions *dim, size_t
 static void speed_dispatch_cpu_kernel(SpeedState *s)
 {
     s->compute_cov_kernel = compute_cov_kernel_scalar;
+    s->matmul = speed_matmul_scalar;
 #if ARCH_X86
     unsigned flags = vmaf_get_cpu_flags();
     if (flags & VMAF_X86_CPU_FLAG_AVX2) {
         s->compute_cov_kernel = compute_cov_kernel_avx2;
+        s->matmul = speed_matmul_avx2;
     }
 #if HAVE_AVX512
     if (flags & VMAF_X86_CPU_FLAG_AVX512) {
         s->compute_cov_kernel = compute_cov_kernel_avx512;
+        s->matmul = speed_matmul_avx512;
     }
 #endif
 #endif

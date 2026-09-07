@@ -37,7 +37,15 @@
  * inside the 1e-9 gate.  Per ADR-0138/ADR-0139 the tolerance contract is
  * documented here, not tightened to memcmp.
  *
- * Boilerplate: simd_bitexact_test.h (ADR-0245).
+ * The same file also gates the SpEED dense matrix-product kernels
+ * (speed_matmul_avx2 / speed_matmul_avx512) against speed_matmul_scalar.
+ * Those carry a *stricter* contract than the covariance kernel above:
+ * memcmp bit-equality, not a relative tolerance.  The `j` axis they widen
+ * is an output index rather than a reduction axis, so vector width cannot
+ * change the order in which any single output element accumulates, and
+ * both translation units are compiled `-ffp-contract=off` so no FMA
+ * fusion collapses the separate multiply and add.  A failure here means
+ * one of those two invariants was broken.
  */
 
 #include <math.h>
@@ -52,10 +60,13 @@
 #include "simd_bitexact_test.h"
 /* clang-format on */
 
+#include "feature/speed_matmul.h"
 #if ARCH_X86
 #include "feature/x86/speed_avx2.h"
+#include "feature/x86/speed_matmul_avx2.h"
 #if HAVE_AVX512
 #include "feature/x86/speed_avx512.h"
+#include "feature/x86/speed_matmul_avx512.h"
 #endif
 #endif
 
@@ -199,26 +210,134 @@ static char *test_avx512_tiny(void)
 }
 #endif /* HAVE_AVX512 */
 
+/* ---------------------------------------------------------------- */
+/* speed_matmul_* — bit-exact (memcmp) parity with speed_matmul_scalar */
+/* ---------------------------------------------------------------- */
+
+/* SpEED's own QR matrices are 25x25 (block_size 5 squared); the rectangular
+ * solve is 25 x num_blocks.  The shapes below cover the native case plus
+ * every tail branch of both kernels (32-wide body, 16/8-wide step, masked
+ * and scalar remainders). */
+#define MATMUL_FILL_LO (-2.0f)
+#define MATMUL_FILL_HI (2.0f)
+
+/* Destinations are file-scope so the memcmp assert (which returns on
+ * failure) never leaks a heap buffer.  MATMUL_MAX_D covers the largest
+ * shape exercised below, 25 x 448. */
+#define MATMUL_MAX_D (25 * 448)
+static float matmul_d_scalar[MATMUL_MAX_D];
+static float matmul_d_simd[MATMUL_MAX_D];
+
+static char *check_matmul(speed_matmul_fn simd, char *label, uint32_t seed, int rows, int inner,
+                          int cols)
+{
+    const size_t x_elems = (size_t)rows * (size_t)inner;
+    const size_t y_elems = (size_t)inner * (size_t)cols;
+    const size_t d_elems = (size_t)rows * (size_t)cols;
+
+    if (d_elems > (size_t)MATMUL_MAX_D)
+        return "check_matmul: shape exceeds MATMUL_MAX_D";
+
+    float *x = (float *)simd_test_aligned_malloc(x_elems * sizeof(float), 64);
+    float *y = (float *)simd_test_aligned_malloc(y_elems * sizeof(float), 64);
+    if (!x || !y) {
+        simd_test_aligned_free(x);
+        simd_test_aligned_free(y);
+        return "aligned_malloc failed (matmul)";
+    }
+
+    simd_test_fill_random_f32(x, x_elems, MATMUL_FILL_LO, MATMUL_FILL_HI, seed);
+    simd_test_fill_random_f32(y, y_elems, MATMUL_FILL_LO, MATMUL_FILL_HI, seed ^ 0x5A5A5A5Au);
+    /* Poison both destinations so a kernel that skips lanes is caught. */
+    for (size_t i = 0; i < d_elems; i++) {
+        matmul_d_scalar[i] = -1.0f;
+        matmul_d_simd[i] = -1.0f;
+    }
+
+    speed_matmul_scalar(matmul_d_scalar, cols, x, inner, y, cols, rows, inner, cols);
+    simd(matmul_d_simd, cols, x, inner, y, cols, rows, inner, cols);
+
+    simd_test_aligned_free(x);
+    simd_test_aligned_free(y);
+
+    SIMD_BITEXACT_ASSERT_MEMCMP(matmul_d_scalar, matmul_d_simd, d_elems * sizeof(float), label);
+    return NULL;
+}
+
+static char *test_matmul_avx2_speed_native(void)
+{
+    /* 25x25 * 25x25 — the QR-iteration shape (3x8 lanes + 1 scalar). */
+    return check_matmul(speed_matmul_avx2, "speed_matmul_avx2 25x25x25", 0xdeadbeefu, 25, 25, 25);
+}
+static char *test_matmul_avx2_rect(void)
+{
+    /* 25x25 * 25x448 — the rectangular Q^T B solve (14x32-wide body). */
+    return check_matmul(speed_matmul_avx2, "speed_matmul_avx2 25x25x448", 0x12345678u, 25, 25, 448);
+}
+static char *test_matmul_avx2_tails(void)
+{
+    /* cols=41 -> one 32-body, one 8-step, one scalar element. */
+    return check_matmul(speed_matmul_avx2, "speed_matmul_avx2 7x9x41", 0xabcdef01u, 7, 9, 41);
+}
+static char *test_matmul_avx2_narrow(void)
+{
+    /* cols=3 -> scalar-only path; inner=1 -> single accumulation step. */
+    return check_matmul(speed_matmul_avx2, "speed_matmul_avx2 4x1x3", 0xfeedfaceu, 4, 1, 3);
+}
+
+#if HAVE_AVX512
+static char *test_matmul_avx512_speed_native(void)
+{
+    return check_matmul(speed_matmul_avx512, "speed_matmul_avx512 25x25x25", 0xdeadbeefu, 25, 25,
+                        25);
+}
+static char *test_matmul_avx512_rect(void)
+{
+    return check_matmul(speed_matmul_avx512, "speed_matmul_avx512 25x25x448", 0x12345678u, 25, 25,
+                        448);
+}
+static char *test_matmul_avx512_tails(void)
+{
+    /* cols=41 -> one 32-body, one full 16-mask, one 9-lane mask. */
+    return check_matmul(speed_matmul_avx512, "speed_matmul_avx512 7x9x41", 0xabcdef01u, 7, 9, 41);
+}
+static char *test_matmul_avx512_narrow(void)
+{
+    return check_matmul(speed_matmul_avx512, "speed_matmul_avx512 4x1x3", 0xfeedfaceu, 4, 1, 3);
+}
+#endif /* HAVE_AVX512 */
+
 #endif /* ARCH_X86 */
 
 char *run_tests(void)
 {
 #if ARCH_X86
-    if (!simd_test_have_avx2()) {
-        return NULL;
-    }
-    mu_run_test(test_avx2_seed_a);
-    mu_run_test(test_avx2_seed_b);
-    mu_run_test(test_avx2_aligned_w);
-    mu_run_test(test_avx2_tiny);
+    /* Guarded by `if (have)` rather than an early `return NULL`: the AVX2 and
+     * AVX-512 gates then read the same way, and the TU keeps exactly one
+     * success exit (ADR-1138 keeps the null pointer constant spelled `NULL`
+     * here for the MSVC C lane, so each extra one is measured debt). */
+    if (simd_test_have_avx2()) {
+        mu_run_test(test_avx2_seed_a);
+        mu_run_test(test_avx2_seed_b);
+        mu_run_test(test_avx2_aligned_w);
+        mu_run_test(test_avx2_tiny);
+        mu_run_test(test_matmul_avx2_speed_native);
+        mu_run_test(test_matmul_avx2_rect);
+        mu_run_test(test_matmul_avx2_tails);
+        mu_run_test(test_matmul_avx2_narrow);
 #if HAVE_AVX512
-    if (simd_test_have_avx512()) {
-        mu_run_test(test_avx512_seed_a);
-        mu_run_test(test_avx512_seed_b);
-        mu_run_test(test_avx512_aligned_w);
-        mu_run_test(test_avx512_tiny);
-    }
+        if (simd_test_have_avx512()) {
+            mu_run_test(test_avx512_seed_a);
+            mu_run_test(test_avx512_seed_b);
+            mu_run_test(test_avx512_aligned_w);
+            mu_run_test(test_avx512_tiny);
+            mu_run_test(test_matmul_avx512_speed_native);
+            mu_run_test(test_matmul_avx512_rect);
+            mu_run_test(test_matmul_avx512_tails);
+            mu_run_test(test_matmul_avx512_narrow);
+        }
 #endif /* HAVE_AVX512 */
+    }
 #else
     (void)fprintf(stderr, "skipping: arch lacks Speed covariance SIMD\n");
 #endif
