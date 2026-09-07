@@ -223,6 +223,35 @@ if want msvcism; then
   check_pattern 'declspec\(\([a-z]' '__declspec argument wrapped in parentheses'
   # __attribute__ needs its double parens; a single pair is a clang error.
   check_pattern '__attribute__\([a-z_]' '__attribute__ with single parens — clang rejects'
+
+  # ADR-1138: C translation units keep `NULL`. MSVC's documented /std:clatest
+  # C23 feature set does not implement the `nullptr` keyword, and the Windows
+  # lane compiles core/ with cl.exe. gcc accepts it and clang accepts it under
+  # -std=c23, so nothing local objects. Comment lines are skipped because the
+  # ADR-1138 NOLINT bracket names the keyword in prose.
+  c_nullptr=$(changed_sources | grep -E '\.c$' | while read -r f; do
+    grep -nE '\bnullptr\b' "$f" 2>/dev/null |
+      grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
+  done | head -5)
+  if [ -n "$c_nullptr" ]; then
+    printf '     %s\n' 'nullptr in a C translation unit — MSVC C2065; ADR-1138 keeps C on NULL'
+    printf '%s\n' "$c_nullptr" | sed 's/^/       /'
+    msvc_fail=1
+  fi
+
+  # A `static const double x = 1.0;` is a const-qualified OBJECT in C, not a
+  # constant expression, so it may not initialise a `static` aggregate (MSVC
+  # C2099, then cascading C2440s as the remaining initialisers shift into the
+  # wrong members). gcc and clang accept it as an extension and emit no
+  # diagnostic at all, not even under -std=c23 -pedantic-errors -Weverything,
+  # so this is grepped rather than compiled.
+  c_static_init=$(changed_sources | grep -E '\.c$' |
+    xargs -r python3 "$REPO_ROOT/scripts/dev/find-nonconst-static-init.py" 2>/dev/null | head -5)
+  if [ -n "$c_static_init" ]; then
+    printf '     %s\n' 'non-constant initialiser in a static aggregate — MSVC C2099; use #define'
+    printf '%s\n' "$c_static_init" | sed 's/^/       /'
+    msvc_fail=1
+  fi
   if [ "$msvc_fail" -eq 0 ]; then
     ok msvcism
   else

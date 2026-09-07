@@ -23,6 +23,13 @@ portability breaks in a single afternoon, each green under local gcc:
 | `static_assert(UINT_MAX <= SIZE_MAX/2/sizeof(ptr))` | passes on LP64 | `Ubuntu i686 gcc` cannot compile the file — false on 32-bit |
 | `#define ALIGNED(x) __declspec(align((x)))` | gcc never sees the MSVC branch | `Windows MSVC+CUDA` C2059 on every use — MSVC needs a literal |
 | `__attribute__(noinline)` (one paren lost) | gcc accepts it | `Ubuntu clang`, `clang+DNN` and all four Sanitizer lanes fail to compile |
+| `nullptr` in a C translation unit | gcc and clang accept the C23 keyword | `Windows MSVC+CUDA` C2065 — MSVC's `/std:clatest` does not implement it (ADR-1138) |
+| `static const double` initialising a `static` aggregate | silent under `-std=c23 -pedantic-errors -Weverything` | `Windows MSVC+CUDA` C2099, then a cascade of C2440s as the remaining initialisers shift |
+
+The last two rows arrived the same evening in PR #1340, both in one new test
+file, and are the reason the `msvcism` stage grew a scanner alongside its
+grep patterns: neither is expressible as a line-local regex, and no locally
+available compiler diagnoses the second one at any warning level.
 
 Each cost a full CI round-trip on a queue where **one PR at a time** may be in
 flight (the strict single-active-PR rule). Three round-trips is roughly ninety
@@ -85,7 +92,8 @@ deliberately planted 32-bit break.
   failed, and `--list` documents which CI context each stage stands in for.
 - **Negative**: the stage list must be kept in step with the workflow matrix.
   `--list` is the single place that mapping is written down.
-- **Negative**: `msvcism` is a pattern match, not a compiler. It catches the
+- **Negative**: `msvcism` is a set of pattern matches plus one scanner, not a
+  compiler. It catches the
   known rejection classes, not everything MSVC dislikes; `Windows MSVC+*`
   remains the authority.
 - **Neutral / follow-ups**: `Ubuntu HIP`, `Windows MinGW64` and the Windows
