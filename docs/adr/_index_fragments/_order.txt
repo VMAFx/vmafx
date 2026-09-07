@@ -933,3 +933,5 @@
 1227-short-workflow-display-names
 1201-release-candidates-before-1-0-0
 1225-rocm-10-therock-migration
+1207-feature-isa-invariance-gate
+1208-ssimulacra2-edge-diff-double-subtract
