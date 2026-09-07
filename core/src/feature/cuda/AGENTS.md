@@ -753,6 +753,22 @@ kernel variants at runtime. The current policy table is in ADR-0753.
   `adm2_apn_2` / `adm2_bcm_1` keys — the default-options test cannot
   see any of this, because `p = 3` IS the hardcoded exponent.
 
+- **MS-SSIM `clip_db` is a CEILING on the dB output, not a clamp on the
+  linear score** (ADR-1221) — `float_ms_ssim.c` derives
+  `max_db = ceil(10 * log10(peak * peak / mse))` with
+  `mse = 0.5 / (w * h)` at `init()`, and `convert_to_db()` returns
+  `MIN(-10*log10(1 - score), max_db)`, short-circuiting to `max_db`
+  when `score >= 1.0`. Until ADR-1221 all three twins clamped the
+  LINEAR score into `[0, 1]` and converted with no ceiling, and none
+  had a `max_db` field: an identical reference/distorted pair returned
+  `+Inf`, and every high-similarity pair returned an uncapped dB value.
+  Keep `max_db` and `ms_ssim_convert_to_db()` in sync with the CPU
+  across `integer_ms_ssim_cuda.c`, `../sycl/integer_ms_ssim_sycl.cpp`
+  and `../hip/integer_ms_ssim_hip.c`. The guard is the
+  `test_*_ms_ssim_*clip_db_ceiling` variant, which must feed an
+  IDENTICAL pair — on a merely high-similarity fixture the ceiling
+  never binds and the variant passes against the unfixed twin.
+
 - **`integer_vif_cuda.c::filter1d_8` picks `filter1d_8_horizontal_kernel_2_17_9_no_bounds`
   at `WS_SMALL` and the bounded variant at `WS_MEDIUM`/`WS_LARGE`** (ADR-0753 extended
   scope). `VifStateCuda` carries `func_filter1d_8_horizontal_kernel_2_17_9_no_bounds`.

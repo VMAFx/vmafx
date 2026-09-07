@@ -70,7 +70,21 @@ rejected with an error at init time (Netflix#1414 / ADR-0153).
 - `enable_chroma` (bool, default `false`): emit per-plane `_cb` and `_cr` scores in addition to luma. YUV400P sources are always luma-only.
 - `enable_lcs` (bool, default `false`): emit per-scale luminance, contrast, and structure intermediate components for the luma plane.
 - `enable_db` (bool, default `false`): report the luma MS-SSIM score as dB (`-10 * log10(1 - score)`).
-- `clip_db` (bool, default `false`): clip the dB score at the theoretical peak. Only meaningful when `enable_db=true`.
+- `clip_db` (bool, default `false`): cap the dB score at a **ceiling derived
+  from the frame geometry** — `max_db = ceil(10 * log10(peak² / mse))` with
+  `mse = 0.5 / (w * h)`. It is a ceiling on the dB *output*, not a clamp on the
+  linear score, and it also defines what a perfect match reports: `score >= 1.0`
+  returns `max_db` rather than `+Inf`. Only meaningful when `enable_db=true`.
+
+  > **GPU scores before this release were wrong.** Up to and including v3.2.1 the
+  > CUDA, SYCL and HIP twins read `clip_db` as a clamp on the *linear* score —
+  > `[0, 1]`, then `-10 * log10(1 - score)` with no ceiling — and carried no
+  > `max_db` at all. Scoring an identical reference/distorted pair returned
+  > `+Inf`, and every high-similarity pair returned an uncapped dB value, so
+  > `clip_db` did not clip. Fixed per
+  > [ADR-1221](../adr/1221-gpu-ms-ssim-db-ceiling.md). **Re-measure any GPU
+  > MS-SSIM dB score taken with `clip_db` set.** The Metal twin exposes neither
+  > `enable_db` nor `clip_db` and is unaffected.
 
 ### How to run
 

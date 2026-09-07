@@ -959,3 +959,4 @@
 1252-solo-maintainer-declared-bypass
 1219-gpu-cambi-tvi-shared-bisection
 1220-gpu-float-adm-options-reach-kernels
+1221-gpu-ms-ssim-db-ceiling

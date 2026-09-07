@@ -50292,3 +50292,32 @@ Branch: `fix/gpu-float-adm-options`.
    aggregate alone could not see the p-norm defect at all — the per-scale
    sub-scores could (`adm_scale0` drifts by `3.09e-03` where `adm2` stays inside
    the gate). An ADM parity test must read all five features.
+## ADR-1221 — MS-SSIM `clip_db` is a dB ceiling (2026-09-07)
+
+Branch: `fix/gpu-ms-ssim-max-db`.
+
+1. **`clip_db` does NOT clamp the linear score.** `float_ms_ssim.c` derives
+   `max_db = ceil(10 * log10(peak * peak / mse))` with `mse = 0.5 / (w * h)` at
+   `init()`, and `convert_to_db()` returns `MIN(-10*log10(1 - score), max_db)`
+   with `score >= 1.0` short-circuiting to `max_db`. A twin that clamps the
+   linear score into `[0, 1]` and then converts without a ceiling returns `+Inf`
+   for an identical reference/distorted pair and an uncapped value for every
+   other high-similarity pair. Keep the `max_db` field and the
+   `ms_ssim_convert_to_db()` helper in sync with the CPU on all three twins.
+
+2. **`max_db` belongs in `init()`, not in `extract()`.** `w`, `h` and `bpc` are
+   fixed for the extractor's lifetime; the CPU computes it once and so do the
+   twins. Its derivation uses the CPU's exact expression and integer types —
+   `peak * peak` in `unsigned`, `0.5 / (w * h)` in `double` — so do not
+   "simplify" it.
+
+3. **A dB-option parity test needs an IDENTICAL pair.** On a merely
+   high-similarity fixture `-10*log10(1 - score)` stays well below `max_db` and
+   both paths agree, so the variant passes against the unfixed twin. Feeding the
+   same picture as reference and distorted drives the score to `1.0`, which is
+   where the ceiling binds — and is an ordinary thing for a user to do.
+
+4. **Metal is out of scope here.** `float_ms_ssim_metal.mm` exposes only
+   `enable_lcs` and rejects `enable_db` / `clip_db` / `enable_chroma`, so it
+   cannot produce a dB score at all. That is a feature gap rather than a wrong
+   answer; it is tracked in `docs/state.md`.

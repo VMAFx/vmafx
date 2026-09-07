@@ -36,6 +36,7 @@
  */
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -103,7 +104,18 @@ static int fill_dist(VmafPicture *pic, unsigned frame_idx)
     return 0;
 }
 
-static char *run_cpu(double *out_score)
+/* ADR-1221 — `enable_db` / `clip_db` opt into the dB-domain score with a
+ * geometry-derived ceiling. Neither is a VMAF_OPT_FLAG_FEATURE_PARAM, so the
+ * collector key stays `float_ms_ssim`. */
+static int ms_ssim_db_opts(VmafFeatureDictionary **opts)
+{
+    int err = vmaf_feature_dictionary_set(opts, "enable_db", "true");
+    if (err)
+        return err;
+    return vmaf_feature_dictionary_set(opts, "clip_db", "true");
+}
+
+static char *run_cpu(bool db, bool identical, double *out_score)
 {
     int err = 0;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
@@ -111,14 +123,21 @@ static char *run_cpu(double *out_score)
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "float_ms_ssim", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    if (db) {
+        err = ms_ssim_db_opts(&opts);
+        mu_assert("CPU: ms_ssim_db_opts failed", !err);
+    }
+    err = vmaf_use_feature(vmaf, "float_ms_ssim", opts);
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CPU: vmaf_use_feature(float_ms_ssim) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         VmafPicture ref, dist;
         err = fill_ref(&ref, i);
         mu_assert("CPU: fill_ref failed", !err);
-        err = fill_dist(&dist, i);
+        err = identical ? fill_ref(&dist, i) : fill_dist(&dist, i);
         mu_assert("CPU: fill_dist failed", !err);
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("CPU: vmaf_read_pictures failed", !err);
@@ -134,7 +153,7 @@ static char *run_cpu(double *out_score)
     return NULL;
 }
 
-static char *run_cuda(double *out_score)
+static char *run_cuda(bool db, bool identical, double *out_score)
 {
     *out_score = NAN;
     int err = 0;
@@ -155,14 +174,21 @@ static char *run_cuda(double *out_score)
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
 
-    err = vmaf_use_feature(vmaf, "float_ms_ssim_cuda", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    if (db) {
+        err = ms_ssim_db_opts(&opts);
+        mu_assert("CUDA: ms_ssim_db_opts failed", !err);
+    }
+    err = vmaf_use_feature(vmaf, "float_ms_ssim_cuda", opts);
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CUDA: vmaf_use_feature(float_ms_ssim_cuda) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         VmafPicture ref, dist;
         err = fill_ref(&ref, i);
         mu_assert("CUDA: fill_ref failed", !err);
-        err = fill_dist(&dist, i);
+        err = identical ? fill_ref(&dist, i) : fill_dist(&dist, i);
         mu_assert("CUDA: fill_dist failed", !err);
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         mu_assert("CUDA: vmaf_read_pictures failed", !err);
@@ -185,10 +211,10 @@ static char *test_float_ms_ssim_cpu_cuda_parity(void)
     double cpu_score = 0.0;
     double cuda_score = NAN;
 
-    char *msg = run_cpu(&cpu_score);
+    char *msg = run_cpu(false, false, &cpu_score);
     if (msg)
         return msg;
-    msg = run_cuda(&cuda_score);
+    msg = run_cuda(false, false, &cuda_score);
     if (msg)
         return msg;
     if (isnan(cuda_score))
@@ -208,8 +234,56 @@ static char *test_float_ms_ssim_cpu_cuda_parity(void)
     return NULL;
 }
 
+/* ------------------------------------------------------------------ */
+/* ADR-1221 — clip_db is a CEILING on the dB output, not a clamp on the */
+/* linear score.                                                        */
+/*                                                                     */
+/* float_ms_ssim.c derives `max_db = ceil(10*log10(peak*peak/mse))`     */
+/* with `mse = 0.5/(w*h)` and returns                                   */
+/* `MIN(-10*log10(1 - score), max_db)`, short-circuiting to `max_db`    */
+/* when score >= 1.0. The twin used to clamp the LINEAR score into      */
+/* [0, 1] and then convert with no ceiling, which returns +Inf for an   */
+/* identical reference/distorted pair.                                  */
+/*                                                                     */
+/* The fixture feeds the SAME picture as reference and distorted, so    */
+/* ms_ssim is 1.0 and the ceiling actually binds. On a merely           */
+/* high-similarity pair `-10*log10(1 - score)` stays well below max_db  */
+/* and both paths agree, which is why this needs its own fixture rather */
+/* than the shared one. Scoring a file against itself is an ordinary    */
+/* thing to do, so this is a reachable case, not a synthetic one.       */
+/* ------------------------------------------------------------------ */
+static char *test_float_ms_ssim_clip_db_ceiling(void)
+{
+    double cpu_score = 0.0;
+    double gpu_score = NAN;
+
+    char *msg = run_cpu(true, true, &cpu_score);
+    if (msg)
+        return msg;
+    msg = run_cuda(true, true, &gpu_score);
+    if (msg)
+        return msg;
+    if (isnan(gpu_score))
+        return NULL;
+
+    mu_assert("CPU float_ms_ssim dB score is non-finite", isfinite(cpu_score));
+    mu_assert("CUDA float_ms_ssim dB score is non-finite -- clip_db must cap it at max_db",
+              isfinite(gpu_score));
+
+    const double delta = fabs(cpu_score - gpu_score);
+    if (delta > PARITY_TOL) {
+        (void)fprintf(stderr,
+                      "\nfloat_ms_ssim enable_db+clip_db parity FAIL: cpu=%.8f cuda=%.8f "
+                      "delta=%.2e tol=%.2e\n",
+                      cpu_score, gpu_score, delta, PARITY_TOL);
+    }
+    mu_assert("float_ms_ssim dB score drifts from the CPU reference", delta <= PARITY_TOL);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_float_ms_ssim_cpu_cuda_parity);
+    mu_run_test(test_float_ms_ssim_clip_db_ceiling);
     return NULL;
 }
