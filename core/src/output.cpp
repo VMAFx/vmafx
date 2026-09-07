@@ -68,7 +68,14 @@ extern "C" {
  * vmaf_write_output_with_format(..., NULL) get golden-compatible numbers
  * without an explicit format. Round-trip lossless is opt-in via "%.17g".
  * See ADR-0119 (supersedes ADR-0006). */
-static constexpr std::string_view DEFAULT_SCORE_FORMAT{"%.6f"};
+/* Internal to this translation unit; an anonymous namespace is the C++
+ * spelling for that (misc-use-anonymous-namespace). The exported writers
+ * stay outside it -- putting them inside would give them internal linkage
+ * and break every caller. */
+namespace
+{
+
+constexpr const char *DEFAULT_SCORE_FORMAT = "%.6f";
 
 /* RAII wrapper for the C locale push/pop pair.  Ensures vmaf_thread_locale_pop
  * is called on every exit path from the public writer functions, including any
@@ -84,9 +91,10 @@ class LocaleGuard
          * potentially producing incorrect decimal separators on non-C locales.
          * Log a warning so this is observable (adversarial review 2026-05-28
          * finding #16). */
-        if (!state_)
+        if (!state_) {
             vmaf_log(VMAF_LOG_LEVEL_WARNING, "vmaf_thread_locale_push_c failed; output may use "
                                              "wrong decimal separator\n");
+        }
     }
     ~LocaleGuard() noexcept
     {
@@ -103,7 +111,7 @@ class LocaleGuard
     VmafThreadLocaleState *state_;
 };
 
-static unsigned max_capacity(VmafFeatureCollector *fc)
+unsigned max_capacity(VmafFeatureCollector *fc)
 {
     unsigned capacity = 0;
 
@@ -121,7 +129,7 @@ static unsigned max_capacity(VmafFeatureCollector *fc)
  * form; use positional initializers so the array compiles cleanly under
  * -std=c++23. Index 0 (UNKNOWN) is nullptr and never accessed — writers index
  * this array only through `pool_report_order`. */
-static constexpr const char *pool_method_name[] = {
+constexpr const char *pool_method_name[] = {
     nullptr,         /* VMAF_POOL_METHOD_UNKNOWN = 0 */
     "min",           /* VMAF_POOL_METHOD_MIN = 1     */
     "max",           /* VMAF_POOL_METHOD_MAX = 2     */
@@ -146,16 +154,20 @@ static_assert(VMAF_POOL_METHOD_NB == 9,
  * silently widen every log file. The percentile methods are reachable through
  * the C API — vmaf_feature_score_pooled / vmaf_score_pooled — and are simply
  * not auto-reported. Writers iterate this array instead of [1, NB). */
-static constexpr VmafPoolingMethod pool_report_order[] = {
+constexpr VmafPoolingMethod pool_report_order[] = {
     VMAF_POOL_METHOD_MIN, VMAF_POOL_METHOD_MAX, VMAF_POOL_METHOD_MEAN,
     VMAF_POOL_METHOD_HARMONIC_MEAN};
 
-static inline std::string_view fmt_or_default(const char *score_format) noexcept
+/* Returns a NUL-terminated format string. It is handed straight to
+ * std::fprintf as the *format* argument, so it must be terminated;
+ * std::string_view::data() carries no such guarantee, which is what
+ * bugprone-suspicious-stringview-data-usage was flagging. */
+inline const char *fmt_or_default(const char *score_format) noexcept
 {
-    return score_format ? std::string_view{score_format} : DEFAULT_SCORE_FORMAT;
+    return score_format ? score_format : DEFAULT_SCORE_FORMAT;
 }
 
-static unsigned count_written_at(VmafFeatureCollector *fc, unsigned i)
+unsigned count_written_at(VmafFeatureCollector *fc, unsigned i)
 {
     unsigned cnt = 0;
     for (unsigned j = 0; j < fc->cnt; j++) {
@@ -175,15 +187,14 @@ static unsigned count_written_at(VmafFeatureCollector *fc, unsigned i)
 /* Writers rely on a final ferror() check to detect I/O failure rather than
  * propagating per-call errors — there is no recoverable action mid-stream. */
 // NOLINTBEGIN(cert-err33-c) — ADR-0141 / ADR-0278: writer ferror pattern
-static void xml_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample,
-                             std::string_view sf)
+void xml_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample, const char *sf)
 {
     (void)std::fprintf(outfile, "  <frames>\n");
     for (unsigned i = 0; i < max_capacity(fc); i++) {
         if ((subsample > 1) && (i % subsample))
             continue;
 
-        unsigned cnt = count_written_at(fc, i);
+        const unsigned cnt = count_written_at(fc, i);
         if (!cnt)
             continue;
 
@@ -195,7 +206,7 @@ static void xml_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned s
                 continue;
             (void)std::fprintf(outfile, "%s=\"",
                                vmaf_feature_name_alias(fc->feature_vector[j]->name));
-            (void)std::fprintf(outfile, sf.data(), fc->feature_vector[j]->score[i].value);
+            (void)std::fprintf(outfile, sf, fc->feature_vector[j]->score[i].value);
             (void)std::fprintf(outfile, "\" ");
         }
         (void)std::fprintf(outfile, "/>\n");
@@ -206,22 +217,22 @@ static void xml_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned s
 /* Emit pool scores for one XML <metric> entry when frames were actually read.
  * Called only when pic_cnt > 0 to avoid the `pic_cnt - 1` unsigned underflow
  * to UINT_MAX that was the ADR-0602 macOS SIGSEGV root cause. */
-static void xml_write_one_metric_pools(VmafContext *vmaf, FILE *outfile, const char *feature_name,
-                                       unsigned pic_cnt, std::string_view sf)
+void xml_write_one_metric_pools(VmafContext *vmaf, FILE *outfile, const char *feature_name,
+                                unsigned pic_cnt, const char *sf)
 {
     for (const VmafPoolingMethod j : pool_report_order) {
         double score;
-        int err = vmaf_feature_score_pooled(vmaf, feature_name, j, &score, 0, pic_cnt - 1);
+        const int err = vmaf_feature_score_pooled(vmaf, feature_name, j, &score, 0, pic_cnt - 1);
         if (!err) {
             (void)std::fprintf(outfile, "%s=\"", pool_method_name[j]);
-            (void)std::fprintf(outfile, sf.data(), score);
+            (void)std::fprintf(outfile, sf, score);
             (void)std::fprintf(outfile, "\" ");
         }
     }
 }
 
-static void xml_write_pooled_metrics(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
-                                     unsigned pic_cnt, std::string_view sf)
+void xml_write_pooled_metrics(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
+                              unsigned pic_cnt, const char *sf)
 {
     (void)std::fprintf(outfile, "  <pooled_metrics>\n");
     for (unsigned i = 0; i < fc->cnt; i++) {
@@ -235,24 +246,25 @@ static void xml_write_pooled_metrics(VmafContext *vmaf, VmafFeatureCollector *fc
     (void)std::fprintf(outfile, "  </pooled_metrics>\n");
 }
 
-static void xml_write_aggregate_metrics(VmafFeatureCollector *fc, FILE *outfile,
-                                        std::string_view sf)
+void xml_write_aggregate_metrics(VmafFeatureCollector *fc, FILE *outfile, const char *sf)
 {
     (void)std::fprintf(outfile, "  <aggregate_metrics ");
     for (unsigned i = 0; i < fc->aggregate_vector.cnt; i++) {
         (void)std::fprintf(outfile, "%s=\"", fc->aggregate_vector.metric[i].name);
-        (void)std::fprintf(outfile, sf.data(), fc->aggregate_vector.metric[i].value);
+        (void)std::fprintf(outfile, sf, fc->aggregate_vector.metric[i].value);
         (void)std::fprintf(outfile, "\" ");
     }
     (void)std::fprintf(outfile, "/>\n");
 }
 
-static void xml_write_pooled_and_aggregate(VmafContext *vmaf, VmafFeatureCollector *fc,
-                                           FILE *outfile, unsigned pic_cnt, std::string_view sf)
+void xml_write_pooled_and_aggregate(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
+                                    unsigned pic_cnt, const char *sf)
 {
     xml_write_pooled_metrics(vmaf, fc, outfile, pic_cnt, sf);
     xml_write_aggregate_metrics(fc, outfile, sf);
 }
+
+} // namespace
 
 [[nodiscard]] int vmaf_write_output_xml(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
                                         unsigned subsample, unsigned width, unsigned height,
@@ -265,7 +277,7 @@ static void xml_write_pooled_and_aggregate(VmafContext *vmaf, VmafFeatureCollect
     if (!outfile)
         return -EINVAL;
 
-    const std::string_view sf = fmt_or_default(score_format);
+    const char *const sf = fmt_or_default(score_format);
 
     const LocaleGuard locale;
 
@@ -284,15 +296,22 @@ static void xml_write_pooled_and_aggregate(VmafContext *vmaf, VmafFeatureCollect
     return (flush_err != 0 || std::ferror(outfile)) ? -EIO : 0;
 }
 
-static void json_write_frame_metric(FILE *outfile, const char *name, double value,
-                                    std::string_view sf, bool trailing_comma)
+/* Internal to this translation unit; an anonymous namespace is the C++
+ * spelling for that (misc-use-anonymous-namespace). The exported writers
+ * stay outside it -- putting them inside would give them internal linkage
+ * and break every caller. */
+namespace
+{
+
+void json_write_frame_metric(FILE *outfile, const char *name, double value, const char *sf,
+                             bool trailing_comma)
 {
     switch (std::fpclassify(value)) {
     case FP_NORMAL:
     case FP_ZERO:
     case FP_SUBNORMAL:
         (void)std::fprintf(outfile, "        \"%s\": ", name);
-        (void)std::fprintf(outfile, sf.data(), value);
+        (void)std::fprintf(outfile, sf, value);
         (void)std::fprintf(outfile, "%s\n", trailing_comma ? "," : "");
         break;
     case FP_INFINITE:
@@ -303,8 +322,8 @@ static void json_write_frame_metric(FILE *outfile, const char *name, double valu
     }
 }
 
-static void json_write_frame(VmafFeatureCollector *fc, FILE *outfile, unsigned i, unsigned cnt,
-                             std::string_view sf)
+void json_write_frame(VmafFeatureCollector *fc, FILE *outfile, unsigned i, unsigned cnt,
+                      const char *sf)
 {
     (void)std::fprintf(outfile, "    {\n");
     (void)std::fprintf(outfile, "      \"frameNum\": %u,\n", i);
@@ -324,8 +343,7 @@ static void json_write_frame(VmafFeatureCollector *fc, FILE *outfile, unsigned i
     (void)std::fprintf(outfile, "    }");
 }
 
-static void json_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample,
-                              std::string_view sf)
+void json_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample, const char *sf)
 {
     (void)std::fprintf(outfile, "  \"frames\": [");
     /* ADR-0606: track whether we have emitted the first frame entry so the
@@ -337,7 +355,7 @@ static void json_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned 
         if ((subsample > 1) && (i % subsample))
             continue;
 
-        unsigned cnt = count_written_at(fc, i);
+        const unsigned cnt = count_written_at(fc, i);
         if (!cnt)
             continue;
         (void)std::fprintf(outfile, "%s", first_frame ? "\n" : ",\n");
@@ -356,8 +374,8 @@ static void json_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned 
  * j==2 call would then print a leading comma with no preceding value,
  * producing malformed JSON ("{,\n  \"max\": ...}").  Use an explicit
  * `*first` flag instead so the comma tracks what was actually emitted. */
-static void json_write_pool_score(FILE *outfile, bool *first, VmafPoolingMethod j, double score,
-                                  std::string_view sf)
+void json_write_pool_score(FILE *outfile, bool *first, VmafPoolingMethod j, double score,
+                           const char *sf)
 {
     (void)std::fprintf(outfile, "%s", *first ? "\n" : ",\n");
     *first = false;
@@ -366,7 +384,7 @@ static void json_write_pool_score(FILE *outfile, bool *first, VmafPoolingMethod 
     case FP_ZERO:
     case FP_SUBNORMAL:
         (void)std::fprintf(outfile, "      \"%s\": ", pool_method_name[j]);
-        (void)std::fprintf(outfile, sf.data(), score);
+        (void)std::fprintf(outfile, sf, score);
         break;
     case FP_INFINITE:
     case FP_NAN:
@@ -376,8 +394,8 @@ static void json_write_pool_score(FILE *outfile, bool *first, VmafPoolingMethod 
     }
 }
 
-static void json_write_pooled_entry(VmafContext *vmaf, FILE *outfile, const char *feature_name,
-                                    unsigned pic_cnt, std::string_view sf)
+void json_write_pooled_entry(VmafContext *vmaf, FILE *outfile, const char *feature_name,
+                             unsigned pic_cnt, const char *sf)
 {
     (void)std::fprintf(outfile, "    \"%s\": {", vmaf_feature_name_alias(feature_name));
     /* ADR-0602 / ADR-0606: pic_cnt == 0 means no frames were read via
@@ -393,7 +411,7 @@ static void json_write_pooled_entry(VmafContext *vmaf, FILE *outfile, const char
         bool first = true;
         for (const VmafPoolingMethod j : pool_report_order) {
             double score;
-            int err = vmaf_feature_score_pooled(vmaf, feature_name, j, &score, 0, pic_cnt - 1);
+            const int err = vmaf_feature_score_pooled(vmaf, feature_name, j, &score, 0, pic_cnt - 1);
             if (!err)
                 json_write_pool_score(outfile, &first, j, score, sf);
         }
@@ -402,8 +420,8 @@ static void json_write_pooled_entry(VmafContext *vmaf, FILE *outfile, const char
     (void)std::fprintf(outfile, "    }");
 }
 
-static void json_write_pooled(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
-                              unsigned pic_cnt, std::string_view sf)
+void json_write_pooled(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile, unsigned pic_cnt,
+                       const char *sf)
 {
     (void)std::fprintf(outfile, "  \"pooled_metrics\": {");
     for (unsigned i = 0; i < fc->cnt; i++) {
@@ -413,7 +431,7 @@ static void json_write_pooled(VmafContext *vmaf, VmafFeatureCollector *fc, FILE 
     (void)std::fprintf(outfile, "\n  },\n");
 }
 
-static void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, std::string_view sf)
+void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, const char *sf)
 {
     (void)std::fprintf(outfile, "  \"aggregate_metrics\": {");
     for (unsigned i = 0; i < fc->aggregate_vector.cnt; i++) {
@@ -422,7 +440,7 @@ static void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, std::s
         case FP_ZERO:
         case FP_SUBNORMAL:
             (void)std::fprintf(outfile, "\n    \"%s\": ", fc->aggregate_vector.metric[i].name);
-            (void)std::fprintf(outfile, sf.data(), fc->aggregate_vector.metric[i].value);
+            (void)std::fprintf(outfile, sf, fc->aggregate_vector.metric[i].value);
             break;
         case FP_INFINITE:
         case FP_NAN:
@@ -434,6 +452,8 @@ static void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, std::s
     }
     (void)std::fprintf(outfile, "\n  }\n");
 }
+
+} // namespace
 
 [[nodiscard]] int vmaf_write_output_json(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
                                          unsigned subsample, double fps, unsigned pic_cnt,
@@ -449,7 +469,7 @@ static void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, std::s
     if (!outfile)
         return -EINVAL;
 
-    const std::string_view sf = fmt_or_default(score_format);
+    const char *const sf = fmt_or_default(score_format);
 
     const LocaleGuard locale;
 
@@ -492,7 +512,7 @@ static void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, std::s
     if (!outfile)
         return -EINVAL;
 
-    const std::string_view sf = fmt_or_default(score_format);
+    const char *const sf = fmt_or_default(score_format);
 
     const LocaleGuard locale;
 
@@ -522,7 +542,7 @@ static void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, std::s
                 continue;
             if (!fc->feature_vector[j]->score[i].written)
                 continue;
-            (void)std::fprintf(outfile, sf.data(), fc->feature_vector[j]->score[i].value);
+            (void)std::fprintf(outfile, sf, fc->feature_vector[j]->score[i].value);
             (void)std::fprintf(outfile, ",");
         }
         (void)std::fprintf(outfile, "\n");
@@ -543,7 +563,7 @@ static void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, std::s
     if (!outfile)
         return -EINVAL;
 
-    const std::string_view sf = fmt_or_default(score_format);
+    const char *const sf = fmt_or_default(score_format);
 
     const LocaleGuard locale;
 
@@ -569,7 +589,7 @@ static void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, std::s
                 continue;
             (void)std::fprintf(outfile,
                                "%s: ", vmaf_feature_name_alias(fc->feature_vector[j]->name));
-            (void)std::fprintf(outfile, sf.data(), fc->feature_vector[j]->score[i].value);
+            (void)std::fprintf(outfile, sf, fc->feature_vector[j]->score[i].value);
             (void)std::fprintf(outfile, "|");
         }
         (void)std::fprintf(outfile, "\n");
