@@ -35,9 +35,9 @@
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 
 #if defined(__GNUC__)
-#define ALIGNED(x) __attribute__((aligned((x))))
+#define ALIGNED(x) __attribute__((aligned(x)))
 #elif defined(_MSC_VER)
-#define ALIGNED(x) __declspec(align((x)))
+#define ALIGNED(x) __declspec(align(x))
 #else
 #define ALIGNED(x)
 #endif
@@ -113,10 +113,10 @@ static FORCE_INLINE void copy_and_pad(const VifBuffer *buf, unsigned w, unsigned
 
 #define shuffle_and_save(addr, x, y)                                                               \
     {                                                                                              \
-        __m256i left = _mm256_permute2x128_si256((x), ((y)), 0x20);                                \
-        __m256i right = _mm256_permute2x128_si256((x), ((y)), 0x31);                               \
-        _mm256_storeu_si256((__m256i *)((addr)), left);                                            \
-        _mm256_storeu_si256(((__m256i *)((addr))) + 1, right);                                     \
+        __m256i left = _mm256_permute2x128_si256((x), (y), 0x20);                                  \
+        __m256i right = _mm256_permute2x128_si256((x), (y), 0x31);                                 \
+        _mm256_storeu_si256((__m256i *)(addr), left);                                              \
+        _mm256_storeu_si256(((__m256i *)(addr)) + 1, right);                                       \
     }
 
 typedef struct VifVertical256 {
