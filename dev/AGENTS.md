@@ -368,3 +368,18 @@ ADR-0966 fixed three references that survived the ADR-0700 rename and caused
 exhaustive") applies here: a single missed grep cost a full build-blockage
 incident. Run the check above as part of any PR that renames a top-level
 source directory.
+
+## Base images come from `build-config.env` (ADR-1231)
+
+Do not write a base image into a Dockerfile in this directory. Every base is an
+`ARG` whose default mirrors the root-level `build-config.env`; edit that file
+and run `make base-images-sync`, never the `ARG` line by hand.
+
+`COPY --from=<digest-pinned image>` counts as a base-image pin and is rejected
+by `scripts/ci/check-base-image-single-source.sh`. Declare a named stage
+instead — `FROM ${CUDA_RUNTIME} AS cuda-runtime-libs`, then
+`COPY --from=cuda-runtime-libs …`. BuildKit prunes unused stages, so the extra
+stage is free. Four pins hidden this way were the most out-of-date images in
+the repository.
+
+See [docs/development/base-images.md](../docs/development/base-images.md).

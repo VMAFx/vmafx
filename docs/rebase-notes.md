@@ -49176,3 +49176,39 @@ Fork-only release tooling and CI. Three invariants:
    returns `1.0.0`, so a naive comparison concludes the RC line has already
    reached 1.0.0 and fails every RC build while `release-as` is legitimately
    still present. The `*-*` early return is load-bearing, not cosmetic.
+
+## ADR-1231 — container base images come from build-config.env (2026-09-07)
+
+Rebase-sensitive invariants introduced by this change:
+
+1. **A Dockerfile must never name a base image directly again.** Every base is
+   an `ARG` whose default mirrors `build-config.env`, and
+   `scripts/ci/check-base-image-single-source.sh` fails on any digest-pinned
+   literal. An upstream merge that reintroduces a literal `FROM debian:…@sha256:…`
+   will fail the gate rather than silently forking the pin. Resolve by moving
+   the value into `build-config.env` and referencing the `ARG`.
+
+2. **`COPY --from=<digest-pinned image>` is a base-image pin and is rejected.**
+   This is the non-obvious half. Four such pins existed and were the most stale
+   in the tree, because no `FROM`-oriented search finds them. Use a named stage
+   (`FROM ${CUDA_RUNTIME} AS cuda-runtime-libs`, then
+   `COPY --from=cuda-runtime-libs …`); BuildKit prunes the stage when the
+   selected target does not use it, so it is free.
+
+3. **Do not hand-edit an `ARG` default to fix a drift failure.** Edit
+   `build-config.env` and run `make base-images-sync`. Hand-editing puts the
+   two copies back out of agreement in the other direction, which the gate will
+   then report against the file you just "fixed".
+
+4. **The Ubuntu 24.04 exemptions are deliberate and self-closing.**
+   `ROCM_BUILDER`, `ROCM_RUNTIME`, `ONEAPI_BUILDER` and `ONEAPI_RUNTIME` are
+   listed in `distro_exempt` in the gate. Do not extend that list to silence a
+   new failure — it exists only because those two migrations need matching
+   source changes (PR #1386 for ROCm; the oneAPI 2026.1 restructure documented
+   in `docs/research/1231-base-image-single-source.md`). Each entry is deleted
+   when its migration lands.
+
+5. **`docker/dev/*.Dockerfile` is intentionally outside the gate.** Those files
+   pin Alpine / Arch / Fedora precisely because they are *not* the release
+   distro. Unifying their bases would defeat the portability matrix they exist
+   to run.

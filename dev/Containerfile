@@ -38,7 +38,14 @@
 # ---------------------------------------------------------------------------
 # Stage 1 — build-deps
 # ---------------------------------------------------------------------------
-FROM ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b AS build-deps
+# Base images come from build-config.env -- the single source of truth for
+# every container base in this repository. These defaults are mirrors kept in
+# sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
+# these lines, then run that script with --write.
+ARG DEV_BASE="ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b"
+ARG DEV_GO_BASE="golang:1.27-trixie@sha256:9baa6b4187bbb98d240372a8a235ac0bb6b5ddd52bba1431dc2f7c0705862728"
+
+FROM ${DEV_BASE} AS build-deps
 
 LABEL org.opencontainers.image.title="vmaf-dev-mcp-build-deps"
 LABEL org.opencontainers.image.description="Base build tools for VMAF fork dev-MCP container"
@@ -1027,11 +1034,15 @@ WORKDIR /build/vmaf
 # vmafx-operator are pure Go. So the toolchain is copied INTO the stage that
 # already has libvmaf.so and its headers, rather than the other way round.
 # =============================================================================
+# Go toolchain as a named stage: the pin stays an ordinary FROM the
+# single-source gate can see.
+FROM ${DEV_GO_BASE} AS go-toolchain
+
 FROM libvmaf-build AS go-build
 
 USER root
 # Toolchain only — no base-image swap, so libvmaf and its pkg-config stay put.
-COPY --from=golang:1.27-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b /usr/local/go /usr/local/go
+COPY --from=go-toolchain /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:${PATH}
 ENV GOTOOLCHAIN=local
 
@@ -1144,7 +1155,7 @@ RUN cd /build/vmaf \
          tail -20 /tmp/collect.log; exit 1; }
 
 ENV PATH=/opt/vmaf-venv/bin:${PATH}
-ENV PYTHONPATH=/build/vmaf/python:${PYTHONPATH}
+ENV PYTHONPATH=/build/vmaf/python
 
 # Runtime environment
 ENV VMAF_MODEL_PATH=/build/vmaf/model
