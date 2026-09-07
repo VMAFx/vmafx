@@ -27,13 +27,13 @@
 #include "feature/common/macros.h"
 #include "feature/x86/vif_avx2.h"
 
-#define MIN(x, y) ((((x)) < ((y))) ? ((x)) : ((y)))
-#define MAX(x, y) ((((x)) > ((y))) ? ((x)) : ((y)))
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
+#define MAX(x, y) (((x) > (y)) ? (x) : (y))
 
 #if defined(__GNUC__)
-#define ALIGNED(x) __attribute__((aligned((x))))
+#define ALIGNED(x) __attribute__((aligned(x)))
 #elif defined(_MSC_VER)
-#define ALIGNED(x) __declspec(align((x)))
+#define ALIGNED(x) __declspec(align(x))
 #else
 #define ALIGNED(x)
 #endif
@@ -74,15 +74,15 @@ static FORCE_INLINE void copy_and_pad(const VifBuffer *buf, unsigned w, unsigned
 #define multiply2(acc_left, acc_right, r0, f)                                                      \
     {                                                                                              \
         __m256i zero = _mm256_setzero_si256();                                                     \
-        ((acc_left)) = _mm256_madd_epi16(_mm256_unpacklo_epi16((r0), zero), f);                    \
-        ((acc_right)) = _mm256_madd_epi16(_mm256_unpackhi_epi16((r0), zero), f);                   \
+        (acc_left) = _mm256_madd_epi16(_mm256_unpacklo_epi16((r0), zero), f);                      \
+        (acc_right) = _mm256_madd_epi16(_mm256_unpackhi_epi16((r0), zero), f);                     \
     }
 
 // multiply r0 * f and r1 * f and store in 32-bit accumulators (shuffled 0 1 2 3 8 9 10 11 / 4 5 6 7 12 13 14 15)
 #define multiply2_and_accumulate(acc_left, acc_right, r0, r1, f)                                   \
-    ((acc_left)) =                                                                                 \
+    (acc_left) =                                                                                   \
         _mm256_add_epi32((acc_left), _mm256_madd_epi16(_mm256_unpacklo_epi16((r0), r1), f));       \
-    ((acc_right)) =                                                                                \
+    (acc_right) =                                                                                  \
         _mm256_add_epi32((acc_right), _mm256_madd_epi16(_mm256_unpackhi_epi16((r0), r1), f));
 
 // compute r0 * r1 * f and set 32-bit accumulators (shuffled 0 1 2 3 8 9 10 11 / 4 5 6 7 12 13 14 15)
@@ -91,8 +91,8 @@ static FORCE_INLINE void copy_and_pad(const VifBuffer *buf, unsigned w, unsigned
         __m256i mul = _mm256_mullo_epi16((r0), r1);                                                \
         __m256i lo = _mm256_mullo_epi16(mul, f);                                                   \
         __m256i hi = _mm256_mulhi_epu16(mul, f);                                                   \
-        ((accum_ref_left)) = _mm256_unpacklo_epi16(lo, hi);                                        \
-        ((accum_ref_right)) = _mm256_unpackhi_epi16(lo, hi);                                       \
+        (accum_ref_left) = _mm256_unpacklo_epi16(lo, hi);                                          \
+        (accum_ref_right) = _mm256_unpackhi_epi16(lo, hi);                                         \
     }
 
 // compute r0 * r1 * f and add to 32-bit accumulators (shuffled 0 1 2 3 8 9 10 11 / 4 5 6 7 12 13 14 15)
@@ -103,16 +103,16 @@ static FORCE_INLINE void copy_and_pad(const VifBuffer *buf, unsigned w, unsigned
         __m256i hi = _mm256_mulhi_epu16(mul, f);                                                   \
         __m256i left = _mm256_unpacklo_epi16(lo, hi);                                              \
         __m256i right = _mm256_unpackhi_epi16(lo, hi);                                             \
-        ((accum_ref_left)) = _mm256_add_epi32((accum_ref_left), left);                             \
-        ((accum_ref_right)) = _mm256_add_epi32((accum_ref_right), right);                          \
+        (accum_ref_left) = _mm256_add_epi32((accum_ref_left), left);                               \
+        (accum_ref_right) = _mm256_add_epi32((accum_ref_right), right);                            \
     }
 
 #define shuffle_and_save(addr, x, y)                                                               \
     {                                                                                              \
-        __m256i left = _mm256_permute2x128_si256((x), ((y)), 0x20);                                \
-        __m256i right = _mm256_permute2x128_si256((x), ((y)), 0x31);                               \
-        _mm256_storeu_si256((__m256i *)((addr)), left);                                            \
-        _mm256_storeu_si256(((__m256i *)((addr))) + 1, right);                                     \
+        __m256i left = _mm256_permute2x128_si256((x), (y), 0x20);                                  \
+        __m256i right = _mm256_permute2x128_si256((x), (y), 0x31);                                 \
+        _mm256_storeu_si256((__m256i *)(addr), left);                                              \
+        _mm256_storeu_si256(((__m256i *)(addr)) + 1, right);                                       \
     }
 
 /* A fully unrolled AVX2 kernel. Splitting it changes register allocation
