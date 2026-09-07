@@ -105,8 +105,10 @@ typedef struct FadmCsfHost {
     float gain_limit;
     float scaler;
     float pixel_offset;
-    uint32_t _pad0;
-    uint32_t _pad1;
+    /* ADR-1220: the two former padding slots now carry adm_p_norm and
+     * adm_bypass_cm, so the struct size and alignment are unchanged. */
+    float p_norm;
+    uint32_t bypass_cm;
 } FadmCsfHost;
 
 typedef struct FloatAdmStateMetal {
@@ -669,6 +671,11 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
         c.gain_limit = gain_limit;
         c.scaler = s->scaler;
         c.pixel_offset = -128.0f;
+        /* ADR-1220: both are VMAF_OPT_FLAG_FEATURE_PARAM options the twin
+         * advertises; the kernels hardcoded p = 3 and always subtracted the
+         * masking threshold until they were carried through here. */
+        c.p_norm = (float)s->adm_p_norm;
+        c.bypass_cm = (uint32_t)s->adm_bypass_cm;
 
         id<MTLBuffer> ref_band = (__bridge id<MTLBuffer>)s->ref_band[scale];
         id<MTLBuffer> dis_band = (__bridge id<MTLBuffer>)s->dis_band[scale];
@@ -822,13 +829,29 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeat
         if (top < 0) { top = 0; }
         const int right = hw - left;
         const int bottom = hh - top;
-        const float area_cbrt = powf(
-            (float)((bottom - top) * (right - left)) * (float)s->adm_noise_weight, 1.0f / 3.0f);
+        /* The pooling root and the noise constant are 1/adm_p_norm, not a
+         * hardcoded 1/3: adm_tools.c uses powf(accum, 1.0f / adm_p_norm) and
+         * get_noise_constant(..., adm_p_norm). ADR-1220. */
+        const float inv_p = 1.0f / (float)s->adm_p_norm;
+        const float area_cbrt =
+            powf((float)((bottom - top) * (right - left)) * (float)s->adm_noise_weight, inv_p);
         float num_scale = 0.0f;
         float den_scale = 0.0f;
-        for (int b = 0; b < FADM_NUM_BANDS; ++b) {
-            num_scale += powf((float)cm_totals[scale][b], 1.0f / 3.0f) + area_cbrt;
-            den_scale += powf((float)csf_totals[scale][b], 1.0f / 3.0f) + area_cbrt;
+        if (scale == 0 && s->adm_skip_scale0) {
+            /* adm.c:235-245 replaces the scale-0 DWT with the lo-pass-only
+             * variant and leaves num_scale at 0 with den_scale = 1e-10, so
+             * scale 0 contributes nothing to the pooled adm2 / aim. The twin
+             * used to zero only the REPORTED adm_scale0 sub-score while still
+             * folding the full scale-0 num/den into the pooled score, which is
+             * a first-order change on every frame. `adm_dwt2_lo_s` writes only
+             * `band_a`, which `adm_dwt2` computes identically, so scales 1..3
+             * are unaffected and no kernel change is needed. ADR-1220. */
+            den_scale = 1e-10f;
+        } else {
+            for (int b = 0; b < FADM_NUM_BANDS; ++b) {
+                num_scale += powf((float)cm_totals[scale][b], inv_p) + area_cbrt;
+                den_scale += powf((float)csf_totals[scale][b], inv_p) + area_cbrt;
+            }
         }
         scores[2 * scale + 0] = num_scale;
         scores[2 * scale + 1] = den_scale;
@@ -836,8 +859,10 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeat
         score_den += den_scale;
 
         float aim_num_scale = 0.0f;
-        for (int b = 0; b < FADM_NUM_BANDS; ++b) {
-            aim_num_scale += powf((float)aim_cm_totals[scale][b], 1.0f / (float)s->adm_p_norm);
+        if (!(scale == 0 && s->adm_skip_scale0)) {
+            for (int b = 0; b < FADM_NUM_BANDS; ++b) {
+                aim_num_scale += powf((float)aim_cm_totals[scale][b], inv_p);
+            }
         }
         if (s->adm_skip_aim_scale != scale) {
             aim_den += den_scale;
