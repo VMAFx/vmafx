@@ -95,6 +95,11 @@ python/vmaf/
   dataset / frame-name parsers) uses the literal-delimited shape; do not
   add tests that probe the broken branches without fixing the bug first.
   Flagged in PR `test/python-test-coverage-push` (round-2 coverage push).
+- **`python/pyproject.toml [project].dependencies` is the single source of Python dependencies (ADR-1236).**
+  `python/setup.py` intentionally does NOT declare `install_requires=[...]`. Setuptools automatically loads
+  `[project].dependencies` from `python/pyproject.toml`. Do not reintroduce `install_requires` during an upstream
+  merge or port. `python/requirements.txt` is mechanically generated via `scripts/ci/check-python-requirements-single-source.sh --write`
+  (`make python-deps-sync`) and must never be edited manually. Renovate ignores `python/requirements.txt` to avoid duplicate PRs.
 
 ## Governing ADRs
 
@@ -104,3 +109,4 @@ python/vmaf/
 - [ADR-0029](../../docs/adr/0029-resource-tree-relocated.md) — resource tree relocation.
 - [ADR-0030](../../docs/adr/0030-matlab-sources-relocated.md) — MATLAB source relocation.
 - [ADR-0038](../../docs/adr/0038-purge-upstream-matlab-mex-binaries.md) — MEX binary purge.
+- [ADR-1236](../../docs/adr/1236-version-single-source-tree.md) — single-source package versions and unify Python dependencies.

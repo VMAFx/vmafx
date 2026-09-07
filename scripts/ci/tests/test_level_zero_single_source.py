@@ -18,6 +18,7 @@ from typing import Protocol, cast
 
 ROOT = Path(__file__).resolve().parents[3]
 BASH = shutil.which("bash") or "/bin/bash"
+GIT = shutil.which("git") or "/usr/bin/git"
 SPEC = importlib.util.spec_from_file_location(
     "workflow_versions", ROOT / "scripts/ci/check-workflow-versions.py"
 )
@@ -53,6 +54,29 @@ class LevelZeroSingleSource(unittest.TestCase):
 
     def test_existing_container_passes(self) -> None:
         self.assertEqual(self.check(self.text), [])
+
+    def test_workflow_checker_entrypoint_retains_container_validation(self) -> None:
+        subprocess.run([GIT, "init", "-q", str(self.repo)], check=True)  # noqa: S603
+        (self.repo / "build-config.env").write_text((ROOT / "build-config.env").read_text())
+        for text, status in (
+            (self.text, 0),
+            (self.text.replace(f". {GATE.LEVEL_ZERO_CONFIG}", "true"), 1),
+        ):
+            with self.subTest(status=status):
+                (self.repo / "dev/Containerfile").write_text(text)
+                result = (
+                    subprocess.run(  # noqa: S603 -- shipped checker in a disposable Git fixture
+                        [
+                            shutil.which("python3") or "/usr/bin/python3",
+                            str(ROOT / "scripts/ci/check-workflow-versions.py"),
+                        ],
+                        cwd=self.repo,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                )
+                self.assertEqual(result.returncode, status, result.stdout + result.stderr)
 
     def test_missing_copy_source_or_reintroduced_argument_fails(self) -> None:
         for text in (

@@ -1,3 +1,6 @@
+# Generated from python/pyproject.toml [project].dependencies by scripts/ci/check-python-requirements-single-source.sh.
+# DO NOT EDIT DIRECTLY. python/pyproject.toml is the single owner.
+# To regenerate: make python-deps-sync (or scripts/ci/check-python-requirements-single-source.sh --write)
 numpy>=2.5.3
 scipy>=1.18.1
 matplotlib>=3.11.1
