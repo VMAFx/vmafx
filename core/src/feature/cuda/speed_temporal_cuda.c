@@ -21,7 +21,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "common.h"
 #include "feature_collector.h"
@@ -341,8 +340,13 @@ fail:
     return _cuda_err;
 }
 
+/* `singular_out` reports a singular covariance matrix, which is NOT a failure:
+ * the CPU reference zeroes the solution and reports it separately so the caller
+ * can apply the one-sided-zero rule in speed_extract_score(). The return value
+ * stays reserved for hard CUDA failures. Mirrors the chroma twin (ADR-1202) and
+ * ADR-1218. */
 static int run_cpu_linalg_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, float *h_indterm,
-                             CUdeviceptr d_sol)
+                             CUdeviceptr d_sol, bool *singular_out)
 {
     int _cuda_err = 0;
     const int sz = (int)ST_ELEMENTS;
@@ -350,11 +354,20 @@ static int run_cpu_linalg_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, flo
 
     speed_internal_compute_eigenvalues(s->h_cov_mat, s->h_eigenvalues, sz, s->h_eig_scratch);
     bool regular = speed_internal_is_matrix_regular(s->h_eigenvalues, (size_t)sz);
+    *singular_out = !regular;
 
     if (!regular) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "speed_temporal_cuda: covariance matrix singular, zeroing solution\n");
-        (void)memset(h_indterm, 0, (size_t)sz * (size_t)nb * sizeof(float));
+        /* Zero the DEVICE solution, not the host staging buffer. The score
+         * kernel reads `d_sol`; the host `h_indterm` is re-downloaded from
+         * `d_indterm` at the top of every pipeline run, so zeroing it changed
+         * nothing. Without this, a singular frame scored against the previous
+         * frame's solution — or, on the first frame, against whatever the
+         * device allocator handed back. ADR-1218. */
+        CHECK_CUDA_GOTO(
+            cu_f, cuMemsetD8Async(d_sol, 0, (size_t)sz * (size_t)nb * sizeof(float), s->stream),
+            fail);
     } else {
         (void)speed_internal_qr_factorize(s->h_cov_mat, sz, s->h_Q, s->h_R, s->h_qr_scratch);
         speed_internal_qt_multiply(s->h_Q, h_indterm, sz, nb, s->h_qt_scratch);
@@ -672,7 +685,8 @@ static int extract_fex_st(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 
     /* CPU eigendecomp + QR for the reference diff. Uploads ref eigenvalues
      * into the shared s->d_eigenvalues buffer. */
-    err = run_cpu_linalg_st(s, cu_f, s->h_indterm_ref, s->d_sol_ref);
+    bool singular_ref = false;
+    err = run_cpu_linalg_st(s, cu_f, s->h_indterm_ref, s->d_sol_ref, &singular_ref);
     if (err)
         goto pop_ctx;
 
@@ -694,14 +708,25 @@ static int extract_fex_st(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 
     /* CPU eigendecomp + QR for the distorted diff (uses the DIS cov_mat).
      * Uploads dis eigenvalues into s->d_eigenvalues. */
-    err = run_cpu_linalg_st(s, cu_f, s->h_indterm_dis, s->d_sol_dis);
+    bool singular_dis = false;
+    err = run_cpu_linalg_st(s, cu_f, s->h_indterm_dis, s->d_sol_dis, &singular_dis);
     if (err)
         goto pop_ctx;
 
+    /* Exactly one side numerically unstable: report 0 rather than the inflated
+     * score a zeroed solution on one side produces. Verbatim the CPU rule in
+     * speed_extract_score() (speed.c), which this twin has to match. When BOTH
+     * sides are singular the CPU still scores, from two zeroed solutions — so
+     * do we, which is why the singular branch above zeroes `d_sol` on the
+     * device. ADR-1218. */
     float score = 0.0f;
-    err = run_score_st(s, cu_f, &score);
-    if (err)
-        goto pop_ctx;
+    if (singular_ref != singular_dis) {
+        score = 0.0f;
+    } else {
+        err = run_score_st(s, cu_f, &score);
+        if (err)
+            goto pop_ctx;
+    }
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_pop);
 

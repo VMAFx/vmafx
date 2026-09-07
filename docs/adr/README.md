@@ -1020,3 +1020,4 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1206](1206-gpu-parity-large-fixture-variants.md) | Every CUDA parity test also runs against a second, larger fixture | Proposed | testing, cuda, ci, correctness |
 | [ADR-1216](1216-gpu-motion3-fps-weight-applied-once.md) | The GPU motion3 twins apply `motion_fps_weight` exactly once | Proposed | cuda, sycl, hip, correctness, feature-extractor, testing |
 | [ADR-1217](1217-gpu-float-vif-options-reach-kernel.md) | The GPU float-VIF kernels read `vif_sigma_nsq` and `vif_enhn_gain_limit` from their options | Proposed | cuda, sycl, hip, correctness, feature-extractor, testing |
+| [ADR-1218](1218-gpu-speed-singular-device-solution.md) | The GPU SpEED twins zero the device solution and report singularity from the temporal path | Proposed | cuda, sycl, hip, correctness, feature-extractor, testing |

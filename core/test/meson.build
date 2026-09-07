@@ -1892,6 +1892,17 @@ test_cuda_speed_temporal_parity = executable('test_cuda_speed_temporal_parity',
 test('test_cuda_speed_temporal_parity', test_cuda_speed_temporal_parity,
     suite : ['fast', 'gpu'])
 
+test_cuda_speed_singular_parity = executable('test_cuda_speed_singular_parity',
+    ['test.c', 'test_cuda_speed_singular_parity.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_speed_singular_parity', test_cuda_speed_singular_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 90)
+
 # ADR-0947 — CUDA kernel parity coverage, round 3. Closes the float-path
 # twin gap (float_psnr, float_vif, float_ms_ssim, float_moment) plus the
 # new ssimulacra2_cuda kernel.  Each test asserts CPU-vs-CUDA agreement
@@ -2818,6 +2829,17 @@ test_sycl_speed_temporal_parity = executable('test_sycl_speed_temporal_parity',
 test('test_sycl_speed_temporal_parity', test_sycl_speed_temporal_parity,
     suite : ['fast', 'gpu', 'sycl'])
 
+test_sycl_speed_singular_parity = executable('test_sycl_speed_singular_parity',
+    ['test.c', 'test_sycl_speed_singular_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_speed_singular_parity', test_sycl_speed_singular_parity,
+    suite : ['fast', 'gpu', 'sycl'],
+    timeout : 90)
+
 test_sycl_ssimulacra2_parity = executable('test_sycl_ssimulacra2_parity',
     ['test.c', 'test_sycl_ssimulacra2_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -3230,6 +3252,17 @@ test_hip_speed_temporal_parity = executable('test_hip_speed_temporal_parity',
 test('test_hip_speed_temporal_parity', test_hip_speed_temporal_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
+
+test_hip_speed_singular_parity = executable('test_hip_speed_singular_parity',
+    ['test.c', 'test_hip_speed_singular_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_speed_singular_parity', test_hip_speed_singular_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 90)
 endif
 
 # ADR-0338 / T8-1: Metal (Apple Silicon) backend scaffold smoke. Same

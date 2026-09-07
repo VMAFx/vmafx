@@ -929,3 +929,4 @@
 1206-gpu-parity-large-fixture-variants
 1216-gpu-motion3-fps-weight-applied-once
 1217-gpu-float-vif-options-reach-kernel
+1218-gpu-speed-singular-device-solution

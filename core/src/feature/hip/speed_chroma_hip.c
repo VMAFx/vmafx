@@ -31,7 +31,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "feature_collector.h"
 #include "feature_extractor.h"
@@ -453,7 +452,15 @@ static int run_cpu_linalg_sc(SpeedChromaHipState *s, float *h_indterm, void *d_s
     if (!regular) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "speed_chroma_hip: covariance matrix singular, zeroing solution\n");
-        (void)memset(h_indterm, 0, indterm_bytes);
+        /* Zero the DEVICE solution, not the host staging buffer. The score
+         * kernel reads `d_sol`; the host `h_indterm` is re-downloaded from
+         * `d_indterm` at the top of every pipeline run, so zeroing it changed
+         * nothing. Without this, a singular frame scored against the previous
+         * frame's solution — or, on the first frame, against whatever the
+         * device allocator handed back. ADR-1218. */
+        rc = hipMemsetAsync(d_sol, 0, indterm_bytes, s->stream);
+        if (rc != hipSuccess)
+            return hip_rc(rc);
     } else {
         (void)speed_internal_qr_factorize(s->h_cov_mat, sz, s->h_Q, s->h_R, s->h_qr_scratch);
         speed_internal_qt_multiply(s->h_Q, h_indterm, sz, nb, s->h_qt_scratch);

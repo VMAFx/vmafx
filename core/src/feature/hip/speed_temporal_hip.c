@@ -21,7 +21,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "feature_collector.h"
 #include "feature_extractor.h"
@@ -411,7 +410,13 @@ static int run_gpu_pipeline_st(SpeedTemporalHipState *s, const float *h_plane, v
     return hip_rc_st(rc);
 }
 
-static int run_cpu_linalg_st(SpeedTemporalHipState *s, float *h_indterm, void *d_sol)
+/* `singular_out` reports a singular covariance matrix, which is NOT a failure:
+ * the CPU reference zeroes the solution and reports it separately so the caller
+ * can apply the one-sided-zero rule in speed_extract_score(). The return value
+ * stays reserved for hard HIP failures. Mirrors the chroma twin (ADR-1202) and
+ * ADR-1218. */
+static int run_cpu_linalg_st(SpeedTemporalHipState *s, float *h_indterm, void *d_sol,
+                             bool *singular_out)
 {
     const int sz = (int)ST_ELEMENTS;
     const int nb = (int)s->dim.num_blocks;
@@ -421,10 +426,19 @@ static int run_cpu_linalg_st(SpeedTemporalHipState *s, float *h_indterm, void *d
     bool regular = speed_internal_is_matrix_regular(s->h_eigenvalues, (size_t)sz);
 
     hipError_t rc = hipSuccess;
+    *singular_out = !regular;
     if (!regular) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "speed_temporal_hip: covariance matrix singular, zeroing solution\n");
-        (void)memset(h_indterm, 0, indterm_bytes);
+        /* Zero the DEVICE solution, not the host staging buffer. The score
+         * kernel reads `d_sol`; the host `h_indterm` is re-downloaded from
+         * `d_indterm` at the top of every pipeline run, so zeroing it changed
+         * nothing. Without this, a singular frame scored against the previous
+         * frame's solution — or, on the first frame, against whatever the
+         * device allocator handed back. ADR-1218. */
+        rc = hipMemsetAsync(d_sol, 0, indterm_bytes, s->stream);
+        if (rc != hipSuccess)
+            return hip_rc_st(rc);
     } else {
         (void)speed_internal_qr_factorize(s->h_cov_mat, sz, s->h_Q, s->h_R, s->h_qr_scratch);
         speed_internal_qt_multiply(s->h_Q, h_indterm, sz, nb, s->h_qt_scratch);
@@ -694,7 +708,8 @@ static int extract_temporal_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     if (err)
         return err;
 
-    err = run_cpu_linalg_st(s, s->h_indterm_ref, s->d_sol_ref);
+    bool singular_ref = false;
+    err = run_cpu_linalg_st(s, s->h_indterm_ref, s->d_sol_ref, &singular_ref);
     if (err)
         return err;
 
@@ -717,14 +732,25 @@ static int extract_temporal_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     if (err)
         return err;
 
-    err = run_cpu_linalg_st(s, s->h_indterm_dis, s->d_sol_dis);
+    bool singular_dis = false;
+    err = run_cpu_linalg_st(s, s->h_indterm_dis, s->d_sol_dis, &singular_dis);
     if (err)
         return err;
 
+    /* Exactly one side numerically unstable: report 0 rather than the inflated
+     * score a zeroed solution on one side produces. Verbatim the CPU rule in
+     * speed_extract_score() (speed.c), which this twin has to match. When BOTH
+     * sides are singular the CPU still scores, from two zeroed solutions — so
+     * do we, which is why the singular branch above zeroes `d_sol` on the
+     * device. ADR-1218. */
     float score = 0.0f;
-    err = run_score_st(s, &score);
-    if (err)
-        return err;
+    if (singular_ref != singular_dis) {
+        score = 0.0f;
+    } else {
+        err = run_score_st(s, &score);
+        if (err)
+            return err;
+    }
 
     const double mxv = s->speed_temporal_max_val;
     const double clipped = (double)score < mxv ? (double)score : mxv;

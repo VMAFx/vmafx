@@ -124,6 +124,39 @@ Two earlier algorithm defects in the GPU kernels are corrected:
   kernels reused the reference basis for the distorted plane, biasing the
   chroma score high whenever the reference and distorted frames differed.
 
+### Singular covariance matrices
+
+SpEED's 25x25 covariance matrix counts as regular only when **every** eigenvalue
+is at least `1e-6`. Anything flatter is singular, which happens routinely:
+grayscale sources, solid-colour frames, letterbox and pillarbox bars, and — for
+`speed_temporal` — any static passage, whose frame difference is identically
+zero.
+
+The CPU zeroes the solution on a singular plane and, when **exactly one** of the
+reference and distorted sides is singular, returns `0` rather than the inflated
+score a one-sided zero solution produces. `speed_chroma` additionally imputes
+`speed_chroma_uv` from whichever of U/V survived.
+
+Up to and including v3.2.1 the GPU twins diverged from this on two counts:
+
+- The three `speed_temporal` twins never reported singularity to their caller,
+  so the one-sided rule did not exist there and they returned the score kernel's
+  result. On a 960x960 fixture with a frozen reference and a moving distorted
+  side the CPU returns `0.00000000` and every GPU backend returned
+  `230.71379089`. **Re-measure any GPU `speed_temporal` score taken over content
+  with static passages.** (`speed_chroma` was fixed earlier, in ADR-1202.)
+- All six twins zeroed a *host* staging buffer on the singular path and uploaded
+  nothing, so the score kernel read the device solution left over from the
+  previous frame — or, on the first frame, whatever the allocator returned. This
+  one has no demonstrable effect on the emitted score, because when both sides
+  are singular the CPU's own zeroed solution drives every block's variance to
+  `0` and the score to exactly `0` regardless; it is fixed because reading
+  uninitialised device memory is undefined behaviour.
+
+Both are corrected per
+[ADR-1218](../adr/1218-gpu-speed-singular-device-solution.md) and gated by
+`core/test/test_{cuda,sycl,hip}_speed_singular_parity`.
+
 No usage change is required — backend selection is automatic. To force a
 specific backend for a cross-backend parity check, use the fork's `--backend`
 selector. See [backends/cuda/overview](../backends/cuda/overview.md) and

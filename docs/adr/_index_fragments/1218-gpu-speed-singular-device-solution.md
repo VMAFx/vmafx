@@ -1,0 +1,1 @@
+| [ADR-1218](1218-gpu-speed-singular-device-solution.md) | The GPU SpEED twins zero the device solution and report singularity from the temporal path | Proposed | cuda, sycl, hip, correctness, feature-extractor, testing |

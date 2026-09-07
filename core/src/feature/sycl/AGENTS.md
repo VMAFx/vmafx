@@ -230,6 +230,13 @@ HIP / Metal motion twins listed in the Twin-update table above) in the same PR.
   `vif_sigma_nsq`, `vif_enhn_gain_limit` and the host-derived
   `sigma_max_inv` from `launch_compute`'s parameters; it must not
   re-declare them as kernel-local constants.
+- **SpEED singular-covariance contract** — see the canonical note in
+  [`../cuda/AGENTS.md`](../cuda/AGENTS.md). `speed_chroma_sycl.cpp` and
+  `speed_temporal_sycl.cpp` zero `d_sol` with `q.memset` and report via
+  `singular_out`. SYCL is the worst case for getting this wrong:
+  `sycl::malloc_device` memory is explicitly uninitialised, so a missing
+  device zero is a genuine uninitialised read on the first singular
+  frame. ADR-1218.
 
 - **VAAPI / dmabuf zero-copy import** — the FFmpeg `libvmaf_sycl`
   filter (`ffmpeg-patches/0005-*.patch`) consumes

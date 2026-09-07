@@ -404,7 +404,14 @@ static int run_channel(SpeedChromaSyclState *s, float *h_plane, float *h_indterm
     if (!regular) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "speed_chroma_sycl: covariance matrix singular, zeroing solution\n");
-        memset(h_indterm, 0, indterm_bytes);
+        /* Zero the DEVICE solution, not the host staging buffer. The score
+         * kernel reads `d_sol`; `h_indterm` is re-downloaded from `d_indterm`
+         * at the top of every pipeline run, so zeroing it changed nothing.
+         * `sycl::malloc_device` memory is explicitly uninitialised, so without
+         * this the first singular frame scored against whatever the allocator
+         * handed back. ADR-1218. */
+        q.memset(d_sol, 0, indterm_bytes);
+        q.wait();
     } else {
         speed_internal_qr_factorize(s->h_cov_mat, sz, s->h_Q, s->h_R, s->h_qr_scratch);
         speed_internal_qt_multiply(s->h_Q, h_indterm, sz, nb, s->h_qt_scratch);
