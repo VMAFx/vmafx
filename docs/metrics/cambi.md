@@ -167,6 +167,23 @@ self.assertAlmostEqual(results[0]['Cambi_score'],
 ## GPU support
 
 CAMBI has a CUDA backend (T3-15a / [ADR-0360](../adr/0360-cambi-cuda.md)).
+
+> **HIP scores before this release were wrong.** Up to and including v3.2.1 the
+> HIP CAMBI twin returned **exactly `0.0`** on banding content that the CPU
+> scores at `5.85`. It hand-rolled the TVI-threshold bisection over an inverted
+> predicate seeded from luma 0 instead of `luma_range.foot`, producing
+> `tvi_for_diff = [1026, 1025, 1024, 4]` where the CPU produces
+> `[182, 309, 436, 563]`; that collapses the scored luma band from 564 entries
+> to a handful, and `calculate_c_values()` then discards almost every pixel as
+> out-of-band. Two smaller divergences compounded it: `filter_mode` filtered
+> output rows 0 and `height-1`, which `cambi.c` leaves unfiltered, and the 7x7
+> mask box sum clamped out-of-frame taps to the border pixel where the CPU's
+> summed-area table zero-pads them. All three are fixed per
+> [ADR-1219](../adr/1219-gpu-cambi-tvi-shared-bisection.md) and HIP is now
+> bit-exact with the CPU. **Re-measure any CAMBI score taken on the HIP
+> backend.** The Metal twin carried the first two and gets the same fixes;
+> CUDA and SYCL were unaffected.
+
 It uses the Strategy II hybrid architecture: the integer phases (spatial mask,
 2× decimate, 3-tap separable mode filter) run on the GPU; the
 precision-sensitive sliding-histogram `calculate_c_values` + top-K spatial

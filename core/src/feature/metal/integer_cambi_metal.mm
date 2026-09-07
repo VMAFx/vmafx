@@ -75,7 +75,6 @@ extern "C" {
 #include "feature_collector.h"
 #include "feature_name.h"
 #include "log.h"
-#include "luminance_tools.h"
 #include "libvmaf/picture.h"
 
 #include "../../metal/common.h"
@@ -341,52 +340,26 @@ static uint16_t cambi_metal_get_mask_index(unsigned w, unsigned h, uint16_t filt
                   1);
 }
 
+/* ADR-1219 — delegate to the shared CPU helper rather than re-deriving the
+ * TVI table.
+ *
+ * This used to hand-roll a binary search whose predicate was the NEGATION of
+ * the CPU's `tvi_hard_threshold_condition`, seeded from luma 0 instead of
+ * `luma_range.foot`, and it derived `vlt_luma` as the LARGEST luma below the
+ * visibility threshold where the CPU takes the SMALLEST luma at or above it.
+ * At the default `max_log_contrast = 2` that produced
+ * `tvi_for_diff = [1026, 1025, 1024, 64]` against the CPU's
+ * `[182, 309, 436, 563]`, which collapses the derived luma band from 564
+ * entries to 65 and drops almost every pixel as out-of-band.
+ *
+ * `vmaf_cambi_init_tvi_and_vlt()` is the same helper the SYCL twin calls; it
+ * runs the CPU's own bisection, so the twins cannot drift again. */
 static int cambi_metal_init_tvi(IntegerCambiStateMetal *s)
 {
-    VmafLumaRange luma_range;
-    int err = vmaf_luminance_init_luma_range(&luma_range, 10, VMAF_PIXEL_RANGE_LIMITED);
-    if (err) { return err; }
-
-    const char *effective_eotf;
-    if (s->cambi_eotf && strcmp(s->cambi_eotf, CAMBI_METAL_DEFAULT_EOTF) != 0) {
-        effective_eotf = s->cambi_eotf;
-    } else {
-        effective_eotf = (s->eotf != NULL) ? s->eotf : CAMBI_METAL_DEFAULT_EOTF;
-    }
-
-    VmafEOTF eotf;
-    err = vmaf_luminance_init_eotf(&eotf, effective_eotf);
-    if (err) { return err; }
-
     const int num_diffs = 1 << s->max_log_contrast;
-    for (int d = 0; d < num_diffs; d++) {
-        const int diff = (int)s->buffers.diffs_to_consider[d];
-        int lo = 0;
-        int hi = (1 << 10) - 1 - diff;
-        int found = -1;
-        while (lo <= hi) {
-            int mid = (lo + hi) / 2;
-            double sample_lum = vmaf_luminance_get_luminance(mid, luma_range, eotf);
-            double diff_lum =
-                vmaf_luminance_get_luminance(mid + diff, luma_range, eotf) - sample_lum;
-            if (diff_lum < s->tvi_threshold * sample_lum) {
-                found = mid;
-                lo = mid + 1;
-            } else {
-                hi = mid - 1;
-            }
-        }
-        if (found < 0) { found = 0; }
-        s->buffers.tvi_for_diff[d] = (uint16_t)(found + num_diffs);
-    }
-
-    int vlt = 0;
-    for (int v = 0; v < (1 << 10); v++) {
-        double L = vmaf_luminance_get_luminance(v, luma_range, eotf);
-        if (L < s->cambi_vis_lum_threshold) { vlt = v; }
-    }
-    s->vlt_luma = (uint16_t)vlt;
-    return 0;
+    return vmaf_cambi_init_tvi_and_vlt(num_diffs, s->buffers.diffs_to_consider, s->tvi_threshold,
+                                       s->cambi_vis_lum_threshold, s->cambi_eotf, s->eotf,
+                                       s->buffers.tvi_for_diff, &s->vlt_luma, NULL, NULL);
 }
 
 /* ------------------------------------------------------------------ */
