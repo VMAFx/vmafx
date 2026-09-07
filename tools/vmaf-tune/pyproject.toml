@@ -2,18 +2,18 @@
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 [project]
 name = "vmaf-tune"
-version = "0.0.1"
+version = "0.0.2"
 description = "Quality-aware encode automation harness for libvmaf (Phase A: x264 grid corpus)."
 readme = "README.md"
 requires-python = ">=3.10,<3.15"
-license = { text = "BSD-2-Clause-Patent" }
+license = "BSD-2-Clause-Patent"
 authors = [
   { name = "Lusoris", email = "lusoris@pm.me" },
 ]
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=9.1.1", "ruff>=0.16.6", "optuna>=4.9.0"]
+dev = ["pytest>=9.1.1", "ruff>=0.16.6", "optuna>=5.0.0"]
 # Phase A.5 fast-path (ADR-0276): proxy + Bayesian + GPU-verify
 # recommend. Optuna is the TPE sampler driver; gated behind an extra
 # so the core install path stays zero-dep.

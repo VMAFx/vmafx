@@ -229,6 +229,13 @@ repos:
         files: '^(renovate\.json|scripts/ci/tests/test_renovate_file_patterns\.py)$'
         pass_filenames: false
 
+      - id: check-python-requirements-single-source
+        name: Python requirements derive from python/pyproject.toml
+        entry: scripts/ci/check-python-requirements-single-source.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+
       - id: check-no-tracked-venv
         name: No virtualenv path is tracked (dir or symlink)
         entry: scripts/ci/check-no-tracked-venv.sh
