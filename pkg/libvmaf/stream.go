@@ -69,6 +69,8 @@ type StreamConfig struct {
 	BitDepth int
 	// ModelPath is the absolute path to the VMAF model JSON.
 	ModelPath string
+	// PoolMethod selects the temporal pooling strategy. Zero / unset defaults to PoolMethodMean.
+	PoolMethod PoolMethod
 	// FrameCountHint, when > 0, pre-sizes the per-frame score slice.  Zero
 	// means unknown / open-ended and the slice grows on demand.
 	FrameCountHint int
@@ -300,9 +302,14 @@ func (s *StreamScorer) Finish(ctx context.Context) (*StreamResult, error) {
 		})
 	}
 
+	cPoolMethod, err := s.cfg.PoolMethod.toC()
+	if err != nil {
+		return nil, fmt.Errorf("StreamScorer.Finish: %w: %v", ErrInvalidArgument, err)
+	}
+
 	var pooled C.double
 	if err := mapErrno("vmaf_score_pooled",
-		int(C.vmaf_score_pooled(s.vmafCtx, s.model, C.VMAF_POOL_METHOD_MEAN,
+		int(C.vmaf_score_pooled(s.vmafCtx, s.model, cPoolMethod,
 			&pooled, 0, C.uint(s.nFrames-1)))); err != nil {
 		return nil, err
 	}

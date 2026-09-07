@@ -1,7 +1,10 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 9c54d2b5fb7c3f87da4b2d2a5ed98402bdf75ca5 Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Mon, 27 Apr 2026 09:00:00 +0200
 Subject: [PATCH] libvmaf: add libvmaf_vulkan filter (zero-copy VkImage import)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
 Introduces a dedicated `libvmaf_vulkan` FFmpeg filter that consumes
 Vulkan-decoded frames (`AVFrame->data[0] -> AVVkFrame*`), pulls the
@@ -34,13 +37,18 @@ v2 async pending-fence model is a deferred follow-up. See
 docs/adr/0186-vulkan-image-import-impl.md.
 
 Patch is on top of 0001-0005 (post-libvmaf_sycl-filter baseline).
-
 ---
+ configure                |   5 +
+ libavfilter/Makefile     |   1 +
+ libavfilter/allfilters.c |   1 +
+ libavfilter/vf_libvmaf.c | 285 +++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 292 insertions(+)
+
 diff --git a/configure b/configure
-index 41738050f0..3b3f0f1d13 100755
+index 144b458cab..272760dfa8 100755
 --- a/configure
 +++ b/configure
-@@ -296,6 +296,7 @@ External library support:
+@@ -295,6 +295,7 @@ External library support:
    --enable-libvidstab      enable video stabilization using vid.stab [no]
    --enable-libvmaf         enable vmaf filter via libvmaf [no]
    --enable-libvmaf-sycl    enable SYCL-accelerated vmaf filter via libvmaf [no]
@@ -48,7 +56,7 @@ index 41738050f0..3b3f0f1d13 100755
    --enable-libvo-amrwbenc  enable AMR-WB encoding via libvo-amrwbenc [no]
    --enable-libvorbis       enable Vorbis en/decoding via libvorbis,
                             native implementation exists [no]
-@@ -2101,6 +2102,7 @@ EXTERNAL_LIBRARY_LIST="
+@@ -2140,6 +2141,7 @@ EXTERNAL_LIBRARY_LIST="
      libv4l2
      libvmaf
      libvmaf_sycl
@@ -56,7 +64,7 @@ index 41738050f0..3b3f0f1d13 100755
      libvorbis
      libvpx
      libvvenc
-@@ -4238,6 +4240,7 @@ vidstabtransform_filter_deps="libvidstab"
+@@ -4299,6 +4301,7 @@ vidstabtransform_filter_deps="libvidstab"
  libvmaf_filter_deps="libvmaf"
  libvmaf_cuda_filter_deps="libvmaf libvmaf_cuda ffnvcodec"
  libvmaf_sycl_filter_deps="libvmaf libvmaf_sycl libvpl"
@@ -64,7 +72,7 @@ index 41738050f0..3b3f0f1d13 100755
  vmaf_pre_filter_deps="libvmaf"
  zmq_filter_deps="libzmq"
  zoompan_filter_deps="swscale"
-@@ -7396,6 +7399,8 @@ enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvm
+@@ -7463,6 +7466,8 @@ enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvm
  enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf_cuda.h vmaf_cuda_state_init
  enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
                               check_pkg_config libvmaf_sycl "libvmaf >= 3.0.0" libvmaf/libvmaf_sycl.h vmaf_sycl_state_init
@@ -74,7 +82,7 @@ index 41738050f0..3b3f0f1d13 100755
  enabled libvmaf           && check_pkg_config libvmaf_vulkan "libvmaf >= 3.0.0" libvmaf/libvmaf_vulkan.h vmaf_vulkan_state_init
  enabled vmaf_pre_filter   && require_pkg_config libvmaf_dnn "libvmaf >= 3.0.0" libvmaf/dnn.h vmaf_dnn_session_open
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
-index f3de17a502..132eec6c11 100644
+index 5e27bfc66c..96d39b18e3 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
 @@ -377,6 +377,7 @@ OBJS-$(CONFIG_LIBPLACEBO_FILTER)             += vf_libplacebo.o vulkan.o vulkan_
@@ -86,7 +94,7 @@ index f3de17a502..132eec6c11 100644
  OBJS-$(CONFIG_LIMITER_FILTER)                += vf_limiter.o
  OBJS-$(CONFIG_LOOP_FILTER)                   += f_loop.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
-index f46c695865..1357561e70 100644
+index ac7f3f4d84..102fd55c38 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
 @@ -351,6 +351,7 @@ extern const FFFilter ff_vf_libplacebo;
@@ -98,7 +106,7 @@ index f46c695865..1357561e70 100644
  extern const FFFilter ff_vf_limiter;
  extern const FFFilter ff_vf_loop;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index d9dab0bdd9..0cfd2d66d8 100644
+index 59d3bf007a..324e1aa82e 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -60,6 +60,12 @@
@@ -114,7 +122,7 @@ index d9dab0bdd9..0cfd2d66d8 100644
  typedef struct LIBVMAFContext {
      const AVClass *class;
      FFFrameSync fs;
-@@ -1254,3 +1260,282 @@ const FFFilter ff_vf_libvmaf_sycl = {
+@@ -1376,3 +1382,282 @@ const FFFilter ff_vf_libvmaf_sycl = {
      .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
  };
  #endif
@@ -126,7 +134,7 @@ index d9dab0bdd9..0cfd2d66d8 100644
 +                  OFFSET(log_path), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, VK_FLAGS},
 +    {"log_fmt",   "Set the format of the log (csv, json, xml, or sub).",
 +                  OFFSET(log_fmt), AV_OPT_TYPE_STRING, {.str="xml"}, 0, 1, VK_FLAGS},
-+    {"pool",      "Set the pool method to be used for computing vmaf.",
++    {"pool",      "Set the pool method to be used for computing vmaf (min, max, mean, harmonic_mean, median, perc5, perc10, perc20).",
 +                  OFFSET(pool), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, VK_FLAGS},
 +    {"n_threads", "Set number of threads to be used when computing vmaf.",
 +                  OFFSET(n_threads), AV_OPT_TYPE_INT, {.i64=0}, 0, UINT_MAX, VK_FLAGS},
@@ -397,3 +405,6 @@ index d9dab0bdd9..0cfd2d66d8 100644
 +    .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 +};
 +#endif
+-- 
+2.55.0
+
