@@ -51,7 +51,7 @@
 #elif defined(__GNUC__) && !defined(__clang__)
 #define VMAF_NOINLINE_NOCLONE __attribute__((noinline, noclone))
 #elif defined(__clang__)
-#define VMAF_NOINLINE_NOCLONE __attribute__(noinline)
+#define VMAF_NOINLINE_NOCLONE __attribute__((noinline))
 #else
 #define VMAF_NOINLINE_NOCLONE
 #endif
@@ -1032,7 +1032,7 @@ void vif_statistic_16_avx512(struct VifPublicState *s, float *num, float *den, u
 /* ADR-0503: loop-fission helpers for vif_subsample_rd_8_avx512.
  *
  * Moving the vertical and horizontal inner-loop bodies into separate
- * __attribute__(noinline) functions reduces the simultaneous ZMM live-set
+ * __attribute__((noinline)) functions reduces the simultaneous ZMM live-set
  * inside each function from ~30 to ~20, eliminating the vmovdqa64-to-stack
  * spill cluster (zmm13/zmm7/zmm15, 4.47%+4.29%+1.10% of profiled cycles).
  *
