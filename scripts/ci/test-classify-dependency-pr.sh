@@ -258,6 +258,77 @@ else
   fail_count=$((fail_count + 1))
 fi
 
+# ---------------------------------------------------------------------------
+# Case 21: a Python dependency bump that lands in setup.py stays exempt.
+#
+# Renovate's `pip_setup` manager edits `install_requires` in setup.py, so a
+# numpy bump across "all managers" touches setup.py alongside the pyproject
+# and requirements files. Before setup.py joined the manifest allowlist that
+# made every such PR non-exempt, and the deliverables + doc-substance gates
+# blocked a bot PR that changed one version string (PR #1380).
+# ---------------------------------------------------------------------------
+repo21="${work}/case21_repo"
+mkdir -p "${repo21}/python"
+(
+  cd "${repo21}" || exit 1
+  git init -q .
+  git config user.email t@example.com
+  git config user.name t
+  printf 'numpy>=2.5.2\n' >python/requirements.txt
+  printf 'setup(install_requires=["numpy>=2.5.2"])\n' >python/setup.py
+  git add -A && git commit -qm base
+  base_sha="$(git rev-parse HEAD)"
+  printf 'numpy>=2.5.3\n' >python/requirements.txt
+  printf 'setup(install_requires=["numpy>=2.5.3"])\n' >python/setup.py
+  git add -A && git commit -qm "renovate: bump numpy"
+  head_sha="$(git rev-parse HEAD)"
+  printf '%s %s\n' "${base_sha}" "${head_sha}" >"${repo21}/.shas"
+) >/dev/null 2>&1
+
+read -r case21_base case21_head <"${repo21}/.shas"
+if (cd "${repo21}" && PR_AUTHOR="renovate[bot]" HEAD_REF="renovate/numpy-all-managers" \
+  BASE_SHA="${case21_base}" HEAD_SHA="${case21_head}" \
+  bash "${classifier}" >/dev/null 2>&1); then
+  echo "PASS: setup.py dependency bump classifies as exempt"
+  pass_count=$((pass_count + 1))
+else
+  echo "FAIL: setup.py dependency bump is not exempt"
+  fail_count=$((fail_count + 1))
+fi
+
+# ---------------------------------------------------------------------------
+# Case 22: setup.py is a manifest, but a source edit alongside it is not — the
+# exemption must not become a hole a bot PR can carry source through.
+# ---------------------------------------------------------------------------
+repo22="${work}/case22_repo"
+mkdir -p "${repo22}/python" "${repo22}/core/src"
+(
+  cd "${repo22}" || exit 1
+  git init -q .
+  git config user.email t@example.com
+  git config user.name t
+  printf 'setup(install_requires=["numpy>=2.5.2"])\n' >python/setup.py
+  printf 'int x;\n' >core/src/thing.c
+  git add -A && git commit -qm base
+  base_sha="$(git rev-parse HEAD)"
+  printf 'setup(install_requires=["numpy>=2.5.3"])\n' >python/setup.py
+  printf 'int x; int y;\n' >core/src/thing.c
+  git add -A && git commit -qm "renovate: bump numpy and edit source"
+  head_sha="$(git rev-parse HEAD)"
+  printf '%s %s\n' "${base_sha}" "${head_sha}" >"${repo22}/.shas"
+) >/dev/null 2>&1
+
+read -r case22_base case22_head <"${repo22}/.shas"
+if (cd "${repo22}" && PR_AUTHOR="renovate[bot]" HEAD_REF="renovate/numpy-plus-source" \
+  BASE_SHA="${case22_base}" HEAD_SHA="${case22_head}" \
+  bash "${classifier}" >/dev/null 2>&1); then
+  echo "FAIL: a bot PR touching core/src alongside setup.py must still be gated"
+  fail_count=$((fail_count + 1))
+else
+  echo "PASS: setup.py exemption does not leak to source edits"
+  pass_count=$((pass_count + 1))
+fi
+
 echo ""
 echo "test-classify-dependency-pr: ${pass_count} passed, ${fail_count} failed"
 
