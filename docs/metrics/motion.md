@@ -70,6 +70,20 @@ All GPU backends emit `motion2_score` and `motion3_score` in 3-frame window mode
 The 5-frame window (`motion_five_frame_window=true`) and `motion_moving_average`
 are CPU-only; GPU paths return `-ENOTSUP` at `init()` when these are set.
 
+> **`motion_fps_weight` is applied exactly once.** The CPU reference scales the
+> SAD-derived score by `motion_fps_weight` in `extract()`, stores the weighted
+> value as `motion_sad_score`, and blends that already-weighted value into
+> `motion2_score` / `motion3_score` without touching the weight again. Every GPU
+> twin matches this: the weight is applied at the emission site, never a second
+> time inside the host-side `motion3` post-process. Up to and including
+> v3.2.1 the CUDA / SYCL / HIP twins re-applied it there, so `motion3_score`
+> carried `motion_fps_weight` **squared** whenever the option was set away from
+> its `1.0` default (`motion2_score` was always correct). Fixed per
+> [ADR-1216](../adr/1216-gpu-motion3-fps-weight-applied-once.md); the
+> `test_<backend>_motion3_parity` tests now pin `motion_fps_weight = 0.6` and
+> assert CPU/GPU parity on the derived `integer_motion3_mfw_0.6` key so the
+> default value can no longer hide a squared weight.
+
 ### How to run
 
 ```bash

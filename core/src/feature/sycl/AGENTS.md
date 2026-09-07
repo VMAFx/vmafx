@@ -219,7 +219,10 @@ HIP / Metal motion twins listed in the Twin-update table above) in the same PR.
   the `motion_fps_weight` option and apply it in `flush()` /
   `collect()` exactly as documented there. Any future change to the
   weight application math must span all motion-family GPU twins in
-  the same PR.
+  the same PR. The v1 `integer_motion_sycl.cpp` twin is covered by the
+  same canonical note's **applied exactly once** clause (ADR-1216):
+  `motion3_postprocess_sycl()` must not re-apply the weight its callers
+  have already applied.
 
 - **VAAPI / dmabuf zero-copy import** — the FFmpeg `libvmaf_sycl`
   filter (`ffmpeg-patches/0005-*.patch`) consumes

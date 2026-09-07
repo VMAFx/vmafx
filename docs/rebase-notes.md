@@ -48997,3 +48997,36 @@ Documentation only. One thing worth knowing:
    in item 2 passed its bit-exactness assertion for as long as it did. When
    touching the conversion, change the shipped copies and the test reference
    together, or the test will keep agreeing with itself.
+
+## ADR-1216 — `motion_fps_weight` is applied exactly once (2026-09-07)
+
+Branch: `fix/gpu-motion3-fps-weight-double`.
+
+1. **The v1 integer-motion weighting point is `extract()`, not the blend.**
+   `core/src/feature/integer_motion.c` scales the SAD-derived score by
+   `motion_fps_weight` once, in `extract()`, and stores the *weighted* value as
+   `motion_sad_score`. `flush()` then reads those weighted values back, takes
+   the neighbour min into `motion2`, and blends `motion2` into `motion3` with
+   `motion_blend()` — no second weighting. The CUDA / SYCL / HIP twins each had
+   a host-side `motion3_postprocess_*()` that opened with
+   `score2 * motion_fps_weight`, while every caller already passed a weighted,
+   clipped value: the weight came out squared in `motion3_score`. If upstream
+   ever moves the weighting point in `integer_motion.c`, move it in all three
+   twins together — the twins deliberately have *no* weight multiplication left
+   in the post-process.
+
+2. **A `1.0` default hides a squared factor.** `motion_fps_weight` defaults to
+   `1.0` and `1.0² = 1.0`, so every parity test that ran the extractors with
+   `NULL` options agreed on a wrong value. The guard is the
+   `test_motion3_fps_weight_applied_once` variant in each of
+   `test_{cuda,sycl,hip}_motion3_parity.c`, which pins `motion_fps_weight = 0.6`
+   and reads the ADR-1183-derived `integer_motion3_mfw_0.6` key. Any option
+   whose default is an arithmetic identity needs a non-default parity variant or
+   it is not actually covered.
+
+3. **`motion_v2` has a *different*, documented divergence — do not "fix" it
+   here.** The GPU `motion_v2` twins store the raw SAD and apply the weight in
+   the host-side flush, which shifts the seed frame relative to the CPU. That is
+   pre-existing, consistent across all four backends, and described in
+   `docs/metrics/motion.md`. `float_motion` on every backend already applies the
+   weight once, at the emission site. Neither was touched by ADR-1216.

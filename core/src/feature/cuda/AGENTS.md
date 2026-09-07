@@ -342,6 +342,24 @@ HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
   `float_motion_vulkan.c`, `float_motion_hip.c`,
   `float_motion_metal.mm`. PR #863 initially wired this option.
 
+- **`motion_fps_weight` is applied EXACTLY ONCE on the v1
+  `integer_motion_*` twins** (ADR-1216) — the CPU reference
+  (`integer_motion.c`) scales the SAD-derived score by the weight in
+  `extract()`, stores the *weighted* value as `motion_sad_score`, and
+  then blends that already-weighted value into `motion2` / `motion3`
+  in `flush()` without touching the weight again. The GPU twins mirror
+  this: every caller of `motion3_postprocess_{cuda,sycl,hip}()` hands
+  it a value that is already fps-weighted and `motion_max_val`-clipped,
+  so **`motion3_postprocess_*` must not multiply by
+  `motion_fps_weight`**. It did until ADR-1216, squaring the weight in
+  `motion3_score`. Because the default is `1.0` and `1.0² = 1.0`, no
+  default-options parity test can see this — the guard is the
+  `test_{cuda,sycl,hip}_motion3_parity`
+  `test_motion3_fps_weight_applied_once` variant, which pins
+  `motion_fps_weight = 0.6` and reads the derived
+  `integer_motion3_mfw_0.6` key. Keep that variant when touching these
+  twins; deleting it re-opens the blind spot.
+
 - **`integer_motion_v2_*` mirror contract** (ADR-0662) — CPU
   `integer_motion_v2.c::mirror` maps `idx >= size` to
   `2 * size - idx - 2`. The CUDA, SYCL, and Vulkan `motion_v2`

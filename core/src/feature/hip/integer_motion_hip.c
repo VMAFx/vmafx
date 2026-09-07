@@ -213,8 +213,12 @@ static const VmafOption options[] = {
 /* ------------------------------------------------------------------ */
 static double motion3_postprocess_hip(MotionStateHip *s, double score2)
 {
-    const double weighted = score2 * s->motion_fps_weight;
-    const double blended = motion_blend(weighted, s->motion_blend_factor, s->motion_blend_offset);
+    /* ``score2`` already carries ``motion_fps_weight`` and the
+     * ``motion_max_val`` clip: every caller applies both before handing the
+     * value over, exactly as the CPU reference does once in extract()
+     * (integer_motion.c:372).  Re-weighting here would square the factor
+     * whenever ``motion_fps_weight != 1.0``.  ADR-1216. */
+    const double blended = motion_blend(score2, s->motion_blend_factor, s->motion_blend_offset);
     const double clipped = blended < s->motion_max_val ? blended : s->motion_max_val;
     const double prev_una = s->prev_motion3_blended;
     s->prev_motion3_blended = clipped;

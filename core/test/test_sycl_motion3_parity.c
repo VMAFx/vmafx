@@ -89,7 +89,7 @@ static int fill_fixture(VmafPicture *pic, unsigned frame_idx)
 /* CPU path — run the "motion" extractor for NUM_FRAMES frames.        */
 /* Returns the motion3_score at frame index 1 via *out_score.         */
 /* ------------------------------------------------------------------ */
-static char *run_cpu_motion3(double *out_score)
+static char *run_cpu_motion3(const char *fps_weight, const char *key, double *out_score)
 {
     int err = 0;
 
@@ -98,7 +98,15 @@ static char *run_cpu_motion3(double *out_score)
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "motion", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    if (fps_weight) {
+        err = vmaf_feature_dictionary_set(&opts, "motion_fps_weight", fps_weight);
+        mu_assert("CPU: vmaf_feature_dictionary_set(motion_fps_weight) failed", !err);
+    }
+
+    err = vmaf_use_feature(vmaf, "motion", opts);
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CPU: vmaf_use_feature(motion) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
@@ -116,7 +124,7 @@ static char *run_cpu_motion3(double *out_score)
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
-    err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion3_score", out_score, 1u);
+    err = vmaf_feature_score_at_index(vmaf, key, out_score, 1u);
     mu_assert("CPU: vmaf_feature_score_at_index(motion3, idx=1) failed", !err);
 
     err = vmaf_close(vmaf);
@@ -129,7 +137,7 @@ static char *run_cpu_motion3(double *out_score)
 /* Returns the motion3_score at frame index 1 via *out_score.         */
 /* Returns a skip sentinel (out_score = NaN) if no SYCL device.      */
 /* ------------------------------------------------------------------ */
-static char *run_sycl_motion3(double *out_score)
+static char *run_sycl_motion3(const char *fps_weight, const char *key, double *out_score)
 {
     *out_score = NAN;
     int err = 0;
@@ -151,7 +159,15 @@ static char *run_sycl_motion3(double *out_score)
     err = vmaf_sycl_import_state(vmaf, sycl_state);
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
 
-    err = vmaf_use_feature(vmaf, "motion_sycl", NULL);
+    VmafFeatureDictionary *opts = NULL;
+    if (fps_weight) {
+        err = vmaf_feature_dictionary_set(&opts, "motion_fps_weight", fps_weight);
+        mu_assert("SYCL: vmaf_feature_dictionary_set(motion_fps_weight) failed", !err);
+    }
+
+    err = vmaf_use_feature(vmaf, "motion_sycl", opts);
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("SYCL: vmaf_use_feature(motion_sycl) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
@@ -169,7 +185,7 @@ static char *run_sycl_motion3(double *out_score)
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
 
-    err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion3_score", out_score, 1u);
+    err = vmaf_feature_score_at_index(vmaf, key, out_score, 1u);
     mu_assert("SYCL: vmaf_feature_score_at_index(motion3, idx=1) failed", !err);
 
     err = vmaf_close(vmaf);
@@ -187,11 +203,11 @@ static char *test_motion3_cpu_sycl_parity(void)
     double cpu_score = 0.0;
     double sycl_score = NAN;
 
-    char *msg = run_cpu_motion3(&cpu_score);
+    char *msg = run_cpu_motion3(NULL, "VMAF_integer_feature_motion3_score", &cpu_score);
     if (msg)
         return msg;
 
-    msg = run_sycl_motion3(&sycl_score);
+    msg = run_sycl_motion3(NULL, "VMAF_integer_feature_motion3_score", &sycl_score);
     if (msg)
         return msg;
 
@@ -390,9 +406,52 @@ static char *test_motion_checkerboard_1080p_parity(void)
     return NULL;
 }
 
+/* ------------------------------------------------------------------ */
+/* ADR-1216 — motion_fps_weight must be applied exactly once.          */
+/*                                                                     */
+/* The CPU reference weights the SAD-derived score a single time in    */
+/* extract() (integer_motion.c:372) and then blends the already-       */
+/* weighted motion2 into motion3 without touching the weight again.    */
+/* The SYCL twin used to re-apply motion_fps_weight inside its host-side */
+/* motion3 post-process, squaring the factor.  With the default        */
+/* weight of 1.0 the squaring is invisible, which is why the parity    */
+/* test above never caught it; this variant pins a non-default weight  */
+/* so the two paths only agree when the weight is applied once.        */
+/* ------------------------------------------------------------------ */
+#define FPS_WEIGHT_VAL "0.6"
+#define FPS_WEIGHT_KEY "integer_motion3_mfw_0.6"
+
+static char *test_motion3_fps_weight_applied_once(void)
+{
+    double cpu_score = 0.0;
+    double gpu_score = NAN;
+
+    char *msg = run_cpu_motion3(FPS_WEIGHT_VAL, FPS_WEIGHT_KEY, &cpu_score);
+    if (msg)
+        return msg;
+
+    msg = run_sycl_motion3(FPS_WEIGHT_VAL, FPS_WEIGHT_KEY, &gpu_score);
+    if (msg)
+        return msg;
+
+    if (isnan(gpu_score))
+        return NULL;
+
+    const double delta = fabs(cpu_score - gpu_score);
+    if (delta > PARITY_TOL) {
+        (void)fprintf(stderr,
+                      "\nmotion3 mfw=%s parity FAIL: cpu=%.8f gpu=%.8f delta=%.2e tol=%.2e\n",
+                      FPS_WEIGHT_VAL, cpu_score, gpu_score, delta, PARITY_TOL);
+    }
+    mu_assert("motion3 with motion_fps_weight != 1.0 drifts from the CPU reference",
+              delta <= PARITY_TOL);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_motion3_cpu_sycl_parity);
+    mu_run_test(test_motion3_fps_weight_applied_once);
     mu_run_test(test_motion_checkerboard_1080p_parity);
     return NULL;
 }
