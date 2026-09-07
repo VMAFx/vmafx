@@ -205,8 +205,11 @@ static inline void iadm_af_norm24(ulong v, thread ulong *m, thread int *e)
     int s = n - 24;
     ulong q = v >> s;
     const ulong rem = v & ((1ul << s) - 1ul);
-    const ulong half = 1ul << (s - 1);
-    if (rem > half || (rem == half && (q & 1ul) != 0ul)) {
+    /* NOT `half`: that is a built-in 16-bit float type in MSL, so declaring a
+     * variable with that name is a redeclaration error (the Metal lane reports
+     * "cannot combine with previous 'type-name' declaration specifier"). */
+    const ulong halfway = 1ul << (s - 1);
+    if (rem > halfway || (rem == halfway && (q & 1ul) != 0ul)) {
         q++;
         if (q == (1ul << 24)) { q >>= 1; s++; }
     }
