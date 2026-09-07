@@ -1,6 +1,6 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
-"""``vmaf-dev-llm`` — local LLM dev helpers for the Lusoris VMAF fork.
+"""``vmaf-dev-llm`` — local LLM dev helpers for the VMAFx fork.
 
 Powers the ``/dev-llm-*`` skills (commit-msg drafting, Doxygen
 generation, code review, model-card drafting). Sub-modules:

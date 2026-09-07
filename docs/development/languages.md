@@ -104,7 +104,7 @@ Members are added by per-sweep PRs (the foundation PR adds none).
 **Setup:**
 
 The repository root `pyproject.toml` contains only tool configuration
-(Black, Ruff, Pytest, Mypy) for `vmaf-fork-tooling`; it has no build system or
+(Black, Ruff, Pytest, Mypy) for `vmafx-tooling`; it has no build system or
 root project dependencies to install. Running `pip install -e .` fails
 flat-layout package discovery. Instead, the repository uses per-package
 editable installs for its independent distributions. See

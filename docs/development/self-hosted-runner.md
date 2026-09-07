@@ -105,7 +105,7 @@ sudo ./svc.sh status
 ```
 
 The service auto-starts on boot and respawns on crash. Logs land in
-`~/actions-runner/_diag/` and `journalctl -u actions.runner.lusoris-vmaf.*`.
+`~/actions-runner/_diag/` and `journalctl -u actions.runner.VMAFx-vmafx.*`.
 
 ### 5. Verify it's online
 
