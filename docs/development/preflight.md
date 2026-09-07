@@ -22,6 +22,11 @@ afternoon. All three were green under local gcc:
 | `static_assert(UINT_MAX <= SIZE_MAX/2/sizeof(ptr))` | fine on 64-bit | `Ubuntu i686 gcc` cannot compile it — the claim is false on 32-bit |
 | `__declspec(align((x)))` | gcc never compiles the MSVC branch | `Windows MSVC+CUDA` → C2059 on every use; `align()` needs a literal |
 | `__attribute__(noinline)` | gcc accepts the single paren | `Ubuntu clang`, `clang+DNN` and four Sanitizer lanes fail to compile |
+| `nullptr` in a `.c` file | gcc and clang accept it under `-std=c23` | `Windows MSVC+CUDA` → C2065 at every site; ADR-1138 keeps C TUs on `NULL` |
+| `static const double` used in a `static` aggregate initialiser | no diagnostic at all, even with `-pedantic-errors -Weverything` | `Windows MSVC+CUDA` → C2099, then cascading C2440s as the members shift |
+
+The last two are from PR #1340 the same evening: one new test file carried
+both, and the `Windows MSVC+CUDA` lane reported 21 errors against it.
 
 Each cost a full CI round-trip. Because only one PR is in flight at a time,
 that is queue time for every other PR too — the branch held the merge window
@@ -65,7 +70,8 @@ aborts at the first `#include` and the stage silently becomes a no-op — run th
 ## What it does not cover
 
 `Windows MinGW64`, the Windows MSVC lanes proper, and `Ubuntu HIP` have no
-local equivalent here. `msvcism` is a pattern match over known rejection
+local equivalent here. `msvcism` is a set of pattern matches plus one small
+scanner (`scripts/dev/find-nonconst-static-init.py`) over known rejection
 classes, not a compiler — `Windows MSVC+*` remains the authority. For HIP and
 the other GPU backends use the dev container
 ([dev-mcp.md](dev-mcp.md), ADR-0451).
