@@ -14,3 +14,15 @@
   shares the `:nonroot` runtime pin used by every other image, with an explicit
   `USER` line. Both listen ports (8080, 9090) are above 1024, so no capability
   is required.
+- The same file now pins the **toolchain versions CI installs**, not just
+  container bases. ROCm was `7.2.4` in one workflow and `7.2.3` in another — so
+  CI validated a ROCm the published images never shipped — and the Level Zero
+  loader existed at four versions at once (`v1.18.5`, `v1.28.0` twice,
+  `v1.29.0`, `1.32.0`), a class of skew that surfaces at runtime as "No device
+  of requested type available" rather than as a build failure. Workflow steps
+  source `build-config.env`, and `scripts/ci/check-workflow-versions.py` fails
+  the build if a literal reappears.
+- Renovate is reconfigured so a base-image bump updates the config and every
+  Dockerfile mirror in one PR. Its built-in `dockerfile` manager understands
+  `ARG X=image` + `FROM $X` and would otherwise have updated only the mirrors,
+  failing the new gate on Renovate's own pull requests.

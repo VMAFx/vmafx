@@ -1,6 +1,6 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 
-# ADR-1231: Container base images come from one config file
+# ADR-1231: Container bases and toolchain versions come from one config file
 
 - **Status**: Accepted
 - **Date**: 2026-09-07
@@ -25,9 +25,16 @@ sense that matters — they decide the libc and the SDK the shipped artifact
 carries — but they are invisible to anyone scanning for `FROM`, which is why
 they were the most stale things in the repository.
 
-Per user direction: define one release configuration and one dev
-configuration in a single place, rather than changing a version by hand in a
-dozen files.
+The same versions also appear in CI workflows, and drifted there independently.
+ROCm was `7.2.4` in `build.yml` and `7.2.3` in `libvmaf-build-matrix.yml`, so CI
+validated a ROCm the published images never shipped. The Level Zero loader
+existed at **four** versions at once — `v1.18.5`, `v1.28.0` twice, `v1.29.0`,
+and `1.32.0` — and a skew there does not fail a build: it surfaces at runtime as
+*"No device of requested type available"*.
+
+Per user direction: define one release configuration and one dev configuration
+in a single place, rather than changing a version by hand in a dozen files —
+covering the whole toolchain, not just container bases.
 
 ## Decision
 
@@ -39,8 +46,22 @@ override any base with `--build-arg`. Vendor runtime libraries are pulled from
 *named stages* rather than `COPY --from=<image>`, so every pin is an ordinary
 `FROM` that both the gate and Renovate can see.
 
-`scripts/ci/check-base-image-single-source.sh` enforces it, and
-`make base-images-sync` rewrites the mirrors from the config.
+Workflows cannot `source` a file at parse time, so their `run:` steps source it
+at run time (`set -a; . ./build-config.env; set +a`), and
+`scripts/ci/load-build-config.sh` exports every knob into `$GITHUB_ENV` for
+steps that need it earlier.
+
+`scripts/ci/check-base-image-single-source.sh` enforces all of it —
+including `scripts/ci/check-workflow-versions.py` for the workflow literals —
+and `make base-images-sync` rewrites the mirrors from the config.
+
+Renovate is reconfigured to match. Its `docker` manager understands
+`ARG X=image` + `FROM $X`, so left alone it would bump the Dockerfile mirrors
+and leave `build-config.env` behind — failing this ADR's own gate on Renovate's
+PRs. One custom manager now matches both the config line and the `ARG` form
+across all nine wired files, so a bump lands every copy in a single PR, and a
+`packageRule` disables the built-in manager on exactly those files.
+`docker/dev/*.Dockerfile` deliberately stays with the built-in manager.
 
 This is deliberately the same shape as
 `scripts/ci/check-default-model-single-source.sh`: one authoritative value,
