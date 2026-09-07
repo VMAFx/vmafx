@@ -4,8 +4,8 @@
 # docker/Dockerfile.operator — multi-stage build for the vmafx-operator Go binary.
 #
 # Stages:
-#   go-builder : compiles cmd/vmafx-operator using golang:1.27-bookworm@sha256:ded31c68586d2e49e760acc2e65a884b23d032e9bbbed0ae0c55abd3fcaf4452
-#   operator   : gcr.io/distroless/static-debian12 runtime (no libc needed;
+#   go-builder : compiles cmd/vmafx-operator using ${RELEASE_GO_BASE}
+#   operator   : ${RELEASE_RUNTIME_STATIC} runtime (no libc needed;
 #                pure-Go binary, no cgo)
 #
 # The operator has no libvmaf dependency — it drives Kubernetes CRD reconciliation
@@ -45,7 +45,14 @@ ARG VMAFX_VERSION=dev
 # ---------------------------------------------------------------------------
 # Stage 1 — go-builder: compile the vmafx-operator binary (CGO_ENABLED=0)
 # ---------------------------------------------------------------------------
-FROM golang:1.27-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b AS go-builder
+# Base images come from build-config.env -- the single source of truth for
+# every container base in this repository. These defaults are mirrors kept in
+# sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
+# these lines, then run that script with --write.
+ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:9baa6b4187bbb98d240372a8a235ac0bb6b5ddd52bba1431dc2f7c0705862728"
+ARG RELEASE_RUNTIME_STATIC="gcr.io/distroless/static-debian13:nonroot@sha256:1c2c046bc09ed40fad370b599a0b1ae7987f55b01e247cf27a7c27cd97e5bbc7"
+
+FROM ${RELEASE_GO_BASE} AS go-builder
 
 # CGO_ENABLED=0: the operator is pure-Go (controller-runtime + k8s client-go).
 # No libvmaf linkage is required.
@@ -74,10 +81,10 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
 # ---------------------------------------------------------------------------
 # Stage 2 — operator: distroless static runtime (no libc, no shell)
 # ---------------------------------------------------------------------------
-# gcr.io/distroless/static-debian12 is appropriate for CGO_ENABLED=0 binaries.
+# gcr.io/distroless/static-debian13 is appropriate for CGO_ENABLED=0 binaries.
 # It contains only the CA bundle and timezone data — no libc, no shell.
 # This is 2 MB smaller than distroless/cc and has a smaller attack surface.
-FROM gcr.io/distroless/static-debian12@sha256:d75cdd72874d4790092fcb1b058493ecf6bb5bf2b2b897045b00ff01d91843f2 AS operator
+FROM ${RELEASE_RUNTIME_STATIC} AS operator
 
 LABEL org.opencontainers.image.title="vmafx-operator"
 LABEL org.opencontainers.image.description="VMAFX Kubernetes operator — CRD reconciliation for VmafxJob / VmafxNode / VmafxModelTraining"

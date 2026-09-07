@@ -5,7 +5,13 @@
 # Digest-pinned (sha256) for supply-chain reproducibility; update when upgrading the
 # CUDA tag. Gives us nvcc + cudart-dev without Ubuntu's stale 'nvidia-cuda-toolkit'
 # apt package.
-FROM nvidia/cuda:13.3.1-devel-ubuntu26.04@sha256:8cf42b8dc4c34d47fb42ffb0923f8a5e363469a7149181c094da336d311bb466
+# Base images come from build-config.env -- the single source of truth for
+# every container base in this repository. These defaults are mirrors kept in
+# sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
+# these lines, then run that script with --write.
+ARG CUDA_BUILDER="nvidia/cuda:13.3.1-devel-ubuntu26.04@sha256:8cf42b8dc4c34d47fb42ffb0923f8a5e363469a7149181c094da336d311bb466"
+
+FROM ${CUDA_BUILDER}
 
 ARG NV_CODEC_TAG="n13.1.15.0"
 ARG FFMPEG_TAG=n9.0.1
