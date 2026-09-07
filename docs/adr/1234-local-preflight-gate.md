@@ -26,6 +26,7 @@ portability breaks in a single afternoon, each green under local gcc:
 | `nullptr` in a C translation unit | gcc and clang accept the C23 keyword | `Windows MSVC+CUDA` C2065 — MSVC's `/std:clatest` does not implement it (ADR-1138) |
 | `static const double` initialising a `static` aggregate | silent under `-std=c23 -pedantic-errors -Weverything` | `Windows MSVC+CUDA` C2099, then a cascade of C2440s as the remaining initialisers shift |
 | `M_PI` without the `_USE_MATH_DEFINES` / `#ifndef` two-step | glibc exposes it via meson's `-D_GNU_SOURCE` | `Windows MinGW64` `'M_PI' undeclared` — MinGW ignores `_GNU_SOURCE`, and `-std=c23` defines `__STRICT_ANSI__` |
+| A `.metal` local named `half` | fine in the C / CUDA / HIP twins the kernel was ported from | `macOS Clang+Metal` redeclaration error — `half` is a built-in MSL type, and every later use then parses as a type name |
 
 The last two rows arrived the same evening in PR #1340, both in one new test
 file, and are the reason the `msvcism` stage grew a scanner alongside its
