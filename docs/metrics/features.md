@@ -186,9 +186,32 @@ Operates on the Y plane only.
 | `debug`                | —     | bool   | `false` | —          | Emit `vif`, `vif_num`, `vif_den`, plus per-scale numerator/denominator |
 | `vif_enhn_gain_limit`  | `egl` | double | `1.4`   | `1.0–1.4`  | Cap enhancement-gain ratio so over-sharpened output cannot saturate    |
 | `vif_kernelscale`      | —     | double | `1.0`   | `0.1–4.0`  | Scale the Gaussian kernel std-dev — only `float_vif`                   |
+| `vif_skip_scale0`      | `ssclz` | bool | `false` | —          | Skip the finest scale: exclude it from the aggregate and report it as zero |
 
 `egl=1.0` disables the enhancement-gain path entirely (matches pre-v1.3
 behaviour).
+
+### `vif_skip_scale0` and what it publishes
+
+With `vif_skip_scale0=true` the finest VIF scale is dropped from the aggregate
+`integer_vif` score **and** its own score is reported as exactly `0.0` rather
+than as a computed ratio. The two are separate effects, and a backend has to do
+both:
+
+| Key | Value when skipping |
+| --- | --- |
+| `integer_vif` | sum over scales 1–3 only |
+| `VMAF_integer_feature_vif_scale0_score` | `0.0` |
+| `integer_vif_num_scale0` / `..._den_scale0` (debug only) | `0.0` / `-1.0` |
+
+Because the option is a `FEATURE_PARAM`, setting it changes the published
+feature names: the alias `ssclz` is appended, so the scale-0 score is filed
+under `integer_vif_scale0_ssclz`. Read that key, not the default one.
+
+The CPU reference simply never computes scale 0. The GPU twins do compute all
+four scales and apply the skip when they publish, so the zeroing lives at the
+emission site rather than in the kernel. `integer_vif` honours this on CPU,
+CUDA, SYCL, HIP and Metal.
 
 **Backends** — `vif`: AVX2, AVX-512, NEON, CUDA, SYCL, HIP.
 `float_vif`: scalar only.

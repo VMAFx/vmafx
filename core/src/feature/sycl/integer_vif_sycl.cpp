@@ -154,6 +154,7 @@ static const VmafOption options[] = {
     },
     {
         .name = "vif_enhn_gain_limit",
+        .alias = "egl",
         .help = "enhancement gain imposed on VIF, must be >= 1.0, "
                 "where 1.0 means the gain is unrestricted",
         .offset = offsetof(VifStateSycl, vif_enhn_gain_limit),
@@ -173,6 +174,7 @@ static const VmafOption options[] = {
     },
     {
         .name = "vif_skip_scale0",
+        .alias = "ssclz",
         .help = "skip scale 0 (finest scale) VIF computation; "
                 "score0 is forced to 0.0 (parity with CPU option)",
         .offset = offsetof(VifStateSycl, vif_skip_scale0),
@@ -1680,7 +1682,17 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
 
     // Write primary per-scale features
     for (int i = 0; i < VIF_NUM_SCALES; i++) {
-        double const score = (vif_scale_den[i] > 0.0) ? vif_scale_num[i] / vif_scale_den[i] : 1.0;
+        /* vif_skip_scale0: the CPU never computes scale 0 in this mode and
+         * publishes 0.0 for its score (integer_vif.c::write_scale_scores,
+         * which is NOT debug-gated). This kernel computes all four scales
+         * regardless -- the flag only excludes scale 0 from the aggregate
+         * above -- so the skip has to be applied at the emission site, exactly
+         * as the CUDA, HIP and Metal twins do. Without it SYCL publishes a
+         * real scale-0 ratio under a key every other backend reports as 0. */
+        double const score =
+            (i == 0 && s->vif_skip_scale0) ?
+                0.0 :
+                ((vif_scale_den[i] > 0.0) ? vif_scale_num[i] / vif_scale_den[i] : 1.0);
 
         static const char *const key_names[] = {
             "VMAF_integer_feature_vif_scale0_score",
