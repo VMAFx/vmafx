@@ -104,8 +104,9 @@ __global__ void calculate_moment_hip_kernel_8bpc(const uint8_t *__restrict__ ref
 
 /**
  * 10/12/16-bpc kernel: ref/dis are byte-addressed; each pixel is
- * a native uint16_t. Values are accumulated raw (no normalisation) —
- * host divides by w*h to recover the moment. Same layout as 8bpc.
+ * a native uint16_t. Values are accumulated raw; the HOST divides the
+ * exact integer sums by the bit-depth scaler (4/16/256) and by w*h to
+ * recover the moment the CPU reference computes (ADR-1212). Same layout as 8bpc.
  */
 __global__ void calculate_moment_hip_kernel_16bpc(const uint8_t *__restrict__ ref,
                                                    const uint8_t *__restrict__ dis,

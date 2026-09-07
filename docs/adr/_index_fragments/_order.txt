@@ -938,3 +938,5 @@
 1227-short-workflow-display-names
 1201-release-candidates-before-1-0-0
 1225-rocm-10-therock-migration
+1212-gpu-moment-bit-depth-normalisation
+1213-hip-ciede-chroma-ceil-dimensions
