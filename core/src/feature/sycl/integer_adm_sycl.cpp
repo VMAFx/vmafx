@@ -32,6 +32,8 @@
  * Pattern: init -> submit (non-blocking) -> collect (wait + scores)
  */
 
+#include <utility>
+
 #include <sycl/sycl.hpp>
 
 #include "sycl_compat.h"
@@ -419,13 +421,13 @@ static sycl::event launch_dwt_vert_pair(sycl::queue &q, const void *input_ref, i
     // For WG_Y outputs: 2*WG_Y + 2 input rows in the tile.
     constexpr int TILE_H = 2 * WG_Y + 2; // 18
     // Z=2: ref(0) + dis(1)
-    sycl::range<3> global(2, ((half_h + WG_Y - 1) / WG_Y) * WG_Y,
-                          ((width + WG_X - 1) / WG_X) * WG_X);
+    sycl::range<3> global(2, ((size_t)(half_h + WG_Y - 1) / WG_Y) * WG_Y,
+                          ((size_t)(width + WG_X - 1) / WG_X) * WG_X);
     sycl::range<3> local(1, WG_Y, WG_X);
 
     return q.submit([&](sycl::handler &cgh) {
         // SLM tile: TILE_H rows × WG_X columns
-        sycl::local_accessor<int32_t, 2> tile(sycl::range<2>(TILE_H, WG_X), cgh);
+        sycl::local_accessor<int32_t, 2> const tile(sycl::range<2>(TILE_H, WG_X), cgh);
 
         cgh.parallel_for(sycl::nd_range<3>(global, local), [=](sycl::nd_item<3> item) {
             // dim 0 = ref(0) or dis(1), dim 1 = row, dim 2 = col
@@ -441,14 +443,14 @@ static sycl::event launch_dwt_vert_pair(sycl::queue &q, const void *input_ref, i
             int32_t *dwt_out = (is_dis == 0) ? dwt_tmp_ref : dwt_tmp_dis;
 
             // Tile origin in input space
-            int tile_col = (int)(item.get_group(2) * WG_X);
-            int n_start = (int)(item.get_group(1) * WG_Y);
+            int const tile_col = (int)(item.get_group(2) * WG_X);
+            int const n_start = (int)(item.get_group(1) * WG_Y);
             int const row_start = 2 * n_start - 1; // first input row
 
             // Read pixel from source at (x, y) with mirroring
             auto read_px = [&](int x, int y) -> int32_t {
                 y = dev_mirror_adm(y, (int)e_h);
-                if (x >= (int)e_w)
+                if (std::cmp_greater_equal(x, e_w))
                     return 0;
                 if (e_scale == 0) {
                     if (e_bpc <= 8) {
@@ -496,15 +498,15 @@ static sycl::event launch_dwt_vert_pair(sycl::queue &q, const void *input_ref, i
 
             item.barrier(sycl::access::fence_space::local_space);
 
-            if (gx >= (int)e_w || gy >= (int)half_h)
+            if (std::cmp_greater_equal(gx, e_w) || std::cmp_greater_equal(gy, half_h))
                 return;
 
             // Read 4 filter taps from shared memory
-            int base = 2 * ly; // tile row offset
-            int32_t s0 = tile[base][lx];
-            int32_t s1 = tile[base + 1][lx];
-            int32_t s2 = tile[base + 2][lx];
-            int32_t s3 = tile[base + 3][lx];
+            int const base = 2 * ly; // tile row offset
+            int32_t const s0 = tile[base][lx];
+            int32_t const s1 = tile[base + 1][lx];
+            int32_t const s2 = tile[base + 2][lx];
+            int32_t const s3 = tile[base + 3][lx];
 
             // Lo-pass: coeffs = {15826, 27411, 7345, -4240}
             int64_t lo_val = (int64_t)dwt_lo[0] * s0 + (int64_t)dwt_lo[1] * s1 +
@@ -561,8 +563,8 @@ static sycl::event launch_dwt_hori_pair(
     constexpr int WG_X = 32;
     constexpr int WG_Y = 8;
     // Z=2: ref(0) + dis(1)
-    sycl::range<3> global(2, ((half_h + WG_Y - 1) / WG_Y) * WG_Y,
-                          ((half_w + WG_X - 1) / WG_X) * WG_X);
+    sycl::range<3> global(2, ((size_t)(half_h + WG_Y - 1) / WG_Y) * WG_Y,
+                          ((size_t)(half_w + WG_X - 1) / WG_X) * WG_X);
     sycl::range<3> local(1, WG_Y, WG_X);
 
     return q.submit([&](sycl::handler &cgh) {
@@ -570,7 +572,7 @@ static sycl::event launch_dwt_hori_pair(
             const int is_dis = item.get_global_id(0);
             const int gx = item.get_global_id(2);
             const int gy = item.get_global_id(1);
-            if (gx >= (int)e_half_w || gy >= (int)e_half_h)
+            if (std::cmp_greater_equal(gx, e_half_w) || std::cmp_greater_equal(gy, e_half_h))
                 return;
 
             const int32_t *dwt_tmp = (is_dis == 0) ? dwt_tmp_ref : dwt_tmp_dis;
@@ -593,7 +595,7 @@ static sycl::event launch_dwt_hori_pair(
                 return dwt_tmp[gy * tmp_stride + e_w + x];
             };
 
-            int base_x = 2 * gx;
+            int const base_x = 2 * gx;
 
             // Horizontal filter on lo row -> band_a, band_h
             int32_t const l0 = read_lo(base_x - 1);
@@ -635,7 +637,7 @@ static sycl::event launch_dwt_hori_pair(
                 d_out = (int32_t)d_val;
             }
 
-            unsigned idx = gy * e_buf_stride + gx;
+            unsigned const idx = gy * e_buf_stride + gx;
             band_a[idx] = a_out;
             band_h[idx] = h_out;
             band_v[idx] = v_out;
@@ -708,17 +710,18 @@ launch_decouple_csf(sycl::queue &q, int scale, unsigned half_w, unsigned half_h,
 
     constexpr int WG_X = 16;
     constexpr int WG_Y = 16;
-    sycl::range<2> global(((half_h + WG_Y - 1) / WG_Y) * WG_Y, ((half_w + WG_X - 1) / WG_X) * WG_X);
-    sycl::range<2> local(WG_Y, WG_X);
+    sycl::range<2> const global(((size_t)(half_h + WG_Y - 1) / WG_Y) * WG_Y,
+                                ((size_t)(half_w + WG_X - 1) / WG_X) * WG_X);
+    sycl::range<2> const local(WG_Y, WG_X);
 
     return q.submit([&](sycl::handler &cgh) {
         cgh.parallel_for(sycl::nd_range<2>(global, local), [=](sycl::nd_item<2> item) {
             const int gx = item.get_global_id(1);
             const int gy = item.get_global_id(0);
-            if (gx >= (int)e_w || gy >= (int)e_h)
+            if (std::cmp_greater_equal(gx, e_w) || std::cmp_greater_equal(gy, e_h))
                 return;
 
-            unsigned idx = gy * e_stride + gx;
+            unsigned const idx = gy * e_stride + gx;
 
             // Load all 3 bands for ref and dis
             int32_t const o[3] = {ref_h[idx], ref_v[idx], ref_d[idx]};
@@ -952,7 +955,7 @@ static sycl::event launch_csf_den_cm_3band(
         csf_shift_sq = 0;
         csf_shift_cub = 0;
         int const area = active_w * active_h;
-        int s = (int)std::ceil(std::log2(area) - 20);
+        int const s = (int)std::ceil(std::log2(area) - 20);
         csf_shift_accum = s > 0 ? (uint32_t)s : 0;
     } else {
         csf_shift_sq = (scale == 2) ? 30 : 31;
@@ -1007,15 +1010,15 @@ static sycl::event launch_csf_den_cm_3band(
     return q.submit([&](sycl::handler &cgh) {
         // 2 reduction slots: [0..MAX_SUBGROUPS) for csf_den,
         //                    [MAX_SUBGROUPS..2*MAX_SUBGROUPS) for cm
-        sycl::local_accessor<int64_t, 1> lmem(sycl::range<1>(2 * MAX_SUBGROUPS), cgh);
+        sycl::local_accessor<int64_t, 1> const lmem(sycl::range<1>((size_t)2 * MAX_SUBGROUPS), cgh);
 
         cgh.parallel_for(
-            sycl::nd_range<1>(3 * num_rows * WG_SIZE, WG_SIZE),
+            sycl::nd_range<1>((size_t)3 * num_rows * WG_SIZE, WG_SIZE),
             [=](sycl::nd_item<1> item) VMAF_SYCL_REQD_SG_SIZE(32) {
-                int wg = item.get_group(0);
+                int const wg = item.get_group(0);
                 int const band_idx = wg / num_rows;
                 int const row_idx = wg % num_rows;
-                int lid = item.get_local_id(0);
+                int const lid = item.get_local_id(0);
                 int const row = e_top + row_idx;
 
                 // Select band-specific pointers
@@ -1206,11 +1209,11 @@ static sycl::event launch_csf_den_cm_3band(
                                 int nx = col + dx;
                                 if (ny < 0)
                                     ny = 0;
-                                if (ny >= (int)e_h)
+                                if (std::cmp_greater_equal(ny, e_h))
                                     ny = (int)e_h - 1;
                                 if (nx < 0)
                                     nx = 0;
-                                if (nx >= (int)e_w)
+                                if (std::cmp_greater_equal(nx, e_w))
                                     nx = (int)e_w - 1;
                                 thr += cf_ptrs[b][ny * e_stride + nx];
                             }
@@ -1237,18 +1240,21 @@ static sycl::event launch_csf_den_cm_3band(
                     if (cm < 0)
                         cm = 0;
 
-                    int64_t rnd_sq2 = e_cm_shift_xsq > 0 ? ((int64_t)1 << (e_cm_shift_xsq - 1)) : 0;
-                    int32_t x_sq = (int32_t)(((cm * cm) + rnd_sq2) >> e_cm_shift_xsq);
-                    int64_t rnd_cub2 =
+                    int64_t const rnd_sq2 =
+                        e_cm_shift_xsq > 0 ? ((int64_t)1 << (e_cm_shift_xsq - 1)) : 0;
+                    int32_t const x_sq = (int32_t)(((cm * cm) + rnd_sq2) >> e_cm_shift_xsq);
+                    int64_t const rnd_cub2 =
                         e_cm_shift_xcub > 0 ? ((int64_t)1 << (e_cm_shift_xcub - 1)) : 0;
-                    int64_t x_cub = (((int64_t)x_sq * cm) + rnd_cub2) >> e_cm_shift_xcub;
+                    int64_t const x_cub = (((int64_t)x_sq * cm) + rnd_cub2) >> e_cm_shift_xcub;
                     local_cm_sum += x_cub;
                 }
 
                 // ── Two-phase reduction for both values ──
-                sycl::sub_group sg = item.get_sub_group();
-                int64_t sg_csf = sycl::reduce_over_group(sg, local_csf_sum, sycl::plus<int64_t>{});
-                int64_t sg_cm = sycl::reduce_over_group(sg, local_cm_sum, sycl::plus<int64_t>{});
+                sycl::sub_group const sg = item.get_sub_group();
+                int64_t const sg_csf =
+                    sycl::reduce_over_group(sg, local_csf_sum, sycl::plus<int64_t>{});
+                int64_t const sg_cm =
+                    sycl::reduce_over_group(sg, local_cm_sum, sycl::plus<int64_t>{});
 
                 const uint32_t sg_id = sg.get_group_linear_id();
                 const uint32_t sg_lid = sg.get_local_linear_id();
@@ -1275,20 +1281,18 @@ static sycl::event launch_csf_den_cm_3band(
                     int64_t const rnd_csf =
                         e_csf_shift_accum > 0 ? ((int64_t)1 << (e_csf_shift_accum - 1)) : 0;
                     int64_t const shifted_csf = (total_csf + rnd_csf) >> e_csf_shift_accum;
-                    sycl::atomic_ref<int64_t, sycl::memory_order::relaxed,
-                                     sycl::memory_scope::device,
-                                     sycl::access::address_space::global_space>
-                        csf_ref(*csf_accum_ptr);
+                    sycl::atomic_ref<
+                        int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
+                        sycl::access::address_space::global_space> const csf_ref(*csf_accum_ptr);
                     csf_ref.fetch_add(shifted_csf);
 
                     // cm: shift and atomic add
                     int64_t const rnd_cm =
                         e_cm_shift_inner > 0 ? ((int64_t)1 << (e_cm_shift_inner - 1)) : 0;
                     int64_t const shifted_cm = (total_cm + rnd_cm) >> e_cm_shift_inner;
-                    sycl::atomic_ref<int64_t, sycl::memory_order::relaxed,
-                                     sycl::memory_scope::device,
-                                     sycl::access::address_space::global_space>
-                        cm_ref(*cm_accum_ptr);
+                    sycl::atomic_ref<
+                        int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
+                        sycl::access::address_space::global_space> const cm_ref(*cm_accum_ptr);
                     cm_ref.fetch_add(shifted_cm);
                 }
             });
@@ -1333,9 +1337,9 @@ static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float
         } else {
             // CPU uses w (full band width) for shift_cub, not active_w
             uint32_t const shift_cub = (uint32_t)std::ceil(std::log2((double)w));
-            double final_shift[3] = {std::pow(2.0, 45.0 - shift_cub - shift_inner_accum),
-                                     std::pow(2.0, 39.0 - shift_cub - shift_inner_accum),
-                                     std::pow(2.0, 36.0 - shift_cub - shift_inner_accum)};
+            double const final_shift[3] = {std::pow(2.0, 45.0 - shift_cub - shift_inner_accum),
+                                           std::pow(2.0, 39.0 - shift_cub - shift_inner_accum),
+                                           std::pow(2.0, 36.0 - shift_cub - shift_inner_accum)};
             f_accum = (double)accum[i] / final_shift[scale - 1];
         }
         *result += std::pow(f_accum, p_norm_exp) + powf_add;
@@ -1361,7 +1365,7 @@ static void conclude_adm_csf_den(const uint64_t *accum, int h, int w, int scale,
         shift_csf = std::pow(2.0, accum_convert[scale] - shift_accum);
     } else {
         shift_accum = (int32_t)std::ceil(std::log2(bottom - top));
-        uint32_t shift_cub = (uint32_t)std::ceil(std::log2(right - left));
+        uint32_t const shift_cub = (uint32_t)std::ceil(std::log2(right - left));
         shift_csf = std::pow(2.0, accum_convert[scale] - shift_accum - shift_cub);
     }
 
@@ -1708,7 +1712,8 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         conclude_adm_cm(cm_results[scale], score_h, score_w, scale, (float)s->adm_noise_weight,
                         s->adm_p_norm, &num_scale);
         conclude_adm_csf_den((uint64_t *)csf_den_results[scale], score_h, score_w, scale,
-                             &den_scale, &s->rfactor[scale * 3], (float)s->adm_noise_weight);
+                             &den_scale, &s->rfactor[(size_t)scale * 3],
+                             (float)s->adm_noise_weight);
 
         /* adm_skip_scale0: exclude scale 0 from num/den accumulation, mirroring
          * the CPU integer_adm.c fast-path (den_scale = 1e-10, num_scale = 0).
