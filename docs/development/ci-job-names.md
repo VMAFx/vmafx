@@ -22,6 +22,35 @@ CI job and matrix display names (`name:`) conform to the following guidelines:
    prefix pattern (e.g. `Ubuntu gcc+DNN`, `Ubuntu clang+DNN`, `Ubuntu HIP`,
    `Windows MinGW64`, `Windows MSVC+CUDA`, `Windows MSVC+SYCL`).
 
+## Workflow display names (ADR-1227)
+
+The same $\le 30$ character budget applies to workflow-level `name:` fields,
+for a sharper reason: GitHub's `badge.svg` endpoint paints the **workflow
+name** into the badge, so the seven status badges at the top of
+[`README.md`](../../README.md) render whatever the workflow is called. Names
+like `Tests & Quality Gates — Netflix Golden / Sanitizers / Tiny AI /
+Coverage` (72 characters) turned those badges into banners that wrapped the
+README header across several lines.
+
+The four workflows the README badges point at are named exactly as their badge
+link labels — `Tests`, `Security`, `Builds`, `FFmpeg` — so the badge text and
+the link text agree.
+
+The axis list a workflow used to carry in its name lives in a comment directly
+under the `name:` line instead, where it does not have to fit in a badge:
+
+```yaml
+name: Security
+# Security — Semgrep / CodeQL / Gitleaks / Dependency Review.
+# The display name is deliberately short: GitHub's badge.svg paints it
+# into the README status badge. See ADR-1227.
+```
+
+**Filenames are not part of this budget.** Badge and Actions URLs are keyed on
+the filename, so filenames stay purpose-descriptive kebab-case per
+[ADR-0116](../adr/0116-ci-workflow-naming-convention.md) §1 — renaming one
+means re-pointing every badge.
+
 ## Aggregator gating
 
 Branch protection targets a single context: `Required Checks Aggregator` in

@@ -10712,6 +10712,21 @@ core internal headers (`framesync.h`, `thread_pool.h`, `picture_pool.h`,
   (62-run `--precision max` output matrix, 21 396 metric values). (ADR-1141)
 
 
+- **CI workflow display names are short again** (ADR-1227). GitHub's
+  `badge.svg` endpoint paints the workflow `name:` into the badge, so names
+  like `Tests & Quality Gates — Netflix Golden / Sanitizers / Tiny AI /
+  Coverage` (72 characters) rendered the README's seven status badges as
+  60-to-70-character banners that wrapped the header across several lines.
+  Fourteen workflows are relabelled — `Tests`, `Security`, `Builds`, `FFmpeg`,
+  `E2E`, `Fuzz`, `SYCL Parity`, `Dev Container`, the two publish workflows and
+  the three upstream watchers — bringing them under the ≤30-character budget
+  `docs/development/ci-job-names.md` already applied to job names. The four the
+  README badges point at now match their badge link labels exactly. The axis
+  list each name used to carry moved to a comment under the `name:` line.
+  Filenames are unchanged, so no badge URL churn and no branch-protection
+  re-pin.
+
+
 - The epic #1246 retrain runbook's gate table records **G4 (K150K re-smoke,
   zero disk leak) as PASS**, measured 2026-09-06 against `master` `e91ab8284`
   after PR #1302 merged: `ok=5 fail=0` in 10.6 s, all seven §4.2 assertions

@@ -1,4 +1,4 @@
-name: "SYCL Parity (Arc A380)"
+name: SYCL Parity
 
 # required-aggregator: SYCL Parity (Arc A380)
 # ADR-1177 — SYCL parity on the workstation's Intel Arc A380, executed by a

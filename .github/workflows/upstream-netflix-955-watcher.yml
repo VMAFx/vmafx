@@ -7,7 +7,10 @@
 # tracking issue with the `upstream-merged` label so the deferral
 # row in `docs/state.md` can be actively closed instead of silently
 # aging.
-name: Upstream watcher — Netflix#1494 (closes Netflix#955 deferral)
+name: Watcher — Netflix#1494
+# Watcher — Netflix#1494 — Netflix#1494, closes the Netflix#955 deferral.
+# The display name is deliberately short: GitHub's badge.svg paints it
+# into the README status badge. See ADR-1227.
 
 on:
   schedule:

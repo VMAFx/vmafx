@@ -19,7 +19,7 @@
 # ADR-0815: operator-node-distroless-dockerfiles
 # ADR-0698: distroless base-image policy
 
-name: docker-publish-operator-node
+name: Publish Operator Node
 
 on:
   release:

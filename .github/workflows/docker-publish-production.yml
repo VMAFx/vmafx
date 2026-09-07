@@ -15,7 +15,7 @@
 # Post-push steps: cosign keyless sign + syft SBOM (CycloneDX JSON) via cosign attest.
 # ADR-0698: vmafx-production-dockerfile
 
-name: docker-publish-production
+name: Publish Production
 
 on:
   release:

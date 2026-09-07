@@ -6,7 +6,10 @@
 # Polls weekly: searches FFmpeg's GitHub mirror for any commit on
 # master that introduces an AV_HWDEVICE_TYPE_HIP / _ROCM enum
 # variant, or new hwcontext_hip.{c,h} files.
-name: Upstream watcher — FFmpeg HIP hwdec (closes T-FFMPEG-HIP-FILTER-DEFERRED)
+name: Watcher — FFmpeg HIP hwdec
+# Watcher — FFmpeg HIP hwdec — closes T-FFMPEG-HIP-FILTER-DEFERRED.
+# The display name is deliberately short: GitHub's badge.svg paints it
+# into the README status badge. See ADR-1227.
 
 on:
   schedule:
