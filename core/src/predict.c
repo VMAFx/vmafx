@@ -30,6 +30,7 @@
 #include "feature/feature_name.h"
 #include "log.h"
 #include "model.h"
+#include "percentile.h"
 #include "predict.h"
 #include "svm.h"
 
@@ -564,29 +565,6 @@ int vmaf_predict_score_at_index(VmafModel *model, VmafFeatureCollector *feature_
     return 0;
 }
 
-static int score_compare(const void *a, const void *b)
-{
-    const double *x = a;
-    const double *y = b;
-    if (*x > *y) {
-        return 1;
-    }
-    if (*x < *y) {
-        return -1;
-    }
-    return 0;
-}
-
-static double percentile(const double *scores, unsigned n_scores, double perc)
-{
-    const double p = perc * (n_scores - 1) / 100.;
-    const int idx_l = (int)floor(p);
-    const int idx_r = (int)ceil(p);
-
-    return (idx_l == idx_r) ? scores[idx_l] :
-                              scores[idx_l] * (idx_r - p) + scores[idx_r] * (p - idx_l);
-}
-
 static int bootstrap_gather_scores(VmafModelCollection *model_collection,
                                    VmafFeatureCollector *feature_collector, unsigned index,
                                    double *scores)
@@ -638,9 +616,14 @@ static void bootstrap_compute_statistics(const VmafModelCollection *model_collec
     }
     score->bootstrap.stddev = sqrt(ssd / model_collection->cnt);
 
-    qsort(scores, model_collection->cnt, sizeof(double), score_compare);
-    score->bootstrap.ci.p95.lo = percentile(scores, model_collection->cnt, 2.5);
-    score->bootstrap.ci.p95.hi = percentile(scores, model_collection->cnt, 97.5);
+    /* ADR-1188: the comparator and the interpolation moved verbatim into the
+     * header-only `percentile.h` so the percentile pooling methods share one
+     * rule with the bootstrap CIs. `static inline` keeps them compiling in
+     * this translation unit, so the golden-asserted ci_p95 bounds are
+     * unchanged. */
+    qsort(scores, model_collection->cnt, sizeof(double), vmaf_score_compare);
+    score->bootstrap.ci.p95.lo = vmaf_percentile(scores, model_collection->cnt, 2.5);
+    score->bootstrap.ci.p95.hi = vmaf_percentile(scores, model_collection->cnt, 97.5);
 }
 
 /* Apply the model's score transform, then its clip, to one value. Propagates

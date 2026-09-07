@@ -116,22 +116,39 @@ static unsigned max_capacity(VmafFeatureCollector *fc)
 }
 
 /* Indexed by VmafPoolingMethod enum value (UNKNOWN=0, MIN=1, MAX=2, MEAN=3,
- * HARMONIC_MEAN=4). Designated initializers are a GCC C++ extension not
- * supported by GCC 16 in non-trivial form; use positional initializers so the
- * array compiles cleanly under -std=c++23. Index 0 (UNKNOWN) is nullptr and
- * never accessed — callers loop from j=1. */
+ * HARMONIC_MEAN=4, MEDIAN=5, PERC5=6, PERC10=7, PERC20=8). Designated
+ * initializers are a GCC C++ extension not supported by GCC 16 in non-trivial
+ * form; use positional initializers so the array compiles cleanly under
+ * -std=c++23. Index 0 (UNKNOWN) is nullptr and never accessed — writers index
+ * this array only through `pool_report_order`. */
 static constexpr const char *pool_method_name[] = {
-    nullptr,        /* VMAF_POOL_METHOD_UNKNOWN = 0 */
-    "min",          /* VMAF_POOL_METHOD_MIN = 1     */
-    "max",          /* VMAF_POOL_METHOD_MAX = 2     */
-    "mean",         /* VMAF_POOL_METHOD_MEAN = 3    */
-    "harmonic_mean" /* VMAF_POOL_METHOD_HARMONIC_MEAN = 4 */
+    nullptr,         /* VMAF_POOL_METHOD_UNKNOWN = 0 */
+    "min",           /* VMAF_POOL_METHOD_MIN = 1     */
+    "max",           /* VMAF_POOL_METHOD_MAX = 2     */
+    "mean",          /* VMAF_POOL_METHOD_MEAN = 3    */
+    "harmonic_mean", /* VMAF_POOL_METHOD_HARMONIC_MEAN = 4 */
+    "median",        /* VMAF_POOL_METHOD_MEDIAN = 5  */
+    "perc5",         /* VMAF_POOL_METHOD_PERC5 = 6   */
+    "perc10",        /* VMAF_POOL_METHOD_PERC10 = 7  */
+    "perc20"         /* VMAF_POOL_METHOD_PERC20 = 8  */
 };
 /* Guard: if VMAF_POOL_METHOD_NB grows without updating this array,
- * callers loop to NB-1 and read out of bounds. Catch it at compile time
+ * a writer could index past the end. Catch it at compile time
  * (adversarial review 2026-05-28 finding #17; JPL Rule 23 spirit). */
-static_assert(VMAF_POOL_METHOD_NB == 5,
+static_assert(VMAF_POOL_METHOD_NB == 9,
               "pool_method_name array size mismatch — update the array above");
+
+/* Which pooling methods the CLI/API log writers emit, in output order.
+ *
+ * ADR-1188 keeps this at the historical four on purpose: `pooled_metrics` is a
+ * consumed output schema (XML attributes, JSON keys, the Python harness's
+ * parsers), so appending the new order-statistic methods to the enum must not
+ * silently widen every log file. The percentile methods are reachable through
+ * the C API — vmaf_feature_score_pooled / vmaf_score_pooled — and are simply
+ * not auto-reported. Writers iterate this array instead of [1, NB). */
+static constexpr VmafPoolingMethod pool_report_order[] = {
+    VMAF_POOL_METHOD_MIN, VMAF_POOL_METHOD_MAX, VMAF_POOL_METHOD_MEAN,
+    VMAF_POOL_METHOD_HARMONIC_MEAN};
 
 static inline std::string_view fmt_or_default(const char *score_format) noexcept
 {
@@ -192,10 +209,9 @@ static void xml_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned s
 static void xml_write_one_metric_pools(VmafContext *vmaf, FILE *outfile, const char *feature_name,
                                        unsigned pic_cnt, std::string_view sf)
 {
-    for (unsigned j = 1; j < VMAF_POOL_METHOD_NB; j++) {
+    for (const VmafPoolingMethod j : pool_report_order) {
         double score;
-        int err = vmaf_feature_score_pooled(vmaf, feature_name, static_cast<VmafPoolingMethod>(j),
-                                            &score, 0, pic_cnt - 1);
+        int err = vmaf_feature_score_pooled(vmaf, feature_name, j, &score, 0, pic_cnt - 1);
         if (!err) {
             (void)std::fprintf(outfile, "%s=\"", pool_method_name[j]);
             (void)std::fprintf(outfile, sf.data(), score);
@@ -340,7 +356,7 @@ static void json_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned 
  * j==2 call would then print a leading comma with no preceding value,
  * producing malformed JSON ("{,\n  \"max\": ...}").  Use an explicit
  * `*first` flag instead so the comma tracks what was actually emitted. */
-static void json_write_pool_score(FILE *outfile, bool *first, unsigned j, double score,
+static void json_write_pool_score(FILE *outfile, bool *first, VmafPoolingMethod j, double score,
                                   std::string_view sf)
 {
     (void)std::fprintf(outfile, "%s", *first ? "\n" : ",\n");
@@ -375,10 +391,9 @@ static void json_write_pooled_entry(VmafContext *vmaf, FILE *outfile, const char
      * preserve.  Skip pooled metrics entirely when there are no frames. */
     if (pic_cnt > 0) {
         bool first = true;
-        for (unsigned j = 1; j < VMAF_POOL_METHOD_NB; j++) {
+        for (const VmafPoolingMethod j : pool_report_order) {
             double score;
-            int err = vmaf_feature_score_pooled(
-                vmaf, feature_name, static_cast<VmafPoolingMethod>(j), &score, 0, pic_cnt - 1);
+            int err = vmaf_feature_score_pooled(vmaf, feature_name, j, &score, 0, pic_cnt - 1);
             if (!err)
                 json_write_pool_score(outfile, &first, j, score, sf);
         }

@@ -61,6 +61,7 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "log.h"
 #include "model.h"
 #include "output.h"
+#include "percentile.h"
 #include "picture.h"
 #include "predict.h"
 #include "thread_pool.h"
@@ -3236,11 +3237,81 @@ typedef struct PoolAccumulators {
     double w_i_sum;     /* Σ w_i/(s_i + 1)                                     */
 } PoolAccumulators;
 
+/* Per-frame score buffer for the order-statistic pooling methods (ADR-1188).
+ *
+ * MEDIAN / PERC5 / PERC10 / PERC20 cannot be computed from running sums, so
+ * those — and only those — retain every pooled per-frame score. The buffer is
+ * grown geometrically rather than sized up front because callers legitimately
+ * pass an open-ended `index_high` (the documented `vmaf_score_pooled(..., 0,
+ * UINT_MAX)` idiom), which would otherwise demand a 32 GiB allocation. */
+typedef struct PoolSamples {
+    double *score;
+    unsigned cnt;
+    unsigned capacity;
+} PoolSamples;
+
+/* The percentile rank implied by `pool_method`, or a negative value when the
+ * method is one of the four O(1) accumulator methods. Keeps the "is this an
+ * order statistic?" test and the rank itself in one place. */
+static double pool_method_percentile(enum VmafPoolingMethod pool_method)
+{
+    switch (pool_method) {
+    case VMAF_POOL_METHOD_PERC5:
+        return 5.;
+    case VMAF_POOL_METHOD_PERC10:
+        return 10.;
+    case VMAF_POOL_METHOD_PERC20:
+        return 20.;
+    case VMAF_POOL_METHOD_MEDIAN:
+        return 50.;
+    default:
+        return -1.;
+    }
+}
+
+/* Append one per-frame score, growing the buffer geometrically. */
+static int pool_samples_push(PoolSamples *s, double score)
+{
+    if (s->cnt == s->capacity) {
+        const unsigned next = (s->capacity == 0u) ? 64u : (s->capacity * 2u);
+        /* Wrap check: a pooled interval of more than 2^31 frames would
+         * overflow the geometric growth. Fail closed instead. */
+        if (next <= s->capacity)
+            return -ENOMEM;
+        double *tmp = realloc(s->score, (size_t)next * sizeof(*tmp));
+        if (!tmp)
+            return -ENOMEM;
+        s->score = tmp;
+        s->capacity = next;
+    }
+
+    s->score[s->cnt++] = score;
+    return 0;
+}
+
+/* Sort-and-interpolate reduction for the order-statistic methods. Shares
+ * `vmaf_percentile` with the bootstrap confidence intervals so the rule is
+ * numpy.percentile(method="linear") on both surfaces (ADR-1188). */
+static int pool_reduce_percentile(PoolSamples *s, double perc, double *score)
+{
+    if (s->cnt == 0)
+        return -EINVAL;
+
+    qsort(s->score, s->cnt, sizeof(*s->score), vmaf_score_compare);
+    *score = vmaf_percentile(s->score, s->cnt, perc);
+    return 0;
+}
+
 /* Reduce the accumulated sums to a single pooled score per method.
  *
  * GOLDEN-GATE ISOLATION (ADR-1118): when `weighting` is false the MEAN and
  * HARMONIC_MEAN branches run the exact same float expressions as upstream, so
  * the no-side-data path (and the Netflix golden pairs) is byte-identical.
+ *
+ * Only the four accumulator methods reach this function; the order-statistic
+ * methods (MEDIAN / PERC*) are dispatched to pool_reduce_percentile before it
+ * is called, so they hit `default` here by construction, and an out-of-range
+ * discriminant is still rejected with -EINVAL (ADR-1188).
  * Returns 0 on success or -EINVAL for an unknown method. */
 static int pool_reduce(const PoolAccumulators *a, enum VmafPoolingMethod pool_method,
                        bool weighting, double *score)
@@ -3274,6 +3345,47 @@ static int pool_reduce(const PoolAccumulators *a, enum VmafPoolingMethod pool_me
     }
 }
 
+/* Walk [index_low, index_high], honouring n_subsample, feeding the O(1)
+ * accumulators and — when `samples` is non-NULL — also retaining every
+ * per-frame score for the order-statistic methods (ADR-1188). Both consumers
+ * see exactly the same frame set, so a percentile and a mean pooled over the
+ * same interval summarise the same samples. */
+static int pool_accumulate(VmafContext *vmaf, const char *feature_name, PoolAccumulators *a,
+                           PoolSamples *samples, bool weighting, unsigned index_low,
+                           unsigned index_high)
+{
+    for (unsigned i = index_low; i <= index_high; i++) {
+        if ((vmaf->cfg.n_subsample > 1) && (i % vmaf->cfg.n_subsample))
+            continue;
+        a->pic_cnt++;
+        double s;
+        int err = vmaf_feature_score_at_index(vmaf, feature_name, &s, i);
+        if (err)
+            return err;
+        a->sum += s;
+        a->i_sum += 1. / (s + 1.);
+        if ((i == index_low) || (s < a->min))
+            a->min = s;
+        if ((i == index_low) || (s > a->max))
+            a->max = s;
+        if (weighting) {
+            /* w == 1.0 for any frame without a stored summary, so a partially
+             * annotated sequence still degrades cleanly per-frame. */
+            const double w = vmaf_perceptual_weight_at_index(&vmaf->perceptual, i);
+            a->w_sum += w;
+            a->w_score_sum += w * s;
+            a->w_i_sum += w / (s + 1.);
+        }
+        if (samples) {
+            err = pool_samples_push(samples, s);
+            if (err)
+                return err;
+        }
+    }
+
+    return 0;
+}
+
 int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
                               enum VmafPoolingMethod pool_method, double *score, unsigned index_low,
                               unsigned index_high)
@@ -3281,6 +3393,8 @@ int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
     if (!vmaf)
         return -EINVAL;
     if (!feature_name)
+        return -EINVAL;
+    if (!score)
         return -EINVAL;
     if (index_low > index_high)
         return -EINVAL;
@@ -3295,38 +3409,30 @@ int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
      * the exact same float operations in the exact same order as upstream. */
     const bool weighting = vmaf_perceptual_weight_active(&vmaf->perceptual);
 
+    /* ADR-1188: MEDIAN / PERC* need the score vector; every other method stays
+     * on the O(1) accumulator path and allocates nothing. Perceptual weighting
+     * is deliberately not applied to the order statistics — re-weighting cannot
+     * reorder the per-frame scores, exactly as for MIN / MAX. */
+    const double perc = pool_method_percentile(pool_method);
+
     PoolAccumulators a = {0};
-    for (unsigned i = index_low; i <= index_high; i++) {
-        if ((vmaf->cfg.n_subsample > 1) && (i % vmaf->cfg.n_subsample))
-            continue;
-        a.pic_cnt++;
-        double s;
-        int err = vmaf_feature_score_at_index(vmaf, feature_name, &s, i);
-        if (err)
-            return err;
-        a.sum += s;
-        a.i_sum += 1. / (s + 1.);
-        if ((i == index_low) || (s < a.min))
-            a.min = s;
-        if ((i == index_low) || (s > a.max))
-            a.max = s;
-        if (weighting) {
-            /* w == 1.0 for any frame without a stored summary, so a partially
-             * annotated sequence still degrades cleanly per-frame. */
-            const double w = vmaf_perceptual_weight_at_index(&vmaf->perceptual, i);
-            a.w_sum += w;
-            a.w_score_sum += w * s;
-            a.w_i_sum += w / (s + 1.);
-        }
-    }
+    PoolSamples samples = {0};
+    int err = pool_accumulate(vmaf, feature_name, &a, (perc >= 0.) ? &samples : NULL, weighting,
+                              index_low, index_high);
 
     /* When n_subsample skips every frame in [index_low, index_high],
      * pic_cnt stays 0 and the MEAN / HARMONIC_MEAN cases would divide
      * by zero.  Reject cleanly. */
-    if (a.pic_cnt == 0)
-        return -EINVAL;
+    if (!err && (a.pic_cnt == 0))
+        err = -EINVAL;
 
-    return pool_reduce(&a, pool_method, weighting, score);
+    if (!err) {
+        err = (perc >= 0.) ? pool_reduce_percentile(&samples, perc, score) :
+                             pool_reduce(&a, pool_method, weighting, score);
+    }
+
+    free(samples.score);
+    return err;
 }
 
 int vmaf_score_pooled(VmafContext *vmaf, VmafModel *model, enum VmafPoolingMethod pool_method,
