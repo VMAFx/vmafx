@@ -160,6 +160,19 @@ def run_analyzer(argv: list[str], root: Path, log: Path) -> int:
     return result.returncode
 
 
+def cppcheck_arguments(binary: str, root: Path, database: Path) -> list[str]:
+    """Model the pthread API without overriding the configured target platform."""
+    return [
+        binary,
+        "--enable=all",
+        "--inline-suppr",
+        "--library=posix",
+        f"--suppressions-list={root / '.cppcheck-suppressions.txt'}",
+        f"--project={database}",
+        "--error-exitcode=1",
+    ]
+
+
 def run(args: argparse.Namespace) -> int:
     root, build = args.repo_root.resolve(), args.build_dir.resolve()
     for attribute in ("clang_tidy", "cppcheck"):
@@ -196,14 +209,7 @@ def run(args: argparse.Namespace) -> int:
     # A clang-tidy failure must not prevent the independent cppcheck report.
     cppcheck_log = report / "cppcheck.log"
     cppcheck_code = run_analyzer(
-        [
-            args.cppcheck,
-            "--enable=all",
-            "--inline-suppr",
-            f"--suppressions-list={root / '.cppcheck-suppressions.txt'}",
-            f"--project={database}",
-            "--error-exitcode=1",
-        ],
+        cppcheck_arguments(args.cppcheck, root, database),
         root,
         cppcheck_log,
     )

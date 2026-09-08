@@ -606,6 +606,9 @@ jobs:
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --quiet meson
+      - name: Verify cppcheck pthread model and real defect controls
+        if: steps.impact.outputs.c_core == 'true'
+        run: python3 -m unittest discover -s scripts/ci/tests -p test_cppcheck_posix_model.py
       - name: Generate compile_commands
         if: steps.impact.outputs.c_core == 'true'
         run: |
@@ -619,6 +622,7 @@ jobs:
         run: |
           cppcheck --enable=warning,performance,portability \
             --inline-suppr \
+            --library=posix \
             --suppressions-list=.cppcheck-suppressions.txt \
             --project=build/compile_commands.json \
             --error-exitcode=1 \

@@ -24,6 +24,16 @@ scope, and run cppcheck even after clang-tidy fails. The scratch-Git fixture
 boundaries; required Pre-Commit runs it when the driver or Makefile changes.
 This does not replace lane-specific ratchet measurements or their baselines.
 
+Both local and required CI cppcheck invocations load its shipped `posix` model.
+The fork uses pthread types on POSIX and through its Windows compatibility shim;
+these are C aggregates, not unknown C++ classes with implicit constructors.
+Keep `--library=posix` separate from target selection: preserve database defines,
+include paths and language settings, with no forced platform or language.
+`tests/test_cppcheck_posix_model.py` runs actual cppcheck on shared headers and
+uninitialized-member/constructor negative controls in the Cppcheck job after
+installation. Missing tools/models fail that test; no diagnostic category is
+disabled. See the [model investigation](../../docs/research/cppcheck-pthread-model-2026-09-08.md).
+
 ### Base-image references (ADR-1231)
 
 `check-base-image-single-source.sh` delegates FROM/COPY instruction parsing to

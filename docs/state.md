@@ -420,6 +420,8 @@ landed fix yet._
 
 ## Recently closed
 
+| **T-CPPCHECK-PTHREAD-MODEL-2026-09-08** | Default cppcheck modeling treated opaque pthread members as class-like objects and incorrectly demanded initialization of 24 shared C aggregate fields. Load the official POSIX model in local and CI paths while preserving diagnostic categories and actual uninitialized-use controls. | [Cppcheck model evidence](research/cppcheck-pthread-model-2026-09-08.md) | `fix/cppcheck-c-header-model-20260908` | 2026-09-08 | Fixed locally; real-tool controls pass, integration pending. |
+
 | **T-TENSOR-IO-TEST-LINT-2026-09-08** | Const-qualified 30 read-only fixtures and split oversized tensor test helpers, preserving 104 assertion token streams and all 30 cases in order. Six intentional invalid-enum calls retain precise cited markers. | [Tensor test cleanup](research/tensor-io-test-cleanup-2026-09-08.md) | `fix/tensor-io-test-cleanup-20260908` | 2026-09-08 | Fixed locally; ASan/UBSan and touched-file lint pass, integration pending. |
 
 | **T-ROI-READER-BOUNDS-2026-09-08** | Maximum high-bit-depth luma rounded to 256 then wrapped to black. Saturate before narrowing; validate private reader depth/extent and placeholder allocation count locally. Original CLI dimension and sidecar contracts retained. | [ROI boundary evidence](research/roi-reader-bounds-2026-09-08.md) | `fix/roi-reader-bounds-20260908` | 2026-09-08 | Fixed locally; exhaustive input and ASan/UBSan tests pass, review/integration pending. |

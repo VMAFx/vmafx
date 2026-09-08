@@ -505,6 +505,28 @@ to the analyzer. Missing source files, missing/invalid/empty databases and
 missing tools fail the gate. Both analyzers run when clang-tidy reports source
 diagnostics; either failure fails `lint-c`.
 
+Local and CI cppcheck load the official `posix` library model shipped with the
+installed tool. It describes the pthread types and functions used by the fork,
+including the Windows pthread compatibility surface; it does not select a Unix
+target or replace compile-database platform defines. Without this model,
+cppcheck can mistake an opaque `pthread_mutex_t` member for a C++ object that
+initializes itself and incorrectly demand constructors for the surrounding C
+aggregate. Keep the shipped model installed with the cppcheck binary. A missing
+model is an error, not an ignored diagnostic.
+
+The Cppcheck job also runs actual-tool controls against the repository's shared
+C headers. Valid zero-initialized C and C++ uses must pass; an uninitialized
+member read and a broken C++ constructor must still fail. Run those controls
+locally with an installed cppcheck (`CPPCHECK_BIN` selects an explicit binary):
+
+```bash
+python3 -m unittest discover -s scripts/ci/tests -p test_cppcheck_posix_model.py
+```
+
+This configuration adds type/function knowledge without disabling any diagnostic
+category. Local `--enable=all` and the CI job's existing
+`warning,performance,portability` selection remain unchanged.
+
 `LINT_JOBS` limits concurrent clang-tidy source jobs (default four). Use
 `LINT_CONFIGURED_ARGS` for helper options such as repeated
 `--clang-tidy-arg=--extra-arg=...` when the configured backend needs explicit
