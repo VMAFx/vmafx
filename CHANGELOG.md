@@ -27752,6 +27752,11 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   checked with `|| exit /b 1`. `test_output` was also added to that list.
 
 
+- Fix Windows CUDA configuration when `vswhere` cannot find MSVC but `cl.exe`
+  is on `PATH`: NVCC and MSVC include discovery now share the resolved compiler
+  path. Add a Meson configure regression for discovery, fallback and missing tools.
+
+
 - Keep installed Git hooks functional after an installer worktree is removed.
 - Activate configured pre-push and commit-message checks in both local modes;
   run MkDocs independently of first-push and draft PR-body skips.
