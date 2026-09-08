@@ -96,7 +96,7 @@ static int alloc_random10(VmafPicture *pic, uint32_t seed)
 
 static char *test_motion_v2_rejects_five_frame_window(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
     mu_assert("motion_v2 extractor missing", fex != NULL);
 
     VmafDictionary *opts = NULL;
@@ -120,20 +120,30 @@ static char *test_motion_v2_rejects_five_frame_window(void)
 /* extract index=0 short-circuit                                     */
 /* ----------------------------------------------------------------- */
 
-static char *test_motion_v2_index_zero_emits_zero(void)
+static char *init_motion_v2_index_zero_emits_zero(VmafFeatureExtractorContext **ctx,
+                                                  VmafFeatureCollector **fc)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
     mu_assert("motion_v2 extractor missing", fex != NULL);
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
     mu_assert("context_create", err == 0);
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, MV2_W, MV2_H);
+    err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, MV2_W, MV2_H);
     mu_assert("context_init", err == 0);
 
-    VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
+    err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
+    return NULL;
+}
+
+static char *test_motion_v2_index_zero_emits_zero(void)
+{
+    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureCollector *fc = NULL;
+    char *setup_error = init_motion_v2_index_zero_emits_zero(&ctx, &fc);
+    if (setup_error)
+        return setup_error;
+    int err;
 
     VmafPicture ref;
     VmafPicture dist;
@@ -163,24 +173,33 @@ static char *test_motion_v2_index_zero_emits_zero(void)
 /* motion_force_zero                                                 */
 /* ----------------------------------------------------------------- */
 
-static char *test_motion_v2_force_zero(void)
+static char *init_motion_v2_force_zero(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
     mu_assert("motion_v2 extractor missing", fex != NULL);
 
     VmafDictionary *opts = NULL;
     int err = vmaf_dictionary_set(&opts, "motion_force_zero", "true", 0);
     mu_assert("set motion_force_zero", err == 0);
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
+    err = vmaf_feature_extractor_context_create(ctx, fex, opts);
     mu_assert("context_create", err == 0);
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, MV2_W, MV2_H);
+    err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, MV2_W, MV2_H);
     mu_assert("context_init", err == 0);
 
-    VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
+    err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
+    return NULL;
+}
+
+static char *test_motion_v2_force_zero(void)
+{
+    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureCollector *fc = NULL;
+    char *setup_error = init_motion_v2_force_zero(&ctx, &fc);
+    if (setup_error)
+        return setup_error;
+    int err;
 
     VmafPicture ref;
     VmafPicture dist;
@@ -215,20 +234,30 @@ static char *test_motion_v2_force_zero(void)
  * successful extract call it releases the old reference and takes a new
  * counted reference on the current ref frame.  context_destroy() releases
  * the final reference.  Do not set prev_ref manually in unit tests. */
-static char *test_motion_v2_three_frame_flow(void)
+static char *init_motion_v2_three_frame_flow(VmafFeatureExtractorContext **ctx,
+                                             VmafFeatureCollector **fc)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
     mu_assert("motion_v2 extractor missing", fex != NULL);
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
     mu_assert("context_create", err == 0);
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, MV2_W, MV2_H);
+    err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, MV2_W, MV2_H);
     mu_assert("context_init", err == 0);
 
-    VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
+    err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
+    return NULL;
+}
+
+static char *test_motion_v2_three_frame_flow(void)
+{
+    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureCollector *fc = NULL;
+    char *setup_error = init_motion_v2_three_frame_flow(&ctx, &fc);
+    if (setup_error)
+        return setup_error;
+    int err;
 
     VmafPicture refs[3];
     VmafPicture dists[3];
@@ -272,24 +301,34 @@ static char *test_motion_v2_three_frame_flow(void)
 /* flush (line 475 motion3 = (processed + prev_processed) / 2.0)     */
 /* ----------------------------------------------------------------- */
 
-static char *test_motion_v2_moving_average_branch(void)
+static char *init_motion_v2_moving_average_branch(VmafFeatureExtractorContext **ctx,
+                                                  VmafFeatureCollector **fc)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
     mu_assert("motion_v2 extractor missing", fex != NULL);
 
     VmafDictionary *opts = NULL;
     int err = vmaf_dictionary_set(&opts, "motion_moving_average", "true", 0);
     mu_assert("set motion_moving_average", err == 0);
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
+    err = vmaf_feature_extractor_context_create(ctx, fex, opts);
     mu_assert("context_create", err == 0);
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, MV2_W, MV2_H);
+    err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, MV2_W, MV2_H);
     mu_assert("context_init", err == 0);
 
-    VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
+    err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
+    return NULL;
+}
+
+static char *test_motion_v2_moving_average_branch(void)
+{
+    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureCollector *fc = NULL;
+    char *setup_error = init_motion_v2_moving_average_branch(&ctx, &fc);
+    if (setup_error)
+        return setup_error;
+    int err;
 
     VmafPicture refs[4];
     VmafPicture dists[4];
@@ -322,20 +361,30 @@ static char *test_motion_v2_moving_average_branch(void)
 /* 10-bit pipeline path                                              */
 /* ----------------------------------------------------------------- */
 
-static char *test_motion_v2_10bit_extract(void)
+static char *init_motion_v2_10bit_extract(VmafFeatureExtractorContext **ctx,
+                                          VmafFeatureCollector **fc)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
     mu_assert("motion_v2 extractor missing", fex != NULL);
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
     mu_assert("context_create", err == 0);
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 10u, MV2_W, MV2_H);
+    err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 10u, MV2_W, MV2_H);
     mu_assert("context_init 10bit", err == 0);
 
-    VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
+    err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
+    return NULL;
+}
+
+static char *test_motion_v2_10bit_extract(void)
+{
+    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureCollector *fc = NULL;
+    char *setup_error = init_motion_v2_10bit_extract(&ctx, &fc);
+    if (setup_error)
+        return setup_error;
+    int err;
 
     VmafPicture refs[2];
     VmafPicture dists[2];

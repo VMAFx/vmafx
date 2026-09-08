@@ -233,7 +233,7 @@ repos:
         name: Configured native lint scope and failure propagation
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_lint_configured.py
         language: system
-        files: '^(Makefile|scripts/ci/lint-configured\.py|scripts/ci/tests/test_lint_configured\.py)$'
+        files: '^(Makefile|scripts/ci/(lint-configured\.py|cppcheck-public-entrypoints\.cfg|tests/test_(lint_configured|cppcheck_posix_model)\.py)|core/include/libvmaf/[^/]+\.(h|build)|\.github/workflows/lint-and-format\.yml|\.pre-commit-config\.yaml)$'
         pass_filenames: false
 
       - id: test-renovate-file-patterns
