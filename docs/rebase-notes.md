@@ -19,6 +19,13 @@ tracks 67 official criteria at its dated source revision and project 14549;
 recheck criteria and public-master evidence before attesting. Unknown personal,
 private-history, crypto and release facts must remain unanswered until verified.
 No native/public API, numerical or FFmpeg rebase impact.
+## Repository security enforcement (2026-09-08)
+
+Keep the canonical master policy and read-only checker together. REST omission
+of bypass actors requires a verified GraphQL zero count, never an assumed empty
+list. Preserve strict checks, the GitHub Actions app binding, independent review
+and no bypass actors. No native or public C API rebase impact. See
+[ADR-1248](adr/1248-repository-security-enforcement.md).
 
 ## Configured lint fixture bootstrap isolation (2026-09-08)
 

@@ -9,3 +9,11 @@ and handwritten pass flags are not validation. Changes to the gateway require
 its disposable-repository tests and the operator guide in
 `docs/development/merge-train.md`. Runtime scripts remain local state; shipping
 source is separate from reviewing and migrating running processes.
+
+Repository security policy (ADR-1248) is checked by
+`check_repository_security.py` against the named active master ruleset and its
+effective rules. Preserve fixed repository/HTTPS-host targeting, exact lists and
+scalar types, the GitHub Actions origin on the aggregate check, and a verified
+zero bypass count even when REST hides actors. Missing/truncated/error API data
+must fail. The checker only reads; CI must never gain administration credentials
+or an automatic apply path. Run its offline adversarial controls after changes.

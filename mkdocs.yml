@@ -341,6 +341,7 @@ nav:
       - Known upstream bugs: development/known-upstream-bugs.md
       - OSSF Scorecard: development/ossf-scorecard.md
       - Best Practices assessment: development/best-practices-assessment.md
+      - Repository security: development/repository-security.md
       - Dependency bot: development/dependency-bot.md
       - Project modernization audit: development/project-modernization-audit.md
       - Self-hosted runner: development/self-hosted-runner.md
