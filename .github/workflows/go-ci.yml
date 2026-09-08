@@ -169,8 +169,7 @@ jobs:
       - name: Install envtest binaries (kubebuilder)
         if: steps.impact.outputs.go_checks == 'true'
         run: |
-          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-          ASSETS="$(setup-envtest use 1.31 -p path)"
+          ASSETS="$(scripts/ci/setup-envtest.sh install)"
           echo "KUBEBUILDER_ASSETS=${ASSETS}" >> "${GITHUB_ENV}"
 
       - name: go test

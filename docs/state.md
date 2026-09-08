@@ -1,4 +1,5 @@
 <!-- markdownlint-disable MD013 MD037 MD038 MD041 MD060 -->
+_Updated: 2026-09-08 (T-ENVTEST-VERSION-OWNER: Make and Go CI now consume a shared verified envtest tool pin; existing Kubernetes1.31 default and operator behavior retained. Component validation is separate from RC1 acceptance.)_
 _Updated: 2026-09-08 (T-FEDORA-SCORECARD-HEREDOC: malformed optional SYCL repository heredoc repaired on `fix/scorecard-parser-20260908`; exact Scorecard/Docker parser controls and shell branch checks pass. Full image build, RPM lint debt and hosted Scorecard remain separate.)_
 _Updated: 2026-09-08 (T-REPOSITORY-SECURITY-2026-09-08: ADR-1248 master ruleset22587111 applied and read back with independent review, strict checks and no bypass; private reporting enabled. Read-only drift controls added. Historical review scores and RC1 acceptance remain separate.)_
 _Updated: 2026-09-08 (T-SCORECARD-EXACT-HEAD-2026-09-08: ADR-1247 replaces conflicting score floors with exact-source PR-local/master-full gates. Focused policy/source/aggregator contracts and live-schema controls are retained; hosted enforcement and badge/governance status require their separate verification.)_
@@ -428,6 +429,15 @@ landed fix yet._
 | **T-GAP-METAL-IOSURFACE-NOT-TRUE-ZERO-COPY** — `vmaf_metal_picture_import` uses CPU `memcpy` instead of true zero-copy GPU texture/buffer binding | `core/include/libvmaf/libvmaf_metal.h` previously claimed zero-copy without host round-trip, but the v1 implementation in `core/src/metal/picture_import.mm` locks the IOSurface and performs a synchronous CPU `memcpy` into a shared-storage `VmafPicture` buffer. Header doc comments and `docs/backends/metal/index.md` updated to state the real behavior. True zero-copy GPU texture or buffer binding (`[MTLDevice newTextureWithDescriptor:iosurface:plane:]` or direct buffer pointer mapping with GPU completion/fence tracking) estimated at ~300 LOC. | Requires Apple Silicon hardware with VideoToolbox hardware decode pipeline. Implement true zero-copy texture/buffer binding in `core/src/metal/picture_import.mm`, add MTLSharedEvent completion tracking to `vmaf_metal_wait_compute`, and verify zero CPU copy overhead and numerical parity (`places=4`) against CPU reference. |
 
 ## Recently closed
+
+- **T-ENVTEST-VERSION-OWNER-2026-09-08** — component fix prepared on
+  `fix/scorecard-pins-20260908`: replace duplicated mutable tool installation
+  and stale PATH acceptance with one config-owned v0.25.0 release, verified
+  installed metadata and shared Make/CI execution. The existing Kubernetes
+  1.31 default, application modules and controller behavior are unchanged.
+  Actual Go1.26.7 compilation/private asset selection and nine failure/consumer
+  regressions pass; full release acceptance remains separate. See
+  [Research-2058](research/2058-envtest-version-owner.md).
 
 - **T-FEDORA-SCORECARD-HEREDOC-2026-09-08** — component repair prepared:
   `docker/dev/fedora-40.Dockerfile` used a nonterminating heredoc, breaking

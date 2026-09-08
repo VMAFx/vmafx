@@ -22016,6 +22016,11 @@ proposed follow-up.
   `test_fr_regressor_v2_ensemble_seed_rows_are_production`.
 
 
+- Use one verified envtest tool release for local Make targets and Go CI;
+  reject stale installed tools and preserve the Kubernetes test generation,
+  installation failures and shell-safe environment export.
+
+
 - **external-bench**: Validate wrapper JSON at the subprocess boundary
   and report malformed payloads as clear wrapper errors instead of
   letting aggregation fail later with `KeyError` / `TypeError`.

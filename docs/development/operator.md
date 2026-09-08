@@ -209,16 +209,35 @@ the `operator.*` koanf subtree under the `VMAFX_` prefix.
 ### Controller envtest suite
 
 The envtest suite installs the CRDs into an embedded etcd + API server and
-verifies each reconciler's Stage 2 behaviour (7 specs).
+verifies each reconciler's Stage 2 behaviour (14 specs).
 
 ```bash
-# Install envtest binaries (one-time).
-go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-export KUBEBUILDER_ASSETS=$(setup-envtest use 1.31 -p path)
+# Install the canonical tool and envtest control-plane binaries.
+make setup-envtest
+eval "$(make -s setup-envtest-env)"
 
 # Run the controller suite.
 go test ./cmd/vmafx-operator/internal/controller/... -v
 ```
+
+The tool release and default Kubernetes generation are owned by
+`SETUP_ENVTEST_VERSION` and `ENVTEST_K8S_VERSION` in `build-config.env`.
+Make and CI share `scripts/ci/setup-envtest.sh`: it installs the exact release
+into Go's `GOBIN` (or the first `GOPATH` entry's `bin`), checks its Go build
+metadata and invokes that path directly. An unrelated or stale binary earlier
+on `PATH` cannot satisfy the version check. The selected release requires
+Go 1.26 or newer; the application keeps its own `go.mod` requirement.
+
+`make setup-envtest-env` never installs the tool and rejects a missing or
+mismatched version. Both the helper's `path` mode and env export require
+installed assets and never fetch missing control-plane binaries. Run
+`make setup-envtest` first to acquire them; set `ENVTEST_INSTALLED_ONLY=true`
+on that installation command to require an existing offline asset cache.
+A test-specific Kubernetes override remains available, for example
+`make setup-envtest ENVTEST_K8S_VERSION=1.31.0`; pass the same override to
+`setup-envtest-env`. The default remains the 1.31 series. By default, the suite
+starts an embedded control plane. See
+[the pinning evidence](../research/2058-envtest-version-owner.md).
 
 ### Webhook unit tests
 
@@ -231,7 +250,7 @@ go test ./cmd/vmafx-operator/internal/webhook/... -v
 ### Run all operator tests
 
 ```bash
-export KUBEBUILDER_ASSETS=$(setup-envtest use 1.31 -p path)
+eval "$(make -s setup-envtest-env)"
 go test ./cmd/vmafx-operator/... -v
 ```
 

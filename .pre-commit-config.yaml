@@ -229,6 +229,13 @@ repos:
         files: '^(build-config\.env|dev/Containerfile|renovate\.json|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-workflow-versions\.py|tests/test_(base_image|level_zero)_single_source\.py))$'
         pass_filenames: false
 
+      - id: test-envtest-single-source
+        name: Envtest installer and Make/CI version ownership
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_envtest_single_source.py
+        language: system
+        files: '^(Makefile|build-config\.env|scripts/ci/(setup-envtest\.sh|tests/test_envtest_single_source\.py)|\.github/workflows/go-ci\.yml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
       - id: test-configured-lint-driver
         name: Configured native lint scope and failure propagation
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_lint_configured.py

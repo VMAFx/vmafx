@@ -469,28 +469,20 @@ go-ort-runner:
 #   eval $$(make -s setup-envtest-env)              # export KUBEBUILDER_ASSETS
 #   go test ./cmd/vmafx-operator/internal/controller/...
 #
-# The CI workflow (.github/workflows/go-ci.yml) runs this target before
+# The CI workflow (.github/workflows/go-ci.yml) calls the same installer before
 # `go test ./...` so the operator suite executes for real instead of skipping.
 
-ENVTEST_K8S_VERSION ?= 1.31
+# Optional command-line override; the default lives in build-config.env.
+ENVTEST_K8S_VERSION ?=
 
 setup-envtest:
-	@command -v go >/dev/null || { echo "go not found — install Go ≥ 1.23 (https://go.dev/dl/)"; exit 1; }
-	@command -v setup-envtest >/dev/null || \
-	    go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-	@setup-envtest use $(ENVTEST_K8S_VERSION) -p path >/dev/null
-	@echo "envtest assets installed; export with:"
-	@echo "  export KUBEBUILDER_ASSETS=\$$(setup-envtest use $(ENVTEST_K8S_VERSION) -p path)"
+	@ENVTEST_K8S_VERSION="$(ENVTEST_K8S_VERSION)" scripts/ci/setup-envtest.sh install >/dev/null
+	@echo 'envtest assets installed; export with: eval "$$(make -s setup-envtest-env)"'
 
-# setup-envtest-env: print the export line on stdout (machine-readable form).
-# Use as `eval $(make -s setup-envtest-env)` to wire KUBEBUILDER_ASSETS into the
-# current shell.
+# Print a shell-quoted export after checking the installed tool's exact version.
+# This mode never installs a tool; setup-envtest must have completed first.
 setup-envtest-env:
-	@command -v setup-envtest >/dev/null || { \
-	    echo 'setup-envtest not installed — run `make setup-envtest` first' >&2; \
-	    exit 1; \
-	}
-	@printf 'export KUBEBUILDER_ASSETS=%s\n' "$$(setup-envtest use $(ENVTEST_K8S_VERSION) -p path)"
+	@ENVTEST_K8S_VERSION="$(ENVTEST_K8S_VERSION)" scripts/ci/setup-envtest.sh env
 
 # ── Rust workspace (ADR-0702) ────────────────────────────────────────────────
 #
