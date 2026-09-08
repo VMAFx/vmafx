@@ -1347,6 +1347,7 @@ nav:
         - "ADR-1251: renovate-draft-automerge-deadlock": adr/1251-renovate-draft-automerge-deadlock.md
 
         - "ADR-1243: tidy-scoped-baseline-tightening": adr/1243-tidy-scoped-baseline-tightening.md
+        - "ADR-1244: merge-train-ownership-and-validation": adr/1244-merge-train-ownership-and-validation.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
