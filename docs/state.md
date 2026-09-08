@@ -436,6 +436,15 @@ landed fix yet._
   remain outside this syntax repair. Not yet a hosted Scorecard result.
   See [Research-2056](research/2056-fedora-scorecard-heredoc.md).
 
+- **T-BEST-PRACTICES-EVIDENCE-2026-09-08** — correct nonexistent VMAFx 3.x
+  support and unverified release-provenance promises in `SECURITY.md`; state
+  the current public-medium remediation bound and project-wide major-feature
+  test policy. A [67-criterion worksheet](development/best-practices-assessment.md)
+  distinguishes verified evidence from pending changes and unknown history.
+  External project 14549 is in progress, not a passing badge. Private reporting
+  is enabled and verified; unanswered requirements remain with the owner. No badge or release
+  acceptance is inferred from these documentation changes.
+
 - **T-CONFIGURED-LINT-FIXTURE-OFFLINE-2026-09-08** — the real-Make lint
   fixtures accidentally bootstrapped tools in a sub-make; a networked host
   concealed the missing pip prerequisite. A pre-provisioned failing sentinel

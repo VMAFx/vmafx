@@ -9,6 +9,16 @@ GPG checks and write/install/cleanup short-circuiting in
 literal-backslash-n heredoc failed both Docker and Scorecard parsing.
 Base/SDK resolution, CUDA, public C/CLI and FFmpeg interfaces are unchanged.
 See [Research-2056](research/2056-fedora-scorecard-heredoc.md).
+## OpenSSF passing evidence and support correction (2026-09-08)
+
+Keep VMAFx release support distinct from inherited libvmaf version strings.
+`SECURITY.md` gives current reporting/remediation policy; targets are not proof
+of historical compliance. Preserve the major-new-functionality test requirement
+in `CONTRIBUTING.md`. The [passing worksheet](development/best-practices-assessment.md)
+tracks 67 official criteria at its dated source revision and project 14549;
+recheck criteria and public-master evidence before attesting. Unknown personal,
+private-history, crypto and release facts must remain unanswered until verified.
+No native/public API, numerical or FFmpeg rebase impact.
 
 ## Configured lint fixture bootstrap isolation (2026-09-08)
 

@@ -2,18 +2,17 @@
 
 ## Supported versions
 
-| Version                         | Supported                                                    |
-|---------------------------------|--------------------------------------------------------------|
-| Latest two VMAFx `3.x` releases | :white_check_mark:                                           |
-| Netflix/vmaf `3.x`              | see [Netflix/vmaf](https://github.com/Netflix/vmaf/security) |
-| VMAFx `< 3.0`                   | :x:                                                          |
+VMAFx is preparing its first `1.0` release candidate. As of 2026-09-08,
+[the active repository has no published releases](https://github.com/VMAFx/vmafx/releases).
+There are no supported stable VMAFx release lines yet. Version strings inherited
+from libvmaf or Netflix tags do not identify a released VMAFx support line.
 
-The fork tracks upstream Netflix/vmaf's supported-version policy for the parts
-of the code inherited from upstream. Fork-only code paths
-(`core/src/{cuda,sycl,hip,metal,mcp}/`,
-`core/src/feature/{cuda,sycl,hip,metal}/`, GPU backend runtimes, Tiny-AI /
-ONNX Runtime surface, embedded + standalone MCP servers) are supported on
-the current `master` and the latest two tagged releases.
+Report problems against the current `master` commit and include its full SHA.
+Development fixes are made on the current code; this is not a promise of
+backports to unannounced releases. The first release's notes will identify its
+support policy. Reports about Netflix's releases belong to
+[Netflix/vmaf's security process](https://github.com/Netflix/vmaf/security);
+we coordinate when a problem also affects this fork.
 
 ## Reporting a vulnerability
 
@@ -41,36 +40,42 @@ Please include:
 
 - **Acknowledgment**: within 72 hours.
 - **Initial triage**: within 7 days (severity, affected versions, fix path).
-- **Fix or mitigation**: aim for 30 days for High/Critical, 90 days for
-  Medium/Low. Longer timelines are possible for complex issues — we'll keep
-  you informed.
+- **Fix or mitigation**: address Critical issues urgently and aim for no more
+  than 30 days for High/Critical reports, 60 days for Medium and 90 days for Low.
+  Publicly known Medium-or-higher issues must be patched and the fix released
+  within 60 days of becoming public. Interim mitigations do not replace that
+  release obligation. Keep the reporter informed of the plan and any missed target.
 - **Public disclosure**: coordinated with the reporter, typically after a fix
   ships in a tagged release. Credit is given in the release notes unless you
   prefer to remain anonymous.
 
-## Supply-chain guarantees
+These are the current response policy and targets, not a statement that past
+reports met them. Badge assessments need actual response and remediation records.
 
-Every tagged release ships with:
+## Release verification
 
-- **SBOMs** (SPDX + CycloneDX) for both the native release artifacts and the
-  `vmaf-mcp` wheel/sdist — attached via `supply-chain.yml`.
-- **Sigstore keyless signatures** for native artifacts, Python distributions,
-  and the SBOMs — verify with
-  `cosign verify-blob --bundle <asset>.bundle <asset>`.
-- **Distinct SLSA L3 provenance** for the native and Python subjects — generated
-  by `slsa-github-generator`; verify with `slsa-verifier`.
-- **PyPI PEP 740 attestations** for `vmaf-mcp`, published through the exact
-  `VMAFx/vmafx` Trusted Publisher with no long-lived repository token.
+The [supply-chain workflow](.github/workflows/supply-chain.yml) defines intended
+SBOM, signature, provenance and package-attestation steps. Configuration alone
+is not proof that these outputs were produced or verified for a release.
+Because no VMAFx release has been published at this assessment date, this policy
+does not claim an achieved SLSA level, published attestations or universal
+signed-artifact coverage.
 
-These are the acceptance criteria for the D12 "signed releases" gate; a
-release without all three is a blocker per `/prep-release`.
+For a future release, use its actual asset list and verification receipts with
+the [release verification guide](docs/development/release.md). Missing expected
+outputs block release acceptance; do not infer their existence from this policy
+or from the presence of a workflow file.
 
-## Known non-vulnerabilities
+## Report scope
 
-- VMAF is a **quality metric**, not an authentication / crypto / sandbox
-  system. Inputs are untrusted video files. Parsing bugs in third-party
-  codec libraries (libavcodec, etc.) are routed to those projects; we
-  consume them via pkg-config and do not fork their parsers.
-- Numerical drift between CPU and GPU backends of up to 2 ULP is a design
-  accommodation (see `docs/principles.md` §3 and decision D10), not a
-  security issue.
+- The core quality metric is not a sandbox boundary. Treat video inputs as
+  untrusted; optional network services and model verification have their own
+  security-relevant behavior. Reports involving external codec libraries are
+  coordinated with their projects when appropriate.
+- Backend numerical tolerances vary by feature; the
+  [cross-backend gate](docs/development/cross-backend-gate.md) is the reference.
+  A score difference alone does not establish a security defect. Describe the
+  affected input, behavior and impact so it can be routed appropriately.
+
+The [OpenSSF passing worksheet](docs/development/best-practices-assessment.md)
+separates published policy, recorded evidence and unanswered badge criteria.

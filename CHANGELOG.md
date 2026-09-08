@@ -19647,6 +19647,12 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
 - Bash strict-mode sweep across 9 in-tree shell scripts: promote `set -eu` to `set -euo pipefail`, add script-wide `mktemp` cleanup traps, add `LC_ALL=C` to filename-numeric sorts. Closes residual gaps left by PRs #318 (perf/release scripts) and #350 (dev-mcp-entrypoint, sycl-bench-env). Touched: `scripts/run_unittests.sh`, `scripts/ai/fetch-tiny-blobs.sh`, `dev/scripts/smoke-probe-loop.sh`, `scripts/ci/check-agent-worktree-drift.sh` + self-test, `scripts/ci/check-adr-numbering.sh`, `scripts/ci/check-dispatch-registry.sh`, `scripts/adr/next-free.sh`, `tools/ensemble-training-kit/_platform_detect.sh` (documented as deliberately sourced-without-strict-mode). See [ADR-0899](docs/adr/0899-bash-strict-mode-sweep.md).
 
 
+- Correct VMAFx security support and release-verification claims for the
+  pre-release project; clarify remediation targets and require tests for major
+  new functionality. Add a dated OpenSSF passing-criteria evidence worksheet
+  with unresolved requirements kept explicit.
+
+
 - **`init_blur_array` partial-allocation leak.**
   `core/src/feature/common/blur_array.c::init_blur_array` allocated
   per-entry blur buffers in a loop and returned `0` immediately when
