@@ -40,12 +40,18 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 static int g_fail;
 
 #define CHECK(cond)                                                                                \
     do {                                                                                           \
         if (!(cond)) {                                                                             \
-            fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                        \
+            (void)fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                  \
             g_fail++;                                                                              \
         }                                                                                          \
     } while (0)
@@ -670,10 +676,12 @@ int main(void)
     test_deband_params();
 
     if (g_fail != 0) {
-        fprintf(stderr, "%d check(s) failed\n", g_fail);
+        (void)fprintf(stderr, "%d check(s) failed\n", g_fail);
         return EXIT_FAILURE;
     }
-    printf("interop: all checks passed (libpelorus %s, ABI %u.%u)\n", pelorus_version_string(),
-           PELORUS_ABI_MAJOR, PELORUS_ABI_MINOR);
+    (void)printf("interop: all checks passed (libpelorus %s, ABI %u.%u)\n",
+                 pelorus_version_string(), PELORUS_ABI_MAJOR, PELORUS_ABI_MINOR);
     return EXIT_SUCCESS;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

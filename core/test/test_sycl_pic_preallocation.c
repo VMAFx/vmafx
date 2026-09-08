@@ -36,7 +36,7 @@ static char *test_sycl_pool_init_sycl(void)
     VmafSyclConfiguration cfg = {.device_index = -1};
     int err = vmaf_sycl_state_init(&sycl, cfg);
     if (err) {
-        fprintf(stderr, "  [SKIP] SYCL state init failed (err=%d), no GPU\n", err);
+        (void)fprintf(stderr, "  [SKIP] SYCL state init failed (err=%d), no GPU\n", err);
         sycl_init_failed = 1;
         sycl = NULL;
     }
@@ -46,7 +46,7 @@ static char *test_sycl_pool_init_sycl(void)
 static char *test_sycl_preallocate_none(void)
 {
     if (sycl_init_failed) {
-        fprintf(stderr, "  [SKIP] test_sycl_preallocate_none (no GPU)\n");
+        (void)fprintf(stderr, "  [SKIP] test_sycl_preallocate_none (no GPU)\n");
         return NULL;
     }
 
@@ -72,7 +72,7 @@ static char *test_sycl_preallocate_none(void)
 static char *test_sycl_preallocate_device_fetch_cycle(void)
 {
     if (sycl_init_failed) {
-        fprintf(stderr, "  [SKIP] test_sycl_preallocate_device_fetch_cycle (no GPU)\n");
+        (void)fprintf(stderr, "  [SKIP] test_sycl_preallocate_device_fetch_cycle (no GPU)\n");
         return NULL;
     }
 
@@ -120,7 +120,7 @@ static char *test_sycl_preallocate_device_fetch_cycle(void)
 static char *test_sycl_preallocate_host_fetch_cycle(void)
 {
     if (sycl_init_failed) {
-        fprintf(stderr, "  [SKIP] test_sycl_preallocate_host_fetch_cycle (no GPU)\n");
+        (void)fprintf(stderr, "  [SKIP] test_sycl_preallocate_host_fetch_cycle (no GPU)\n");
         return NULL;
     }
 
@@ -183,7 +183,7 @@ static char *test_sycl_preallocate_without_state(void)
 static char *test_sycl_pool_release(void)
 {
     if (sycl_init_failed || sycl == NULL) {
-        fprintf(stderr, "  [SKIP] test_sycl_pool_release (no GPU)\n");
+        (void)fprintf(stderr, "  [SKIP] test_sycl_pool_release (no GPU)\n");
         return NULL;
     }
     vmaf_sycl_state_free(&sycl);

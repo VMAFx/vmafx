@@ -54,6 +54,12 @@
 #include "libvmaf/picture.h"
 #include "test.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* Fill every plane of `pic` with a deterministic, non-trivial 8-bit
  * pattern so the extractor cannot short-circuit on an all-zero input
  * (cambi etc. degenerate; psnr_max would clamp to the ceiling for any
@@ -290,3 +296,5 @@ char *run_tests(void)
     mu_run_test(test_ciede_yuv422p_8bit_identical);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

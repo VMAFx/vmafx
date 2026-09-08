@@ -77,7 +77,7 @@ static char *test_cuda_picture_preallocation_method_none()
     err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
     if (err || !cu_state) {
         (void)vmaf_close(vmaf);
-        fprintf(stderr, "[skip: no CUDA device] ");
+        (void)fprintf(stderr, "[skip: no CUDA device] ");
         return NULL;
     }
     err = vmaf_cuda_import_state(vmaf, cu_state);
@@ -129,7 +129,7 @@ static char *test_cuda_picture_preallocation_method_host()
     err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
     if (err || !cu_state) {
         (void)vmaf_close(vmaf);
-        fprintf(stderr, "[skip: no CUDA device] ");
+        (void)fprintf(stderr, "[skip: no CUDA device] ");
         return NULL;
     }
     err = vmaf_cuda_import_state(vmaf, cu_state);
@@ -195,7 +195,7 @@ static char *test_cuda_picture_preallocation_method_host_pinned()
     err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
     if (err || !cu_state) {
         (void)vmaf_close(vmaf);
-        fprintf(stderr, "[skip: no CUDA device] ");
+        (void)fprintf(stderr, "[skip: no CUDA device] ");
         return NULL;
     }
     err = vmaf_cuda_import_state(vmaf, cu_state);
@@ -261,7 +261,7 @@ static char *test_cuda_picture_preallocation_method_device()
     err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
     if (err || !cu_state) {
         (void)vmaf_close(vmaf);
-        fprintf(stderr, "[skip: no CUDA device] ");
+        (void)fprintf(stderr, "[skip: no CUDA device] ");
         return NULL;
     }
     err = vmaf_cuda_import_state(vmaf, cu_state);

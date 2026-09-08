@@ -26,7 +26,7 @@ static int fn_a(void *data, void **thread_data)
 {
     (void)data;
     (void)thread_data;
-    printf("thread ");
+    (void)printf("thread ");
     return 0;
 }
 
@@ -34,7 +34,7 @@ static int fn_b(void *data, void **thread_data)
 {
     (void)data;
     (void)thread_data;
-    printf("pool ");
+    (void)printf("pool ");
     return 0;
 }
 
@@ -42,7 +42,7 @@ static int fn_c(void *data, void **thread_data)
 {
     (void)data;
     (void)thread_data;
-    printf("test ");
+    (void)printf("test ");
     return 0;
 }
 
@@ -54,7 +54,7 @@ static int fn_d(void *data, void **thread_data)
 {
     (void)thread_data;
     Fps *fps = data;
-    printf("FPS: %d/%d ", fps->num, fps->den);
+    (void)printf("FPS: %d/%d ", fps->num, fps->den);
     return 0;
 }
 
@@ -81,7 +81,7 @@ static char *test_thread_pool_create_enqueue_wait_and_destroy()
     err = vmaf_thread_pool_destroy(pool);
     mu_assert("problem during vmaf_thread_pool_destroy", !err);
 
-    printf("\n");
+    (void)printf("\n");
 
     return NULL;
 }

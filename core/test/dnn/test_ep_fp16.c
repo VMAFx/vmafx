@@ -28,6 +28,12 @@
 
 #include "libvmaf/dnn.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* Skip on -ENOENT (model not in tree) or -EIO (CUDA EP .so absent; see
  * DNN_OPEN_SKIP_RC in test_dnn_session_api.c for full rationale). */
 #define DNN_OPEN_SKIP_RC(rc) ((rc) == -ENOENT || (rc) == -EIO)
@@ -426,3 +432,5 @@ char *run_tests(void)
     mu_run_test(test_stub_attached_ep_returns_null);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -22,6 +22,12 @@
 
 #include "dnn/onnx_scan.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 static char *test_null_buffer(void)
 {
     const int err = vmaf_dnn_scan_onnx(NULL, 10, NULL);
@@ -541,3 +547,5 @@ char *run_tests(void)
     }
     return run_tests_domain();
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -13,6 +13,12 @@
 
 #include "dnn/tensor_io.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 static char *test_luma_to_f32_unnormalized(void)
 {
     uint8_t src[16] = {0, 64, 128, 192, 255, 0, 128, 255, 10, 20, 30, 40, 50, 60, 70, 80};
@@ -633,3 +639,5 @@ char *run_tests(void)
     mu_run_test(test_resize_rejects_bad_args);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

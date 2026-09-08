@@ -47,7 +47,7 @@ static char *test_cuda_buffer_alloc_oom_returns_enomem(void)
     if (err != 0 || cu_state == NULL) {
         /* No CUDA runtime / no device — skip. The wholesale rewrite is
          * still exercised on a host where the driver is present. */
-        fprintf(stderr, "[skip: no CUDA runtime] ");
+        (void)fprintf(stderr, "[skip: no CUDA runtime] ");
         return NULL;
     }
 
