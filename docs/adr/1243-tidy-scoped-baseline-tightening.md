@@ -57,5 +57,5 @@ serialize arbitrary editors or Git operations that ignore the lock.
 ## References
 
 - [ADR-1142](1142-whole-codebase-standards.md).
-- [Thread-pool research](../research/thread-pool-backpressure.md).
+- [Thread-pool research](../research/2041-thread-pool-backpressure.md).
 - `req` (2026-09-08): “we are getting close to rc1, it must be close to perfect”.

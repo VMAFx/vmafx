@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 292,
-  "total_warnings": 1472,
+  "total_warnings": 1457,
   "total_nolint_uncited": 59,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
@@ -89,7 +89,6 @@
     "core/src/picture_pool.c": 5,
     "core/src/picture_pool.cpp": 8,
     "core/src/thread_locale.cpp": 9,
-    "core/src/thread_pool.c": 15,
     "core/src/x86/cpu.c": 1,
     "core/test/dnn/test_dnn_session_api.c": 2,
     "core/test/dnn/test_ep_fp16.c": 2,
@@ -240,5 +239,23 @@
     "core/tools/vmaf_per_shot.c": 1,
     "core/tools/vmaf_roi.c": 1,
     "core/tools/yuv_input.c": 3
-  }
+  },
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/src/thread_pool.c",
+        "core/test/test_thread_pool_backpressure.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/thread_pool.c": {
+          "warnings": [
+            15,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "f7964f3e650529ed82487e1eca7c4964e5621ffd06927b955b0169e45ff58665"
+    }
+  ]
 }

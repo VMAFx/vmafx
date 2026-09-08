@@ -49,6 +49,6 @@ mixed inline/heap payloads, batch-error reset, per-worker cleanup and primitive
 initialization failure. Readiness uses condition signals and deadlines. The
 suite runs under the normal fast and sanitizer test selection.
 
-The [research note](../research/thread-pool-backpressure.md) records the upstream
+The [research note](../research/2041-thread-pool-backpressure.md) records the upstream
 fix and the fork-specific adaptation. No score formula or golden assertion is
 changed.

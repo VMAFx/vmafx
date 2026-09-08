@@ -112,7 +112,7 @@ static int observed_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 #define pthread_cond_destroy observed_destroy
 #define pthread_cond_wait observed_wait
 #define pthread_cond_signal observed_signal
-// NOLINTNEXTLINE(bugprone-suspicious-include) -- ADR-0141: deterministic pthread injection; docs/research/thread-pool-backpressure.md
+// NOLINTNEXTLINE(bugprone-suspicious-include) -- ADR-0141: deterministic pthread injection; docs/research/2041-thread-pool-backpressure.md
 #include "../src/thread_pool.c"
 #undef pthread_create
 #undef pthread_cond_init
