@@ -470,6 +470,13 @@ linked AGENTS.md before resolving conflicts.
   python` rather than duplicating the Cython + Netflix golden-data
   setup that lives in `python/tox.ini`; do not collapse them.
 
+- **Security support and badge evidence** — `SECURITY.md` describes actual
+  VMAFx release support, not inherited Netflix/libvmaf version strings.
+  Keep [the passing worksheet](docs/development/best-practices-assessment.md)
+  tied to a reviewed source revision and the live project record. Configuration,
+  future releases and agent-authored prose cannot establish historical response
+  times, a human developer's knowledge or a completed external badge.
+
 ## 14. Interaction style — prefer structured popup questions
 
 When your host agent exposes a structured-question UI (Claude Code's `AskUserQuestion`,

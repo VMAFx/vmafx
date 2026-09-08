@@ -132,6 +132,10 @@ not a public issue.
 
 ## Review expectations
 
+- Major new functionality must include automated tests in the same change.
+  Cover the new behavior and its relevant failure paths, document how to run
+  the tests, and preserve existing numerical assertions. Reviewers check this
+  policy against the actual change; green CI alone does not prove new coverage.
 - CI must be green (ci, lint, security workflows).
 - PRs that touch a feature with SIMD / GPU twins must either touch every
   twin or explicitly call out the gap in the PR body so a follow-up can be
