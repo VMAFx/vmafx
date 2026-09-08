@@ -222,6 +222,13 @@ repos:
         files: '^(build-config\.env$|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|tests/test_base_image_single_source\.py)$)'
         pass_filenames: false
 
+      - id: test-renovate-file-patterns
+        name: Renovate custom managers select real inputs
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_renovate_file_patterns.py
+        language: system
+        files: '^(renovate\.json|scripts/ci/tests/test_renovate_file_patterns\.py)$'
+        pass_filenames: false
+
       - id: check-no-tracked-venv
         name: No virtualenv path is tracked (dir or symlink)
         entry: scripts/ci/check-no-tracked-venv.sh

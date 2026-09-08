@@ -30,6 +30,14 @@ Preserve regular dispatchers, actual Git argument/stdin forwarding, and
 independent MkDocs/PR-body push checks (ADR-1241). Keep the disposable
 lifecycle fixture wired into required Pre-Commit CI. Fork-only tooling;
 no Netflix C API or FFmpeg patch impact.
+## fix/base-image-unpinned-reference-guard — Renovate file selection (2026-09-08)
+
+Custom-manager file patterns use one `/regex/` delimiter pair. Preserve positive
+tracked-file fixtures and the base-manager coverage of every Dockerfile where
+the built-in manager is disabled. The fixture iterates active managers, so
+removing an obsolete manager does not reintroduce or require it. No upstream
+rebase impact: Renovate configuration and these tests are fork-local.
+
 ## fix/base-image-unpinned-reference-guard — container reference guard (2026-09-08)
 
 The ADR-1231 scanner must reject direct external FROM/COPY references regardless

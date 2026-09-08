@@ -266,9 +266,9 @@
       "customType": "regex",
       "description": "ROCm image pin. ADR-1225 moved the fork off the repo.radeon.com apt channel (frozen at 7.2.4 since AMD switched to TheRock) onto the digest-pinned rocm/dev-ubuntu-24.04 image. The Dockerfiles are covered by the built-in dockerfile manager; this manager catches the same pin where it appears in CI workflows and helper scripts.",
       "managerFilePatterns": [
-        "//^\\.github/workflows/build\\.yml$//",
-        "//^\\.github/workflows/libvmaf-build-matrix\\.yml$//",
-        "//^scripts/ci/install-rocm-from-image\\.sh$//"
+        "/^\\.github/workflows/build\\.yml$/",
+        "/^\\.github/workflows/libvmaf-build-matrix\\.yml$/",
+        "/^scripts/ci/install-rocm-from-image\\.sh$/"
       ],
       "matchStrings": [
         "rocm/dev-ubuntu-24\\.04:(?<currentValue>[^@\"'\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
@@ -280,10 +280,10 @@
       "customType": "regex",
       "description": "Intel compute-runtime (NEO) version in dev/Containerfile. Tracks github.com/intel/compute-runtime releases. See ADR-0605.",
       "managerFilePatterns": [
-        "//^dev/Containerfile$//",
-        "//^docker/Dockerfile\\.node$//",
-        "//^Dockerfile$//",
-        "//^Dockerfile\\.ffmpeg$//"
+        "/^dev/Containerfile$/",
+        "/^docker/Dockerfile\\.node$/",
+        "/^Dockerfile$/",
+        "/^Dockerfile\\.ffmpeg$/"
       ],
       "matchStrings": [
         "ARG NEO_VER=(?<currentValue>[0-9.]+)"
@@ -296,10 +296,10 @@
       "customType": "regex",
       "description": "Level Zero loader version in dev/Containerfile. Tracks github.com/oneapi-src/level-zero releases. See ADR-0605.",
       "managerFilePatterns": [
-        "//^dev/Containerfile$//",
-        "//^docker/Dockerfile\\.node$//",
-        "//^Dockerfile$//",
-        "//^Dockerfile\\.ffmpeg$//"
+        "/^dev/Containerfile$/",
+        "/^docker/Dockerfile\\.node$/",
+        "/^Dockerfile$/",
+        "/^Dockerfile\\.ffmpeg$/"
       ],
       "matchStrings": [
         "ARG LEVEL_ZERO_VER=(?<currentValue>[0-9.]+)"
@@ -311,11 +311,11 @@
       "customType": "regex",
       "description": "ONNX Runtime C++ library version in dev/Containerfile and the Go CI job (ADR-1134). Installed via tarball from GitHub releases (not apt). Tracks github.com/microsoft/onnxruntime releases. See ADR-0605.",
       "managerFilePatterns": [
-        "//^dev/Containerfile$//",
-        "//^docker/Dockerfile\\.node$//",
-        "//^Dockerfile$//",
-        "//^Dockerfile\\.ffmpeg$//",
-        "//^\\.github/workflows/go-ci\\.yml$//"
+        "/^dev/Containerfile$/",
+        "/^docker/Dockerfile\\.node$/",
+        "/^Dockerfile$/",
+        "/^Dockerfile\\.ffmpeg$/",
+        "/^\\.github/workflows/go-ci\\.yml$/"
       ],
       "matchStrings": [
         "ARG ORT_VERSION=(?<currentValue>[0-9.]+)",
@@ -328,10 +328,10 @@
       "customType": "regex",
       "description": "SVT-AV1 encoder version in dev/Containerfile. Built from source via git clone of gitlab.com/AOMediaCodec/SVT-AV1 at a tagged release. See ADR-0605.",
       "managerFilePatterns": [
-        "//^dev/Containerfile$//",
-        "//^docker/Dockerfile\\.node$//",
-        "//^Dockerfile$//",
-        "//^Dockerfile\\.ffmpeg$//"
+        "/^dev/Containerfile$/",
+        "/^docker/Dockerfile\\.node$/",
+        "/^Dockerfile$/",
+        "/^Dockerfile\\.ffmpeg$/"
       ],
       "matchStrings": [
         "ARG SVTAV1_VERSION=(?<currentValue>[0-9.]+)"
@@ -344,10 +344,10 @@
       "customType": "regex",
       "description": "VVenC (Fraunhofer VVC reference encoder) version in dev/Containerfile. Built from source via git clone of github.com/fraunhoferhhi/vvenc at a tagged release. See ADR-0605.",
       "managerFilePatterns": [
-        "//^dev/Containerfile$//",
-        "//^docker/Dockerfile\\.node$//",
-        "//^Dockerfile$//",
-        "//^Dockerfile\\.ffmpeg$//"
+        "/^dev/Containerfile$/",
+        "/^docker/Dockerfile\\.node$/",
+        "/^Dockerfile$/",
+        "/^Dockerfile\\.ffmpeg$/"
       ],
       "matchStrings": [
         "ARG VVENC_VERSION=(?<currentValue>[0-9.]+)"
@@ -359,10 +359,10 @@
       "customType": "regex",
       "description": "AMD AMF (Advanced Media Framework) headers version in dev/Containerfile. Built from source via git clone of github.com/GPUOpen-LibrariesAndSDKs/AMF at a tagged release. See ADR-0605.",
       "managerFilePatterns": [
-        "//^dev/Containerfile$//",
-        "//^docker/Dockerfile\\.node$//",
-        "//^Dockerfile$//",
-        "//^Dockerfile\\.ffmpeg$//"
+        "/^dev/Containerfile$/",
+        "/^docker/Dockerfile\\.node$/",
+        "/^Dockerfile$/",
+        "/^Dockerfile\\.ffmpeg$/"
       ],
       "matchStrings": [
         "ARG AMF_VERSION=(?<currentValue>[0-9.]+)"
@@ -374,15 +374,15 @@
       "customType": "regex",
       "description": "Container base images (ADR-1231). Every base is defined once in build-config.env and mirrored into each Dockerfile as an ARG default, so a bump has to touch every copy in ONE PR or scripts/ci/check-base-image-single-source.sh fails the build. Matching both the config line and the ARG form in a single manager is what keeps them in step -- same approach as the FFmpeg manager above.",
       "managerFilePatterns": [
-        "//^build-config\\.env$//",
-        "//^Dockerfile$//",
-        "//^Dockerfile\\.go-server$//",
-        "//^dev/Containerfile$//",
-        "//^docker/Dockerfile\\.controller$//",
-        "//^docker/Dockerfile\\.node$//",
-        "//^docker/Dockerfile\\.operator$//",
-        "//^docker/Dockerfile\\.production$//",
-        "//^docker/Dockerfile\\.production-gpu$//"
+        "/^build-config\\.env$/",
+        "/^Dockerfile$/",
+        "/^Dockerfile\\.go-server$/",
+        "/^dev/Containerfile$/",
+        "/^docker/Dockerfile\\.controller$/",
+        "/^docker/Dockerfile\\.node$/",
+        "/^docker/Dockerfile\\.operator$/",
+        "/^docker/Dockerfile\\.production$/",
+        "/^docker/Dockerfile\\.production-gpu$/"
       ],
       "matchStrings": [
         "(?:ARG\\s+)?[A-Z][A-Z0-9_]*=\"(?<depName>[^\"\\s:@]+):(?<currentValue>[^\"@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""

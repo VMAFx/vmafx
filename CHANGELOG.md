@@ -25261,6 +25261,11 @@ the draft.
      there was no Renovate issue in the tracker at all. Now enabled.
 
 
+- Restore file discovery for every Renovate custom manager by removing duplicate
+  regex delimiters. Add positive selection fixtures for shared build configuration
+  and Dockerfile mirrors so schema-valid patterns cannot silently disable updates.
+
+
 - **Renovate config:** fixed an invalid schedule (`before 6am on weekdays` →
   `before 6am every weekday`) — Renovate's later.js parser rejects `on weekday(s)`
   and had stopped all dependency PRs. `every weekday` is the form Renovate's own

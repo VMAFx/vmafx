@@ -323,6 +323,14 @@ Alpha pre-releases (`X.Y.Za<N>`) are never an acceptable pin.
 
 ## Adding a Renovate-managed surface (ADR-1152)
 
+`tests/test_renovate_file_patterns.py` validates positive file-selection
+fixtures for custom managers. `managerFilePatterns` regexes have one slash
+delimiter at each end; doubled delimiters silently select no files despite
+passing Renovate's schema validator. Keep the base-image custom manager's
+config-plus-mirror set paired with the built-in Docker manager exclusions.
+The `test-renovate-file-patterns` pre-commit hook runs these fixtures whenever
+the Renovate configuration or the test changes.
+
 `classify-dependency-pr.sh` exempts a bot PR only when **every** changed path
 matches its allowlist — one unmatched path fails the whole PR, and a bot cannot
 write a deliverables checklist to recover. So whenever a new dependency-pinning
