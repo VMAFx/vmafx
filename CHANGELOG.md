@@ -11915,6 +11915,10 @@ master tip `40d192ef1`:
   units keep `NULL` per ADR-1138.
 
 
+- Remove CAMBI AVX2 parameter shadowing with local names that preserve the
+  configured machine code, constants and existing scalar/SIMD tests.
+
+
 - **perf(cuda/cambi)**: `cambi_spatial_mask_kernel` now stages a 22x22
   zero_deriv tile into `__shared__` memory before the 7x7 box-sum pass.
   Global memory reads per block fall from 37,632 (256 threads x 147 reads) to
@@ -26039,6 +26043,12 @@ mirroring the `sse_line_16_c` reference in `core/src/feature/integer_psnr.c`.
   are not routed through `llvm.fmuladd` and so pin the rounding regardless of
   compiler or flag order. The wider flag-ordering defect is recorded as
   `T-ICX-FP-CONTRACT-FLAG-ORDER-2026-09-07` in `docs/state.md`.
+
+
+Keep the existing SpEED registration and QA tests lint-clean through
+read-only descriptor views and small temporal setup helpers. All assertions,
+inputs and case registrations are preserved; helper failures still reach the
+original test runner. The measured CPU warning baseline tightens by 26.
 
 
 - **`vmaf --feature ssim` could not resolve.** The fixed-point SSIM

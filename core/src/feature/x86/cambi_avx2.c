@@ -16,7 +16,7 @@
  *     limitations under the License.
  *
  */
-
+// NOLINTBEGIN(modernize-use-nullptr) — ADR-1138: preserve NULL for MSVC C.
 #include <assert.h>
 #include <immintrin.h>
 #include <stddef.h>
@@ -221,7 +221,7 @@ void cambi_decrement_range_avx2(uint16_t *arr, int left, int right)
 static inline __m256 accumulate_c_value_chunk_avx2(
     __m256i value_v, __m256i compact_v, __m256i col_v, __m256i p0, const uint16_t *histograms,
     const uint16_t num_diffs, const uint16_t *tvi_thresholds, const int *diff_weights,
-    const int *all_diffs, const float *reciprocal_lut, __m256i width_v, __m256i vlt_luma_v,
+    const int *all_diffs, const float *reciprocals, __m256i width_v, __m256i vlt_luma_v,
     __m256i band_max_v, __m256i zero, __m256i lo16_mask, __m256i all_ones)
 {
     __m256 c_value = _mm256_setzero_ps();
@@ -270,8 +270,8 @@ static inline __m256 accumulate_c_value_chunk_avx2(
             _mm256_mullo_epi32(_mm256_set1_epi32(weight), _mm256_mullo_epi32(p0, p_max));
         __m256 num_f = _mm256_cvtepi32_ps(num_int);
 
-        // rcp = reciprocal_lut[denom]; LUT is small, hot in L1
-        __m256 rcp = _mm256_i32gather_ps(reciprocal_lut, denom, 4);
+        // rcp = reciprocals[denom]; LUT is small, hot in L1
+        __m256 rcp = _mm256_i32gather_ps(reciprocals, denom, 4);
 
         __m256 val = _mm256_mul_ps(num_f, rcp);
         // mask off lanes where predicate is false
@@ -284,7 +284,7 @@ static inline __m256 accumulate_c_value_chunk_avx2(
 static inline float calculate_c_value_pixel_scalar_avx2(
     uint16_t img_val, int col, int width, const uint16_t *histograms, const uint16_t num_diffs,
     const uint16_t *tvi_thresholds, uint16_t vlt_luma, const int *diff_weights,
-    const int *all_diffs, const float *reciprocal_lut, uint16_t v_band_base, uint16_t v_band_size)
+    const int *all_diffs, const float *reciprocals, uint16_t v_band_base, uint16_t v_band_size)
 {
     int compact_v_signed = (int)img_val - (int)v_band_base;
     if ((unsigned)compact_v_signed >= v_band_size) {
@@ -303,7 +303,7 @@ static inline float calculate_c_value_pixel_scalar_avx2(
             uint16_t p_1 = histograms[(ptrdiff_t)idx1 * width + col];
             uint16_t p_2 = (idx2 >= 0) ? histograms[(ptrdiff_t)idx2 * width + col] : 0;
             uint16_t p_max = (p_1 > p_2) ? p_1 : p_2;
-            float val = (float)(diff_weights[d] * p_0 * p_max) * reciprocal_lut[p_max + p_0];
+            float val = (float)(diff_weights[d] * p_0 * p_max) * reciprocals[p_max + p_0];
             if (val > c_v) {
                 c_v = val;
             }
@@ -315,15 +315,16 @@ static inline float calculate_c_value_pixel_scalar_avx2(
 static void calculate_c_values_row_scalar_tail_avx2(
     float *c_row, const uint16_t *histograms, const uint16_t *image_row, const uint16_t *mask_row,
     int col_start, int width, const uint16_t num_diffs, const uint16_t *tvi_thresholds,
-    uint16_t vlt_luma, const int *diff_weights, const int *all_diffs, const float *reciprocal_lut,
+    uint16_t vlt_luma, const int *diff_weights, const int *all_diffs, const float *reciprocals,
     uint16_t v_band_base, uint16_t v_band_size)
 {
     for (int col = col_start; col < width; col++) {
-        c_row[col] = mask_row[col] ? calculate_c_value_pixel_scalar_avx2(
-                                         image_row[col], col, width, histograms, num_diffs,
-                                         tvi_thresholds, vlt_luma, diff_weights, all_diffs,
-                                         reciprocal_lut, v_band_base, v_band_size) :
-                                     0.0f;
+        c_row[col] = mask_row[col] ?
+                         calculate_c_value_pixel_scalar_avx2(image_row[col], col, width, histograms,
+                                                             num_diffs, tvi_thresholds, vlt_luma,
+                                                             diff_weights, all_diffs, reciprocals,
+                                                             v_band_base, v_band_size) :
+                         0.0f;
     }
 }
 
@@ -331,7 +332,7 @@ static inline int
 process_c_values_row_chunks_avx2(float *c_row, const uint16_t *image_row, const uint16_t *mask_row,
                                  const uint16_t *histograms, int width, const uint16_t num_diffs,
                                  const uint16_t *tvi_thresholds, const int *diff_weights,
-                                 const int *all_diffs, const float *reciprocal_lut,
+                                 const int *all_diffs, const float *reciprocals,
                                  uint16_t v_band_base, uint16_t v_band_size, __m256i vlt_luma_v)
 {
     const __m256i col_base = _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7);
@@ -376,7 +377,7 @@ process_c_values_row_chunks_avx2(float *c_row, const uint16_t *image_row, const 
 
         __m256 c_value = accumulate_c_value_chunk_avx2(
             value_v, compact_v, col_v, p0, histograms, num_diffs, tvi_thresholds, diff_weights,
-            all_diffs, reciprocal_lut, width_v, vlt_luma_v, band_max_v, zero, lo16_mask, all_ones);
+            all_diffs, reciprocals, width_v, vlt_luma_v, band_max_v, zero, lo16_mask, all_ones);
 
         // Apply mask: lanes with mask == 0 keep 0
         c_value = _mm256_and_ps(c_value, _mm256_castsi256_ps(mask_active));
@@ -389,7 +390,7 @@ void calculate_c_values_row_avx2(float *c_values, const uint16_t *histograms, co
                                  const uint16_t *mask, int row, int width, ptrdiff_t stride,
                                  const uint16_t num_diffs, const uint16_t *tvi_thresholds,
                                  uint16_t vlt_luma, const int *diff_weights, const int *all_diffs,
-                                 const float *reciprocal_lut)
+                                 const float *reciprocals)
 {
     int v_lo_signed_sc = (int)vlt_luma - 3 * (int)num_diffs + 1;
     uint16_t v_band_base = v_lo_signed_sc > 0 ? (uint16_t)v_lo_signed_sc : 0;
@@ -400,13 +401,13 @@ void calculate_c_values_row_avx2(float *c_values, const uint16_t *histograms, co
     float *c_row = &c_values[(ptrdiff_t)row * width];
     const __m256i vlt_luma_v = _mm256_set1_epi32(vlt_luma);
 
-    int col = process_c_values_row_chunks_avx2(
-        c_row, image_row, mask_row, histograms, width, num_diffs, tvi_thresholds, diff_weights,
-        all_diffs, reciprocal_lut, v_band_base, v_band_size, vlt_luma_v);
+    int col = process_c_values_row_chunks_avx2(c_row, image_row, mask_row, histograms, width,
+                                               num_diffs, tvi_thresholds, diff_weights, all_diffs,
+                                               reciprocals, v_band_base, v_band_size, vlt_luma_v);
 
     calculate_c_values_row_scalar_tail_avx2(c_row, histograms, image_row, mask_row, col, width,
                                             num_diffs, tvi_thresholds, vlt_luma, diff_weights,
-                                            all_diffs, reciprocal_lut, v_band_base, v_band_size);
+                                            all_diffs, reciprocals, v_band_base, v_band_size);
 }
 
 void get_derivative_data_for_row_avx2(const uint16_t *image_data, uint16_t *derivative_buffer,
@@ -599,3 +600,5 @@ void calculate_c_values_avx2(VmafPicture *pic, const VmafPicture *mask_pic, floa
                               num_diffs, tvi_for_diff, vlt_luma, diff_weights, all_diffs,
                               v_band_base, v_band_size);
 }
+
+// NOLINTEND(modernize-use-nullptr) — ADR-1138.

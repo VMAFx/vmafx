@@ -392,3 +392,15 @@ without adding a test count. Parser model views and runtime API query arrays
 are read-only. Preserve all assertions, public `svm.h` calls and ownership
 teardown; these tests do not justify changes to vendored `svm.cpp` or its
 header. See [Research-2049](../../docs/research/2049-svm-observation-test-lint-2026-09-08.md).
+
+## SpEED test fixture grouping (Research-2050)
+
+`test_speed.c` and `test_speed_qa.c` keep their original five registrations
+apiece, assertion expressions/messages, input literals and API call order.
+The temporal SpEED-QA setup uses `alloc_temporal_pictures` and
+`init_temporal_extractor` to remain below the strict branch limit; each caller
+must immediately return a helper's failure message. These helpers are setup
+stages, not additional registered tests. Descriptor views are const because
+the context-creation API already accepts read-only descriptors. Preserve the
+ADR-1138 C `NULL` bracket and the measured zero warning baseline. See
+[Research-2050](../../docs/research/2050-speed-test-native-lint.md).
