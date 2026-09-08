@@ -10,6 +10,15 @@ old-tip/new-tip intersection. The always-run, filename-free hook invocation,
 lexical symlink identity, safe target validation and outgoing-HEAD check are
 paired with a real Git rebase regression. Fork-only tooling; no native API
 or FFmpeg patch impact. This fixes implementation of AGENTS.md §12.10.
+## fix/git-fixture-environment-isolation — fixture caller safety (2026-09-08)
+
+Keep inherited `GIT_*` and caller global/system configuration out of the
+FFmpeg replay/smoke, dependency-classifier and agent-cleanup test fixtures,
+including setup and assertions. `git -C` alone can still mutate a caller's
+config, refs, object store or index. Preserve the disposable caller matrix
+in `scripts/ci/test_git_fixture_isolation.py` and its local/CI hook. This
+implements the existing ADR-1240 isolation contract; no production Git
+operation or native/FFmpeg API changes.
 
 ## FFmpeg stable-release patch maintenance (2026-09-08)
 

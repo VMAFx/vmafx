@@ -428,3 +428,13 @@ write only after the whole candidate succeeds. Disposable Git must discard
 inherited `GIT_*` repository variables and caller Git configuration. Discovery
 is scheduled and accepts only stable tags; ordinary checks use the reviewed tag.
 The required aggregator name is exactly `FFmpeg Patch Stack`.
+
+Fixture setup and assertions obey the same isolation rule as the production
+replayer. `test_ffmpeg_patch_stack.py`, `test_ffmpeg_patch_smoke_safety.py`
+and the dependency-classifier shell fixture discard inherited `GIT_*` before
+their first Git command and disable caller global/system Git configuration.
+Never rely on `git -C` alone. `test_git_fixture_isolation.py` runs those
+fixtures plus the agent-cleanup fixture with disposable caller variables,
+checks byte-for-byte metadata/work preservation, and remains registered in
+pre-commit/pre-push and required Pre-Commit CI. Poison only fresh temporary
+caller paths; never export the real repository's Git paths into a test.
