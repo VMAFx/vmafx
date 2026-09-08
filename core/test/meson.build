@@ -9,6 +9,18 @@ endif
 
 test_inc = include_directories('.')
 
+# Execute Windows discovery with stubbed tools on POSIX build hosts. This
+# exercises Meson control flow without requiring a Windows SDK or CUDA device.
+if build_machine.system() != 'windows'
+    test('test_windows_cuda_compiler_discovery',
+        import('python').find_installation(),
+        args : files('test_windows_cuda_compiler_discovery.py'),
+        env : ['VMAFX_TEST_MESON=' + find_program('meson', native : true).full_path()],
+        suite : ['fast'],
+        timeout : 90,
+    )
+endif
+
 # Aggregate of all GPU/compute backend dependency objects so test
 # binaries that must link against ANY enabled backend can reference
 # one variable instead of repeating the per-backend list.
