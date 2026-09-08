@@ -21,15 +21,23 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import copy
+import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Iterable
+import tempfile
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
+
+if os.name == "posix":
+    import fcntl
 
 BASELINE_SCHEMA = 1
 SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".cu", ".hip", ".mm", ".m"}
@@ -54,6 +62,7 @@ class Measurement:
     nolint_uncited: dict[str, int] = field(default_factory=dict)
     compile_failures: list[str] = field(default_factory=list)
     clang_tidy_version: str = ""
+    sources: list[str] = field(default_factory=list)
 
     @property
     def total_warnings(self) -> int:
@@ -63,13 +72,15 @@ class Measurement:
     def total_nolint_uncited(self) -> int:
         return sum(self.nolint_uncited.values())
 
-    def to_json(self) -> dict:
+    def to_json(self) -> dict[str, Any]:
         return {
             "schema": BASELINE_SCHEMA,
             "lane": self.lane,
             "generator": "scripts/ci/tidy-ratchet.py",
             "clang_tidy_version": self.clang_tidy_version,
             "tus": self.tus,
+            "measured_sources": self.sources,
+            "compile_failures": sorted(self.compile_failures),
             "total_warnings": self.total_warnings,
             "total_nolint_uncited": self.total_nolint_uncited,
             "warnings": dict(sorted(self.warnings.items())),
@@ -77,12 +88,14 @@ class Measurement:
         }
 
     @classmethod
-    def from_json(cls, data: dict) -> Measurement:
+    def from_json(cls, data: dict[str, Any]) -> Measurement:
         if data.get("schema") != BASELINE_SCHEMA:
             raise ValueError(f"unsupported baseline schema {data.get('schema')!r}")
         return cls(
             lane=str(data.get("lane", "")),
             tus=int(data.get("tus", 0)),
+            sources=list(data.get("measured_sources", [])),
+            compile_failures=list(data.get("compile_failures", [])),
             warnings={str(k): int(v) for k, v in data.get("warnings", {}).items()},
             nolint_uncited={str(k): int(v) for k, v in data.get("nolint_uncited", {}).items()},
             clang_tidy_version=str(data.get("clang_tidy_version", "")),
@@ -118,6 +131,13 @@ def parse_diagnostics(
     for raw in output.splitlines():
         match = DIAG_RE.match(raw.rstrip())
         if match is None:
+            # Reject diagnostic-looking lines the parser cannot account for.
+            # Source excerpts ("42 | ...") and summary counts are not diagnostics.
+            if re.match(
+                r"^(?:.+:\d+(?::\d+)?:\s*|[\w-]+:\s*)?(?:fatal error|error|warning):",
+                raw,
+            ):
+                compile_failed = True
             continue
         if match["check"] == COMPILE_ERROR_CHECK:
             compile_failed = True
@@ -223,13 +243,13 @@ def clang_tidy_version(binary: str) -> str:
 
 def run_one(
     binary: str, build_dir: Path, extra_args: list[str], unit: tuple[Path, Path]
-) -> tuple[str, str]:
+) -> tuple[str, str, int]:
     source, directory = unit
     argv = [binary, "-p", str(build_dir), *extra_args, str(source)]
     proc = subprocess.run(  # noqa: S603 -- argv built from compile_commands, no shell
         argv, capture_output=True, text=True, check=False, cwd=str(directory)
     )
-    return str(source), proc.stdout + "\n" + proc.stderr
+    return str(source), proc.stdout + "\n" + proc.stderr, proc.returncode
 
 
 def measure(
@@ -245,8 +265,16 @@ def measure(
     units = load_compile_commands(build_dir, repo_root)
     wanted = {Path(p).resolve() for p in only}
     if wanted:
+        missing = wanted - {unit[0].resolve() for unit in units}
+        if missing:
+            raise ValueError(
+                f"requested TUs missing from compile database: {sorted(map(str, missing))}"
+            )
         units = [u for u in units if u[0].resolve() in wanted]
+    if not units:
+        raise ValueError("compile database selected no translation units")
     result = Measurement(lane=lane, tus=len(units))
+    result.sources = sorted(source.relative_to(repo_root).as_posix() for source, _ in units)
     result.clang_tidy_version = clang_tidy_version(binary)
     diags: set[tuple[str, int, int, str]] = set()
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
@@ -255,8 +283,16 @@ def measure(
         }
         for future in concurrent.futures.as_completed(futures):
             source, directory = futures[future]
-            unit_diags, failed = parse_diagnostics(future.result()[1], repo_root, directory)
-            if failed:
+            _source, output, returncode = future.result()
+            unit_diags, failed = parse_diagnostics(output, repo_root, directory)
+            # The ratchet has always counted promoted checks as debt. A normal
+            # warnings-as-errors exit is distinct from a tool/compile failure.
+            promoted_only = (
+                returncode == 1
+                and re.search(r"^\d+ warnings? treated as errors?$", output, re.MULTILINE)
+                and any("-warnings-as-errors" in diag[3].split(",") for diag in unit_diags)
+            )
+            if failed or (returncode and not promoted_only):
                 rel = relpath(str(source), repo_root, directory) or str(source)
                 result.compile_failures.append(rel)
             diags |= unit_diags
@@ -285,8 +321,8 @@ def scan_nolints(repo_root: Path, units: list[tuple[Path, Path]], lane: str) -> 
     for path in sorted(paths):
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
+        except OSError as exc:
+            raise ValueError(f"cannot measure NOLINTs in {path}: {exc}") from exc
         rel = relpath(str(path), repo_root, repo_root)
         if rel is None:
             continue
@@ -364,6 +400,145 @@ def report(baseline: Measurement, measured: Measurement, allow_slack: bool) -> i
     return 0
 
 
+class ScopedRegressionError(ValueError):
+    """A scoped write must never retain a larger debt allowance."""
+
+
+def merge_scoped_baseline(
+    original: dict[str, Any], measured: Measurement, requested: list[str]
+) -> dict[str, Any]:
+    """Tighten selected TUs only; preserve the last full measurement (ADR-1243)."""
+    wanted = set(requested)
+    if (
+        not wanted
+        or set(measured.sources) != wanted
+        or len(measured.sources) != len(wanted)
+        or measured.tus != len(wanted)
+        or measured.compile_failures
+    ):
+        raise ValueError("scoped write requires exact, nonempty, successful TU coverage")
+    baseline = Measurement.from_json(original)
+    if baseline.lane != measured.lane or not measured.clang_tidy_version:
+        raise ValueError("scoped write requires a matching lane and known tool version")
+    if baseline.clang_tidy_version != measured.clang_tidy_version:
+        raise ValueError("scoped write requires the original clang-tidy version")
+    result = copy.deepcopy(original)
+    changes: dict[str, dict[str, list[int]]] = {}
+    for metric in ("warnings", "nolint_uncited"):
+        before: dict[str, int] = getattr(baseline, metric)
+        after: dict[str, int] = getattr(measured, metric)
+        raw_before = original.get(metric, {})
+        if any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+            for value in (*raw_before.values(), *after.values())
+        ):
+            raise ValueError("debt counts must be nonnegative integers")
+        for path, count in after.items():
+            if count > before.get(path, 0):
+                raise ScopedRegressionError(f"{path}: {metric} would increase to {count}")
+        merged = dict(before)
+        for path in sorted(wanted):
+            count = after.get(path, 0)
+            if count != before.get(path, 0):
+                changes.setdefault(path, {})[metric] = [before.get(path, 0), count]
+            if count:
+                merged[path] = count
+            else:
+                merged.pop(path, None)
+        result[metric] = dict(sorted(merged.items()))
+        result[f"total_{metric}"] = sum(merged.values())
+    if changes:
+        provenance = {
+            "sources": sorted(wanted),
+            "clang_tidy_version": measured.clang_tidy_version,
+            "changes": changes,
+            "previous_baseline_sha256": hashlib.sha256(
+                json.dumps(original, sort_keys=True).encode("utf-8")
+            ).hexdigest(),
+        }
+        result.setdefault("scoped_updates", []).append(provenance)
+    return result
+
+
+@contextmanager
+def baseline_lock(path: Path) -> Iterator[None]:
+    """Serialize cooperating POSIX writers by resolved filename (ADR-1243)."""
+    if os.name != "posix":
+        raise OSError("baseline writes require POSIX advisory locking")
+    lock_root = Path(tempfile.gettempdir()) / f"vmafx-tidy-locks-{os.getuid()}"
+    lock_root.mkdir(mode=0o700, exist_ok=True)
+    key = hashlib.sha256(str(path.resolve()).encode("utf-8")).hexdigest()
+    # Keep the lock inode: unlinking would let a third process lock a different
+    # inode while another writer still held the old one. Locks release on exit.
+    descriptor = os.open(lock_root / key, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    finally:
+        os.close(descriptor)
+
+
+def atomic_write_baseline(path: Path, result: dict[str, Any], expected: bytes | None) -> None:
+    """Replace validated output after checking for non-cooperating file drift."""
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, delete=False
+        ) as output:
+            temporary = Path(output.name)
+            output.write(json.dumps(result, indent=2) + "\n")
+            output.flush()
+            os.fsync(output.fileno())
+        mode = path.stat().st_mode if path.exists() else 0o644
+        temporary.chmod(mode)
+        current = path.read_bytes() if path.exists() else None
+        if current != expected:
+            raise ValueError("baseline changed during update; rerun measurement")
+        temporary.replace(path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def write_scoped_baseline(
+    path: Path, measured: Measurement, requested: list[str], expected: bytes | None = None
+) -> int:
+    """Validate every guard before writing any byte of the existing baseline."""
+    try:
+        path = path.resolve(strict=True)
+        with baseline_lock(path):
+            original_bytes = path.read_bytes()
+            if expected is not None and original_bytes != expected:
+                raise ValueError("baseline changed during measurement; rerun measurement")
+            original = json.loads(original_bytes)
+            result = merge_scoped_baseline(original, measured, requested)
+            if result != original:
+                atomic_write_baseline(path, result, original_bytes)
+    except ScopedRegressionError as exc:
+        annotate("error", str(exc))
+        return 2
+    except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as exc:
+        annotate("error", f"cannot tighten scoped baseline: {exc}")
+        return 5
+    print(
+        f"tidy-ratchet: scoped baseline tightened for {len(set(requested))} TUs; full metadata retained"
+    )
+    return 0
+
+
+def write_full_baseline(path: Path, measured: Measurement, expected: bytes | None) -> int:
+    """Use the same lock and atomic replacement for the original full writer."""
+    try:
+        path = path.resolve()
+        with baseline_lock(path):
+            atomic_write_baseline(path, measured.to_json(), expected)
+    except (OSError, ValueError, RuntimeError) as exc:
+        annotate("error", f"cannot write baseline: {exc}")
+        return 5
+    print(f"tidy-ratchet: wrote {path} ({measured.total_warnings} warnings)")
+    return 0
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--lane", default="cpu", help="baseline lane name (cpu, cuda, sycl, hip)")
@@ -378,16 +553,66 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 2)
     parser.add_argument(
-        "--only", action="append", default=[], help="measure only these TUs (debugging)"
+        "--only",
+        action="append",
+        default=[],
+        help="measure exactly these TUs; with --write, tighten only their allowance",
     )
     parser.add_argument("--report", type=Path, help="write the measurement JSON here")
     parser.add_argument(
-        "--write", action="store_true", help="overwrite the baseline with the measurement"
+        "--write",
+        action="store_true",
+        help="write the full measurement, or guarded scoped tightening with --only",
     )
     parser.add_argument(
         "--allow-slack", action="store_true", help="do not fail when files improved"
     )
     return parser.parse_args(argv)
+
+
+def same_output_file(first: Path, second: Path) -> bool:
+    """Resolved names catch symlinks; samefile also catches hard-link aliases."""
+    if first.resolve() == second.resolve():
+        return True
+    try:
+        return first.samefile(second)
+    except FileNotFoundError:
+        return False
+
+
+def prepare_output(args: argparse.Namespace, baseline_path: Path) -> bytes | None:
+    """Reject report aliases and snapshot the baseline before any measurement."""
+    if args.report and same_output_file(args.report, baseline_path):
+        raise ValueError("measurement report must not overwrite the baseline")
+    if args.write:
+        try:
+            return baseline_path.read_bytes()
+        except FileNotFoundError:
+            if args.only:
+                raise ValueError("scoped write requires an existing baseline") from None
+    return None
+
+
+def finish_measurement(
+    args: argparse.Namespace,
+    repo_root: Path,
+    baseline_path: Path,
+    baseline_before: bytes | None,
+    measured: Measurement,
+) -> int:
+    """Apply the full gate or explicitly selected local write/report mode."""
+    if args.only:
+        if args.write:
+            requested = [
+                Path(path).resolve().relative_to(repo_root).as_posix() for path in args.only
+            ]
+            return write_scoped_baseline(baseline_path, measured, requested, baseline_before)
+        annotate("notice", "--only given: comparison against the baseline skipped")
+        return 0
+    if args.write:
+        return write_full_baseline(baseline_path, measured, baseline_before)
+    baseline = Measurement.from_json(json.loads(baseline_path.read_text(encoding="utf-8")))
+    return report(baseline, measured, args.allow_slack)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -396,29 +621,33 @@ def main(argv: list[str] | None = None) -> int:
     baseline_path = (
         args.baseline or repo_root / "scripts" / "ci" / f"tidy-baseline-{args.lane}.json"
     )
-    binary = shutil.which(args.clang_tidy) or args.clang_tidy
-    measured = measure(
-        args.lane, args.build_dir.resolve(), repo_root, binary, args.extra_arg, args.jobs, args.only
-    )
-    if args.report:
-        args.report.write_text(json.dumps(measured.to_json(), indent=2) + "\n", encoding="utf-8")
-    if measured.compile_failures:
-        for path in sorted(measured.compile_failures):
-            annotate("error", f"{path}: clang-tidy could not compile this TU; measurement unusable")
-        return 4
-    if args.only:
-        annotate("notice", "--only given: comparison against the baseline skipped")
-        return 0
-    if args.write:
-        baseline_path.write_text(json.dumps(measured.to_json(), indent=2) + "\n", encoding="utf-8")
-        print(f"tidy-ratchet: wrote {baseline_path} ({measured.total_warnings} warnings)")
-        return 0
     try:
-        baseline = Measurement.from_json(json.loads(baseline_path.read_text(encoding="utf-8")))
-    except (OSError, ValueError) as exc:
-        annotate("error", f"cannot load baseline {baseline_path}: {exc}")
+        baseline_before = prepare_output(args, baseline_path)
+        binary = shutil.which(args.clang_tidy) or args.clang_tidy
+        measured = measure(
+            args.lane,
+            args.build_dir.resolve(),
+            repo_root,
+            binary,
+            args.extra_arg,
+            args.jobs,
+            args.only,
+        )
+        if args.report:
+            args.report.write_text(
+                json.dumps(measured.to_json(), indent=2) + "\n", encoding="utf-8"
+            )
+        if measured.compile_failures:
+            for path in sorted(measured.compile_failures):
+                annotate(
+                    "error",
+                    f"{path}: clang-tidy compile/tool/diagnostic parse failure; measurement unusable",
+                )
+            return 4
+        return finish_measurement(args, repo_root, baseline_path, baseline_before, measured)
+    except (OSError, ValueError, RuntimeError) as exc:
+        annotate("error", f"measurement/output failed: {exc}")
         return 5
-    return report(baseline, measured, args.allow_slack)
 
 
 if __name__ == "__main__":

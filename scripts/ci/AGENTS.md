@@ -301,7 +301,8 @@ Alpha pre-releases (`X.Y.Za<N>`) are never an acceptable pin.
   `/* ... */` block comment that holds the marker; `NOLINTEND` never counts) are
   load-bearing: the baselines were measured with exactly these rules, so
   changing either requires re-measuring every lane in the same PR (the `cpu`
-  baseline is CI's own `tidy-ratchet-cpu` artifact, never a workstation run).
+  full baseline is CI's own `tidy-ratchet-cpu` artifact; ADR-1243 permits
+  only guarded scoped tightening afterward).
 - The `Tidy Ratchet` job starts unconditionally and gates its
   work on the ADR-1140 planner's `c_core` selector; `.clang-tidy`, this
   directory (ratchet + baselines) and the workflow are CI-authority inputs, so
@@ -309,6 +310,20 @@ Alpha pre-releases (`X.Y.Za<N>`) are never an acceptable pin.
   `paths:` filter or a custom early-skip probe to the job.
 - A `clang-diagnostic-error` in any TU is a measurement failure (exit 4), never a
   zero. Build (generated headers) before measuring.
+- **Scoped writer (ADR-1243):** `--only` plus `--write` requires exact nonempty
+  measured-TU coverage, the original tool version/lane and no observed debt
+  increase. Preserve every unselected TU/header entry and all full-report
+  metadata; append explicit scoped provenance. Validate report/baseline aliases
+  before output, and replace the validated baseline atomically. Full and scoped
+  writers share a resolved-path advisory lock; preserve baseline-drift checks
+  around measurement/replacement and fail on unreadable NOLINT inputs. A diagnostic
+  `--only` run is not a full comparison. Keep failure/zero-tightening cases in
+  `tests/test_tidy_scoped_write.py`; never make CI's full lane use `--only`.
+- Promoted clang-tidy checks (`-warnings-as-errors`) remain counted debt. Only
+  the recognized promotion exit/summary may bypass the nonzero-tool-exit guard;
+  parse/compile failures still invalidate that measurement. Reports retain
+  actual `measured_sources` and `compile_failures` so partial/error output is
+  never presented as a successful whole-tree scan.
 
 ## release-pr-exempt.sh invariants (ADR-1151)
 
