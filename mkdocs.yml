@@ -1344,6 +1344,7 @@ nav:
         - "ADR-1240: ffmpeg-release-patch-lifecycle": adr/1240-ffmpeg-release-patch-lifecycle.md
         - "ADR-1241: worktree-hook-dispatch": adr/1241-worktree-hook-dispatch.md
         - "ADR-1242: generated-adr-freshness": adr/1242-generated-adr-freshness.md
+        - "ADR-1243: tidy-scoped-baseline-tightening": adr/1243-tidy-scoped-baseline-tightening.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
