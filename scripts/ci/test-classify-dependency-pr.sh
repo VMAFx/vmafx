@@ -17,6 +17,13 @@
 
 set -euo pipefail
 
+# Real-Git cases must not inherit the hook caller's repository or config.
+while IFS= read -r fixture_git_variable; do
+  unset "$fixture_git_variable"
+done < <(compgen -A variable GIT_)
+unset fixture_git_variable
+export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 classifier="${repo_root}/scripts/ci/classify-dependency-pr.sh"
 
