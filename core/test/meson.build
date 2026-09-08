@@ -210,6 +210,13 @@ test_thread_pool = executable('test_thread_pool',
     dependencies : [pthread_dependency, thread_lib, sycl_dependency],
 )
 
+# Source inclusion allows deterministic pthread failure and wakeup injection.
+test_thread_pool_backpressure = executable('test_thread_pool_backpressure',
+    ['test.c', 'test_thread_pool_backpressure.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    dependencies : [pthread_dependency, thread_lib],
+)
+
 test_model = executable('test_model',
     ['test.c', 'test_model.c', '../src/dict.cpp', '../src/pdjson.c', json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
@@ -3537,6 +3544,7 @@ test('test_output', test_output, suite : ['fast'])
 test('test_log', test_log, suite : ['fast'])
 test('test_public_api_score', test_public_api_score, suite : ['fast'])
 test('test_thread_pool', test_thread_pool, suite : ['fast'])
+test('test_thread_pool_backpressure', test_thread_pool_backpressure, suite : ['fast'])
 test('test_model', test_model, suite : ['fast'])
 test('test_model_libsvm_dup_key', test_model_libsvm_dup_key, suite : ['fast'])
 test('test_model_feature_overload_ownership', test_model_feature_overload_ownership, suite : ['fast'])

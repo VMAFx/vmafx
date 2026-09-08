@@ -26443,6 +26443,13 @@ ADR-0513.
 - Test YUV fixture provisioner: `scripts/test/fetch-test-yuvs.sh` downloads `src01_hrc0[0-1]_576x324.yuv` from `Netflix/vmaf_resource` and md5-verifies them. Reverts the [#1237](https://github.com/VMAFx/vmafx/pull/1237) ADM2 golden override, which was based on output from stale local fixture content. See [ADR-0493](docs/adr/0493-test-yuv-fixture-md5-verification.md) and [docs/development/test-fixtures.md](docs/development/test-fixtures.md).
 
 
+- Bound pending CPU thread-pool jobs to the created worker count, restoring
+  backpressure when decoding outpaces feature extraction. Preserve recycled
+  payloads and batch errors, and wait for blocked producers during shutdown.
+  Adapted from Netflix/vmaf commit `8fc71e3` with shutdown-lifetime regression
+  coverage.
+
+
 - `vmaf_thread_pool_create` now checks the return value of `pthread_create`
   and handles partial-success (at least one thread started) and total-failure
   (zero threads started, returns `-EAGAIN`/`-EPERM` to the caller) gracefully.

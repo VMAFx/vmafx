@@ -85,6 +85,15 @@ has the same defect. Preserve the assignment when porting that discovery block.
 through Meson using Windows host metadata and stubbed tool responses. It covers
 successful discovery, empty/error fallback and missing `cl`, and is registered
 in `fast` on POSIX build hosts. This is configure coverage, not a Windows GPU test.
+## fix/thread-pool-queue-bound — Netflix queue-capacity fix (2026-09-08)
+
+Adapt Netflix `8fc71e3006f0b21e8e31d6e5d1b904332149ad9e` from
+`libvmaf/src/thread_pool.c` to `core/src/thread_pool.c`. Keep the fork's inline
+payload/free-list recycling, two-argument callback, worker private-data cleanup,
+checked primitive initialization and error OR/reset. Capacity follows the
+successfully created worker count. Destruction must also wait for admitted
+producers to leave capacity waits; the upstream broadcast by itself does not
+protect their lifetime. The isolated pthread-injection test gates these paths.
 
 ## fix/ai-1270-blockers — DISTS, MobileSal, and predictor stub triage (2026-09-08)
 
