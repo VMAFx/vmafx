@@ -1006,6 +1006,13 @@ static void decimate_generic_uint16_and_convert_to_10b(const VmafPicture *pic, V
 
 static void anti_dithering_filter(VmafPicture *pic, unsigned width, unsigned height)
 {
+#if ARCH_X86
+    unsigned flags = vmaf_get_cpu_flags();
+    if (flags & VMAF_X86_CPU_FLAG_AVX2) {
+        anti_dithering_filter_avx2(pic, width, height);
+        return;
+    }
+#endif
     uint16_t *data = pic->data[0];
     int stride = pic->stride[0] >> 1;
 

@@ -18,8 +18,8 @@ set -euo pipefail
 # Skip silently if none are available.
 ONEAPI_CANDIDATES=(
   "${VMAF_ONEAPI_SETVARS:-}"
-  /opt/intel/oneapi-2025.3/setvars.sh
   /opt/intel/oneapi/setvars.sh
+  /opt/intel/oneapi-2025.3/setvars.sh
 )
 for cand in "${ONEAPI_CANDIDATES[@]}"; do
   if [[ -n "${cand}" && -f "${cand}" ]]; then
@@ -194,10 +194,10 @@ compare t1
 
 echo ""
 echo "========================================="
-echo "Test 2: 1080p (5 frames, 8-bit)"
+echo "Test 2: 1080p Checkerboard Mild (3 frames, 8-bit)"
 echo "========================================="
-REF=python/test/resource/yuv/src01_hrc00_1920x1080_5frames.yuv
-DIS=python/test/resource/yuv/src01_hrc01_1920x1080_5frames.yuv
+REF=python/test/resource/yuv/checkerboard_1920_1080_10_3_0_0.yuv
+DIS=python/test/resource/yuv/checkerboard_1920_1080_10_3_1_0.yuv
 run_test t2 "$REF" "$DIS" 1920 1080 8
 echo "Comparison:"
 compare t2

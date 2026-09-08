@@ -1881,8 +1881,9 @@ static int batch_thread_data_ensure(void **thread_data, unsigned cnt, BatchThrea
 static bool batch_extractor_skip(const VmafFeatureExtractor *shared_fex, unsigned index,
                                  unsigned n_subsample)
 {
-    const uint64_t not_pooled =
-        VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL | VMAF_FEATURE_EXTRACTOR_TEMPORAL;
+    const uint64_t not_pooled = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
+                                VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL |
+                                VMAF_FEATURE_EXTRACTOR_TEMPORAL;
     if (shared_fex->flags & not_pooled)
         return true;
     return fex_subsample_skip(shared_fex->flags, index, n_subsample);
@@ -2069,7 +2070,8 @@ static int flush_non_temporal_cpu_extractors(VmafContext *vmaf)
         VmafFeatureExtractor *fex = fex_ctx->fex;
         if (fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL)
             continue;
-        if (fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA)
+        if (fex->flags & (VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
+                          VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL))
             continue;
         if (!fex->flush)
             continue;
@@ -2100,7 +2102,18 @@ static int flush_context_threaded(VmafContext *vmaf)
     {
         RegisteredFeatureExtractors rfe = vmaf->registered_feature_extractors;
         for (unsigned i = 0; i < rfe.cnt; i++) {
-            if (!(rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL))
+            if (rfe.fex_ctx[i]->gpu_pending &&
+                !(rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA) &&
+                !(rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL)) {
+                err |= vmaf_feature_extractor_context_collect(
+                    rfe.fex_ctx[i], rfe.fex_ctx[i]->gpu_pending_index, vmaf->feature_collector);
+                rfe.fex_ctx[i]->gpu_pending = false;
+            }
+        }
+        for (unsigned i = 0; i < rfe.cnt; i++) {
+            if (!(rfe.fex_ctx[i]->fex->flags &
+                  (VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_HIP |
+                   VMAF_FEATURE_EXTRACTOR_METAL)))
                 continue;
             /* Leave GPU extractors entirely to flush_context_cuda /
              * flush_context_sycl, which run collect-then-flush in the same
@@ -2530,7 +2543,8 @@ static bool read_pictures_should_skip(const VmafContext *vmaf,
      * Skipping them in the threaded batch and skipping them ALSO from the serial
      * loop here would leak — be careful to keep these in sync with
      * batch_extractor_skip(). */
-    const bool gpu = (flags & (VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL)) != 0;
+    const bool gpu = (flags & (VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
+                               VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL)) != 0;
     return !gpu && vmaf->thread_pool && !(flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL);
 }
 

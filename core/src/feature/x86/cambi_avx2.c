@@ -59,6 +59,63 @@ void decimate_avx2(VmafPicture *image, unsigned width, unsigned height)
     }
 }
 
+// 2x2 box blur on 16-bit luma to suppress spatial dithering patterns.
+// Vectorized across 16 uint16 lanes using zero-extended uint32 sums to avoid overflow.
+void anti_dithering_filter_avx2(VmafPicture *pic, unsigned width, unsigned height)
+{
+    assert(pic != NULL);
+    assert(pic->data[0] != NULL);
+    assert(width > 0u);
+    assert(height > 0u);
+    uint16_t *data = pic->data[0];
+    const ptrdiff_t stride = pic->stride[0] >> 1;
+
+    for (unsigned i = 0; i < height - 1; i++) {
+        uint16_t *row0 = &data[(ptrdiff_t)i * stride];
+        const uint16_t *row1 = &data[(ptrdiff_t)(i + 1) * stride];
+        unsigned j = 0;
+        for (; j + 16 < width; j += 16) {
+            __m256i v0 = _mm256_loadu_si256((const __m256i *)&row0[j]);
+            __m256i v0n = _mm256_loadu_si256((const __m256i *)&row0[j + 1]);
+            __m256i v1 = _mm256_loadu_si256((const __m256i *)&row1[j]);
+            __m256i v1n = _mm256_loadu_si256((const __m256i *)&row1[j + 1]);
+
+            __m256i v0_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v0));
+            __m256i v0_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v0, 1));
+
+            __m256i v0n_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v0n));
+            __m256i v0n_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v0n, 1));
+
+            __m256i v1_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v1));
+            __m256i v1_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v1, 1));
+
+            __m256i v1n_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v1n));
+            __m256i v1n_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v1n, 1));
+
+            __m256i sum_lo =
+                _mm256_add_epi32(_mm256_add_epi32(v0_lo, v0n_lo), _mm256_add_epi32(v1_lo, v1n_lo));
+            __m256i sum_hi =
+                _mm256_add_epi32(_mm256_add_epi32(v0_hi, v0n_hi), _mm256_add_epi32(v1_hi, v1n_hi));
+
+            __m256i res_lo = _mm256_srli_epi32(sum_lo, 2);
+            __m256i res_hi = _mm256_srli_epi32(sum_hi, 2);
+
+            __m256i packed = _mm256_packus_epi32(res_lo, res_hi);
+            packed = _mm256_permute4x64_epi64(packed, 0xD8);
+            _mm256_storeu_si256((__m256i *)&row0[j], packed);
+        }
+        for (; j < width - 1; j++) {
+            row0[j] = (row0[j] + row0[j + 1] + row1[j] + row1[j + 1]) >> 2;
+        }
+        row0[width - 1] = (row0[width - 1] + row1[width - 1]) >> 1;
+    }
+    const unsigned i = height - 1;
+    uint16_t *last_row = &data[(ptrdiff_t)i * stride];
+    for (unsigned j = 0; j < width - 1; j++) {
+        last_row[j] = (last_row[j] + last_row[j + 1]) >> 1;
+    }
+}
+
 // mode3 returns the duplicate among (a, b, c) if any pair matches, otherwise
 // the unsigned min. Vectorized over 16 uint16 lanes.
 static inline __m256i mode3_avx2(__m256i a, __m256i b, __m256i c)

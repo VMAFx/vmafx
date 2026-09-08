@@ -940,3 +940,4 @@
 1225-rocm-10-therock-migration
 1235-pkgconfig-advertises-abi-version
 1223-cuda-ampere-architecture-floor
+1237-perf-pass-1245
