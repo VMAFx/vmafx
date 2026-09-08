@@ -1417,6 +1417,39 @@ static char *test_json_model_score_transform_knots_array_walks(void)
     return NULL;
 }
 
+/* ADR-0887: JSON models whose per-feature arrays disagree on length must be
+ * rejected at parse time with -EINVAL by validate_feature_arrays(). */
+static char *test_json_model_slopes_longer_than_feature_names_rejects(void)
+{
+    const char json[] = "{\"model_dict\": {"
+                        "\"feature_names\": [\"f1\"],"
+                        "\"slopes\": [1.0, 2.0, 3.0]"
+                        "}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    mu_assert("slopes longer than feature_names must reject with -EINVAL", err == -EINVAL);
+    mu_assert("rejected parse must leave *model NULL", m == NULL);
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
+/* ADR-1060 defect #5: stream error during unknown-key skipping after
+ * model_dict must surface as -EINVAL rather than returning 0. */
+static char *test_json_model_malformed_after_model_dict_rejects(void)
+{
+    const char json[] = "{\"model_dict\": {}, \"trailing_malformed\": [1, 2, ";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {NULL};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    mu_assert("malformed JSON after model_dict must reject with -EINVAL", err == -EINVAL);
+    mu_assert("rejected parse must leave *model NULL", m == NULL);
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
 typedef struct {
     const char *name;
     char *(*fn)(void);
@@ -1498,6 +1531,10 @@ static const TestCase test_cases[] = {
      test_json_model_score_transform_poly_string_rejects},
     {"test_json_model_score_transform_knots_array_walks",
      test_json_model_score_transform_knots_array_walks},
+    {"test_json_model_slopes_longer_than_feature_names_rejects",
+     test_json_model_slopes_longer_than_feature_names_rejects},
+    {"test_json_model_malformed_after_model_dict_rejects",
+     test_json_model_malformed_after_model_dict_rejects},
     {"test_version_next", test_version_next},
 };
 

@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 -->
 # Research digests
 
-Iteration-time research notes for the lusoris vmaf fork. Each digest
+Iteration-time research notes for the VMAFx fork. Each digest
 captures **what was investigated and why** for a fork-local
 workstream — source links, alternatives weighed, prior art, dead ends.
 

@@ -23,6 +23,18 @@ Triage and point-of-use guards for issue #1270 blockers:
    (`tools/vmaf-tune/src/vmaftune/cli.py`), and Go session (`pkg/predictor/ortsession.go`) detect
    and warn on synthetic-stub predictor models (`synthetic-stub-N=100`, ADR-0325). Real-corpus models
    exist only for NVENC and QSV. Tracked in `docs/state.md` under `T-PREDICTOR-SOFTWARE-AMF-STUB-MODELS-2026-09-08`.
+## refactor/1241-modernization-finish — JSON model parser twin lockstep and rebrand finish (2026-09-08)
+
+- `core/src/read_json_model.c`, `core/src/read_json_model.cpp`: C and C++23 parser twins
+  brought into full lockstep. Invariant: keep `read_json_model.c` (compiled into `fuzz_json_model`
+  by `core/test/fuzz/meson.build`) and `read_json_model.cpp` (compiled into `read_json_model_cpp23_lib`
+  for `libvmaf`) in lockstep on any parser change.
+  - `read_json_model.c` gains the ADR-1060 defect #5 stream-error check (`if (json_get_error(s)) return -EINVAL;`
+    after the unknown-key skip loop in `model_parse`).
+  - `read_json_model.cpp` gains ADR-0887 cross-key per-feature length mismatch validation (`sync_n_features`
+    in all walkers, `validate_feature_arrays` in `parse_model_dict`).
+- `tools/vmaf-roi-score/README.md`, `tools/vmaf-tune/README.md`, `docs/research/README.md`:
+  Residual "lusoris vmaf fork" product names updated to "VMAFx fork".
 
 ## fix/venv-gate-basename-false-positive — tracked-venv gate pattern (2026-09-05)
 
