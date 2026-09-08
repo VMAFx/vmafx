@@ -92,6 +92,13 @@ Run `hadolint dev/Containerfile` to check the Dockerfile and embedded shell
 before a rebuild. This static check does not establish native build or GPU
 runtime acceptance.
 
+The container installs ONNX Runtime's native CPU archive for libvmaf's C/C++
+API. That archive does not add CUDA or ROCm execution providers; libvmaf's
+own GPU feature backends and the Python `onnxruntime` package are separate
+components. A provider-enabled ORT installation needs the corresponding
+runtime libraries, as described in
+[ADR-0113](../adr/0113-ort-create-session-fallback-multi-ep-ci.md).
+
 ### Which source is in the image?
 
 A rebuild only picks up work that is *in the checkout you build from*. If the
