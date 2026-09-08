@@ -217,7 +217,7 @@ struct VmafSyclPicturePool {
 extern "C" {
 static int sycl_pool_free_cb(VmafPicture *pic, void *cookie)
 {
-    int err = vmaf_sycl_picture_free(pic, cookie);
+    int const err = vmaf_sycl_picture_free(pic, cookie);
     if (pic->priv) {
         free(pic->priv);
         pic->priv = nullptr;

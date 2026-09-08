@@ -97,7 +97,7 @@ static void launch_cov(sycl::queue &q, const float *plane, const float *means, f
     /* 625 work-groups of COV_WG threads, one per (x_index, y_index) pair. */
     const size_t total_wg = SP_ELEMENTS * SP_ELEMENTS;
     q.submit([&](sycl::handler &cgh) {
-        sycl::local_accessor<float, 1> s_partial(sycl::range<1>(COV_WG), cgh);
+        sycl::local_accessor<float, 1> const s_partial(sycl::range<1>(COV_WG), cgh);
         cgh.parallel_for(sycl::nd_range<1>(total_wg * COV_WG, COV_WG), [=](sycl::nd_item<1> it) {
             const uint32_t x_index = (uint32_t)(it.get_group(0) / SP_ELEMENTS);
             const uint32_t y_index = (uint32_t)(it.get_group(0) % SP_ELEMENTS);
@@ -225,8 +225,8 @@ static void launch_score(sycl::queue &q, const float *ref_eigenvalues, const flo
             float re = 0.0f;
             float de = 0.0f;
             for (uint32_t k = 0; k < SP_ELEMENTS; ++k) {
-                float ref_lk = ref_eigenvalues[k] < 0.0f ? 0.0f : ref_eigenvalues[k];
-                float dis_lk = dis_eigenvalues[k] < 0.0f ? 0.0f : dis_eigenvalues[k];
+                float const ref_lk = ref_eigenvalues[k] < 0.0f ? 0.0f : ref_eigenvalues[k];
+                float const dis_lk = dis_eigenvalues[k] < 0.0f ? 0.0f : dis_eigenvalues[k];
                 re += sycl::log2(ref_lk * rv + sigma_nn) + log2e_2pi;
                 de += sycl::log2(dis_lk * dv + sigma_nn) + log2e_2pi;
             }
@@ -296,7 +296,7 @@ struct SpeedChromaSyclState {
 
 static void free_sycl_state(SpeedChromaSyclState *s)
 {
-    sycl::queue *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
+    sycl::queue const *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
 #define FREE_D(p)                                                                                  \
     do {                                                                                           \
         if ((p)) {                                                                                 \
@@ -395,7 +395,7 @@ static int run_channel(SpeedChromaSyclState *s, float *h_plane, float *h_indterm
     const int sz = (int)SP_ELEMENTS;
     const int nb = (int)num_blocks;
     speed_internal_compute_eigenvalues(s->h_cov_mat, s->h_eigenvalues, sz, s->h_eig_scratch);
-    bool regular = speed_internal_is_matrix_regular(s->h_eigenvalues, SP_ELEMENTS);
+    bool const regular = speed_internal_is_matrix_regular(s->h_eigenvalues, SP_ELEMENTS);
 
     /* A singular covariance matrix is NOT a failure: the CPU reference zeroes
      * the solution and reports it separately so the caller can impute. The
@@ -459,12 +459,12 @@ static int score_aggregate(SpeedChromaSyclState *s, float *score_out)
 
     float total = 0.0f;
     for (uint32_t i = 0; i < num_blocks; ++i) {
-        float re = s->h_ref_ent[i];
-        float de = s->h_dis_ent[i];
+        float const re = s->h_ref_ent[i];
+        float const de = s->h_dis_ent[i];
         if (re < base_entropy && de < base_entropy)
             continue;
-        float rv = s->h_ref_var[i];
-        float dv = s->h_dis_var[i];
+        float const rv = s->h_ref_var[i];
+        float const dv = s->h_dis_var[i];
         const int wvm = s->opt.speed_weight_var_mode;
         float sr = 0.0f;
         float sd = 0.0f;
@@ -478,7 +478,7 @@ static int score_aggregate(SpeedChromaSyclState *s, float *score_out)
             sr = re * std::log2f(1.0f + dv);
             sd = de * std::log2f(1.0f + dv);
         } else if (wvm == 3) {
-            float mv = (rv + dv) * 0.5f;
+            float const mv = (rv + dv) * 0.5f;
             sr = re * std::log2f(1.0f + mv);
             sd = de * std::log2f(1.0f + mv);
         } else if (wvm == 4) {
@@ -616,12 +616,13 @@ static int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_
         .speed_weight_var_mode = s->speed_weight_var_mode,
     };
 
-    int err = speed_internal_init_dimensions(&s->dim, (int)cw, (int)ch, s->opt.speed_prescale);
+    int const err =
+        speed_internal_init_dimensions(&s->dim, (int)cw, (int)ch, s->opt.speed_prescale);
     if (err)
         return err;
     s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
 
-    sycl::queue &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
+    sycl::queue const &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
     const size_t stride_px = s->float_stride / sizeof(float);
     const size_t nb = s->dim.num_blocks;
     const size_t plane_bytes = s->dim.alloc_height * stride_px * sizeof(float);
@@ -706,8 +707,8 @@ static int extract_chroma_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     bool singular_v = false;
 
     for (int ch = 1; ch <= 2; ++ch) {
-        float *h_plane = (ch == 1) ? s->h_plane_ref : s->h_plane_dis;
-        float *h_plane_d = (ch == 1) ? s->h_plane_dis : nullptr;
+        float const *h_plane = (ch == 1) ? s->h_plane_ref : s->h_plane_dis;
+        float const *h_plane_d = (ch == 1) ? s->h_plane_dis : nullptr;
         /* Reuse h_plane_ref/dis for ref/dis of each chroma channel. */
         picture_copy(s->h_plane_ref, s->float_stride, ref_pic, -128, ref_pic->bpc, ch);
         speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_ref, tmp_filter,

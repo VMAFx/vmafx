@@ -209,7 +209,7 @@ static uint16_t cambi_sycl_ceil_log2(uint32_t num)
 
 static uint16_t cambi_sycl_get_mask_index(unsigned w, unsigned h, unsigned filter_size)
 {
-    uint32_t shifted_wh = (w >> 6) * (h >> 6);
+    uint32_t const shifted_wh = (w >> 6) * (h >> 6);
     return (uint16_t)((filter_size * filter_size + 3u * (cambi_sycl_ceil_log2(shifted_wh) - 11u) -
                        1u) >>
                       1u);
@@ -226,7 +226,7 @@ static sycl::event launch_spatial_mask(sycl::queue &q, const uint16_t *image, ui
 {
     const size_t global_x = ((size_t)width + WG_X - 1u) / WG_X * WG_X;
     const size_t global_y = ((size_t)height + WG_Y - 1u) / WG_Y * WG_Y;
-    sycl::nd_range<2> ndr{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
+    sycl::nd_range<2> const ndr{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
 
     const unsigned e_w = width;
     const unsigned e_h = height;
@@ -285,7 +285,7 @@ static sycl::event launch_decimate(sycl::queue &q, const uint16_t *src, uint16_t
 {
     const size_t global_x = ((size_t)out_w + WG_X - 1u) / WG_X * WG_X;
     const size_t global_y = ((size_t)out_h + WG_Y - 1u) / WG_Y * WG_Y;
-    sycl::nd_range<2> ndr{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
+    sycl::nd_range<2> const ndr{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
 
     const unsigned e_out_w = out_w;
     const unsigned e_out_h = out_h;
@@ -319,7 +319,7 @@ static sycl::event launch_filter_mode(sycl::queue &q, const uint16_t *in, uint16
 {
     const size_t global_x = ((size_t)width + WG_X - 1u) / WG_X * WG_X;
     const size_t global_y = ((size_t)height + WG_Y - 1u) / WG_Y * WG_Y;
-    sycl::nd_range<2> ndr{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
+    sycl::nd_range<2> const ndr{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
 
     const unsigned e_w = width;
     const unsigned e_h = height;
@@ -750,8 +750,8 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     sycl::queue &q = *qptr;
 
     /* Step 1: host preprocessing → pics[0] (10-bit luma, proc_w × proc_h). */
-    int err = vmaf_cambi_preprocessing(dist_pic, &s->pics[0], (int)s->proc_width,
-                                       (int)s->proc_height, s->enc_bitdepth);
+    int const err = vmaf_cambi_preprocessing(dist_pic, &s->pics[0], (int)s->proc_width,
+                                             (int)s->proc_height, s->enc_bitdepth);
     if (err)
         return err;
 
@@ -829,7 +829,7 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
         /* GPU filter_mode H: cur_image → cur_tmp.  Depends on ev_prev
          * (spatial_mask for scale 0; combined decimate fence for scale > 0). */
-        sycl::event ev_filt_h =
+        sycl::event const ev_filt_h =
             launch_filter_mode(q, cur_image, cur_tmp, scaled_w, scaled_h, scaled_w, 0, ev_prev);
         /* GPU filter_mode V: cur_tmp → cur_image.  Depends on H. */
         ev_prev =

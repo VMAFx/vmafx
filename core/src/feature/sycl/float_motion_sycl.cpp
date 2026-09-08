@@ -97,10 +97,10 @@ static sycl::event launch_float_motion(sycl::queue &q, const void *ref, float *c
     float *e_sad = sad_partials;
 
     return q.submit([&](sycl::handler &cgh) {
-        sycl::local_accessor<float, 2> s_tile(sycl::range<2>(FM_TILE_H, FM_TILE_W), cgh);
-        sycl::local_accessor<float, 2> s_vert(sycl::range<2>(FM_WG_Y, FM_TILE_W), cgh);
+        sycl::local_accessor<float, 2> const s_tile(sycl::range<2>(FM_TILE_H, FM_TILE_W), cgh);
+        sycl::local_accessor<float, 2> const s_vert(sycl::range<2>(FM_WG_Y, FM_TILE_W), cgh);
         constexpr int MAX_SUBGROUPS = FM_WG_X * FM_WG_Y;
-        sycl::local_accessor<float, 1> s_sad(sycl::range<1>(MAX_SUBGROUPS), cgh);
+        sycl::local_accessor<float, 1> const s_sad(sycl::range<1>(MAX_SUBGROUPS), cgh);
 
         cgh.parallel_for(
             sycl::nd_range<2>(sycl::range<2>(global_y, global_x), sycl::range<2>(FM_WG_Y, FM_WG_X)),
@@ -182,7 +182,7 @@ static sycl::event launch_float_motion(sycl::queue &q, const void *ref, float *c
 
                 /* Phase 4: subgroup + cross-subgroup reduction */
                 if (e_compute_sad != 0u) {
-                    sycl::sub_group sg = item.get_sub_group();
+                    sycl::sub_group const sg = item.get_sub_group();
                     const float sg_sum = sycl::reduce_over_group(sg, abs_diff, sycl::plus<float>{});
                     const uint32_t sg_id = sg.get_group_linear_id();
                     const uint32_t sg_lid = sg.get_local_linear_id();
