@@ -442,7 +442,8 @@ landed fix yet._
   the current public-medium remediation bound and project-wide major-feature
   test policy. A [67-criterion worksheet](development/best-practices-assessment.md)
   distinguishes verified evidence from pending changes and unknown history.
-  External project 14549 is in progress, not a passing badge. Private reporting
+  External project 14549 has a submitted 2026-09-08 snapshot of 42% (28 Met,
+  39 unknown; Basics 13/13), still in progress, not a passing badge. Private reporting
   is enabled and verified; unanswered requirements remain with the owner. No badge or release
   acceptance is inferred from these documentation changes. The Pages homepage
   now has a prepared purpose/participation introduction; the worksheet links
