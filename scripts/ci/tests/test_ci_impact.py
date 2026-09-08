@@ -85,6 +85,7 @@ class ConfigContract(unittest.TestCase):
             ".github/workflows/required-aggregator.yml",
             ".pre-commit-config.yaml",
             "Makefile",
+            "osv-scanner.toml",
             "scripts/ci/plan-ci-impact.py",
         ):
             self.assertTrue(planner._matches(path, tuple(config["full_patterns"])), path)
@@ -95,7 +96,7 @@ class RoutingContract(unittest.TestCase):
         plan = _plan_for(["docs/usage/cli.md", "changelog.d/fixed/x.md"])
         self.assertEqual(plan.mode, "impact")
         self.assertTrue(plan.selectors["docs"])
-        for lane in ("c_core", "python", "go", "rust", "golden_harness", "tiny_ai"):
+        for lane in ("c_core", "python", "go", "go_checks", "rust", "golden_harness", "tiny_ai"):
             self.assertFalse(plan.selectors[lane], lane)
 
     def test_c_change_selects_core_and_its_dependents(self):
@@ -105,6 +106,7 @@ class RoutingContract(unittest.TestCase):
         self.assertTrue(plan.selectors["golden_harness"])
         self.assertTrue(plan.selectors["tiny_ai"])
         self.assertFalse(plan.selectors["go"])
+        self.assertTrue(plan.selectors["go_checks"])
         self.assertFalse(plan.selectors["docs"])
 
     def test_model_json_change_runs_goldens(self):
@@ -119,6 +121,7 @@ class RoutingContract(unittest.TestCase):
     def test_go_change_selects_only_go(self):
         plan = _plan_for(["pkg/predictor/predictor.go", "go.mod"])
         self.assertTrue(plan.selectors["go"])
+        self.assertTrue(plan.selectors["go_checks"])
         self.assertFalse(plan.selectors["c_core"])
         self.assertFalse(plan.selectors["python"])
 
@@ -139,6 +142,19 @@ class RoutingContract(unittest.TestCase):
         self.assertEqual(plan.mode, "full")
         self.assertTrue(plan.reason.startswith("global-ci-input:"))
         self.assertTrue(all(plan.selectors.values()))
+
+    def test_go_workflow_change_forces_full(self):
+        plan = _plan_for([".github/workflows/go-ci.yml"])
+        self.assertEqual(plan.mode, "full")
+        self.assertTrue(plan.selectors["go_checks"])
+
+    def test_release_version_change_runs_go_checks(self):
+        plan = _plan_for([".release-please-manifest.json"])
+        self.assertTrue(plan.selectors["go_checks"])
+
+    def test_model_change_runs_go_checks(self):
+        plan = _plan_for(["model/predictor_libx264.onnx"])
+        self.assertTrue(plan.selectors["go_checks"])
 
     def test_ci_script_change_forces_full(self):
         plan = _plan_for(["scripts/ci/assertion-density.sh"])

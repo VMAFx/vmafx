@@ -83,6 +83,7 @@
     "go.sum",
     "mkdocs.yml",
     "noxfile.py",
+    "osv-scanner.toml",
     "pyproject.toml",
     "release-please-config.json",
     "renovate.json"
@@ -90,6 +91,7 @@
   "full_patterns": [
     ".github/ci-impact.json",
     ".github/workflows/required-aggregator.yml",
+    ".github/workflows/go-ci.yml",
     ".github/workflows/lint-and-format.yml",
     ".github/workflows/security-scans.yml",
     ".github/workflows/tests-and-quality-gates.yml",
@@ -104,7 +106,8 @@
     "scripts/ci/*",
     "scripts/ci/**",
     "build-aux/*",
-    "build-aux/**"
+    "build-aux/**",
+    "osv-scanner.toml"
   ],
   "selectors": {
     "c_core": {
@@ -244,6 +247,13 @@
       "inherits": [
         "python",
         "ai"
+      ],
+      "patterns": []
+    },
+    "go_checks": {
+      "inherits": [
+        "go",
+        "c_core"
       ],
       "patterns": []
     }

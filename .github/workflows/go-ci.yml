@@ -2,17 +2,11 @@ name: Go
 
 on:
   push:
-    paths:
-      - "**/*.go"
-      - "go.mod"
-      - "go.sum"
-      - ".github/workflows/go-ci.yml"
+    branches: [master]
   pull_request:
-    paths:
-      - "**/*.go"
-      - "go.mod"
-      - "go.sum"
-      - ".github/workflows/go-ci.yml"
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
 
 concurrency:
   group: go-ci-${{ github.workflow }}-${{ github.ref }}
@@ -25,14 +19,36 @@ permissions:
 
 jobs:
   go-ci:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # required-aggregator
     name: go vet + go test
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
+      # ADR-1238: Go links native libvmaf and loads shipped ONNX models.
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+
+      - name: Go checks not impacted
+        if: steps.impact.outputs.go_checks != 'true'
+        env:
+          MODE: ${{ steps.impact.outputs.mode }}
+          REASON: ${{ steps.impact.outputs.reason }}
+        run: echo "::notice::Go/native inputs not impacted (mode=$MODE reason=$REASON)"
+
       - name: Set up Go
+        if: steps.impact.outputs.go_checks == 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod  # single source of truth: the go directive in go.mod (Renovate bumps it)
@@ -41,6 +57,7 @@ jobs:
       # ADR-0973 sibling — pkg/libvmaf uses cgo with -L core/build-cpu/src -lvmaf
       # so go test fails to link unless libvmaf is built first.
       - name: Install meson + ninja for libvmaf build
+        if: steps.impact.outputs.go_checks == 'true'
         run: |
           # The hosted runner ships pre-provisioned Microsoft/Azure apt
           # sources (packages.microsoft.com) that intermittently 403 /
@@ -62,6 +79,7 @@ jobs:
       # Same tarball + pkg-config recipe as dev/Containerfile (ORT_VERSION
       # is tracked by renovate in both places).
       - name: Install ONNX Runtime (CPU)
+        if: steps.impact.outputs.go_checks == 'true'
         env:
           ORT_VERSION: "1.29.0"
         run: |
@@ -87,6 +105,7 @@ jobs:
           pkg-config --modversion libonnxruntime
 
       - name: Build libvmaf (CPU + ONNX Runtime) for cgo link
+        if: steps.impact.outputs.go_checks == 'true'
         # Post-ADR-0700: meson.build lives at core/meson.build, so the
         # source dir must be passed explicitly (or run from core/). Pre-rename
         # `meson setup core/build-cpu` worked because root had meson.build.
@@ -101,18 +120,21 @@ jobs:
           ninja -C core/build-cpu
 
       - name: go vet
+        if: steps.impact.outputs.go_checks == 'true'
         run: go vet ./...
 
       # The runner is what pkg/ai.Registry.Infer execs; putting it on PATH
       # lets pkg/ai's TestInfer_RealRunner drive the real subprocess path
       # instead of skipping. Built once here, reused by the smoke below.
       - name: Build vmafx-ort-runner and put it on PATH
+        if: steps.impact.outputs.go_checks == 'true'
         run: |
           install -d "${RUNNER_TEMP}/vmafx-bin"
           go build -o "${RUNNER_TEMP}/vmafx-bin/vmafx-ort-runner" ./cmd/vmafx-ort-runner
           echo "${RUNNER_TEMP}/vmafx-bin" >> "${GITHUB_PATH}"
 
       - name: Smoke-test vmafx-ort-runner against the shipped predictor
+        if: steps.impact.outputs.go_checks == 'true'
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-cpu/src
         run: |
@@ -125,12 +147,14 @@ jobs:
           python3 -c 'import json, sys; v = json.loads(sys.argv[1]); assert len(v) == 1 and abs(v[0] - 66.13961791992188) < 1e-2, v' "${out}"
 
       - name: Install gosec
+        if: steps.impact.outputs.go_checks == 'true'
         # v2.21.4 pulls x/tools@v0.25.0 which fails to compile under Go 1.26
         # (invalid array-length constant in tokeninternal.go). v2.27.1 pulls
         # x/tools@v0.37.0 which is compatible.
         run: go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
 
       - name: gosec (exclude generated)
+        if: steps.impact.outputs.go_checks == 'true'
         run: |
           # Generated protobuf code (gen/) carries G103 (unsafe.Slice) and
           # G115 (int -> uint32 cgo casts) by design; -exclude-generated
@@ -143,12 +167,14 @@ jobs:
       # skipping. Without KUBEBUILDER_ASSETS the suite panics in BeforeSuite
       # with a nil-pointer deref (PRs #330 / #341 / #362 all tripped this).
       - name: Install envtest binaries (kubebuilder)
+        if: steps.impact.outputs.go_checks == 'true'
         run: |
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
           ASSETS="$(setup-envtest use 1.31 -p path)"
           echo "KUBEBUILDER_ASSETS=${ASSETS}" >> "${GITHUB_ENV}"
 
       - name: go test
+        if: steps.impact.outputs.go_checks == 'true'
         env:
           # cgo packages (vmafx-controller, vmafx-mcp, vmafx-node, vmafx-server,
           # pkg/libvmaf) link against libvmaf.so.3 which is built in

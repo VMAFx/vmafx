@@ -49668,3 +49668,15 @@ Patch 0005 already introduces max and percentile mappings in the shared
 those existing percentile entries with `VMAF_HAVE_PERCENTILE_POOLING`.
 Do not re-add the mappings in 0018. Replay every entry in `series.txt` against
 a fresh upstream checkout; the old `000*-*.patch` glob missed patches 0010–0018.
+
+## ADR-1238 — Go validation is a required impact-routed check (2026-09-08)
+
+Keep `go vet + go test` synchronized between `go-ci.yml`, its
+`# required-aggregator` marker, and the aggregator's required list. The
+workflow starts without path filters and gates heavy steps on `go_checks`
+(`go` plus `c_core`); its own changes force full impact. Preserve
+ready-for-review coverage and the documentation-only no-work success.
+Run `python3 scripts/ci/test_go_workflow_contract.py` and
+`python3 -m unittest scripts/ci/tests/test_ci_impact.py` after workflow
+rebases. Predictor model-card reads use `os.Root`; do not restore an
+unconfined `os.ReadFile` or symlink escape while reconciling stub warnings.

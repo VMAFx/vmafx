@@ -24812,6 +24812,13 @@ Fix 23 pre-existing test failures across three packages.
   file listed 13–17 three times over. Renumbered 1–25.
 
 
+- Confine Go predictor model-card reads to the model directory, retaining
+  registry-resolved model names and known-stub fallback when an optional card is absent or escapes via a symlink.
+- Require the Go security and test job before merging; route its native and
+  ONNX checks from Go/core/model changes while documentation-only changes
+  report an explicit skip of the heavy work (ADR-1238).
+
+
 Fix `vmaf-tune predict --use-saliency` so saliency mean/variance are
 actually populated from the saliency ONNX path, and preserve row-provided
 saliency / signalstats columns during predictor training.

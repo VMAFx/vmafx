@@ -944,3 +944,4 @@
 1229-mcp-go-runtime
 1231-base-image-single-source
 1240-ffmpeg-release-patch-lifecycle
+1238-go-security-required-gate

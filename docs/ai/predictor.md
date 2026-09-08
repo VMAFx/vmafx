@@ -82,6 +82,16 @@ so the resulting ONNX model is a smooth re-encoding of the analytical
 formula. **Stub models are not authoritative for production CRF picks.**
 Every per-codec model card flags this prominently.
 
+The Go predictor reads an optional `<model-stem>_card.md` next to the
+selected model to classify its training corpus. Registry names resolve via
+`VMAFX_MODEL_DIR` before this lookup. A card containing
+`synthetic-stub` marks a stub; `real-N=` can override the software/AMF
+filename fallback. Card symlinks must remain inside that model directory.
+If the card is missing, unreadable, or points outside it, the predictor
+uses its existing filename/codec fallback. A filename containing `stub`
+always remains a stub. Keep real-corpus cards alongside renamed models
+so their corpus classification remains available.
+
 To train real models on a real corpus:
 
 ```bash
