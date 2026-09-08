@@ -70,7 +70,10 @@ class RepositorySecurityTests(unittest.TestCase):
                 self.inspect()
 
     def test_graphql_errors_and_truncation_never_count_as_zero(self) -> None:
-        with patch.object(CHECK.subprocess, "run") as run:
+        with (
+            patch.object(CHECK.shutil, "which", return_value="/fixture/bin/gh"),
+            patch.object(CHECK.subprocess, "run") as run,
+        ):
             run.return_value.stdout = json.dumps({"errors": [{"message": "denied"}]})
             with self.assertRaisesRegex(ValueError, "rejected"):
                 CHECK.bypass_count(8123)
