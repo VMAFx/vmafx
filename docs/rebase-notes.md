@@ -448,6 +448,11 @@ Triage and point-of-use guards for issue #1270 blockers:
 - `core/src/feature/speed_internal.c`: `si_mat_mul()` now dispatches through `speed_matmul_avx512` / `speed_matmul_avx2` / `speed_matmul_scalar` per ADR-1237, lifting the ADR-1196 scalar hold.
 - `core/src/libvmaf.c`: `batch_extractor_skip()`, `read_pictures_should_skip()`, and `flush_non_temporal_cpu_extractors()` include `VMAF_FEATURE_EXTRACTOR_HIP` and `VMAF_FEATURE_EXTRACTOR_METAL` in their GPU extractor sets. `flush_context_threaded()` drains `gpu_pending` for non-CUDA/SYCL extractors before temporal flushes, matching `flush_context_serial()`. Preserve this alignment so HIP works under `--threads N`.
 - `testdata/bench_all.sh`: prefers `/opt/intel/oneapi/setvars.sh` over legacy 2025.3 paths, and Test 2 targets `checkerboard_1920_1080_10_3_0_0.yuv` and `checkerboard_1920_1080_10_3_1_0.yuv`.
+## feat/1242-tiny-ai-completion — tiny-AI model cards and int8 fallback test coverage (2026-09-08)
+
+- `core/test/dnn/test_dnn_session_api.c`, `core/test/dnn/test_vmaf_use_tiny_model.c`: fork-added C unit tests verifying the ADR-1032 second fallback trigger (int8 session creation failure retrying fp32 baseline without leak).
+- `docs/ai/models/`: added missing model cards `smoke_multi_output_v0.md` and `smoke_v0_symbolic_batch.md`; brought existing cards into compliance with ADR-0042.
+- `no rebase impact: fork-added tests and docs; upstream Netflix/vmaf has no dnn test or docs/ai tree.`
 
 ## fix/venv-gate-basename-false-positive — tracked-venv gate pattern (2026-09-05)
 

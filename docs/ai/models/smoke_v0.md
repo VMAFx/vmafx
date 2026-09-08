@@ -46,6 +46,16 @@ Intentional smoke probe — not evaluated on any quality corpus. PLCC /
 SROCC / RMSE figures are not applicable. The only gate the model must
 pass is ORT load-and-run without error.
 
+## Runnable usage example
+
+```bash
+# Verify via the C unit test suite:
+meson test -C build --suite=dnn test_dnn_session_api
+
+# Or inspect the session inputs via Python:
+python3 -c "import onnxruntime as ort; sess = ort.InferenceSession('model/tiny/smoke_v0.onnx'); print('Loaded inputs:', [i.name for i in sess.get_inputs()])"
+```
+
 ## Known limitations / when NOT to use
 
 - Do not use for video quality assessment of any kind.

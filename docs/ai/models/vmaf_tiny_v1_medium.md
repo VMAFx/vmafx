@@ -55,6 +55,18 @@ baked StandardScaler, ADR-0275 PTQ sidecar).
 | LOSO capacity baseline (`mlp_medium`) | `vmaf_tiny_v1_medium` — required fixture |
 | Accuracy comparison vs `mlp_small` | Pair with [`vmaf_tiny_v1`](vmaf_tiny_v1.md) |
 
+## Runnable usage example
+
+```bash
+# Evaluate quality using the vmaf CLI with the medium-capacity tiny model:
+vmaf \
+    --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --tiny-model model/tiny/vmaf_tiny_v1_medium.onnx \
+    --json --output /tmp/vmaf_tiny_v1_medium.json
+```
+
 ## Known limitations
 
 - Trained on Netflix Public Dataset only — same limited UGC coverage as
