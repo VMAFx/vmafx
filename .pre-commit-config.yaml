@@ -194,6 +194,13 @@ repos:
         # alongside the formatters. Bypass with `git commit --no-verify`
         # for legitimate main-checkout commits while an agent is active.
 
+      - id: merge-train-guard-contract
+        name: Merge-train ownership and validation regressions
+        entry: python3 -m unittest discover -s scripts/dev/tests -p test_merge_train_guard.py
+        language: system
+        files: '^scripts/dev/(merge_train_guard\.py|tests/test_merge_train_guard\.py)$'
+        pass_filenames: false
+
       - id: check-dispatch-registry
         name: Check backend feature extractor dispatch registry wiring
         entry: scripts/ci/check-dispatch-registry.sh

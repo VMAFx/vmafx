@@ -102,6 +102,14 @@ checked primitive initialization and error OR/reset. Capacity follows the
 successfully created worker count. Destruction must also wait for admitted
 producers to leave capacity waits; the upstream broadcast by itself does not
 protect their lifetime. The isolated pthread-injection test gates these paths.
+## fix/merge-train-ownership-guard — local control boundary (2026-09-08)
+
+The fork-local gateway `scripts/dev/merge_train_guard.py` and its pre-commit
+regression hook must move together. Preserve ADR-1244's shared hold/base/owner
+guard on every mutation, rebase-before-ready ordering, exact-head leases,
+non-force cleanup, and actual full-gate receipt generation. Do not restore an
+unrestricted local agent operator alongside it. Runtime migration remains an
+explicit operator step documented in `docs/development/merge-train.md`.
 
 ## fix/ai-1270-blockers — DISTS, MobileSal, and predictor stub triage (2026-09-08)
 
