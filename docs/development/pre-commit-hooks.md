@@ -101,3 +101,25 @@ file checks. `make lint-sh` also runs it.
 
 See [ADR-1241](../adr/1241-worktree-hook-dispatch.md) and the
 [research digest](../research/1241-worktree-hook-dispatch.md).
+
+## Disposable Git fixture safety
+
+Git exports repository and index variables to hooks. Changing directory or
+using `git -C` does not override them, so a test that creates a temporary
+repository must clear inherited `GIT_*` before its first Git command and
+disable caller system/global Git configuration. The FFmpeg replay/smoke,
+dependency-classifier and agent-cleanup fixtures use this isolation for setup
+and assertions as well as the operation under test.
+
+Run their caller-preservation regression with:
+
+```bash
+python3 scripts/ci/test_git_fixture_isolation.py
+```
+
+It creates fake caller repositories with committed, staged and unstaged work,
+then runs each fixture with `GIT_DIR`, `GIT_COMMON_DIR`, `GIT_WORK_TREE`,
+`GIT_INDEX_FILE` and `GIT_CONFIG_PARAMETERS` individually and together.
+Every fixture must succeed without changing any caller metadata or files.
+Only temporary caller paths are injected. The local pre-commit/pre-push hook
+runs when its inputs change. Required `Pre-Commit` CI also runs the regression.

@@ -22397,6 +22397,12 @@ is addressed.
   when the impact plan produced no documentation artifact.
 
 
+- Isolate FFmpeg replay/smoke, dependency-classifier and agent-cleanup test
+  fixtures from inherited Git repository, index and configuration variables.
+  Local and CI regression checks now verify that disposable caller repositories
+  retain their configuration, refs, object store, index and working files.
+
+
 - **The Netflix golden YUV fixtures are no longer reachable by `git clean -xfd`.**
   `python/test/resource/yuv/` (160 MB, 26 files) and
   `python/test/resource/test_image_yuv/` were neither tracked nor ignored, so a

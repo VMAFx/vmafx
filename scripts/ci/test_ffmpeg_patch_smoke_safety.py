@@ -16,6 +16,12 @@ SMOKE = ROOT / "ffmpeg-patches/test/build-and-run.sh"
 
 class SmokeSafety(unittest.TestCase):
     def git(self, path: Path, *args: str) -> str:
+        # Isolate setup and assertions before injecting fake caller variables
+        # into the smoke script itself. -C alone cannot select the fixture.
+        environment = {
+            key: value for key, value in os.environ.items() if not key.startswith("GIT_")
+        }
+        environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
         return subprocess.check_output(  # noqa: S603 -- fixed Git argv and fixture-owned paths
             [
                 shutil.which("git") or "/usr/bin/git",
@@ -33,6 +39,7 @@ class SmokeSafety(unittest.TestCase):
             ],
             text=True,
             stderr=subprocess.DEVNULL,
+            env=environment,
         )
 
     def setUp(self) -> None:
@@ -82,12 +89,16 @@ class SmokeSafety(unittest.TestCase):
         self.before_head = self.git(self.caller, "rev-parse", "HEAD")
         self.before_index = (self.caller / ".git/index").read_bytes()
         self.checkout = self.root / "ffmpeg-checkout"
-        self.env = {
-            **os.environ,
-            "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
-            "FFMPEG_SRC": str(self.checkout),
-            "KEEP_BUILD": "1",
-        }
+        self.env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        self.env.update(
+            {
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
+                "FFMPEG_SRC": str(self.checkout),
+                "KEEP_BUILD": "1",
+            }
+        )
 
     def run_smoke(self) -> subprocess.CompletedProcess[str]:
         # Fixed Bash executable, copied repository script and fixture-owned cwd.
