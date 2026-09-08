@@ -180,7 +180,7 @@ static char *test_overload_success_consumes_dict(void)
 /* maps that to -ENOMEM.  Handing it a heap-allocated EMPTY dictionary */
 /* reaches that branch deterministically, with no malloc-fail          */
 /* injection: pre-fix the code returned straight out and leaked the    */
-/* caller's dictionary (the defect Netflix/vmaf#1242 reports);         */
+/* caller's dictionary (the defect Netflix/vmaf#1242 reports),         */
 /* post-fix it breaks to the common exit and releases it.  The return  */
 /* code is -ENOMEM either way, so the leak half is what LeakSanitizer  */
 /* sees in the ASan lane — hence this case must NOT free the dict.     */
