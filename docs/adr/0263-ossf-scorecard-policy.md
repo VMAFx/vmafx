@@ -1,9 +1,20 @@
 # ADR-0263: OSSF Scorecard policy and remediation cadence
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-1247](1247-scorecard-exact-head-gates.md)
 - **Date**: 2026-05-03
 - **Deciders**: lusoris
 - **Tags**: ci, security, supply-chain, docs
+
+## Supersession note (2026-09-08)
+
+This document preserves the May decision, not current posture. ADR-1247
+replaces its 6.2/7.0 thresholds and permanent blocker list with measurable
+exact-head gates. Live inspection found missing review/strict/admin controls,
+not merely classic-rule visibility; repository rulesets are readable with the
+default token. The parser failure was a real malformed Fedora-container heredoc,
+not the hypothesized root-Dockerfile redirect bug. No release, badge or independent
+review is inferred from a configured workflow. See the dated correction in
+[Research-0053](../research/0053-ossf-scorecard-investigation.md#2026-09-08-correction-and-measured-gate-design).
 
 ## Context
 

@@ -1,10 +1,77 @@
 # Research-0053: OSSF Scorecard investigation and remediation plan
 
-- **Status**: Active
-- **Workstream**: ADR-0263
-- **Last updated**: 2026-05-03
+- **Status**: Historical May investigation, corrected 2026-09-08
+- **Workstream**: ADR-0263, superseded by ADR-1247
+- **Last updated**: 2026-09-08
 
-## Question
+## 2026-09-08 correction and measured gate design
+
+The May observations below are retained as history. They are not current
+security evidence, and several causal claims were wrong:
+
+- The public result at `2026-09-08T16:15:55Z` identifies master
+  `78c9d2bfc580880919d5168c18ad19441f9db96a`, Scorecard `v5.5.0` at
+  `c395761df6afe1a69e476bc60a013a94bcbc153f`, aggregate **8.8**. CII and
+  Code-Review are **0**, License **9**, and twelve checks **10**. Pinning,
+  Branch-Protection and Signed-Releases are **-1**; the aggregate excludes
+  them. It is not an acceptance report for the RC1 integration branch.
+- Exact BuildKit 0.26.3 and the Scorecard raw callback reproduce an actual
+  unterminated heredoc in `docker/dev/fedora-40.Dockerfile`. Its optional
+  SYCL RUN has a literal backslash-n terminator. The root Dockerfile parses.
+  The earlier root `while`/redirect hypothesis is disproved; that root block
+  needs no speculative rewrite. The parser component records its own controls.
+- Live classic protection lacked required PR reviews, admin enforcement and
+  strict status checks; no ruleset was present. Those are real policy gaps,
+  not merely token visibility. The pinned action documents rulesets readable
+  with its default ephemeral token; a stored PAT is not the only remedy.
+- The repository license is **BSD-2-Clause-Patent**, as its LICENSE and README
+  state. The May BSD-3-Clause-Plus-Patent/BSD-3-Clause-Clear identification and
+  claimed explanation of the one-point license deduction were unsupported.
+- No fork release exists in the retained live query. First-release signing
+  must be verified on actual artifacts; neither a future score of 10 nor
+  historical `v3.x.y-lusoris.N` fork versioning is a current contract.
+- CII registration and independent review are remediation work, not permanent
+  waivers. A Gold goal is not an earned badge. See current policy
+  [ADR-1247](../adr/1247-scorecard-exact-head-gates.md) and the
+  [operator guide](../development/ossf-scorecard.md).
+
+The exact pinned action's `main.go` writes `results.json` alongside SARIF
+before signing/publishing. Its `options/options.go` selects local directory
+mode on PRs and default remote HEAD otherwise; `internal/scorecard/scorecard.go`
+does not pass an event SHA to the library. Scorecard's `pkg/scorecard/scorecard.go`
+limits explicit-commit and local runs by request type. Consequently, a full
+18-check master score is not available for an unmerged PR. We preserve the
+restricted publisher and validate its same-run full report in another job;
+PRs get a separately labelled exact-source 11-check local gate. The GitHub
+client separately fetches GraphQL history and a default-HEAD archive, so a final
+read-only master-ref check must still match the report/event SHA. Under the
+no-force/no-deletion branch policy this rejects forward movement during the
+scan; an administrator changing and restoring policy is outside that guarantee.
+
+A real local schema/parser control with exact Scorecard 5.5.0/c395761d and the
+reviewed Fedora fix returned eleven checks and aggregate **9.7**: License 9,
+Pinned-Dependencies 7 and all other local checks 10. The parser now reports
+actual unpinned dependencies instead of hiding them behind an error. This was
+a disposable source overlay control, not hosted or final-candidate acceptance.
+Gate fixtures additionally reject stale heads, missing/duplicate checks, forged
+rounded scores, any scanner error and modified/untracked inputs, and execute
+the actual aggregator JavaScript against absence/skip/neutral/failure controls.
+The only explicit unassessed state is the exact upstream no-release reason.
+
+Independent review reproduced a source-binding hole in the first implementation:
+a tracked Dockerfile symlink could read `.git/hidden-input`, changing the actual
+local pinning score from 10 to 0 while both source receipts stayed identical.
+The corrected binder verifies every followed symlink component against tracked
+files/directories, rejects mutable Git metadata and escaping/missing/cyclic
+targets, and preserves literal targets and legitimate directory-link chains.
+The original real-scanner negative evidence is retained with the fix controls.
+
+Implementation evidence is retained under
+`.workingdir2/evidence/scorecard-policy-20260908/`; its manifest distinguishes
+local controls from subsequent hosted acceptance and links raw report hashes.
+Official source anchors are pinned in ADR-1247 rather than following `main`.
+
+## Historical May question
 
 The OpenSSF Scorecard workflow on `master` has been red on every push
 for an extended period, and the public dashboard at
@@ -26,8 +93,8 @@ tooling?
 - `github/codeql-action` v4 tag resolution (queried 2026-05-03):
   GitHub API `git/refs/tags/v4` →
   `e46ed2cbd01164d986452f91f178727624ae40d7`.
-- BSD-3-Clause-Plus-Patent license metadata (SPDX):
-  <https://spdx.org/licenses/BSD-3-Clause-Clear.html> and the
+- Historical license identification (incorrect; see correction above):
+  the previously cited BSD-3-Clause-Clear metadata and the
   Scorecard `License` check normaliser source.
 
 ## Findings
@@ -97,7 +164,7 @@ is to repin to a SHA that currently exists under the `v4` tag.
 Resolved 2026-05-03 via GitHub API: `v4` →
 `e46ed2cbd01164d986452f91f178727624ae40d7`.
 
-### Pinned-Dependencies internal error
+### Historical pinning hypothesis (disproved above)
 
 The check returns `-1` (internal error) with message "invalid
 Dockerfile: unterminated heredoc" against the project's top-level
