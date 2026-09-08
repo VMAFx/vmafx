@@ -2220,8 +2220,19 @@ if cxx.get_argument_syntax() != 'msvc'
     endif
 endif
 
+# `Version:` in libvmaf.pc is the LIBRARY INTERFACE version, not the product
+# version — it must track `libvmaf.so.3`, the ABI this fork deliberately keeps.
+# Consumers gate on it with pkg-config range expressions they compiled long
+# before this fork existed: unpatched upstream FFmpeg's configure requires
+# `libvmaf >= 2.0.0`, and the fork's own ffmpeg-patches additionally require
+# `libvmaf >= 3.0.0` for the SYCL, Vulkan and DNN entry points. Publishing the
+# release-please product version here made the first release candidate advertise
+# `1.0.0-rc.1`, which satisfies neither — every FFmpeg lane and the Docker image
+# build failed with "Package 'libvmaf' has version '1.0.0-rc.1', required
+# version is '>= 2.0.0'". Bump this only alongside `vmaf_soname_version`, i.e.
+# when the C API changes. See ADR-1235 (amends ADR-1151).
 pkg_mod.generate(libraries: libvmaf,
-    version: meson.project_version(),
+    version: vmaf_soname_version,
     name: 'libvmaf',
     filebase: 'libvmaf',
     description: 'VMAF, Video Multimethod Assessment Fusion',

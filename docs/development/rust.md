@@ -47,7 +47,7 @@ sudo ldconfig                 # refresh the dynamic linker cache
 Verify the install:
 
 ```bash
-pkg-config --modversion libvmaf  # should print the library version
+pkg-config --modversion libvmaf  # the C API version (3.x), not the product version — ADR-1235
 ls /usr/local/lib/libvmaf.so     # should exist
 ```
 
