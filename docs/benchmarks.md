@@ -11,6 +11,92 @@ and earlier models. Historical runs were produced by `make bench`
 pinned commit. Contribute new numbers via a
 PR that updates this file alongside the commit that motivates the rerun.
 
+## Upstream A/B (ADR-1228)
+
+Every other table on this page compares the fork against itself. This one
+compares it against **upstream Netflix/vmaf at a pinned tag**, which is the only
+measurement that answers whether the fork is worth using on throughput grounds —
+and whether it stayed exact while getting there.
+
+Harness: [`testdata/bench_upstream_ab.py`](../testdata/bench_upstream_ab.py).
+It clones and builds upstream, then runs both binaries over the same fixtures
+with the ADR-1185 discipline (one discarded warmup, `--runs` timed repetitions
+reported as the median, spread and load average recorded).
+
+```bash
+meson setup core/build core -Denable_cuda=false -Denable_sycl=false -Denable_float=true
+ninja -C core/build
+testdata/bench_upstream_ab.py --runs 5 --json /tmp/ab.json
+```
+
+**CPU path only.** Upstream has no SYCL, HIP or Metal backend and its CUDA
+backend covers a different feature set, so a GPU comparison would measure the
+hardware rather than the work. Per-backend numbers stay in
+[`backend-perf-baselines.md`](development/backend-perf-baselines.md).
+
+### 2026-09-07 — fork `257ac1ec4` vs upstream `v3.2.0`, `ryzen-4090-arc`, single-threaded
+
+| Fixture | Upstream | Fork | Speedup | Score delta |
+| --- | --- | --- | --- | --- |
+| 48f 1920x1080 (concatenated checkerboard) | 0.756 s | 0.764 s | **0.989x** | `+5.0e-06` |
+| `src01_576x324`, 48f | 0.073 s | 0.072 s | 1.01x † | `0` |
+| `checkerboard_1px`, 3f | 0.053 s | 0.054 s | 0.97x † | `+4.0e-06` |
+| `checkerboard_10px`, 3f | 0.053 s | 0.054 s | 0.98x † | `0` |
+
+† **Startup-dominated — do not quote these.** Every tracked fixture runs in well
+under a second, so process startup, model parse and JSON emit dominate the wall
+clock and the ratio sits near 1.00x by construction. Two consecutive runs of
+identical code produced geomeans of 1.05x and 0.99x. The harness warns when this
+is the case; `MIN_USEFUL_SECONDS` encodes the threshold. The first row is the
+only one long enough to mean anything, and it needs a locally built fixture
+because the 4K pair is untracked.
+
+**Reading the result honestly:** on the *inherited* path — the `vmaf_v0.6.1`
+model, whose four features are `integer_adm`, `integer_vif`, `integer_motion`
+and `integer_aim` — the fork is at parity with upstream. That is the right
+result to want there: it says the fork has not regressed the code it inherited.
+It is **not** a statement about the fork's speed in general, because upstream
+already ships AVX2 and AVX-512 for exactly those four features. Picking that
+model picks the one workload where both projects are equally optimised.
+
+### Where the fork actually wins: features upstream left scalar
+
+The fork adds 25 x86 SIMD sources upstream does not have. Same 48-frame
+1920x1080 pair, single-threaded, `--feature X --no_prediction`:
+
+| Feature | Upstream | Fork | Speedup |
+| --- | --- | --- | --- |
+| `float_ms_ssim` | 5.894 s | 1.318 s | **4.47x** |
+| `psnr_hvs` | 1.182 s | 0.801 s | **1.47x** |
+| `float_ssim` | 0.358 s | 0.246 s | **1.46x** |
+| `ciede` | 13.300 s | 12.816 s | 1.04x |
+| `float_moment` | 0.191 s | 0.191 s | 1.00x |
+| `float_adm` | 0.715 s | 0.738 s | 0.97x |
+| `cambi` | 1.012 s | 1.117 s | 0.91x |
+| `psnr` | 0.024 s | 0.026 s | 0.91x † |
+
+† startup-dominated at 24 ms; not a real measurement.
+
+`float_ms_ssim` is the headline: upstream has no `ms_ssim_decimate` SIMD at all,
+so it runs the decimation scalar. `psnr_hvs` and `float_ssim` are the same story
+at smaller scale. The rows near 1.00x are where upstream is already vectorised or
+where the kernel is memory-bound.
+
+Features that exist only in the fork — `ssimulacra2`, `speed_qa`, `pu21`,
+`delta_e_itp`, `niqe`, `brisque`, the tiny-AI extractors — have no upstream
+counterpart to compare against and are therefore absent from both tables.
+
+**So both statements are true, and neither alone is the answer:** the fork has
+not made the inherited integer path faster, and the fork is substantially faster
+across the surface it added SIMD to. A single geomean over one model would have
+hidden both facts, which is why this section reports per-feature rows.
+
+**The score delta is a tracked bug,** not a rounding artefact: see
+`T-UPSTREAM-AB-SCORE-DELTA-2026-09-07` in [`state.md`](state.md). All fourteen
+pooled features agree exactly at the resolution the output format exposes; only
+the final prediction moves, by up to `8e-6` per frame in both directions. It
+sits under the Netflix golden gate's `places=4`, which is why nothing caught it.
+
 ## Hardware profiles
 
 |Profile|CPU|GPUs|Memory|OS|

@@ -49615,3 +49615,31 @@ fork-added.
 4. **stdout belongs to JSON-RPC.** The Go server logs to stderr. Any change that
    sends log output to stdout corrupts the protocol stream and shows up as
    `mcp stdio returned empty response` rather than as a logging bug.
+## ADR-1228 — upstream A/B performance milestone (2026-09-07)
+
+**Files touched**: `testdata/bench_upstream_ab.py` (new),
+`docs/benchmarks.md`, `docs/state.md`, `docs/adr/1228-*`.
+
+**Rebase impact**: none against upstream Netflix — all fork-local. The harness
+*builds* upstream but does not vendor any of it.
+
+1. **The upstream ref is pinned on purpose.** `DEFAULT_UPSTREAM_REF` tracks a
+   release tag, not `master`. Pointing it at a moving branch makes the speedup
+   column measure upstream's churn as much as the fork's work, and a recorded
+   table stops being comparable to itself. Bump the pin deliberately, and
+   re-measure the table in the same PR.
+
+2. **`--max-score-delta` is a ratchet, not a tolerance.** Its default `1e-5`
+   sits above the `1e-6` floor the `%.6f` output format imposes and above the
+   known ~5e-6 divergence tracked as `T-UPSTREAM-AB-SCORE-DELTA-2026-09-07`.
+   Do not raise it to make a run pass; lower it as the delta is localised.
+
+3. **The comparison is CPU-only by design.** Upstream has no SYCL/HIP/Metal
+   backend and a different CUDA feature set, so adding a GPU cell here would
+   measure hardware rather than work. Per-backend numbers belong in
+   `testdata/bench_backends.py`.
+
+4. **The tracked fixtures cannot produce a meaningful speedup.** They all run
+   in well under `MIN_USEFUL_SECONDS`, so the ratio is startup-dominated and
+   sits near 1.00x whatever the kernels do. The harness warns; do not silence
+   the warning by lowering the threshold.

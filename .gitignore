@@ -211,3 +211,4 @@ relcache/
 # `-version` behind. A leading dash also makes `pre-commit run --files` parse
 # the path as an option, so the large-file hook never sees it.
 /tools/vmaf-tune/-version
+build-upstream-ab/
