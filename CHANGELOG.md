@@ -23299,6 +23299,12 @@ overwrite; added an ASan regression test
   gap that PR #213 surfaced but did not merge.
 
 
+- Make development-container Level Zero downloads consume `LEVEL_ZERO_VERSION`
+  from `build-config.env`, with tests for real command consumption and drift.
+  Renovate now updates the shared loader setting; remove its obsolete ROCm
+  literal-version manager because the central image pins already own ROCm.
+
+
 - **`core/src/svm.cpp` parser now rejects header rows that depend on
   `nr_class` if they appear before the `nr_class` row itself.** Five
   affected rows (`rho`, `label`, `probA`, `probB`, `nr_sv`) gain a

@@ -264,20 +264,6 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "ROCm image pin. ADR-1225 moved the fork off the repo.radeon.com apt channel (frozen at 7.2.4 since AMD switched to TheRock) onto the digest-pinned rocm/dev-ubuntu-24.04 image. The Dockerfiles are covered by the built-in dockerfile manager; this manager catches the same pin where it appears in CI workflows and helper scripts.",
-      "managerFilePatterns": [
-        "/^\\.github/workflows/build\\.yml$/",
-        "/^\\.github/workflows/libvmaf-build-matrix\\.yml$/",
-        "/^scripts/ci/install-rocm-from-image\\.sh$/"
-      ],
-      "matchStrings": [
-        "rocm/dev-ubuntu-24\\.04:(?<currentValue>[^@\"'\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
-      ],
-      "datasourceTemplate": "docker",
-      "depNameTemplate": "rocm/dev-ubuntu-24.04"
-    },
-    {
-      "customType": "regex",
       "description": "Intel compute-runtime (NEO) version in dev/Containerfile. Tracks github.com/intel/compute-runtime releases. See ADR-0605.",
       "managerFilePatterns": [
         "/^dev/Containerfile$/",
@@ -294,15 +280,12 @@
     },
     {
       "customType": "regex",
-      "description": "Level Zero loader version in dev/Containerfile. Tracks github.com/oneapi-src/level-zero releases. See ADR-0605.",
+      "description": "Level Zero loader shared by the development SDK stage and CI. build-config.env owns the version; consumers source it directly (ADR-1231).",
       "managerFilePatterns": [
-        "/^dev/Containerfile$/",
-        "/^docker/Dockerfile\\.node$/",
-        "/^Dockerfile$/",
-        "/^Dockerfile\\.ffmpeg$/"
+        "/^build-config\\.env$/"
       ],
       "matchStrings": [
-        "ARG LEVEL_ZERO_VER=(?<currentValue>[0-9.]+)"
+        "(?:^|\\n)LEVEL_ZERO_VERSION=\"(?<currentValue>[0-9.]+)\""
       ],
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "oneapi-src/level-zero"

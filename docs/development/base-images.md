@@ -129,14 +129,16 @@ six months later is the whole point. The gate rejects any entry without
 ## Verify the guard
 
 ```bash
-python3 -m unittest discover -s scripts/ci/tests -p test_base_image_single_source.py -v
+python3 -m unittest discover -s scripts/ci/tests -p 'test_*single_source.py' -v
 bash scripts/ci/check-base-image-single-source.sh
 ```
 
 The tests run the actual gate in temporary Git repositories, without builds
 or registry access. They cover external image bypasses, local exceptions,
-named stages and mirror repair. The pre-commit regression hook runs when the
-guard or configuration changes; CI's all-files pre-commit run includes it.
+named stages and mirror repair. The Level Zero fixtures also execute the
+container download command with temporary command stubs and an altered config,
+so no package installation or network access is needed. The pre-commit
+regression hook runs when the guard or configuration changes; CI's all-files pre-commit run includes it.
 
 If two Dockerfiles want the same image, they share one entry. That collapsing
 is the point: 25 `FROM` lines in this repo resolve to 13 pins.
@@ -149,10 +151,11 @@ existed at four versions at once. GitHub Actions cannot `source` a file at
 parse time, so `run:` steps source it at run time:
 
 ```yaml
-      - name: Install ROCm / HIP runtime
+      - name: Fetch Level Zero loader source
         run: |
           set -a; . ./build-config.env; set +a
-          ...  https://repo.radeon.com/rocm/apt/${ROCM_APT_VERSION} ...
+          git clone --depth 1 --branch "v${LEVEL_ZERO_VERSION}" \
+            https://github.com/oneapi-src/level-zero.git /tmp/level-zero
 ```
 
 For a value needed by a later step or by a `with:` block, use the loader, which
@@ -163,10 +166,16 @@ writes `KEY=value` lines for every knob:
         run: scripts/ci/load-build-config.sh >> "$GITHUB_ENV"
 ```
 
-`scripts/ci/check-workflow-versions.py` fails the build if a literal version
-reappears in a workflow. The Windows SYCL leg runs under `cmd` and cannot source
-the config, so it mirrors the value by hand — and that check is what keeps the
-mirror honest.
+The development container's SDK stage copies `build-config.env` to
+`/opt/vmafx/build-config.env` and sources it in the Level Zero download `RUN`.
+Both the release tag and Debian package filename use `LEVEL_ZERO_VERSION`.
+There is no separate `LEVEL_ZERO_VER` argument: edit the shared setting and
+rebuild the development container to change the loader.
+
+`scripts/ci/check-workflow-versions.py` rejects drifted literal Level Zero clone
+versions in workflows and verifies that the container downloads use the copied
+configuration. The Windows SYCL leg runs under `cmd` and mirrors the value by
+hand; the same check keeps that mirror aligned.
 
 ## Renovate
 
@@ -174,7 +183,12 @@ Renovate's built-in `dockerfile` manager understands `ARG X=image` + `FROM $X`,
 so if it owned the Dockerfiles it would bump the `ARG` mirrors and leave
 `build-config.env` behind — failing the gate on Renovate's own PRs. Instead a
 single custom manager in `renovate.json` matches **both** the config line and
-the `ARG` form across every wired file, so one PR updates all 41 copies of the
-affected pin together, and a `packageRule` disables the built-in manager on
+the `ARG` form across every wired file, so one PR updates the shared pin and
+its mirrors together, and a `packageRule` disables the built-in manager on
 those files. `docker/dev/*.Dockerfile` keeps the built-in manager, because those
 pins are deliberately independent.
+
+The Level Zero custom manager updates only `LEVEL_ZERO_VERSION` in
+`build-config.env`; its container and workflow consumers read that setting.
+ROCm uses the image manager's `ROCM_BUILDER` and `ROCM_RUNTIME` entries. The old
+ROCm manager for literal workflow versions no longer has an input and is removed.

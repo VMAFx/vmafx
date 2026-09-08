@@ -23,6 +23,16 @@ exceptions bind an exact consumer and value, never a broad unpinned-tag rule.
 repositories and is wired through `test-base-image-single-source` in
 `.pre-commit-config.yaml`.
 
+### Level Zero version consumption (ADR-1231)
+
+`dev/Containerfile` copies and sources `build-config.env` in its SDK download
+RUN. The loader version is runtime shell input, so it needs no Docker ARG
+mirror. Preserve the source step, both URL components and the command-execution
+fixture in `tests/test_level_zero_single_source.py`; the base-image test hook
+runs both single-source suites. `check-workflow-versions.py` verifies this
+container consumer alongside the Windows workflow mirror. Renovate tracks
+Level Zero only in `build-config.env`; ROCm uses the central image manager.
+
 ### Workflow coupling
 
 The following pairs are tightly coupled — a rename or signature

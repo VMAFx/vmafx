@@ -38,6 +38,16 @@ Preserve regular dispatchers, actual Git argument/stdin forwarding, and
 independent MkDocs/PR-body push checks (ADR-1241). Keep the disposable
 lifecycle fixture wired into required Pre-Commit CI. Fork-only tooling;
 no Netflix C API or FFmpeg patch impact.
+## fix/base-image-unpinned-reference-guard — Level Zero config consumer (2026-09-08)
+
+The development SDK stage reads `LEVEL_ZERO_VERSION` from its copied
+`build-config.env` during the download RUN; no Docker ARG mirror is needed.
+Keep both URL fields and the Renovate manager attached to that owner. The
+single-source regression test executes the actual command with stubs. ROCm
+continues through the image manager; do not restore the obsolete literal
+workflow manager. No upstream rebase impact: these container and CI surfaces
+are fork-local.
+
 ## fix/base-image-unpinned-reference-guard — Renovate file selection (2026-09-08)
 
 Custom-manager file patterns use one `/regex/` delimiter pair. Preserve positive

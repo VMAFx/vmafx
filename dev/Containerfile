@@ -356,11 +356,12 @@ RUN for pkg in intel-opencl-icd libze-intel-gpu1; do \
     done
 
 # Level Zero loader (libze_loader) for SYCL
-ARG LEVEL_ZERO_VER=1.32.0
+COPY build-config.env /opt/vmafx/build-config.env
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VER}/libze1_${LEVEL_ZERO_VER}%2Bu24.04_amd64.deb" -o /tmp/libze1.deb \
-    && curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VER}/libze-dev_${LEVEL_ZERO_VER}%2Bu24.04_amd64.deb" -o /tmp/libze-dev.deb \
+    . /opt/vmafx/build-config.env \
+    && curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze1_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze1.deb \
+    && curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze-dev_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze-dev.deb \
     && apt-get update \
     && apt-get install -y --no-install-recommends /tmp/libze1.deb /tmp/libze-dev.deb \
     && find /tmp -maxdepth 1 -name 'libze*.deb' -delete

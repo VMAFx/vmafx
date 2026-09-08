@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import unittest
 from pathlib import Path
+from typing import Any, ClassVar
 
 ROOT = Path(__file__).resolve().parents[3]
 GIT = shutil.which("git") or "/usr/bin/git"
@@ -35,6 +36,9 @@ BASE_FILES = {
 
 
 class RenovateFilePatterns(unittest.TestCase):
+    config: ClassVar[dict[str, Any]]
+    files: ClassVar[list[str]]
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.config = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
@@ -45,7 +49,7 @@ class RenovateFilePatterns(unittest.TestCase):
             [GIT, "-C", str(ROOT), "ls-files"], env=environment, text=True
         ).splitlines()
 
-    def patterns(self, manager: dict) -> list[re.Pattern]:
+    def patterns(self, manager: dict[str, Any]) -> list[re.Pattern[str]]:
         patterns = manager["managerFilePatterns"]
         self.assertTrue(patterns)
         compiled = []

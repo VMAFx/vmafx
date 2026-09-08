@@ -45,6 +45,10 @@ GIT = shutil.which("git") or "/usr/bin/git"  # absolute path: ruff S607
 
 CLONE_RE = re.compile(r"git clone(?:[^\n]*\\\n)*[^\n]*")
 BRANCH_RE = re.compile(r'--branch\s+"?v([0-9][0-9.]*)')
+RUN_RE = re.compile(r"(?m)^RUN(?:[^\n]*\\\n)*[^\n]*")
+LEVEL_ZERO_CONFIG = "/opt/vmafx/build-config.env"
+LEVEL_ZERO_URL = "https://github.com/oneapi-src/level-zero/releases/download/"
+LEVEL_ZERO_VERSION_FIELDS = 2  # release tag and package filename in each URL
 
 
 def load_config(root: Path) -> dict[str, str]:
@@ -61,6 +65,50 @@ def load_config(root: Path) -> dict[str, str]:
     return values
 
 
+def check_level_zero_container(root: Path) -> list[str]:
+    """The SDK stage consumes the shared value at RUN time; no ARG is needed."""
+    path = root / "dev" / "Containerfile"
+    if not path.is_file():
+        return []
+    text = path.read_text(encoding="utf-8")
+    problems = []
+    copy = re.search(rf"(?m)^COPY\s+build-config\.env\s+{re.escape(LEVEL_ZERO_CONFIG)}\s*$", text)
+    if not copy:
+        problems.append("dev/Containerfile must COPY build-config.env for the Level Zero SDK step")
+    if re.search(r"(?im)^\s*ARG\s+LEVEL_ZERO_VER(?:SION)?(?:=|\s|$)", text):
+        problems.append(
+            "dev/Containerfile must not duplicate the shared Level Zero version as an ARG"
+        )
+    downloads = [run for run in RUN_RE.finditer(text) if LEVEL_ZERO_URL in run.group(0)]
+    if len(downloads) != 1:
+        problems.append(
+            "dev/Containerfile needs one Level Zero download RUN sourced from the shared config"
+        )
+        return problems
+    run = downloads[0]
+    source = f". {LEVEL_ZERO_CONFIG}"
+    command = run.group(0)
+    if (
+        not copy
+        or copy.end() > run.start()
+        or source not in command
+        or command.index(source) > command.index(LEVEL_ZERO_URL)
+    ):
+        problems.append(
+            "dev/Containerfile must source the copied config before downloading Level Zero"
+        )
+    if re.search(r"LEVEL_ZERO_VER\b", command) or re.search(
+        re.escape(LEVEL_ZERO_URL) + r"v[0-9]", command
+    ):
+        problems.append(
+            "dev/Containerfile Level Zero downloads must use LEVEL_ZERO_VERSION from build-config.env"
+        )
+    urls = re.findall(re.escape(LEVEL_ZERO_URL) + r'[^"\s]+', command)
+    if any(url.count("${LEVEL_ZERO_VERSION}") != LEVEL_ZERO_VERSION_FIELDS for url in urls):
+        problems.append("dev/Containerfile does not consume LEVEL_ZERO_VERSION in every SDK URL")
+    return problems
+
+
 def main() -> int:
     # S603: the argument vector is a fixed literal -- no user input reaches it.
     root = Path(
@@ -74,7 +122,7 @@ def main() -> int:
     cfg = load_config(root)
     lz_want = cfg.get("LEVEL_ZERO_VERSION")
 
-    problems: list[str] = []
+    problems = check_level_zero_container(root)
     for path in sorted((root / ".github" / "workflows").glob("*.yml")):
         text = path.read_text(encoding="utf-8")
         rel = path.relative_to(root)

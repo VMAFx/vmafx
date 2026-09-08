@@ -44,9 +44,11 @@ class BaseImageGate(unittest.TestCase):
         )
         self.run_command([GIT, "init", "--quiet"], check=True)
 
-    def run_command(self, command: list[str], **kwargs) -> subprocess.CompletedProcess:
+    def run_command(
+        self, command: list[str], *, check: bool = False
+    ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(  # noqa: S603 -- fixed gate/Git commands in a disposable fixture
-            command, cwd=self.repo, env=self.env, capture_output=True, text=True, **kwargs
+            command, cwd=self.repo, env=self.env, capture_output=True, text=True, check=check
         )
 
     def check(self, text: str, expected: int, name: str = "Dockerfile", write: bool = False) -> str:

@@ -60,10 +60,15 @@ The Intel NEO compute-runtime and ROCm KFD userspace MUST match the host
 kernel's i915 / xe / KFD ioctl ABI, or `vmaf --backend sycl|hip` silently
 falls back to CPU. Two hard pins live in `dev/Containerfile`:
 
-- **`ARG NEO_VER=26.31.39395.13`** (+ `LEVEL_ZERO_VER=1.32.0`).
+- **`ARG NEO_VER=26.31.39395.13`** and shared `LEVEL_ZERO_VERSION`.
   Pinned via GitHub releases because Intel's `noble/unified` APT repo's
   newest as of 2026-05-18 is `25.18.x`, too old for kernel ≥ 7.0.
-  The Level-Zero loader (`LEVEL_ZERO_VER`) comes from `oneapi-src/level-zero`.
+  The Level Zero loader comes from `oneapi-src/level-zero`. Its SDK-stage
+  `RUN` sources the copied root `build-config.env` from `/opt/vmafx/`; both
+  download URL components use `LEVEL_ZERO_VERSION`. Do not reintroduce a
+  separate `LEVEL_ZERO_VER`/`LEVEL_ZERO_VERSION` ARG or literal version.
+  `scripts/ci/check-workflow-versions.py` and the single-source fixture gate
+  protect this consumer. Renovate owns the setting only in `build-config.env`.
   **Invariant (ADR-1145)**: `NEO_VER` is the only pinned Intel version; never
   reintroduce `GMMLIB_VER` or `IGC_VER` ARGs. The matching `gmmlib` and `IGC`
   deb packages are dynamically derived and verified against published sha256
@@ -86,7 +91,7 @@ When CI / a maintainer's host runs a newer kernel that breaks these pins,
 the `dev-mcp-entrypoint.sh` runtime-visibility probe (also ADR-0541)
 surfaces the regression on container start as
 `WARN: SYCL level_zero:gpu NOT detected` or `WARN: HIP HSA agent NOT
-detected`. Bump the relevant ARG and rebuild.
+detected`. Bump the relevant version owner and rebuild.
 
 ### SHELL / hadolint DL4006
 
@@ -389,7 +394,8 @@ Do not write a base image into a Dockerfile in this directory. Every base is an
 `ARG` whose default mirrors the root-level `build-config.env`; edit that file
 and run `make base-images-sync`, never the `ARG` line by hand.
 
-`COPY --from=<digest-pinned image>` counts as a base-image pin and is rejected
+`COPY --from=<external image>` counts as a base-image pin and is rejected with
+or without a digest
 by `scripts/ci/check-base-image-single-source.sh`. Declare a named stage
 instead — `FROM ${CUDA_RUNTIME} AS cuda-runtime-libs`, then
 `COPY --from=cuda-runtime-libs …`. BuildKit prunes unused stages, so the extra

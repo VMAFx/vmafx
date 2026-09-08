@@ -216,10 +216,10 @@ repos:
         always_run: true
 
       - id: test-base-image-single-source
-        name: Base image single-source regression tests
-        entry: python3 -m unittest discover -s scripts/ci/tests -p test_base_image_single_source.py
+        name: Base image and toolchain single-source tests
+        entry: python3 -m unittest discover -s scripts/ci/tests -p 'test_*single_source.py'
         language: system
-        files: '^(build-config\.env$|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|tests/test_base_image_single_source\.py)$)'
+        files: '^(build-config\.env|dev/Containerfile|renovate\.json|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-workflow-versions\.py|tests/test_(base_image|level_zero)_single_source\.py))$'
         pass_filenames: false
 
       - id: test-renovate-file-patterns
