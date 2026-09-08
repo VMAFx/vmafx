@@ -152,10 +152,7 @@ class LevelZeroSingleSource(unittest.TestCase):
     def test_rocm_pins_are_owned_by_the_base_manager(self) -> None:
         config = json.loads((ROOT / "renovate.json").read_text())
         self.assertFalse(
-            any(
-                m.get("depNameTemplate") == "rocm/dev-ubuntu-24.04"
-                for m in config["customManagers"]
-            )
+            any(m.get("depNameTemplate", "").startswith("rocm/") for m in config["customManagers"])
         )
         manager = next(
             m
@@ -170,8 +167,11 @@ class LevelZeroSingleSource(unittest.TestCase):
                 match = re.search(pattern, f'{key}="{values[key]}"')
                 self.assertIsNotNone(match)
                 assert match is not None
-                self.assertEqual(match["depName"], "rocm/dev-ubuntu-24.04")
-                self.assertTrue(match["currentDigest"].startswith("sha256:"))
+                image_tag, digest = values[key].split("@", 1)
+                name, version = image_tag.rsplit(":", 1)
+                self.assertEqual(match["depName"], name)
+                self.assertEqual(match["currentValue"], version)
+                self.assertEqual(match["currentDigest"], digest)
 
 
 if __name__ == "__main__":

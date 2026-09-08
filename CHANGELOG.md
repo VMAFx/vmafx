@@ -21038,6 +21038,13 @@ All four functions are declared in `motion_avx512.h` and use scalar fallback pat
 for edge pixels, with AVX-512 SIMD for interior pixels.
 
 
+- **Cppcheck pthread modeling:** Load the official POSIX API model in local
+  and CI analysis so shared C aggregates are not mistaken for C++ classes
+  needing constructors. Real-header controls still reject uninitialized
+  member reads and broken constructors; target settings and diagnostic
+  categories remain unchanged.
+
+
 - `core/src/feature/vif.c`: corrected 10 `cppcheck-suppress
   invalidPointerCast` comments from bracket syntax
   `[MISRA-C:2012-11.3/EXP36-C: ...]` to semicolon-delimited syntax
@@ -25416,6 +25423,11 @@ scan in `vmaf_read_pictures` was therefore re-introduced. This fix restores:
 - lazy-recompute read path in `vmaf_read_pictures`
 
 ADR-0485.
+
+
+- Restore the released Ubuntu 26.04 ROCm 10 image across the shared builder
+  and runtime pins. The pruned SDK stage now compiles and links a HIP kernel
+  instead of only querying its version.
 
 
 Fix `frame_bytes()` chroma ceiling-division for odd-dimension YUV inputs in `vmaf-roi`.

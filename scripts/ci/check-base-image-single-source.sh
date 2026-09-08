@@ -151,7 +151,7 @@ expect_in ROCM_RUNTIME ":${ROCM_VERSION}" "ROCM_VERSION=$ROCM_VERSION"
 # The exemption list is empty: every image pin is on the current distro. Keep it
 # that way -- an entry here means a release image is shipping on a base the tree
 # has moved off, which is the drift this gate exists to prevent.
-distro_exempt=" ONEAPI_BUILDER ONEAPI_RUNTIME ROCM_BUILDER ROCM_RUNTIME "
+distro_exempt=" ONEAPI_BUILDER ONEAPI_RUNTIME "
 for key in "${image_keys[@]}"; do
   val="${!key:-}"
   case "$distro_exempt" in

@@ -48,7 +48,7 @@ ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d
 ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:9baa6b4187bbb98d240372a8a235ac0bb6b5ddd52bba1431dc2f7c0705862728"
 ARG RELEASE_RUNTIME_CC="gcr.io/distroless/cc-debian13:nonroot@sha256:c31ff9abcb1910f3ab25c7957bdaf0bfe12a01eb546e8df2282f1c8f682b606c"
 ARG CUDA_RUNTIME="nvidia/cuda:13.3.1-runtime-ubuntu26.04@sha256:71b55b93449973f2ee6d8024d6dd34853d338a1f007fe07adaaf9a35fd591794"
-ARG ROCM_RUNTIME="rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374"
+ARG ROCM_RUNTIME="rocm/dev-ubuntu-26.04:10.0.0-full@sha256:8ebc02ee1aefb6b7c0e952b4088542133bad8805d19730db92cc61be673421d1"
 ARG ONEAPI_RUNTIME="intel/oneapi-runtime:2025.3.1-0-devel-ubuntu24.04@sha256:8942e89b6e6e0cd9a4ca26f12fd4b32a2f0dd1de7e631ea59101a183878d660f"
 
 # Vendor runtime libraries as named stages: a digest-pinned

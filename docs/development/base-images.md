@@ -18,6 +18,15 @@ make base-images-sync         # push it into every Dockerfile
 git diff                      # review, then commit both
 ```
 
+The ROCm builder and runtime source use AMD's released Ubuntu 26.04
+`10.0.0-full` image, pinned through `ROCM_BUILDER` and `ROCM_RUNTIME`.
+The `rocm-src` stage compiles and links a small HIP kernel after pruning the
+SDK, then runs its host-only entry point. This checks the compiler and loader
+without requiring an AMD GPU; device execution remains a separate test.
+The node runtime retains the vendor library directory structure when copying
+the HIP dependency closure into Debian 13. See the
+[26.04 verification](../research/rocm-2604-restoration-2026-09-08.md).
+
 `make base-images-sync` rewrites the `ARG` defaults in every Dockerfile from
 the config and then re-runs the check, so a clean run means the tree agrees
 with the config.

@@ -117,3 +117,10 @@ drift fatal.
   now *fails* on any pin that is not.
 - **CVE surface delta**: narrows. Debian 12 bases move to Debian 13, and the
   controller stops running as root.
+
+## Verification update — 2026-09-08
+
+The 26.04 ROCm choice remains in effect. A later rollback to ADR-1225
+restored 24.04 pins without superseding this decision. Fresh registry,
+HIP compiler and Debian 13 runtime-load checks support restoring 26.04;
+see [the correction evidence](../research/rocm-2604-restoration-2026-09-08.md).

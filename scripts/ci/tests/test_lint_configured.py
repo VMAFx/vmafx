@@ -144,7 +144,21 @@ class ConfiguredLintTests(unittest.TestCase):
             {args[-1] for args in calls}, {str(self.root / name) for name in self.native}
         )
         self.assertEqual(len(calls), len(self.native))
-        self.assertEqual(len(list(self.calls.glob("cppcheck-*.json"))), 1)
+        cppcheck_calls = [
+            json.loads(path.read_text()) for path in self.calls.glob("cppcheck-*.json")
+        ]
+        self.assertEqual(len(cppcheck_calls), 1)
+        self.assertEqual(
+            cppcheck_calls[0],
+            [
+                "--enable=all",
+                "--inline-suppr",
+                "--library=posix",
+                f"--suppressions-list={self.root / '.cppcheck-suppressions.txt'}",
+                f"--project={report / 'compile_commands.json'}",
+                "--error-exitcode=1",
+            ],
+        )
 
     def test_command_form_and_only_numeric_lto_adaptation(self) -> None:
         flags = [
@@ -168,6 +182,28 @@ class ConfiguredLintTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         entry = json.loads((self.report() / "compile_commands.json").read_text())[0]
         self.assertEqual(entry["arguments"][1:-2], [*flags[:-1], "-flto"])
+
+    def test_posix_model_preserves_windows_and_cpp_command_settings(self) -> None:
+        flags = ["-D_WIN32", "-D_WIN64", "--target=x86_64-w64-mingw32", "-std=c++23"]
+        self.entries = [self.entry("core/src/dict.cpp", flags)]
+        self.write_database()
+        result = self.run_driver()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        entries = json.loads((self.report() / "compile_commands.json").read_text())
+        self.assertEqual(entries[0]["arguments"], self.entries[0]["arguments"])
+        args = json.loads(next(self.calls.glob("cppcheck-*.json")).read_text())
+        self.assertIn("--library=posix", args)
+        self.assertFalse(any(arg.startswith(("--platform", "--language", "--std")) for arg in args))
+
+    def test_ci_runs_real_model_controls_and_retains_diagnostic_categories(self) -> None:
+        workflow = (ROOT / ".github/workflows/lint-and-format.yml").read_text()
+        job = workflow.split("\n  cppcheck:\n", 1)[1].split("\n  python-lint:", 1)[0]
+        self.assertIn("-p test_cppcheck_posix_model.py", job)
+        self.assertIn("--library=posix", job)
+        self.assertIn("--enable=warning,performance,portability", job)
+        self.assertIn("--error-exitcode=1", job)
+        self.assertIn("--project=build/compile_commands.json", job)
+        self.assertNotIn("--disable", job)
 
     def test_both_analyzers_run_and_failures_propagate(self) -> None:
         for failing in ["CLANG_TIDY_EXIT", "CPPCHECK_EXIT"]:
