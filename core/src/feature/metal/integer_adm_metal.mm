@@ -930,7 +930,8 @@ static void read_band_row_totals(IntegerAdmStateMetal *s, int scale, int64_t csf
     }
 }
 
-static float conclude_adm_cm(const int64_t accum[3], int h, int w, int scale, float noise_weight)
+static float conclude_adm_cm(const int64_t accum[3], int h, int w, int scale,
+                             float noise_weight, double p_norm)
 {
     int left = (int)((double)w * IADM_BORDER_FACTOR - 0.5);
     int top = (int)((double)h * IADM_BORDER_FACTOR - 0.5);
@@ -947,8 +948,18 @@ static float conclude_adm_cm(const int64_t accum[3], int h, int w, int scale, fl
     float final_shift[3] = {powf(2.0f, (float)(45 - (int)shift_cub - (int)shift_inner_accum)),
                             powf(2.0f, (float)(39 - (int)shift_cub - (int)shift_inner_accum)),
                             powf(2.0f, (float)(36 - (int)shift_cub - (int)shift_inner_accum))};
+    /* The CPU parameterises the NUMERATOR p-norm by adm_p_norm
+     * (integer_adm.c::adm_num_scale takes p_norm_exp = 1/adm_p_norm) and leaves
+     * only the DENOMINATOR at a hardcoded cube root
+     * (adm_den_scale_finalise). This twin hardcoded both, so `adm_p_norm` was
+     * accepted, range-checked and folded into the ADR-1183 feature-name key
+     * while the arithmetic stayed at p = 3 -- a score filed as
+     * `integer_adm2_apn_2` that is not adm2 at p = 2. Same class as ADR-1220
+     * on the float-ADM twins; conclude_adm_csf_den below keeps its literal
+     * because the CPU denominator does too. */
+    const float p_norm_exp = 1.0f / (float)p_norm;
     float powf_add =
-        powf((float)((bottom - top) * (right - left)) * noise_weight, 1.0f / 3.0f);
+        powf((float)((bottom - top) * (right - left)) * noise_weight, p_norm_exp);
 
     float result = 0.0f;
     for (int i = 0; i < 3; ++i) {
@@ -960,7 +971,7 @@ static float conclude_adm_cm(const int64_t accum[3], int h, int w, int scale, fl
         } else {
             f_accum = (float)((double)accum[i] / (double)final_shift[scale - 1]);
         }
-        result += powf(f_accum, 1.0f / 3.0f) + powf_add;
+        result += powf(f_accum, p_norm_exp) + powf_add;
     }
     return result;
 }
@@ -1026,7 +1037,8 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeat
             num_scale = 0.0f;
             den_scale = 1e-10f;
         } else {
-            num_scale = conclude_adm_cm(cm_tot, hh, hw, scale, (float)s->adm_noise_weight);
+            num_scale = conclude_adm_cm(cm_tot, hh, hw, scale, (float)s->adm_noise_weight,
+                                        s->adm_p_norm);
             den_scale =
                 conclude_adm_csf_den(csf_tot, hh, hw, scale, (float)s->adm_norm_view_dist,
                                      (float)s->adm_ref_display_height, (float)s->adm_csf_scale,
@@ -1034,7 +1046,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeat
         }
 
         if (!s->adm_skip_aim) {
-            aim_num_scale = conclude_adm_cm(aim_tot, hh, hw, scale, 0.0f);
+            aim_num_scale = conclude_adm_cm(aim_tot, hh, hw, scale, 0.0f, s->adm_p_norm);
         }
 
         num += num_scale;
