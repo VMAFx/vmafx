@@ -85,6 +85,14 @@ has the same defect. Preserve the assignment when porting that discovery block.
 through Meson using Windows host metadata and stubbed tool responses. It covers
 successful discovery, empty/error fallback and missing `cl`, and is registered
 in `fast` on POSIX build hosts. This is configure coverage, not a Windows GPU test.
+## Scoped lint-baseline tightening (ADR-1243)
+
+`tidy-ratchet.py --only --write` updates only successfully measured source
+entries, preserves all unselected headers/TUs and full-report metadata, and
+rejects increased allowance. Preserve its failure and atomic-write tests when
+rebasing the CI tools. A scoped report must never replace the full baseline;
+the required whole-tree lane and diagnostic-only `--only` semantics remain.
+
 ## fix/thread-pool-queue-bound — Netflix queue-capacity fix (2026-09-08)
 
 Adapt Netflix `8fc71e3006f0b21e8e31d6e5d1b904332149ad9e` from

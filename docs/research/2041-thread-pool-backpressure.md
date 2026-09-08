@@ -1,4 +1,13 @@
-# Research: thread-pool backpressure and shutdown lifetime
+# Research-2041: Thread-pool backpressure and shutdown lifetime
+
+- **Status**: Active
+- **Workstream**: ADR-1243; Netflix/vmaf #1587 queue admission fix
+- **Last updated**: 2026-09-08
+
+## Question
+
+Does the upstream queue bound apply to VMAFx, and how can admission and shutdown
+preserve the fork's recycled jobs, worker data and batch-error semantics?
 
 ## Source evidence
 
@@ -52,3 +61,22 @@ runs ASan/UBSan and TSan variants. The normal Meson CPU configuration registers
 both thread-pool executables in the fast suite. Full-scoring, golden and
 platform-wide validation remain separate integration gates; the upstream
 reporter's macOS/VideoToolbox workload was not reproduced here.
+
+## Lint baseline measurement
+
+The isolated CPU Meson database has 253 unique translation units, while the
+committed full CPU report has 292. Its Clang CPU configuration disables assembly
+and DNN dependencies, so it cannot replace the CI GCC 14 database. The local
+clang-tidy executable is LLVM 22.1.8, matching the committed report.
+
+ADR-1243 adds guarded scoped tightening instead of hand-editing that report.
+The existing Meson commands for the two changed translation units are retained
+with container `/source` and `/out/build` paths mapped to their identical host
+mounts. clang-tidy measures both at zero warnings and zero uncited NOLINTs.
+The writer preserves every unmeasured entry and the original full-report
+metadata; only `core/src/thread_pool.c` tightens from 15 warnings to zero.
+Filesystem fixtures cover report aliases, failed atomic replacement, empty or
+inexact coverage, errors, unreadable sources/headers, debt increases, unchanged
+headers and zero tightening. Two actual subprocess writers prove full/scoped
+lock contention fails without output; separate fixtures preserve a concurrent
+outside edit detected before replacement and reject drift during measurement.
