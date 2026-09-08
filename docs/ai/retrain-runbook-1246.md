@@ -74,7 +74,7 @@ the verification command for each gate and confirm a passing result.
 ## 3. Container Rebuild and Default-Model CUDA Verification
 
 Canonical builds are produced exclusively inside the `vmaf-dev-mcp` container per
-[ADR-1102](../adr/1102-container-only-publishing.md).
+[ADR-1102](../adr/1102-phase4b9-container-only-publishing.md).
 
 ### 3.1 Rebuild Container
 

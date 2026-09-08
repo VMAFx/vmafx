@@ -143,7 +143,7 @@ wheels distributed via PyPI follow the SONAME bump in cycle N+3.
   — decision record + alternatives + consequences.
 - [ADR-0186](../adr/0186-vulkan-image-import-impl.md) — first
   hwaccel-import case that motivated typed backend handles.
-- [ADR-0700](../adr/0700-core-directory-rename.md) — VMAFX
+- [ADR-0700](../adr/0700-vmafx-repo-layout.md) — VMAFX
   rebrand directory move; aligned with v2 lifecycle.
 - [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md)
   — controller/node protocol that consumes v2.

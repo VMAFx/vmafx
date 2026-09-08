@@ -10,10 +10,10 @@ Subject: [PATCH] libvmaf: wire sycl backend selector (sycl_device /
  2 files changed, 49 insertions(+)
 
 diff --git a/configure b/configure
-index 87a9d35..c1666a9 100755
+index 3375a2a255ffb69670616c149df7aac04d8f32bd..1f2c0529a66c186e904e1b53488d5c6ea9a6fd4e 100755
 --- a/configure
 +++ b/configure
-@@ -7391,6 +7391,7 @@ enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_i
+@@ -7458,6 +7458,7 @@ enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_i
  enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid.stab/libvidstab.h vsMotionDetectInit
  enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init
  enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf_cuda.h vmaf_cuda_state_init
@@ -22,7 +22,7 @@ index 87a9d35..c1666a9 100755
  enabled libvo_amrwbenc    && { check_pkg_config libvo_amrwbenc vo-amrwbenc vo-amrwbenc/enc_if.h E_IF_init ||
                                 require libvo_amrwbenc vo-amrwbenc/enc_if.h E_IF_init -lvo-amrwbenc; }
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 552743f..e3cf572 100644
+index 552743f4e3fa2cc94d36487b94e2272546862660..4d72812bff3e242cc48b08748a729ecb76e505ee 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -47,6 +47,10 @@
@@ -94,7 +94,7 @@ index 552743f..e3cf572 100644
      err = parse_models(ctx);
      if (err)
          return err;
-@@ -646,6 +687,13 @@ clean_up:
+@@ -655,6 +696,13 @@ clean_up:
  
      if (s->vmaf)
          vmaf_close(s->vmaf);
@@ -108,5 +108,3 @@ index 552743f..e3cf572 100644
  }
  
  static const AVFilterPad libvmaf_inputs[] = {
--- 
-2.54.0

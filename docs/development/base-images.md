@@ -2,12 +2,13 @@
 
 # Container bases and toolchain versions
 
-Every container base image **and toolchain version** in this repository is
-defined in one file: [`build-config.env`](../../build-config.env) at the
-repository root.
+Shared container bases and toolchain versions are defined in
+[`build-config.env`](../../build-config.env) at the repository root. The
+contract covers the entries declared there; compatibility test versions need
+separate review before consolidation.
 
-If you have forked VMAFx and want it to build on a different Debian, a
-different Go, or a different GPU SDK, that file is the only thing you edit.
+To change one of these shared settings in a fork, edit that file and regenerate
+its mirrors.
 
 ## Quick start
 
@@ -62,8 +63,18 @@ FROM ${CUDA_RUNTIME} AS cuda-runtime-libs
 COPY --from=cuda-runtime-libs /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
 ```
 
-BuildKit prunes the stage when the selected target does not use it, so this
-costs nothing. The gate rejects a digest-pinned `COPY --from`.
+BuildKit prunes the stage when the selected target does not use it. The gate
+rejects direct external `FROM` and `COPY --from` references with or without a
+digest: `alpine`, `alpine:latest` and `alpine@sha256:…` all need a centrally
+owned named stage. Instruction case, `--platform`, other `COPY` flags and
+continued instructions do not exempt a reference. Docker documents these
+forms in its [Dockerfile reference](https://docs.docker.com/reference/dockerfile/).
+
+Declare each shared image's global `ARG NAME=value` on one physical line
+before the first `FROM`, so the mirror checker and `--write` can maintain it.
+`FROM ${NAME}` or `FROM $NAME` must use that declared configuration key;
+an arbitrary new ARG or a fallback such as `${NAME:-alpine}` is rejected.
+Use named stages or an earlier numeric stage index for `COPY --from`.
 
 ## The two tracks
 
@@ -93,6 +104,11 @@ six months later is the whole point. The gate rejects any entry without
 
 ## Deliberate exceptions
 
+- **Local image consumers**: `Dockerfile.ffmpeg` extends `vmaf:latest`, built
+  from the root Dockerfile. `dev/Containerfile.runner` uses
+  `ARG BASE_IMAGE=vmaf-dev-mcp:local`, built from `dev/Containerfile`. These
+  exceptions bind the exact file, argument (where applicable) and value.
+  An unpinned tag in any other consumer is not assumed to be local.
 - **`docker/dev/*.Dockerfile`** pin Alpine, Arch and Fedora on purpose. They
   exist to prove the build survives distros the release track does not use, so
   unifying their bases would defeat them. The gate skips that directory.
@@ -110,6 +126,20 @@ six months later is the whole point. The gate rejects any entry without
 2. Reference it as `ARG` + `FROM ${…}` in the Dockerfile.
 3. Run `make base-images-sync`.
 
+## Verify the guard
+
+```bash
+python3 -m unittest discover -s scripts/ci/tests -p 'test_*single_source.py' -v
+bash scripts/ci/check-base-image-single-source.sh
+```
+
+The tests run the actual gate in temporary Git repositories, without builds
+or registry access. They cover external image bypasses, local exceptions,
+named stages and mirror repair. The Level Zero fixtures also execute the
+container download command with temporary command stubs and an altered config,
+so no package installation or network access is needed. The pre-commit
+regression hook runs when the guard or configuration changes; CI's all-files pre-commit run includes it.
+
 If two Dockerfiles want the same image, they share one entry. That collapsing
 is the point: 25 `FROM` lines in this repo resolve to 13 pins.
 
@@ -121,10 +151,11 @@ existed at four versions at once. GitHub Actions cannot `source` a file at
 parse time, so `run:` steps source it at run time:
 
 ```yaml
-      - name: Install ROCm / HIP runtime
+      - name: Fetch Level Zero loader source
         run: |
           set -a; . ./build-config.env; set +a
-          ...  https://repo.radeon.com/rocm/apt/${ROCM_APT_VERSION} ...
+          git clone --depth 1 --branch "v${LEVEL_ZERO_VERSION}" \
+            https://github.com/oneapi-src/level-zero.git /tmp/level-zero
 ```
 
 For a value needed by a later step or by a `with:` block, use the loader, which
@@ -135,10 +166,16 @@ writes `KEY=value` lines for every knob:
         run: scripts/ci/load-build-config.sh >> "$GITHUB_ENV"
 ```
 
-`scripts/ci/check-workflow-versions.py` fails the build if a literal version
-reappears in a workflow. The Windows SYCL leg runs under `cmd` and cannot source
-the config, so it mirrors the value by hand — and that check is what keeps the
-mirror honest.
+The development container's SDK stage copies `build-config.env` to
+`/opt/vmafx/build-config.env` and sources it in the Level Zero download `RUN`.
+Both the release tag and Debian package filename use `LEVEL_ZERO_VERSION`.
+There is no separate `LEVEL_ZERO_VER` argument: edit the shared setting and
+rebuild the development container to change the loader.
+
+`scripts/ci/check-workflow-versions.py` rejects drifted literal Level Zero clone
+versions in workflows and verifies that the container downloads use the copied
+configuration. The Windows SYCL leg runs under `cmd` and mirrors the value by
+hand; the same check keeps that mirror aligned.
 
 ## Renovate
 
@@ -146,7 +183,12 @@ Renovate's built-in `dockerfile` manager understands `ARG X=image` + `FROM $X`,
 so if it owned the Dockerfiles it would bump the `ARG` mirrors and leave
 `build-config.env` behind — failing the gate on Renovate's own PRs. Instead a
 single custom manager in `renovate.json` matches **both** the config line and
-the `ARG` form across every wired file, so one PR updates all 41 copies of the
-affected pin together, and a `packageRule` disables the built-in manager on
+the `ARG` form across every wired file, so one PR updates the shared pin and
+its mirrors together, and a `packageRule` disables the built-in manager on
 those files. `docker/dev/*.Dockerfile` keeps the built-in manager, because those
 pins are deliberately independent.
+
+The Level Zero custom manager updates only `LEVEL_ZERO_VERSION` in
+`build-config.env`; its container and workflow consumers read that setting.
+ROCm uses the image manager's `ROCM_BUILDER` and `ROCM_RUNTIME` entries. The old
+ROCm manager for literal workflow versions no longer has an input and is removed.

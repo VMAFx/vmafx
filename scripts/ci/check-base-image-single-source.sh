@@ -4,8 +4,7 @@
 # The authoritative definition is build-config.env at the repo root. Dockerfiles
 # do not name a base image directly: each takes it as a build argument whose
 # default mirrors the config, so a plain `docker build` still works while
-# `scripts/build/image.sh` (and CI) can override every base from the config in
-# one shot.
+# CI can override a base through --build-arg using the same config value.
 #
 # That mirror is the thing that rots, so this gate checks it, in the same shape
 # scripts/ci/check-default-model-single-source.sh applies to the default model:
@@ -80,54 +79,12 @@ mapfile -t image_keys < <(
   done < <(grep -oE '^[A-Z][A-Z0-9_]*=' "$config" | tr -d '=' | sort -u)
 )
 
-# ------------------------------------------------- rule 1: no literal FROMs --
-for f in "${files[@]}"; do
-  # Stage names declared in this file are legitimate FROM targets.
-  stages=$(grep -oiE '^[[:space:]]*FROM[[:space:]]+\S+[[:space:]]+AS[[:space:]]+\S+' "$f" |
-    awk '{print tolower($NF)}' | sort -u || true)
-  while IFS=: read -r lineno line; do
-    ref=$(printf '%s' "$line" | sed -E 's/^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]+//; s/[[:space:]]+([Aa][Ss][[:space:]]+.*)?$//' | awk '{print $1}')
-    # An ARG reference is exactly what we want.
-    # shellcheck disable=SC2016  # matching a literal '${' prefix, not expanding it
-    case "$ref" in
-      '${'* | '$'*) continue ;;
-      scratch) continue ;;
-      # Only digest-pinned references are external bases. A bare local tag such
-      # as `vmaf:latest` names an image this repo builds itself, which is not a
-      # base pin and has nothing to centralise.
-      *@sha256:*) ;;
-      *) continue ;;
-    esac
-    # A reference to an earlier stage in the same file is fine.
-    if printf '%s\n' "$stages" | grep -qxF "$(printf '%s' "$ref" | tr '[:upper:]' '[:lower:]')"; then
-      continue
-    fi
-    bad "$f:$lineno hardcodes a base image: $ref"
-    note "       Take it from $config instead:"
-    note "         ARG SOME_BASE=\"$ref\""
-    note "         FROM \${SOME_BASE} AS ..."
-  done < <(grep -niE '^[[:space:]]*FROM[[:space:]]' "$f" | sed 's/^\([0-9]*\):/\1:/')
-done
-
-# `COPY --from=<image>` pulls a base in just as much as FROM does, and it is
-# easier to miss: dev/Containerfile lifted the Go toolchain out of a
-# golang:1.27-bookworm image this way and stayed on Debian 12 long after every
-# FROM had moved to 13.
-for f in "${files[@]}"; do
-  while IFS=: read -r lineno line; do
-    ref=$(printf '%s' "$line" | grep -oE -- '--from=[^ ]+' | head -1 | sed 's/^--from=//')
-    case "$ref" in
-      *@sha256:*) ;;
-      *) continue ;;
-    esac
-    # shellcheck disable=SC2016  # matching a literal '${' prefix, not expanding it
-    case "$ref" in
-      '${'*) continue ;;
-    esac
-    bad "$f:$lineno COPY --from hardcodes a base image: $ref"
-    note "       Take it from $config the same way FROM does."
-  done < <(grep -nE '^[[:space:]]*COPY[[:space:]]+--from=' "$f")
-done
+# --------------------------------------- rule 1: references use config/stages --
+# Tags without a digest are still external images. Parse flags, instruction
+# case and continuation lines before distinguishing config ARGs and stages.
+if ! python3 scripts/ci/check-container-image-references.py "${image_keys[*]}" "${files[@]}"; then
+  fail=1
+fi
 
 # ------------------------------------- rule 2: ARG defaults mirror the config --
 for f in "${files[@]}"; do
@@ -136,7 +93,7 @@ for f in "${files[@]}"; do
     [ -z "$want" ] && continue
     # Every ARG line in this file declaring that key.
     while IFS=: read -r lineno line; do
-      got=$(printf '%s' "$line" | sed -E "s/^[[:space:]]*ARG[[:space:]]+${key}=//; s/^\"//; s/\"$//")
+      got=$(printf '%s' "$line" | sed -E "s/^[[:space:]]*[Aa][Rr][Gg][[:space:]]+${key}=//; s/^\"//; s/\"$//")
       [ "$got" = "$want" ] && continue
       if [ "$write" -eq 1 ]; then
         python3 - "$f" "$lineno" "$key" "$want" <<'PY'
@@ -154,7 +111,7 @@ PY
         note "         file:   $got"
         note "       Run: scripts/ci/check-base-image-single-source.sh --write"
       fi
-    done < <(grep -nE "^[[:space:]]*ARG[[:space:]]+${key}=" "$f")
+    done < <(grep -nE "^[[:space:]]*[Aa][Rr][Gg][[:space:]]+${key}=" "$f")
   done
 done
 

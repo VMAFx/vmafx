@@ -82,6 +82,8 @@ jobs:
         run: brew install -q ninja nasm
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Load build config
+        run: scripts/ci/load-build-config.sh >> "$GITHUB_ENV"
 
       - name: Build vmaf
         run: |
@@ -90,7 +92,7 @@ jobs:
 
       - name: Build FFmpeg
         run: |
-          git clone -q --branch n9.0.1 --depth=1 "https://github.com/FFmpeg/FFmpeg" ffmpeg
+          git clone -q --branch "$FFMPEG_TAG" --depth=1 "$FFMPEG_REMOTE" ffmpeg
           cd ffmpeg
           ./configure --enable-version3 --enable-libvmaf --disable-indevs \
             --cc="$CC" --cxx="$CXX" || { less ffbuild/config.log; exit 1; }
@@ -107,6 +109,9 @@ jobs:
       CXX: g++
       DEBIAN_FRONTEND: noninteractive
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Load build config
+        run: scripts/ci/load-build-config.sh >> "$GITHUB_ENV"
       - name: Setup python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
@@ -127,7 +132,6 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
           sudo apt-get update
-          set -a; . ./build-config.env; set +a
           sudo -E apt-get -yq install "${ONEAPI_APT_PACKAGE}" cmake
           git clone --depth=1 --branch "v${LEVEL_ZERO_VERSION}" \
             https://github.com/oneapi-src/level-zero.git /tmp/level-zero
@@ -139,7 +143,6 @@ jobs:
           echo "/opt/intel/oneapi/compiler/latest/lib" | sudo tee /etc/ld.so.conf.d/oneapi.conf
           sudo ldconfig
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Build vmaf with SYCL
         env:
@@ -160,7 +163,7 @@ jobs:
 
       - name: Build FFmpeg with SYCL patch series
         run: |
-          git clone -q --branch n9.0.1 --depth=1 "https://github.com/FFmpeg/FFmpeg" ffmpeg
+          git clone -q --branch "$FFMPEG_TAG" --depth=1 "$FFMPEG_REMOTE" ffmpeg
           cd ffmpeg
           # Apply the patch series in series.txt order. Patch 0003 (SYCL)
           # depends on fields added by 0001 (tiny-AI), so applying out of

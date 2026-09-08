@@ -137,6 +137,16 @@ check runs older than its current workflow run when selecting sibling
 outcomes; otherwise stale draft-era skipped check runs on the same commit can
 mask real queued or failed ready-for-review checks.
 
+### Go validation (ADR-1238)
+
+`go-ci.yml` reports `go vet + go test` as required. It starts on non-draft
+PRs including `ready_for_review`, master pushes, and manual dispatches,
+then gates heavyweight steps on `go_checks` (`go` plus `c_core`). Preserve
+its explicit documentation-only no-work result, CPU/optional-backend
+settings, and CI-authority classification. The Rules job runs
+`scripts/ci/test_go_workflow_contract.py` before authoring exemptions;
+this test executes the aggregator script with failing Go outcomes.
+
 ### CI job display names and aggregator parity
 
 All workflow job and matrix display names (`name:`) target $\le 30$ characters

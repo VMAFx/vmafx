@@ -1,4 +1,4 @@
-From 645e401336d13d88380a2b7afc5158b75f794bf5 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Mon, 18 May 2026 21:22:47 +0200
 Subject: [PATCH] libvmaf: expose cpumask and gpumask on all vmaf filters
@@ -39,7 +39,7 @@ ADR-0576.
  1 file changed, 30 insertions(+)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 61f2747..8dabe15 100644
+index e8d018ed9e67cd8473248e16febcceee8a27d306..4ac15d8b93606ddf272d11ac2baad6378575ad26 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -122,6 +122,12 @@ typedef struct LIBVMAFContext {
@@ -73,7 +73,7 @@ index 61f2747..8dabe15 100644
      };
  
      err = vmaf_init(&s->vmaf, cfg);
-@@ -1040,6 +1050,8 @@ static int config_props_cuda(AVFilterLink *outlink)
+@@ -1050,6 +1060,8 @@ static int config_props_cuda(AVFilterLink *outlink)
          .log_level = log_level_map(av_log_get_level()),
          .n_subsample = s->n_subsample,
          .n_threads = s->n_threads,
@@ -82,7 +82,7 @@ index 61f2747..8dabe15 100644
      };
  
      VmafCudaPictureConfiguration cuda_pic_cfg = {
-@@ -1223,6 +1235,10 @@ static const AVOption libvmaf_sycl_options[] = {
+@@ -1233,6 +1245,10 @@ static const AVOption libvmaf_sycl_options[] = {
                    OFFSET(feature_cfg), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, SYCL_FLAGS},
      {"gpu_profile", "Print per-kernel GPU timing breakdown at end.",
                      OFFSET(sycl_profile), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, SYCL_FLAGS},
@@ -93,7 +93,7 @@ index 61f2747..8dabe15 100644
      { NULL }
  };
  #undef SYCL_FLAGS
-@@ -1410,6 +1426,8 @@ static int config_props_sycl(AVFilterLink *outlink)
+@@ -1493,6 +1509,8 @@ static int config_props_sycl(AVFilterLink *outlink)
          .log_level = log_level_map(av_log_get_level()),
          .n_subsample = s->n_subsample,
          .n_threads = s->n_threads,
@@ -102,7 +102,7 @@ index 61f2747..8dabe15 100644
      };
  
      err = vmaf_init(&s->vmaf, cfg);
-@@ -1498,6 +1516,10 @@ static const AVOption libvmaf_vulkan_options[] = {
+@@ -1581,6 +1599,10 @@ static const AVOption libvmaf_vulkan_options[] = {
                    OFFSET(model_cfg), AV_OPT_TYPE_STRING, {.str="version=vmaf_v0.6.1"}, 0, 1, VK_FLAGS},
      {"feature",   "Set the feature to be used for computing vmaf.",
                    OFFSET(feature_cfg), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, VK_FLAGS},
@@ -113,7 +113,7 @@ index 61f2747..8dabe15 100644
      { NULL }
  };
  #undef VK_FLAGS
-@@ -1712,6 +1734,8 @@ static int config_props_vulkan(AVFilterLink *outlink)
+@@ -1795,6 +1817,8 @@ static int config_props_vulkan(AVFilterLink *outlink)
          .log_level = log_level_map(av_log_get_level()),
          .n_subsample = s->n_subsample,
          .n_threads = s->n_threads,
@@ -122,7 +122,7 @@ index 61f2747..8dabe15 100644
      };
      err = vmaf_init(&s->vmaf, cfg);
      if (err)
-@@ -1777,6 +1801,10 @@ static const AVOption libvmaf_metal_options[] = {
+@@ -1860,6 +1884,10 @@ static const AVOption libvmaf_metal_options[] = {
                    OFFSET(model_cfg), AV_OPT_TYPE_STRING, {.str="version=vmaf_v0.6.1"}, 0, 1, MTL_FLAGS},
      {"feature",   "Set the feature to be used for computing vmaf.",
                    OFFSET(feature_cfg), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, MTL_FLAGS},
@@ -133,7 +133,7 @@ index 61f2747..8dabe15 100644
      { NULL }
  };
  #undef MTL_FLAGS
-@@ -1974,6 +2002,8 @@ static int config_props_metal(AVFilterLink *outlink)
+@@ -2057,6 +2085,8 @@ static int config_props_metal(AVFilterLink *outlink)
          .log_level = log_level_map(av_log_get_level()),
          .n_subsample = s->n_subsample,
          .n_threads = s->n_threads,
@@ -142,6 +142,3 @@ index 61f2747..8dabe15 100644
      };
      err = vmaf_init(&s->vmaf, cfg);
      if (err)
--- 
-2.54.0
-

@@ -19376,6 +19376,13 @@ ADRs affected: 0251, 0331, 0341, 0353, 0365, 0394, 0396, 0397, 0403.
     T-PYTHON-LOCAL-EXPLAINER-HACKY.
 
 
+- Agent-state cleanup now inventories by default and requires `--apply` with
+  exact `--worktree` paths before removing eligible clean checkouts. It preserves
+  modified, untracked and ignored files, active or unknown owners, detached work
+  without preserving refs, and all stashes and branches. Failed removal restores
+  the original owner lock (ADR-1239).
+
+
 - Fixed `Required Checks Aggregator` workflow timing out at 30 minutes
   while CI queue depth pushed sibling workflows past 60+ minutes wall-clock.
   Bumped poll deadline from 30 → 90 minutes and job timeout from 35 → 100
@@ -19583,6 +19590,11 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
 
 
 - **CRITICAL**: AVX-512 float convolution dispatch from [#1261](https://github.com/VMAFx/vmafx/pull/1261) (ADR-0504) reads past the row buffer when row width isn't a multiple of 16 floats (64 bytes). Surfaces as `munmap_chunk(): invalid pointer` / SIGABRT in `speed_temporal` which calls `vif_filter1d_s` at downscaled widths like 45 (= 360 >> 3) on portrait sources. Guard the three AVX-512 dispatch sites in `core/src/feature/vif_tools.c` with `(w % 16) == 0` — narrower rows fall through to the AVX2 8-wide path. Caught by the CHUG re-extract failing with SIGABRT on every portrait clip after the dispatch landed in master.
+
+
+- Reject unpinned external container images that bypassed the central base-image
+  guard through `FROM`, `COPY --from`, platform/other flags or instruction case.
+  Preserve exact local image consumers and test mirror repair in isolated fixtures.
 
 
 - Bash strict-mode sweep across 9 in-tree shell scripts: promote `set -eu` to `set -euo pipefail`, add script-wide `mktemp` cleanup traps, add `LC_ALL=C` to filename-numeric sorts. Closes residual gaps left by PRs #318 (perf/release scripts) and #350 (dev-mcp-entrypoint, sycl-bench-env). Touched: `scripts/run_unittests.sh`, `scripts/ai/fetch-tiny-blobs.sh`, `dev/scripts/smoke-probe-loop.sh`, `scripts/ci/check-agent-worktree-drift.sh` + self-test, `scripts/ci/check-adr-numbering.sh`, `scripts/ci/check-dispatch-registry.sh`, `scripts/adr/next-free.sh`, `tools/ensemble-training-kit/_platform_detect.sh` (documented as deliberately sourced-without-strict-mode). See [ADR-0899](docs/adr/0899-bash-strict-mode-sweep.md).
@@ -19821,6 +19833,12 @@ Regression coverage: new tail-only bit-exact tests in
 `core/test/test_moment_simd.c` (`test_avx2_tail_bitexact`,
 `test_avx512_tail_bitexact`, `test_neon_tail_bitexact`); the existing SVE2
 relative-tolerance tests cover the FCVT fix on SVE2 hardware/emulation.
+
+
+- Recognize the root `build-config.env` as a dependency manifest for bot PRs,
+  including updates to its Dockerfile mirrors. Human changes on non-bot
+  branches, mixed source changes, nested build configs, and unrelated env
+  files retain the documentation gates.
 
 
 - Fix NEON `neon_any_nonzero_s32` uint64-truncation bug that incorrectly
@@ -21443,6 +21461,15 @@ uses the kernel-template readback pair: `integer_psnr_cuda`, `integer_ssim_cuda`
   File: `core/src/feature/cuda/integer_adm/adm_cm.cu`.
 
 
+- **Documentation links:** repaired 41 relocated references across 25 current topic
+  pages after ADR renumbering and source-tree moves. Relocated source links open
+  the canonical repository from the published site. Seven other dead links retain
+  their original paths as explicitly unavailable evidence or removed Vulkan
+  history, with links to the retirement decision. The tiny-AI overview identifies
+  v5 as a deferred proposal instead of linking to an unshipped model card;
+  intentional scaffolds and historical findings remain intact.
+
+
 - **Every dependency PR failed the documentation gates because the classifier
   diffed the wrong range.** `scripts/ci/classify-dependency-pr.sh` compared
   `base_sha..head_sha` with two dots, but GitHub's `pull_request.base.sha` is the
@@ -21568,6 +21595,13 @@ discover Arc GPUs. ADR-0528.
   character device when it is present (non-NVIDIA hosts skip this check via
   `|| true` short-circuit) and raising `start_period` from 20 s to 45 s to
   accommodate slower host CUDA-init sequences.
+
+
+- **Dev container builds:** make pipeline failure handling explicit per stage,
+  export the ccache directory to both libvmaf configure and compile commands,
+  and use explicit build paths before cleanup. Golden-test collection failures
+  retain their diagnostics; Go artifact counting handles filenames directly and
+  the artifact stage returns to the unprivileged build user.
 
 
 ### Fixed
@@ -21752,6 +21786,12 @@ Fix two broken intra-doc links pointing to nonexistent docs/adr/0720-sunset-floa
 (correct target is ADR-0865); add 9 orphaned metric pages and 2 orphaned MCP pages to
 the mkdocs.yml nav (ansnr, motion, ms-ssim, psnr-hvs, speed_qa, ssim, tad, vif, vmaf-neg,
 mcp/backends, mcp/http-transport).
+
+
+- Repair broken developer and usage guide links using canonical ADR IDs, backend
+  overview pages, and source paths; retain historical local-only references.
+- Block selected documentation pushes when MkDocs is unavailable, while direct
+  non-doc checks continue to skip without requiring the docs toolchain.
 
 
 Fixed the MkDocs strict-mode anchor warnings that blocked the GitHub Pages
@@ -21997,6 +22037,13 @@ linear-scan overhead on every extractor lookup; the first matching entry was
 always returned so feature availability was never affected.
 
 
+- Update the FFmpeg refresh guide to use the shared release configuration and
+  disposable replay tooling. Correct the reversed PSNR values and unsupported
+  frame-alignment diagnosis in the upstream issue research and status ledger.
+- Keep direct documentation validation selected for large diffs and Git
+  comparison failures; cover both cases in the hook regression suite.
+
+
 - ffmpeg: document the `libvmaf` filter input-ordering convention
   (`[0:v]` = distorted / main, `[1:v]` = reference — the OPPOSITE
   of the Python runner and `vmaf` CLI which take `(ref, dis)`).
@@ -22022,6 +22069,14 @@ always returned so feature availability was never affected.
   to mirror 0005/0006. Series replays clean against pristine `n8.1`;
   `vf_libvmaf_tune.o` builds green. Discovery: PR #415 / ADR-0317.
   Originating patch ADR: ADR-0312.
+
+
+- Fix FFmpeg patch 0018 replay after patch 0005 already introduced percentile
+  pooling. Preserve the feature guard and mean fallback, and apply the full
+  stack through `series.txt` in the documented command.
+
+
+- Refresh and verify the complete FFmpeg patch stack in local hooks and required CI; discover stable upstream releases daily, centralize the release configuration, and preserve existing checkouts on failure.
 
 
 - FFmpeg Integration CI: removed stale `ffmpeg-vulkan` job that failed with
@@ -22332,6 +22387,14 @@ is addressed.
   - `core/include/libvmaf/libvmaf_metal.h` & `docs/backends/metal/index.md`: documented real synchronous CPU `memcpy` behavior for `vmaf_metal_picture_import` and recorded Deferred row for true zero-copy GPU texture binding (`GAP-METAL-IOSURFACE-NOT-TRUE-ZERO-COPY`).
   - `docs/backends/metal/index.md` & `docs/metrics/features.md`: truthfully recorded SpEED family (`speed_chroma`, `speed_temporal`) as missing on Metal with CUDA porting reference and LOC estimate, and cleaned up stale path and Vulkan references in Metal docs (`GAP-METAL-MISSING-SPEED-TWINS`).
   - `docs/state.md`: tracked all 4 gaps in the Metal bucket across Closed and Deferred sections.
+
+
+- Refresh ADR navigation and all tag indexes from their sources, remove duplicate
+  navigation entries, and restore the missing ADR-1123 index row.
+- Check generated metadata freshness and fragment coverage locally and in required
+  Docs CI; reject malformed sentinel pairs before navigation writes.
+- Preserve readable generated titles and tag names, and skip Pages deployment
+  when the impact plan produced no documentation artifact.
 
 
 - **The Netflix golden YUV fixtures are no longer reachable by `git clean -xfd`.**
@@ -23256,6 +23319,12 @@ overwrite; added an ASan regression test
   `VmafQualityRunner`. The underlying runner was sunset in ADR-0749 / PR #87;
   this stub closes the T-LEGACY-RUNNER-STUB-MISSING-2026-05-29 import-failure
   gap that PR #213 surfaced but did not merge.
+
+
+- Make development-container Level Zero downloads consume `LEVEL_ZERO_VERSION`
+  from `build-config.env`, with tests for real command consumption and drift.
+  Renovate now updates the shared loader setting; remove its obsolete ROCm
+  literal-version manager because the central image pins already own ROCm.
 
 
 - **`core/src/svm.cpp` parser now rejects header rows that depend on
@@ -24812,6 +24881,13 @@ Fix 23 pre-existing test failures across three packages.
   file listed 13–17 three times over. Renumbered 1–25.
 
 
+- Confine Go predictor model-card reads to the model directory, retaining
+  registry-resolved model names and known-stub fallback when an optional card is absent or escapes via a symlink.
+- Require the Go security and test job before merging; route its native and
+  ONNX checks from Go/core/model changes while documentation-only changes
+  report an explicit skip of the heavy work (ADR-1238).
+
+
 Fix `vmaf-tune predict --use-saliency` so saliency mean/variance are
 actually populated from the saliency ONNX path, and preserve row-provided
 saliency / signalstats columns during predictor training.
@@ -25115,6 +25191,9 @@ Fix three RC-gate failures surfaced by the pre-release validation matrix:
   shipped version — is stricter than before rather than looser.
 
 
+- Route shared build configuration changes through full CI validation and let node publication consume the generated FFmpeg release default.
+
+
 ### Fixed
 
 - Correct two stale README badges: C++ standard badge now reads `C++23`
@@ -25223,6 +25302,11 @@ the draft.
      once onto that same one-at-a-time queue. Now 3, with a branch limit of 5.
   4. **No dependency dashboard**, so Renovate's own failures were invisible —
      there was no Renovate issue in the tracker at all. Now enabled.
+
+
+- Restore file discovery for every Renovate custom manager by removing duplicate
+  regex delimiters. Add positive selection fixtures for shared build configuration
+  and Dockerfile mirrors so schema-valid patterns cannot silently disable updates.
 
 
 - **Renovate config:** fixed an invalid schedule (`before 6am on weekdays` →
@@ -27660,6 +27744,12 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   last one in its list failed. GitHub runs `shell: cmd` with `/V:OFF`, so the
   step reported only the final executable's exit code; each test is now
   checked with `|| exit /b 1`. `test_output` was also added to that list.
+
+
+- Keep installed Git hooks functional after an installer worktree is removed.
+- Activate configured pre-push and commit-message checks in both local modes;
+  run MkDocs independently of first-push and draft PR-body skips.
+- Refuse unknown custom hooks and preserve managed replacements in unique backups.
 
 
 - **`y4m_convert_411_422jpeg` 1-byte heap-buffer-overflow on

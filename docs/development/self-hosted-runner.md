@@ -7,11 +7,14 @@ plus future SYCL / CUDA-specific suites) require a self-hosted runner
 that exposes both NVIDIA and Intel GPUs alongside an AVX-512-capable
 CPU. Hosted GitHub runners can't reach those code paths.
 
-Until a runner is enrolled, every `runs-on: [self-hosted, linux, gpu-full]`
-job queues forever. This guide pins the enrollment steps so the next
-operator can stand a runner up in ~10 minutes.
+The `coverage-gpu` job runs only when the repository variable
+`GPU_COVERAGE_ENABLED` is `true` and the PR is not a draft. Enroll a runner
+with the matching labels before enabling that variable; an enabled job
+waits for a matching runner. This guide describes that enrollment.
 
-Tracked as backlog item T7-3.
+Historical backlog reference: T7-3. The local `.workingdir2/BACKLOG.md`
+notebook is not part of the published documentation; the linked workflow
+is the current configuration source.
 
 ## Required labels
 
@@ -157,7 +160,8 @@ rm -rf ~/actions-runner
 
 ## References
 
-- [BACKLOG T7-3](../../.workingdir2/BACKLOG.md) — backlog row.
+- Historical T7-3 reference: `.workingdir2/BACKLOG.md` (local notebook,
+  not shipped with this documentation).
 - [`tests-and-quality-gates.yml` § coverage-gpu](../../.github/workflows/tests-and-quality-gates.yml) —
   the first consumer of the `gpu-full` label.
 - [GitHub Actions: self-hosted runners](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners)

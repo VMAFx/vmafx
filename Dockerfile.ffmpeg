@@ -7,12 +7,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends pkg-config && \
     rm -rf /var/lib/apt/lists/*
 
 ARG FFMPEG_TAG=n9.0.1
+ARG FFMPEG_REMOTE=https://github.com/FFmpeg/FFmpeg.git
 # Matches the main Dockerfile NVCC_FLAGS: Turing + Ampere + Hopper +
 # Blackwell consumer. CUDA 13 removed sm_50/60/70.
 ARG NVCC_FLAGS="-gencode arch=compute_75,code=sm_75 -gencode arch=compute_80,code=sm_80 -gencode arch=compute_90,code=sm_90 -gencode arch=compute_120,code=sm_120 -gencode arch=compute_120,code=compute_120 -O2"
 
 # get ffmpeg
-RUN wget -q "https://github.com/FFmpeg/FFmpeg/archive/${FFMPEG_TAG}.zip" && \
+RUN wget -q "${FFMPEG_REMOTE%.git}/archive/${FFMPEG_TAG}.zip" && \
     unzip -q "${FFMPEG_TAG}.zip"
 
 # apply libvmaf GPU filter patch (SYCL)

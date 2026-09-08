@@ -146,8 +146,8 @@ quality grades. Establish NEG-specific operating points from your encoder sweep 
 
 ## Technical references
 
-- ADR-0616: [VMAF NEG integration — design](adr/../adr/0616-vmaf-neg-integration.md)
-- ADR-0622: [VMAF NEG integration — implementation](adr/../adr/0622-vmaf-neg-integration-impl.md)
+- ADR-0616: [VMAF NEG integration — design](../adr/0616-vmaf-neg-integration.md)
+- ADR-0622: [VMAF NEG integration — implementation](../adr/0622-vmaf-neg-integration-impl.md)
 - Netflix Tech Blog: "Toward a Better Quality Metric for Streaming" (describes NEG
   motivation; search Netflix Tech Blog for the article).
 - `model/vmaf_v0.6.1neg.json` — in-tree SVM model (HD).

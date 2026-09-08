@@ -120,7 +120,7 @@ target. The Meson build discovers the targets in this order:
 Steps 2 and 3 only succeed when the build host can see a real GPU.
 Inside a no-GPU build sandbox (BuildKit, CI) both probes return
 empty and the build falls through to step 4. The fallback was
-`gfx90a` only until [ADR-0546](../../adr/0546-audit-cleanup-bundle.md);
+`gfx90a` only until [ADR-0561](../../adr/0561-hip-gfx-targets-fallback-widening.md);
 that narrow fallback shipped libvmaf.so binaries that failed at
 runtime on the fork's own dev host (AMD Raphael APU `gfx1036`) with
 `hip_fatbin.cpp: No compatible code objects found for: gfx1030`.
@@ -162,7 +162,7 @@ explicit opt-in:
 ```
 
 FFmpeg backend selector: `hip_device=N` (patch `0011-libvmaf-wire-hip-backend-selector.patch`
-in `ffmpeg-patches/`; see [ADR-0380](../../adr/0380-ffmpeg-hip-backend-selector.md)).
+in `ffmpeg-patches/`; see [ADR-0380](../../adr/0380-ffmpeg-patches-hip-backend-selector.md)).
 
 ## Source layout
 
@@ -276,13 +276,15 @@ Each returns `-ENOSYS` at `init()`. Tracked in
   (PR #38) — ANSNR is no longer a registered feature on any backend.
 - [ADR-0267](../../adr/0267-hip-sixth-consumer-motion-v2.md) —
   sixth consumer (`motion_v2_hip`).
-- [ADR-0372](../../adr/0372-hip-batch1-runtime-kernels.md) — batch-1 kernels.
-- [ADR-0373](../../adr/0373-hip-batch2-runtime-kernels.md) — batch-2 kernels.
-- [ADR-0375](../../adr/0375-hip-batch3-runtime-kernels.md) — batch-3 kernels.
-- [ADR-0377](../../adr/0377-hip-batch4-runtime-kernels.md) — batch-4 kernels.
-- [ADR-0379](../../adr/0379-hip-float-vif.md) — `float_vif_hip`.
-- [ADR-0380](../../adr/0380-ffmpeg-hip-backend-selector.md) — FFmpeg selector.
-- [ADR-0468](../../adr/0468-hip-float-adm.md) — `float_adm_hip`.
+- [ADR-0372](../../adr/0372-hip-batch1-integer-psnr-float-ansnr.md) — batch-1 kernels.
+- [ADR-0373](../../adr/0373-hip-batch2-float-motion.md) — batch-2 kernels.
+- [ADR-0375](../../adr/0375-hip-batch3-float-moment-float-ssim.md) — batch-3 kernels.
+- [ADR-0377](../../adr/0377-hip-batch4-ciede-motion-v2.md) — batch-4 kernels.
+- `docs/adr/0379-hip-float-vif.md` — unavailable historical reference
+  for `float_vif_hip`; [ADR-0592](../../adr/0592-hip-float-vif-stub-removal.md)
+  records the later removal of its weak stub after the real kernel shipped.
+- [ADR-0380](../../adr/0380-ffmpeg-patches-hip-backend-selector.md) — FFmpeg selector.
+- [ADR-0468](../../adr/0468-hip-float-adm-real-kernel.md) — `float_adm_hip`.
 - [ADR-0523](../../adr/0523-hip-integer-motion-extractor-registration.md) —
   register `vmaf_fex_integer_motion_hip`.
 - [ADR-0533](../../adr/0533-hip-all-extractors-registration-sweep.md) —

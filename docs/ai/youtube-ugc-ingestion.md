@@ -4,7 +4,7 @@
 The fork's `nr_metric_v1` tiny no-reference VQA model is trained
 on a union of MOS-corpus shards. This page documents the
 YouTube UGC shard ingestion adapter
-(`ai/scripts/youtube_ugc_to_corpus_jsonl.py`, ADR-0368).
+(`ai/scripts/youtube_ugc_to_corpus_jsonl.py`, ADR-0413).
 
 ## What YouTube UGC is
 
@@ -26,7 +26,7 @@ on the same 1.0-5.0 Likert scale as LSVQ / KonViD.
 
 Run this adapter when you want to (re-)build the YouTube UGC
 MOS-corpus JSONL shard the trainer consumes alongside LSVQ
-(ADR-0333), KonViD-150k (ADR-0325 Phase 2), and BVI-DVC
+(ADR-0367), KonViD-150k (ADR-0325 Phase 2), and BVI-DVC
 (ADR-0310).
 
 ## Prerequisites
@@ -202,9 +202,9 @@ attribution travelling alongside.
 
 ## Related
 
-- [ADR-0368: YouTube UGC corpus ingestion](../adr/0368-youtube-ugc-corpus-ingestion.md).
+- [ADR-0413: YouTube UGC corpus ingestion](../adr/0413-youtube-ugc-corpus-ingestion.md).
 - [Research-0091: YouTube UGC corpus feasibility](../research/0091-youtube-ugc-corpus-feasibility.md).
-- [ADR-0333](../adr/0333-lsvq-corpus-ingestion.md) (LSVQ) —
+- [ADR-0367](../adr/0367-lsvq-corpus-ingestion.md) (LSVQ) —
   same adapter shape; this YouTube UGC adapter is a near-mirror
   modulo dataset specifics + the synthesised-bucket-URL path.
 - ADR-0325 Phase 2 (KonViD-150k) — schema co-author.

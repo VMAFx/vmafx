@@ -140,8 +140,8 @@ on the host.
 
 - [`docs/backends/vulkan/overview.md`](../backends/vulkan/overview.md)
   — backend overview, kernel matrix, build flags.
-- [`core/include/libvmaf/libvmaf_vulkan.h`](../../core/include/libvmaf/libvmaf_vulkan.h)
-  — authoritative API surface.
+- `core/include/libvmaf/libvmaf_vulkan.h` — historical API header,
+  removed in [ADR-0726](../adr/0726-drop-vulkan-backend.md).
 - [`docs/usage/ffmpeg.md`](../usage/ffmpeg.md) — `vf_libvmaf_vulkan`
   filter that consumes the import API end-to-end.
 - [ADR-0184](../adr/0184-vulkan-image-import-scaffold.md) /

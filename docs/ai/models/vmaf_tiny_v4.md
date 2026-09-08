@@ -16,7 +16,7 @@ over v3's PLCC = 0.9986 ± 0.0015 baseline?**
 > std). Production default stays `vmaf_tiny_v2`; the higher-tier
 > opt-in stays v3. Pick v4 when you want the absolute top of the
 > measured ladder and don't mind the ~3x ONNX bytes vs v3. See
-> [ADR-0242](../../adr/0242-vmaf-tiny-v4-mlp-large.md) for the
+> [ADR-0390](../../adr/0390-vmaf-tiny-v4-mlp-large.md) for the
 > "ladder stops here" rationale.
 
 ## What the output means
@@ -221,13 +221,13 @@ python ai/scripts/measure_quant_drop.py model/tiny/vmaf_tiny_v4.onnx
 - Same canonical-6 input contract as v2 / v3 — no new features. v4's quality ceiling is the canonical-6 information bottleneck, not its arch.
 - Trained 4-corpus (NF Public + KoNViD + BVI-DVC A+B+C+D, 330 499 rows). Out-of-distribution content (HDR, 8K, screen content, animation outside the corpora) inherits the corpus's coverage limitations.
 - Single-seed LOSO; v3 also single-seed. v2 was 5-seed. A multi-seed v4 LOSO study (5+ seeds) would tighten the variance estimate but is not gating; the saturation evidence is decisive enough.
-- The architecture ladder **stops here**. Future tiny-VMAF gains require *regime change* (richer features, larger corpus, ensembles, distillation), not deeper / wider MLPs. See ADR-0242.
+- The architecture ladder **stops here**. Future tiny-VMAF gains require *regime change* (richer features, larger corpus, ensembles, distillation), not deeper / wider MLPs. See ADR-0390.
 
 ## Related
 
 - [`vmaf_tiny_v2`](vmaf_tiny_v2.md) — production default.
 - [`vmaf_tiny_v3`](vmaf_tiny_v3.md) — opt-in higher-tier, recommended for most opt-in uses.
-- [ADR-0241](../../adr/0241-vmaf-tiny-v3-mlp-medium.md) — v3 ship + ladder candidate.
-- [ADR-0242](../../adr/0242-vmaf-tiny-v4-mlp-large.md) — v4 ship + ladder stops here.
+- [ADR-0389](../../adr/0389-vmaf-tiny-v3-mlp-medium.md) — v3 ship + ladder candidate.
+- [ADR-0390](../../adr/0390-vmaf-tiny-v4-mlp-large.md) — v4 ship + ladder stops here.
 - [Research-0048](../../research/0048-vmaf-tiny-v4-mlp-large-evaluation.md) — full evaluation.
 - [`docs/ai/inference.md`](../inference.md) — runtime / dispatch table.

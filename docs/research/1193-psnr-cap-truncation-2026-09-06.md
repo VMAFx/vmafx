@@ -6,7 +6,8 @@ Companion to [ADR-1193](../adr/1193-psnr-uncapped-option.md). Closes
 
 ## The question
 
-Netflix/vmaf#1109 reports "PSNR value is capped". The
+Netflix/vmaf#1109 reports both an unexpectedly high PSNR/VMAF result and
+truncation of high PSNR values. The
 [ADR-1166 harvest](1166-upstream-issue-harvest-2026-09-03.md) verified the
 report against this tree and left a `docs/state.md` row rather than a fix,
 because closing it needs a new user-visible option surface. This digest
@@ -106,11 +107,18 @@ divergence in exchange for nothing, since the option changes the *value* of
 
 ## Scope correction carried forward
 
-The upstream reporter's concrete symptom — 28 dB where 72 dB was expected —
-is **not** this defect and must not be re-attributed to it. A `MIN` can only
-lower a value; a reading *below* expectation is a frame-alignment problem in
-the caller's decode graph. `docs/state.md` already records that as a separate
-"Confirmed not-affected — wrong diagnosis" row, and it stays there.
+Correction verified against the upstream discussion on 2026-09-08: the reporter
+observed **72 dB from libvmaf where FFmpeg's `psnr` filter reported 28 dB**.
+The previous version of this digest reversed those values and stated a
+frame-alignment diagnosis without evidence. An upper cap alone cannot raise
+28 to 72, so the truncation fix does not establish a fix for that symptom.
+
+A maintainer suggested testing timestamp alignment, but the reporter
+[rejected that explanation](https://github.com/Netflix/vmaf/issues/1109#issuecomment-1309823804)
+because each stream repeats a static image. The original input/filtergraph
+combination has not been reproduced in this investigation, and its cause
+remains unresolved. The local cap regression and measurements above establish
+only the separate truncation behavior.
 
 ## Cross-backend status
 
@@ -128,7 +136,7 @@ unchanged because the default path is unchanged.
 
 ## References
 
-- Netflix/vmaf#1109.
+- [Netflix/vmaf#1109](https://github.com/Netflix/vmaf/issues/1109).
 - `docs/state.md` — `T-UPSTREAM-1109-PSNR-CAP-TRUNCATES-2026-09-03`.
 - [ADR-1166](../adr/1166-upstream-issue-harvest.md) / [Research 1166](1166-upstream-issue-harvest-2026-09-03.md) — the harvest that verified the report.
 - [ADR-1193](../adr/1193-psnr-uncapped-option.md) — the decision.
