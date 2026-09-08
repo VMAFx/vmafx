@@ -49413,3 +49413,42 @@ Invariants a future rebase must not undo:
 5. **`HSA_OVERRIDE_GFX_VERSION` stays out of `dev/docker-compose.yml`.**
    ROCm 10 supports `gfx1036` natively; re-adding the `10.3.0` alias would map
    the agent to `gfx1030` while meson compiles `gfx1036` code objects.
+## ADR-1219 — CAMBI TVI bisection and border rules on the HIP/Metal twins (2026-09-07)
+
+Branch: `fix/gpu-cambi-tvi-shared-bisection`.
+
+1. **Never re-derive the TVI table in a twin — call
+   `vmaf_cambi_init_tvi_and_vlt()`.** It is host-side scalar code that runs once
+   in `init()`, so there is no performance argument for a per-backend copy, and
+   the CPU's bisection is subtle enough that two independent hand-ports both got
+   it wrong in the same way: they searched the *negated*
+   `tvi_hard_threshold_condition` and seeded from luma 0 instead of
+   `luma_range.foot`. The helper also computes `vlt_luma` and validates the
+   derived band, so a twin that calls it cannot drift on any of the three.
+
+2. **`cambi.c::filter_mode` leaves output rows 0 and `height-1` UNFILTERED.**
+   Its vertical writeback sits under `if (i > 1)` and covers rows
+   `1 .. height-2`; the horizontal results for the two border rows live only in
+   the 3-row ring buffer and are never written back. A GPU twin that does a
+   clean separable H-then-V pass over all rows is therefore wrong at the top and
+   bottom edge. The guard is
+   `if (axis == 1 && (y == 0 || y >= height - 1)) return;` — the vertical pass
+   reads the H result from a scratch buffer and writes into the buffer that
+   still holds the pre-filter image, so returning early preserves it exactly.
+
+3. **`get_spatial_mask_for_index()` ZERO-PADS its 7x7 box sum; it does not
+   clamp.** The summed-area table is `memset` to zero, `dp_width` carries
+   `2 * pad_size + 1` extra columns, and `deriv_valid = (i < height)` gates the
+   row dimension, so an out-of-frame tap adds nothing. Clamping each tap to the
+   border pixel counts that pixel's zero-derivative flag up to three extra times
+   per axis and flips `box_sum > mask_index` on a band of border pixels.
+
+4. **A CAMBI fixture must actually band.** CAMBI counts neighbour differences of
+   `1 .. num_diffs` (4 at the default `max_log_contrast = 2`). The HIP and Metal
+   parity fixtures were 8-bit gradients stepping 32 code levels every 32
+   columns — an edge, not banding — and scored `0.0` on the CPU as well, so the
+   parity assertion was `0 == 0` and hid a total score collapse. Use a 10-bit
+   gradient of one code level every two columns held inside the TVI band
+   (200..900), and assert the CPU score is non-degenerate before comparing. The
+   CUDA and SYCL gradient fixtures are still degenerate the same way; only
+   CUDA's second *textured* fixture asserts anything.

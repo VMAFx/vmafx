@@ -34,7 +34,7 @@
  * places=4 (1e-4) ADR-0214 gate bounds any residual.
  *
  * Both backends require >= 216 on at least one dimension — see
- * CAMBI_MIN_WIDTH_HEIGHT in cambi.c. 256x256 is comfortably above the
+ * CAMBI_MIN_WIDTH_HEIGHT in cambi.c. 640x480 is comfortably above the
  * threshold and still cheap to run in CI.
  *
  * Skip behaviour: -ENODEV from `vmaf_metal_state_init` -> clean skip on
@@ -61,31 +61,43 @@
 #include "libvmaf/picture.h"
 #include "feature/feature_extractor.h"
 
-/* CAMBI requires >= 216 on at least one dimension; 256x256 is safely above. */
-#define FIXTURE_W 256u
-#define FIXTURE_H 256u
-#define FIXTURE_BPC 8u
+/* CAMBI requires >= 216 on at least one dimension; 640x480 is safely above. */
+#define FIXTURE_W 640u
+#define FIXTURE_H 480u
+#define FIXTURE_BPC 10u
 #define PARITY_TOL 1e-4
 
+/* 10-bit banding gradient: one code level every two columns, held in the
+ * 200..900 range so the whole plane sits inside the TVI luma band that CAMBI
+ * actually scores.
+ *
+ * The previous fixture was an 8-bit gradient stepping 32 levels every 32
+ * columns. CAMBI only counts neighbour differences of 1..num_diffs (4 at the
+ * default max_log_contrast = 2), so a 32-level step is an edge, not banding:
+ * that fixture scored **exactly 0.0 on both the CPU and the twin**, and the
+ * parity assertion was `0 == 0`. It is why the twin's TVI-table defect — which
+ * collapses the score to zero — survived. This fixture scores 5.846154 on the
+ * CPU; the assertion below refuses to run against a degenerate score so the
+ * gate cannot silently rot back. ADR-1219. */
 static int fill_fixture(VmafPicture *pic, unsigned salt)
 {
     int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
     if (err)
         return err;
-    /* Step-function quantised gradient — classic banding artefact pattern,
-     * so CAMBI emits a non-trivial score in both backends. */
-    uint8_t *y = (uint8_t *)pic->data[0];
+    uint16_t *y = (uint16_t *)pic->data[0];
+    const unsigned ystride = pic->stride[0] / 2u;
     for (unsigned row = 0; row < pic->h[0]; row++) {
         for (unsigned col = 0; col < pic->w[0]; col++) {
-            const unsigned base = (col / 32u) * 32u + salt * 4u;
-            y[row * pic->stride[0] + col] = (uint8_t)(base & 0xFFu);
+            const unsigned base = 200u + (col / 2u) + salt;
+            y[row * ystride + col] = (uint16_t)(base > 900u ? 900u : base);
         }
     }
     for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
-        }
+        uint16_t *plane = (uint16_t *)pic->data[p];
+        const unsigned cstride = pic->stride[p] / 2u;
+        for (unsigned row = 0; row < pic->h[p]; row++)
+            for (unsigned col = 0; col < pic->w[p]; col++)
+                plane[row * cstride + col] = 512u;
     }
     return 0;
 }
@@ -248,6 +260,11 @@ static char *test_cambi_cpu_metal_parity(void)
     msg = run_metal_cambi(&metal_score, &skipped);
     if (msg)
         return msg;
+    /* Guard against the degenerate fixture this test used to carry: a CAMBI
+     * score of 0 makes the parity assertion vacuous. ADR-1219. */
+    mu_assert("CPU CAMBI score is degenerate — the fixture no longer produces banding",
+              cpu_score > 1.0);
+
     if (skipped)
         return NULL;
 
@@ -269,7 +286,7 @@ static char *test_cambi_cpu_metal_parity(void)
  * change. Both backends must accept the option and land on the same key and
  * the same score.
  *
- * What this does NOT cover: the fixture is 256x256, far below the 1920*1080
+ * What this does NOT cover: the fixture is 640x480, far below the 1920*1080
  * pixel threshold, so `hrs=1080` resolves to *inactive* in both `cambi.c` and
  * the Metal twin — the halved window and the extra pre-scale-0 decimation are
  * not exercised here. The sibling CUDA/SYCL parity tests have the same limit
