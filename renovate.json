@@ -271,6 +271,18 @@
   "customManagers": [
     {
       "customType": "regex",
+      "description": "One envtest tool release owned by build-config.env and consumed by Make and Go CI (ADR-1231).",
+      "managerFilePatterns": [
+        "/^build-config\\.env$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)SETUP_ENVTEST_VERSION=\"(?<currentValue>v[0-9.]+)\""
+      ],
+      "datasourceTemplate": "go",
+      "depNameTemplate": "sigs.k8s.io/controller-runtime/tools/setup-envtest"
+    },
+    {
+      "customType": "regex",
       "description": "Intel compute-runtime (NEO) version in dev/Containerfile. Tracks github.com/intel/compute-runtime releases. See ADR-0605.",
       "managerFilePatterns": [
         "/^dev/Containerfile$/",

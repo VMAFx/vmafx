@@ -508,3 +508,15 @@ Preserve the real linked-worktree hook regression: Git itself exports `GIT_DIR`,
 so a clean parent shell is insufficient. The old-command control may mutate
 only a disposable caller; the fixed helper must preserve every shared Git and
 linked-worktree file, including both indexes and staged/unstaged work.
+
+## Shared envtest installer (ADR-1231)
+
+`setup-envtest.sh` is the executable consumer of the envtest tool/version
+fields in `build-config.env`. Both Make and Go CI call it; keep the Go module
+metadata check, direct GOBIN/first-GOPATH executable path, and installed-only
+`path`/`env` lookup. Only `install` may fetch assets; inherited
+`ENVTEST_USE_ENV` must not bypass configured selection. Do not restore
+`@latest`, PATH-existence acceptance or a second Kubernetes default in CI.
+Preserve install/asset failures and shell-quoted export output, and keep
+`tests/test_envtest_single_source.py` wired to commit/push checks. See
+[Research-2058](../../docs/research/2058-envtest-version-owner.md).
