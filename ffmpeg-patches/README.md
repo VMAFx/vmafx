@@ -75,6 +75,12 @@ Local patches against FFmpeg **n9.0.1** for integrating this VMAF fork into
   Symmetric with the `cpumask`/`gpumask` options added in ADR-0576 (patch
   0014).
 
+- **`0018-libvmaf-map-percentile-pool-methods.patch`** — guards the
+  percentile mappings already introduced in patch 0005 with
+  `VMAF_HAVE_PERCENTILE_POOLING` and documents the pool options. Keep its
+  context relative to all 17 preceding patches; adding the same mapper
+  entries twice breaks the cumulative replay.
+
 Every patch is guarded by `check_pkg_config` so it degrades gracefully when
 libvmaf was built without the relevant feature (`-Denable_dnn`, `-Denable_sycl`,
 `-Denable_vulkan`, `-Denable_cuda`, `-Denable_hip`).
@@ -114,9 +120,10 @@ hardware-frame import.
 
 ```bash
 cd /path/to/ffmpeg    # must be at tag n9.0.1
-for p in /path/to/vmaf/ffmpeg-patches/000*-*.patch; do
-    git am --3way "$p" || break
-done
+while IFS= read -r patch; do
+    case "$patch" in ""|\#*) continue ;; esac
+    git am --3way "/path/to/vmaf/ffmpeg-patches/$patch" || exit 1
+done < /path/to/vmaf/ffmpeg-patches/series.txt
 ```
 
 Or via the helper skill: `/ffmpeg-apply-patches /path/to/ffmpeg`.

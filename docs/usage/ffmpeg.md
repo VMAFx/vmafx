@@ -75,12 +75,17 @@ libvmaf=model=version=vmaf_v0.6.1:log_path=/dev/stdout:log_fmt=json:n_threads=4
 | `n_threads` | integer | `0` (library default) | Number of worker threads libvmaf is allowed to spawn. |
 | `n_subsample` | integer `≥ 1` | `1` | Compute VMAF on every Nth frame only — useful for long-clip QC. |
 
+Percentile pooling is available when the libvmaf headers define
+`VMAF_HAVE_PERCENTILE_POOLING`. Apply the complete ordered patch series;
+patch 0018 adds the compatibility guard to the mappings introduced by patch
+0005. Without that macro, percentile strings retain the `mean` fallback.
+
 The filter publishes the final pooled score to FFmpeg's log as
 `VMAF score: <mean>`; the structured log at `log_path` is authoritative.
 
 ### Fork-added options
 
-The fork's `ffmpeg-patches/` series (0001–0017) adds options to
+The fork's `ffmpeg-patches/` series (0001–0018) adds options to
 the `libvmaf` filter beyond the upstream surface — tiny-AI ONNX
 inference, backend selectors for SYCL / CUDA / HIP, a dedicated
 `libvmaf_sycl` filter, and the Pelorus perceptual-weighting reader. (The `libvmaf_vulkan` filter and `vulkan_device`

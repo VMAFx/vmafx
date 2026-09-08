@@ -49650,3 +49650,11 @@ Rebase-sensitive invariants introduced by this change:
    pin Alpine / Arch / Fedora precisely because they are *not* the release
    distro. Unifying their bases would defeat the portability matrix they exist
    to run.
+
+## FFmpeg percentile patch replay (2026-09-08)
+
+Patch 0005 already introduces max and percentile mappings in the shared
+`pool_method_map`. Patch 0018 must apply to that cumulative state and guard
+those existing percentile entries with `VMAF_HAVE_PERCENTILE_POOLING`.
+Do not re-add the mappings in 0018. Replay every entry in `series.txt` against
+a fresh upstream checkout; the old `000*-*.patch` glob missed patches 0010–0018.

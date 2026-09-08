@@ -22016,6 +22016,11 @@ always returned so feature availability was never affected.
   Originating patch ADR: ADR-0312.
 
 
+- Fix FFmpeg patch 0018 replay after patch 0005 already introduced percentile
+  pooling. Preserve the feature guard and mean fallback, and apply the full
+  stack through `series.txt` in the documented command.
+
+
 - FFmpeg Integration CI: removed stale `ffmpeg-vulkan` job that failed with
   `ERROR: Unknown option: "enable_vulkan"` on every push to master. The
   Vulkan backend was dropped in ADR-0726 (PR #47), which removed the
