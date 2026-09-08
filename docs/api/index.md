@@ -71,6 +71,21 @@ Semantic versioning follows the independent VMAFx `vX.Y.Z` stream — see
 stable API that would break source or binary compatibility gets a major
 version bump.
 
+## Feature registration identity
+
+`vmaf_use_feature()` and `vmaf_use_features_from_model()` deduplicate by the
+emitted feature key, including parsed feature parameters. A default motion
+extractor and one with `motion_force_zero=true` both remain registered; their
+scores use separate keys, such as `VMAF_integer_feature_motion2_score` and
+`integer_motion2_force_0`. Equivalent defaults, canonical
+option names and aliases share a registration. Equivalent CPU/GPU twins keep
+the first registered context.
+
+Check registration return values. If allocating comparison keys or growing
+registration storage fails, the call reports `-ENOMEM` and retains previously
+registered contexts. Dictionary ownership remains as described under
+[Feature option dictionary ownership](#ownership-who-frees-the-dictionary).
+
 ## Thread-safety
 
 `VmafContext` itself is **not** re-entrant. A single context's scoring
@@ -339,9 +354,20 @@ A name that matches nothing there is **not** an error — it is a successful
 no-op that returns `0` — and the dictionary is consumed anyway. Only
 `vmaf_use_feature()` can report an unknown name and hand the dictionary back.
 
-In practice: free the dictionary yourself only when the call returned
-`-EINVAL` **and** you either passed a `NULL` argument or called
-`vmaf_use_feature()`. Otherwise never.
+Free the dictionary yourself only after an early argument rejection, or when
+`vmaf_use_feature()` rejects an unknown extractor name before registration.
+An invalid option value for a **known** extractor also returns `-EINVAL`, but
+consumes the supplied dictionary. The error number alone does not identify
+which ownership rule applies.
+
+`vmaf_use_features_from_model()` borrows the model's option dictionaries and
+registers private copies. Rejection of an invalid option, or failure to copy
+options, releases the failed private copy and leaves the model available for
+correction or retry. Registration is not transactional: features registered
+before a later error remain registered. Worker-context creation follows the
+same private-copy cleanup rule. These changes do not alter valid feature scores.
+See the [ownership regression](../research/2048-model-registration-ownership-2026-09-08.md)
+for the fault controls and their platform limits.
 
 ```c
 /* Consumed — success. Freeing here would be a double free. */

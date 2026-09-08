@@ -170,6 +170,14 @@ the same escaping rules — see [Option-string grammar](#option-string-grammar):
 --feature brisque=model_path=/path/to/brisque_live.model
 ```
 
+Repeated registrations share work only when their option-derived feature keys
+match. For example, `--feature motion` and
+`--feature motion=motion_force_zero=true` retain separate contexts and output
+keys; the latter adds the `_force_0` suffix. Explicit default values and option
+aliases resolve to the same keys as their equivalent canonical settings.
+Equivalent CPU/GPU twins retain the first registered context. These rules also
+apply when several loaded models request different feature parameters.
+
 The `brisque` no-reference metric ships its trained model embedded in the
 binary, so it needs no extra arguments; `model_path` overrides it with an
 on-disk libsvm model (and is required only for builds with `built_in_models`

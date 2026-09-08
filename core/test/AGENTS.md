@@ -383,3 +383,12 @@ adding a NOLINT.
   or worker threads (such as stdio, UDS, or SSE MCP transports), synchronize on
   real readiness signals or poll readiness endpoints with a timeout rather than
   using fixed `sleep()` calls.
+
+## Observation-only SVM test cleanup (Research-2049)
+
+`test_svm_parser.c` keeps the nine malformed-model fixtures and their order;
+its header-size/header-order driver helpers propagate the first failure
+without adding a test count. Parser model views and runtime API query arrays
+are read-only. Preserve all assertions, public `svm.h` calls and ownership
+teardown; these tests do not justify changes to vendored `svm.cpp` or its
+header. See [Research-2049](../../docs/research/2049-svm-observation-test-lint-2026-09-08.md).

@@ -40,6 +40,9 @@
  * loop, label assignment, and decision-function construction.
  */
 
+// ADR-1138/ADR-1166: preserve NULL for MSVC C builds.
+// NOLINTBEGIN(modernize-use-nullptr)
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -368,7 +371,7 @@ static char *test_train_csvc_predict(void)
     mu_assert("model trained", m != NULL);
 
     /* + side */
-    struct svm_node q_pos[3] = {{1, 2.5}, {2, 2.5}, {-1, 0.0}};
+    const struct svm_node q_pos[3] = {{1, 2.5}, {2, 2.5}, {-1, 0.0}};
     double dec[1] = {0.0};
     double y_pos = svm_predict_values(m, q_pos, dec);
     /* SVM predict returns exact integer class labels (+1.0 / -1.0); these are
@@ -376,7 +379,7 @@ static char *test_train_csvc_predict(void)
     int pos_ok = (svm_predict(m, q_pos) == y_pos) && (y_pos == 1.0); /* sentinel: SVM label */
 
     /* - side */
-    struct svm_node q_neg[3] = {{1, -2.5}, {2, -2.5}, {-1, 0.0}};
+    const struct svm_node q_neg[3] = {{1, -2.5}, {2, -2.5}, {-1, 0.0}};
     int neg_ok = svm_predict(m, q_neg) == -1.0; /* sentinel: SVM label */
 
     svm_free_and_destroy_model(&m);
@@ -420,7 +423,7 @@ static char *test_predict_probability_csvc(void)
     double *probs = (double *)calloc((size_t)n, sizeof(double));
     mu_assert("alloc probs", probs != NULL);
 
-    struct svm_node q[3] = {{1, 2.5}, {2, 2.5}, {-1, 0.0}};
+    const struct svm_node q[3] = {{1, 2.5}, {2, 2.5}, {-1, 0.0}};
     double y = svm_predict_probability(m, q, probs);
     int label_ok = y == 1.0 || y == -1.0;
     int probs_ok = probs_sum_to_one_in_unit(probs, n);
@@ -466,7 +469,7 @@ static char *test_train_epsilon_svr(void)
     /* For regression svm_get_svr_probability returns sigma > 0. */
     mu_assert("svr probability > 0", svm_get_svr_probability(m) > 0.0);
 
-    struct svm_node q[3] = {{1, 2.0}, {2, 2.0}, {-1, 0.0}};
+    const struct svm_node q[3] = {{1, 2.0}, {2, 2.0}, {-1, 0.0}};
     double dec[1] = {0.0};
     double v = svm_predict_values(m, q, dec);
     mu_assert("svr predicts finite", isfinite(v));
@@ -491,7 +494,7 @@ static int models_inspector_equal(const struct svm_model *a, const struct svm_mo
         return 0;
     if (svm_get_nr_sv(a) != svm_get_nr_sv(b))
         return 0;
-    struct svm_node q[3] = {{1, 2.5}, {2, 2.5}, {-1, 0.0}};
+    const struct svm_node q[3] = {{1, 2.5}, {2, 2.5}, {-1, 0.0}};
     /* SVM predict returns an exact integer class label; comparing two calls
      * on the same input verifies that the serialised model round-trips
      * identically. Intentional exact float equality. */
@@ -616,3 +619,5 @@ char *run_tests(void)
     mu_run_test(test_save_load_roundtrip);
     return NULL;
 }
+
+// NOLINTEND(modernize-use-nullptr) — ADR-1138/ADR-1166.

@@ -1,6 +1,30 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/fex-context-vector-20260908 — option-aware context identity
+
+Keep the shared provided-feature base comparison from ADR-0385, followed by
+canonical keys derived from each context's parsed feature parameters. Base-only
+matching silently drops option-distinct motion/model registrations. Equivalent
+CPU/GPU twins, defaults and aliases still deduplicate with the first registration
+winning; absent provided-feature lists retain the name/options fallback.
+
+Both comparison allocation failures and checked-growth failures return `-ENOMEM`
+without consuming the incoming context or changing existing vector storage.
+Preserve the runtime `UINT_MAX` and `SIZE_MAX` bounds, the portable registration
+and public-score controls, and Linux linker-wrapped allocation failure tests.
+The vector keeps its existing C-visible layout and manual pointer-array allocator;
+do not restore the obsolete prologue claiming a `std::vector` owns its storage.
+See [Research-2047](research/2047-option-aware-context-registration-2026-09-08.md).
+## fix/svm-tests-native-lint — observation-only parser/API tests (2026-09-08)
+
+Preserve the parser's header-size/header-order groups and exact case order,
+const model/query views, existing assertions and public SVM calls. The driver
+helpers return the first failure without incrementing the test count. Keep
+ADR-1138/ADR-1166 C `NULL` brackets. Vendored library bodies, headers, test
+registration and FFmpeg integration are unchanged. See
+[Research-2049](research/2049-svm-observation-test-lint-2026-09-08.md).
+
 ## docs/readme-entrypoint-20260908 — concise documentation entry points
 
 Keep the README as a short introduction and guide index. Changing SDK pins,
@@ -33,6 +57,15 @@ without changing its assertions, case order or fixture lifetime. The called
 production APIs already accept these read-only inputs. No production API,
 FFmpeg or numerical rebase impact; see
 [the preservation receipt](research/2044-feature-extractor-test-const-2026-09-08.md).
+## fix/vif-simd-native-lint — integer AVX2 stages (2026-09-08)
+
+Preserve the private stages in `vif_avx2.c` while retaining the original
+integer tap/reduction order, per-scale shifts, packed mean additions and
+separate 8/16-bit variance lane layouts. Keep scalar tails, copy/padding and
+`VifState` callback signatures unchanged. The new native stage test compares
+real scalar/AVX2 results and vertical workspace bytes. Preserve the system
+`<stdio.h>` include in `integer_adm.h`; it changes no numeric declarations.
+See Research-2045 and `core/src/feature/x86/AGENTS.md`. No public/FFmpeg impact.
 
 ## fix/cppcheck-c-header-model-20260908 — official pthread type model (2026-09-08)
 
@@ -49984,3 +50017,29 @@ its coverage notices. The actual-tool suite must retain its branch-heavy
 positive control and real uninitialized-member/constructor negative controls.
 [ADR-1245](adr/1245-cppcheck-exhaustive-configured-analysis.md) records the
 measured runtime tradeoff; backend/runner differences still require validation.
+## Integer VIF AVX-512 native lint cleanup (2026-09-08)
+
+Preserve the private forced-inline stages in `feature/x86/vif_avx512.c`, the
+fixed mutable-state callback ABI, and the two ADR-0503 noinline/noclone block
+helpers. Each accumulator retains tap order, lane packing and shifts. Keep the fused
+two-channel horizontal mean and three-channel energy loops: independent channel
+loops caused a measured 8-bit slowdown despite bit-exact results. Retain
+the 16-sample vertical extent / 32-sample vector step and scalar overwrite for
+8-bit statistics. The dedicated `test_integer_vif_avx512_stages` links private
+configured objects and compares the actual scalar implementation, including
+reflected temporary-row padding. Keep its Meson registration conditional on
+`is_avx512_enabled`, independent of float features. No public/FFmpeg surface
+change; no golden assertions changed. See [Research-2046](research/2046-integer-vif-avx512-stage-lint.md).
+
+## Registration option-copy ownership (2026-09-08)
+
+Keep both private cleanup helpers in `libvmaf.c`: dictionary-copy failure can
+leave a partial destination, and context-create failure does not consume its
+input options. Explicit registration still consumes its original dictionary
+after the existing argument/name guards; model/worker sources remain borrowed.
+Preserve prior registered features on later failure and successful ownership
+transfer. Keep the public rejection test independent of the Linux-only partial
+copy interposer. No public signatures, feature calculations, FFmpeg filter
+contract or Netflix assertions change. Six exact retained DNN/metadata exports
+and the weak glibc ABI marker remain documented in
+[Research-2048](research/2048-model-registration-ownership-2026-09-08.md).
