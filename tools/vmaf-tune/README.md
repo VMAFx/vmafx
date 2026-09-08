@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # vmaf-tune
 
-Quality-aware encode automation harness for the lusoris vmaf fork. Drives
+Quality-aware encode automation harness for the VMAFx fork. Drives
 `ffmpeg` over an encoder-parameter grid, scores each encode with the
 `vmaf` CLI, and ships a JSONL corpus plus a stack of higher-level
 subcommands that build on it (target-VMAF bisect, per-title CRF, per-shot

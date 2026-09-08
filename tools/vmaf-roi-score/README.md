@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # vmaf-roi-score (Option C)
 
-Region-of-interest VMAF *scoring* for the lusoris vmaf fork.
+Region-of-interest VMAF *scoring* for the VMAFx fork.
 
 > **Note on naming**: the existing `core/tools/vmaf_roi.c` (ADR-0247)
 > ships a binary named `vmaf-roi` that emits per-CTU QP-offset sidecars
