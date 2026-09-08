@@ -32,6 +32,15 @@ check before new text is attested. Keep existing published topic-page evidence
 distinct from that pending improvement; the recorded external assessment is a
 dated in-progress snapshot, not permanent certification. No native/public API,
 numerical or FFmpeg rebase impact.
+## Scorecard exact-head gates (2026-09-08)
+
+Preserve ADR-1247's separate PR-local and master-full scopes, immutable
+same-run artifact identity, before/after source binding, complete check sets,
+upstream risk weights and unrounded 8.5 floor. Keep publisher restrictions and
+its OIDC permission isolated from the gate jobs. The aggregator must require
+success from the applicable scope without waiting for the other event. Scanner
+errors are never exceptions; the exact no-release state is visibly unassessed.
+No C API, numerical baseline or FFmpeg surface changes.
 
 ## Configured lint fixture bootstrap isolation (2026-09-08)
 

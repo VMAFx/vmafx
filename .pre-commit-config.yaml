@@ -348,6 +348,22 @@ repos:
         # pyproject.toml — same posture as CI's lint-and-format job).
         stages: [pre-push]
 
+      - id: scorecard-policy-contract
+        name: Scorecard exact-head policy and workflow contracts
+        entry: python3 -B -m unittest discover -s scripts/ci/tests -p test_scorecard_*.py
+        language: system
+        files: '^(scripts/ci/(scorecard_gate\.py|tests/test_scorecard_.*\.py)|\.github/workflows/(scorecard(-policy)?|required-aggregator)\.yml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: repository-security-contract
+        name: Repository security policy failure controls
+        entry: python3 -B scripts/dev/tests/test_repository_security.py
+        language: system
+        files: '^(scripts/dev/(check_repository_security\.py|tests/test_repository_security\.py)|\.github/(repository-security-policy\.json|workflows/scorecard(-policy)?\.yml)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: mypy-scope-contract
         name: Check pre-push mypy merge-base scope
         entry: python3 scripts/git-hooks/test-pre-push-mypy.py

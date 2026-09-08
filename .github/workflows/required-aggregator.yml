@@ -63,6 +63,8 @@ jobs:
               'CodeQL (C/C++)',
               'CodeQL (Python)',
               'Pre-Commit',
+              'Scorecard PR Gate',
+              'Scorecard Master Gate',
               'Python Lint',
               // ADR-1238: scanner failures must not hide the Go test suite.
               'go vet + go test',
@@ -123,6 +125,11 @@ jobs:
               'Netflix CPU Golden',
               'Ubuntu gcc+DNN',
             ];
+            // ADR-1247: these scopes never wait for each other's future event.
+            const scorecardGate = context.eventName === 'pull_request'
+              ? 'Scorecard PR Gate' : 'Scorecard Master Gate';
+            required.splice(required.indexOf(context.eventName === 'pull_request'
+              ? 'Scorecard Master Gate' : 'Scorecard PR Gate'), 1);
             const headRef = context.eventName === 'pull_request'
               ? context.payload.pull_request.head.ref
               : '';
@@ -233,6 +240,14 @@ jobs:
             const accepted = ['success', 'skipped', 'neutral'];
             for (const name of required) {
               const run = byName[name];
+              if (name === scorecardGate) {
+                if (!run || run.conclusion !== 'success') {
+                  failed.push(`${name}: ${run ? (run.conclusion ?? run.status) : 'never reported'}`);
+                } else {
+                  core.info(`OK (success): ${name}`);
+                }
+                continue;
+              }
               if (name === 'SYCL Parity (Arc A380)') {
                 if (syclArcEnabled) {
                   if (!run) {

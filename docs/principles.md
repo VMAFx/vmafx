@@ -222,8 +222,13 @@ See [phases/03-framework/3c-supply-chain.md](../.workingdir2/phases/03-framework
 
 ## 6. Compliance targets
 
-- **OpenSSF Best Practices** — Gold badge goal
-- **OpenSSF Scorecard** — ≥ 8.5 score required on master
+- **OpenSSF Best Practices** — truthful Passing assessment first; Silver/Gold are
+  later goals, not earned status. Registration and evidence are active work.
+- **OpenSSF Scorecard** — unrounded ≥ 8.5 required on master, with exact-head
+  full-report verification and explicitly separate PR file checks per
+  [ADR-1247](adr/1247-scorecard-exact-head-gates.md) and the
+  [operator guide](development/ossf-scorecard.md). Scanner errors fail; the
+  precise no-release state remains visibly unassessed, never signed.
 - **OWASP ASVS** — Level 2 applicable controls (auth/authz not applicable — library)
 - **NIST SSDF** — PW.4 (design), PW.5 (implement), PW.7 (review), PW.9 (archive) aligned
 
@@ -232,8 +237,8 @@ See [phases/03-framework/3c-supply-chain.md](../.workingdir2/phases/03-framework
 We explicitly do **not** pursue:
 
 - Full MISRA C compliance (too restrictive for numerical code — informative subset only)
-- CII Best Practices "Passing" badge deadline commitment (will earn it when it earns
-  itself)
+- Claiming a Best Practices badge before its criteria and external status are
+  verified; no calendar deadline substitutes for that evidence
 - FIPS 140 (no cryptography in this library)
 - DO-178C (aerospace software — out of scope)
 
