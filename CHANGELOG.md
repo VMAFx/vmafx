@@ -9014,6 +9014,12 @@ non-empty, printable string. Closes a coverage gap noted in
 `fuzz/meson.build`; registered in suite `fast`.
 
 
+- Allow `tidy-ratchet.py --only <TU> --write` to tighten measured source
+  allowances while preserving unmeasured entries and full-report metadata.
+  Exact coverage, matching tool version, parse/compile success, debt monotonicity
+  and atomic replacement are required; CI still measures the whole tree.
+
+
 - **`--tiny-codec` / `--tiny-preset` / `--tiny-crf` CLI flags** populate
   the codec one-hot block of codec-aware tiny models (today
   `fr_regressor_v2`) so the model receives the real encoder context
