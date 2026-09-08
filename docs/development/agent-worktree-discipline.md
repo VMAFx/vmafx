@@ -145,33 +145,53 @@ disposable temp git repos. No build artifacts, no network.
 
 ## Cleaning up stale agent state
 
-After a batch of agent runs, worktrees whose agent process has exited but
-whose `.git/worktrees/<id>/locked` file still holds a dead PID will block
-`git worktree list --porcelain` output and slow down the host-side guard.
-Similarly, git stashes created during agent navigation on `master` or on
-branches that already exist locally accumulate noise in `git stash list`.
-
-Use the bundled utility to prune both in one pass:
+Use `scripts/dev/cleanup-agent-state.sh` to inventory worktrees and stashes.
+With no arguments, or with `--dry-run`, it reports without changing either.
+`REVIEW` means the checkout passes the local eligibility checks; confirm that
+its work is complete and no process will write to it before selecting it.
+`KEEP` includes the reason a checkout is protected.
 
 ```bash
-# Preview what would be removed (no changes made)
+# Inventory only; this is also the behavior with no arguments.
 bash scripts/dev/cleanup-agent-state.sh --dry-run
 
-# Apply — removes dead-PID agent-* worktrees + redundant stashes
-bash scripts/dev/cleanup-agent-state.sh
+# After reviewing this exact checkout and stopping its writers:
+bash scripts/dev/cleanup-agent-state.sh --apply \
+  --worktree /absolute/repo/.claude/worktrees/agent-finished
 ```
 
-The script:
+Repeat `--worktree` to select multiple exact registered paths. `--apply` without
+targets, conflicting modes, duplicate targets, relative paths and unknown
+arguments fail. Every target is checked before the first removal, and each is
+checked again immediately before Git removes it. If a later target changes,
+already completed removals are reported and processing stops.
 
-- Removes `agent-*` worktrees whose lock-file PID returns `kill -0` failure.
-- Drops stashes on `master`, `(no branch)` (detached HEAD), or branches
-  that still exist locally (where the stash is redundant).
-- Never touches worktrees owned by alive PIDs or stashes on branches
-  that no longer exist locally (the only surviving copy of that work).
-- Run from any worktree of the repo; `git -C <root>` is used throughout.
+The utility only removes an `agent-*` checkout with a recognized lock reason
+ending in `(pid N)` whose recorded process has exited. It preserves the main
+checkout, the current checkout, live or unknown owners, pending Git operations,
+tracked changes, untracked files and ignored artifacts. Detached HEADs must be
+reachable through a preserving ref. Review and archive useful evidence before
+separately retiring generated files; an ignored file is not proof of redundancy.
+Git removes eligible worktrees without `--force`. A failed removal restores
+the original lock, and branch refs are retained.
 
-Run it after every significant multi-agent session or when
-`git worktree list` shows more than a handful of `agent-*` entries.
+Stashes are always listed with their full object IDs and retained. A branch
+that still exists does not establish that a stash's changes were committed.
+Inspect the selected stash and preserve any unique work before a separate,
+explicitly reviewed stash retirement. Cleanup does not expire reflogs or prune
+objects. It does not classify intentional code scaffolds or ADR reservation
+stubs as disposable files.
+
+Keep selected worktrees idle throughout apply. PID checks and Git's normal
+removal guards do not serialize unrelated processes that start writing during
+the operation. The regression test uses disposable repositories only:
+
+```bash
+bash scripts/dev/test-cleanup-agent-state.sh
+```
+
+See [ADR-1239](../adr/1239-agent-cleanup-preserve-work.md) for the preservation
+contract and the migration from the old apply-by-default behavior.
 
 ## Why two layers and not just one
 

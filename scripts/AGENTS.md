@@ -59,6 +59,15 @@ have no upstream-Netflix equivalent.
 
 ## Rebase-sensitive invariants
 
+### `dev/cleanup-agent-state.sh` preserves unclassified work
+
+Per [ADR-1239](../docs/adr/1239-agent-cleanup-preserve-work.md), no arguments
+and `--dry-run` are read-only. `--apply` requires exact `--worktree` targets;
+keep all dirty, untracked, ignored, active and unknown-owner checkouts protected.
+Do not restore forced worktree removal or infer stash redundancy from branch
+existence. All stashes and branch refs are retained. The temporary-repository
+regression is `bash scripts/dev/test-cleanup-agent-state.sh`.
+
 ### `release/concat-changelog-fragments.sh` is the source of truth for `CHANGELOG.md`
 
 Per [ADR-0221](../docs/adr/0221-changelog-adr-fragment-pattern.md),

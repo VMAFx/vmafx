@@ -213,6 +213,7 @@ lint-sh:
 	@scripts/ci/check-default-model-single-source.sh
 	@scripts/ci/check-vcs-version-not-bare-sha.sh
 	@scripts/ci/test-prune-corrupt-fixtures.sh
+	@bash scripts/dev/test-cleanup-agent-state.sh
 	@scripts/ci/check-no-tracked-venv.sh
 	@scripts/ci/check-aggregator-names.sh
 	@scripts/ci/check-state-md-rows.sh

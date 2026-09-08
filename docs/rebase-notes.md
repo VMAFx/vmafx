@@ -10,6 +10,12 @@ reviewed tag, while scheduled `--latest` refreshes select stable releases only.
 Canonical patch mail metadata changes without changing the applied source tree.
 Local hooks use disposable Git state and fail closed on network/replay errors.
 See [ADR-1240](adr/1240-ffmpeg-release-patch-lifecycle.md).
+## fix/agent-cleanup-preserve-work-20260908 — preserve agent state (2026-09-08)
+
+`cleanup-agent-state.sh` is fork-owned. Preserve ADR-1239's report-only default,
+explicit worktree selections, non-force removal, file-state guards and stash
+retention when rebasing developer tooling. Branch existence never proves a stash
+is redundant. Regression: `bash scripts/dev/test-cleanup-agent-state.sh`.
 
 ## fix/ai-1270-blockers — DISTS, MobileSal, and predictor stub triage (2026-09-08)
 
