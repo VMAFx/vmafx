@@ -70,7 +70,7 @@ def execute(argv: list[str], cwd: Path) -> str:
         [binary, *argv[1:]], cwd=cwd, env=environment(), capture_output=True, text=True
     )
     if result.returncode:
-        raise Refused(f"{argv[0]} {argv[1]} failed ({result.returncode}): {result.stderr.strip()}")
+        raise Refused(f"{' '.join(argv[:2])} failed ({result.returncode}): {result.stderr.strip()}")
     return result.stdout
 
 
