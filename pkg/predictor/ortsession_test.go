@@ -50,3 +50,25 @@ func TestNewWithModelMissingModelIsAnError(t *testing.T) {
 		t.Fatalf("NewWithModel(%q) = %#v, nil; want an error for a missing model", missing, p)
 	}
 }
+
+func TestIsStubPredictorModel(t *testing.T) {
+	t.Parallel()
+	// Empty path
+	if IsStubPredictorModel("") {
+		t.Errorf("IsStubPredictorModel(\"\") = true, want false")
+	}
+	// Software codecs are stubs
+	if !IsStubPredictorModel("model/predictor_libx264.onnx") {
+		t.Errorf("IsStubPredictorModel(predictor_libx264) = false, want true")
+	}
+	if !IsStubPredictorModel("model/predictor_h264_amf.onnx") {
+		t.Errorf("IsStubPredictorModel(predictor_h264_amf) = false, want true")
+	}
+	// Hardware nvenc/qsv are real models
+	if IsStubPredictorModel("model/predictor_h264_nvenc.onnx") {
+		t.Errorf("IsStubPredictorModel(predictor_h264_nvenc) = true, want false")
+	}
+	if IsStubPredictorModel("model/predictor_av1_qsv.onnx") {
+		t.Errorf("IsStubPredictorModel(predictor_av1_qsv) = true, want false")
+	}
+}

@@ -1,6 +1,19 @@
 <!-- markdownlint-disable MD060 -->
 # Per-shot VMAF predictor
 
+> **Important — software and AMF predictor models are synthetic stubs.**
+> The shipped ONNX models for software encoders (`libx264`, `libx265`,
+> `libsvtav1`, `libaom-av1`, `libvvenc`) and AMF hardware encoders
+> (`h264_amf`, `hevc_amf`, `av1_amf`) are **synthetic stubs** trained on a
+> 100-row synthetic corpus (`synthetic-stub-N=100`) that re-encodes the
+> analytical fallback curve (ADR-0325). **Stub models are not authoritative
+> for production CRF picks.** Only NVENC and QSV models are trained on real
+> Phase-A corpora. At point of use, `Predictor` and `vmaf-tune` emit a warning
+> when loading a stub model. To use software/AMF predictors in production,
+> generate a real corpus via `python -m vmaftune.cli corpus` and re-train with
+> `python -m vmaftune.predictor_train`. Tracked as
+> `T-PREDICTOR-SOFTWARE-AMF-STUB-MODELS-2026-09-08` in `docs/state.md`.
+
 The per-shot VMAF predictor turns "encode every shot, score every
 shot" into "predict every shot, encode every shot, score a sampled
 subset". The predict-then-verify loop saves wall time on long titles

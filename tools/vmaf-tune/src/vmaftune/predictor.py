@@ -150,6 +150,7 @@ class Predictor:
     coefficients: Mapping[str, tuple[float, float, float, float, float]] = dataclasses.field(
         default_factory=lambda: dict(_DEFAULT_COEFFS)
     )
+    is_stub: bool = dataclasses.field(default=False, init=False)
     _onnx_session: object | None = dataclasses.field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -161,6 +162,18 @@ class Predictor:
         """
         if self.model_path is None:
             return
+        # Detect synthetic stub models and warn at the point of use.
+        self.is_stub = self._check_is_stub(self.model_path)
+        if self.is_stub:
+            import warnings
+
+            warnings.warn(
+                f"Predictor: loading synthetic-stub model '{self.model_path}' "
+                "(trained on analytical curve; not authoritative for production CRF picks). "
+                "Retrain on a real corpus via predictor_train.py for production use.",
+                UserWarning,
+                stacklevel=2,
+            )
         try:
             import onnxruntime as ort  # type: ignore[import-not-found]
         except ImportError:
@@ -177,6 +190,36 @@ class Predictor:
         self._onnx_session = ort.InferenceSession(
             str(self.model_path), providers=["CPUExecutionProvider"]
         )
+
+    @staticmethod
+    def _check_is_stub(model_path: Path) -> bool:
+        """Check if model_path points to a synthetic stub model."""
+        if "stub" in model_path.name.lower():
+            return True
+        card_path = model_path.with_name(f"{model_path.stem}_card.md")
+        if card_path.is_file():
+            try:
+                card_text = card_path.read_text(encoding="utf-8")
+                if "synthetic-stub" in card_text:
+                    return True
+                if "real-N=" in card_text:
+                    return False
+            except OSError:
+                pass
+        known_stub_codecs = {
+            "libx264",
+            "libx265",
+            "libsvtav1",
+            "libaom-av1",
+            "libvvenc",
+            "h264_amf",
+            "hevc_amf",
+            "av1_amf",
+        }
+        for codec in known_stub_codecs:
+            if codec in model_path.name:
+                return True
+        return False
 
     def predict_vmaf(
         self,
