@@ -1598,3 +1598,16 @@ gain limit, so it moves `adm` scores directly. The four historical spellings
 of this predicate disagreed on about 4e-5 of near-parallel scale-0 band
 quadruples; see
 [`docs/research/2030-adm-angle-flag-fp64-free.md`](../../../docs/research/2030-adm-angle-flag-fp64-free.md).
+
+## Feature-context pool entry lifetime
+
+`VmafFeatureExtractorContextPool::fex_list` is a growable pointer table;
+`get_fex_list_entry()` separately allocates each `fex_list_entry` and publishes
+it only after `init_fex_list_slot()` succeeds. Do not move an initialized entry:
+`vmaf_fex_ctx_pool_aquire()` retains it while `pthread_cond_wait()` releases the
+pool mutex, and release must signal the same condition-variable address.
+Preserve pointer-table and context-array size checks, and free each options copy
+even if its first context allocation failed. The Linux
+`test_fex_pool_growth` regression forces a table relocation while another
+acquisition waits. See
+[the pool-growth digest](../../../docs/research/fex-pool-growth-2026-09-08.md).

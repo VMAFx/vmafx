@@ -20861,6 +20861,9 @@ Fix two `dev/Containerfile` build-correctness bugs:
   [Research-0892](../docs/research/0892-conventional-commits-audit-2026-05-30.md).
 
 
+- Bound AVX2 and AVX-512 horizontal convolution loads and stores to valid output lanes, preserving each ISA's arithmetic and scalar tail; cover tight final rows, tiny widths and normal/square/cross-product modes.
+
+
 Fix 6 reproducible test failures introduced by the recent PR train:
 
 - `test_gpu_picture_pool_uaf`: `gpu_picture_pool.cpp` `free_p`/`fail` labels
@@ -22066,6 +22069,11 @@ Remove 61 duplicate entries (6 SYCL, 55 Vulkan) from `feature_extractor_list[]`
 in `core/src/feature/feature_extractor.c`. The duplicates caused unnecessary
 linear-scan overhead on every extractor lookup; the first matching entry was
 always returned so feature availability was never affected.
+
+
+- Keep internal feature-context pool entries at stable addresses when their
+  pointer table grows, so waiting acquisitions are signaled correctly. Check
+  allocation sizes and release entry options even after context creation fails.
 
 
 - Update the FFmpeg refresh guide to use the shared release configuration and

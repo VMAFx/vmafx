@@ -36,6 +36,16 @@ CLI dimensions, rounding below saturation, radial arithmetic and encoder
 sidecar byte layouts remain unchanged. Preserve the ADR-1138 C `NULL`
 brackets and the cited single-threaded getopt invariant. Fork-only CLI
 implementation; no public libvmaf or FFmpeg filter surface changes.
+## fix/convolution-horizontal-boundary (2026-09-08)
+
+Preserve the output-based horizontal split in both common AVX kernels:
+`j_vec_end` is the first final scalar output; SIMD source starts stop at
+`j_vec_end - radius`. The masked final load/store keeps original AVX2 mul/add
+and AVX-512 FMA regions without discarded out-of-plane accesses. Keep clamped
+tiny-width borders and the common horizontal pass per ISA. The regression
+uses configured private objects, runtime ISA checks and tight final rows.
+No public API or FFmpeg integration surface changes.
+
 ## fix/vif-native-lint — scalar VIF decomposition (2026-09-08)
 
 Preserve the ten-plane workspace layout, filter/decimation/statistic order,
@@ -49884,3 +49894,14 @@ feature-name helpers. Public C signatures, emitted keys and GPU fallback
 behavior are unchanged. Recheck `test_feature`, `test_feature_extractor` and
 `test_opt`; see the [option-sentinel research digest](research/option-sentinel-cleanup-2026-09-08.md)
 for the focused lint scope and factory-specific cppcheck model corrections.
+
+## fix/fex-pool-stable-entries — internal pool growth (2026-09-08)
+
+Keep the pool's pointer table separate from stable `fex_list_entry` allocations.
+An acquisition retains its entry across `pthread_cond_wait()`; relocating live
+entries during geometric growth loses the condition-variable identity. Preserve
+construction before `cnt` publication, allocation-overflow checks and one-time
+options/condition-variable cleanup. `test_fex_pool_growth` covers synchronized
+ninth-entry growth with forced relocation and native allocation. Current scoring
+does not use these acquire/release operations; this fixes the compiled internal
+API, not a demonstrated scoring hang. No public header or FFmpeg surface changes.

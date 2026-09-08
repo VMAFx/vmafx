@@ -175,3 +175,19 @@ the checked writer now emits only initialized samples. Dump I/O does not alter
 metric scores; open, short-write and close failures are logged. A missing
 directory prevents file output. Use the normal
 production build for timing measurements.
+
+## CPU convolution boundary regression
+
+Floating-point VIF shares separable convolution helpers with other CPU
+features. The AVX2 and AVX-512 horizontal helpers now avoid loading discarded
+lanes beyond a row, including tight final rows and planes narrower than the
+filter radius. This is a memory-safety repair: each ISA retains its existing
+per-pixel arithmetic and final scalar region. No score option or tolerance
+changes are needed.
+
+Developers can run `meson test -C build test_convolution_horizontal` on an x86
+assembly-enabled build. The test checks normal, squared and cross-product
+filters; ASan/UBSan builds also detect invalid reads that leave final scores
+unchanged. Unsupported CPU ISAs are skipped, and disabled AVX-512 is omitted.
+See the [boundary investigation](../research/convolution-horizontal-boundary-2026-09-08.md)
+for the exact validation scope and negative controls.
