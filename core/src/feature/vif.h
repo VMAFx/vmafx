@@ -16,6 +16,9 @@
  *
  */
 
+#ifndef VMAF_FEATURE_VIF_H
+#define VMAF_FEATURE_VIF_H
+
 #include <stddef.h>
 
 /*
@@ -33,3 +36,12 @@ int compute_vif(const float *ref, const float *dis, int w, int h, int ref_stride
                 double vif_enhn_gain_limit, double vif_kernelscale, int vif_skip_scale0,
                 double vif_sigma_nsq, const float (*precomputed_filters)[128],
                 const int *precomputed_filter_widths);
+
+/* Legacy temporal-VIF entry points retain their external linkage. */
+void apply_frame_differencing(const float *current_frame, const float *previous_frame,
+                              float *frame_difference, int width, int height, int stride);
+int vifdiff(int (*read_frame)(float *ref_data, float *main_data, float *temp_data, int stride,
+                              void *user_data),
+            void *user_data, int w, int h, const char *fmt);
+
+#endif

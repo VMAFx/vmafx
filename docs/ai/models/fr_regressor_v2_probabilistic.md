@@ -38,7 +38,7 @@ still ≥ 92"_ — driving the new `vmaf-tune --quality-confidence` flag
 > [ADR-0321](../../adr/0321-fr-regressor-v2-ensemble-full-prod-flip.md)
 > (the original production flip), and
 > [ADR-1105](../../adr/1105-ensemble-v2-prod-flip-deferred-oneshot-retrain.md)
-> (RC deferral). The scaffold-era ADR-0279 entry point is preserved
+> (RC deferral). The scaffold-era ADR-0393 entry point is preserved
 > for history.
 
 ## What the output means
@@ -234,7 +234,7 @@ row reports the conformal interval's empirical coverage (should be
 
 See [Research-0054](../../research/0067-fr-regressor-v2-probabilistic.md)
 for the full audit (PR #354 Bucket #18, top-3 ranked) and the decision
-matrix in [ADR-0279 § Alternatives considered](../../adr/0279-fr-regressor-v2-probabilistic.md).
+matrix in [ADR-0393 § Alternatives considered](../../adr/0393-fr-regressor-v2-probabilistic.md).
 Short version: deep ensembles dominate single-network alternatives
 (MC-dropout, single-network heteroscedastic NLL) on calibration
 quality, with the conformal layer giving a distribution-free coverage
@@ -250,7 +250,7 @@ guarantee at negligible inference-time cost.
   Regression_ — the "normalised residual" scheme used here.
 - [ADR-0272](../../adr/0272-fr-regressor-v2-codec-aware-scaffold.md) —
   parent v2 deterministic scaffold.
-- [ADR-0279](../../adr/0279-fr-regressor-v2-probabilistic.md) — this
+- [ADR-0393](../../adr/0393-fr-regressor-v2-probabilistic.md) — this
   ADR (probabilistic head + conformal calibration).
 - [ADR-0237](../../adr/0237-quality-aware-encode-automation.md) —
   vmaf-tune Phase A; the `--quality-confidence` consumer flag.

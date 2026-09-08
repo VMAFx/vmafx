@@ -391,8 +391,8 @@ attribution following the source licence:
 
 For the full licence analysis per corpus see the respective ADR:
 [ADR-0325](../adr/0325-konvid-150k-corpus-ingestion.md) (KonViD),
-[ADR-0333](../adr/0333-lsvq-corpus-ingestion.md) (LSVQ),
-[ADR-0334 / ADR-0368](../adr/0368-youtube-ugc-corpus-ingestion.md) (YouTube UGC),
+[ADR-0367](../adr/0367-lsvq-corpus-ingestion.md) (LSVQ),
+[ADR-0413](../adr/0413-youtube-ugc-corpus-ingestion.md) (YouTube UGC),
 [ADR-0369](../adr/0369-waterloo-ivc-4k-corpus-ingestion.md) (Waterloo IVC),
 [ADR-0370](../adr/0370-live-vqc-corpus-ingestion.md) (LIVE-VQC),
 [ADR-0426](../adr/0426-chug-hdr-corpus-ingestion.md) (CHUG),

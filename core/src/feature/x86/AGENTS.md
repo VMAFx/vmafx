@@ -90,6 +90,17 @@ The complete invariants live in [../AGENTS.md
 §"Rebase-sensitive invariants"](../AGENTS.md); this table is the
 **index** of which file groups move together.
 
+## Integer ADM declaration cleanup (2026-09-08)
+
+Keep the AVX2 and AVX-512 CM/CSF band descriptors and first-row threshold
+aliases read-only locally. Their pointed-to output buffers remain writable;
+this does not change the `AdmBuffer *` dispatch ABI. Scalar-tail temporaries
+and row accumulators belong to their existing inner scopes. Preserve every
+integer shift, float/double promotion, reduction order and prefetch distance;
+const qualification is not permission to change numerical expressions.
+Same-ISA old/new validation is described in
+[the cleanup digest](../../../../docs/research/2042-adm-simd-native-lint-2026-09-08.md).
+
 ## simd_dx macros (ADR-0140)
 
 [`../simd_dx.h`](../simd_dx.h) is fork-internal. AVX2 / AVX-512 paths
@@ -190,3 +201,35 @@ mirrored in `integer_ssim_avx2.h`.
   / 0138 / 0139 froze. Only after confirming intent is preserved (or
   the ADRs are updated) is `make ir-diff-update` appropriate, with
   justification in the commit message.
+
+## Integer VIF AVX2 private stages (Research-2045)
+
+`vif_avx2.c` keeps the original packed 64-bit mean additions over 32-bit
+products, distinct 8/16-bit moment packing and shifts, tap order, scalar tails
+and final copy/padding order. Do not merge those distinct lane layouts during
+rebases. Keep the GCC-only no-unroll constraint on the 8-bit second-moment tap loop;
+removing it reproduced full unrolling/spills and a repeatable slowdown. This
+constraint does not change arithmetic or apply to the other compilers.
+The four exported statistic/subsample signatures remain in
+`vif_avx2.h`; statistic callbacks must continue to match `VifState` in
+`integer_vif.c`. The two precise Cppcheck const-parameter annotations preserve
+that shared function-pointer contract. Re-run the native scalar/AVX2 stage
+test and same-ISA old/new numerical comparisons after changing these stages.
+See [Research-2045](../../../../docs/research/2045-integer-vif-avx2-stages-2026-09-08.md).
+
+## Integer VIF AVX-512 stages (Research-2046)
+
+Keep the private forced-inline statistic/subsample stages' per-accumulator tap
+order, lane permutations, rounding constants and scalar tails. Preserve the
+fused two-channel horizontal mean and three-channel energy tap loops and their
+GCC unroll bounds; separate channel loops caused a measured 8-bit regression.
+The two
+ADR-0503 8-bit subsample block helpers remain noinline/noclone; their call
+boundaries control register pressure. The statistic callbacks keep the mutable
+`VifPublicState *` type required by `VifState` dispatch, despite only reading
+that struct and writing through its buffer pointers. Run
+`test_integer_vif_avx512_stages` after rebasing these kernels; preserve all five
+vertical planes and bit-exact numerator/denominator checks. The 8-bit vertical
+vector extent is rounded down to 16 samples but loads/stores 32 at a time;
+production scratch padding owns those extra lanes, while scalar tails overwrite
+valid residual pixels. See [Research-2046](../../../../docs/research/2046-integer-vif-avx512-stage-lint.md).

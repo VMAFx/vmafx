@@ -1,4 +1,4 @@
-From 1a8a533a1b61a4d8f830501e128c4a9338523fe8 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Sat, 9 May 2026 10:29:32 +0200
 Subject: [PATCH] libvmaf: wire cuda backend selector (cuda option)
@@ -49,10 +49,10 @@ stack applied; no upstream hunks rebased.
  2 files changed, 90 insertions(+), 1 deletion(-)
 
 diff --git a/configure b/configure
-index 4ab258c..5aee240 100755
+index 051be41257c98139dc4f59c6089fefc1575526d8..992ccaf9860c356bce018d9c00499b1240dfb063 100755
 --- a/configure
 +++ b/configure
-@@ -295,6 +295,7 @@ External library support:
+@@ -294,6 +294,7 @@ External library support:
    --enable-libv4l2         enable libv4l2/v4l-utils [no]
    --enable-libvidstab      enable video stabilization using vid.stab [no]
    --enable-libvmaf         enable vmaf filter via libvmaf [no]
@@ -60,7 +60,7 @@ index 4ab258c..5aee240 100755
    --enable-libvmaf-sycl    enable SYCL-accelerated vmaf filter via libvmaf [no]
    --enable-libvmaf-vulkan  enable Vulkan-accelerated vmaf filter via libvmaf [no]
    --enable-libvo-amrwbenc  enable AMR-WB encoding via libvo-amrwbenc [no]
-@@ -2101,6 +2102,7 @@ EXTERNAL_LIBRARY_LIST="
+@@ -2140,6 +2141,7 @@ EXTERNAL_LIBRARY_LIST="
      libuavs3d
      libv4l2
      libvmaf
@@ -68,7 +68,7 @@ index 4ab258c..5aee240 100755
      libvmaf_sycl
      libvmaf_vulkan
      libvorbis
-@@ -7397,11 +7399,13 @@ enabled libuavs3d         && require_pkg_config libuavs3d "uavs3d >= 1.1.41" uav
+@@ -7464,11 +7466,13 @@ enabled libuavs3d         && require_pkg_config libuavs3d "uavs3d >= 1.1.41" uav
  enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_ioctl
  enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid.stab/libvidstab.h vsMotionDetectInit
  enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init
@@ -84,7 +84,7 @@ index 4ab258c..5aee240 100755
  enabled libvmaf           && check_pkg_config libvmaf_vulkan "libvmaf >= 3.0.0" libvmaf/libvmaf_vulkan.h vmaf_vulkan_state_init
  enabled vmaf_pre_filter   && require_pkg_config libvmaf_dnn "libvmaf >= 3.0.0" libvmaf/dnn.h vmaf_dnn_session_open
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 43d6e05..85752a4 100644
+index 324e1aa82e51c229be901693859e0f2f52a3abd4..baf35892fb865be020e529737a6d2c8f1e727866 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -45,6 +45,8 @@
@@ -200,7 +200,7 @@ index 43d6e05..85752a4 100644
      err = parse_models(ctx);
      if (err)
          return err;
-@@ -782,6 +860,13 @@ clean_up:
+@@ -801,6 +879,13 @@ clean_up:
          s->vulkan_state = NULL;
      }
  #endif
@@ -214,6 +214,3 @@ index 43d6e05..85752a4 100644
  }
  
  static const AVFilterPad libvmaf_inputs[] = {
--- 
-2.54.0
-

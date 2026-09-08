@@ -18,6 +18,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import ModuleType
+from typing import Protocol, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PLANNER = REPO_ROOT / "scripts" / "ci" / "plan-ci-impact.py"
@@ -26,8 +28,31 @@ REQUIRED_AGGREGATOR = REPO_ROOT / ".github" / "workflows" / "required-aggregator
 GIT = shutil.which("git") or "/usr/bin/git"
 
 
-def _load_planner():
+class ImpactPlan(Protocol):
+    """Read-only result fields consumed from the dynamically loaded CLI."""
+
+    @property
+    def mode(self) -> str: ...
+
+    @property
+    def reason(self) -> str: ...
+
+    @property
+    def changed_paths(self) -> tuple[str, ...]: ...
+
+    @property
+    def selectors(self) -> dict[str, bool]: ...
+
+
+class GitCommand(Protocol):
+    """A Git command bound to a disposable repository and author environment."""
+
+    def __call__(self, *args: str) -> str: ...
+
+
+def _load_planner() -> ModuleType:
     spec = importlib.util.spec_from_file_location("plan_ci_impact", PLANNER)
+    assert spec is not None
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     # dataclasses resolve `cls.__module__` through sys.modules when the module
@@ -40,22 +65,22 @@ def _load_planner():
 planner = _load_planner()
 
 
-def _plan_for(paths: list[str], statuses: list[str] | None = None):
+def _plan_for(paths: list[str], statuses: list[str] | None = None) -> ImpactPlan:
     config = planner.load_config(CONFIG)
     statuses = statuses or ["M"] * len(paths)
     changes = tuple(
         planner.Change(status=s, paths=(p,)) for s, p in zip(statuses, paths, strict=True)
     )
-    return planner.build_plan(config, changes, None, "b" * 40, "h" * 40)
+    return cast(ImpactPlan, planner.build_plan(config, changes, None, "b" * 40, "h" * 40))
 
 
 class ConfigContract(unittest.TestCase):
-    def test_config_is_canonical_json(self):
+    def test_config_is_canonical_json(self) -> None:
         raw = CONFIG.read_text(encoding="utf-8")
         parsed = json.loads(raw)
         self.assertEqual(raw, json.dumps(parsed, indent=2, ensure_ascii=False) + "\n")
 
-    def test_config_loads_and_every_selector_has_patterns_or_inherits(self):
+    def test_config_loads_and_every_selector_has_patterns_or_inherits(self) -> None:
         config = planner.load_config(CONFIG)
         for name, selector in config["selectors"].items():
             self.assertTrue(
@@ -63,7 +88,7 @@ class ConfigContract(unittest.TestCase):
                 f"selector {name} selects nothing",
             )
 
-    def test_every_top_level_repo_entry_is_known(self):
+    def test_every_top_level_repo_entry_is_known(self) -> None:
         """A path the planner cannot classify forces mode=full (fail-closed).
         Keep the map in step with the tree so routing actually happens."""
         config = planner.load_config(CONFIG)
@@ -78,116 +103,144 @@ class ConfigContract(unittest.TestCase):
         unknown = [e for e in tracked if e not in known_prefixes and e not in known_files]
         self.assertEqual(unknown, [], f"top-level entries missing from ci-impact.json: {unknown}")
 
-    def test_ci_authority_files_are_full_patterns(self):
+    def test_ci_authority_files_are_full_patterns(self) -> None:
         config = planner.load_config(CONFIG)
         for path in (
             ".github/ci-impact.json",
             ".github/workflows/required-aggregator.yml",
             ".pre-commit-config.yaml",
             "Makefile",
+            "osv-scanner.toml",
             "scripts/ci/plan-ci-impact.py",
         ):
             self.assertTrue(planner._matches(path, tuple(config["full_patterns"])), path)
 
 
 class RoutingContract(unittest.TestCase):
-    def test_docs_only_change_is_impact_mode_with_no_c_lane(self):
+    def test_docs_only_change_is_impact_mode_with_no_c_lane(self) -> None:
         plan = _plan_for(["docs/usage/cli.md", "changelog.d/fixed/x.md"])
         self.assertEqual(plan.mode, "impact")
         self.assertTrue(plan.selectors["docs"])
-        for lane in ("c_core", "python", "go", "rust", "golden_harness", "tiny_ai"):
+        for lane in ("c_core", "python", "go", "go_checks", "rust", "golden_harness", "tiny_ai"):
             self.assertFalse(plan.selectors[lane], lane)
 
-    def test_c_change_selects_core_and_its_dependents(self):
+    def test_c_change_selects_core_and_its_dependents(self) -> None:
         plan = _plan_for(["core/src/feature/adm_tools.c"])
         self.assertEqual(plan.mode, "impact")
         self.assertTrue(plan.selectors["c_core"])
         self.assertTrue(plan.selectors["golden_harness"])
         self.assertTrue(plan.selectors["tiny_ai"])
         self.assertFalse(plan.selectors["go"])
+        self.assertTrue(plan.selectors["go_checks"])
         self.assertFalse(plan.selectors["docs"])
 
-    def test_model_json_change_runs_goldens(self):
+    def test_model_json_change_runs_goldens(self) -> None:
         plan = _plan_for(["model/vmaf_v0.6.1.json"])
         self.assertTrue(plan.selectors["c_core"])
         self.assertTrue(plan.selectors["golden_harness"])
 
-    def test_golden_fixture_change_runs_goldens(self):
+    def test_golden_fixture_change_runs_goldens(self) -> None:
         plan = _plan_for(["python/test/resource/yuv/src01_hrc00_576x324.yuv"])
         self.assertTrue(plan.selectors["golden_harness"])
 
-    def test_go_change_selects_only_go(self):
+    def test_go_change_selects_only_go(self) -> None:
         plan = _plan_for(["pkg/predictor/predictor.go", "go.mod"])
         self.assertTrue(plan.selectors["go"])
+        self.assertTrue(plan.selectors["go_checks"])
         self.assertFalse(plan.selectors["c_core"])
         self.assertFalse(plan.selectors["python"])
 
-    def test_python_harness_change_runs_goldens_but_not_c_builds(self):
+    def test_python_harness_change_runs_goldens_but_not_c_builds(self) -> None:
         plan = _plan_for(["python/vmaf/core/result.py"])
         self.assertTrue(plan.selectors["python"])
         self.assertTrue(plan.selectors["golden_harness"])
         self.assertFalse(plan.selectors["c_core"])
 
-    def test_shell_change_selects_shell_lane_only(self):
+    def test_shell_change_selects_shell_lane_only(self) -> None:
         plan = _plan_for(["dev/scripts/probe.sh"])
         self.assertTrue(plan.selectors["shell"])
         self.assertTrue(plan.selectors["container"])
         self.assertFalse(plan.selectors["c_core"])
 
-    def test_workflow_hosting_required_context_forces_full(self):
+    def test_workflow_hosting_required_context_forces_full(self) -> None:
         plan = _plan_for([".github/workflows/lint-and-format.yml"])
         self.assertEqual(plan.mode, "full")
         self.assertTrue(plan.reason.startswith("global-ci-input:"))
         self.assertTrue(all(plan.selectors.values()))
 
-    def test_ci_script_change_forces_full(self):
+    def test_go_workflow_change_forces_full(self) -> None:
+        plan = _plan_for([".github/workflows/go-ci.yml"])
+        self.assertEqual(plan.mode, "full")
+        self.assertTrue(plan.selectors["go_checks"])
+
+    def test_release_version_change_runs_go_checks(self) -> None:
+        plan = _plan_for([".release-please-manifest.json"])
+        self.assertTrue(plan.selectors["go_checks"])
+
+    def test_model_change_runs_go_checks(self) -> None:
+        plan = _plan_for(["model/predictor_libx264.onnx"])
+        self.assertTrue(plan.selectors["go_checks"])
+
+    def test_ci_script_change_forces_full(self) -> None:
         plan = _plan_for(["scripts/ci/assertion-density.sh"])
         self.assertEqual(plan.mode, "full")
 
-    def test_unknown_root_forces_full(self):
+    def test_cppcheck_model_and_control_changes_run_native_gate(self) -> None:
+        for path in (
+            "scripts/ci/cppcheck-public-entrypoints.cfg",
+            "scripts/ci/lint-configured.py",
+            "scripts/ci/tests/test_cppcheck_posix_model.py",
+            "scripts/ci/tests/test_lint_configured.py",
+        ):
+            with self.subTest(path=path):
+                plan = _plan_for([path])
+                self.assertEqual(plan.mode, "full")
+                self.assertTrue(plan.selectors["c_core"])
+
+    def test_unknown_root_forces_full(self) -> None:
         plan = _plan_for(["brand-new-top-level/thing.c"])
         self.assertEqual(plan.mode, "full")
         self.assertEqual(plan.reason, "unknown-path:brand-new-top-level/thing.c")
 
-    def test_every_non_additive_status_forces_full(self):
+    def test_every_non_additive_status_forces_full(self) -> None:
         for status in ("D", "R100", "C75", "T", "U"):
             plan = _plan_for(["docs/x.md"], [status])
             self.assertEqual(plan.mode, "full", status)
             self.assertTrue(plan.reason.startswith("non-additive-change:"), status)
 
-    def test_empty_diff_and_missing_enumeration_force_full(self):
+    def test_empty_diff_and_missing_enumeration_force_full(self) -> None:
         config = planner.load_config(CONFIG)
         self.assertEqual(planner.build_plan(config, (), None, "b", "h").mode, "full")
         self.assertEqual(
             planner.build_plan(config, None, "no-merge-base", "b", "h").reason, "no-merge-base"
         )
 
-    def test_mixed_paths_are_sorted_and_deduplicated(self):
+    def test_mixed_paths_are_sorted_and_deduplicated(self) -> None:
         plan = _plan_for(["docs/b.md", "docs/a.md", "docs/b.md"])
         self.assertEqual(plan.changed_paths, ("docs/a.md", "docs/b.md"))
 
 
 class ParserContract(unittest.TestCase):
-    def test_name_status_parser_is_nul_safe_and_preserves_rename_pairs(self):
+    def test_name_status_parser_is_nul_safe_and_preserves_rename_pairs(self) -> None:
         raw = b"M\0core/src/a.c\0R090\0old name.c\0new name.c\0A\0docs/x.md\0"
         changes = planner.parse_name_status(raw, max_paths=10)
         self.assertEqual([c.status for c in changes], ["M", "R090", "A"])
         self.assertEqual(changes[1].paths, ("old name.c", "new name.c"))
 
-    def test_name_status_parser_rejects_missing_delimiter_and_bounds(self):
+    def test_name_status_parser_rejects_missing_delimiter_and_bounds(self) -> None:
         with self.assertRaises(planner.PlanError):
             planner.parse_name_status(b"M\0core/src/a.c", max_paths=10)
         with self.assertRaises(planner.PlanError):
             planner.parse_name_status(b"M\0a\0M\0b\0", max_paths=1)
 
-    def test_unsafe_paths_are_refused(self):
+    def test_unsafe_paths_are_refused(self) -> None:
         for bad in (b"../x", b"/abs", b"a/../b"):
             with self.assertRaises(planner.PlanError):
                 planner.parse_name_status(b"M\0" + bad + b"\0", max_paths=10)
 
 
 class OutputContract(unittest.TestCase):
-    def test_github_output_is_single_line_exact_booleans(self):
+    def test_github_output_is_single_line_exact_booleans(self) -> None:
         plan = _plan_for(["docs/x.md"])
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "out"
@@ -205,7 +258,7 @@ class OutputContract(unittest.TestCase):
 class GitIntegration(unittest.TestCase):
     """Drive the real CLI against a throwaway repository."""
 
-    def _repo(self):
+    def _repo(self) -> tuple[str, GitCommand]:
         tmp = tempfile.mkdtemp()
         env = {
             **os.environ,
@@ -215,7 +268,7 @@ class GitIntegration(unittest.TestCase):
             "GIT_COMMITTER_EMAIL": "t@t",
         }
 
-        def git(*a):
+        def git(*a: str) -> str:
             return subprocess.run(  # noqa: S603 -- fixed argv, absolute git
                 [GIT, "-C", tmp, *a], capture_output=True, text=True, check=True, env=env
             ).stdout.strip()
@@ -232,7 +285,7 @@ class GitIntegration(unittest.TestCase):
         git("commit", "-q", "-m", "base")
         return tmp, git
 
-    def _run(self, tmp, event, base, head):
+    def _run(self, tmp: str, event: str, base: str, head: str) -> dict[str, str]:
         with tempfile.TemporaryDirectory() as t:
             out = Path(t) / "gh"
             proc = subprocess.run(  # noqa: S603 -- fixed argv: our own planner
@@ -256,7 +309,7 @@ class GitIntegration(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             return dict(line.split("=", 1) for line in out.read_text().splitlines())
 
-    def test_pull_request_uses_merge_base_aware_diff(self):
+    def test_pull_request_uses_merge_base_aware_diff(self) -> None:
         tmp, git = self._repo()
         base = git("rev-parse", "HEAD")
         git("checkout", "-q", "-b", "feature")
@@ -276,7 +329,7 @@ class GitIntegration(unittest.TestCase):
         )
         self.assertEqual(kv["base_sha"], base)
 
-    def test_linear_push_uses_exact_before_and_head(self):
+    def test_linear_push_uses_exact_before_and_head(self) -> None:
         tmp, git = self._repo()
         before = git("rev-parse", "HEAD")
         (Path(tmp) / "core" / "src" / "a.c").write_text("int a = 2;\n")
@@ -287,7 +340,7 @@ class GitIntegration(unittest.TestCase):
         self.assertEqual(kv["c_core"], "true")
         self.assertEqual(kv["docs"], "false")
 
-    def test_zero_before_and_non_linear_push_fall_back_to_full(self):
+    def test_zero_before_and_non_linear_push_fall_back_to_full(self) -> None:
         tmp, git = self._repo()
         head = git("rev-parse", "HEAD")
         self.assertEqual(self._run(tmp, "push", "0" * 40, head)["mode"], "full")
@@ -298,7 +351,7 @@ class GitIntegration(unittest.TestCase):
         other = git("rev-parse", "HEAD")
         self.assertEqual(self._run(tmp, "push", other, head)["mode"], "full")
 
-    def test_unrouted_event_is_full(self):
+    def test_unrouted_event_is_full(self) -> None:
         tmp, git = self._repo()
         head = git("rev-parse", "HEAD")
         kv = self._run(tmp, "workflow_dispatch", head, head)
@@ -307,7 +360,7 @@ class GitIntegration(unittest.TestCase):
 
 
 class WorkflowContract(unittest.TestCase):
-    def test_required_contexts_workflows_have_no_path_filters(self):
+    def test_required_contexts_workflows_have_no_path_filters(self) -> None:
         """Every workflow hosting an aggregator-required check must always start;
         routing happens inside the job via the planner, never via `paths:`."""
         required = [

@@ -59,6 +59,21 @@ have no upstream-Netflix equivalent.
 
 ## Rebase-sensitive invariants
 
+### `dev/cleanup-agent-state.sh` preserves unclassified work
+
+Per [ADR-1239](../docs/adr/1239-agent-cleanup-preserve-work.md), no arguments
+and `--dry-run` are read-only. `--apply` requires exact `--worktree` targets;
+keep all dirty, untracked, ignored, active and unknown-owner checkouts protected.
+Do not restore forced worktree removal or infer stash redundancy from branch
+existence. All stashes and branch refs are retained. The temporary-repository
+regression is `bash scripts/dev/test-cleanup-agent-state.sh`.
+
+The regression itself must clear inherited `GIT_*` and disable caller
+global/system Git configuration before creating fixtures. `git -C` does not
+isolate repository, shared metadata or index paths supplied by the environment.
+Keep the disposable-caller preservation matrix in
+`ci/test_git_fixture_isolation.py` registered in the local/CI hooks.
+
 ### `release/concat-changelog-fragments.sh` is the source of truth for `CHANGELOG.md`
 
 Per [ADR-0221](../docs/adr/0221-changelog-adr-fragment-pattern.md),
@@ -136,10 +151,12 @@ Editing inside the sentinels by hand will be lost on the next
 (splice). Per-hundred bucket labels live in the `LABELS` Python dict
 inside the script — edit when a bucket's theme drifts.
 
-**On rebase**: keep the sentinel comments in `mkdocs.yml`. If the
-sentinels are removed, `--write` exits 66 with a hand-splice
-instruction. Renaming the script breaks any future CI `--check` hook;
-update `.github/workflows/docs.yml` in the same PR.
+**On rebase**: keep exactly one ordered sentinel pair in `mkdocs.yml`.
+Both write and check fail before changing output if either boundary is
+missing, repeated, or reversed. Generate tags before navigation with
+`make docs-fragments-write`. Required Docs CI and local pre-commit run
+`make docs-fragments-check`; preserve that shared entry point and the
+fixture in `docs/tests/test_generators.py` (ADR-1242).
 
 ### `docs/generate-adr-by-tag.sh` owns the `docs/adr/by-tag/` tree
 
@@ -153,7 +170,12 @@ and `Tags: …` (legacy bare) forms.
 remove a tag, edit the ADR's `Tags:` line and re-run the script with
 `--write`. Tag values containing whitespace or angle-bracket
 placeholders (template examples) are filtered out — keep the filter
-in place when adapting the regex.
+in place when adapting the regex. Validate output basenames before writing,
+deduplicate equivalent tags within one ADR, and preserve the generator-owned
+lint header. Title escaping and meaningful code-span spaces are renderer
+responsibilities; do not rewrite accepted ADRs to satisfy generated lint.
+`docs/check-adr-index.py` also verifies fragment/source coverage and mutable
+fragment ADR references before concatenation.
 
 ### `gen_smoke_onnx.py` and `gen_*_onnx.py` are deterministic
 
@@ -231,33 +253,38 @@ Do the same for non-implementation uses of the word "stub": Python type-stub
 packages, driver-stub environment diagnostics, and comments that pin
 disabled-build stub signatures to the real implementation ABI.
 
-### `git-hooks/` and `githooks/` are two coexisting directories — intentional
+### Git hook dispatch survives installer-worktree deletion
 
-Two parallel directories, both fork-original:
+[ADR-1241](../docs/adr/1241-worktree-hook-dispatch.md) keeps the existing
+`git-hooks/` source checks and `githooks/` installer/native formatter split.
+`githooks/install.py` installs regular copies of `dispatch.sh` into Git's
+resolved hooks directory. Never replace them with absolute worktree
+symlinks. Unknown hooks are refused; recognized replacements get unique
+backups. Keep the disposable Git lifecycle fixture in
+`githooks/tests/test_install.py` wired into required `Pre-Commit` CI.
 
-- `scripts/git-hooks/` (hyphenated) holds the shared **pre-push**
-  PR-body deliverables validator (ADR-0108) plus the pre-rebase
-  worktree-drift guard (ADR-0684). These hooks are installed by
-  *both* pre-commit paths and are not specific to either.
-- `scripts/githooks/` (no hyphen) holds the **native bash pre-commit**
-  hook (`pre-commit.sh`) and the unified installer (`install.sh`)
-  added in [ADR-0924](../docs/adr/0924-native-pre-commit-hooks.md).
-  This directory is the opt-in alternative to the pre-commit
-  framework path.
+Framework `pre-commit`, `commit-msg`, and `pre-push` dispatch must preserve
+Git arguments and push-ref stdin through `pre-commit hook-impl`; the
+pre-rebase source guard is installed too. Native mode changes only the
+pre-commit formatter path. MkDocs and PR-body checks are independent
+pre-push config entries: a no-PR/draft skip must not skip documentation
+validation, and selected docs must fail if MkDocs is unavailable. Direct
+non-doc invocations select scope before requiring the docs toolchain.
+Paired updates to the config, dispatcher, fixture, and
+`docs/development/pre-commit-hooks.md` preserve this contract.
 
-The naming split is deliberate — it lets `make install-hooks`
-delegate to `scripts/githooks/install.sh` (a single entry point
-that handles both framework and native modes) without colliding
-with the existing `scripts/git-hooks/pre-push` symlink target that
-the legacy `hooks-install` target wires in.
+### Python pre-push scope follows the PR merge base
 
-**On rebase**: the native `pre-commit.sh` mirrors
-`.pre-commit-config.yaml`'s file-scope rules (excludes for
-`subprojects/`, `core/test/data/`, etc.). When the framework
-config changes scope, the native script needs a paired update —
-otherwise contributors on the native path drift silently from CI.
-The native path is staged-file scope only; CI continues to invoke
-`pre-commit run --all-files` against the framework matrix.
+`git-hooks/pre-push-mypy.py` implements parent §12.10 for the existing
+`ai/` and `scripts/` Python scope. Preserve full merge-base ownership,
+including type changes, rather than intersecting with pre-commit's
+old-tip/new-tip filenames. Rebases can change imports without changing an
+owned source file. Keep `always_run: true` and `pass_filenames: false` so
+even an empty outgoing diff rechecks that set. Resolve symlinks only for
+safety validation; keep lexical Git paths for selection and mypy. Reject
+outgoing refs different from the checked-out HEAD and fail closed on missing
+base/tool/file state. Keep `git-hooks/test-pre-push-mypy.py` registered in
+local hooks and required Pre-Commit CI. No new lint policy is introduced.
 
 ### `run_unittests.sh` is upstream-mirror
 

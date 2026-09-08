@@ -263,8 +263,8 @@ State-of-the-art Video Encoders on 4K Videos," ICIAR
 - ADR-0333 (LSVQ) — same adapter shape; this Waterloo
   IVC adapter is a near-mirror modulo dataset specifics
   (manifest shape + MOS scale).
-- [ADR-0325 Phase 2](../adr/0325-konvid-150k-phase2.md) (KonViD-150k) — same
-  schema; same resumable-download contract.
+- [ADR-0325 Phase 2](../adr/0325-konvid-150k-corpus-ingestion.md)
+  (KonViD-150k) — same schema; same resumable-download contract.
 - [ADR-0310](../adr/0310-bvi-dvc-corpus-ingestion.md)
   (BVI-DVC) — first second-shard ingestion ADR; sets the
   local-only-corpus / redistributable-derivatives

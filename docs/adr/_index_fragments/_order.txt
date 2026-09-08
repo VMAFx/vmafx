@@ -942,3 +942,15 @@
 1223-cuda-ampere-architecture-floor
 1237-perf-pass-1245
 1229-mcp-go-runtime
+1231-base-image-single-source
+1240-ffmpeg-release-patch-lifecycle
+1238-go-security-required-gate
+1239-agent-cleanup-preserve-work
+1241-worktree-hook-dispatch
+1123-ci-throughput-aggregator-deadline-docker-grouping
+1242-generated-adr-freshness
+1236-version-single-source-tree
+1243-tidy-scoped-baseline-tightening
+1244-merge-train-ownership-and-validation
+1245-cppcheck-exhaustive-configured-analysis
+1246-cppcheck-public-entrypoints

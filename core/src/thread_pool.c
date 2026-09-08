@@ -24,6 +24,9 @@
 
 #include "thread_pool.h"
 
+/* MSVC C23 requires NULL in C sources (ADR-1138). */
+// NOLINTBEGIN(modernize-use-nullptr)
+
 /* Payload ≤ JOB_INLINE_DATA_SIZE lives inside the job struct itself,
  * avoiding a second malloc per enqueue. Sized to cover every
  * `data_sz` used by current callers (the CPU read_pictures stage
@@ -47,7 +50,10 @@ typedef struct VmafThreadPool {
     struct {
         pthread_mutex_t lock;
         pthread_cond_t empty;
+        pthread_cond_t not_full;
         VmafThreadPoolJob *head, *tail;
+        unsigned depth;
+        unsigned waiting_producers;
     } queue;
     pthread_cond_t working;
     /* n_threads: live worker count; decremented by each runner on exit (lock held).
@@ -129,6 +135,10 @@ static void *vmaf_thread_pool_runner(void *p)
         if (pool->stop)
             break;
         VmafThreadPoolJob *job = vmaf_thread_pool_fetch_job(pool);
+        if (job) {
+            pool->queue.depth--;
+            (void)pthread_cond_signal(&pool->queue.not_full);
+        }
         pool->n_working++;
         pthread_mutex_unlock(&(pool->queue.lock));
         int job_err = 0;
@@ -153,8 +163,8 @@ static void *vmaf_thread_pool_runner(void *p)
     return NULL;
 }
 
-/* Initialise the three synchronisation primitives in `p` in dependency
- * order (mutex first, then both cond vars).  On failure, tears down only
+/* Initialise the synchronisation primitives in `p` in dependency
+ * order (mutex first, then the cond vars).  On failure, tears down only
  * the objects that were successfully initialised and returns -ENOMEM.
  * pthread_*_init can fail with ENOMEM on constrained / embedded systems;
  * ignoring the return value leaves the pool in undefined state. */
@@ -173,7 +183,16 @@ static int pool_init_primitives(VmafThreadPool *p, VmafThreadPool **pool_out_to_
         *pool_out_to_null = NULL;
         return -ENOMEM;
     }
+    if (pthread_cond_init(&(p->queue.not_full), NULL) != 0) {
+        pthread_cond_destroy(&(p->queue.empty));
+        pthread_mutex_destroy(&(p->queue.lock));
+        free(p->workers);
+        free(p);
+        *pool_out_to_null = NULL;
+        return -ENOMEM;
+    }
     if (pthread_cond_init(&(p->working), NULL) != 0) {
+        pthread_cond_destroy(&(p->queue.not_full));
         pthread_cond_destroy(&(p->queue.empty));
         pthread_mutex_destroy(&(p->queue.lock));
         free(p->workers);
@@ -200,6 +219,7 @@ static int pool_spawn_workers(VmafThreadPool *p, VmafThreadPoolConfig cfg,
             if (i == 0) {
                 pthread_mutex_destroy(&(p->queue.lock));
                 pthread_cond_destroy(&(p->queue.empty));
+                pthread_cond_destroy(&(p->queue.not_full));
                 pthread_cond_destroy(&(p->working));
                 free(p->workers);
                 free(p);
@@ -244,8 +264,28 @@ int vmaf_thread_pool_create(VmafThreadPool **pool, VmafThreadPoolConfig cfg)
     return pool_spawn_workers(p, cfg, pool);
 }
 
+/* Caller holds queue.lock throughout admission and job allocation. */
+static int wait_for_queue_capacity(VmafThreadPool *pool)
+{
+    /* Bound queued work before allocating or retaining a job payload. The
+     * actual created width also covers partial pthread_create failure. */
+    pool->queue.waiting_producers++;
+    while (pool->queue.depth >= pool->n_workers_created && !pool->stop)
+        (void)pthread_cond_wait(&pool->queue.not_full, &pool->queue.lock);
+    pool->queue.waiting_producers--;
+    if (pool->stop) {
+        /* Destroy must not free the condition/mutex while a producer is still
+         * waking from its capacity wait. API entry is externally serialized
+         * against destroy; callers waiting to acquire queue.lock are not counted. */
+        (void)pthread_cond_signal(&pool->working);
+        return -ECANCELED;
+    }
+
+    return 0;
+}
+
 int vmaf_thread_pool_enqueue(VmafThreadPool *pool, int (*func)(void *data, void **thread_data),
-                             void *data, size_t data_sz)
+                             const void *data, size_t data_sz)
 {
     if (!pool)
         return -EINVAL;
@@ -254,9 +294,14 @@ int vmaf_thread_pool_enqueue(VmafThreadPool *pool, int (*func)(void *data, void 
 
     pthread_mutex_lock(&(pool->queue.lock));
 
-    /* Reuse a recycled slot if available, otherwise heap-allocate one.
-     * The free list is mutex-protected so fetching and returning stays
-     * coherent with the runner thread's recycle on job completion. */
+    const int admission_err = wait_for_queue_capacity(pool);
+    if (admission_err) {
+        (void)pthread_mutex_unlock(&pool->queue.lock);
+        return admission_err;
+    }
+
+    /* The mutex protects slot reuse against worker-side recycling; allocate
+     * a slot only when none is free. */
     VmafThreadPoolJob *job = pool->free_jobs;
     if (job) {
         pool->free_jobs = job->next;
@@ -296,6 +341,7 @@ int vmaf_thread_pool_enqueue(VmafThreadPool *pool, int (*func)(void *data, void 
         pool->queue.tail = job;
     }
 
+    pool->queue.depth++;
     pthread_cond_signal(&(pool->queue.empty));
     pthread_mutex_unlock(&(pool->queue.lock));
 
@@ -309,7 +355,7 @@ int vmaf_thread_pool_wait(VmafThreadPool *pool)
 
     pthread_mutex_lock(&(pool->queue.lock));
     while ((!pool->stop && (pool->n_working || pool->queue.head)) ||
-           (pool->stop && pool->n_threads))
+           (pool->stop && (pool->n_threads || pool->queue.waiting_producers)))
         pthread_cond_wait(&(pool->working), &(pool->queue.lock));
     /* Harvest and clear the accumulated worker-error flags.  Clearing here
      * means each vmaf_thread_pool_wait() call reports errors from the batch
@@ -339,8 +385,12 @@ int vmaf_thread_pool_destroy(VmafThreadPool *pool)
         job = next_job;
     }
 
+    pool->queue.head = NULL;
+    pool->queue.tail = NULL;
+    pool->queue.depth = 0;
     pool->stop = true;
     pthread_cond_broadcast(&(pool->queue.empty));
+    (void)pthread_cond_broadcast(&pool->queue.not_full);
     pthread_mutex_unlock(&(pool->queue.lock));
     vmaf_thread_pool_wait(pool);
 
@@ -364,8 +414,11 @@ int vmaf_thread_pool_destroy(VmafThreadPool *pool)
 
     pthread_mutex_destroy(&(pool->queue.lock));
     pthread_cond_destroy(&(pool->queue.empty));
+    (void)pthread_cond_destroy(&(pool->queue.not_full));
     pthread_cond_destroy(&(pool->working));
 
     free(pool);
     return 0;
 }
+
+// NOLINTEND(modernize-use-nullptr)

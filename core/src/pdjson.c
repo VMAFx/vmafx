@@ -1,18 +1,13 @@
-/* Vendored 3rd-party JSON parser (pdjson). Suppress lint on the whole file. */
+/* Vendored 3rd-party JSON parser (pdjson); fork changes are in docs/rebase-notes.md. */
 /* Copyright: pdjson authors (https://github.com/skeeto/pdjson), Unlicense */
 /* Fork integration: Copyright 2026 Lusoris */
 /* SPDX-License-Identifier: Unlicense */
-// NOLINTBEGIN
+/* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: preserve upstream C NULL
+ * compatibility and the required Windows MSVC C build. */
 
-#ifndef _POSIX_C_SOURCE
-#define _POSIX_C_SOURCE 200112L
-#elif _POSIX_C_SOURCE < 200112L
-#error incompatible _POSIX_C_SOURCE level
-#endif
-
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 
 #ifndef PDJSON_H
 #include "pdjson.h"
@@ -30,23 +25,28 @@
 #define PDJSON_STACK_MAX 512u
 #endif
 
+static bool json_begin_error(json_stream *json)
+{
+    if (json->flags & JSON_FLAG_ERROR)
+        return false;
+    json->flags |= JSON_FLAG_ERROR;
+    return true;
+}
+
+/* Diagnostic formatting is best effort after the sticky error flag is set.
+ * Keep the upstream formatter (including legacy MSVC), with an expression
+ * macro so calling it inside an if/else never captures the caller's else. */
 #if defined(_MSC_VER) && (_MSC_VER < 1900)
-
 #define json_error(json, format, ...)                                                              \
-    if (!(json->flags & JSON_FLAG_ERROR)) {                                                        \
-        json->flags |= JSON_FLAG_ERROR;                                                            \
-        _snprintf_s(json->errmsg, sizeof(json->errmsg), _TRUNCATE, format, __VA_ARGS__);           \
-    }
-
+    (json_begin_error(json) ? (void)_snprintf_s((json)->errmsg, sizeof((json)->errmsg), _TRUNCATE, \
+                                                format, __VA_ARGS__) :                             \
+                              (void)0)
 #else
-
 #define json_error(json, format, ...)                                                              \
-    if (!(json->flags & JSON_FLAG_ERROR)) {                                                        \
-        json->flags |= JSON_FLAG_ERROR;                                                            \
-        snprintf(json->errmsg, sizeof(json->errmsg), format, __VA_ARGS__);                         \
-    }
-
-#endif /* _MSC_VER */
+    (json_begin_error(json) ?                                                                      \
+         (void)snprintf((json)->errmsg, sizeof((json)->errmsg), format, __VA_ARGS__) :             \
+         (void)0)
+#endif
 
 /* See also PDJSON_STACK_MAX below. */
 #ifndef PDJSON_STACK_INC
@@ -60,45 +60,35 @@ struct json_stack {
 
 static enum json_type push(json_stream *json, enum json_type type)
 {
-    json->stack_top++;
-
-    /* ADR-1061: depth guard — PDJSON_STACK_MAX is always defined above.
-     * Check before the realloc path so we never grow the stack beyond the
-     * limit even if stack_size happens to be below it. */
-    if (json->stack_top > (ptrdiff_t)PDJSON_STACK_MAX) {
+    /* ADR-1061: depth counts containers, while stack_top is a zero-based
+     * index. Reject before changing the accepted stack or allocating. */
+    const ptrdiff_t next_top = json->stack_top + 1;
+    if (next_top >= (ptrdiff_t)PDJSON_STACK_MAX) {
         json_error(json, "%s", "maximum depth of nesting reached");
         return JSON_ERROR;
     }
 
-    if ((size_t)json->stack_top >= json->stack_size) {
-        struct json_stack *stack;
-        /* ADR-1061: guard against size_t wrap before the multiply.
-         * PDJSON_STACK_INC is 4 and PDJSON_STACK_MAX <= 512 so the cap
-         * above prevents any realistic overflow, but an explicit check is
-         * required for CERT-C INT30-C compliance. */
-        size_t new_count = json->stack_size + PDJSON_STACK_INC;
-        if (new_count < json->stack_size) { /* overflow */
+    if ((size_t)next_top >= json->stack_size) {
+        /* Check both the addition and multiplication before either occurs. */
+        if (PDJSON_STACK_INC == 0 || PDJSON_STACK_INC > SIZE_MAX / sizeof(*json->stack) ||
+            json->stack_size > SIZE_MAX / sizeof(*json->stack) - PDJSON_STACK_INC) {
             json_error(json, "%s", "out of memory");
             return JSON_ERROR;
         }
-        if (new_count > (size_t)-1 / sizeof(*json->stack)) { /* multiply overflow */
-            json_error(json, "%s", "out of memory");
-            return JSON_ERROR;
-        }
-        size_t size = new_count * sizeof(*json->stack);
-        stack = (struct json_stack *)json->alloc.realloc(json->stack, size);
+        const size_t new_count = json->stack_size + PDJSON_STACK_INC;
+        const size_t size = new_count * sizeof(*json->stack);
+        struct json_stack *stack = json->alloc.realloc(json->stack, size);
         if (stack == NULL) {
             json_error(json, "%s", "out of memory");
             return JSON_ERROR;
         }
-
-        json->stack_size += PDJSON_STACK_INC;
+        json->stack_size = new_count;
         json->stack = stack;
     }
 
-    json->stack[json->stack_top].type = type;
-    json->stack[json->stack_top].count = 0;
-
+    json->stack_top = next_top;
+    json->stack[next_top].type = type;
+    json->stack[next_top].count = 0;
     return type;
 }
 
@@ -116,8 +106,7 @@ static int buffer_peek(struct json_source *source)
 {
     if (source->position < source->source.buffer.length)
         return source->source.buffer.buffer[source->position];
-    else
-        return EOF;
+    return EOF;
 }
 
 static int buffer_get(struct json_source *source)
@@ -136,7 +125,7 @@ static int stream_get(struct json_source *source)
 static int stream_peek(struct json_source *source)
 {
     int c = fgetc(source->source.stream.stream);
-    ungetc(c, source->source.stream.stream);
+    (void)ungetc(c, source->source.stream.stream);
     return c;
 }
 
@@ -146,10 +135,10 @@ static void init(json_stream *json)
     json->flags = JSON_FLAG_STREAMING;
     json->errmsg[0] = '\0';
     json->ntokens = 0;
-    json->next = (enum json_type)0;
+    json->next = JSON_NONE;
 
     json->stack = NULL;
-    json->stack_top = -1; /* sentinel (ptrdiff_t -1); matches comparisons at lines 723 and 749 */
+    json->stack_top = -1; /* No active container. */
     json->stack_size = 0;
 
     json->data.string = NULL;
@@ -164,9 +153,9 @@ static void init(json_stream *json)
 
 static enum json_type is_match(json_stream *json, const char *pattern, enum json_type type)
 {
-    int c;
     for (const char *p = pattern; *p; p++) {
-        if (*p != (c = json->source.get(&json->source))) {
+        const int c = json->source.get(&json->source);
+        if (*p != c) {
             json_error(json, "expected '%c' instead of byte '%c'", *p, c);
             return JSON_ERROR;
         }
@@ -178,7 +167,7 @@ static int pushchar(json_stream *json, int c)
 {
     if (json->data.string_fill == json->data.string_size) {
         /* ADR-1061: guard the x2 doubling against size_t wrap (CERT-C INT30-C).
-         * When string_size >= SIZE_MAX/2 the multiply would overflow to a value
+         * When string_size > SIZE_MAX/2 the multiply would overflow to a value
          * smaller than the current allocation, causing realloc to shrink the
          * buffer and the subsequent write to go out of bounds. */
         if (json->data.string_size > (size_t)-1 / 2u) {
@@ -292,13 +281,13 @@ static long read_unicode_cp(json_stream *json)
     int shift = 12;
 
     for (size_t i = 0; i < 4; i++) {
-        int c = json->source.get(&json->source);
-        int hc;
+        const int c = json->source.get(&json->source);
+        const int hc = hexchar(c);
 
         if (c == EOF) {
             json_error(json, "%s", "unterminated string literal in Unicode");
             return -1;
-        } else if ((hc = hexchar(c)) == -1) {
+        } else if (hc == -1) {
             json_error(json, "invalid escape Unicode byte '%c'", c);
             return -1;
         }
@@ -312,9 +301,8 @@ static long read_unicode_cp(json_stream *json)
 
 static int read_unicode(json_stream *json)
 {
-    long cp, h, l;
-
-    if ((cp = read_unicode_cp(json)) == -1) {
+    long cp = read_unicode_cp(json);
+    if (cp == -1) {
         return -1;
     }
 
@@ -322,7 +310,7 @@ static int read_unicode(json_stream *json)
         /* This is the high portion of a surrogate pair; we need to read the
          * lower portion to get the codepoint
          */
-        h = cp;
+        const long h = cp;
 
         int c = json->source.get(&json->source);
         if (c == EOF) {
@@ -348,7 +336,8 @@ static int read_unicode(json_stream *json)
             return -1;
         }
 
-        if ((l = read_unicode_cp(json)) == -1) {
+        const long l = read_unicode_cp(json);
+        if (l == -1) {
             return -1;
         }
 
@@ -416,19 +405,11 @@ static int utf8_seq_length(char byte)
     if (u < 0x80)
         return 1;
 
-    if (u <= 0xBF) {
-        /* u >= 0x80 is guaranteed by the early return above; the lower bound
-         * is redundant and was flagged as a constant comparison (CodeQL
-         * cpp/constant-comparison). */
-        // second, third or fourth byte of a multi-byte
-        // sequence, i.e. a "continuation byte"
-        return 0;
-    } else if (u == 0xC0 || u == 0xC1) {
-        // overlong encoding of an ASCII byte
+    if (u <= 0xC1 || u > 0xF4) {
+        /* Continuation bytes, overlong ASCII, or prefixes beyond Unicode. */
         return 0;
     } else if (u <= 0xDF) {
-        /* u >= 0xC2 is guaranteed by the preceding branches (u < 0x80, u <= 0xBF,
-         * u == 0xC0 || u == 0xC1); redundant lower bound removed for
+        /* u >= 0xC2 is guaranteed by the preceding branches; lower bound removed for
          * CodeQL cpp/constant-comparison. */
         // 2-byte sequence
         return 2;
@@ -437,16 +418,8 @@ static int utf8_seq_length(char byte)
          * redundant lower bound removed for CodeQL cpp/constant-comparison. */
         // 3-byte sequence
         return 3;
-    } else if (u <= 0xF4) {
-        /* u >= 0xF0 is guaranteed by the preceding branch (u <= 0xEF);
-         * redundant lower bound removed for CodeQL cpp/constant-comparison. */
-        // 4-byte sequence
-        return 4;
-    } else {
-        // u >= 0xF5
-        // Restricted (start of 4-, 5- or 6-byte sequence) or invalid UTF-8
-        return 0;
     }
+    return 4; /* 0xF0..0xF4: four-byte sequence. */
 }
 
 static int is_legal_utf8(const unsigned char *bytes, int length)
@@ -454,22 +427,14 @@ static int is_legal_utf8(const unsigned char *bytes, int length)
     if (0 == bytes || 0 == length)
         return 0;
 
-    unsigned char a;
-    const unsigned char *srcptr = bytes + length;
-    switch (length) {
-    default:
+    if (length < 1 || length > 4)
         return 0;
-        // Everything else falls through when true.
-    case 4:
-        if ((a = (*--srcptr)) < 0x80 || a > 0xBF)
+    for (int i = length - 1; i >= 2; --i) {
+        if (bytes[i] < 0x80 || bytes[i] > 0xBF)
             return 0;
-        /* FALLTHRU */
-    case 3:
-        if ((a = (*--srcptr)) < 0x80 || a > 0xBF)
-            return 0;
-        /* FALLTHRU */
-    case 2:
-        a = (*--srcptr);
+    }
+    if (length >= 2) {
+        const unsigned char a = bytes[1];
         switch (*bytes) {
         case 0xE0:
             if (a < 0xA0 || a > 0xBF)
@@ -492,11 +457,9 @@ static int is_legal_utf8(const unsigned char *bytes, int length)
                 return 0;
             break;
         }
-        /* FALLTHRU */
-    case 1:
-        if (*bytes >= 0x80 && *bytes < 0xC2)
-            return 0;
     }
+    if (*bytes >= 0x80 && *bytes < 0xC2)
+        return 0;
     return *bytes <= 0xF4;
 }
 
@@ -513,7 +476,6 @@ static int read_utf8(json_stream *json, int next_char)
     int i;
     for (i = 1; i < count; ++i) {
         buffer[i] = json->source.get(&json->source);
-        ;
     }
 
     if (!is_legal_utf8((unsigned char *)buffer, count)) {
@@ -540,8 +502,7 @@ static enum json_type read_string(json_stream *json)
         } else if (c == '"') {
             if (pushchar(json, '\0') == 0)
                 return JSON_STRING;
-            else
-                return JSON_ERROR;
+            return JSON_ERROR;
         } else if (c == '\\') {
             if (read_escaped(json) != 0)
                 return JSON_ERROR;
@@ -585,65 +546,56 @@ static int read_digits(json_stream *json)
     return 0;
 }
 
+static int read_fraction(json_stream *json)
+{
+    const int c = json->source.peek(&json->source);
+    if (c != '.')
+        return 0;
+    (void)json->source.get(&json->source);
+    if (pushchar(json, c) != 0)
+        return -1;
+    return read_digits(json);
+}
+
+static int read_exponent(json_stream *json)
+{
+    int c = json->source.peek(&json->source);
+    if (c != 'e' && c != 'E')
+        return 0;
+    (void)json->source.get(&json->source);
+    if (pushchar(json, c) != 0)
+        return -1;
+    c = json->source.peek(&json->source);
+    if (c == '+' || c == '-') {
+        (void)json->source.get(&json->source);
+        if (pushchar(json, c) != 0)
+            return -1;
+    } else if (!is_digit(c)) {
+        json_error(json, "unexpected byte '%c' in number", c);
+        return -1;
+    }
+    return read_digits(json);
+}
+
 static enum json_type read_number(json_stream *json, int c)
 {
     if (pushchar(json, c) != 0)
         return JSON_ERROR;
     if (c == '-') {
         c = json->source.get(&json->source);
-        if (is_digit(c)) {
-            return read_number(json, c);
-        } else {
+        if (!is_digit(c)) {
             json_error(json, "unexpected byte '%c' in number", c);
             return JSON_ERROR;
         }
-    } else if (strchr("123456789", c) != NULL) {
-        c = json->source.peek(&json->source);
-        if (is_digit(c)) {
-            if (read_digits(json) != 0)
-                return JSON_ERROR;
-        }
+        return read_number(json, c);
     }
-    /* Up to decimal or exponent has been read. */
-    c = json->source.peek(&json->source);
-    if (strchr(".eE", c) == NULL) {
-        if (pushchar(json, '\0') != 0)
-            return JSON_ERROR;
-        else
-            return JSON_NUMBER;
-    }
-    if (c == '.') {
-        json->source.get(&json->source); // consume .
-        if (pushchar(json, c) != 0)
-            return JSON_ERROR;
+    if (c >= '1' && c <= '9' && is_digit(json->source.peek(&json->source))) {
         if (read_digits(json) != 0)
             return JSON_ERROR;
     }
-    /* Check for exponent. */
-    c = json->source.peek(&json->source);
-    if (c == 'e' || c == 'E') {
-        json->source.get(&json->source); // consume e/E
-        if (pushchar(json, c) != 0)
-            return JSON_ERROR;
-        c = json->source.peek(&json->source);
-        if (c == '+' || c == '-') {
-            json->source.get(&json->source); // consume
-            if (pushchar(json, c) != 0)
-                return JSON_ERROR;
-            if (read_digits(json) != 0)
-                return JSON_ERROR;
-        } else if (is_digit(c)) {
-            if (read_digits(json) != 0)
-                return JSON_ERROR;
-        } else {
-            json_error(json, "unexpected byte '%c' in number", c);
-            return JSON_ERROR;
-        }
-    }
-    if (pushchar(json, '\0') != 0)
+    if (read_fraction(json) != 0 || read_exponent(json) != 0 || pushchar(json, '\0') != 0)
         return JSON_ERROR;
-    else
-        return JSON_NUMBER;
+    return JSON_NUMBER;
 }
 
 bool json_isspace(int c)
@@ -654,18 +606,19 @@ bool json_isspace(int c)
     case 0x0d:
     case 0x20:
         return true;
+    default:
+        return false;
     }
-
-    return false;
 }
 
 /* Returns the next non-whitespace character in the stream. */
-static int next(json_stream *json)
+static int next_nonspace(json_stream *json)
 {
     int c;
-    while (json_isspace(c = json->source.get(&json->source)))
+    while (json_isspace(c = json->source.get(&json->source))) {
         if (c == '\n')
             json->lineno++;
+    }
     return c;
 }
 
@@ -710,123 +663,113 @@ static enum json_type read_value(json_stream *json, int c)
 
 enum json_type json_peek(json_stream *json)
 {
-    enum json_type next;
-    if (json->next)
-        next = json->next;
-    else
-        next = json->next = json_next(json);
-    return next;
+    if (json->next == JSON_NONE)
+        json->next = json_next(json);
+    return json->next;
+}
+
+static enum json_type read_array_item(json_stream *json, int c)
+{
+    struct json_stack *frame = &json->stack[json->stack_top];
+    if (frame->count == 0) {
+        if (c == ']')
+            return pop(json, c, JSON_ARRAY);
+        frame->count++;
+        return read_value(json, c);
+    }
+    if (c == ',') {
+        frame->count++;
+        return read_value(json, next_nonspace(json));
+    }
+    if (c == ']')
+        return pop(json, c, JSON_ARRAY);
+    json_error(json, "unexpected byte '%c'", c);
+    return JSON_ERROR;
+}
+
+static enum json_type read_member_name(json_stream *json, int c, const char *error)
+{
+    const enum json_type value = read_value(json, c);
+    if (value != JSON_STRING) {
+        if (value != JSON_ERROR)
+            json_error(json, "%s", error);
+        return JSON_ERROR;
+    }
+    json->stack[json->stack_top].count++;
+    return value;
+}
+
+static enum json_type read_object_item(json_stream *json, int c)
+{
+    struct json_stack *frame = &json->stack[json->stack_top];
+    if (frame->count == 0) {
+        if (c == '}')
+            return pop(json, c, JSON_OBJECT);
+        return read_member_name(json, c, "expected member name or '}'");
+    }
+    if ((frame->count % 2) == 0) {
+        if (c == '}')
+            return pop(json, c, JSON_OBJECT);
+        if (c != ',') {
+            json_error(json, "%s", "expected ',' or '}' after member value");
+            return JSON_ERROR;
+        }
+        return read_member_name(json, next_nonspace(json), "expected member name");
+    }
+    if (c != ':') {
+        json_error(json, "%s", "expected ':' after member name");
+        return JSON_ERROR;
+    }
+    frame->count++;
+    return read_value(json, next_nonspace(json));
+}
+
+static enum json_type finish_document(json_stream *json)
+{
+    /* Streaming mode intentionally leaves trailing whitespace for the caller. */
+    if (!(json->flags & JSON_FLAG_STREAMING)) {
+        int c;
+        do {
+            c = json->source.peek(&json->source);
+            if (json_isspace(c))
+                c = json->source.get(&json->source);
+        } while (json_isspace(c));
+        if (c != EOF) {
+            json_error(json, "expected end of text instead of byte '%c'", c);
+            return JSON_ERROR;
+        }
+    }
+    return JSON_DONE;
 }
 
 enum json_type json_next(json_stream *json)
 {
     if (json->flags & JSON_FLAG_ERROR)
         return JSON_ERROR;
-    if (json->next != 0) {
-        enum json_type next = json->next;
-        json->next = (enum json_type)0;
-        return next;
+    if (json->next != JSON_NONE) {
+        const enum json_type cached = json->next;
+        json->next = JSON_NONE;
+        return cached;
     }
-    if (json->ntokens > 0 && json->stack_top == -1) {
-
-        /* In the streaming mode leave any trailing whitespaces in the stream.
-         * This allows the user to validate any desired separation between
-         * values (such as newlines) using json_source_get/peek() with any
-         * remaining whitespaces ignored as leading when we parse the next
-         * value. */
-        if (!(json->flags & JSON_FLAG_STREAMING)) {
-            int c;
-
-            do {
-                c = json->source.peek(&json->source);
-                if (json_isspace(c)) {
-                    c = json->source.get(&json->source);
-                }
-            } while (json_isspace(c));
-
-            if (c != EOF) {
-                json_error(json, "expected end of text instead of byte '%c'", c);
-                return JSON_ERROR;
-            }
-        }
-
-        return JSON_DONE;
-    }
-    int c = next(json);
+    if (json->ntokens > 0 && json->stack_top == -1)
+        return finish_document(json);
+    const int c = next_nonspace(json);
     if (json->stack_top == -1) {
         if (c == EOF && (json->flags & JSON_FLAG_STREAMING))
             return JSON_DONE;
-
         return read_value(json, c);
     }
-    if (json->stack[json->stack_top].type == JSON_ARRAY) {
-        if (json->stack[json->stack_top].count == 0) {
-            if (c == ']') {
-                return pop(json, c, JSON_ARRAY);
-            }
-            json->stack[json->stack_top].count++;
-            return read_value(json, c);
-        } else if (c == ',') {
-            json->stack[json->stack_top].count++;
-            return read_value(json, next(json));
-        } else if (c == ']') {
-            return pop(json, c, JSON_ARRAY);
-        } else {
-            json_error(json, "unexpected byte '%c'", c);
-            return JSON_ERROR;
-        }
-    } else if (json->stack[json->stack_top].type == JSON_OBJECT) {
-        if (json->stack[json->stack_top].count == 0) {
-            if (c == '}') {
-                return pop(json, c, JSON_OBJECT);
-            }
-
-            /* No member name/value pairs yet. */
-            enum json_type value = read_value(json, c);
-            if (value != JSON_STRING) {
-                if (value != JSON_ERROR)
-                    json_error(json, "%s", "expected member name or '}'");
-                return JSON_ERROR;
-            } else {
-                json->stack[json->stack_top].count++;
-                return value;
-            }
-        } else if ((json->stack[json->stack_top].count % 2) == 0) {
-            /* Expecting comma followed by member name. */
-            if (c != ',' && c != '}') {
-                json_error(json, "%s", "expected ',' or '}' after member value");
-                return JSON_ERROR;
-            } else if (c == '}') {
-                return pop(json, c, JSON_OBJECT);
-            } else {
-                enum json_type value = read_value(json, next(json));
-                if (value != JSON_STRING) {
-                    if (value != JSON_ERROR)
-                        json_error(json, "%s", "expected member name");
-                    return JSON_ERROR;
-                } else {
-                    json->stack[json->stack_top].count++;
-                    return value;
-                }
-            }
-        } else if ((json->stack[json->stack_top].count % 2) != 0) {
-            /* Expecting colon followed by value. */
-            if (c != ':') {
-                json_error(json, "%s", "expected ':' after member name");
-                return JSON_ERROR;
-            } else {
-                json->stack[json->stack_top].count++;
-                return read_value(json, next(json));
-            }
-        }
-    }
+    if (json->stack[json->stack_top].type == JSON_ARRAY)
+        return read_array_item(json, c);
+    if (json->stack[json->stack_top].type == JSON_OBJECT)
+        return read_object_item(json, c);
     json_error(json, "%s", "invalid parser state");
     return JSON_ERROR;
 }
 
 void json_reset(json_stream *json)
 {
-    json->stack_top = -1; /* sentinel (ptrdiff_t -1); matches comparisons at lines 723 and 749 */
+    json->stack_top = -1; /* No active container. */
     json->ntokens = 0;
     json->flags &= ~JSON_FLAG_ERROR;
     json->errmsg[0] = '\0';
@@ -874,38 +817,37 @@ enum json_type json_skip_until(json_stream *json, enum json_type type)
     return type;
 }
 
-const char *json_get_string(json_stream *json, size_t *length)
+const char *json_get_string(const json_stream *json, size_t *length)
 {
     if (length != NULL)
         *length = json->data.string_fill;
     if (json->data.string == NULL)
         return "";
-    else
-        return json->data.string;
+    return json->data.string;
 }
 
-double json_get_number(json_stream *json)
+double json_get_number(const json_stream *json)
 {
-    char *p = json->data.string;
+    const char *p = json->data.string;
     return p == NULL ? 0 : strtod(p, NULL);
 }
 
-const char *json_get_error(json_stream *json)
+const char *json_get_error(const json_stream *json)
 {
-    return json->flags & JSON_FLAG_ERROR ? json->errmsg : NULL;
+    return (json->flags & JSON_FLAG_ERROR) ? json->errmsg : NULL;
 }
 
-size_t json_get_lineno(json_stream *json)
+size_t json_get_lineno(const json_stream *json)
 {
     return json->lineno;
 }
 
-size_t json_get_position(json_stream *json)
+size_t json_get_position(const json_stream *json)
 {
     return json->source.position;
 }
 
-size_t json_get_depth(json_stream *json)
+size_t json_get_depth(const json_stream *json)
 {
     return json->stack_top + 1;
 }
@@ -919,7 +861,7 @@ size_t json_get_depth(json_stream *json)
    In particular, inside an object, an odd number would indicate that the just
    observed JSON_STRING event is a member name.
 */
-enum json_type json_get_context(json_stream *json, size_t *count)
+enum json_type json_get_context(const json_stream *json, size_t *count)
 {
     if (json->stack_top == -1)
         return JSON_DONE;
@@ -985,17 +927,18 @@ void json_open_user(json_stream *json, json_user_io get, json_user_io peek, void
     json->source.source.user.peek = peek;
 }
 
-void json_set_allocator(json_stream *json, json_allocator *a)
+void json_set_allocator(json_stream *json, const json_allocator *a)
 {
     json->alloc = *a;
 }
 
 void json_set_streaming(json_stream *json, bool streaming)
 {
-    if (streaming)
+    if (streaming) {
         json->flags |= JSON_FLAG_STREAMING;
-    else
+    } else {
         json->flags &= ~JSON_FLAG_STREAMING;
+    }
 }
 
 void json_close(json_stream *json)
@@ -1004,4 +947,4 @@ void json_close(json_stream *json)
     json->alloc.free(json->data.string);
 }
 
-// NOLINTEND
+/* NOLINTEND(modernize-use-nullptr) */

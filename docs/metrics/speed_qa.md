@@ -251,3 +251,14 @@ The C extractors must have been compiled with `-Denable_float=true`.
 4. Noise-textured (checkerboard) input produces a higher score than flat.
 5. A 0-to-255 inter-frame step raises frame-1 score above frame-0 score
    (confirming the temporal component is positive).
+
+Run the existing CPU tests in a build configured with `-Denable_float=true`
+(the chroma/temporal registration test is float-gated):
+
+```sh
+meson test -C build --print-errorlogs test_speed test_speed_qa
+```
+
+The two executables retain five registered cases each. The temporal QA test
+uses small setup helpers that propagate the original assertion failure to
+the same test runner; its 64×64 inputs and 0-to-255 frame step are unchanged.

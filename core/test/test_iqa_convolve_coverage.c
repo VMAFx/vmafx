@@ -19,7 +19,7 @@
  *    6. iqa_filter_pixel() with NULL kernel (line 273-274).
  *    7. iqa_filter_pixel() edge / non-edge dispatch (line 285-300).
  */
-
+// NOLINTBEGIN(modernize-use-nullptr) — ADR-1138/ADR-1166: MSVC C NULL.
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,7 +34,7 @@
 
 static char *test_kbnd_symmetric_in_range(void)
 {
-    float img[9] = {0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f};
+    const float img[9] = {0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f};
     /* (0,0) is in range — identity. */
     mu_assert("KBND_SYMMETRIC in-range identity", KBND_SYMMETRIC(img, 3, 3, 0, 0, 0.0f) == 0.f);
     mu_assert("KBND_SYMMETRIC center", KBND_SYMMETRIC(img, 3, 3, 1, 1, 0.0f) == 4.f);
@@ -43,7 +43,7 @@ static char *test_kbnd_symmetric_in_range(void)
 
 static char *test_kbnd_symmetric_negative(void)
 {
-    float img[9] = {1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f, 9.f};
+    const float img[9] = {1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f, 9.f};
     /* x = -1, y = 0 → mirror to (0,0) */
     mu_assert("KBND_SYMMETRIC x=-1 reflects to x=0", KBND_SYMMETRIC(img, 3, 3, -1, 0, 0.0f) == 1.f);
     /* y = -1 → mirror to y = 0 */
@@ -53,7 +53,7 @@ static char *test_kbnd_symmetric_negative(void)
 
 static char *test_kbnd_symmetric_overflow(void)
 {
-    float img[9] = {1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f, 9.f};
+    const float img[9] = {1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f, 9.f};
     /* x = 3 (out of 0..2) → reflect to x = 2 */
     mu_assert("KBND_SYMMETRIC x=3 reflects to x=2", KBND_SYMMETRIC(img, 3, 3, 3, 1, 0.0f) == 6.f);
     /* y = 3 → reflect to y = 2 */
@@ -63,7 +63,7 @@ static char *test_kbnd_symmetric_overflow(void)
 
 static char *test_kbnd_replicate_clamp(void)
 {
-    float img[9] = {1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f, 9.f};
+    const float img[9] = {1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f, 9.f};
     mu_assert("KBND_REPLICATE x<0 → x=0", KBND_REPLICATE(img, 3, 3, -1, 1, 0.0f) == 4.f);
     mu_assert("KBND_REPLICATE x>w → x=w-1", KBND_REPLICATE(img, 3, 3, 5, 1, 0.0f) == 6.f);
     mu_assert("KBND_REPLICATE y<0 → y=0", KBND_REPLICATE(img, 3, 3, 1, -1, 0.0f) == 2.f);
@@ -73,7 +73,7 @@ static char *test_kbnd_replicate_clamp(void)
 
 static char *test_kbnd_constant_oob(void)
 {
-    float img[9] = {1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f, 9.f};
+    const float img[9] = {1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f, 9.f};
     /* x or y >= w/h → return bnd_const. */
     mu_assert("KBND_CONSTANT x>=w returns constant",
               KBND_CONSTANT(img, 3, 3, 7, 1, 42.0f) == 42.0f);
@@ -128,7 +128,7 @@ static char *test_iqa_img_filter_owns_buffer(void)
 
 static char *test_iqa_filter_pixel_null_kernel(void)
 {
-    float img[9] = {0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f};
+    const float img[9] = {0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f};
     float v = iqa_filter_pixel(img, 3, 3, 1, 1, NULL, 1.0f);
     mu_assert("filter_pixel NULL kernel returns raw pixel", v == 4.f);
     return NULL;
@@ -137,8 +137,8 @@ static char *test_iqa_filter_pixel_null_kernel(void)
 static char *test_iqa_filter_pixel_edge_branch(void)
 {
     /* 5x5 image, 3x3 kernel — (0,0) hits the edge branch (line 286). */
-    float img[25] = {1.f, 2.f, 3.f, 4.f, 5.f, 1.f, 2.f, 3.f, 4.f, 5.f, 1.f, 2.f, 3.f,
-                     4.f, 5.f, 1.f, 2.f, 3.f, 4.f, 5.f, 1.f, 2.f, 3.f, 4.f, 5.f};
+    const float img[25] = {1.f, 2.f, 3.f, 4.f, 5.f, 1.f, 2.f, 3.f, 4.f, 5.f, 1.f, 2.f, 3.f,
+                           4.f, 5.f, 1.f, 2.f, 3.f, 4.f, 5.f, 1.f, 2.f, 3.f, 4.f, 5.f};
     float k_vals[9] = {0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f, 0.f};
     struct iqa_kernel k;
     k.kernel = k_vals;
@@ -160,16 +160,26 @@ static char *test_iqa_filter_pixel_edge_branch(void)
     return NULL;
 }
 
-char *run_tests(void)
+static char *run_boundary_tests(void)
 {
     mu_run_test(test_kbnd_symmetric_in_range);
     mu_run_test(test_kbnd_symmetric_negative);
     mu_run_test(test_kbnd_symmetric_overflow);
     mu_run_test(test_kbnd_replicate_clamp);
     mu_run_test(test_kbnd_constant_oob);
+    return NULL;
+}
+
+char *run_tests(void)
+{
+    char *msg = run_boundary_tests();
+    if (msg)
+        return msg;
     mu_run_test(test_iqa_img_filter_null_kernel);
     mu_run_test(test_iqa_img_filter_owns_buffer);
     mu_run_test(test_iqa_filter_pixel_null_kernel);
     mu_run_test(test_iqa_filter_pixel_edge_branch);
     return NULL;
 }
+
+// NOLINTEND(modernize-use-nullptr) — ADR-1138/ADR-1166.

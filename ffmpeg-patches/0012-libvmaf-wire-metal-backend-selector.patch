@@ -1,7 +1,10 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
-Date: Sun, 11 May 2026 17:00:00 +0200
+Date: Mon, 11 May 2026 17:00:00 +0200
 Subject: [PATCH] libvmaf: wire metal backend selector (metal_device option)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
 Adds a per-context Metal backend selector to the regular `libvmaf`
 filter, mirroring the existing `sycl_device` / `vulkan_device` /
@@ -63,10 +66,10 @@ applied; applies cleanly.
  2 files changed, 50 insertions(+)
 
 diff --git a/configure b/configure
-index 405ffe1..7c8c8ef 100755
+index 46973b60e1128fdf60f5236c0666fbe9ce7a3a71..fc8cab818ef59faeb3c4ffbcfbaac504a4ff5ee4 100755
 --- a/configure
 +++ b/configure
-@@ -296,6 +296,7 @@ External library support:
+@@ -295,6 +295,7 @@ External library support:
    --enable-libvidstab      enable video stabilization using vid.stab [no]
    --enable-libvmaf         enable vmaf filter via libvmaf [no]
    --enable-libvmaf-hip     enable HIP-accelerated vmaf filter via libvmaf [no]
@@ -74,7 +77,7 @@ index 405ffe1..7c8c8ef 100755
    --enable-libvmaf-cuda    enable CUDA-accelerated vmaf filter via libvmaf [no]
    --enable-libvmaf-sycl    enable SYCL-accelerated vmaf filter via libvmaf [no]
    --enable-libvmaf-vulkan  enable Vulkan-accelerated vmaf filter via libvmaf [no]
-@@ -2104,6 +2105,7 @@ EXTERNAL_LIBRARY_LIST="
+@@ -2143,6 +2144,7 @@ EXTERNAL_LIBRARY_LIST="
      libv4l2
      libvmaf
      libvmaf_hip
@@ -82,8 +85,7 @@ index 405ffe1..7c8c8ef 100755
      libvmaf_cuda
      libvmaf_sycl
      libvmaf_vulkan
-@@ -7403,6 +7405,9 @@ enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid
- enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init
+@@ -7471,6 +7473,9 @@ enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvm
  enabled libvmaf_hip       && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
                               check_pkg_config libvmaf_hip "libvmaf >= 3.0.0" libvmaf/libvmaf_hip.h vmaf_hip_state_init
  enabled libvmaf           && check_pkg_config libvmaf_hip "libvmaf >= 3.0.0" libvmaf/libvmaf_hip.h vmaf_hip_state_init
@@ -92,14 +94,15 @@ index 405ffe1..7c8c8ef 100755
 +enabled libvmaf           && check_pkg_config libvmaf_metal "libvmaf >= 3.0.0" libvmaf/libvmaf_metal.h vmaf_metal_state_init
  enabled libvmaf_cuda      && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init &&
                               check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
+ enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 0793356..5c4d5ad 100644
+index d8b582902257109bf8c0fb0cdc40137a60295514..b6d77a7a9e74ec0937493f12668602271a494e0e 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -72,6 +72,10 @@
  #include <libvmaf/libvmaf_hip.h>
  #endif
-
+ 
 +#if CONFIG_LIBVMAF_METAL
 +#include <libvmaf/libvmaf_metal.h>
 +#endif
@@ -115,7 +118,7 @@ index 0793356..5c4d5ad 100644
 +#if CONFIG_LIBVMAF_METAL
 +    VmafMetalState *metal_state;        /* owned by the libvmaf filter when metal_device >= -1 + !default-disabled */
 +#endif
-
+ 
      VmafContext *vmaf;
      VmafModel **model;
 @@ -139,6 +147,7 @@ static const AVOption libvmaf_options[] = {
@@ -125,11 +128,11 @@ index 0793356..5c4d5ad 100644
 +    {"metal_device", "Metal device index (-2 = disabled, -1 = system default, 0+ = MTLCopyAllDevices ordinal).", OFFSET(metal_device), AV_OPT_TYPE_INT, {.i64=-2}, -2, INT_MAX, FLAGS},
      { NULL }
  };
-
+ 
 @@ -688,6 +697,35 @@ static av_cold int init(AVFilterContext *ctx)
  #endif
      }
-
+ 
 +    if (s->metal_device >= -1) {
 +#if CONFIG_LIBVMAF_METAL
 +        VmafMetalConfiguration metal_cfg = {
@@ -162,7 +165,7 @@ index 0793356..5c4d5ad 100644
      err = parse_models(ctx);
      if (err)
          return err;
-@@ -921,6 +959,13 @@ clean_up:
+@@ -931,6 +969,13 @@ clean_up:
          s->hip_state = NULL;
      }
  #endif
@@ -174,7 +177,5 @@ index 0793356..5c4d5ad 100644
 +    }
 +#endif
  }
-
+ 
  static const AVFilterPad libvmaf_inputs[] = {
---
-2.54.0

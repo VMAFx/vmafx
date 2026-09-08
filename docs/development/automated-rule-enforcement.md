@@ -98,12 +98,17 @@ or `dependabot[bot]`, or branches matching `renovate/*` / `dependabot/*`)
 cannot satisfy the deliverables checklist. When every changed file in the
 PR is an allowed dependency manifest, lockfile, or image-tag surface (e.g.
 `package.json`, `go.mod`, `Cargo.toml`, `pyproject.toml`, `requirements*.txt`,
-`Dockerfile*`, `dev/Containerfile`, `docker/**`, `deploy/helm/**`,
+the root `build-config.env`, `Dockerfile*`, `dev/Containerfile`, `docker/**`, `deploy/helm/**`,
 `Chart.yaml` / `Chart.lock`, `docker-compose*.yml`,
 `.pre-commit-config.yaml`, `.github/workflows/**`, `changelog.d/**`), the PR
 is classified as dependency-only via
 `scripts/ci/classify-dependency-pr.sh`. The job emits a GitHub Actions
 notice and succeeds without running the deliverables body checks.
+
+The `build-config.env` allowance applies only at the repository root, including
+updates accompanied by its Dockerfile mirrors. A nested `pkg/build-config.env`
+or an unrelated `runtime.env` is outside this allowance. A human change on a
+non-bot branch still runs the documentation gates.
 
 If ANY other path is touched — especially source code under `core/`, `ai/`,
 `python/`, `compat/`, `cmd/`, `pkg/`, `internal/`, `bindings/`, `tools/`,

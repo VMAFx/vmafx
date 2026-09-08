@@ -1042,7 +1042,7 @@ static int validate_image_lbd(const VmafPicture *pic)
         return 0;
     uint8_t max_val = (1 << bpc) - 1;
     int channel = 0;
-    uint8_t *data = (uint8_t *)pic->data[channel];
+    const uint8_t *data = (const uint8_t *)pic->data[channel];
     size_t stride = pic->stride[channel];
     for (unsigned i = 0; i < pic->h[channel]; i++) {
         for (unsigned j = 0; j < pic->w[channel]; j++) {
@@ -1065,7 +1065,7 @@ static int validate_image_hbd(const VmafPicture *pic)
         return 0;
     uint16_t max_val = (1 << bpc) - 1;
     int channel = 0;
-    uint16_t *data = (uint16_t *)pic->data[channel];
+    const uint16_t *data = (const uint16_t *)pic->data[channel];
     size_t stride = pic->stride[channel] / 2;
     for (unsigned i = 0; i < pic->h[channel]; i++) {
         for (unsigned j = 0; j < pic->w[channel]; j++) {
@@ -1354,9 +1354,9 @@ static void calculate_c_values_row(float *c_values, const uint16_t *histograms,
                                    ptrdiff_t stride, const uint16_t num_diffs,
                                    const uint16_t *tvi_for_diff, uint16_t vlt_luma,
                                    const int *diff_weights, const int *all_diffs,
-                                   const float *reciprocal_lut)
+                                   const float *reciprocals)
 {
-    (void)reciprocal_lut;
+    (void)reciprocals;
     int v_lo_signed = (int)vlt_luma - 3 * (int)num_diffs + 1;
     uint16_t v_band_base = v_lo_signed > 0 ? (uint16_t)v_lo_signed : 0;
     uint16_t v_band_size = tvi_for_diff[num_diffs - 1] + 1 - v_band_base;
@@ -1655,8 +1655,8 @@ static int cambi_score(VmafPicture *pics, uint16_t window_size, double topk,
     return 0;
 }
 
-static int preprocess_and_extract_cambi(CambiState *s, VmafPicture *pic, double *score, bool is_src,
-                                        int frame)
+static int preprocess_and_extract_cambi(CambiState *s, const VmafPicture *pic, double *score,
+                                        bool is_src, int frame)
 {
     int width = is_src ? s->src_width : s->enc_width;
     int height = is_src ? s->src_height : s->enc_height;
@@ -1691,7 +1691,10 @@ static double combine_dist_src_scores(double dist_score, double src_score)
     return MAX(0, dist_score - src_score);
 }
 
+/* ADR-0205 / feature_extractor.h: the shared extract callback fixes mutable picture types. */
+// cppcheck-suppress constParameterCallback
 static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
+                   // cppcheck-suppress constParameterCallback
                    VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
 {
@@ -1792,6 +1795,8 @@ VmafFeatureExtractor vmaf_fex_cambi = {
 /* ------------------------------------------------------------------ */
 #include "cambi_internal.h"
 
+/* ADR-0205: retained private GPU scaffold; see 2043-cambi-production-lint-2026-09-08.md. */
+// cppcheck-suppress unusedFunction
 void vmaf_cambi_get_spatial_mask(const VmafPicture *image, VmafPicture *mask, uint32_t *dp,
                                  uint16_t *derivative_buffer, unsigned width, unsigned height,
                                  VmafCambiDerivativeCalculator derivative_callback)
@@ -1800,16 +1805,22 @@ void vmaf_cambi_get_spatial_mask(const VmafPicture *image, VmafPicture *mask, ui
                      (VmafDerivativeCalculator)derivative_callback);
 }
 
+/* ADR-0205: retained private GPU scaffold; see 2043-cambi-production-lint-2026-09-08.md. */
+// cppcheck-suppress unusedFunction
 void vmaf_cambi_decimate(VmafPicture *image, unsigned width, unsigned height)
 {
     decimate(image, width, height);
 }
 
+/* ADR-0205: retained private GPU scaffold; see 2043-cambi-production-lint-2026-09-08.md. */
+// cppcheck-suppress unusedFunction
 void vmaf_cambi_filter_mode(const VmafPicture *image, int width, int height, uint16_t *buffer)
 {
     filter_mode(image, width, height, buffer);
 }
 
+/* ADR-0205: GPU callers are outside CPU profiles; see 2043-cambi-production-lint-2026-09-08.md. */
+// cppcheck-suppress unusedFunction
 void vmaf_cambi_calculate_c_values(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
                                    uint16_t *histograms, uint16_t window_size,
                                    const uint16_t num_diffs, const uint16_t *tvi_for_diff,
@@ -1829,21 +1840,29 @@ void vmaf_cambi_calculate_c_values(VmafPicture *pic, const VmafPicture *mask_pic
                        vlt_luma, diff_weights, all_diffs, width, height);
 }
 
+/* ADR-0205: GPU callers are outside CPU profiles; see 2043-cambi-production-lint-2026-09-08.md. */
+// cppcheck-suppress unusedFunction
 double vmaf_cambi_spatial_pooling(float *c_values, double topk, unsigned width, unsigned height)
 {
     return spatial_pooling(c_values, topk, width, height);
 }
 
-double vmaf_cambi_weight_scores_per_scale(double *scores_per_scale, uint16_t normalization)
+/* ADR-0205: GPU callers are outside CPU profiles; see 2043-cambi-production-lint-2026-09-08.md. */
+// cppcheck-suppress unusedFunction
+double vmaf_cambi_weight_scores_per_scale(const double *scores_per_scale, uint16_t normalization)
 {
     return weight_scores_per_scale(scores_per_scale, normalization);
 }
 
+/* ADR-0205: GPU callers are outside CPU profiles; see 2043-cambi-production-lint-2026-09-08.md. */
+// cppcheck-suppress unusedFunction
 uint16_t vmaf_cambi_get_pixels_in_window(uint16_t window_length)
 {
     return get_pixels_in_window(window_length);
 }
 
+/* ADR-0205: GPU callers are outside CPU profiles; see 2043-cambi-production-lint-2026-09-08.md. */
+// cppcheck-suppress unusedFunction
 void vmaf_cambi_default_callbacks(VmafCambiRangeUpdater *inc, VmafCambiRangeUpdater *dec,
                                   VmafCambiDerivativeCalculator *deriv)
 {
@@ -1852,12 +1871,16 @@ void vmaf_cambi_default_callbacks(VmafCambiRangeUpdater *inc, VmafCambiRangeUpda
     *deriv = (VmafCambiDerivativeCalculator)get_derivative_data_for_row;
 }
 
+/* ADR-0205: GPU callers are outside CPU profiles; see 2043-cambi-production-lint-2026-09-08.md. */
+// cppcheck-suppress unusedFunction
 int vmaf_cambi_preprocessing(const VmafPicture *image, VmafPicture *preprocessed, int width,
                              int height, int enc_bitdepth)
 {
     return cambi_preprocessing(image, preprocessed, width, height, enc_bitdepth);
 }
 
+/* ADR-0205: GPU callers are outside CPU profiles; see 2043-cambi-production-lint-2026-09-08.md. */
+// cppcheck-suppress unusedFunction
 int vmaf_cambi_init_tvi_and_vlt(int num_diffs, const uint16_t *diffs_to_consider,
                                 double tvi_threshold, double cambi_vis_lum_threshold,
                                 const char *cambi_eotf, const char *eotf, uint16_t *tvi_for_diff,

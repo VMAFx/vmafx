@@ -9,6 +9,18 @@ endif
 
 test_inc = include_directories('.')
 
+# Execute Windows discovery with stubbed tools on POSIX build hosts. This
+# exercises Meson control flow without requiring a Windows SDK or CUDA device.
+if build_machine.system() != 'windows'
+    test('test_windows_cuda_compiler_discovery',
+        import('python').find_installation(),
+        args : files('test_windows_cuda_compiler_discovery.py'),
+        env : ['VMAFX_TEST_MESON=' + find_program('meson', native : true).full_path()],
+        suite : ['fast'],
+        timeout : 90,
+    )
+endif
+
 # Aggregate of all GPU/compute backend dependency objects so test
 # binaries that must link against ANY enabled backend can reference
 # one variable instead of repeating the per-backend list.
@@ -198,6 +210,28 @@ test_thread_pool = executable('test_thread_pool',
     dependencies : [pthread_dependency, thread_lib, sycl_dependency],
 )
 
+# Source inclusion allows deterministic pthread failure and wakeup injection.
+test_thread_pool_backpressure = executable('test_thread_pool_backpressure',
+    ['test.c', 'test_thread_pool_backpressure.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    dependencies : [pthread_dependency, thread_lib],
+)
+
+test_pdjson = executable('test_pdjson',
+    ['test.c', 'test_pdjson.c', '../src/pdjson.c'],
+    include_directories : [test_inc, include_directories('../src')],
+)
+
+foreach increment_case : [['zero', '0'], ['oversized', 'SIZE_MAX']]
+    increment_test_name = 'test_pdjson_stack_increment_' + increment_case[0]
+    increment_test = executable(increment_test_name,
+        ['test.c', 'test_pdjson_stack_increment.c', '../src/pdjson.c'],
+        include_directories : [test_inc, include_directories('../src')],
+        c_args : ['-DPDJSON_STACK_INC=' + increment_case[1]],
+    )
+    test(increment_test_name, increment_test, suite : ['fast'])
+endforeach
+
 test_model = executable('test_model',
     ['test.c', 'test_model.c', '../src/dict.cpp', '../src/pdjson.c', json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
@@ -236,6 +270,26 @@ test_model_feature_overload_ownership = executable('test_model_feature_overload_
     objects : [libsvm_static_lib.extract_all_objects(recursive: true),
                read_json_model_cpp23_lib.extract_all_objects(recursive: true)],
 )
+
+# Public-only failed-registration ownership regression (Research-2048).
+test_model_registration_ownership = executable('test_model_registration_ownership',
+    ['test.c', 'test_model_registration_ownership.cpp'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : libvmaf_public_link,
+    dependencies : [math_lib, pthread_dependency, thread_lib],
+)
+
+# ELF fault control: private dictionary-copy failure, public registration callers.
+# It deliberately interposes one symbol and must use the actual shared library.
+if host_machine.system() == 'linux' and get_option('default_library') != 'static'
+    test_registration_partial_copy = executable('test_registration_partial_copy',
+        ['test.c', 'test_registration_partial_copy.cpp'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : libvmaf_public_link,
+        dependencies : [math_lib, pthread_dependency, thread_lib, cc.find_library('dl')],
+    )
+    test('test_registration_partial_copy', test_registration_partial_copy, suite : ['fast'])
+endif
 
 # Coverage for model-collection public API: vmaf_model_collection_load,
 # vmaf_use_features_from_model_collection, vmaf_score_at_index_model_collection,
@@ -352,6 +406,72 @@ test_feature_extractor = executable('test_feature_extractor',
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects
 )
+
+# Registration identity and checked growth, through private and public callers.
+fex_vector_test_args = []
+fex_vector_link_args = []
+if host_machine.system() == 'linux'
+  fex_vector_test_args = ['-DFEX_VECTOR_ALLOC_TEST=1']
+  fex_vector_link_args = ['-Wl,--wrap=realloc', '-Wl,--wrap=vmaf_feature_name_from_options']
+endif
+test_fex_ctx_vector = executable('test_fex_ctx_vector',
+    # Compile private vector dependencies without interposing on a public-API test.
+    ['test.c', 'test_fex_ctx_vector.cpp', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     '../src/fex_ctx_vector.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    cpp_args : fex_vector_test_args,
+    link_args : fex_vector_link_args,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+
+# Keep public calls in a separate executable: private objects in the caller
+# can interpose on ELF shared-library internals and invalidate an old/new control.
+test_fex_ctx_vector_public = executable('test_fex_ctx_vector_public',
+    ['test.c', 'test_fex_ctx_vector_public.cpp'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : libvmaf_public_link,
+    dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+)
+
+# Link-time shims synchronize normal pool growth and force legal realloc moves.
+# No production hook or GPU execution: GNU-compatible --wrap is Linux-only here.
+if host_machine.system() == 'linux'
+test_fex_pool_growth = executable('test_fex_pool_growth',
+    ['test.c', 'test_fex_pool_growth.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    link_args : ['-Wl,--wrap=pthread_cond_wait', '-Wl,--wrap=realloc',
+                 '-Wl,--wrap=malloc', '-Wl,--wrap=calloc', '-Wl,--wrap=strdup', '-Wl,--wrap=pthread_cond_init',
+                 '-Wl,--wrap=pthread_cond_destroy'],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_fex_pool_growth', test_fex_pool_growth, suite : ['fast'], timeout : 15)
+endif
 
 test_dict = executable('test_dict',
     ['test.c', 'test_dict.cpp', '../src/dict.cpp'],
@@ -2152,6 +2272,14 @@ test_vmaf_roi = executable('test_vmaf_roi',
 )
 test('test_vmaf_roi', test_vmaf_roi, suite : ['fast'])
 
+# Exercise the production private ROI reader and placeholder, not copied math.
+test_vmaf_roi_bounds = executable('test_vmaf_roi_bounds',
+    ['test.c', 'test_vmaf_roi_bounds.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    dependencies : [test_vmaf_roi_libm],
+)
+test('test_vmaf_roi_bounds', test_vmaf_roi_bounds, suite : ['fast'])
+
 # picture pool test - exercises vmaf_preallocate_pictures / vmaf_fetch_preallocated_picture.
 # These symbols are always linked into libvmaf (no build gate), so this test
 # always runs.
@@ -2324,6 +2452,27 @@ test_convolution_edge_small = executable('test_convolution_edge_small',
 )
 test('test_convolution_edge_small', test_convolution_edge_small, suite : ['fast'])
 
+# Exercise the configured convolution objects directly, including shared builds.
+# No float-feature dependency: float motion also consumes these common kernels.
+if is_asm_enabled and host_machine.cpu_family().startswith('x86')
+    convolution_horizontal_objects = [
+        x86_avx2_static_lib.extract_objects(feature_src_dir + 'common/convolution_avx.c'),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+    ]
+    if is_avx512_enabled
+        convolution_horizontal_objects += x86_avx512_static_lib.extract_objects(
+            feature_src_dir + 'common/convolution_avx512.c')
+    endif
+    test_convolution_horizontal = executable('test_convolution_horizontal',
+        ['test.c', 'test_convolution_horizontal.c', '../src/feature/common/alignment.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        c_args : vmaf_cflags_common,
+        dependencies : [math_lib, thread_lib],
+        objects : convolution_horizontal_objects,
+    )
+    test('test_convolution_horizontal', test_convolution_horizontal, suite : ['fast'])
+endif
+
 # Netflix/vmaf#1551 (retracting Netflix/vmaf#1422): the MSVC __builtin_clz shim
 # must derive the leading-zero count from BSR, not from the ungated LZCNT
 # instruction. The arithmetic is portable and unit-tested here; the "must not
@@ -2473,6 +2622,25 @@ test_float_vif_coverage = executable('test_float_vif_coverage',
     ] + wave8_opt_only_objects
 )
 test('test_float_vif_coverage', test_float_vif_coverage, suite : ['fast'])
+
+# Exercise internal VIF symbols with the same float gate/object recipe as coverage,
+# including shared-only builds where these helpers are not public exports.
+test_vif_lifecycle = executable('test_vif_lifecycle',
+    ['test.c', 'test_vif_lifecycle.c'] + _float_fex_test_sources_common + dnn_sources,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        log_cpp23_test_objects,
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_vif_lifecycle', test_vif_lifecycle, suite : ['fast'])
 
 test_float_adm_coverage = executable('test_float_adm_coverage',
     ['test.c', 'test_float_adm_coverage.c'] + _float_fex_test_sources_common + dnn_sources,
@@ -3525,9 +3693,12 @@ test('test_output', test_output, suite : ['fast'])
 test('test_log', test_log, suite : ['fast'])
 test('test_public_api_score', test_public_api_score, suite : ['fast'])
 test('test_thread_pool', test_thread_pool, suite : ['fast'])
+test('test_thread_pool_backpressure', test_thread_pool_backpressure, suite : ['fast'])
+test('test_pdjson', test_pdjson, suite : ['fast'])
 test('test_model', test_model, suite : ['fast'])
 test('test_model_libsvm_dup_key', test_model_libsvm_dup_key, suite : ['fast'])
 test('test_model_feature_overload_ownership', test_model_feature_overload_ownership, suite : ['fast'])
+test('test_model_registration_ownership', test_model_registration_ownership, suite : ['fast'])
 test('test_model_collection_api', test_model_collection_api, suite : ['fast'])
 test('test_predict', test_predict, suite : ['fast'])
 test('test_svm_api', test_svm_api, suite : ['fast'])
@@ -3535,6 +3706,8 @@ test('test_svm_parser', test_svm_parser, suite : ['fast'])
 test('test_svm_multiclass', test_svm_multiclass, suite : ['fast'])
 test('test_iqa_helpers', test_iqa_helpers, suite : ['fast'])
 test('test_feature_extractor', test_feature_extractor, suite : ['fast'])
+test('test_fex_ctx_vector', test_fex_ctx_vector, suite : ['fast'])
+test('test_fex_ctx_vector_public', test_fex_ctx_vector_public, suite : ['fast'])
 test('test_dict', test_dict, suite : ['fast'])
 test('test_opt', test_opt, suite : ['fast'])
 test('test_cpu', test_cpu, suite : ['fast'])
@@ -3731,3 +3904,55 @@ test_mkdirp = executable('test_mkdirp',
     dependencies: [pthread_dependency, sycl_dependency],
 )
 test('test_mkdirp', test_mkdirp, suite : ['fast'])
+
+# Research-2045: configured private integer-VIF objects also work in shared builds.
+if is_asm_enabled and host_machine.cpu_family().startswith('x86')
+test_integer_vif_avx2_stages = executable('test_integer_vif_avx2_stages',
+    # dnn_sources pulled in directly so feature_lpips.c can resolve its
+    # libvmaf/dnn.h references (session_open/run/close,
+    # vmaf_tensor_from_rgb_imagenet) without linking against libvmaf.so.
+    ['test.c', 'test_integer_vif_avx2_stages.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_integer_vif_avx2_stages', test_integer_vif_avx2_stages, suite : ['fast', 'simd'])
+endif
+
+# Research-2046: configured private integer-VIF objects also work in shared builds.
+if is_avx512_enabled and host_machine.cpu_family().startswith('x86')
+test_integer_vif_avx512_stages = executable('test_integer_vif_avx512_stages',
+    # dnn_sources pulled in directly so feature_lpips.c can resolve its
+    # libvmaf/dnn.h references (session_open/run/close,
+    # vmaf_tensor_from_rgb_imagenet) without linking against libvmaf.so.
+    ['test.c', 'test_integer_vif_avx512_stages.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_integer_vif_avx512_stages', test_integer_vif_avx512_stages, suite : ['fast', 'simd'])
+endif

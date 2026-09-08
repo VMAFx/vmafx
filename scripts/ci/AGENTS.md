@@ -10,6 +10,76 @@ upstream Netflix/vmaf has no equivalent tree, so the rebase risk is
 
 ## Rebase-sensitive surfaces
 
+### Configured native lint (ADR-1142)
+
+`lint-configured.py` owns local `make lint-c` selection. Make first regenerates
+Meson metadata with `--reconfigure BUILD_DIR LIBVMAF_DIR`, without option
+overrides, then builds generated prerequisites. Intersect Meson's native database with tracked native sources, including engine roots, tests,
+C++ tools and tracked vendored code. Preserve every configured command variant;
+never infer commands for inactive backends or regenerate the database with
+unfiltered `ninja -t compdb`. Only positive numeric `-flto=N` becomes `-flto`
+in a private analyzer copy. Keep missing/invalid inputs fatal, report excluded
+scope, and run cppcheck even after clang-tidy fails. The scratch-Git fixture
+`tests/test_lint_configured.py` executes the real Make target and both analyzer
+boundaries; required Pre-Commit runs it when the driver or Makefile changes.
+This does not replace lane-specific ratchet measurements or their baselines.
+
+The real-Make fixtures create their failing/recording pip sentinel before fake
+Meson and Ninja, satisfying the recursive build dependency graph without tool
+bootstrap. GNU Make does not propagate `-o` to sub-makes. Keep `PIP_NO_INDEX=1`
+and assertions that no pip call, real venv or sentinel overwrite occurred;
+host network access must never turn a broken fixture into a passing test.
+
+Both local and required CI cppcheck invocations load its shipped `posix` model.
+The fork uses pthread types on POSIX and through its Windows compatibility shim;
+these are C aggregates, not unknown C++ classes with implicit constructors.
+Keep `--library=posix` separate from target selection: preserve database defines,
+include paths and language settings, with no forced platform or language.
+`tests/test_cppcheck_posix_model.py` runs actual cppcheck on shared headers and
+uninitialized-member/constructor negative controls in the Cppcheck job after
+installation. Missing tools/models fail that test; no diagnostic category is
+disabled. See the [model investigation](../../docs/research/cppcheck-pthread-model-2026-09-08.md).
+
+Both paths select `--check-level=exhaustive` (ADR-1245). Preserve this value-flow
+policy alongside the existing severity sets and all command variants; never
+suppress `normalCheckLevelMaxBranches` to hide incomplete analysis. The real-tool
+suite includes normal/exhaustive branch-budget controls and defect controls.
+
+Both paths also load `cppcheck-public-entrypoints.cfg` (ADR-1246). Keep its exact
+public names shared; adding a private helper to remove an unused warning is not
+an export contract. The configured-driver hook validates the model against
+`VMAF_EXPORT` declarations and Meson's explicit installed-header lists, including
+option-conditional headers. Preserve its cfg/header/workflow/test trigger paths.
+The real-tool Cppcheck suite must reject missing/invalid models and still find
+unlisted unused helpers and defects inside listed bodies. Entry names are
+scope/linkage-blind: do not reuse them for private/static functions. Keep the
+measured collision control and both existing severity selections unchanged.
+
+### Base-image references (ADR-1231)
+
+`check-base-image-single-source.sh` delegates FROM/COPY instruction parsing to
+`check-container-image-references.py`. External references without a digest
+are still external: never restore the old `*@sha256:*`-only detection. Keep
+instruction case, flags and continuations covered by the fixture tests.
+Shared FROM arguments need a global, single-line default named by
+`build-config.env`; the shell gate owns default drift/repair. Local image
+exceptions bind an exact consumer and value, never a broad unpinned-tag rule.
+`tests/test_base_image_single_source.py` exercises the actual gate in scratch
+repositories and is wired through `test-base-image-single-source` in
+`.pre-commit-config.yaml`.
+
+### Level Zero version consumption (ADR-1231)
+
+`dev/Containerfile` copies and sources `build-config.env` in its SDK download
+RUN. The loader version is runtime shell input, so it needs no Docker ARG
+mirror. Preserve the source step, both URL components and the command-execution
+fixture in `tests/test_level_zero_single_source.py`; the base-image test hook
+runs both single-source suites. `check-workflow-versions.py` verifies this
+container consumer alongside the Windows workflow mirror. Renovate tracks
+Level Zero only in `build-config.env`; ROCm uses the central image manager.
+
+### Workflow coupling
+
 The following pairs are tightly coupled — a rename or signature
 change in one **must** land alongside the matching update in the
 other, in the **same PR**. Required-status-check names are derived
@@ -25,6 +95,7 @@ until master is fixed.
 | `gpu_ulp_calibration.yaml` | (data, not invoked directly by workflow) | The default path is hard-coded as `Path(__file__).parent / "gpu_ulp_calibration.yaml"` in `cross_backend_calibration.DEFAULT_CALIBRATION_PATH`. Renaming this file is a breaking change for the gate scripts and any caller that didn't pass `--calibration-table` explicitly. |
 | `test_calibration.py` | `tests-and-quality-gates.yml` — pytest collection (`pytest-tests` lane) | Discovered automatically by pytest; the test module name is part of the gate's contract. |
 | `test_e2e_runtime_contract.py` | `rule-enforcement.yml` and `e2e-k8s.yml` — `Verify E2E runtime contract` | The always-on PR gate and exact E2E lane enforce explicit CPU node + Go server targets, three-image transfer into kind, exact-local Helm pulls, and the real chart-backed scoring case. Keep it outside the E2E trigger gate as well as inside the image job. |
+| `test_go_workflow_contract.py` | `rule-enforcement.yml` — `Verify Go required-check contract` | Executes the embedded aggregator with Go pass/fail outcomes and guards ready-event coverage plus step-level `go_checks` routing. Keep it before authoring exemptions (ADR-1238). |
 | `test_security_workflow_contract.py` | `rule-enforcement.yml` — `Verify Security Scans concurrency contract` | The Security Scans group must include workflow, event name, and ref. This keeps same-event cancellation while preventing a schedule on `refs/heads/master` from canceling a master-push CodeQL run (or vice versa). |
 
 | `agent-eligibility-precheck.py` | (no workflow lane today; called manually from `.claude/workflows/*.md` per [ADR-0355](../../docs/adr/0355-symphony-agent-dispatch-infra.md)) | Imports `scripts/lib/backlog_tracker.py` via `sys.path.insert(0, …)`. The two files move together. The exit-code contract (0 = eligible, 1 = block, 2 = bad CLI usage) and the `::error title=...::...` stderr format are **the** dispatcher contract; never change without updating `.claude/workflows/_template.md` in the same PR. |
@@ -275,7 +346,8 @@ Alpha pre-releases (`X.Y.Za<N>`) are never an acceptable pin.
   `/* ... */` block comment that holds the marker; `NOLINTEND` never counts) are
   load-bearing: the baselines were measured with exactly these rules, so
   changing either requires re-measuring every lane in the same PR (the `cpu`
-  baseline is CI's own `tidy-ratchet-cpu` artifact, never a workstation run).
+  full baseline is CI's own `tidy-ratchet-cpu` artifact; ADR-1243 permits
+  only guarded scoped tightening afterward).
 - The `Tidy Ratchet` job starts unconditionally and gates its
   work on the ADR-1140 planner's `c_core` selector; `.clang-tidy`, this
   directory (ratchet + baselines) and the workflow are CI-authority inputs, so
@@ -283,6 +355,20 @@ Alpha pre-releases (`X.Y.Za<N>`) are never an acceptable pin.
   `paths:` filter or a custom early-skip probe to the job.
 - A `clang-diagnostic-error` in any TU is a measurement failure (exit 4), never a
   zero. Build (generated headers) before measuring.
+- **Scoped writer (ADR-1243):** `--only` plus `--write` requires exact nonempty
+  measured-TU coverage, the original tool version/lane and no observed debt
+  increase. Preserve every unselected TU/header entry and all full-report
+  metadata; append explicit scoped provenance. Validate report/baseline aliases
+  before output, and replace the validated baseline atomically. Full and scoped
+  writers share a resolved-path advisory lock; preserve baseline-drift checks
+  around measurement/replacement and fail on unreadable NOLINT inputs. A diagnostic
+  `--only` run is not a full comparison. Keep failure/zero-tightening cases in
+  `tests/test_tidy_scoped_write.py`; never make CI's full lane use `--only`.
+- Promoted clang-tidy checks (`-warnings-as-errors`) remain counted debt. Only
+  the recognized promotion exit/summary may bypass the nonzero-tool-exit guard;
+  parse/compile failures still invalidate that measurement. Reports retain
+  actual `measured_sources` and `compile_failures` so partial/error output is
+  never presented as a successful whole-tree scan.
 
 ## release-pr-exempt.sh invariants (ADR-1151)
 
@@ -307,6 +393,14 @@ Alpha pre-releases (`X.Y.Za<N>`) are never an acceptable pin.
 
 ## Adding a Renovate-managed surface (ADR-1152)
 
+`tests/test_renovate_file_patterns.py` validates positive file-selection
+fixtures for custom managers. `managerFilePatterns` regexes have one slash
+delimiter at each end; doubled delimiters silently select no files despite
+passing Renovate's schema validator. Keep the base-image custom manager's
+config-plus-mirror set paired with the built-in Docker manager exclusions.
+The `test-renovate-file-patterns` pre-commit hook runs these fixtures whenever
+the Renovate configuration or the test changes.
+
 `classify-dependency-pr.sh` exempts a bot PR only when **every** changed path
 matches its allowlist — one unmatched path fails the whole PR, and a bot cannot
 write a deliverables checklist to recover. So whenever a new dependency-pinning
@@ -314,6 +408,10 @@ surface appears in the tree (a new chart under `deploy/helm/`, a new compose
 file, a new container build file outside `docker/`), add it to
 `is_allowed_dependency_path` **and** add a fixture case to
 `test-classify-dependency-pr.sh` in the same change.
+
+The `build-config.env` allowance is an exact root-path match (ADR-1231).
+Never replace it with an env-file glob or a basename match: nested build
+configs and unrelated runtime env files must still fail the path condition.
 
 Two invariants the test suite pins deliberately — do not "simplify" them away:
 
@@ -328,7 +426,7 @@ see [`docs/research/1152-dependency-classifier-surface-audit.md`](../../docs/res
 
 ## check-aggregator-names.sh invariants
 
-- Gates 1:1 parity between the 35 required status checks declared in
+- Gates 1:1 parity between the required status checks declared in
   `.github/workflows/required-aggregator.yml` (`const required = [...]`) and
   the `# required-aggregator` markers on `name:` fields across workflow files.
 - Enforced locally via `make lint-sh` and pre-commit hook `check-aggregator-names`.
@@ -365,3 +463,29 @@ under `.github/workflows/sycl-parity.yml`. The following invariants are load-bea
 6. **Render node is resolved, not hard-coded**: `dev/docker-compose.runner.yml` takes
    `ARC_RENDER_NODE` from `dev/scripts/arc-render-node.sh` (exactly one vendor-`0x8086` render node).
    Do not replace it with a bare `renderD<N>`; numbers change after PCI re-enumeration.
+
+## FFmpeg patch lifecycle (ADR-1240)
+
+`ffmpeg_patch_stack.py`, the local `ffmpeg-patches-apply-check` hook and
+`ffmpeg-patch-stack.yml` share one release owner: `build-config.env`.
+Replay `series.txt` cumulatively, fail on fetch/replay/configuration drift, and
+write only after the whole candidate succeeds. Disposable Git must discard
+inherited `GIT_*` repository variables and caller Git configuration. Discovery
+is scheduled and accepts only stable tags; ordinary checks use the reviewed tag.
+The required aggregator name is exactly `FFmpeg Patch Stack`.
+
+Fixture setup and assertions obey the same isolation rule as the production
+replayer. `test_ffmpeg_patch_stack.py`, `test_ffmpeg_patch_smoke_safety.py`
+and the dependency-classifier shell fixture discard inherited `GIT_*` before
+their first Git command and disable caller global/system Git configuration.
+Never rely on `git -C` alone. `test_git_fixture_isolation.py` runs those
+fixtures plus the agent-cleanup fixture with disposable caller variables,
+checks byte-for-byte metadata/work preservation, and remains registered in
+pre-commit/pre-push and required Pre-Commit CI. Poison only fresh temporary
+caller paths; never export the real repository's Git paths into a test.
+
+Level Zero fixture setup and its checker subprocess use the same Git isolation.
+Preserve the real linked-worktree hook regression: Git itself exports `GIT_DIR`,
+so a clean parent shell is insufficient. The old-command control may mutate
+only a disposable caller; the fixed helper must preserve every shared Git and
+linked-worktree file, including both indexes and staged/unstaged work.

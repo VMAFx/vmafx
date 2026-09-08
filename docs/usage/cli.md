@@ -114,6 +114,14 @@ The `--model / -m` flag takes a colon-delimited key/value string (see
 --model version=...:enable_transform      # apply transform
 ```
 
+JSON model files may contain at most **512 simultaneously nested arrays or
+objects**, including the outermost container. A 513th level causes model loading
+to fail; the internal parser records `maximum depth of nesting reached` (the
+CLI may report only the enclosing model-load failure).
+This implements the existing parser resource limit; it does not limit the number
+of features or array elements at one level. Flatten unnecessarily nested custom
+model data instead of increasing its nesting depth.
+
 Built-in model versions (compiled into `libvmaf` via `-Dbuilt_in_models=true`,
 default `true`):
 
@@ -161,6 +169,14 @@ the same escaping rules — see [Option-string grammar](#option-string-grammar):
 --feature brisque
 --feature brisque=model_path=/path/to/brisque_live.model
 ```
+
+Repeated registrations share work only when their option-derived feature keys
+match. For example, `--feature motion` and
+`--feature motion=motion_force_zero=true` retain separate contexts and output
+keys; the latter adds the `_force_0` suffix. Explicit default values and option
+aliases resolve to the same keys as their equivalent canonical settings.
+Equivalent CPU/GPU twins retain the first registered context. These rules also
+apply when several loaded models request different feature parameters.
 
 The `brisque` no-reference metric ships its trained model embedded in the
 binary, so it needs no extra arguments; `model_path` overrides it with an
@@ -226,6 +242,12 @@ variable that overrides it.
 | `--cpumask <bitmask>` (`-c`) | all ISAs enabled | Mask out specific CPU ISAs (e.g. force scalar, disable AVX-512). Values are fork-internal — see `core/src/cpu.h`. |
 | `--gpumask <bitmask>` | all GPU ops enabled | Mask out specific GPU ops. |
 | `--threads <N>` | host `nproc` | Worker thread count. Valid with every backend, including `cuda` and `sycl`, and the result is identical to a serial run. |
+
+Threaded CPU submission keeps at most one pending frame job per worker, in
+addition to jobs already running. When decoding runs ahead of feature extraction,
+submission waits for queue capacity instead of retaining an unbounded backlog.
+This bounds pending work; score storage and backend buffers still contribute to
+memory use. See [thread-pool behavior](../development/thread-pool.md).
 
 > **`--threads` with a GPU backend.** Builds before
 > [ADR-1197](../adr/1197-gpu-threaded-flush-ownership.md) aborted with
@@ -391,7 +413,7 @@ or `--tiny-crf` to **any** non-default value to enable the path. See
 [ADR-0522](../adr/0522-tiny-codec-preset-crf-cli-flags.md) for the categorical
 encoding rationale.
 
-**Resize mode** ([ADR-0550](../adr/0550-tiny-dnn-resize-mode.md)).
+**Resize mode** ([ADR-0550](../adr/0550-tiny-model-auto-resize.md)).
 Required when the source frame size (`--width` / `--height`) differs from
 the tiny model's declared input shape:
 
@@ -547,7 +569,7 @@ Expected `scores.xml` head:
 </VMAF>
 ```
 
-Since [ADR-1181](../adr/1181-percentile-pooling-methods.md) every `<metric>` row
+Since [ADR-1188](../adr/1188-percentile-pooling-methods.md) every `<metric>` row
 (and the matching JSON object) also carries the percentile pooling methods —
 `median`, `perc5`, `perc10` and `perc20` — next to `min` / `max` / `mean` /
 `harmonic_mean`. Every registered pooling method is emitted for every metric;
@@ -604,4 +626,3 @@ CPU goldens preserved verbatim as a required CI gate — see
   [ADR-0023](../adr/0023-tinyai-user-surfaces.md),
   [ADR-0024](../adr/0024-netflix-golden-preserved.md),
   [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
-x

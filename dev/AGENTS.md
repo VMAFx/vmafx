@@ -60,25 +60,32 @@ The Intel NEO compute-runtime and ROCm KFD userspace MUST match the host
 kernel's i915 / xe / KFD ioctl ABI, or `vmaf --backend sycl|hip` silently
 falls back to CPU. Two hard pins live in `dev/Containerfile`:
 
-- **`ARG NEO_VER=26.31.39395.13`** (+ `LEVEL_ZERO_VER=1.32.0`).
+- **`ARG NEO_VER=26.31.39395.13`** and shared `LEVEL_ZERO_VERSION`.
   Pinned via GitHub releases because Intel's `noble/unified` APT repo's
   newest as of 2026-05-18 is `25.18.x`, too old for kernel ≥ 7.0.
-  The Level-Zero loader (`LEVEL_ZERO_VER`) comes from `oneapi-src/level-zero`.
+  The Level Zero loader comes from `oneapi-src/level-zero`. Its SDK-stage
+  `RUN` sources the copied root `build-config.env` from `/opt/vmafx/`; both
+  download URL components use `LEVEL_ZERO_VERSION`. Do not reintroduce a
+  separate `LEVEL_ZERO_VER`/`LEVEL_ZERO_VERSION` ARG or literal version.
+  `scripts/ci/check-workflow-versions.py` and the single-source fixture gate
+  protect this consumer. Renovate owns the setting only in `build-config.env`.
   **Invariant (ADR-1145)**: `NEO_VER` is the only pinned Intel version; never
   reintroduce `GMMLIB_VER` or `IGC_VER` ARGs. The matching `gmmlib` and `IGC`
   deb packages are dynamically derived and verified against published sha256
   checksums at build time by `dev/scripts/fetch-intel-neo.py`.
-- **The digest-pinned `rocm-src` stage** (`rocm/dev-ubuntu-24.04:10.0.0-full`)
+- **The digest-pinned `rocm-src` stage** (`rocm/dev-ubuntu-26.04:10.0.0-full`)
   replaces the old `ARG ROCM_VER` + `repo.radeon.com/rocm/apt/` install.
-  **Invariant (ADR-1225)**: do not "restore" the apt path. Since ROCm 7.14
-  AMD builds and releases through TheRock; the apt channel tops out at 7.2.4
-  (its own `latest` resolves there, and `apt/7.14` and `apt/10.0.0` both 404),
-  the manylinux channel stops at `rocm-rel-7.2.4`, and the TheRock wheel index
-  carries only 7.14.0 alphas. The container image is the only stable,
-  digest-pinnable ROCm 10 artifact.
+  **Invariant (ADR-1225 / ADR-1231)**: keep the selected digest-pinned image
+  as the SDK source. Update `ROCM_BUILDER` / `ROCM_RUNTIME` in
+  `build-config.env` and regenerate their mirrors. ADR-1225 records the
+  historical package-channel checks; those observations are not a current
+  inventory of AMD's release channels.
   **Invariant**: keep the prune list in the `rocm-src` stage, but never prune
   `librocprofiler-register` — `libamdhip64.so` links it, and dropping it makes
   every HIP binary fail at load with "cannot open shared object file".
+  Keep the post-prune HIP compile/link and host-entry smoke in this stage;
+  `hipconfig --version` alone does not exercise the compiler dependency closure.
+  The smoke compiles a kernel but does not launch it or require a GPU.
   ROCm 6.x KFD ioctls do not match kernel ≥ 7.0; 10.0.0 does (verified on
   Linux 7.2.3 with `gfx1036`).
 
@@ -86,15 +93,19 @@ When CI / a maintainer's host runs a newer kernel that breaks these pins,
 the `dev-mcp-entrypoint.sh` runtime-visibility probe (also ADR-0541)
 surfaces the regression on container start as
 `WARN: SYCL level_zero:gpu NOT detected` or `WARN: HIP HSA agent NOT
-detected`. Bump the relevant ARG and rebuild.
+detected`. Bump the relevant version owner and rebuild.
 
 ### SHELL / hadolint DL4006
 
-- `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` is set in the `gpu-sdks`
-  stage and **inherited** by `libvmaf-build` and `dev-mcp`.
-- hadolint does not track cross-stage SHELL inheritance. Any `RUN` step in
-  a derived stage that contains a pipe will trigger DL4006 as a false positive.
-  Suppress with `# hadolint ignore=DL4006` and note that SHELL is inherited.
+- Declare `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` explicitly in
+  `build-deps`, `gpu-sdks`, `libvmaf-build`, `go-build`, and `dev-mcp`.
+  Each executing stage then exposes its pipeline failure contract to both
+  the builder and static analysis without depending on parent-stage tracking.
+- Keep the Go output-count guard as a Bash array, not parsed `ls` output.
+  The artifact builder returns to `USER vmaf` after privileged compilation;
+  the final runtime also remains `USER vmaf`.
+- Keep collection failure handling explicit: import failure stops the layer;
+  pytest collection failure prints its captured diagnostics and exits nonzero.
 
 ### Source-tree paths after ADR-0700 / ADR-0870
 
@@ -104,11 +115,10 @@ detected`. Bump the relevant ARG and rebuild.
   - `COPY core/        /build/vmaf/core/` (was `libvmaf/`).
   - `COPY compat/      /build/vmaf/compat/` (required for the editable
     Python install through the `python/` shim).
-  - `cd core && meson setup build` / `cd core && ninja -C build install`
-    (both occurrences).
+  - `meson setup core/build core` / `ninja -C core/build install`.
 - **Rule**: any rebase that picks up an upstream patch touching the
   old `libvmaf/` directory must rewrite the path to `core/` before
-  applying it inside the Containerfile's COPY/cd flow. The
+  applying it to the Containerfile's COPY/source/build paths. The
   `.dockerignore` carries both `core/build*/` and legacy
   `libvmaf/build*/` siblings so a pre-rename worktree still excludes
   its build dirs; do not delete the legacy entries.
@@ -345,20 +355,22 @@ Three invariants must hold on every modification:
 2. **ccache mount pairs with `CCACHE_DIR=...`.** Every meson / ninja /
    cmake C/C++ compile step MUST be wrapped with a ccache cache mount
    plus a matching `CCACHE_DIR` env hint. When the step runs as the
-   `vmaf` user the mount needs `uid=1000,gid=1000` (the user is
-   uid-pinned in the build-deps stage); when the step runs as root
+   `vmaf` user the mount needs `uid=2000,gid=2000` (the build-deps stage
+   pins the user identity per ADR-0603); when the step runs as root
    point the cache at `/root/.cache/ccache`. The shared
    `id=ccache-dev-mcp` / `id=ccache-dev-mcp-vmaf` markers serialise
    concurrent BuildKit workers against the same cache and MUST stay
-   consistent across steps that should share a cache pool.
+   consistent across steps that should share a cache pool. For a RUN that
+   configures and then builds, export `CCACHE_DIR` before both commands; an
+   assignment attached only to `cd` does not reach Meson or Ninja.
 
 3. **`# syntax=docker/dockerfile:1.7`** at the top of the file is what
    enables `--mount=type=cache` parsing — do not remove or downgrade
    the directive.
 
 4. **`vmaf` user uid/gid pin.** The user is created with
-   `useradd --uid 1000 --gid 1000` in the build-deps stage so the
-   `--mount=...,uid=1000,gid=1000` cache mounts resolve to the same
+   `useradd --uid 2000 --gid 2000` in the build-deps stage so the
+   `--mount=...,uid=2000,gid=2000` cache mounts resolve to the same
    identity that runs the build. Preserve the explicit uid/gid pin
    on any modification to the user-creation step.
 
@@ -382,3 +394,19 @@ ADR-0966 fixed three references that survived the ADR-0700 rename and caused
 exhaustive") applies here: a single missed grep cost a full build-blockage
 incident. Run the check above as part of any PR that renames a top-level
 source directory.
+
+## Base images come from `build-config.env` (ADR-1231)
+
+Do not write a base image into a Dockerfile in this directory. Every base is an
+`ARG` whose default mirrors the root-level `build-config.env`; edit that file
+and run `make base-images-sync`, never the `ARG` line by hand.
+
+`COPY --from=<external image>` counts as a base-image pin and is rejected with
+or without a digest
+by `scripts/ci/check-base-image-single-source.sh`. Declare a named stage
+instead — `FROM ${CUDA_RUNTIME} AS cuda-runtime-libs`, then
+`COPY --from=cuda-runtime-libs …`. BuildKit prunes unused stages, so the extra
+stage is free. Four pins hidden this way were the most out-of-date images in
+the repository.
+
+See [docs/development/base-images.md](../docs/development/base-images.md).

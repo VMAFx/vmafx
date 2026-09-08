@@ -27,6 +27,7 @@ extern "C" {
 #include <stdio.h>
 
 enum json_type {
+    JSON_NONE = 0, /* Internal empty-lookahead sentinel; never emitted as an event. */
     JSON_ERROR = 1,
     JSON_DONE,
     JSON_OBJECT,
@@ -58,23 +59,23 @@ PDJSON_SYMEXPORT void json_open_user(json_stream *json, json_user_io get, json_u
                                      void *user);
 PDJSON_SYMEXPORT void json_close(json_stream *json);
 
-PDJSON_SYMEXPORT void json_set_allocator(json_stream *json, json_allocator *a);
+PDJSON_SYMEXPORT void json_set_allocator(json_stream *json, const json_allocator *a);
 PDJSON_SYMEXPORT void json_set_streaming(json_stream *json, bool mode);
 
 PDJSON_SYMEXPORT enum json_type json_next(json_stream *json);
 PDJSON_SYMEXPORT enum json_type json_peek(json_stream *json);
 PDJSON_SYMEXPORT void json_reset(json_stream *json);
-PDJSON_SYMEXPORT const char *json_get_string(json_stream *json, size_t *length);
-PDJSON_SYMEXPORT double json_get_number(json_stream *json);
+PDJSON_SYMEXPORT const char *json_get_string(const json_stream *json, size_t *length);
+PDJSON_SYMEXPORT double json_get_number(const json_stream *json);
 
 PDJSON_SYMEXPORT enum json_type json_skip(json_stream *json);
 PDJSON_SYMEXPORT enum json_type json_skip_until(json_stream *json, enum json_type type);
 
-PDJSON_SYMEXPORT size_t json_get_lineno(json_stream *json);
-PDJSON_SYMEXPORT size_t json_get_position(json_stream *json);
-PDJSON_SYMEXPORT size_t json_get_depth(json_stream *json);
-PDJSON_SYMEXPORT enum json_type json_get_context(json_stream *json, size_t *count);
-PDJSON_SYMEXPORT const char *json_get_error(json_stream *json);
+PDJSON_SYMEXPORT size_t json_get_lineno(const json_stream *json);
+PDJSON_SYMEXPORT size_t json_get_position(const json_stream *json);
+PDJSON_SYMEXPORT size_t json_get_depth(const json_stream *json);
+PDJSON_SYMEXPORT enum json_type json_get_context(const json_stream *json, size_t *count);
+PDJSON_SYMEXPORT const char *json_get_error(const json_stream *json);
 
 PDJSON_SYMEXPORT int json_source_get(json_stream *json);
 PDJSON_SYMEXPORT int json_source_peek(json_stream *json);

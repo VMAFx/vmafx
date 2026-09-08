@@ -48,7 +48,13 @@ typedef struct VmafThreadPoolConfig {
 int vmaf_thread_pool_create(VmafThreadPool **tpool, VmafThreadPoolConfig cfg);
 
 /**
- * @brief Enqueue a work item on the pool.
+ * @brief Enqueue a work item, waiting while the bounded queue is full.
+ *
+ * At most one pending job per successfully created worker is retained. A
+ * dequeuing worker wakes a producer; running jobs are outside this bound.
+ * A registered capacity waiter returns -ECANCELED during coordinated shutdown.
+ * Callbacks must not recursively enqueue into this same pool or wait on work
+ * whose submission requires the blocked producer to advance.
  *
  * @p data is copied internally (up to @p data_sz bytes), so the caller's
  * buffer may be reused or freed immediately after this call returns.
@@ -68,7 +74,7 @@ int vmaf_thread_pool_create(VmafThreadPool **tpool, VmafThreadPoolConfig cfg);
  * @return 0 on success, negative errno on failure.
  */
 int vmaf_thread_pool_enqueue(VmafThreadPool *pool, int (*func)(void *data, void **thread_data),
-                             void *data, size_t data_sz);
+                             const void *data, size_t data_sz);
 
 /**
  * @brief Block until all enqueued work items have completed.
@@ -79,11 +85,16 @@ int vmaf_thread_pool_enqueue(VmafThreadPool *pool, int (*func)(void *data, void 
 int vmaf_thread_pool_wait(VmafThreadPool *pool);
 
 /**
- * @brief Drain the pool and free all associated resources.
+ * @brief Discard queued jobs, finish active jobs, and free the pool.
  *
- * Implicitly calls vmaf_thread_pool_wait() before tearing down threads.
+ * Call vmaf_thread_pool_wait() first to drain all accepted work. Destruction
+ * wakes and waits for registered queue-capacity waiters. The owner must
+ * externally serialize destruction against API entry, including callers
+ * waiting to acquire the queue mutex. Cancellation is supported only when
+ * the owner has established that the concurrent producers are already in
+ * the capacity wait. Otherwise stop and join producers before destruction.
  *
- * @param tpool  Pool to destroy.  May be NULL (no-op).
+ * @param tpool  Pool to destroy. NULL returns -EINVAL.
  * @return 0 on success, negative errno on failure.
  */
 int vmaf_thread_pool_destroy(VmafThreadPool *tpool);

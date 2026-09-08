@@ -147,11 +147,11 @@ the setup recipe above to recreate a clean virtualenv.
 
 See the backend-specific guides:
 
-- [docs/backends/cuda.md](../backends/cuda.md)
-- [docs/backends/sycl.md](../backends/sycl.md)
-- [docs/backends/hip.md](../backends/hip.md)
-- [docs/backends/vulkan.md](../backends/vulkan.md)
-- [docs/backends/metal.md](../backends/metal.md)
+- [CUDA](../backends/cuda/overview.md)
+- [SYCL](../backends/sycl/overview.md)
+- [HIP](../backends/hip/overview.md)
+- [Vulkan removal notice](../backends/vulkan/overview.md)
+- [Metal](../backends/metal/index.md)
 
 ## CI toolchain matrix
 

@@ -78,6 +78,13 @@ tools/
     planar YUV uses little-endian 16-bit containers; frame seeking must
     count the chroma planes and sample width even though only luma enters
     the saliency path. The DNN-facing tensor remains luma8.
+  - Private input helpers live in `vmaf_roi_input.h`, shared directly with
+    `test_vmaf_roi_bounds`. Keep local depth/extent guards before shifts,
+    allocation and reads; rounded high-bit-depth samples saturate at 255
+    before the `uint8_t` cast. `VMAF_ROI_MAX_DIM` remains the existing
+    16384 CLI limit. Placeholder traversal validates and uses the caller's
+    allocation count while preserving radial coordinate arithmetic.
+    See [ROI boundary evidence](../../docs/research/roi-reader-bounds-2026-09-08.md).
 - **Long-only options must not pass synthesised short-option
   chars to `error()`** (rebase-sensitive). Handlers for
   `ARG_THREADS`, `ARG_SUBSAMPLE`, `ARG_CPUMASK`, and any

@@ -33,25 +33,10 @@ Non-Claude agents: see [AGENTS.md](AGENTS.md) (same content, tool-agnostic).
 
 ## 2. How to build
 
-Meson + Ninja (NOT CMake).
-
-```bash
-# CPU only (fastest build, no GPU deps required)
-meson setup build -Denable_cuda=false -Denable_sycl=false
-ninja -C build
-
-# With CUDA (requires /opt/cuda + nvcc)
-meson setup build -Denable_cuda=true -Denable_sycl=false
-ninja -C build
-
-# With SYCL (requires oneAPI / icpx)
-meson setup build -Denable_cuda=false -Denable_sycl=true
-ninja -C build
-
-# Full (both backends)
-meson setup build -Denable_cuda=true -Denable_sycl=true
-ninja -C build
-```
+Meson + Ninja. Run from the repository root; Meson's source directory is
+`core/`. Follow the [source-build guide](docs/getting-started/index.md#build-from-source-any-platform)
+for the CPU configuration and [backend guides](docs/backends/index.md) for
+SDK setup and GPU configurations.
 
 Shortcut: `/build-vmaf --backend=cpu|cuda|sycl|all` (skill).
 
@@ -77,7 +62,7 @@ make test-netflix-golden                # the 3 Netflix CPU golden-data tests (s
 ## 4. How to lint
 
 ```bash
-make lint        # clang-tidy + cppcheck + iwyu + ruff + semgrep
+make lint        # configured native + Python, shell, Markdown, Go and docs checks
 make format      # clang-format + black + ruff (write)
 make format-check  # same, no writes (pre-commit / CI)
 ```
@@ -327,15 +312,14 @@ Use `/prep-release` to dry-run locally before merging a release PR.
     public headers, kernel implementations behind an existing
     public surface, doc-only changes, test-only changes. The PR
     template carries a checklist row; reviewers verify by running
-    a series replay against a clean `n8.1` checkout
-    (`git -C /path/to/ffmpeg-8 reset --hard n8.1 && for p in
-    ffmpeg-patches/000*-*.patch; do git -C /path/to/ffmpeg-8 am
-    --3way "$p" || break; done`) — per-patch `git apply --check`
-    is **the wrong gate** because patches `0002…0006` build on
-    each other and standalone-apply cleanly only against the
-    cumulative state from earlier patches, not against pristine
-    `n8.1`. See
-    [ADR-0186](docs/adr/0186-vulkan-image-import-impl.md).
+    `python3 scripts/ci/ffmpeg_patch_stack.py --refresh` followed by `--check`.
+    The helper reads `FFMPEG_TAG` and `FFMPEG_REMOTE` from `build-config.env`
+    and replays every `series.txt` entry in order in disposable storage.
+    Local hooks refresh that configured release; daily CI discovers the latest
+    stable released tag. Development branches and prerelease refs are excluded.
+    Per-patch `git apply --check` does not validate the cumulative series.
+    See [FFmpeg patch automation](docs/development/ffmpeg-patch-automation.md)
+    and [ADR-1240](docs/adr/1240-ffmpeg-release-patch-lifecycle.md).
 15. **Default to the `vmaf-dev-mcp` container for vmaf / vmaf-tune /
     ai / MCP-probing work.** The container at
     [`dev/Containerfile`](dev/Containerfile) bakes in every backend

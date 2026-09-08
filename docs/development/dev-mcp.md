@@ -10,7 +10,7 @@ server.  It is the standard environment for:
 - Reproducing build regressions on GPU paths other than the host's primary GPU
   (for example: catching HIP toolchain regressions on an NVIDIA-only host).
 
-The design decision is recorded in [ADR-0435](../adr/0435-local-dev-mcp-container.md).
+The design decision is recorded in [ADR-0451](../adr/0451-local-dev-mcp-container.md).
 
 ---
 
@@ -73,6 +73,31 @@ but it performs no such check and leaves the image recording
 The first build downloads all GPU SDK layers and compiles libvmaf from source.
 Expect 20–40 minutes on a typical workstation; subsequent builds use the
 layer cache and take 1–3 minutes when only Python packages change.
+
+### Build failures and cache use
+
+Every stage that runs build pipelines explicitly enables Bash `pipefail`, so
+an upstream command failure cannot be hidden by a successful output filter.
+The golden-suite import and collection checks fail the build; collection
+failures print the captured pytest diagnostics. Hardware-availability probes
+retain their documented warning behavior in a build sandbox without GPUs.
+
+The libvmaf configure and compile commands share the exported `CCACHE_DIR`
+backed by the BuildKit cache mount. Install steps address their build trees
+explicitly, and FFmpeg cleanup runs from outside the directory it removes.
+The Go artifact stage verifies seven outputs without parsing filenames as
+lines, then returns to the `vmaf` user. The final runtime also uses `vmaf`.
+
+Run `hadolint dev/Containerfile` to check the Dockerfile and embedded shell
+before a rebuild. This static check does not establish native build or GPU
+runtime acceptance.
+
+The container installs ONNX Runtime's native CPU archive for libvmaf's C/C++
+API. That archive does not add CUDA or ROCm execution providers; libvmaf's
+own GPU feature backends and the Python `onnxruntime` package are separate
+components. A provider-enabled ORT installation needs the corresponding
+runtime libraries, as described in
+[ADR-0113](../adr/0113-ort-create-session-fallback-multi-ep-ci.md).
 
 ### Which source is in the image?
 

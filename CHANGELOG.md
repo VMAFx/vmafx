@@ -9014,6 +9014,12 @@ non-empty, printable string. Closes a coverage gap noted in
 `fuzz/meson.build`; registered in suite `fast`.
 
 
+- Allow `tidy-ratchet.py --only <TU> --write` to tighten measured source
+  allowances while preserving unmeasured entries and full-report metadata.
+  Exact coverage, matching tool version, parse/compile success, debt monotonicity
+  and atomic replacement are required; CI still measures the whole tree.
+
+
 - **`--tiny-codec` / `--tiny-preset` / `--tiny-crf` CLI flags** populate
   the codec one-hot block of codec-aware tiny models (today
   `fr_regressor_v2`) so the model receives the real encoder context
@@ -11683,6 +11689,42 @@ No code changes — docs-only.
   Vulkan references from the Background section and Selector option reference table.
 
 
+- Every container base image now comes from a single file,
+  [`build-config.env`](build-config.env), instead of being pinned by hand in
+  each Dockerfile. Changing the Debian generation, the Go release or a GPU SDK
+  is a one-line edit; `make base-images-sync` propagates it and
+  `scripts/ci/check-base-image-single-source.sh` fails the build on drift.
+  Closes four Debian 12 pins (`distroless/cc-debian12`,
+  `distroless/static-debian12`, two `golang:1.27-bookworm`) and two Ubuntu
+  24.04 CUDA pins, and brings four base pins that were hidden inside
+  `COPY --from=<image>` under the same gate. See
+  [ADR-1231](docs/adr/1231-base-image-single-source.md) and
+  [docs/development/base-images.md](docs/development/base-images.md).
+- The `vmafx-controller` image now runs as UID 65532 instead of root. Its base
+  was `gcr.io/distroless/cc-debian12` *without* the `:nonroot` suffix; it now
+  shares the `:nonroot` runtime pin used by every other image, with an explicit
+  `USER` line. Both listen ports (8080, 9090) are above 1024, so no capability
+  is required.
+- The same file now pins the **toolchain versions CI installs**, not just
+  container bases. ROCm was `7.2.4` in one workflow and `7.2.3` in another — so
+  CI validated a ROCm the published images never shipped — and the Level Zero
+  loader existed at four versions at once (`v1.18.5`, `v1.28.0` twice,
+  `v1.29.0`, `1.32.0`), a class of skew that surfaces at runtime as "No device
+  of requested type available" rather than as a build failure. Workflow steps
+  source `build-config.env`, and `scripts/ci/check-workflow-versions.py` fails
+  the build if a literal reappears.
+- Renovate is reconfigured so a base-image bump updates the config and every
+  Dockerfile mirror in one PR. Its built-in `dockerfile` manager understands
+  `ARG X=image` + `FROM $X` and would otherwise have updated only the mirrors,
+  failing the new gate on Renovate's own pull requests.
+- ROCm images move to the Ubuntu 26.04 variant of 10.0.0. The libraries are
+  copied out of the vendor image into a Debian 13 runtime, so this was checked
+  rather than assumed: the `/opt/rocm/core-10.0/lib` layout is identical in both
+  variants and the copied closure needs at most `GLIBC_2.28` against Debian 13's
+  2.41. No release image is on Ubuntu 24.04 any more except oneAPI, whose
+  migration is tracked separately.
+
+
 - **refactor(predict,libvmaf)**: extract bootstrap score-name suffix constants
   and `BOOTSTRAP_NAME_BUF_SZ()` macro into shared `bootstrap_names.h`; remove
   two `//TODO: dedupe` markers that referenced each other (ADR-0480).
@@ -11871,6 +11913,10 @@ master tip `40d192ef1`:
   golden scores, the AVX2 / AVX-512 / scalar lanes and every feature option
   path are byte-identical at `--precision max` (31-case matrix). C translation
   units keep `NULL` per ADR-1138.
+
+
+- Remove CAMBI AVX2 parameter shadowing with local names that preserve the
+  configured machine code, constants and existing scalar/SIMD tests.
 
 
 - **perf(cuda/cambi)**: `cambi_spatial_mask_kernel` now stages a 22x22
@@ -13578,6 +13624,12 @@ SYCL, and Metal. All vendors retain native GPU coverage after the drop.
   [docs/development/ide-setup.md](docs/development/ide-setup.md).
 
 
+- Refactor integer VIF AVX2 filters into bounded private stages, remove overwritten initial stores and preserve bit-exact scores with direct scalar/SIMD regression coverage.
+
+
+- Refactor integer VIF AVX-512 kernels into small private stages while preserving exact arithmetic and the existing subsample register-pressure boundaries; add direct scalar-stage parity coverage across 8–16-bit inputs.
+
+
 - **Bump Intel NEO compute stack in `dev/Containerfile` as a matched set.**
   Intel compute-runtime (`NEO_VER`) moves to `26.31.39395.13`, Intel Graphics
   Compiler (`IGC_VER`) to `2.40.13+22418`, Level Zero loader (`LEVEL_ZERO_VER`)
@@ -13841,6 +13893,9 @@ retired scaffold / TBD wording.
   build && meson test -C build test_metal_smoke`.
 
 
+- Keep motion-v2, SSIM and PSNR coverage descriptors read-only and bound their setup helpers while preserving all nineteen cases, assertions and failure behavior.
+
+
 - **docs(nav):** Restructure mkdocs ADR section into per-hundred collapsible
   buckets (`0000-0099 — Foundation, build, golden gate` …
   `0700-0799 — VMAFx rebrand, Go/Rust/C++23, k8s`) plus an auto-generated
@@ -13967,6 +14022,11 @@ Total NOLINT count before and after: 180 (unchanged).
   merge-train upstream settles. (ADR-0141 §2 / ADR-0278)
 
 
+- Keep IQA boundary/filter and integer-motion edge coverage lint-clean with
+  read-only inputs and a bounded test runner, preserving all existing cases
+  and assertions.
+
+
 - Build the `-oneapi2025` production container from Intel's oneAPI Base Toolkit
   image tagged 2025.3.2 while retaining Intel's latest published 2025.3.1 runtime image;
   both inputs remain digest-pinned and the final image is runtime-smoked. The
@@ -13975,6 +14035,23 @@ Total NOLINT count before and after: 180 (unchanged).
   Production CPU and GPU images also place bundled model files directly under
   the documented `/usr/local/share/vmafx/model` directory instead of an
   unintended nested `model/` subdirectory.
+
+
+- **The Linux SYCL toolchain version lives in one place, and moves to 2026.1.**
+  Three workflows (`build.yml`, `ffmpeg-integration.yml`,
+  `libvmaf-build-matrix.yml`) each spelled
+  `intel-oneapi-compiler-dpcpp-cpp-2025.3` inline, so the version could only be
+  bumped by editing every one and the tree drifted from the toolchain actually
+  installed on the workstation. They now source `build-config.env` — which they
+  already did for `LEVEL_ZERO_VERSION` — and install `${ONEAPI_APT_PACKAGE}`.
+  `ONEAPI_VERSION` is `2026.1`. The config also records
+  `ONEAPI_RUNTIME_APT_PACKAGES`, which names `intel-oneapi-umf` explicitly
+  because `intel-oneapi-runtime-dpcpp-cpp` does not depend on it: without it
+  `libumf.so.1` is missing and the adapter fails to load, which presents as
+  "No device of requested type available" rather than as a link error. The
+  Windows leg stays on 2025.3.0.372 — its offline-installer URL carries an
+  opaque per-build GUID that cannot be derived from a version number — and is
+  tracked as `T-ONEAPI-WINDOWS-CI-LAG-2026-09-07`.
 
 
 - Scaffolding for ADR-0457 offloading of large `model/tiny/*.onnx`
@@ -13987,6 +14064,9 @@ Total NOLINT count before and after: 180 (unchanged).
   master pending the `tiny-blobs-v1` GitHub Release upload + matching
   registry update. Until that follow-up lands, the fetcher is a no-op
   on fresh clones (the blobs are already present).
+
+
+- Simplify internal feature-option iteration while preserving generated feature names, option validation and backend fallback behavior.
 
 
 - **changed(ai):** `aiutils.parquet_utils.write_parquet_atomic` now
@@ -14604,6 +14684,10 @@ and config paths are also updated in `docs/architecture/workspace.md`.
 
 
 - New CLAUDE.md rule 15 / AGENTS.md rule 12: default to vmaf-dev-mcp container for vmaf/vmaf-tune/ai/MCP work; rebuild before non-trivial runs; don't multiplex the same GPU across parallel jobs; pin long-running jobs to one device (CUDA/SYCL/HIP/Vulkan/CPU). See [ADR-0496](docs/adr/0496-prefer-dev-mcp-container-rule.md).
+
+
+- Make private PSNR format-table initialization explicit and use the standard
+  projected lookup without changing supported formats, constants or errors.
 
 
 - Pyright strict audit of the three fork-local Python trees
@@ -15257,6 +15341,11 @@ the header is consumed only via `core/src/predict.c`.
 Identified in the 2026-05-15 code-quality audit (AUDIT-2026-05-15.md §8).
 
 
+- Keep the existing SVM parser and runtime API tests lint-clean with const
+  input views and bounded parser test drivers, preserving every assertion
+  and the vendored library contracts.
+
+
 - ADR-0332 records the deferral of the SYCL ADM DWT `group_load`
   rewrite recommended by research-0086 §A.4. The kernel
   ([`integer_adm_sycl.cpp`](core/src/feature/sycl/integer_adm_sycl.cpp))
@@ -15467,6 +15556,14 @@ audit needed before the abs() refactor can land safely.
   tolerances byte-for-byte on the three Netflix CPU golden pairs per
   CLAUDE §8 / ADR-0024. No code touched in this PR; no rebase impact
   beyond the documentation entries themselves.
+
+
+- Single-source package versions across the repository and eliminate Python dependency triplication ([ADR-1236](docs/adr/1236-version-single-source-tree.md)):
+  - `python/pyproject.toml` `[project].dependencies` is now the single owner of the `vmaf` Python package runtime dependencies. Duplicate `install_requires` in `python/setup.py` is removed, relying on standard setuptools reading `pyproject.toml`.
+  - `python/requirements.txt` is mechanically derived from `python/pyproject.toml` via `scripts/ci/check-python-requirements-single-source.sh --write` (`make python-deps-sync`), verified by CI and pre-commit hooks.
+  - `renovate.json` adds `python/requirements.txt` to `ignorePaths`, eliminating duplicate competing PRs caused by Renovate managing `pip_requirements` and `pep621` simultaneously.
+  - Resolves repository-wide package version disagreements using the newest-version policy: `numpy` (current `vmaf` runtime/build floor `>=2.5.3`), `scipy` (unified to `>=1.18.1`), `matplotlib` (unified to `>=3.11.1`), and `pyarrow` (unified to `>=25.0.1`).
+  - Synchronizes package metadata versions: `tools/vmaf-tune/pyproject.toml` aligned to `0.0.2` matching `src/vmaftune/__init__.py`. Added release-owned `VMAFX_VERSION="3.2.1"` to `build-config.env`, with version-marker checks in `scripts/ci/check-workflow-versions.py`. Scientific Python floors remain in package manifests; unused proposed global knobs were removed during review.
 
 
 - **`vif.comp` + `ciede.comp` shaders — `precise` decorations on the
@@ -19097,6 +19194,9 @@ their defaults in `init_fex_metal` rather than being user-configurable via
   table-column-style violations in the extractor overview and DISTS-Sq options tables.
 
 
+- Make integer ADM AVX2/AVX-512 temporary scopes and read-only aliases analyzer-clean while preserving dispatch signatures and numerical expression order.
+
+
 - **CUDA integer_adm `adm_skip_scale0` option** (`integer_adm_cuda.c`): the
   CUDA backend silently dropped the `adm_skip_scale0` option, always
   accumulating and emitting scale-0 results even when the caller explicitly
@@ -19323,6 +19423,13 @@ ADRs affected: 0251, 0331, 0341, 0353, 0365, 0394, 0396, 0397, 0403.
     T-PYTHON-LOCAL-EXPLAINER-HACKY.
 
 
+- Agent-state cleanup now inventories by default and requires `--apply` with
+  exact `--worktree` paths before removing eligible clean checkouts. It preserves
+  modified, untracked and ignored files, active or unknown owners, detached work
+  without preserving refs, and all stashes and branches. Failed removal restores
+  the original owner lock (ADR-1239).
+
+
 - Fixed `Required Checks Aggregator` workflow timing out at 30 minutes
   while CI queue depth pushed sibling workflows past 60+ minutes wall-clock.
   Bumped poll deadline from 30 → 90 minutes and job timeout from 35 → 100
@@ -19530,6 +19637,11 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
 
 
 - **CRITICAL**: AVX-512 float convolution dispatch from [#1261](https://github.com/VMAFx/vmafx/pull/1261) (ADR-0504) reads past the row buffer when row width isn't a multiple of 16 floats (64 bytes). Surfaces as `munmap_chunk(): invalid pointer` / SIGABRT in `speed_temporal` which calls `vif_filter1d_s` at downscaled widths like 45 (= 360 >> 3) on portrait sources. Guard the three AVX-512 dispatch sites in `core/src/feature/vif_tools.c` with `(w % 16) == 0` — narrower rows fall through to the AVX2 8-wide path. Caught by the CHUG re-extract failing with SIGABRT on every portrait clip after the dispatch landed in master.
+
+
+- Reject unpinned external container images that bypassed the central base-image
+  guard through `FROM`, `COPY --from`, platform/other flags or instruction case.
+  Preserve exact local image consumers and test mirror repair in isolated fixtures.
 
 
 - Bash strict-mode sweep across 9 in-tree shell scripts: promote `set -eu` to `set -euo pipefail`, add script-wide `mktemp` cleanup traps, add `LC_ALL=C` to filename-numeric sorts. Closes residual gaps left by PRs #318 (perf/release scripts) and #350 (dev-mcp-entrypoint, sycl-bench-env). Touched: `scripts/run_unittests.sh`, `scripts/ai/fetch-tiny-blobs.sh`, `dev/scripts/smoke-probe-loop.sh`, `scripts/ci/check-agent-worktree-drift.sh` + self-test, `scripts/ci/check-adr-numbering.sh`, `scripts/ci/check-dispatch-registry.sh`, `scripts/adr/next-free.sh`, `tools/ensemble-training-kit/_platform_detect.sh` (documented as deliberately sourced-without-strict-mode). See [ADR-0899](docs/adr/0899-bash-strict-mode-sweep.md).
@@ -19770,6 +19882,12 @@ Regression coverage: new tail-only bit-exact tests in
 relative-tolerance tests cover the FCVT fix on SVE2 hardware/emulation.
 
 
+- Recognize the root `build-config.env` as a dependency manifest for bot PRs,
+  including updates to its Dockerfile mirrors. Human changes on non-bot
+  branches, mixed source changes, nested build configs, and unrelated env
+  files retain the documentation gates.
+
+
 - Fix NEON `neon_any_nonzero_s32` uint64-truncation bug that incorrectly
   skipped rows with alternating zero/non-zero y_row values on arm64,
   causing the checkerboard motion score to return 0.0 instead of 12.55
@@ -19954,6 +20072,10 @@ unmodified CPU c-values code on byte-identical buffers). Added `cambi` to the
 
 The `cross_backend_vif_diff.py` per-feature lane already carried a `cambi` entry
 (added with T7-36); this change brings `cross_backend_parity_gate.py` into alignment.
+
+
+- Clean up CAMBI read-only input declarations and shadowing while preserving
+  numerical code, GPU helper exports and documented private scaffolds.
 
 
 - `cambi` CUDA, SYCL, and Vulkan backends now accept `src_width` and `src_height`
@@ -20587,6 +20709,18 @@ Stale `python/vmaf/workspace` and `python/vmaf/resource` references in
 `config.py` docstrings updated to `compat/python-vmaf/` (post-ADR-0700).
 
 
+- Keep configured-lint Make fixtures offline: provision their pip prerequisite
+  before fake build tools and reject any bootstrap attempt, including recursive
+  Make paths.
+
+
+- Local native lint now selects tracked sources from the configured Meson
+  database, covering engine roots, C++ tools, tests and tracked vendors without
+  inventing build commands for inactive backends. It preserves build metadata,
+  adapts numeric GCC LTO flags only in a private analyzer copy, retains command
+  variants and analyzer receipts, and runs cppcheck after clang-tidy failures.
+
+
 ### Fixed
 
 - Remove committed conflict markers from 78 files introduced by the
@@ -20766,6 +20900,9 @@ Fix two `dev/Containerfile` build-correctness bugs:
   [Research-0892](../docs/research/0892-conventional-commits-audit-2026-05-30.md).
 
 
+- Bound AVX2 and AVX-512 horizontal convolution loads and stores to valid output lanes, preserving each ISA's arithmetic and scalar tail; cover tight final rows, tiny widths and normal/square/cross-product modes.
+
+
 Fix 6 reproducible test failures introduced by the recent PR train:
 
 - `test_gpu_picture_pool_uaf`: `gpu_picture_pool.cpp` `free_p`/`fail` labels
@@ -20924,6 +21061,9 @@ Rollup PR targeting master; rebases trivially after the cpp23 PRs land.
     values, and TSan only runs on Linux).
 
 
+- Run configured local and CI Cppcheck analysis in exhaustive mode so normal branch-budget cutoffs do not leave clean native sources only partly analyzed. Preserve diagnostic categories and real-defect failures; deeper analysis can take longer (ADR-1245).
+
+
 **Fix build failure in Cppcheck CI gate caused by missing AVX-512 motion sub-kernel functions.**
 
 `test_motion_avx512_parity.c` called `sad_avx512`, `y_convolution_8_avx512`,
@@ -20941,6 +21081,19 @@ The fix adds AVX-512 implementations of these four sub-kernels:
 
 All four functions are declared in `motion_avx512.h` and use scalar fallback paths
 for edge pixels, with AVX-512 SIMD for interior pixels.
+
+
+- **Cppcheck pthread modeling:** Load the official POSIX API model in local
+  and CI analysis so shared C aggregates are not mistaken for C++ classes
+  needing constructors. Real-header controls still reject uninitialized
+  member reads and broken constructors; target settings and diagnostic
+  categories remain unchanged.
+
+
+- Model 16 verified public C entrypoints in the shared local/CI Cppcheck
+  configuration so missing external callers do not make disabled-backend APIs
+  look unused. Keep private-function and body-defect checks, with declaration
+  validation and real-tool failure controls (ADR-1246).
 
 
 - `core/src/feature/vif.c`: corrected 10 `cppcheck-suppress
@@ -21390,6 +21543,15 @@ uses the kernel-template readback pair: `integer_psnr_cuda`, `integer_ssim_cuda`
   File: `core/src/feature/cuda/integer_adm/adm_cm.cu`.
 
 
+- **Documentation links:** repaired 41 relocated references across 25 current topic
+  pages after ADR renumbering and source-tree moves. Relocated source links open
+  the canonical repository from the published site. Seven other dead links retain
+  their original paths as explicitly unavailable evidence or removed Vulkan
+  history, with links to the retirement decision. The tiny-AI overview identifies
+  v5 as a deferred proposal instead of linking to an unshipped model card;
+  intentional scaffolds and historical findings remain intact.
+
+
 - **Every dependency PR failed the documentation gates because the classifier
   diffed the wrong range.** `scripts/ci/classify-dependency-pr.sh` compared
   `base_sha..head_sha` with two dots, but GitHub's `pull_request.base.sha` is the
@@ -21515,6 +21677,13 @@ discover Arc GPUs. ADR-0528.
   character device when it is present (non-NVIDIA hosts skip this check via
   `|| true` short-circuit) and raising `start_period` from 20 s to 45 s to
   accommodate slower host CUDA-init sequences.
+
+
+- **Dev container builds:** make pipeline failure handling explicit per stage,
+  export the ccache directory to both libvmaf configure and compile commands,
+  and use explicit build paths before cleanup. Golden-test collection failures
+  retain their diagnostics; Go artifact counting handles filenames directly and
+  the artifact stage returns to the unprivileged build user.
 
 
 ### Fixed
@@ -21664,6 +21833,12 @@ behaviour instead of the retired CPU/CUDA-only status.
   load-fails-for-unrelated-reasons `dists_sq.onnx` placeholder).
 
 
+Reject read and destination close/flush errors in the DNN session-test fixture
+copier, with separate POSIX regressions. Preserve all original ORT/session test assertions and inputs while
+making read-only arrays const and grouping the session driver for strict lint.
+The measured CPU warning baseline tightens by two warnings.
+
+
 - **Docker FFMPEG_TAG pin drift fixed** — `Dockerfile` and `Dockerfile.ffmpeg` both
   declared `ARG FFMPEG_TAG=n8.1` (the bare minor-version tag) rather than
   `ARG FFMPEG_TAG=n8.1.1` (the patch-level tag our 16-patch stack targets).
@@ -21699,6 +21874,12 @@ Fix two broken intra-doc links pointing to nonexistent docs/adr/0720-sunset-floa
 (correct target is ADR-0865); add 9 orphaned metric pages and 2 orphaned MCP pages to
 the mkdocs.yml nav (ansnr, motion, ms-ssim, psnr-hvs, speed_qa, ssim, tad, vif, vmaf-neg,
 mcp/backends, mcp/http-transport).
+
+
+- Repair broken developer and usage guide links using canonical ADR IDs, backend
+  overview pages, and source paths; retain historical local-only references.
+- Block selected documentation pushes when MkDocs is unavailable, while direct
+  non-doc checks continue to skip without requiring the docs toolchain.
 
 
 Fixed the MkDocs strict-mode anchor warnings that blocked the GitHub Pages
@@ -21944,6 +22125,22 @@ linear-scan overhead on every extractor lookup; the first matching entry was
 always returned so feature availability was never affected.
 
 
+- Document four factory-initialized pool fields for cppcheck consumers that
+  cannot see the factories, retaining diagnostics for real uninitialized reads.
+
+
+- Keep internal feature-context pool entries at stable addresses when their
+  pointer table grows, so waiting acquisitions are signaled correctly. Check
+  allocation sizes and release entry options even after context creation fails.
+
+
+- Update the FFmpeg refresh guide to use the shared release configuration and
+  disposable replay tooling. Correct the reversed PSNR values and unsupported
+  frame-alignment diagnosis in the upstream issue research and status ledger.
+- Keep direct documentation validation selected for large diffs and Git
+  comparison failures; cover both cases in the hook regression suite.
+
+
 - ffmpeg: document the `libvmaf` filter input-ordering convention
   (`[0:v]` = distorted / main, `[1:v]` = reference — the OPPOSITE
   of the Python runner and `vmaf` CLI which take `(ref, dis)`).
@@ -21969,6 +22166,14 @@ always returned so feature availability was never affected.
   to mirror 0005/0006. Series replays clean against pristine `n8.1`;
   `vf_libvmaf_tune.o` builds green. Discovery: PR #415 / ADR-0317.
   Originating patch ADR: ADR-0312.
+
+
+- Fix FFmpeg patch 0018 replay after patch 0005 already introduced percentile
+  pooling. Preserve the feature guard and mean fallback, and apply the full
+  stack through `series.txt` in the documented command.
+
+
+- Refresh and verify the complete FFmpeg patch stack in local hooks and required CI; discover stable upstream releases daily, centralize the release configuration, and preserve existing checkouts on failure.
 
 
 - FFmpeg Integration CI: removed stale `ffmpeg-vulkan` job that failed with
@@ -22279,6 +22484,23 @@ is addressed.
   - `core/include/libvmaf/libvmaf_metal.h` & `docs/backends/metal/index.md`: documented real synchronous CPU `memcpy` behavior for `vmaf_metal_picture_import` and recorded Deferred row for true zero-copy GPU texture binding (`GAP-METAL-IOSURFACE-NOT-TRUE-ZERO-COPY`).
   - `docs/backends/metal/index.md` & `docs/metrics/features.md`: truthfully recorded SpEED family (`speed_chroma`, `speed_temporal`) as missing on Metal with CUDA porting reference and LOC estimate, and cleaned up stale path and Vulkan references in Metal docs (`GAP-METAL-MISSING-SPEED-TWINS`).
   - `docs/state.md`: tracked all 4 gaps in the Metal bucket across Closed and Deferred sections.
+
+
+- Refresh ADR navigation and all tag indexes from their sources, remove duplicate
+  navigation entries, and restore the missing ADR-1123 index row.
+- Check generated metadata freshness and fragment coverage locally and in required
+  Docs CI; reject malformed sentinel pairs before navigation writes.
+- Preserve readable generated titles and tag names, and skip Pages deployment
+  when the impact plan produced no documentation artifact.
+
+
+- Isolate FFmpeg replay/smoke, dependency-classifier and agent-cleanup test
+  fixtures from inherited Git repository, index and configuration variables.
+  Local and CI regression checks now verify that disposable caller repositories
+  retain their configuration, refs, object store, index and working files.
+- Isolate Level Zero configuration fixtures when invoked by real Git hooks;
+  verify that Git-exported linked-worktree state cannot change shared repository
+  configuration, either index, or staged and unstaged work.
 
 
 - **The Netflix golden YUV fixtures are no longer reachable by `git clean -xfd`.**
@@ -23205,6 +23427,12 @@ overwrite; added an ASan regression test
   gap that PR #213 surfaced but did not merge.
 
 
+- Make development-container Level Zero downloads consume `LEVEL_ZERO_VERSION`
+  from `build-config.env`, with tests for real command consumption and drift.
+  Renovate now updates the shared loader setting; remove its obsolete ROCm
+  literal-version manager because the central image pins already own ROCm.
+
+
 - **`core/src/svm.cpp` parser now rejects header rows that depend on
   `nr_class` if they appear before the `nr_class` row itself.** Five
   affected rows (`rho`, `label`, `probA`, `probB`, `nr_sv`) gain a
@@ -23749,6 +23977,14 @@ so that MCP output is Netflix-compatible without explicit precision argument (AD
   CERT INT30-C.
 
 
+- Guard local merge-train promotion, rebase, and merge actions against stacked
+  bases, holds, release PRs, and active source owners. Rebase failures retain
+  evidence and prevent promotion; merges require executed full local gate
+  receipts and present, passing required checks. A previewed migration helper
+  preserves originals/holds and installs paused adapters with hash checks and
+  read-only observer defaults; process restart remains explicit.
+
+
 ### Meson build-option combination validation
 
 **Fixed:** Three broken build-option combinations now produce clear diagnostics instead of silently succeeding with no effect (audit findings 1b, 1c, 1d from audit-build-matrix-symbols-2026-05-16).
@@ -24055,6 +24291,9 @@ preprocessor macros. (PR #744)
   `vmaf_use_features_from_model` checks GPU twin options against model requirements,
   automatically dispatching extractors with unsupported options to the CPU reference
   twin with an informational notice ([ADR-1183](docs/adr/1183-model-options-gate-gpu-twin-selection.md)).
+
+
+Release private feature-option dictionaries when registration rejects options or an internal copy fails, including partially copied dictionaries. Model options remain available for correction or retry; successful registration and dictionary-consumption rules are unchanged.
 
 
 - `model/tiny/registry.json`: added missing `license`, `license_url`, and
@@ -24465,6 +24704,13 @@ clear diagnostic: `enable_nvtx=true requires enable_cuda=true`.
     of NotTo(BeNil) / ShouldNot(Equal)).
 
 
+- Preserve separately configured feature extractors when their option-derived
+  output keys differ, including motion variants requested by multiple models.
+  Equivalent defaults, aliases and CPU/GPU twins still share a registration.
+  Registration allocation failures preserve existing contexts, and vector
+  growth checks both count and byte-size limits in release builds.
+
+
 - **`GetTensorElementType` errors during session open were silently discarded,
   leaving `input_elem_types[i]` / `output_elem_types[i]` at
   `ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED` (0).** The run path then silently
@@ -24480,6 +24726,12 @@ clear diagnostic: `enable_nvtx=true requires enable_cuda=true`.
   populate FLOAT16). Found by PR #112 ORT audit.
 
 
+- **Dev container documentation:** clarify that the native ONNX Runtime CPU
+  archive does not contain CUDA or ROCm execution providers and that the Python
+  runtime dependency floor is owned separately. Remove stale version and ADR
+  claims without changing runtime pins.
+
+
 - Added three unit tests to `core/test/test_output.c` covering
   previously untested public API entry points identified in the
   2026-05-16 test-coverage audit (§2):
@@ -24487,6 +24739,13 @@ clear diagnostic: `enable_nvtx=true requires enable_cuda=true`.
   `vmaf_write_output()` (JSON path-based dispatcher),
   and `vmaf_write_output_with_format()` (custom printf format string
   honoured). Total test count in `test_output` raised from 8 to 11.
+
+
+- Enforce the documented 512-container JSON model nesting limit before changing
+  parser state; reject a 513th nested array or object and invalid stack-growth
+  overrides before allocation. Preserve parser behavior
+  through dedicated Unicode, streaming, malformed-input and allocator tests,
+  and remove the vendored parser's blanket lint suppression.
 
 
 `vmaf-tune` per-shot report: Bitrate column now shows real kbps values (was "—" for
@@ -24739,6 +24998,13 @@ Fix 23 pre-existing test failures across three packages.
   wire-level invariant.
 
 
+- Fix pre-push mypy scope after rebases: recheck every branch-owned Python
+  file under `ai/` and `scripts/` against the master merge base, including
+  unchanged outgoing files and Git type changes. Preserve internal symlink
+  filenames, reject unsafe targets and refuse validation of a pushed ref
+  different from the checked-out HEAD.
+
+
 - markdownlint no longer lints golden fixtures as prose. The exclude pattern was
   `^testdata/`, anchored at the repository root, so fixture trees under
   `pkg/*/testdata/` — the benchmark renderer's byte-exact expected Markdown, for
@@ -24757,6 +25023,13 @@ Fix 23 pre-existing test failures across three packages.
   of the parallel `vmafx-tune` ports each appended invariants numbered 13–17, and
   the union-merge that reconciled them (PR #1153) kept all three blocks, so the
   file listed 13–17 three times over. Renumbered 1–25.
+
+
+- Confine Go predictor model-card reads to the model directory, retaining
+  registry-resolved model names and known-stub fallback when an optional card is absent or escapes via a symlink.
+- Require the Go security and test job before merging; route its native and
+  ONNX checks from Go/core/model changes while documentation-only changes
+  report an explicit skip of the heavy work (ADR-1238).
 
 
 Fix `vmaf-tune predict --use-saliency` so saliency mean/variance are
@@ -25062,6 +25335,9 @@ Fix three RC-gate failures surfaced by the pre-release validation matrix:
   shipped version — is stricter than before rather than looser.
 
 
+- Route shared build configuration changes through full CI validation and let node publication consume the generated FFmpeg release default.
+
+
 ### Fixed
 
 - Correct two stale README badges: C++ standard badge now reads `C++23`
@@ -25088,6 +25364,11 @@ Fix three RC-gate failures surfaced by the pre-release validation matrix:
   workflow badges in `README.md` already pointed at the correct
   `VMAFx/vmafx` repo and reference real, active, master-green
   workflows; verified via the GitHub Actions API.
+
+
+- Shorten the README to verified examples and documentation links; correct
+  linked build entry points, remove repeated backend status tables and align
+  the documentation footer with the repository license.
 
 
 - Restored the README toolchain badges (Go, Rust edition, Python, C, C++,
@@ -25172,6 +25453,11 @@ the draft.
      there was no Renovate issue in the tracker at all. Now enabled.
 
 
+- Restore file discovery for every Renovate custom manager by removing duplicate
+  regex delimiters. Add positive selection fixtures for shared build configuration
+  and Dockerfile mirrors so schema-valid patterns cannot silently disable updates.
+
+
 - **Renovate config:** fixed an invalid schedule (`before 6am on weekdays` →
   `before 6am every weekday`) — Renovate's later.js parser rejects `on weekday(s)`
   and had stopped all dependency PRs. `every weekday` is the form Renovate's own
@@ -25227,6 +25513,11 @@ scan in `vmaf_read_pictures` was therefore re-introduced. This fix restores:
 ADR-0485.
 
 
+- Restore the released Ubuntu 26.04 ROCm 10 image across the shared builder
+  and runtime pins. The pruned SDK stage now compiles and links a HIP kernel
+  instead of only querying its version.
+
+
 Fix `frame_bytes()` chroma ceiling-division for odd-dimension YUV inputs in `vmaf-roi`.
 
 `core/tools/vmaf_roi.c` computed the per-frame byte count for 4:2:0 and 4:2:2 inputs
@@ -25239,6 +25530,13 @@ maps. The 4:4:4 path was unaffected.
 Fix: use `cw = (w+1)/2`, `ch = (h+1)/2` ceiling-division in all three pixel-format
 branches. Four regression tests added to `test_vmaf_roi` (even dims, odd 4:2:0, odd
 4:2:2, 4:4:4 baseline).
+
+
+- **ROI high-bit-depth input:** Keep the brightest 10-, 12- and 16-bit
+  luma samples white when converting to the saliency model's 8-bit input;
+  rounded values now saturate instead of wrapping to black. Validate
+  private reader and placeholder extents before accessing their buffers,
+  with exhaustive conversion and sanitizer boundary regressions.
 
 
 - **vmaf-roi-score**: Make `--synthetic-mask` materialise and score a
@@ -25772,6 +26070,12 @@ mirroring the `sse_line_16_c` reference in `core/src/feature/integer_psnr.c`.
   `T-ICX-FP-CONTRACT-FLAG-ORDER-2026-09-07` in `docs/state.md`.
 
 
+Keep the existing SpEED registration and QA tests lint-clean through
+read-only descriptor views and small temporal setup helpers. All assertions,
+inputs and case registrations are preserved; helper failures still reach the
+original test runner. The measured CPU warning baseline tightens by 26.
+
+
 - **`vmaf --feature ssim` could not resolve.** The fixed-point SSIM
   extractor `vmaf_fex_ssim` was defined in
   `core/src/feature/integer_ssim.c` but the source file was not
@@ -26180,6 +26484,24 @@ in `integer_ssim_sycl.cpp` that were accidentally dropped by PR #1095 when it ad
   after UV copies and before graph submission. (ADR-1034)
 
 
+- **Tensor I/O regression tests:** Make input fixtures read-only and split
+  oversized helpers without changing any numerical assertion or test case.
+  Preserve deliberate invalid-enum probes with precise cited markers, and
+  tighten the measured native lint baseline by nine warnings.
+
+
+- Make the shared native test result read-only and the alignment remainder
+  predicate explicit, preserving test exits and existing rounding behavior.
+
+
+- Split large CAMBI test groups into focused helpers and make read-only
+  fixtures const, preserving all 144 assertions and 23 registered cases.
+
+
+- Make feature-extractor test input views read-only without changing
+  assertions, registration order or fixture ownership.
+
+
 - **The seven assertions ported into `core/test/test_feature.cpp` by PR #1219
   raised that file's clang-tidy debt from 9 warnings to 34.** The port
   (ADR-1153, rescuing the dead C twin's unique coverage before deleting it)
@@ -26283,6 +26605,13 @@ ADR-0513.
 
 
 - Test YUV fixture provisioner: `scripts/test/fetch-test-yuvs.sh` downloads `src01_hrc0[0-1]_576x324.yuv` from `Netflix/vmaf_resource` and md5-verifies them. Reverts the [#1237](https://github.com/VMAFx/vmafx/pull/1237) ADM2 golden override, which was based on output from stale local fixture content. See [ADR-0493](docs/adr/0493-test-yuv-fixture-md5-verification.md) and [docs/development/test-fixtures.md](docs/development/test-fixtures.md).
+
+
+- Bound pending CPU thread-pool jobs to the created worker count, restoring
+  backpressure when decoding outpaces feature extraction. Preserve recycled
+  payloads and batch errors, and wait for blocked producers during shutdown.
+  Adapted from Netflix/vmaf commit `8fc71e3` with shutdown-lifetime regression
+  coverage.
 
 
 - `vmaf_thread_pool_create` now checks the return value of `pthread_create`
@@ -26827,6 +27156,9 @@ consistent with existing Malloc behaviour in the file (ADR-1039).
 - `docs/metrics/vif.md`: document `vif_skip_scale0` and `vif_enhn_gain_limit`
   options; fix pre-existing MD060 table-column-style violations on all three
   tables in the file; add `vif_skip_scale0` CLI example.
+
+
+- Repair scalar VIF dead stores and oversized helper bodies while preserving score arithmetic and temporal entry points; reject invalid/overflowing allocation geometry, restore checked optional debug dumps, and cover odd-width strides and temporal cleanup.
 
 
 - **`vif_statistic_8_neon` dropped up to 7 pixel columns from every row.** Its
@@ -27607,6 +27939,17 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   last one in its list failed. GitHub runs `shell: cmd` with `/V:OFF`, so the
   step reported only the final executable's exit code; each test is now
   checked with `|| exit /b 1`. `test_output` was also added to that list.
+
+
+- Fix Windows CUDA configuration when `vswhere` cannot find MSVC but `cl.exe`
+  is on `PATH`: NVCC and MSVC include discovery now share the resolved compiler
+  path. Add a Meson configure regression for discovery, fallback and missing tools.
+
+
+- Keep installed Git hooks functional after an installer worktree is removed.
+- Activate configured pre-push and commit-message checks in both local modes;
+  run MkDocs independently of first-push and draft PR-body skips.
+- Refuse unknown custom hooks and preserve managed replacements in unique backups.
 
 
 - **`y4m_convert_411_422jpeg` 1-byte heap-buffer-overflow on

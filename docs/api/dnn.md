@@ -438,6 +438,24 @@ the model-registry policy in `docs/ai/model-registry.md`). Bundles
 shipped under `model/tiny/*.sig` + `*.cert` carry a keyless OIDC
 identity tied to the GitHub Actions workflow that built the model.
 
+## Testing standalone sessions
+
+Run the existing internal and public-session tests with:
+
+```sh
+meson test -C build --print-errorlogs test_ort_internals test_dnn_session_api
+```
+
+Use a build configured with `-Denable_dnn=enabled` and a discoverable ONNX
+Runtime package to exercise inference and session creation. A disabled-DNN
+build exercises stub semantics; many other cases return early, so that result
+alone does not validate ONNX inference. The POSIX session-test fixture helper
+also checks that source read errors and destination close/flush failures cannot
+be reported as successful copies. The close-error case runs first, before ORT
+initialization, and confines its file-size limit and signal disposition to a
+child process. All 35 original session cases retain their relative order; the
+read-error case stays last, for 37 session cases on POSIX (plus 48 internals).
+
 ## Known limitations
 
 - **Attached mode supports multiple scalar output tensors, not vector or image

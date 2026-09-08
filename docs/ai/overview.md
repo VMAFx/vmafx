@@ -89,8 +89,9 @@ for the rule. Current pages:
   uncertainty-aware variant.
 - [fr_regressor_v3](models/fr_regressor_v3.md) — FR MLP regressor v3.
 - [vmaf_tiny_v2](models/vmaf_tiny_v2.md), [vmaf_tiny_v3](models/vmaf_tiny_v3.md),
-  [vmaf_tiny_v4](models/vmaf_tiny_v4.md), [vmaf_tiny_v5](models/vmaf_tiny_v5.md)
-  — progressive VMAF-tiny checkpoint series.
+  [vmaf_tiny_v4](models/vmaf_tiny_v4.md) — progressive VMAF-tiny checkpoint series.
+  The [v5 corpus-expansion proposal](../adr/0287-vmaf-tiny-v5-corpus-expansion.md)
+  remains deferred; no `vmaf_tiny_v5.onnx` checkpoint is shipped.
 - [saliency_student_v1](models/saliency_student_v1.md),
   [saliency_student_v2](models/saliency_student_v2.md) — saliency map heads.
 - [fastdvdnet_pre](models/fastdvdnet_pre.md) — temporal pre-filter (5-frame window).

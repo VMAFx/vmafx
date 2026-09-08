@@ -3,6 +3,7 @@
 # The format/lint hooks run only on changed files for speed.
 
 minimum_pre_commit_version: "3.5.0"
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
 fail_fast: false
 
 repos:
@@ -193,6 +194,13 @@ repos:
         # alongside the formatters. Bypass with `git commit --no-verify`
         # for legitimate main-checkout commits while an agent is active.
 
+      - id: merge-train-guard-contract
+        name: Merge-train ownership and validation regressions
+        entry: python3 -m unittest discover -s scripts/dev/tests -p test_*merge_train_guard.py
+        language: system
+        files: '^scripts/dev/((install_)?merge_train_guard\.py|tests/test_(install_)?merge_train_guard\.py)$'
+        pass_filenames: false
+
       - id: check-dispatch-registry
         name: Check backend feature extractor dispatch registry wiring
         entry: scripts/ci/check-dispatch-registry.sh
@@ -206,6 +214,49 @@ repos:
         language: script
         pass_filenames: false
         always_run: true
+
+      - id: check-base-image-single-source
+        name: Container base images come from build-config.env
+        entry: scripts/ci/check-base-image-single-source.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+
+      - id: test-base-image-single-source
+        name: Base image and toolchain single-source tests
+        entry: python3 -m unittest discover -s scripts/ci/tests -p 'test_*single_source.py'
+        language: system
+        files: '^(build-config\.env|dev/Containerfile|renovate\.json|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-workflow-versions\.py|tests/test_(base_image|level_zero)_single_source\.py))$'
+        pass_filenames: false
+
+      - id: test-configured-lint-driver
+        name: Configured native lint scope and failure propagation
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_lint_configured.py
+        language: system
+        files: '^(Makefile|scripts/ci/(lint-configured\.py|cppcheck-public-entrypoints\.cfg|tests/test_(lint_configured|cppcheck_posix_model)\.py)|core/include/libvmaf/[^/]+\.(h|build)|\.github/workflows/lint-and-format\.yml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
+      - id: test-renovate-file-patterns
+        name: Renovate custom managers select real inputs
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_renovate_file_patterns.py
+        language: system
+        files: '^(renovate\.json|scripts/ci/tests/test_renovate_file_patterns\.py)$'
+        pass_filenames: false
+
+      - id: check-python-requirements-single-source
+        name: Python requirements derive from python/pyproject.toml
+        entry: scripts/ci/check-python-requirements-single-source.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+
+      - id: test-git-fixture-isolation
+        name: Git fixtures preserve caller repositories
+        entry: python3 scripts/ci/test_git_fixture_isolation.py
+        language: system
+        files: '^(scripts/ci/test_(git_fixture_isolation|ffmpeg_patch_stack|ffmpeg_patch_smoke_safety)\.py|scripts/ci/test-classify-dependency-pr\.sh|scripts/ci/tests/test_level_zero_single_source\.py|scripts/dev/test-cleanup-agent-state\.sh|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
 
       - id: check-no-tracked-venv
         name: No virtualenv path is tracked (dir or symlink)
@@ -282,17 +333,28 @@ repos:
 
       - id: mypy-local
         name: mypy (ai/ + scripts/, fork-added Python)
-        entry: mypy
+        entry: python3 scripts/git-hooks/pre-push-mypy.py
         language: system
-        files: '^(ai|scripts)/.*\.py$'
+        # The wrapper owns the unchanged ai/scripts *.py policy. Incoming
+        # old-tip/new-tip filenames omit owned files after a rebase.
+        always_run: true
+        pass_filenames: false
         verbose: true
         require_serial: true
         # Pre-push only — running mypy on every commit doubles a
-        # 1-line edit's commit time; the gate is cheap on staged files
-        # but contributors land many small commits per push.
+        # 1-line edit's commit time. Check the complete branch-owned set
+        # against the master merge base on every push, including rebases.
         # Contributors need `pip install mypy` (system tool, not in
         # pyproject.toml — same posture as CI's lint-and-format job).
         stages: [pre-push]
+
+      - id: mypy-scope-contract
+        name: Check pre-push mypy merge-base scope
+        entry: python3 scripts/git-hooks/test-pre-push-mypy.py
+        language: system
+        files: '^(scripts/git-hooks/(pre-push-mypy|test-pre-push-mypy)\.py|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
 
       - id: semgrep-local
         name: semgrep (.semgrep.yml — local rules, error-gated)
@@ -346,13 +408,16 @@ repos:
         # without an explicit file list, picking up .semgrepignore).
 
       - id: ffmpeg-patches-apply-check
-        name: ffmpeg-patches apply --check (n8.1.1)
-        entry: scripts/ci/ffmpeg-patches-check.sh
-        language: script
-        files: '^ffmpeg-patches/.*\.patch$'
-        stages: [pre-push]
-        # Script self-discovers via series.txt; passing per-file paths
-        # would re-check each patch once per file in the diff.
+        name: FFmpeg patch stack on the configured release
+        entry: python3 scripts/ci/ffmpeg_patch_stack.py --refresh --output-dir .workingdir2/cache/ffmpeg-patch-stack/hooks
+        language: system
+        # CI helpers are authority inputs (ADR-1140), including the replay
+        # script's config/refresh helpers. Public API/build changes can make
+        # a previously clean patch stack stale without editing a patch.
+        files: '^(ffmpeg-patches/|scripts/ci/|build-config\.env$|core/include/|(?:core/)?meson(?:_options\.txt|\.build)$|\.github/workflows/ffmpeg-patch-stack\.yml$)'
+        stages: [pre-commit, pre-push]
+        # Refresh only the configured release. The framework stops the commit
+        # or push when regeneration changes tracked files for review/restaging.
         pass_filenames: false
 
       - id: validate-pr-body
@@ -365,4 +430,20 @@ repos:
         # gh CLI is absent or no open PR exists (both handled gracefully
         # inside the script). See docs/development/pr-body-sentinel-guide.md.
         always_run: true
+        pass_filenames: false
+
+      - id: mkdocs-strict
+        name: Build changed documentation with MkDocs strict validation
+        entry: scripts/git-hooks/pre-push-mkdocs-strict.sh
+        language: script
+        stages: [pre-push]
+        files: '^(docs/|mkdocs\.yml)'
+        pass_filenames: false
+
+      - id: check-generated-docs
+        name: Check generated ADR and changelog freshness
+        entry: make docs-fragments-check
+        language: system
+        stages: [pre-commit]
+        files: '^(docs/adr/|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
         pass_filenames: false

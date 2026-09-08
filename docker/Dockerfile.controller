@@ -4,9 +4,9 @@
 # docker/Dockerfile.controller — multi-stage build for the vmafx-controller Go binary.
 #
 # Stages:
-#   go-builder  : compiles cmd/vmafx-controller using golang:1.27-bookworm@sha256:ded31c68586d2e49e760acc2e65a884b23d032e9bbbed0ae0c55abd3fcaf4452
+#   go-builder  : compiles cmd/vmafx-controller using ${RELEASE_GO_BASE}
 #   vmaf-builder: compiles libvmaf + vmaf CLI (mirrors docker/Dockerfile.production)
-#   controller  : distroless runtime carrying both the Go binary and libvmaf.so
+#   controller  : ${RELEASE_RUNTIME_CC} carrying both the Go binary and libvmaf.so
 #
 # Build:
 #   docker build -f docker/Dockerfile.controller -t ghcr.io/vmafx/vmafx-controller:dev .
@@ -33,7 +33,15 @@
 # ---------------------------------------------------------------------------
 # Stage 1 — go-builder: compile the controller binary
 # ---------------------------------------------------------------------------
-FROM golang:1.27-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b AS go-builder
+# Base images come from build-config.env -- the single source of truth for
+# every container base in this repository. These defaults are mirrors kept in
+# sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
+# these lines, then run that script with --write.
+ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:9baa6b4187bbb98d240372a8a235ac0bb6b5ddd52bba1431dc2f7c0705862728"
+ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132"
+ARG RELEASE_RUNTIME_CC="gcr.io/distroless/cc-debian13:nonroot@sha256:c31ff9abcb1910f3ab25c7957bdaf0bfe12a01eb546e8df2282f1c8f682b606c"
+
+FROM ${RELEASE_GO_BASE} AS go-builder
 
 ARG CGO_ENABLED=1
 ARG DEBIAN_FRONTEND=noninteractive
@@ -68,7 +76,7 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
 # Stage 2 — vmaf-builder: compile libvmaf + vmaf CLI
 # ---------------------------------------------------------------------------
 # Reuses the same setup as docker/Dockerfile.production stage 1.
-FROM debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS vmaf-builder
+FROM ${RELEASE_BUILDER_BASE} AS vmaf-builder
 
 ARG VMAF_BUILD_JOBS=4
 ARG DEBIAN_FRONTEND=noninteractive
@@ -105,7 +113,7 @@ RUN mkdir -p /dist/lib /dist/bin /dist/model \
 # ---------------------------------------------------------------------------
 # Stage 3 — controller: distroless runtime (glibc, no shell)
 # ---------------------------------------------------------------------------
-FROM gcr.io/distroless/cc-debian12@sha256:e5d81ddde149641e2a9ba55be4545bc125c67de07508b03ba4c22e6eb0ded5aa AS controller
+FROM ${RELEASE_RUNTIME_CC} AS controller
 
 LABEL org.opencontainers.image.title="vmafx-controller"
 LABEL org.opencontainers.image.description="VMAFX controller — distributed job queue + node registry, gRPC + HTTP, backed by libvmaf"
@@ -129,4 +137,7 @@ ENV VMAFX_DB_PATH="/data/vmafx-controller.db"
 EXPOSE 8080
 EXPOSE 9090
 
+# Drop privileges. Both listen ports are above 1024, so no capability is
+# needed. Explicit rather than inherited from the base tag.
+USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/vmafx-controller"]

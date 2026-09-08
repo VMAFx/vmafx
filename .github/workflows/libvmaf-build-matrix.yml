@@ -404,9 +404,15 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
           sudo apt-get update
-          sudo -E apt-get -yq install intel-oneapi-compiler-dpcpp-cpp-2025.3 cmake
-          # Level Zero headers + loader library, pinned to stable tag.
-          git clone --depth=1 --branch v1.28.0 \
+          set -a; . ./build-config.env; set +a
+          sudo -E apt-get -yq install "${ONEAPI_APT_PACKAGE}" cmake
+          # Level Zero headers + loader, pinned by LEVEL_ZERO_VERSION in
+          # build-config.env. Three different versions used to be in the tree at
+          # once (v1.28.0 here, 1.32.0 in dev/Containerfile, the distro package
+          # elsewhere); a skew here surfaces as "no device available" rather
+          # than as a build error (ADR-1231).
+          set -a; . ./build-config.env; set +a
+          git clone --depth=1 --branch "v${LEVEL_ZERO_VERSION}" \
             https://github.com/oneapi-src/level-zero.git /tmp/level-zero
           cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr
           cmake --build /tmp/level-zero/build -j$(nproc)
@@ -471,14 +477,16 @@ jobs:
       # comparable to the apt install it replaces.
       - name: Install ROCm / HIP toolchain
         if: ${{ (matrix.hip) && steps.impact.outputs.c_core == 'true' }}
-        env:
-          ROCM_IMAGE: "rocm/dev-ubuntu-24.04@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374"
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install --no-install-recommends \
             ccache ninja-build nasm libomp-dev pkg-config gcc g++ jq
+          # The ROCm image is defined once in build-config.env (ADR-1231),
+          # never pinned again here. It was previously a digest literal in
+          # this file and a second one in libvmaf-build-matrix.yml.
+          set -a; . ./build-config.env; set +a
           ./scripts/ci/install-rocm-from-image.sh \
-            --image "$ROCM_IMAGE" --dest /opt/rocm
+            --image "$ROCM_BUILDER" --dest /opt/rocm
           # Surface the ROCm tooling on PATH / pkg-config / ld so meson's
           # `dependency('hip-lang')` and the link of `amdhip64` resolve
           # without per-step exports.
@@ -838,7 +846,7 @@ jobs:
   # first (Linux-only — all install URLs `.sh`) and Chocolatey's
   # `intel-oneapi-basekit` (not on the community feed); neither
   # works on `windows-2025`. Pinned to oneAPI 2025.3.0.372 to
-  # match the Linux SYCL leg's `intel-oneapi-compiler-dpcpp-cpp-2025.3`.
+  # lag the Linux SYCL leg, which now follows ONEAPI_APT_PACKAGE.
   # Both legs additionally inject `/experimental:c11atomics` into
   # `CFLAGS` / `CXXFLAGS` because libvmaf uses C11 atomics that
   # MSVC's `<stdatomic.h>` refuses without that flag.
@@ -952,7 +960,7 @@ jobs:
       # `--components=intel.oneapi.win.cpp-dpcpp-common --eula=accept`
       # plus `NEED_VS*_INTEGRATION=0` so we skip the (very slow) VS
       # IDE plug-in steps. Pinned to oneAPI 2025.3 to match the
-      # Linux SYCL leg's `intel-oneapi-compiler-dpcpp-cpp-2025.3`.
+      # Linux SYCL leg, which now follows ONEAPI_APT_PACKAGE in build-config.env.
       # Chocolatey was tried first but `intel-oneapi-basekit` is
       # not on the community feed (verified 2026-04-19).
       - name: Install Intel oneAPI (windows)
@@ -1035,7 +1043,11 @@ jobs:
         if: matrix.backend == 'sycl'
         shell: cmd
         run: |
-          git clone --depth=1 --branch v1.18.5 https://github.com/oneapi-src/level-zero level-zero-src
+          REM Level Zero pin. This leg runs under cmd and cannot source
+          REM build-config.env, so LEVEL_ZERO_VERSION is mirrored here by hand
+          REM and checked against the config by
+          REM scripts/ci/check-base-image-single-source.sh (ADR-1231).
+          git clone --depth=1 --branch v1.32.0 https://github.com/oneapi-src/level-zero level-zero-src
           cmake -S level-zero-src -B level-zero-src\build -DCMAKE_INSTALL_PREFIX=%CD%\level-zero-prefix -DCMAKE_BUILD_TYPE=Release
           cmake --build level-zero-src\build --config Release --target install
           echo INCLUDE=%CD%\level-zero-prefix\include;%INCLUDE%>>%GITHUB_ENV%

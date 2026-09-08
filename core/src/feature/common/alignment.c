@@ -25,5 +25,5 @@ int vmaf_floorn(int n, int m)
 
 int vmaf_ceiln(int n, int m)
 {
-    return n % m ? n + (m - n % m) : n;
+    return (n % m) != 0 ? n + (m - n % m) : n;
 }

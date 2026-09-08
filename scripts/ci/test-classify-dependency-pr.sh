@@ -17,6 +17,13 @@
 
 set -euo pipefail
 
+# Real-Git cases must not inherit the hook caller's repository or config.
+while IFS= read -r fixture_git_variable; do
+  unset "$fixture_git_variable"
+done < <(compgen -A variable GIT_)
+unset fixture_git_variable
+export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 classifier="${repo_root}/scripts/ci/classify-dependency-pr.sh"
 
@@ -328,6 +335,45 @@ else
   echo "PASS: setup.py exemption does not leak to source edits"
   pass_count=$((pass_count + 1))
 fi
+
+# Cases 23-28: the root build config is a Renovate-managed dependency surface
+# (ADR-1231). Match this exact path without admitting arbitrary env files.
+cat >"${work}/case23_build_config.diff" <<'DIFF'
+build-config.env
+DIFF
+expect_exit "root build config is exempt for a dependency bot" 0 "renovate[bot]" \
+  "renovate/base-images" "${work}/case23_build_config.diff"
+
+cat >"${work}/case24_build_config_mirrors.diff" <<'DIFF'
+build-config.env
+Dockerfile
+dev/Containerfile
+docker/Dockerfile.production-gpu
+DIFF
+expect_exit "build config and Dockerfile mirrors are exempt together" 0 "app/renovate" \
+  "renovate/base-images" "${work}/case24_build_config_mirrors.diff"
+
+expect_exit "human build config change is NOT exempt" 1 "lusoris" \
+  "build/update-base-images" "${work}/case23_build_config.diff"
+
+cat >"${work}/case26_build_config_source.diff" <<'DIFF'
+build-config.env
+core/src/libvmaf.c
+DIFF
+expect_exit "build config plus source is NOT exempt" 1 "renovate[bot]" \
+  "renovate/base-images" "${work}/case26_build_config_source.diff"
+
+cat >"${work}/case27_nested_build_config.diff" <<'DIFF'
+pkg/build-config.env
+DIFF
+expect_exit "nested build config is NOT exempt" 1 "renovate[bot]" \
+  "renovate/base-images" "${work}/case27_nested_build_config.diff"
+
+cat >"${work}/case28_other_env.diff" <<'DIFF'
+runtime.env
+DIFF
+expect_exit "unrelated env file is NOT exempt" 1 "renovate[bot]" \
+  "renovate/base-images" "${work}/case28_other_env.diff"
 
 echo ""
 echo "test-classify-dependency-pr: ${pass_count} passed, ${fail_count} failed"

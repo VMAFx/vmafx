@@ -20,7 +20,10 @@
 
 #ifndef _WIN32
 #include <fcntl.h>
+#include <signal.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #endif
 
@@ -185,7 +188,7 @@ static char *test_session_run_luma8_size_mismatch(void)
 
     /* smoke_v0.onnx is fixed-shape NCHW [1,1,4,4]. Pass 7x7 buffers — the
      * w/h mismatch must return -ERANGE before any tensor copy happens. */
-    uint8_t in[49] = {0};
+    const uint8_t in[49] = {0};
     uint8_t out[49] = {0};
     rc = vmaf_dnn_session_run_luma8(sess, in, 7, 7, 7, out, 7);
     mu_assert("w/h mismatch returns negative", rc < 0);
@@ -257,10 +260,102 @@ static int copy_file(const char *src, const char *dst)
             rc = -1;
             break;
         }
+        if (n < sizeof(buf))
+            break;
     }
+    if (ferror(fsrc))
+        rc = -1;
     (void)fclose(fsrc);
-    (void)fclose(fdst);
+    if (fclose(fdst) != 0)
+        rc = -1;
     return rc;
+}
+
+/* One-byte regular fixtures keep fwrite buffered until fclose. Research-2052. */
+static int create_copy_flush_file(char *path, size_t size)
+{
+    char *tmp_dir = realpath(P_tmpdir, NULL);
+    if (!tmp_dir)
+        return -1;
+    const int n = snprintf(path, size, "%s/vmaf-copy-flush-XXXXXX", tmp_dir);
+    free(tmp_dir);
+    if (n < 0 || (size_t)n >= size) {
+        path[0] = '\0';
+        return -1;
+    }
+    const int fd = mkstemp(path);
+    if (fd < 0) {
+        path[0] = '\0';
+        return -1;
+    }
+    const ssize_t written = write(fd, "x", 1);
+    const int closed = close(fd);
+    return written == 1 && closed == 0 ? 0 : -1;
+}
+
+static void run_copy_flush_child(const char *src, const char *dst)
+{
+    const struct rlimit limit = {.rlim_cur = 0, .rlim_max = 0};
+    struct sigaction action = {.sa_handler = SIG_IGN};
+    if (sigemptyset(&action.sa_mask) != 0 || sigaction(SIGXFSZ, &action, NULL) != 0 ||
+        setrlimit(RLIMIT_FSIZE, &limit) != 0)
+        _exit(2); /* Fixture setup failed, distinct from an incorrect copy result. */
+    _exit(copy_file(src, dst) == -1 ? 0 : 3);
+}
+
+/* Run before any ORT initialization: the child performs stdio after fork.
+ * Only the child changes its signal disposition and file-size limit. */
+static char *test_copy_file_rejects_close_error(void)
+{
+    char src[4096] = {0};
+    char dst[4096] = {0};
+    const int src_rc = create_copy_flush_file(src, sizeof(src));
+    const int dst_rc = src_rc == 0 ? create_copy_flush_file(dst, sizeof(dst)) : -1;
+    const int normal_rc = dst_rc == 0 ? copy_file(src, dst) : -1;
+    const pid_t child = normal_rc == 0 ? fork() : -1;
+    if (child == 0)
+        run_copy_flush_child(src, dst);
+    int status = 0;
+    pid_t waited = -1;
+    if (child > 0) {
+        do {
+            waited = waitpid(child, &status, 0);
+        } while (waited < 0 && errno == EINTR);
+    }
+    struct stat output = {0};
+    const int stat_rc = stat(dst, &output);
+    const int src_unlink = unlink(src);
+    const int dst_unlink = unlink(dst);
+    mu_assert("copy-close fixtures and unrestricted copy succeed",
+              src_rc == 0 && dst_rc == 0 && normal_rc == 0);
+    mu_assert("copy-close child reaped with normal exit",
+              child > 0 && waited == child && WIFEXITED(status));
+    mu_assert("copy-close temporary files removed", src_unlink == 0 && dst_unlink == 0);
+    mu_assert("copy-close child setup succeeds", WEXITSTATUS(status) != 2);
+    mu_assert("copy-close output is empty after denied flush", stat_rc == 0 && output.st_size == 0);
+    mu_assert("copy_file rejects destination close error", WEXITSTATUS(status) == 0);
+    return NULL;
+}
+
+/* A directory opens on POSIX but fread fails: a failed model-fixture copy
+ * must never be reported as successful. See Research-2052. */
+static char *test_copy_file_rejects_read_error(void)
+{
+    char *tmp_dir = realpath(P_tmpdir, NULL);
+    mu_assert("copy-error temporary directory resolves", tmp_dir != NULL);
+    char dst[4096];
+    const int n = snprintf(dst, sizeof(dst), "%s/vmaf-copy-read-error-XXXXXX", tmp_dir);
+    free(tmp_dir);
+    mu_assert("copy-error path fits", n >= 0 && (size_t)n < sizeof(dst));
+    const int fd = mkstemp(dst);
+    mu_assert("copy-error temporary file created", fd >= 0);
+    const int close_rc = close(fd);
+    const int result = close_rc == 0 ? copy_file(".", dst) : -1;
+    const int unlink_rc = unlink(dst);
+    mu_assert("copy-error descriptor closed", close_rc == 0);
+    mu_assert("copy-error temporary file removed", unlink_rc == 0);
+    mu_assert("copy_file rejects source read error", result == -1);
+    return NULL;
 }
 
 static int write_sidecar_dynamic(const char *path)
@@ -370,7 +465,7 @@ static char *test_session_run_plane16_rejects_bad_bpc(void)
     if (DNN_OPEN_SKIP_RC(rc))
         return NULL;
     mu_assert("smoke model open ok", rc == 0);
-    uint16_t in[16] = {0};
+    const uint16_t in[16] = {0};
     uint16_t out[16] = {0};
     /* bpc < 9 not allowed (use _luma8 for 8-bit). */
     rc = vmaf_dnn_session_run_plane16(sess, in, 8, 4, 4, 8, out, 8);
@@ -393,7 +488,7 @@ static char *test_session_run_plane16_size_mismatch(void)
     mu_assert("smoke model open ok", rc == 0);
     /* smoke_v0.onnx pinned at 4x4; 7x7 input must hit the -ERANGE branch
      * inside run_plane16. */
-    uint16_t in[49] = {0};
+    const uint16_t in[49] = {0};
     uint16_t out[49] = {0};
     rc = vmaf_dnn_session_run_plane16(sess, in, 14, 7, 7, 10, out, 14);
     mu_assert("w/h mismatch returns negative", rc < 0);
@@ -420,7 +515,7 @@ static char *test_session_run_heap_path_for_many_inputs(void)
 
     /* 5 inputs forces the heap-allocation branch (stack array is size 4). */
     float buf[4] = {0};
-    int64_t shape[4] = {1, 1, 2, 2};
+    const int64_t shape[4] = {1, 1, 2, 2};
     VmafDnnInput in[5];
     for (size_t i = 0; i < 5; ++i) {
         in[i].name = "x";
@@ -667,7 +762,7 @@ static char *test_session_run_named_io_round_trip(void)
     /* Use the legacy luma path to drive a successful end-to-end run that
      * exercises the inference branches in vmaf_ort_infer (build_input_tensor
      * fp32 path + copy_output_tensor non-fp16 branch). */
-    uint8_t in_buf[16] = {0};
+    const uint8_t in_buf[16] = {0};
     uint8_t out_buf[16] = {0};
     rc = vmaf_dnn_session_run_luma8(sess, in_buf, 4, 4, 4, out_buf, 4);
     mu_assert("luma8 run on smoke model succeeds", rc == 0);
@@ -831,7 +926,7 @@ static char *test_session_open_symbolic_batch_skips_luma_fast_path(void)
     mu_assert("symbolic-batch model opens ok", rc == 0);
     mu_assert("session populated", sess != NULL);
 
-    uint8_t in[16] = {0};
+    const uint8_t in[16] = {0};
     uint8_t out[16] = {0};
     rc = vmaf_dnn_session_run_luma8(sess, in, 4, 4, 4, out, 4);
     mu_assert("luma8 must return -ENOTSUP when in_buf was not allocated", rc == -ENOTSUP);
@@ -856,7 +951,7 @@ static char *test_session_symbolic_batch_run_plane16_returns_notsup(void)
     mu_assert("symbolic-batch model opens ok", rc == 0);
     mu_assert("session populated", sess != NULL);
 
-    uint16_t in[16] = {0};
+    const uint16_t in[16] = {0};
     uint16_t out[16] = {0};
     rc = vmaf_dnn_session_run_plane16(sess, in, 8, 4, 4, 10, out, 8);
     mu_assert("plane16 must return -ENOTSUP when in_buf was not allocated", rc == -ENOTSUP);
@@ -865,23 +960,38 @@ static char *test_session_symbolic_batch_run_plane16_returns_notsup(void)
     return NULL;
 }
 
-char *run_tests(void)
+static char *run_session_api_group_1(void)
 {
     mu_run_test(test_stub_returns_enosys_when_disabled);
     mu_run_test(test_rejects_null_session);
     mu_run_test(test_descriptor_field_layout);
     mu_run_test(test_session_open_rejects_null_out);
     mu_run_test(test_session_open_rejects_null_path);
+    return NULL;
+}
+
+static char *run_session_api_group_2(void)
+{
     mu_run_test(test_session_open_rejects_missing_file);
     mu_run_test(test_session_run_luma8_rejects_null);
     mu_run_test(test_session_close_null_is_noop);
     mu_run_test(test_attached_ep_null_returns_null);
     mu_run_test(test_run_rejects_zero_n_inputs);
+    return NULL;
+}
+
+static char *run_session_api_group_3(void)
+{
     mu_run_test(test_session_run_luma8_size_mismatch);
     mu_run_test(test_session_run_plane16_rejects_null);
     mu_run_test(test_session_run_plane16_rejects_bad_bpc);
     mu_run_test(test_session_run_plane16_size_mismatch);
     mu_run_test(test_session_run_plane16_happy_path);
+    return NULL;
+}
+
+static char *run_session_api_group_4(void)
+{
 #ifndef _WIN32
     mu_run_test(test_session_open_int8_missing_falls_back_to_fp32);
     mu_run_test(test_session_open_int8_redirect_succeeds);
@@ -889,16 +999,31 @@ char *run_tests(void)
     mu_run_test(test_session_run_heap_path_for_many_inputs);
     mu_run_test(test_attached_ep_after_session_close);
     mu_run_test(test_session_run_unknown_input_name);
+    return NULL;
+}
+
+static char *run_session_api_group_5(void)
+{
     mu_run_test(test_session_run_unknown_output_name);
     mu_run_test(test_session_run_zero_rank_input);
     mu_run_test(test_session_run_negative_dim);
     mu_run_test(test_session_run_null_input_data);
     mu_run_test(test_session_run_null_output_data);
+    return NULL;
+}
+
+static char *run_session_api_group_6(void)
+{
     mu_run_test(test_session_run_rejects_null_vectors);
     mu_run_test(test_session_run_generic_success);
     mu_run_test(test_session_run_undersized_output);
     mu_run_test(test_session_run_named_io_round_trip);
     mu_run_test(test_session_open_threads_config);
+    return NULL;
+}
+
+static char *run_session_api_group_7(void)
+{
     mu_run_test(test_session_open_rocm_falls_through);
     mu_run_test(test_session_open_explicit_ep_selectors_fall_back);
 #ifndef _WIN32
@@ -906,6 +1031,46 @@ char *run_tests(void)
 #endif
     mu_run_test(test_session_open_symbolic_batch_skips_luma_fast_path);
     mu_run_test(test_session_symbolic_batch_run_plane16_returns_notsup);
+    return NULL;
+}
+
+static char *run_session_api_group_8(void)
+{
+#ifndef _WIN32
+    mu_run_test(test_copy_file_rejects_read_error);
+#endif
+    return NULL;
+}
+
+char *run_tests(void)
+{
+#ifndef _WIN32
+    mu_run_test(test_copy_file_rejects_close_error);
+#endif
+    char *fail = run_session_api_group_1();
+    if (fail)
+        return fail;
+    fail = run_session_api_group_2();
+    if (fail)
+        return fail;
+    fail = run_session_api_group_3();
+    if (fail)
+        return fail;
+    fail = run_session_api_group_4();
+    if (fail)
+        return fail;
+    fail = run_session_api_group_5();
+    if (fail)
+        return fail;
+    fail = run_session_api_group_6();
+    if (fail)
+        return fail;
+    fail = run_session_api_group_7();
+    if (fail)
+        return fail;
+    fail = run_session_api_group_8();
+    if (fail)
+        return fail;
     return NULL;
 }
 

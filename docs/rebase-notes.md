@@ -1,6 +1,314 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Configured lint fixture bootstrap isolation (2026-09-08)
+
+Preserve the real Make target and recursive build in `test_lint_configured.py`.
+Create its failing/recording pip prerequisite before fake Meson/Ninja, retain
+`PIP_NO_INDEX=1`, and assert no pip call, real venv or sentinel overwrite.
+Outer `-o` flags do not propagate to recursive Make. Production dependency
+rules, native sources and baselines stay unchanged. See
+[Research-1246](research/1246-cppcheck-public-entrypoints.md#offline-make-fixture-correction).
+
+## fix/observation-fixture-const — IQA/motion coverage inputs (2026-09-08)
+
+Preserve the twelve const fixture inputs, writable IQA filter/kernel storage
+and exact assertion/API-call order. `run_boundary_tests` groups the first five
+IQA cases without adding a case count; its caller propagates the first failure.
+Production headers and numerical bodies are untouched. No public C API or
+FFmpeg rebase impact; see
+[Research-2053](research/2053-observation-fixture-const-2026-09-08.md).
+
+## fix/dnn-tests-native-lint-20260908 — ORT/session test inputs and copying
+
+Keep the 16 read-only input/shape array qualifiers in the ORT and session API
+tests. All original 83 cases, 208 assertions and API call order remain intact;
+the session driver's private groups must return the first failure without
+counting helper groups. Keep the added POSIX read-error regression: a short
+`fread` must stop the copy loop, and `ferror` must make `copy_file` fail.
+This fixes test-fixture copying only; production APIs, model bytes and Netflix
+golden assertions are untouched. Preserve the two zero warning entries. See
+[Research-2052](research/2052-dnn-tests-native-lint.md). The copier must also
+check destination `fclose` after closing both streams. Keep its close-error
+regression before any ORT initialization, with limits/signals changed only in
+the child and a distinct setup-failure exit; retain the read-error case last.
+
+## fix/metric-coverage-const — preserve metric coverage setup (2026-09-08)
+
+Keep the motion-v2, SSIM and PSNR coverage tests' const descriptor views and
+thirteen private setup helpers. Each caller immediately returns the original
+failure before its unchanged picture/extract/score/teardown path. Preserve
+all 133 assertions, 183 API calls, nineteen ordered registrations and literals.
+No production, public-header, test-registration or FFmpeg rebase impact. See
+[Research-2054](research/2054-metric-coverage-const-2026-09-08.md).
+
+## fix/fex-context-vector-20260908 — option-aware context identity
+
+Keep the shared provided-feature base comparison from ADR-0385, followed by
+canonical keys derived from each context's parsed feature parameters. Base-only
+matching silently drops option-distinct motion/model registrations. Equivalent
+CPU/GPU twins, defaults and aliases still deduplicate with the first registration
+winning; absent provided-feature lists retain the name/options fallback.
+
+Both comparison allocation failures and checked-growth failures return `-ENOMEM`
+without consuming the incoming context or changing existing vector storage.
+Preserve the runtime `UINT_MAX` and `SIZE_MAX` bounds, the portable registration
+and public-score controls, and Linux linker-wrapped allocation failure tests.
+The vector keeps its existing C-visible layout and manual pointer-array allocator;
+do not restore the obsolete prologue claiming a `std::vector` owns its storage.
+See [Research-2047](research/2047-option-aware-context-registration-2026-09-08.md).
+## fix/svm-tests-native-lint — observation-only parser/API tests (2026-09-08)
+
+Preserve the parser's header-size/header-order groups and exact case order,
+const model/query views, existing assertions and public SVM calls. The driver
+helpers return the first failure without incrementing the test count. Keep
+ADR-1138/ADR-1166 C `NULL` brackets. Vendored library bodies, headers, test
+registration and FFmpeg integration are unchanged. See
+[Research-2049](research/2049-svm-observation-test-lint-2026-09-08.md).
+## fix/cambi-avx2-native-lint — local reciprocal-table names (2026-09-08)
+
+Keep `reciprocals` for the five local CAMBI AVX2 parameter bindings and retain
+`reciprocal_lut` at the outer global-table call sites. All function types,
+expressions, gather widths and test registrations are unchanged. No algorithm,
+header/API or FFmpeg rebase impact. See
+[Research-2051](research/2051-cambi-avx2-parameter-names-2026-09-08.md).
+## fix/speed-test-native-lint-20260908 — preserve existing SpEED cases
+
+Keep the read-only descriptor views in `test_speed.c` and `test_speed_qa.c`.
+The temporal QA fixture's allocation and extractor setup groups must return
+failures immediately to their original registered test. Preserve all 67
+assertion expressions/messages, 10 registrations, input literals and API call
+order. Neither group is a new case. Keep the ADR-1138 C `NULL` brackets and
+the two measured zero warning entries. No production, API, FFmpeg or upstream
+algorithm change; see [Research-2050](research/2050-speed-test-native-lint.md).
+
+## docs/readme-entrypoint-20260908 — concise documentation entry points
+
+Keep the README as a short introduction and guide index. Changing SDK pins,
+backend coverage and model defaults belong with their canonical topic docs,
+not repeated badge values, kernel counts or maturity tables. Root build
+commands use Meson's `core/` source directory; the CPU guide explicitly
+disables optional GPU backends. Preserve the existing build-guide heading anchor for incoming
+links. Documentation-only correction; no native or FFmpeg surface impact.
+
+## refactor/cambi-production-lint-20260908 — read-only views and GPU helpers
+
+Keep CAMBI's validation/preprocessing inputs and paired private scale-score
+wrapper declaration read-only. Preserve every formula, callback type and
+GPU trampoline, including the three documented scaffolds. Exact declaration
+annotations distinguish fixed callback types and out-of-profile/scaffold
+exports; unused checks elsewhere remain enabled. No public API or FFmpeg
+surface changes. See [the equivalence receipt](research/2043-cambi-production-lint-2026-09-08.md).
+## fix/adm-simd-native-lint — integer ADM local declarations (2026-09-08)
+
+Keep AVX2/AVX-512 read-only band descriptors, threshold aliases and fixed
+arrays const. Preserve row-local SIMD accumulators and declaration-at-use
+scalar temporaries without changing expression order, shifts, clipping,
+p-norm behavior or LUT prefetch. Dispatch signatures remain unchanged;
+output band storage is writable. Existing cited function-size exceptions
+remain numerical invariants. No public C API or FFmpeg surface impact.
+## refactor/test-feature-extractor-lint-20260908 — read-only test views
+
+Keep the twelve const qualifications in `core/test/test_feature_extractor.c`
+without changing its assertions, case order or fixture lifetime. The called
+production APIs already accept these read-only inputs. No production API,
+FFmpeg or numerical rebase impact; see
+[the preservation receipt](research/2044-feature-extractor-test-const-2026-09-08.md).
+## fix/vif-simd-native-lint — integer AVX2 stages (2026-09-08)
+
+Preserve the private stages in `vif_avx2.c` while retaining the original
+integer tap/reduction order, per-scale shifts, packed mean additions and
+separate 8/16-bit variance lane layouts. Keep scalar tails, copy/padding and
+`VifState` callback signatures unchanged. The new native stage test compares
+real scalar/AVX2 results and vertical workspace bytes. Preserve the system
+`<stdio.h>` include in `integer_adm.h`; it changes no numeric declarations.
+See Research-2045 and `core/src/feature/x86/AGENTS.md`. No public/FFmpeg impact.
+
+## fix/cppcheck-c-header-model-20260908 — official pthread type model (2026-09-08)
+
+Keep `--library=posix` in both configured local lint and the required Cppcheck
+workflow. It models pthread's C types without forcing a target platform or
+language. Preserve actual-header positive/negative controls, fail-closed missing
+model behavior, diagnostic categories and compile-database variants. No native
+header constructors or member suppressions are needed for the 24 modeled
+aggregate warnings. Fork-only analyzer wiring; no libvmaf/FFmpeg API impact.
+
+## fix/tensor-io-test-cleanup-20260908 — preserve tensor test coverage (2026-09-08)
+
+Keep read-only tensor fixtures const and grouped test drivers below the existing
+function-size limit. Preserve the explicit unsupported dtype/resize values and
+individual cited analyzer markers; those calls protect rejection behavior, not
+an accidental cast. All numerical assertions, test order and one execution per
+real case remain unchanged. The test compiles real tensor I/O with DNN disabled.
+See `core/test/dnn/AGENTS.md`. Fork-only test cleanup; no public API or FFmpeg impact.
+## fix/rocm-2604-restore-20260908 — released vendor image
+
+Keep `ROCM_BUILDER` and `ROCM_RUNTIME` on the digest-pinned Ubuntu 26.04
+ROCm 10 image selected by ADR-1231. Regenerate Dockerfile mirrors from
+`build-config.env`; do not restore the ROCm 24.04 exemptions from the old
+rollback. The pruned SDK stage must compile/link a HIP kernel and check its
+host loader, not just report a version. Preserve the node runtime library
+layout. See [verification](research/rocm-2604-restoration-2026-09-08.md).
+
+## fix/roi-reader-bounds-20260908 — ROI input boundaries (2026-09-08)
+
+Keep `vmaf_roi_input.h` shared by the CLI and its boundary test: validate
+depth and extent locally, saturate rounded luma before narrowing to 8 bits,
+and traverse the placeholder using its validated allocation count. Existing
+CLI dimensions, rounding below saturation, radial arithmetic and encoder
+sidecar byte layouts remain unchanged. Preserve the ADR-1138 C `NULL`
+brackets and the cited single-threaded getopt invariant. Fork-only CLI
+implementation; no public libvmaf or FFmpeg filter surface changes.
+## fix/convolution-horizontal-boundary (2026-09-08)
+
+Preserve the output-based horizontal split in both common AVX kernels:
+`j_vec_end` is the first final scalar output; SIMD source starts stop at
+`j_vec_end - radius`. The masked final load/store keeps original AVX2 mul/add
+and AVX-512 FMA regions without discarded out-of-plane accesses. Keep clamped
+tiny-width borders and the common horizontal pass per ISA. The regression
+uses configured private objects, runtime ISA checks and tight final rows.
+No public API or FFmpeg integration surface changes.
+
+## fix/vif-native-lint — scalar VIF decomposition (2026-09-08)
+
+Preserve the ten-plane workspace layout, filter/decimation/statistic order,
+float-to-double promotions, scale reductions and temporal first-frame values
+in `core/src/feature/vif.c`. The own-header declarations retain all three
+legacy external symbols; the C `NULL` bracket follows ADR-1138. Debug dumps
+write initialized planes and scalar numerator/denominator outputs. Keep the
+odd-stride and temporal EOF/error lifecycle test registered. No public C API
+or FFmpeg surface changes; the scalar arithmetic remains Netflix-compatible.
+
+## fix/pre-push-mypy-scope — merge-base ownership (2026-09-08)
+
+Preserve the existing `ai/`/`scripts/` Python touched-file policy in
+`scripts/git-hooks/pre-push-mypy.py`. Check every branch-owned path against
+the master merge base, including type changes; do not restore the remote
+old-tip/new-tip intersection. The always-run, filename-free hook invocation,
+lexical symlink identity, safe target validation and outgoing-HEAD check are
+paired with a real Git rebase regression. Fork-only tooling; no native API
+or FFmpeg patch impact. This fixes implementation of AGENTS.md §12.10.
+## fix/git-fixture-environment-isolation — fixture caller safety (2026-09-08)
+
+Keep inherited `GIT_*` and caller global/system configuration out of the
+FFmpeg replay/smoke, dependency-classifier, Level Zero and agent-cleanup test fixtures,
+including setup and assertions. `git -C` alone can still mutate a caller's
+config, refs, object store or index. Preserve the disposable caller matrix
+in `scripts/ci/test_git_fixture_isolation.py`, its actual linked-worktree hook
+control, and its local/CI registration. This
+implements the existing ADR-1240 isolation contract; no production Git
+operation or native/FFmpeg API changes.
+## fix/configured-lint-driver — native lint selection (2026-09-08)
+
+Local Make lint regenerates Meson metadata without option overrides before
+building, then retains its native database and every configured tracked
+source/command variant. Keep engine roots, C++ tools, tests and tracked
+vendors included, inactive backends explicitly outside the profile, and numeric
+GCC LTO adaptation confined to the private analyzer database. Preserve the
+scratch-Git/Make fixture and pre-commit registration. Existing ADR-1142 ratchet
+baselines and remote lane policies remain authoritative; no libvmaf/FFmpeg
+surface changes.
+
+## FFmpeg stable-release patch maintenance (2026-09-08)
+
+Preserve `build-config.env` as the FFmpeg remote/tag owner, the ordered
+`ffmpeg-patches/series.txt`, and `FFmpeg Patch Stack` in the required aggregator.
+Regenerate with `scripts/ci/ffmpeg_patch_stack.py --refresh`; checks fetch the
+reviewed tag, while scheduled `--latest` refreshes select stable releases only.
+Canonical patch mail metadata changes without changing the applied source tree.
+Local hooks use disposable Git state and fail closed on network/replay errors.
+See [ADR-1240](adr/1240-ffmpeg-release-patch-lifecycle.md).
+## fix/agent-cleanup-preserve-work-20260908 — preserve agent state (2026-09-08)
+
+`cleanup-agent-state.sh` is fork-owned. Preserve ADR-1239's report-only default,
+explicit worktree selections, non-force removal, file-state guards and stash
+retention when rebasing developer tooling. Branch existence never proves a stash
+is redundant. Regression: `bash scripts/dev/test-cleanup-agent-state.sh`.
+## fix/docs-guide-references — developer/usage links and push tools (2026-09-08)
+
+Preserve canonical ADR IDs alongside link slugs, backend overview paths,
+and the historical-but-unpublished T7-3 notebook note. The MkDocs push hook
+selects documentation before checking availability; missing MkDocs blocks
+selected docs, while direct non-doc invocation still skips. The real-Git
+fixture tests both cases. No libvmaf/FFmpeg API impact.
+
+## fix/generated-adr-freshness — generated metadata (2026-09-08)
+
+Regenerate with `make docs-fragments-write` after combining ADR fragments.
+Tags must precede navigation. Preserve required Docs/local freshness checks,
+fragment coverage validation, and generator fixtures (ADR-1242). Accepted
+ADR bodies and tag taxonomy are unchanged; only mutable fragments and
+rendered outputs are refreshed.
+
+## fix/worktree-hook-dispatch — local hook lifetime (2026-09-08)
+
+Preserve regular dispatchers, actual Git argument/stdin forwarding, and
+independent MkDocs/PR-body push checks (ADR-1241). Keep the disposable
+lifecycle fixture wired into required Pre-Commit CI. Fork-only tooling;
+no Netflix C API or FFmpeg patch impact.
+## fix/base-image-unpinned-reference-guard — Level Zero config consumer (2026-09-08)
+
+The development SDK stage reads `LEVEL_ZERO_VERSION` from its copied
+`build-config.env` during the download RUN; no Docker ARG mirror is needed.
+Keep both URL fields and the Renovate manager attached to that owner. The
+single-source regression test executes the actual command with stubs. ROCm
+continues through the image manager; do not restore the obsolete literal
+workflow manager. No upstream rebase impact: these container and CI surfaces
+are fork-local.
+
+## fix/base-image-unpinned-reference-guard — Renovate file selection (2026-09-08)
+
+Custom-manager file patterns use one `/regex/` delimiter pair. Preserve positive
+tracked-file fixtures and the base-manager coverage of every Dockerfile where
+the built-in manager is disabled. The fixture iterates active managers, so
+removing an obsolete manager does not reintroduce or require it. No upstream
+rebase impact: Renovate configuration and these tests are fork-local.
+
+## fix/base-image-unpinned-reference-guard — container reference guard (2026-09-08)
+
+The ADR-1231 scanner must reject direct external FROM/COPY references regardless
+of digest presence. Preserve the Python instruction scanner, the exact local
+consumer exceptions and the fixture suite in `scripts/ci/tests/`. Shared image
+ARG defaults remain one per physical line for the shell mirror writer. No
+upstream rebase impact: these guard scripts and fixtures are fork-local.
+## fix/windows-cuda-cl-fallback (2026-09-08)
+
+In `core/src/meson.build`, the PATH fallback must assign `cl_path` from
+`cl_exe.full_path()` before forming `nvcc_ccbin_flags`. The next PowerShell
+command derives MSVC includes from `cl_path`; assigning only the flags leaves
+an undefined variable when `vswhere` fails. Netflix PR #1472 at `b7b65e64`
+has the same defect. Preserve the assignment when porting that discovery block.
+
+`core/test/test_windows_cuda_compiler_discovery.py` executes the current block
+through Meson using Windows host metadata and stubbed tool responses. It covers
+successful discovery, empty/error fallback and missing `cl`, and is registered
+in `fast` on POSIX build hosts. This is configure coverage, not a Windows GPU test.
+## Scoped lint-baseline tightening (ADR-1243)
+
+`tidy-ratchet.py --only --write` updates only successfully measured source
+entries, preserves all unselected headers/TUs and full-report metadata, and
+rejects increased allowance. Preserve its failure and atomic-write tests when
+rebasing the CI tools. A scoped report must never replace the full baseline;
+the required whole-tree lane and diagnostic-only `--only` semantics remain.
+
+## fix/thread-pool-queue-bound — Netflix queue-capacity fix (2026-09-08)
+
+Adapt Netflix `8fc71e3006f0b21e8e31d6e5d1b904332149ad9e` from
+`libvmaf/src/thread_pool.c` to `core/src/thread_pool.c`. Keep the fork's inline
+payload/free-list recycling, two-argument callback, worker private-data cleanup,
+checked primitive initialization and error OR/reset. Capacity follows the
+successfully created worker count. Destruction must also wait for admitted
+producers to leave capacity waits; the upstream broadcast by itself does not
+protect their lifetime. The isolated pthread-injection test gates these paths.
+## fix/merge-train-ownership-guard — local control boundary (2026-09-08)
+
+The fork-local gateway `scripts/dev/merge_train_guard.py` and its pre-commit
+regression hook must move together. Preserve ADR-1244's shared hold/base/owner
+guard on every mutation, rebase-before-ready ordering, exact-head leases,
+non-force cleanup, and actual full-gate receipt generation. Do not restore an
+unrestricted local agent operator alongside it. Runtime migration remains an
+explicit operator step documented in `docs/development/merge-train.md`.
+
 ## fix/ai-1270-blockers — DISTS, MobileSal, and predictor stub triage (2026-09-08)
 
 Triage and point-of-use guards for issue #1270 blockers:
@@ -49615,3 +49923,194 @@ fork-added.
 4. **stdout belongs to JSON-RPC.** The Go server logs to stderr. Any change that
    sends log output to stdout corrupts the protocol stream and shows up as
    `mcp stdio returned empty response` rather than as a logging bug.
+## ADR-1231 — container base images come from build-config.env (2026-09-07)
+
+Rebase-sensitive invariants introduced by this change:
+
+1. **A Dockerfile must never name a base image directly again.** Every base is
+   an `ARG` whose default mirrors `build-config.env`, and
+   `scripts/ci/check-base-image-single-source.sh` fails on any digest-pinned
+   literal. An upstream merge that reintroduces a literal `FROM debian:…@sha256:…`
+   will fail the gate rather than silently forking the pin. Resolve by moving
+   the value into `build-config.env` and referencing the `ARG`.
+
+2. **`COPY --from=<digest-pinned image>` is a base-image pin and is rejected.**
+   This is the non-obvious half. Four such pins existed and were the most stale
+   in the tree, because no `FROM`-oriented search finds them. Use a named stage
+   (`FROM ${CUDA_RUNTIME} AS cuda-runtime-libs`, then
+   `COPY --from=cuda-runtime-libs …`); BuildKit prunes the stage when the
+   selected target does not use it, so it is free.
+
+3. **Do not hand-edit an `ARG` default to fix a drift failure.** Edit
+   `build-config.env` and run `make base-images-sync`. Hand-editing puts the
+   two copies back out of agreement in the other direction, which the gate will
+   then report against the file you just "fixed".
+
+4. **The Ubuntu 24.04 exemptions are deliberate and self-closing.**
+   `ROCM_BUILDER`, `ROCM_RUNTIME`, `ONEAPI_BUILDER` and `ONEAPI_RUNTIME` are
+   listed in `distro_exempt` in the gate. Do not extend that list to silence a
+   new failure — it exists only because those two migrations need matching
+   source changes (PR #1386 for ROCm; the oneAPI 2026.1 restructure documented
+   in `docs/research/1231-base-image-single-source.md`). Each entry is deleted
+   when its migration lands.
+
+5. **`docker/dev/*.Dockerfile` is intentionally outside the gate.** Those files
+   pin Alpine / Arch / Fedora precisely because they are *not* the release
+   distro. Unifying their bases would defeat the portability matrix they exist
+   to run.
+
+## FFmpeg percentile patch replay (2026-09-08)
+
+Patch 0005 already introduces max and percentile mappings in the shared
+`pool_method_map`. Patch 0018 must apply to that cumulative state and guard
+those existing percentile entries with `VMAF_HAVE_PERCENTILE_POOLING`.
+Do not re-add the mappings in 0018. Replay every entry in `series.txt` against
+a fresh upstream checkout; the old `000*-*.patch` glob missed patches 0010–0018.
+
+## ADR-1238 — Go validation is a required impact-routed check (2026-09-08)
+
+Keep `go vet + go test` synchronized between `go-ci.yml`, its
+`# required-aggregator` marker, and the aggregator's required list. The
+workflow starts without path filters and gates heavy steps on `go_checks`
+(`go` plus `c_core`); its own changes force full impact. Preserve
+ready-for-review coverage and the documentation-only no-work success.
+Run `python3 scripts/ci/test_go_workflow_contract.py` and
+`python3 -m unittest scripts/ci/tests/test_ci_impact.py` after workflow
+rebases. Predictor model-card reads use `os.Root`; do not restore an
+unconfined `os.ReadFile` or symlink escape while reconciling stub warnings.
+## ADR-1236 — version single-sourcing and Python dependency unification (2026-09-08)
+
+Rebase-sensitive invariants introduced by this change:
+
+1. **`python/pyproject.toml` is the single owner of Python runtime dependencies.**
+   `python/setup.py` intentionally removes duplicate `install_requires=[...]`.
+   Setuptools natively loads dependencies from `python/pyproject.toml`.
+   If an upstream merge reintroduces `install_requires` in `python/setup.py`,
+   delete the block so dependencies remain single-sourced.
+
+2. **`python/requirements.txt` is mechanically generated — never hand-edit.**
+   `python/requirements.txt` is derived from `python/pyproject.toml` using
+   `scripts/ci/check-python-requirements-single-source.sh --write` (or `make python-deps-sync`).
+   Any manual edits will fail `scripts/ci/check-python-requirements-single-source.sh`
+   in CI and pre-commit hooks.
+
+3. **Renovate must ignore `python/requirements.txt`.**
+   `renovate.json` includes `"python/requirements.txt"` in `ignorePaths`.
+   Renovate should only manage `python/pyproject.toml` to prevent competing PRs.
+
+4. **Package version disagreements follow the newest-version policy.**
+   Divergent version pins across submodules or dev requirements (e.g. `numpy`, `scipy`,
+   `matplotlib`, `pyarrow`) must never be downgraded to resolve a merge conflict.
+   The current `vmaf` build/runtime floor is `>=2.5.3` for numpy, `>=1.18.1` for scipy, `>=3.11.1` for matplotlib,
+   and `>=25.0.1` for pyarrow. Package version definitions across `pyproject.toml`
+   and `__init__.py` files must remain synchronized.
+
+Preserve the Level Zero container consumer check when rebasing the ADR-1236 workflow-checker refactor. Do not reintroduce scientific-stack globals without consumers or drift checks; native ORT archive roles and Python dependency floors are separate contracts.
+
+## Feature-option sentinel cleanup (2026-09-08)
+
+`feature_extractor.cpp` and `feature_name.cpp` iterate `VmafOption` tables
+through their existing null-name sentinel. Keep the early empty-dictionary
+return before reporting the first missing option, and preserve aliases,
+default-value omission and dictionary sorting when rebasing the private
+feature-name helpers. Public C signatures, emitted keys and GPU fallback
+behavior are unchanged. Recheck `test_feature`, `test_feature_extractor` and
+`test_opt`; see the [option-sentinel research digest](research/option-sentinel-cleanup-2026-09-08.md)
+for the focused lint scope and factory-specific cppcheck model corrections.
+
+## fix/fex-pool-stable-entries — internal pool growth (2026-09-08)
+
+Keep the pool's pointer table separate from stable `fex_list_entry` allocations.
+An acquisition retains its entry across `pthread_cond_wait()`; relocating live
+entries during geometric growth loses the condition-variable identity. Preserve
+construction before `cnt` publication, allocation-overflow checks and one-time
+options/condition-variable cleanup. `test_fex_pool_growth` covers synchronized
+ninth-entry growth with forced relocation and native allocation. Current scoring
+does not use these acquire/release operations; this fixes the compiled internal
+API, not a demonstrated scoring hang. No public header or FFmpeg surface changes.
+
+## fix/fex-pool-consumer-model — factory visibility (2026-09-08)
+
+Cppcheck's POSIX model resolves pthread types, but `fex_ctx_vector.cpp` cannot
+see the separately compiled pool factories. Preserve only the four documented
+`uninitMemberVarNoCtor` member markers for `fex`, `opts_dict`, `ctx_list` and
+`full`; do not suppress atomic fields, the outer pool, or uninitialized reads.
+The real-header negative control must continue reporting an uninitialized
+member read. Pool entry construction and runtime behavior are unchanged.
+## refactor/test-cambi-lint — preserved test coverage (2026-09-08)
+
+Keep the named assertion groups and dispatcher groups in `test_cambi.c` small
+without dropping cases or changing fixture/expected values. The cleanup retains
+all 144 assertion expressions/messages, 30 array initializers and 23 original
+registrations in order. Its direct `feature/cambi.c` include intentionally tests
+private static helpers; the narrow include exception does not export a new API.
+No production code, golden assertions or FFmpeg integration changed.
+## PSNR format-table cleanup — 2026-09-08
+
+No rebase impact: the private C++ format table has an explicit member default
+and uses a projected standard lookup. Preserve all twelve format/constant
+rows and `psnr_constants()` return/output behavior. The C header is unchanged;
+see [the differential checks](research/psnr-format-table-lint-2026-09-08.md).
+## pdjson nesting boundary and lint cleanup (2026-09-08)
+
+`fix/pdjson-lint-20260908` keeps the pdjson Unlicense provenance and all existing
+private parser entry points. Preserve ADR-1061's 512-container count, checked
+capacity arithmetic and publication of `stack_top` only after successful
+admission/allocation. Reject zero and oversized stack increments before allocation.
+The old `> PDJSON_STACK_MAX` comparison admitted 513 levels.
+Keep the named zero lookahead sentinel (existing nonzero event values unchanged),
+read-only getter const qualifiers, first-error formatter guard and split parser
+phases. The source has only the ADR-1138 C `NULL` exception, not a blanket NOLINT.
+Run `test_pdjson` plus the model/ownership tests after an upstream parser refresh;
+its streaming, skip, Unicode, invalid-input, allocation and depth assertions are
+behavioral contracts. See [the digest](research/pdjson-nesting-and-lint-2026-09-08.md).
+
+## Cppcheck exhaustive configured analysis (2026-09-08)
+
+Preserve `--check-level=exhaustive` in both `scripts/ci/lint-configured.py` and
+the required Cppcheck workflow, with every existing diagnostic selection and
+configured command variant. Do not restore normal's branch budget or suppress
+its coverage notices. The actual-tool suite must retain its branch-heavy
+positive control and real uninitialized-member/constructor negative controls.
+[ADR-1245](adr/1245-cppcheck-exhaustive-configured-analysis.md) records the
+measured runtime tradeoff; backend/runner differences still require validation.
+## Integer VIF AVX-512 native lint cleanup (2026-09-08)
+
+Preserve the private forced-inline stages in `feature/x86/vif_avx512.c`, the
+fixed mutable-state callback ABI, and the two ADR-0503 noinline/noclone block
+helpers. Each accumulator retains tap order, lane packing and shifts. Keep the fused
+two-channel horizontal mean and three-channel energy loops: independent channel
+loops caused a measured 8-bit slowdown despite bit-exact results. Retain
+the 16-sample vertical extent / 32-sample vector step and scalar overwrite for
+8-bit statistics. The dedicated `test_integer_vif_avx512_stages` links private
+configured objects and compares the actual scalar implementation, including
+reflected temporary-row padding. Keep its Meson registration conditional on
+`is_avx512_enabled`, independent of float features. No public/FFmpeg surface
+change; no golden assertions changed. See [Research-2046](research/2046-integer-vif-avx512-stage-lint.md).
+
+## Registration option-copy ownership (2026-09-08)
+
+Keep both private cleanup helpers in `libvmaf.c`: dictionary-copy failure can
+leave a partial destination, and context-create failure does not consume its
+input options. Explicit registration still consumes its original dictionary
+after the existing argument/name guards; model/worker sources remain borrowed.
+Preserve prior registered features on later failure and successful ownership
+transfer. Keep the public rejection test independent of the Linux-only partial
+copy interposer. No public signatures, feature calculations, FFmpeg filter
+contract or Netflix assertions change. Six exact retained DNN/metadata exports
+and the weak glibc ABI marker remain documented in
+[Research-2048](research/2048-model-registration-ownership-2026-09-08.md).
+
+## Cppcheck public entrypoint model (2026-09-08)
+
+Preserve the one `scripts/ci/cppcheck-public-entrypoints.cfg` input in local
+`lint-configured.py` and the Cppcheck workflow. ADR-1246 permits only reviewed
+public roots with `VMAF_EXPORT` declarations in installed headers; private or
+vendored helper retention is a separate decision. Keep the configured-driver
+hook's cfg/header/workflow/control triggers and the required real-tool
+missing-model, unused-private and body-defect negatives. Names are scope- and
+linkage-blind in Cppcheck; do not reuse public names for private/static code.
+Both existing severity selections, POSIX model, exhaustive depth, command
+variants and failure handling remain unchanged. No native/public API, FFmpeg
+patch, numerical assertion or baseline change. See
+[Research-1246](research/1246-cppcheck-public-entrypoints.md).

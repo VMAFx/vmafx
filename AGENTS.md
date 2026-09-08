@@ -36,7 +36,7 @@ opened in this repo. For Claude Code–specific tooling (skills, hooks), see
 Meson + Ninja.
 
 ```text
-meson setup build [-Denable_cuda=true|false] [-Denable_sycl=true|false]
+meson setup build core [-Denable_cuda=true|false] [-Denable_sycl=true|false]
 ninja -C build
 ```
 
@@ -52,7 +52,7 @@ make test-netflix-golden                # Netflix CPU golden-data gate (see §8)
 ## 4. Lint / format
 
 ```text
-make lint          # clang-tidy + cppcheck + iwyu + ruff + semgrep
+make lint          # configured native + Python, shell, Markdown, Go and docs checks
 make format        # clang-format + black + ruff (writes)
 make format-check  # dry-run (CI / pre-commit)
 ```
@@ -242,20 +242,16 @@ the root release aligns the release-owned Python packages and Helm
     points, public headers, CLI flags, `meson_options.txt`
     entries, or any symbol probed by the `enabled libvmaf*`
     `check_pkg_config` lines) updates the relevant
-    `ffmpeg-patches/000*-*.patch` file in the **same PR**. The
-    fork ships FFmpeg integration as a patch stack against
-    `n9.0.1`; libvmaf-side surface drift breaks the patches
-    silently for the next rebase. Verify with a series replay
-    against a clean `n9.0.1` checkout
-    (`git -C ffmpeg-9 reset --hard n9.0.1 && for p in
-    ffmpeg-patches/000*-*.patch; do git -C ffmpeg-9 am
-    --3way "$p" || break; done`) — per-patch
-    `git apply --check` is the wrong gate (patches build on
-    each other). Pure libvmaf
-    internals (kernel impls, refactors that don't change
-    headers), doc-only changes, and test-only changes are
-    exempt. See
-    [ADR-0186](docs/adr/0186-vulkan-image-import-impl.md).
+    numbered patch file in **the same PR** when integration behavior changes.
+    The root `build-config.env` owns `FFMPEG_TAG` and `FFMPEG_REMOTE`.
+    Run `python3 scripts/ci/ffmpeg_patch_stack.py --refresh` and then `--check`:
+    these replay every entry in `ffmpeg-patches/series.txt` cumulatively in
+    disposable storage. Per-patch `git apply --check` is not a series gate.
+    Local hooks refresh the configured release; daily CI discovers the latest
+    stable released tag, excluding development and prerelease refs. See
+    [FFmpeg patch automation](docs/development/ffmpeg-patch-automation.md)
+    and [ADR-1240](docs/adr/1240-ffmpeg-release-patch-lifecycle.md).
+    Pure internals, documentation and test changes need no semantic patch edit.
 12. **Default to the `vmaf-dev-mcp` container for vmaf / vmaf-tune /
     ai / MCP-probing work.** The container at
     [`dev/Containerfile`](dev/Containerfile) bakes in every backend
@@ -343,6 +339,13 @@ preserve. Per-subtree details (the load-bearing reasons + load-bearing
 mechanics) live in the relevant `AGENTS.md` under that subtree; this
 list is the index. When a rebase touches the cited TUs, walk the
 linked AGENTS.md before resolving conflicts.
+
+- **Documentation entry points**: keep `README.md` concise and link to the
+  topic guides for changing build requirements, backend coverage and model
+  defaults. `docs/index.md` and `docs/backends/index.md` should link to backend
+  guides rather than repeat kernel counts or maturity summaries. Keep the
+  repository-root build instructions in `docs/getting-started/index.md` and
+  include Meson's `core/` source directory when showing a configure command.
 
 - **GPU long-tail terminus reached** — every registered feature
   extractor has at least one GPU twin (lpips remains ORT-delegated
@@ -441,10 +444,10 @@ linked AGENTS.md before resolving conflicts.
   `dev/Containerfile` pins `cuda-toolkit-13-3`, the unversioned
   `intel-basekit` meta-package (Intel does not publish a
   `intel-basekit-2025.3` apt package), and the digest-pinned
-  `rocm/dev-ubuntu-24.04:10.0.0-full` image in the `rocm-src` stage
-  (ADR-1225 — ROCm has no apt channel past 7.2.4). If SDK versions are
-  bumped (routine security maintenance), update the version pins and the
-  apt repo URL paths in `dev/Containerfile` before merging; a ROCm bump
+  `rocm/dev-ubuntu-26.04:10.0.0-full` image in the `rocm-src` stage
+  (ADR-1225 / ADR-1231). If SDK versions are bumped (routine security
+  maintenance), update their shared pins in `build-config.env` and regenerate
+  the mirrors before merging; a ROCm bump
   additionally means re-validating the `rocm-src` prune list against its
   hipcc smoke check.
   `dev/scripts/smoke-probe-loop.sh` assumes the golden pair lives at
