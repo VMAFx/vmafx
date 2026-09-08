@@ -229,6 +229,14 @@ repos:
         files: '^(renovate\.json|scripts/ci/tests/test_renovate_file_patterns\.py)$'
         pass_filenames: false
 
+      - id: test-git-fixture-isolation
+        name: Git fixtures preserve caller repositories
+        entry: python3 scripts/ci/test_git_fixture_isolation.py
+        language: system
+        files: '^(scripts/ci/test_(git_fixture_isolation|ffmpeg_patch_stack|ffmpeg_patch_smoke_safety)\.py|scripts/ci/test-classify-dependency-pr\.sh|scripts/dev/test-cleanup-agent-state\.sh|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: check-no-tracked-venv
         name: No virtualenv path is tracked (dir or symlink)
         entry: scripts/ci/check-no-tracked-venv.sh

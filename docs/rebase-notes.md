@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/git-fixture-environment-isolation — fixture caller safety (2026-09-08)
+
+Keep inherited `GIT_*` and caller global/system configuration out of the
+FFmpeg replay/smoke, dependency-classifier and agent-cleanup test fixtures,
+including setup and assertions. `git -C` alone can still mutate a caller's
+config, refs, object store or index. Preserve the disposable caller matrix
+in `scripts/ci/test_git_fixture_isolation.py` and its local/CI hook. This
+implements the existing ADR-1240 isolation contract; no production Git
+operation or native/FFmpeg API changes.
+
 ## FFmpeg stable-release patch maintenance (2026-09-08)
 
 Preserve `build-config.env` as the FFmpeg remote/tag owner, the ordered

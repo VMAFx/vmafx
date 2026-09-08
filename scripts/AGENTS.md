@@ -68,6 +68,12 @@ Do not restore forced worktree removal or infer stash redundancy from branch
 existence. All stashes and branch refs are retained. The temporary-repository
 regression is `bash scripts/dev/test-cleanup-agent-state.sh`.
 
+The regression itself must clear inherited `GIT_*` and disable caller
+global/system Git configuration before creating fixtures. `git -C` does not
+isolate repository, shared metadata or index paths supplied by the environment.
+Keep the disposable-caller preservation matrix in
+`ci/test_git_fixture_isolation.py` registered in the local/CI hooks.
+
 ### `release/concat-changelog-fragments.sh` is the source of truth for `CHANGELOG.md`
 
 Per [ADR-0221](../docs/adr/0221-changelog-adr-fragment-pattern.md),
