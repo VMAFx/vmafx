@@ -22022,6 +22022,11 @@ linear-scan overhead on every extractor lookup; the first matching entry was
 always returned so feature availability was never affected.
 
 
+- Update the FFmpeg refresh guide to use the shared release configuration and
+  disposable replay tooling. Correct the reversed PSNR values and unsupported
+  frame-alignment diagnosis in the upstream issue research and status ledger.
+
+
 - ffmpeg: document the `libvmaf` filter input-ordering convention
   (`[0:v]` = distorted / main, `[1:v]` = reference — the OPPOSITE
   of the Python runner and `vmaf` CLI which take `(ref, dis)`).

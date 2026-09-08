@@ -335,6 +335,7 @@ nav:
       - Windows D3D11 import: development/windows-d3d11-import.md
       - Intel Arc / VAAPI driver priority: development/intel-arc-vaapi-driver-priority.md
       - FFmpeg patches refresh: development/ffmpeg-patches-refresh.md
+      - FFmpeg patch automation: development/ffmpeg-patch-automation.md
       - GPU backend template: development/gpu-backend-template.md
       - Upstream watchers: development/upstream-watchers.md
       - Known upstream bugs: development/known-upstream-bugs.md
