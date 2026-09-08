@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-20
-- **Deciders**: @lusoris, Claude
+- **Deciders**: @lusoris
 - **Tags**: upstream-port, correctness, testing
 
 ## Context

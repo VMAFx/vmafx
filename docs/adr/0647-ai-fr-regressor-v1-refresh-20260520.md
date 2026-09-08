@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-20
-- **Deciders**: Lusoris, Codex
+- **Deciders**: Lusoris
 - **Tags**: ai, tiny-ai, model-refresh, netflix-public, fr-regressor, fork-local
 
 ## Context

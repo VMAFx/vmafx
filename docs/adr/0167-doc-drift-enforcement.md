@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-25
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: process, enforcement, claude-hook, ci, adr-0100
 
 ## Context

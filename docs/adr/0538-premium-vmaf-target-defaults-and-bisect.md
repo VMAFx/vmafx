@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, Claude
+- **Deciders**: lusoris
 - **Tags**: vmaf-tune, compare, bisect, defaults, premium-archival
 - **Supersedes**: target-VMAF defaults from [ADR-0534](0534-compare-rate-quality-chart-from-bisect-samples.md)
 

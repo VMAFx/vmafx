@@ -3,7 +3,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-05-29
-- **Deciders**: Lusoris, Claude
+- **Deciders**: Lusoris
 - **Tags**: ai, sidecar, online-learning, k8s, vmafx-node, phase4b, fork-local
 
 ## Context

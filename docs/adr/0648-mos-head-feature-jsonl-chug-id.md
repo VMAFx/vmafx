@@ -3,7 +3,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-05-20
-- **Deciders**: Lusoris, Codex
+- **Deciders**: Lusoris
 - **Tags**: ai, hdr, chug, mos, training
 
 ## Context

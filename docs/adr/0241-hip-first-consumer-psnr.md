@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-02
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: gpu, hip, rocm, amd, kernel-template, fork-local
 
 ## Context

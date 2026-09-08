@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-26
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: simd, audit, fork-local, doc-correction
 
 ## Context

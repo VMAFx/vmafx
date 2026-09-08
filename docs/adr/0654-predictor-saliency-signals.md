@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-20
-- **Deciders**: Lusoris, Codex
+- **Deciders**: Lusoris
 - **Tags**: ai, vmaf-tune, saliency, predictor
 
 ## Context

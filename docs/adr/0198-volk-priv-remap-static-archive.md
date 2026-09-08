@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-27
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: vulkan, build, fork-local, abi
 - **Supersedes**: nothing — extends [ADR-0185](0185-vulkan-hide-volk-symbols.md)
   to the case `--exclude-libs,ALL` cannot reach.

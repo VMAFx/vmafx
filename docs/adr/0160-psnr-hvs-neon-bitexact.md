@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-24
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: simd, neon, aarch64, psnr-hvs, bit-exact, performance
 
 ## Context

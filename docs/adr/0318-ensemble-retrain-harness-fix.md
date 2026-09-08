@@ -6,7 +6,7 @@
   `ai/scripts/run_ensemble_v2_real_corpus_loso.sh` present on master;
   Phase A runbook + wrapper landed.
 - **Date**: 2026-05-06
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: `ai`, `fr-regressor`, `ensemble`, `loso`, `runbook`, `fork-local`
 - **Related**: [ADR-0309](0309-fr-regressor-v2-ensemble-real-corpus-retrain.md)
   (real-corpus retrain harness — this ADR fixes the harness it shipped),

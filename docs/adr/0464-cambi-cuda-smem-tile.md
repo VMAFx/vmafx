@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-16
-- **Deciders**: lusoris, claude-sonnet-4-6
+- **Deciders**: lusoris
 - **Tags**: `cuda`, `gpu`, `cambi`, `performance`, `kernel`, `fork-local`
 
 ## Context

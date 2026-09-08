@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-11
-- **Deciders**: lusoris, lawrence, Claude (Anthropic)
+- **Deciders**: lusoris, lawrence
 - **Tags**: `gpu`, `metal`, `apple-silicon`, `runtime`, `fork-local`
 
 ## Context

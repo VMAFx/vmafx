@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-22
-- **Deciders**: Lusoris, Codex
+- **Deciders**: Lusoris
 - **Tags**: ci, github-actions, merge-train, adr, fork-local
 
 ## Context

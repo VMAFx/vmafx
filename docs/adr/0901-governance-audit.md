@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-30
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `governance`, `docs`, `meta`
 
 ## Context

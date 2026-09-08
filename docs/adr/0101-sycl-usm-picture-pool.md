@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-18
-- **Deciders**: Lusoris, Claude (Opus 4.7)
+- **Deciders**: Lusoris
 - **Tags**: `sycl`, `gpu`, `picture-api`, `memory`
 
 ## Context

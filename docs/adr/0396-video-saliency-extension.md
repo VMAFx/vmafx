@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-08
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ai, dnn, saliency, video-saliency, vmaf-tune, roi, fork-local, design
 
 ## Context

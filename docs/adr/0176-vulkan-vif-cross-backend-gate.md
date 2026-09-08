@@ -2,7 +2,7 @@
 
 - **Status**: Accepted (errata 2026-04-26 below — body unchanged per ADR-0028)
 - **Date**: 2026-04-25
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: `ci`, `vulkan`, `gpu`, `numerical-correctness`
 
 > **Errata (2026-04-26)** — the "ULP=0" empirical baseline asserted in

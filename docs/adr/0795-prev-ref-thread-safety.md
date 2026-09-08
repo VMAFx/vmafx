@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-29
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: threading, feature-extractor, batch-threading, correctness
 
 ## Context

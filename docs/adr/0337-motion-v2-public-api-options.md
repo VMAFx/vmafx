@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-09
-- **Deciders**: Lusoris, Claude (Opus 4.7)
+- **Deciders**: Lusoris
 - **Tags**: upstream-port, motion, feature-extractor, cli, public-api, fork-local
 
 ## Context

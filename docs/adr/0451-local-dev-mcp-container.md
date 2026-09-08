@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-15
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `infra`, `docker`, `mcp`, `gpu`, `hip`, `cuda`, `sycl`, `vulkan`, `dev`, `fork-local`
 
 ## Context

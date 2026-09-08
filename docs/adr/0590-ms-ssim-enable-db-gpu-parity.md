@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-17
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: cuda, sycl, ms-ssim, option-parity, bug, fork-local
 
 ## Context

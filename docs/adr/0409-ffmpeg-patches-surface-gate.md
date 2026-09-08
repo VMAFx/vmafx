@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-09
-- **Deciders**: Lusoris, Claude (Opus 4.7)
+- **Deciders**: Lusoris
 - **Tags**: `ci`, `ffmpeg-integration`, `process`, `rule-enforcement`
 
 ## Context

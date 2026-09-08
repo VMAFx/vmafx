@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-30
-- **Deciders**: Lusoris, Claude (Opus 4.7)
+- **Deciders**: Lusoris
 - **Tags**: process, release, changelog, ci, fork-local
 
 ## Context

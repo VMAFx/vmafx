@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-28
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `cuda`, `integer_adm`, `aim`, `adm3`, `parity`
 
 ## Context

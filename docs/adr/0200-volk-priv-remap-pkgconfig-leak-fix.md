@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-27
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: vulkan, build, fork-local, abi
 - **Supersedes**: nothing — bug-fix follow-up to [ADR-0198](0198-volk-priv-remap-static-archive.md)
 

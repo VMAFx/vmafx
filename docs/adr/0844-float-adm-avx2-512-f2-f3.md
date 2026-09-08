@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-29
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: simd, bit-exactness, avx2, avx512, float_adm, build
 
 ## Context

@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-25
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: release, mcp, supply-chain, sigstore, pypi
 
 > **2026-08-31 operational amendment:** the repository was transferred to

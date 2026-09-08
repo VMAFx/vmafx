@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-31
-- **Deciders**: lusoris, Claude (cross-backend audit gap-fill)
+- **Deciders**: lusoris
 - **Tags**: `cuda`, `hip`, `sycl`, `feature-extractor`, `cross-backend-parity`, `speed`
 
 ## Context

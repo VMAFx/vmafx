@@ -40,7 +40,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-20
-- **Deciders**: Lusoris, Codex
+- **Deciders**: Lusoris
 - **Tags**: vmaf-tune, ffmpeg, docs, profile, cli
 
 ## Context

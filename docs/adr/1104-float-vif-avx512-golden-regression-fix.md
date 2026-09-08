@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-06-13
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: `simd`, `correctness`, `float-vif`, `bug-fix`
 
 ## Context

@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-06
-- **Deciders**: Lusoris, Claude
+- **Deciders**: Lusoris
 - **Tags**: `ci`, `build`
 
 ## Context

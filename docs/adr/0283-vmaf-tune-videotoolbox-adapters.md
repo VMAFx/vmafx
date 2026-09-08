@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-03
-- **Deciders**: lusoris (with Claude)
+- **Deciders**: Lusoris
 - **Tags**: tooling, ai, ffmpeg, codec, hardware-encoder, apple, fork-local
 
 ## Context

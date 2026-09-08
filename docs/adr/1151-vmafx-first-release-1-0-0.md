@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-03
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: release, semver, automation, ci, docs
 
 ## Context

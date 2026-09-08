@@ -6,7 +6,7 @@
   `scripts/ci/check-agent-worktree-drift.sh` present; wired into
   `.pre-commit-config.yaml`; landed in commit 1141faa15.
 - **Date**: 2026-05-09
-- **Deciders**: lusoris, Claude (agent kit)
+- **Deciders**: lusoris
 - **Tags**: agents, ci, build, fork-local
 
 ## Context

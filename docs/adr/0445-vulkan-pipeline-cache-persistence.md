@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-16
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: `vulkan`, `gpu`, `performance`, `pipeline-cache`, `fork-local`
 
 ## Context

@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-03
-- **Deciders**: Lusoris, Claude (Opus 4.7)
+- **Deciders**: Lusoris
 - **Tags**: `tools`, `vmaf-tune`, `codec`, `av1`, `fork-local`
 
 ## Context

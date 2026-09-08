@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-31
-- **Deciders**: lusoris, Claude Code
+- **Deciders**: lusoris
 - **Tags**: `docs`, `ci`, `api`, `public-surface`
 
 ## Context

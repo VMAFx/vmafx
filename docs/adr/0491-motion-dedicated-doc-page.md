@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-17
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `docs`, `metrics`, `motion`, `fork-local`
 
 ## Context

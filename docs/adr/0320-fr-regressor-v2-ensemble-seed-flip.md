@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-06
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ai, fr-regressor, ensemble, registry, prod-flip, fork-local
 - **Related**: [ADR-0303](0303-fr-regressor-v2-ensemble-prod-flip.md)
   (gate definition: mean ≥ 0.95 AND spread ≤ 0.005),

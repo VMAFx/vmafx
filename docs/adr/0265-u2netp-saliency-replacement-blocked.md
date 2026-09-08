@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-03
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ai, dnn, mobilesal, u2netp, saliency, license, op-allowlist, fork-local, docs
 
 ## Context

@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-01
-- **Deciders**: Lusoris, Claude
+- **Deciders**: Lusoris
 - **Tags**: `ai`, `dnn`, `tiny-ai`, `fr-regressor`, `fork-local`
 
 ## Context

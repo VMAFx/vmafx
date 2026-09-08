@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-03
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: tooling, ai, saliency, ffmpeg, codec, fork-local
 
 ## Context

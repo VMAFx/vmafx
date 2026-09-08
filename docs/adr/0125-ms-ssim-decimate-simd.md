@@ -5,7 +5,7 @@
   empirical Netflix golden `places=4` gate; FLOP accounting corrected from
   ~9× to ~3×; removed non-existent snapshot-refresh premise)
 - **Date**: 2026-04-20
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: simd, testing, agents
 
 ## Context

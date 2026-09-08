@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-30
-- **Deciders**: lusoris, Claude (agent)
+- **Deciders**: lusoris
 - **Tags**: cleanup, cert, mcp, dnn, picture, cuda
 
 ## Context

@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-30
-- **Deciders**: lusoris, Claude
+- **Deciders**: lusoris
 - **Tags**: `security`, `ci`, `supply-chain`
 
 ## Context

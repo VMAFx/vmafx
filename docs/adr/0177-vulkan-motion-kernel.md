@@ -2,7 +2,7 @@
 
 - **Status**: Accepted (errata 2026-04-26 below — body unchanged per ADR-0028)
 - **Date**: 2026-04-26
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: `vulkan`, `gpu`, `feature-extractor`, `numerical-correctness`
 
 > **Errata (2026-04-26 same-day)** — the "ULP=0 vs CPU on the

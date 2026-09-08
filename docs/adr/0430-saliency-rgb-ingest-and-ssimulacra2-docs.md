@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-14
-- **Deciders**: Lusoris, Codex
+- **Deciders**: Lusoris
 - **Tags**: vmaf-tune, saliency, docs, metrics, fork-local
 
 ## Context

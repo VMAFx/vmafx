@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, claude
+- **Deciders**: lusoris
 - **Tags**: ai, corpus, chug, k150k, extractor, training-data, regression-guard
 
 ## Context

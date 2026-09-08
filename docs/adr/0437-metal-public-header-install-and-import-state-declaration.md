@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-15
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: metal, build, c-api, install, apple-silicon, fork-local
 
 ## Context

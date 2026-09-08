@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `sycl`, `build`, `meson`, `gpu`, `intel`, `aot`, `fork-local`
 
 ## Context

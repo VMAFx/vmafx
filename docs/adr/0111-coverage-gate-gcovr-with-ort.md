@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-18
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Supersedes**: [ADR-0110](0110-coverage-gate-fprofile-update-atomic.md)
 - **Tags**: ci, build, dnn, testing
 

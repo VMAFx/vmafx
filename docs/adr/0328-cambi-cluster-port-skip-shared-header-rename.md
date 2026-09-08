@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-08
-- **Deciders**: lusoris, agent-ad03c1b2db5286821 (Claude Opus 4.7)
+- **Deciders**: lusoris
 - **Tags**: simd, port, cambi
 
 ## Context

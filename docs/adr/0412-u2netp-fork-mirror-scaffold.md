@@ -14,7 +14,7 @@
   from an audited local upstream checkout. The binary remains a
   release asset, not a committed file.
 - **Date**: 2026-05-08
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ai, dnn, u2netp, saliency, license, apache-2.0, supply-chain, fork-local, docs
 
 ## Context

@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, Claude (deep-audit follow-up)
+- **Deciders**: lusoris
 - **Tags**: `bug`, `dispatch`, `vulkan`, `sycl`, `registry`
 
 ## Context

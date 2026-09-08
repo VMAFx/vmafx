@@ -3,7 +3,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-05-15
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: vmaf-tune, ai, hdr, training, panel, display, fork-local
 
 ## Context

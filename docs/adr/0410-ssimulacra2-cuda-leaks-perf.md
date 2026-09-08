@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-09
-- **Deciders**: Lusoris, Claude
+- **Deciders**: Lusoris
 - **Tags**: cuda, gpu, perf, memory-leak, ssimulacra2, fork-local
 
 ## Context

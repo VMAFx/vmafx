@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-01
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: ai, fr, dnn, tiny-ai, fork-local, perceptual
 
 ## Context

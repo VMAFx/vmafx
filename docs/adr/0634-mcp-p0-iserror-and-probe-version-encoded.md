@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-19
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `mcp`, `bugfix`, `spec-correctness`, `fork-local`
 
 ## Context

@@ -4,7 +4,7 @@
 - **Status**: Superseded by [ADR-0119](0119-cli-precision-default-revert.md)
   (2026-04-19)
 - **Date**: 2026-04-17
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: cli, testing, python
 
 ## Context

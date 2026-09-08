@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `python`, `mcp`, `ai`, `vmaf-tune`, `correctness`, `audit`
 
 ## Context

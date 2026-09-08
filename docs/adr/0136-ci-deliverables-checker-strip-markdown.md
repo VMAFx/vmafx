@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-20
-- **Deciders**: @lusoris, Claude
+- **Deciders**: @lusoris
 - **Tags**: ci, rule-enforcement, adr-0108
 
 ## Context

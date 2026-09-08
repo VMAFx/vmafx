@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-01
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: vulkan, ffmpeg, fork-local, zero-copy, performance, implementation
 
 ## Context

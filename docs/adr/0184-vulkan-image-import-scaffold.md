@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-26
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: vulkan, ffmpeg, fork-local, zero-copy, scaffold
 
 ## Context

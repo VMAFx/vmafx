@@ -5,7 +5,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `cuda`, `sycl`, `hip`, `vulkan`, `speed`, `feature`, `gpu`, `fork-local`
 
 ## Context

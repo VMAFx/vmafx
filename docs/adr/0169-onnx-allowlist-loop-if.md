@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-25
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: tiny-ai, onnx, security, op-allowlist
 
 ## Context

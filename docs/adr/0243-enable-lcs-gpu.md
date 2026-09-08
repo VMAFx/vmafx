@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-29
-- **Deciders**: Lusoris (user), Claude (agent)
+- **Deciders**: Lusoris (user)
 - **Tags**: cuda, vulkan, gpu, metrics, ms-ssim, fork-local
 
 ## Context

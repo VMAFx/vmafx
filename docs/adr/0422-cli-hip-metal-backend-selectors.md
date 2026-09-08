@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-11
-- **Deciders**: Kilian, Claude (Anthropic)
+- **Deciders**: Kilian
 - **Tags**: `cli`, `hip`, `metal`, `gpu`, `fork-local`
 
 ## Context

@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-06-03
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: cuda, precision, ms-ssim, bit-exactness
 
 ## Context

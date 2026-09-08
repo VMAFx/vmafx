@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-29
-- **Deciders**: <lusoris@pm.me>, Claude (Anthropic)
+- **Deciders**: <lusoris@pm.me>
 - **Tags**: vulkan, gpu, cambi, feature-extractor, fork-local, places-4
 
 ## Context

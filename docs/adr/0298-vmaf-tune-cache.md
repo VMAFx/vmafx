@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-03
-- **Deciders**: lusoris, Claude
+- **Deciders**: lusoris
 - **Tags**: `tools`, `vmaf-tune`, `cache`, `fork-local`
 
 ## Context

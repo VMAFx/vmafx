@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-17
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: framework, ci, docs, build, mcp
 
 ## Context

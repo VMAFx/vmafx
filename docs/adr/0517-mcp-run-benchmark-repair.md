@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, Claude Sonnet 4.6
+- **Deciders**: lusoris
 - **Tags**: mcp, bugfix, fork-local, benchmark
 
 ## Context

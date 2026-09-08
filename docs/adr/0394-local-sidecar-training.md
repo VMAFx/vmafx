@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-08
-- **Deciders**: Lusoris, Claude
+- **Deciders**: Lusoris
 - **Tags**: ai, vmaf-tune, sidecar, online-learning, privacy, fork-local
 
 ## Context

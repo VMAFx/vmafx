@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-18
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: dnn, testing, coverage
 
 ## Context

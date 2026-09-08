@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, Claude Opus 4.7 (1M context)
+- **Deciders**: lusoris
 - **Tags**: cuda, vif, parity, docs, audit-disposition
 
 ## Context

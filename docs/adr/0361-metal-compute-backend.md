@@ -6,7 +6,7 @@
   `core/include/libvmaf/libvmaf_metal.h` and `core/src/metal/`
   tree present on master; `-ENOSYS` stubs in place.
 - **Date**: 2026-05-09
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: gpu, metal, apple-silicon, scaffold, audit-first, fork-local
 
 ## Context

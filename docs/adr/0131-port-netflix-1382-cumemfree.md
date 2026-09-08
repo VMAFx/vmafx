@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-20
-- **Deciders**: @lusoris, Claude
+- **Deciders**: @lusoris
 - **Tags**: cuda, upstream-port, correctness
 
 ## Context

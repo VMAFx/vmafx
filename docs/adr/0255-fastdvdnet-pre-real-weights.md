@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-03
-- **Deciders**: Lusoris, Claude (Opus 4.7)
+- **Deciders**: Lusoris
 - **Tags**: `ai`, `dnn`, `feature-extractor`, `wave-1`, `weights-drop`
 
 ## Context

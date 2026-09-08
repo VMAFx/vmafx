@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-26
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: simd, x86, arm64, feature-extractor, fork-local
 
 ## Context

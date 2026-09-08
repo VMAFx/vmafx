@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-16
-- **Deciders**: lusoris, Claude (Anthropic)
+- **Deciders**: lusoris
 - **Tags**: `metal`, `ssim`, `option-parity`, `apple-silicon`, `kernel`, `fork-local`
 
 ## Context

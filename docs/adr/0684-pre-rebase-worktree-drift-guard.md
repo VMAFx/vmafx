@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-22
-- **Deciders**: lusoris, Claude (Opus 4.7)
+- **Deciders**: lusoris
 - **Tags**: agents, ci, git-hooks, fork-local
 
 ## Context

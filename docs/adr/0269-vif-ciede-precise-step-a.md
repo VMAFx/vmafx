@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-03
-- **Deciders**: Lusoris, Claude
+- **Deciders**: Lusoris
 - **Tags**: vulkan, fork-local, bit-exactness, shaders
 
 ## Context

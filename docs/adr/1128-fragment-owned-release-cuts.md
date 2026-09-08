@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-08-31
-- **Deciders**: Lusoris, Codex (OpenAI)
+- **Deciders**: Lusoris
 - **Tags**: release, changelog, automation, ci, docs
 
 ## Context

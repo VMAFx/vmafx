@@ -3,7 +3,7 @@
 
 - **Status**: Superseded by [ADR-1151](1151-vmafx-first-release-1-0-0.md)
 - **Date**: 2026-08-31
-- **Deciders**: Lusoris, Codex (OpenAI)
+- **Deciders**: Lusoris
 - **Tags**: release, semver, automation, docs
 
 ## Context

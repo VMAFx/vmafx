@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-27
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Tags**: vulkan, gpu, feature-extractor, fork-local, places-2
 
 ## Context

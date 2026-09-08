@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-05
-- **Deciders**: Lusoris, Claude (Anthropic)
+- **Deciders**: Lusoris
 - **Companion research digest**: [Research-0081](../research/0081-fr-regressor-v2-ensemble-real-corpus-methodology.md)
 - **Tags**: ai, fr-regressor, ensemble, loso, runbook, fork-local
 - **Related**: [ADR-0303](0303-fr-regressor-v2-ensemble-prod-flip.md)

@@ -3,7 +3,7 @@
 
 - **Status**: Superseded by [ADR-1167](1167-adm-cm-row-level-rounding.md)
 - **Date**: 2026-05-18
-- **Deciders**: lusoris, Claude
+- **Deciders**: lusoris
 - **Tags**: hip, gpu, feature, integer-adm, port
 
 ## Context
