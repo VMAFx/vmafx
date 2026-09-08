@@ -1,0 +1,1 @@
+- Refactor integer VIF AVX-512 kernels into small private stages while preserving exact arithmetic and the existing subsample register-pressure boundaries; add direct scalar-stage parity coverage across 8–16-bit inputs.

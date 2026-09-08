@@ -111,7 +111,7 @@ the `extern "C"` boundary and converted to an `int` error code (typically
 | File | ADR | C++ idioms used |
 |---|---|---|
 | `core/src/metadata_handler.cpp` | ADR-0708 | `std::unique_ptr` + custom deleter for linked-list teardown |
-| `core/src/fex_ctx_vector.cpp` | ADR-0723 | `std::vector::reserve` for init guard; `extern "C"` + pre-`<atomic>` include pattern |
+| `core/src/fex_ctx_vector.cpp` | ADR-0723 | C-compatible pointer-array ownership with checked `malloc`/`realloc`; `extern "C"` + pre-`<atomic>` include pattern |
 
 ## Governing ADRs
 
