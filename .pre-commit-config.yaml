@@ -311,17 +311,28 @@ repos:
 
       - id: mypy-local
         name: mypy (ai/ + scripts/, fork-added Python)
-        entry: mypy
+        entry: python3 scripts/git-hooks/pre-push-mypy.py
         language: system
-        files: '^(ai|scripts)/.*\.py$'
+        # The wrapper owns the unchanged ai/scripts *.py policy. Incoming
+        # old-tip/new-tip filenames omit owned files after a rebase.
+        always_run: true
+        pass_filenames: false
         verbose: true
         require_serial: true
         # Pre-push only — running mypy on every commit doubles a
-        # 1-line edit's commit time; the gate is cheap on staged files
-        # but contributors land many small commits per push.
+        # 1-line edit's commit time. Check the complete branch-owned set
+        # against the master merge base on every push, including rebases.
         # Contributors need `pip install mypy` (system tool, not in
         # pyproject.toml — same posture as CI's lint-and-format job).
         stages: [pre-push]
+
+      - id: mypy-scope-contract
+        name: Check pre-push mypy merge-base scope
+        entry: python3 scripts/git-hooks/test-pre-push-mypy.py
+        language: system
+        files: '^(scripts/git-hooks/(pre-push-mypy|test-pre-push-mypy)\.py|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
 
       - id: semgrep-local
         name: semgrep (.semgrep.yml — local rules, error-gated)

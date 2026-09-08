@@ -24869,6 +24869,13 @@ Fix 23 pre-existing test failures across three packages.
   wire-level invariant.
 
 
+- Fix pre-push mypy scope after rebases: recheck every branch-owned Python
+  file under `ai/` and `scripts/` against the master merge base, including
+  unchanged outgoing files and Git type changes. Preserve internal symlink
+  filenames, reject unsafe targets and refuse validation of a pushed ref
+  different from the checked-out HEAD.
+
+
 - markdownlint no longer lints golden fixtures as prose. The exclude pattern was
   `^testdata/`, anchored at the repository root, so fixture trees under
   `pkg/*/testdata/` — the benchmark renderer's byte-exact expected Markdown, for
