@@ -553,6 +553,44 @@ static char *test_use_tiny_model_missing_external_data_returns_error_not_abort(v
     return NULL;
 }
 
+static char *test_use_tiny_model_int8_session_fail_falls_back_to_fp32(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    if (access(SMOKE_FP32_MODEL, R_OK) != 0 || access(TINY_V1_MODEL, R_OK) != 0)
+        return NULL;
+
+    char tmpl[] = "/tmp/vmaf-tiny-retry-XXXXXX";
+    const int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    (void)close(fd);
+
+    char onnx[1024];
+    char int8_onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof(onnx), "%s.onnx", tmpl);
+    (void)snprintf(int8_onnx, sizeof(int8_onnx), "%s.int8.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof(sidecar), "%s.json", tmpl);
+
+    mu_assert("copy smoke onnx failed", copy_file_600(SMOKE_FP32_MODEL, onnx) == 0);
+    mu_assert("copy tiny v1 int8 failed", copy_file_600(TINY_V1_MODEL, int8_onnx) == 0);
+
+    static const unsigned char json_dyn[] =
+        "{\"kind\":\"fr\",\"quant_mode\":\"dynamic\",\"name\":\"redir_retry_test\"}\n";
+    mu_assert("write sidecar failed",
+              write_file_600(sidecar, json_dyn, sizeof(json_dyn) - 1u) == 0);
+
+    char *err = expect_tiny_attach(onnx, 1, "session failure retry to fp32 should succeed");
+    if (err)
+        return err;
+
+    (void)unlink(sidecar);
+    (void)unlink(int8_onnx);
+    (void)unlink(onnx);
+    (void)unlink(tmpl);
+    return NULL;
+}
+
 /* NOLINTEND(modernize-use-nullptr) */
 #endif
 
@@ -571,6 +609,7 @@ char *run_tests(void)
     mu_run_test(test_invalid_ort_model_frees_loaded_sidecar);
     mu_run_test(test_use_tiny_model_int8_redirect_and_fallback);
     mu_run_test(test_use_tiny_model_missing_external_data_returns_error_not_abort);
+    mu_run_test(test_use_tiny_model_int8_session_fail_falls_back_to_fp32);
 #endif
     mu_run_test(test_happy_path_smoke_model);
     mu_run_test(test_attached_multi_output_model_records_named_scores);

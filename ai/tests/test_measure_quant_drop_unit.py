@@ -148,8 +148,10 @@ def test_measure_records_drop_when_outputs_diverge(tmp_path: Path) -> None:
 
 
 def test_gate_one_pass_under_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # Pre-create matching fp32 + int8 files for the path probe.
-    tiny_dir = MQD.REPO_ROOT / "model" / "tiny"
+    # Pre-create matching fp32 + int8 files for the path probe in tmp_path.
+    tiny_dir = tmp_path / "model" / "tiny"
+    tiny_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(MQD, "REPO_ROOT", tmp_path)
     # Use a real registry entry path schema, but patch _measure to fake values.
     entry = {
         "id": "stub",
@@ -159,7 +161,6 @@ def test_gate_one_pass_under_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     }
     fp32 = tiny_dir / "stub_v1.onnx"
     int8 = tiny_dir / "stub_v1.int8.onnx"
-    fp32.parent.mkdir(parents=True, exist_ok=True)
     fp32.write_bytes(b"\x00")
     int8.write_bytes(b"\x00")
     try:
@@ -174,8 +175,10 @@ def test_gate_one_pass_under_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         int8.unlink(missing_ok=True)
 
 
-def test_gate_one_fail_over_budget(tmp_path: Path) -> None:
-    tiny_dir = MQD.REPO_ROOT / "model" / "tiny"
+def test_gate_one_fail_over_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    tiny_dir = tmp_path / "model" / "tiny"
+    tiny_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(MQD, "REPO_ROOT", tmp_path)
     entry = {
         "id": "stub_fail",
         "quant_mode": "int8_static",
@@ -184,7 +187,6 @@ def test_gate_one_fail_over_budget(tmp_path: Path) -> None:
     }
     fp32 = tiny_dir / "stub_fail.onnx"
     int8 = tiny_dir / "stub_fail.int8.onnx"
-    fp32.parent.mkdir(parents=True, exist_ok=True)
     fp32.write_bytes(b"\x00")
     int8.write_bytes(b"\x00")
     try:

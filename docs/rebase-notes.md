@@ -1,6 +1,12 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## feat/1242-tiny-ai-completion — tiny-AI model cards and int8 fallback test coverage (2026-09-08)
+
+- `core/test/dnn/test_dnn_session_api.c`, `core/test/dnn/test_vmaf_use_tiny_model.c`: fork-added C unit tests verifying the ADR-1032 second fallback trigger (int8 session creation failure retrying fp32 baseline without leak).
+- `docs/ai/models/`: added missing model cards `smoke_multi_output_v0.md` and `smoke_v0_symbolic_batch.md`; brought existing cards into compliance with ADR-0042.
+- `no rebase impact: fork-added tests and docs; upstream Netflix/vmaf has no dnn test or docs/ai tree.`
+
 ## fix/venv-gate-basename-false-positive — tracked-venv gate pattern (2026-09-05)
 
 No rebase impact: `scripts/ci/check-no-tracked-venv.sh` and its test are fork-added.
