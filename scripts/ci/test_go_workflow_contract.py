@@ -19,7 +19,7 @@ GO_CHECK = "go vet + go test"
 
 
 class GoWorkflowContract(unittest.TestCase):
-    def test_ready_pr_and_master_runs_are_routed_inside_the_job(self):
+    def test_ready_pr_and_master_runs_are_routed_inside_the_job(self) -> None:
         workflow = (WORKFLOWS / "go-ci.yml").read_text(encoding="utf-8")
         trigger = workflow.split("\nconcurrency:", 1)[0]
         self.assertNotRegex(trigger, r"(?m)^\s+paths(?:-ignore)?:")
@@ -48,7 +48,8 @@ class GoWorkflowContract(unittest.TestCase):
         text = (WORKFLOWS / "required-aggregator.yml").read_text(encoding="utf-8")
         script = textwrap.dedent(text.split("          script: |\n", 1)[1])
         required_block = re.search(r"const required = \[(.*?)\];", script, re.DOTALL)
-        self.assertIsNotNone(required_block)
+        if required_block is None:
+            self.fail("required aggregator must declare its check list")
         names = re.findall(r"'([^']+)'", required_block.group(1))
         self.assertIn(GO_CHECK, names)
         checks = [
@@ -57,7 +58,8 @@ class GoWorkflowContract(unittest.TestCase):
             if name != GO_CHECK or go_conclusion is not None
         ]
         node = shutil.which("node")
-        self.assertIsNotNone(node, "Node.js is needed to exercise the Actions JavaScript")
+        if node is None:
+            self.fail("Node.js is needed to exercise the Actions JavaScript")
         driver = r"""
 const fs = require('fs');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
@@ -86,17 +88,25 @@ new AsyncFunction('github', 'context', 'core', 'process', 'Date', 'setTimeout', 
             check=True,
             timeout=10,
         )
-        return json.loads(result.stdout)
+        payload: object = json.loads(result.stdout)
+        if not isinstance(payload, list):
+            self.fail("aggregator driver must return a list of failure messages")
+        failures: list[str] = []
+        for message in payload:
+            if not isinstance(message, str):
+                self.fail("aggregator failure messages must be strings")
+            failures.append(message)
+        return failures
 
-    def test_failed_go_scan_blocks_otherwise_green_checks(self):
+    def test_failed_go_scan_blocks_otherwise_green_checks(self) -> None:
         failures = self._aggregate("failure")
         self.assertEqual(len(failures), 1)
         self.assertIn(GO_CHECK + ": failure", failures[0])
 
-    def test_successful_go_checks_pass(self):
+    def test_successful_go_checks_pass(self) -> None:
         self.assertEqual(self._aggregate("success"), [])
 
-    def test_unreported_check_keeps_existing_absence_semantics(self):
+    def test_unreported_check_keeps_existing_absence_semantics(self) -> None:
         self.assertEqual(self._aggregate(None), [])
 
 
