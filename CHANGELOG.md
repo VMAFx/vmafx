@@ -9014,6 +9014,12 @@ non-empty, printable string. Closes a coverage gap noted in
 `fuzz/meson.build`; registered in suite `fast`.
 
 
+- Allow `tidy-ratchet.py --only <TU> --write` to tighten measured source
+  allowances while preserving unmeasured entries and full-report metadata.
+  Exact coverage, matching tool version, parse/compile success, debt monotonicity
+  and atomic replacement are required; CI still measures the whole tree.
+
+
 - **`--tiny-codec` / `--tiny-preset` / `--tiny-crf` CLI flags** populate
   the codec one-hot block of codec-aware tiny models (today
   `fr_regressor_v2`) so the model receives the real encoder context
@@ -26283,6 +26289,13 @@ ADR-0513.
 
 
 - Test YUV fixture provisioner: `scripts/test/fetch-test-yuvs.sh` downloads `src01_hrc0[0-1]_576x324.yuv` from `Netflix/vmaf_resource` and md5-verifies them. Reverts the [#1237](https://github.com/VMAFx/vmafx/pull/1237) ADM2 golden override, which was based on output from stale local fixture content. See [ADR-0493](docs/adr/0493-test-yuv-fixture-md5-verification.md) and [docs/development/test-fixtures.md](docs/development/test-fixtures.md).
+
+
+- Bound pending CPU thread-pool jobs to the created worker count, restoring
+  backpressure when decoding outpaces feature extraction. Preserve recycled
+  payloads and batch errors, and wait for blocked producers during shutdown.
+  Adapted from Netflix/vmaf commit `8fc71e3` with shutdown-lifetime regression
+  coverage.
 
 
 - `vmaf_thread_pool_create` now checks the return value of `pthread_create`

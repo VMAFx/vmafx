@@ -201,8 +201,8 @@ instead of a touched-files rule:
 - The rule is *baseline equals measurement*. Exit codes: `0` match, `2` a file
   is above its baseline (fix the code, never raise the baseline), `3` a file is
   below its baseline (tighten it: `make tidy-ratchet-write`, commit the JSON
-  in the same PR), `4` clang-tidy could not compile a TU (fail closed), `5`
-  usage/IO error.
+  in the same PR), `4` a compilation, tool or diagnostic-parse failure made
+  the measurement unusable (fail closed), `5` usage/IO or scoped-validation error.
 - **`cpu` lane** — the required context `Tidy Ratchet` in
   `lint-and-format.yml` (aggregator list, ADR-0313). Like every required job
   it always starts and first runs the [ADR-1140](../adr/1140-ci-impact-planner.md)
@@ -214,9 +214,11 @@ instead of a touched-files rule:
   or baseline edit always runs the lane. It uploads `tidy-ratchet-cpu` (the
   measurement JSON): when the job fails with exit 3 after a cleanup, download
   that artifact and commit it as `scripts/ci/tidy-baseline-cpu.json` — the
-  committed `cpu` baseline is always CI's own measurement (the hosted build
+  full `cpu` baseline comes from CI's own measurement (the hosted build
   lacks optional dependencies, so its TU set differs from a workstation
-  build). The compile database also lists the model-JSON → C translation
+  build). The guarded scoped update below can subsequently tighten measured
+  translation units while retaining that full-report metadata. The compile
+  database also lists the model-JSON → C translation
   units meson generates under `build/src/` (`vmaf_v0.6.1.json.c`, …); they are
   measured like every other TU and appear in the baseline under that path, so
   the `cpu` lane is always measured with `--build-dir build` at the repository
@@ -236,6 +238,49 @@ instead of a touched-files rule:
   feedback and keeps the `WarningsAsErrors` hard stop; ADR-0141's "a touched
   file ends the PR at zero" is unchanged. The ratchet adds the bound on
   untouched files.
+
+When a full matching CPU build is unavailable, [ADR-1243](../adr/1243-tidy-scoped-baseline-tightening.md)
+allows an existing compilation database to measure and tighten selected source
+files without replacing other entries:
+
+```bash
+python3 scripts/ci/tidy-ratchet.py --lane cpu --build-dir build \
+  --only core/src/thread_pool.c \
+  --only core/test/test_thread_pool_backpressure.c \
+  --report /tmp/thread-pool-tidy.json --write
+```
+
+Run from the repository root after building the selected targets so generated
+headers exist. Every `--only` path must be a translation unit in that database;
+a missing/empty selection, failed tool, unparsed diagnostic or compiler error
+leaves the baseline unchanged. The clang-tidy version must exactly match the
+baseline. Existing checks promoted by `WarningsAsErrors` are still counted as
+warning debt; genuine tool failures cannot produce a clean measurement.
+
+A scoped write may only lower allowances. It rejects every observed increase,
+including in included headers, and preserves **all** unselected source/header
+entries. It removes a selected entry measured at zero, updates aggregate totals,
+and records selected sources, before/after counts and the preceding baseline's
+canonical JSON hash in `scoped_updates`. Original `tus`, generator and tool
+metadata describe the last full measurement, not a new whole-tree scan. The
+separate report records the actual measured sources and failures; it must not
+alias the baseline. Replacement is atomic after validation, and repeating an
+unchanged scoped measurement leaves the baseline byte-identical.
+
+Both full and scoped baseline writes require POSIX advisory locking, available
+in the Linux CI and Linux/macOS developer lanes. A second writer fails with exit
+5 while the first owns the resolved baseline path; retry after that process
+exits. Lock ownership releases on exit, and the empty lock file under the
+per-user temporary directory is retained to keep its inode stable. Writers also
+reject content drift since measurement and before replacement. External editors
+and Git operations do not honor this lock, so keep the checkout stable during
+measurement; a successful write does not certify safety against arbitrary
+concurrent repository mutation. Unreadable NOLINT source/header files also fail
+closed instead of clearing their allowance.
+
+`--only` without `--write` remains diagnostic-only and skips comparison. Required
+CI continues to measure the full configured tree; a successful scoped write
+cannot stand in for that gate or clear unmeasured debt.
 
 Baselines at the time this landed (2026-09-02): cpu 5,241 warnings / 281 TUs /
 83 uncited NOLINTs; cuda 1,650; sycl 716; hip 1,173 (whole tree ≈ 8,780).
