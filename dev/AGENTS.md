@@ -95,11 +95,15 @@ detected`. Bump the relevant version owner and rebuild.
 
 ### SHELL / hadolint DL4006
 
-- `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` is set in the `gpu-sdks`
-  stage and **inherited** by `libvmaf-build` and `dev-mcp`.
-- hadolint does not track cross-stage SHELL inheritance. Any `RUN` step in
-  a derived stage that contains a pipe will trigger DL4006 as a false positive.
-  Suppress with `# hadolint ignore=DL4006` and note that SHELL is inherited.
+- Declare `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` explicitly in
+  `build-deps`, `gpu-sdks`, `libvmaf-build`, `go-build`, and `dev-mcp`.
+  Each executing stage then exposes its pipeline failure contract to both
+  the builder and static analysis without depending on parent-stage tracking.
+- Keep the Go output-count guard as a Bash array, not parsed `ls` output.
+  The artifact builder returns to `USER vmaf` after privileged compilation;
+  the final runtime also remains `USER vmaf`.
+- Keep collection failure handling explicit: import failure stops the layer;
+  pytest collection failure prints its captured diagnostics and exits nonzero.
 
 ### Source-tree paths after ADR-0700 / ADR-0870
 
@@ -109,11 +113,10 @@ detected`. Bump the relevant version owner and rebuild.
   - `COPY core/        /build/vmaf/core/` (was `libvmaf/`).
   - `COPY compat/      /build/vmaf/compat/` (required for the editable
     Python install through the `python/` shim).
-  - `cd core && meson setup build` / `cd core && ninja -C build install`
-    (both occurrences).
+  - `meson setup core/build core` / `ninja -C core/build install`.
 - **Rule**: any rebase that picks up an upstream patch touching the
   old `libvmaf/` directory must rewrite the path to `core/` before
-  applying it inside the Containerfile's COPY/cd flow. The
+  applying it to the Containerfile's COPY/source/build paths. The
   `.dockerignore` carries both `core/build*/` and legacy
   `libvmaf/build*/` siblings so a pre-rename worktree still excludes
   its build dirs; do not delete the legacy entries.
@@ -350,20 +353,22 @@ Three invariants must hold on every modification:
 2. **ccache mount pairs with `CCACHE_DIR=...`.** Every meson / ninja /
    cmake C/C++ compile step MUST be wrapped with a ccache cache mount
    plus a matching `CCACHE_DIR` env hint. When the step runs as the
-   `vmaf` user the mount needs `uid=1000,gid=1000` (the user is
-   uid-pinned in the build-deps stage); when the step runs as root
+   `vmaf` user the mount needs `uid=2000,gid=2000` (the build-deps stage
+   pins the user identity per ADR-0603); when the step runs as root
    point the cache at `/root/.cache/ccache`. The shared
    `id=ccache-dev-mcp` / `id=ccache-dev-mcp-vmaf` markers serialise
    concurrent BuildKit workers against the same cache and MUST stay
-   consistent across steps that should share a cache pool.
+   consistent across steps that should share a cache pool. For a RUN that
+   configures and then builds, export `CCACHE_DIR` before both commands; an
+   assignment attached only to `cd` does not reach Meson or Ninja.
 
 3. **`# syntax=docker/dockerfile:1.7`** at the top of the file is what
    enables `--mount=type=cache` parsing — do not remove or downgrade
    the directive.
 
 4. **`vmaf` user uid/gid pin.** The user is created with
-   `useradd --uid 1000 --gid 1000` in the build-deps stage so the
-   `--mount=...,uid=1000,gid=1000` cache mounts resolve to the same
+   `useradd --uid 2000 --gid 2000` in the build-deps stage so the
+   `--mount=...,uid=2000,gid=2000` cache mounts resolve to the same
    identity that runs the build. Preserve the explicit uid/gid pin
    on any modification to the user-creation step.
 

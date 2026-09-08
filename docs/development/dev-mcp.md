@@ -74,6 +74,24 @@ The first build downloads all GPU SDK layers and compiles libvmaf from source.
 Expect 20–40 minutes on a typical workstation; subsequent builds use the
 layer cache and take 1–3 minutes when only Python packages change.
 
+### Build failures and cache use
+
+Every stage that runs build pipelines explicitly enables Bash `pipefail`, so
+an upstream command failure cannot be hidden by a successful output filter.
+The golden-suite import and collection checks fail the build; collection
+failures print the captured pytest diagnostics. Hardware-availability probes
+retain their documented warning behavior in a build sandbox without GPUs.
+
+The libvmaf configure and compile commands share the exported `CCACHE_DIR`
+backed by the BuildKit cache mount. Install steps address their build trees
+explicitly, and FFmpeg cleanup runs from outside the directory it removes.
+The Go artifact stage verifies seven outputs without parsing filenames as
+lines, then returns to the `vmaf` user. The final runtime also uses `vmaf`.
+
+Run `hadolint dev/Containerfile` to check the Dockerfile and embedded shell
+before a rebuild. This static check does not establish native build or GPU
+runtime acceptance.
+
 ### Which source is in the image?
 
 A rebuild only picks up work that is *in the checkout you build from*. If the

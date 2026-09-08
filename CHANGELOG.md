@@ -21589,6 +21589,13 @@ discover Arc GPUs. ADR-0528.
   accommodate slower host CUDA-init sequences.
 
 
+- **Dev container builds:** make pipeline failure handling explicit per stage,
+  export the ccache directory to both libvmaf configure and compile commands,
+  and use explicit build paths before cleanup. Golden-test collection failures
+  retain their diagnostics; Go artifact counting handles filenames directly and
+  the artifact stage returns to the unprivileged build user.
+
+
 ### Fixed
 
 - `dev/docker-compose.yml`: default container runtime changed from `runc` to `nvidia`
