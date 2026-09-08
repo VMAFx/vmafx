@@ -197,8 +197,8 @@ int vmaf_dnn_session_open(VmafDnnSession **out, const char *onnx_path, const Vma
              * vmaf_use_tiny_model() in dnn_attach_api.c — see
              * core/src/dnn/AGENTS.md. */
             vmaf_log(VMAF_LOG_LEVEL_DEBUG,
-                     "dnn: int8 session open failed (%s, rc=%d); retrying fp32 path\n",
-                     load_path, rc);
+                     "dnn: int8 session open failed (%s, rc=%d); retrying fp32 path\n", load_path,
+                     rc);
             rc = vmaf_ort_open(&s->ort, onnx_path, cfg);
         }
     }
