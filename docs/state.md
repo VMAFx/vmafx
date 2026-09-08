@@ -426,6 +426,15 @@ landed fix yet._
 
 ## Recently closed
 
+- **T-CONFIGURED-LINT-FIXTURE-OFFLINE-2026-09-08** — the real-Make lint
+  fixtures accidentally bootstrapped tools in a sub-make; a networked host
+  concealed the missing pip prerequisite. A pre-provisioned failing sentinel
+  plus no-bootstrap assertions keeps both fixtures offline. Plain GNU Make
+  4.4.1 in the same network-disabled container changes the original 20-case
+  suite's two failures to 20 passes. Production Make, analyzers, native sources
+  and baselines are untouched. See
+  [Research-1246](research/1246-cppcheck-public-entrypoints.md#offline-make-fixture-correction).
+
 - **T-METRIC-COVERAGE-CONST-2026-09-08** — component cleanup prepared on
   `fix/metric-coverage-const`: read-only descriptors and bounded setup helpers
   preserve all nineteen cases, assertions, API/options order and first failures.

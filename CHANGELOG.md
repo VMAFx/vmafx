@@ -20709,6 +20709,11 @@ Stale `python/vmaf/workspace` and `python/vmaf/resource` references in
 `config.py` docstrings updated to `compat/python-vmaf/` (post-ADR-0700).
 
 
+- Keep configured-lint Make fixtures offline: provision their pip prerequisite
+  before fake build tools and reject any bootstrap attempt, including recursive
+  Make paths.
+
+
 - Local native lint now selects tracked sources from the configured Meson
   database, covering engine roots, C++ tools, tests and tracked vendors without
   inventing build commands for inactive backends. It preserves build metadata,

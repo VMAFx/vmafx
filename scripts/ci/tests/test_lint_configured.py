@@ -176,6 +176,7 @@ class ConfiguredLintTests(unittest.TestCase):
             CALLS=str(self.calls),
             GIT_CONFIG_NOSYSTEM="1",
             GIT_CONFIG_GLOBAL=os.devnull,
+            PIP_NO_INDEX="1",
         )
         self.native = [
             "core/src/engine.c",
@@ -510,6 +511,17 @@ class ConfiguredLintTests(unittest.TestCase):
                 }
             ]
             self.write_database()
+        # Recursive Make does not inherit -o: satisfy the actual tool prerequisites.
+        pip = self.root / "fixture-venv/bin/pip"
+        pip.parent.mkdir(parents=True)
+        pip_source = (
+            f"#!{sys.executable}\n"
+            "import os, sys\nfrom pathlib import Path\n"
+            "Path(os.environ['CALLS'], 'pip-bootstrap.txt').write_text(repr(sys.argv))\n"
+            "raise SystemExit('fixture must not bootstrap tools')\n"
+        )
+        pip.write_text(pip_source, encoding="utf-8")
+        pip.chmod(0o755)
         meson = self.bin / "meson"
         meson.write_text(
             f"#!{sys.executable}\n"
@@ -534,7 +546,7 @@ class ConfiguredLintTests(unittest.TestCase):
             encoding="utf-8",
         )
         ninja.chmod(0o755)
-        # Mark existing tools old: this fixture must never bootstrap Meson/Ninja.
+        # Keep the initial configured-build target; recursive build checks real prerequisites.
         result = self.command(
             [
                 "make",
@@ -552,6 +564,9 @@ class ConfiguredLintTests(unittest.TestCase):
                 "LINT_JOBS=2",
             ]
         )
+        self.assertFalse((self.calls / "pip-bootstrap.txt").exists())
+        self.assertFalse((self.root / "fixture-venv/pyvenv.cfg").exists())
+        self.assertEqual(pip.read_text(encoding="utf-8"), pip_source)
         self.assertEqual(self.database.read_bytes(), original)
         self.assertTrue((self.build / "build-called.txt").is_file())
         self.assertIn("Configured lint:", result.stdout)
