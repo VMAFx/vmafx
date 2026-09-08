@@ -1,6 +1,15 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Configured lint fixture bootstrap isolation (2026-09-08)
+
+Preserve the real Make target and recursive build in `test_lint_configured.py`.
+Create its failing/recording pip prerequisite before fake Meson/Ninja, retain
+`PIP_NO_INDEX=1`, and assert no pip call, real venv or sentinel overwrite.
+Outer `-o` flags do not propagate to recursive Make. Production dependency
+rules, native sources and baselines stay unchanged. See
+[Research-1246](research/1246-cppcheck-public-entrypoints.md#offline-make-fixture-correction).
+
 ## fix/observation-fixture-const — IQA/motion coverage inputs (2026-09-08)
 
 Preserve the twelve const fixture inputs, writable IQA filter/kernel storage
