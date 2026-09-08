@@ -5,3 +5,5 @@
 - Introduce VMAFx and link installation, issue reporting and contribution from
   the documentation homepage; use published GitHub Pages URLs in the evidence
   worksheet while keeping undeployed homepage changes explicit.
+- Distinguish existing website evidence from the prepared homepage improvement
+  and record the dated, submitted in-progress assessment without claiming a badge.

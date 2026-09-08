@@ -28,8 +28,10 @@ and no bypass actors. No native or public C API rebase impact. See
 [ADR-1248](adr/1248-repository-security-enforcement.md).
 Preserve the short purpose and participation links in `docs/index.md`; the
 website evidence uses GitHub Pages URLs with source links and a deployment
-check before new text is attested. No native/public API, numerical or FFmpeg
-rebase impact.
+check before new text is attested. Keep existing published topic-page evidence
+distinct from that pending improvement; the recorded external assessment is a
+dated in-progress snapshot, not permanent certification. No native/public API,
+numerical or FFmpeg rebase impact.
 
 ## Configured lint fixture bootstrap isolation (2026-09-08)
 
