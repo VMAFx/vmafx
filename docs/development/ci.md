@@ -257,6 +257,49 @@ to CI:
 | … excludes `core/src/mcp/`, `core/test/test_mcp*`, `core/test/fuzz/`, `core/src/compat/win32/`, `core/tools/vmaf_vpl.c` | needs `-Denable_mcp=true` / fuzz / libva / MinGW compile DBs | add those TUs to the cpu-lane build in CI |
 | `.cppcheck-suppressions.txt` per-file suppressions, `.clang-tidy` disabled checks, `.semgrep.yml` path excludes, `pyproject.toml` per-file ignores | none — each is a fix-the-code item | rework waves; each removal is a ratchet decrease |
 
+## Resolving a `docs/state.md` rebase conflict
+
+[`docs/state.md`](../state.md) conflicts on almost every rebase of a branch
+that touches it, and unlike the other append-only bookkeeping files it is
+**deliberately not** in the `merge=union` list in
+[`.gitattributes`](../../.gitattributes). Its rows *move* between the
+"Open bugs" and "Recently closed" sections, so a union merge would duplicate
+the row and leave a closed bug reading as open forever.
+
+That makes "keep both sides" the tempting wrong answer, and
+`scripts/ci/check-state-md-rows.sh` exists to catch it. The correct rule is:
+
+- **master's side wins for any row both sides carry.** master is the more
+  advanced state — it already has every row merged ahead of your branch,
+  including one your branch also touches but that master has since moved or
+  reworded.
+- **your branch contributes only rows master does not have at all** — its own
+  new bug id.
+
+[`scripts/dev/resolve-state-md-conflict.py`](../../scripts/dev/resolve-state-md-conflict.py)
+applies exactly that, deduplicating by bug id rather than by line so a row
+master reworded is not re-added in its stale form:
+
+```bash
+# mid-rebase, with docs/state.md conflicted
+python3 scripts/dev/resolve-state-md-conflict.py docs/state.md
+scripts/ci/check-state-md-rows.sh          # always verify
+git add docs/state.md && git rebase --continue
+```
+
+The verification step is not optional. The script encodes the common case —
+a branch adding one new row against a master that has moved others. It cannot
+know that a row *your* branch moved to "Recently closed" should win over
+master's older "Open bugs" copy; there it keeps master's, and you redo the
+move by hand. The row count the gate prints is the cheapest way to notice.
+
+Its own regression test is
+[`scripts/dev/test-resolve-state-md-conflict.py`](../../scripts/dev/test-resolve-state-md-conflict.py):
+
+```bash
+python3 scripts/dev/test-resolve-state-md-conflict.py
+```
+
 ## Bug-status hygiene gate (ADR-0165 / ADR-0334)
 
 Per [CLAUDE.md §12 rule 13](../../CLAUDE.md) and
