@@ -28396,6 +28396,11 @@ See `docs/server/auth.md` for the full configuration guide.
   ADR cycle so the lockfile policy gets the deliberation it warrants.
 
 
+- Enforce independent human review, fresh required checks and no bypass actors
+  on master through a public GitHub ruleset; enable private vulnerability
+  reporting and add a read-only settings drift checker.
+
+
 - **Scorecard and Code Scanning audit and cleanup (2026-09-04)** —
   audited all remaining OpenSSF Scorecard and GitHub Code Scanning alerts.
   (1) Added `osv-scanner.toml` to ignore informational advisory `GO-2026-5932`
