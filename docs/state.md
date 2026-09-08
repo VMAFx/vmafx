@@ -1,5 +1,8 @@
 <!-- markdownlint-disable MD013 MD037 MD038 MD041 MD060 -->
+_Updated: 2026-09-08 (T-CAMBI-AVX2-SHADOWS-2026-09-08: five local parameter shadows removed on `fix/cambi-avx2-native-lint`; native code/constants and both existing CAMBI tests preserved, zero owned analyzer findings. Full combined RC1 gates remain separate.)_
 _Updated: 2026-09-08 (T-SVM-TEST-NATIVE-LINT-2026-09-08: parser/API observation tests cleaned on `fix/svm-tests-native-lint`; 28 existing tests and all assertion/call tokens preserved, zero scoped native analyzer findings. Component validation only; combined RC1 acceptance remains separate.)_
+
+_Updated: 2026-09-08 (T-SPEED-TEST-NATIVE-LINT-2026-09-08: isolated test-only cleanup preserves all 67 assertions and 10 registrations; existing CPU tests and eight original/current failure controls pass. Both touched tests are clang-tidy/Cppcheck clean; generated scoped CPU baseline tightens by 26 warnings. Combined release acceptance remains separate.)_
 _Updated: 2026-09-08 (T-ADM-SIMD-NATIVE-LINT-2026-09-08: AVX2/AVX-512 integer ADM local declaration and const cleanup removes the configured native analyzer findings; component numerical validation is recorded in the ADM SIMD cleanup digest. Combined RC1 acceptance remains separate.)_
 _Updated: 2026-09-08 (T-CPPCHECK-BRANCH-BUDGET-2026-09-08: normal analysis cutoff reproduced on clean parser code; exhaustive configuration and positive/negative controls prepared under ADR-1245. Full CPU profile 3b65d0df measured all 1,177 commands/281 sources in 93.31s with 62,472 KiB peak RSS; whole-tree lint remains red on 347 style and 3 missing-include findings. No branch-budget notices remain.)_
 

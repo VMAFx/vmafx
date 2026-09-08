@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 292,
-  "total_warnings": 1296,
+  "total_warnings": 1270,
   "total_nolint_uncited": 44,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
@@ -166,8 +166,6 @@
     "core/test/test_read_pictures_monotonic.c": 6,
     "core/test/test_ref.c": 2,
     "core/test/test_score_pooled_eagain.c": 14,
-    "core/test/test_speed.c": 6,
-    "core/test/test_speed_qa.c": 20,
     "core/test/test_speed_simd.c": 5,
     "core/test/test_ssim_coverage.c": 7,
     "core/test/test_ssimulacra2_coverage.c": 4,
@@ -434,6 +432,29 @@
         }
       },
       "previous_baseline_sha256": "cd23d8057e441eac0686ae7cc51d92b7a919890d8279c14a4ee02b4888192871"
+    },
+    {
+      "sources": [
+        "core/src/feature/x86/cambi_avx2.c",
+        "core/test/test_speed.c",
+        "core/test/test_speed_qa.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_speed.c": {
+          "warnings": [
+            6,
+            0
+          ]
+        },
+        "core/test/test_speed_qa.c": {
+          "warnings": [
+            20,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "481bbfd6c4dd336c8f65865c1327f440bde7d93ecc2db5de8948b9c74cd6f86b"
     }
   ]
 }
