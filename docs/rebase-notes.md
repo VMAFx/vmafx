@@ -1,6 +1,15 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/merge-train-ownership-guard — local control boundary (2026-09-08)
+
+The fork-local gateway `scripts/dev/merge_train_guard.py` and its pre-commit
+regression hook must move together. Preserve ADR-1244's shared hold/base/owner
+guard on every mutation, rebase-before-ready ordering, exact-head leases,
+non-force cleanup, and actual full-gate receipt generation. Do not restore an
+unrestricted local agent operator alongside it. Runtime migration remains an
+explicit operator step documented in `docs/development/merge-train.md`.
+
 ## fix/ai-1270-blockers — DISTS, MobileSal, and predictor stub triage (2026-09-08)
 
 Triage and point-of-use guards for issue #1270 blockers:
