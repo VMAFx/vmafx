@@ -131,7 +131,7 @@ override.
 
 Output JSONL is gitignored; only derived training weights ship in-tree
 (same posture as the Netflix and BVI-DVC shards —
-[ADR-0203](../adr/0203-tinyai-training-data.md),
+[ADR-0203](../adr/0203-tiny-ai-training-prep-impl.md),
 [ADR-0310](../adr/0310-bvi-dvc-corpus-ingestion.md)).
 
 ## 6. Smoke test

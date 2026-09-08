@@ -1333,6 +1333,7 @@ nav:
         - "ADR-1223: cuda-ampere-architecture-floor": adr/1223-cuda-ampere-architecture-floor.md
         - "ADR-1225: rocm-10-therock-migration": adr/1225-rocm-10-therock-migration.md
         - "ADR-1227: short-workflow-display-names": adr/1227-short-workflow-display-names.md
+        - "ADR-1229: mcp-go-runtime": adr/1229-mcp-go-runtime.md
         - "ADR-1231: base-image-single-source": adr/1231-base-image-single-source.md
         - "ADR-1235: pkgconfig-advertises-abi-version": adr/1235-pkgconfig-advertises-abi-version.md
         - "ADR-1237: perf-pass-1245": adr/1237-perf-pass-1245.md

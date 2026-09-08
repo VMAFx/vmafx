@@ -150,7 +150,7 @@ point, low, high = predictor.predict_vmaf_with_uncertainty(
   about the point estimate. For asymmetric noise (e.g. the residual
   distribution skews high near VMAF 100 because of the [0, 100]
   clamp), use `CVPlusConformalCalibration` or train a quantile head
-  per ADR-0279's "Quantile regression" alternative.
+  per ADR-0393's "Quantile regression" alternative.
 
 ## Theoretical background
 
@@ -173,7 +173,7 @@ docstring at `tools/vmaf-tune/src/vmaftune/conformal.py`.
 
 ## Cross-references
 
-- [ADR-0279](../adr/0279-fr-regressor-v2-probabilistic.md) — the
+- [ADR-0393](../adr/0393-fr-regressor-v2-probabilistic.md) — the
   scoping ADR (deep-ensemble + conformal scaffold). The "Status
   update 2026-05-08" addendum tracks the implementation deliverables
   shipped here.

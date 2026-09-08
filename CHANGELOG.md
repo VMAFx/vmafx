@@ -21453,6 +21453,15 @@ uses the kernel-template readback pair: `integer_psnr_cuda`, `integer_ssim_cuda`
   File: `core/src/feature/cuda/integer_adm/adm_cm.cu`.
 
 
+- **Documentation links:** repaired 41 relocated references across 25 current topic
+  pages after ADR renumbering and source-tree moves. Relocated source links open
+  the canonical repository from the published site. Seven other dead links retain
+  their original paths as explicitly unavailable evidence or removed Vulkan
+  history, with links to the retirement decision. The tiny-AI overview identifies
+  v5 as a deferred proposal instead of linking to an unshipped model card;
+  intentional scaffolds and historical findings remain intact.
+
+
 - **Every dependency PR failed the documentation gates because the classifier
   diffed the wrong range.** `scripts/ci/classify-dependency-pr.sh` compared
   `base_sha..head_sha` with two dots, but GitHub's `pull_request.base.sha` is the

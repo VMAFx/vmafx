@@ -24,7 +24,7 @@ The CUDA backend and feature-extractor dispatcher are instrumented with
   and [core/src/cuda/drain_batch.c](../../../core/src/cuda/drain_batch.c) —
   per-frame submit/collect boundaries (formerly under the removed
   `ring_buffer.c`).
-- [core/src/feature/feature_extractor.c](../../../core/src/feature/feature_extractor.c) —
+- [core/src/feature/feature_extractor.cpp](https://github.com/VMAFx/vmafx/blob/master/core/src/feature/feature_extractor.cpp) —
   one range per `(feature, scale)` pair so you can tell VIF-scale-1 from
   ADM-scale-3 in a timeline.
 
