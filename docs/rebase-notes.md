@@ -1,6 +1,15 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Canonical envtest installer (2026-09-08)
+
+Keep Make, Go CI and controller-suite guidance on `scripts/ci/setup-envtest.sh`.
+The tool release and Kubernetes default live in `build-config.env`; preserve
+exact executable metadata checking, first-GOPATH/GOBIN selection, overrides
+and failure propagation. `setup-envtest-env` prints a shell-quoted export.
+Application Go dependencies, controller behavior and native/FFmpeg APIs are
+unchanged. See [Research-2058](research/2058-envtest-version-owner.md).
+
 ## Fedora Dockerfile parser repair (2026-09-08)
 
 Preserve the optional SYCL branch's seven literal oneAPI configuration lines,
