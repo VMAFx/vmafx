@@ -75,15 +75,17 @@ falls back to CPU. Two hard pins live in `dev/Containerfile`:
   checksums at build time by `dev/scripts/fetch-intel-neo.py`.
 - **The digest-pinned `rocm-src` stage** (`rocm/dev-ubuntu-26.04:10.0.0-full`)
   replaces the old `ARG ROCM_VER` + `repo.radeon.com/rocm/apt/` install.
-  **Invariant (ADR-1225)**: do not "restore" the apt path. Since ROCm 7.14
-  AMD builds and releases through TheRock; the apt channel tops out at 7.2.4
-  (its own `latest` resolves there, and `apt/7.14` and `apt/10.0.0` both 404),
-  the manylinux channel stops at `rocm-rel-7.2.4`, and the TheRock wheel index
-  carries only 7.14.0 alphas. The container image is the only stable,
-  digest-pinnable ROCm 10 artifact.
+  **Invariant (ADR-1225 / ADR-1231)**: keep the selected digest-pinned image
+  as the SDK source. Update `ROCM_BUILDER` / `ROCM_RUNTIME` in
+  `build-config.env` and regenerate their mirrors. ADR-1225 records the
+  historical package-channel checks; those observations are not a current
+  inventory of AMD's release channels.
   **Invariant**: keep the prune list in the `rocm-src` stage, but never prune
   `librocprofiler-register` — `libamdhip64.so` links it, and dropping it makes
   every HIP binary fail at load with "cannot open shared object file".
+  Keep the post-prune HIP compile/link and host-entry smoke in this stage;
+  `hipconfig --version` alone does not exercise the compiler dependency closure.
+  The smoke compiles a kernel but does not launch it or require a GPU.
   ROCm 6.x KFD ioctls do not match kernel ≥ 7.0; 10.0.0 does (verified on
   Linux 7.2.3 with `gfx1036`).
 

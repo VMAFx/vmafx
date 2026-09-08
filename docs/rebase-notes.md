@@ -1,6 +1,15 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/cppcheck-c-header-model-20260908 — official pthread type model (2026-09-08)
+
+Keep `--library=posix` in both configured local lint and the required Cppcheck
+workflow. It models pthread's C types without forcing a target platform or
+language. Preserve actual-header positive/negative controls, fail-closed missing
+model behavior, diagnostic categories and compile-database variants. No native
+header constructors or member suppressions are needed for the 24 modeled
+aggregate warnings. Fork-only analyzer wiring; no libvmaf/FFmpeg API impact.
+
 ## fix/tensor-io-test-cleanup-20260908 — preserve tensor test coverage (2026-09-08)
 
 Keep read-only tensor fixtures const and grouped test drivers below the existing
@@ -9,6 +18,14 @@ individual cited analyzer markers; those calls protect rejection behavior, not
 an accidental cast. All numerical assertions, test order and one execution per
 real case remain unchanged. The test compiles real tensor I/O with DNN disabled.
 See `core/test/dnn/AGENTS.md`. Fork-only test cleanup; no public API or FFmpeg impact.
+## fix/rocm-2604-restore-20260908 — released vendor image
+
+Keep `ROCM_BUILDER` and `ROCM_RUNTIME` on the digest-pinned Ubuntu 26.04
+ROCm 10 image selected by ADR-1231. Regenerate Dockerfile mirrors from
+`build-config.env`; do not restore the ROCm 24.04 exemptions from the old
+rollback. The pruned SDK stage must compile/link a HIP kernel and check its
+host loader, not just report a version. Preserve the node runtime library
+layout. See [verification](research/rocm-2604-restoration-2026-09-08.md).
 
 ## fix/roi-reader-bounds-20260908 — ROI input boundaries (2026-09-08)
 
