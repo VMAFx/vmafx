@@ -26,10 +26,11 @@
 extern "C" {
 #endif
 
-char *vmaf_feature_name_from_options(const char *name, const VmafOption *opts, void *obj);
+char *vmaf_feature_name_from_options(const char *name, const VmafOption *opts, const void *obj);
 
 VmafDictionary *vmaf_feature_name_dict_from_provided_features(const char **provided_features,
-                                                              const VmafOption *opts, void *obj);
+                                                              const VmafOption *opts,
+                                                              const void *obj);
 
 #ifdef __cplusplus
 }

@@ -152,3 +152,26 @@ change; it has one now.
 - [Features](features.md) - full feature extractor reference
 - [ADR-0597](../adr/0597-integer-vif-luma-only-clarification.md) - why
   `enable_chroma` is a documented no-op on the CUDA twin.
+
+## Developer-only floating-point stage dumps
+
+A build compiled with `-DVIF_OPT_DEBUG_DUMP` writes intermediate floating-point
+VIF data into an existing `stage/` directory relative to the process working
+directory. Create that directory in a disposable run workspace before invoking
+the binary. This compile-time diagnostic is separate from the extractor's
+`debug=true` score-output option.
+
+For each computed scale `N`, `ref[N].bin` and `dis[N].bin` contain the current
+scale's source planes; `mu1`, `mu2`, `ref_sq_filt`, `dis_sq_filt` and
+`ref_dis_filt` contain filtered planes. Files contain row-major native-endian
+32-bit floats without row padding or a header. Scale dimensions follow the
+pyramid above. When border handling is disabled at build time, filtered dumps
+exclude the filter's half-width border.
+
+`num_array[N].bin` and `den_array[N].bin` each contain **one float**, the
+scale's reduced numerator and denominator. They are not image-sized maps.
+The old optional path referenced an absent writer and null output pointers;
+the checked writer now emits only initialized samples. Dump I/O does not alter
+metric scores; open, short-write and close failures are logged. A missing
+directory prevents file output. Use the normal
+production build for timing measurements.
