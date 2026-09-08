@@ -1046,3 +1046,4 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1244](1244-merge-train-ownership-and-validation.md) | Guard merge-train ownership and exact-head validation | Accepted | ci, agents, safety, fork-local |
 | [ADR-1245](1245-cppcheck-exhaustive-configured-analysis.md) | Analyze configured Cppcheck paths exhaustively | Accepted | ci, build, quality |
 | [ADR-1246](1246-cppcheck-public-entrypoints.md) | Model verified public functions as Cppcheck entrypoints | Accepted | ci, build, quality |
+| [ADR-1248](1248-repository-security-enforcement.md) | Enforce repository security through public rulesets | Accepted | security, ci, governance |
