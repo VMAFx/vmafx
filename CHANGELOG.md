@@ -27675,6 +27675,12 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   checked with `|| exit /b 1`. `test_output` was also added to that list.
 
 
+- Keep installed Git hooks functional after an installer worktree is removed.
+- Activate configured pre-push and commit-message checks in both local modes;
+  run MkDocs independently of first-push and draft PR-body skips.
+- Refuse unknown custom hooks and preserve managed replacements in unique backups.
+
+
 - **`y4m_convert_411_422jpeg` 1-byte heap-buffer-overflow on
   4:1:1 streams whose destination chroma row reduces to a single
   pixel (`dst_c_w == 1`).** The Daala-derived 4:1:1 → 4:2:2-jpeg

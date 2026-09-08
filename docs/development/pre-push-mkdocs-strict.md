@@ -88,18 +88,17 @@ governs which categories are `warn` vs. `info`.
 
 ## Wire-up details
 
-The hook is registered in two places so all contributor workflows
-are covered:
+`make install-hooks` installs a regular dispatcher for the framework's
+`pre-push` stage. `.pre-commit-config.yaml` registers `mkdocs-strict` as an
+independent check selected by changed `docs/` or `mkdocs.yml` paths in
+Git's pushed-ref range. A skipped PR-body check cannot skip this build.
+The build validates the active working tree, as other local source checks
+do; CI validates the submitted commit in a clean checkout.
 
-1. **`scripts/git-hooks/pre-push`** (the omnibus hook symlinked to
-   `.git/hooks/pre-push` by `make hooks-install`) — delegates to
-   `scripts/git-hooks/pre-push-mkdocs-strict.sh` at the end of its
-   check sequence. Existing contributors do **not** need to re-run
-   `make hooks-install`; the delegation call is picked up via the
-   existing symlink.
-
-2. **`.pre-commit-config.yaml`** — a `stages: [pre-push]` local
-   hook (`id: mkdocs-strict`, `files: '^(docs/|mkdocs\.yml)'`) so
-   `pre-commit run --hook-stage pre-push` exercises the gate in
-   isolation. This is consistent with the `validate-pr-body` hook
-   pattern (ADR-0435).
+A direct invocation of `pre-push-mkdocs-strict.sh` selects documentation
+changes relative to `origin/master`, and runs conservatively when that
+base is unavailable. Installations predating
+[ADR-1241](../adr/1241-worktree-hook-dispatch.md) must rerun
+`make install-hooks`, particularly if an old source symlink points into a
+removed worktree. See [local hooks](pre-commit-hooks.md) for migration and
+custom-hook preservation.

@@ -218,6 +218,7 @@ lint-sh:
 	@scripts/ci/check-aggregator-names.sh
 	@scripts/ci/check-state-md-rows.sh
 	@scripts/ci/check-base-image-single-source.sh
+	@python3 scripts/githooks/tests/test_install.py
 
 # Markdown lint (ADR-0866). Default scope is the touched-file delta vs
 # origin/master so the ~6.2k pre-existing-warning tail (ADR-0864) doesn't
@@ -387,30 +388,11 @@ ir-diff:
 ir-diff-update:
 	@bash scripts/perf/check-ir-diff.sh update
 
-# Install the pre-commit + pre-push git hooks.
-#
-# Default (framework) path — symlinks the framework-managed pre-commit
-# hook from .pre-commit-config.yaml (including the
-# `agent-worktree-drift-guard` local hook; ADR-0332) plus the commit-msg
-# hook, then the fork's pre-push PR-body deliverables validator at
-# scripts/git-hooks/pre-push (mirrors rule-enforcement.yml; ADR-0108).
-#
-# Native (opt-in) path — set VMAFX_NATIVE_HOOKS=1 to install the bash
-# pre-commit at scripts/githooks/pre-commit.sh instead of the framework
-# hook. The native path skips the per-hook venv-wrap cost (~3 s/hook)
-# and typically completes in ~0.4 s on a small commit. CI is unaffected.
-# See docs/development/pre-commit-hooks.md and ADR-0924.
-#
-# Usage:
-#   make install-hooks                          # framework (default)
-#   VMAFX_NATIVE_HOOKS=1 make install-hooks     # native bash
-#
-# Idempotent: re-running replaces stale symlinks. Existing non-symlink
-# pre-push or pre-commit hooks are preserved with a `.local-backup`
-# suffix so a contributor's hand-rolled hook is never silently
-# overwritten.
-#
-# `hooks-install` retained as a legacy alias for `install-hooks`.
+# Install regular, worktree-independent pre-commit, commit-msg, pre-push,
+# and pre-rebase dispatchers (ADR-1241). Unknown custom hooks are refused;
+# replaced managed hooks are retained in unique backups. Native mode changes
+# only pre-commit formatting; all push and message checks remain active.
+# See docs/development/pre-commit-hooks.md.
 install-hooks:
 	@scripts/githooks/install.sh
 

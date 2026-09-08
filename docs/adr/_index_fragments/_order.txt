@@ -946,3 +946,4 @@
 1240-ffmpeg-release-patch-lifecycle
 1238-go-security-required-gate
 1239-agent-cleanup-preserve-work
+1241-worktree-hook-dispatch

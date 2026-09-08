@@ -3,6 +3,7 @@
 # The format/lint hooks run only on changed files for speed.
 
 minimum_pre_commit_version: "3.5.0"
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
 fail_fast: false
 
 repos:
@@ -375,4 +376,12 @@ repos:
         # gh CLI is absent or no open PR exists (both handled gracefully
         # inside the script). See docs/development/pr-body-sentinel-guide.md.
         always_run: true
+        pass_filenames: false
+
+      - id: mkdocs-strict
+        name: Build changed documentation with MkDocs strict validation
+        entry: scripts/git-hooks/pre-push-mkdocs-strict.sh
+        language: script
+        stages: [pre-push]
+        files: '^(docs/|mkdocs\.yml)'
         pass_filenames: false

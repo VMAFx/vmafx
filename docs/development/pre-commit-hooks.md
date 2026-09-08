@@ -1,119 +1,101 @@
-<!-- markdownlint-disable MD060 -->
-# Pre-commit hooks — framework (default) vs native (opt-in)
+# Local Git hooks
 
-The fork ships **two** parallel implementations of the local
-pre-commit gate. Both reach the same destination (well-formatted,
-ruff-clean staged files); they differ in startup cost.
-
-| Path                          | Default? | Install with                             | Per-commit overhead | Tools                                     | Source of truth                     |
-| ----------------------------- | -------- | ---------------------------------------- | ------------------- | ----------------------------------------- | ----------------------------------- |
-| Framework (`pre-commit` venv) | yes      | `make install-hooks`                     | ~3 s per hook       | full `.pre-commit-config.yaml` matrix     | `.pre-commit-config.yaml`           |
-| Native bash                   | opt-in   | `VMAFX_NATIVE_HOOKS=1 make install-hooks` | ~0.4 s total         | `ruff check --fix`, `clang-format -i`, `shfmt -w` | `scripts/githooks/pre-commit.sh` |
-
-Both paths share the same `pre-push` hook
-(`scripts/git-hooks/pre-push`) — the PR-body deliverables validator
-(ADR-0108) is installed independently of which `pre-commit` you
-choose, and is always wired in by either install path.
-
-CI continues to run the **framework** pre-commit against the full tree
-(`pre-commit run --all-files`) on every PR. The native path is a
-local-only optimisation; it does not affect what CI gates.
-
-## Why two paths?
-
-The pre-commit framework wraps every formatter in an isolated
-`pre-commit`-managed virtualenv. For a four-formatter touch
-(ruff + clang-format + shfmt + trailing-whitespace) the per-hook
-startup adds up to ~12 s before the first file is even inspected.
-That cost is amortised across the framework's full hook matrix
-(file-content checks, JSON / YAML validators, gitleaks, semgrep,
-…) — but for the typical contributor's "fix one Python typo"
-commit it dominates the wall clock.
-
-The native bash path skips the venv wrap and shells out directly
-to the formatter binaries on PATH. It implements only the three
-formatters that contributors hit on every commit
-(`ruff check --fix`, `clang-format -i`, `shfmt -w`). Everything
-else the framework runs — gitleaks, semgrep, conventional-commits
-checks, the agent-worktree-drift guard, copyright header
-validation — stays in CI, where startup cost is amortised across
-the full tree.
-
-## When to pick which
-
-Use the **framework** (default) if you:
-
-- Want the full hook matrix locally (catch gitleaks / semgrep
-  findings before push).
-- Don't mind the per-commit cost (slower commits, faster CI
-  agreement).
-- Want the same hook surface as CI (no risk of "framework caught
-  it, native missed it").
-
-Use the **native** path (opt-in) if you:
-
-- Make many small commits per session (the cumulative startup
-  cost matters).
-- Have ruff / clang-format / shfmt already installed and pinned
-  on PATH (no surprises from framework version drift).
-- Are comfortable that gitleaks / semgrep / conventional-commits
-  will be caught by CI on push rather than locally.
-
-## How to switch
-
-Either path is idempotent: re-running `install-hooks` (or
-`hooks-install` for the legacy alias) replaces the prior
-`.git/hooks/pre-commit` symlink without touching any other hook.
+Run `make install-hooks` from the checkout or linked worktree you use.
+The installer requires Python with `pre-commit` installed in the active
+environment and prepares the configured hook environments before replacing
+any hooks. `make hooks-install` remains an alias.
 
 ```bash
-# Switch to native:
-VMAFX_NATIVE_HOOKS=1 make install-hooks
-
-# Switch back to framework:
+python3 -m pip install pre-commit
 make install-hooks
 ```
 
-Existing non-symlink `pre-commit` or `pre-push` hooks (e.g. a
-contributor's hand-rolled wrapper) are preserved as
-`pre-commit.local-backup` / `pre-push.local-backup` rather than
-silently overwritten — both paths share this safety net.
+The installer writes regular dispatcher files to Git's effective hooks
+directory, including a configured `core.hooksPath`. Each invocation finds
+its current worktree with Git. Removing the worktree used for installation
+therefore cannot break hooks in the surviving checkout.
 
-## Native hook contract
+## Installed checks
 
-`scripts/githooks/pre-commit.sh` collects staged files via
+| Git event | Framework mode, the default | Native mode |
+| --- | --- | --- |
+| `pre-commit` | Configured formatters and checks | Three native formatters |
+| `commit-msg` | Configured Conventional Commits validation | Same framework check |
+| `pre-push` | All configured push checks | Same framework checks |
+| `pre-rebase` | Agent worktree drift guard | Same guard |
+
+The dispatcher forwards Git's arguments and pushed-ref input to
+`pre-commit hook-impl`. The framework selects checks and changed files
+from `.pre-commit-config.yaml`. Push checks include assertion density,
+twin drift, mypy, FFmpeg patch replay, PR deliverables, and MkDocs strict
+validation. The PR-body check may skip a first push or draft PR;
+that does not skip the other checks. Existing framework `.legacy` hooks
+continue to run in framework stages.
+
+MkDocs remains optional locally: missing `mkdocs` prints an installation
+hint. Install `docs/requirements.txt` to enable it. The required hosted
+`Docs` job installs these dependencies and runs strict validation.
+Missing `pre-commit` itself blocks framework hook dispatch with a clear
+message; activate the environment used for installation.
+
+## Existing hooks and migration
+
+The installer recognizes its own dispatchers, unmodified framework
+hooks, and the repository's historical source symlinks, including links
+into deleted `.claude/worktrees/` directories. It retains replaced
+managed hooks in uniquely named `HOOK.vmafx-backup-*` files. Repeating an
+unchanged installation makes no new backups.
+
+Unknown regular hooks and symlinks cause installation to stop before
+changing any hook. Review the reported paths and relocate or integrate
+your custom hook explicitly before retrying. Existing backups are never
+overwritten. Merely fetching the fix does not repair an already dangling
+symlink: rerun `make install-hooks` from a checkout containing the fix.
+
+Dispatch uses each active worktree's checked-out configuration. Installing
+from an updated worktree repairs hook lifetime everywhere, but an older
+branch does not acquire newly registered checks until its source config
+is updated. In particular, older configs still lack the MkDocs push entry.
+
+For inspection without installing:
 
 ```bash
-git diff --cached --name-only --diff-filter=ACM
+git config --show-origin --get core.hooksPath
+git rev-parse --path-format=absolute --git-path hooks
 ```
 
-and dispatches them to the matching formatter based on extension
-and path prefix (mirroring the framework hook's scope):
+## Native formatting option
 
-- `*.py` under `ai/`, `scripts/`, `tools/`, `python/` → `ruff check --fix`
-- `*.c` / `*.h` / `*.cpp` / `*.hpp` / `*.cc` / `*.cu` / `*.cuh`,
-  excluding `subprojects/` and `core/test/data/` → `clang-format -i`
-- `*.sh` / `*.bash` → `shfmt -w -i 2 -ci`
-
-Each formatter is conditional on the binary being present on PATH.
-A missing tool is logged as a one-line notice on stderr and does
-**not** block the commit (graceful degrade); install the tool
-locally if you want the gate to fire.
-
-Files that the formatter rewrites are `git add`-ed back so the
-commit picks up the autofix in the same operation, and a summary
-line is printed:
-
-```text
-[pre-commit] auto-fixed and re-staged 3 file(s): ruff=2 clang-format=1
+```bash
+VMAFX_NATIVE_HOOKS=1 make install-hooks  # opt in
+make install-hooks                      # restore the default
 ```
 
-Bypass either path with `git commit --no-verify` (standard escape
-hatch).
+Native mode preserves the formatter-only choice in
+[ADR-0924](../adr/0924-native-pre-commit-hooks.md). It runs installed
+`ruff check --fix`, `clang-format -i`, and `shfmt -w` on matching staged
+paths and restages files changed by formatters. Missing formatters print
+a notice. Its pre-commit stage does not run the framework's security,
+metadata, or agent-drift checks; use the default for those local checks.
+Commit-message validation and push checks still use the framework in
+both modes. CI uses the full framework configuration.
 
-## Background
+The native formatter reads working-tree files and restages the whole file
+when it changes one. Use the framework path for partially staged files to
+preserve the unstaged portion through the framework's stash/restore flow.
 
-See [ADR-0924](../adr/0924-native-pre-commit-hooks.md) for the
-decision context and the
-[research digest](../research/0924-native-pre-commit-hooks.md) for
-the cost-of-startup measurements and rejected alternatives
-(replace the framework outright, write a Go helper, etc.).
+## Regression checks
+
+```bash
+python3 scripts/githooks/tests/test_install.py
+```
+
+This runs real Git commits and pushes to disposable local repositories.
+It tests installer-worktree deletion, failed commit/message/push gates,
+first-push and draft documentation failures, custom-hook refusal,
+framework migration, legacy hooks, native mode, and the rebase guard.
+The required `Pre-Commit` CI job runs the same fixture before the normal
+file checks. `make lint-sh` also runs it.
+
+See [ADR-1241](../adr/1241-worktree-hook-dispatch.md) and the
+[research digest](../research/1241-worktree-hook-dispatch.md).

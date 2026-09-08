@@ -45,11 +45,14 @@ if ! command -v mkdocs >/dev/null 2>&1; then
 fi
 
 # ── Detect whether the push touches docs/ or mkdocs.yml ──────────────────────
-# Read push arguments from stdin (format: <local-ref> <local-sha1> <remote-ref> <remote-sha1>)
-# If stdin is not provided (e.g. direct invocation), fall back to diff vs origin/master.
+# The framework selects this hook from Git's pushed-file range. For a direct
+# invocation, fall back to the local branch diff against origin/master.
 touched_docs=0
 
-if ! git rev-parse --verify origin/master >/dev/null 2>&1; then
+if [ "${PRE_COMMIT_REMOTE_NAME+x}" = x ]; then
+  # Selection already used the pushed ref, which may differ from HEAD.
+  touched_docs=1
+elif ! git rev-parse --verify origin/master >/dev/null 2>&1; then
   # No remote reference yet (first push) — run the check conservatively.
   touched_docs=1
 else

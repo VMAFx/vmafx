@@ -240,33 +240,23 @@ Do the same for non-implementation uses of the word "stub": Python type-stub
 packages, driver-stub environment diagnostics, and comments that pin
 disabled-build stub signatures to the real implementation ABI.
 
-### `git-hooks/` and `githooks/` are two coexisting directories — intentional
+### Git hook dispatch survives installer-worktree deletion
 
-Two parallel directories, both fork-original:
+[ADR-1241](../docs/adr/1241-worktree-hook-dispatch.md) keeps the existing
+`git-hooks/` source checks and `githooks/` installer/native formatter split.
+`githooks/install.py` installs regular copies of `dispatch.sh` into Git's
+resolved hooks directory. Never replace them with absolute worktree
+symlinks. Unknown hooks are refused; recognized replacements get unique
+backups. Keep the disposable Git lifecycle fixture in
+`githooks/tests/test_install.py` wired into required `Pre-Commit` CI.
 
-- `scripts/git-hooks/` (hyphenated) holds the shared **pre-push**
-  PR-body deliverables validator (ADR-0108) plus the pre-rebase
-  worktree-drift guard (ADR-0684). These hooks are installed by
-  *both* pre-commit paths and are not specific to either.
-- `scripts/githooks/` (no hyphen) holds the **native bash pre-commit**
-  hook (`pre-commit.sh`) and the unified installer (`install.sh`)
-  added in [ADR-0924](../docs/adr/0924-native-pre-commit-hooks.md).
-  This directory is the opt-in alternative to the pre-commit
-  framework path.
-
-The naming split is deliberate — it lets `make install-hooks`
-delegate to `scripts/githooks/install.sh` (a single entry point
-that handles both framework and native modes) without colliding
-with the existing `scripts/git-hooks/pre-push` symlink target that
-the legacy `hooks-install` target wires in.
-
-**On rebase**: the native `pre-commit.sh` mirrors
-`.pre-commit-config.yaml`'s file-scope rules (excludes for
-`subprojects/`, `core/test/data/`, etc.). When the framework
-config changes scope, the native script needs a paired update —
-otherwise contributors on the native path drift silently from CI.
-The native path is staged-file scope only; CI continues to invoke
-`pre-commit run --all-files` against the framework matrix.
+Framework `pre-commit`, `commit-msg`, and `pre-push` dispatch must preserve
+Git arguments and push-ref stdin through `pre-commit hook-impl`; the
+pre-rebase source guard is installed too. Native mode changes only the
+pre-commit formatter path. MkDocs and PR-body checks are independent
+pre-push config entries: a no-PR/draft skip must not skip documentation
+validation. Paired updates to the config, dispatcher, fixture, and
+`docs/development/pre-commit-hooks.md` preserve this contract.
 
 ### `run_unittests.sh` is upstream-mirror
 

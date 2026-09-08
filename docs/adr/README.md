@@ -1037,3 +1037,4 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1240](1240-ffmpeg-release-patch-lifecycle.md) | Maintain the FFmpeg patch stack against stable releases | Accepted | build, ci, ffmpeg |
 | [ADR-1238](1238-go-security-required-gate.md) | Require the Go security and test job through impact routing | Accepted | ci, go, security |
 | [1239](1239-agent-cleanup-preserve-work.md) | Preserve work during agent-state cleanup | Accepted | 2026-09-08 |
+| [ADR-1241](1241-worktree-hook-dispatch.md) | Worktree-independent Git hook dispatch with complete framework stages and custom-hook preservation. | Accepted | ci, docs, workspace, agents |

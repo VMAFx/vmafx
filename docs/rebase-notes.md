@@ -16,6 +16,12 @@ See [ADR-1240](adr/1240-ffmpeg-release-patch-lifecycle.md).
 explicit worktree selections, non-force removal, file-state guards and stash
 retention when rebasing developer tooling. Branch existence never proves a stash
 is redundant. Regression: `bash scripts/dev/test-cleanup-agent-state.sh`.
+## fix/worktree-hook-dispatch — local hook lifetime (2026-09-08)
+
+Preserve regular dispatchers, actual Git argument/stdin forwarding, and
+independent MkDocs/PR-body push checks (ADR-1241). Keep the disposable
+lifecycle fixture wired into required Pre-Commit CI. Fork-only tooling;
+no Netflix C API or FFmpeg patch impact.
 
 ## fix/ai-1270-blockers — DISTS, MobileSal, and predictor stub triage (2026-09-08)
 
