@@ -51,6 +51,9 @@ LEVEL_ZERO_URL = "https://github.com/oneapi-src/level-zero/releases/download/"
 LEVEL_ZERO_VERSION_FIELDS = 2  # release tag and package filename in each URL
 
 
+PYTHON_RE = re.compile(r'python-version:\s*[\'"]?([0-9]+\.[0-9]+\.[0-9]+)[\'"]?')
+
+
 def load_config(root: Path) -> dict[str, str]:
     """Read build-config.env into a dict without executing it."""
     config = root / "build-config.env"
@@ -109,20 +112,8 @@ def check_level_zero_container(root: Path) -> list[str]:
     return problems
 
 
-def main() -> int:
-    # S603: the argument vector is a fixed literal -- no user input reaches it.
-    root = Path(
-        subprocess.run(  # noqa: S603
-            [GIT, "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-    )
-    cfg = load_config(root)
-    lz_want = cfg.get("LEVEL_ZERO_VERSION")
-
-    problems = check_level_zero_container(root)
+def check_workflows(root: Path, lz_want: str | None, py_want: str | None) -> list[str]:
+    problems: list[str] = []
     for path in sorted((root / ".github" / "workflows").glob("*.yml")):
         text = path.read_text(encoding="utf-8")
         rel = path.relative_to(root)
@@ -140,18 +131,73 @@ def main() -> int:
                         f"build-config.env says {lz_want}"
                     )
 
+        if py_want:
+            for m in PYTHON_RE.finditer(text):
+                ver = m.group(1)
+                if ver != py_want:
+                    line_no = text[: m.start()].count("\n") + 1
+                    problems.append(
+                        f"{rel}:{line_no} pins python-version '{ver}'; "
+                        f"build-config.env says '{py_want}'"
+                    )
+    return problems
+
+
+def check_vmafx_version(root: Path, ver_want: str | None) -> list[str]:
+    if not ver_want:
+        return []
+    problems: list[str] = []
+    meson_file = root / "core" / "meson.build"
+    if meson_file.is_file():
+        m = re.search(r"version\s*:\s*'([^']+)'", meson_file.read_text(encoding="utf-8"))
+        if m and m.group(1) != ver_want:
+            problems.append(
+                f"core/meson.build specifies version '{m.group(1)}'; "
+                f"build-config.env says '{ver_want}'"
+            )
+
+    compat_init = root / "compat" / "python-vmaf" / "__init__.py"
+    if compat_init.is_file():
+        m = re.search(r'__version__\s*=\s*"([^"]+)"', compat_init.read_text(encoding="utf-8"))
+        if m and m.group(1) != ver_want:
+            problems.append(
+                f"compat/python-vmaf/__init__.py specifies __version__ '{m.group(1)}'; "
+                f"build-config.env says '{ver_want}'"
+            )
+    return problems
+
+
+def main() -> int:
+    # S603: the argument vector is a fixed literal -- no user input reaches it.
+    root = Path(
+        subprocess.run(  # noqa: S603
+            [GIT, "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    )
+    cfg = load_config(root)
+    lz_want = cfg.get("LEVEL_ZERO_VERSION")
+    py_want = cfg.get("PYTHON_CI_VERSION")
+    ver_want = cfg.get("VMAFX_VERSION")
+
+    problems: list[str] = []
+    problems.extend(check_level_zero_container(root))
+    problems.extend(check_workflows(root, lz_want, py_want))
+    problems.extend(check_vmafx_version(root, ver_want))
+
     for problem in problems:
-        print(f"::error title=toolchain version drift::{problem}", file=sys.stderr)
+        print(f"::error title=version drift::{problem}", file=sys.stderr)
     if problems:
         print(
-            "\nTake the version from the config instead of a literal:\n"
-            "    set -a; . ./build-config.env; set +a\n"
-            "The Windows leg runs under cmd and cannot source it, so it mirrors\n"
-            "the value by hand -- this check is what keeps that mirror honest.",
+            "\nVersion drift detected. Align literal versions with build-config.env.",
             file=sys.stderr,
         )
         return 1
-    print(f"check-workflow-versions: OK (Level Zero {lz_want})")
+    print(
+        f"check-workflow-versions: OK (Level Zero {lz_want}, Python CI {py_want}, VMAFx {ver_want})"
+    )
     return 0
 
 

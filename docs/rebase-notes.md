@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/pre-push-mypy-scope — merge-base ownership (2026-09-08)
+
+Preserve the existing `ai/`/`scripts/` Python touched-file policy in
+`scripts/git-hooks/pre-push-mypy.py`. Check every branch-owned path against
+the master merge base, including type changes; do not restore the remote
+old-tip/new-tip intersection. The always-run, filename-free hook invocation,
+lexical symlink identity, safe target validation and outgoing-HEAD check are
+paired with a real Git rebase regression. Fork-only tooling; no native API
+or FFmpeg patch impact. This fixes implementation of AGENTS.md §12.10.
+
 ## FFmpeg stable-release patch maintenance (2026-09-08)
 
 Preserve `build-config.env` as the FFmpeg remote/tag owner, the ordered
@@ -49733,3 +49743,31 @@ Run `python3 scripts/ci/test_go_workflow_contract.py` and
 `python3 -m unittest scripts/ci/tests/test_ci_impact.py` after workflow
 rebases. Predictor model-card reads use `os.Root`; do not restore an
 unconfined `os.ReadFile` or symlink escape while reconciling stub warnings.
+## ADR-1236 — version single-sourcing and Python dependency unification (2026-09-08)
+
+Rebase-sensitive invariants introduced by this change:
+
+1. **`python/pyproject.toml` is the single owner of Python runtime dependencies.**
+   `python/setup.py` intentionally removes duplicate `install_requires=[...]`.
+   Setuptools natively loads dependencies from `python/pyproject.toml`.
+   If an upstream merge reintroduces `install_requires` in `python/setup.py`,
+   delete the block so dependencies remain single-sourced.
+
+2. **`python/requirements.txt` is mechanically generated — never hand-edit.**
+   `python/requirements.txt` is derived from `python/pyproject.toml` using
+   `scripts/ci/check-python-requirements-single-source.sh --write` (or `make python-deps-sync`).
+   Any manual edits will fail `scripts/ci/check-python-requirements-single-source.sh`
+   in CI and pre-commit hooks.
+
+3. **Renovate must ignore `python/requirements.txt`.**
+   `renovate.json` includes `"python/requirements.txt"` in `ignorePaths`.
+   Renovate should only manage `python/pyproject.toml` to prevent competing PRs.
+
+4. **Package version disagreements follow the newest-version policy.**
+   Divergent version pins across submodules or dev requirements (e.g. `numpy`, `scipy`,
+   `matplotlib`, `pyarrow`) must never be downgraded to resolve a merge conflict.
+   The current `vmaf` build/runtime floor is `>=2.5.3` for numpy, `>=1.18.1` for scipy, `>=3.11.1` for matplotlib,
+   and `>=25.0.1` for pyarrow. Package version definitions across `pyproject.toml`
+   and `__init__.py` files must remain synchronized.
+
+Preserve the Level Zero container consumer check when rebasing the ADR-1236 workflow-checker refactor. Do not reintroduce scientific-stack globals without consumers or drift checks; native ORT archive roles and Python dependency floors are separate contracts.
