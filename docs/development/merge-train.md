@@ -73,7 +73,7 @@ it does not mutate GitHub. Supply the exact, clean source checkout and an output
 state directory shared with the guarded operator:
 
 ```bash
-python3 scripts/dev/merge_train_guard.py validate 1421 \
+python3 scripts/dev/merge_train_guard.py validate 1422 \
   --repo-root /home/kilian/dev/vmaf --state-dir /home/kilian/dev/vmaf/.claude/mergetrain \
   --checkout /path/to/explicit-validation-checkout --apply
 ```
@@ -83,6 +83,9 @@ both logs. It rejects tracked or untracked source changes before/between/after
 the commands, ignored Makefile shadowing, and head changes. Inherited Git
 redirection and GNU Make recipe/dry-run overrides are removed. A failed repeat
 run archives the older receipt rather than leaving that old pass usable.
+
+The validation example assumes #1422 targets master. A stacked PR such as #1421
+must first be rebased/retargeted by its owner; validation refuses a non-master base.
 
 Success creates `validated-HEAD.json`, with command/log hashes and an HMAC from
 a private local `validation-key`. This is an attestation by the local runner,
@@ -121,25 +124,45 @@ legacy actors that can invoke raw `gh pr ready`, `gh pr merge`, or Git rebases.
 Retire an old unrestricted agent process; do not resume its in-memory prompt.
 
 Keep `PAUSED` present while deploying a reviewed, committed gateway to a stable
-source checkout. Replace each local runtime entry point with this mapping:
+source checkout. The reproducible installer previews its exact source hash,
+existing file hashes, preserved holds, and merged protected-owner policy:
+
+```bash
+python3 scripts/dev/install_merge_train_guard.py \
+  --repo-root /home/kilian/dev/vmaf --state-dir /home/kilian/dev/vmaf/.claude/mergetrain \
+  --protect-branch build/base-image-single-source \
+  --protect-branch build/version-single-source-tree \
+  --protect-worktree /home/kilian/dev/vmaf/.claude/worktrees/agent-rc1-ffmpeg
+```
+
+After reviewing the JSON plan, repeat the same command with
+`--apply --expect-plan THE_PRINTED_SHA256`. Any changed runtime target or gateway
+source requires a new preview. The helper backs up originals/modes into a fresh
+`migration-*/` directory with `plan.json` and `receipt.json`, copies the committed
+gateway to `releases/GATEWAY_SHA256/`, and leaves `PAUSED` present. It preserves
+existing hold text and unions new protected owners into the existing policy.
+Every generated entry point verifies the gateway's hash before execution. A
+failure preserves the backups and pause; do not start an incomplete migration.
+The helper never kills or launches a process. It installs this mapping:
 
 | Legacy entry | Replacement |
 | --- | --- |
-| `train.sh` | One `cycle --apply` invocation of the reviewed gateway |
+| `train.sh` | One read-only `cycle`; mutations require explicit `--apply` |
 | `rebase-clean.sh` | Explicit `rebase NUMBER --apply`; no implicit global sweep |
 | `merge_train_operator.py` | Retired mutation operator; use `cycle` for inspection |
-| `watchdog.sh` | Supervise only the guarded cycle; never spawn the old agent prompt |
+| `watchdog.sh` | Observe the read-only cycle every 60 seconds; mutation arguments refused |
 
 Add the active session's exact branch/worktree owners to `policy.json`, preserve
 all holds, and independently confirm that held/non-master PRs have no pending
 server auto-merge. Run read-only inspection and the regression command below.
-Review the replacement scripts and source hash before removing `PAUSED` and
-starting a fresh guarded actor. Replacing a file underneath a running process
+Review the replacement scripts, backup receipt, and source hash before starting
+the fresh read-only observer. Keep `PAUSED` until promotion/merge is explicitly
+authorized and the required full-gate evidence exists. Replacing a file underneath a running process
 does not update that process's policy. A commit landing alone does not complete
 this runtime migration.
 
 ```bash
-python3 -m unittest discover -s scripts/dev/tests -p 'test_merge_train_guard.py'
+python3 -m unittest discover -s scripts/dev/tests -p 'test_*merge_train_guard.py'
 ```
 
 The regressions use disposable Git repositories and Makefiles, with fixture
