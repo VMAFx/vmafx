@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 292,
-  "total_warnings": 1270,
+  "total_warnings": 1229,
   "total_nolint_uncited": 44,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
@@ -85,7 +85,6 @@
     "core/src/picture_pool.cpp": 8,
     "core/src/thread_locale.cpp": 9,
     "core/src/x86/cpu.c": 1,
-    "core/test/dnn/test_dnn_session_api.c": 2,
     "core/test/dnn/test_ep_fp16.c": 2,
     "core/test/dnn/test_model_loader.c": 24,
     "core/test/dnn/test_op_allowlist.c": 6,
@@ -126,13 +125,9 @@
     "core/test/test_integer_adm_min_dim.c": 4,
     "core/test/test_integer_adm_simd.c": 7,
     "core/test/test_integer_motion_coverage.c": 4,
-    "core/test/test_integer_motion_edge16_coverage.c": 6,
-    "core/test/test_integer_motion_v2_coverage.c": 5,
-    "core/test/test_integer_psnr_coverage.c": 2,
     "core/test/test_integer_ssim_simd.c": 9,
     "core/test/test_integer_vif_log2.c": 5,
     "core/test/test_iqa_convolve.c": 11,
-    "core/test/test_iqa_convolve_coverage.c": 19,
     "core/test/test_locale_handling.c": 21,
     "core/test/test_log.c": 4,
     "core/test/test_lpips.c": 3,
@@ -167,7 +162,6 @@
     "core/test/test_ref.c": 2,
     "core/test/test_score_pooled_eagain.c": 14,
     "core/test/test_speed_simd.c": 5,
-    "core/test/test_ssim_coverage.c": 7,
     "core/test/test_ssimulacra2_coverage.c": 4,
     "core/test/test_svm_multiclass.c": 6,
     "core/test/test_thread_pool.c": 5,
@@ -455,6 +449,57 @@
         }
       },
       "previous_baseline_sha256": "481bbfd6c4dd336c8f65865c1327f440bde7d93ecc2db5de8948b9c74cd6f86b"
+    },
+    {
+      "sources": [
+        "core/test/dnn/test_dnn_session_api.c",
+        "core/test/dnn/test_ort_internals.c",
+        "core/test/test_integer_motion_edge16_coverage.c",
+        "core/test/test_integer_motion_v2_coverage.c",
+        "core/test/test_integer_psnr_coverage.c",
+        "core/test/test_iqa_convolve_coverage.c",
+        "core/test/test_ssim_coverage.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/dnn/test_dnn_session_api.c": {
+          "warnings": [
+            2,
+            0
+          ]
+        },
+        "core/test/test_integer_motion_edge16_coverage.c": {
+          "warnings": [
+            6,
+            0
+          ]
+        },
+        "core/test/test_integer_motion_v2_coverage.c": {
+          "warnings": [
+            5,
+            0
+          ]
+        },
+        "core/test/test_integer_psnr_coverage.c": {
+          "warnings": [
+            2,
+            0
+          ]
+        },
+        "core/test/test_iqa_convolve_coverage.c": {
+          "warnings": [
+            19,
+            0
+          ]
+        },
+        "core/test/test_ssim_coverage.c": {
+          "warnings": [
+            7,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "56fbc87392a200772e044ff6286a7de2c5d2c4846ec08f424d9ff14fe9b49bb5"
     }
   ]
 }

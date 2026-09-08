@@ -6,18 +6,156 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 SCRIPT = Path(__file__).resolve().parents[1] / "lint-configured.py"
 ROOT = SCRIPT.parents[2]
+PUBLIC_MODEL = Path("scripts/ci/cppcheck-public-entrypoints.cfg")
+
+
+class PublicEntrypointModelTests(unittest.TestCase):
+    def validate_model(self, root: Path) -> set[str]:
+        """Validate the checked-in subset against this repo's explicit header lists."""
+        model = ET.fromstring(  # noqa: S314 -- checked-in model or local fixture XML
+            (root / PUBLIC_MODEL).read_text(encoding="utf-8")
+        )
+        self.assertEqual((model.tag, model.attrib), ("def", {"format": "2"}))
+        self.assertTrue(len(model), "public entrypoint model must not be empty")
+        self.assertFalse((model.text or "").strip())
+        names: set[str] = set()
+        for node in model:
+            self.assertEqual(node.tag, "entrypoint")
+            self.assertEqual(set(node.attrib), {"name"})
+            name = node.attrib["name"]
+            self.assertRegex(name, r"\Avmaf_[a-z0-9_]+\Z")
+            self.assertNotIn(name, names, "duplicate public entrypoint")
+            self.assertFalse(len(node), "entrypoints cannot contain nested policy")
+            self.assertFalse((node.text or "").strip())
+            self.assertFalse((node.tail or "").strip())
+            names.add(name)
+
+        include = root / "core/include/libvmaf"
+        # These are the explicit lists used by this Meson file, not a general
+        # Meson evaluator. A new declaration outside these lists fails closed.
+        meson = re.sub(r"#.*", "", (include / "meson.build").read_text(encoding="utf-8"))
+        installed = re.search(r"install_headers\(\s*\[([^\]]+)\]([^)]*)\)", meson, re.DOTALL)
+        self.assertIsNotNone(installed, "expected explicit installed-header list")
+        assert installed is not None
+        headers = set(re.findall(r"'([^']+)'", installed[1]))
+        conditional = re.findall(r"platform_specific_headers\s*\+=\s*'([^']+)'", meson)
+        if conditional:
+            self.assertIn(
+                "platform_specific_headers",
+                [argument.strip() for argument in installed[2].split(",")],
+                "conditional public-header list must reach install_headers",
+            )
+        headers.update(conditional)
+        declarations: dict[str, list[str]] = {}
+        for header in sorted(headers):
+            self.assertEqual(Path(header).name, header, "public header must be a basename")
+            text = (include / header).read_text(encoding="utf-8")
+            text = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.DOTALL)
+            for name in re.findall(
+                r"\bVMAF_EXPORT\s+[^;{}]*?\b(vmaf_[a-z0-9_]+)\s*\([^;{}]*\)\s*;", text
+            ):
+                declarations.setdefault(name, []).append(header)
+        for name in names:
+            self.assertEqual(
+                len(declarations.get(name, [])),
+                1,
+                f"{name}: expected one VMAF_EXPORT declaration in an installed header",
+            )
+        return names
+
+    def test_shipped_model_has_only_declared_public_roots(self) -> None:
+        self.validate_model(ROOT)
+
+    def test_missing_invalid_and_non_public_entries_fail_validation(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="cppcheck-public-model-") as temporary:
+            root = Path(temporary)
+            model = root / PUBLIC_MODEL
+            model.parent.mkdir(parents=True)
+            include = root / "core/include/libvmaf"
+            include.mkdir(parents=True)
+            (include / "meson.build").write_text("install_headers(['public.h'])\n")
+            (include / "public.h").write_text(
+                "VMAF_EXPORT int vmaf_public(void);\nint vmaf_private(void);\n"
+                "/* VMAF_EXPORT int vmaf_comment(void); */\n"
+            )
+            (include / "not_installed.h").write_text("VMAF_EXPORT int vmaf_uninstalled(void);\n")
+            with self.assertRaises(FileNotFoundError):
+                self.validate_model(root)
+            for body in (
+                "",
+                "<entrypoint/>",
+                '<entrypoint name="vmaf_private"/>',
+                '<entrypoint name="vmaf_comment"/>',
+                '<entrypoint name="vmaf_uninstalled"/>',
+                '<entrypoint name="vmaf_misspelled"/>',
+                '<entrypoint name="vmaf_*"/>',
+                '<entrypoint name="vmaf_public"/>' * 2,
+                '<function name="vmaf_public"/>',
+            ):
+                with self.subTest(body=body):
+                    model.write_text(f'<def format="2">{body}</def>')
+                    with self.assertRaises(AssertionError):
+                        self.validate_model(root)
+            model.write_text('<def format="2"><entrypoint name="vmaf_public"/></def>')
+            self.assertEqual(self.validate_model(root), {"vmaf_public"})
+
+    def test_conditional_header_list_must_be_consumed_by_install(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="cppcheck-public-install-") as temporary:
+            root = Path(temporary)
+            model = root / PUBLIC_MODEL
+            model.parent.mkdir(parents=True)
+            model.write_text('<def format="2"><entrypoint name="vmaf_conditional"/></def>')
+            include = root / "core/include/libvmaf"
+            include.mkdir(parents=True)
+            (include / "public.h").write_text("/* unconditional public header */\n")
+            (include / "conditional.h").write_text("VMAF_EXPORT int vmaf_conditional(void);\n")
+            for consumed in (True, False):
+                with self.subTest(consumed=consumed):
+                    argument = ", platform_specific_headers" if consumed else ""
+                    (include / "meson.build").write_text(
+                        "platform_specific_headers = []\n"
+                        "if enabled\n  platform_specific_headers += 'conditional.h'\nendif\n"
+                        f"install_headers(['public.h']{argument})\n"
+                    )
+                    if consumed:
+                        self.assertEqual(self.validate_model(root), {"vmaf_conditional"})
+                    else:
+                        with self.assertRaisesRegex(AssertionError, "must reach install_headers"):
+                            self.validate_model(root)
+
+    def test_model_declaration_workflow_and_control_changes_route_to_hook(self) -> None:
+        config = (ROOT / ".pre-commit-config.yaml").read_text()
+        hook = config.split("- id: test-configured-lint-driver", 1)[1].split("- id:", 1)[0]
+        pattern = re.search(r"files: '([^']+)'", hook)
+        self.assertIsNotNone(pattern)
+        assert pattern is not None
+        for path in (
+            str(PUBLIC_MODEL),
+            "scripts/ci/lint-configured.py",
+            "scripts/ci/tests/test_lint_configured.py",
+            "scripts/ci/tests/test_cppcheck_posix_model.py",
+            "core/include/libvmaf/libvmaf_hip.h",
+            "core/include/libvmaf/meson.build",
+            ".github/workflows/lint-and-format.yml",
+            ".pre-commit-config.yaml",
+        ):
+            with self.subTest(path=path):
+                self.assertRegex(path, pattern[1])
+        self.assertIn("-p test_lint_configured.py", hook)
 
 
 class ConfiguredLintTests(unittest.TestCase):
@@ -52,6 +190,8 @@ class ConfiguredLintTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("int fixture;\n", encoding="utf-8")
         (self.root / ".cppcheck-suppressions.txt").write_text("", encoding="utf-8")
+        (self.root / PUBLIC_MODEL).parent.mkdir(parents=True)
+        shutil.copy2(ROOT / PUBLIC_MODEL, self.root / PUBLIC_MODEL)
         self.command(["git", "init", "-q"])
         self.command(["git", "add", "."])
         self.entries = [self.entry(name) for name in self.native]
@@ -155,6 +295,7 @@ class ConfiguredLintTests(unittest.TestCase):
                 "--check-level=exhaustive",
                 "--inline-suppr",
                 "--library=posix",
+                f"--library={self.root / PUBLIC_MODEL}",
                 f"--suppressions-list={self.root / '.cppcheck-suppressions.txt'}",
                 f"--project={report / 'compile_commands.json'}",
                 "--error-exitcode=1",
@@ -194,6 +335,7 @@ class ConfiguredLintTests(unittest.TestCase):
         self.assertEqual(entries[0]["arguments"], self.entries[0]["arguments"])
         args = json.loads(next(self.calls.glob("cppcheck-*.json")).read_text())
         self.assertIn("--library=posix", args)
+        self.assertIn(f"--library={self.root / PUBLIC_MODEL}", args)
         self.assertIn("--check-level=exhaustive", args)
         self.assertFalse(any(arg.startswith(("--platform", "--language", "--std")) for arg in args))
 
@@ -202,6 +344,7 @@ class ConfiguredLintTests(unittest.TestCase):
         job = workflow.split("\n  cppcheck:\n", 1)[1].split("\n  python-lint:", 1)[0]
         self.assertIn("-p test_cppcheck_posix_model.py", job)
         self.assertIn("--library=posix", job)
+        self.assertIn(f"--library={PUBLIC_MODEL.as_posix()}", job)
         self.assertIn("--check-level=exhaustive", job)
         self.assertNotIn("--check-level=normal", job)
         self.assertNotIn("--check-level=reduced", job)
@@ -353,7 +496,7 @@ class ConfiguredLintTests(unittest.TestCase):
     def run_make_target(self, *, polluted: bool = False) -> None:
         shutil.copy2(ROOT / "Makefile", self.root / "Makefile")
         target = self.root / "scripts/ci/lint-configured.py"
-        target.parent.mkdir(parents=True)
+        target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SCRIPT, target)
         original = self.database.read_bytes()
         (self.root / "native-database.json").write_bytes(original)

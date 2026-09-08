@@ -185,6 +185,18 @@ class RoutingContract(unittest.TestCase):
         plan = _plan_for(["scripts/ci/assertion-density.sh"])
         self.assertEqual(plan.mode, "full")
 
+    def test_cppcheck_model_and_control_changes_run_native_gate(self) -> None:
+        for path in (
+            "scripts/ci/cppcheck-public-entrypoints.cfg",
+            "scripts/ci/lint-configured.py",
+            "scripts/ci/tests/test_cppcheck_posix_model.py",
+            "scripts/ci/tests/test_lint_configured.py",
+        ):
+            with self.subTest(path=path):
+                plan = _plan_for([path])
+                self.assertEqual(plan.mode, "full")
+                self.assertTrue(plan.selectors["c_core"])
+
     def test_unknown_root_forces_full(self) -> None:
         plan = _plan_for(["brand-new-top-level/thing.c"])
         self.assertEqual(plan.mode, "full")

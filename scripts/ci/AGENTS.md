@@ -39,6 +39,16 @@ policy alongside the existing severity sets and all command variants; never
 suppress `normalCheckLevelMaxBranches` to hide incomplete analysis. The real-tool
 suite includes normal/exhaustive branch-budget controls and defect controls.
 
+Both paths also load `cppcheck-public-entrypoints.cfg` (ADR-1246). Keep its exact
+public names shared; adding a private helper to remove an unused warning is not
+an export contract. The configured-driver hook validates the model against
+`VMAF_EXPORT` declarations and Meson's explicit installed-header lists, including
+option-conditional headers. Preserve its cfg/header/workflow/test trigger paths.
+The real-tool Cppcheck suite must reject missing/invalid models and still find
+unlisted unused helpers and defects inside listed bodies. Entry names are
+scope/linkage-blind: do not reuse them for private/static functions. Keep the
+measured collision control and both existing severity selections unchanged.
+
 ### Base-image references (ADR-1231)
 
 `check-base-image-single-source.sh` delegates FROM/COPY instruction parsing to

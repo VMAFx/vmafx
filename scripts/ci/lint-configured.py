@@ -168,6 +168,7 @@ def cppcheck_arguments(binary: str, root: Path, database: Path) -> list[str]:
         "--check-level=exhaustive",
         "--inline-suppr",
         "--library=posix",
+        f"--library={root / 'scripts/ci/cppcheck-public-entrypoints.cfg'}",
         f"--suppressions-list={root / '.cppcheck-suppressions.txt'}",
         f"--project={database}",
         "--error-exitcode=1",
