@@ -70,6 +70,16 @@ feature/
 
 ## Rebase-sensitive invariants
 
+- **Floating-point VIF lint decomposition** (ADR-0141 / ADR-1142):
+  `vif.c` keeps the ten-plane aligned layout and original convolution,
+  decimation, statistic and scale-reduction order. Preserve float intermediate
+  values before double score storage. `vif.h` declares all three legacy
+  external symbols, including `vifdiff`; do not make them static to satisfy
+  per-TU lint. The temporal first-frame placeholders and offset/difference/
+  previous-frame-copy order are unchanged. Debug dumps write one initialized
+  float for each reduced numerator/denominator. See
+  [the focused investigation](../../../docs/research/vif-native-lint-2026-09-08.md).
+
 - **The CAMBI GPU twins mirror `cambi.c`'s host-side semantics, not "something
   reasonable" (branch `fix/gpu-cambi-parity-drift`, 2026-09-05)**. `cambi.c` is
   pinned by the Netflix golden gate, so when a twin and the reference disagree
@@ -1443,6 +1453,18 @@ height, and even-height fixtures â€” including both Netflix golden resolutions â
 never catch it.
 
 ## GPU-twin `VmafOption` tables mirror the CPU table (2026-09-05)
+
+Option iteration terminates on the table entry's null `name`, not the address
+of the entry. Preserve that sentinel, aliases and default-value omission when
+rebasing `feature_extractor.cpp` or `feature_name.cpp`; the existing
+`test_feature` and `test_feature_extractor` cases pin those behaviors.
+
+The two shared pool structs in `feature_extractor.h` keep C-compatible layouts
+under ADR-0772. Their narrowly scoped `uninitMemberVarNoCtor` markers depend
+on `vmaf_fex_ctx_pool_create()` zero-initializing the outer pool and all three
+slot construction paths value-initializing entries before activation. New
+construction sites must preserve and re-verify that contract; do not broaden
+those markers to other types or uninitialized-use checks.
 
 `vmaf_feature_name_from_options()` (`feature_name.cpp`) builds the emitted
 feature key from the extractor's **own** `options[]` table: every entry that
