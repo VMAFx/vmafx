@@ -34,9 +34,18 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "cpu.h"
 #include "log.h"
 #include "mem.h"
+#include "speed_matmul.h"
 #include "vif_tools.h"
+
+#if ARCH_X86
+#include "x86/speed_matmul_avx2.h"
+#if HAVE_AVX512
+#include "x86/speed_matmul_avx512.h"
+#endif
+#endif
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -538,15 +547,20 @@ static void si_mat_copy(float *dst, const float *src, int rows, int cols)
 
 static void si_mat_mul(float *dst, const float *x, const float *y, int size)
 {
-    si_mat_zero(dst, size, size);
-    for (int i = 0; i < size; i++) {
-        for (int k = 0; k < size; k++) {
-            const float xik = x[i * size + k];
-            for (int j = 0; j < size; j++) {
-                dst[i * size + j] += xik * y[k * size + j];
-            }
-        }
+#if ARCH_X86
+    const unsigned flags = vmaf_get_cpu_flags();
+#if HAVE_AVX512
+    if (flags & VMAF_X86_CPU_FLAG_AVX512) {
+        speed_matmul_avx512(dst, size, x, size, y, size, size, size, size);
+        return;
     }
+#endif
+    if (flags & VMAF_X86_CPU_FLAG_AVX2) {
+        speed_matmul_avx2(dst, size, x, size, y, size, size, size, size);
+        return;
+    }
+#endif
+    speed_matmul_scalar(dst, size, x, size, y, size, size, size, size);
 }
 
 static void si_mat_transpose(float *m, int size)

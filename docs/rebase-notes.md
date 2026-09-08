@@ -35,6 +35,13 @@ Triage and point-of-use guards for issue #1270 blockers:
     in all walkers, `validate_feature_arrays` in `parse_model_dict`).
 - `tools/vmaf-roi-score/README.md`, `tools/vmaf-tune/README.md`, `docs/research/README.md`:
   Residual "lusoris vmaf fork" product names updated to "VMAFx fork".
+## perf/1245-benchmark-tuning-pass — CAMBI AVX2 anti-dithering, SpEED SIMD QR, and HIP threaded pipeline (2026-09-08)
+
+- `core/src/feature/cambi.c`: `anti_dithering_filter()` now checks `VMAF_X86_CPU_FLAG_AVX2` and dispatches to `anti_dithering_filter_avx2()` in `core/src/feature/x86/cambi_avx2.c`. The fallback remains the upstream scalar loop. When rebasing against upstream Netflix, preserve the AVX2 check and dispatch branch.
+- `core/src/feature/x86/cambi_avx2.c` and `cambi_avx2.h`: fork-added AVX2 implementation of `anti_dithering_filter_avx2()`. Must preserve 32-bit zero-extended accumulation and lane permute (`0xD8`) to ensure bit-exact parity with scalar arithmetic.
+- `core/src/feature/speed_internal.c`: `si_mat_mul()` now dispatches through `speed_matmul_avx512` / `speed_matmul_avx2` / `speed_matmul_scalar` per ADR-1237, lifting the ADR-1196 scalar hold.
+- `core/src/libvmaf.c`: `batch_extractor_skip()`, `read_pictures_should_skip()`, and `flush_non_temporal_cpu_extractors()` include `VMAF_FEATURE_EXTRACTOR_HIP` and `VMAF_FEATURE_EXTRACTOR_METAL` in their GPU extractor sets. `flush_context_threaded()` drains `gpu_pending` for non-CUDA/SYCL extractors before temporal flushes, matching `flush_context_serial()`. Preserve this alignment so HIP works under `--threads N`.
+- `testdata/bench_all.sh`: prefers `/opt/intel/oneapi/setvars.sh` over legacy 2025.3 paths, and Test 2 targets `checkerboard_1920_1080_10_3_0_0.yuv` and `checkerboard_1920_1080_10_3_1_0.yuv`.
 
 ## fix/venv-gate-basename-false-positive — tracked-venv gate pattern (2026-09-05)
 

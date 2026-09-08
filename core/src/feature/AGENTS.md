@@ -906,12 +906,8 @@ Netflix does not do — expect a signature conflict there on the next
 
 `si_mat_mul()` in `speed_internal.c` — the ADR-0964 duplicate of the same
 i-k-j loop, used by the host side of the GPU SpEED twins — is
-deliberately **left scalar**. That is not drift to "fix" opportunistically:
-it produces identical values today, and it was left alone because no GPU
-backend currently completes a scored run long enough to measure the change
-(`T-GPU-MOTION-FLUSH-DOUBLE-EMIT-2026-09-06` in
-[`docs/state.md`](../../../docs/state.md)). Wiring it to the same dispatch
-is bit-exact by the same argument once that clears.
+dispatched through `speed_matmul_avx512` / `speed_matmul_avx2` / `speed_matmul_scalar`
+per ADR-1237 (gated behind the same bit-exact contract as `speed.c`'s `matrix_mul()`).
 
 **Source-of-truth note**: `speed_internal.c` duplicates ~600 LOC
 of pure math (eigendecomp, QR, matrix helpers) from `speed.c`.
