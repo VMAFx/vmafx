@@ -12,7 +12,7 @@ type: application
 # rollover-changelog-fragments.sh both require exactly one marker per file, so
 # annotating this line too would hard-fail every release preflight.
 version: 0.1.0
-appVersion: "3.2.1" # x-release-please-version
+appVersion: "1.0.0-rc.1" # x-release-please-version
 home: https://github.com/VMAFx/vmafx
 sources:
   - https://github.com/VMAFx/vmafx
