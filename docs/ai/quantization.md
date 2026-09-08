@@ -94,9 +94,10 @@ allowlist change requiring security review, not a documentation change.
 
 ### Loader behaviour and fp32 fallback
 
-`vmaf_dnn_session_open` in
-[`core/src/dnn/dnn_api.c`](../../core/src/dnn/dnn_api.c) resolves which
-file to load:
+Both `vmaf_dnn_session_open` in
+[`core/src/dnn/dnn_api.c`](../../core/src/dnn/dnn_api.c) and `vmaf_use_tiny_model`
+in [`core/src/dnn/dnn_attach_api.c`](../../core/src/dnn/dnn_attach_api.c)
+resolve which file to load using the exact same redirect logic:
 
 1. Validate the caller-supplied (fp32) path — size cap plus op allowlist.
 2. Load the sidecar. If it declares `quant_mode: "fp32"`, that file is the
@@ -109,21 +110,43 @@ file to load:
    non-allowlisted op — the loader emits a `VMAF_LOG_LEVEL_DEBUG` line and
    loads the **fp32 baseline** instead. The session still reports the
    sidecar's `quant_mode`; only the weights are fp32.
+6. If the int8 file clears every gate in step 3 but `vmaf_ort_open()` still
+   fails on it, the loader retries the fp32 baseline once, on the same
+   rationale. This is not hypothetical: an ONNX Runtime build without a kernel
+   for one of the quantised ops fails session creation with `-EIO` and
+   `Could not find an implementation for ConvInteger(10)`, which is what
+   `model/tiny/nr_metric_v1.int8.onnx` (dynamic PTQ, `ConvInteger`) hits on
+   such a build. The allowlist scan cannot see this — it checks op *names*
+   against `core/src/dnn/op_allowlist.c`, not whether the local runtime has a
+   kernel for them.
 
 The redirect keys off `quant_mode != fp32` alone. It does not distinguish
 `dynamic` from `static` from `qat`, and neither the registry nor the sidecar
 records a wire format — the allowlist scan in step 3 is the only thing that
 decides whether a given int8 graph is acceptable.
 
+**The redirect does not verify `int8_sha256`.** The fp32 sidecar records an
+`int8_sha256` for its quantised sibling, but neither loader parses it: the
+gates at load time are the 50 MB size cap and the op allowlist, nothing else.
+Integrity of the shipped int8 artefacts is enforced elsewhere —
+`ai/scripts/validate_model_registry.py` and `core/test/dnn/test_registry.sh`
+compare `int8_sha256` against the file on disk in CI, and
+`--tiny-model-verify` checks the Sigstore bundle
+([ADR-0209](../adr/0209-mcp-embedded-scaffold.md)). A digest check inside the
+loader would change the ADR-1032 fallback semantics (a digest mismatch would
+need its own outcome, distinct from "int8 absent") and needs its own ADR; it is
+not in the tree today.
+
 Two consequences an operator needs to know:
 
 - A quantised model whose int8 file is absent or rejected **still loads and
   still scores**, at fp32 weights and fp32 speed. Nothing fails, and the
   scores are the fp32 baseline's rather than the int8 model's.
-- That fallback is visible only at debug log level. Run with
-  `--log-level debug` (or set `VmafConfiguration.log_level` to
-  `VMAF_LOG_LEVEL_DEBUG`) and look for `int8 sidecar unavailable` to confirm
-  which weights a session actually loaded.
+- That fallback is visible only at debug log level, and the `vmaf` CLI has no
+  flag for it — the binary runs at `VMAF_LOG_LEVEL_INFO`. An API caller that
+  sets `VmafConfiguration.log_level` to `VMAF_LOG_LEVEL_DEBUG` sees
+  `int8 sidecar unavailable` (steps 3-5) or `int8 session open failed`
+  (step 6) and can confirm which weights a session actually loaded.
 
 This is a deliberate reversal of what
 [ADR-0174](../adr/0174-first-model-quantisation.md) §2 originally specified
@@ -134,6 +157,46 @@ Fix 3 replaced that hard error with the fallback above on a "better degraded
 than dead" rationale, and the code has matched ADR-1032 ever since. ADR-0174
 is Accepted and therefore frozen, so it still reads the old way; **this page
 is authoritative for the runtime behaviour.**
+
+### The `onnx_has_scaler` contract
+
+Feature-vector tiny models (`vmaf_tiny_v2` .. `v4`, `fr_regressor_v*`) ship the
+StandardScaler two different ways, and the sidecar is the only thing that says
+which:
+
+- The graph applies it — `Sub` (mean) and `Div` (std) Constant nodes sit in
+  front of the first `Gemm`. The sidecar must declare `"onnx_has_scaler": true`
+  and the C runtime feeds **raw** canonical-6 values.
+- The runtime applies it — the sidecar carries `input_mean` / `input_std` (or
+  `feature_mean` / `feature_std`) and omits `onnx_has_scaler`, and
+  `core/src/libvmaf.c` normalises the vector before inference.
+
+The two must not both happen. When a scaler-baking graph ships without the
+declaration, the runtime double-scales and the score is meaningless — measured
+on the Netflix `src01_hrc00/hrc01_576x324` pair with `vmaf_tiny_v3.int8.onnx`:
+pooled `vmaf_tiny_model` **16.020865** without the declaration versus
+**71.952113** with it, against an fp32 baseline of **72.359458** (per-frame PLCC
+vs fp32 0.975443 versus 0.999876). That was the shipped state of
+`model/tiny/vmaf_tiny_v3.int8.json` until 2026-09-05
+(`T-TINY-V3-INT8-SIDECAR-MISSING-ONNX-HAS-SCALER-2026-09-04`).
+
+Quantising a model does not change which of the two applies — `ptq_dynamic.py` /
+`ptq_static.py` / `qat_train.py` keep the scaler nodes in the graph — so an
+`.int8.onnx` needs the same declaration its fp32 parent has. Three gates now
+enforce it over every `model/tiny/*.int8.onnx`:
+
+```bash
+bash core/test/dnn/test_registry.sh                                   # meson `dnn` suite
+python -m pytest python/test/model_registry_schema_test.py -q         # python suite
+python ai/scripts/validate_model_registry.py                          # CI registry gate
+```
+
+Each loads the graph with `onnx` when it is installed (falling back to a
+protobuf byte scan otherwise) and fails when a graph containing both `Sub` and
+`Div` has a companion sidecar that does not declare
+`"onnx_has_scaler": true`. The companion sidecar for `foo.int8.onnx` is
+`foo.int8.json` when present, otherwise the fp32 sidecar `foo.json` — the same
+resolution order `vmaf_dnn_sidecar_load` uses.
 
 ## Mode selection
 
@@ -224,6 +287,44 @@ for a complete example.
 pipeline for direct Python invocation (used by tests and by future
 `vmaf-train qat` subcommand).
 
+**Training data.** The `cache:` field in the config points at the training
+corpus; which reader parses it is decided by the rank of `qat.input_shape`
+(the same shape the FX trace uses, so the loader and the trace cannot
+disagree):
+
+| `qat.input_shape` rank | Loader | Cache format |
+| --- | --- | --- |
+| 2 (e.g. `[1, 6]`) | `vmaf_train.datamodule.VmafTrainDataModule` | `.parquet` (canonical-6 feature columns + `mos`) or `.npz` (`features`, `scores`) |
+| 4 (e.g. `[1, 1, 32, 32]`) | built-in NCHW image loader | `.npz` (see below) |
+| anything else | none — the run downgrades to `--smoke` with a message on stderr | — |
+
+Rank 4 is also the default when `qat.input_shape` is absent, matching the
+`[1, 1, 32, 32]` fallback the exporter traces with.
+
+A rank-4 `.npz` carries the input batch under `x` (aliases: `images`,
+`degraded`, `input`) with shape `(N, C, H, W)`, and the target under `y`
+(aliases: `targets`, `clean`, `reference`, `output`) with the same leading
+dimension. Both are cast to float32, and the archive is validated when the
+loader is built — a wrong extension, an unknown array name, a non-4D input, a
+length mismatch, or an empty cache all exit before the fp32 warm-start burns
+an epoch. Batch size comes from the config's `batch_size` (default 32).
+
+```python
+import numpy as np
+np.savez(
+    "ai/data/learned_filter_patches.npz",
+    x=degraded_patches,   # (N, 1, 32, 32) float32
+    y=clean_patches,      # (N, 1, 32, 32) float32
+)
+```
+
+Before this dispatch existed, every config went to `VmafTrainDataModule`,
+which only materialises rank-2 tabular rows. 2D CNN configs such as
+[`learned_filter_v1_qat.yaml`](../../ai/configs/learned_filter_v1_qat.yaml)
+therefore could not train for real; they appeared to work only because their
+parquet cache is uncommitted, so the missing-cache branch silently downgraded
+the run to smoke mode (Research-2029 §5 gap 4).
+
 ## CI accuracy gate (`ai-quant-accuracy`)
 
 Wired into the `Tiny AI` job in
@@ -246,6 +347,42 @@ python ai/scripts/measure_quant_drop.py --all \
 `--out-json` preserves the per-model gate rows and the same ADR-0661
 `run_provenance` block as the producer scripts. Use it for model-card evidence
 or when comparing a refreshed int8 sidecar against a previous CI gate.
+
+### Gating a model that is not in the registry
+
+`--all` and the positional form both resolve through
+[`model/tiny/registry.json`](../../model/tiny/registry.json): the positional
+argument must live under `model/tiny/`, and the budget comes from that entry's
+`quant_accuracy_budget_plcc`. A model that has not been committed yet — PTQ or
+QAT scratch output, a CI smoke artifact, a freshly built release candidate —
+has neither. The `--fp32` / `--int8` overrides measure an explicit pair
+instead, touching no registry at all:
+
+```bash
+python ai/scripts/measure_quant_drop.py \
+    --fp32 /tmp/train_out/mlp_small_final.onnx \
+    --int8 /tmp/train_out/mlp_small_final.ptq_static.int8.onnx \
+    --budget 0.002 \
+    --id mlp_small_static_ptq \
+    --out-json /tmp/quant_drop.json
+```
+
+```text
+[PASS] mlp_small_static_ptq     mode=override PLCC=0.999536  drop=0.000464  budget=0.0020  worst_abs=0.0010
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--fp32 PATH` | fp32 ONNX to measure. Required together with `--int8`; any path, not just `model/tiny/`. |
+| `--int8 PATH` | int8 ONNX to measure against it. |
+| `--budget FLOAT` | PLCC-drop budget for the pair (default `0.01`, matching the registry-wide default). Research-2029 §6 recommends `0.002` for static PTQ and `0.001` for QAT. |
+| `--id NAME` | Label in the console line and the `--out-json` report. Defaults to the fp32 filename without `.onnx`. |
+
+The overrides are mutually exclusive with `--all` and with the positional
+argument — passing both exits `2`. Exit codes are otherwise unchanged: `0`
+pass, `1` drop over budget or a missing file, `2` bad invocation. The
+`--out-json` report keeps the same shape as a registry run, with
+`"quant_mode": "override"` on the single row.
 
 ## Currently quantised models
 

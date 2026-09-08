@@ -189,3 +189,48 @@ def test_jsonschema_rejects_bad_id_pattern() -> None:
     validator = jsonschema.Draft202012Validator(schema)
     errors = list(validator.iter_errors(bad))
     assert any("does not match" in e.message or "pattern" in e.message for e in errors)
+
+
+def _graph_bakes_scaler(onnx_path: Path) -> bool:
+    """True when the ONNX graph applies the StandardScaler itself.
+
+    Prefers the ``onnx`` protobuf parser (exact ``op_type`` match); on legs
+    without ``onnx`` installed, falls back to a length-prefixed protobuf byte
+    scan (``0x22`` = field 4 ``NodeProto.op_type``, ``0x03`` = string length).
+    """
+    try:
+        import onnx  # type: ignore[import-not-found]
+    except ImportError:
+        raw = onnx_path.read_bytes()
+        return (b"\x22\x03Sub" in raw) and (b"\x22\x03Div" in raw)
+    ops = {n.op_type for n in onnx.load(str(onnx_path), load_external_data=False).graph.node}
+    return "Sub" in ops and "Div" in ops
+
+
+def test_int8_models_with_scaler_ops_declare_onnx_has_scaler() -> None:
+    """Regression gate for T-TINY-V3-INT8-SIDECAR-MISSING-ONNX-HAS-SCALER-2026-09-04.
+
+    ``model/tiny/vmaf_tiny_v3.int8.json`` shipped without
+    ``"onnx_has_scaler": true`` even though ``vmaf_tiny_v3.int8.onnx`` bakes
+    the feature scaler as Constant nodes. ``core/src/libvmaf.c`` therefore
+    normalised the feature vector a second time and the pooled
+    ``vmaf_tiny_model`` score on the Netflix src01 pair read 16.02 instead of
+    71.95 (fp32 baseline 72.36).
+    """
+    tiny_dir = REGISTRY_PATH.parent
+    checked = 0
+    for int8_onnx in sorted(tiny_dir.glob("*.int8.onnx")):
+        if not _graph_bakes_scaler(int8_onnx):
+            continue
+        checked += 1
+        sidecar = int8_onnx.with_suffix(".json")
+        if not sidecar.is_file():
+            base_stem = int8_onnx.name[: -len(".int8.onnx")]
+            sidecar = int8_onnx.with_name(f"{base_stem}.json")
+        assert sidecar.is_file(), f"{int8_onnx.name}: companion sidecar missing"
+        sdata = json.loads(sidecar.read_text(encoding="utf-8"))
+        assert sdata.get("onnx_has_scaler") is True, (
+            f"{int8_onnx.name} bakes scaler ops but {sidecar.name} does not "
+            f"declare onnx_has_scaler: true"
+        )
+    assert checked > 0, "no scaler-baking int8 model found — fixture drift"

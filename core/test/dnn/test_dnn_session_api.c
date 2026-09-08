@@ -343,6 +343,58 @@ static char *test_session_open_int8_redirect_succeeds(void)
     (void)unlink(base);
     return NULL;
 }
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
+#define TINY_V1_MODEL "model/tiny/vmaf_tiny_v1.onnx"
+
+/* sidecar declares quant_mode=dynamic and .int8.onnx exists and passes
+ * validate_onnx, but fails session creation inside ORT (e.g. missing external
+ * data) → vmaf_dnn_session_open must retry the fp32 baseline and succeed
+ * (ADR-1032 second fallback trigger). */
+static char *test_session_open_int8_session_fail_falls_back_to_fp32(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    if (access(TINY_V1_MODEL, R_OK) != 0 || access(SMOKE_FP32_MODEL, R_OK) != 0)
+        return NULL;
+
+    char base[] = "/tmp/vmaf-dnn-int8-fail-XXXXXX";
+    const int fd = mkstemp(base);
+    if (fd < 0)
+        return NULL;
+    (void)close(fd);
+
+    char onnx[1100];
+    char int8_onnx[1200];
+    char sidecar[1100];
+    (void)snprintf(onnx, sizeof(onnx), "%s.onnx", base);
+    (void)snprintf(int8_onnx, sizeof(int8_onnx), "%s.int8.onnx", base);
+    (void)snprintf(sidecar, sizeof(sidecar), "%s.json", base);
+    if (copy_file(SMOKE_FP32_MODEL, onnx) != 0 || copy_file(TINY_V1_MODEL, int8_onnx) != 0) {
+        (void)unlink(base);
+        return NULL;
+    }
+    mu_assert("write sidecar ok", write_sidecar_dynamic(sidecar) == 0);
+
+    VmafDnnSession *sess = NULL;
+    int rc = vmaf_dnn_session_open(&sess, onnx, NULL);
+    mu_assert("session open with retry fallback ok", rc == 0);
+    mu_assert("session populated", sess != NULL);
+    vmaf_dnn_session_close(sess);
+
+    (void)unlink(sidecar);
+    (void)unlink(int8_onnx);
+    (void)unlink(onnx);
+    (void)unlink(base);
+    return NULL;
+}
+
+/* NOLINTEND(modernize-use-nullptr) */
 #endif /* !_WIN32 */
 
 /* ADR-0170 / T6-4: drive the input-validation branches of
@@ -879,6 +931,7 @@ char *run_tests(void)
 #ifndef _WIN32
     mu_run_test(test_session_open_int8_missing_falls_back_to_fp32);
     mu_run_test(test_session_open_int8_redirect_succeeds);
+    mu_run_test(test_session_open_int8_session_fail_falls_back_to_fp32);
 #endif
     mu_run_test(test_session_run_heap_path_for_many_inputs);
     mu_run_test(test_attached_ep_after_session_close);

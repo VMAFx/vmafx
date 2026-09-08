@@ -50,6 +50,16 @@ SROCC / RMSE figures are not applicable. The only gate the model must
 pass is ORT load-and-run without error, plus round-trip numerical
 proximity within fp16 precision.
 
+## Runnable usage example
+
+```bash
+# Verify the fp16 I/O round-trip via the C unit test suite:
+meson test -C build --suite=dnn test_ep_fp16
+
+# Or inspect the model via Python:
+python3 -c "import onnxruntime as ort; sess = ort.InferenceSession('model/tiny/smoke_fp16_v0.onnx'); print('Inputs:', [i.name for i in sess.get_inputs()])"
+```
+
 ## Known limitations / when NOT to use
 
 - Do not use for video quality assessment of any kind.
