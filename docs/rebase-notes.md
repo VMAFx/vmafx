@@ -26,6 +26,10 @@ of bypass actors requires a verified GraphQL zero count, never an assumed empty
 list. Preserve strict checks, the GitHub Actions app binding, independent review
 and no bypass actors. No native or public C API rebase impact. See
 [ADR-1248](adr/1248-repository-security-enforcement.md).
+Preserve the short purpose and participation links in `docs/index.md`; the
+website evidence uses GitHub Pages URLs with source links and a deployment
+check before new text is attested. No native/public API, numerical or FFmpeg
+rebase impact.
 
 ## Configured lint fixture bootstrap isolation (2026-09-08)
 

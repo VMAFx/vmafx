@@ -19651,6 +19651,9 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
   pre-release project; clarify remediation targets and require tests for major
   new functionality. Add a dated OpenSSF passing-criteria evidence worksheet
   with unresolved requirements kept explicit.
+- Introduce VMAFx and link installation, issue reporting and contribution from
+  the documentation homepage; use published GitHub Pages URLs in the evidence
+  worksheet while keeping undeployed homepage changes explicit.
 
 
 - **`init_blur_array` partial-allocation leak.**

@@ -475,7 +475,9 @@ linked AGENTS.md before resolving conflicts.
   Keep [the passing worksheet](docs/development/best-practices-assessment.md)
   tied to a reviewed source revision and the live project record. Configuration,
   future releases and agent-authored prose cannot establish historical response
-  times, a human developer's knowledge or a completed external badge.
+  times, a human developer's knowledge or a completed external badge. The
+  project website is GitHub Pages; keep the short purpose and participation
+  links in `docs/index.md`, and verify deployed pages before citing new text.
 
 ## 14. Interaction style — prefer structured popup questions
 

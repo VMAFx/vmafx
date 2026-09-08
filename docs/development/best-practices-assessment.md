@@ -34,21 +34,27 @@ Keep the full criterion text and its required justification/URL rules open
 when entering answers. The linked file paths are evidence entrypoints, not
 claims that every backend, package or historical run was audited.
 
+The project website is [VMAFx on GitHub Pages](https://vmafx.github.io/vmafx/).
+The published getting-started, CLI and API pages were checked on 2026-09-08;
+the new homepage introduction and direct participation links are prepared in
+[the documentation source](../index.md). Recheck the deployed homepage before
+using that new text as evidence for `description_good` or `interact`.
+
 ## Criterion evidence map
 
 ### Basics
 
 | Criterion | Requirement | Assessment | Evidence / remaining work |
 | --- | --- | --- | --- |
-| [`description_good`](https://www.bestpractices.dev/en/criteria/0#description_good) | MUST | Evidence | [README](../../README.md) explains perceptual quality assessment. |
-| [`interact`](https://www.bestpractices.dev/en/criteria/0#interact) | MUST | Evidence | [Getting started](../getting-started/index.md), [contribution guide](../../CONTRIBUTING.md) and issue templates explain obtaining, reporting and contributing. |
+| [`description_good`](https://www.bestpractices.dev/en/criteria/0#description_good) | MUST | Prepared | The [Pages homepage](https://vmafx.github.io/vmafx/) is the project website; its new purpose statement is prepared in [the source](../index.md). [README](../../README.md) already explains the purpose. Verify the deployed intro before attesting. |
+| [`interact`](https://www.bestpractices.dev/en/criteria/0#interact) | MUST | Prepared | The [published getting-started guide](https://vmafx.github.io/vmafx/getting-started/) explains obtaining and using VMAFx. Direct [issue](https://github.com/VMAFx/vmafx/issues) and [contribution](../../CONTRIBUTING.md) links are added to [the homepage source](../index.md); verify deployment. |
 | [`contribution`](https://www.bestpractices.dev/en/criteria/0#contribution) | MUST | Evidence | [CONTRIBUTING](../../CONTRIBUTING.md) documents branches, pull requests and review. |
 | [`contribution_requirements`](https://www.bestpractices.dev/en/criteria/0#contribution_requirements) | SHOULD | Evidence | [Review expectations](../../CONTRIBUTING.md#review-expectations) and [principles](../principles.md) define contribution requirements; these are policies, not passing-run receipts. |
 | [`floss_license`](https://www.bestpractices.dev/en/criteria/0#floss_license) | MUST | Evidence | [LICENSE](../../LICENSE) identifies BSD-2-Clause-Patent; the source is publicly available. Third-party components retain their own notices. |
 | [`floss_license_osi`](https://www.bestpractices.dev/en/criteria/0#floss_license_osi) | SUGGESTED | Evidence | The root license is [OSI approved](https://opensource.org/license/bsd-2-clause-patent); no blanket claim is made for every optional external SDK. |
 | [`license_location`](https://www.bestpractices.dev/en/criteria/0#license_location) | MUST | Evidence | [LICENSE](../../LICENSE) is at the repository root. |
-| [`documentation_basics`](https://www.bestpractices.dev/en/criteria/0#documentation_basics) | MUST | Evidence | [Getting started](../getting-started/index.md), [CLI](../usage/cli.md), [MCP transport](../mcp/http-transport.md) and [AI security](../ai/security.md) provide installation, usage and relevant safety guidance. |
-| [`documentation_interface`](https://www.bestpractices.dev/en/criteria/0#documentation_interface) | MUST | Evidence | [CLI](../usage/cli.md), [C API](../api/index.md) and [MCP tools](../mcp/tools.md) describe inputs and results. This is not an exhaustive doc-to-code coverage audit. |
+| [`documentation_basics`](https://www.bestpractices.dev/en/criteria/0#documentation_basics) | MUST | Evidence | Published [installation](https://vmafx.github.io/vmafx/getting-started/), [CLI](https://vmafx.github.io/vmafx/usage/cli/), [MCP transport](https://vmafx.github.io/vmafx/mcp/http-transport/) and [AI security](https://vmafx.github.io/vmafx/ai/security/) guides cover installation, usage and relevant safety guidance. Sources: [getting started](../getting-started/index.md), [CLI](../usage/cli.md), [transport](../mcp/http-transport.md), [security](../ai/security.md). |
+| [`documentation_interface`](https://www.bestpractices.dev/en/criteria/0#documentation_interface) | MUST | Evidence | Published [CLI](https://vmafx.github.io/vmafx/usage/cli/), [C API](https://vmafx.github.io/vmafx/api/) and [MCP tools](https://vmafx.github.io/vmafx/mcp/tools/) describe inputs and results. Sources: [CLI](../usage/cli.md), [API](../api/index.md), [tools](../mcp/tools.md). This is not an exhaustive doc-to-code coverage audit. |
 | [`sites_https`](https://www.bestpractices.dev/en/criteria/0#sites_https) | MUST | Evidence | GitHub repository/releases and the [published docs](https://vmafx.github.io/vmafx/) respond over HTTPS. Future release download hosts need the same check. |
 | [`discussion`](https://www.bestpractices.dev/en/criteria/0#discussion) | MUST | Evidence | [Issues](https://github.com/VMAFx/vmafx/issues) and [discussions](https://github.com/VMAFx/vmafx/discussions) are public, searchable web interfaces with addressable threads. |
 | [`english`](https://www.bestpractices.dev/en/criteria/0#english) | SHOULD | Evidence | The README, guides and issue templates are in English; contribution guidance accepts public reports. |

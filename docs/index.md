@@ -1,7 +1,13 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Documentation
 
-This is an overview of the available documentation in the VMAF repository.
+VMAFx is an open-source toolkit for measuring perceptual video quality, built on
+[Netflix's VMAF](https://github.com/Netflix/vmaf).
+
+[Get started](getting-started/index.md) with installation and scoring,
+[report a bug or request a feature](https://github.com/VMAFx/vmafx/issues), or
+[read the contribution guide](https://github.com/VMAFx/vmafx/blob/master/CONTRIBUTING.md)
+to help improve the project. The topic index below links to the full guides.
 
 ## Getting started
 
