@@ -2,8 +2,9 @@
 
 The FFmpeg integration follows stable upstream release tags. The root
 `build-config.env` owns `FFMPEG_REMOTE` and `FFMPEG_TAG`; the patch tooling reads
-both values from that file. Development branches, snapshots and prerelease tags
-are outside this release channel.
+both values from that file. Container ARG defaults are generated mirrors, and
+publication uses those defaults without a separate release override.
+Development branches, snapshots and prerelease tags are outside this channel.
 
 ## Check a change locally
 

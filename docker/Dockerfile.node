@@ -18,7 +18,7 @@
 #
 # FFmpeg version policy (ADR-0717):
 #   Pinned to the latest stable tagged release at image-build time.
-#   Currently n9.0.1. Update FFMPEG_TAG on every release sync.
+#   The reviewed stable tag is owned by build-config.env and mirrored below.
 #   Option A (pin to latest tag) was chosen over Option B (rolling
 #   release/8.x branch) to maintain reproducible builds.
 #
@@ -295,7 +295,7 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
 FROM ${RELEASE_RUNTIME_CC} AS runtime-base
 
 LABEL org.opencontainers.image.title="vmafx-node"
-LABEL org.opencontainers.image.description="VMAFX worker node — ffmpeg n9.0.1 + libvmaf + vmafx-node gRPC service"
+LABEL org.opencontainers.image.description="VMAFX worker node — FFmpeg + libvmaf + vmafx-node gRPC service"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"

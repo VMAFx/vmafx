@@ -407,6 +407,8 @@ landed fix yet._
 
 ## Recently closed
 
+| **T-BUILD-CONFIG-CI-ROUTING-2026-09-08** | The new root build configuration was absent from the impact registry, breaking its tracked-root contract. Registered it as a known full-validation authority. Also removed the node publisher's literal FFmpeg build argument, which overrode refreshed release mirrors. | [FFmpeg maintenance](development/ffmpeg-patch-automation.md) | `fix/rc1-repository-hygiene` | 2026-09-08 | CI impact contracts and publication default regression check. |
+
 | **T-FFMPEG-REPLAY-HOOK-OFFLINE-PASS-2026-09-08** | The cached checker passed when upstream preparation failed, while the local hook ran only at pre-push and no required CI check verified canonical full-series output. Added disposable replay, deterministic refresh, failure receipts, pre-commit/pre-push wiring and required plus scheduled CI. | [ADR-1240](adr/1240-ffmpeg-release-patch-lifecycle.md) | `fix/rc1-ffmpeg-percentile-stack` | 2026-09-08 | Real Git replay, conflict/network failure, inherited hook environment and rollback tests; all 18 patches replay against the released tag. |
 
 | **T-FFMPEG-PERCENTILE-STACK-REPLAY-2026-09-08** | Patch 0018 added the percentile mapper cases a second time after patch 0005, so cumulative replay stopped before any FFmpeg build. Regenerated 0018 against patches 0001–0017; it now adds only the availability guard and documentation. | Existing ADR-1188 pooling contract; no new API | `fix/rc1-ffmpeg-percentile-stack` | 2026-09-08 | Full 18-patch replay against n9.0.1; mapper compiled with and without the feature macro. |

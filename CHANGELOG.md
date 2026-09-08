@@ -19368,6 +19368,13 @@ ADRs affected: 0251, 0331, 0341, 0353, 0365, 0394, 0396, 0397, 0403.
     T-PYTHON-LOCAL-EXPLAINER-HACKY.
 
 
+- Agent-state cleanup now inventories by default and requires `--apply` with
+  exact `--worktree` paths before removing eligible clean checkouts. It preserves
+  modified, untracked and ignored files, active or unknown owners, detached work
+  without preserving refs, and all stashes and branches. Failed removal restores
+  the original owner lock (ADR-1239).
+
+
 - Fixed `Required Checks Aggregator` workflow timing out at 30 minutes
   while CI queue depth pushed sibling workflows past 60+ minutes wall-clock.
   Bumped poll deadline from 30 → 90 minutes and job timeout from 35 → 100
@@ -25139,6 +25146,9 @@ Fix three RC-gate failures surfaced by the pre-release validation matrix:
   a valid version and free of an unsubstituted `x-release-please` placeholder,
   so the check this test exists for — a marker comment leaking into the
   shipped version — is stricter than before rather than looser.
+
+
+- Route shared build configuration changes through full CI validation and let node publication consume the generated FFmpeg release default.
 
 
 ### Fixed

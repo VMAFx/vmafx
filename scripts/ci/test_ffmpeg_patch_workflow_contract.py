@@ -85,6 +85,10 @@ class FFmpegWorkflowContract(unittest.TestCase):
         self.assertNotIn("steps.impact", header)
         self.assertNotIn("needs:", header)
 
+    def test_publication_uses_generated_release_default(self) -> None:
+        publication = (ROOT / ".github/workflows/docker-publish-operator-node.yml").read_text()
+        self.assertNotRegex(publication, r"(?m)^\s+FFMPEG_TAG=n[0-9]")
+
     def test_integration_loads_config_before_consumers(self) -> None:
         integration = (ROOT / ".github/workflows/ffmpeg-integration.yml").read_text()
         sycl = _job(integration, "ffmpeg-sycl")

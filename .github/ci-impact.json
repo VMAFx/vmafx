@@ -86,7 +86,8 @@
     "osv-scanner.toml",
     "pyproject.toml",
     "release-please-config.json",
-    "renovate.json"
+    "renovate.json",
+    "build-config.env"
   ],
   "full_patterns": [
     ".github/ci-impact.json",
@@ -107,7 +108,8 @@
     "scripts/ci/**",
     "build-aux/*",
     "build-aux/**",
-    "osv-scanner.toml"
+    "osv-scanner.toml",
+    "build-config.env"
   ],
   "selectors": {
     "c_core": {
