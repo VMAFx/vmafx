@@ -124,8 +124,11 @@ is_allowed_dependency_path() {
   # matches how docker/* and .github/workflows/* are already treated: the
   # conjunction with condition (a) means only a bot author or bot branch can
   # reach this, so a human editing chart logic is still fully gated.
+  # ADR-1231's root build config owns the pins mirrored into Dockerfiles.
+  # Keep it an exact path: other env files are not dependency manifests.
   case "$path" in
     renovate.json | \
+      build-config.env | \
       .github/renovate.json* | \
       .pre-commit-config.yaml | \
       dev/Containerfile | \

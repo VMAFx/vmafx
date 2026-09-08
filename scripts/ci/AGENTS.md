@@ -316,6 +316,10 @@ file, a new container build file outside `docker/`), add it to
 `is_allowed_dependency_path` **and** add a fixture case to
 `test-classify-dependency-pr.sh` in the same change.
 
+The `build-config.env` allowance is an exact root-path match (ADR-1231).
+Never replace it with an env-file glob or a basename match: nested build
+configs and unrelated runtime env files must still fail the path condition.
+
 Two invariants the test suite pins deliberately — do not "simplify" them away:
 
 - Widening the allowlist must never drop the conjunction with condition (a).

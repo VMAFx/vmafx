@@ -19815,6 +19815,12 @@ Regression coverage: new tail-only bit-exact tests in
 relative-tolerance tests cover the FCVT fix on SVE2 hardware/emulation.
 
 
+- Recognize the root `build-config.env` as a dependency manifest for bot PRs,
+  including updates to its Dockerfile mirrors. Human changes on non-bot
+  branches, mixed source changes, nested build configs, and unrelated env
+  files retain the documentation gates.
+
+
 - Fix NEON `neon_any_nonzero_s32` uint64-truncation bug that incorrectly
   skipped rows with alternating zero/non-zero y_row values on arm64,
   causing the checkerboard motion score to return 0.0 instead of 12.55
