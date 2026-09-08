@@ -79,7 +79,6 @@ def main() -> int:
         text = path.read_text(encoding="utf-8")
         rel = path.relative_to(root)
 
-
         if lz_want:
             for clone in CLONE_RE.finditer(text):
                 blob = clone.group(0)
