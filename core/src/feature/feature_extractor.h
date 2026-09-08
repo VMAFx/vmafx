@@ -259,22 +259,19 @@ int vmaf_feature_extractor_context_destroy(VmafFeatureExtractorContext *fex_ctx)
  * typedef struct is scoped to that struct (ADR-0772).
  *
  * ADR-0772: this C-compatible layout has no C++ constructor. Every slot is
- * value-initialized by vmaf_fex_ctx_pool_create(), grow_fex_list(), or
- * init_fex_list_slot(); the latter stores both atomics and initializes the
- * condition variable before publication. The member-declaration-only
- * cppcheck warning does not model those factories. Keep uninitialized-use
- * checks enabled; see docs/research/option-sentinel-cleanup-2026-09-08.md. */
+ * separately allocated by get_fex_list_entry() and value-initialized by
+ * init_fex_list_slot(), which stores both atomics and initializes the
+ * condition variable before publication. Keep cppcheck's official POSIX
+ * library model enabled for the pthread fields; preserve uninitialized-use
+ * checks. See docs/research/fex-pool-growth-2026-09-08.md. Entries remain at
+ * fixed addresses until pool destruction, including across waits. */
 struct fex_list_entry {
-    // cppcheck-suppress uninitMemberVarNoCtor
     VmafFeatureExtractor *fex;
-    // cppcheck-suppress uninitMemberVarNoCtor
     VmafDictionary *opts_dict;
     struct {
         VmafFeatureExtractorContext *fex_ctx;
         bool in_use;
-        // cppcheck-suppress uninitMemberVarNoCtor
     } *ctx_list;
-    // cppcheck-suppress uninitMemberVarNoCtor
     atomic_int capacity, in_use;
     pthread_cond_t full;
 };
@@ -283,12 +280,9 @@ struct fex_list_entry {
  * aggregate, then initializes capacity, thread count and mutex before a
  * successful return. No other construction site exists in the source tree. */
 typedef struct VmafFeatureExtractorContextPool {
-    // cppcheck-suppress uninitMemberVarNoCtor
-    struct fex_list_entry *fex_list;
-    // cppcheck-suppress uninitMemberVarNoCtor
+    struct fex_list_entry **fex_list;
     unsigned cnt, capacity;
     pthread_mutex_t lock;
-    // cppcheck-suppress uninitMemberVarNoCtor
     unsigned n_threads;
 } VmafFeatureExtractorContextPool;
 

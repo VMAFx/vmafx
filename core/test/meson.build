@@ -372,6 +372,33 @@ test_feature_extractor = executable('test_feature_extractor',
     ] + wave8_opt_only_objects
 )
 
+# Link-time shims synchronize normal pool growth and force legal realloc moves.
+# No production hook or GPU execution: GNU-compatible --wrap is Linux-only here.
+if host_machine.system() == 'linux'
+test_fex_pool_growth = executable('test_fex_pool_growth',
+    ['test.c', 'test_fex_pool_growth.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    link_args : ['-Wl,--wrap=pthread_cond_wait', '-Wl,--wrap=realloc',
+                 '-Wl,--wrap=malloc', '-Wl,--wrap=calloc', '-Wl,--wrap=strdup', '-Wl,--wrap=pthread_cond_init',
+                 '-Wl,--wrap=pthread_cond_destroy'],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_fex_pool_growth', test_fex_pool_growth, suite : ['fast'], timeout : 15)
+endif
+
 test_dict = executable('test_dict',
     ['test.c', 'test_dict.cpp', '../src/dict.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -2350,6 +2377,27 @@ test_convolution_edge_small = executable('test_convolution_edge_small',
     dependencies : [math_lib, pthread_dependency, sycl_dependency],
 )
 test('test_convolution_edge_small', test_convolution_edge_small, suite : ['fast'])
+
+# Exercise the configured convolution objects directly, including shared builds.
+# No float-feature dependency: float motion also consumes these common kernels.
+if is_asm_enabled and host_machine.cpu_family().startswith('x86')
+    convolution_horizontal_objects = [
+        x86_avx2_static_lib.extract_objects(feature_src_dir + 'common/convolution_avx.c'),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+    ]
+    if is_avx512_enabled
+        convolution_horizontal_objects += x86_avx512_static_lib.extract_objects(
+            feature_src_dir + 'common/convolution_avx512.c')
+    endif
+    test_convolution_horizontal = executable('test_convolution_horizontal',
+        ['test.c', 'test_convolution_horizontal.c', '../src/feature/common/alignment.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        c_args : vmaf_cflags_common,
+        dependencies : [math_lib, thread_lib],
+        objects : convolution_horizontal_objects,
+    )
+    test('test_convolution_horizontal', test_convolution_horizontal, suite : ['fast'])
+endif
 
 # Netflix/vmaf#1551 (retracting Netflix/vmaf#1422): the MSVC __builtin_clz shim
 # must derive the leading-zero count from BSR, not from the ungated LZCNT
