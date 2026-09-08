@@ -8,8 +8,11 @@ self-certification; an authorized maintainer registers the project and supplies
 truthful answers. Repository documents alone cannot replace that external
 record or change Scorecard's `CII-Best-Practices` result. The registered
 [VMAFx assessment, project 14549](https://www.bestpractices.dev/en/projects/14549),
-is **in progress**; no passing badge is claimed. Unsaved website proposals and
-local check counts must not be reported as an earned badge.
+is **in progress**; no passing badge is claimed. The authorized submission's
+public readback at `2026-09-08T21:38:23.592Z` recorded **42%**, with 28 passing
+criteria marked `Met`, 39 unknown and all 13 Basics criteria marked `Met`.
+This is a dated external assessment snapshot, not an earned badge or a
+percentage inferred from local checks. Recheck the project record for updates.
 
 The source reviewed here is the RC1 candidate
 `76a7c467c3524478c25d588a31b37b2d45d96081`; live `master` was `78c9d2bf`.
@@ -46,8 +49,8 @@ using that new text as evidence for `description_good` or `interact`.
 
 | Criterion | Requirement | Assessment | Evidence / remaining work |
 | --- | --- | --- | --- |
-| [`description_good`](https://www.bestpractices.dev/en/criteria/0#description_good) | MUST | Prepared | The [Pages homepage](https://vmafx.github.io/vmafx/) is the project website; its new purpose statement is prepared in [the source](../index.md). [README](../../README.md) already explains the purpose. Verify the deployed intro before attesting. |
-| [`interact`](https://www.bestpractices.dev/en/criteria/0#interact) | MUST | Prepared | The [published getting-started guide](https://vmafx.github.io/vmafx/getting-started/) explains obtaining and using VMAFx. Direct [issue](https://github.com/VMAFx/vmafx/issues) and [contribution](../../CONTRIBUTING.md) links are added to [the homepage source](../index.md); verify deployment. |
+| [`description_good`](https://www.bestpractices.dev/en/criteria/0#description_good) | MUST | Evidence | The [published CLI introduction](https://vmafx.github.io/vmafx/usage/cli/) explains comparing reference/distorted video and producing quality scores; the [public README](https://github.com/VMAFx/vmafx/blob/master/README.md) describes the project purpose. The shorter homepage introduction is a separate improvement pending deployment. |
+| [`interact`](https://www.bestpractices.dev/en/criteria/0#interact) | MUST | Evidence | The [published getting-started guide](https://vmafx.github.io/vmafx/getting-started/), [public contribution guide](https://github.com/VMAFx/vmafx/blob/master/CONTRIBUTING.md) and [issue tracker](https://github.com/VMAFx/vmafx/issues) explain obtaining, reporting and contributing. New direct homepage links improve discovery; their deployment is still pending. |
 | [`contribution`](https://www.bestpractices.dev/en/criteria/0#contribution) | MUST | Evidence | [CONTRIBUTING](../../CONTRIBUTING.md) documents branches, pull requests and review. |
 | [`contribution_requirements`](https://www.bestpractices.dev/en/criteria/0#contribution_requirements) | SHOULD | Evidence | [Review expectations](../../CONTRIBUTING.md#review-expectations) and [principles](../principles.md) define contribution requirements; these are policies, not passing-run receipts. |
 | [`floss_license`](https://www.bestpractices.dev/en/criteria/0#floss_license) | MUST | Evidence | [LICENSE](../../LICENSE) identifies BSD-2-Clause-Patent; the source is publicly available. Third-party components retain their own notices. |

@@ -87,9 +87,18 @@ HTTP 200 but introduced itself only as a documentation overview, without a
 concise product purpose or direct reporting/contribution links. The source now
 adds that introduction while preserving the entire topic index. The worksheet
 uses published Pages URLs alongside source proofs for basic and interface
-documentation; `description_good` and `interact` stay prepared until the new
-homepage text is deployed and read back. HTTP availability alone does not prove
-a criterion or deploy a source change.
+documentation. The existing CLI purpose statement, getting-started guide,
+public README/CONTRIBUTING and issue tracker support `description_good` and
+`interact` independently of the new homepage introduction. Only that introduction
+is pending deployment. HTTP availability alone does not prove a criterion or
+deploy a source change.
+
+After the user approved the specific data-license submission, the owner saved
+the assessment. Public JSON at `2026-09-08T21:38:23.592Z` identifies VMAFx,
+project 14549, the GitHub Pages homepage and `in_progress` status with 42%.
+Filtering to the official 67 passing identifiers gives 28 `Met` and 39 unknown;
+the 13 Basics identifiers are all `Met`. The retained snapshot supports this
+dated result, not an earned passing badge or future compliance.
 
 The bounded receipt in `.workingdir2/cache/scorecard-pages-intro-20260908/`
 retains the live page responses, topic-index identity, changed-link checks and
