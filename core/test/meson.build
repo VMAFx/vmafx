@@ -217,6 +217,21 @@ test_thread_pool_backpressure = executable('test_thread_pool_backpressure',
     dependencies : [pthread_dependency, thread_lib],
 )
 
+test_pdjson = executable('test_pdjson',
+    ['test.c', 'test_pdjson.c', '../src/pdjson.c'],
+    include_directories : [test_inc, include_directories('../src')],
+)
+
+foreach increment_case : [['zero', '0'], ['oversized', 'SIZE_MAX']]
+    increment_test_name = 'test_pdjson_stack_increment_' + increment_case[0]
+    increment_test = executable(increment_test_name,
+        ['test.c', 'test_pdjson_stack_increment.c', '../src/pdjson.c'],
+        include_directories : [test_inc, include_directories('../src')],
+        c_args : ['-DPDJSON_STACK_INC=' + increment_case[1]],
+    )
+    test(increment_test_name, increment_test, suite : ['fast'])
+endforeach
+
 test_model = executable('test_model',
     ['test.c', 'test_model.c', '../src/dict.cpp', '../src/pdjson.c', json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
@@ -3620,6 +3635,7 @@ test('test_log', test_log, suite : ['fast'])
 test('test_public_api_score', test_public_api_score, suite : ['fast'])
 test('test_thread_pool', test_thread_pool, suite : ['fast'])
 test('test_thread_pool_backpressure', test_thread_pool_backpressure, suite : ['fast'])
+test('test_pdjson', test_pdjson, suite : ['fast'])
 test('test_model', test_model, suite : ['fast'])
 test('test_model_libsvm_dup_key', test_model_libsvm_dup_key, suite : ['fast'])
 test('test_model_feature_overload_ownership', test_model_feature_overload_ownership, suite : ['fast'])

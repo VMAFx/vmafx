@@ -70,6 +70,15 @@ feature/
 
 ## Rebase-sensitive invariants
 
+- **CAMBI read-only views and retained private helpers** (ADR-0205 / ADR-1146):
+  keep the CPU validation/preprocessing views and paired scale-score wrapper
+  declaration read-only without changing the shared extractor callback types.
+  Ten exact `unusedFunction` annotations preserve seven exports with GPU
+  callers outside CPU builds and three documented helper scaffolds. They do
+  not authorize general unused-function exemptions. Preserve every numerical
+  body and all trampolines; see
+  [the measured source and binary equivalence](../../../docs/research/2043-cambi-production-lint-2026-09-08.md).
+
 - **Floating-point VIF lint decomposition** (ADR-0141 / ADR-1142):
   `vif.c` keeps the ten-plane aligned layout and original convolution,
   decimation, statistic and scale-reduction order. Preserve float intermediate

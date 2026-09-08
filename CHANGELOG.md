@@ -14668,6 +14668,10 @@ and config paths are also updated in `docs/architecture/workspace.md`.
 - New CLAUDE.md rule 15 / AGENTS.md rule 12: default to vmaf-dev-mcp container for vmaf/vmaf-tune/ai/MCP work; rebuild before non-trivial runs; don't multiplex the same GPU across parallel jobs; pin long-running jobs to one device (CUDA/SYCL/HIP/Vulkan/CPU). See [ADR-0496](docs/adr/0496-prefer-dev-mcp-container-rule.md).
 
 
+- Make private PSNR format-table initialization explicit and use the standard
+  projected lookup without changing supported formats, constants or errors.
+
+
 - Pyright strict audit of the three fork-local Python trees
   (`ai/src`, `mcp-server/vmaf-mcp/src`, `tools/vmaf-tune/src`),
   companion pass to PR #366 (`mypy --strict`). Catches a different
@@ -19167,6 +19171,9 @@ their defaults in `init_fex_metal` rather than being user-configurable via
   table-column-style violations in the extractor overview and DISTS-Sq options tables.
 
 
+- Make integer ADM AVX2/AVX-512 temporary scopes and read-only aliases analyzer-clean while preserving dispatch signatures and numerical expression order.
+
+
 - **CUDA integer_adm `adm_skip_scale0` option** (`integer_adm_cuda.c`): the
   CUDA backend silently dropped the `adm_skip_scale0` option, always
   accumulating and emitting scale-0 results even when the caller explicitly
@@ -20042,6 +20049,10 @@ unmodified CPU c-values code on byte-identical buffers). Added `cambi` to the
 
 The `cross_backend_vif_diff.py` per-feature lane already carried a `cambi` entry
 (added with T7-36); this change brings `cross_backend_parity_gate.py` into alignment.
+
+
+- Clean up CAMBI read-only input declarations and shadowing while preserving
+  numerical code, GPU helper exports and documented private scaffolds.
 
 
 - `cambi` CUDA, SYCL, and Vulkan backends now accept `src_width` and `src_height`
@@ -22069,6 +22080,10 @@ Remove 61 duplicate entries (6 SYCL, 55 Vulkan) from `feature_extractor_list[]`
 in `core/src/feature/feature_extractor.c`. The duplicates caused unnecessary
 linear-scan overhead on every extractor lookup; the first matching entry was
 always returned so feature availability was never affected.
+
+
+- Document four factory-initialized pool fields for cppcheck consumers that
+  cannot see the factories, retaining diagnostics for real uninitialized reads.
 
 
 - Keep internal feature-context pool entries at stable addresses when their
@@ -24673,6 +24688,13 @@ clear diagnostic: `enable_nvtx=true requires enable_cuda=true`.
   honoured). Total test count in `test_output` raised from 8 to 11.
 
 
+- Enforce the documented 512-container JSON model nesting limit before changing
+  parser state; reject a 513th nested array or object and invalid stack-growth
+  overrides before allocation. Preserve parser behavior
+  through dedicated Unicode, streaming, malformed-input and allocator tests,
+  and remove the vendored parser's blanket lint suppression.
+
+
 `vmaf-tune` per-shot report: Bitrate column now shows real kbps values (was "—" for
 every shot because the bisect-predicate side-channel was not wired up); per-shot
 timeline chart now renders the last shot's CRF band visibly (asymmetric x-axis
@@ -26406,6 +26428,10 @@ in `integer_ssim_sycl.cpp` that were accidentally dropped by PR #1095 when it ad
 
 - Make the shared native test result read-only and the alignment remainder
   predicate explicit, preserving test exits and existing rounding behavior.
+
+
+- Split large CAMBI test groups into focused helpers and make read-only
+  fixtures const, preserving all 144 assertions and 23 registered cases.
 
 
 - **The seven assertions ported into `core/test/test_feature.cpp` by PR #1219

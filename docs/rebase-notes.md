@@ -1,6 +1,23 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## refactor/cambi-production-lint-20260908 — read-only views and GPU helpers
+
+Keep CAMBI's validation/preprocessing inputs and paired private scale-score
+wrapper declaration read-only. Preserve every formula, callback type and
+GPU trampoline, including the three documented scaffolds. Exact declaration
+annotations distinguish fixed callback types and out-of-profile/scaffold
+exports; unused checks elsewhere remain enabled. No public API or FFmpeg
+surface changes. See [the equivalence receipt](research/2043-cambi-production-lint-2026-09-08.md).
+## fix/adm-simd-native-lint — integer ADM local declarations (2026-09-08)
+
+Keep AVX2/AVX-512 read-only band descriptors, threshold aliases and fixed
+arrays const. Preserve row-local SIMD accumulators and declaration-at-use
+scalar temporaries without changing expression order, shifts, clipping,
+p-norm behavior or LUT prefetch. Dispatch signatures remain unchanged;
+output band storage is writable. Existing cited function-size exceptions
+remain numerical invariants. No public C API or FFmpeg surface impact.
+
 ## fix/cppcheck-c-header-model-20260908 — official pthread type model (2026-09-08)
 
 Keep `--library=posix` in both configured local lint and the required Cppcheck
@@ -49905,3 +49922,39 @@ options/condition-variable cleanup. `test_fex_pool_growth` covers synchronized
 ninth-entry growth with forced relocation and native allocation. Current scoring
 does not use these acquire/release operations; this fixes the compiled internal
 API, not a demonstrated scoring hang. No public header or FFmpeg surface changes.
+
+## fix/fex-pool-consumer-model — factory visibility (2026-09-08)
+
+Cppcheck's POSIX model resolves pthread types, but `fex_ctx_vector.cpp` cannot
+see the separately compiled pool factories. Preserve only the four documented
+`uninitMemberVarNoCtor` member markers for `fex`, `opts_dict`, `ctx_list` and
+`full`; do not suppress atomic fields, the outer pool, or uninitialized reads.
+The real-header negative control must continue reporting an uninitialized
+member read. Pool entry construction and runtime behavior are unchanged.
+## refactor/test-cambi-lint — preserved test coverage (2026-09-08)
+
+Keep the named assertion groups and dispatcher groups in `test_cambi.c` small
+without dropping cases or changing fixture/expected values. The cleanup retains
+all 144 assertion expressions/messages, 30 array initializers and 23 original
+registrations in order. Its direct `feature/cambi.c` include intentionally tests
+private static helpers; the narrow include exception does not export a new API.
+No production code, golden assertions or FFmpeg integration changed.
+## PSNR format-table cleanup — 2026-09-08
+
+No rebase impact: the private C++ format table has an explicit member default
+and uses a projected standard lookup. Preserve all twelve format/constant
+rows and `psnr_constants()` return/output behavior. The C header is unchanged;
+see [the differential checks](research/psnr-format-table-lint-2026-09-08.md).
+## pdjson nesting boundary and lint cleanup (2026-09-08)
+
+`fix/pdjson-lint-20260908` keeps the pdjson Unlicense provenance and all existing
+private parser entry points. Preserve ADR-1061's 512-container count, checked
+capacity arithmetic and publication of `stack_top` only after successful
+admission/allocation. Reject zero and oversized stack increments before allocation.
+The old `> PDJSON_STACK_MAX` comparison admitted 513 levels.
+Keep the named zero lookahead sentinel (existing nonzero event values unchanged),
+read-only getter const qualifiers, first-error formatter guard and split parser
+phases. The source has only the ADR-1138 C `NULL` exception, not a blanket NOLINT.
+Run `test_pdjson` plus the model/ownership tests after an upstream parser refresh;
+its streaming, skip, Unicode, invalid-input, allocation and depth assertions are
+behavioral contracts. See [the digest](research/pdjson-nesting-and-lint-2026-09-08.md).
