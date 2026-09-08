@@ -18,7 +18,7 @@
 #
 # FFmpeg version policy (ADR-0717):
 #   Pinned to the latest stable tagged release at image-build time.
-#   Currently n9.0.1. Update FFMPEG_TAG on every release sync.
+#   The reviewed stable tag is owned by build-config.env and mirrored below.
 #   Option A (pin to latest tag) was chosen over Option B (rolling
 #   release/8.x branch) to maintain reproducible builds.
 #
@@ -40,7 +40,25 @@ ARG VMAFX_VERSION=dev
 # ---------------------------------------------------------------------------
 # Stage 1 — vmaf-builder: compile libvmaf + vmaf CLI from core/
 # ---------------------------------------------------------------------------
-FROM debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS vmaf-builder
+# Base images come from build-config.env -- the single source of truth for
+# every container base in this repository. These defaults are mirrors kept in
+# sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
+# these lines, then run `make base-images-sync`.
+ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132"
+ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:9baa6b4187bbb98d240372a8a235ac0bb6b5ddd52bba1431dc2f7c0705862728"
+ARG RELEASE_RUNTIME_CC="gcr.io/distroless/cc-debian13:nonroot@sha256:c31ff9abcb1910f3ab25c7957bdaf0bfe12a01eb546e8df2282f1c8f682b606c"
+ARG CUDA_RUNTIME="nvidia/cuda:13.3.1-runtime-ubuntu26.04@sha256:71b55b93449973f2ee6d8024d6dd34853d338a1f007fe07adaaf9a35fd591794"
+ARG ROCM_RUNTIME="rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374"
+ARG ONEAPI_RUNTIME="intel/oneapi-runtime:2025.3.1-0-devel-ubuntu24.04@sha256:8942e89b6e6e0cd9a4ca26f12fd4b32a2f0dd1de7e631ea59101a183878d660f"
+
+# Vendor runtime libraries as named stages: a digest-pinned
+# `COPY --from=<image>` is a base-image pin that no FROM-oriented search
+# finds. BuildKit prunes whichever the selected target does not use.
+FROM ${CUDA_RUNTIME} AS cuda-runtime-libs
+FROM ${ROCM_RUNTIME} AS rocm-runtime-libs
+FROM ${ONEAPI_RUNTIME} AS oneapi-runtime-libs
+
+FROM ${RELEASE_BUILDER_BASE} AS vmaf-builder
 
 ARG VMAF_BUILD_JOBS=4
 ARG DEBIAN_FRONTEND=noninteractive
@@ -92,7 +110,7 @@ RUN mkdir -p /dist/lib /dist/bin /dist/model \
 # for the detailed rationale. The core issue: ffmpeg-patches/0007 references
 # aom_roi_map_t fields not present in any released libaom version.
 # SVT-AV1 (libsvtav1) covers the AV1 production lane.
-FROM debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS ffmpeg-deps-base
+FROM ${RELEASE_BUILDER_BASE} AS ffmpeg-deps-base
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -163,6 +181,7 @@ RUN git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
 FROM ffmpeg-deps-base AS ffmpeg-builder-cpu
 
 ARG FFMPEG_TAG=n9.0.1
+ARG FFMPEG_REMOTE=https://github.com/FFmpeg/FFmpeg.git
 
 # Restate the shell in this named stage so static Dockerfile linters can prove
 # that the dependency-closure pipeline below fails on any producer error.
@@ -171,7 +190,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY ffmpeg-patches/ /src/ffmpeg-patches/
 
 RUN git clone --depth=1 --branch "${FFMPEG_TAG}" \
-        https://git.ffmpeg.org/ffmpeg.git /src/ffmpeg
+        "${FFMPEG_REMOTE}" /src/ffmpeg
 
 WORKDIR /src/ffmpeg
 
@@ -231,7 +250,7 @@ RUN mkdir -p /ffmpeg-install/runtime-libs \
 # ---------------------------------------------------------------------------
 # Stage 4 — go-builder: compile the vmafx-node Go binary
 # ---------------------------------------------------------------------------
-FROM golang:1.27-trixie@sha256:9baa6b4187bbb98d240372a8a235ac0bb6b5ddd52bba1431dc2f7c0705862728 AS go-builder
+FROM ${RELEASE_GO_BASE} AS go-builder
 
 ARG CGO_ENABLED=1
 ARG DEBIAN_FRONTEND=noninteractive
@@ -273,10 +292,10 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
 # ---------------------------------------------------------------------------
 # Stage 5 — runtime-base: Debian 13 glibc runtime foundation
 # ---------------------------------------------------------------------------
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:c31ff9abcb1910f3ab25c7957bdaf0bfe12a01eb546e8df2282f1c8f682b606c AS runtime-base
+FROM ${RELEASE_RUNTIME_CC} AS runtime-base
 
 LABEL org.opencontainers.image.title="vmafx-node"
-LABEL org.opencontainers.image.description="VMAFX worker node — ffmpeg n9.0.1 + libvmaf + vmafx-node gRPC service"
+LABEL org.opencontainers.image.description="VMAFX worker node — FFmpeg + libvmaf + vmafx-node gRPC service"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
@@ -327,7 +346,7 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
 # CUDA runtime libs — provided by host via nvidia-container-toolkit
 # CUDA 13.3.1 runtime is sourced from the official Ubuntu 24.04 image.
 # Mismatching major versions (12.x runtime vs 13.x build) causes symbol-resolution failures.
-COPY --from=nvidia/cuda:13.3.1-runtime-ubuntu24.04@sha256:63da350831208559df18c7b8f3e0d5d1c984eaa815cdde690aacd6606cd0cb11 /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
+COPY --from=cuda-runtime-libs /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 
@@ -370,21 +389,21 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
 # `/opt/rocm/`: ROCm 10 makes `/opt/rocm/lib` a Debian-alternatives symlink,
 # and BuildKit resolves a `COPY --from` source against the source image's
 # filesystem without following that indirection reliably.
-COPY --from=rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 \
+COPY --from=rocm-runtime-libs \
      /opt/rocm/core-10.0/lib/libamdhip64.so*            /opt/rocm/lib/
-COPY --from=rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 \
+COPY --from=rocm-runtime-libs \
      /opt/rocm/core-10.0/lib/libhsa-runtime64.so*       /opt/rocm/lib/
-COPY --from=rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 \
+COPY --from=rocm-runtime-libs \
      /opt/rocm/core-10.0/lib/libamd_comgr.so*           /opt/rocm/lib/
-COPY --from=rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 \
+COPY --from=rocm-runtime-libs \
      /opt/rocm/core-10.0/lib/librocm_kpack.so*          /opt/rocm/lib/
-COPY --from=rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 \
+COPY --from=rocm-runtime-libs \
      /opt/rocm/core-10.0/lib/librocprofiler-register.so* /opt/rocm/lib/
-COPY --from=rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 \
+COPY --from=rocm-runtime-libs \
      /opt/rocm/core-10.0/lib/rocm_sysdeps/lib/          /opt/rocm/lib/rocm_sysdeps/lib/
-COPY --from=rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 \
+COPY --from=rocm-runtime-libs \
      /opt/rocm/core-10.0/lib/llvm/lib/libLLVM.so.*      /opt/rocm/lib/llvm/lib/
-COPY --from=rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 \
+COPY --from=rocm-runtime-libs \
      /opt/rocm/core-10.0/lib/llvm/lib/libclang-cpp.so.* /opt/rocm/lib/llvm/lib/
 
 ENV LD_LIBRARY_PATH="/usr/local/lib:/opt/rocm/lib"
@@ -410,8 +429,8 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libsw*.so*  /usr/local/lib/
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
 
 # Intel oneAPI SYCL + Level Zero runtime
-COPY --from=intel/oneapi-runtime:2025.3.1-0-devel-ubuntu24.04@sha256:8942e89b6e6e0cd9a4ca26f12fd4b32a2f0dd1de7e631ea59101a183878d660f /opt/intel/oneapi/compiler/latest/lib/libsycl.so*   /usr/local/lib/
-COPY --from=intel/oneapi-runtime:2025.3.1-0-devel-ubuntu24.04@sha256:8942e89b6e6e0cd9a4ca26f12fd4b32a2f0dd1de7e631ea59101a183878d660f /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
+COPY --from=oneapi-runtime-libs /opt/intel/oneapi/compiler/latest/lib/libsycl.so*   /usr/local/lib/
+COPY --from=oneapi-runtime-libs /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 

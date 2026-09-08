@@ -54,7 +54,18 @@
 # it to emit .hsaco), the HIP / HSA / comgr runtimes, the amdgcn device
 # bitcode, the headers -- and `librocprofiler-register`, which despite the
 # name is a hard link-time dependency of libamdhip64.so.
-FROM rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374 AS rocm-src
+# Base images come from build-config.env -- the single source of truth for
+# every container base in this repository. These defaults are mirrors kept in
+# sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
+# these lines, then run `make base-images-sync`.
+#
+# They must precede the FIRST FROM: an ARG declared after one is scoped to the
+# stage it follows, so `FROM ${ROCM_BUILDER}` above would expand to nothing.
+ARG DEV_BASE="ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b"
+ARG DEV_GO_BASE="golang:1.27-trixie@sha256:9baa6b4187bbb98d240372a8a235ac0bb6b5ddd52bba1431dc2f7c0705862728"
+ARG ROCM_BUILDER="rocm/dev-ubuntu-24.04:10.0.0-full@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374"
+
+FROM ${ROCM_BUILDER} AS rocm-src
 
 ARG RL=/opt/rocm/core-10.0/lib
 RUN rm -rf \
@@ -99,7 +110,12 @@ RUN for entry in /opt/rocm/*; do \
 # ---------------------------------------------------------------------------
 # Stage 1 — build-deps
 # ---------------------------------------------------------------------------
-FROM ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b AS build-deps
+# every container base in this repository. These defaults are mirrors kept in
+
+FROM ${DEV_BASE} AS build-deps
+
+# Declare the shell in each stage with pipelines so failures stay visible.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 LABEL org.opencontainers.image.title="vmaf-dev-mcp-build-deps"
 LABEL org.opencontainers.image.description="Base build tools for VMAF fork dev-MCP container"
@@ -343,11 +359,12 @@ RUN for pkg in intel-opencl-icd libze-intel-gpu1; do \
     done
 
 # Level Zero loader (libze_loader) for SYCL
-ARG LEVEL_ZERO_VER=1.32.0
+COPY build-config.env /opt/vmafx/build-config.env
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VER}/libze1_${LEVEL_ZERO_VER}%2Bu24.04_amd64.deb" -o /tmp/libze1.deb \
-    && curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VER}/libze-dev_${LEVEL_ZERO_VER}%2Bu24.04_amd64.deb" -o /tmp/libze-dev.deb \
+    . /opt/vmafx/build-config.env \
+    && curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze1_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze1.deb \
+    && curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze-dev_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze-dev.deb \
     && apt-get update \
     && apt-get install -y --no-install-recommends /tmp/libze1.deb /tmp/libze-dev.deb \
     && find /tmp -maxdepth 1 -name 'libze*.deb' -delete
@@ -483,6 +500,7 @@ RUN echo "=== sycl-ls (SYCL device visibility) ===" \
 # ---------------------------------------------------------------------------
 FROM gpu-sdks AS libvmaf-build
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 WORKDIR /build/vmaf
 
 # Copy only the build-needed subtrees — NOT the full repo root.
@@ -586,23 +604,22 @@ USER root
 #
 # Note the two archives unpack to DIFFERENT top-level directory names
 # (`nv-codec-headers` from code.ffmpeg.org, `nv-codec-headers-<tag>` from
-# GitHub), so the build cds into whatever was extracted rather than a fixed name.
+# GitHub), so make targets the extracted directory rather than a fixed name.
 ARG NV_CODEC_HEADERS_REF=n13.1.15.0
-RUN cd /tmp \
-    && { curl -fsSL --retry 1 --retry-delay 2 --connect-timeout 10 --max-time 60 \
+RUN { curl -fsSL --retry 1 --retry-delay 2 --connect-timeout 10 --max-time 60 \
            "https://code.ffmpeg.org/FFmpeg/nv-codec-headers/archive/${NV_CODEC_HEADERS_REF}.tar.gz" \
-           -o nv-codec-headers.tgz \
+           -o /tmp/nv-codec-headers.tgz \
          || { echo "nv-codec-headers: code.ffmpeg.org unreachable, falling back to the GitHub mirror" >&2; \
               curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 120 \
                 "https://github.com/FFmpeg/nv-codec-headers/archive/refs/tags/${NV_CODEC_HEADERS_REF}.tar.gz" \
-                -o nv-codec-headers.tgz; }; } \
-    && tar xzf nv-codec-headers.tgz \
+                -o /tmp/nv-codec-headers.tgz; }; } \
+    && tar xzf /tmp/nv-codec-headers.tgz -C /tmp \
     && src_dir="$(find /tmp -maxdepth 1 -type d -name 'nv-codec-headers*' -print -quit)" \
     && test -n "$src_dir" \
     && test -f "$src_dir/include/ffnvcodec/dynlink_cuda.h" \
     && grep -q cuStreamCreateWithPriority "$src_dir/include/ffnvcodec/dynlink_loader.h" \
     && make -C "$src_dir" install PREFIX=/usr/local \
-    && cd / && find /tmp -maxdepth 1 -name 'nv-codec-headers*' -exec rm -rf {} +
+    && find /tmp -maxdepth 1 -name 'nv-codec-headers*' -exec rm -rf {} +
 
 USER vmaf
 
@@ -624,8 +641,8 @@ USER vmaf
 # cost again. Meson auto-detects ccache when it's on PATH; passing the
 # environment hint keeps the cache scoped to the dev-mcp image.
 RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,gid=2000,id=ccache-dev-mcp-vmaf \
-    CCACHE_DIR=/home/vmaf/.cache/ccache \
-    cd core && CC=icx CXX=icpx meson setup build \
+    export CCACHE_DIR=/home/vmaf/.cache/ccache \
+    && CC=icx CXX=icpx meson setup core/build core \
         -Denable_cuda=true \
         -Denable_sycl=true \
         -Denable_hip=true \
@@ -640,14 +657,14 @@ RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,g
         -Db_lto=false \
         --prefix=/usr/local \
         -Dc_args="-march=native" \
-    && ninja -C build
+    && ninja -C core/build
 
 USER root
 # Install and remove the Meson build dir (CUDA PTX/SASS, SYCL AOT fat
 # binaries, HIP .co objects, C object files). Installed libvmaf.so and
 # headers live under /usr/local/; the build dir is not needed at runtime
 # (~1-3 GB with all GPU backends). ADR-0790.
-RUN cd core && ninja -C build install \
+RUN ninja -C core/build install \
     && ldconfig \
     && find /build/vmaf/core/build -maxdepth 0 -exec rm -rf {} +
 
@@ -709,12 +726,6 @@ RUN for B in cpu cuda sycl hip; do \
 # `libvmaf_sycl`, `vmaf_pre`, `libvmaf_tune` so the dev
 # MCP probe can shell out to a real FFmpeg toolchain end-to-end.
 USER root
-
-# Re-set pipefail shell for this stage. SHELL directives are NOT inherited
-# across FROM boundaries in multi-stage builds — each stage starts fresh
-# with /bin/sh. The gpu-sdks stage set pipefail, but libvmaf-build is a
-# new stage so we must repeat it here.
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Codec dependencies for FFmpeg n9.0.1 build:
 #
@@ -887,7 +898,8 @@ RUN git clone --depth=1 --branch "v${AMF_VERSION}" \
 USER vmaf
 
 ARG FFMPEG_TAG=n9.0.1
-RUN git clone --depth=1 --branch ${FFMPEG_TAG} https://git.ffmpeg.org/ffmpeg.git /build/ffmpeg
+ARG FFMPEG_REMOTE=https://github.com/FFmpeg/FFmpeg.git
+RUN git clone --depth=1 --branch ${FFMPEG_TAG} "${FFMPEG_REMOTE}" /build/ffmpeg
 WORKDIR /build/ffmpeg
 
 # Apply every patch from ffmpeg-patches/series.txt in order.
@@ -1005,8 +1017,8 @@ USER root
 # Install and then remove the FFmpeg source tree (sources + build objects).
 # Installed binaries/libs live under /usr/local/; the source tree at
 # /build/ffmpeg is not needed at runtime (~2-5 GB). ADR-0790.
-RUN cd /build/ffmpeg \
-    && make install \
+WORKDIR /build/vmaf
+RUN make -C /build/ffmpeg install \
     && /usr/local/bin/ffmpeg -version | head -3 \
     && find /build/ffmpeg -maxdepth 0 -exec rm -rf {} +
 
@@ -1059,11 +1071,16 @@ WORKDIR /build/vmaf
 # vmafx-operator are pure Go. So the toolchain is copied INTO the stage that
 # already has libvmaf.so and its headers, rather than the other way round.
 # =============================================================================
+# Go toolchain as a named stage: the pin stays an ordinary FROM the
+# single-source gate can see.
+FROM ${DEV_GO_BASE} AS go-toolchain
+
 FROM libvmaf-build AS go-build
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 USER root
 # Toolchain only — no base-image swap, so libvmaf and its pkg-config stay put.
-COPY --from=golang:1.27-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b /usr/local/go /usr/local/go
+COPY --from=go-toolchain /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:${PATH}
 ENV GOTOOLCHAIN=local
 
@@ -1082,12 +1099,15 @@ ENV CGO_ENABLED=1
 RUN --mount=type=cache,target=/root/.cache/go-build,sharing=locked,id=gobuild-dev-mcp \
     --mount=type=cache,target=/root/go/pkg/mod,sharing=locked,id=gomod-dev-mcp \
     go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/... \
-    && ls -1 /out/ \
-    && test "$(ls -1 /out/ | wc -l)" -eq 7 \
+    && binaries=(/out/*) \
+    && printf '%s\n' "${binaries[@]}" \
+    && test "${#binaries[@]}" -eq 7 \
     && test -x /out/vmafx-ort-runner
+USER vmaf
 
 FROM libvmaf-build AS dev-mcp
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Install in-tree Python packages (editable for dev convenience)
 # vmaf-mcp: embedded MCP JSON-RPC server
 # vmaf-train: tiny-AI training harness (ai/)
@@ -1166,16 +1186,17 @@ RUN printf '%s\n' \
 # Explicit interpreter path: `ENV PATH=/opt/vmaf-venv/bin:...` is set BELOW
 # this line, so a bare `python3` here would be the system interpreter, which
 # does not have the harness installed.
-RUN cd /build/vmaf \
-    && /opt/vmaf-venv/bin/python -c 'import vmaf, slugify; print("harness import OK:", vmaf.__file__)' \
-    && /opt/vmaf-venv/bin/python -m pytest python/test/quality_runner_test.py --collect-only -q \
-        > /tmp/collect.log 2>&1 \
-    && tail -1 /tmp/collect.log \
-    || { echo "Netflix golden suite does not collect inside the container:"; \
-         tail -20 /tmp/collect.log; exit 1; }
+RUN /opt/vmaf-venv/bin/python -c 'import vmaf, slugify; print("harness import OK:", vmaf.__file__)' \
+    && if /opt/vmaf-venv/bin/python -m pytest python/test/quality_runner_test.py --collect-only -q \
+        > /tmp/collect.log 2>&1; then \
+         tail -n 1 /tmp/collect.log; \
+       else \
+         echo "Netflix golden suite does not collect inside the container:"; \
+         tail -n 20 /tmp/collect.log; exit 1; \
+       fi
 
 ENV PATH=/opt/vmaf-venv/bin:${PATH}
-ENV PYTHONPATH=/build/vmaf/python:${PYTHONPATH}
+ENV PYTHONPATH=/build/vmaf/python
 
 # Runtime environment
 ENV VMAF_MODEL_PATH=/build/vmaf/model

@@ -33,11 +33,9 @@ ADR_DIR="$REPO_ROOT/docs/adr"
 BY_TAG_DIR="$ADR_DIR/by-tag"
 MKDOCS_YML="$REPO_ROOT/mkdocs.yml"
 
-BEGIN_MARK='# >>> ADR-NAV-GENERATED'
-END_MARK='# <<< ADR-NAV-GENERATED'
-
 render() {
   python3 - "$ADR_DIR" "$BY_TAG_DIR" <<'PY'
+import json
 import os
 import re
 import sys
@@ -94,7 +92,7 @@ for b in sorted(buckets):
     header = f'"{lo:04d}-{hi:04d} — {label}"'
     lines.append(f"{indent6}- {header}:")
     for num, slug, fname in buckets[b]:
-        lines.append(f"{indent8}- \"ADR-{num:04d}: {slug}\": adr/{fname}")
+        lines.append(f"{indent8}- {json.dumps(f'ADR-{num:04d}: {slug}')}: adr/{fname}")
 
 # By-tag section: enumerate files under by-tag/, sorted.
 if os.path.isdir(by_tag_dir):
@@ -108,7 +106,7 @@ if os.path.isdir(by_tag_dir):
             lines.append(f"{indent8}- Overview: adr/by-tag/index.md")
         for f in tag_files:
             tag = f[:-3]  # strip .md
-            lines.append(f"{indent8}- \"{tag}\": adr/by-tag/{f}")
+            lines.append(f"{indent8}- {json.dumps(tag)}: adr/by-tag/{f}")
 
 print("\n".join(lines))
 PY
@@ -136,42 +134,39 @@ if [[ "$mode" == render ]]; then
   exit 0
 fi
 
-# splice/check: extract the existing block from mkdocs.yml.
-extract_block() {
-  awk -v b="$BEGIN_MARK" -v e="$END_MARK" '
-    index($0, b) {inblk=1; next}
-    index($0, e) {inblk=0; next}
-    inblk {print}
-  ' "$MKDOCS_YML"
-}
+# Check both sentinel boundaries before reading or replacing any bytes.
+# Stage next to mkdocs.yml so replace is atomic even when /tmp is elsewhere.
+printf '%s\n' "$rendered" | python3 -c '
+from pathlib import Path
+import difflib
+import sys
+import tempfile
 
-splice_block() {
-  local tmp
-  tmp="$(mktemp)"
-  awk -v b="$BEGIN_MARK" -v e="$END_MARK" -v payload="$rendered" '
-    index($0, b) {print; print payload; skip=1; next}
-    index($0, e) {skip=0; print; next}
-    !skip {print}
-  ' "$MKDOCS_YML" >"$tmp"
-  mv "$tmp" "$MKDOCS_YML"
-}
-
-if ! grep -q "$BEGIN_MARK" "$MKDOCS_YML"; then
-  printf 'mkdocs.yml is missing the %s sentinel — splice once by hand first.\n' \
-    "$BEGIN_MARK" >&2
-  exit 66
-fi
-
-if [[ "$mode" == check ]]; then
-  existing="$(extract_block)"
-  if [[ "$existing" == "$rendered" ]]; then
-    exit 0
-  fi
-  diff -u <(printf '%s\n' "$existing") <(printf '%s\n' "$rendered") || true
-  printf '\nmkdocs.yml ADR-nav block is out of sync.\n' >&2
-  printf 'Run: scripts/docs/generate-adr-nav.sh --write\n' >&2
-  exit 1
-fi
-
-splice_block
-printf 'mkdocs.yml ADR-nav block rewritten.\n' >&2
+path = Path(sys.argv[1])
+mode = sys.argv[2]
+lines = path.read_text().splitlines(keepends=True)
+begins = [i for i, line in enumerate(lines) if line.lstrip().startswith("# >>> ADR-NAV-GENERATED")]
+ends = [i for i, line in enumerate(lines) if line.lstrip().startswith("# <<< ADR-NAV-GENERATED")]
+if len(begins) != 1 or len(ends) != 1 or begins[0] >= ends[0]:
+    raise SystemExit("mkdocs.yml requires exactly one ordered ADR-NAV-GENERATED sentinel pair")
+begin, end = begins[0], ends[0]
+rendered = sys.stdin.read()
+existing = "".join(lines[begin + 1:end])
+if mode == "check":
+    if existing != rendered:
+        sys.stderr.writelines(difflib.unified_diff(existing.splitlines(True), rendered.splitlines(True), fromfile="committed ADR nav", tofile="generated ADR nav"))
+        raise SystemExit("mkdocs.yml ADR nav is stale; run make docs-fragments-write")
+else:
+    replacement = "".join(lines[:begin + 1]) + rendered + "".join(lines[end:])
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, prefix=".adr-nav-", delete=False) as output:
+            temporary = Path(output.name)
+            output.write(replacement)
+        temporary.chmod(path.stat().st_mode)
+        temporary.replace(path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    print("mkdocs.yml ADR-nav block rewritten.", file=sys.stderr)
+' "$MKDOCS_YML" "$mode"

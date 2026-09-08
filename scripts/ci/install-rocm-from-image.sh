@@ -65,6 +65,7 @@ case "$IMAGE" in
 esac
 
 REPO="${IMAGE%@*}"
+REPO="${REPO%:*}"
 DIGEST="${IMAGE#*@}"
 
 # Paths under /opt/rocm that libvmaf's HIP backend never links. Kept as tar

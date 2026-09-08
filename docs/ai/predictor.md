@@ -6,7 +6,7 @@
 > `libsvtav1`, `libaom-av1`, `libvvenc`) and AMF hardware encoders
 > (`h264_amf`, `hevc_amf`, `av1_amf`) are **synthetic stubs** trained on a
 > 100-row synthetic corpus (`synthetic-stub-N=100`) that re-encodes the
-> analytical fallback curve (ADR-0325). **Stub models are not authoritative
+> analytical fallback curve (ADR-0395). **Stub models are not authoritative
 > for production CRF picks.** Only NVENC and QSV models are trained on real
 > Phase-A corpora. At point of use, `Predictor` and `vmaf-tune` emit a warning
 > when loading a stub model. To use software/AMF predictors in production,
@@ -75,12 +75,22 @@ not committed). Their model cards carry `corpus.kind: real-N=<rows>`
 and honest held-out metrics.
 
 The software and AMF models remain **synthetic-stub** models per
-[ADR-0325](../adr/0325-predictor-stub-models-policy.md): each such codec
+[ADR-0395](../adr/0395-predictor-stub-models-policy.md): each such codec
 gets a deterministic 100-row synthetic corpus seeded by the codec name.
 The synthetic target is the predictor's own analytical-fallback curve,
 so the resulting ONNX model is a smooth re-encoding of the analytical
 formula. **Stub models are not authoritative for production CRF picks.**
 Every per-codec model card flags this prominently.
+
+The Go predictor reads an optional `<model-stem>_card.md` next to the
+selected model to classify its training corpus. Registry names resolve via
+`VMAFX_MODEL_DIR` before this lookup. A card containing
+`synthetic-stub` marks a stub; `real-N=` can override the software/AMF
+filename fallback. Card symlinks must remain inside that model directory.
+If the card is missing, unreadable, or points outside it, the predictor
+uses its existing filename/codec fallback. A filename containing `stub`
+always remains a stub. Keep real-corpus cards alongside renamed models
+so their corpus classification remains available.
 
 To train real models on a real corpus:
 
@@ -217,5 +227,5 @@ pytest tools/vmaf-tune/tests/test_predictor_train.py -v
 
 - [ADR-0237 — quality-aware encode automation](../adr/0237-quality-aware-encode-automation.md)
 - [ADR-0392 — vmaf-tune Phase D per-shot tuning](../adr/0392-vmaf-tune-phase-d-per-shot.md)
-- [ADR-0325 — predictor stub-models policy](../adr/0325-predictor-stub-models-policy.md)
+- [ADR-0395 — predictor stub-models policy](../adr/0395-predictor-stub-models-policy.md)
 - [ADR-0042 — tiny-AI docs bar](../adr/0042-tinyai-docs-required-per-pr.md)

@@ -3,6 +3,7 @@
 # The format/lint hooks run only on changed files for speed.
 
 minimum_pre_commit_version: "3.5.0"
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
 fail_fast: false
 
 repos:
@@ -207,6 +208,27 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: check-base-image-single-source
+        name: Container base images come from build-config.env
+        entry: scripts/ci/check-base-image-single-source.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+
+      - id: test-base-image-single-source
+        name: Base image and toolchain single-source tests
+        entry: python3 -m unittest discover -s scripts/ci/tests -p 'test_*single_source.py'
+        language: system
+        files: '^(build-config\.env|dev/Containerfile|renovate\.json|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-workflow-versions\.py|tests/test_(base_image|level_zero)_single_source\.py))$'
+        pass_filenames: false
+
+      - id: test-renovate-file-patterns
+        name: Renovate custom managers select real inputs
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_renovate_file_patterns.py
+        language: system
+        files: '^(renovate\.json|scripts/ci/tests/test_renovate_file_patterns\.py)$'
+        pass_filenames: false
+
       - id: check-no-tracked-venv
         name: No virtualenv path is tracked (dir or symlink)
         entry: scripts/ci/check-no-tracked-venv.sh
@@ -346,13 +368,16 @@ repos:
         # without an explicit file list, picking up .semgrepignore).
 
       - id: ffmpeg-patches-apply-check
-        name: ffmpeg-patches apply --check (n8.1.1)
-        entry: scripts/ci/ffmpeg-patches-check.sh
-        language: script
-        files: '^ffmpeg-patches/.*\.patch$'
-        stages: [pre-push]
-        # Script self-discovers via series.txt; passing per-file paths
-        # would re-check each patch once per file in the diff.
+        name: FFmpeg patch stack on the configured release
+        entry: python3 scripts/ci/ffmpeg_patch_stack.py --refresh --output-dir .workingdir2/cache/ffmpeg-patch-stack/hooks
+        language: system
+        # CI helpers are authority inputs (ADR-1140), including the replay
+        # script's config/refresh helpers. Public API/build changes can make
+        # a previously clean patch stack stale without editing a patch.
+        files: '^(ffmpeg-patches/|scripts/ci/|build-config\.env$|core/include/|(?:core/)?meson(?:_options\.txt|\.build)$|\.github/workflows/ffmpeg-patch-stack\.yml$)'
+        stages: [pre-commit, pre-push]
+        # Refresh only the configured release. The framework stops the commit
+        # or push when regeneration changes tracked files for review/restaging.
         pass_filenames: false
 
       - id: validate-pr-body
@@ -365,4 +390,20 @@ repos:
         # gh CLI is absent or no open PR exists (both handled gracefully
         # inside the script). See docs/development/pr-body-sentinel-guide.md.
         always_run: true
+        pass_filenames: false
+
+      - id: mkdocs-strict
+        name: Build changed documentation with MkDocs strict validation
+        entry: scripts/git-hooks/pre-push-mkdocs-strict.sh
+        language: script
+        stages: [pre-push]
+        files: '^(docs/|mkdocs\.yml)'
+        pass_filenames: false
+
+      - id: check-generated-docs
+        name: Check generated ADR and changelog freshness
+        entry: make docs-fragments-check
+        language: system
+        stages: [pre-commit]
+        files: '^(docs/adr/|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
         pass_filenames: false

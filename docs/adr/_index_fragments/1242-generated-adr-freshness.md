@@ -1,0 +1,1 @@
+| [ADR-1242](1242-generated-adr-freshness.md) | Require deterministic ADR fragment coverage, tags, and navigation freshness in local and hosted checks. | Accepted | docs, ci, adr, navigation, automation |
