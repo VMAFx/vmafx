@@ -114,6 +114,14 @@ The `--model / -m` flag takes a colon-delimited key/value string (see
 --model version=...:enable_transform      # apply transform
 ```
 
+JSON model files may contain at most **512 simultaneously nested arrays or
+objects**, including the outermost container. A 513th level causes model loading
+to fail; the internal parser records `maximum depth of nesting reached` (the
+CLI may report only the enclosing model-load failure).
+This implements the existing parser resource limit; it does not limit the number
+of features or array elements at one level. Flatten unnecessarily nested custom
+model data instead of increasing its nesting depth.
+
 Built-in model versions (compiled into `libvmaf` via `-Dbuilt_in_models=true`,
 default `true`):
 

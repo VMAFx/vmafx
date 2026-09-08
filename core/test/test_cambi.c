@@ -18,6 +18,7 @@
 
 #include "test.h"
 #include "ref.h"
+// NOLINTNEXTLINE(bugprone-suspicious-include) — ADR-0141; docs/research/cambi-test-lint-2026-09-08.md: private static helper coverage.
 #include "feature/cambi.c"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -35,11 +36,11 @@ static int almost_equal(double a, double b)
     return diff < EPS;
 }
 
-static bool pic_data_equality(VmafPicture *pic, VmafPicture *pic2)
+static bool pic_data_equality(const VmafPicture *pic, const VmafPicture *pic2)
 {
-    uint16_t *data = pic->data[0];
+    const uint16_t *data = pic->data[0];
     ptrdiff_t stride = pic->stride[0] >> 1;
-    uint16_t *data2 = pic2->data[0];
+    const uint16_t *data2 = pic2->data[0];
     ptrdiff_t stride2 = pic2->stride[0] >> 1;
 
     for (unsigned i = 0; i < pic->h[0]; i++) {
@@ -52,10 +53,10 @@ static bool pic_data_equality(VmafPicture *pic, VmafPicture *pic2)
     return 1;
 }
 
-static int data_pic_sum(VmafPicture *pic)
+static int data_pic_sum(const VmafPicture *pic)
 {
     int sum = 0;
-    uint16_t *data = pic->data[0];
+    const uint16_t *data = pic->data[0];
     ptrdiff_t stride = pic->stride[0] >> 1;
     for (unsigned i = 0; i < pic->h[0]; i++) {
         for (unsigned j = 0; j < pic->w[0]; j++) {
@@ -94,7 +95,7 @@ static int get_sample_image(VmafPicture *pic, int pic_index)
 static int get_sample_image_8b(VmafPicture *pic)
 {
     int count = 0;
-    uint16_t sample_pic[16] = {1, 2, 0, 100, 0, 2, 0, 100, 0, 2, 0, 100, 4, 2, 0, 100};
+    const uint16_t sample_pic[16] = {1, 2, 0, 100, 0, 2, 0, 100, 0, 2, 0, 100, 4, 2, 0, 100};
     int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV400P, 8, 4, 4);
     if (err)
         return err;
@@ -159,7 +160,7 @@ static char *test_decimate()
     int err = get_sample_image(&pic, 0);
     mu_assert("test_decimate alloc error", !err);
 
-    uint16_t *data = pic.data[0];
+    const uint16_t *data = pic.data[0];
     ptrdiff_t stride = pic.stride[0] >> 1;
     uint16_t width = pic.w[0] >> 1;
     uint16_t height = pic.h[0] >> 1;
@@ -177,21 +178,12 @@ static char *test_decimate()
 }
 
 /* Banding detection functions */
-static char *test_decimate_generic()
+static char *check_decimate_10b(VmafPicture pic, VmafPicture out_pic)
 {
-    VmafPicture pic;
-    int err = 0;
-    err |= get_sample_image(&pic, 0);
-    mu_assert("test_decimate_generic alloc #1 error", !err);
-
-    VmafPicture out_pic;
-    err |= vmaf_picture_alloc(&out_pic, VMAF_PIX_FMT_YUV400P, 10, 2, 2);
-    mu_assert("test_decimate_generic alloc #2 error", !err);
-
     pic.bpc = 10;
     decimate_generic_uint16_and_convert_to_10b(&pic, &out_pic, out_pic.w[0], out_pic.h[0]);
 
-    uint16_t *data = out_pic.data[0];
+    const uint16_t *data = out_pic.data[0];
     ptrdiff_t stride = out_pic.stride[0] >> 1;
 
     mu_assert("decimate generic 10b wrong pixel value (0,0)", data[0] == 2);
@@ -199,6 +191,13 @@ static char *test_decimate_generic()
     mu_assert("decimate generic 10b wrong pixel value (1,0)", data[stride] == 2);
     mu_assert("decimate generic 10b wrong pixel value (1,1)", data[1 + stride] == 100);
 
+    return NULL;
+}
+
+static char *check_decimate_16b(VmafPicture pic, VmafPicture out_pic)
+{
+    const uint16_t *data = out_pic.data[0];
+    ptrdiff_t stride = out_pic.stride[0] >> 1;
     pic.bpc = 16;
     decimate_generic_uint16_and_convert_to_10b(&pic, &out_pic, out_pic.w[0], out_pic.h[0]);
 
@@ -207,6 +206,13 @@ static char *test_decimate_generic()
     mu_assert("decimate generic 16b wrong pixel value (1,0)", data[stride] == 0);
     mu_assert("decimate generic 16b wrong pixel value (1,1)", data[1 + stride] == 2);
 
+    return NULL;
+}
+
+static char *check_decimate_12b(VmafPicture pic, VmafPicture out_pic)
+{
+    const uint16_t *data = out_pic.data[0];
+    ptrdiff_t stride = out_pic.stride[0] >> 1;
     pic.bpc = 12;
     decimate_generic_uint16_and_convert_to_10b(&pic, &out_pic, out_pic.w[0], out_pic.h[0]);
 
@@ -215,6 +221,13 @@ static char *test_decimate_generic()
     mu_assert("decimate generic 12b wrong pixel value (1,0)", data[stride] == 1);
     mu_assert("decimate generic 12b wrong pixel value (1,1)", data[1 + stride] == 25);
 
+    return NULL;
+}
+
+static char *check_decimate_9b(VmafPicture pic, VmafPicture out_pic)
+{
+    const uint16_t *data = out_pic.data[0];
+    ptrdiff_t stride = out_pic.stride[0] >> 1;
     pic.bpc = 9;
     decimate_generic_9b_and_convert_to_10b(&pic, &out_pic, out_pic.w[0], out_pic.h[0]);
 
@@ -223,6 +236,14 @@ static char *test_decimate_generic()
     mu_assert("decimate generic 9b to 10b wrong pixel value (1,0)", data[stride] == 4);
     mu_assert("decimate generic 9b to 10b wrong pixel value (1,1)", data[1 + stride] == 200);
 
+    return NULL;
+}
+
+static char *check_decimate_additional_inputs(VmafPicture pic, VmafPicture out_pic)
+{
+    int err = 0;
+    const uint16_t *data = out_pic.data[0];
+    ptrdiff_t stride = out_pic.stride[0] >> 1;
     VmafPicture out_pic_4x4;
     err |= vmaf_picture_alloc(&out_pic_4x4, VMAF_PIX_FMT_YUV400P, 10, 4, 4);
     mu_assert("test_decimate_generic alloc #3 error", !err);
@@ -246,10 +267,47 @@ static char *test_decimate_generic()
     mu_assert("decimate generic 8b to 10b wrong pixel value (1,0)", data[stride] == 8);
     mu_assert("decimate generic 8b to 10b wrong pixel value (1,1)", data[1 + stride] == 400);
 
-    vmaf_picture_unref(&pic);
     vmaf_picture_unref(&pic_8b);
-    vmaf_picture_unref(&out_pic);
     vmaf_picture_unref(&out_pic_4x4);
+
+    return NULL;
+}
+
+static char *test_decimate_generic()
+{
+    VmafPicture pic;
+    int err = 0;
+    err |= get_sample_image(&pic, 0);
+    mu_assert("test_decimate_generic alloc #1 error", !err);
+
+    VmafPicture out_pic;
+    err |= vmaf_picture_alloc(&out_pic, VMAF_PIX_FMT_YUV400P, 10, 2, 2);
+    mu_assert("test_decimate_generic alloc #2 error", !err);
+
+    char *error;
+    error = check_decimate_10b(pic, out_pic);
+    if (error)
+        return error;
+    error = check_decimate_16b(pic, out_pic);
+    if (error)
+        return error;
+    error = check_decimate_12b(pic, out_pic);
+    if (error)
+        return error;
+    error = check_decimate_9b(pic, out_pic);
+    if (error)
+        return error;
+    error = check_decimate_additional_inputs(pic, out_pic);
+    vmaf_picture_unref(&pic);
+    vmaf_picture_unref(&out_pic);
+    return error;
+}
+static char *check_filtered_center(VmafPicture filtered_image, const uint16_t *filtered_data,
+                                   ptrdiff_t output_stride)
+{
+    mu_assert("filter_mode: one one sum check", data_pic_sum(&filtered_image) == 1);
+    mu_assert("filter_mode: zero (3,3) check", filtered_data[3 * output_stride + 3] == 0);
+    mu_assert("filter_mode: one (2,3) check", filtered_data[2 * output_stride + 3] == 1);
 
     return NULL;
 }
@@ -283,9 +341,11 @@ static char *test_filter_mode()
     memcpy(filtered_data, data, stride * h * sizeof(uint16_t));
     filter_mode(&filtered_image, w, h, buffer);
 
-    mu_assert("filter_mode: one one sum check", data_pic_sum(&filtered_image) == 1);
-    mu_assert("filter_mode: zero (3,3) check", filtered_data[3 * output_stride + 3] == 0);
-    mu_assert("filter_mode: one (2,3) check", filtered_data[2 * output_stride + 3] == 1);
+    {
+        char *error = check_filtered_center(filtered_image, filtered_data, output_stride);
+        if (error)
+            return error;
+    }
 
     data[0 * stride + 0] = 2;
     data[0 * stride + 1] = 1;
@@ -309,7 +369,7 @@ static char *test_filter_mode()
     return NULL;
 }
 
-static char *test_get_mask_index()
+static char *check_large_mask_indices(void)
 {
     uint16_t index = get_mask_index(3840, 2160, 7);
     mu_assert("get_mask_index wrong index for (3840, 2160)", index == 24);
@@ -321,6 +381,15 @@ static char *test_get_mask_index()
     mu_assert("get_mask_index wrong index for (1280, 720)", index == 19);
     index = get_mask_index(960, 540, 7);
     mu_assert("get_mask_index wrong index for (960, 540)", index == 18);
+    return NULL;
+}
+
+static char *test_get_mask_index()
+{
+    char *error = check_large_mask_indices();
+    if (error)
+        return error;
+    uint16_t index;
     index = get_mask_index(640, 360, 7);
     mu_assert("get_mask_index wrong index for (640, 360)", index == 16);
     index = get_mask_index(480, 270, 7);
@@ -331,6 +400,23 @@ static char *test_get_mask_index()
     mu_assert("get_mask_index wrong index for (6000, 4000)", index == 27);
     index = get_mask_index(960, 540, 5);
     mu_assert("get_mask_index wrong index for (960, 540)", index == 6);
+    return NULL;
+}
+
+static char *check_spatial_mask_first_image(VmafPicture image, VmafPicture mask, uint32_t *mask_dp,
+                                            uint16_t *derivative_buffer, uint16_t filter_size,
+                                            unsigned width, unsigned height)
+{
+    get_spatial_mask_for_index(&image, &mask, mask_dp, derivative_buffer, 2, filter_size, width,
+                               height, get_derivative_data_for_row);
+    mu_assert("spatial_mask_for_index wrong mask for index=2, image=3", data_pic_sum(&mask) == 14);
+    get_spatial_mask_for_index(&image, &mask, mask_dp, derivative_buffer, 1, filter_size, width,
+                               height, get_derivative_data_for_row);
+    mu_assert("spatial_mask_for_index wrong mask for index=1, image=3", data_pic_sum(&mask) == 16);
+    get_spatial_mask_for_index(&image, &mask, mask_dp, derivative_buffer, 0, filter_size, width,
+                               height, get_derivative_data_for_row);
+    mu_assert("spatial_mask_for_index wrong mask for index=0, image=3", data_pic_sum(&mask) == 16);
+
     return NULL;
 }
 
@@ -353,15 +439,12 @@ static char *test_get_spatial_mask_for_index()
     err |= get_sample_image(&mask, 3);
     mu_assert("test_get_spatial_mask_for_index alloc #2 error", !err);
 
-    get_spatial_mask_for_index(&image, &mask, mask_dp, derivative_buffer, 2, filter_size, width,
-                               height, get_derivative_data_for_row);
-    mu_assert("spatial_mask_for_index wrong mask for index=2, image=3", data_pic_sum(&mask) == 14);
-    get_spatial_mask_for_index(&image, &mask, mask_dp, derivative_buffer, 1, filter_size, width,
-                               height, get_derivative_data_for_row);
-    mu_assert("spatial_mask_for_index wrong mask for index=1, image=3", data_pic_sum(&mask) == 16);
-    get_spatial_mask_for_index(&image, &mask, mask_dp, derivative_buffer, 0, filter_size, width,
-                               height, get_derivative_data_for_row);
-    mu_assert("spatial_mask_for_index wrong mask for index=0, image=3", data_pic_sum(&mask) == 16);
+    {
+        char *error = check_spatial_mask_first_image(image, mask, mask_dp, derivative_buffer,
+                                                     filter_size, width, height);
+        if (error)
+            return error;
+    }
 
     vmaf_picture_unref(&image);
 
@@ -384,16 +467,37 @@ static char *test_get_spatial_mask_for_index()
     return NULL;
 }
 
+static char *check_c_values_4x4(const float *combined_c_values, const float *expected_values)
+{
+    for (unsigned i = 0; i < 16; i++) {
+        mu_assert("calculate_c_values error ws=3",
+                  almost_equal(combined_c_values[i], expected_values[i]));
+    }
+
+    return NULL;
+}
+
+static char *check_c_values_8x8(const float *combined_c_values_8x8)
+{
+    double sum = 0;
+    for (unsigned i = 0; i < 64; i++) {
+        sum += combined_c_values_8x8[i];
+    }
+    mu_assert("combined_c_values 8x8 error", almost_equal(sum, 195.382527));
+
+    return NULL;
+}
+
 static char *test_calculate_c_values()
 {
     VmafPicture input;
     VmafPicture mask;
     float combined_c_values[16];
-    float expected_values[16] = {0.6666667, 2.0,  0.0, 0.0, 2.4, 3.4285715, 2.4, 0.0,
-                                 2.6666667, 3.75, 3.0, 0.0, 2.0, 2.4,       2.0, 0.0};
+    const float expected_values[16] = {0.6666667, 2.0,  0.0, 0.0, 2.4, 3.4285715, 2.4, 0.0,
+                                       2.6666667, 3.75, 3.0, 0.0, 2.0, 2.4,       2.0, 0.0};
     unsigned width = 4;
     unsigned height = 4;
-    uint16_t tvi_for_diff[4] = {178, 305, 432, 559};
+    const uint16_t tvi_for_diff[4] = {178, 305, 432, 559};
     uint16_t vlt_luma = 0;
     uint16_t window_size = 3;
     const uint16_t num_diffs = 4;
@@ -413,9 +517,10 @@ static char *test_calculate_c_values()
     calculate_c_values(&input, &mask, combined_c_values, histograms, window_size, num_diffs,
                        tvi_for_diff, vlt_luma, diff_weights, all_diffs, width, height);
 
-    for (unsigned i = 0; i < 16; i++) {
-        mu_assert("calculate_c_values error ws=3",
-                  almost_equal(combined_c_values[i], expected_values[i]));
+    {
+        char *error = check_c_values_4x4(combined_c_values, expected_values);
+        if (error)
+            return error;
     }
 
     VmafPicture input_8x8;
@@ -430,12 +535,7 @@ static char *test_calculate_c_values()
     calculate_c_values(&input_8x8, &mask_8x8, combined_c_values_8x8, histograms_8x8, window_size,
                        num_diffs, tvi_for_diff, vlt_luma, diff_weights, all_diffs, 8, 8);
 
-    double sum = 0;
-    for (unsigned i = 0; i < 64; i++) {
-        sum += combined_c_values_8x8[i];
-    }
-    mu_assert("combined_c_values 8x8 error", almost_equal(sum, 195.382527));
-
+    char *error = check_c_values_8x8(combined_c_values_8x8);
     vmaf_picture_unref(&input);
     vmaf_picture_unref(&mask);
     vmaf_picture_unref(&input_8x8);
@@ -445,15 +545,15 @@ static char *test_calculate_c_values()
     aligned_free(diff_weights);
     aligned_free(all_diffs);
 
-    return NULL;
+    return error;
 }
 
 static char *test_c_value_pixel()
 {
-    uint16_t histogram[10] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    const uint16_t histogram[10] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
     uint16_t value = 2;
-    int diffs[5] = {-2, -1, 0, 1, 2};
-    uint16_t tvi_thresholds[2] = {2, 3};
+    const int diffs[5] = {-2, -1, 0, 1, 2};
+    const uint16_t tvi_thresholds[2] = {2, 3};
     uint16_t vlt_luma = 0;
     int diff_weights[2] = {1, 2};
     uint16_t num_diffs = 2;
@@ -482,14 +582,25 @@ static char *test_c_value_pixel()
     return NULL;
 }
 
-static char *test_update_range()
+static char *check_incremented_range(const uint16_t *arr)
 {
-    uint16_t arr[15] = {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
-    increment_range(arr, 5, 10);
     mu_assert("increment_range i=5", arr[5] == 6);
     mu_assert("increment_range i=7", arr[7] == 6);
     mu_assert("increment_range i=9", arr[9] == 6);
     mu_assert("increment_range i=10", arr[10] == 5);
+
+    return NULL;
+}
+
+static char *test_update_range()
+{
+    uint16_t arr[15] = {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
+    increment_range(arr, 5, 10);
+    {
+        char *error = check_incremented_range(arr);
+        if (error)
+            return error;
+    }
 
     decrement_range(arr, 2, 6);
     mu_assert("decrement_range i=2", arr[2] == 4);
@@ -538,7 +649,7 @@ static char *test_quick_select()
 
 static char *test_average_topk_elements()
 {
-    float arr[12] = {11, 10, 9, 8, 7, 6, 1, 2, 3, 4, 5, 0};
+    const float arr[12] = {11, 10, 9, 8, 7, 6, 1, 2, 3, 4, 5, 0};
     double average;
 
     average = average_topk_elements(arr, 1);
@@ -567,13 +678,13 @@ static char *test_get_pixels_in_window()
 
 static char *test_weight_scores_per_scale()
 {
-    double scores_per_scale[NUM_SCALES] = {10000, 1000, 100, 10, 1};
+    const double scores_per_scale[NUM_SCALES] = {10000, 1000, 100, 10, 1};
     double score = weight_scores_per_scale(scores_per_scale, (uint16_t)10);
     mu_assert("weight_scores_per_scale cambi score", almost_equal(score, 16842.1));
     return NULL;
 }
 
-static char *test_adjust_window_size()
+static char *check_standard_window_sizes(void)
 {
     bool cambi_high_res_speedup = false;
     uint16_t window_size = 63;
@@ -604,6 +715,16 @@ static char *test_adjust_window_size()
     adjust_window_size(&window_size, 480, 270, cambi_high_res_speedup);
     mu_assert("adjusted window size for input=(480, 270), ws=63", window_size == 7);
 
+    return NULL;
+}
+
+static char *test_adjust_window_size()
+{
+    char *error = check_standard_window_sizes();
+    if (error)
+        return error;
+    bool cambi_high_res_speedup = false;
+    uint16_t window_size;
     window_size = 63;
     adjust_window_size(&window_size, 320, 180, cambi_high_res_speedup);
     mu_assert("adjusted window size for input=(320, 180), ws=63", window_size == 5);
@@ -676,16 +797,16 @@ static char *test_tvi_condition()
     return NULL;
 }
 
-static char *test_set_contrast_arrays()
+static char *check_contrast_arrays_four(void)
 {
     uint16_t *diffs_to_consider = NULL;
     int *diffs_weights = NULL;
     int *all_diffs = NULL;
 
     int max_log_diff = 2;
-    int expected_diffs_to_consider_4[4] = {1, 2, 3, 4};
-    int expected_diffs_weights_4[4] = {1, 2, 3, 4};
-    int expected_all_diffs_4[9] = {-4, -3, -2, -1, 0, 1, 2, 3, 4};
+    const int expected_diffs_to_consider_4[4] = {1, 2, 3, 4};
+    const int expected_diffs_weights_4[4] = {1, 2, 3, 4};
+    const int expected_all_diffs_4[9] = {-4, -3, -2, -1, 0, 1, 2, 3, 4};
 
     int num_diffs = (1 << max_log_diff);
     set_contrast_arrays(num_diffs, &diffs_to_consider, &diffs_weights, &all_diffs);
@@ -706,10 +827,24 @@ static char *test_set_contrast_arrays()
     aligned_free(diffs_weights);
     aligned_free(all_diffs);
 
+    return NULL;
+}
+
+static char *test_set_contrast_arrays()
+{
+    char *error = check_contrast_arrays_four();
+    if (error)
+        return error;
+    uint16_t *diffs_to_consider = NULL;
+    int *diffs_weights = NULL;
+    int *all_diffs = NULL;
+    int max_log_diff;
+    int num_diffs;
     max_log_diff = 3;
-    int expected_diffs_to_consider_8[8] = {1, 2, 3, 4, 5, 6, 7, 8};
-    int expected_diffs_weights_8[8] = {1, 2, 3, 4, 4, 5, 5, 6};
-    int expected_all_diffs_8[17] = {-8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8};
+    const int expected_diffs_to_consider_8[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    const int expected_diffs_weights_8[8] = {1, 2, 3, 4, 4, 5, 5, 6};
+    const int expected_all_diffs_8[17] = {-8, -7, -6, -5, -4, -3, -2, -1, 0,
+                                          1,  2,  3,  4,  5,  6,  7,  8};
 
     num_diffs = (1 << max_log_diff);
     set_contrast_arrays(num_diffs, &diffs_to_consider, &diffs_weights, &all_diffs);
@@ -792,17 +927,28 @@ static char *test_get_vlt_luma()
  * deriv_valid=false (padding row). We verify the output matches the expected
  * SAT recurrence dp[c] = dp_prev[c] + prefix_sum(deriv, 0..c).
  */
+static char *check_valid_dp_row(const uint32_t *dp_curr)
+{
+    mu_assert("compute_dp_row dp_curr[2] (j=0)", dp_curr[2] == 11);
+    mu_assert("compute_dp_row dp_curr[3] (j=1)", dp_curr[3] == 21);
+    mu_assert("compute_dp_row dp_curr[4] (j=2)", dp_curr[4] == 33);
+    mu_assert("compute_dp_row dp_curr[5] (j=3)", dp_curr[5] == 44);
+    mu_assert("compute_dp_row dp_curr[6] (pad tail)", dp_curr[6] == 4);
+
+    return NULL;
+}
+
 static char *test_compute_dp_row()
 {
     /* 4-pixel-wide image: dp_width = width + 2*pad_size + 1 = 7 with pad_size=1 */
     enum { WIDTH = 4, PAD = 1 };
 
-    uint32_t dp_prev[7] = {0, 0, 10, 20, 30, 40, 0};
+    const uint32_t dp_prev[7] = {0, 0, 10, 20, 30, 40, 0};
     uint32_t dp_curr[7];
     memset(dp_curr, 0, sizeof(dp_curr));
 
     /* derivative row: [1, 0, 2, 1] → prefix sums: [1, 1, 3, 4] */
-    uint16_t deriv[4] = {1, 0, 2, 1};
+    const uint16_t deriv[4] = {1, 0, 2, 1};
 
     /* With valid derivative: dp_curr[dp_offset + j] = dp_prev[dp_offset + j] + prefix */
     compute_dp_row(dp_curr, dp_prev, deriv, WIDTH, PAD, true);
@@ -814,11 +960,11 @@ static char *test_compute_dp_row()
      * j=3: prefix=4, dp_curr[5] = dp_prev[5] + 4 = 40 + 4 = 44
      * Pad tail (j=4..n-1=4): prefix stays 4; dp_curr[6] = dp_prev[6] + 4 = 4
      */
-    mu_assert("compute_dp_row dp_curr[2] (j=0)", dp_curr[2] == 11);
-    mu_assert("compute_dp_row dp_curr[3] (j=1)", dp_curr[3] == 21);
-    mu_assert("compute_dp_row dp_curr[4] (j=2)", dp_curr[4] == 33);
-    mu_assert("compute_dp_row dp_curr[5] (j=3)", dp_curr[5] == 44);
-    mu_assert("compute_dp_row dp_curr[6] (pad tail)", dp_curr[6] == 4);
+    {
+        char *error = check_valid_dp_row(dp_curr);
+        if (error)
+            return error;
+    }
 
     /* With invalid derivative (padding row): prefix stays 0 throughout */
     uint32_t dp_curr2[7];
@@ -869,8 +1015,8 @@ static char *test_compute_mask_row()
      * j=2: dp_bottom[5]+dp_top[2]-dp_bottom[2]-dp_top[5] = 10+0-0-4 = 6
      * j=3: dp_bottom[6]+dp_top[3]-dp_bottom[3]-dp_top[6] = 15+0-0-6 = 9
      */
-    uint32_t dp_bottom[7] = {0, 0, 0, 0, 5, 10, 15};
-    uint32_t dp_top[7] = {0, 0, 0, 0, 2, 4, 6};
+    const uint32_t dp_bottom[7] = {0, 0, 0, 0, 5, 10, 15};
+    const uint32_t dp_top[7] = {0, 0, 0, 0, 2, 4, 6};
     uint16_t mask_row[4];
     memset(mask_row, 0, sizeof(mask_row));
 
@@ -906,6 +1052,14 @@ static char *test_compute_mask_row()
  * output float is identical (bit-exact). On non-x86 hosts the AVX2 path is
  * compiled out; the test falls through and passes as a no-op.
  */
+/* Runtime CPU-feature gate: the AVX2 helpers (`calculate_c_values_avx2`,
+     * `cambi_increment_range_avx2`, etc.) build AVX2 SIMD constants
+     * (`_mm256_setr_epi32`, `_mm256_set1_epi32`) at function entry — executing
+     * those without runtime AVX2 support raises SIGILL. The non-test dispatch
+     * path is already runtime-gated via `vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX2`
+     * (see `cambi.c::init()`); reuse the in-tree portable gate here rather
+     * than `__builtin_cpu_supports("avx2")` (MSVC has no such builtin).
+     * Closes T-CAMBI-AVX2-CI-SIGILL. */
 static char *test_calculate_c_values_scalar_avx2_parity()
 {
     VmafPicture input_scalar;
@@ -925,7 +1079,7 @@ static char *test_calculate_c_values_scalar_avx2_parity()
     memset(c_avx2, 0, sizeof(c_avx2));
 
     const uint16_t num_diffs = 4;
-    uint16_t tvi_for_diff[4] = {178, 305, 432, 559};
+    const uint16_t tvi_for_diff[4] = {178, 305, 432, 559};
     uint16_t vlt_luma = 0;
     uint16_t window_size = 9;
     /* histograms: width * v_band_size, v_band_size <= tvi_for_diff[3]+1 = 560.
@@ -943,14 +1097,6 @@ static char *test_calculate_c_values_scalar_avx2_parity()
                        tvi_for_diff, vlt_luma, diff_weights, all_diffs, 8, 8);
 
 #if ARCH_X86
-    /* Runtime CPU-feature gate: the AVX2 helpers (`calculate_c_values_avx2`,
-     * `cambi_increment_range_avx2`, etc.) build AVX2 SIMD constants
-     * (`_mm256_setr_epi32`, `_mm256_set1_epi32`) at function entry — executing
-     * those without runtime AVX2 support raises SIGILL. The non-test dispatch
-     * path is already runtime-gated via `vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX2`
-     * (see `cambi.c::init()`); reuse the in-tree portable gate here rather
-     * than `__builtin_cpu_supports("avx2")` (MSVC has no such builtin).
-     * Closes T-CAMBI-AVX2-CI-SIGILL. */
     if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX2) {
         calculate_c_values_avx2(&input_avx2, &mask_avx2, c_avx2, histograms_a, window_size,
                                 num_diffs, tvi_for_diff, vlt_luma, diff_weights, all_diffs, 8, 8);
@@ -974,44 +1120,64 @@ static char *test_calculate_c_values_scalar_avx2_parity()
     return NULL;
 }
 
-char *run_tests()
+static char *run_cambi_preprocessing_and_masks(void)
 {
-    /* Preprocessing functions */
     mu_run_test(test_anti_dithering_filter);
     mu_run_test(test_decimate_generic);
-
-    /* Banding detection functions */
     mu_run_test(test_decimate);
     mu_run_test(test_filter_mode);
-
     mu_run_test(test_get_mask_index);
     mu_run_test(test_get_spatial_mask_for_index);
-
-    mu_run_test(test_calculate_c_values);
-    mu_run_test(test_c_value_pixel);
-    mu_run_test(test_update_range);
-
-    mu_run_test(test_spatial_pooling);
-    mu_run_test(test_quick_select);
-    mu_run_test(test_average_topk_elements);
-
-    mu_run_test(test_get_pixels_in_window);
-    mu_run_test(test_weight_scores_per_scale);
-    mu_run_test(test_adjust_window_size);
-
-    /* Visibility threshold functions */
-    mu_run_test(test_get_tvi_for_diff);
-    mu_run_test(test_tvi_condition);
-    mu_run_test(test_set_contrast_arrays);
-    mu_run_test(test_tvi_hard_threshold_condition);
-    mu_run_test(test_get_vlt_luma);
-
-    /* Post-merge sanity: PR #463 cambi cluster port (admin-merged 2026-05-09) */
-    mu_run_test(test_compute_dp_row);
-    mu_run_test(test_compute_mask_row);
-    mu_run_test(test_calculate_c_values_scalar_avx2_parity);
-
     return NULL;
 }
 
+static char *run_cambi_values_and_pooling(void)
+{
+    mu_run_test(test_calculate_c_values);
+    mu_run_test(test_c_value_pixel);
+    mu_run_test(test_update_range);
+    mu_run_test(test_spatial_pooling);
+    mu_run_test(test_quick_select);
+    mu_run_test(test_average_topk_elements);
+    return NULL;
+}
+
+static char *run_cambi_windows_and_visibility(void)
+{
+    mu_run_test(test_get_pixels_in_window);
+    mu_run_test(test_weight_scores_per_scale);
+    mu_run_test(test_adjust_window_size);
+    mu_run_test(test_get_tvi_for_diff);
+    mu_run_test(test_tvi_condition);
+    mu_run_test(test_set_contrast_arrays);
+    return NULL;
+}
+
+static char *run_cambi_thresholds_rows_and_parity(void)
+{
+    mu_run_test(test_tvi_hard_threshold_condition);
+    mu_run_test(test_get_vlt_luma);
+    mu_run_test(test_compute_dp_row);
+    mu_run_test(test_compute_mask_row);
+    mu_run_test(test_calculate_c_values_scalar_avx2_parity);
+    return NULL;
+}
+
+char *run_tests(void)
+{
+    char *error;
+    error = run_cambi_preprocessing_and_masks();
+    if (error)
+        return error;
+    error = run_cambi_values_and_pooling();
+    if (error)
+        return error;
+    error = run_cambi_windows_and_visibility();
+    if (error)
+        return error;
+    error = run_cambi_thresholds_rows_and_parity();
+    if (error)
+        return error;
+    return NULL;
+}
 /* NOLINTEND(modernize-use-nullptr) */

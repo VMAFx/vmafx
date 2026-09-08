@@ -46,8 +46,8 @@
         *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
             int32_t sum = 0;                                                                       \
-            int16_t *src_ptr = (angles)[theta];                                                    \
-            int16_t *flt_ptr = (flt_angles)[theta];                                                \
+            const int16_t *src_ptr = (angles)[theta];                                              \
+            const int16_t *flt_ptr = (flt_angles)[theta];                                          \
             sum += flt_ptr[(src_stride) + 1];                                                      \
             sum += flt_ptr[(src_stride)];                                                          \
             sum += flt_ptr[(src_stride) + 1];                                                      \
@@ -66,8 +66,8 @@
     do {                                                                                           \
         *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int16_t *src_ptr = (angles)[theta];                                                    \
-            int16_t *flt_ptr = (flt_angles)[theta];                                                \
+            const int16_t *src_ptr = (angles)[theta];                                              \
+            const int16_t *flt_ptr = (flt_angles)[theta];                                          \
             int32_t sum = 0;                                                                       \
             sum += flt_ptr[(src_stride) + (w) - 2];                                                \
             sum += flt_ptr[(src_stride) + (w) - 1];                                                \
@@ -88,8 +88,8 @@
         *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
             int32_t sum = 0;                                                                       \
-            int16_t *src_ptr = (angles)[theta];                                                    \
-            int16_t *flt_ptr = (flt_angles)[theta];                                                \
+            const int16_t *src_ptr = (angles)[theta];                                              \
+            const int16_t *flt_ptr = (flt_angles)[theta];                                          \
             sum += flt_ptr[(src_stride) + (j) - 1];                                                \
             sum += flt_ptr[(src_stride) + (j)];                                                    \
             sum += flt_ptr[(src_stride) + (j) + 1];                                                \
@@ -360,8 +360,8 @@
         *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
             int32_t sum = 0;                                                                       \
-            int32_t *src_ptr = (angles)[theta];                                                    \
-            int32_t *flt_ptr = (flt_angles)[theta];                                                \
+            const int32_t *src_ptr = (angles)[theta];                                              \
+            const int32_t *flt_ptr = (flt_angles)[theta];                                          \
             sum += flt_ptr[(src_stride) + 1];                                                      \
             sum += flt_ptr[(src_stride)];                                                          \
             sum += flt_ptr[(src_stride) + 1];                                                      \
@@ -382,8 +382,8 @@
     do {                                                                                           \
         *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
-            int32_t *src_ptr = (angles)[theta];                                                    \
-            int32_t *flt_ptr = (flt_angles)[theta];                                                \
+            const int32_t *src_ptr = (angles)[theta];                                              \
+            const int32_t *flt_ptr = (flt_angles)[theta];                                          \
             int32_t sum = 0;                                                                       \
             sum += flt_ptr[(src_stride) + (w) - 2];                                                \
             sum += flt_ptr[(src_stride) + (w) - 1];                                                \
@@ -407,8 +407,8 @@
         *(accum) = 0;                                                                              \
         for (int theta = 0; theta < 3; ++theta) {                                                  \
             int32_t sum = 0;                                                                       \
-            int32_t *src_ptr = (angles)[theta];                                                    \
-            int32_t *flt_ptr = (flt_angles)[theta];                                                \
+            const int32_t *src_ptr = (angles)[theta];                                              \
+            const int32_t *flt_ptr = (flt_angles)[theta];                                          \
             sum += flt_ptr[(src_stride) + (j) - 1];                                                \
             sum += flt_ptr[(src_stride) + (j)];                                                    \
             sum += flt_ptr[(src_stride) + (j) + 1];                                                \
@@ -780,10 +780,6 @@ void adm_decouple_avx512(AdmBuffer *buf, int w, int h, int stride, double adm_en
         bottom = h;
     }
 
-    int64_t ot_dp;
-    int64_t o_mag_sq;
-    int64_t t_mag_sq;
-
     int right_mod16 = right - ((right - left) % 16);
     __m512 inv_32768 = _mm512_set1_ps(1.0f / 32768.0f);
     __m512 inv_4096 = _mm512_set1_ps(1.0f / 4096.0f);
@@ -1080,9 +1076,9 @@ void adm_decouple_avx512(AdmBuffer *buf, int w, int h, int stride, double adm_en
             * END
             */
 
-            ot_dp = (int64_t)oh * th + (int64_t)ov * tv;
-            o_mag_sq = (int64_t)oh * oh + (int64_t)ov * ov;
-            t_mag_sq = (int64_t)th * th + (int64_t)tv * tv;
+            int64_t ot_dp = (int64_t)oh * th + (int64_t)ov * tv;
+            int64_t o_mag_sq = (int64_t)oh * oh + (int64_t)ov * ov;
+            int64_t t_mag_sq = (int64_t)th * th + (int64_t)tv * tv;
 
             /**
             * angle_flag is calculated in floating-point by converting fixed-point variables back to
@@ -1905,9 +1901,9 @@ float adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stri
                     double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
                     double adm_p_norm, bool measure_aim)
 {
-    adm_dwt_band_t *src;
-    adm_dwt_band_t *csf_f;
-    adm_dwt_band_t *csf_a;
+    const adm_dwt_band_t *src;
+    const adm_dwt_band_t *csf_f;
+    const adm_dwt_band_t *csf_a;
 
     if (measure_aim) {
         src = &buf->decouple_a;
@@ -2003,8 +1999,6 @@ float adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stri
     const int start_row = (top > 1) ? top : 1;
     const int end_row = (bottom < (h - 1)) ? bottom : (h - 1);
 
-    int end_col_mod14 = end_col - ((end_col - start_col) % 14);
-
     int i;
     int j;
     int64_t val;
@@ -2023,15 +2017,6 @@ float adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stri
     int64_t accum_inner_d = 0;
 
     __m512i thr_512;
-    __m512i xh_512;
-    __m512i xv_512;
-    __m512i xd_512;
-    __m512i accum_inner_h_lo_512;
-    __m512i accum_inner_h_hi_512;
-    __m512i accum_inner_v_lo_512;
-    __m512i accum_inner_v_hi_512;
-    __m512i accum_inner_d_lo_512;
-    __m512i accum_inner_d_hi_512;
 
     /* i=0,j=0 */
     if ((top <= 0) && (left <= 0)) {
@@ -2099,10 +2084,17 @@ float adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stri
 
     if ((left > 0) && (right <= (w - 1))) /* Completely within frame */
     {
+        const int end_col_mod14 = end_col - ((end_col - start_col) % 14);
         __m512i i_rfactor0 = _mm512_maskz_set1_epi32(0x3FFF, i_rfactor[0]);
         __m512i i_rfactor1 = _mm512_maskz_set1_epi32(0x3FFF, i_rfactor[1]);
         __m512i i_rfactor2 = _mm512_maskz_set1_epi32(0x3FFF, i_rfactor[2]);
         for (i = start_row; i < end_row; ++i) {
+            __m512i accum_inner_h_lo_512;
+            __m512i accum_inner_h_hi_512;
+            __m512i accum_inner_v_lo_512;
+            __m512i accum_inner_v_hi_512;
+            __m512i accum_inner_d_lo_512;
+            __m512i accum_inner_d_hi_512;
             accum_inner_h = 0;
             accum_inner_v = 0;
             accum_inner_d = 0;
@@ -2111,11 +2103,11 @@ float adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stri
             accum_inner_d_lo_512 = accum_inner_d_hi_512 = _mm512_setzero_si512();
 
             for (j = start_col; j < end_col_mod14; j += 14) {
-                xh_512 = _mm512_cvtepi16_epi32(
+                __m512i xh_512 = _mm512_cvtepi16_epi32(
                     _mm256_loadu_si256((__m256i *)(src->band_h + (ptrdiff_t)i * src_stride + j)));
-                xv_512 = _mm512_cvtepi16_epi32(
+                __m512i xv_512 = _mm512_cvtepi16_epi32(
                     _mm256_loadu_si256((__m256i *)(src->band_v + (ptrdiff_t)i * src_stride + j)));
-                xd_512 = _mm512_cvtepi16_epi32(
+                __m512i xd_512 = _mm512_cvtepi16_epi32(
                     _mm256_loadu_si256((__m256i *)(src->band_d + (ptrdiff_t)i * src_stride + j)));
 
                 xh_512 = _mm512_mullo_epi32(xh_512, i_rfactor0);
@@ -2391,9 +2383,9 @@ float i4_adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_s
                        double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
                        double adm_p_norm, bool measure_aim)
 {
-    i4_adm_dwt_band_t *src;
-    i4_adm_dwt_band_t *csf_f;
-    i4_adm_dwt_band_t *csf_a;
+    const i4_adm_dwt_band_t *src;
+    const i4_adm_dwt_band_t *csf_f;
+    const i4_adm_dwt_band_t *csf_a;
 
     if (measure_aim) {
         src = &buf->i4_decouple_a;
@@ -2426,7 +2418,7 @@ float i4_adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_s
         factor2 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 2, adm_norm_view_dist,
                                         adm_ref_display_height);
     }
-    float rfactor1[3] = {factor1, factor1, factor2};
+    const float rfactor1[3] = {factor1, factor1, factor2};
 
     const uint32_t rfactor[3] = {(uint32_t)(rfactor1[0] * pow(2, 32)),
                                  (uint32_t)(rfactor1[1] * pow(2, 32)),
@@ -2448,9 +2440,9 @@ float i4_adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_s
     uint32_t shift_inner_accum = (uint32_t)ceil(log2(h));
     uint32_t add_shift_inner_accum = (uint32_t)pow(2, (shift_inner_accum - 1));
 
-    float final_shift[3] = {pow(2, (45 - shift_cub - shift_inner_accum)),
-                            pow(2, (39 - shift_cub - shift_inner_accum)),
-                            pow(2, (36 - shift_cub - shift_inner_accum))};
+    const float final_shift[3] = {pow(2, (45 - shift_cub - shift_inner_accum)),
+                                  pow(2, (39 - shift_cub - shift_inner_accum)),
+                                  pow(2, (36 - shift_cub - shift_inner_accum))};
 
     const int32_t shift_sq = 30;
     const int32_t add_shift_sq = 536870912; //2^29
@@ -2471,8 +2463,6 @@ float i4_adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_s
     const int start_row = (top > 1) ? top : 1;
     const int end_row = (bottom < (h - 1)) ? bottom : (h - 1);
 
-    int end_col_mod6 = end_col - ((end_col - start_col) % 6);
-
     int i;
     int j;
     int32_t xh;
@@ -2491,12 +2481,6 @@ float i4_adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_s
     int64_t accum_inner_d = 0;
 
     __m512i thr_512;
-    __m512i xh_512;
-    __m512i xv_512;
-    __m512i xd_512;
-    __m512i accum_inner_h_512;
-    __m512i accum_inner_v_512;
-    __m512i accum_inner_d_512;
 
     /* i=0,j=0 */
     if ((top <= 0) && (left <= 0)) {
@@ -2569,7 +2553,11 @@ float i4_adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_s
 
     if ((left > 0) && (right <= (w - 1))) /* Completely within frame */
     {
+        const int end_col_mod6 = end_col - ((end_col - start_col) % 6);
         for (i = start_row; i < end_row; ++i) {
+            __m512i accum_inner_h_512;
+            __m512i accum_inner_v_512;
+            __m512i accum_inner_d_512;
             accum_inner_h = 0;
             accum_inner_v = 0;
             accum_inner_d = 0;
@@ -2579,11 +2567,11 @@ float i4_adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_s
             accum_inner_d_512 = _mm512_setzero_si512();
 
             for (j = start_col; j < end_col_mod6; j += 6) {
-                xh_512 = _mm512_cvtepi32_epi64(
+                __m512i xh_512 = _mm512_cvtepi32_epi64(
                     _mm256_loadu_si256((__m256i *)(src->band_h + (ptrdiff_t)i * src_stride + j)));
-                xv_512 = _mm512_cvtepi32_epi64(
+                __m512i xv_512 = _mm512_cvtepi32_epi64(
                     _mm256_loadu_si256((__m256i *)(src->band_v + (ptrdiff_t)i * src_stride + j)));
-                xd_512 = _mm512_cvtepi32_epi64(
+                __m512i xd_512 = _mm512_cvtepi32_epi64(
                     _mm256_loadu_si256((__m256i *)(src->band_d + (ptrdiff_t)i * src_stride + j)));
 
                 __m512i rfactor_v0 = _mm512_maskz_set1_epi64(0x3F, rfactor[0]);
@@ -3490,10 +3478,6 @@ void adm_dwt2_16_avx512(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffe
     __m512i f23_hi =
         _mm512_set1_epi32(filter_hi[2] + ((uint32_t)filter_hi[3] << 16) /*+ (1 << 16)*/);
 
-    __m512i accum0;
-    __m512i accum0_lo;
-    __m512i accum0_hi;
-
     int half_w = (w + 1) / 2;
     int half_w_mod64 = half_w >= 2 ? half_w - 1 - ((half_w - 2) % 64) : 1;
 
@@ -3585,8 +3569,8 @@ void adm_dwt2_16_avx512(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffe
             __m512i s0_32 = _mm512_loadu_si512((__m512i *)(tmplo + j16));
             __m512i s2_32 = _mm512_loadu_si512((__m512i *)(tmplo + j18));
 
-            accum0_lo = _mm512_setzero_si512();
-            accum0_hi = _mm512_setzero_si512();
+            __m512i accum0_lo = _mm512_setzero_si512();
+            __m512i accum0_hi = _mm512_setzero_si512();
 
             accum0_lo = _mm512_add_epi32(accum0_lo, _mm512_madd_epi16(s0, f01_lo));
             accum0_hi = _mm512_add_epi32(accum0_hi, _mm512_madd_epi16(s0_32, f01_lo));
@@ -3598,8 +3582,9 @@ void adm_dwt2_16_avx512(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffe
             accum0_lo = _mm512_srai_epi32(accum0_lo, shift_HP);
             accum0_hi = _mm512_srai_epi32(accum0_hi, shift_HP);
 
-            accum0 = _mm512_inserti64x4(_mm512_castsi256_si512(_mm512_cvtepi32_epi16(accum0_lo)),
-                                        _mm512_cvtepi32_epi16(accum0_hi), 1);
+            __m512i accum0 =
+                _mm512_inserti64x4(_mm512_castsi256_si512(_mm512_cvtepi32_epi16(accum0_lo)),
+                                   _mm512_cvtepi32_epi16(accum0_hi), 1);
 
             _mm512_storeu_si512((__m512i *)(dst->band_a + (ptrdiff_t)i * dst_stride + j), accum0);
 
@@ -4053,9 +4038,9 @@ void adm_csf_avx512(AdmBuffer *buf, int w, int h, int stride, double adm_norm_vi
                     int adm_ref_display_height, int adm_csf_mode, double adm_csf_scale,
                     double adm_csf_diag_scale, bool measure_aim)
 {
-    adm_dwt_band_t *src;
-    adm_dwt_band_t *dst;
-    adm_dwt_band_t *flt;
+    const adm_dwt_band_t *src;
+    const adm_dwt_band_t *dst;
+    const adm_dwt_band_t *flt;
 
     if (measure_aim) {
         src = &buf->decouple_r;
@@ -4227,9 +4212,9 @@ void i4_adm_csf_avx512(AdmBuffer *buf, int scale, int w, int h, int stride,
                        double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
                        double adm_csf_scale, double adm_csf_diag_scale, bool measure_aim)
 {
-    i4_adm_dwt_band_t *src;
-    i4_adm_dwt_band_t *dst;
-    i4_adm_dwt_band_t *flt;
+    const i4_adm_dwt_band_t *src;
+    const i4_adm_dwt_band_t *dst;
+    const i4_adm_dwt_band_t *flt;
 
     if (measure_aim) {
         src = &buf->i4_decouple_r;
