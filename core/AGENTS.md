@@ -156,6 +156,16 @@ core/
   `boolean` (matching `enable_cuda` / `enable_sycl`); do NOT
   convert it to `feature` without an ADR amendment per ADR-0212
   § "Decision".
+- **Bounded thread-pool admission** (Netflix `8fc71e3`, fork lifetime adaptation):
+  `src/thread_pool.c` admits at most one queued job per successfully created
+  worker, before payload allocation. Keep dequeue wakeups and checked condition
+  teardown. Destruction waits for both workers and already-blocked producers;
+  waking a producer does not make it safe to free its mutex. Preserve the
+  cancellation/lifetime and mixed-payload tests in
+  `test/test_thread_pool_backpressure.c`. Callbacks must not enqueue into the
+  same pool. Serialize destruction against API entry, including mutex-acquisition
+  waiters; only proven registered capacity waiters can be cancelled concurrently. See
+  [thread-pool behavior](../docs/development/thread-pool.md).
 - **Thread-pool job recycling + inline data buffer** (fork-local,
   ADR-0147): [`src/thread_pool.c`](src/thread_pool.c) recycles
   `VmafThreadPoolJob` slots via a `pool->free_jobs` free list

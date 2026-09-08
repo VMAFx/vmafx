@@ -227,6 +227,12 @@ variable that overrides it.
 | `--gpumask <bitmask>` | all GPU ops enabled | Mask out specific GPU ops. |
 | `--threads <N>` | host `nproc` | Worker thread count. Valid with every backend, including `cuda` and `sycl`, and the result is identical to a serial run. |
 
+Threaded CPU submission keeps at most one pending frame job per worker, in
+addition to jobs already running. When decoding runs ahead of feature extraction,
+submission waits for queue capacity instead of retaining an unbounded backlog.
+This bounds pending work; score storage and backend buffers still contribute to
+memory use. See [thread-pool behavior](../development/thread-pool.md).
+
 > **`--threads` with a GPU backend.** Builds before
 > [ADR-1197](../adr/1197-gpu-threaded-flush-ownership.md) aborted with
 > `libvmaf ERROR context could not be synchronized` and exit 234
