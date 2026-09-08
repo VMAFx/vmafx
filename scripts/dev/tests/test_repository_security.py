@@ -7,6 +7,7 @@ import importlib.util
 import json
 import unittest
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -39,7 +40,7 @@ class RepositorySecurityTests(unittest.TestCase):
     def inspect(self) -> list[str]:
         with patch.object(CHECK, "get_json", side_effect=self.responses.__getitem__):
             errors, _ = CHECK.inspect(self.policy)
-        return errors
+        return cast(list[str], errors)
 
     def test_matching_policy_allows_unrelated_ruleset_and_metadata(self) -> None:
         self.rule["rules"].reverse()
