@@ -1,6 +1,13 @@
 <!-- markdownlint-disable MD060 -->
 # vmaf-mcp
 
+> **DEPRECATED (ADR-1229).** The MCP server is now the Go binary `vmafx-mcp`
+> (`cmd/vmafx-mcp/`), installed at `/usr/local/bin/vmafx-mcp` in every container
+> image. Attach with `docker exec -i vmaf-dev-mcp vmafx-mcp`. This Python package
+> implements the same fifteen tools and is retained for one release as a
+> reference implementation; it is no longer installed by `dev/Containerfile` and
+> a follow-up removes it. Do not add tools here — add them to `cmd/vmafx-mcp/`.
+
 MCP (Model Context Protocol) server that exposes the VMAFx fork's
 scoring CLI to LLM tooling via JSON-RPC over stdio.
 

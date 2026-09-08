@@ -5,23 +5,22 @@
 # dev/scripts/dev-mcp-entrypoint.sh — container entrypoint
 #
 # Keeps the container alive so MCP clients can attach via
-#   docker exec -i vmaf-dev-mcp /opt/vmaf-venv/bin/vmaf-mcp
-# (stdio transport — the only one vmaf-mcp's main() implements).
+#   docker exec -i vmaf-dev-mcp vmafx-mcp
+# (stdio transport).
 #
-# Background: an earlier iteration tried to spawn vmaf-mcp with
-# `--transport uds --socket …`, but vmaf-mcp's main() has no argparse
-# and ignores all argv flags; it always opens a stdio_server() and
-# blocks on stdin. Spawned as a background daemon, its stdin
-# immediately closes → the process exits silently → the 30 s socket
-# wait timed out → entrypoint exited 1 → docker restarted the
-# container in a tight loop. The `.vscode/mcp.json` template and the
-# project rule (ADR-0496) already document the docker-exec-i pattern;
-# this entrypoint now just keeps the container alive for that pattern
-# to work.
+# ADR-1229: the server is the Go binary `vmafx-mcp`, built from cmd/vmafx-mcp
+# and already installed at /usr/local/bin by the go-build stage. It replaced
+# the Python `mcp-server/vmaf-mcp` package, which implemented the same fifteen
+# tools with the same required-argument sets.
 #
-# If the project later grows a real UDS transport in vmaf-mcp, switch
-# this script back to launching it as a daemon and waiting for the
-# socket — the previous version of this file is in git.
+# Background on why this script does not daemonise the server: an earlier
+# iteration tried to spawn the Python server with `--transport uds --socket …`,
+# but its main() had no argparse and ignored all argv flags; it always opened a
+# stdio_server() and blocked on stdin. Spawned as a background daemon its stdin
+# immediately closed → the process exited silently → the 30 s socket wait timed
+# out → entrypoint exited 1 → docker restarted the container in a tight loop.
+# The docker-exec-i pattern (ADR-0496) avoids that entirely, and the Go server
+# is attached the same way, so the reasoning still holds.
 
 set -euo pipefail
 
@@ -104,7 +103,7 @@ MODEL_PATH="${VMAF_MODEL_PATH:-/workspace/model}"
   echo "[dev-mcp-entrypoint] vmaf-dev-mcp container ready."
   echo "[dev-mcp-entrypoint] Build info: $(vmaf --version 2>&1 || echo 'vmaf CLI not in PATH')"
   echo "[dev-mcp-entrypoint] Model path: ${MODEL_PATH}"
-  echo "[dev-mcp-entrypoint] vmaf-mcp transport: stdio (use 'docker exec -i ${HOSTNAME:-vmaf-dev-mcp} /opt/vmaf-venv/bin/vmaf-mcp')"
+  echo "[dev-mcp-entrypoint] vmafx-mcp transport: stdio (use 'docker exec -i ${HOSTNAME:-vmaf-dev-mcp} vmafx-mcp')"
   echo "[dev-mcp-entrypoint] To run vmaf-tune / vmaf-tools inside, e.g.:"
   echo "[dev-mcp-entrypoint]   docker exec ${HOSTNAME:-vmaf-dev-mcp} vmaf --help"
   echo "[dev-mcp-entrypoint]   docker exec ${HOSTNAME:-vmaf-dev-mcp} bash -c 'cd /workspace && PYTHONPATH=tools/vmaf-tune/src python -c \"from vmaftune.cli import main; main()\" --help'"

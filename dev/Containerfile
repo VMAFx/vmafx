@@ -16,7 +16,8 @@
 #                           against an in-tree FFmpeg n9.0.1 (or `FFMPEG_TAG`
 #                           build-arg override) with the fork's
 #                           `ffmpeg-patches/series.txt` applied
-#   Stage 4 (python-env)  — install vmaf-mcp + vmaf-train + vmaf-tune
+#   Stage 4 (python-env)  — install vmaf-train + vmaf-tune
+#                           (MCP is the Go binary vmafx-mcp — ADR-1229)
 #
 # RUNTIME PREREQUISITES (host):
 #   - NVIDIA Container Toolkit for CUDA kernel execution
@@ -503,7 +504,8 @@ WORKDIR /build/vmaf
 #                     be present in the build context for the editable install
 #                     to resolve. ADR-0700.
 #   ffmpeg-patches/ — patch series applied in stage 3.5
-#   mcp-server/     — MCP JSON-RPC server (pip install -e)
+#   cmd/vmafx-mcp/  — MCP JSON-RPC server (Go; installed to
+#                     /usr/local/bin by the go-build stage, ADR-1229)
 #   ai/             — tiny-AI training harness (pip install -e)
 #   tools/          — vmaf-tune CLI (pip install -e)
 #   python/         — Python bindings shim added to PYTHONPATH
@@ -1110,7 +1112,6 @@ RUN python3.14 -m venv /opt/vmaf-venv \
     # so that the ai/ and vmaf-tune pins below are resolved last and win on any
     # shared dependency (numpy in particular).
     && /opt/vmaf-venv/bin/pip install --no-cache-dir -e /build/vmaf/python \
-    && /opt/vmaf-venv/bin/pip install --no-cache-dir -e /build/vmaf/mcp-server/vmaf-mcp \
     && /opt/vmaf-venv/bin/pip install --no-cache-dir -e '/build/vmaf/ai[dev]' \
     # Pin torchvision to the ABI-compatible wheel for torch 2.12.x.
     # Without this pin, pip may resolve torchvision 0.26.0 (built against

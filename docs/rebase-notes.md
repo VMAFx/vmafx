@@ -49587,3 +49587,31 @@ Branch: `feat/cuda-ampere-floor-and-133`.
 5. **Windows lanes export a versioned env var.** `CUDA_PATH_V13_2` became
    `CUDA_PATH_V13_3`; it is derived from `$cudaMajorMinor` by hand in two
    separate workflow files, so both move together with the version.
+## ADR-1229 — the MCP server is the Go binary (2026-09-07)
+
+**Files touched**: `dev/Containerfile`, `dev/scripts/dev-mcp-entrypoint.sh`,
+`dev/AGENTS.md`, `docs/development/dev-mcp.md`,
+`mcp-server/vmaf-mcp/README.md` (deprecation banner only).
+
+**Rebase impact**: none against upstream Netflix — the MCP surface is entirely
+fork-added.
+
+1. **`vmafx-mcp` needs no install step.** The `go-build` stage already does
+   `COPY --from=go-build /out/ /usr/local/bin/`, which includes every
+   `./cmd/...` binary. A rebase that "restores" a missing install line for the
+   MCP server is adding a second, conflicting copy.
+
+2. **Do not reinstate `pip install -e /build/vmaf/mcp-server/vmaf-mcp`.** It was
+   removed deliberately. The Python package is deprecated and its tools are
+   fully covered by the Go binary; reinstating the install quietly returns 15k
+   lines of Python to the image without returning any capability.
+
+3. **The entrypoint still must not daemonise the server.** The reasoning in its
+   header predates the Go swap and still holds: the container stays alive and
+   clients attach with `docker exec -i`. The compose healthcheck must therefore
+   remain a CLI check (`vmaf --version`), not `test -S /sockets/vmaf-mcp.sock` —
+   see the ADR-0641 invariant in `dev/AGENTS.md`.
+
+4. **stdout belongs to JSON-RPC.** The Go server logs to stderr. Any change that
+   sends log output to stdout corrupts the protocol stream and shows up as
+   `mcp stdio returned empty response` rather than as a logging bug.
