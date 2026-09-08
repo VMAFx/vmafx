@@ -101,3 +101,28 @@ FFmpeg overview removes a stale Vulkan leg after checking the actual workflow:
 its ordinary matrix is Linux GCC/macOS Clang with a separate SYCL build leg.
 ADR-1246's alternatives table supplies the decision matrix; the script invariant,
 rebase note, changelog fragment and [verification commands in the CI guide](../development/ci.md#local-lint-build-profile-and-receipts) complete the deliverables.
+
+## Offline Make fixture correction
+
+The original real-Make tests passed on a networked host but failed in the
+isolated acceptance container: recursive `make build` did not inherit the
+outer `-o bin/meson -o bin/ninja`, and the missing `fixture-venv/bin/pip`
+prerequisite triggered actual venv creation and package installation. The
+outer flags alone did not enforce the comment's no-bootstrap claim. Plain
+GNU Make 4.4.1 reproduces both failures, independently of the acceptance
+harness's Make wrapper.
+
+Create a failing, recording pip sentinel before the fake Meson/Ninja files.
+The real dependency graph now sees already-provisioned prerequisites in both
+Make processes. Assert that pip was not called or overwritten and no real
+`pyvenv.cfg` appeared. `PIP_NO_INDEX=1` adds an offline guard. Keep the actual
+recursive Make call, reconfigure/build stubs, all command variants and original
+native/polluted database assertions unchanged.
+
+Using the same pinned CPU tool image, plain GNU Make and disabled Docker
+network, the original 20-case suite fails its two Make fixtures; the corrected
+suite passes all 20. Evidence and exact commands live under
+`.workingdir2/evidence/configured-lint-fixture-offline-2026-09-08/`.
+This is fixture hermeticity, not a production Makefile, analyzer, native-source,
+backend or baseline change. No alternatives: satisfy the existing dependency
+contract; no new ADR or user-facing surface is introduced.

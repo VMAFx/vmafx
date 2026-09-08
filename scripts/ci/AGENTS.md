@@ -24,6 +24,12 @@ scope, and run cppcheck even after clang-tidy fails. The scratch-Git fixture
 boundaries; required Pre-Commit runs it when the driver or Makefile changes.
 This does not replace lane-specific ratchet measurements or their baselines.
 
+The real-Make fixtures create their failing/recording pip sentinel before fake
+Meson and Ninja, satisfying the recursive build dependency graph without tool
+bootstrap. GNU Make does not propagate `-o` to sub-makes. Keep `PIP_NO_INDEX=1`
+and assertions that no pip call, real venv or sentinel overwrite occurred;
+host network access must never turn a broken fixture into a passing test.
+
 Both local and required CI cppcheck invocations load its shipped `posix` model.
 The fork uses pthread types on POSIX and through its Windows compatibility shim;
 these are C aggregates, not unknown C++ classes with implicit constructors.
