@@ -951,3 +951,4 @@
 1242-generated-adr-freshness
 1236-version-single-source-tree
 1243-tidy-scoped-baseline-tightening
+1244-merge-train-ownership-and-validation
