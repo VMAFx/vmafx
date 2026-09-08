@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/thread-pool-queue-bound — Netflix queue-capacity fix (2026-09-08)
+
+Adapt Netflix `8fc71e3006f0b21e8e31d6e5d1b904332149ad9e` from
+`libvmaf/src/thread_pool.c` to `core/src/thread_pool.c`. Keep the fork's inline
+payload/free-list recycling, two-argument callback, worker private-data cleanup,
+checked primitive initialization and error OR/reset. Capacity follows the
+successfully created worker count. Destruction must also wait for admitted
+producers to leave capacity waits; the upstream broadcast by itself does not
+protect their lifetime. The isolated pthread-injection test gates these paths.
+
 ## fix/ai-1270-blockers — DISTS, MobileSal, and predictor stub triage (2026-09-08)
 
 Triage and point-of-use guards for issue #1270 blockers:
