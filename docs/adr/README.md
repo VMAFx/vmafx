@@ -1047,3 +1047,4 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1245](1245-cppcheck-exhaustive-configured-analysis.md) | Analyze configured Cppcheck paths exhaustively | Accepted | ci, build, quality |
 | [ADR-1246](1246-cppcheck-public-entrypoints.md) | Model verified public functions as Cppcheck entrypoints | Accepted | ci, build, quality |
 | [ADR-1248](1248-repository-security-enforcement.md) | Enforce repository security through public rulesets | Accepted | security, ci, governance |
+| [ADR-1247](1247-scorecard-exact-head-gates.md) | Bind Scorecard gates to their measured source and scope | Accepted | ci, security, supply-chain |
