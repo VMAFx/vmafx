@@ -1352,6 +1352,7 @@ nav:
         - "ADR-1244: merge-train-ownership-and-validation": adr/1244-merge-train-ownership-and-validation.md
         - "ADR-1245: cppcheck-exhaustive-configured-analysis": adr/1245-cppcheck-exhaustive-configured-analysis.md
         - "ADR-1246: cppcheck-public-entrypoints": adr/1246-cppcheck-public-entrypoints.md
+        - "ADR-1247: scorecard-exact-head-gates": adr/1247-scorecard-exact-head-gates.md
         - "ADR-1248: repository-security-enforcement": adr/1248-repository-security-enforcement.md
       - "By tag":
         - Overview: adr/by-tag/index.md
