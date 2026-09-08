@@ -22,6 +22,9 @@
  *  T6-2b. ADR-0247.
  */
 
+/* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: preserve C/upstream NULL
+ * compatibility; required Windows MSVC /std:clatest does not document nullptr. */
+
 #include <errno.h>
 #include <getopt.h>
 #include <inttypes.h>
@@ -34,6 +37,7 @@
 
 #include "libvmaf/dnn.h"
 #include "vmaf_roi_core.h"
+#include "vmaf_roi_input.h"
 
 /* x265 / SVT-AV1 ROI sidecars use a small integer offset range. We clamp
  * to +-12 which is comfortably inside both encoders' accepted bands. */
@@ -41,7 +45,6 @@
 
 /* Hard upper limits. Power-of-10 rule 2 (bounded loops): every dimension
  * is checked against these caps before any allocation. */
-#define VMAF_ROI_MAX_DIM 16384
 #define VMAF_ROI_MIN_CTU 8
 #define VMAF_ROI_MAX_CTU 128
 #define VMAF_ROI_MAX_FRAME_INDEX 1000000
@@ -162,12 +165,6 @@ static int parse_double_arg(const char *arg, double lo, double hi, double *out)
     return 0;
 }
 
-static size_t luma_plane_size(int w, int h)
-{
-    /* Both bounded by VMAF_ROI_MAX_DIM, so the product fits in size_t. */
-    return (size_t)w * (size_t)h;
-}
-
 static size_t sample_bytes_for_bitdepth(int bitdepth)
 {
     return (bitdepth > 8) ? 2U : 1U;
@@ -209,42 +206,6 @@ static size_t frame_bytes(int w, int h, enum vmaf_roi_pixfmt pf, int bitdepth)
     return samples * sample_bytes_for_bitdepth(bitdepth);
 }
 
-static int read_luma8(FILE *fp, uint8_t *dst, size_t y_sz, int bitdepth, size_t *got_bytes)
-{
-    if (got_bytes == NULL)
-        return -EINVAL;
-    *got_bytes = 0U;
-    if (bitdepth == 8) {
-        size_t got = fread(dst, 1U, y_sz, fp);
-        *got_bytes = got;
-        if (got != y_sz)
-            return -EIO;
-        return 0;
-    }
-
-    uint8_t *raw = (uint8_t *)malloc(y_sz * 2U);
-    if (raw == NULL)
-        return -ENOMEM;
-    size_t got = fread(raw, 2U, y_sz, fp);
-    *got_bytes = got * 2U;
-    if (got != y_sz) {
-        free(raw);
-        return -EIO;
-    }
-
-    const unsigned shift = (unsigned)bitdepth - 8U;
-    const unsigned round = (shift == 0U) ? 0U : (1U << (shift - 1U));
-    const unsigned max_sample = (1U << (unsigned)bitdepth) - 1U;
-    for (size_t i = 0U; i < y_sz; ++i) {
-        unsigned v = (unsigned)raw[i * 2U] | ((unsigned)raw[i * 2U + 1U] << 8U);
-        if (v > max_sample)
-            v = max_sample;
-        dst[i] = (uint8_t)((v + round) >> shift);
-    }
-    free(raw);
-    return 0;
-}
-
 static int load_luma_frame(const struct vmaf_roi_opts *o, uint8_t *dst)
 {
     FILE *fp = fopen(o->reference, "rb");
@@ -282,26 +243,6 @@ static int load_luma_frame(const struct vmaf_roi_opts *o, uint8_t *dst)
     }
     (void)fclose(fp);
     return rc;
-}
-
-/* Center-weighted radial placeholder. Returns saliency in [0, 1]: 1 at the
- * frame centre, falling off to ~0 in the corners. Only used for smoke
- * testing the sidecar plumbing -- NOT a substitute for MobileSal. */
-static void fill_placeholder_saliency(int w, int h, float *dst)
-{
-    const double cx = (double)(w - 1) * 0.5;
-    const double cy = (double)(h - 1) * 0.5;
-    const double rmax = sqrt(cx * cx + cy * cy);
-    const double inv_rmax = (rmax > 0.0) ? (1.0 / rmax) : 0.0;
-    for (int y = 0; y < h; ++y) {
-        const double dy = (double)y - cy;
-        for (int x = 0; x < w; ++x) {
-            const double dx = (double)x - cx;
-            const double r = sqrt(dx * dx + dy * dy) * inv_rmax;
-            const double s = 1.0 - r;
-            dst[(size_t)y * (size_t)w + (size_t)x] = (float)((s < 0.0) ? 0.0 : s);
-        }
-    }
 }
 
 /* Run the optional ONNX session against the luma frame. The model is
@@ -542,7 +483,7 @@ static int parse_args(int argc, char **argv, struct vmaf_roi_opts *o)
      * warning is inherent to CLI option parsing and matches upstream
      * libvmaf/tools/cli_parse.c. CLI parsing happens before any threads
      * are spawned, so this is safe. */
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe) */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) -- ADR-0247: CLI parsing completes before threads. */
     while ((c = getopt_long(argc, argv, "h", g_long_opts, NULL)) != -1) {
         if (c == 'h') {
             print_usage(stdout);
@@ -580,7 +521,7 @@ static int compute_saliency(const struct vmaf_roi_opts *o, float *sal)
         if (o->saliency_model != NULL) {
             rc = run_saliency_model(o, luma, sal);
         } else {
-            fill_placeholder_saliency(o->width, o->height, sal);
+            rc = fill_placeholder_saliency(o->width, o->height, sal, y_sz);
         }
     }
     free(luma);
@@ -592,6 +533,8 @@ static int compute_saliency(const struct vmaf_roi_opts *o, float *sal)
 static int run_pipeline(const struct vmaf_roi_opts *opts)
 {
     const size_t y_sz = luma_plane_size(opts->width, opts->height);
+    if (y_sz == 0U)
+        return -EINVAL;
     /* calloc zero-initialises so a degenerate/empty plane still produces a
      * defined input to reduce_per_ctu(). compute_saliency() overwrites
      * every cell on the success path. */
@@ -644,3 +587,5 @@ int main(int argc, char **argv)
     }
     return (run_pipeline(&opts) == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
+
+/* NOLINTEND(modernize-use-nullptr) -- ADR-1138 */
