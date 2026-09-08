@@ -71,6 +71,6 @@ a decision record to explain the pairing invariant.
 - Source audit reference: a4003b2235845d570
 - CWE-401: Missing Release of Memory after Effective Lifetime
 - ISO C11 §7.17 (atomics / memory model)
-- ADR-0461: `gpu_dispatch_env` once-snapshotted pattern
+- ADR-0488: `gpu_dispatch_env` once-snapshotted pattern
 - ADR-0157: `vmaf_cuda_state_free` API introduction (CUDA preallocation leak fix)
 - Related PR: fix/gpu-dispatch-toctou-fence-20260529

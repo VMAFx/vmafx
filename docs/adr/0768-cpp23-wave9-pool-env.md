@@ -36,7 +36,7 @@ new `.cpp` TUs:
 - `core/src/picture_pool.h` — declares the CPU pool API.
 
 `core/src/gpu_picture_pool.h` and `core/src/gpu_dispatch_env.h` already
-had guards (ADR-0239, ADR-0461).
+had guards (ADR-0239, ADR-0488).
 
 Adding `extern "C"` guards to headers that lacked them is a no-op for
 existing C TUs; it is required so the new C++ TUs resolve unmangled

@@ -94,7 +94,7 @@ on every CI matrix lane that builds tests.
 
 - ADR-0181 — CUDA / SYCL dispatch-strategy contract.
 - ADR-0212 — HIP backend scaffold + runtime PR (T7-10b).
-- ADR-0461 — `gpu_dispatch_env` thread-safe once-snapshot helper.
+- ADR-0488 — `gpu_dispatch_env` thread-safe once-snapshot helper.
 - ADR-0483 — `gpu_dispatch_parse.h` shared inline tokeniser.
 - ADR-0840 — atomic acquire/release fence pattern on the env-snapshot table.
 - ADR-0108 — Deep-dive deliverables rule (PR checklist).
