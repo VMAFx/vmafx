@@ -10,6 +10,21 @@ upstream Netflix/vmaf has no equivalent tree, so the rebase risk is
 
 ## Rebase-sensitive surfaces
 
+### Base-image references (ADR-1231)
+
+`check-base-image-single-source.sh` delegates FROM/COPY instruction parsing to
+`check-container-image-references.py`. External references without a digest
+are still external: never restore the old `*@sha256:*`-only detection. Keep
+instruction case, flags and continuations covered by the fixture tests.
+Shared FROM arguments need a global, single-line default named by
+`build-config.env`; the shell gate owns default drift/repair. Local image
+exceptions bind an exact consumer and value, never a broad unpinned-tag rule.
+`tests/test_base_image_single_source.py` exercises the actual gate in scratch
+repositories and is wired through `test-base-image-single-source` in
+`.pre-commit-config.yaml`.
+
+### Workflow coupling
+
 The following pairs are tightly coupled — a rename or signature
 change in one **must** land alongside the matching update in the
 other, in the **same PR**. Required-status-check names are derived

@@ -2,12 +2,13 @@
 
 # Container bases and toolchain versions
 
-Every container base image **and toolchain version** in this repository is
-defined in one file: [`build-config.env`](../../build-config.env) at the
-repository root.
+Shared container bases and toolchain versions are defined in
+[`build-config.env`](../../build-config.env) at the repository root. The
+contract covers the entries declared there; compatibility test versions need
+separate review before consolidation.
 
-If you have forked VMAFx and want it to build on a different Debian, a
-different Go, or a different GPU SDK, that file is the only thing you edit.
+To change one of these shared settings in a fork, edit that file and regenerate
+its mirrors.
 
 ## Quick start
 
@@ -62,8 +63,18 @@ FROM ${CUDA_RUNTIME} AS cuda-runtime-libs
 COPY --from=cuda-runtime-libs /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
 ```
 
-BuildKit prunes the stage when the selected target does not use it, so this
-costs nothing. The gate rejects a digest-pinned `COPY --from`.
+BuildKit prunes the stage when the selected target does not use it. The gate
+rejects direct external `FROM` and `COPY --from` references with or without a
+digest: `alpine`, `alpine:latest` and `alpine@sha256:…` all need a centrally
+owned named stage. Instruction case, `--platform`, other `COPY` flags and
+continued instructions do not exempt a reference. Docker documents these
+forms in its [Dockerfile reference](https://docs.docker.com/reference/dockerfile/).
+
+Declare each shared image's global `ARG NAME=value` on one physical line
+before the first `FROM`, so the mirror checker and `--write` can maintain it.
+`FROM ${NAME}` or `FROM $NAME` must use that declared configuration key;
+an arbitrary new ARG or a fallback such as `${NAME:-alpine}` is rejected.
+Use named stages or an earlier numeric stage index for `COPY --from`.
 
 ## The two tracks
 
@@ -93,6 +104,11 @@ six months later is the whole point. The gate rejects any entry without
 
 ## Deliberate exceptions
 
+- **Local image consumers**: `Dockerfile.ffmpeg` extends `vmaf:latest`, built
+  from the root Dockerfile. `dev/Containerfile.runner` uses
+  `ARG BASE_IMAGE=vmaf-dev-mcp:local`, built from `dev/Containerfile`. These
+  exceptions bind the exact file, argument (where applicable) and value.
+  An unpinned tag in any other consumer is not assumed to be local.
 - **`docker/dev/*.Dockerfile`** pin Alpine, Arch and Fedora on purpose. They
   exist to prove the build survives distros the release track does not use, so
   unifying their bases would defeat them. The gate skips that directory.
@@ -109,6 +125,18 @@ six months later is the whole point. The gate rejects any entry without
    (`RELEASE_RUNTIME_CC`), not for the file that uses it.
 2. Reference it as `ARG` + `FROM ${…}` in the Dockerfile.
 3. Run `make base-images-sync`.
+
+## Verify the guard
+
+```bash
+python3 -m unittest discover -s scripts/ci/tests -p test_base_image_single_source.py -v
+bash scripts/ci/check-base-image-single-source.sh
+```
+
+The tests run the actual gate in temporary Git repositories, without builds
+or registry access. They cover external image bypasses, local exceptions,
+named stages and mirror repair. The pre-commit regression hook runs when the
+guard or configuration changes; CI's all-files pre-commit run includes it.
 
 If two Dockerfiles want the same image, they share one entry. That collapsing
 is the point: 25 `FROM` lines in this repo resolve to 13 pins.

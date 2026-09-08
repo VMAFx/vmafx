@@ -19577,6 +19577,11 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
 - **CRITICAL**: AVX-512 float convolution dispatch from [#1261](https://github.com/VMAFx/vmafx/pull/1261) (ADR-0504) reads past the row buffer when row width isn't a multiple of 16 floats (64 bytes). Surfaces as `munmap_chunk(): invalid pointer` / SIGABRT in `speed_temporal` which calls `vif_filter1d_s` at downscaled widths like 45 (= 360 >> 3) on portrait sources. Guard the three AVX-512 dispatch sites in `core/src/feature/vif_tools.c` with `(w % 16) == 0` — narrower rows fall through to the AVX2 8-wide path. Caught by the CHUG re-extract failing with SIGABRT on every portrait clip after the dispatch landed in master.
 
 
+- Reject unpinned external container images that bypassed the central base-image
+  guard through `FROM`, `COPY --from`, platform/other flags or instruction case.
+  Preserve exact local image consumers and test mirror repair in isolated fixtures.
+
+
 - Bash strict-mode sweep across 9 in-tree shell scripts: promote `set -eu` to `set -euo pipefail`, add script-wide `mktemp` cleanup traps, add `LC_ALL=C` to filename-numeric sorts. Closes residual gaps left by PRs #318 (perf/release scripts) and #350 (dev-mcp-entrypoint, sycl-bench-env). Touched: `scripts/run_unittests.sh`, `scripts/ai/fetch-tiny-blobs.sh`, `dev/scripts/smoke-probe-loop.sh`, `scripts/ci/check-agent-worktree-drift.sh` + self-test, `scripts/ci/check-adr-numbering.sh`, `scripts/ci/check-dispatch-registry.sh`, `scripts/adr/next-free.sh`, `tools/ensemble-training-kit/_platform_detect.sh` (documented as deliberately sourced-without-strict-mode). See [ADR-0899](docs/adr/0899-bash-strict-mode-sweep.md).
 
 

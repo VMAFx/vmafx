@@ -22,6 +22,13 @@ Preserve regular dispatchers, actual Git argument/stdin forwarding, and
 independent MkDocs/PR-body push checks (ADR-1241). Keep the disposable
 lifecycle fixture wired into required Pre-Commit CI. Fork-only tooling;
 no Netflix C API or FFmpeg patch impact.
+## fix/base-image-unpinned-reference-guard — container reference guard (2026-09-08)
+
+The ADR-1231 scanner must reject direct external FROM/COPY references regardless
+of digest presence. Preserve the Python instruction scanner, the exact local
+consumer exceptions and the fixture suite in `scripts/ci/tests/`. Shared image
+ARG defaults remain one per physical line for the shell mirror writer. No
+upstream rebase impact: these guard scripts and fixtures are fork-local.
 
 ## fix/ai-1270-blockers — DISTS, MobileSal, and predictor stub triage (2026-09-08)
 
