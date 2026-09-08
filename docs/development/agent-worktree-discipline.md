@@ -13,6 +13,10 @@ under `.claude/worktrees/agent-<id>/`. Two things must hold:
 This page documents both layers. They are independent, and one is not
 a substitute for the other.
 
+The [local merge-train guide](merge-train.md) covers the matching ownership
+boundary for automation: the train refuses an existing owner's checkout and
+requires an explicit handoff before promotion, rebase, or merge.
+
 ## The drift pattern
 
 "Drift" is when an agent's process ends up running with `cwd` inside
