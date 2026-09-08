@@ -20,15 +20,15 @@ RUN if [ "$ENABLE_CUDA" = "true" ]; then \
     fi
 
 RUN if [ "$ENABLE_SYCL" = "true" ]; then \
-      tee /etc/yum.repos.d/oneAPI.repo <<'EOF' \
-[oneAPI]\n\
-name=Intel(R) oneAPI repository\n\
-baseurl=https://yum.repos.intel.com/oneapi\n\
-enabled=1\n\
-gpgcheck=1\n\
-repo_gpgcheck=1\n\
-gpgkey=https://yum.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB\n\
-EOF\n\
+      printf '%s\n' \
+        '[oneAPI]' \
+        'name=Intel(R) oneAPI repository' \
+        'baseurl=https://yum.repos.intel.com/oneapi' \
+        'enabled=1' \
+        'gpgcheck=1' \
+        'repo_gpgcheck=1' \
+        'gpgkey=https://yum.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB' \
+        > /etc/yum.repos.d/oneAPI.repo \
    && dnf install -y intel-oneapi-compiler-dpcpp-cpp intel-oneapi-runtime-libs level-zero-devel \
    && dnf clean all; \
     fi
