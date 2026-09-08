@@ -1009,12 +1009,6 @@ int vmaf_dnn_validate_onnx(const char *path, size_t max_bytes)
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
-
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this file mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
 /* environ is a POSIX extension; the variable is only accessed in the
  * POSIX (non-Windows) build path via posix_spawnp().  Confine the
  * extern declaration here to match the actual usage site. */
