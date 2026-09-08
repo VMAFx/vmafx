@@ -444,7 +444,9 @@ landed fix yet._
   distinguishes verified evidence from pending changes and unknown history.
   External project 14549 is in progress, not a passing badge. Private reporting
   is enabled and verified; unanswered requirements remain with the owner. No badge or release
-  acceptance is inferred from these documentation changes.
+  acceptance is inferred from these documentation changes. The Pages homepage
+  now has a prepared purpose/participation introduction; the worksheet links
+  published topic pages and keeps that new introduction pending deployment.
 
 - **T-CONFIGURED-LINT-FIXTURE-OFFLINE-2026-09-08** — the real-Make lint
   fixtures accidentally bootstrapped tools in a sub-make; a networked host

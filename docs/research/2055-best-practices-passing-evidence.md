@@ -79,3 +79,19 @@ the Scorecard gate policy is handled separately. The human guide, root agent
 invariant, rebase note, state entry and changelog fragment carry the associated
 deliverables. Recheck the worksheet whenever public evidence or official criteria
 change instead of treating this dated snapshot as permanent certification.
+
+## GitHub Pages entrypoint follow-up
+
+The user selected GitHub Pages as the project website. Its homepage returned
+HTTP 200 but introduced itself only as a documentation overview, without a
+concise product purpose or direct reporting/contribution links. The source now
+adds that introduction while preserving the entire topic index. The worksheet
+uses published Pages URLs alongside source proofs for basic and interface
+documentation; `description_good` and `interact` stay prepared until the new
+homepage text is deployed and read back. HTTP availability alone does not prove
+a criterion or deploy a source change.
+
+The bounded receipt in `.workingdir2/cache/scorecard-pages-intro-20260908/`
+retains the live page responses, topic-index identity, changed-link checks and
+normal documentation hooks. No new ADR is needed for this factual entrypoint
+correction; no native test or numerical data changed.
