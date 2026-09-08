@@ -22021,6 +22021,9 @@ always returned so feature availability was never affected.
   stack through `series.txt` in the documented command.
 
 
+- Refresh and verify the complete FFmpeg patch stack in local hooks and required CI; discover stable upstream releases daily, centralize the release configuration, and preserve existing checkouts on failure.
+
+
 - FFmpeg Integration CI: removed stale `ffmpeg-vulkan` job that failed with
   `ERROR: Unknown option: "enable_vulkan"` on every push to master. The
   Vulkan backend was dropped in ADR-0726 (PR #47), which removed the

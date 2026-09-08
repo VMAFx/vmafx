@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
-Date: Sat, 10 May 2026 12:00:00 +0200
+Date: Sun, 10 May 2026 12:00:00 +0200
 Subject: [PATCH] libvmaf: wire hip backend selector (hip_device option)
 
 Adds a per-context HIP backend selector to the regular `libvmaf`
@@ -56,10 +56,10 @@ stack applied; applies cleanly.
  2 files changed, 50 insertions(+)
 
 diff --git a/configure b/configure
-index 5aee240..405ffe1 100755
+index 992ccaf9860c356bce018d9c00499b1240dfb063..46973b60e1128fdf60f5236c0666fbe9ce7a3a71 100755
 --- a/configure
 +++ b/configure
-@@ -295,6 +295,7 @@ External library support:
+@@ -294,6 +294,7 @@ External library support:
    --enable-libv4l2         enable libv4l2/v4l-utils [no]
    --enable-libvidstab      enable video stabilization using vid.stab [no]
    --enable-libvmaf         enable vmaf filter via libvmaf [no]
@@ -67,7 +67,7 @@ index 5aee240..405ffe1 100755
    --enable-libvmaf-cuda    enable CUDA-accelerated vmaf filter via libvmaf [no]
    --enable-libvmaf-sycl    enable SYCL-accelerated vmaf filter via libvmaf [no]
    --enable-libvmaf-vulkan  enable Vulkan-accelerated vmaf filter via libvmaf [no]
-@@ -2102,6 +2103,7 @@ EXTERNAL_LIBRARY_LIST="
+@@ -2141,6 +2142,7 @@ EXTERNAL_LIBRARY_LIST="
      libuavs3d
      libv4l2
      libvmaf
@@ -75,7 +75,7 @@ index 5aee240..405ffe1 100755
      libvmaf_cuda
      libvmaf_sycl
      libvmaf_vulkan
-@@ -7399,6 +7401,9 @@ enabled libuavs3d         && require_pkg_config libuavs3d "uavs3d >= 1.1.41" uav
+@@ -7466,6 +7468,9 @@ enabled libuavs3d         && require_pkg_config libuavs3d "uavs3d >= 1.1.41" uav
  enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_ioctl
  enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid.stab/libvidstab.h vsMotionDetectInit
  enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init
@@ -86,13 +86,13 @@ index 5aee240..405ffe1 100755
                               check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
  enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index a32c915..0793356 100644
+index baf35892fb865be020e529737a6d2c8f1e727866..d8b582902257109bf8c0fb0cdc40137a60295514 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -68,6 +68,10 @@
  #include <vulkan/vulkan.h>
  #endif
-
+ 
 +#if CONFIG_LIBVMAF_HIP
 +#include <libvmaf/libvmaf_hip.h>
 +#endif
@@ -108,7 +108,7 @@ index a32c915..0793356 100644
 +#if CONFIG_LIBVMAF_HIP
 +    VmafHipState *hip_state;            /* owned by the libvmaf filter when hip_device >= 0 */
 +#endif
-
+ 
      VmafContext *vmaf;
      VmafModel **model;
 @@ -130,6 +138,7 @@ static const AVOption libvmaf_options[] = {
@@ -118,11 +118,11 @@ index a32c915..0793356 100644
 +    {"hip_device",   "HIP device index (-1 = disabled, 0+ = device index).",            OFFSET(hip_device),      AV_OPT_TYPE_INT,    {.i64=-1},    -1, INT_MAX,  FLAGS},
      { NULL }
  };
-
+ 
 @@ -650,6 +659,35 @@ static av_cold int init(AVFilterContext *ctx)
  #endif
      }
-
+ 
 +    if (s->hip_device >= 0) {
 +#if CONFIG_LIBVMAF_HIP
 +        VmafHipConfiguration hip_cfg = {
@@ -155,7 +155,7 @@ index a32c915..0793356 100644
      err = parse_models(ctx);
      if (err)
          return err;
-@@ -876,6 +914,13 @@ clean_up:
+@@ -886,6 +924,13 @@ clean_up:
          s->cu_state = NULL;
      }
  #endif
@@ -167,7 +167,5 @@ index a32c915..0793356 100644
 +    }
 +#endif
  }
-
+ 
  static const AVFilterPad libvmaf_inputs[] = {
---
-2.54.0

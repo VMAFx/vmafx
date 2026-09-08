@@ -365,3 +365,13 @@ under `.github/workflows/sycl-parity.yml`. The following invariants are load-bea
 6. **Render node is resolved, not hard-coded**: `dev/docker-compose.runner.yml` takes
    `ARC_RENDER_NODE` from `dev/scripts/arc-render-node.sh` (exactly one vendor-`0x8086` render node).
    Do not replace it with a bare `renderD<N>`; numbers change after PCI re-enumeration.
+
+## FFmpeg patch lifecycle (ADR-1240)
+
+`ffmpeg_patch_stack.py`, the local `ffmpeg-patches-apply-check` hook and
+`ffmpeg-patch-stack.yml` share one release owner: `build-config.env`.
+Replay `series.txt` cumulatively, fail on fetch/replay/configuration drift, and
+write only after the whole candidate succeeds. Disposable Git must discard
+inherited `GIT_*` repository variables and caller Git configuration. Discovery
+is scheduled and accepts only stable tags; ordinary checks use the reviewed tag.
+The required aggregator name is exactly `FFmpeg Patch Stack`.

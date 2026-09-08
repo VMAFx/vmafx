@@ -242,20 +242,16 @@ the root release aligns the release-owned Python packages and Helm
     points, public headers, CLI flags, `meson_options.txt`
     entries, or any symbol probed by the `enabled libvmaf*`
     `check_pkg_config` lines) updates the relevant
-    `ffmpeg-patches/000*-*.patch` file in the **same PR**. The
-    fork ships FFmpeg integration as a patch stack against
-    `n9.0.1`; libvmaf-side surface drift breaks the patches
-    silently for the next rebase. Verify with a series replay
-    against a clean `n9.0.1` checkout
-    (`git -C ffmpeg-9 reset --hard n9.0.1 && for p in
-    ffmpeg-patches/000*-*.patch; do git -C ffmpeg-9 am
-    --3way "$p" || break; done`) — per-patch
-    `git apply --check` is the wrong gate (patches build on
-    each other). Pure libvmaf
-    internals (kernel impls, refactors that don't change
-    headers), doc-only changes, and test-only changes are
-    exempt. See
-    [ADR-0186](docs/adr/0186-vulkan-image-import-impl.md).
+    numbered patch file in **the same PR** when integration behavior changes.
+    The root `build-config.env` owns `FFMPEG_TAG` and `FFMPEG_REMOTE`.
+    Run `python3 scripts/ci/ffmpeg_patch_stack.py --refresh` and then `--check`:
+    these replay every entry in `ffmpeg-patches/series.txt` cumulatively in
+    disposable storage. Per-patch `git apply --check` is not a series gate.
+    Local hooks refresh the configured release; daily CI discovers the latest
+    stable released tag, excluding development and prerelease refs. See
+    [FFmpeg patch automation](docs/development/ffmpeg-patch-automation.md)
+    and [ADR-1240](docs/adr/1240-ffmpeg-release-patch-lifecycle.md).
+    Pure internals, documentation and test changes need no semantic patch edit.
 12. **Default to the `vmaf-dev-mcp` container for vmaf / vmaf-tune /
     ai / MCP-probing work.** The container at
     [`dev/Containerfile`](dev/Containerfile) bakes in every backend

@@ -1,59 +1,38 @@
 ---
 name: build-ffmpeg-with-vmaf
-description: Clone (or update) ffmpeg, apply our fork's patches under ffmpeg-patches/, configure with --enable-libvmaf against our local libvmaf.so, build, and run smoke tests on both the 'libvmaf' and 'vmaf_pre' filters.
+description: Build FFmpeg from the configured released tag with the complete VMAFx patch series and smoke-test its filters in the dev container.
 ---
-
-<!-- markdownlint-disable MD013 -->
 
 # /build-ffmpeg-with-vmaf
 
-End-to-end verification that our libvmaf (CLI, C API, tiny-AI surface) integrates
-correctly with ffmpeg.
+Use the dev-MCP container described in `AGENTS.md` for native integration work.
+Confirm that its installed libvmaf matches the source being tested and rebuild
+it when required by the container freshness rule.
 
-## Invocation
+First validate the full patch series with:
 
-```text
-/build-ffmpeg-with-vmaf [--ffmpeg-ref=master|n7.0|<sha>] [--ffmpeg-dir=/tmp/ffmpeg]
-                        [--libvmaf-build=core/build] [--jobs=N]
-                        [--run-filter-smoketest]
+```bash
+python3 scripts/ci/ffmpeg_patch_stack.py --check
 ```
 
-Defaults: `master` at HEAD, `/tmp/ffmpeg` checkout, our latest `core/build`, `$(nproc)`
-jobs, smoke-test enabled.
+Then run the build helper inside the container with the worktree mounted as
+its repository root:
 
-## Steps
+```bash
+bash ffmpeg-patches/test/build-and-run.sh
+```
 
-1. Ensure `core/build/src/libvmaf.so.3.0.0` + `core/build/src/libvmaf.pc` exist.
-   If not, call `/build-vmaf --backend=cpu` first.
-2. Clone or fetch the ffmpeg repo into `--ffmpeg-dir`. `git clean -fdx` before applying
-   patches (to keep idempotent).
-3. Checkout `--ffmpeg-ref`.
-4. Apply every `*.patch` in `ffmpeg-patches/` in lexicographic order via `git am`.
-   On conflict: abort the `am`, report the failing patch + hunks, suggest
-   `/refresh-ffmpeg-patches`.
-5. Configure ffmpeg:
+The helper uses `FFMPEG_REMOTE` and `FFMPEG_TAG` from `build-config.env`, applies
+`series.txt` in order, builds against the installed libvmaf, and checks the
+`libvmaf` tiny-model option and `vmaf_pre` filter. Set `VMAF_PREFIX` for a
+nonstandard libvmaf installation. Missing prerequisites return exit 77 and
+are an unavailable result, not a pass.
 
-   ```text
-   PKG_CONFIG_PATH=$repo/core/build/src:$PKG_CONFIG_PATH \
-   LD_LIBRARY_PATH=$repo/core/build/src:$LD_LIBRARY_PATH \
-   ./configure --prefix=/tmp/ffmpeg-install --enable-libvmaf --enable-gpl \
-               --enable-version3
-   ```
+The default source checkout is disposable. An explicit `FFMPEG_SRC` must be a
+new path; existing checkouts are rejected intact. `KEEP_BUILD=1` retains a
+successful build, and failures remain available for diagnosis. `FFMPEG_SHA`
+can select another stable released tag; development and arbitrary commit refs
+are rejected. An empty or failed series is not a valid integration result.
 
-6. `make -j$jobs && make install`.
-7. Smoke test (if `--run-filter-smoketest`):
-   - `ffmpeg -i testdata/ref_576x324_48f.yuv -i testdata/dis_576x324_48f.yuv \
-      -lavfi "[0:v][1:v]libvmaf=log_path=/tmp/vmaf.xml" -f null -`
-   - `ffmpeg ... -lavfi "vmaf_pre=tiny_model=model/tiny/psnr_proxy.onnx"` (only if the
-      tiny-AI model file is present — skip silently otherwise).
-   - Verify `/tmp/vmaf.xml` contains a `pooled_metrics` block with `vmaf` mean ≥ 0.
-8. Report: ffmpeg ref built, patches applied (N), filter test pass/fail,
-   resulting ffmpeg binary path.
-
-## Notes
-
-- Uses our local `libvmaf.so`, NOT a system-installed one. `LD_LIBRARY_PATH` scoping
-  is critical to avoid false positives against an older installed copy.
-- If no patches exist yet (`ffmpeg-patches/` is empty or absent), skip step 4 and
-  configure against vanilla ffmpeg — still a valid integration test.
-- Does NOT push or install ffmpeg system-wide.
+Report the source revision, installed libvmaf version, applied patch count and
+actual smoke results. See [FFmpeg patch automation](../../../docs/development/ffmpeg-patch-automation.md).

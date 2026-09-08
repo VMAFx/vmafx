@@ -1,4 +1,4 @@
-From f0c60e8f88e5f0104fea0bbdb2307191e1d61a25 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Tue, 8 Sep 2026 17:13:10 +0200
 Subject: [PATCH] libvmaf: guard and document percentile pool methods
@@ -17,7 +17,7 @@ the feature macro rather than tying availability to a fork version.
  2 files changed, 7 insertions(+), 1 deletion(-)
 
 diff --git a/doc/filters.texi b/doc/filters.texi
-index 3534c87..f313182 100644
+index 3534c87c9be9374db14189a28324cf95efc4b576..f3131824804ac8a1b21c864e9d0eca3aecbfb7a4 100644
 --- a/doc/filters.texi
 +++ b/doc/filters.texi
 @@ -17470,7 +17470,11 @@ Set the format of the log file (xml, json, csv, or sub).
@@ -34,7 +34,7 @@ index 3534c87..f313182 100644
  @item n_threads
  Set number of threads to be used when initializing libvmaf.
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 7ff3ee5..74a41bf 100644
+index 7ff3ee56c1505e46b24a0e3e272f18dc392c2926..74a41bf0c47b6b88254ae4b05f2889aa8ee6dbf5 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -949,6 +949,7 @@ static enum VmafPoolingMethod pool_method_map(const char *pool_method)
@@ -53,6 +53,3 @@ index 7ff3ee5..74a41bf 100644
      }
  
      return VMAF_POOL_METHOD_MEAN;
--- 
-2.55.0
-

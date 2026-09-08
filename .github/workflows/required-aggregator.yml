@@ -100,6 +100,7 @@ jobs:
               'Doc-Substance Gate',
               'docs/state.md Gate',
               'FFmpeg-Patches Surface Sync',
+              'FFmpeg Patch Stack',
               'ADR Collision Guard',
               'Release Script Contract',
             ];

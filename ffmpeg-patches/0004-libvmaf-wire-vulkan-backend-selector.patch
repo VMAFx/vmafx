@@ -2,6 +2,9 @@ From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Sun, 26 Apr 2026 13:50:00 +0200
 Subject: [PATCH] libvmaf: wire vulkan backend selector (vulkan_device option)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
 PR #120 (T5-1c-adm) closes the Vulkan runtime + cross-backend gate;
 `vmaf_vulkan_state_init` / `_import_state` / `_state_free` are all
@@ -30,11 +33,15 @@ DEVICE-backed Y-plane buffer would force the chroma path through
 a separate allocation.  Switching to DEVICE is a follow-up gated
 on cross-backend chroma parity.
 ---
+ configure                |  1 +
+ libavfilter/vf_libvmaf.c | 82 ++++++++++++++++++++++++++++++++++++++--
+ 2 files changed, 79 insertions(+), 4 deletions(-)
+
 diff --git a/configure b/configure
-index c1666a9..9b16ddf 100755
+index 1f2c0529a66c186e904e1b53488d5c6ea9a6fd4e..f804911e5b4f4df75754af3e7672236a21dd3033 100755
 --- a/configure
 +++ b/configure
-@@ -7392,6 +7392,7 @@ enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid
+@@ -7459,6 +7459,7 @@ enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid
  enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init
  enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf_cuda.h vmaf_cuda_state_init
  enabled libvmaf           && check_pkg_config libvmaf_sycl "libvmaf >= 3.0.0" libvmaf/libvmaf_sycl.h vmaf_sycl_state_init
@@ -43,13 +50,13 @@ index c1666a9..9b16ddf 100755
  enabled libvo_amrwbenc    && { check_pkg_config libvo_amrwbenc vo-amrwbenc vo-amrwbenc/enc_if.h E_IF_init ||
                                 require libvo_amrwbenc vo-amrwbenc/enc_if.h E_IF_init -lvo-amrwbenc; }
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index e3cf572..f0ec236 100644
+index 4d72812bff3e242cc48b08748a729ecb76e505ee..74bd5ca4c21d0d16ec262956ded9af92695a4916 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -51,6 +51,10 @@
  #include <libvmaf/libvmaf_sycl.h>
  #endif
-
+ 
 +#if CONFIG_LIBVMAF_VULKAN
 +#include <libvmaf/libvmaf_vulkan.h>
 +#endif
@@ -66,7 +73,7 @@ index e3cf572..f0ec236 100644
 +    VmafVulkanState *vulkan_state;
 +    int             vulkan_pool_initialised;  /* ADR-0238: deferred until first frame */
 +#endif
-
+ 
      VmafContext *vmaf;
      VmafModel **model;
 @@ -98,6 +107,7 @@ static const AVOption libvmaf_options[] = {
@@ -76,11 +83,11 @@ index e3cf572..f0ec236 100644
 +    {"vulkan_device","Vulkan device index (-1 = disabled, 0+ = device index).",         OFFSET(vulkan_device),   AV_OPT_TYPE_INT,    {.i64=-1},    -1, INT_MAX,  FLAGS},
      { NULL }
  };
-
-@@ -126,11 +136,40 @@
+ 
+@@ -126,11 +136,40 @@ static enum VmafPixelFormat pix_fmt_map(enum AVPixelFormat av_pix_fmt)
      }
  }
-
+ 
 -static int copy_picture_data(AVFrame *src, VmafPicture *dst, unsigned bpc)
 +/* ADR-0238: when the Vulkan backend is active, dispense `dst` from the
 + * preallocated picture pool instead of allocating a fresh VmafPicture
@@ -92,7 +99,6 @@ index e3cf572..f0ec236 100644
  {
      const int bytes_per_value = bpc > 8 ? 2 : 1;
 -    int err = vmaf_picture_alloc(dst, pix_fmt_map(src->format), bpc,
--                                 src->width, src->height);
 +    int err = 0;
 +#if CONFIG_LIBVMAF_VULKAN
 +    if (s->vulkan_state) {
@@ -116,22 +122,22 @@ index e3cf572..f0ec236 100644
 +#endif
 +    {
 +        err = vmaf_picture_alloc(dst, pix_fmt_map(src->format), bpc,
-+                                 src->width, src->height);
+                                  src->width, src->height);
 +    }
      if (err)
          return AVERROR(ENOMEM);
-
+ 
 @@ -168,13 +207,13 @@ static int do_vmaf(FFFrameSync *fs)
                 av_color_range_name(ref->color_range));
      }
-
+ 
 -    err = copy_picture_data(ref, &pic_ref, s->bpc);
 +    err = copy_picture_data(s, ref, &pic_ref, s->bpc);
      if (err) {
          av_log(ctx, AV_LOG_ERROR, "problem during vmaf_picture_alloc.\n");
          return AVERROR(ENOMEM);
      }
-
+ 
 -    err = copy_picture_data(dist, &pic_dist, s->bpc);
 +    err = copy_picture_data(s, dist, &pic_dist, s->bpc);
      if (err) {
@@ -140,7 +146,7 @@ index e3cf572..f0ec236 100644
 @@ -491,6 +530,34 @@ static av_cold int init(AVFilterContext *ctx)
  #endif
      }
-
+ 
 +    if (s->vulkan_device >= 0) {
 +#if CONFIG_LIBVMAF_VULKAN
 +        VmafVulkanConfiguration vulkan_cfg = {
@@ -172,7 +178,7 @@ index e3cf572..f0ec236 100644
      err = parse_models(ctx);
      if (err)
          return err;
-@@ -694,6 +761,13 @@ clean_up:
+@@ -703,6 +770,13 @@ clean_up:
          s->sycl_state = NULL;
      }
  #endif
@@ -184,7 +190,5 @@ index e3cf572..f0ec236 100644
 +    }
 +#endif
  }
-
+ 
  static const AVFilterPad libvmaf_inputs[] = {
---
-2.54.0

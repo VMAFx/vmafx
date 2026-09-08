@@ -900,7 +900,8 @@ RUN git clone --depth=1 --branch "v${AMF_VERSION}" \
 USER vmaf
 
 ARG FFMPEG_TAG=n9.0.1
-RUN git clone --depth=1 --branch ${FFMPEG_TAG} https://git.ffmpeg.org/ffmpeg.git /build/ffmpeg
+ARG FFMPEG_REMOTE=https://github.com/FFmpeg/FFmpeg.git
+RUN git clone --depth=1 --branch ${FFMPEG_TAG} "${FFMPEG_REMOTE}" /build/ffmpeg
 WORKDIR /build/ffmpeg
 
 # Apply every patch from ffmpeg-patches/series.txt in order.

@@ -15,6 +15,7 @@ FROM ${CUDA_BUILDER}
 
 ARG NV_CODEC_TAG="n13.1.15.0"
 ARG FFMPEG_TAG=n9.0.1
+ARG FFMPEG_REMOTE=https://github.com/FFmpeg/FFmpeg.git
 # Broadened gencode: Turing baseline (sm_75) + Ampere (sm_80) + Hopper (sm_90) +
 # Blackwell consumer (sm_120). CUDA 13 dropped sm_50/60/70.
 # Experimental nvcc feature flags (ADR D27): relaxed-constexpr lets us reuse host
@@ -118,7 +119,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked \
 RUN echo /usr/local/lib/x86_64-linux-gnu > /etc/ld.so.conf.d/vmaf-local.conf && ldconfig
 
 # ---------- build FFmpeg ----------
-RUN wget -q "https://github.com/FFmpeg/FFmpeg/archive/${FFMPEG_TAG}.zip" && \
+RUN wget -q "${FFMPEG_REMOTE%.git}/archive/${FFMPEG_TAG}.zip" && \
     unzip -q "${FFMPEG_TAG}.zip" && rm "${FFMPEG_TAG}.zip"
 
 COPY ffmpeg-patches /tmp/ffmpeg-patches

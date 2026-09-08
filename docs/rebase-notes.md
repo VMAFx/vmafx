@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## FFmpeg stable-release patch maintenance (2026-09-08)
+
+Preserve `build-config.env` as the FFmpeg remote/tag owner, the ordered
+`ffmpeg-patches/series.txt`, and `FFmpeg Patch Stack` in the required aggregator.
+Regenerate with `scripts/ci/ffmpeg_patch_stack.py --refresh`; checks fetch the
+reviewed tag, while scheduled `--latest` refreshes select stable releases only.
+Canonical patch mail metadata changes without changing the applied source tree.
+Local hooks use disposable Git state and fail closed on network/replay errors.
+See [ADR-1240](adr/1240-ffmpeg-release-patch-lifecycle.md).
+
 ## fix/ai-1270-blockers — DISTS, MobileSal, and predictor stub triage (2026-09-08)
 
 Triage and point-of-use guards for issue #1270 blockers:

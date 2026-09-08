@@ -151,12 +151,18 @@ bash ffmpeg-patches/test/build-and-run.sh
 
 Requires `libvmaf` to be installed (`pkg-config --cflags libvmaf` must
 resolve). Set `VMAF_PREFIX` to point at a non-standard install prefix.
-Pins `FFMPEG_SHA=n9.0.1`; override to test against another tag.
+The default release and remote come from `build-config.env`. `FFMPEG_SHA`
+can select another stable released tag for compatibility testing. The helper
+creates a disposable checkout and rejects any existing `FFMPEG_SRC` path.
+Set `KEEP_BUILD=1` to retain a successful build; failed builds are retained
+for diagnosis. It never resets or cleans an existing checkout.
 
 ## How to regenerate
 
-After editing FFmpeg locally, run `/ffmpeg-build-patches` to diff against
-the tracked upstream base and rewrite the numbered patches in place.
+Run `python3 scripts/ci/ffmpeg_patch_stack.py --refresh` and review the diff,
+then run the same command with `--check`. The local hooks use this helper too.
+See [FFmpeg patch automation](../docs/development/ffmpeg-patch-automation.md)
+for daily stable-release updates, diagnostics and conflict recovery.
 
 ## License
 

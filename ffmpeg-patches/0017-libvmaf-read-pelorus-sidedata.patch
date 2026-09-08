@@ -1,7 +1,11 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Sun, 14 Jun 2026 12:00:00 +0200
-Subject: [PATCH] libvmaf: read Pelorus side-data and drive perceptual weighting
+Subject: [PATCH] libvmaf: read Pelorus side-data and drive perceptual
+ weighting
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
 Wire the `libvmaf` filter's per-frame callback to read a Pelorus
 side-data blob off the distorted AVFrame (AV_FRAME_DATA_SEI_UNREGISTERED,
@@ -26,34 +30,40 @@ ADR-1113 (vendored Pelorus interop ABI). CI validates this patch by
 replaying the full series against a clean n8.1 checkout
 (git am --3way), not standalone git apply.
 ---
- libavfilter/vf_libvmaf.c | 41 +++++++++++++++++++++++++++++++++++++++++
+ libavfilter/vf_libvmaf.c | 41 ++++++++++++++++++++++++++++++++++++++++
  1 file changed, 41 insertions(+)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 1111111..2222222 100644
+index 76b6b0998e4318f460b2f3463dcbbc7f2073433f..7ff3ee56c1505e46b24a0e3e272f18dc392c2926 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
-@@ -31,2 +31,5 @@
+@@ -29,6 +29,9 @@
+ #include <libvmaf.h>
+ #include <libvmaf/dnn.h>
+ 
 +#include <libvmaf/perceptual_weight.h>
 +#include "libavutil/frame.h"
 +
  #include "libavutil/avstring.h"
  #include "libavutil/mem.h"
-@@ -99,3 +103,4 @@ typedef struct LIBVMAFContext {
+ #include "libavutil/opt.h"
+@@ -136,6 +139,7 @@ typedef struct LIBVMAFContext {
+     int64_t cpumask;
+     int64_t gpumask;
+ 
 +    int   perceptual_weight;  /* Pelorus side-data perceptual weighting (ADR-1118) */
      VmafContext *vmaf;
      VmafModel **model;
      unsigned model_cnt;
-@@ -174,3 +179,4 @@ static const AVOption libvmaf_options[] = {
+@@ -170,6 +174,7 @@ static const AVOption libvmaf_options[] = {
+     {"cpumask",      "Bitmask to disable SIMD ISAs (1=SSE2/NEON 2=SSE3 4=SSE4.1 8=AVX2 16=AVX512 32=AVX512ICL; 0=all enabled).", OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, FLAGS},
+     {"gpumask",      "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).", OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, FLAGS},
      {"score_fmt",    "printf format for score values in log file (NULL=%.6f default; use %.17g for lossless).", OFFSET(score_fmt), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS},
 +    {"perceptual_weight", "Perceptually re-weight VMAF pooling using Pelorus side-data (banding/variance maps). OFF by default; inert unless Pelorus side-data is present on the frame.", OFFSET(perceptual_weight), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
      { NULL }
  };
-@@ -172,12 +176,48 @@ static int do_vmaf(FFFrameSync *fs)
-     err = copy_picture_data(s, dist, &pic_dist, s->bpc);
-     if (err) {
-         av_log(ctx, AV_LOG_ERROR, "problem during vmaf_picture_alloc.\n");
-         vmaf_picture_unref(&pic_ref);
+ 
+@@ -313,6 +318,42 @@ static int do_vmaf(FFFrameSync *fs)
          return AVERROR(ENOMEM);
      }
  
@@ -96,7 +106,3 @@ index 1111111..2222222 100644
      err = vmaf_read_pictures(s->vmaf, &pic_ref, &pic_dist, s->frame_cnt++);
      if (err) {
          av_log(ctx, AV_LOG_ERROR, "problem during vmaf_read_pictures.\n");
-         return AVERROR(EINVAL);
-     }
---
-2.43.0

@@ -214,18 +214,6 @@
       "automerge": false
     },
     {
-      "description": "FFmpeg release tag \u2014 manual review; drives the ffmpeg-patches/ rebase story.",
-      "matchPackageNames": [
-        "FFmpeg/FFmpeg"
-      ],
-      "groupName": "FFmpeg patch base",
-      "automerge": false,
-      "labels": [
-        "dependencies",
-        "ffmpeg-patches"
-      ]
-    },
-    {
       "description": "ROCm image version bump \u2014 manual review required. ROCm major-version bumps carry KFD ioctl ABI risk; validate kernel compat, and re-check the prune list in the rocm-src stage, before merging (ADR-1225, ADR-0604, ADR-0603).",
       "matchPackageNames": [
         "rocm/dev-ubuntu-24.04"
@@ -274,25 +262,6 @@
     }
   ],
   "customManagers": [
-    {
-      "customType": "regex",
-      "description": "FFmpeg release tag pinned in the patch-stack test script + the CI gate + the Containerfile ARG.",
-      "managerFilePatterns": [
-        "//^ffmpeg-patches/test/build-and-run\\.sh$//",
-        "//^scripts/ci/ffmpeg-patches-check\\.sh$//",
-        "//^dev/Containerfile$//",
-        "//^docker/Dockerfile\\.node$//",
-        "//^Dockerfile$//",
-        "//^Dockerfile\\.ffmpeg$//"
-      ],
-      "matchStrings": [
-        "FFMPEG_SHA:=(?<currentValue>n[0-9.]+)",
-        "FFMPEG_PATCHES_BRANCH:-(?<currentValue>release/[0-9.]+)",
-        "ARG FFMPEG_TAG=(?<currentValue>n[0-9.]+)"
-      ],
-      "datasourceTemplate": "github-tags",
-      "depNameTemplate": "FFmpeg/FFmpeg"
-    },
     {
       "customType": "regex",
       "description": "ROCm image pin. ADR-1225 moved the fork off the repo.radeon.com apt channel (frozen at 7.2.4 since AMD switched to TheRock) onto the digest-pinned rocm/dev-ubuntu-24.04 image. The Dockerfiles are covered by the built-in dockerfile manager; this manager catches the same pin where it appears in CI workflows and helper scripts.",

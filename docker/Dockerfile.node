@@ -181,6 +181,7 @@ RUN git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
 FROM ffmpeg-deps-base AS ffmpeg-builder-cpu
 
 ARG FFMPEG_TAG=n9.0.1
+ARG FFMPEG_REMOTE=https://github.com/FFmpeg/FFmpeg.git
 
 # Restate the shell in this named stage so static Dockerfile linters can prove
 # that the dependency-closure pipeline below fails on any producer error.
@@ -189,7 +190,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY ffmpeg-patches/ /src/ffmpeg-patches/
 
 RUN git clone --depth=1 --branch "${FFMPEG_TAG}" \
-        https://git.ffmpeg.org/ffmpeg.git /src/ffmpeg
+        "${FFMPEG_REMOTE}" /src/ffmpeg
 
 WORKDIR /src/ffmpeg
 

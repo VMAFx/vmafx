@@ -353,13 +353,16 @@ repos:
         # without an explicit file list, picking up .semgrepignore).
 
       - id: ffmpeg-patches-apply-check
-        name: ffmpeg-patches apply --check (n8.1.1)
-        entry: scripts/ci/ffmpeg-patches-check.sh
-        language: script
-        files: '^ffmpeg-patches/.*\.patch$'
-        stages: [pre-push]
-        # Script self-discovers via series.txt; passing per-file paths
-        # would re-check each patch once per file in the diff.
+        name: FFmpeg patch stack on the configured release
+        entry: python3 scripts/ci/ffmpeg_patch_stack.py --refresh --output-dir .workingdir2/cache/ffmpeg-patch-stack/hooks
+        language: system
+        # CI helpers are authority inputs (ADR-1140), including the replay
+        # script's config/refresh helpers. Public API/build changes can make
+        # a previously clean patch stack stale without editing a patch.
+        files: '^(ffmpeg-patches/|scripts/ci/|build-config\.env$|core/include/|(?:core/)?meson(?:_options\.txt|\.build)$|\.github/workflows/ffmpeg-patch-stack\.yml$)'
+        stages: [pre-commit, pre-push]
+        # Refresh only the configured release. The framework stops the commit
+        # or push when regeneration changes tracked files for review/restaging.
         pass_filenames: false
 
       - id: validate-pr-body

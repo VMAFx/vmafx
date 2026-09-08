@@ -28,6 +28,8 @@ from series.txt in order, and fail on missing files, conflicts or fetch errors.
 They never reset, clean or reuse a contributor's FFmpeg checkout.
 
 Scheduled release discovery selects the highest stable tag numerically.
+It owns FFmpeg discovery; remove the redundant Renovate manager that proposed
+pin-only updates without rebasing the series.
 The updater applies the old series first, rebases those commits onto the new
 release, and formats every patch reproducibly. It changes tracked files only
 after the whole series succeeds. Conflicts retain diagnostics for review;

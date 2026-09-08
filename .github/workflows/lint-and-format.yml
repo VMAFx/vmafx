@@ -52,6 +52,10 @@ jobs:
       - name: Install pre-commit
         run: python -m pip install --upgrade pip pre-commit
       - name: Run pre-commit on all files
+        # The independent FFmpeg Patch Stack job owns network replay and
+        # ADR-1140 routing; --all-files here would replay on docs-only PRs.
+        env:
+          SKIP: ffmpeg-patches-apply-check
         run: pre-commit run --show-diff-on-failure --color=always --all-files
 
   clang-tidy:
