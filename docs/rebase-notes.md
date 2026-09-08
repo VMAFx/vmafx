@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/roi-reader-bounds-20260908 — ROI input boundaries (2026-09-08)
+
+Keep `vmaf_roi_input.h` shared by the CLI and its boundary test: validate
+depth and extent locally, saturate rounded luma before narrowing to 8 bits,
+and traverse the placeholder using its validated allocation count. Existing
+CLI dimensions, rounding below saturation, radial arithmetic and encoder
+sidecar byte layouts remain unchanged. Preserve the ADR-1138 C `NULL`
+brackets and the cited single-threaded getopt invariant. Fork-only CLI
+implementation; no public libvmaf or FFmpeg filter surface changes.
+
 ## fix/pre-push-mypy-scope — merge-base ownership (2026-09-08)
 
 Preserve the existing `ai/`/`scripts/` Python touched-file policy in

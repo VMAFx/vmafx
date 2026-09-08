@@ -412,6 +412,8 @@ landed fix yet._
 
 ## Recently closed
 
+| **T-ROI-READER-BOUNDS-2026-09-08** | Maximum high-bit-depth luma rounded to 256 then wrapped to black. Saturate before narrowing; validate private reader depth/extent and placeholder allocation count locally. Original CLI dimension and sidecar contracts retained. | [ROI boundary evidence](research/roi-reader-bounds-2026-09-08.md) | `fix/roi-reader-bounds-20260908` | 2026-09-08 | Fixed locally; exhaustive input and ASan/UBSan tests pass, review/integration pending. |
+
 | **T-LEVEL-ZERO-HOOK-GIT-ENV-2026-09-08** | A real Git hook exports linked-worktree Git state even from a clean shell. The Level Zero fixture inherited it during temporary Git initialization; a disposable control reproduced shared core.bare false-to-true. Setup and checker subprocesses now isolate Git state, with complete caller metadata/work preservation under an actual linked-worktree hook. | [Fixture hook environment](research/git-fixture-hook-environment-2026-09-08.md) and disposable hook regression. | `integration/rc1-fixes-20260908` | 2026-09-08 | fixed locally; combined validation pending |
 
 | **T-PRE-PUSH-MYPY-REBASE-SCOPE-2026-09-08** | Old-tip/new-tip selection included unrelated master debt and could omit branch-owned files after a rebase, Git type changes and symlink identities; an outgoing ref different from HEAD could be checked against the wrong tree. The hook now checks the complete existing ai/scripts Python policy against master merge-base, validates targets and runs even for empty outgoing file lists. | Real Git rebase and pre-commit regression, type/symlink/ref/error controls; strict typing. | `fix/package-version-owner-convergence` (#1416, held draft) | 2026-09-08 | closed locally; integration pending |
