@@ -24,6 +24,22 @@ helpers return the first failure without incrementing the test count. Keep
 ADR-1138/ADR-1166 C `NULL` brackets. Vendored library bodies, headers, test
 registration and FFmpeg integration are unchanged. See
 [Research-2049](research/2049-svm-observation-test-lint-2026-09-08.md).
+## fix/cambi-avx2-native-lint — local reciprocal-table names (2026-09-08)
+
+Keep `reciprocals` for the five local CAMBI AVX2 parameter bindings and retain
+`reciprocal_lut` at the outer global-table call sites. All function types,
+expressions, gather widths and test registrations are unchanged. No algorithm,
+header/API or FFmpeg rebase impact. See
+[Research-2051](research/2051-cambi-avx2-parameter-names-2026-09-08.md).
+## fix/speed-test-native-lint-20260908 — preserve existing SpEED cases
+
+Keep the read-only descriptor views in `test_speed.c` and `test_speed_qa.c`.
+The temporal QA fixture's allocation and extractor setup groups must return
+failures immediately to their original registered test. Preserve all 67
+assertion expressions/messages, 10 registrations, input literals and API call
+order. Neither group is a new case. Keep the ADR-1138 C `NULL` brackets and
+the two measured zero warning entries. No production, API, FFmpeg or upstream
+algorithm change; see [Research-2050](research/2050-speed-test-native-lint.md).
 
 ## docs/readme-entrypoint-20260908 — concise documentation entry points
 
