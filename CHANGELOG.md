@@ -24602,6 +24602,12 @@ clear diagnostic: `enable_nvtx=true requires enable_cuda=true`.
   populate FLOAT16). Found by PR #112 ORT audit.
 
 
+- **Dev container documentation:** clarify that the native ONNX Runtime CPU
+  archive does not contain CUDA or ROCm execution providers and that the Python
+  runtime dependency floor is owned separately. Remove stale version and ADR
+  claims without changing runtime pins.
+
+
 - Added three unit tests to `core/test/test_output.c` covering
   previously untested public API entry points identified in the
   2026-05-16 test-coverage audit (§2):
