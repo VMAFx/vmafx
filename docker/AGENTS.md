@@ -24,3 +24,13 @@ stage is free. Four pins hidden this way were the most out-of-date images in
 the repository.
 
 See [docs/development/base-images.md](../docs/development/base-images.md).
+
+## Fedora optional SYCL repository
+
+`dev/fedora-40.Dockerfile` writes its seven literal oneAPI repository lines
+with `printf '%s\n'` inside `ENABLE_SYCL=true`. Keep both signature checks,
+repository-write → install → cleanup short-circuiting and the default-off
+branch. Literal `\n` text cannot terminate a Dockerfile heredoc: it breaks
+parsing even when the branch is disabled. The root Dockerfile's redirected
+while loop is unrelated. See
+[Research-2056](../docs/research/2056-fedora-scorecard-heredoc.md).

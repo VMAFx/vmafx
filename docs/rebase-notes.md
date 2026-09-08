@@ -1,6 +1,15 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Fedora Dockerfile parser repair (2026-09-08)
+
+Preserve the optional SYCL branch's seven literal oneAPI configuration lines,
+GPG checks and write/install/cleanup short-circuiting in
+`docker/dev/fedora-40.Dockerfile`. Keep the `printf` form; the previous
+literal-backslash-n heredoc failed both Docker and Scorecard parsing.
+Base/SDK resolution, CUDA, public C/CLI and FFmpeg interfaces are unchanged.
+See [Research-2056](research/2056-fedora-scorecard-heredoc.md).
+
 ## Configured lint fixture bootstrap isolation (2026-09-08)
 
 Preserve the real Make target and recursive build in `test_lint_configured.py`.

@@ -1,4 +1,5 @@
 <!-- markdownlint-disable MD013 MD037 MD038 MD041 MD060 -->
+_Updated: 2026-09-08 (T-FEDORA-SCORECARD-HEREDOC: malformed optional SYCL repository heredoc repaired on `fix/scorecard-parser-20260908`; exact Scorecard/Docker parser controls and shell branch checks pass. Full image build, RPM lint debt and hosted Scorecard remain separate.)_
 _Updated: 2026-09-08 (T-OBSERVATION-FIXTURE-CONST-2026-09-08: IQA/motion coverage inputs cleaned on `fix/observation-fixture-const`; 14 existing cases and actual release code/constants preserved, zero scoped native analyzer findings. Combined RC1 acceptance remains separate.)_
 _Updated: 2026-09-08 (T-DNN-COPY-FLUSH-2026-09-08: `fix/dnn-copy-flush-20260908` rejects reproduced final-flush failures in the test-only model copier. A child-only regular-file regression runs before ORT; all original cases/assertions and the read-error case remain. CPU stub and ORT-enabled tests and scoped native lint pass; measured zero baseline is unchanged. Combined acceptance remains separate.)_
 _Updated: 2026-09-08 (T-DNN-TEST-NATIVE-LINT-2026-09-08: ORT/session test cleanup preserves 83 original cases and 208 assertions, fixes fixture-copy read errors, and adds one POSIX regression. Stub and ORT1.29-enabled CPU tests pass; complete touched files are clang-tidy/Cppcheck clean. Scoped baseline tightens by 2 warnings. Component validation does not replace combined release acceptance.)_
@@ -425,6 +426,15 @@ landed fix yet._
 | **T-GAP-METAL-IOSURFACE-NOT-TRUE-ZERO-COPY** — `vmaf_metal_picture_import` uses CPU `memcpy` instead of true zero-copy GPU texture/buffer binding | `core/include/libvmaf/libvmaf_metal.h` previously claimed zero-copy without host round-trip, but the v1 implementation in `core/src/metal/picture_import.mm` locks the IOSurface and performs a synchronous CPU `memcpy` into a shared-storage `VmafPicture` buffer. Header doc comments and `docs/backends/metal/index.md` updated to state the real behavior. True zero-copy GPU texture or buffer binding (`[MTLDevice newTextureWithDescriptor:iosurface:plane:]` or direct buffer pointer mapping with GPU completion/fence tracking) estimated at ~300 LOC. | Requires Apple Silicon hardware with VideoToolbox hardware decode pipeline. Implement true zero-copy texture/buffer binding in `core/src/metal/picture_import.mm`, add MTLSharedEvent completion tracking to `vmaf_metal_wait_compute`, and verify zero CPU copy overhead and numerical parity (`places=4`) against CPU reference. |
 
 ## Recently closed
+
+- **T-FEDORA-SCORECARD-HEREDOC-2026-09-08** — component repair prepared:
+  `docker/dev/fedora-40.Dockerfile` used a nonterminating heredoc, breaking
+  Docker and Scorecard 5.5.0 parsing even with SYCL disabled. Literal-line
+  `printf` preserves the intended signed repository configuration and
+  conditional failure behavior. Exact original/fixed parser and callback
+  controls pass; full Fedora build and three DL3041 RPM-version warnings
+  remain outside this syntax repair. Not yet a hosted Scorecard result.
+  See [Research-2056](research/2056-fedora-scorecard-heredoc.md).
 
 - **T-CONFIGURED-LINT-FIXTURE-OFFLINE-2026-09-08** — the real-Make lint
   fixtures accidentally bootstrapped tools in a sub-make; a networked host
