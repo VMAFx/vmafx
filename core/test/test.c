@@ -62,7 +62,7 @@ int main(void)
     mu_install_crash_handler();
 #endif
 
-    char *msg = run_tests();
+    const char *const msg = run_tests();
 
     if (msg) {
         (void)fprintf(stderr, "\033[31m%s\n%d tests run, 1 failed\033[0m\n", msg, mu_tests_run);

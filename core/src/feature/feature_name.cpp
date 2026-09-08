@@ -38,7 +38,6 @@
  */
 
 #include <cerrno>
-#include <cstdarg>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -51,6 +50,9 @@
 #include "feature_name.h"
 #include "opt.h"
 
+namespace
+{
+
 /* Custom deleter for VmafDictionary* owned in this TU. */
 struct DictDeleter {
     void operator()(VmafDictionary *d) const noexcept
@@ -60,21 +62,40 @@ struct DictDeleter {
 };
 using DictPtr = std::unique_ptr<VmafDictionary, DictDeleter>;
 
-static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
+template <typename... Args>
+size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, Args... args)
 {
-    va_list args;
     const size_t len = strnlen(buf, buf_sz);
-    va_start(args, fmt);
-    const size_t result = static_cast<size_t>(vsnprintf(buf + len, buf_sz - len, fmt, args));
-    va_end(args);
+    const size_t result = static_cast<size_t>(snprintf(buf + len, buf_sz - len, fmt, args...));
     return result + len;
 }
 
 #define VMAF_FEATURE_NAME_DEFAULT_BUFFER_SIZE 256
 
-[[nodiscard]] static char *vmaf_feature_name_from_opts_dict(const char *name,
-                                                            const VmafOption *opts,
-                                                            VmafDictionary *opts_dict)
+void append_option_names(char *buf, size_t buf_sz, const VmafOption *opts,
+                         const VmafDictionary *sorted)
+{
+    for (unsigned i = 0; i < sorted->cnt; i++) {
+        for (unsigned j = 0; opts[j].name; j++) {
+            const VmafOption *opt = &opts[j];
+            if (strcmp(opt->name, sorted->entry[i].key) != 0)
+                continue;
+            if (!(opt->flags & VMAF_OPT_FLAG_FEATURE_PARAM))
+                continue;
+            const char *key = opt->alias ? opt->alias : opt->name;
+            const char *val = sorted->entry[i].val;
+
+            if (opt->type == VMAF_OPT_TYPE_BOOL) {
+                snprintfcat(buf, buf_sz, "_%s", key);
+            } else {
+                snprintfcat(buf, buf_sz, "_%s_%s", key, val);
+            }
+        }
+    }
+}
+
+[[nodiscard]] char *vmaf_feature_name_from_opts_dict(const char *name, const VmafOption *opts,
+                                                     VmafDictionary *opts_dict)
 {
     VmafDictionary *sorted_raw = nullptr;
     /* vmaf_dictionary_copy returns -EINVAL when *src is null, which is the
@@ -88,7 +109,7 @@ static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
     if (copy_err != 0 && copy_err != -EINVAL)
         return nullptr;
     vmaf_dictionary_alphabetical_sort(sorted_raw);
-    DictPtr sorted(sorted_raw); /* freed by DictPtr destructor on any exit */
+    const DictPtr sorted(sorted_raw); /* freed by DictPtr destructor on any exit */
 
     const size_t buf_sz = VMAF_FEATURE_NAME_DEFAULT_BUFFER_SIZE;
     char buf[VMAF_FEATURE_NAME_DEFAULT_BUFFER_SIZE + 1] = {0};
@@ -98,39 +119,21 @@ static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
     } else {
         snprintfcat(buf, buf_sz, "%s", vmaf_feature_name_alias(name));
 
-        for (unsigned i = 0; i < sorted->cnt; i++) {
-            const VmafOption *opt = nullptr;
-            for (unsigned j = 0; (opt = &opts[j]); j++) {
-                if (!opt->name)
-                    break;
-                if (strcmp(opt->name, sorted->entry[i].key) != 0)
-                    continue;
-                if (!(opt->flags & VMAF_OPT_FLAG_FEATURE_PARAM))
-                    continue;
-                const char *key = opt->alias ? opt->alias : opt->name;
-                const char *val = sorted->entry[i].val;
-
-                if (opt->type == VMAF_OPT_TYPE_BOOL) {
-                    snprintfcat(buf, buf_sz, "_%s", key);
-                } else {
-                    snprintfcat(buf, buf_sz, "_%s_%s", key, val);
-                }
-            }
-        }
+        append_option_names(buf, buf_sz, opts, sorted.get());
     }
 
     /* sorted freed automatically here by DictPtr */
 
     const size_t dst_sz = strnlen(buf, buf_sz) + 1U;
-    char *dst =
-        static_cast<char *>(malloc(dst_sz)); // NOLINT(cppcoreguidelines-no-malloc) — C ABI owner
+    char *dst = static_cast<char *>(
+        malloc(dst_sz)); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0729 C ABI owner
     if (!dst)
         return nullptr;
     strncpy(dst, buf, dst_sz);
     return dst;
 }
 
-[[nodiscard]] static int option_is_default(const VmafOption *opt, const void *data) noexcept
+[[nodiscard]] int option_is_default(const VmafOption *opt, const void *data) noexcept
 {
     if (!opt)
         return -EINVAL;
@@ -152,8 +155,10 @@ static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
     }
 }
 
+} // namespace
+
 [[nodiscard]] char *vmaf_feature_name_from_options(const char *name, const VmafOption *opts,
-                                                   void *obj)
+                                                   const void *obj)
 {
     if (!name)
         return nullptr;
@@ -169,10 +174,8 @@ static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
      * handles cleanup on any subsequent early return. */
     VmafDictionary *opts_raw = nullptr;
 
-    const VmafOption *opt = nullptr;
-    for (unsigned i = 0; (opt = &opts[i]); i++) {
-        if (!opt->name)
-            break;
+    for (unsigned i = 0; opts[i].name; i++) {
+        const VmafOption *opt = &opts[i];
         if (!(opt->flags & VMAF_OPT_FLAG_FEATURE_PARAM))
             continue;
 
@@ -209,7 +212,7 @@ static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
     }
 
     /* Now safe to adopt into RAII guard: opts_raw is stable after the loop. */
-    DictPtr opts_guard(opts_raw);
+    const DictPtr opts_guard(opts_raw);
     char *output = vmaf_feature_name_from_opts_dict(name, opts, opts_guard.get());
     /* opts_guard destructor frees opts_raw on scope exit (success or failure). */
     return output;
@@ -217,7 +220,7 @@ static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
 
 [[nodiscard]] VmafDictionary *
 vmaf_feature_name_dict_from_provided_features(const char **provided_features,
-                                              const VmafOption *opts, void *obj)
+                                              const VmafOption *opts, const void *obj)
 {
     /* Same ownership discipline as vmaf_feature_name_from_options above:
      * vmaf_dictionary_set may reallocate, so we adopt into the RAII guard
@@ -233,7 +236,7 @@ vmaf_feature_name_dict_from_provided_features(const char **provided_features,
         }
 
         const int err = vmaf_dictionary_set(&dict_raw, feature_name, fn, 0);
-        free(fn); // NOLINT(cppcoreguidelines-no-malloc) — C ABI string owner
+        free(fn); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0729 C ABI string owner
         if (err) {
             vmaf_dictionary_free(&dict_raw);
             return nullptr;

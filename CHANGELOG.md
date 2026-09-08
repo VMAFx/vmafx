@@ -14048,6 +14048,9 @@ Total NOLINT count before and after: 180 (unchanged).
   on fresh clones (the blobs are already present).
 
 
+- Simplify internal feature-option iteration while preserving generated feature names, option validation and backend fallback behavior.
+
+
 - **changed(ai):** `aiutils.parquet_utils.write_parquet_atomic` now
   emits parquet schema v2 by default — zstd at compression level 3 in
   place of snappy, columns reordered into a canonical layout
@@ -26375,6 +26378,16 @@ in `integer_ssim_sycl.cpp` that were accidentally dropped by PR #1095 when it ad
   after UV copies and before graph submission. (ADR-1034)
 
 
+- **Tensor I/O regression tests:** Make input fixtures read-only and split
+  oversized helpers without changing any numerical assertion or test case.
+  Preserve deliberate invalid-enum probes with precise cited markers, and
+  tighten the measured native lint baseline by nine warnings.
+
+
+- Make the shared native test result read-only and the alignment remainder
+  predicate explicit, preserving test exits and existing rounding behavior.
+
+
 - **The seven assertions ported into `core/test/test_feature.cpp` by PR #1219
   raised that file's clang-tidy debt from 9 warnings to 34.** The port
   (ADR-1153, rescuing the dead C twin's unique coverage before deleting it)
@@ -27029,6 +27042,9 @@ consistent with existing Malloc behaviour in the file (ADR-1039).
 - `docs/metrics/vif.md`: document `vif_skip_scale0` and `vif_enhn_gain_limit`
   options; fix pre-existing MD060 table-column-style violations on all three
   tables in the file; add `vif_skip_scale0` CLI example.
+
+
+- Repair scalar VIF dead stores and oversized helper bodies while preserving score arithmetic and temporal entry points; reject invalid/overflowing allocation geometry, restore checked optional debug dumps, and cover odd-width strides and temporal cleanup.
 
 
 - **`vif_statistic_8_neon` dropped up to 7 pixel columns from every row.** Its

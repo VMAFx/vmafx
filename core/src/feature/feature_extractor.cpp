@@ -566,7 +566,7 @@ bool vmaf_feature_extractor_supports_options(const VmafFeatureExtractor *fex,
         return true;
 
     if (!fex || !fex->options) {
-        if (missing_key && opts_dict->cnt > 0 && opts_dict->entry)
+        if (missing_key)
             *missing_key = opts_dict->entry[0].key;
         return false;
     }
@@ -607,10 +607,8 @@ int vmaf_fex_ctx_parse_options(VmafFeatureExtractorContext *fex_ctx)
         return -EINVAL;
     }
 
-    const VmafOption *opt = nullptr;
-    for (unsigned i = 0; (opt = &fex_ctx->fex->options[i]); i++) {
-        if (!opt->name)
-            break;
+    for (unsigned i = 0; fex_ctx->fex->options[i].name; i++) {
+        const VmafOption *opt = &fex_ctx->fex->options[i];
         const VmafDictionaryEntry *entry = vmaf_dictionary_get(&fex_ctx->opts_dict, opt->name, 0);
         if (!entry && opt->alias)
             entry = vmaf_dictionary_get(&fex_ctx->opts_dict, opt->alias, 0);
@@ -625,7 +623,8 @@ int vmaf_fex_ctx_parse_options(VmafFeatureExtractorContext *fex_ctx)
 } /* anonymous namespace */
 
 int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
-                                          VmafFeatureExtractor *fex, VmafDictionary *opts_dict)
+                                          const VmafFeatureExtractor *fex,
+                                          VmafDictionary *opts_dict)
 {
     int err = 0;
     VmafFeatureExtractorContext *f = *fex_ctx =

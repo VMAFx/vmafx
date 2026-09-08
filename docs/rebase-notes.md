@@ -1,6 +1,15 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/tensor-io-test-cleanup-20260908 — preserve tensor test coverage (2026-09-08)
+
+Keep read-only tensor fixtures const and grouped test drivers below the existing
+function-size limit. Preserve the explicit unsupported dtype/resize values and
+individual cited analyzer markers; those calls protect rejection behavior, not
+an accidental cast. All numerical assertions, test order and one execution per
+real case remain unchanged. The test compiles real tensor I/O with DNN disabled.
+See `core/test/dnn/AGENTS.md`. Fork-only test cleanup; no public API or FFmpeg impact.
+
 ## fix/roi-reader-bounds-20260908 — ROI input boundaries (2026-09-08)
 
 Keep `vmaf_roi_input.h` shared by the CLI and its boundary test: validate
@@ -10,6 +19,15 @@ CLI dimensions, rounding below saturation, radial arithmetic and encoder
 sidecar byte layouts remain unchanged. Preserve the ADR-1138 C `NULL`
 brackets and the cited single-threaded getopt invariant. Fork-only CLI
 implementation; no public libvmaf or FFmpeg filter surface changes.
+## fix/vif-native-lint — scalar VIF decomposition (2026-09-08)
+
+Preserve the ten-plane workspace layout, filter/decimation/statistic order,
+float-to-double promotions, scale reductions and temporal first-frame values
+in `core/src/feature/vif.c`. The own-header declarations retain all three
+legacy external symbols; the C `NULL` bracket follows ADR-1138. Debug dumps
+write initialized planes and scalar numerator/denominator outputs. Keep the
+odd-stride and temporal EOF/error lifecycle test registered. No public C API
+or FFmpeg surface changes; the scalar arithmetic remains Netflix-compatible.
 
 ## fix/pre-push-mypy-scope — merge-base ownership (2026-09-08)
 
@@ -49838,3 +49856,14 @@ Rebase-sensitive invariants introduced by this change:
    and `__init__.py` files must remain synchronized.
 
 Preserve the Level Zero container consumer check when rebasing the ADR-1236 workflow-checker refactor. Do not reintroduce scientific-stack globals without consumers or drift checks; native ORT archive roles and Python dependency floors are separate contracts.
+
+## Feature-option sentinel cleanup (2026-09-08)
+
+`feature_extractor.cpp` and `feature_name.cpp` iterate `VmafOption` tables
+through their existing null-name sentinel. Keep the early empty-dictionary
+return before reporting the first missing option, and preserve aliases,
+default-value omission and dictionary sorting when rebasing the private
+feature-name helpers. Public C signatures, emitted keys and GPU fallback
+behavior are unchanged. Recheck `test_feature`, `test_feature_extractor` and
+`test_opt`; see the [option-sentinel research digest](research/option-sentinel-cleanup-2026-09-08.md)
+for the focused lint scope and factory-specific cppcheck model corrections.
