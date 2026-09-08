@@ -2171,6 +2171,14 @@ test_vmaf_roi = executable('test_vmaf_roi',
 )
 test('test_vmaf_roi', test_vmaf_roi, suite : ['fast'])
 
+# Exercise the production private ROI reader and placeholder, not copied math.
+test_vmaf_roi_bounds = executable('test_vmaf_roi_bounds',
+    ['test.c', 'test_vmaf_roi_bounds.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    dependencies : [test_vmaf_roi_libm],
+)
+test('test_vmaf_roi_bounds', test_vmaf_roi_bounds, suite : ['fast'])
+
 # picture pool test - exercises vmaf_preallocate_pictures / vmaf_fetch_preallocated_picture.
 # These symbols are always linked into libvmaf (no build gate), so this test
 # always runs.

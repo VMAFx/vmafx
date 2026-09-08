@@ -4,8 +4,8 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 292,
-  "total_warnings": 1457,
-  "total_nolint_uncited": 59,
+  "total_warnings": 1435,
+  "total_nolint_uncited": 58,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
     "build/src/vmaf_4k_v0.6.1.json.c": 2,
@@ -193,7 +193,6 @@
     "core/test/test_y4m_alloc_failure.c": 3,
     "core/tools/vidinput.c": 2,
     "core/tools/vmaf_per_shot.c": 20,
-    "core/tools/vmaf_roi.c": 22,
     "core/tools/yuv_input.c": 7
   },
   "nolint_uncited": {
@@ -237,7 +236,6 @@
     "core/test/test_ssimulacra2_simd.c": 1,
     "core/test/test_y4m_alloc_failure.c": 1,
     "core/tools/vmaf_per_shot.c": 1,
-    "core/tools/vmaf_roi.c": 1,
     "core/tools/yuv_input.c": 3
   },
   "scoped_updates": [
@@ -256,6 +254,26 @@
         }
       },
       "previous_baseline_sha256": "f7964f3e650529ed82487e1eca7c4964e5621ffd06927b955b0169e45ff58665"
+    },
+    {
+      "sources": [
+        "core/test/test_vmaf_roi_bounds.c",
+        "core/tools/vmaf_roi.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/tools/vmaf_roi.c": {
+          "warnings": [
+            22,
+            0
+          ],
+          "nolint_uncited": [
+            1,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "41f189b7d87413195b1b54093423c259714251d165db557ff252199733a70891"
     }
   ]
 }
