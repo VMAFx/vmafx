@@ -527,6 +527,15 @@ This configuration adds type/function knowledge without disabling any diagnostic
 category. Local `--enable=all` and the CI job's existing
 `warning,performance,portability` selection remain unchanged.
 
+Both paths use `--check-level=exhaustive` ([ADR-1245](../adr/1245-cppcheck-exhaustive-configured-analysis.md)).
+This removes Cppcheck's normal forward-branch budget instead of suppressing its
+coverage notice. It can take substantially longer and can expose additional
+real findings. The existing CI timeout and diagnostic selections remain in
+force: timeout, memory exhaustion or any analyzer failure is a failed run.
+The real-tool suite above also checks a small branch-heavy function against
+normal and exhaustive analysis; actual uninitialized reads must still fail.
+See the [measured profile and tool-version limits](../research/1245-cppcheck-exhaustive-configured-analysis.md).
+
 `LINT_JOBS` limits concurrent clang-tidy source jobs (default four). Use
 `LINT_CONFIGURED_ARGS` for helper options such as repeated
 `--clang-tidy-arg=--extra-arg=...` when the configured backend needs explicit

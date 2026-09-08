@@ -5,7 +5,7 @@ This is an overview of the available documentation in the VMAF repository.
 
 ## Getting started
 
-- [Installation](getting-started/install/ubuntu.md) – per-OS install scripts (Ubuntu, Fedora, Arch, Alpine, macOS, Windows)
+- [Installation and source builds](getting-started/index.md) – choose your platform and build configuration
 - [Building on Windows](getting-started/building-on-windows.md) – build VMAF from source on Windows (upstream guide)
 
 ## Usage
@@ -60,17 +60,12 @@ This is an overview of the available documentation in the VMAF repository.
 
 ## Backends
 
-GPU / SIMD backend notes under [backends/](backends/index.md):
+Use the [backend guide](backends/index.md) for build and runtime selection,
+and the individual guides for requirements and feature coverage:
 
-| Backend | Status | Page |
-|---------|--------|------|
-| x86 SIMD (AVX2 / AVX-512) | Production | [avx512.md](backends/x86/avx512.md) |
-| ARM NEON / SVE2 | Production | [arm/overview.md](backends/arm/overview.md) |
-| CUDA | Production | [cuda/overview.md](backends/cuda/overview.md) + [NVTX profiling](backends/nvtx/profiling.md) |
-| SYCL / oneAPI | Production | [sycl/overview.md](backends/sycl/overview.md) + [bundling](backends/sycl/bundling.md) |
-| Vulkan | **Removed** ([ADR-0726](adr/0726-drop-vulkan-backend.md), 2026-05-28) | — |
-| HIP (AMD ROCm) | 7 of 10 real kernels (psnr, integer_psnr, float_motion, float_moment, float_ssim, ciede, integer_motion_v2); 3 stubs (adm/vif/integer_motion). `float_ansnr_hip` removed per [ADR-0865](adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md). | [hip/overview.md](backends/hip/overview.md) |
-| Metal (Apple Silicon) | Scaffold — 4 of 17 extractors registered | [metal/index.md](backends/metal/index.md) |
+- [x86 SIMD](backends/x86/avx512.md) and [ARM SIMD](backends/arm/overview.md)
+- [CUDA](backends/cuda/overview.md) and [SYCL / oneAPI](backends/sycl/overview.md)
+- [HIP / ROCm](backends/hip/overview.md) and [Metal](backends/metal/index.md)
 
 ## Architecture
 

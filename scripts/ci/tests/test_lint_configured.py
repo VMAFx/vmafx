@@ -152,6 +152,7 @@ class ConfiguredLintTests(unittest.TestCase):
             cppcheck_calls[0],
             [
                 "--enable=all",
+                "--check-level=exhaustive",
                 "--inline-suppr",
                 "--library=posix",
                 f"--suppressions-list={self.root / '.cppcheck-suppressions.txt'}",
@@ -193,6 +194,7 @@ class ConfiguredLintTests(unittest.TestCase):
         self.assertEqual(entries[0]["arguments"], self.entries[0]["arguments"])
         args = json.loads(next(self.calls.glob("cppcheck-*.json")).read_text())
         self.assertIn("--library=posix", args)
+        self.assertIn("--check-level=exhaustive", args)
         self.assertFalse(any(arg.startswith(("--platform", "--language", "--std")) for arg in args))
 
     def test_ci_runs_real_model_controls_and_retains_diagnostic_categories(self) -> None:
@@ -200,6 +202,9 @@ class ConfiguredLintTests(unittest.TestCase):
         job = workflow.split("\n  cppcheck:\n", 1)[1].split("\n  python-lint:", 1)[0]
         self.assertIn("-p test_cppcheck_posix_model.py", job)
         self.assertIn("--library=posix", job)
+        self.assertIn("--check-level=exhaustive", job)
+        self.assertNotIn("--check-level=normal", job)
+        self.assertNotIn("--check-level=reduced", job)
         self.assertIn("--enable=warning,performance,portability", job)
         self.assertIn("--error-exitcode=1", job)
         self.assertIn("--project=build/compile_commands.json", job)

@@ -1,6 +1,15 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## docs/readme-entrypoint-20260908 — concise documentation entry points
+
+Keep the README as a short introduction and guide index. Changing SDK pins,
+backend coverage and model defaults belong with their canonical topic docs,
+not repeated badge values, kernel counts or maturity tables. Root build
+commands use Meson's `core/` source directory; the CPU guide explicitly
+disables optional GPU backends. Preserve the existing build-guide heading anchor for incoming
+links. Documentation-only correction; no native or FFmpeg surface impact.
+
 ## refactor/cambi-production-lint-20260908 — read-only views and GPU helpers
 
 Keep CAMBI's validation/preprocessing inputs and paired private scale-score
@@ -17,6 +26,13 @@ scalar temporaries without changing expression order, shifts, clipping,
 p-norm behavior or LUT prefetch. Dispatch signatures remain unchanged;
 output band storage is writable. Existing cited function-size exceptions
 remain numerical invariants. No public C API or FFmpeg surface impact.
+## refactor/test-feature-extractor-lint-20260908 — read-only test views
+
+Keep the twelve const qualifications in `core/test/test_feature_extractor.c`
+without changing its assertions, case order or fixture lifetime. The called
+production APIs already accept these read-only inputs. No production API,
+FFmpeg or numerical rebase impact; see
+[the preservation receipt](research/2044-feature-extractor-test-const-2026-09-08.md).
 
 ## fix/cppcheck-c-header-model-20260908 — official pthread type model (2026-09-08)
 
@@ -49958,3 +49974,13 @@ phases. The source has only the ADR-1138 C `NULL` exception, not a blanket NOLIN
 Run `test_pdjson` plus the model/ownership tests after an upstream parser refresh;
 its streaming, skip, Unicode, invalid-input, allocation and depth assertions are
 behavioral contracts. See [the digest](research/pdjson-nesting-and-lint-2026-09-08.md).
+
+## Cppcheck exhaustive configured analysis (2026-09-08)
+
+Preserve `--check-level=exhaustive` in both `scripts/ci/lint-configured.py` and
+the required Cppcheck workflow, with every existing diagnostic selection and
+configured command variant. Do not restore normal's branch budget or suppress
+its coverage notices. The actual-tool suite must retain its branch-heavy
+positive control and real uninitialized-member/constructor negative controls.
+[ADR-1245](adr/1245-cppcheck-exhaustive-configured-analysis.md) records the
+measured runtime tradeoff; backend/runner differences still require validation.

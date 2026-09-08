@@ -21033,6 +21033,9 @@ Rollup PR targeting master; rebases trivially after the cpp23 PRs land.
     values, and TSan only runs on Linux).
 
 
+- Run configured local and CI Cppcheck analysis in exhaustive mode so normal branch-budget cutoffs do not leave clean native sources only partly analyzed. Preserve diagnostic categories and real-defect failures; deeper analysis can take longer (ADR-1245).
+
+
 **Fix build failure in Cppcheck CI gate caused by missing AVX-512 motion sub-kernel functions.**
 
 `test_motion_avx512_parity.c` called `sad_avx512`, `y_convolution_8_avx512`,
@@ -25313,6 +25316,11 @@ Fix three RC-gate failures surfaced by the pre-release validation matrix:
   workflows; verified via the GitHub Actions API.
 
 
+- Shorten the README to verified examples and documentation links; correct
+  linked build entry points, remove repeated backend status tables and align
+  the documentation footer with the repository license.
+
+
 - Restored the README toolchain badges (Go, Rust edition, Python, C, C++,
   CUDA, ROCm) that the README overhaul dropped, and made them live: Go reads
   `go.mod`, Python reads `pyproject.toml`, Rust reads `Cargo.toml`, CUDA reads
@@ -26432,6 +26440,10 @@ in `integer_ssim_sycl.cpp` that were accidentally dropped by PR #1095 when it ad
 
 - Split large CAMBI test groups into focused helpers and make read-only
   fixtures const, preserving all 144 assertions and 23 registered cases.
+
+
+- Make feature-extractor test input views read-only without changing
+  assertions, registration order or fixture ownership.
 
 
 - **The seven assertions ported into `core/test/test_feature.cpp` by PR #1219

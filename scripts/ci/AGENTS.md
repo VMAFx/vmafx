@@ -34,6 +34,11 @@ uninitialized-member/constructor negative controls in the Cppcheck job after
 installation. Missing tools/models fail that test; no diagnostic category is
 disabled. See the [model investigation](../../docs/research/cppcheck-pthread-model-2026-09-08.md).
 
+Both paths select `--check-level=exhaustive` (ADR-1245). Preserve this value-flow
+policy alongside the existing severity sets and all command variants; never
+suppress `normalCheckLevelMaxBranches` to hide incomplete analysis. The real-tool
+suite includes normal/exhaustive branch-budget controls and defect controls.
+
 ### Base-image references (ADR-1231)
 
 `check-base-image-single-source.sh` delegates FROM/COPY instruction parsing to

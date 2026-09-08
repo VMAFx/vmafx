@@ -952,3 +952,4 @@
 1236-version-single-source-tree
 1243-tidy-scoped-baseline-tightening
 1244-merge-train-ownership-and-validation
+1245-cppcheck-exhaustive-configured-analysis
