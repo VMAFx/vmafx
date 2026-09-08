@@ -61,7 +61,7 @@ option('sycl_compiler',
 option('sycl_acpp_targets',
     type: 'string',
     value: 'generic',
-    description: 'AdaptiveCpp --acpp-targets argument (e.g. "generic", "omp", "omp;cuda:sm_75", "omp;hip:gfx1100"). Ignored when sycl_compiler is icpx. See ADR-0335.')
+    description: 'AdaptiveCpp --acpp-targets argument (e.g. "generic", "omp", "omp;cuda:sm_80", "omp;hip:gfx1100"). Ignored when sycl_compiler is icpx. See ADR-0335.')
 
 option('sycl_icpx_aot_targets',
     type: 'string',

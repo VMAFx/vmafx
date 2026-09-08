@@ -24,14 +24,13 @@ Meson options:
 
 ### GPU architecture coverage
 
-The fork ships cubins for every currently-shipping consumer Nvidia
-generation from Turing through Blackwell whenever the host `nvcc`
-supports them, plus a `compute_80` PTX as an unconditional JIT
-fallback:
+**Minimum compute capability: 8.0 (Ampere).** The fork ships cubins for
+every supported Nvidia generation from Ampere through Blackwell whenever
+the host `nvcc` supports them, plus a `compute_80` PTX as an
+unconditional JIT fallback:
 
 | Generation | Arch     | Emitted as      | Host `nvcc` gate |
 | ---------- | -------- | --------------- | ---------------- |
-| Turing     | `sm_75`  | cubin           | always           |
 | Ampere     | `sm_80`  | cubin + PTX     | always           |
 | Ampere     | `sm_86`  | cubin           | always           |
 | Ada        | `sm_89`  | cubin           | always           |
@@ -44,6 +43,28 @@ that lacks a matching cubin (future minor revisions, headless Tegra
 variants) can still JIT a compatible kernel at driver-load time. This
 diverges from upstream Netflix's meson.build, which ships cubins only
 at Txx major boundaries; see [ADR-0122](../../adr/0122-cuda-gencode-coverage-and-init-hardening.md).
+
+> **Turing (`sm_75`) and older are not supported.**
+> [ADR-1223](../../adr/1223-cuda-ampere-architecture-floor.md) raised the
+> floor to compute capability 8.0 and removed the `sm_75` cubin and the
+> `compute_50` PTX that older toolkits emitted. CUDA 13.x had already
+> dropped Maxwell (`sm_50`), Pascal (`sm_60`) and Volta (`sm_70`); this
+> drops Turing (RTX 20xx, GTX 16xx, Tesla T4) as well.
+>
+> `vmaf_cuda_state_init()` now queries the device compute capability and
+> returns `-ENOTSUP` with an explicit message rather than letting
+> `cuModuleLoadData` fail with `CUDA_ERROR_NO_BINARY_FOR_GPU` (222)
+> inside whichever feature extractor loaded first:
+>
+> ```text
+> CUDA: device "NVIDIA GeForce RTX 2080 Ti" has compute capability 7.5,
+>       below the minimum 8.0 (Ampere).
+>       libvmaf ships no cubin or PTX below sm_80, so no kernel can be
+>       loaded on this GPU.
+>       Turing (sm_75) and older were dropped in ADR-1223. Use an Ampere
+>       or newer GPU, or build with -Denable_cuda=false and run on the
+>       CPU backend.
+> ```
 
 ## Runtime requirements
 

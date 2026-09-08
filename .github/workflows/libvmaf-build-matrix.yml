@@ -412,21 +412,24 @@ jobs:
           sudo ldconfig
 
       # ---------- CUDA toolkit ----------
-      # Pinned to CUDA 13.2.0. Two constraints: (1) ADR-0603 — Ubuntu 26.04
-      # (glibc 2.43) needs CUDA >= 13.2 to avoid the rsqrt(double) noexcept
-      # C2059/C2085 NVCC cascade; (2) the CI installer (Jimver/cuda-toolkit)
-      # does NOT yet publish a 13.3.0 build — bumping the CI legs to 13.3.0
-      # fails the "Install CUDA toolkit" step (T-CI-JIMVER-CUDA-133-NOT-
-      # AVAILABLE). The Docker / dev-container images DO use 13.3.0 (the
-      # nvidia/cuda:13.3.0 image exists); this Docker-13.3-vs-CI-13.2 split is
-      # intentional and stays until Jimver ships 13.3.0. 13.x drops sm_50/60/70
-      # (Maxwell/Pascal/Volta); meson.build guards the sm_50 gencode with a
-      # `<13` version check. Minimum driver for 13.x is >= 580.
+      # Pinned to CUDA 13.3.1, matching build.yml's Linux and Windows legs and
+      # the dev container. ADR-0603: Ubuntu 26.04 (glibc 2.43) needs CUDA >=
+      # 13.2 to avoid the rsqrt(double) noexcept C2059/C2085 NVCC cascade.
+      #
+      # The former 13.2.0 pin cited T-CI-JIMVER-CUDA-133-NOT-AVAILABLE — the
+      # Jimver/cuda-toolkit action having no 13.3.0 build. That was true of
+      # v0.2.35 and is stale: v0.2.36 (pinned below) serves 13.3.1, which
+      # build.yml's Linux leg already installs. The Docker-13.3-vs-CI-13.2
+      # split is closed.
+      #
+      # 13.x drops sm_50/60/70 (Maxwell/Pascal/Volta). ADR-1223 additionally
+      # drops sm_75 (Turing): the gencode floor is compute_80 (Ampere).
+      # Minimum driver for 13.x is >= 580.
       - name: Install CUDA toolkit
         if: ${{ (matrix.cuda) && steps.impact.outputs.c_core == 'true' }}
         uses: Jimver/cuda-toolkit@b8bf9c6c28f8a92fbb04dcfcaee872e60c57462d  # v0.2.36
         with:
-          cuda: '13.2.0'
+          cuda: '13.3.1'
           method: network
           sub-packages: '["nvcc", "cudart-dev"]'
 
@@ -820,7 +823,7 @@ jobs:
   # on Node.js 20 — see ADR-0635). Functionally identical: runs
   # vcvarsall.bat and exports PATH/INCLUDE/LIB for cl.exe.
   # CUDA toolkit is installed directly from NVIDIA's Windows network
-  # installer, pinned to the same 13.2.0 release as the Linux CUDA
+  # installer, pinned to the same 13.3.1 release as the Linux CUDA
   # legs. The Linux legs still use Jimver/cuda-toolkit; the Windows
   # leg avoids that action because v0.2.35 can exit before setup on
   # current windows-2025 images (ADR-0664).
@@ -890,9 +893,11 @@ jobs:
           arch: x64
 
       # ---------- CUDA toolkit (CUDA leg only) ----------
-      # Same pin as the Linux CUDA legs: CUDA 13.2.0, Maxwell/Pascal/Volta
-      # gencodes dropped (meson.build already guards the sm_50 emit on
-      # `version < 13`). Bumped from 13.0.0 per ADR-0603.
+      # Same pin as the Linux CUDA legs: CUDA 13.3.1. 13.x itself drops
+      # Maxwell/Pascal/Volta; ADR-1223 additionally drops Turing (sm_75), so
+      # meson.build's gencode floor is compute_80 and the `< 13` sm_50 guard
+      # is gone. Bumped 13.0.0 -> 13.2.0 per ADR-0603, 13.2.0 -> 13.3.1 per
+      # ADR-1223.
       - name: Install CUDA toolkit (windows)
         if: matrix.backend == 'cuda'
         shell: pwsh
@@ -900,8 +905,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $ProgressPreference = 'SilentlyContinue'
 
-          $cudaVersion = '13.2.0'
-          $cudaMajorMinor = '13.2'
+          $cudaVersion = '13.3.1'
+          $cudaMajorMinor = '13.3'
           $url = "https://developer.download.nvidia.com/compute/cuda/$cudaVersion/network_installers/cuda_${cudaVersion}_windows_network.exe"
           $installer = Join-Path $env:RUNNER_TEMP "cuda_${cudaVersion}_windows_network.exe"
 
@@ -931,7 +936,7 @@ jobs:
           }
 
           "CUDA_PATH=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CUDA_PATH_V13_2=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CUDA_PATH_V13_3=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           (Join-Path $cudaPath 'bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           & (Join-Path $cudaPath 'bin\nvcc.exe') --version
 

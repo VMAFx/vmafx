@@ -125,10 +125,14 @@ gpus:
   # ---------------------------------------------------------------
   - id: "cuda:7.5"
     label: "NVIDIA Turing RTX 20 / T4 (sm_7.5)"
-    status: placeholder
+    status: retired
     notes: >-
-      No real-hardware corpus collected yet — entry reserves the
-      shape for a future calibration sweep on a Turing runner.
+      Retired by ADR-1223, which raised the CUDA floor to compute
+      capability 8.0 (Ampere). No cubin or PTX is emitted for sm_75 any
+      more and vmaf_cuda_state_init() rejects the device, so no
+      calibration sweep can be run on it. Kept rather than deleted so
+      the row shape and the id remain a stable reference for anyone
+      reading a historical calibration corpus.
     features: {}
 
   # ---------------------------------------------------------------

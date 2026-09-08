@@ -939,3 +939,4 @@
 1201-release-candidates-before-1-0-0
 1225-rocm-10-therock-migration
 1235-pkgconfig-advertises-abi-version
+1223-cuda-ampere-architecture-floor

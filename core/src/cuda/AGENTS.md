@@ -41,6 +41,24 @@ cuda/
 
 ## Rebase-sensitive invariants
 
+- **The CUDA architecture floor is compute capability 8.0 (Ampere)**
+  (ADR-1223) — the gencode list in `core/src/meson.build` emits cubins
+  for `sm_80` / `sm_86` / `sm_89` (plus `sm_90` / `sm_100` / `sm_120`
+  when the host nvcc supports them) and a `compute_80` PTX as the
+  backward-JIT floor. Nothing below 8.0 is emitted: Turing (`sm_75`) was
+  dropped, and so was the CUDA-12-only `compute_50` PTX. Two consequences
+  for anyone touching this: (1) `vmaf_cuda_state_init()` enforces the
+  floor at runtime via `check_device_arch()` on BOTH the primary-context
+  and provided-context paths — dropping a gencode entry without the
+  guard turns an unsupported GPU into an opaque
+  `CUDA_ERROR_NO_BINARY_FOR_GPU` from whichever extractor loaded first;
+  (2) the floor lives in exactly two places that must move together,
+  `VMAF_CUDA_MIN_COMPUTE_MAJOR` / `_MINOR` in `common.h` and the gencode
+  list in `meson.build`. Upstream Netflix still ships `sm_75`, so a
+  rebase that takes their gencode block wholesale reintroduces it.
+  Guarded by `core/test/test_cuda_arch_floor.c`, a pure-function test —
+  no runner in the fleet has a Turing GPU to test the rejection path on.
+
 - **`picture_cuda.c` picture-upload stream must use `CU_STREAM_NON_BLOCKING`**
   (fork-local, ADR-0378): `vmaf_cuda_picture_alloc` creates the per-picture
   upload stream with `cuStreamCreateWithPriority(..., CU_STREAM_NON_BLOCKING, 0)`.
