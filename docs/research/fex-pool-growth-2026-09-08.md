@@ -74,8 +74,15 @@ representation is adapted to the old header. The final CPU release test and
 targeted AddressSanitizer/UndefinedBehaviorSanitizer/LeakSanitizer runs pass.
 Actual clang-tidy reports zero warnings and zero uncited exceptions. With
 cppcheck's official `--library=posix` model, the earlier seven pool-constructor
-markers (covering nine diagnostics) are unnecessary and removed. This models
-the pthread types without disabling uninitialized-use analysis. Reduced
+markers (covering nine diagnostics) were removed after factory-TU analysis.
+A subsequent full-profile run identified `fex_ctx_vector.cpp` as a consumer
+without visible factory assignments. Because the entry contains self-initializing
+`std::atomic` members, this consumer still flags four raw fields: `fex`,
+`opts_dict`, `ctx_list` and `full`. Four declaration-only markers now describe
+that factory-visibility limitation; atomic and outer-pool markers stay removed.
+Placement construction plus explicit stores and `pthread_cond_init` initialize
+all four fields before publication. A real-header control reading an uninitialized
+entry member remains diagnosed; no uninitialized-use check is disabled. Reduced
 analysis context still identifies unused helpers in untouched shared headers;
 a whole-tree lint pass is not claimed.
 

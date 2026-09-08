@@ -90,6 +90,17 @@ The complete invariants live in [../AGENTS.md
 §"Rebase-sensitive invariants"](../AGENTS.md); this table is the
 **index** of which file groups move together.
 
+## Integer ADM declaration cleanup (2026-09-08)
+
+Keep the AVX2 and AVX-512 CM/CSF band descriptors and first-row threshold
+aliases read-only locally. Their pointed-to output buffers remain writable;
+this does not change the `AdmBuffer *` dispatch ABI. Scalar-tail temporaries
+and row accumulators belong to their existing inner scopes. Preserve every
+integer shift, float/double promotion, reduction order and prefetch distance;
+const qualification is not permission to change numerical expressions.
+Same-ISA old/new validation is described in
+[the cleanup digest](../../../../docs/research/2042-adm-simd-native-lint-2026-09-08.md).
+
 ## simd_dx macros (ADR-0140)
 
 [`../simd_dx.h`](../simd_dx.h) is fork-internal. AVX2 / AVX-512 paths

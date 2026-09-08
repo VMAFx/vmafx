@@ -264,15 +264,22 @@ int vmaf_feature_extractor_context_destroy(VmafFeatureExtractorContext *fex_ctx)
  * condition variable before publication. Keep cppcheck's official POSIX
  * library model enabled for the pthread fields; preserve uninitialized-use
  * checks. See docs/research/fex-pool-growth-2026-09-08.md. Entries remain at
- * fixed addresses until pool destruction, including across waits. */
+ * fixed addresses until pool destruction, including across waits.
+ * Consumer TUs such as fex_ctx_vector.cpp cannot see the factory assignments;
+ * their std::atomic members trigger constructor analysis of these four raw
+ * fields. Suppress only that declaration warning, not uninitialized reads. */
 struct fex_list_entry {
+    // cppcheck-suppress uninitMemberVarNoCtor
     VmafFeatureExtractor *fex;
+    // cppcheck-suppress uninitMemberVarNoCtor
     VmafDictionary *opts_dict;
     struct {
         VmafFeatureExtractorContext *fex_ctx;
         bool in_use;
+        // cppcheck-suppress uninitMemberVarNoCtor
     } *ctx_list;
     atomic_int capacity, in_use;
+    // cppcheck-suppress uninitMemberVarNoCtor
     pthread_cond_t full;
 };
 

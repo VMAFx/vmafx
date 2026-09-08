@@ -4,8 +4,8 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 292,
-  "total_warnings": 1371,
-  "total_nolint_uncited": 56,
+  "total_warnings": 1359,
+  "total_nolint_uncited": 54,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
     "build/src/vmaf_4k_v0.6.1.json.c": 2,
@@ -100,7 +100,6 @@
     "core/test/test_barten_csf.c": 2,
     "core/test/test_barten_csf_coverage.c": 14,
     "core/test/test_brisque.c": 4,
-    "core/test/test_cambi.c": 12,
     "core/test/test_cambi_simd.c": 8,
     "core/test/test_ciede.c": 11,
     "core/test/test_ciede_simd_parity.c": 12,
@@ -201,7 +200,6 @@
     "core/src/feature/iqa/ssim_tools.c": 1,
     "core/src/feature/niqe.c": 1,
     "core/src/feature/offset.c": 1,
-    "core/src/feature/psnr_tools.cpp": 1,
     "core/src/feature/ssimulacra2.c": 2,
     "core/src/feature/third_party/xiph/psnr_hvs.c": 2,
     "core/src/feature/x86/psnr_hvs_avx2.c": 1,
@@ -216,7 +214,6 @@
     "core/src/metadata_handler.cpp": 2,
     "core/src/opt.cpp": 1,
     "core/src/output.cpp": 1,
-    "core/src/pdjson.c": 1,
     "core/src/picture.c": 1,
     "core/src/read_json_model.cpp": 1,
     "core/src/ref.cpp": 2,
@@ -321,6 +318,51 @@
         }
       },
       "previous_baseline_sha256": "893cb6411937edfa6c8e3952df183a74faf6e86ebd098cb9173584873be3ddb2"
+    },
+    {
+      "sources": [
+        "core/test/test_cambi.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_cambi.c": {
+          "warnings": [
+            12,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "f52c186bcefbfa8204458329204854db605b0c5751b492df11dd0ac4249ada36"
+    },
+    {
+      "sources": [
+        "core/src/feature/cambi.c",
+        "core/src/feature/feature_extractor.cpp",
+        "core/src/feature/psnr_tools.cpp",
+        "core/src/feature/x86/adm_avx2.c",
+        "core/src/feature/x86/adm_avx512.c",
+        "core/src/fex_ctx_vector.cpp",
+        "core/src/pdjson.c",
+        "core/test/test_cambi.c",
+        "core/test/test_pdjson.c",
+        "core/test/test_pdjson_stack_increment.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/psnr_tools.cpp": {
+          "nolint_uncited": [
+            1,
+            0
+          ]
+        },
+        "core/src/pdjson.c": {
+          "nolint_uncited": [
+            1,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "20967c562930b6c549ce7843484d275b341cb908e40d95de9f2fca11ceff1e0d"
     }
   ]
 }
