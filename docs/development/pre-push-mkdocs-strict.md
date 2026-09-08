@@ -5,8 +5,8 @@ The fork runs `mkdocs build --strict` in CI (the `docs.yml` lane) on
 every push that touches `docs/` or `mkdocs.yml`. Before this hook
 landed, audit slice G found that 38 of 50 master pushes failed that
 lane for trivial breakage (broken anchors, orphan pages, missing nav
-entries). Each CI failure cost ~6 minutes. The pre-push hook catches
-the same errors in ~5 seconds locally, before any network traffic.
+entries). The pre-push hook catches the same errors locally before the
+push. Build duration depends on the documentation tree and installed plugins.
 
 See [ADR-0466](../adr/0466-mkdocs-strict-pre-push-hook.md) for the
 decision record.
@@ -18,7 +18,6 @@ decision record.
 make hooks-install
 
 # Run the mkdocs check manually (without pushing):
-SKIP=mkdocs-strict git push --dry-run  # skips the hook
 scripts/git-hooks/pre-push-mkdocs-strict.sh  # runs directly
 
 # Install the docs toolchain if mkdocs is not on PATH:
@@ -62,7 +61,9 @@ pip install -r docs/requirements.txt
 
 If the framework selects no documentation paths, this check does not run.
 A direct script invocation also skips a confirmed non-doc change before
-checking for MkDocs. Documentation changes must pass the build.
+checking for MkDocs. It consumes the complete changed-path list, including
+large diffs, and runs the build if Git cannot determine that list.
+Documentation changes must pass the build.
 
 ### "WARNING - Doc file … contains a link … but the target"
 

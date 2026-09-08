@@ -69,7 +69,9 @@ class HookInstallTests(unittest.TestCase):
         self.assertIn("default_install_hook_types: [pre-commit, commit-msg, pre-push]", config)
         blocks = re.split(r"^      - id: ", config, flags=re.MULTILINE)[1:]
         push_hooks = {
-            block.splitlines()[0]: block for block in blocks if "stages: [pre-push]" in block
+            block.splitlines()[0]: block
+            for block in blocks
+            if re.search(r"stages: \[[^\]\n]*\bpre-push\b", block)
         }
         self.assertTrue(
             {
@@ -288,6 +290,33 @@ class HookInstallTests(unittest.TestCase):
         result = self.run_git("push", "origin", "master", check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("documentation changed but mkdocs is missing", result.stdout + result.stderr)
+
+    def test_direct_docs_detection_consumes_large_diff_and_checks_on_git_failure(self) -> None:
+        actual_git = shutil.which("git")
+        assert actual_git is not None
+        self.run_git("update-ref", "refs/remotes/origin/master", "HEAD")
+        self.env["HOOK_TEST_REAL_GIT"] = actual_git
+        self.write_bin(
+            "git",
+            "#!/usr/bin/env python3\n"
+            "import os, signal, sys\n"
+            "if sys.argv[1:3] == ['diff', '--name-only']:\n"
+            "    if os.environ.get('HOOK_TEST_DIFF_FAIL') == '1':\n"
+            "        sys.exit(2)\n"
+            "    signal.signal(signal.SIGPIPE, signal.SIG_DFL)\n"
+            "    sys.stdout.write('docs/index.md\\n')\n"
+            "    sys.stdout.flush()\n"
+            "    for i in range(100000):\n"
+            "        sys.stdout.write(f'other/path/{i}.txt\\n')\n"
+            "    sys.exit(0)\n"
+            "os.execv(os.environ['HOOK_TEST_REAL_GIT'], ['git', *sys.argv[1:]])\n",
+        )
+        for failed_diff in ("0", "1"):
+            with self.subTest(failed_diff=failed_diff):
+                self.env["HOOK_TEST_DIFF_FAIL"] = failed_diff
+                self.log.unlink(missing_ok=True)
+                self.run_command("bash", "scripts/git-hooks/pre-push-mkdocs-strict.sh")
+                self.assertIn(["mkdocs"], self.events())
 
 
 if __name__ == "__main__":

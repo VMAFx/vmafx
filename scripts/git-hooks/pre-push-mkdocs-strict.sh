@@ -51,8 +51,11 @@ elif ! git rev-parse --verify origin/master >/dev/null 2>&1; then
 else
   base="$(git merge-base origin/master HEAD 2>/dev/null || true)"
   if [ -n "${base}" ]; then
-    if git diff --name-only "${base}..HEAD" 2>/dev/null |
-      grep -qE '^(docs/|mkdocs\.yml)'; then
+    # Consume the full diff before matching: grep -q can close a large pipe
+    # early, making Git fail with SIGPIPE under pipefail and skipping docs.
+    if ! changed_files="$(git diff --name-only "${base}..HEAD" 2>/dev/null)"; then
+      touched_docs=1
+    elif grep -qE '^(docs/|mkdocs\.yml)' <<<"${changed_files}"; then
       touched_docs=1
     fi
   else
