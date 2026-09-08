@@ -14,18 +14,25 @@ Choose your platform below, or see [Building on Windows](building-on-windows.md)
 
 ## Build from source (any platform)
 
+Run commands from the repository root after installing your platform's
+build dependencies. For native Windows setup, use the
+[Windows build guide](building-on-windows.md).
+
+For a CPU build, explicitly disable the optional GPU backends and DNN runtime:
+
 ```bash
-# CPU only
-meson setup build core -Denable_cuda=false -Denable_sycl=false
+meson setup build core \
+  -Denable_cuda=false -Denable_sycl=false -Denable_hip=false \
+  -Denable_metal=disabled -Denable_dnn=disabled
 ninja -C build
-
-# With CUDA
-meson setup build core -Denable_cuda=true -Denable_sycl=false
-ninja -C build
-
-# With SYCL (Intel oneAPI)
-meson setup build core -Denable_cuda=false -Denable_sycl=true
-ninja -C build
+meson test -C build
 ```
 
-See [Engineering principles](../principles.md) for coding standards and the [Backends](../backends/index.md) section for GPU/SIMD details.
+The CLI is `build/tools/vmaf` (or `build/tools/vmaf.exe` on Windows).
+Use a fresh build directory for each backend configuration; the
+[backend guides](../backends/index.md) describe the required SDK setup and
+configuration options. For the shared development container, see
+[the dev-MCP guide](../development/dev-mcp.md).
+
+Continue with the [CLI reference](../usage/cli.md) for scoring examples and
+[engineering principles](../principles.md) for contribution standards.

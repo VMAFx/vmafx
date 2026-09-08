@@ -33,25 +33,10 @@ Non-Claude agents: see [AGENTS.md](AGENTS.md) (same content, tool-agnostic).
 
 ## 2. How to build
 
-Meson + Ninja (NOT CMake).
-
-```bash
-# CPU only (fastest build, no GPU deps required)
-meson setup build -Denable_cuda=false -Denable_sycl=false
-ninja -C build
-
-# With CUDA (requires /opt/cuda + nvcc)
-meson setup build -Denable_cuda=true -Denable_sycl=false
-ninja -C build
-
-# With SYCL (requires oneAPI / icpx)
-meson setup build -Denable_cuda=false -Denable_sycl=true
-ninja -C build
-
-# Full (both backends)
-meson setup build -Denable_cuda=true -Denable_sycl=true
-ninja -C build
-```
+Meson + Ninja. Run from the repository root; Meson's source directory is
+`core/`. Follow the [source-build guide](docs/getting-started/index.md#build-from-source-any-platform)
+for the CPU configuration and [backend guides](docs/backends/index.md) for
+SDK setup and GPU configurations.
 
 Shortcut: `/build-vmaf --backend=cpu|cuda|sycl|all` (skill).
 

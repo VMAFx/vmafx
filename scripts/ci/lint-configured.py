@@ -161,10 +161,11 @@ def run_analyzer(argv: list[str], root: Path, log: Path) -> int:
 
 
 def cppcheck_arguments(binary: str, root: Path, database: Path) -> list[str]:
-    """Model the pthread API without overriding the configured target platform."""
+    """Analyze beyond branch budgets without overriding configured target settings."""
     return [
         binary,
         "--enable=all",
+        "--check-level=exhaustive",
         "--inline-suppr",
         "--library=posix",
         f"--suppressions-list={root / '.cppcheck-suppressions.txt'}",

@@ -1,6 +1,6 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-2-Clause-Patent
-"""Exercise official pthread modeling with real cppcheck; missing tools are errors."""
+"""Exercise real cppcheck modeling/depth; missing tools are errors."""
 
 from __future__ import annotations
 
@@ -94,6 +94,43 @@ class CppcheckPosixModelTests(unittest.TestCase):
                 self.assertFalse(
                     any(severity != "information" for severity, _identifier in diagnostics), output
                 )
+
+    def test_exhaustive_analysis_finishes_real_branch_budget_control(self) -> None:
+        # Eight early returns exceed 2.21's four forward branches. Older supported
+        # tools (notably Ubuntu 24.04's 2.13) have no such cutoff/diagnostic.
+        source = (
+            "int main(int argc, char **argv) {\n(void)argv;\n"
+            + "".join(f"if (argc == {value}) {{ return {value}; }}\n" for value in range(8))
+            + "return argc;\n}\n"
+        )
+        code, diagnostics, output = self.analyze(
+            source, language="c", extra=("--check-level=normal",)
+        )
+        version = subprocess.run(  # noqa: S603 -- resolved analyzer, fixed argv
+            [self.binary, "--version"], capture_output=True, text=True, check=True
+        ).stdout
+        match = re.search(r"Cppcheck (\d+)\.(\d+)", version)
+        self.assertIsNotNone(match, version)
+        assert match is not None
+        if tuple(map(int, match.groups())) == (2, 21):
+            self.assertEqual(code, 1, output)
+            self.assertIn(("information", "normalCheckLevelMaxBranches"), diagnostics, output)
+        self.assertEqual(
+            code, int(("information", "normalCheckLevelMaxBranches") in diagnostics), output
+        )
+        self.assertTrue(
+            all(
+                severity == "information"
+                and identifier in {"normalCheckLevelMaxBranches", "checkersReport"}
+                for severity, identifier in diagnostics
+            ),
+            output,
+        )
+        code, diagnostics, output = self.analyze(source, language="c")
+        self.assertEqual(code, 0, output)
+        self.assertTrue(
+            all(item == ("information", "checkersReport") for item in diagnostics), output
+        )
 
     def test_actual_uninitialized_c_member_read_still_fails(self) -> None:
         source = """#include "model.h"

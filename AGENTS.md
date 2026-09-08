@@ -36,7 +36,7 @@ opened in this repo. For Claude Code–specific tooling (skills, hooks), see
 Meson + Ninja.
 
 ```text
-meson setup build [-Denable_cuda=true|false] [-Denable_sycl=true|false]
+meson setup build core [-Denable_cuda=true|false] [-Denable_sycl=true|false]
 ninja -C build
 ```
 
@@ -339,6 +339,13 @@ preserve. Per-subtree details (the load-bearing reasons + load-bearing
 mechanics) live in the relevant `AGENTS.md` under that subtree; this
 list is the index. When a rebase touches the cited TUs, walk the
 linked AGENTS.md before resolving conflicts.
+
+- **Documentation entry points**: keep `README.md` concise and link to the
+  topic guides for changing build requirements, backend coverage and model
+  defaults. `docs/index.md` and `docs/backends/index.md` should link to backend
+  guides rather than repeat kernel counts or maturity summaries. Keep the
+  repository-root build instructions in `docs/getting-started/index.md` and
+  include Meson's `core/` source directory when showing a configure command.
 
 - **GPU long-tail terminus reached** — every registered feature
   extractor has at least one GPU twin (lpips remains ORT-delegated
