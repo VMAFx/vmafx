@@ -1044,3 +1044,4 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-1243](1243-tidy-scoped-baseline-tightening.md) | Allow measured scoped tightening of the lint baseline | Accepted | ci, lint, fork-local |
 | [ADR-1244](1244-merge-train-ownership-and-validation.md) | Guard merge-train ownership and exact-head validation | Accepted | ci, agents, safety, fork-local |
 | [ADR-1245](1245-cppcheck-exhaustive-configured-analysis.md) | Analyze configured Cppcheck paths exhaustively | Accepted | ci, build, quality |
+| [ADR-1246](1246-cppcheck-public-entrypoints.md) | Model verified public functions as Cppcheck entrypoints | Accepted | ci, build, quality |

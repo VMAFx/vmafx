@@ -1347,6 +1347,7 @@ nav:
         - "ADR-1243: tidy-scoped-baseline-tightening": adr/1243-tidy-scoped-baseline-tightening.md
         - "ADR-1244: merge-train-ownership-and-validation": adr/1244-merge-train-ownership-and-validation.md
         - "ADR-1245: cppcheck-exhaustive-configured-analysis": adr/1245-cppcheck-exhaustive-configured-analysis.md
+        - "ADR-1246: cppcheck-public-entrypoints": adr/1246-cppcheck-public-entrypoints.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
