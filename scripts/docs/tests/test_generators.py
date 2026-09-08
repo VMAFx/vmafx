@@ -48,9 +48,11 @@ class GeneratorTests(unittest.TestCase):
     def run_generator(
         self, script: str, mode: str, *, check: bool = True
     ) -> subprocess.CompletedProcess[str]:
+        executable = shutil.which("bash")
+        assert executable is not None, "bash is required by the generator fixture"
         # ADR-1242: fixed repository scripts in a disposable fixture, no shell.
         result = subprocess.run(  # noqa: S603
-            (shutil.which("bash"), str(self.root / "scripts/docs" / script), mode),
+            (executable, str(self.root / "scripts/docs" / script), mode),
             text=True,
             capture_output=True,
             check=False,

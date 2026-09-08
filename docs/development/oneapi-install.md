@@ -164,7 +164,7 @@ follow-up backlog candidate.
   [Research-0086 §A.4](../research/0086-sycl-toolchain-audit-2026-05-08.md)
   emitted GO; on implementation review the rewrite was
   **deferred** under
-  [ADR-0332](../adr/0332-sycl-adm-dwt-group-load-deferral.md) —
+  [ADR-0406](../adr/0406-sycl-adm-dwt-group-load-deferral.md) —
   the `WG_SIZE × ElementsPerWorkItem` divisibility constraint and
   the multi-row source contiguity gap defeat the sketch. Re-opens
   when (a) a tile-geometry redesign yields integer divisibility and
@@ -173,7 +173,7 @@ follow-up backlog candidate.
 - [x] OpenVINO EP version bump — newer ORT bundled with the basekit
   exposes the NPU plugin via `device_type=NPU` on the existing
   `OpenVINOExecutionProvider`. **Done 2026-05-08** in
-  [ADR-0332](../adr/0405-openvino-npu-ep-wiring.md): adds
+  [ADR-0405](../adr/0405-openvino-npu-ep-wiring.md): adds
   `--tiny-device=openvino-npu` (plus `openvino-cpu` / `openvino-gpu`
   for explicit OpenVINO device-type pinning). End-to-end NPU
   silicon validation still pending a contributor with Meteor /

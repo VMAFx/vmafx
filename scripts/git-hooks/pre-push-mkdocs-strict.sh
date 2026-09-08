@@ -17,9 +17,9 @@
 #
 # Requirements:
 #   mkdocs (+ docs/requirements.txt) must be installed in the active Python env.
-#   `pip install -r docs/requirements.txt` satisfies this. The hook skips
-#   silently when mkdocs is not on PATH to avoid blocking contributors who
-#   work only on non-docs code paths.
+#   `pip install -r docs/requirements.txt` satisfies this. Missing mkdocs
+#   blocks a selected docs push; direct non-doc invocations skip before
+#   requiring the docs toolchain.
 #
 # See also: docs/development/pre-push-mkdocs-strict.md
 
@@ -34,13 +34,6 @@ fi
 # ── Repo root ─────────────────────────────────────────────────────────────────
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -z "${repo_root}" ]; then
-  exit 0
-fi
-
-# ── mkdocs availability ───────────────────────────────────────────────────────
-if ! command -v mkdocs >/dev/null 2>&1; then
-  echo "pre-push-mkdocs-strict: mkdocs not found on PATH — skipping." >&2
-  echo "  Install: pip install -r ${repo_root}/docs/requirements.txt" >&2
   exit 0
 fi
 
@@ -70,6 +63,13 @@ fi
 
 if [ "${touched_docs}" -eq 0 ]; then
   exit 0
+fi
+
+# ── mkdocs availability ───────────────────────────────────────────────────────
+if ! command -v mkdocs >/dev/null 2>&1; then
+  echo "pre-push-mkdocs-strict: BLOCKED — documentation changed but mkdocs is missing." >&2
+  echo "  Install: pip install -r ${repo_root}/docs/requirements.txt" >&2
+  exit 1
 fi
 
 # ── Run mkdocs build --strict ─────────────────────────────────────────────────

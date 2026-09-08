@@ -9,9 +9,8 @@ import os
 import shutil
 import subprocess
 import tempfile
+from importlib.resources import files
 from pathlib import Path
-
-from pre_commit.util import resource_text
 
 HOOKS = ("pre-commit", "commit-msg", "pre-push", "pre-rebase")
 SOURCES = {
@@ -22,13 +21,18 @@ SOURCES = {
 
 
 def git(*args: str) -> str:
+    executable = shutil.which("git")
+    if executable is None:
+        raise SystemExit("install-hooks: Git is missing from PATH")
     # ADR-1241: callers supply fixed Git queries as argv; never a shell command.
-    return subprocess.check_output((shutil.which("git"), *args), text=True).strip()  # noqa: S603
+    return subprocess.check_output((executable, *args), text=True).strip()  # noqa: S603
 
 
 def framework_hook(path: Path) -> bool:
     """Only replace an unmodified framework template, never a user wrapper."""
-    before, rest = resource_text("hook-tmpl").split("# start templated\n")
+    before, rest = (
+        files("pre_commit.resources").joinpath("hook-tmpl").read_text().split("# start templated\n")
+    )
     _, after = rest.split("# end templated\n")
     contents = path.read_text()
     lines = contents.splitlines()

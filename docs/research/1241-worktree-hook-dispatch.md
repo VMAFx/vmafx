@@ -31,7 +31,9 @@ real Git and pre-commit with only local hooks and a local bare remote;
 GitHub and MkDocs responses are controlled test doubles. It proves a
 regular installed hook survives deletion of the installer worktree and
 that commit, commit-message, and push failures block Git operations.
-MkDocs failures still block first and draft pushes. Native mode runs the
+MkDocs failures still block first and draft pushes. A hermetic PATH fixture
+also proves a selected docs push fails when MkDocs is missing, while a
+direct non-doc invocation skips before requiring that tool. Native mode runs the
 framework's message/push stages; legacy hooks and the rebase guard remain
 active. Unknown hooks are refused without changing installed hooks.
 This tests dispatch and failure propagation, not the native VMAF build

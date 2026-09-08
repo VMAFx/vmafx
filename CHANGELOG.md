@@ -21764,6 +21764,12 @@ the mkdocs.yml nav (ansnr, motion, ms-ssim, psnr-hvs, speed_qa, ssim, tad, vif, 
 mcp/backends, mcp/http-transport).
 
 
+- Repair broken developer and usage guide links using canonical ADR IDs, backend
+  overview pages, and source paths; retain historical local-only references.
+- Block selected documentation pushes when MkDocs is unavailable, while direct
+  non-doc checks continue to skip without requiring the docs toolchain.
+
+
 Fixed the MkDocs strict-mode anchor warnings that blocked the GitHub Pages
 deployment after recent documentation merges.
 

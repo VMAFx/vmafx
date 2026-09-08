@@ -30,9 +30,9 @@ pip install -r docs/requirements.txt
 1. **Scope check** — if the push does not touch `docs/` or
    `mkdocs.yml`, the hook exits 0 immediately (no latency on
    non-docs pushes).
-2. **Toolchain check** — if `mkdocs` is not on PATH, the hook
-   exits 0 with a one-line notice. Install via
-   `pip install -r docs/requirements.txt`.
+2. **Toolchain check** — once documentation is selected, missing `mkdocs`
+   blocks the push with an installation hint. Install via
+   `pip install -r docs/requirements.txt` in the active environment.
 3. **Build** — runs `mkdocs build --strict --quiet` against a
    temporary `--site-dir`. The temporary directory is cleaned up
    on exit regardless of outcome.
@@ -60,8 +60,9 @@ Install the docs toolchain:
 pip install -r docs/requirements.txt
 ```
 
-If you work only on C / Python / GPU code and never edit docs, the
-hook will skip silently on every push — no action needed.
+If the framework selects no documentation paths, this check does not run.
+A direct script invocation also skips a confirmed non-doc change before
+checking for MkDocs. Documentation changes must pass the build.
 
 ### "WARNING - Doc file … contains a link … but the target"
 

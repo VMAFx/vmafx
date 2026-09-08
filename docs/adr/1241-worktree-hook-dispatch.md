@@ -40,7 +40,9 @@ and real Git lifecycle failures in a disposable-repository CI fixture.
 Installation requires the active Python environment's pre-commit package.
 Push checks previously declared but unwired now run. Native mode continues
 to have a reduced pre-commit check surface, documented explicitly.
-MkDocs remains optional locally under ADR-0466; hosted Docs is required.
+A selected documentation push requires MkDocs locally, closing the prior
+ADR-0466 missing-tool skip. Non-doc changes do not require the docs toolchain.
+Hosted Docs remains required.
 The fixture uses local repositories and no GitHub calls. Subprocess calls
 use fixed argv and resolved executables; narrow scanner annotations explain
 those calls where static analysis cannot follow the local helper arguments.

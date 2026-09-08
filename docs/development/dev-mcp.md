@@ -10,7 +10,7 @@ server.  It is the standard environment for:
 - Reproducing build regressions on GPU paths other than the host's primary GPU
   (for example: catching HIP toolchain regressions on an NVIDIA-only host).
 
-The design decision is recorded in [ADR-0435](../adr/0435-local-dev-mcp-container.md).
+The design decision is recorded in [ADR-0451](../adr/0451-local-dev-mcp-container.md).
 
 ---
 

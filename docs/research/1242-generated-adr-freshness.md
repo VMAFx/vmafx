@@ -57,3 +57,23 @@ Reproduce with `python3 scripts/docs/tests/test_generators.py`,
 site directory; installed versions and build diagnostics are retained
 with the audit evidence. MkDocs INFO categories remain governed by the
 existing archival/source-link policy, not silently promoted or disabled.
+
+## Follow-up: developer and usage guide references
+
+The strict-build INFO inventory contained 27 missing linked targets in
+`docs/development/` and `docs/usage/`. Canonical headings and source files
+resolved 26 to existing targets: renamed ADR slugs, corrected IDs for
+Rust FFI (0706), local dev-MCP (0451), cloud-native server work (0701),
+SYCL DWT deferral (0406), AdaptiveCpp (0407), and percentile pooling
+(1188), backend overview pages, `core/include/meson.build`, and
+`docker/Dockerfile.production`. The remaining reference was the local
+`.workingdir2/BACKLOG.md` notebook; the guide retains its historical T7-3
+identifier as plain text and names the live workflow as its configuration
+source. It now accurately describes that job's `GPU_COVERAGE_ENABLED`
+opt-in and draft guard. No historical research claim or scaffold is removed.
+
+A local path scan confirms zero missing inline-link targets in those
+12 repaired guide pages. Source-tree links remain useful on GitHub and
+continue to appear as INFO in MkDocs when they lie outside `docs_dir`.
+Historical ADR and research link debt is reported separately from this
+bounded guide repair.

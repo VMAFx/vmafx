@@ -7,13 +7,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-
-from pre_commit.clientlib import load_config
 
 ROOT = Path(__file__).resolve().parents[3]
 CONFIG = """repos:
@@ -65,15 +64,12 @@ if sys.argv[1] == os.environ.get('HOOK_TEST_FAIL'):
 
 class HookInstallTests(unittest.TestCase):
     def test_repository_config_and_required_ci_wiring(self) -> None:
-        config = load_config(str(ROOT / ".pre-commit-config.yaml"))
-        self.assertEqual(
-            config["default_install_hook_types"], ["pre-commit", "commit-msg", "pre-push"]
-        )
+        self.run_command("pre-commit", "validate-config", cwd=ROOT)
+        config = (ROOT / ".pre-commit-config.yaml").read_text()
+        self.assertIn("default_install_hook_types: [pre-commit, commit-msg, pre-push]", config)
+        blocks = re.split(r"^      - id: ", config, flags=re.MULTILINE)[1:]
         push_hooks = {
-            hook["id"]: hook
-            for repo in config["repos"]
-            for hook in repo["hooks"]
-            if hook.get("stages") == ["pre-push"]
+            block.splitlines()[0]: block for block in blocks if "stages: [pre-push]" in block
         }
         self.assertTrue(
             {
@@ -86,9 +82,8 @@ class HookInstallTests(unittest.TestCase):
             }
             <= push_hooks.keys()
         )
-        self.assertEqual(
-            push_hooks["mkdocs-strict"]["entry"],
-            "scripts/git-hooks/pre-push-mkdocs-strict.sh",
+        self.assertIn(
+            "entry: scripts/git-hooks/pre-push-mkdocs-strict.sh", push_hooks["mkdocs-strict"]
         )
         workflow = (ROOT / ".github/workflows/lint-and-format.yml").read_text()
         precommit_job = workflow.split("  pre-commit:\n", 1)[1].split("  clang-tidy:\n", 1)[0]
@@ -266,6 +261,33 @@ class HookInstallTests(unittest.TestCase):
         self.assertIn(["legacy"], events)
         self.assertTrue(any(event[0] == "pre-push" for event in events))
         self.assertIn(["mkdocs"], events)
+
+    def test_missing_mkdocs_blocks_selected_docs_but_not_direct_non_docs(self) -> None:
+        self.install()
+        (self.bin / "mkdocs").unlink()
+        # Keep the actual Git/framework toolchain, excluding every ambient
+        # MkDocs installation (including a caller's activated docs virtualenv).
+        for name in (
+            "bash",
+            "git",
+            "python3",
+            "pre-commit",
+            "dirname",
+            "mktemp",
+            "rm",
+            "grep",
+            "cat",
+        ):
+            executable = shutil.which(name)
+            assert executable is not None, name
+            (self.bin / name).symlink_to(executable)
+        self.env["PATH"] = str(self.bin)
+        self.run_git("update-ref", "refs/remotes/origin/master", "HEAD")
+        self.run_command("bash", "scripts/git-hooks/pre-push-mkdocs-strict.sh")
+        self.run_git("update-ref", "-d", "refs/remotes/origin/master")
+        result = self.run_git("push", "origin", "master", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("documentation changed but mkdocs is missing", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

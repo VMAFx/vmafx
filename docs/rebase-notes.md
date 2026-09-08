@@ -16,6 +16,14 @@ See [ADR-1240](adr/1240-ffmpeg-release-patch-lifecycle.md).
 explicit worktree selections, non-force removal, file-state guards and stash
 retention when rebasing developer tooling. Branch existence never proves a stash
 is redundant. Regression: `bash scripts/dev/test-cleanup-agent-state.sh`.
+## fix/docs-guide-references — developer/usage links and push tools (2026-09-08)
+
+Preserve canonical ADR IDs alongside link slugs, backend overview paths,
+and the historical-but-unpublished T7-3 notebook note. The MkDocs push hook
+selects documentation before checking availability; missing MkDocs blocks
+selected docs, while direct non-doc invocation still skips. The real-Git
+fixture tests both cases. No libvmaf/FFmpeg API impact.
+
 ## fix/generated-adr-freshness — generated metadata (2026-09-08)
 
 Regenerate with `make docs-fragments-write` after combining ADR fragments.

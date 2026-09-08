@@ -399,7 +399,7 @@ The same fork-added selector pattern exists for SYCL, CUDA, and HIP on the
 | `sycl_device=N` | `-1` (disabled) | Pick SYCL device ordinal; `-1` keeps the CPU path. Errors out if libvmaf was built without `-Denable_sycl=true`. Patch `0003`. |
 | `sycl_profile=0\|1` | `0` | Enable SYCL queue profiling. Patch `0003`. |
 | `cuda=0\|1` | `0` | Enable CUDA compute path on software-decoded input. Patch `0010`. |
-| `hip_device=N` | `-1` (disabled) | Pick HIP device ordinal; `-1` keeps the CPU path. Errors out if libvmaf was built without `-Denable_hip=true`. Patch `0011` ([ADR-0380](../adr/0380-ffmpeg-hip-backend-selector.md)). |
+| `hip_device=N` | `-1` (disabled) | Pick HIP device ordinal; `-1` keeps the CPU path. Errors out if libvmaf was built without `-Denable_hip=true`. Patch `0011` ([ADR-0380](../adr/0380-ffmpeg-patches-hip-backend-selector.md)). |
 
 ## External resources
 

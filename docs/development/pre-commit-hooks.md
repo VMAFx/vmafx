@@ -32,9 +32,11 @@ validation. The PR-body check may skip a first push or draft PR;
 that does not skip the other checks. Existing framework `.legacy` hooks
 continue to run in framework stages.
 
-MkDocs remains optional locally: missing `mkdocs` prints an installation
-hint. Install `docs/requirements.txt` to enable it. The required hosted
-`Docs` job installs these dependencies and runs strict validation.
+A selected documentation push requires MkDocs. Missing `mkdocs` blocks the
+push with an installation hint; install `docs/requirements.txt` in the
+active environment. Direct non-doc invocations skip before requiring the
+docs toolchain. The required hosted `Docs` job installs these dependencies
+and runs strict validation.
 Missing `pre-commit` itself blocks framework hook dispatch with a clear
 message; activate the environment used for installation.
 

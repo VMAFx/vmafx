@@ -262,7 +262,9 @@ Git arguments and push-ref stdin through `pre-commit hook-impl`; the
 pre-rebase source guard is installed too. Native mode changes only the
 pre-commit formatter path. MkDocs and PR-body checks are independent
 pre-push config entries: a no-PR/draft skip must not skip documentation
-validation. Paired updates to the config, dispatcher, fixture, and
+validation, and selected docs must fail if MkDocs is unavailable. Direct
+non-doc invocations select scope before requiring the docs toolchain.
+Paired updates to the config, dispatcher, fixture, and
 `docs/development/pre-commit-hooks.md` preserve this contract.
 
 ### `run_unittests.sh` is upstream-mirror
