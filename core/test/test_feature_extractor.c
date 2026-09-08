@@ -59,7 +59,7 @@ typedef struct {
  * first failing step. */
 static int fex_fixture_open(FexFixture *fixture, const char *fex_name, VmafDictionary *opts)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(fex_name);
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(fex_name);
     if (!fex)
         return -1;
 
@@ -115,7 +115,7 @@ static int fex_fixture_extract_two_frames_and_flush(FexFixture *fixture)
 
 static char *test_get_feature_extractor_by_name_and_feature_name(void)
 {
-    VmafFeatureExtractor *fex;
+    const VmafFeatureExtractor *fex;
     fex = vmaf_get_feature_extractor_by_name("");
     mu_assert("problem during vmaf_get_feature_extractor_by_name", !fex);
     fex = vmaf_get_feature_extractor_by_name("vif");
@@ -194,7 +194,7 @@ static char *test_feature_extractor_list_no_duplicates(void)
  * NULL at line 443 in feature_extractor.c). */
 static char *test_get_feature_extractor_null_and_unknown(void)
 {
-    VmafFeatureExtractor *fex;
+    const VmafFeatureExtractor *fex;
 
     fex = vmaf_get_feature_extractor_by_name(NULL);
     mu_assert("by_name(NULL) must return NULL", !fex);
@@ -219,7 +219,7 @@ static char *test_get_feature_extractor_null_and_unknown(void)
  * provides "VMAF_integer_feature_motion2_score". */
 static char *test_get_feature_extractor_by_name_cuda_fallback(void)
 {
-    VmafFeatureExtractor *fex =
+    const VmafFeatureExtractor *fex =
         vmaf_get_feature_extractor_by_feature_name(MOTION2_SCORE, VMAF_FEATURE_EXTRACTOR_CUDA);
     mu_assert("by_feature_name(CUDA) must fall back to the CPU twin", fex != NULL);
 #if !HAVE_CUDA
@@ -238,7 +238,7 @@ static char *test_get_feature_extractor_by_name_cuda_fallback(void)
 static char *test_ssim_extractor_registered_and_extracts(void)
 {
     int err = 0;
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssim");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssim");
     mu_assert("ssim extractor must be registered in feature_extractor_list[]",
               fex && !strcmp(fex->name, "ssim"));
 
@@ -416,7 +416,8 @@ static char *test_fex_ctx_pool_null_guards(void)
 /* Creates a context for `fex` and appends it to `rfe`. Returns the append()
  * status, which is 0 both when the entry was stored and when it was deduped
  * away (the dedup path destroys the incoming context and reports success). */
-static int fex_vector_create_and_append(RegisteredFeatureExtractors *rfe, VmafFeatureExtractor *fex)
+static int fex_vector_create_and_append(RegisteredFeatureExtractors *rfe,
+                                        const VmafFeatureExtractor *fex)
 {
     VmafFeatureExtractorContext *ctx = NULL;
     int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
@@ -485,14 +486,14 @@ static char *test_fex_vector_dedup_by_provided_feature_name(void)
  * missing-key out-parameter untouched. */
 static char *test_supports_options_empty_dict(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
     mu_assert("psnr extractor missing", fex != NULL);
 
     const char *missing = NULL;
     bool ok = vmaf_feature_extractor_supports_options(fex, NULL, &missing);
     mu_assert("supports_options(NULL dict) must return true", ok && missing == NULL);
 
-    VmafDictionary *opts = NULL;
+    const VmafDictionary *opts = NULL;
     ok = vmaf_feature_extractor_supports_options(fex, opts, &missing);
     mu_assert("supports_options(empty dict) must return true", ok && missing == NULL);
 
@@ -502,7 +503,7 @@ static char *test_supports_options_empty_dict(void)
 /* A key the extractor declares in its option table is accepted. */
 static char *test_supports_options_known_key(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
     mu_assert("psnr extractor missing", fex != NULL);
 
     VmafDictionary *opts = NULL;
@@ -521,7 +522,7 @@ static char *test_supports_options_known_key(void)
  * out-parameter, which is what the CLI prints back to the user. */
 static char *test_supports_options_unknown_key_reports_missing(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
     mu_assert("psnr extractor missing", fex != NULL);
 
     VmafDictionary *opts = NULL;
@@ -542,7 +543,7 @@ static char *test_supports_options_unknown_key_reports_missing(void)
  * motion_force_zero threshold) resolves like the canonical name. */
 static char *test_supports_options_alias_key(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion");
     mu_assert("motion extractor missing", fex != NULL);
 
     VmafDictionary *opts = NULL;
@@ -578,7 +579,7 @@ static char *test_supports_options_null_extractor(void)
  * stale pointer. */
 static char *test_feature_extractor_unknown_option_rejected(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
     mu_assert("psnr extractor missing", fex != NULL);
 
     VmafDictionary *opts = NULL;
