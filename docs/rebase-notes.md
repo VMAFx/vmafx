@@ -13,12 +13,23 @@ or FFmpeg patch impact. This fixes implementation of AGENTS.md §12.10.
 ## fix/git-fixture-environment-isolation — fixture caller safety (2026-09-08)
 
 Keep inherited `GIT_*` and caller global/system configuration out of the
-FFmpeg replay/smoke, dependency-classifier and agent-cleanup test fixtures,
+FFmpeg replay/smoke, dependency-classifier, Level Zero and agent-cleanup test fixtures,
 including setup and assertions. `git -C` alone can still mutate a caller's
 config, refs, object store or index. Preserve the disposable caller matrix
-in `scripts/ci/test_git_fixture_isolation.py` and its local/CI hook. This
+in `scripts/ci/test_git_fixture_isolation.py`, its actual linked-worktree hook
+control, and its local/CI registration. This
 implements the existing ADR-1240 isolation contract; no production Git
 operation or native/FFmpeg API changes.
+## fix/configured-lint-driver — native lint selection (2026-09-08)
+
+Local Make lint regenerates Meson metadata without option overrides before
+building, then retains its native database and every configured tracked
+source/command variant. Keep engine roots, C++ tools, tests and tracked
+vendors included, inactive backends explicitly outside the profile, and numeric
+GCC LTO adaptation confined to the private analyzer database. Preserve the
+scratch-Git/Make fixture and pre-commit registration. Existing ADR-1142 ratchet
+baselines and remote lane policies remain authoritative; no libvmaf/FFmpeg
+surface changes.
 
 ## FFmpeg stable-release patch maintenance (2026-09-08)
 

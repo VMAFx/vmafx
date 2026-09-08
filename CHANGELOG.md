@@ -20672,6 +20672,13 @@ Stale `python/vmaf/workspace` and `python/vmaf/resource` references in
 `config.py` docstrings updated to `compat/python-vmaf/` (post-ADR-0700).
 
 
+- Local native lint now selects tracked sources from the configured Meson
+  database, covering engine roots, C++ tools, tests and tracked vendors without
+  inventing build commands for inactive backends. It preserves build metadata,
+  adapts numeric GCC LTO flags only in a private analyzer copy, retains command
+  variants and analyzer receipts, and runs cppcheck after clang-tidy failures.
+
+
 ### Fixed
 
 - Remove committed conflict markers from 78 files introduced by the
@@ -22415,6 +22422,9 @@ is addressed.
   fixtures from inherited Git repository, index and configuration variables.
   Local and CI regression checks now verify that disposable caller repositories
   retain their configuration, refs, object store, index and working files.
+- Isolate Level Zero configuration fixtures when invoked by real Git hooks;
+  verify that Git-exported linked-worktree state cannot change shared repository
+  configuration, either index, or staged and unstaged work.
 
 
 - **The Netflix golden YUV fixtures are no longer reachable by `git clean -xfd`.**

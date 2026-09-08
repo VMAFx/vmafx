@@ -143,8 +143,8 @@ Git exports repository and index variables to hooks. Changing directory or
 using `git -C` does not override them, so a test that creates a temporary
 repository must clear inherited `GIT_*` before its first Git command and
 disable caller system/global Git configuration. The FFmpeg replay/smoke,
-dependency-classifier and agent-cleanup fixtures use this isolation for setup
-and assertions as well as the operation under test.
+dependency-classifier, Level Zero and agent-cleanup fixtures use this isolation
+for setup and assertions as well as the operation under test.
 
 Run their caller-preservation regression with:
 
@@ -156,5 +156,11 @@ It creates fake caller repositories with committed, staged and unstaged work,
 then runs each fixture with `GIT_DIR`, `GIT_COMMON_DIR`, `GIT_WORK_TREE`,
 `GIT_INDEX_FILE` and `GIT_CONFIG_PARAMETERS` individually and together.
 Every fixture must succeed without changing any caller metadata or files.
+A second regression invokes a real Git hook from a disposable linked worktree.
+Git supplies `GIT_DIR` itself; the old unisolated `git init` control changes
+the fake caller's shared `core.bare`, while the current Level Zero test must
+preserve both worktrees and all shared Git metadata byte for byte. This tests
+the hook environment even when the invoking shell has no Git variables.
+
 Only temporary caller paths are injected. The local pre-commit/pre-push hook
 runs when its inputs change. Required `Pre-Commit` CI also runs the regression.

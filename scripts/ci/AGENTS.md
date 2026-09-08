@@ -10,6 +10,20 @@ upstream Netflix/vmaf has no equivalent tree, so the rebase risk is
 
 ## Rebase-sensitive surfaces
 
+### Configured native lint (ADR-1142)
+
+`lint-configured.py` owns local `make lint-c` selection. Make first regenerates
+Meson metadata with `--reconfigure BUILD_DIR LIBVMAF_DIR`, without option
+overrides, then builds generated prerequisites. Intersect Meson's native database with tracked native sources, including engine roots, tests,
+C++ tools and tracked vendored code. Preserve every configured command variant;
+never infer commands for inactive backends or regenerate the database with
+unfiltered `ninja -t compdb`. Only positive numeric `-flto=N` becomes `-flto`
+in a private analyzer copy. Keep missing/invalid inputs fatal, report excluded
+scope, and run cppcheck even after clang-tidy fails. The scratch-Git fixture
+`tests/test_lint_configured.py` executes the real Make target and both analyzer
+boundaries; required Pre-Commit runs it when the driver or Makefile changes.
+This does not replace lane-specific ratchet measurements or their baselines.
+
 ### Base-image references (ADR-1231)
 
 `check-base-image-single-source.sh` delegates FROM/COPY instruction parsing to
@@ -438,3 +452,9 @@ fixtures plus the agent-cleanup fixture with disposable caller variables,
 checks byte-for-byte metadata/work preservation, and remains registered in
 pre-commit/pre-push and required Pre-Commit CI. Poison only fresh temporary
 caller paths; never export the real repository's Git paths into a test.
+
+Level Zero fixture setup and its checker subprocess use the same Git isolation.
+Preserve the real linked-worktree hook regression: Git itself exports `GIT_DIR`,
+so a clean parent shell is insufficient. The old-command control may mutate
+only a disposable caller; the fixed helper must preserve every shared Git and
+linked-worktree file, including both indexes and staged/unstaged work.

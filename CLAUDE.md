@@ -77,7 +77,7 @@ make test-netflix-golden                # the 3 Netflix CPU golden-data tests (s
 ## 4. How to lint
 
 ```bash
-make lint        # clang-tidy + cppcheck + iwyu + ruff + semgrep
+make lint        # configured native + Python, shell, Markdown, Go and docs checks
 make format      # clang-format + black + ruff (write)
 make format-check  # same, no writes (pre-commit / CI)
 ```

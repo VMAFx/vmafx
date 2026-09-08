@@ -229,6 +229,13 @@ repos:
         files: '^(build-config\.env|dev/Containerfile|renovate\.json|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-workflow-versions\.py|tests/test_(base_image|level_zero)_single_source\.py))$'
         pass_filenames: false
 
+      - id: test-configured-lint-driver
+        name: Configured native lint scope and failure propagation
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_lint_configured.py
+        language: system
+        files: '^(Makefile|scripts/ci/lint-configured\.py|scripts/ci/tests/test_lint_configured\.py)$'
+        pass_filenames: false
+
       - id: test-renovate-file-patterns
         name: Renovate custom managers select real inputs
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_renovate_file_patterns.py
@@ -247,7 +254,7 @@ repos:
         name: Git fixtures preserve caller repositories
         entry: python3 scripts/ci/test_git_fixture_isolation.py
         language: system
-        files: '^(scripts/ci/test_(git_fixture_isolation|ffmpeg_patch_stack|ffmpeg_patch_smoke_safety)\.py|scripts/ci/test-classify-dependency-pr\.sh|scripts/dev/test-cleanup-agent-state\.sh|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/ci/test_(git_fixture_isolation|ffmpeg_patch_stack|ffmpeg_patch_smoke_safety)\.py|scripts/ci/test-classify-dependency-pr\.sh|scripts/ci/tests/test_level_zero_single_source\.py|scripts/dev/test-cleanup-agent-state\.sh|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

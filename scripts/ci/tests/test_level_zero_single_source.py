@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import shlex
 import shutil
@@ -46,6 +47,8 @@ class LevelZeroSingleSource(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.repo = Path(self.temporary.name)
+        self.env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        self.env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
         (self.repo / "dev").mkdir()
 
     def check(self, text: str) -> list[str]:
@@ -56,7 +59,9 @@ class LevelZeroSingleSource(unittest.TestCase):
         self.assertEqual(self.check(self.text), [])
 
     def test_workflow_checker_entrypoint_retains_container_validation(self) -> None:
-        subprocess.run([GIT, "init", "-q", str(self.repo)], check=True)  # noqa: S603
+        subprocess.run(  # noqa: S603 -- isolated disposable Git fixture
+            [GIT, "init", "-q", str(self.repo)], check=True, env=self.env
+        )
         (self.repo / "build-config.env").write_text((ROOT / "build-config.env").read_text())
         for text, status in (
             (self.text, 0),
@@ -71,6 +76,7 @@ class LevelZeroSingleSource(unittest.TestCase):
                             str(ROOT / "scripts/ci/check-workflow-versions.py"),
                         ],
                         cwd=self.repo,
+                        env=self.env,
                         capture_output=True,
                         text=True,
                         check=False,
