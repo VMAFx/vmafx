@@ -449,8 +449,8 @@ Before pushing, run the local subset of CI to catch the common
 formatter / lint / fast-test failures:
 
 ```bash
-make format-check   # clang-format + black + isort, no writes
-make lint           # clang-tidy + cppcheck + iwyu + ruff + semgrep
+make format-check   # clang-format + black + ruff, no writes
+make lint           # configured native + Python, shell, Markdown, Go and docs checks
 meson test -C build --suite=fast
 bash scripts/ci/twin-drift-check.sh  # .c/.cpp twin drift + stale source refs (ADR-1135)
 pre-commit run --all-files  # if .pre-commit-config.yaml hooks are installed
@@ -459,6 +459,68 @@ pre-commit run --all-files  # if .pre-commit-config.yaml hooks are installed
 The format-check + pre-commit pair catches roughly the same surface as
 `lint-and-format.yml`'s `pre-commit` job in seconds, vs. a 10-minute
 CI round-trip.
+
+### Local lint build profile and receipts
+
+`make lint` runs clang-tidy and cppcheck for the configured tracked native
+sources, Ruff and Black for `python/`, `ai/` and `scripts/`, shell checks,
+Markdown checks, gosec, and generated-document consistency checks. Mypy
+remains advisory. IWYU and Semgrep are separate tools/jobs; this Make target
+does not invoke them. Markdown defaults to changed files against
+`origin/master`; use `MDLINT_SCOPE=all` for the configured whole-document
+scope.
+
+Configure the intended profile before linting. `lint-c` asks Meson to
+reconfigure the existing build with no option overrides, then runs the
+existing `build` target so generated headers and sources exist. For a CPU
+profile without optional backends:
+
+```bash
+meson setup core/build-cpu core --buildtype=release \
+  -Denable_cuda=false -Denable_sycl=false -Denable_hip=false \
+  -Denable_metal=disabled -Denable_dnn=disabled -Denable_mcp=false
+make lint BUILD_DIR=core/build-cpu LINT_JOBS=4
+```
+
+`make lint-c` reads Meson's regenerated `compile_commands.json`. Regeneration
+repairs databases previously overwritten by unfiltered Ninja export, including
+phony entries with empty commands, while retaining the configured build
+options. It selects every tracked native source with a configured command,
+including top-level engine files, C++ CLI tools, tests and tracked vendored
+sources. It keeps all command variants for a source, including different test
+defines and include paths. Unconfigured backends are listed as outside the
+profile; a CPU result does not validate CUDA, SYCL, HIP, ARM or Metal sources
+absent from that database. Untracked/generated sources are recorded as
+excluded; the separate whole-tree ratchet retains its generated-source and
+lane policies.
+
+Each run prints a private `BUILD_DIR/lint-configured-*/` receipt directory:
+`scope.json` records the input database hash, selected sources, command count,
+excluded scope and LTO adaptations; `compile_commands.json` is the analyzer
+copy; per-source clang-tidy logs, `cppcheck.log` and `result.json` retain
+results. The helper leaves Meson's resulting native database and build options
+unchanged. Positive numeric GCC `-flto=N` becomes clang-compatible `-flto`
+only in that copy; other spellings, including invalid options, remain visible
+to the analyzer. Missing source files, missing/invalid/empty databases and
+missing tools fail the gate. Both analyzers run when clang-tidy reports source
+diagnostics; either failure fails `lint-c`.
+
+`LINT_JOBS` limits concurrent clang-tidy source jobs (default four). Use
+`LINT_CONFIGURED_ARGS` for helper options such as repeated
+`--clang-tidy-arg=--extra-arg=...` when the configured backend needs explicit
+clang frontend arguments, or `--clang-tidy=/path/to/analyzer` and
+`--cppcheck=/path/to/analyzer` for explicit tool paths. Backend toolchains
+must exist; the helper does not install SDKs or convert unavailable backend
+checks into passes. Receipts are disposable build output and can be archived
+before normal build cleanup.
+
+This local source lint does not replace required CI, the Tidy Ratchet, Netflix
+golden tests, sanitizer tests or backend runtime/parity checks. Regression
+coverage runs locally and in the required Pre-Commit job:
+
+```bash
+python3 -m unittest discover -s scripts/ci/tests -p test_lint_configured.py
+```
 
 ## Flaky legs (2026-09-04 audit)
 

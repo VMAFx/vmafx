@@ -151,22 +151,16 @@ docs-fragments-write:
 	@bash scripts/docs/generate-adr-by-tag.sh --write
 	@bash scripts/docs/generate-adr-nav.sh --write
 
-lint-c: $(BUILD_DIR) $(NINJA)
-	$(call require-tool,clang-tidy,install clang-tools)
-	$(call require-tool,cppcheck,install cppcheck)
-	@echo "--- compile database ---"
-	@PATH="$(VENV)/bin:$$PATH" $(NINJA) -C $(BUILD_DIR) -t compdb \
-	    > $(BUILD_DIR)/compile_commands.json
-	@echo "--- clang-tidy ---"
-	@FILES=$$(git ls-files 'core/src/**/*.c' 'core/src/**/*.cpp' 'core/tools/*.c' \
-	         | grep -v '^subprojects/' \
-	         | grep -v '^core/src/interop/pelorus_'); \
-	 clang-tidy -p $(BUILD_DIR) --quiet $$FILES
-	@echo "--- cppcheck ---"
-	cppcheck --enable=all --inline-suppr \
-	         --suppressions-list=.cppcheck-suppressions.txt \
-	         --project=$(BUILD_DIR)/compile_commands.json \
-	         --error-exitcode=1
+# Analyze only this Meson profile, retaining all configured command variants.
+# Backend-specific clang-tidy options can be supplied with repeated
+# --clang-tidy-arg=... operands in LINT_CONFIGURED_ARGS.
+LINT_JOBS ?= 4
+LINT_CONFIGURED_ARGS ?=
+lint-c: $(BUILD_DIR) $(MESON) $(NINJA)
+	PATH="$(VENV)/bin:$$PATH" $(MESON_SETUP) --reconfigure "$(BUILD_DIR)" "$(LIBVMAF_DIR)"
+	$(MAKE) build
+	$(PYTHON_INTERPRETER) scripts/ci/lint-configured.py --build-dir "$(BUILD_DIR)" \
+	    --jobs "$(LINT_JOBS)" $(LINT_CONFIGURED_ARGS)
 
 # ADR-1142 — whole-tree clang-tidy debt ratchet. LANE=cpu|cuda|sycl|hip
 # (default cpu). The build dir must be configured for the lane
@@ -515,7 +509,8 @@ rust-test:
 
 help:
 	@echo "Fork-specific targets:"
-	@echo "  make lint             — clang-tidy + cppcheck + ruff + shellcheck + markdownlint"
+	@echo "  make lint             — configured C/C++ + Python, shell, Markdown, Go and docs checks"
+	@echo "  make lint-c           — tracked native sources in BUILD_DIR (LINT_JOBS=4; receipts under build)"
 	@echo "  make lint-md          — markdownlint-cli2 on changed *.md (MDLINT_SCOPE=all for full tree, ADR-0866)"
 	@echo "  make format           — clang-format + black + ruff + shfmt (writes)"
 	@echo "  make format-check     — same, no writes (CI gate)"
