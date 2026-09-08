@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/pre-push-mypy-scope — merge-base ownership (2026-09-08)
+
+Preserve the existing `ai/`/`scripts/` Python touched-file policy in
+`scripts/git-hooks/pre-push-mypy.py`. Check every branch-owned path against
+the master merge base, including type changes; do not restore the remote
+old-tip/new-tip intersection. The always-run, filename-free hook invocation,
+lexical symlink identity, safe target validation and outgoing-HEAD check are
+paired with a real Git rebase regression. Fork-only tooling; no native API
+or FFmpeg patch impact. This fixes implementation of AGENTS.md §12.10.
+
 ## FFmpeg stable-release patch maintenance (2026-09-08)
 
 Preserve `build-config.env` as the FFmpeg remote/tag owner, the ordered
