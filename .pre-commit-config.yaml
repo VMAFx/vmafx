@@ -392,3 +392,11 @@ repos:
         stages: [pre-push]
         files: '^(docs/|mkdocs\.yml)'
         pass_filenames: false
+
+      - id: check-generated-docs
+        name: Check generated ADR and changelog freshness
+        entry: make docs-fragments-check
+        language: system
+        stages: [pre-commit]
+        files: '^(docs/adr/|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
+        pass_filenames: false

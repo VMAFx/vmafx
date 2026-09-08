@@ -135,17 +135,21 @@ lint-go:
 	@gosec -exclude-generated -quiet ./...
 
 # Fragment-tree drift check (ADR-0221). Verifies CHANGELOG.md and
-# docs/adr/README.md are in sync with their per-PR fragment trees.
+# docs/adr/README.md are in sync with fragments, and ADR tags/nav match sources.
 docs-fragments-check:
 	@echo "--- changelog.d/ vs CHANGELOG.md ---"
 	@bash scripts/release/concat-changelog-fragments.sh --check
 	@echo "--- docs/adr/_index_fragments/ vs docs/adr/README.md ---"
 	@bash scripts/docs/concat-adr-index.sh --check
+	@bash scripts/docs/generate-adr-by-tag.sh --check
+	@bash scripts/docs/generate-adr-nav.sh --check
 
 # Regenerate consolidated outputs from fragments (ADR-0221).
 docs-fragments-write:
 	@bash scripts/release/concat-changelog-fragments.sh --write
 	@bash scripts/docs/concat-adr-index.sh --write
+	@bash scripts/docs/generate-adr-by-tag.sh --write
+	@bash scripts/docs/generate-adr-nav.sh --write
 
 lint-c: $(BUILD_DIR) $(NINJA)
 	$(call require-tool,clang-tidy,install clang-tools)

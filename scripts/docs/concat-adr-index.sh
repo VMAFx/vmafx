@@ -91,6 +91,8 @@ case "${1:-}" in
     ;;
 esac
 
+python3 "$SCRIPT_DIR/check-adr-index.py"
+
 rendered="$(render)"
 
 if [[ "$mode" == render ]]; then

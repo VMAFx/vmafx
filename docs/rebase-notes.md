@@ -16,6 +16,14 @@ See [ADR-1240](adr/1240-ffmpeg-release-patch-lifecycle.md).
 explicit worktree selections, non-force removal, file-state guards and stash
 retention when rebasing developer tooling. Branch existence never proves a stash
 is redundant. Regression: `bash scripts/dev/test-cleanup-agent-state.sh`.
+## fix/generated-adr-freshness — generated metadata (2026-09-08)
+
+Regenerate with `make docs-fragments-write` after combining ADR fragments.
+Tags must precede navigation. Preserve required Docs/local freshness checks,
+fragment coverage validation, and generator fixtures (ADR-1242). Accepted
+ADR bodies and tag taxonomy are unchanged; only mutable fragments and
+rendered outputs are refreshed.
+
 ## fix/worktree-hook-dispatch — local hook lifetime (2026-09-08)
 
 Preserve regular dispatchers, actual Git argument/stdin forwarding, and

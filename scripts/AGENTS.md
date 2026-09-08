@@ -145,10 +145,12 @@ Editing inside the sentinels by hand will be lost on the next
 (splice). Per-hundred bucket labels live in the `LABELS` Python dict
 inside the script — edit when a bucket's theme drifts.
 
-**On rebase**: keep the sentinel comments in `mkdocs.yml`. If the
-sentinels are removed, `--write` exits 66 with a hand-splice
-instruction. Renaming the script breaks any future CI `--check` hook;
-update `.github/workflows/docs.yml` in the same PR.
+**On rebase**: keep exactly one ordered sentinel pair in `mkdocs.yml`.
+Both write and check fail before changing output if either boundary is
+missing, repeated, or reversed. Generate tags before navigation with
+`make docs-fragments-write`. Required Docs CI and local pre-commit run
+`make docs-fragments-check`; preserve that shared entry point and the
+fixture in `docs/tests/test_generators.py` (ADR-1242).
 
 ### `docs/generate-adr-by-tag.sh` owns the `docs/adr/by-tag/` tree
 
@@ -162,7 +164,12 @@ and `Tags: …` (legacy bare) forms.
 remove a tag, edit the ADR's `Tags:` line and re-run the script with
 `--write`. Tag values containing whitespace or angle-bracket
 placeholders (template examples) are filtered out — keep the filter
-in place when adapting the regex.
+in place when adapting the regex. Validate output basenames before writing,
+deduplicate equivalent tags within one ADR, and preserve the generator-owned
+lint header. Title escaping and meaningful code-span spaces are renderer
+responsibilities; do not rewrite accepted ADRs to satisfy generated lint.
+`docs/check-adr-index.py` also verifies fragment/source coverage and mutable
+fragment ADR references before concatenation.
 
 ### `gen_smoke_onnx.py` and `gen_*_onnx.py` are deterministic
 

@@ -119,18 +119,13 @@ validation:
   #   `backends/` -> `backends/index.md`) was swept once on the
   #   ADR-0221-strict-gate PR; future occurrences are caught at INFO and
   #   tidied opportunistically.
-  # - nav.omitted_files: warn — catches new orphan pages added to docs/
-  #   without a nav row.
+  # - nav.omitted_files: info — topic pages may use parent-index navigation.
+  #   Generated ADR coverage is checked separately by make docs-fragments-check.
   # - nav.not_found: warn — catches typos in mkdocs.yml `nav:` entries.
   nav:
-    # The fork's ADR (260+ files) and research-digest (80+ files) trees
-    # are deliberately not enumerated in `nav:` — they use cross-link
-    # navigation from `docs/adr/README.md` and inbound links from other
-    # pages. Same for many topic-tree pages (e.g., `ai/models/*.md`,
-    # `development/*-bisect-*.md`) that are linked from their parent
-    # index but not listed individually. Promoting this to `warn`
-    # would require either a 350-row nav explosion or routine churn
-    # on the nav whenever a new ADR / digest / model card lands.
+    # ADR pages are enumerated by the source-owned nav generator (ADR-0937).
+    # Research and topic pages may instead be linked from their parent index;
+    # that intentional policy is independent of generated metadata freshness.
     omitted_files: info
     not_found: warn
     absolute_links: info
@@ -1265,13 +1260,83 @@ nav:
         - "ADR-1108: cuda-motion-v2-motion3-emission": adr/1108-cuda-motion-v2-motion3-emission.md
         - "ADR-1109: vmafx-node-serve-scoring-grpc": adr/1109-vmafx-node-serve-scoring-grpc.md
         - "ADR-1110: delta-e-itp-metric": adr/1110-delta-e-itp-metric.md
-        - "ADR-1112: niqe-nr-metric": adr/1112-niqe-nr-metric.md
-        - "ADR-1110: delta-e-itp-metric": adr/1110-delta-e-itp-metric.md
         - "ADR-1111: pu21-hdr-metric": adr/1111-pu21-hdr-metric.md
+        - "ADR-1112: niqe-nr-metric": adr/1112-niqe-nr-metric.md
         - "ADR-1113: vendor-pelorus-interop-abi": adr/1113-vendor-pelorus-interop-abi.md
         - "ADR-1114: y-funque-plus-atoms": adr/1114-y-funque-plus-atoms.md
+        - "ADR-1115: brisque-nr-metric": adr/1115-brisque-nr-metric.md
+        - "ADR-1116: autotune-prefilter-control-plane": adr/1116-autotune-prefilter-control-plane.md
         - "ADR-1117: mcp-tiny-ai-feature-coverage": adr/1117-mcp-tiny-ai-feature-coverage.md
         - "ADR-1118: perceptual-sidedata-weighting": adr/1118-perceptual-sidedata-weighting.md
+        - "ADR-1119: golusoris-go-framework-adoption": adr/1119-golusoris-go-framework-adoption.md
+        - "ADR-1120: pelorus-abi-minor3-resync-complexity": adr/1120-pelorus-abi-minor3-resync-complexity.md
+        - "ADR-1121: sycl-qsv-zerocopy-p010-normalization": adr/1121-sycl-qsv-zerocopy-p010-normalization.md
+        - "ADR-1122: vmaf-v1-model-port": adr/1122-vmaf-v1-model-port.md
+        - "ADR-1123: ci-throughput-aggregator-deadline-docker-grouping": adr/1123-ci-throughput-aggregator-deadline-docker-grouping.md
+        - "ADR-1124: vmafx-tune-go-stage5-per-shot": adr/1124-vmafx-tune-go-stage5-per-shot.md
+        - "ADR-1125: vmafx-tune-go-port-integration": adr/1125-vmafx-tune-go-port-integration.md
+        - "ADR-1126: retire-isort-for-ruff": adr/1126-retire-isort-for-ruff.md
+        - "ADR-1127: single-semver-release-stream": adr/1127-single-semver-release-stream.md
+        - "ADR-1128: fragment-owned-release-cuts": adr/1128-fragment-owned-release-cuts.md
+        - "ADR-1129: release-container-runtime-alignment": adr/1129-release-container-runtime-alignment.md
+        - "ADR-1134: vmafx-ort-runner-in-tree": adr/1134-vmafx-ort-runner-in-tree.md
+        - "ADR-1135: ci-twin-drift-gate": adr/1135-ci-twin-drift-gate.md
+        - "ADR-1137: go-dedup-tune-shadow": adr/1137-go-dedup-tune-shadow.md
+        - "ADR-1138: c-translation-units-keep-null": adr/1138-c-translation-units-keep-null.md
+        - "ADR-1140: ci-impact-planner": adr/1140-ci-impact-planner.md
+        - "ADR-1141: integer-adm-upstream-mirror-rework": adr/1141-integer-adm-upstream-mirror-rework.md
+        - "ADR-1142: whole-codebase-standards": adr/1142-whole-codebase-standards.md
+        - "ADR-1143: cuda-intel-backend-gaps": adr/1143-cuda-intel-backend-gaps.md
+        - "ADR-1145: neo-stack-derived-from-release": adr/1145-neo-stack-derived-from-release.md
+        - "ADR-1146: speed-cambi-upstream-mirror-rework": adr/1146-speed-cambi-upstream-mirror-rework.md
+        - "ADR-1151: vmafx-first-release-1-0-0": adr/1151-vmafx-first-release-1-0-0.md
+        - "ADR-1152: dependency-pr-gate-exemption": adr/1152-dependency-pr-gate-exemption.md
+        - "ADR-1153: twin-dead-sides-resolution": adr/1153-twin-dead-sides-resolution.md
+        - "ADR-1154: hip-backend-gaps": adr/1154-hip-backend-gaps.md
+        - "ADR-1155: tools-upstream-mirror-rework": adr/1155-tools-upstream-mirror-rework.md
+        - "ADR-1166: upstream-issue-harvest": adr/1166-upstream-issue-harvest.md
+        - "ADR-1167: adm-cm-row-level-rounding": adr/1167-adm-cm-row-level-rounding.md
+        - "ADR-1168: default-model-single-source": adr/1168-default-model-single-source.md
+        - "ADR-1169: default-model-v1-0-16": adr/1169-default-model-v1-0-16.md
+        - "ADR-1171: release-please-credential-gate-warning": adr/1171-release-please-credential-gate-warning.md
+        - "ADR-1172: bound-lto-link-parallelism": adr/1172-bound-lto-link-parallelism.md
+        - "ADR-1173: ai-teacher-follows-default-model": adr/1173-ai-teacher-follows-default-model.md
+        - "ADR-1176: metal-motion-v2-mirror-closeout": adr/1176-metal-motion-v2-mirror-closeout.md
+        - "ADR-1177: sycl-arc-self-hosted-runner": adr/1177-sycl-arc-self-hosted-runner.md
+        - "ADR-1178: dev-container-image-publish": adr/1178-dev-container-image-publish.md
+        - "ADR-1179: sycl-v1-model-crash-fix": adr/1179-sycl-v1-model-crash-fix.md
+        - "ADR-1183: model-options-gate-gpu-twin-selection": adr/1183-model-options-gate-gpu-twin-selection.md
+        - "ADR-1184: mcp-grpc-bridge-go-only": adr/1184-mcp-grpc-bridge-go-only.md
+        - "ADR-1185: backend-perf-baseline-methodology": adr/1185-backend-perf-baseline-methodology.md
+        - "ADR-1188: percentile-pooling-methods": adr/1188-percentile-pooling-methods.md
+        - "ADR-1190: cli-option-string-escape-grammar": adr/1190-cli-option-string-escape-grammar.md
+        - "ADR-1191: adm-csf-fixed-point-representability-guard": adr/1191-adm-csf-fixed-point-representability-guard.md
+        - "ADR-1192: netflix-bench-snapshot-drift-not-regenerated": adr/1192-netflix-bench-snapshot-drift-not-regenerated.md
+        - "ADR-1193: psnr-uncapped-option": adr/1193-psnr-uncapped-option.md
+        - "ADR-1194: adm-angle-flag-single-source": adr/1194-adm-angle-flag-single-source.md
+        - "ADR-1195: container-source-revision-guard": adr/1195-container-source-revision-guard.md
+        - "ADR-1196: speed-matmul-simd-dispatch": adr/1196-speed-matmul-simd-dispatch.md
+        - "ADR-1197: gpu-threaded-flush-ownership": adr/1197-gpu-threaded-flush-ownership.md
+        - "ADR-1198: changelog-unknown-section-is-an-error": adr/1198-changelog-unknown-section-is-an-error.md
+        - "ADR-1199: cuda-picture-handover-barrier": adr/1199-cuda-picture-handover-barrier.md
+      - "1200-1299 — Misc":
+        - "ADR-1200: nv-codec-headers-mirror-fallback": adr/1200-nv-codec-headers-mirror-fallback.md
+        - "ADR-1201: release-candidates-before-1-0-0": adr/1201-release-candidates-before-1-0-0.md
+        - "ADR-1202: cuda-speed-chroma-4k-launch-bounds": adr/1202-cuda-speed-chroma-4k-launch-bounds.md
+        - "ADR-1203: cuda-psnr-hvs-enable-chroma-default": adr/1203-cuda-psnr-hvs-enable-chroma-default.md
+        - "ADR-1204: adm-cm-edge-clamp-gpu-twins": adr/1204-adm-cm-edge-clamp-gpu-twins.md
+        - "ADR-1205: ssimulacra2-fma-unification-scalar-and-gpu": adr/1205-ssimulacra2-fma-unification-scalar-and-gpu.md
+        - "ADR-1206: gpu-parity-large-fixture-variants": adr/1206-gpu-parity-large-fixture-variants.md
+        - "ADR-1216: gpu-motion3-fps-weight-applied-once": adr/1216-gpu-motion3-fps-weight-applied-once.md
+        - "ADR-1217: gpu-float-vif-options-reach-kernel": adr/1217-gpu-float-vif-options-reach-kernel.md
+        - "ADR-1218: gpu-speed-singular-device-solution": adr/1218-gpu-speed-singular-device-solution.md
+        - "ADR-1223: cuda-ampere-architecture-floor": adr/1223-cuda-ampere-architecture-floor.md
+        - "ADR-1225: rocm-10-therock-migration": adr/1225-rocm-10-therock-migration.md
+        - "ADR-1227: short-workflow-display-names": adr/1227-short-workflow-display-names.md
+        - "ADR-1235: pkgconfig-advertises-abi-version": adr/1235-pkgconfig-advertises-abi-version.md
+        - "ADR-1237: perf-pass-1245": adr/1237-perf-pass-1245.md
+        - "ADR-1241: worktree-hook-dispatch": adr/1241-worktree-hook-dispatch.md
+        - "ADR-1242: generated-adr-freshness": adr/1242-generated-adr-freshness.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -1282,6 +1347,11 @@ nav:
         - "adm_cm": adr/by-tag/adm_cm.md
         - "adr-0100": adr/by-tag/adr-0100.md
         - "adr-0108": adr/by-tag/adr-0108.md
+        - "adr-0114": adr/by-tag/adr-0114.md
+        - "adr-0220": adr/by-tag/adr-0220.md
+        - "adr-0700": adr/by-tag/adr-0700.md
+        - "adr-0782": adr/by-tag/adr-0782.md
+        - "adr-1102": adr/by-tag/adr-1102.md
         - "adr": adr/by-tag/adr.md
         - "advisory": adr/by-tag/advisory.md
         - "agents": adr/by-tag/agents.md
@@ -1291,29 +1361,40 @@ nav:
         - "amf": adr/by-tag/amf.md
         - "aot": adr/by-tag/aot.md
         - "apache-2.0": adr/by-tag/apache-2.0.md
+        - "api-contract": adr/by-tag/api-contract.md
         - "api": adr/by-tag/api.md
         - "apple-silicon": adr/by-tag/apple-silicon.md
         - "apple": adr/by-tag/apple.md
+        - "arc-a380": adr/by-tag/arc-a380.md
         - "arc": adr/by-tag/arc.md
         - "architecture": adr/by-tag/architecture.md
         - "arm64": adr/by-tag/arm64.md
+        - "artifacts": adr/by-tag/artifacts.md
         - "asan": adr/by-tag/asan.md
+        - "asyncio": adr/by-tag/asyncio.md
+        - "atomics": adr/by-tag/atomics.md
+        - "attestation": adr/by-tag/attestation.md
         - "audit-disposition": adr/by-tag/audit-disposition.md
         - "audit-first": adr/by-tag/audit-first.md
         - "audit": adr/by-tag/audit.md
+        - "auth": adr/by-tag/auth.md
         - "automation": adr/by-tag/automation.md
+        - "autotune": adr/by-tag/autotune.md
         - "av1": adr/by-tag/av1.md
         - "avx2": adr/by-tag/avx2.md
         - "avx512": adr/by-tag/avx512.md
         - "backend": adr/by-tag/backend.md
         - "backlog": adr/by-tag/backlog.md
         - "batch-threading": adr/by-tag/batch-threading.md
+        - "batch": adr/by-tag/batch.md
+        - "bench": adr/by-tag/bench.md
         - "benchmark": adr/by-tag/benchmark.md
         - "benchmarks": adr/by-tag/benchmarks.md
         - "bindings": adr/by-tag/bindings.md
         - "bisect": adr/by-tag/bisect.md
         - "bit-exact": adr/by-tag/bit-exact.md
         - "bit-exactness": adr/by-tag/bit-exactness.md
+        - "boundary": adr/by-tag/boundary.md
         - "breaking-change": adr/by-tag/breaking-change.md
         - "breaking": adr/by-tag/breaking.md
         - "bristol": adr/by-tag/bristol.md
@@ -1325,15 +1406,20 @@ nav:
         - "bvi-dvc": adr/by-tag/bvi-dvc.md
         - "c++": adr/by-tag/c++.md
         - "c-api": adr/by-tag/c-api.md
+        - "c-standards": adr/by-tag/c-standards.md
         - "c": adr/by-tag/c.md
         - "c1": adr/by-tag/c1.md
         - "c2": adr/by-tag/c2.md
+        - "c23": adr/by-tag/c23.md
         - "c3": adr/by-tag/c3.md
         - "cache": adr/by-tag/cache.md
         - "cambi": adr/by-tag/cambi.md
         - "cbindgen": adr/by-tag/cbindgen.md
         - "ceiling": adr/by-tag/ceiling.md
+        - "cert-c": adr/by-tag/cert-c.md
+        - "cert": adr/by-tag/cert.md
         - "cgo": adr/by-tag/cgo.md
+        - "changelog": adr/by-tag/changelog.md
         - "chart": adr/by-tag/chart.md
         - "chroma": adr/by-tag/chroma.md
         - "chug": adr/by-tag/chug.md
@@ -1346,20 +1432,28 @@ nav:
         - "claude": adr/by-tag/claude.md
         - "cleanup": adr/by-tag/cleanup.md
         - "cli": adr/by-tag/cli.md
+        - "clock": adr/by-tag/clock.md
+        - "closeout": adr/by-tag/closeout.md
         - "cloud-native": adr/by-tag/cloud-native.md
         - "code-quality": adr/by-tag/code-quality.md
         - "codec-adapter": adr/by-tag/codec-adapter.md
         - "codec-adapters": adr/by-tag/codec-adapters.md
         - "codec-aware": adr/by-tag/codec-aware.md
         - "codec": adr/by-tag/codec.md
+        - "codecov": adr/by-tag/codecov.md
         - "codecs": adr/by-tag/codecs.md
         - "codeql": adr/by-tag/codeql.md
+        - "colour": adr/by-tag/colour.md
         - "compare": adr/by-tag/compare.md
         - "compatibility": adr/by-tag/compatibility.md
+        - "compliance": adr/by-tag/compliance.md
         - "concurrency": adr/by-tag/concurrency.md
+        - "configs": adr/by-tag/configs.md
         - "conformal": adr/by-tag/conformal.md
         - "container": adr/by-tag/container.md
+        - "containerfile": adr/by-tag/containerfile.md
         - "contributor-experience": adr/by-tag/contributor-experience.md
+        - "control-plane": adr/by-tag/control-plane.md
         - "controller-runtime": adr/by-tag/controller-runtime.md
         - "controller": adr/by-tag/controller.md
         - "convolve": adr/by-tag/convolve.md
@@ -1367,20 +1461,29 @@ nav:
         - "coreml": adr/by-tag/coreml.md
         - "corpus": adr/by-tag/corpus.md
         - "correctness": adr/by-tag/correctness.md
+        - "cosign": adr/by-tag/cosign.md
+        - "cost": adr/by-tag/cost.md
         - "coverage": adr/by-tag/coverage.md
+        - "cpp": adr/by-tag/cpp.md
         - "cpp23": adr/by-tag/cpp23.md
         - "cpu": adr/by-tag/cpu.md
         - "crd": adr/by-tag/crd.md
+        - "cross-backend-parity": adr/by-tag/cross-backend-parity.md
         - "cross-backend": adr/by-tag/cross-backend.md
+        - "cross-surface": adr/by-tag/cross-surface.md
         - "cuda": adr/by-tag/cuda.md
+        - "darwin": adr/by-tag/darwin.md
         - "data": adr/by-tag/data.md
         - "datasets": adr/by-tag/datasets.md
         - "dead-code": adr/by-tag/dead-code.md
+        - "dead-twin": adr/by-tag/dead-twin.md
         - "debug": adr/by-tag/debug.md
         - "dedup": adr/by-tag/dedup.md
+        - "default": adr/by-tag/default.md
         - "defaults": adr/by-tag/defaults.md
         - "deferral": adr/by-tag/deferral.md
         - "deferred": adr/by-tag/deferred.md
+        - "dependabot": adr/by-tag/dependabot.md
         - "dependencies": adr/by-tag/dependencies.md
         - "dependency-bot": adr/by-tag/dependency-bot.md
         - "deploy": adr/by-tag/deploy.md
@@ -1388,15 +1491,21 @@ nav:
         - "design": adr/by-tag/design.md
         - "dev-container": adr/by-tag/dev-container.md
         - "dev-experience": adr/by-tag/dev-experience.md
+        - "dev-mcp": adr/by-tag/dev-mcp.md
         - "dev": adr/by-tag/dev.md
+        - "developer-experience": adr/by-tag/developer-experience.md
         - "developer-tools": adr/by-tag/developer-tools.md
+        - "devx": adr/by-tag/devx.md
+        - "diagnostics": adr/by-tag/diagnostics.md
         - "disk-space": adr/by-tag/disk-space.md
         - "dispatch": adr/by-tag/dispatch.md
         - "display": adr/by-tag/display.md
         - "dnn": adr/by-tag/dnn.md
         - "doc-correction": adr/by-tag/doc-correction.md
         - "docker": adr/by-tag/docker.md
+        - "docs-policy": adr/by-tag/docs-policy.md
         - "docs": adr/by-tag/docs.md
+        - "durability": adr/by-tag/durability.md
         - "dx": adr/by-tag/dx.md
         - "ebpf": adr/by-tag/ebpf.md
         - "encode": adr/by-tag/encode.md
@@ -1406,6 +1515,7 @@ nav:
         - "enforcement": adr/by-tag/enforcement.md
         - "ensemble": adr/by-tag/ensemble.md
         - "ergonomics": adr/by-tag/ergonomics.md
+        - "error-handling": adr/by-tag/error-handling.md
         - "eval": adr/by-tag/eval.md
         - "executor": adr/by-tag/executor.md
         - "exit-code": adr/by-tag/exit-code.md
@@ -1424,20 +1534,31 @@ nav:
         - "ffmpeg-patches": adr/by-tag/ffmpeg-patches.md
         - "ffmpeg": adr/by-tag/ffmpeg.md
         - "fifo": adr/by-tag/fifo.md
+        - "filter-adapters": adr/by-tag/filter-adapters.md
+        - "fix": adr/by-tag/fix.md
         - "fixtures": adr/by-tag/fixtures.md
+        - "flaky": adr/by-tag/flaky.md
+        - "float-adm": adr/by-tag/float-adm.md
         - "float-ms-ssim": adr/by-tag/float-ms-ssim.md
         - "float-vif": adr/by-tag/float-vif.md
         - "float": adr/by-tag/float.md
+        - "float_adm": adr/by-tag/float_adm.md
+        - "float_moment": adr/by-tag/float_moment.md
         - "fork-internal": adr/by-tag/fork-internal.md
         - "fork-local": adr/by-tag/fork-local.md
         - "fork-policy": adr/by-tag/fork-policy.md
+        - "fp64": adr/by-tag/fp64.md
         - "fr-regressor": adr/by-tag/fr-regressor.md
         - "fr": adr/by-tag/fr.md
+        - "framesync": adr/by-tag/framesync.md
         - "framework": adr/by-tag/framework.md
         - "full-features": adr/by-tag/full-features.md
+        - "full-reference": adr/by-tag/full-reference.md
         - "fuzz": adr/by-tag/fuzz.md
         - "fuzzing": adr/by-tag/fuzzing.md
+        - "fx": adr/by-tag/fx.md
         - "gate": adr/by-tag/gate.md
+        - "gates": adr/by-tag/gates.md
         - "gcovr": adr/by-tag/gcovr.md
         - "git-hooks": adr/by-tag/git-hooks.md
         - "git": adr/by-tag/git.md
@@ -1446,15 +1567,22 @@ nav:
         - "go": adr/by-tag/go.md
         - "golden-data": adr/by-tag/golden-data.md
         - "golden-gate": adr/by-tag/golden-gate.md
+        - "golusoris": adr/by-tag/golusoris.md
+        - "goroutine": adr/by-tag/goroutine.md
         - "governance": adr/by-tag/governance.md
+        - "gpu-coverage": adr/by-tag/gpu-coverage.md
+        - "gpu-dispatch": adr/by-tag/gpu-dispatch.md
         - "gpu-parity": adr/by-tag/gpu-parity.md
+        - "gpu-twins": adr/by-tag/gpu-twins.md
         - "gpu": adr/by-tag/gpu.md
         - "grpc": adr/by-tag/grpc.md
         - "h266": adr/by-tag/h266.md
         - "hardening": adr/by-tag/hardening.md
         - "hardware-encoder": adr/by-tag/hardware-encoder.md
         - "hardware": adr/by-tag/hardware.md
+        - "hbd": adr/by-tag/hbd.md
         - "hdr": adr/by-tag/hdr.md
+        - "headers": adr/by-tag/headers.md
         - "helm": adr/by-tag/helm.md
         - "hfr": adr/by-tag/hfr.md
         - "hip": adr/by-tag/hip.md
@@ -1463,6 +1591,7 @@ nav:
         - "http": adr/by-tag/http.md
         - "hygiene": adr/by-tag/hygiene.md
         - "i18n": adr/by-tag/i18n.md
+        - "icpx": adr/by-tag/icpx.md
         - "icx": adr/by-tag/icx.md
         - "ide": adr/by-tag/ide.md
         - "iir-blur": adr/by-tag/iir-blur.md
@@ -1471,16 +1600,20 @@ nav:
         - "infra": adr/by-tag/infra.md
         - "install": adr/by-tag/install.md
         - "integer-adm": adr/by-tag/integer-adm.md
+        - "integer-ssim": adr/by-tag/integer-ssim.md
         - "integer-vif": adr/by-tag/integer-vif.md
         - "integer_adm": adr/by-tag/integer_adm.md
         - "integration": adr/by-tag/integration.md
         - "intel-ai-pc": adr/by-tag/intel-ai-pc.md
         - "intel": adr/by-tag/intel.md
         - "internals": adr/by-tag/internals.md
+        - "interop": adr/by-tag/interop.md
         - "iqa": adr/by-tag/iqa.md
         - "job-queue": adr/by-tag/job-queue.md
+        - "json": adr/by-tag/json.md
         - "k150k": adr/by-tag/k150k.md
         - "k8s": adr/by-tag/k8s.md
+        - "kernel-coverage": adr/by-tag/kernel-coverage.md
         - "kernel-template": adr/by-tag/kernel-template.md
         - "kernel": adr/by-tag/kernel.md
         - "knob-sweep": adr/by-tag/knob-sweep.md
@@ -1490,13 +1623,19 @@ nav:
         - "ladder": adr/by-tag/ladder.md
         - "language-modernization": adr/by-tag/language-modernization.md
         - "language-policy": adr/by-tag/language-policy.md
+        - "leak": adr/by-tag/leak.md
+        - "libsvm": adr/by-tag/libsvm.md
         - "libvmaf": adr/by-tag/libvmaf.md
         - "license": adr/by-tag/license.md
+        - "lifecycle": adr/by-tag/lifecycle.md
         - "lint": adr/by-tag/lint.md
         - "loader": adr/by-tag/loader.md
         - "local-explainer": adr/by-tag/local-explainer.md
+        - "locale": adr/by-tag/locale.md
         - "loso": adr/by-tag/loso.md
+        - "lto": adr/by-tag/lto.md
         - "macos": adr/by-tag/macos.md
+        - "maintainability": adr/by-tag/maintainability.md
         - "maintenance": adr/by-tag/maintenance.md
         - "manifests": adr/by-tag/manifests.md
         - "materializer": adr/by-tag/materializer.md
@@ -1504,6 +1643,7 @@ nav:
         - "mcp": adr/by-tag/mcp.md
         - "measurement": adr/by-tag/measurement.md
         - "memory-leak": adr/by-tag/memory-leak.md
+        - "memory-safety": adr/by-tag/memory-safety.md
         - "memory": adr/by-tag/memory.md
         - "merge-train": adr/by-tag/merge-train.md
         - "meson": adr/by-tag/meson.md
@@ -1511,7 +1651,9 @@ nav:
         - "metadata": adr/by-tag/metadata.md
         - "metal": adr/by-tag/metal.md
         - "methodology": adr/by-tag/methodology.md
+        - "metric": adr/by-tag/metric.md
         - "metrics": adr/by-tag/metrics.md
+        - "migration": adr/by-tag/migration.md
         - "mingw": adr/by-tag/mingw.md
         - "mkdocs": adr/by-tag/mkdocs.md
         - "mobilesal": adr/by-tag/mobilesal.md
@@ -1524,12 +1666,15 @@ nav:
         - "moltenvk": adr/by-tag/moltenvk.md
         - "mos-head": adr/by-tag/mos-head.md
         - "mos": adr/by-tag/mos.md
+        - "motion-v2": adr/by-tag/motion-v2.md
         - "motion": adr/by-tag/motion.md
         - "ms-ssim": adr/by-tag/ms-ssim.md
         - "ms_ssim": adr/by-tag/ms_ssim.md
         - "msvc": adr/by-tag/msvc.md
         - "multi-dispatch": adr/by-tag/multi-dispatch.md
+        - "multi-tenant": adr/by-tag/multi-tenant.md
         - "naming": adr/by-tag/naming.md
+        - "nasa-power-of-10": adr/by-tag/nasa-power-of-10.md
         - "navigation": adr/by-tag/navigation.md
         - "neg": adr/by-tag/neg.md
         - "neon": adr/by-tag/neon.md
@@ -1537,8 +1682,11 @@ nav:
         - "netflix-golden": adr/by-tag/netflix-golden.md
         - "netflix-public": adr/by-tag/netflix-public.md
         - "netflix-upstream": adr/by-tag/netflix-upstream.md
+        - "networkpolicy": adr/by-tag/networkpolicy.md
+        - "nightly": adr/by-tag/nightly.md
         - "nn-vc": adr/by-tag/nn-vc.md
         - "nnvc": adr/by-tag/nnvc.md
+        - "no-reference": adr/by-tag/no-reference.md
         - "node-registry": adr/by-tag/node-registry.md
         - "node": adr/by-tag/node.md
         - "numerical-correctness": adr/by-tag/numerical-correctness.md
@@ -1547,15 +1695,22 @@ nav:
         - "nvidia": adr/by-tag/nvidia.md
         - "observability": adr/by-tag/observability.md
         - "occupancy": adr/by-tag/occupancy.md
+        - "oidc": adr/by-tag/oidc.md
         - "online-learning": adr/by-tag/online-learning.md
         - "onnx": adr/by-tag/onnx.md
         - "op-allowlist": adr/by-tag/op-allowlist.md
+        - "openapi": adr/by-tag/openapi.md
         - "openvino": adr/by-tag/openvino.md
         - "operator": adr/by-tag/operator.md
         - "option-parity": adr/by-tag/option-parity.md
         - "options": adr/by-tag/options.md
+        - "optuna": adr/by-tag/optuna.md
         - "ort": adr/by-tag/ort.md
+        - "ossf": adr/by-tag/ossf.md
+        - "otel": adr/by-tag/otel.md
+        - "output-schema": adr/by-tag/output-schema.md
         - "output": adr/by-tag/output.md
+        - "packaging": adr/by-tag/packaging.md
         - "panel": adr/by-tag/panel.md
         - "pareto": adr/by-tag/pareto.md
         - "parity": adr/by-tag/parity.md
@@ -1563,7 +1718,9 @@ nav:
         - "parser": adr/by-tag/parser.md
         - "patch-series": adr/by-tag/patch-series.md
         - "patches": adr/by-tag/patches.md
+        - "pelorus": adr/by-tag/pelorus.md
         - "per-shot": adr/by-tag/per-shot.md
+        - "per-surface-bar": adr/by-tag/per-surface-bar.md
         - "perceptual": adr/by-tag/perceptual.md
         - "perf": adr/by-tag/perf.md
         - "performance": adr/by-tag/performance.md
@@ -1571,14 +1728,21 @@ nav:
         - "phase4": adr/by-tag/phase4.md
         - "phase4b": adr/by-tag/phase4b.md
         - "picture-api": adr/by-tag/picture-api.md
+        - "picture-pool": adr/by-tag/picture-pool.md
+        - "picture": adr/by-tag/picture.md
         - "pipeline-cache": adr/by-tag/pipeline-cache.md
+        - "pipeline": adr/by-tag/pipeline.md
+        - "pixel-format": adr/by-tag/pixel-format.md
         - "places-2": adr/by-tag/places-2.md
         - "places-4": adr/by-tag/places-4.md
         - "planning": adr/by-tag/planning.md
         - "platform": adr/by-tag/platform.md
+        - "podsecurity": adr/by-tag/podsecurity.md
         - "policy": adr/by-tag/policy.md
+        - "pooling": adr/by-tag/pooling.md
         - "port": adr/by-tag/port.md
         - "portability": adr/by-tag/portability.md
+        - "posix": adr/by-tag/posix.md
         - "pre-commit": adr/by-tag/pre-commit.md
         - "preallocation": adr/by-tag/preallocation.md
         - "precision": adr/by-tag/precision.md
@@ -1595,59 +1759,91 @@ nav:
         - "provenance": adr/by-tag/provenance.md
         - "psnr-hvs": adr/by-tag/psnr-hvs.md
         - "psnr": adr/by-tag/psnr.md
+        - "psnr_hvs": adr/by-tag/psnr_hvs.md
+        - "pu21": adr/by-tag/pu21.md
         - "public-api": adr/by-tag/public-api.md
+        - "public-surface": adr/by-tag/public-surface.md
+        - "publish": adr/by-tag/publish.md
         - "pypi": adr/by-tag/pypi.md
+        - "python-harness": adr/by-tag/python-harness.md
+        - "python-sunset": adr/by-tag/python-sunset.md
         - "python": adr/by-tag/python.md
         - "qat": adr/by-tag/qat.md
         - "qemu": adr/by-tag/qemu.md
         - "qsv": adr/by-tag/qsv.md
+        - "quality-gate": adr/by-tag/quality-gate.md
         - "quality-runner": adr/by-tag/quality-runner.md
         - "quantization": adr/by-tag/quantization.md
+        - "queue": adr/by-tag/queue.md
+        - "raii": adr/by-tag/raii.md
+        - "rbac": adr/by-tag/rbac.md
+        - "rc-blocking": adr/by-tag/rc-blocking.md
+        - "rc": adr/by-tag/rc.md
         - "rclone": adr/by-tag/rclone.md
         - "readme": adr/by-tag/readme.md
+        - "rebase-hygiene": adr/by-tag/rebase-hygiene.md
+        - "rebase": adr/by-tag/rebase.md
         - "rebrand": adr/by-tag/rebrand.md
         - "refactor": adr/by-tag/refactor.md
+        - "refactoring": adr/by-tag/refactoring.md
+        - "refcount": adr/by-tag/refcount.md
         - "registry": adr/by-tag/registry.md
         - "regression-gate": adr/by-tag/regression-gate.md
         - "regression-guard": adr/by-tag/regression-guard.md
         - "regression-recovery": adr/by-tag/regression-recovery.md
         - "regression": adr/by-tag/regression.md
+        - "release-please": adr/by-tag/release-please.md
         - "release": adr/by-tag/release.md
         - "reliability": adr/by-tag/reliability.md
+        - "rename": adr/by-tag/rename.md
         - "renovate": adr/by-tag/renovate.md
+        - "repo-hygiene": adr/by-tag/repo-hygiene.md
         - "repo-size": adr/by-tag/repo-size.md
         - "report": adr/by-tag/report.md
         - "reports": adr/by-tag/reports.md
+        - "reproducibility": adr/by-tag/reproducibility.md
         - "research": adr/by-tag/research.md
+        - "rest": adr/by-tag/rest.md
+        - "revert": adr/by-tag/revert.md
         - "roadmap": adr/by-tag/roadmap.md
         - "robustness": adr/by-tag/robustness.md
         - "rocm": adr/by-tag/rocm.md
         - "roi": adr/by-tag/roi.md
         - "rule-enforcement": adr/by-tag/rule-enforcement.md
         - "runbook": adr/by-tag/runbook.md
+        - "runner": adr/by-tag/runner.md
         - "runtime": adr/by-tag/runtime.md
         - "rust": adr/by-tag/rust.md
+        - "safety": adr/by-tag/safety.md
         - "saliency": adr/by-tag/saliency.md
         - "sanitizer": adr/by-tag/sanitizer.md
         - "sanitizers": adr/by-tag/sanitizers.md
         - "sbom": adr/by-tag/sbom.md
         - "scaffold": adr/by-tag/scaffold.md
+        - "scanf": adr/by-tag/scanf.md
         - "scheduler": adr/by-tag/scheduler.md
         - "schema-evolution": adr/by-tag/schema-evolution.md
         - "schema": adr/by-tag/schema.md
         - "score": adr/by-tag/score.md
+        - "scoring": adr/by-tag/scoring.md
         - "scripts": adr/by-tag/scripts.md
         - "second-opinion": adr/by-tag/second-opinion.md
         - "security": adr/by-tag/security.md
+        - "semver": adr/by-tag/semver.md
         - "server": adr/by-tag/server.md
         - "shaders": adr/by-tag/shaders.md
+        - "shell": adr/by-tag/shell.md
         - "shot-detection": adr/by-tag/shot-detection.md
+        - "shutdown": adr/by-tag/shutdown.md
         - "sidecar": adr/by-tag/sidecar.md
         - "signal-mix": adr/by-tag/signal-mix.md
         - "signing": adr/by-tag/signing.md
         - "sigstore": adr/by-tag/sigstore.md
         - "simd": adr/by-tag/simd.md
+        - "skills": adr/by-tag/skills.md
+        - "slsa": adr/by-tag/slsa.md
         - "smem": adr/by-tag/smem.md
+        - "smoke": adr/by-tag/smoke.md
         - "spec-correctness": adr/by-tag/spec-correctness.md
         - "speed": adr/by-tag/speed.md
         - "sqlite": adr/by-tag/sqlite.md
@@ -1658,8 +1854,11 @@ nav:
         - "state-hygiene": adr/by-tag/state-hygiene.md
         - "state": adr/by-tag/state.md
         - "storage": adr/by-tag/storage.md
+        - "streaming": adr/by-tag/streaming.md
+        - "supersedes-partial": adr/by-tag/supersedes-partial.md
         - "supply-chain": adr/by-tag/supply-chain.md
         - "sve2": adr/by-tag/sve2.md
+        - "swagger": adr/by-tag/swagger.md
         - "sycl": adr/by-tag/sycl.md
         - "t3-15": adr/by-tag/t3-15.md
         - "t3-15c": adr/by-tag/t3-15c.md
@@ -1673,6 +1872,7 @@ nav:
         - "test": adr/by-tag/test.md
         - "testdata": adr/by-tag/testdata.md
         - "testing": adr/by-tag/testing.md
+        - "tests": adr/by-tag/tests.md
         - "thread-safety": adr/by-tag/thread-safety.md
         - "threading": adr/by-tag/threading.md
         - "timeout": adr/by-tag/timeout.md
@@ -1687,15 +1887,21 @@ nav:
         - "training": adr/by-tag/training.md
         - "transport": adr/by-tag/transport.md
         - "tsan": adr/by-tag/tsan.md
+        - "type-safety": adr/by-tag/type-safety.md
         - "u2netp": adr/by-tag/u2netp.md
+        - "ub": adr/by-tag/ub.md
         - "ubsan": adr/by-tag/ubsan.md
         - "ugc": adr/by-tag/ugc.md
         - "upstream-blocked": adr/by-tag/upstream-blocked.md
+        - "upstream-mirror": adr/by-tag/upstream-mirror.md
         - "upstream-port": adr/by-tag/upstream-port.md
         - "upstream-sync": adr/by-tag/upstream-sync.md
+        - "upstream": adr/by-tag/upstream.md
         - "ux": adr/by-tag/ux.md
+        - "v4": adr/by-tag/v4.md
         - "validation": adr/by-tag/validation.md
         - "vendored": adr/by-tag/vendored.md
+        - "vendoring": adr/by-tag/vendoring.md
         - "verification": adr/by-tag/verification.md
         - "video-saliency": adr/by-tag/video-saliency.md
         - "vif": adr/by-tag/vif.md
@@ -1703,7 +1909,10 @@ nav:
         - "vmaf-cli": adr/by-tag/vmaf-cli.md
         - "vmaf-tune": adr/by-tag/vmaf-tune.md
         - "vmaf": adr/by-tag/vmaf.md
+        - "vmafx-modernization": adr/by-tag/vmafx-modernization.md
+        - "vmafx-node": adr/by-tag/vmafx-node.md
         - "vmafx-rebrand": adr/by-tag/vmafx-rebrand.md
+        - "vmafx-server": adr/by-tag/vmafx-server.md
         - "vmafx-tune": adr/by-tag/vmafx-tune.md
         - "vmafx": adr/by-tag/vmafx.md
         - "vulkan-video": adr/by-tag/vulkan-video.md
@@ -1711,6 +1920,7 @@ nav:
         - "vvc": adr/by-tag/vvc.md
         - "wasm": adr/by-tag/wasm.md
         - "wave-1": adr/by-tag/wave-1.md
+        - "wavelet": adr/by-tag/wavelet.md
         - "weights-drop": adr/by-tag/weights-drop.md
         - "windows": adr/by-tag/windows.md
         - "workspace": adr/by-tag/workspace.md
