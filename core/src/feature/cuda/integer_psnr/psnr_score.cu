@@ -71,8 +71,14 @@ __global__ void calculate_psnr_kernel_8bpc(const VmafPicture ref, const VmafPict
     }
 }
 
+/* ADR-1215: `plane` selects the Y/Cb/Cr plane exactly as in the 8-bpc kernel.
+ * The host has always passed it (psnr_cuda_dispatch's kernelParams), but this
+ * kernel had no parameter for it and read `data[0]` / `stride[0]`, so every
+ * high-bit-depth chroma dispatch measured a chroma-sized top-left window of
+ * the LUMA plane: psnr_cb == psnr_cr == a luma value. */
 __global__ void calculate_psnr_kernel_16bpc(const VmafPicture ref, const VmafPicture dis,
-                                            VmafCudaBuffer sse, unsigned width, unsigned height)
+                                            VmafCudaBuffer sse, unsigned width, unsigned height,
+                                            unsigned plane)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -80,9 +86,9 @@ __global__ void calculate_psnr_kernel_16bpc(const VmafPicture ref, const VmafPic
     uint64_t my_se = 0;
     if (x < (int)width && y < (int)height) {
         const uint16_t *ref_row = reinterpret_cast<const uint16_t *>(
-            reinterpret_cast<const uint8_t *>(ref.data[0]) + y * ref.stride[0]);
+            reinterpret_cast<const uint8_t *>(ref.data[plane]) + y * ref.stride[plane]);
         const uint16_t *dis_row = reinterpret_cast<const uint16_t *>(
-            reinterpret_cast<const uint8_t *>(dis.data[0]) + y * dis.stride[0]);
+            reinterpret_cast<const uint8_t *>(dis.data[plane]) + y * dis.stride[plane]);
         const int64_t diff = (int64_t)ref_row[x] - (int64_t)dis_row[x];
         my_se = (uint64_t)(diff * diff);
     }

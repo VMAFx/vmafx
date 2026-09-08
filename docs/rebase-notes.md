@@ -49413,3 +49413,15 @@ Invariants a future rebase must not undo:
 5. **`HSA_OVERRIDE_GFX_VERSION` stays out of `dev/docker-compose.yml`.**
    ROCm 10 supports `gfx1036` natively; re-adding the `10.3.0` alias would map
    the agent to `gfx1030` while meson compiles `gfx1036` code objects.
+## ADR-1215 — per-plane CUDA kernels must take the plane index
+
+1. **`psnr_cuda_dispatch` passes `plane` for both bit depths; both kernels must
+   declare it.** `cuLaunchKernel` ignores a surplus trailing argument, so a
+   kernel that omits the parameter compiles, launches and silently reads
+   `data[0]`. When adding or syncing a per-plane CUDA kernel, check the kernel
+   signature against the `kernelParams` array by count, not by whether it runs.
+
+2. **A flat-chroma fixture cannot see a wrong-plane chroma read.** Both sides
+   report the `psnr_max` sentinel for identical chroma. The 10-bit variant of
+   `test_cuda_psnr_parity` therefore carries non-flat, ref/dist-different
+   chroma; keep it that way.

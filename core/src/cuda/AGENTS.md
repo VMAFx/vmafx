@@ -293,3 +293,14 @@ ninja -C build
 ```
 
 Requires `/opt/cuda` + `nvcc` on PATH.
+
+## Per-plane kernels: the signature must match `kernelParams` by count (ADR-1215)
+
+`cuLaunchKernel` does not validate that a kernel consumes every entry of the
+`kernelParams` array — a kernel declared with five parameters launched with six
+just ignores the sixth. That is how `calculate_psnr_kernel_16bpc` shipped
+reading `data[0]` for every plane while the host faithfully passed `plane`.
+When a host dispatch is shared between bit-depth variants, diff the two
+kernel signatures against the params array before trusting the parity test —
+and make sure the fixture's chroma is not flat, or the wrong plane reads the
+same sentinel as the right one.
