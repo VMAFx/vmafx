@@ -15,7 +15,7 @@ SMOKE = ROOT / "ffmpeg-patches/test/build-and-run.sh"
 
 
 class SmokeSafety(unittest.TestCase):
-    def git(self, path, *args):
+    def git(self, path: Path, *args: str) -> str:
         return subprocess.check_output(  # noqa: S603 -- fixed Git argv and fixture-owned paths
             [
                 shutil.which("git") or "/usr/bin/git",
@@ -35,7 +35,7 @@ class SmokeSafety(unittest.TestCase):
             stderr=subprocess.DEVNULL,
         )
 
-    def setUp(self):
+    def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory(prefix="ffmpeg-smoke-safety-")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
@@ -89,7 +89,7 @@ class SmokeSafety(unittest.TestCase):
             "KEEP_BUILD": "1",
         }
 
-    def run_smoke(self):
+    def run_smoke(self) -> subprocess.CompletedProcess[str]:
         # Fixed Bash executable, copied repository script and fixture-owned cwd.
         return subprocess.run(  # noqa: S603
             [shutil.which("bash") or "/bin/bash", str(self.script)],
@@ -100,7 +100,7 @@ class SmokeSafety(unittest.TestCase):
             timeout=30,
         )
 
-    def assert_caller_preserved(self):
+    def assert_caller_preserved(self) -> None:
         self.assertEqual(self.git(self.caller, "rev-parse", "HEAD"), self.before_head)
         self.assertEqual((self.caller / ".git/index").read_bytes(), self.before_index)
         self.assertEqual((self.caller / "sample").read_text(), "before\n")
@@ -109,14 +109,14 @@ class SmokeSafety(unittest.TestCase):
         )
         self.git(self.caller, "diff", "--cached")
 
-    def test_index_only_hook_environment_cannot_overwrite_caller_staging(self):
+    def test_index_only_hook_environment_cannot_overwrite_caller_staging(self) -> None:
         self.env["GIT_INDEX_FILE"] = str(self.caller / ".git/index")
         result = self.run_smoke()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assert_caller_preserved()
         self.assertEqual((self.checkout / "sample").read_text(), "patched\n")
 
-    def test_all_hook_variables_and_global_hooks_are_isolated(self):
+    def test_all_hook_variables_and_global_hooks_are_isolated(self) -> None:
         hooks = self.root / "hostile-hooks"
         hooks.mkdir()
         marker = self.root / "caller-hook-ran"
@@ -138,7 +138,7 @@ class SmokeSafety(unittest.TestCase):
         self.assert_caller_preserved()
         self.assertFalse(marker.exists())
 
-    def test_existing_source_is_refused_without_touching_caller(self):
+    def test_existing_source_is_refused_without_touching_caller(self) -> None:
         self.checkout.mkdir()
         marker = self.checkout / "valuable-output"
         marker.write_text("preserve\n")
@@ -147,7 +147,7 @@ class SmokeSafety(unittest.TestCase):
         self.assertEqual(marker.read_text(), "preserve\n")
         self.assert_caller_preserved()
 
-    def test_development_override_is_refused_before_clone(self):
+    def test_development_override_is_refused_before_clone(self) -> None:
         self.env["FFMPEG_SHA"] = "master"
         result = self.run_smoke()
         self.assertNotEqual(result.returncode, 0)

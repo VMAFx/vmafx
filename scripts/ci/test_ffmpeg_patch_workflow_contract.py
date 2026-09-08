@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import ModuleType
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/ffmpeg-patch-stack.yml"
@@ -45,12 +46,12 @@ def _run(step: str) -> str:
     return "\n".join(line[10:] for line in body.splitlines() if line.startswith("          "))
 
 
-def _load_planner():
+def _load_planner() -> ModuleType:
     spec = importlib.util.spec_from_file_location(
         "ffmpeg_workflow_impact_planner", ROOT / "scripts/ci/plan-ci-impact.py"
     )
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
@@ -58,6 +59,11 @@ def _load_planner():
 
 class FFmpegWorkflowContract(unittest.TestCase):
     """Keep expensive replay scoped while preserving an independent CI gate."""
+
+    workflow: str
+    check: str
+    refresh: str
+    hook: str
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -146,7 +152,7 @@ class FFmpegWorkflowContract(unittest.TestCase):
         self.assertIn("stages: [pre-commit, pre-push]", self.hook)
         self.assertIn("pass_filenames: false", self.hook)
         pattern = re.search(r"(?m)^        files: '([^']+)'$", self.hook)
-        self.assertIsNotNone(pattern)
+        assert pattern is not None
         selected = re.compile(pattern.group(1))
         for path in (
             "ffmpeg-patches/series.txt",
@@ -179,11 +185,13 @@ class FFmpegWorkflowContract(unittest.TestCase):
         planner = _load_planner()
         config = planner.load_config(ROOT / ".github/ci-impact.json")
         replay = _step(self.check, "Check configured FFmpeg release")
-        condition = re.search(r"(?m)^        if: (.+)$", replay).group(1)
+        condition_match = re.search(r"(?m)^        if: (.+)$", replay)
+        assert condition_match is not None
+        condition = condition_match.group(1)
         predicates = []
         for term in condition.split(" || "):
             match = re.fullmatch(r"steps\.impact\.outputs\.([a-z_]+) == '([^']+)'", term)
-            self.assertIsNotNone(match, f"unsupported replay condition: {term}")
+            assert match is not None, f"unsupported replay condition: {term}"
             predicates.append(match.groups())
 
         cases = {

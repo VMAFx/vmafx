@@ -22,7 +22,7 @@ SPEC.loader.exec_module(STACK)
 
 
 class ReleaseSelection(unittest.TestCase):
-    def test_only_stable_tags_and_numeric_order(self):
+    def test_only_stable_tags_and_numeric_order(self) -> None:
         refs = "\n".join(
             f"{'a' * 40}\trefs/tags/{tag}"
             for tag in ("n9.0.1", "n9.9", "n10.0", "n11.0-dev", "n12.0-rc1", "snapshot", "master")
@@ -34,7 +34,7 @@ class ReleaseSelection(unittest.TestCase):
 
 
 class RealReplay(unittest.TestCase):
-    def git(self, path, *args):
+    def git(self, path: Path, *args: str) -> str:
         # Fixed Git executable and fixture-owned arguments; no shell.
         return subprocess.check_output(  # noqa: S603
             [
@@ -55,7 +55,7 @@ class RealReplay(unittest.TestCase):
             stderr=subprocess.DEVNULL,
         )
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
@@ -85,14 +85,14 @@ class RealReplay(unittest.TestCase):
             path.write_text(f"ARG FFMPEG_TAG=n9.0.1\nARG FFMPEG_REMOTE={self.upstream}\n")
         self.output = self.root / "report"
 
-    def contents(self):
+    def contents(self) -> dict[str, bytes]:
         return {
             str(path.relative_to(self.repo)): path.read_bytes()
             for path in self.repo.rglob("*")
             if path.is_file()
         }
 
-    def test_refresh_is_replayable_and_idempotent(self):
+    def test_refresh_is_replayable_and_idempotent(self) -> None:
         with self.assertRaisesRegex(ValueError, "drift"):
             STACK.maintain(self.repo, self.output, False, False)
         result = STACK.maintain(self.repo, self.output, True, False)
@@ -103,7 +103,7 @@ class RealReplay(unittest.TestCase):
         STACK.maintain(self.repo, self.output, True, False)
         self.assertEqual(self.contents(), before)
 
-    def test_caller_global_config_cannot_change_canonical_patches(self):
+    def test_caller_global_config_cannot_change_canonical_patches(self) -> None:
         STACK.maintain(self.repo, self.output, True, False)
         before = self.contents()
         hostile_home = self.root / "hostile-home"
@@ -117,13 +117,13 @@ class RealReplay(unittest.TestCase):
         self.assertEqual(checked["changed"], [])
         self.assertEqual(self.contents(), before)
 
-    def test_invalid_configuration_retains_failure_receipt(self):
+    def test_invalid_configuration_retains_failure_receipt(self) -> None:
         (self.repo / "build-config.env").write_text('FFMPEG_TAG="master"\n')
         with self.assertRaises(KeyError):
             STACK.maintain(self.repo, self.output, False, False)
         self.assertEqual(json.loads((self.output / "receipt.json").read_text())["status"], "failed")
 
-    def test_latest_release_rebases_and_updates_all_mirrors(self):
+    def test_latest_release_rebases_and_updates_all_mirrors(self) -> None:
         self.git(self.upstream, "switch", "--detach", "n9.0.1")
         (self.upstream / "other").write_text("new release\n")
         self.git(self.upstream, "add", "other")
@@ -137,7 +137,7 @@ class RealReplay(unittest.TestCase):
         self.assertIn('FFMPEG_TAG="n9.1"', (self.repo / "build-config.env").read_text())
         STACK.maintain(self.repo, self.output, False, False)
 
-    def test_conflicting_release_preserves_every_input(self):
+    def test_conflicting_release_preserves_every_input(self) -> None:
         self.git(self.upstream, "switch", "--detach", "n9.0.1")
         (self.upstream / "sample").write_text("incompatible upstream\n")
         self.git(self.upstream, "commit", "-qam", "release")
@@ -149,7 +149,7 @@ class RealReplay(unittest.TestCase):
         self.assertEqual(json.loads((self.output / "receipt.json").read_text())["status"], "failed")
         self.assertIn("CONFLICT", (self.output / "replay.log").read_text())
 
-    def test_network_failure_is_failure_and_preserves_files(self):
+    def test_network_failure_is_failure_and_preserves_files(self) -> None:
         config = self.repo / "build-config.env"
         config.write_text(f'FFMPEG_REMOTE="{self.root / "missing"}"\nFFMPEG_TAG="n9.0.1"\n')
         before = self.contents()
@@ -157,7 +157,7 @@ class RealReplay(unittest.TestCase):
             STACK.maintain(self.repo, self.output, True, False)
         self.assertEqual(self.contents(), before)
 
-    def test_hook_git_environment_cannot_redirect_replay(self):
+    def test_hook_git_environment_cannot_redirect_replay(self) -> None:
         before = self.git(self.upstream, "rev-parse", "HEAD")
         index = (self.upstream / ".git/index").read_bytes()
         poisoned = {
@@ -172,14 +172,14 @@ class RealReplay(unittest.TestCase):
         self.assertEqual((self.upstream / ".git/index").read_bytes(), index)
         self.assertEqual((self.upstream / "sample").read_text(), "patched\n")
 
-    def test_replace_failure_restores_all_original_bytes(self):
+    def test_replace_failure_restores_all_original_bytes(self) -> None:
         config = self.repo / "build-config.env"
         before = self.contents()
         actual_replace = os.replace
         calls = 0
         fail_on_call = 2
 
-        def fail_second(source, target):
+        def fail_second(source: Path, target: Path) -> None:
             nonlocal calls
             calls += 1
             if calls == fail_on_call:
@@ -192,14 +192,14 @@ class RealReplay(unittest.TestCase):
         self.assertEqual(self.contents(), before)
         self.assertEqual(list(self.repo.rglob(".ffmpeg-refresh-*")), [])
 
-    def test_interrupt_restores_originals(self):
+    def test_interrupt_restores_originals(self) -> None:
         config = self.repo / "build-config.env"
         before = self.contents()
         actual_replace = os.replace
         calls = 0
         fail_on_call = 2
 
-        def interrupt_second(source, target):
+        def interrupt_second(source: Path, target: Path) -> None:
             nonlocal calls
             calls += 1
             if calls == fail_on_call:
@@ -213,14 +213,14 @@ class RealReplay(unittest.TestCase):
             STACK.replace_files({self.patch: b"replacement", config: b"new config"})
         self.assertEqual(self.contents(), before)
 
-    def test_second_interrupt_keeps_recovery_backups(self):
+    def test_second_interrupt_keeps_recovery_backups(self) -> None:
         config = self.repo / "build-config.env"
         original_patch = self.patch.read_bytes()
         actual_replace = os.replace
         calls = 0
         fail_from_call = 2
 
-        def interrupt_recovery(source, target):
+        def interrupt_recovery(source: Path, target: Path) -> None:
             nonlocal calls
             calls += 1
             if calls >= fail_from_call:
@@ -236,14 +236,14 @@ class RealReplay(unittest.TestCase):
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_bytes(), original_patch)
 
-    def test_rollback_failure_keeps_original_backups(self):
+    def test_rollback_failure_keeps_original_backups(self) -> None:
         config = self.repo / "build-config.env"
         original_patch = self.patch.read_bytes()
         actual_replace = os.replace
         calls = 0
         fail_from_call = 2
 
-        def fail_persistently(source, target):
+        def fail_persistently(source: Path, target: Path) -> None:
             nonlocal calls
             calls += 1
             if calls >= fail_from_call:
@@ -259,7 +259,7 @@ class RealReplay(unittest.TestCase):
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_bytes(), original_patch)
 
-    def test_invalid_or_incomplete_series(self):
+    def test_invalid_or_incomplete_series(self) -> None:
         path = self.repo / "ffmpeg-patches/series.txt"
         for content in (
             "",
@@ -271,12 +271,12 @@ class RealReplay(unittest.TestCase):
                 path.write_text(content)
                 STACK.series(self.repo)
 
-    def test_unlisted_patch_is_not_silently_omitted(self):
+    def test_unlisted_patch_is_not_silently_omitted(self) -> None:
         (self.repo / "ffmpeg-patches/0018-omitted.patch").write_text(self.patch.read_text())
         with self.assertRaisesRegex(ValueError, "outside series"):
             STACK.series(self.repo)
 
-    def test_late_patch_failure_does_not_rewrite_earlier_patch(self):
+    def test_late_patch_failure_does_not_rewrite_earlier_patch(self) -> None:
         (self.repo / "ffmpeg-patches/0002-broken.patch").write_text("invalid patch\n")
         (self.repo / "ffmpeg-patches/series.txt").write_text(
             "0001-integration.patch\n0002-broken.patch\n"

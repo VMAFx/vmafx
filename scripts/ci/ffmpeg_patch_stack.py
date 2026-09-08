@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import TypedDict
 
 STABLE_TAG = re.compile(r"n(\d+)\.(\d+)(?:\.(\d+))?\Z")
 PATCH_NAME = re.compile(r"\d{4}-[A-Za-z0-9_.-]+\.patch\Z")
@@ -26,7 +27,8 @@ def stable_version(tag: str) -> tuple[int, int, int]:
     match = STABLE_TAG.fullmatch(tag)
     if not match:
         raise ValueError(f"not a stable FFmpeg release tag: {tag}")
-    return tuple(int(part or 0) for part in match.groups())
+    major, minor, patch = match.groups()
+    return int(major), int(minor), int(patch or 0)
 
 
 def latest_release(refs: str) -> str:
@@ -197,14 +199,27 @@ def replace_files(updates: dict[Path, bytes]) -> None:
             temporary.unlink(missing_ok=True)
 
 
-def maintain(repo: Path, output: Path, refresh: bool, latest: bool) -> dict:
-    receipt = {}
+class Receipt(TypedDict, total=False):
+    remote: str
+    configured_tag: str
+    patch_count: int
+    applying: str
+    tag: str
+    upstream_commit: str
+    patched_tree: str
+    changed: list[str]
+    status: str
+    error: str
+
+
+def maintain(repo: Path, output: Path, refresh: bool, latest: bool) -> Receipt:
+    receipt: Receipt = {}
     output.mkdir(parents=True, exist_ok=True)
     (output / "replay.log").write_text("")
     try:
         remote, current_tag = configuration(repo)
         names = series(repo)
-        receipt.update(remote=remote, configured_tag=current_tag, patch_count=len(names))
+        receipt.update({"remote": remote, "configured_tag": current_tag, "patch_count": len(names)})
         with tempfile.TemporaryDirectory(prefix="vmafx-ffmpeg-") as temporary:
             replay = Replay(Path(temporary), output)
             replay.git("init", "--quiet")
@@ -227,9 +242,11 @@ def maintain(repo: Path, output: Path, refresh: bool, latest: bool) -> dict:
                 target = replay.fetch(remote, target_tag)
                 replay.git("rebase", "--onto", target, base)
             receipt.update(
-                tag=target_tag,
-                upstream_commit=target,
-                patched_tree=replay.git("rev-parse", "HEAD^{tree}").strip(),
+                {
+                    "tag": target_tag,
+                    "upstream_commit": target,
+                    "patched_tree": replay.git("rev-parse", "HEAD^{tree}").strip(),
+                }
             )
             commits = replay.git("rev-list", "--reverse", f"{target}..HEAD").splitlines()
             if len(commits) != len(names):
@@ -262,7 +279,7 @@ def maintain(repo: Path, output: Path, refresh: bool, latest: bool) -> dict:
                 for path, data in updates.items()
                 if path.read_bytes() != data
             ]
-            receipt.update(changed=changed, status="refreshed" if refresh else "checked")
+            receipt.update({"changed": changed, "status": "refreshed" if refresh else "checked"})
             if refresh:
                 replace_files(updates)
             elif changed:
@@ -270,7 +287,7 @@ def maintain(repo: Path, output: Path, refresh: bool, latest: bool) -> dict:
                     "patch/configuration drift; run python3 scripts/ci/ffmpeg_patch_stack.py --refresh"
                 )
     except (KeyError, ValueError, RuntimeError, OSError, subprocess.TimeoutExpired) as error:
-        receipt.update(status="failed", error=str(error))
+        receipt.update({"status": "failed", "error": str(error)})
         raise
     finally:
         (output / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
