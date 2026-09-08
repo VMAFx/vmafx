@@ -409,6 +409,8 @@ landed fix yet._
 
 ## Recently closed
 
+| **T-PRE-PUSH-MYPY-REBASE-SCOPE-2026-09-08** | Old-tip/new-tip selection included unrelated master debt and could omit branch-owned files after a rebase, Git type changes and symlink identities; an outgoing ref different from HEAD could be checked against the wrong tree. The hook now checks the complete existing ai/scripts Python policy against master merge-base, validates targets and runs even for empty outgoing file lists. | Real Git rebase and pre-commit regression, type/symlink/ref/error controls; strict typing. | `fix/package-version-owner-convergence` (#1416, held draft) | 2026-09-08 | closed locally; integration pending |
+
 | **T-PACKAGE-VERSION-OWNER-NONCONSUMERS-2026-09-08** | Reviewed #1416 against the current hygiene parent: removed five scientific-stack globals without consumers, preserved newer NumPy/PyWavelets/MCP base updates, retained Level Zero validation through the workflow-checker refactor, and documented actual package/native-runtime ownership. The updated branch remains held pending integration. | Metadata/requirements checks, 20 configuration regressions and strict typing. | `fix/package-version-owner-convergence` | 2026-09-08 | closed |
 
 | **T-BUILD-CONFIG-CI-ROUTING-2026-09-08** | The new root build configuration was absent from the impact registry, breaking its tracked-root contract. Registered it as a known full-validation authority. Also removed the node publisher's literal FFmpeg build argument, which overrode refreshed release mirrors. | [FFmpeg maintenance](development/ffmpeg-patch-automation.md) | `fix/rc1-repository-hygiene` | 2026-09-08 | CI impact contracts and publication default regression check. |
