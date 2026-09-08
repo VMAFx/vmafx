@@ -59,6 +59,10 @@ every individual check or an earned Best Practices badge.
   and compare the unrounded value with 8.5. The report's rounded score must agree.
 - Master advancing during a remote scan can cause an exact-head mismatch. That
   run fails; use the matching newer run rather than relabelling a newer report.
+  Also require a final live master-ref match: upstream retrieves GraphQL commit
+  metadata and its default-HEAD archive separately. This scan-window check
+  relies on the enforced no-force/no-deletion policy preventing a rewind; it
+  does not establish safety against privileged policy changes during a run.
 - Ordinary ephemeral read-only GitHub tokens remain the default. Only the
   publisher has OIDC and SARIF write permissions. Remote repository settings
   and external badge attestations require their own verified changes.

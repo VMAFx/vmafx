@@ -1,0 +1,1 @@
+- Enforce the documented Scorecard 8.5 floor with distinct exact-head PR file checks and same-run full master reports. Reject stale, incomplete and scanner-error results; expose zero scores and the explicitly unassessed no-release state. Correct conflicting historical policy and operator documentation.

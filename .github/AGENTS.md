@@ -210,9 +210,9 @@ gh api repos/<owner>/<repo>/git/ref/tags/<vN.M.K> --jq '.object.sha'
 gh api repos/<owner>/<repo>/git/tags/<sha-from-prev> --jq '.object.sha'
 ```
 
-See [ADR-0263](../docs/adr/0263-ossf-scorecard-policy.md) for the
-project-level Scorecard policy (introduced by PR #337) and entry 0231
-of [`docs/rebase-notes.md`](../docs/rebase-notes.md) for the standing
+See [ADR-1247](../docs/adr/1247-scorecard-exact-head-gates.md) for the
+current project-level Scorecard policy (superseding PR #337 / ADR-0263)
+and entry 0231 of [`docs/rebase-notes.md`](../docs/rebase-notes.md) for the standing
 re-test command.
 
 ### Dependency-update bot: Renovate, not Dependabot (ADR-0363)
@@ -410,13 +410,11 @@ is load-bearing for the
 ## OSSF Scorecard pin invariant
 
 `.github/workflows/scorecard.yml` references
-`github/codeql-action/upload-sarif@<sha>`. The Scorecard webapp at
-`api.scorecard.dev` validates the pinned SHA against the action's
-upstream repository on every publish; a SHA that no longer exists
-under the declared tag (e.g. because upstream rewrote a release
-branch or moved a tag) is rejected as an "imposter commit", returning
-HTTP 400 and turning the workflow red. Whenever this pin is updated
-(Renovate or manual), spot-check that the new SHA still resolves:
+`github/codeql-action/upload-sarif@<sha>`. Preserve a resolving immutable
+upstream commit and the publishing restrictions of the pinned Scorecard action.
+The historical unresolved-pin failure is recorded in Research-0053; it does not
+establish that a later tag move invalidates an otherwise valid commit. Whenever
+this pin is updated (Renovate or manual), verify that the new SHA resolves:
 
 ```bash
 pin=$(grep -oE 'codeql-action/upload-sarif@[a-f0-9]{40}' \
@@ -425,7 +423,7 @@ gh api "/repos/github/codeql-action/commits/$pin" --jq '.sha'
 ```
 
 A 422 response here is the canary that the workflow is about to start
-failing on the next push. See [ADR-0263](../docs/adr/0263-ossf-scorecard-policy.md)
+failing on the next push. See [ADR-1247](../docs/adr/1247-scorecard-exact-head-gates.md)
 and [Research-0053](../docs/research/0053-ossf-scorecard-investigation.md).
 
 ## macOS tmate SSH debug step (ADR-0626)
@@ -494,8 +492,8 @@ Note: pin updates to `codeql-action/upload-sarif` now arrive via Renovate
 ## Related
 
 - [ADR-0124](../docs/adr/0124-automated-rule-enforcement.md) — this tooling
-- [ADR-0263](../docs/adr/0263-ossf-scorecard-policy.md) — OSSF Scorecard
-  policy + accepted blockers
+- [ADR-1247](../docs/adr/1247-scorecard-exact-head-gates.md) — current OSSF
+  Scorecard policy; ADR-0263 is superseded
 - [ADR-0338](../docs/adr/0338-macos-vulkan-via-moltenvk-lane.md) — macOS
   Vulkan-via-MoltenVK advisory lane
 - [Research-0002](../docs/research/0002-automated-rule-enforcement.md) — investigation
@@ -598,3 +596,22 @@ Pass `-Db_lto=false` on every icpx/SYCL `meson setup` in CI. Both SYCL legs of
 `libvmaf-build-matrix.yml` already do, and `Clang-Tidy SYCL (Changed Files,
 Advisory)` now does too. Pinning an older oneAPI does not help — the mismatch
 is against the *system* linker plugin, not a specific compiler release.
+
+## Scorecard scope and report authenticity (ADR-1247)
+
+Keep the `scorecard.yml` publisher restricted to upstream-approved actions;
+only that job may obtain OIDC write permission. Its generated JSON and SARIF
+artifact name binds run ID, attempt and event SHA. The separate Master Gate
+requires successful analysis and downloads only the same run's artifact; never
+replace it with the public latest-score API. The action scans remote HEAD, so
+a mismatch with the event SHA must fail. Keep the PR workflow read-only and
+non-publishing, with exact head checkout and source snapshots around all eleven
+local file checks. An applicable Scorecard context must report success in the
+aggregator; absent, skipped and neutral are failures. The inactive event's gate
+must not create a pre-merge wait for a future master result. Contract tests are
+`scripts/ci/tests/test_scorecard_*.py`; preserve the pinned source/schema checks
+and the exact no-release-only unavailable case. Both gates and the local
+`repository-security-contract` hook must run the offline ADR-1248 controls.
+The master gate runs the read-only repository security checker outside the
+publisher, using the built-in token and retaining a separate live receipt;
+a failed Scorecard assessment must not silently skip that drift check.

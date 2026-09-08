@@ -10,6 +10,25 @@ upstream Netflix/vmaf has no equivalent tree, so the rebase risk is
 
 ## Rebase-sensitive surfaces
 
+### Exact-source Scorecard reports (ADR-1247)
+
+`scorecard_gate.py` validates the complete reviewed check sets and tool identity,
+recomputes the risk-weighted unrounded score, and rejects scanner errors. Keep
+all zero and inconclusive states in its summaries; only Signed-Releases/-1 with
+exact reason `no releases found` is unassessed rather than an error. PR-local
+reports have no upstream commit identity: preserve Git-object byte/mode checks,
+extra-input rejection and before/after run-bound receipts. Every followed
+symlink component must be tracked; do not permit links through Git metadata or
+other mutable inputs even when the final file is tracked. Preserve literal
+symlink targets and legitimate directory chains, with bounded cycle rejection.
+Git subprocesses and
+fixtures must clear inherited GIT_* and caller global/system configuration.
+Never use latest public API results, merge SHA instead of PR head, or omit a
+check to improve the denominator. The workflow/aggregator and source-tamper
+controls run through the `scorecard-policy-contract` hook and both gate jobs.
+Preserve the companion ADR-1248 offline repository-policy hook and live master
+checker; neither a local fixture pass nor an aggregate score proves settings.
+
 ### Configured native lint (ADR-1142)
 
 `lint-configured.py` owns local `make lint-c` selection. Make first regenerates

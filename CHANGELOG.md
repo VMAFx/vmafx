@@ -28422,6 +28422,9 @@ See `docs/server/auth.md` for the full configuration guide.
   covering all resolved and reported-not-fixed items.
 
 
+- Enforce the documented Scorecard 8.5 floor with distinct exact-head PR file checks and same-run full master reports. Reject stale, incomplete and scanner-error results; expose zero scores and the explicitly unassessed no-release state. Correct conflicting historical policy and operator documentation.
+
+
 - **Semgrep OSS warnings — 19/19 triaged (Research-0090)** — three real
   fixes plus sixteen line-level `# nosemgrep` suppressions, each citing
   the call-site reasoning. Fixed: (1) `python/vmaf/config.py`
