@@ -13620,6 +13620,12 @@ SYCL, and Metal. All vendors retain native GPU coverage after the drop.
   [docs/development/ide-setup.md](docs/development/ide-setup.md).
 
 
+- Refactor integer VIF AVX2 filters into bounded private stages, remove overwritten initial stores and preserve bit-exact scores with direct scalar/SIMD regression coverage.
+
+
+- Refactor integer VIF AVX-512 kernels into small private stages while preserving exact arithmetic and the existing subsample register-pressure boundaries; add direct scalar-stage parity coverage across 8–16-bit inputs.
+
+
 - **Bump Intel NEO compute stack in `dev/Containerfile` as a matched set.**
   Intel compute-runtime (`NEO_VER`) moves to `26.31.39395.13`, Intel Graphics
   Compiler (`IGC_VER`) to `2.40.13+22418`, Level Zero loader (`LEVEL_ZERO_VER`)
@@ -15321,6 +15327,11 @@ comment to clarify the `free_sv` semantics. No logic changes; SVM is deprecated 
 the header is consumed only via `core/src/predict.c`.
 
 Identified in the 2026-05-15 code-quality audit (AUDIT-2026-05-15.md §8).
+
+
+- Keep the existing SVM parser and runtime API tests lint-clean with const
+  input views and bounded parser test drivers, preserving every assertion
+  and the vendored library contracts.
 
 
 - ADR-0332 records the deferral of the SYCL ADM DWT `group_load`
@@ -24253,6 +24264,9 @@ preprocessor macros. (PR #744)
   twin with an informational notice ([ADR-1183](docs/adr/1183-model-options-gate-gpu-twin-selection.md)).
 
 
+Release private feature-option dictionaries when registration rejects options or an internal copy fails, including partially copied dictionaries. Model options remain available for correction or retry; successful registration and dictionary-consumption rules are unchanged.
+
+
 - `model/tiny/registry.json`: added missing `license`, `license_url`, and
   `sigstore_bundle` fields to the `fr_regressor_v1` entry; the registry
   schema (ADR-0211) requires these fields for all non-smoke entries.
@@ -24659,6 +24673,13 @@ clear diagnostic: `enable_nvtx=true requires enable_cuda=true`.
   - Envtest assertions in `vmafxnode_controller_test.go` updated to reflect
     correct LastHeartbeat ownership semantics (BeNil / Equal stale value instead
     of NotTo(BeNil) / ShouldNot(Equal)).
+
+
+- Preserve separately configured feature extractors when their option-derived
+  output keys differ, including motion variants requested by multiple models.
+  Equivalent defaults, aliases and CPU/GPU twins still share a registration.
+  Registration allocation failures preserve existing contexts, and vector
+  growth checks both count and byte-size limits in release builds.
 
 
 - **`GetTensorElementType` errors during session open were silently discarded,

@@ -87,18 +87,19 @@ core/
   much later at configure with the cryptic
   `ERROR: Unknown C std ['c23']`, which is what took out seven CI
   workflows at once when Ubuntu's meson 1.3.2 was still in use.
-- **`feature_extractor_vector_append()` deduplicates by provided-feature
-  names, not extractor name** (fork-local, ADR-0385 / T-CUDA-FEATURE-EXTRACTOR-DOUBLE-WRITE):
-  [`src/fex_ctx_vector.c`](src/fex_ctx_vector.c) uses
-  `provided_features_overlap()` to detect CPU/GPU twins before
-  registering a new extractor. The old dedup key was derived from
-  `vmaf_feature_name_from_options(fex->name, …)`, which produced
-  `"adm"` vs `"adm_cuda"` — two distinct strings — so both twins were
-  registered and both wrote the same collector slot. Any upstream sync
-  that rewrites `fex_ctx_vector.c` must preserve the provided-feature
-  dedup path; reverting to name-only dedup re-opens the double-write
-  regression on every GPU-enabled binary when `--feature <name>` is
-  combined with a default model load.
+- **Feature-context deduplication includes parsed feature parameters**
+  (ADR-0385; [Research-2047](../docs/research/2047-option-aware-context-registration-2026-09-08.md)):
+  [`src/fex_ctx_vector.cpp`](src/fex_ctx_vector.cpp) compares
+  `vmaf_feature_name_from_options()` keys for shared advertised feature bases.
+  CPU/GPU twins with equivalent defaults or alias-spelled options still use
+  the first registration. Different feature parameters must coexist: matching
+  only `provided_features[]` drops the second model/explicit option set.
+  When either list is absent, preserve the extractor-name fallback with parsed
+  options. Name-allocation failure returns `-ENOMEM` without consuming the
+  incoming context; growth failure preserves the pointer table, count and
+  capacity. The private capacity helper checks both `UINT_MAX` and `SIZE_MAX`
+  before doubling, including release builds. Keep the actual-motion public
+  scoring test and the Linux allocation-failure controls on rebase.
 - **`picture_compute_geometry` stride alignment uses `unsigned` + `1u`
   mask** (fork-local, round-5 `-fsanitize=integer` sweep):
   `aligned_y` and `aligned_c` in
@@ -873,3 +874,27 @@ The GPU parity tests in `meson test --suite=fast` all run below the 256-system
 threshold and cannot catch either invariant. Check 4K agreement against the CPU
 backend by hand. See `docs/rebase-notes.md` entry
 `fix/cuda-speed-chroma-4k-launch`.
+
+## Registration option-copy ownership (Research-2048)
+
+In `src/libvmaf.c`, `fex_options_copy()` must release any partial destination
+when `vmaf_dictionary_copy()` fails. The dictionary implementation can allocate
+some entries before returning an error. Every caller starts with an independent
+NULL destination: explicit registration, model registration and worker-context
+creation. Preserve the supplied-dictionary consumption guards of
+`vmaf_use_feature()`; model and worker source dictionaries remain borrowed.
+`fex_ctx_create_owned_options()` transfers only the private copy on success and
+releases it when context creation rejects options or fails allocation.
+
+Keep the public-only rejection regression separate from the Linux ELF
+partial-copy control: only the latter intentionally interposes dictionary copy.
+It forwards normal calls to the actual shared library, injects a real partial
+destination, then checks error propagation and registration retry. Do not link
+private engine objects into these targets or invalidate the old-library control.
+The four DNN bridge exports retain out-of-profile consumers in
+`src/dnn/dnn_attach_api.c`; `vmaf_ctx_dnn_has_session` and
+`vmaf_register_metadata_handler` remain declared integration scaffolds in
+`src/dnn/dnn_ctx.h` and `src/metadata.h`. Their six exact unused-function markers
+preserve those interfaces without disabling ordinary unused checks. The glibc
+weak symbol retains its dictated ABI spelling. See
+[Research-2048](../docs/research/2048-model-registration-ownership-2026-09-08.md).

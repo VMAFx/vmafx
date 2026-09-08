@@ -32,6 +32,9 @@
  * ASan.
  */
 
+// ADR-1138/ADR-1166: preserve NULL for MSVC C builds.
+// NOLINTBEGIN(modernize-use-nullptr)
+
 #include <stdio.h>
 #include <string.h>
 
@@ -59,7 +62,8 @@ static char *test_reject_oversized_nr_class(void)
                                 "rho 0\n"
                                 "SV\n";
     svm_set_print_string_function(&silence_svm_log);
-    struct svm_model *m = svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
+    const struct svm_model *const m =
+        svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
     mu_assert("parser must reject nr_class > VMAF_SVM_MAX_AXIS_COUNT", m == NULL);
     return NULL;
 }
@@ -76,7 +80,8 @@ static char *test_reject_oversized_total_sv(void)
                                 "rho 0\n"
                                 "SV\n";
     svm_set_print_string_function(&silence_svm_log);
-    struct svm_model *m = svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
+    const struct svm_model *const m =
+        svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
     mu_assert("parser must reject total_sv > VMAF_SVM_MAX_AXIS_COUNT", m == NULL);
     return NULL;
 }
@@ -94,7 +99,8 @@ static char *test_reject_missing_nr_class_before_rho(void)
                                 "total_sv 1\n"
                                 "SV\n";
     svm_set_print_string_function(&silence_svm_log);
-    struct svm_model *m = svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
+    const struct svm_model *const m =
+        svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
     mu_assert("parser must reject rho before nr_class", m == NULL);
     return NULL;
 }
@@ -110,7 +116,8 @@ static char *test_reject_missing_nr_class_before_label(void)
                                 "rho 0\n"
                                 "SV\n";
     svm_set_print_string_function(&silence_svm_log);
-    struct svm_model *m = svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
+    const struct svm_model *const m =
+        svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
     mu_assert("parser must reject label before nr_class", m == NULL);
     return NULL;
 }
@@ -127,7 +134,8 @@ static char *test_reject_missing_nr_class_before_probA(void)
                                 "rho 0\n"
                                 "SV\n";
     svm_set_print_string_function(&silence_svm_log);
-    struct svm_model *m = svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
+    const struct svm_model *const m =
+        svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
     mu_assert("parser must reject probA before nr_class", m == NULL);
     return NULL;
 }
@@ -143,7 +151,8 @@ static char *test_reject_missing_nr_class_before_nr_sv(void)
                                 "rho 0\n"
                                 "SV\n";
     svm_set_print_string_function(&silence_svm_log);
-    struct svm_model *m = svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
+    const struct svm_model *const m =
+        svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
     mu_assert("parser must reject nr_sv before nr_class", m == NULL);
     return NULL;
 }
@@ -159,7 +168,8 @@ static char *test_reject_missing_nr_class_at_sv_parse(void)
                                 "SV\n"
                                 "1.0 1:0.5\n";
     svm_set_print_string_function(&silence_svm_log);
-    struct svm_model *m = svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
+    const struct svm_model *const m =
+        svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
     mu_assert("parser must reject missing nr_class at SV parse", m == NULL);
     return NULL;
 }
@@ -177,7 +187,8 @@ static char *test_reject_empty_sv_section(void)
                                 "rho 0\n"
                                 "SV\n";
     svm_set_print_string_function(&silence_svm_log);
-    struct svm_model *m = svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
+    const struct svm_model *const m =
+        svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
     mu_assert("parser must reject zero total_sv", m == NULL);
     return NULL;
 }
@@ -192,21 +203,40 @@ static char *test_reject_unknown_svm_type(void)
                                 "rho 0\n"
                                 "SV\n";
     svm_set_print_string_function(&silence_svm_log);
-    struct svm_model *m = svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
+    const struct svm_model *const m =
+        svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
     mu_assert("parser must reject unknown svm_type", m == NULL);
+    return NULL;
+}
+
+static char *run_header_size_tests(void)
+{
+    mu_run_test(test_reject_oversized_nr_class);
+    mu_run_test(test_reject_oversized_total_sv);
+    return NULL;
+}
+
+static char *run_header_order_tests(void)
+{
+    mu_run_test(test_reject_missing_nr_class_before_rho);
+    mu_run_test(test_reject_missing_nr_class_before_label);
+    mu_run_test(test_reject_missing_nr_class_before_probA);
+    mu_run_test(test_reject_missing_nr_class_before_nr_sv);
     return NULL;
 }
 
 char *run_tests(void)
 {
-    mu_run_test(test_reject_oversized_nr_class);
-    mu_run_test(test_reject_oversized_total_sv);
-    mu_run_test(test_reject_missing_nr_class_before_rho);
-    mu_run_test(test_reject_missing_nr_class_before_label);
-    mu_run_test(test_reject_missing_nr_class_before_probA);
-    mu_run_test(test_reject_missing_nr_class_before_nr_sv);
+    char *msg = run_header_size_tests();
+    if (msg)
+        return msg;
+    msg = run_header_order_tests();
+    if (msg)
+        return msg;
     mu_run_test(test_reject_missing_nr_class_at_sv_parse);
     mu_run_test(test_reject_empty_sv_section);
     mu_run_test(test_reject_unknown_svm_type);
     return NULL;
 }
+
+// NOLINTEND(modernize-use-nullptr) — ADR-1138/ADR-1166.

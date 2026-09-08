@@ -271,6 +271,26 @@ test_model_feature_overload_ownership = executable('test_model_feature_overload_
                read_json_model_cpp23_lib.extract_all_objects(recursive: true)],
 )
 
+# Public-only failed-registration ownership regression (Research-2048).
+test_model_registration_ownership = executable('test_model_registration_ownership',
+    ['test.c', 'test_model_registration_ownership.cpp'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : libvmaf_public_link,
+    dependencies : [math_lib, pthread_dependency, thread_lib],
+)
+
+# ELF fault control: private dictionary-copy failure, public registration callers.
+# It deliberately interposes one symbol and must use the actual shared library.
+if host_machine.system() == 'linux' and get_option('default_library') != 'static'
+    test_registration_partial_copy = executable('test_registration_partial_copy',
+        ['test.c', 'test_registration_partial_copy.cpp'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : libvmaf_public_link,
+        dependencies : [math_lib, pthread_dependency, thread_lib, cc.find_library('dl')],
+    )
+    test('test_registration_partial_copy', test_registration_partial_copy, suite : ['fast'])
+endif
+
 # Coverage for model-collection public API: vmaf_model_collection_load,
 # vmaf_use_features_from_model_collection, vmaf_score_at_index_model_collection,
 # vmaf_score_pooled_model_collection, vmaf_model_collection_load_from_path,
@@ -385,6 +405,45 @@ test_feature_extractor = executable('test_feature_extractor',
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects
+)
+
+# Registration identity and checked growth, through private and public callers.
+fex_vector_test_args = []
+fex_vector_link_args = []
+if host_machine.system() == 'linux'
+  fex_vector_test_args = ['-DFEX_VECTOR_ALLOC_TEST=1']
+  fex_vector_link_args = ['-Wl,--wrap=realloc', '-Wl,--wrap=vmaf_feature_name_from_options']
+endif
+test_fex_ctx_vector = executable('test_fex_ctx_vector',
+    # Compile private vector dependencies without interposing on a public-API test.
+    ['test.c', 'test_fex_ctx_vector.cpp', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     '../src/fex_ctx_vector.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    cpp_args : fex_vector_test_args,
+    link_args : fex_vector_link_args,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+
+# Keep public calls in a separate executable: private objects in the caller
+# can interpose on ELF shared-library internals and invalidate an old/new control.
+test_fex_ctx_vector_public = executable('test_fex_ctx_vector_public',
+    ['test.c', 'test_fex_ctx_vector_public.cpp'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : libvmaf_public_link,
+    dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
 )
 
 # Link-time shims synchronize normal pool growth and force legal realloc moves.
@@ -3639,6 +3698,7 @@ test('test_pdjson', test_pdjson, suite : ['fast'])
 test('test_model', test_model, suite : ['fast'])
 test('test_model_libsvm_dup_key', test_model_libsvm_dup_key, suite : ['fast'])
 test('test_model_feature_overload_ownership', test_model_feature_overload_ownership, suite : ['fast'])
+test('test_model_registration_ownership', test_model_registration_ownership, suite : ['fast'])
 test('test_model_collection_api', test_model_collection_api, suite : ['fast'])
 test('test_predict', test_predict, suite : ['fast'])
 test('test_svm_api', test_svm_api, suite : ['fast'])
@@ -3646,6 +3706,8 @@ test('test_svm_parser', test_svm_parser, suite : ['fast'])
 test('test_svm_multiclass', test_svm_multiclass, suite : ['fast'])
 test('test_iqa_helpers', test_iqa_helpers, suite : ['fast'])
 test('test_feature_extractor', test_feature_extractor, suite : ['fast'])
+test('test_fex_ctx_vector', test_fex_ctx_vector, suite : ['fast'])
+test('test_fex_ctx_vector_public', test_fex_ctx_vector_public, suite : ['fast'])
 test('test_dict', test_dict, suite : ['fast'])
 test('test_opt', test_opt, suite : ['fast'])
 test('test_cpu', test_cpu, suite : ['fast'])
@@ -3842,3 +3904,55 @@ test_mkdirp = executable('test_mkdirp',
     dependencies: [pthread_dependency, sycl_dependency],
 )
 test('test_mkdirp', test_mkdirp, suite : ['fast'])
+
+# Research-2045: configured private integer-VIF objects also work in shared builds.
+if is_asm_enabled and host_machine.cpu_family().startswith('x86')
+test_integer_vif_avx2_stages = executable('test_integer_vif_avx2_stages',
+    # dnn_sources pulled in directly so feature_lpips.c can resolve its
+    # libvmaf/dnn.h references (session_open/run/close,
+    # vmaf_tensor_from_rgb_imagenet) without linking against libvmaf.so.
+    ['test.c', 'test_integer_vif_avx2_stages.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_integer_vif_avx2_stages', test_integer_vif_avx2_stages, suite : ['fast', 'simd'])
+endif
+
+# Research-2046: configured private integer-VIF objects also work in shared builds.
+if is_avx512_enabled and host_machine.cpu_family().startswith('x86')
+test_integer_vif_avx512_stages = executable('test_integer_vif_avx512_stages',
+    # dnn_sources pulled in directly so feature_lpips.c can resolve its
+    # libvmaf/dnn.h references (session_open/run/close,
+    # vmaf_tensor_from_rgb_imagenet) without linking against libvmaf.so.
+    ['test.c', 'test_integer_vif_avx512_stages.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_integer_vif_avx512_stages', test_integer_vif_avx512_stages, suite : ['fast', 'simd'])
+endif

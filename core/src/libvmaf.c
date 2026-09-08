@@ -39,8 +39,7 @@
  * __libc_single_threaded.  The weak attribute lets the real glibc symbol
  * take precedence when available. */
 #ifdef __linux__
-/* The name is dictated by glibc's ABI and must match exactly. */
-/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) */
+/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0141 / Research-2048: glibc ABI symbol. */
 __attribute__((weak)) char __libc_single_threaded = 1;
 #endif
 
@@ -762,6 +761,8 @@ static void vmaf_ctx_dnn_free(VmafContext *vmaf)
     vmaf->dnn.n_outputs = 0u;
 }
 
+/* Research-2048: retained dnn_ctx.h integration surface. */
+// cppcheck-suppress unusedFunction
 int vmaf_ctx_dnn_has_session(const VmafContext *ctx)
 {
     return (ctx && ctx->dnn.sess) ? 1 : 0;
@@ -770,6 +771,8 @@ int vmaf_ctx_dnn_has_session(const VmafContext *ctx)
 /* ADR-0519: bridge for vmaf_dnn_set_codec_context. The public symbol
  * lives in dnn_attach_api.c and forwards here so VmafContext stays
  * opaque to the DNN module. */
+/* Research-2048: called by the DNN-enabled dnn_attach_api.c bridge. */
+// cppcheck-suppress unusedFunction
 int vmaf_ctx_dnn_set_codec_context(VmafContext *ctx, const char *codec_name, const char *preset,
                                    int crf)
 {
@@ -803,6 +806,8 @@ int vmaf_ctx_dnn_set_codec_context(VmafContext *ctx, const char *codec_name, con
  * DNN module. The int -> enum cast happens at the dispatch site
  * (vmaf_ctx_dnn_run_frame_nchw); the enum-validity gate lives in the
  * public wrapper. */
+/* Research-2048: called by the DNN-enabled dnn_attach_api.c bridge. */
+// cppcheck-suppress unusedFunction
 int vmaf_ctx_dnn_set_resize_mode(VmafContext *ctx, int mode)
 {
     if (!ctx)
@@ -818,6 +823,8 @@ int vmaf_ctx_dnn_set_resize_mode(VmafContext *ctx, int mode)
  *   - the codec block buffer was allocated at attach time (extra_in_width > 0).
  * All three conditions must hold; any mismatch indicates a model that either
  * has no codec block or whose sidecar was absent at load time. */
+/* Research-2048: called by the DNN-enabled dnn_attach_api.c bridge. */
+// cppcheck-suppress unusedFunction
 int vmaf_ctx_dnn_is_codec_aware(const VmafContext *ctx)
 {
     if (!ctx || !ctx->dnn.sess)
@@ -1244,6 +1251,8 @@ static int dnn_attach_feature_vector(VmafContext *ctx, VmafOrtSession *sess,
     return 0;
 }
 
+/* Research-2048: called by the DNN-enabled dnn_attach_api.c bridge. */
+// cppcheck-suppress unusedFunction
 int vmaf_ctx_dnn_attach(VmafContext *ctx, VmafOrtSession *sess, const VmafModelSidecar *meta,
                         const int64_t *in_shape, size_t in_rank, const char *feature_name)
 {
@@ -1605,6 +1614,26 @@ int vmaf_set_perceptual_sidedata(VmafContext *vmaf, const uint8_t *blob, size_t 
     return err;
 }
 
+/* A failed dictionary copy can still own a partial destination. */
+static int fex_options_copy(VmafDictionary *source, VmafDictionary **copy)
+{
+    const int err = vmaf_dictionary_copy(&source, copy);
+    if (err)
+        (void)vmaf_dictionary_free(copy);
+    return err;
+}
+
+/* Private copies transfer to the context on success only. All caller paths,
+ * including worker-context creation, must release them on failure. */
+static int fex_ctx_create_owned_options(VmafFeatureExtractorContext **ctx,
+                                        const VmafFeatureExtractor *fex, VmafDictionary *options)
+{
+    const int err = vmaf_feature_extractor_context_create(ctx, fex, options);
+    if (err)
+        (void)vmaf_dictionary_free(&options);
+    return err;
+}
+
 int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDictionary *opts_dict)
 {
     if (!vmaf)
@@ -1616,7 +1645,7 @@ int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDic
 
     int err = 0;
 
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(feature_name);
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(feature_name);
     if (!fex)
         return -EINVAL;
 
@@ -1626,7 +1655,7 @@ int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDic
      * when the caller was told not to free it. */
     VmafDictionary *d = NULL;
     if (s) {
-        err = vmaf_dictionary_copy(&s, &d);
+        err = fex_options_copy(s, &d);
         if (err) {
             (void)vmaf_dictionary_free(&s);
             return err;
@@ -1639,14 +1668,9 @@ int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDic
     }
 
     VmafFeatureExtractorContext *fex_ctx = NULL;
-    err = vmaf_feature_extractor_context_create(&fex_ctx, fex, d);
-    if (err) {
-        /* context_create does not release the dictionary on its own failure
-         * paths (it frees only what it allocated), so the copy is ours to
-         * release here. */
-        (void)vmaf_dictionary_free(&d);
+    err = fex_ctx_create_owned_options(&fex_ctx, fex, d);
+    if (err)
         return err;
-    }
     fex_ctx_bind_backends(fex_ctx, vmaf);
 
     RegisteredFeatureExtractors *rfe = &(vmaf->registered_feature_extractors);
@@ -1758,11 +1782,11 @@ int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
         VmafFeatureExtractorContext *fex_ctx = NULL;
         VmafDictionary *d = NULL;
         if (model->feature[i].opts_dict) {
-            err = vmaf_dictionary_copy(&model->feature[i].opts_dict, &d);
+            err = fex_options_copy(model->feature[i].opts_dict, &d);
             if (err)
                 return err;
         }
-        err = vmaf_feature_extractor_context_create(&fex_ctx, fex, d);
+        err = fex_ctx_create_owned_options(&fex_ctx, fex, d);
         if (err)
             return err;
         fex_ctx_bind_backends(fex_ctx, vmaf);
@@ -1904,11 +1928,11 @@ static int batch_ensure_fex_ctx(BatchThreadData *td, const struct ThreadDataBatc
     VmafDictionary *d = NULL;
     if (shared_ctx->opts_dict) {
         VmafDictionary *opts_dict = shared_ctx->opts_dict;
-        const int err = vmaf_dictionary_copy(&opts_dict, &d);
+        const int err = fex_options_copy(opts_dict, &d);
         if (err)
             return err;
     }
-    return vmaf_feature_extractor_context_create(&td->fex_ctx[i], shared_ctx->fex, d);
+    return fex_ctx_create_owned_options(&td->fex_ctx[i], shared_ctx->fex, d);
 }
 
 /* Run extractor i for the frame carried by `f` on this worker's private
@@ -3104,6 +3128,8 @@ int vmaf_flush_sycl(VmafContext *vmaf)
 }
 #endif
 
+/* Research-2048: retained externally callable metadata.h registration API. */
+// cppcheck-suppress unusedFunction
 int vmaf_register_metadata_handler(VmafContext *vmaf, VmafMetadataConfiguration cfg)
 {
     if (!vmaf)
@@ -3129,7 +3155,7 @@ int vmaf_register_metadata_handler(VmafContext *vmaf, VmafMetadataConfiguration 
  * Returns 0 when it is worth re-reading, negative on a fence error. */
 static int fence_for_read(VmafContext *vmaf, unsigned index)
 {
-    int err = 0;
+    int err;
 
     if (vmaf->thread_pool) {
         err = vmaf_thread_pool_wait(vmaf->thread_pool);

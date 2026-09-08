@@ -4,8 +4,8 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 292,
-  "total_warnings": 1359,
-  "total_nolint_uncited": 54,
+  "total_warnings": 1296,
+  "total_nolint_uncited": 44,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
     "build/src/vmaf_4k_v0.6.1.json.c": 2,
@@ -68,10 +68,7 @@
     "core/src/feature/x86/ssimulacra2_avx2.c": 3,
     "core/src/feature/x86/ssimulacra2_avx512.c": 3,
     "core/src/feature/x86/ssimulacra2_host_avx2.c": 1,
-    "core/src/feature/x86/vif_avx2.c": 17,
-    "core/src/feature/x86/vif_avx512.c": 15,
     "core/src/feature/y_funque_plus.c": 10,
-    "core/src/fex_ctx_vector.cpp": 3,
     "core/src/framesync.c": 7,
     "core/src/gpu_picture_pool.cpp": 1,
     "core/src/hip/stubs.c": 2,
@@ -174,9 +171,7 @@
     "core/test/test_speed_simd.c": 5,
     "core/test/test_ssim_coverage.c": 7,
     "core/test/test_ssimulacra2_coverage.c": 4,
-    "core/test/test_svm_api.c": 17,
     "core/test/test_svm_multiclass.c": 6,
-    "core/test/test_svm_parser.c": 11,
     "core/test/test_thread_pool.c": 5,
     "core/test/test_thread_safety_batch.c": 10,
     "core/test/test_transnet_v2.c": 5,
@@ -204,11 +199,7 @@
     "core/src/feature/third_party/xiph/psnr_hvs.c": 2,
     "core/src/feature/x86/psnr_hvs_avx2.c": 1,
     "core/src/feature/x86/ssimulacra2_host_avx2.c": 1,
-    "core/src/feature/x86/vif_avx2.c": 2,
-    "core/src/feature/x86/vif_avx512.c": 2,
-    "core/src/fex_ctx_vector.cpp": 5,
     "core/src/gpu_dispatch_env.cpp": 1,
-    "core/src/libvmaf.c": 1,
     "core/src/log.cpp": 2,
     "core/src/mem.cpp": 1,
     "core/src/metadata_handler.cpp": 2,
@@ -363,6 +354,86 @@
         }
       },
       "previous_baseline_sha256": "20967c562930b6c549ce7843484d275b341cb908e40d95de9f2fca11ceff1e0d"
+    },
+    {
+      "sources": [
+        "core/src/fex_ctx_vector.cpp",
+        "core/test/test_fex_ctx_vector.cpp",
+        "core/test/test_fex_ctx_vector_public.cpp"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/fex_ctx_vector.cpp": {
+          "warnings": [
+            3,
+            0
+          ],
+          "nolint_uncited": [
+            5,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "1285502257ecf2d5dc7ce8bced4806ac8de7236c5ecdf2a1014b193132fcde04"
+    },
+    {
+      "sources": [
+        "core/src/feature/x86/adm_avx2.c",
+        "core/src/feature/x86/vif_avx2.c",
+        "core/src/feature/x86/vif_avx512.c",
+        "core/src/fex_ctx_vector.cpp",
+        "core/src/libvmaf.c",
+        "core/test/test_fex_ctx_vector.cpp",
+        "core/test/test_fex_ctx_vector_public.cpp",
+        "core/test/test_integer_vif_avx2_stages.c",
+        "core/test/test_integer_vif_avx512_stages.c",
+        "core/test/test_model_registration_ownership.cpp",
+        "core/test/test_registration_partial_copy.cpp",
+        "core/test/test_svm_api.c",
+        "core/test/test_svm_parser.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/x86/vif_avx2.c": {
+          "warnings": [
+            17,
+            0
+          ],
+          "nolint_uncited": [
+            2,
+            0
+          ]
+        },
+        "core/src/feature/x86/vif_avx512.c": {
+          "warnings": [
+            15,
+            0
+          ],
+          "nolint_uncited": [
+            2,
+            0
+          ]
+        },
+        "core/test/test_svm_api.c": {
+          "warnings": [
+            17,
+            0
+          ]
+        },
+        "core/test/test_svm_parser.c": {
+          "warnings": [
+            11,
+            0
+          ]
+        },
+        "core/src/libvmaf.c": {
+          "nolint_uncited": [
+            1,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "cd23d8057e441eac0686ae7cc51d92b7a919890d8279c14a4ee02b4888192871"
     }
   ]
 }
