@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -115,6 +116,82 @@ class GitFixtureIsolation(unittest.TestCase):
     def test_dependency_classifier_fixture(self) -> None:
         self.check_helper("scripts/ci/test-classify-dependency-pr.sh")
 
+    def test_level_zero_fixture(self) -> None:
+        self.check_helper("scripts/ci/tests/test_level_zero_single_source.py")
+
+    def test_real_linked_worktree_hook_preserves_shared_repository(self) -> None:
+        # A real Git hook supplies GIT_DIR even when its caller has no Git
+        # variables. Keep both the old-command control and fixed helper inside
+        # fresh disposable linked repositories, never the developer's checkout.
+        for old_command in (True, False):
+            with (
+                self.subTest(old_command=old_command),
+                tempfile.TemporaryDirectory(prefix="git-linked-hook-") as directory,
+            ):
+                root = Path(directory)
+                caller = root / "caller"
+                linked = root / "linked"
+                caller.mkdir()
+                clean = {
+                    key: value for key, value in os.environ.items() if not key.startswith("GIT_")
+                }
+                clean.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull, LC_ALL="C")
+
+                def git(
+                    path: Path, *args: str, environment: dict[str, str] = clean
+                ) -> subprocess.CompletedProcess[str]:
+                    return subprocess.run(  # noqa: S603 -- isolated disposable Git caller
+                        [GIT, "-C", str(path), *args],
+                        env=environment,
+                        text=True,
+                        capture_output=True,
+                        check=True,
+                    )
+
+                git(caller, "init", "-q", "-b", "master")
+                git(caller, "config", "user.name", "Linked Hook Test")
+                git(caller, "config", "user.email", "fixture@example.invalid")
+                (caller / "tracked").write_text("committed caller work\n")
+                git(caller, "add", "tracked")
+                git(caller, "commit", "-qm", "test: linked hook baseline")
+                git(caller, "worktree", "add", "-q", "-b", "linked", str(linked))
+                for path in (caller, linked):
+                    (path / "staged").write_text("unique staged work\n")
+                    git(path, "add", "staged")
+                    (path / "tracked").write_text("unique unstaged work\n")
+                self.assertEqual(
+                    git(caller, "config", "--local", "--get", "core.bare").stdout, "false\n"
+                )
+                marker = root / "hook-environment.json"
+                command = (
+                    [GIT, "init", "-q", str(root / "old-fixture")]
+                    if old_command
+                    else [
+                        sys.executable,
+                        str(ROOT / "scripts/ci/tests/test_level_zero_single_source.py"),
+                        "LevelZeroSingleSource.test_workflow_checker_entrypoint_retains_container_validation",
+                    ]
+                )
+                hook = caller / ".git/hooks/pre-commit"
+                hook.write_text(
+                    f"#!{sys.executable}\n"
+                    "import json, os, subprocess\nfrom pathlib import Path\n"
+                    f"Path({str(marker)!r}).write_text(json.dumps({{'GIT_DIR': os.environ.get('GIT_DIR')}}))\n"
+                    f"subprocess.run({command!r}, check=True)\n"
+                )
+                hook.chmod(0o700)
+                before_caller, before_linked = snapshot(caller), snapshot(linked)
+                git(linked, "hook", "run", "pre-commit")
+                inherited = json.loads(marker.read_text())["GIT_DIR"]
+                self.assertEqual((linked / inherited).resolve(), caller / ".git/worktrees/linked")
+                after_caller, after_linked = snapshot(caller), snapshot(linked)
+                if old_command:
+                    self.assertNotEqual(after_caller[".git/config"], before_caller[".git/config"])
+                    self.assertIn(b"bare = true", after_caller[".git/config"])
+                else:
+                    self.assertEqual(after_caller, before_caller)
+                    self.assertEqual(after_linked, before_linked)
+
     def test_local_and_required_ci_hook_registration(self) -> None:
         config = (ROOT / ".pre-commit-config.yaml").read_text()
         hook = config.split("      - id: test-git-fixture-isolation\n", 1)[1].split(
@@ -130,6 +207,7 @@ class GitFixtureIsolation(unittest.TestCase):
             "scripts/ci/test_ffmpeg_patch_smoke_safety.py",
             "scripts/dev/test-cleanup-agent-state.sh",
             "scripts/ci/test-classify-dependency-pr.sh",
+            "scripts/ci/tests/test_level_zero_single_source.py",
             ".pre-commit-config.yaml",
         ):
             self.assertIsNotNone(re.search(pattern, path), path)
