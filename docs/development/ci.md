@@ -17,7 +17,7 @@ The main `pull_request`-triggered workflows include:
 | [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy (changed files + whole-tree ratchet, ADR-1142), cppcheck, mypy, registry validate, twin-drift gate (ADR-1135). |
 | [`required-aggregator.yml`](../../.github/workflows/required-aggregator.yml) | Single required-check aggregator (ADR-0313). |
 | [`go-ci.yml`](../../.github/workflows/go-ci.yml) | Required Go vet, security scan, runner smoke, and tests (ADR-1238). |
-| [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) | FFmpeg + libvmaf build (gcc / clang / SYCL / Vulkan). |
+| [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) | FFmpeg + libvmaf build (Linux GCC / macOS Clang / SYCL). |
 | [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform / cross-backend libvmaf build matrix. |
 | [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100 / 0106 / 0108 / 0165 process gates. |
 | [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml) | Netflix golden, sanitizers, tiny-AI, MCP, coverage, assertion-density. |
@@ -526,6 +526,25 @@ python3 -m unittest discover -s scripts/ci/tests -p test_cppcheck_posix_model.py
 This configuration adds type/function knowledge without disabling any diagnostic
 category. Local `--enable=all` and the CI job's existing
 `warning,performance,portability` selection remain unchanged.
+
+Both paths also load the shared
+[`cppcheck-public-entrypoints.cfg`](../../scripts/ci/cppcheck-public-entrypoints.cfg)
+model ([ADR-1246](../adr/1246-cppcheck-public-entrypoints.md)). It identifies
+16 reviewed public C functions whose external callers are absent from the CPU
+database, including disabled HIP/Metal fallbacks. It does not mark private
+helpers or every backend scaffold as public. The model does not disable body
+checks: unlisted unused functions and defects inside listed functions still
+fail their applicable checks. Missing or invalid model files fail analysis.
+
+Before adding a name, verify its `VMAF_EXPORT` declaration and the header's
+unconditional or conditional installation in `core/include/libvmaf/meson.build`.
+The existing configured-driver tests enforce those declarations and reject empty,
+duplicate, misspelled and non-public entries. The real-tool suite above checks
+the external-root behavior, private-function/body-defect negatives and malformed
+models. Cppcheck compares names without linkage or scope: a same-named static
+function is also treated as an entrypoint. Keep public C names unique; this
+model is not a visibility or ABI checker. See
+[the verified roots and version limits](../research/1246-cppcheck-public-entrypoints.md).
 
 Both paths use `--check-level=exhaustive` ([ADR-1245](../adr/1245-cppcheck-exhaustive-configured-analysis.md)).
 This removes Cppcheck's normal forward-branch budget instead of suppressing its

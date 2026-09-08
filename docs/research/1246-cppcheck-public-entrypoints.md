@@ -63,7 +63,7 @@ new remote unused-function coverage, or widen it to all 53 findings.
 The diagnostic ledger, source excerpts, real-tool XML reports and rejected
 same-name collision control are retained under
 `.workingdir2/cache/cppcheck-unused-diagnosis-20260908/`; implementation
-validation and its durable evidence index follow in the same PR.
+validation is retained under `.workingdir2/evidence/cppcheck-public-entrypoints-2026-09-08/`.
 
 ## Sources
 
@@ -73,3 +73,31 @@ validation and its durable evidence index follow in the same PR.
 - [Cppcheck 2.13 option parser](https://github.com/danmar/cppcheck/blob/2.13.0/cli/cmdlineparser.cpp).
 - [Cppcheck 2.13 model schema](https://github.com/danmar/cppcheck/blob/2.13.0/cfg/cppcheck-cfg.rng).
 - [Ubuntu Noble package](https://packages.ubuntu.com/noble/cppcheck).
+
+## Implementation validation
+
+The only production analyzer change is the shared model argument in each
+existing path. The configured-driver suite passes 20 tests, including model
+schema/declaration checks, invalid/private/uninstalled-name negatives, conditional-list consumption, header
+and model hook routing, real Make execution, all command variants and unchanged
+build databases. An impact-planner regression confirms cfg-only, driver-only
+and control-only changes each enable `c_core`; the existing `scripts/ci/**`
+full-routing policy needs no configuration change. The existing real-tool suite passes 10 tests with Cppcheck
+2.21.1: listed-only functions pass; unlisted private functions remain diagnosed
+in direct and build-directory modes; listed bodies retain uninitialized-read
+failures; missing/malformed files fail; the static-name collision limitation is
+explicitly measured. Other existing pthread, constructor and branch-budget
+controls remain present. Tests are CPU-only analyzer controls, not a fresh
+native build, whole-tree lint, hosted CI or backend-runtime acceptance.
+
+The required Pre-Commit job runs the lightweight declaration/schema/driver
+suite. Actual Cppcheck controls remain in the existing Cppcheck job after its
+tool installation, so Pre-Commit does not acquire an undeclared analyzer
+installation prerequisite. Local and remote severity selections are unchanged.
+
+No native source, public header, callback, feature calculation, Netflix golden
+assertion, FFmpeg patch or lint baseline changes. The accompanying CI guide's
+FFmpeg overview removes a stale Vulkan leg after checking the actual workflow:
+its ordinary matrix is Linux GCC/macOS Clang with a separate SYCL build leg.
+ADR-1246's alternatives table supplies the decision matrix; the script invariant,
+rebase note, changelog fragment and [verification commands in the CI guide](../development/ci.md#local-lint-build-profile-and-receipts) complete the deliverables.

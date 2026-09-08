@@ -18,3 +18,19 @@ assertions. Their individual `EnumCastOutOfRange` markers follow ADR-1080's
 invalid-enum-test invariant; do not replace them with valid values, opaque data
 construction, or a file-wide suppression. See the
 [tensor test cleanup digest](../../../docs/research/tensor-io-test-cleanup-2026-09-08.md).
+
+## ORT/session test fixtures (Research-2052)
+
+`test_ort_internals.c` keeps its original 48-case table and read-only inference
+inputs/shapes. `test_dnn_session_api.c` keeps all 35 original registrations in
+order; its private driver groups propagate the first failure without counting
+themselves as cases. Original assertions, negative dimensions, fixture values,
+API calls and ownership remain unchanged. The additional POSIX copy-error case
+must fail with the old helper: stop after a short read and inspect `ferror`
+before reporting a fixture copy as successful. Also check destination `fclose`:
+a buffered write may fail only on final flush. Keep the child-only close-error
+case first, before any ORT initialization or threads; only the child changes
+`RLIMIT_FSIZE`/`SIGXFSZ`, and setup failure is distinct from an incorrect copy
+result. The read-error case remains last. Keep the measured zero warning
+entries and existing ADR-1138 C `NULL` brackets. See
+[Research-2052](../../../docs/research/2052-dnn-tests-native-lint.md).

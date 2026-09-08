@@ -41,9 +41,9 @@
  * the C spelling of the surface it exercises. ADR-1138. */
 
 /* Helper: locate the psnr extractor or return a test-fail string. */
-static VmafFeatureExtractor *psnr_fex_or_fail(char **fail_out)
+static const VmafFeatureExtractor *psnr_fex_or_fail(char **fail_out)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr");
     if (!fex)
         *fail_out = (char *)"psnr extractor missing";
     return fex;
@@ -82,7 +82,7 @@ static int alloc_grey(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned b
 static char *test_psnr_init_yuv400p_disables_chroma(void)
 {
     char *fail = NULL;
-    VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
+    const VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
     if (fail)
         return fail;
 
@@ -101,7 +101,7 @@ static char *test_psnr_init_yuv400p_disables_chroma(void)
 static char *test_psnr_init_yuv444p_no_chroma_subsample(void)
 {
     char *fail = NULL;
-    VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
+    const VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
     if (fail)
         return fail;
 
@@ -133,7 +133,7 @@ static char *test_psnr_init_yuv444p_no_chroma_subsample(void)
 static char *test_psnr_init_yuv422p_horizontal_only_subsample(void)
 {
     char *fail = NULL;
-    VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
+    const VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
     if (fail)
         return fail;
 
@@ -159,23 +159,33 @@ static char *test_psnr_init_yuv422p_horizontal_only_subsample(void)
 /* extract() HBD path (10 / 12 bit)                                  */
 /* ----------------------------------------------------------------- */
 
-static char *run_extract_hbd_identical(unsigned bpc)
+static char *init_extract_hbd_identical(VmafFeatureExtractorContext **ctx,
+                                        VmafFeatureCollector **fc, unsigned bpc)
 {
     char *fail = NULL;
-    VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
+    const VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
     if (fail)
         return fail;
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
     mu_assert("psnr context_create", err == 0);
 
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, bpc, 16u, 16u);
+    err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, bpc, 16u, 16u);
     mu_assert("psnr init hbd", err == 0);
 
-    VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
+    err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
+    return NULL;
+}
+
+static char *run_extract_hbd_identical(unsigned bpc)
+{
+    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureCollector *fc = NULL;
+    char *setup_error = init_extract_hbd_identical(&ctx, &fc, bpc);
+    if (setup_error)
+        return setup_error;
+    int err;
 
     VmafPicture ref;
     VmafPicture dist;
@@ -216,10 +226,11 @@ static char *test_psnr_extract_hbd_12bit(void)
 /* flush() with enable_apsnr=true                                    */
 /* ----------------------------------------------------------------- */
 
-static char *test_psnr_flush_apsnr_enabled(void)
+static char *init_psnr_flush_apsnr_enabled(VmafFeatureExtractorContext **ctx,
+                                           VmafFeatureCollector **fc)
 {
     char *fail = NULL;
-    VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
+    const VmafFeatureExtractor *fex = psnr_fex_or_fail(&fail);
     if (fail)
         return fail;
 
@@ -227,16 +238,25 @@ static char *test_psnr_flush_apsnr_enabled(void)
     int err = vmaf_dictionary_set(&opts, "enable_apsnr", "true", 0);
     mu_assert("set enable_apsnr", err == 0);
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
+    err = vmaf_feature_extractor_context_create(ctx, fex, opts);
     mu_assert("psnr context_create with apsnr", err == 0);
 
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, 16u, 16u);
+    err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, 16u, 16u);
     mu_assert("psnr init", err == 0);
 
-    VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
+    err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
+    return NULL;
+}
+
+static char *test_psnr_flush_apsnr_enabled(void)
+{
+    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureCollector *fc = NULL;
+    char *setup_error = init_psnr_flush_apsnr_enabled(&ctx, &fc);
+    if (setup_error)
+        return setup_error;
+    int err;
 
     /* Run a single frame so apsnr.n_pixels[*] > 0 — otherwise log10(0) in
      * the flush path would emit NaN/inf.  Score the collector once with

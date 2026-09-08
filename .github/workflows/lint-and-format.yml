@@ -624,6 +624,7 @@ jobs:
             --check-level=exhaustive \
             --inline-suppr \
             --library=posix \
+            --library=scripts/ci/cppcheck-public-entrypoints.cfg \
             --suppressions-list=.cppcheck-suppressions.txt \
             --project=build/compile_commands.json \
             --error-exitcode=1 \

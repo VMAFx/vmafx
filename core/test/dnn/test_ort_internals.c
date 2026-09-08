@@ -388,9 +388,9 @@ static char *test_ort_infer_null_guards(void)
 {
     if (!vmaf_dnn_available())
         return NULL;
-    float input[16] = {0.0f};
+    const float input[16] = {0.0f};
     float output[16] = {0.0f};
-    int64_t shape[4] = {1, 1, 4, 4};
+    const int64_t shape[4] = {1, 1, 4, 4};
     size_t written = 0;
 
     mu_assert("infer NULL sess",
@@ -416,9 +416,9 @@ static char *test_ort_infer_guards_and_smoke_paths(void)
 {
     if (!vmaf_dnn_available())
         return NULL;
-    float input[16] = {0.0f};
+    const float input[16] = {0.0f};
     float output[16] = {0.0f};
-    int64_t shape[4] = {1, 1, 4, 4};
+    const int64_t shape[4] = {1, 1, 4, 4};
     size_t written = 0;
 
     VmafOrtSession *sess = NULL;
@@ -450,7 +450,7 @@ static char *test_ort_infer_rejects_bad_shape(void)
 {
     if (!vmaf_dnn_available())
         return NULL;
-    float input[16] = {0.0f};
+    const float input[16] = {0.0f};
     float output[16] = {0.0f};
     size_t written = 0;
     VmafOrtSession *sess = NULL;
@@ -459,13 +459,13 @@ static char *test_ort_infer_rejects_bad_shape(void)
         return NULL;
     mu_assert("infer-bad-shape: open succeeds", rc == 0);
 
-    int64_t neg_shape[4] = {1, 1, -4, 4};
+    const int64_t neg_shape[4] = {1, 1, -4, 4};
     mu_assert("infer rejects negative dim",
               vmaf_ort_infer(sess, input, neg_shape, 4u, output, 16u, &written) == -EINVAL);
-    int64_t zero_shape[4] = {1, 1, 0, 4};
+    const int64_t zero_shape[4] = {1, 1, 0, 4};
     mu_assert("infer rejects zero dim",
               vmaf_ort_infer(sess, input, zero_shape, 4u, output, 16u, &written) == -EINVAL);
-    int64_t any_shape[4] = {1, 1, 4, 4};
+    const int64_t any_shape[4] = {1, 1, 4, 4};
     mu_assert("infer rejects zero rank",
               vmaf_ort_infer(sess, input, any_shape, 0u, output, 16u, &written) == -EINVAL);
 
@@ -479,7 +479,7 @@ static char *test_ort_infer_fp16_input_output_path(void)
         return NULL;
     float input[4] = {0.0f};
     float output[4] = {0.0f};
-    int64_t shape[4] = {1, 1, 2, 2};
+    const int64_t shape[4] = {1, 1, 2, 2};
     size_t written = 0;
     VmafOrtSession *sess = NULL;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CPU, .fp16_io = true};

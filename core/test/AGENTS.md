@@ -404,3 +404,23 @@ stages, not additional registered tests. Descriptor views are const because
 the context-creation API already accepts read-only descriptors. Preserve the
 ADR-1138 C `NULL` bracket and the measured zero warning baseline. See
 [Research-2050](../../docs/research/2050-speed-test-native-lint.md).
+
+## IQA/motion observation fixtures (Research-2053)
+
+`test_iqa_convolve_coverage.c` keeps seven input-only image arrays const;
+`iqa_img_filter` inputs and kernel storage remain writable. Its boundary-test
+group preserves the first five cases, propagates failure immediately and does
+not increment the test count itself. The five edge-16 motion source arrays
+are read-only; all expected sums and mirror fixtures remain unchanged. See
+[Research-2053](../../docs/research/2053-observation-fixture-const-2026-09-08.md).
+
+## Metric coverage setup stages (Research-2054)
+
+`test_integer_motion_v2_coverage.c`, `test_ssim_coverage.c` and
+`test_integer_psnr_coverage.c` retain all nineteen registrations and their order.
+Their private setup helpers preserve descriptor lookup, option insertion,
+context creation/init, collector creation and every assertion in order; callers
+immediately propagate the first failure. Keep the existing ownership and
+teardown behavior, const descriptor views and C NULL brackets. Helpers are not
+new registered cases. See
+[Research-2054](../../docs/research/2054-metric-coverage-const-2026-09-08.md).

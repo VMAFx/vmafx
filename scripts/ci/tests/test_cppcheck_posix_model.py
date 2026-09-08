@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import cast
 
 ROOT = Path(__file__).resolve().parents[3]
+PUBLIC_MODEL = ROOT / "scripts/ci/cppcheck-public-entrypoints.cfg"
 COMMAND = cast(
     Callable[[str, Path, Path], list[str]],
     runpy.run_path(str(ROOT / "scripts/ci/lint-configured.py"))["cppcheck_arguments"],
@@ -45,7 +46,12 @@ class CppcheckPosixModelTests(unittest.TestCase):
         self.directory = Path(self.temp.name)
 
     def analyze(
-        self, text: str, *, language: str = "c++", extra: tuple[str, ...] = ()
+        self,
+        text: str,
+        *,
+        language: str = "c++",
+        extra: tuple[str, ...] = (),
+        public_model: Path | None = PUBLIC_MODEL,
     ) -> tuple[int, list[tuple[str, str]], str]:
         """Use production argv and a real one-TU database, without Git or a build."""
         source = self.directory / ("control.c" if language == "c" else "control.cpp")
@@ -71,8 +77,13 @@ class CppcheckPosixModelTests(unittest.TestCase):
             encoding="utf-8",
         )
         before = database.read_bytes()
+        command = COMMAND(self.binary, ROOT, database)
+        if public_model != PUBLIC_MODEL:
+            command.remove(f"--library={PUBLIC_MODEL}")
+            if public_model is not None:
+                command.append(f"--library={public_model}")
         result = subprocess.run(  # noqa: S603 -- resolved tool, fixture argv, no shell
-            [*COMMAND(self.binary, ROOT, database), "--template={severity}:{id}", *extra],
+            [*command, "--template={severity}:{id}:{message}", *extra],
             cwd=self.directory,
             capture_output=True,
             text=True,
@@ -80,11 +91,65 @@ class CppcheckPosixModelTests(unittest.TestCase):
         )
         self.assertEqual(database.read_bytes(), before)
         diagnostics = re.findall(
-            r"^(error|warning|style|performance|portability|information):([A-Za-z0-9_]+)$",
+            r"^(error|warning|style|performance|portability|information):([A-Za-z0-9_]+):",
             result.stderr,
             re.MULTILINE,
         )
         return result.returncode, diagnostics, result.stdout + result.stderr
+
+    def test_public_roots_preserve_unlisted_unused_functions_in_both_modes(self) -> None:
+        root = "int vmaf_hip_available(void) { return 0; }\n"
+        private = "static int private_dead(void) { return 2; }\n"
+        for mode in ("direct", "whole-program"):
+            with self.subTest(mode=mode):
+                extra: tuple[str, ...] = ()
+                if mode == "whole-program":
+                    cache = self.directory / mode
+                    cache.mkdir()
+                    extra = (f"--cppcheck-build-dir={cache}", "-j2")
+                code, diagnostics, output = self.analyze(
+                    root, language="c", extra=extra, public_model=None
+                )
+                self.assertNotEqual(code, 0, output)
+                self.assertIn(("style", "unusedFunction"), diagnostics, output)
+                self.assertIn("'vmaf_hip_available' is never used", output)
+                code, diagnostics, output = self.analyze(root, language="c", extra=extra)
+                self.assertEqual(code, 0, output)
+                self.assertNotIn(("style", "unusedFunction"), diagnostics, output)
+                code, diagnostics, output = self.analyze(root + private, language="c", extra=extra)
+                self.assertNotEqual(code, 0, output)
+                self.assertIn("'private_dead' is never used", output)
+                self.assertNotIn("'vmaf_hip_available' is never used", output)
+
+    def test_body_defect_inside_listed_public_function_still_fails(self) -> None:
+        code, diagnostics, output = self.analyze(
+            "int vmaf_hip_available(void) { int value; return value; }\n", language="c"
+        )
+        self.assertNotEqual(code, 0, output)
+        self.assertIn(("error", "uninitvar"), diagnostics, output)
+        self.assertNotIn(("style", "unusedFunction"), diagnostics, output)
+
+    def test_public_model_name_only_static_collision_limit(self) -> None:
+        # ADR-1246: Cppcheck does not use linkage or scope in this comparison.
+        source = "static int vmaf_hip_available(void) { return 0; }\n"
+        code, diagnostics, output = self.analyze(source, language="c", public_model=None)
+        self.assertNotEqual(code, 0, output)
+        self.assertIn(("style", "unusedFunction"), diagnostics, output)
+        code, diagnostics, output = self.analyze(source, language="c")
+        self.assertEqual(code, 0, output)
+        self.assertNotIn(("style", "unusedFunction"), diagnostics, output)
+
+    def test_missing_or_invalid_public_model_fails(self) -> None:
+        model = self.directory / "public.cfg"
+        for contents in (None, '<def format="2"><entrypoint/></def>', "not XML"):
+            with self.subTest(contents=contents):
+                if contents is not None:
+                    model.write_text(contents, encoding="utf-8")
+                code, _diagnostics, output = self.analyze(
+                    "int main(void) { return 0; }\n", language="c", public_model=model
+                )
+                self.assertNotEqual(code, 0, output)
+                self.assertIn("Failed to load library configuration file", output)
 
     def test_real_shared_headers_are_plain_c_aggregates_in_c_and_cpp(self) -> None:
         for language in ("c", "c++"):

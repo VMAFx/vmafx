@@ -1,6 +1,38 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/observation-fixture-const — IQA/motion coverage inputs (2026-09-08)
+
+Preserve the twelve const fixture inputs, writable IQA filter/kernel storage
+and exact assertion/API-call order. `run_boundary_tests` groups the first five
+IQA cases without adding a case count; its caller propagates the first failure.
+Production headers and numerical bodies are untouched. No public C API or
+FFmpeg rebase impact; see
+[Research-2053](research/2053-observation-fixture-const-2026-09-08.md).
+
+## fix/dnn-tests-native-lint-20260908 — ORT/session test inputs and copying
+
+Keep the 16 read-only input/shape array qualifiers in the ORT and session API
+tests. All original 83 cases, 208 assertions and API call order remain intact;
+the session driver's private groups must return the first failure without
+counting helper groups. Keep the added POSIX read-error regression: a short
+`fread` must stop the copy loop, and `ferror` must make `copy_file` fail.
+This fixes test-fixture copying only; production APIs, model bytes and Netflix
+golden assertions are untouched. Preserve the two zero warning entries. See
+[Research-2052](research/2052-dnn-tests-native-lint.md). The copier must also
+check destination `fclose` after closing both streams. Keep its close-error
+regression before any ORT initialization, with limits/signals changed only in
+the child and a distinct setup-failure exit; retain the read-error case last.
+
+## fix/metric-coverage-const — preserve metric coverage setup (2026-09-08)
+
+Keep the motion-v2, SSIM and PSNR coverage tests' const descriptor views and
+thirteen private setup helpers. Each caller immediately returns the original
+failure before its unchanged picture/extract/score/teardown path. Preserve
+all 133 assertions, 183 API calls, nineteen ordered registrations and literals.
+No production, public-header, test-registration or FFmpeg rebase impact. See
+[Research-2054](research/2054-metric-coverage-const-2026-09-08.md).
+
 ## fix/fex-context-vector-20260908 — option-aware context identity
 
 Keep the shared provided-feature base comparison from ADR-0385, followed by
@@ -50059,3 +50091,17 @@ copy interposer. No public signatures, feature calculations, FFmpeg filter
 contract or Netflix assertions change. Six exact retained DNN/metadata exports
 and the weak glibc ABI marker remain documented in
 [Research-2048](research/2048-model-registration-ownership-2026-09-08.md).
+
+## Cppcheck public entrypoint model (2026-09-08)
+
+Preserve the one `scripts/ci/cppcheck-public-entrypoints.cfg` input in local
+`lint-configured.py` and the Cppcheck workflow. ADR-1246 permits only reviewed
+public roots with `VMAF_EXPORT` declarations in installed headers; private or
+vendored helper retention is a separate decision. Keep the configured-driver
+hook's cfg/header/workflow/control triggers and the required real-tool
+missing-model, unused-private and body-defect negatives. Names are scope- and
+linkage-blind in Cppcheck; do not reuse public names for private/static code.
+Both existing severity selections, POSIX model, exhaustive depth, command
+variants and failure handling remain unchanged. No native/public API, FFmpeg
+patch, numerical assertion or baseline change. See
+[Research-1246](research/1246-cppcheck-public-entrypoints.md).

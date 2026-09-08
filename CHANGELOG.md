@@ -13893,6 +13893,9 @@ retired scaffold / TBD wording.
   build && meson test -C build test_metal_smoke`.
 
 
+- Keep motion-v2, SSIM and PSNR coverage descriptors read-only and bound their setup helpers while preserving all nineteen cases, assertions and failure behavior.
+
+
 - **docs(nav):** Restructure mkdocs ADR section into per-hundred collapsible
   buckets (`0000-0099 — Foundation, build, golden gate` …
   `0700-0799 — VMAFx rebrand, Go/Rust/C++23, k8s`) plus an auto-generated
@@ -14017,6 +14020,11 @@ Total NOLINT count before and after: 180 (unchanged).
   touched by 19 sibling drafts) — those sites already carry per-block
   prose justification and the cite-form sweep will follow once the
   merge-train upstream settles. (ADR-0141 §2 / ADR-0278)
+
+
+- Keep IQA boundary/filter and integer-motion edge coverage lint-clean with
+  read-only inputs and a bounded test runner, preserving all existing cases
+  and assertions.
 
 
 - Build the `-oneapi2025` production container from Intel's oneAPI Base Toolkit
@@ -21077,6 +21085,12 @@ for edge pixels, with AVX-512 SIMD for interior pixels.
   categories remain unchanged.
 
 
+- Model 16 verified public C entrypoints in the shared local/CI Cppcheck
+  configuration so missing external callers do not make disabled-backend APIs
+  look unused. Keep private-function and body-defect checks, with declaration
+  validation and real-tool failure controls (ADR-1246).
+
+
 - `core/src/feature/vif.c`: corrected 10 `cppcheck-suppress
   invalidPointerCast` comments from bracket syntax
   `[MISRA-C:2012-11.3/EXP36-C: ...]` to semicolon-delimited syntax
@@ -21812,6 +21826,12 @@ behaviour instead of the retired CPU/CUDA-only status.
   `test_cli.sh` `--no-reference` smoke now uses
   `nr_metric_v1.onnx` end-to-end (replacing the prior
   load-fails-for-unrelated-reasons `dists_sq.onnx` placeholder).
+
+
+Reject read and destination close/flush errors in the DNN session-test fixture
+copier, with separate POSIX regressions. Preserve all original ORT/session test assertions and inputs while
+making read-only arrays const and grouping the session driver for strict lint.
+The measured CPU warning baseline tightens by two warnings.
 
 
 - **Docker FFMPEG_TAG pin drift fixed** — `Dockerfile` and `Dockerfile.ffmpeg` both
