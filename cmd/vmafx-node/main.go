@@ -63,8 +63,8 @@ import (
 	"go.uber.org/fx"
 	googlegrpc "google.golang.org/grpc"
 
-	"github.com/golusoris/golusoris/clock"
-	"github.com/golusoris/golusoris/config"
+	"github.com/golusoris/golusoris/core/clock"
+	"github.com/golusoris/golusoris/core/config"
 	grpcmod "github.com/golusoris/golusoris/grpc"
 	"github.com/golusoris/golusoris/k8s/health"
 	"github.com/golusoris/golusoris/observability/statuspage"

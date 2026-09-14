@@ -26,7 +26,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/golusoris/golusoris"
-	"github.com/golusoris/golusoris/config"
+	"github.com/golusoris/golusoris/core/config"
 	"github.com/golusoris/golusoris/otel"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"

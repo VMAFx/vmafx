@@ -17,7 +17,7 @@ package main
 import (
 	"testing"
 
-	"github.com/golusoris/golusoris/config"
+	"github.com/golusoris/golusoris/core/config"
 )
 
 // TestServerEnvOptionsContract pins the VMAFX_ prefix, delimiter, and the exact
