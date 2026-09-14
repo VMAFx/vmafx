@@ -19,7 +19,7 @@ package main
 import (
 	"testing"
 
-	"github.com/golusoris/golusoris/config"
+	"github.com/golusoris/golusoris/core/config"
 )
 
 // newTestConfig builds a golusoris config with the VMAFX_ prefix and "."

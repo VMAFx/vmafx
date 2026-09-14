@@ -68,7 +68,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/fx"
 
-	"github.com/golusoris/golusoris/config"
+	"github.com/golusoris/golusoris/core/config"
 
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
 )
