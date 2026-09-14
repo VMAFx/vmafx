@@ -36,7 +36,7 @@ import (
 
 	"go.uber.org/fx"
 
-	"github.com/golusoris/golusoris/config"
+	"github.com/golusoris/golusoris/core/config"
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-node/probe"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"

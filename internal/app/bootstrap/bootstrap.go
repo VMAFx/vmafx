@@ -23,7 +23,7 @@ import (
 	"strings"
 
 	"github.com/golusoris/golusoris"
-	"github.com/golusoris/golusoris/config"
+	"github.com/golusoris/golusoris/core/config"
 	"github.com/golusoris/golusoris/otel"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/fx"

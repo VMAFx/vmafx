@@ -81,7 +81,7 @@ import (
 	googlegrpc "google.golang.org/grpc"
 
 	"github.com/golusoris/golusoris"
-	"github.com/golusoris/golusoris/config"
+	"github.com/golusoris/golusoris/core/config"
 	grpcmod "github.com/golusoris/golusoris/grpc"
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth"

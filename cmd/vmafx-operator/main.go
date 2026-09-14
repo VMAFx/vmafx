@@ -48,7 +48,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/golusoris/golusoris/config"
+	"github.com/golusoris/golusoris/core/config"
 	"github.com/golusoris/golusoris/k8s/operator"
 	"go.uber.org/fx"
 	"sigs.k8s.io/controller-runtime/pkg/manager"

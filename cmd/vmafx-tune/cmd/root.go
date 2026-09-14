@@ -11,7 +11,7 @@ import (
 	"errors"
 	"os"
 
-	"github.com/golusoris/golusoris/clikit"
+	"github.com/golusoris/golusoris/core/clikit"
 
 	"github.com/VMAFx/vmafx/pkg/report"
 )
