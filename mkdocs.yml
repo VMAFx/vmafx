@@ -1331,14 +1331,32 @@ nav:
         - "ADR-1204: adm-cm-edge-clamp-gpu-twins": adr/1204-adm-cm-edge-clamp-gpu-twins.md
         - "ADR-1205: ssimulacra2-fma-unification-scalar-and-gpu": adr/1205-ssimulacra2-fma-unification-scalar-and-gpu.md
         - "ADR-1206: gpu-parity-large-fixture-variants": adr/1206-gpu-parity-large-fixture-variants.md
+        - "ADR-1207: feature-isa-invariance-gate": adr/1207-feature-isa-invariance-gate.md
+        - "ADR-1208: ssimulacra2-edge-diff-double-subtract": adr/1208-ssimulacra2-edge-diff-double-subtract.md
+        - "ADR-1209: cli-gpumask-negative-contract": adr/1209-cli-gpumask-negative-contract.md
+        - "ADR-1210: sycl-integer-adm-cm-near-edge-mirror": adr/1210-sycl-integer-adm-cm-near-edge-mirror.md
+        - "ADR-1211: hip-integer-adm-picture-staging": adr/1211-hip-integer-adm-picture-staging.md
+        - "ADR-1212: gpu-moment-bit-depth-normalisation": adr/1212-gpu-moment-bit-depth-normalisation.md
+        - "ADR-1213: hip-ciede-chroma-ceil-dimensions": adr/1213-hip-ciede-chroma-ceil-dimensions.md
+        - "ADR-1215: cuda-psnr-16bpc-plane-argument": adr/1215-cuda-psnr-16bpc-plane-argument.md
         - "ADR-1216: gpu-motion3-fps-weight-applied-once": adr/1216-gpu-motion3-fps-weight-applied-once.md
         - "ADR-1217: gpu-float-vif-options-reach-kernel": adr/1217-gpu-float-vif-options-reach-kernel.md
         - "ADR-1218: gpu-speed-singular-device-solution": adr/1218-gpu-speed-singular-device-solution.md
+        - "ADR-1219: gpu-cambi-tvi-shared-bisection": adr/1219-gpu-cambi-tvi-shared-bisection.md
+        - "ADR-1220: gpu-float-adm-options-reach-kernels": adr/1220-gpu-float-adm-options-reach-kernels.md
+        - "ADR-1221: gpu-ms-ssim-db-ceiling": adr/1221-gpu-ms-ssim-db-ceiling.md
+        - "ADR-1222: code-scanning-alert-triage-and-scope": adr/1222-code-scanning-alert-triage-and-scope.md
         - "ADR-1223: cuda-ampere-architecture-floor": adr/1223-cuda-ampere-architecture-floor.md
+        - "ADR-1224: cuda-tile-not-adopted": adr/1224-cuda-tile-not-adopted.md
         - "ADR-1225: rocm-10-therock-migration": adr/1225-rocm-10-therock-migration.md
+        - "ADR-1226: cuda-adm-cm-aim-grid-occupancy": adr/1226-cuda-adm-cm-aim-grid-occupancy.md
         - "ADR-1227: short-workflow-display-names": adr/1227-short-workflow-display-names.md
+        - "ADR-1228: upstream-ab-perf-milestone": adr/1228-upstream-ab-perf-milestone.md
         - "ADR-1229: mcp-go-runtime": adr/1229-mcp-go-runtime.md
+        - "ADR-1230: modern-gcc-toolchain": adr/1230-modern-gcc-toolchain.md
         - "ADR-1231: base-image-single-source": adr/1231-base-image-single-source.md
+        - "ADR-1233: github-native-release-notes": adr/1233-github-native-release-notes.md
+        - "ADR-1234: local-preflight-gate": adr/1234-local-preflight-gate.md
         - "ADR-1235: pkgconfig-advertises-abi-version": adr/1235-pkgconfig-advertises-abi-version.md
         - "ADR-1236: version-single-source-tree": adr/1236-version-single-source-tree.md
         - "ADR-1237: perf-pass-1245": adr/1237-perf-pass-1245.md
@@ -1355,6 +1373,7 @@ nav:
         - "ADR-1246: cppcheck-public-entrypoints": adr/1246-cppcheck-public-entrypoints.md
         - "ADR-1247: scorecard-exact-head-gates": adr/1247-scorecard-exact-head-gates.md
         - "ADR-1248: repository-security-enforcement": adr/1248-repository-security-enforcement.md
+        - "ADR-1251: renovate-draft-automerge-deadlock": adr/1251-renovate-draft-automerge-deadlock.md
         - "ADR-1252: solo-maintainer-declared-bypass": adr/1252-solo-maintainer-declared-bypass.md
       - "By tag":
         - Overview: adr/by-tag/index.md
@@ -1408,9 +1427,11 @@ nav:
         - "batch": adr/by-tag/batch.md
         - "bench": adr/by-tag/bench.md
         - "benchmark": adr/by-tag/benchmark.md
+        - "benchmarking": adr/by-tag/benchmarking.md
         - "benchmarks": adr/by-tag/benchmarks.md
         - "bindings": adr/by-tag/bindings.md
         - "bisect": adr/by-tag/bisect.md
+        - "bit-depth": adr/by-tag/bit-depth.md
         - "bit-exact": adr/by-tag/bit-exact.md
         - "bit-exactness": adr/by-tag/bit-exactness.md
         - "boundary": adr/by-tag/boundary.md
@@ -1913,6 +1934,7 @@ nav:
         - "ubsan": adr/by-tag/ubsan.md
         - "ugc": adr/by-tag/ugc.md
         - "upstream-blocked": adr/by-tag/upstream-blocked.md
+        - "upstream-divergence": adr/by-tag/upstream-divergence.md
         - "upstream-mirror": adr/by-tag/upstream-mirror.md
         - "upstream-port": adr/by-tag/upstream-port.md
         - "upstream-sync": adr/by-tag/upstream-sync.md

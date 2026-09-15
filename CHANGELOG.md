@@ -5072,11 +5072,6 @@ and `docs/api/perceptual-weight.md`.
   the same one-line `dict.cpp` fix as #1186.
 
 
-**Complete Tiny-AI model cards and int8 fallback test coverage** (ADR-0042, ADR-1032, #1242)
-
-- Added missing model cards for `smoke_multi_output_v0` and `smoke_v0_symbolic_batch` in `docs/ai/models/` and updated existing model cards (`vmaf_tiny_v1`, `vmaf_tiny_v1_medium`, `fr_regressor_v2`, `fr_regressor_v3`, `smoke_v0`, `smoke_fp16_v0`, `u2netp_mirror_card`) to satisfy the ADR-0042 5-point documentation standard (description, output range/interpretation, runnable example, provenance/facts, and known limitations).
-- Added C unit test coverage in `core/test/dnn/test_dnn_session_api.c` and `core/test/dnn/test_vmaf_use_tiny_model.c` for the int8 session creation failure retry fallback to fp32 baseline, closing the CI coverage gap on `core/src/dnn/dnn_api.c`.
-- Fixed test isolation in `ai/tests/test_measure_quant_drop_unit.py` to write test artifacts into temporary pytest directories rather than repo root paths.
 - **Upstream A/B performance milestone** (`testdata/bench_upstream_ab.py`,
   ADR-1228). Every other benchmark in the tree compares the fork against itself;
   this one builds upstream Netflix/vmaf at a pinned tag and runs both binaries
@@ -5103,6 +5098,13 @@ and `docs/api/perceptual-weight.md`.
   exposes; only the final prediction moves, by up to `8e-6` per frame in both
   directions. It sits under the Netflix golden gate's `places=4`, which is why it
   went unnoticed.
+
+
+**Complete Tiny-AI model cards and int8 fallback test coverage** (ADR-0042, ADR-1032, #1242)
+
+- Added missing model cards for `smoke_multi_output_v0` and `smoke_v0_symbolic_batch` in `docs/ai/models/` and updated existing model cards (`vmaf_tiny_v1`, `vmaf_tiny_v1_medium`, `fr_regressor_v2`, `fr_regressor_v3`, `smoke_v0`, `smoke_fp16_v0`, `u2netp_mirror_card`) to satisfy the ADR-0042 5-point documentation standard (description, output range/interpretation, runnable example, provenance/facts, and known limitations).
+- Added C unit test coverage in `core/test/dnn/test_dnn_session_api.c` and `core/test/dnn/test_vmaf_use_tiny_model.c` for the int8 session creation failure retry fallback to fp32 baseline, closing the CI coverage gap on `core/src/dnn/dnn_api.c`.
+- Fixed test isolation in `ai/tests/test_measure_quant_drop_unit.py` to write test artifacts into temporary pytest directories rather than repo root paths.
 
 
 - **Research digest** — int8 static PTQ / QAT readiness smoke for the 1.0.0 retrain
@@ -11040,26 +11042,6 @@ core internal headers (`framesync.h`, `thread_pool.h`, `picture_pool.h`,
   vmafx-mcp`; `dev/Containerfile` no longer runs `pip install -e` for the Python
   package. The Python tree is retained for one release as a reference
   implementation and marked deprecated — a follow-up removes it.
-- **refactor(lint):** Every `NOLINT` directive in the CPU lane
-  (`core/src`, `core/tools`, `core/test`, excluding the CUDA / SYCL / HIP /
-  Metal backend trees) now carries an inline `ADR-NNNN` citation in the
-  ADR-0278 format required by ADR-0141 §2. `scripts/ci/tidy-ratchet.py`'s
-  citation rule counts **95 → 0** uncited markers across those directories.
-  Cite-only: no function was split, no suppression was widened or removed,
-  and no numeric path changed. Two stale references in the SSIMULACRA2 host
-  XYB SIMD kernels named ADR-0242 (tiny-AI Netflix training corpus) where
-  they meant ADR-0252 (host XYB SIMD); both are corrected. Three prose-only
-  mentions of the word "NOLINT" (`core/src/log.cpp`,
-  `core/src/mcp/dispatcher.c`, `core/test/test_iqa_helpers.c`) that the
-  ratchet regex counted as bare markers are reworded to "suppression
-  justification". Four `NOLINTNEXTLINE(readability-function-size, …)`
-  directives in the PSNR-HVS and SSIMULACRA2 host SIMD kernels
-  (`core/src/feature/{x86,arm64}/`) keep their justification on one line: a
-  wrapped directive applies to the following comment rather than to the
-  function and silently un-suppresses the diagnostic.
-  `scripts/ci/tidy-baseline-cpu.json` is tightened to the measured
-  `total_nolint_uncited: 0`; its `warnings` map is untouched. (ADR-0141,
-  ADR-0278, ADR-1142)
 
 
 - **CI's gcc stops being the one toolchain component frozen at the distro's
@@ -11083,6 +11065,28 @@ core internal headers (`framesync.h`, `thread_pool.h`, `picture_pool.h`,
 - **Requires a CI-side baseline regeneration**: warning counts under gcc-15's
   headers do not equal gcc-14's, so `scripts/ci/tidy-baseline-cpu.json` must be
   rewritten from a CI run rather than a developer machine.
+
+
+- **refactor(lint):** Every `NOLINT` directive in the CPU lane
+  (`core/src`, `core/tools`, `core/test`, excluding the CUDA / SYCL / HIP /
+  Metal backend trees) now carries an inline `ADR-NNNN` citation in the
+  ADR-0278 format required by ADR-0141 §2. `scripts/ci/tidy-ratchet.py`'s
+  citation rule counts **95 → 0** uncited markers across those directories.
+  Cite-only: no function was split, no suppression was widened or removed,
+  and no numeric path changed. Two stale references in the SSIMULACRA2 host
+  XYB SIMD kernels named ADR-0242 (tiny-AI Netflix training corpus) where
+  they meant ADR-0252 (host XYB SIMD); both are corrected. Three prose-only
+  mentions of the word "NOLINT" (`core/src/log.cpp`,
+  `core/src/mcp/dispatcher.c`, `core/test/test_iqa_helpers.c`) that the
+  ratchet regex counted as bare markers are reworded to "suppression
+  justification". Four `NOLINTNEXTLINE(readability-function-size, …)`
+  directives in the PSNR-HVS and SSIMULACRA2 host SIMD kernels
+  (`core/src/feature/{x86,arm64}/`) keep their justification on one line: a
+  wrapped directive applies to the following comment rather than to the
+  function and silently un-suppresses the diagnostic.
+  `scripts/ci/tidy-baseline-cpu.json` is tightened to the measured
+  `total_nolint_uncited: 0`; its `warnings` map is untouched. (ADR-0141,
+  ADR-0278, ADR-1142)
 
 
 - **build(meson):** Remove the redundant per-target
@@ -19142,6 +19146,87 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   the top of every pipeline run. See ADR-1218.
 
 
+- CAMBI on the HIP backend returned **exactly 0.0** on banding content
+  that the CPU scores at 5.85. Three divergences, all now fixed: the
+  twin hand-rolled the TVI-threshold bisection over an inverted
+  predicate seeded from luma 0 instead of `luma_range.foot`, producing
+  `tvi_for_diff = [1026, 1025, 1024, 4]` against the CPU's
+  `[182, 309, 436, 563]` and collapsing the scored luma band from 564
+  entries to a handful; its `filter_mode` filtered output rows 0 and
+  height-1, which `cambi.c` leaves unfiltered; and its 7x7 mask box sum
+  clamped out-of-frame taps to the border pixel where the CPU's
+  summed-area table zero-pads them. HIP CAMBI is now bit-exact with the
+  CPU (`5.8461540042` on both). The Metal twin carried the first two and
+  gets the same fixes. **Any recorded HIP CAMBI score is invalid and
+  must be re-measured.**
+- The HIP and Metal CAMBI parity tests now use a 10-bit banding
+  gradient and refuse to run against a degenerate CPU score. Their
+  previous fixtures were 8-bit gradients stepping 32 code levels every
+  32 columns; CAMBI only counts neighbour differences of 1..4 at default
+  settings, so those fixtures scored 0.0 on the CPU too and the parity
+  assertion was `0 == 0`. See ADR-1219.
+
+
+- `adm_p_norm` now reaches the CUDA, SYCL, HIP and Metal `float_adm`
+  kernels. All four hardcoded the cube sum in the kernel and the `1/3`
+  root in the host pooling, applying the option to the AIM exponent
+  alone, so a non-default `apn` produced a hybrid quantity: a sum of
+  cubes raised to `1/p`, with `adm2` and every `adm_scaleN` sub-score
+  left at `p = 3`. Measured at `apn=2.0` against the `1e-4` gate:
+  `cpu = 0.43097075` vs `cuda = 0.45416959` on `adm2_apn_2`, a
+  `2.32e-02` drift. The kernels mirror the CPU's own `p == 3` fast path,
+  so the default path is unchanged.
+- `adm_bypass_cm` now reaches the CUDA and Metal `float_adm` kernels.
+  Both declared the option and stored it in their state struct, and
+  neither read it anywhere — the 3x3 contrast-masking threshold was
+  always subtracted, so `bcm=1` was silently ignored. SYCL and HIP do
+  not declare the option and reject it, which is unchanged.
+- Metal's `adm_skip_scale0` now excludes scale 0 from the pooled `adm2`
+  and `aim` scores as `adm.c` does (`num_scale = 0`,
+  `den_scale = 1e-10`). It used to zero only the reported
+  `adm_scale0` sub-score while still folding the full scale-0
+  numerator and denominator into the pooled score.
+- Each backend's `float_adm` parity test now carries a variant per
+  option it declares, reading the derived `adm2_apn_2` / `adm2_bcm_1`
+  keys. The previous tests ran with `NULL` options, where `p = 3` *is*
+  the hardcoded exponent and `bypass = 0` *is* the hardcoded behaviour.
+  See ADR-1220.
+
+
+- `clip_db` now caps the MS-SSIM dB output at the CPU's
+  geometry-derived `max_db` on the CUDA, SYCL and HIP twins. All three
+  read it as a clamp on the *linear* score instead — `[0, 1]` then
+  `-10*log10(1 - score)` with no ceiling — and none carried a `max_db`
+  field. Two consequences: scoring an identical reference/distorted
+  pair (MS-SSIM = 1.0) returned **+Inf** where the CPU returns the
+  finite `max_db`, and every high-similarity pair returned an unbounded
+  dB value, so `clip_db` did not clip. The twins now derive
+  `max_db = ceil(10*log10(peak*peak / (0.5/(w*h))))` in `init()` and
+  mirror `float_ms_ssim.c::convert_to_db()`, including its
+  `score >= 1.0` short-circuit. Re-measure any GPU MS-SSIM dB score
+  taken with `clip_db` set. The parity tests could not see this: they
+  ran with `NULL` options, and with `enable_db` off neither path
+  converts to dB at all. Each backend now has a variant that sets both
+  options and feeds an identical pair. See ADR-1221.
+
+
+- CodeQL's `paths-ignore` entries now match at any depth (`**/build`,
+  `**/build-*`, `**/builddir`). A bare `build` matched only a top-level
+  directory, so meson's generated probe files under `core/build/` were
+  being analysed and raising alerts. The config also records inline that
+  `paths` / `paths-ignore` are **inert for the built C/C++ analysis** —
+  every translation unit the CodeQL build compiles is extracted
+  regardless — which is why `core/test` is listed and still produces
+  alerts.
+- Removed a duplicated `_VALID_*` constant block from the MCP server.
+  Five names (`_VALID_TINY_DEVICES`, `_VALID_TINY_RESIZES`,
+  `_VALID_PIXFMTS`, `_VALID_BITDEPTHS`, `_VALID_BACKENDS`) were defined
+  twice with identical values, so editing the first definition was a
+  silent no-op; `_VALID_AOM_CTCS` / `_VALID_NFLX_CTCS` were dead
+  near-duplicates of the singular `_VALID_AOM_CTC` / `_VALID_NFLX_CTC`
+  the validator actually reads. See ADR-1222.
+
+
 - `docs/backends/cuda/overview.md` contradicted itself about the default
   model's ADM: one bullet said `integer_adm_cuda` lacks `adm_csf_mode: 2`
   and that libvmaf falls back to the CPU extractor, while a later section
@@ -19198,79 +19283,6 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   `enable_hipcc=true` (`HAVE_HIPCC`) while falling back to `-ENOSYS` via `init()`
   or `submit()` without it, and all Metal extractors are fully implemented with
   `MTLComputePipelineState` dispatch.
-- CAMBI on the HIP backend returned **exactly 0.0** on banding content
-  that the CPU scores at 5.85. Three divergences, all now fixed: the
-  twin hand-rolled the TVI-threshold bisection over an inverted
-  predicate seeded from luma 0 instead of `luma_range.foot`, producing
-  `tvi_for_diff = [1026, 1025, 1024, 4]` against the CPU's
-  `[182, 309, 436, 563]` and collapsing the scored luma band from 564
-  entries to a handful; its `filter_mode` filtered output rows 0 and
-  height-1, which `cambi.c` leaves unfiltered; and its 7x7 mask box sum
-  clamped out-of-frame taps to the border pixel where the CPU's
-  summed-area table zero-pads them. HIP CAMBI is now bit-exact with the
-  CPU (`5.8461540042` on both). The Metal twin carried the first two and
-  gets the same fixes. **Any recorded HIP CAMBI score is invalid and
-  must be re-measured.**
-- The HIP and Metal CAMBI parity tests now use a 10-bit banding
-  gradient and refuse to run against a degenerate CPU score. Their
-  previous fixtures were 8-bit gradients stepping 32 code levels every
-  32 columns; CAMBI only counts neighbour differences of 1..4 at default
-  settings, so those fixtures scored 0.0 on the CPU too and the parity
-  assertion was `0 == 0`. See ADR-1219.
-- `adm_p_norm` now reaches the CUDA, SYCL, HIP and Metal `float_adm`
-  kernels. All four hardcoded the cube sum in the kernel and the `1/3`
-  root in the host pooling, applying the option to the AIM exponent
-  alone, so a non-default `apn` produced a hybrid quantity: a sum of
-  cubes raised to `1/p`, with `adm2` and every `adm_scaleN` sub-score
-  left at `p = 3`. Measured at `apn=2.0` against the `1e-4` gate:
-  `cpu = 0.43097075` vs `cuda = 0.45416959` on `adm2_apn_2`, a
-  `2.32e-02` drift. The kernels mirror the CPU's own `p == 3` fast path,
-  so the default path is unchanged.
-- `adm_bypass_cm` now reaches the CUDA and Metal `float_adm` kernels.
-  Both declared the option and stored it in their state struct, and
-  neither read it anywhere — the 3x3 contrast-masking threshold was
-  always subtracted, so `bcm=1` was silently ignored. SYCL and HIP do
-  not declare the option and reject it, which is unchanged.
-- Metal's `adm_skip_scale0` now excludes scale 0 from the pooled `adm2`
-  and `aim` scores as `adm.c` does (`num_scale = 0`,
-  `den_scale = 1e-10`). It used to zero only the reported
-  `adm_scale0` sub-score while still folding the full scale-0
-  numerator and denominator into the pooled score.
-- Each backend's `float_adm` parity test now carries a variant per
-  option it declares, reading the derived `adm2_apn_2` / `adm2_bcm_1`
-  keys. The previous tests ran with `NULL` options, where `p = 3` *is*
-  the hardcoded exponent and `bypass = 0` *is* the hardcoded behaviour.
-  See ADR-1220.
-- `clip_db` now caps the MS-SSIM dB output at the CPU's
-  geometry-derived `max_db` on the CUDA, SYCL and HIP twins. All three
-  read it as a clamp on the *linear* score instead — `[0, 1]` then
-  `-10*log10(1 - score)` with no ceiling — and none carried a `max_db`
-  field. Two consequences: scoring an identical reference/distorted
-  pair (MS-SSIM = 1.0) returned **+Inf** where the CPU returns the
-  finite `max_db`, and every high-similarity pair returned an unbounded
-  dB value, so `clip_db` did not clip. The twins now derive
-  `max_db = ceil(10*log10(peak*peak / (0.5/(w*h))))` in `init()` and
-  mirror `float_ms_ssim.c::convert_to_db()`, including its
-  `score >= 1.0` short-circuit. Re-measure any GPU MS-SSIM dB score
-  taken with `clip_db` set. The parity tests could not see this: they
-  ran with `NULL` options, and with `enable_db` off neither path
-  converts to dB at all. Each backend now has a variant that sets both
-  options and feeds an identical pair. See ADR-1221.
-- CodeQL's `paths-ignore` entries now match at any depth (`**/build`,
-  `**/build-*`, `**/builddir`). A bare `build` matched only a top-level
-  directory, so meson's generated probe files under `core/build/` were
-  being analysed and raising alerts. The config also records inline that
-  `paths` / `paths-ignore` are **inert for the built C/C++ analysis** —
-  every translation unit the CodeQL build compiles is extracted
-  regardless — which is why `core/test` is listed and still produces
-  alerts.
-- Removed a duplicated `_VALID_*` constant block from the MCP server.
-  Five names (`_VALID_TINY_DEVICES`, `_VALID_TINY_RESIZES`,
-  `_VALID_PIXFMTS`, `_VALID_BITDEPTHS`, `_VALID_BACKENDS`) were defined
-  twice with identical values, so editing the first definition was a
-  silent no-op; `_VALID_AOM_CTCS` / `_VALID_NFLX_CTCS` were dead
-  near-duplicates of the singular `_VALID_AOM_CTC` / `_VALID_NFLX_CTC`
-  the validator actually reads. See ADR-1222.
 
 
 - `vmafx-tune predict --use-saliency` now wires saliency moments into
@@ -25795,6 +25807,8 @@ the draft.
 - Restore file discovery for every Renovate custom manager by removing duplicate
   regex delimiters. Add positive selection fixtures for shared build configuration
   and Dockerfile mirrors so schema-valid patterns cannot silently disable updates.
+
+
 - **Dependency bumps can merge again.** No Renovate PR had landed since
   2026-09-10: twenty were open, two of them security fixes. `draftPR: true`
   (PR #1411) made every bot PR a draft, and ADR-0679 makes the single required
@@ -26768,6 +26782,19 @@ Fix the CI scoping defect in `.github/workflows/lint-and-format.yml`:
   2026-05-30 (HIGH + MEDIUM severity).
 
 
+- **The SYCL integer-ADM contrast-masking kernel read the wrong sample at the
+  near edge.** The CPU rule is asymmetric — the near edge mirrors to index 1,
+  the far edge clamps to the last index — and the SYCL twin clamped both, so
+  row/column 0 was read twice and the mirrored sample dropped. It only
+  diverges once a scale's ADM border crop collapses to 0 (band dimensions
+  <= 14), which is exactly what the shipped 256x144 fixture hits at scale 3.
+  `test_sycl_adm_parity` had been failing on real Intel hardware at
+  `integer_adm_scale3_csf_2`: cpu=0.58175555 sycl=0.58191226, delta 1.57e-04
+  against a 1e-4 gate. CUDA, HIP and Metal all already carried this fix
+  (ADR-1167 / PR #1224); SYCL was the only twin that missed it. The shipped
+  SYCL parity suite goes 17/1 to 18/0 on an Arc A380.
+
+
 - **`integer_vif_sycl` honours `vif_skip_scale0` at the emission site, and its
   option aliases match the CPU.** Three defects, all found by comparing the twin
   against the CPU extractor rather than by a failing test:
@@ -26785,17 +26812,6 @@ Fix the CI scoping defect in `.github/workflows/lint-and-format.yml`:
   filed its scores under names nothing else looks for. `test_sycl_vif_parity`
   gains `test_vif_skip_scale0_score_is_zero`, verified on an Arc A380 to fail
   before the fix and pass after.
-- **The SYCL integer-ADM contrast-masking kernel read the wrong sample at the
-  near edge.** The CPU rule is asymmetric — the near edge mirrors to index 1,
-  the far edge clamps to the last index — and the SYCL twin clamped both, so
-  row/column 0 was read twice and the mirrored sample dropped. It only
-  diverges once a scale's ADM border crop collapses to 0 (band dimensions
-  <= 14), which is exactly what the shipped 256x144 fixture hits at scale 3.
-  `test_sycl_adm_parity` had been failing on real Intel hardware at
-  `integer_adm_scale3_csf_2`: cpu=0.58175555 sycl=0.58191226, delta 1.57e-04
-  against a 1e-4 gate. CUDA, HIP and Metal all already carried this fix
-  (ADR-1167 / PR #1224); SYCL was the only twin that missed it. The shipped
-  SYCL parity suite goes 17/1 to 18/0 on an Arc A380.
 
 
 **fix(sycl): clip integer_motion2 score to motion_max_val (1080p checkerboard drift)**
