@@ -66,6 +66,7 @@ func IsStubPredictorModel(modelPath string) bool {
 	ext := filepath.Ext(modelPath)
 	stem := strings.TrimSuffix(modelPath, ext)
 	cardPath := stem + "_card.md"
+	// #nosec G304 -- cardPath is the model's own sidecar (<model stem>_card.md), derived from the operator-supplied model path
 	if data, err := os.ReadFile(cardPath); err == nil {
 		cardText := string(data)
 		if strings.Contains(cardText, "synthetic-stub") {

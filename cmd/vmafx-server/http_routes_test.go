@@ -27,7 +27,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/golusoris/golusoris/clock"
+	"github.com/golusoris/golusoris/core/clock"
 	"github.com/golusoris/golusoris/observability/statuspage"
 
 	"github.com/VMAFx/vmafx/pkg/libvmaf"

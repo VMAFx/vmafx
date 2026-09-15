@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/golusoris/golusoris/clikit"
+	"github.com/golusoris/golusoris/core/clikit"
 	"github.com/spf13/cobra"
 
 	"github.com/VMAFx/vmafx/pkg/codecadapter"
