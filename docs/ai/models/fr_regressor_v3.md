@@ -231,6 +231,42 @@ targets. Smoke runs point at the generated temporary corpus, which makes
 the sidecar explicit that the output is a pipeline check rather than a
 real Phase-A training result.
 
+## Checkpoint facts
+
+| Field | Value |
+| --- | --- |
+| Model id | `fr_regressor_v3` |
+| Location | `model/tiny/fr_regressor_v3.onnx` |
+| Architecture | MLP with 16-slot codec conditioning block |
+| Input | `features` `[N, 6]`, `codec_block` `[N, 18]` |
+| Output | `vmaf` `[N]` |
+| ONNX opset | 17 |
+| License | BSD-3-Clause-Plus-Patent |
+| Registry entry | `fr_regressor_v3` in `model/tiny/registry.json` (`"smoke": false`) |
+| SHA-256 | `eaa16d23461eda74940b2ed590edfcaf13428aade294e47792a5a15f4d3b999c` |
+
+## Runnable usage example
+
+```bash
+# Evaluate quality using the vmaf CLI with the v3 codec-aware model:
+vmaf \
+    --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --tiny-model model/tiny/fr_regressor_v3.onnx \
+    --tiny-codec libx264 --tiny-preset medium --tiny-crf 28 \
+    --json --output /tmp/fr_v3.json
+```
+
+## Known limitations
+
+- **Feature dependency**: requires the canonical-6 feature set
+  (`adm2`, `vif_scale0..3`, `motion2`) extracted from 8-bit luma planes.
+- **Closed 16-slot vocabulary**: encoders outside the 16-slot vocabulary
+  fall back to slot 0 (`libx264`).
+- **Execution providers**: validated on CPU (`CPUExecutionProvider`) and CUDA
+  (`CUDAExecutionProvider`).
+
 ## See also
 
 - [ADR-0323](../../adr/0323-fr-regressor-v3-train-and-register.md) —

@@ -107,6 +107,44 @@ real-corpus path/hash or `synthetic-smoke`, and output targets. Use this
 block when comparing refreshed codec-aware runs so stale Phase-A
 corpora are visible without reverse-engineering shell history.
 
+## Checkpoint facts
+
+| Field | Value |
+| --- | --- |
+| Model id | `fr_regressor_v2` |
+| Location | `model/tiny/fr_regressor_v2.onnx` |
+| Architecture | MLP with codec conditioning block |
+| Input | `features` `[N, 6]`, `codec` `[N, 8]` |
+| Output | `score` `[N]` |
+| ONNX opset | 17 |
+| License | BSD-2-Clause-Patent |
+| Registry entry | `fr_regressor_v2` in `model/tiny/registry.json` (`"smoke": false`) |
+| SHA-256 | `67934b0b61c73eb852d84ffb34e3333756e8da2530179ecc830336133e63e69e` |
+
+## Runnable usage example
+
+```bash
+# Score reference and distorted video using the codec-aware model:
+vmaf \
+    --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --tiny-model model/tiny/fr_regressor_v2.onnx \
+    --tiny-codec libx264 --tiny-preset medium --tiny-crf 28 \
+    --json --output /tmp/fr_v2.json
+```
+
+## Known limitations
+
+- **Feature dependency**: requires the canonical-6 feature set
+  (`adm2`, `vif_scale0..3`, `motion2`) extracted from 8-bit luma planes.
+- **Closed encoder vocabulary**: supports `libx264`, `libx265`, `libsvtav1`,
+  `libvvenc`, `libvpx-vp9`, and `unknown` (fallback slot).
+- **Execution providers**: validated on CPU (`CPUExecutionProvider`) and CUDA
+  (`CUDAExecutionProvider`).
+- **External data file**: uses external data format; companion
+  `fr_regressor_v2.onnx.data` must remain co-located.
+
 ## See also
 
 - [ADR-0272](../../adr/0272-fr-regressor-v2-codec-aware-scaffold.md)
