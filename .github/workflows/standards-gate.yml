@@ -1,0 +1,72 @@
+name: Standards
+
+# Praetor / HISS-16 governance gate (ADR-1249).
+#
+# Runs on every pull request with no `paths:` filter on purpose: the HISS scan
+# reads source, the baseline ratchet has to see every change, and a required
+# context that silently does not start would leave the aggregator waiting on a
+# check that never reports.
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+concurrency:
+  group: standards-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege default for the whole workflow (ADR-0875).
+permissions:
+  contents: read
+
+jobs:
+  standards:
+    # required-aggregator: Standards & Invariant Verification Gate
+    name: Standards & Invariant Verification Gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          # `audit -base` diffs against the merge base, so the gate needs history.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod  # single source of truth: the go directive in go.mod
+          cache: true
+
+      # praetor publishes no semver releases, only the moving tags
+      # bleeding/edge/latest/lts, so the governance engine is pinned by commit
+      # exactly like every other third-party dependency in this repo. Bumping it
+      # is a deliberate PR: a newer praetor can tighten a policy and turn this
+      # gate red on unrelated work.
+      - name: Install praetorctl
+        env:
+          PRAETOR_REF: PRAETOR_PINNED_SHA
+        run: |
+          go install "github.com/cordanaLLM/praetor/cmd/standardsctl@${PRAETOR_REF}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Report the governance engine version
+        run: standardsctl version
+
+      # The canonical AGENTS.md is compiled into six vendor context files. This
+      # fails if any of them was hand-edited or if AGENTS.md grew past the
+      # 300-line-per-target budget.
+      - name: Verify agent context integrity (HISS-16)
+        run: standardsctl compile-context --verify
+
+      # `-base` enables the touched-file clean rule over the PR range and the
+      # baseline growth guard, which is what makes this a ratchet rather than a
+      # snapshot: recorded debt may shrink, never grow.
+      - name: Audit HISS invariants against the baseline
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            standardsctl audit -base "origin/${{ github.base_ref }}"
+          else
+            standardsctl audit
+          fi
