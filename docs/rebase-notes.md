@@ -63,6 +63,27 @@ of digest presence. Preserve the Python instruction scanner, the exact local
 consumer exceptions and the fixture suite in `scripts/ci/tests/`. Shared image
 ARG defaults remain one per physical line for the shell mirror writer. No
 upstream rebase impact: these guard scripts and fixtures are fork-local.
+## fix/renovate-draft-automerge-deadlock — dependency bumps can merge again (2026-09-15)
+
+`renovate.json` gains `"draftPR": false` in seven places: the six `packageRules` that
+carry `"automerge": true` and the `vulnerabilityAlerts` block. The global
+`"draftPR": true` at the bottom of the file stays.
+
+Rebase-sensitive in two ways:
+
+1. **Do not "simplify" this by removing the global `draftPR`.** The per-rule
+   overrides exist precisely so that review-needed bumps keep opening as drafts,
+   which is what PR #1411 added the global flag for. Dropping the global and
+   keeping the overrides inverts the behaviour and re-floods the ready queue.
+2. **Keep the overrides paired with `automerge`.** A rule that gains
+   `"automerge": true` later must gain `"draftPR": false` with it, or it
+   deadlocks again: ADR-0679 makes the required aggregator fail on drafts, so a
+   draft can never satisfy branch protection and automerge can never fire. If a
+   rule loses `automerge`, the `draftPR` override should go with it.
+
+PR #1416 also edits dependency declarations (single-sourcing versions); it does
+not touch `renovate.json`'s `packageRules`, so the two should not collide. If a
+conflict does appear here, keep both sides: they are independent keys.
 
 ## fix/ai-1270-blockers — DISTS, MobileSal, and predictor stub triage (2026-09-08)
 
