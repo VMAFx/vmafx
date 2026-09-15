@@ -50714,3 +50714,27 @@ Two things that do not work, both tried:
 
 A real fix needs an interception mechanism that survives LTO. Until then the
 harness runs in debug, in any `-Db_lto=false` build and in the sanitizer lane.
+
+## psnr_hvs scalar reference carries -ffp-contract=off (2026-09-16)
+
+`third_party/xiph/psnr_hvs.c` is compiled in its own
+`libvmaf_psnr_hvs_scalar_static_lib` purely so it can carry
+`-ffp-contract=off`. Do not fold it back into `libvmaf_feature_sources` on a
+rebase, and do not "simplify" the extra static library away.
+
+Both of its SIMD twins already carry that flag — `x86_psnr_hvs_avx2_lib` and the
+arm64 `arm64_fp_lib`. The scalar reference did not, so clang was free to contract
+`a + b * c` in it while the kernels it is compared against were not. On x86-64
+nothing contracted, because there is no FMA without `-mfma`, and the paths agreed
+by accident. On aarch64 FMA is baseline, clang contracted, and ADR-1207's
+`test_feature_isa_invariance` reported psnr_hvs host-isa 14.191670308986598
+against scalar 14.191669969203765.
+
+The policy lives in `meson.build` rather than in the file because the file is
+vendored from xiph; keeping the source untouched keeps the next upstream sync a
+clean diff. x86 codegen is unaffected: compiled both ways the instruction stream
+is identical at 889 instructions with zero FMA.
+
+To reproduce the aarch64 side without ARM hardware, cross-build with clang and
+run under `qemu-aarch64-static`; a gcc cross-build will not show it, for the same
+reason gcc does not show the x86 convolution case.

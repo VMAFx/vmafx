@@ -25480,6 +25480,23 @@ default path is bit-for-bit unchanged. (ADR-0453 / Research-0136)
   silently dropped, yielding wrong PSNR ceilings at non-default values.
 
 
+- **`psnr_hvs` no longer scores differently with and without NEON on aarch64.**
+  The ADR-1207 ISA-invariance gate reported host-isa `14.191670308986598`
+  against scalar `14.191669969203765`, a delta of **3.398e-07**, on the
+  `Ubuntu ARM clang` lane. Both SIMD twins are already built
+  `-ffp-contract=off` — `x86_psnr_hvs_avx2_lib` and the arm64 `arm64_fp_lib` —
+  but the scalar reference they are compared against, the vendored
+  `third_party/xiph/psnr_hvs.c`, was not, so clang was free to contract
+  `a + b * c` in it. It only surfaced on aarch64: FMA is baseline there, while
+  on x86-64 there is no FMA without `-mfma`, so nothing contracted and the two
+  paths happened to agree. The scalar file now carries the same contract policy
+  as its twins, applied in `meson.build` rather than in the vendored source so
+  the next upstream sync stays a clean diff. x86 codegen is unchanged — compiled
+  both ways, the instruction streams are identical at 889 instructions with zero
+  FMA. Reproduced and verified under `qemu-aarch64-static` with a clang cross
+  build.
+
+
 - **SYCL PSNR `min_sse` option parity** (`integer_psnr_sycl.cpp`): the SYCL
   PSNR extractor was missing the `min_sse` feature option present in the CPU
   reference (`integer_psnr.c`). Without it, callers could not constrain the
@@ -27078,6 +27095,16 @@ ADR-0513.
 
 
 - Test YUV fixture provisioner: `scripts/test/fetch-test-yuvs.sh` downloads `src01_hrc0[0-1]_576x324.yuv` from `Netflix/vmaf_resource` and md5-verifies them. Reverts the [#1237](https://github.com/VMAFx/vmafx/pull/1237) ADM2 golden override, which was based on output from stale local fixture content. See [ADR-0493](docs/adr/0493-test-yuv-fixture-md5-verification.md) and [docs/development/test-fixtures.md](docs/development/test-fixtures.md).
+
+
+- **The thread-pool backpressure test builds on Windows again.**
+  `test_thread_pool_backpressure.c` took its `pthread_cond_timedwait` deadline
+  from `timespec_get(&deadline, TIME_UTC)`. MinGW-w64's `<time.h>` does not
+  declare it, so the required `Windows MinGW64` lane failed to build with
+  `implicit declaration of function 'timespec_get'` and `'TIME_UTC' undeclared`.
+  It now uses `clock_gettime(CLOCK_REALTIME, &deadline)`, which is what
+  `core/test/test_fex_pool_growth.c` already does for the same purpose and is
+  also the clock `pthread_cond_timedwait` measures its deadline against.
 
 
 - Bound pending CPU thread-pool jobs to the created worker count, restoring

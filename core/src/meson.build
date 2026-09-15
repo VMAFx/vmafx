@@ -1696,7 +1696,6 @@ endif
 libvmaf_feature_sources = [
     feature_src_dir + 'picture_copy.cpp',
     feature_src_dir + 'integer_psnr.c',
-    feature_src_dir + 'third_party/xiph/psnr_hvs.c',
     feature_src_dir + 'feature_extractor.cpp',
     feature_src_dir + 'feature_name.cpp',
     feature_src_dir + 'alias.c',
@@ -1911,6 +1910,24 @@ endif
 # main extract loop, float pooling) must use the same FMA-contract
 # policy as the SIMD TUs to avoid cross-host drift. Scoped here so
 # other extractors' bit-exact behaviour is untouched.
+# psnr_hvs scalar reference carve-out (ADR-0873 / ADR-1207), same reason as
+# the x86 and arm64 twins above and ssimulacra2 below: the SIMD kernels are
+# already built `-ffp-contract=off` (`x86_psnr_hvs_avx2_lib`, `arm64_fp_lib`),
+# so this scalar reference must be too or the two disagree. It surfaced only on
+# aarch64, where FMA is baseline and clang contracts `a + b * c` freely, while
+# on x86-64 there is no FMA without `-mfma` so nothing contracted and the paths
+# happened to match: `test_feature_isa_invariance` reported psnr_hvs host-isa
+# 14.191670308986598 against scalar 14.191669969203765 on the ARM clang lane.
+# The file is vendored from xiph, so the policy goes here rather than into the
+# source, keeping the next upstream sync a clean diff.
+libvmaf_psnr_hvs_scalar_static_lib = static_library(
+    'libvmaf_psnr_hvs_scalar',
+    feature_src_dir + 'third_party/xiph/psnr_hvs.c',
+    include_directories : [libvmaf_include, vmaf_include, cuda_dir],
+    dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency],
+    c_args: vmaf_cflags_common + ['-ffp-contract=off'] + _libvmaf_feature_icx_args,
+)
+
 libvmaf_ssimulacra2_static_lib = static_library(
     'libvmaf_ssimulacra2',
     feature_src_dir + 'ssimulacra2.c',
@@ -1956,6 +1973,7 @@ libvmaf_feature_static_lib = static_library(
     c_args : vmaf_cflags_common + _libvmaf_feature_icx_args,
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency, hip_deps, metal_deps],
     objects: [common_cuda_objects, common_sycl_objects, sycl_feature_objects,
+              libvmaf_psnr_hvs_scalar_static_lib.extract_all_objects(recursive: false),
               libvmaf_ssimulacra2_static_lib.extract_all_objects(recursive: false),
               libvmaf_y_funque_plus_static_lib.extract_all_objects(recursive: false),
               gpu_dispatch_env_cpp23_lib.extract_all_objects(recursive: true)]
