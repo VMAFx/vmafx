@@ -25,15 +25,26 @@ fi
 usage() {
   cat <<'EOF'
 Usage: rollover-changelog-fragments.sh --version X.Y.Z --date YYYY-MM-DD
+                                       [--archive-over N]
 
 Versions the exact rendered Unreleased body, removes the active fragment
 sources, retires one-time release-please cutover fields, and writes
 changelog.d/releases/X.Y.Z.json as a verification receipt.
+
+--archive-over N (default 400)
+  When the rendered body is longer than N lines, the detail moves to
+  docs/changelog-archive/X.Y.Z.md and CHANGELOG.md keeps a per-section
+  index that links to it. Nothing is discarded. The first release renders
+  ~27,500 lines from ~1,660 fragments -- an accumulated fork history, not
+  one release's worth of notes -- and pasting that inline makes CHANGELOG.md
+  unreadable and slow to render on GitHub. Pass 0 to disable and keep the
+  old inline behaviour.
 EOF
 }
 
 version=""
 release_date=""
+archive_over=400
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --version)
@@ -52,6 +63,14 @@ while [[ $# -gt 0 ]]; do
       release_date="$2"
       shift 2
       ;;
+    --archive-over)
+      [[ $# -ge 2 ]] || {
+        usage >&2
+        exit 64
+      }
+      archive_over="$2"
+      shift 2
+      ;;
     --help | -h)
       usage
       exit 0
@@ -66,6 +85,10 @@ done
 
 if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
   printf 'ERROR: --version must be ordinary SemVer X.Y.Z\n' >&2
+  exit 64
+fi
+if [[ ! "$archive_over" =~ ^[0-9]+$ ]]; then
+  printf 'ERROR: --archive-over must be a non-negative integer\n' >&2
   exit 64
 fi
 if [[ ! "$release_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
@@ -180,15 +203,93 @@ if [[ ! -s "$tmp_body" ]]; then
 fi
 body_sha256="$(sha256sum "$tmp_body" | cut -d' ' -f1)"
 
-awk -v version="$version" -v release_date="$release_date" '
-    /^## \[Unreleased\]/ {
-        print
-        print ""
-        print "## [" version "] - " release_date
-        next
-    }
-    { print }
-' "$CHANGELOG" >"$tmp_changelog"
+body_lines="$(wc -l <"$tmp_body")"
+archive_path=""
+if [[ "$archive_over" -gt 0 && "$body_lines" -gt "$archive_over" ]]; then
+  archive_path="docs/changelog-archive/${version}.md"
+fi
+
+# Two shapes. Inline (the default for an ordinary release) inserts the version
+# heading and leaves the rendered body where it is. Archived (a release whose
+# body is too long to read in place) moves the detail out and leaves a
+# per-section index behind. Nothing is discarded either way -- the archive is a
+# tracked file, and the receipt records the sha256 of the rendered body in both
+# cases.
+python3 - "$CHANGELOG" "$tmp_body" "$tmp_changelog" "$version" "$release_date" \
+  "$archive_path" "$REPO_ROOT" <<'PYEOF'
+import pathlib
+import re
+import sys
+
+changelog, body_file, out_file, version, date, archive_rel, repo_root = sys.argv[1:8]
+
+lines = pathlib.Path(changelog).read_text(encoding="utf-8").splitlines()
+body = pathlib.Path(body_file).read_text(encoding="utf-8")
+
+start = next(i for i, l in enumerate(lines) if l.startswith("## [Unreleased]"))
+end = len(lines)
+for i in range(start + 1, len(lines)):
+    if lines[i].startswith("## "):
+        end = i
+        break
+
+if not archive_rel:
+    # Inline: keep every rendered line, just retitle it as a release.
+    new_lines = lines[: start + 1] + ["", f"## [{version}] - {date}"] + lines[start + 1 :]
+else:
+    # Count entries per section. Two wrinkles: the rendered body repeats
+    # "### Added" / "### Fixed" once per fragment group, so aggregate by name;
+    # and individual fragments use their own "###" headings as prose structure
+    # ("### What ships"), which are not sections. Only the headings the
+    # renderer itself emits -- one per changelog.d/ subdirectory -- count, and
+    # a fragment's internal heading leaves the enclosing section active so its
+    # bullets are still attributed.
+    known = {"Added", "Changed", "Deprecated", "Fixed", "Removed", "Security"}
+    counts: dict[str, int] = {}
+    current = None
+    for line in body.splitlines():
+        if line.startswith("### "):
+            heading = line[4:].strip()
+            if heading in known:
+                current = heading
+                counts.setdefault(current, 0)
+        elif current is not None and re.match(r"^[-*] ", line):
+            counts[current] += 1
+    sections = list(counts.items())
+
+    index = [
+        "",
+        f"## [{version}] - {date}",
+        "",
+        f"This release collects {sum(c for _, c in sections)} changelog entries.",
+        "They are recorded in full, unedited, in",
+        # CHANGELOG.md sits at the repository root, so the link is the path
+        # as-is; stripping the leading "docs/" would break it.
+        f"[`{archive_rel}`]({archive_rel}) — too long to read inline here.",
+        "",
+    ]
+    if sections:
+        index.append("| Section | Entries |")
+        index.append("| --- | --- |")
+        for title, count in sections:
+            index.append(f"| {title} | {count} |")
+        index.append("")
+
+    new_lines = lines[: start + 1] + index + lines[end:]
+
+    archive = pathlib.Path(repo_root) / archive_rel
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    archive.write_text(
+        f"<!-- markdownlint-disable -->\n"
+        f"# Changelog archive — {version}\n\n"
+        f"The complete, unedited changelog body for {version} ({date}).\n"
+        f"[`CHANGELOG.md`](../../CHANGELOG.md) carries the per-section index.\n\n"
+        f"---\n\n{body}",
+        encoding="utf-8",
+    )
+
+pathlib.Path(out_file).write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+PYEOF
 
 if [[ "$(grep -Ec "^## \\[${escaped_version}\\] - ${release_date}$" "$tmp_changelog")" -ne 1 ]]; then
   printf 'ERROR: generated changelog does not contain the exact release heading\n' >&2
