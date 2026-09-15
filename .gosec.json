@@ -1,0 +1,7 @@
+{
+  "global": {
+    "exclude-generated": true,
+    "quiet": true,
+    "exclude": ""
+  }
+}
