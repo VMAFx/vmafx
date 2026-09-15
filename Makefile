@@ -117,6 +117,7 @@ cythonize-deps: $(VENV_PIP)
 # ============================================================================
 
 .PHONY: lint lint-c lint-py lint-sh lint-md lint-go tidy-ratchet tidy-ratchet-write \
+	preflight \
 	format format-check sec sbom \
         test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
         coverage coverage-html coverage-check assertion-density pr-check
@@ -186,6 +187,13 @@ tidy-ratchet-write:
 	$(call require-tool,clang-tidy,install clang-tools)
 	python3 scripts/ci/tidy-ratchet.py --lane $(LANE) --write \
 	    --build-dir $(TIDY_RATCHET_BUILD_DIR) $(TIDY_RATCHET_EXTRA_$(LANE)) $(TIDY_RATCHET_ARGS)
+
+# Run the CI lanes that a single-compiler local build cannot catch: clang,
+# 32-bit, sanitizers, MSVC-hostile constructs, clang-tidy, cppcheck (ADR-1234).
+# `make preflight` before pushing; `scripts/dev/preflight.sh --list` explains
+# which CI context each stage stands in for.
+preflight:
+	scripts/dev/preflight.sh
 
 lint-py:
 	$(call require-tool,ruff,pip install ruff==0.15.17)

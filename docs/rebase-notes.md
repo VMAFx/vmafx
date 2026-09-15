@@ -49615,3 +49615,31 @@ fork-added.
 4. **stdout belongs to JSON-RPC.** The Go server logs to stderr. Any change that
    sends log output to stdout corrupts the protocol stream and shows up as
    `mcp stdio returned empty response` rather than as a logging bug.
+## ADR-1234 — local preflight gate (2026-09-07)
+
+1. **`scripts/dev/preflight.sh` must stay in step with the required-check list**
+   in `.github/workflows/required-aggregator.yml`. A new required compiler
+   context without a matching stage recreates the gap this closed: green
+   locally, red in CI, one round-trip per discovery on a single-active-PR
+   queue.
+
+2. **The `m32` stage's `-I build/src` is load-bearing, not decoration.** It
+   supplies the generated `config.h`. Drop it and every file aborts at its
+   first `#include`, the stage reports success, and it silently checks nothing.
+   That is not hypothetical — the first version of the stage passed against a
+   deliberately planted 32-bit break for exactly this reason.
+
+3. **`changed_sources()` deliberately includes the working tree**, not only
+   `origin/master...HEAD`. Narrowing it to committed changes makes the script
+   useless for its main job.
+
+4. **The sanitizer stage's `-Db_lundef=false` is required, not optional.**
+   Clang puts the sanitizer runtime in executables, not shared libraries, so
+   without it `libvmaf.so` fails to link on undefined `__asan_report_*` and the
+   stage reports failure on every branch — including ones with no code changes.
+   `fuzz.yml` pairs the same two options.
+
+5. **A missing toolchain skips, it does not fail.** Do not "fix" that into a
+   hard error: the script is meant to run on partially provisioned machines,
+   and a stage that fails for want of `gcc-multilib` trains people to ignore
+   the output.
