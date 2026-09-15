@@ -10750,6 +10750,9 @@ core internal headers (`framesync.h`, `thread_pool.h`, `picture_pool.h`,
 - **`vmafx-tune-go` on golusoris `clikit`:** migrated the `cmd/vmafx-tune` Go CLI from a hand-built `cobra` root onto the golusoris `clikit` (cobra + fx) framework (ADR-1119 Phase-1). Each subcommand now runs inside a one-shot `fx` graph that injects a structured `*slog.Logger` and a `VMAFX_`-prefixed config tree: the `compare`, `ladder`, and `report` runs emit structured progress logs on `stderr` (keeping JSON/Markdown/HTML output clean on `stdout`), and the not-yet-ported stubs log a `WARN`-level redirect notice instead of a bare `fmt.Fprintf`. New config surface: `VMAFX_LOG_LEVEL` (`debug`/`info`/`warn`/`error`) and `VMAFX_LOG_FORMAT` (`auto`/`tint`/`json`). Exit codes and all subcommand output schemas are unchanged. The Python `vmaf-tune` harness is untouched. ([ADR-1119](docs/adr/1119-golusoris-go-framework-adoption.md))
 
 
+- **golusoris pinned to tagged releases (`v0.10.2`, `core/v0.9.1`):** the Go tooling (`vmafx-server`, `vmafx-node`, `vmafx-controller`, `vmafx-operator`, `vmafx-mcp`, `vmafx-tune`) now imports golusoris `config`, `clock`, and `clikit` from the lean `core/` sub-module (`github.com/golusoris/golusoris/core/...`, golusoris ADR-0017) and requires the tagged `v0.10.2` / `core/v0.9.1` releases instead of a local `replace` onto a developer checkout. Package names, APIs, CLI flags, config keys, and output schemas are unchanged; only the module graph moves. ([ADR-1119](docs/adr/1119-golusoris-go-framework-adoption.md))
+
+
 - **changed(operator):** `vmafx-operator` is now composed with the golusoris
   fx framework (ADR-1119 Phase 1). The hand-rolled
   `ctrl.NewManager(...) + mgr.Start(ctrl.SetupSignalHandler())` entry point is
