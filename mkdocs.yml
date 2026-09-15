@@ -1354,6 +1354,7 @@ nav:
         - "ADR-1246: cppcheck-public-entrypoints": adr/1246-cppcheck-public-entrypoints.md
         - "ADR-1247: scorecard-exact-head-gates": adr/1247-scorecard-exact-head-gates.md
         - "ADR-1248: repository-security-enforcement": adr/1248-repository-security-enforcement.md
+        - "ADR-1252: solo-maintainer-declared-bypass": adr/1252-solo-maintainer-declared-bypass.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
