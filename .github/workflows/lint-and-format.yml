@@ -107,7 +107,18 @@ jobs:
         if: steps.cpp-changes.outputs.any == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-14 g++-14 ninja-build nasm \
+          # gcc from ubuntu-toolchain-r/test for the same reason clang comes
+          # from apt.llvm.org and meson from PyPI: the ubuntu-24.04 image's
+          # newest gcc is 14, and the tree targets C23 / C++26 (ADR-0692).
+          # Leaving gcc at the distro version while pulling the other two
+          # forward was an oversight, not a decision -- and it is not free.
+          # gcc supplies the system headers clang-tidy parses, so the ratchet's
+          # warning counts depend on it; pinning it a major behind every
+          # developer's box makes a ratchet delta unreproducible locally, which
+          # is exactly how ADR-1230 came about.
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y gcc-15 g++-15 ninja-build nasm \
             jq parallel
           # clang-tidy from apt.llvm.org: the ubuntu-24.04 image tops out at
           # clang 18, whose libstdc++ has no std::expected, so it cannot even
@@ -136,7 +147,7 @@ jobs:
           # and the generated headers, so LTO buys nothing here. The SYCL tidy
           # lane below already configures with -Db_lto=false for its own
           # toolchain reason.
-          CC=gcc-14 CXX=g++-14 meson setup build core \
+          CC=gcc-15 CXX=g++-15 meson setup build core \
             -Denable_cuda=false -Denable_sycl=false -Db_lto=false
           # Build first so codegen outputs (vcs_version.h, model JSONs → .c)
           # exist on disk before clang-tidy parses the translation units.
@@ -356,7 +367,11 @@ jobs:
         if: steps.impact.outputs.c_core == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-14 g++-14 ninja-build nasm jq
+          # See the ADR-1230 note on the changed-files lane above: gcc moves
+          # forward with clang and meson rather than staying at the distro's.
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y gcc-15 g++-15 ninja-build nasm jq
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           chmod +x /tmp/llvm.sh
           sudo /tmp/llvm.sh 22
@@ -375,7 +390,7 @@ jobs:
           # and the generated headers, so LTO buys nothing here. The SYCL tidy
           # lane below already configures with -Db_lto=false for its own
           # toolchain reason.
-          CC=gcc-14 CXX=g++-14 meson setup build core \
+          CC=gcc-15 CXX=g++-15 meson setup build core \
             -Denable_cuda=false -Denable_sycl=false -Db_lto=false
           meson compile -C build
       - name: Ratchet — whole-tree clang-tidy vs committed baseline
