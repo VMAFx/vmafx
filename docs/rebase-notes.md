@@ -50191,3 +50191,24 @@ Both existing severity selections, POSIX model, exhaustive depth, command
 variants and failure handling remain unchanged. No native/public API, FFmpeg
 patch, numerical assertion or baseline change. See
 [Research-1246](research/1246-cppcheck-public-entrypoints.md).
+
+## scripts/dev/gc_workingdir.py — local state-tree GC (2026-09-15)
+
+Two invariants are load-bearing and were both found by the tests rather than by
+inspection, so do not "simplify" them on a rebase:
+
+1. **Citations are stored relative to the state root.** `git grep` reports them
+   with the `.workingdir2/` prefix, while the walk compares paths relative to the
+   state root. The first version compared the two directly, so no citation ever
+   matched and the protection silently did nothing — the count printed fine. The
+   prefix is stripped on read; keep it that way or add the prefix on both sides.
+2. **A citation protects the named path, not the subtree beneath it.** A run
+   directory is cited precisely because a document links to it, so the directory
+   must survive; its Go cache, meson build tree and object files must still be
+   reclaimable from underneath it. An earlier version pruned the walk at any
+   cited directory, which protected the entire run tree and would have reclaimed
+   almost nothing, since the 14.6 GB was inside cited run directories.
+
+`PROTECTED_NAMES` (`rescue`, `evidence`, `archive`, `netflix`) is a separate,
+absolute guard: those roots are never walked, citation or not. `rescue/` holds
+the 134-branch recovery bundle.
