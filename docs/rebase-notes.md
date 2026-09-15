@@ -50691,3 +50691,26 @@ If this test ever fails again, bisect the same way rather than guessing: build
 with `-ffp-contract=off` globally to confirm contraction is the cause, then
 re-enable it one translation unit at a time with
 `#pragma clang fp contract(fast)` until the failure returns.
+
+## core/test/meson.build — the fault-injection harnesses are gated on non-LTO (2026-09-16)
+
+`fex_vector_alloc_harness` and the `test_registration_partial_copy` block are
+both conditioned on `not get_option('b_lto')`. Do not drop that condition on a
+rebase to "restore coverage in release": the coverage is not there to restore.
+
+GNU `--wrap` and ELF interposition both redirect references the linker resolves.
+With `b_lto=true` the compiler resolves those calls across translation units
+first, so the interceptor is never reached, the injected allocation succeeds and
+`test_fex_ctx_vector` ends in a double free rather than an assertion — SIGSEGV on
+the runner, `free(): double free detected in tcache 2` locally.
+
+Two things that do not work, both tried:
+
+1. `override_options : ['b_lto=false']` on the test executables. They consume
+   `extract_all_objects()` from LTO-built libraries, so the non-LTO link fails
+   with `file format not recognized`.
+2. `__attribute__((noinline))` on `vmaf_feature_name_from_options`. It keeps the
+   call but LTO still resolves the symbol internally, so `--wrap` never applies.
+
+A real fix needs an interception mechanism that survives LTO. Until then the
+harness runs in debug, in any `-Db_lto=false` build and in the sanitizer lane.

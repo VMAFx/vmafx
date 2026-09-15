@@ -110,14 +110,25 @@ class CppcheckPosixModelTests(unittest.TestCase):
                 code, diagnostics, output = self.analyze(
                     root, language="c", extra=extra, public_model=None
                 )
-                self.assertNotEqual(code, 0, output)
+                # The contract this test defends is which functions get reported,
+                # so the diagnostic is asserted unconditionally. Whether a
+                # whole-program `unusedFunction` finding also reaches the process
+                # exit code is tool-version dependent: 2.21 propagates it, while
+                # Ubuntu 24.04's 2.13 — what CI installs — prints the same
+                # diagnostic and still exits 0 under `--cppcheck-build-dir`.
+                # Learn that from this first probe instead of matching on a
+                # version number, then hold the rest of the mode to it. A tool
+                # that stopped reporting altogether still fails, because the
+                # assertions below do not depend on `propagates`.
                 self.assertIn(("style", "unusedFunction"), diagnostics, output)
                 self.assertIn("'vmaf_hip_available' is never used", output)
+                propagates = code != 0
                 code, diagnostics, output = self.analyze(root, language="c", extra=extra)
                 self.assertEqual(code, 0, output)
                 self.assertNotIn(("style", "unusedFunction"), diagnostics, output)
                 code, diagnostics, output = self.analyze(root + private, language="c", extra=extra)
-                self.assertNotEqual(code, 0, output)
+                self.assertEqual(code != 0, propagates, output)
+                self.assertIn(("style", "unusedFunction"), diagnostics, output)
                 self.assertIn("'private_dead' is never used", output)
                 self.assertNotIn("'vmaf_hip_available' is never used", output)
 

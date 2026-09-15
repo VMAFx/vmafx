@@ -21360,6 +21360,19 @@ Rollup PR targeting master; rebases trivially after the cpp23 PRs land.
 - Run configured local and CI Cppcheck analysis in exhaustive mode so normal branch-budget cutoffs do not leave clean native sources only partly analyzed. Preserve diagnostic categories and real-defect failures; deeper analysis can take longer (ADR-1245).
 
 
+- **The cppcheck model test passes on the cppcheck CI actually installs.** Its
+  public-roots case asserted a non-zero exit code when an unlisted unused
+  function is reported. cppcheck 2.21 propagates a whole-program
+  `unusedFunction` finding to the exit code; Ubuntu 24.04's 2.13 — what the
+  workflow gets from `apt` — prints the identical diagnostic and still exits 0
+  under `--cppcheck-build-dir`, so the job failed on CI while passing on a
+  developer machine with a newer tool. The contract the test defends is which
+  functions get reported, and that is now asserted unconditionally; the exit
+  code is checked for consistency with what the running tool does, learned from
+  the case's own first probe rather than matched against a version number. A
+  tool that stopped reporting still fails. Verified against both 2.13 and 2.21.
+
+
 **Fix build failure in Cppcheck CI gate caused by missing AVX-512 motion sub-kernel functions.**
 
 `test_motion_avx512_parity.c` called `sad_avx512`, `y_convolution_8_avx512`,
@@ -22358,6 +22371,24 @@ proposed follow-up.
   struct copy in Phase 2 PREV_REF submit loop with `vmaf_picture_ref`; propagated the
   previously `(void)`-discarded error from `dist` translate, preventing silent partial-init
   of `dist_device`.
+
+
+- **The allocation-failure tests no longer double-free under an optimised LTO
+  build.** `test_fex_ctx_vector` and `test_registration_partial_copy` inject
+  failures by intercepting a symbol — the first through GNU `-Wl,--wrap=`, the
+  second through ELF interposition. Both redirect *references* resolved at link
+  time, and the project builds with `b_lto=true`, so LTO resolves those calls
+  internally before the linker ever sees a reference and neither interceptor
+  runs. That is not a quiet loss of coverage: the injected allocation then
+  succeeds, `feature_extractor_vector_append` takes ownership of a context the
+  test still holds, and the run ends in `free(): double free detected in tcache
+  2` — reported as SIGSEGV on the CI runner. Debug builds hid it because nothing
+  inlines at `-O0`. The two harnesses are now compiled in only where they can
+  actually intercept, so a debug or `-Db_lto=false` build and the sanitizer lane
+  still carry the fault-injection coverage while the release+LTO lane builds the
+  identity tests without it. `override_options : ['b_lto=false']` on the test
+  targets is **not** an alternative — those targets consume LTO bitcode from the
+  libraries and fail to link with `file format not recognized`.
 
 
 - **`feature_extractor.c` — 3 cleanup-path leaks + 1 double-free

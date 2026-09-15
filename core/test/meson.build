@@ -281,7 +281,12 @@ test_model_registration_ownership = executable('test_model_registration_ownershi
 
 # ELF fault control: private dictionary-copy failure, public registration callers.
 # It deliberately interposes one symbol and must use the actual shared library.
-if host_machine.system() == 'linux' and get_option('default_library') != 'static'
+# ELF interposition has the same LTO constraint as the `--wrap` harness above:
+# with LTO the library inlines its own call to `vmaf_dictionary_copy`, so the
+# definition this executable provides is never reached and "copy failure must
+# propagate" fails. Build it only where interposition can work.
+if host_machine.system() == 'linux' and get_option('default_library') != 'static' \
+        and not get_option('b_lto')
     test_registration_partial_copy = executable('test_registration_partial_copy',
         ['test.c', 'test_registration_partial_copy.cpp'],
         include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
@@ -408,9 +413,26 @@ test_feature_extractor = executable('test_feature_extractor',
 )
 
 # Registration identity and checked growth, through private and public callers.
+# The allocation-failure harness needs GNU `--wrap`, which redirects *references*
+# to a symbol at link time. Under `b_lto=true` (set project-wide in
+# core/meson.build) LTO resolves those calls internally before the linker sees a
+# reference, so the wrapper never runs. The failure is not a quiet loss of
+# coverage: the injected allocation then succeeds, `feature_extractor_vector_append`
+# takes ownership of a context the test still holds, and the run ends in
+# `free(): double free detected in tcache 2` — SIGSEGV on the CI runner. Debug
+# builds hid it because nothing inlines at -O0.
+#
+# So the harness is compiled in only where it can actually intercept. `meson test
+# --suite fast` on a debug or `-Db_lto=false` build still covers these paths, as
+# does the sanitizer lane; the release+LTO lane builds the identity tests without
+# the injection. Re-enabling it needs a mechanism that survives LTO, not a
+# `-Db_lto=false` override on the test target — that fails to link, because the
+# target consumes LTO bitcode objects from the libraries.
+# ADR-0723 / Research-2047.
+fex_vector_alloc_harness = host_machine.system() == 'linux' and not get_option('b_lto')
 fex_vector_test_args = []
 fex_vector_link_args = []
-if host_machine.system() == 'linux'
+if fex_vector_alloc_harness
   fex_vector_test_args = ['-DFEX_VECTOR_ALLOC_TEST=1']
   fex_vector_link_args = ['-Wl,--wrap=realloc', '-Wl,--wrap=vmaf_feature_name_from_options']
 endif
