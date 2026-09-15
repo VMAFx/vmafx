@@ -514,6 +514,12 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CUdeviceptr csf_a_aim_d = (CUdeviceptr)s->csf_a_aim->data;
     CUdeviceptr csf_f_aim_d = (CUdeviceptr)s->csf_f_aim->data;
 
+    /* adm_p_norm and adm_bypass_cm are VMAF_OPT_FLAG_FEATURE_PARAM options the
+     * twin advertises. Until ADR-1220 the kernels hardcoded p = 3 and always
+     * subtracted the masking threshold, so `apn` moved only the AIM exponent
+     * and `bcm` did nothing at all. */
+    const float pnorm_f = (float)s->adm_p_norm;
+    const int bypass_cm_arg = s->adm_bypass_cm;
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
         const int cur_w = (int)s->scale_w[scale];
         const int cur_h = (int)s->scale_h[scale];
@@ -656,7 +662,9 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                             &rfh,
                             &rfv,
                             &rfd,
-                            &gl};
+                            &gl,
+                            &pnorm_f,
+                            &bypass_cm_arg};
             CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_csf_cm, gx, 1u, 1u, FADM_BX, FADM_BY, 1,
                                                    0, pic_stream, args, NULL));
         }
@@ -713,7 +721,9 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                             &rfh,
                             &rfv,
                             &rfd,
-                            &gl};
+                            &gl,
+                            &pnorm_f,
+                            &bypass_cm_arg};
             CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_aim_cm, gx, 1u, 1u, FADM_BX, FADM_BY, 1,
                                                    0, pic_stream, args, NULL));
         }
@@ -797,13 +807,17 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index, VmafFeatu
             top = 0;
         const int right = hw - left;
         const int bottom = hh - top;
-        const float area_cbrt = powf(
-            (float)((bottom - top) * (right - left)) * (float)s->adm_noise_weight, 1.0f / 3.0f);
+        /* The pooling root and the noise constant are 1/adm_p_norm, not a
+         * hardcoded 1/3: adm_tools.c uses powf(accum, 1.0f / adm_p_norm) and
+         * get_noise_constant(..., adm_p_norm). ADR-1220. */
+        const float inv_p = 1.0f / (float)s->adm_p_norm;
+        const float area_cbrt =
+            powf((float)((bottom - top) * (right - left)) * (float)s->adm_noise_weight, inv_p);
         float num_scale = 0.0f;
         float den_scale = 0.0f;
         for (int b = 0; b < FADM_NUM_BANDS; b++) {
-            num_scale += powf((float)cm_totals[scale][b], 1.0f / 3.0f) + area_cbrt;
-            den_scale += powf((float)csf_totals[scale][b], 1.0f / 3.0f) + area_cbrt;
+            num_scale += powf((float)cm_totals[scale][b], inv_p) + area_cbrt;
+            den_scale += powf((float)csf_totals[scale][b], inv_p) + area_cbrt;
         }
         scores[2 * scale + 0] = num_scale;
         scores[2 * scale + 1] = den_scale;
@@ -816,7 +830,7 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index, VmafFeatu
          * launched), so aim_num contribution is 0 naturally. */
         float aim_num_scale = 0.0f;
         for (int b = 0; b < FADM_NUM_BANDS; b++) {
-            aim_num_scale += powf((float)aim_cm_totals[scale][b], 1.0f / (float)s->adm_p_norm);
+            aim_num_scale += powf((float)aim_cm_totals[scale][b], inv_p);
         }
         if (s->adm_skip_aim_scale != scale) {
             aim_den += den_scale;
