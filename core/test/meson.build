@@ -211,11 +211,24 @@ test_thread_pool = executable('test_thread_pool',
 )
 
 # Source inclusion allows deterministic pthread failure and wakeup injection.
-test_thread_pool_backpressure = executable('test_thread_pool_backpressure',
-    ['test.c', 'test_thread_pool_backpressure.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    dependencies : [pthread_dependency, thread_lib],
-)
+#
+# Needs a real `pthread_cond_timedwait`: the test bounds every wait so a broken
+# gate fails instead of hanging the suite. Linux and MinGW-w64's winpthreads
+# both have it. MSVC does not, and neither does this repo's Win32 shim
+# (`core/src/compat/win32/pthread.h` implements init/destroy/wait/signal/
+# broadcast over CONDITION_VARIABLE, but no timed wait), so on the MSVC lanes
+# the call was only ever an implicit declaration. Probe for it rather than
+# matching on a platform name, so the target reappears by itself if the shim
+# grows one.
+has_cond_timedwait = cc.has_header_symbol('pthread.h', 'pthread_cond_timedwait',
+                                          dependencies : [pthread_dependency, thread_lib])
+if has_cond_timedwait
+  test_thread_pool_backpressure = executable('test_thread_pool_backpressure',
+      ['test.c', 'test_thread_pool_backpressure.c'],
+      include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+      dependencies : [pthread_dependency, thread_lib],
+  )
+endif
 
 test_pdjson = executable('test_pdjson',
     ['test.c', 'test_pdjson.c', '../src/pdjson.c'],
@@ -3900,7 +3913,9 @@ test('test_output', test_output, suite : ['fast'])
 test('test_log', test_log, suite : ['fast'])
 test('test_public_api_score', test_public_api_score, suite : ['fast'])
 test('test_thread_pool', test_thread_pool, suite : ['fast'])
-test('test_thread_pool_backpressure', test_thread_pool_backpressure, suite : ['fast'])
+if has_cond_timedwait
+  test('test_thread_pool_backpressure', test_thread_pool_backpressure, suite : ['fast'])
+endif
 test('test_pdjson', test_pdjson, suite : ['fast'])
 test('test_model', test_model, suite : ['fast'])
 test('test_model_libsvm_dup_key', test_model_libsvm_dup_key, suite : ['fast'])
