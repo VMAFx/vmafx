@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "enabled": true,
+  "commit_after_minutes": 30,
+  "commit_after_files": 20,
+  "on_stop": true,
+  "publish": false,
+  "remote": "origin",
+  "base": "main",
+  "repository": "vmafx/vmafx-gen",
+  "branch_prefixes": [
+    "checkpoint/",
+    "audit/",
+    "fix/",
+    "feat/",
+    "chore/",
+    "docs/",
+    "refactor/",
+    "test/",
+    "ci/"
+  ],
+  "require_pr": false
+}

@@ -47,7 +47,7 @@ resolve under `core/include/`.
 
 2. **The local pelorus checkout had advanced past the pin.** Hypothesis: diff
    the vendored mirror against the working tree at
-   `/home/kilian/dev/pelorus`. Check: `git -C … rev-parse HEAD` returned
+   `/home/kilian/dev/vmafx/pelorus`. Check: `git -C … rev-parse HEAD` returned
    `ff63ebe`, not the pinned `835e097`; the working tree had been reformatted
    (wider column limit) AND refactored (`pel_blob_pack` split into
    `validate_pack_sections` + `write_pack_header` helpers). Conclusion: the

@@ -112,6 +112,8 @@ tools/external-bench/**/__pycache__/
 .claude/scheduled_tasks.lock
 # Agent isolation worktrees (created by parallel-agent harness; machine-local).
 .claude/worktrees/
+# Local merge-train nudger + its log (machine-local operator tooling).
+.claude/mergetrain/
 
 # Generated benchmark results
 testdata/bbb/results/
@@ -211,3 +213,12 @@ relcache/
 # `-version` behind. A leading dash also makes `pre-commit run --files` parse
 # the path as an option, so the large-file hook never sees it.
 /tools/vmaf-tune/-version
+# local-only agent scratch (bench fixtures, fan-out logs, tmp scratch)
+.claude/bench-data/
+.claude/fanout/
+.claude/tmpsp/
+
+# Vendor skill mirrors. `.claude/skills/` is canonical and tracked; the
+# per-vendor copies drift and are regenerated from it.
+.agents/skills/
+/.workingdir/

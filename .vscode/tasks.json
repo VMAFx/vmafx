@@ -1,58 +1,41 @@
 {
-  "version": "2.0.0",
   "tasks": [
     {
-      "label": "meson: setup CPU",
-      "type": "shell",
-      "command": "meson setup build libvmaf -Denable_cuda=false -Denable_sycl=false --buildtype=debug",
-      "problemMatcher": ["$gcc"],
-      "group": "build"
+      "command": "make verify-all",
+      "group": {
+        "isDefault": true,
+        "kind": "test"
+      },
+      "label": "Standards: Verify All",
+      "problemMatcher": [
+        "$go"
+      ],
+      "type": "shell"
     },
     {
-      "label": "meson: setup CUDA",
-      "type": "shell",
-      "command": "meson setup build libvmaf -Denable_cuda=true -Denable_sycl=false --buildtype=debug --reconfigure",
-      "problemMatcher": ["$gcc"],
-      "group": "build"
+      "command": "make build",
+      "group": {
+        "isDefault": true,
+        "kind": "build"
+      },
+      "label": "Standards: Build Binaries",
+      "problemMatcher": [
+        "$go"
+      ],
+      "type": "shell"
     },
     {
-      "label": "meson: setup SYCL",
-      "type": "shell",
-      "command": "meson setup build libvmaf -Denable_cuda=false -Denable_sycl=true --buildtype=debug --reconfigure",
-      "problemMatcher": ["$gcc"],
-      "group": "build"
-    },
-    {
-      "label": "build",
-      "type": "shell",
-      "command": "meson compile -C build",
-      "problemMatcher": ["$gcc"],
-      "group": { "kind": "build", "isDefault": true }
-    },
-    {
-      "label": "test: unit",
-      "type": "shell",
-      "command": "meson test -C build --print-errorlogs",
+      "command": "standardsctl compile-context",
+      "label": "Standards: Compile Context",
       "problemMatcher": [],
-      "group": { "kind": "test", "isDefault": true }
+      "type": "shell"
     },
     {
-      "label": "test: netflix-golden",
-      "type": "shell",
-      "command": "make test-netflix-golden",
-      "problemMatcher": []
-    },
-    {
-      "label": "lint: all",
-      "type": "shell",
-      "command": "make lint",
-      "problemMatcher": ["$gcc"]
-    },
-    {
-      "label": "format: all",
-      "type": "shell",
-      "command": "make format",
-      "problemMatcher": []
+      "command": "standardsctl audit",
+      "label": "Standards: Audit Invariants",
+      "problemMatcher": [],
+      "type": "shell"
     }
-  ]
+  ],
+  "version": "2.0.0"
 }

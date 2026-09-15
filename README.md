@@ -1,5 +1,7 @@
 # VMAFx
 
+[![HISS-16 Compliant](https://img.shields.io/badge/Standards-HISS--16%20Compliant-brightgreen)](AGENTS.md)
+
 <!-- Build / test / security CI badges (live status) -->
 [![Tests](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
 [![Lint](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml)
@@ -258,3 +260,14 @@ rig maintenance and test hardware at [ko-fi.com/lusoris](https://ko-fi.com/lusor
 
 For release history and upstream updates, see [`CHANGELOG.md`](CHANGELOG.md)
 and [Netflix/vmaf Releases](https://github.com/Netflix/vmaf/releases).
+
+## Standards & Governance
+
+This repository conforms to High-Integrity Systems Standards (HISS-16)
+and modernized NASA JPL Power-of-10 rules.
+
+| Gate | Command | Description |
+| :--- | :--- | :--- |
+| **Verification** | `make verify-all` | Runs full audit, test suite, and context integrity check |
+| **HISS Audit** | `standardsctl audit` | Enforces zero technical debt regression against baseline |
+| **Context Sync** | `standardsctl compile-context` | Transpiles canonical `AGENTS.md` to all AI targets |
