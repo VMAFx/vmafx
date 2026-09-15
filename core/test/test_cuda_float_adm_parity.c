@@ -121,7 +121,28 @@ static int fill_dist(VmafPicture *pic, unsigned frame_idx)
     return 0;
 }
 
-static char *run_cpu(double *out_scores)
+/* Derived feature names use the feature's ALIAS as their base once any option
+ * is non-default (feature_name.cpp: `vmaf_feature_name_alias(name)` + one
+ * `_<alias>_<value>` per option, options sorted alphabetically by name), e.g.
+ * "VMAF_feature_adm2_score" -> "adm2_scfd_0.5_scf_2". Strip the fixed
+ * prefix/suffix at runtime rather than keeping a parallel alias table. */
+static void adm_key(char *out, size_t n, const char *full, const char *suffix)
+{
+    static const char pfx[] = "VMAF_feature_";
+    static const char sfx[] = "_score";
+    const size_t pl = sizeof(pfx) - 1u;
+    const size_t sl = sizeof(sfx) - 1u;
+    const size_t fl = strlen(full);
+    if (!suffix[0]) {
+        (void)snprintf(out, n, "%s", full);
+    } else if (strncmp(full, pfx, pl) == 0 && fl > pl + sl && strcmp(full + fl - sl, sfx) == 0) {
+        (void)snprintf(out, n, "%.*s%s", (int)(fl - pl - sl), full + pl, suffix);
+    } else {
+        (void)snprintf(out, n, "%s%s", full, suffix);
+    }
+}
+
+static char *run_cpu(double *out_scores, VmafFeatureDictionary *opts, const char *suffix)
 {
     int err = 0;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
@@ -129,7 +150,7 @@ static char *run_cpu(double *out_scores)
     err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
 
-    err = vmaf_use_feature(vmaf, "float_adm", NULL);
+    err = vmaf_use_feature(vmaf, "float_adm", opts);
     mu_assert("CPU: vmaf_use_feature(float_adm) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
@@ -145,7 +166,9 @@ static char *run_cpu(double *out_scores)
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
-        err = vmaf_feature_score_at_index(vmaf, ADM_FEATURES[m], &out_scores[m], 1u);
+        char key[128];
+        adm_key(key, sizeof(key), ADM_FEATURES[m], suffix);
+        err = vmaf_feature_score_at_index(vmaf, key, &out_scores[m], 1u);
         mu_assert("CPU: vmaf_feature_score_at_index(adm[i], idx=1) failed", !err);
     }
 
@@ -154,7 +177,8 @@ static char *run_cpu(double *out_scores)
     return NULL;
 }
 
-static char *run_cuda(double *out_scores, int *skipped)
+static char *run_cuda(double *out_scores, int *skipped, VmafFeatureDictionary *opts,
+                      const char *suffix)
 {
     *skipped = 0;
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++)
@@ -178,7 +202,7 @@ static char *run_cuda(double *out_scores, int *skipped)
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
 
-    err = vmaf_use_feature(vmaf, "float_adm_cuda", NULL);
+    err = vmaf_use_feature(vmaf, "float_adm_cuda", opts);
     mu_assert("CUDA: vmaf_use_feature(float_adm_cuda) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
@@ -194,7 +218,9 @@ static char *run_cuda(double *out_scores, int *skipped)
     mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
 
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
-        err = vmaf_feature_score_at_index(vmaf, ADM_FEATURES[m], &out_scores[m], 1u);
+        char key[128];
+        adm_key(key, sizeof(key), ADM_FEATURES[m], suffix);
+        err = vmaf_feature_score_at_index(vmaf, key, &out_scores[m], 1u);
         mu_assert("CUDA: vmaf_feature_score_at_index(adm[i], idx=1) failed", !err);
     }
 
@@ -205,16 +231,20 @@ static char *run_cuda(double *out_scores, int *skipped)
     return NULL;
 }
 
-static char *test_float_adm_cpu_cuda_parity(void)
+/* Shared comparison body: run both sides with `opts` (consumed by
+ * vmaf_use_feature; build a fresh dictionary per side) and compare every
+ * feature whose name is ADM_FEATURES[m] + suffix. */
+static char *compare_cpu_cuda(VmafFeatureDictionary *cpu_opts, VmafFeatureDictionary *cuda_opts,
+                              const char *suffix, const char *label)
 {
     double cpu_scores[NUM_ADM_FEATURES] = {0};
     double cuda_scores[NUM_ADM_FEATURES] = {0};
     int skipped = 0;
 
-    char *msg = run_cpu(cpu_scores);
+    char *msg = run_cpu(cpu_scores, cpu_opts, suffix);
     if (msg)
         return msg;
-    msg = run_cuda(cuda_scores, &skipped);
+    msg = run_cuda(cuda_scores, &skipped, cuda_opts, suffix);
     if (msg)
         return msg;
     if (skipped)
@@ -227,8 +257,10 @@ static char *test_float_adm_cpu_cuda_parity(void)
         const double delta = fabs(cpu_scores[m] - cuda_scores[m]);
         if (delta > PARITY_TOL) {
             (void)fprintf(stderr,
-                          "\nfloat_adm parity FAIL %s: cpu=%.8f cuda=%.8f delta=%.2e tol=%.2e\n",
-                          ADM_FEATURES[m], cpu_scores[m], cuda_scores[m], delta, PARITY_TOL);
+                          "\nfloat_adm parity FAIL [%s] %s%s: cpu=%.8f cuda=%.8f delta=%.2e "
+                          "tol=%.2e\n",
+                          label, ADM_FEATURES[m], suffix, cpu_scores[m], cuda_scores[m], delta,
+                          PARITY_TOL);
         }
         mu_assert("float_adm CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)",
                   delta <= PARITY_TOL);
@@ -236,8 +268,40 @@ static char *test_float_adm_cpu_cuda_parity(void)
     return NULL;
 }
 
+static char *test_float_adm_cpu_cuda_parity(void)
+{
+    return compare_cpu_cuda(NULL, NULL, "", "default");
+}
+
+/* ADR-1214: adm_csf_scale / adm_csf_diag_scale are Barten-mode (mode 1)
+ * options. In the Watson-97 mode this twin supports, the CPU ignores them;
+ * the twin used to multiply them into every CSF rfactor. The derived feature
+ * names must also agree — the CPU aliases them "scf" / "scfd", and the twin
+ * used to say "cs" / "cds", so the same request produced different keys.
+ * Options are sorted alphabetically by NAME when the suffix is built
+ * (adm_csf_diag_scale before adm_csf_scale), and numeric values print with
+ * %g, hence "_scfd_0.5_scf_2". */
+static VmafFeatureDictionary *csf_scale_opts(void)
+{
+    VmafFeatureDictionary *d = NULL;
+    if (vmaf_feature_dictionary_set(&d, "adm_csf_scale", "2.0"))
+        return NULL;
+    if (vmaf_feature_dictionary_set(&d, "adm_csf_diag_scale", "0.5"))
+        return NULL;
+    return d;
+}
+
+static char *test_float_adm_cpu_cuda_parity_csf_scale(void)
+{
+    VmafFeatureDictionary *cpu_opts = csf_scale_opts();
+    VmafFeatureDictionary *cuda_opts = csf_scale_opts();
+    mu_assert("csf_scale_opts: dictionary build failed", cpu_opts && cuda_opts);
+    return compare_cpu_cuda(cpu_opts, cuda_opts, "_scfd_0.5_scf_2", "adm_csf_scale=2");
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_float_adm_cpu_cuda_parity);
+    mu_run_test(test_float_adm_cpu_cuda_parity_csf_scale);
     return NULL;
 }
