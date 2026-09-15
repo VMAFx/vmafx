@@ -956,3 +956,4 @@
 1245-cppcheck-exhaustive-configured-analysis
 1246-cppcheck-public-entrypoints
 1248-repository-security-enforcement
+1252-solo-maintainer-declared-bypass

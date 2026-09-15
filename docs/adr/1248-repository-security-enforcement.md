@@ -1,6 +1,6 @@
 # ADR-1248: Enforce repository security through public rulesets
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-1252](1252-solo-maintainer-declared-bypass.md)
 - **Date**: 2026-09-08
 - **Deciders**: lusoris
 - **Tags**: security, ci, governance

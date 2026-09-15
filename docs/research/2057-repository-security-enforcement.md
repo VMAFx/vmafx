@@ -44,3 +44,23 @@ The local evidence root is
 `.workingdir2/evidence/scorecard-repository-security-2026-09-08/`. It retains the
 before/after API responses, canonical payload, offline controls, commit/hook
 receipts and checksums. API metadata is read-only and contains no credentials.
+
+## Addendum, 2026-09-15 — the control could not be satisfied
+
+The payload this digest measured declared no bypass actors and one required
+independent approval. Seven days of evidence showed that combination is
+unsatisfiable here: `VMAFx` has one collaborator, who authors every pull request,
+and GitHub forbids self-approval.
+
+Measured outcome — the last merge was #1413 at 2026-09-08 16:15 UTC, and the
+ruleset was created at 23:26 local the same day. Nothing merged in the week that
+followed, including a fully green #1396 and two security dependency bumps. Every
+merge in the repository's history predates the ruleset and had zero reviews, so
+the control was never satisfied, only avoided.
+
+[ADR-1252](../adr/1252-solo-maintainer-declared-bypass.md) supersedes ADR-1248:
+the ruleset keeps every other control and declares exactly one `User` bypass
+actor, and the drift checker now verifies the declared list rather than asserting
+an empty one. The limitation that matters for this digest's own method: a reader
+without ruleset write access sees only `bypassActors.totalCount`, so it can
+confirm how many actors bypass but not which.

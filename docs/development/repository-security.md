@@ -11,8 +11,19 @@ Every merge needs one independent human approval after the latest push, resolved
 review threads, and an up-to-date branch with the **Required Checks Aggregator**
 check passing from GitHub Actions. New commits dismiss stale approvals. Only
 squash and rebase merges are allowed; history stays linear. Force pushes and
-branch deletion are blocked. The ruleset has no administrator, bot, or other
-bypass actors. AI reviews do not satisfy the human approval requirement.
+branch deletion are blocked. AI reviews do not satisfy the human approval
+requirement.
+
+The ruleset carries **exactly one** bypass actor: the `lusoris` account, by
+numeric user id, declared in `.github/repository-security-policy.json`. It exists
+because this is a single-maintainer repository — GitHub forbids approving your own
+pull request, so with no bypass actor the approval requirement had nobody who
+could satisfy it and nothing merged for a week ([ADR-1252](../adr/1252-solo-maintainer-declared-bypass.md),
+superseding [ADR-1248](../adr/1248-repository-security-enforcement.md)). The
+bypass waives the **approval**, not the tests: `Required Checks Aggregator` is
+still a required status check. No role tier, bot, or second account holds bypass,
+and the drift checker fails on any actor that is not the declared one. Remove the
+bypass as soon as a second maintainer can review.
 
 These settings supplement the local lint/test and hosted gate requirements in
 [AGENTS.md](../../AGENTS.md). They do not resume the merge train or establish that
@@ -46,9 +57,13 @@ permission or stored personal access token is required. Do not print tokens.
 
 GitHub omits `bypass_actors` from REST responses for readers without ruleset write
 access. The checker then uses `gh api graphql` to read only the matching ruleset's
-bypass actor count. Use an existing `gh auth login` session locally, or `GH_TOKEN`
-in CI. A missing or inaccessible count fails the check: omission never means
-zero. REST requests and the CLI subprocess each have a 30-second timeout.
+bypass actor count and compares it with the number of actors the policy declares.
+Use an existing `gh auth login` session locally, or `GH_TOKEN` in CI. A missing or
+inaccessible count fails the check: omission never means a match. Note the limit
+of that path — a count cannot tell one actor from another, so a reader without
+admin rights cannot confirm that the single bypass actor is the declared one. A
+reader with admin rights sees the list and the checker compares identities
+exactly. REST requests and the CLI subprocess each have a 30-second timeout.
 
 ## Maintain the policy
 

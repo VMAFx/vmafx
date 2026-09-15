@@ -6,7 +6,9 @@
     "name": "VMAFx master security",
     "target": "branch",
     "enforcement": "active",
-    "bypass_actors": [],
+    "bypass_actors": [
+      {"actor_id": 6750258, "actor_type": "User", "bypass_mode": "always"}
+    ],
     "conditions": {"ref_name": {"include": ["refs/heads/master"], "exclude": []}},
     "rules": [
       {"type": "deletion"},

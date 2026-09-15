@@ -150,12 +150,17 @@ def inspect(policy: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
     data["ruleset"] = get_json(prefix + f"/rulesets/{rule_id}")
     comparable = desired
     if isinstance(data["ruleset"], dict) and "bypass_actors" not in data["ruleset"]:
-        if desired["bypass_actors"] != []:
-            raise ValueError("managed ruleset policy must forbid all bypass actors")
+        # REST hides the actor list from non-admin readers, so this path can only
+        # verify HOW MANY actors bypass, not WHICH. A reader without admin rights
+        # therefore cannot distinguish the declared actor from a substituted one
+        # of the same count; the admin readback below compares identities exactly.
+        # ADR-1252 accepts that limit as the price of a declared, countable
+        # exception over an undeclared one.
+        expected = desired["bypass_actors"]
         count = bypass_count(rule_id)
         data["bypass_actor_count"] = count
-        if count != 0:
-            errors.append(f"ruleset.bypass_actors: expected none, found {count}")
+        if count != len(expected):
+            errors.append(f"ruleset.bypass_actors: expected {len(expected)}, found {count}")
         comparable = {key: value for key, value in desired.items() if key != "bypass_actors"}
     errors.extend(differences(comparable, data["ruleset"], "ruleset"))
     effective = get_json(prefix + "/rules/branches/master?per_page=100")
