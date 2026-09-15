@@ -898,6 +898,7 @@ The four DNN bridge exports retain out-of-profile consumers in
 preserve those interfaces without disabling ordinary unused checks. The glibc
 weak symbol retains its dictated ABI spelling. See
 [Research-2048](../docs/research/2048-model-registration-ownership-2026-09-08.md).
+
 ## Every `NOLINT` names its ADR, and the citation has to be within one line
 
 [ADR-0141](../docs/adr/0141-touched-file-cleanup-rule.md) §2 requires each

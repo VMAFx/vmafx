@@ -58,7 +58,8 @@ permission or stored personal access token is required. Do not print tokens.
 GitHub omits `bypass_actors` from REST responses for readers without ruleset write
 access. The checker then uses `gh api graphql` to read only the matching ruleset's
 bypass actor count and compares it with the number of actors the policy declares.
-Use an existing `gh auth login` session locally, or `GH_TOKEN` in CI. A missing or
+Use an existing `gh auth login` session locally, or `GH_TOKEN` in CI. A
+missing or
 inaccessible count fails the check: omission never means a match. Note the limit
 of that path — a count cannot tell one actor from another, so a reader without
 admin rights cannot confirm that the single bypass actor is the declared one. A

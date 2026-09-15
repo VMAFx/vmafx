@@ -465,6 +465,7 @@ Guarded by `core/test/test_hip_speed_singular_parity.c`. The older
 chroma planes give 4x2 = 8 blocks for a 25x25 covariance — singular on
 every frame — so they never exercise the regular path. A SpEED test that
 needs a regular frame must be at least 960x960.
+
 ## CAMBI: use the shared TVI helper and the CPU's border rules (ADR-1219)
 
 Three exact-logic traps, all of which the HIP twin fell into and which
@@ -502,7 +503,6 @@ stepping 32 levels every 32 columns scores 0.0 on the CPU too and makes
 the assertion `0 == 0`. Use a 10-bit gradient of one level every two
 columns inside the TVI band (200..900) and assert the CPU score is
 non-degenerate first.
-
 
 ## float_adm options must reach the kernels (ADR-1220)
 
