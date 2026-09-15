@@ -46,7 +46,7 @@ jobs:
       # gate red on unrelated work.
       - name: Install praetorctl
         env:
-          PRAETOR_REF: PRAETOR_PINNED_SHA
+          PRAETOR_REF: 5a671abfc795cdd5ae59a89762aff56c4cfb1421  # praetor main, 2026-09-15; the baseline is recorded against this engine
         run: |
           go install "github.com/cordanaLLM/praetor/cmd/standardsctl@${PRAETOR_REF}"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"

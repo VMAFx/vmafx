@@ -18,6 +18,16 @@ pre-commit:
     govet:
       glob: "*.go"
       run: go vet ./...
+    framework-hooks:
+      # ADR-1249: lefthook owns .git/hooks because the praetor audit requires
+      # active lefthook hooks, and delegates to the pre-commit framework so this
+      # repository's existing hooks (clang-format, ruff, markdownlint, the ADR,
+      # state.md and aggregator gates, semgrep, the ADR-0332 worktree-drift
+      # guard) keep running unchanged. Superseding note for ADR-0924.
+      run: |
+        if [ -x .venv/bin/pre-commit ]; then .venv/bin/pre-commit run; \
+        elif command -v pre-commit >/dev/null 2>&1; then pre-commit run; \
+        else echo "pre-commit is not installed; framework hooks skipped" >&2; fi
     context-check:
       run: if command -v praetorctl >/dev/null 2>&1; then praetorctl compile-context --verify; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl compile-context --verify; else echo HISS-16 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
     hiss-audit:
