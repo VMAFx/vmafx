@@ -29,7 +29,7 @@ The script:
   `ok      <name> (md5 verified)` for each fixture and exits 0.
 
 These two fixtures are sufficient for the §8 Netflix CPU golden gate
-([ADR-0024](../adr/0024-netflix-golden-tests.md)) and for the
+([ADR-0024](../adr/0024-netflix-golden-preserved.md)) and for the
 cross-backend VIF / motion diff jobs that CI runs.
 
 ## Why md5 verification matters
@@ -70,5 +70,5 @@ add the file (with its md5) to the `FIXTURES` array in
 ## Related
 
 - [`CLAUDE.md` §8](../../CLAUDE.md) — Netflix golden-data gate rule
-- [ADR-0024](../adr/0024-netflix-golden-tests.md) — Netflix golden tests
+- [ADR-0024](../adr/0024-netflix-golden-preserved.md) — Netflix golden tests
 - [ADR-0493](../adr/0493-test-yuv-fixture-md5-verification.md) — this provisioner rationale

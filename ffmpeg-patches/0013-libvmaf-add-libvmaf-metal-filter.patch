@@ -1,4 +1,4 @@
-From 1de88053272eb76d600cac8ca2a872802706ab41 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Mon, 11 May 2026 23:30:00 +0200
 Subject: [PATCH] libvmaf: add libvmaf_metal filter (zero-copy IOSurface
@@ -52,7 +52,7 @@ Patch is on top of 0001-0012 (post-metal-backend-selector baseline).
  4 files changed, 273 insertions(+)
 
 diff --git a/configure b/configure
-index fc8cab818e..bacc4e9bf0 100755
+index fc8cab818ef59faeb3c4ffbcfbaac504a4ff5ee4..bacc4e9bf08f336fdb4f05b7aa8e2752c4f5a2c1 100755
 --- a/configure
 +++ b/configure
 @@ -4306,6 +4306,7 @@ vidstabdetect_filter_deps="libvidstab"
@@ -73,7 +73,7 @@ index fc8cab818e..bacc4e9bf0 100755
                               check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
  enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
-index 3b20788df7..9e19069dc9 100644
+index 3b20788df758b060847768e731718024b4a75a49..9e19069dc9a1fa01fa5d456602dba6cfdba9d7de 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
 @@ -376,6 +376,7 @@ OBJS-$(CONFIG_LENSFUN_FILTER)                += vf_lensfun.o
@@ -85,7 +85,7 @@ index 3b20788df7..9e19069dc9 100644
  OBJS-$(CONFIG_LIBVMAF_VULKAN_FILTER)          += vf_libvmaf.o framesync.o
  OBJS-$(CONFIG_LIMITDIFF_FILTER)              += vf_limitdiff.o framesync.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
-index 9bd3aa0163..75e598b530 100644
+index 9bd3aa0163aa8ef1a95897dfab1b75246b132595..75e598b530bb0a60f3e94098e6c8d25ed9fd9513 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
 @@ -350,6 +350,7 @@ extern const FFFilter ff_vf_lensfun;
@@ -97,7 +97,7 @@ index 9bd3aa0163..75e598b530 100644
  extern const FFFilter ff_vf_libvmaf_vulkan;
  extern const FFFilter ff_vf_libvmaf_tune;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index b6d77a7a9e..e8d018ed9e 100644
+index b6d77a7a9e74ec0937493f12668602271a494e0e..e8d018ed9e67cd8473248e16febcceee8a27d306 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -76,6 +76,12 @@
@@ -379,6 +379,3 @@ index b6d77a7a9e..e8d018ed9e 100644
 +    .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 +};
 +#endif
--- 
-2.55.0
-

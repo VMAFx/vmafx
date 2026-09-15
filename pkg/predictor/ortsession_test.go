@@ -4,8 +4,12 @@
 package predictor
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -70,5 +74,93 @@ func TestIsStubPredictorModel(t *testing.T) {
 	}
 	if IsStubPredictorModel("model/predictor_av1_qsv.onnx") {
 		t.Errorf("IsStubPredictorModel(predictor_av1_qsv) = true, want false")
+	}
+}
+
+func TestIsStubPredictorModelCard(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, model, card string
+		want              bool
+	}{
+		{"synthetic custom model", "custom.onnx", "corpus.kind: synthetic-stub-N=100", true},
+		{"real overrides codec fallback", "predictor_libx264.onnx", "corpus.kind: real-N=200", false},
+		{"synthetic takes precedence", "custom.onnx", "real-N=200 synthetic-stub-N=100", true},
+		{"unrecognized card keeps codec fallback", "predictor_libx264.onnx", "unknown", true},
+		{"filename stub takes precedence", "custom_stub.onnx", "real-N=200", true},
+		{"multi-dot basename", "custom.v2.onnx", "synthetic-stub-N=100", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			modelPath := filepath.Join(dir, tc.model)
+			cardPath := modelPath[:len(modelPath)-len(filepath.Ext(modelPath))] + "_card.md"
+			if err := os.WriteFile(cardPath, []byte(tc.card), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if got := IsStubPredictorModel(modelPath); got != tc.want {
+				t.Errorf("IsStubPredictorModel(%q) = %v, want %v", modelPath, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsStubPredictorModelCardSymlinks(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, target string
+		want         bool
+	}{
+		{"inside model directory", "card.md", true},
+		{"outside model directory", "../card.md", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			modelDir := filepath.Join(dir, "models")
+			if err := os.Mkdir(modelDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(modelDir, tc.target), []byte("synthetic-stub-N=100"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(tc.target, filepath.Join(modelDir, "custom_card.md")); err != nil {
+				t.Skipf("symlink unavailable: %v", err)
+			}
+			if got := IsStubPredictorModel(filepath.Join(modelDir, "custom.onnx")); got != tc.want {
+				t.Errorf("IsStubPredictorModel with card symlink %q = %v, want %v", tc.target, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsStubPredictorModelMissingCardFallback(t *testing.T) {
+	t.Parallel()
+	for _, dir := range []string{t.TempDir(), filepath.Join(t.TempDir(), "missing")} {
+		if !IsStubPredictorModel(filepath.Join(dir, "predictor_libx264.onnx")) {
+			t.Error("missing card must preserve the known-codec stub fallback")
+		}
+		if IsStubPredictorModel(filepath.Join(dir, "custom.onnx")) {
+			t.Error("missing card must not classify a custom model as a known stub")
+		}
+	}
+}
+
+func TestNewWithModelUsesResolvedModelCard(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("VMAFX_MODEL_DIR", dir)
+	if err := os.WriteFile(filepath.Join(dir, "custom.onnx"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "custom_card.md"), []byte("synthetic-stub-N=100"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&output, nil))
+	if _, err := NewWithModel(context.Background(), "custom", log); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "loading synthetic-stub model") {
+		t.Errorf("registry-resolved model did not emit its card's stub warning: %s", output.String())
 	}
 }

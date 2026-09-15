@@ -147,7 +147,8 @@ shared error-handling and partial-init unwind paths, not the line count.
 The Vulkan template captured the descriptor-pool + pipeline + per-WG int64
 partials shape that every Vulkan SSBO-only reduction kernel used. The
 reference implementation was
-[`psnr_vulkan.c`](../../core/src/feature/vulkan/psnr_vulkan.c) (deleted).
+`core/src/feature/vulkan/psnr_vulkan.c`
+(removed in [ADR-0726](../adr/0726-drop-vulkan-backend.md)).
 
 ### Surface
 
@@ -418,8 +419,9 @@ trade-offs for all four backends:
   Metal section addition.
 - [`core/src/cuda/AGENTS.md`](../../core/src/cuda/AGENTS.md) — kernel
   template invariant row.
-- [`core/src/vulkan/AGENTS.md`](../../core/src/vulkan/AGENTS.md) —
-  kernel template invariant row.
+- `core/src/vulkan/AGENTS.md` — historical kernel-template invariant
+  record, removed with the backend in
+  [ADR-0726](../adr/0726-drop-vulkan-backend.md).
 - [`core/src/hip/AGENTS.md`](../../core/src/hip/AGENTS.md) — HIP
   kernel template invariant row.
 - [`core/src/metal/AGENTS.md`](../../core/src/metal/AGENTS.md) — Metal

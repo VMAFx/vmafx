@@ -75,12 +75,17 @@ libvmaf=model=version=vmaf_v0.6.1:log_path=/dev/stdout:log_fmt=json:n_threads=4
 | `n_threads` | integer | `0` (library default) | Number of worker threads libvmaf is allowed to spawn. |
 | `n_subsample` | integer `≥ 1` | `1` | Compute VMAF on every Nth frame only — useful for long-clip QC. |
 
+Percentile pooling is available when the libvmaf headers define
+`VMAF_HAVE_PERCENTILE_POOLING`. Apply the complete ordered patch series;
+patch 0018 adds the compatibility guard to the mappings introduced by patch
+0005. Without that macro, percentile strings retain the `mean` fallback.
+
 The filter publishes the final pooled score to FFmpeg's log as
 `VMAF score: <mean>`; the structured log at `log_path` is authoritative.
 
 ### Fork-added options
 
-The fork's `ffmpeg-patches/` series (0001–0017) adds options to
+The fork's `ffmpeg-patches/` series (0001–0018) adds options to
 the `libvmaf` filter beyond the upstream surface — tiny-AI ONNX
 inference, backend selectors for SYCL / CUDA / HIP, a dedicated
 `libvmaf_sycl` filter, and the Pelorus perceptual-weighting reader. (The `libvmaf_vulkan` filter and `vulkan_device`
@@ -394,7 +399,7 @@ The same fork-added selector pattern exists for SYCL, CUDA, and HIP on the
 | `sycl_device=N` | `-1` (disabled) | Pick SYCL device ordinal; `-1` keeps the CPU path. Errors out if libvmaf was built without `-Denable_sycl=true`. Patch `0003`. |
 | `sycl_profile=0\|1` | `0` | Enable SYCL queue profiling. Patch `0003`. |
 | `cuda=0\|1` | `0` | Enable CUDA compute path on software-decoded input. Patch `0010`. |
-| `hip_device=N` | `-1` (disabled) | Pick HIP device ordinal; `-1` keeps the CPU path. Errors out if libvmaf was built without `-Denable_hip=true`. Patch `0011` ([ADR-0380](../adr/0380-ffmpeg-hip-backend-selector.md)). |
+| `hip_device=N` | `-1` (disabled) | Pick HIP device ordinal; `-1` keeps the CPU path. Errors out if libvmaf was built without `-Denable_hip=true`. Patch `0011` ([ADR-0380](../adr/0380-ffmpeg-patches-hip-backend-selector.md)). |
 
 ## External resources
 

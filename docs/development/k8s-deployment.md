@@ -267,7 +267,7 @@ profile (ADR-0930):
 | Setting                          | Value                              | Why                                                                                          |
 |----------------------------------|------------------------------------|----------------------------------------------------------------------------------------------|
 | `runAsNonRoot`                   | `true`                             | Required by `restricted`; matches the `USER nonroot:nonroot` directive in every production image (ADR-0878). |
-| `runAsUser` / `runAsGroup`       | `65532`                            | Distroless `gcr.io/distroless/cc-debian12` baked-in nonroot UID/GID — keeps file ownership consistent across `emptyDir`, PVCs, and rclone caches. |
+| `runAsUser` / `runAsGroup`       | `65532`                            | Distroless `gcr.io/distroless/cc-debian13` baked-in nonroot UID/GID — keeps file ownership consistent across `emptyDir`, PVCs, and rclone caches. |
 | `readOnlyRootFilesystem`         | `true`                             | Writes are restricted to explicitly-mounted `emptyDir` / PVC volumes (`/tmp`, the StatefulSet's `/var/lib/vmafx`).  Catches privilege-escalation primitives that depend on overwriting on-disk binaries. |
 | `allowPrivilegeEscalation`       | `false`                            | Drops the `no_new_privs` exec bit; covers the SUID and `cap_setuid` escape paths.            |
 | `capabilities.drop`              | `[ALL]`                            | Distroless containers do not need `CAP_NET_BIND_SERVICE` etc.; everything is dropped.        |
@@ -352,8 +352,8 @@ Requires Kubernetes >= 1.21 (for `policy/v1`). See ADR-1058, ADR-1094.
 ## Related
 
 - [GPU scheduling guide](gpu-scheduling.md)
-- [Production Dockerfile](../../deploy/Dockerfile) — ADR-0698
-- [Cloud-native redesign](../../docs/adr/0697-vmafx-cloud-native-redesign.md) — ADR-0697
+- [Production Dockerfile](../../docker/Dockerfile.production) — ADR-0698
+- [Cloud-native server foundation](../adr/0701-vmafx-cloud-native-redesign.md) — ADR-0701
 - [Helm chart ADR](../../docs/adr/0699-vmafx-helm-chart-k8s.md) — ADR-0699
 - [Security hardening ADR](../../docs/adr/1058-helm-chart-security-hardening.md) — ADR-1058
 - [Rolling-update correctness ADR](../../docs/adr/1094-helm-rolling-update-correctness.md) — ADR-1094

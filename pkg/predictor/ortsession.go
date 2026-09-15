@@ -63,10 +63,7 @@ func IsStubPredictorModel(modelPath string) bool {
 	if strings.Contains(strings.ToLower(base), "stub") {
 		return true
 	}
-	ext := filepath.Ext(modelPath)
-	stem := strings.TrimSuffix(modelPath, ext)
-	cardPath := stem + "_card.md"
-	if data, err := os.ReadFile(cardPath); err == nil {
+	if data, err := readPredictorCard(modelPath); err == nil {
 		cardText := string(data)
 		if strings.Contains(cardText, "synthetic-stub") {
 			return true
@@ -87,6 +84,19 @@ func IsStubPredictorModel(modelPath string) bool {
 	return false
 }
 
+// readPredictorCard confines optional card access to the selected model's
+// directory, including when the card is a symlink.
+func readPredictorCard(modelPath string) ([]byte, error) {
+	root, err := os.OpenRoot(filepath.Dir(modelPath))
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	base := filepath.Base(modelPath)
+	cardName := strings.TrimSuffix(base, filepath.Ext(base)) + "_card.md"
+	return root.ReadFile(cardName)
+}
+
 // NewWithModel builds the predictor a `--model`-bearing subcommand runs on:
 // the analytical curve when modelPath is empty, otherwise the curve with an
 // ORTSession attached and log receiving the one-time fallback warning.
@@ -99,10 +109,11 @@ func NewWithModel(ctx context.Context, modelPath string, log *slog.Logger) (*Pre
 	if modelPath == "" {
 		return New(), nil
 	}
-	if _, err := ai.NewRegistry("").ModelPath(modelPath); err != nil {
+	resolvedPath, err := ai.NewRegistry("").ModelPath(modelPath)
+	if err != nil {
 		return nil, err
 	}
-	if IsStubPredictorModel(modelPath) {
+	if IsStubPredictorModel(resolvedPath) {
 		if log != nil {
 			log.Warn("predictor: loading synthetic-stub model; not authoritative for production CRF picks",
 				"model", modelPath)

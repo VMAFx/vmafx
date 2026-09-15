@@ -1,6 +1,69 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## FFmpeg stable-release patch maintenance (2026-09-08)
+
+Preserve `build-config.env` as the FFmpeg remote/tag owner, the ordered
+`ffmpeg-patches/series.txt`, and `FFmpeg Patch Stack` in the required aggregator.
+Regenerate with `scripts/ci/ffmpeg_patch_stack.py --refresh`; checks fetch the
+reviewed tag, while scheduled `--latest` refreshes select stable releases only.
+Canonical patch mail metadata changes without changing the applied source tree.
+Local hooks use disposable Git state and fail closed on network/replay errors.
+See [ADR-1240](adr/1240-ffmpeg-release-patch-lifecycle.md).
+## fix/agent-cleanup-preserve-work-20260908 — preserve agent state (2026-09-08)
+
+`cleanup-agent-state.sh` is fork-owned. Preserve ADR-1239's report-only default,
+explicit worktree selections, non-force removal, file-state guards and stash
+retention when rebasing developer tooling. Branch existence never proves a stash
+is redundant. Regression: `bash scripts/dev/test-cleanup-agent-state.sh`.
+## fix/docs-guide-references — developer/usage links and push tools (2026-09-08)
+
+Preserve canonical ADR IDs alongside link slugs, backend overview paths,
+and the historical-but-unpublished T7-3 notebook note. The MkDocs push hook
+selects documentation before checking availability; missing MkDocs blocks
+selected docs, while direct non-doc invocation still skips. The real-Git
+fixture tests both cases. No libvmaf/FFmpeg API impact.
+
+## fix/generated-adr-freshness — generated metadata (2026-09-08)
+
+Regenerate with `make docs-fragments-write` after combining ADR fragments.
+Tags must precede navigation. Preserve required Docs/local freshness checks,
+fragment coverage validation, and generator fixtures (ADR-1242). Accepted
+ADR bodies and tag taxonomy are unchanged; only mutable fragments and
+rendered outputs are refreshed.
+
+## fix/worktree-hook-dispatch — local hook lifetime (2026-09-08)
+
+Preserve regular dispatchers, actual Git argument/stdin forwarding, and
+independent MkDocs/PR-body push checks (ADR-1241). Keep the disposable
+lifecycle fixture wired into required Pre-Commit CI. Fork-only tooling;
+no Netflix C API or FFmpeg patch impact.
+## fix/base-image-unpinned-reference-guard — Level Zero config consumer (2026-09-08)
+
+The development SDK stage reads `LEVEL_ZERO_VERSION` from its copied
+`build-config.env` during the download RUN; no Docker ARG mirror is needed.
+Keep both URL fields and the Renovate manager attached to that owner. The
+single-source regression test executes the actual command with stubs. ROCm
+continues through the image manager; do not restore the obsolete literal
+workflow manager. No upstream rebase impact: these container and CI surfaces
+are fork-local.
+
+## fix/base-image-unpinned-reference-guard — Renovate file selection (2026-09-08)
+
+Custom-manager file patterns use one `/regex/` delimiter pair. Preserve positive
+tracked-file fixtures and the base-manager coverage of every Dockerfile where
+the built-in manager is disabled. The fixture iterates active managers, so
+removing an obsolete manager does not reintroduce or require it. No upstream
+rebase impact: Renovate configuration and these tests are fork-local.
+
+## fix/base-image-unpinned-reference-guard — container reference guard (2026-09-08)
+
+The ADR-1231 scanner must reject direct external FROM/COPY references regardless
+of digest presence. Preserve the Python instruction scanner, the exact local
+consumer exceptions and the fixture suite in `scripts/ci/tests/`. Shared image
+ARG defaults remain one per physical line for the shell mirror writer. No
+upstream rebase impact: these guard scripts and fixtures are fork-local.
+
 ## fix/ai-1270-blockers — DISTS, MobileSal, and predictor stub triage (2026-09-08)
 
 Triage and point-of-use guards for issue #1270 blockers:
@@ -49615,3 +49678,58 @@ fork-added.
 4. **stdout belongs to JSON-RPC.** The Go server logs to stderr. Any change that
    sends log output to stdout corrupts the protocol stream and shows up as
    `mcp stdio returned empty response` rather than as a logging bug.
+## ADR-1231 — container base images come from build-config.env (2026-09-07)
+
+Rebase-sensitive invariants introduced by this change:
+
+1. **A Dockerfile must never name a base image directly again.** Every base is
+   an `ARG` whose default mirrors `build-config.env`, and
+   `scripts/ci/check-base-image-single-source.sh` fails on any digest-pinned
+   literal. An upstream merge that reintroduces a literal `FROM debian:…@sha256:…`
+   will fail the gate rather than silently forking the pin. Resolve by moving
+   the value into `build-config.env` and referencing the `ARG`.
+
+2. **`COPY --from=<digest-pinned image>` is a base-image pin and is rejected.**
+   This is the non-obvious half. Four such pins existed and were the most stale
+   in the tree, because no `FROM`-oriented search finds them. Use a named stage
+   (`FROM ${CUDA_RUNTIME} AS cuda-runtime-libs`, then
+   `COPY --from=cuda-runtime-libs …`); BuildKit prunes the stage when the
+   selected target does not use it, so it is free.
+
+3. **Do not hand-edit an `ARG` default to fix a drift failure.** Edit
+   `build-config.env` and run `make base-images-sync`. Hand-editing puts the
+   two copies back out of agreement in the other direction, which the gate will
+   then report against the file you just "fixed".
+
+4. **The Ubuntu 24.04 exemptions are deliberate and self-closing.**
+   `ROCM_BUILDER`, `ROCM_RUNTIME`, `ONEAPI_BUILDER` and `ONEAPI_RUNTIME` are
+   listed in `distro_exempt` in the gate. Do not extend that list to silence a
+   new failure — it exists only because those two migrations need matching
+   source changes (PR #1386 for ROCm; the oneAPI 2026.1 restructure documented
+   in `docs/research/1231-base-image-single-source.md`). Each entry is deleted
+   when its migration lands.
+
+5. **`docker/dev/*.Dockerfile` is intentionally outside the gate.** Those files
+   pin Alpine / Arch / Fedora precisely because they are *not* the release
+   distro. Unifying their bases would defeat the portability matrix they exist
+   to run.
+
+## FFmpeg percentile patch replay (2026-09-08)
+
+Patch 0005 already introduces max and percentile mappings in the shared
+`pool_method_map`. Patch 0018 must apply to that cumulative state and guard
+those existing percentile entries with `VMAF_HAVE_PERCENTILE_POOLING`.
+Do not re-add the mappings in 0018. Replay every entry in `series.txt` against
+a fresh upstream checkout; the old `000*-*.patch` glob missed patches 0010–0018.
+
+## ADR-1238 — Go validation is a required impact-routed check (2026-09-08)
+
+Keep `go vet + go test` synchronized between `go-ci.yml`, its
+`# required-aggregator` marker, and the aggregator's required list. The
+workflow starts without path filters and gates heavy steps on `go_checks`
+(`go` plus `c_core`); its own changes force full impact. Preserve
+ready-for-review coverage and the documentation-only no-work success.
+Run `python3 scripts/ci/test_go_workflow_contract.py` and
+`python3 -m unittest scripts/ci/tests/test_ci_impact.py` after workflow
+rebases. Predictor model-card reads use `os.Root`; do not restore an
+unconfined `os.ReadFile` or symlink escape while reconciling stub warnings.

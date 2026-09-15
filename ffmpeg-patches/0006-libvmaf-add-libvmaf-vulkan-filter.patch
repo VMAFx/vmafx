@@ -1,4 +1,4 @@
-From 9c54d2b5fb7c3f87da4b2d2a5ed98402bdf75ca5 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Mon, 27 Apr 2026 09:00:00 +0200
 Subject: [PATCH] libvmaf: add libvmaf_vulkan filter (zero-copy VkImage import)
@@ -45,7 +45,7 @@ Patch is on top of 0001-0005 (post-libvmaf_sycl-filter baseline).
  4 files changed, 292 insertions(+)
 
 diff --git a/configure b/configure
-index 144b458cab..272760dfa8 100755
+index 144b458cab359fc271d96402bb16ecc51d79e3b0..272760dfa83540608d3d1c9b3ee24727c6247c37 100755
 --- a/configure
 +++ b/configure
 @@ -295,6 +295,7 @@ External library support:
@@ -82,7 +82,7 @@ index 144b458cab..272760dfa8 100755
  enabled libvmaf           && check_pkg_config libvmaf_vulkan "libvmaf >= 3.0.0" libvmaf/libvmaf_vulkan.h vmaf_vulkan_state_init
  enabled vmaf_pre_filter   && require_pkg_config libvmaf_dnn "libvmaf >= 3.0.0" libvmaf/dnn.h vmaf_dnn_session_open
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
-index 5e27bfc66c..96d39b18e3 100644
+index 5e27bfc66c8d4e631964e28bd32f1f7b78bf9e2e..96d39b18e3fb2f88b47dcef563cef710b6fd0e6c 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
 @@ -377,6 +377,7 @@ OBJS-$(CONFIG_LIBPLACEBO_FILTER)             += vf_libplacebo.o vulkan.o vulkan_
@@ -94,7 +94,7 @@ index 5e27bfc66c..96d39b18e3 100644
  OBJS-$(CONFIG_LIMITER_FILTER)                += vf_limiter.o
  OBJS-$(CONFIG_LOOP_FILTER)                   += f_loop.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
-index ac7f3f4d84..102fd55c38 100644
+index ac7f3f4d849ceeaa5fadd773e1f4999bd1cd96c3..102fd55c38821b98c5a760019b6feda0f64fb5b8 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
 @@ -351,6 +351,7 @@ extern const FFFilter ff_vf_libplacebo;
@@ -106,7 +106,7 @@ index ac7f3f4d84..102fd55c38 100644
  extern const FFFilter ff_vf_limiter;
  extern const FFFilter ff_vf_loop;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 59d3bf007a..324e1aa82e 100644
+index 59d3bf007a5fb4af4d239a127d1b590f6c368db8..324e1aa82e51c229be901693859e0f2f52a3abd4 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -60,6 +60,12 @@
@@ -405,6 +405,3 @@ index 59d3bf007a..324e1aa82e 100644
 +    .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 +};
 +#endif
--- 
-2.55.0
-

@@ -30,6 +30,11 @@ runs/
 build*/
 build-*/
 build_*/
+# Docker cleans a trailing slash off an ignore pattern, so `build*/` also
+# matches the root-level file `build-config.env` and drops it from the build
+# context — `COPY build-config.env` then fails with "not found". Negate it
+# explicitly; the directory exclusions above are unaffected.
+!build-config.env
 core/build*/
 core/build-*/
 core/build_*/

@@ -1,10 +1,7 @@
-From 6e5cb88a9786e13849339c3d778d60d552e3b59d Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Tue, 5 May 2026 23:17:41 +0200
-Subject: [PATCH 8/9] libavfilter: add libvmaf_tune filter (vmaf-tune helper)
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
+Subject: [PATCH] libavfilter: add libvmaf_tune filter (vmaf-tune helper)
 
 New 2-input video filter that runs alongside a 1-pass encode and emits
 a recommended CRF for the next pass:
@@ -36,7 +33,7 @@ ADR: docs/adr/0312-ffmpeg-patches-vmaf-tune-integration.md
  create mode 100644 libavfilter/vf_libvmaf_tune.c
 
 diff --git a/configure b/configure
-index 272760d..051be41 100755
+index 272760dfa83540608d3d1c9b3ee24727c6247c37..051be41257c98139dc4f59c6089fefc1575526d8 100755
 --- a/configure
 +++ b/configure
 @@ -4303,6 +4303,7 @@ libvmaf_cuda_filter_deps="libvmaf libvmaf_cuda ffnvcodec"
@@ -48,7 +45,7 @@ index 272760d..051be41 100755
  zoompan_filter_deps="swscale"
  zscale_filter_deps="libzimg const_nan"
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
-index 96d39b1..3b20788 100644
+index 96d39b18e3fb2f88b47dcef563cef710b6fd0e6c..3b20788df758b060847768e731718024b4a75a49 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
 @@ -573,6 +573,7 @@ OBJS-$(CONFIG_VIF_FILTER)                    += vf_vif.o framesync.o
@@ -60,7 +57,7 @@ index 96d39b1..3b20788 100644
  OBJS-$(CONFIG_FRC_AMF_FILTER)                += vf_frc_amf.o vf_amf_common.o
  OBJS-$(CONFIG_VPP_QSV_FILTER)                += vf_vpp_qsv.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
-index 102fd55..9bd3aa0 100644
+index 102fd55c38821b98c5a760019b6feda0f64fb5b8..9bd3aa0163aa8ef1a95897dfab1b75246b132595 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
 @@ -352,6 +352,7 @@ extern const FFFilter ff_vf_libvmaf;
@@ -73,7 +70,7 @@ index 102fd55..9bd3aa0 100644
  extern const FFFilter ff_vf_loop;
 diff --git a/libavfilter/vf_libvmaf_tune.c b/libavfilter/vf_libvmaf_tune.c
 new file mode 100644
-index 0000000..37b1e9c
+index 0000000000000000000000000000000000000000..37b1e9c83e4e21a2cfeb2eaf04c0fa9a0e4668f5
 --- /dev/null
 +++ b/libavfilter/vf_libvmaf_tune.c
 @@ -0,0 +1,410 @@
@@ -487,6 +484,3 @@ index 0000000..37b1e9c
 +    FILTER_OUTPUTS(libvmaf_tune_outputs),
 +    FILTER_QUERY_FUNC2(query_formats),
 +};
--- 
-2.55.0
-

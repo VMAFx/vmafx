@@ -6,7 +6,7 @@ gitignored and only exists on the maintainer's machine, so on every
 other host (including the [`vmaf-dev-mcp` container](../development/dev-mcp.md))
 the first run fails with `FileNotFoundError`.
 
-Per [ADR-0546](../adr/0546-audit-cleanup-bundle.md) each script accepts
+Per [ADR-0547](../adr/0547-ai-script-env-vars.md) each script accepts
 an env-var override layered on top of the default. Set the env var and
 the script picks up your local layout without any CLI edit; leave it
 unset and the maintainer's defaults still apply.
@@ -50,7 +50,7 @@ operator can still override per-invocation on the CLI.
 
 ## Why this exists
 
-The audit pass that produced [ADR-0546](../adr/0546-audit-cleanup-bundle.md)
+The audit pass that produced [ADR-0547](../adr/0547-ai-script-env-vars.md)
 flagged "heavy `.workingdir2/` defaults across 15+ scripts" as a
 recurring friction point: anyone trying to reproduce the maintainer's
 training runs in the container or on their own machine had to either

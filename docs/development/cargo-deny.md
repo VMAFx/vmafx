@@ -79,7 +79,7 @@ The three most common cases:
 ## Related
 
 - [ADR-0917](../adr/0917-cargo-deny-supply-chain-policy.md) — policy decision
-- [ADR-0707](../adr/0707-tad-cbindgen-pilot.md) — TAD cbindgen pilot
-- [ADR-0702](../adr/0702-vmafx-sys-ffi-crate.md) — vmafx-sys FFI crate
+- [ADR-0707](../adr/0707-vmafx-rust-pilot-feature.md) — TAD cbindgen pilot
+- [ADR-0706](../adr/0706-vmafx-rust-sys-bindings.md) — vmafx-sys FFI crate
 - [`deny.toml`](../../deny.toml) — the live configuration
 - Upstream: <https://embarkstudios.github.io/cargo-deny/>

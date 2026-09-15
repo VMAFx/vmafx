@@ -75,6 +75,12 @@ Local patches against FFmpeg **n9.0.1** for integrating this VMAF fork into
   Symmetric with the `cpumask`/`gpumask` options added in ADR-0576 (patch
   0014).
 
+- **`0018-libvmaf-map-percentile-pool-methods.patch`** — guards the
+  percentile mappings already introduced in patch 0005 with
+  `VMAF_HAVE_PERCENTILE_POOLING` and documents the pool options. Keep its
+  context relative to all 17 preceding patches; adding the same mapper
+  entries twice breaks the cumulative replay.
+
 Every patch is guarded by `check_pkg_config` so it degrades gracefully when
 libvmaf was built without the relevant feature (`-Denable_dnn`, `-Denable_sycl`,
 `-Denable_vulkan`, `-Denable_cuda`, `-Denable_hip`).
@@ -114,9 +120,10 @@ hardware-frame import.
 
 ```bash
 cd /path/to/ffmpeg    # must be at tag n9.0.1
-for p in /path/to/vmaf/ffmpeg-patches/000*-*.patch; do
-    git am --3way "$p" || break
-done
+while IFS= read -r patch; do
+    case "$patch" in ""|\#*) continue ;; esac
+    git am --3way "/path/to/vmaf/ffmpeg-patches/$patch" || exit 1
+done < /path/to/vmaf/ffmpeg-patches/series.txt
 ```
 
 Or via the helper skill: `/ffmpeg-apply-patches /path/to/ffmpeg`.
@@ -144,12 +151,18 @@ bash ffmpeg-patches/test/build-and-run.sh
 
 Requires `libvmaf` to be installed (`pkg-config --cflags libvmaf` must
 resolve). Set `VMAF_PREFIX` to point at a non-standard install prefix.
-Pins `FFMPEG_SHA=n9.0.1`; override to test against another tag.
+The default release and remote come from `build-config.env`. `FFMPEG_SHA`
+can select another stable released tag for compatibility testing. The helper
+creates a disposable checkout and rejects any existing `FFMPEG_SRC` path.
+Set `KEEP_BUILD=1` to retain a successful build; failed builds are retained
+for diagnosis. It never resets or cleans an existing checkout.
 
 ## How to regenerate
 
-After editing FFmpeg locally, run `/ffmpeg-build-patches` to diff against
-the tracked upstream base and rewrite the numbered patches in place.
+Run `python3 scripts/ci/ffmpeg_patch_stack.py --refresh` and review the diff,
+then run the same command with `--check`. The local hooks use this helper too.
+See [FFmpeg patch automation](../docs/development/ffmpeg-patch-automation.md)
+for daily stable-release updates, diagnostics and conflict recovery.
 
 ## License
 

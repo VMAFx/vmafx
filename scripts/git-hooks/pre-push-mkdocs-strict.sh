@@ -17,9 +17,9 @@
 #
 # Requirements:
 #   mkdocs (+ docs/requirements.txt) must be installed in the active Python env.
-#   `pip install -r docs/requirements.txt` satisfies this. The hook skips
-#   silently when mkdocs is not on PATH to avoid blocking contributors who
-#   work only on non-docs code paths.
+#   `pip install -r docs/requirements.txt` satisfies this. Missing mkdocs
+#   blocks a selected docs push; direct non-doc invocations skip before
+#   requiring the docs toolchain.
 #
 # See also: docs/development/pre-push-mkdocs-strict.md
 
@@ -37,26 +37,25 @@ if [ -z "${repo_root}" ]; then
   exit 0
 fi
 
-# ── mkdocs availability ───────────────────────────────────────────────────────
-if ! command -v mkdocs >/dev/null 2>&1; then
-  echo "pre-push-mkdocs-strict: mkdocs not found on PATH — skipping." >&2
-  echo "  Install: pip install -r ${repo_root}/docs/requirements.txt" >&2
-  exit 0
-fi
-
 # ── Detect whether the push touches docs/ or mkdocs.yml ──────────────────────
-# Read push arguments from stdin (format: <local-ref> <local-sha1> <remote-ref> <remote-sha1>)
-# If stdin is not provided (e.g. direct invocation), fall back to diff vs origin/master.
+# The framework selects this hook from Git's pushed-file range. For a direct
+# invocation, fall back to the local branch diff against origin/master.
 touched_docs=0
 
-if ! git rev-parse --verify origin/master >/dev/null 2>&1; then
+if [ "${PRE_COMMIT_REMOTE_NAME+x}" = x ]; then
+  # Selection already used the pushed ref, which may differ from HEAD.
+  touched_docs=1
+elif ! git rev-parse --verify origin/master >/dev/null 2>&1; then
   # No remote reference yet (first push) — run the check conservatively.
   touched_docs=1
 else
   base="$(git merge-base origin/master HEAD 2>/dev/null || true)"
   if [ -n "${base}" ]; then
-    if git diff --name-only "${base}..HEAD" 2>/dev/null |
-      grep -qE '^(docs/|mkdocs\.yml)'; then
+    # Consume the full diff before matching: grep -q can close a large pipe
+    # early, making Git fail with SIGPIPE under pipefail and skipping docs.
+    if ! changed_files="$(git diff --name-only "${base}..HEAD" 2>/dev/null)"; then
+      touched_docs=1
+    elif grep -qE '^(docs/|mkdocs\.yml)' <<<"${changed_files}"; then
       touched_docs=1
     fi
   else
@@ -67,6 +66,13 @@ fi
 
 if [ "${touched_docs}" -eq 0 ]; then
   exit 0
+fi
+
+# ── mkdocs availability ───────────────────────────────────────────────────────
+if ! command -v mkdocs >/dev/null 2>&1; then
+  echo "pre-push-mkdocs-strict: BLOCKED — documentation changed but mkdocs is missing." >&2
+  echo "  Install: pip install -r ${repo_root}/docs/requirements.txt" >&2
+  exit 1
 fi
 
 # ── Run mkdocs build --strict ─────────────────────────────────────────────────

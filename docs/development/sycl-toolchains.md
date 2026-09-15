@@ -11,7 +11,7 @@ toolchains:
 
 Both use the same `core/src/feature/sycl/*.cpp` kernels — the
 build plumbing branches on the configured `sycl_compiler` basename.
-See [ADR-0335](../adr/0335-adaptivecpp-second-sycl-toolchain.md) for
+See [ADR-0407](../adr/0407-adaptivecpp-second-sycl-toolchain.md) for
 the design rationale.
 
 ## Quickstart — AdaptiveCpp
@@ -45,7 +45,7 @@ AdaptiveCpp builds against any modern LLVM (≥ 16). Upstream
 instructions live at
 <https://adaptivecpp.github.io/AdaptiveCpp/installing.html>. The
 fork's CI does not yet ship an official AdaptiveCpp lane (a future
-PR adds `.github/workflows/sycl-acpp.yml` per ADR-0335 § follow-ups).
+PR adds `.github/workflows/sycl-acpp.yml` per ADR-0407 § follow-ups).
 
 ### Build the fork with AdaptiveCpp
 
@@ -133,7 +133,7 @@ execution that runs anywhere LLVM does, including stock
 `ubuntu-latest`.
 
 A follow-up PR (`.github/workflows/sycl-acpp.yml`, sized ~50 LOC in
-ADR-0335 § follow-ups) will land that lane as a non-required
+ADR-0407 § follow-ups) will land that lane as a non-required
 status check before promoting it to `required-aggregator.yml`.
 
 ## Troubleshooting
@@ -167,7 +167,7 @@ parity with icpx.
 
 ## See also
 
-- [ADR-0335](../adr/0335-adaptivecpp-second-sycl-toolchain.md) — the
+- [ADR-0407](../adr/0407-adaptivecpp-second-sycl-toolchain.md) — the
   design decision.
 - [ADR-0217](../adr/0217-sycl-toolchain-cleanup.md) — multi-version
   oneAPI install recipe (icpx side).

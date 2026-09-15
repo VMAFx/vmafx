@@ -64,6 +64,8 @@ jobs:
               'CodeQL (Python)',
               'Pre-Commit',
               'Python Lint',
+              // ADR-1238: scanner failures must not hide the Go test suite.
+              'go vet + go test',
               'Semgrep',
               'Tidy Changed',
               'Tidy Ratchet',
@@ -100,6 +102,7 @@ jobs:
               'Doc-Substance Gate',
               'docs/state.md Gate',
               'FFmpeg-Patches Surface Sync',
+              'FFmpeg Patch Stack',
               'ADR Collision Guard',
               'Release Script Contract',
             ];

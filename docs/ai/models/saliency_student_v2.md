@@ -12,7 +12,7 @@ after empirical validation in real ROI encodes.
 > default for the `mobilesal` extractor; supersedes `saliency_student_v1`
 > (IoU 0.7105 vs 0.6558, +8.3%). See
 > [ADR-0444](../../adr/0444-saliency-student-v2-production-promotion.md),
-> [ADR-0332](../../adr/0332-saliency-student-v2-resize-decoder.md),
+> [ADR-0364](../../adr/0364-saliency-student-v2-resize-decoder.md),
 > and [Research-0089](../../research/0089-saliency-student-v2-resize-decoder.md).
 
 ## What changed vs v1
@@ -154,7 +154,7 @@ and report paths.
 
 `saliency_student_v2` was initially shipped 2026-05-09 as a parallel
 artefact alongside v1 (per
-[ADR-0332](../../adr/0332-saliency-student-v2-resize-decoder.md)),
+[ADR-0364](../../adr/0364-saliency-student-v2-resize-decoder.md)),
 with v1 remaining as the production weight pending ROI A/B validation.
 On 2026-05-15,
 [ADR-0444](../../adr/0444-saliency-student-v2-production-promotion.md)
@@ -194,7 +194,7 @@ Specific to v2:
   `Resize` to the allowlist.
 - [ADR-0286](../../adr/0286-saliency-student-fork-trained-on-duts.md)
   — v1 decision record.
-- [ADR-0332](../../adr/0332-saliency-student-v2-resize-decoder.md)
+- [ADR-0364](../../adr/0364-saliency-student-v2-resize-decoder.md)
   — v2 decision record (this PR).
 - [Research-0089](../../research/0089-saliency-student-v2-resize-decoder.md)
   — companion digest.

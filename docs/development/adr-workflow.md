@@ -18,10 +18,48 @@ $EDITOR docs/adr/${N}-my-topic-slug.md.stub
 # 3. Rename the stub to the final filename before committing
 mv docs/adr/${N}-my-topic-slug.md.stub docs/adr/${N}-my-topic-slug.md
 
-# 4. Add an index row to docs/adr/README.md and commit
-git add docs/adr/${N}-my-topic-slug.md docs/adr/README.md
+# 4. Create the one-row index fragment and register its order
+$EDITOR docs/adr/_index_fragments/${N}-my-topic-slug.md
+printf '%s\n' "${N}-my-topic-slug" >> docs/adr/_index_fragments/_order.txt
+
+# 5. Regenerate and check all source-owned metadata
+make docs-fragments-write
+make docs-fragments-check
+
+# 6. Stage the ADR, fragment, and generated outputs
+git add docs/adr/${N}-my-topic-slug.md \
+  docs/adr/_index_fragments/${N}-my-topic-slug.md \
+  docs/adr/_index_fragments/_order.txt docs/adr/README.md \
+  docs/adr/by-tag/ mkdocs.yml CHANGELOG.md
 git commit -m "docs(adr): ADR-${N} my topic slug"
 ```
+
+## Generated metadata
+
+Edit ADR files and index fragments as the sources. The README index,
+by-tag pages, and the sentinel-bounded ADR navigation block are rendered
+outputs. Never correct those generated files by hand.
+
+`make docs-fragments-write` regenerates the changelog, the ADR index,
+then tag pages, then navigation. This order matters because navigation
+reads the generated tag file set. `make docs-fragments-check` is read-only
+and fails on missing, changed, or obsolete generated files. It also checks
+that every ADR has one correctly named fragment, fragment ADR links resolve,
+and the order manifest has no duplicate or missing-fragment entries.
+
+The same check runs in the local pre-commit hook, required `Docs` CI job,
+and Pages build. A clean MkDocs build alone does not prove metadata freshness.
+Run `python3 scripts/docs/tests/test_generators.py` for the disposable
+fixture tests. After a rebase that adds other ADRs, regenerate again from
+the combined sources before committing.
+
+Tags come from each ADR's front matter. Existing case/backtick normalization
+is preserved, and repeated equivalent tags contribute one row per ADR.
+Unsafe filename characters and the reserved tag `index` are rejected;
+ordinary tags, including `c++`, underscore names, and version tags, retain
+their spelling after normalization. The generator escapes title text for
+Markdown tables without changing accepted ADR bodies or stripping meaningful
+spaces from code examples. See [ADR-1242](../adr/1242-generated-adr-freshness.md).
 
 ## Why use `--claim`?
 

@@ -10,11 +10,11 @@ tiny_device exposes all VmafDnnDevice enum values from dnn.h (v2):
 - PR #676 (OpenVINO NPU EP): openvino-npu
 - PR #677 (OpenVINO CPU/GPU EP variant): openvino-cpu, openvino-gpu
 ---
- libavfilter/vf_libvmaf.c | 60 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ libavfilter/vf_libvmaf.c | 60 ++++++++++++++++++++++++++++++++++++++++
  1 file changed, 60 insertions(+)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 3ab67d3..552743f 100644
+index 3ab67d3dba590ce61a1968e00da82a9757a115b3..552743f4e3fa2cc94d36487b94e2272546862660 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -27,6 +27,7 @@
@@ -105,5 +105,3 @@ index 3ab67d3..552743f 100644
      s->fs.on_event = do_vmaf;
      return 0;
  }
---
-2.54.0

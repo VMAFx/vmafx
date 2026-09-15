@@ -391,7 +391,7 @@ or `--tiny-crf` to **any** non-default value to enable the path. See
 [ADR-0522](../adr/0522-tiny-codec-preset-crf-cli-flags.md) for the categorical
 encoding rationale.
 
-**Resize mode** ([ADR-0550](../adr/0550-tiny-dnn-resize-mode.md)).
+**Resize mode** ([ADR-0550](../adr/0550-tiny-model-auto-resize.md)).
 Required when the source frame size (`--width` / `--height`) differs from
 the tiny model's declared input shape:
 
@@ -547,7 +547,7 @@ Expected `scores.xml` head:
 </VMAF>
 ```
 
-Since [ADR-1181](../adr/1181-percentile-pooling-methods.md) every `<metric>` row
+Since [ADR-1188](../adr/1188-percentile-pooling-methods.md) every `<metric>` row
 (and the matching JSON object) also carries the percentile pooling methods —
 `median`, `perc5`, `perc10` and `perc20` — next to `min` / `max` / `mean` /
 `harmonic_mean`. Every registered pooling method is emitted for every metric;
@@ -604,4 +604,3 @@ CPU goldens preserved verbatim as a required CI gate — see
   [ADR-0023](../adr/0023-tinyai-user-surfaces.md),
   [ADR-0024](../adr/0024-netflix-golden-preserved.md),
   [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
-x

@@ -1,56 +1,31 @@
 ---
 name: refresh-ffmpeg-patches
-description: Rebase our ffmpeg-patches/ series onto the latest ffmpeg master (or a specified ref), resolve trivial conflicts, regenerate .patch files, and surface unresolved hunks for human attention.
+description: Refresh the full FFmpeg patch series against the configured stable release or the latest stable released tag, retaining conflict diagnostics.
 ---
-
-<!-- markdownlint-disable MD013 -->
 
 # /refresh-ffmpeg-patches
 
-Keeps our ffmpeg integration patches current with upstream ffmpeg. Run this whenever
-`build-ffmpeg-with-vmaf` reports a patch apply failure, or periodically (monthly).
+The root `build-config.env` owns the maintained FFmpeg remote and release tag.
+Use the same implementation as local hooks and CI:
 
-## Invocation
-
-```text
-/refresh-ffmpeg-patches [--ffmpeg-ref=master|n7.0|<sha>] [--ffmpeg-dir=/tmp/ffmpeg]
-                        [--branch=vmafx-patches]
+```bash
+python3 scripts/ci/ffmpeg_patch_stack.py --refresh
+python3 scripts/ci/ffmpeg_patch_stack.py --check
 ```
 
-Defaults: `master` at HEAD, `/tmp/ffmpeg`, `vmafx-patches` work branch.
+When explicitly updating upstream, use `--refresh --latest`. This selects the
+highest stable released tag, excluding master, development, RC and snapshot
+refs. Daily CI already performs this discovery and retains a proposed diff.
+Ordinary commits and PRs replay only the reviewed release.
 
-## Steps
+The helper fetches into disposable storage, applies every `series.txt` entry
+in order and writes canonical patches/configuration mirrors only after the
+complete replay and rebase succeed. Do not reset or clean existing checkouts.
+If it fails, inspect the printed diagnostics directory; resolve the integration
+source deliberately and replay the complete series. Later patches depend on
+earlier ones, so continuing after a failed patch is not a valid series check.
 
-1. Clone or fetch ffmpeg into `--ffmpeg-dir`.
-2. Checkout a clean work branch from `--ffmpeg-ref`: `git switch -c <branch>`.
-3. Apply each `ffmpeg-patches/*.patch` via `git am --3way`.
-4. If any `git am` fails:
-   a. Capture the failing patch name + conflicting hunks to
-      `/tmp/refresh-ffmpeg-report.md`.
-   b. Attempt a 3-way merge with the current upstream file. If the result is trivially
-      resolvable (new import added, no semantic overlap with our changes), resolve +
-      `git am --continue`. Otherwise leave for human review and move on.
-5. For patches that rebased cleanly, regenerate them as a single series via:
-   `git format-patch --output-directory=$repo/ffmpeg-patches-new/ <base>..HEAD`.
-6. Diff old vs new patch directory:
-   - Any patch that is byte-identical: skip (no refresh needed).
-   - Any patch that changed but still applies: overwrite in `ffmpeg-patches/`.
-   - Any patch that failed: emit a clear diff + context snippet.
-7. Summary output:
-   - `<patches> total, <clean> clean, <refreshed> refreshed, <failed> needs-human`.
-   - If `<failed>` > 0, list those by filename and point to the report.
-8. Stop short of committing — print the exact `git add ffmpeg-patches/ && git commit`
-   line the operator should run.
-
-## Guardrails
-
-- Does not touch `ffmpeg-patches/` until every patch has been processed.
-- Does not commit. The human must inspect the diff and commit explicitly.
-- Failure in one patch does not abort — process every patch, report all failures at
-  end, so you get a full picture of upstream drift in one pass.
-
-## When to use
-
-- After a `/sync-upstream`-style pull from ffmpeg upstream.
-- When `build-ffmpeg-with-vmaf` fails at step 4.
-- On a monthly cadence via scheduled agent run, so drift is caught early.
+Review the generated diff and validation before committing within the user's
+authorized scope. Patch refresh cannot invent the semantics of a new public API.
+See [FFmpeg patch automation](../../../docs/development/ffmpeg-patch-automation.md)
+and [ADR-1240](../../../docs/adr/1240-ffmpeg-release-patch-lifecycle.md).

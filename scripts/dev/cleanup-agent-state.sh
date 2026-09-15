@@ -2,149 +2,174 @@
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 # Copyright 2026 Lusoris
 #
-# cleanup-agent-state.sh — sweep stale agent worktrees and stashes
-#
-# Removes git worktrees whose lock-holder PID is no longer alive.
-# Drops stashes that are redundant (branch still exists locally) or are
-# clearly ephemeral agent navigation checkpoints on "master" or "no branch".
-#
-# Usage:
-#   scripts/dev/cleanup-agent-state.sh [--dry-run]
-#
-# Dry-run mode prints what would be removed without changing anything.
-#
-# The script never touches:
-#   - Worktrees owned by alive PIDs
-#   - Stashes on BRANCH_GONE branches (the only copy of the work)
-#   - The main worktree
-#
-# Run from any worktree of the repo. git -C REPO_ROOT is used throughout.
+# Inventory agent worktrees and stashes; remove only explicitly selected,
+# idle, clean agent checkouts. See ADR-1239 and the operator guide at
+# docs/development/agent-worktree-discipline.md.
 
 set -euo pipefail
 
-DRY_RUN=false
-if [[ "${1:-}" == "--dry-run" ]]; then
-  DRY_RUN=true
+usage() {
+  cat <<'USAGE'
+Usage: cleanup-agent-state.sh [--dry-run]
+       cleanup-agent-state.sh --apply --worktree /absolute/registered/path [...]
+
+The default and --dry-run only report. Repeat --worktree to select exact paths.
+Apply retains branches and all stashes. It refuses dirty/untracked/ignored
+files, live or unknown owners, unreferenced detached HEADs, and main/self
+worktrees. Keep selected worktrees idle throughout the operation.
+USAGE
+}
+
+APPLY=false
+MODE=""
+TARGETS=()
+while (($#)); do
+  case "$1" in
+    --apply | --dry-run)
+      [[ -z "$MODE" || "$MODE" == "$1" ]] || {
+        echo 'error: --apply and --dry-run are mutually exclusive' >&2
+        exit 64
+      }
+      MODE="$1"
+      [[ "$1" != --apply ]] || APPLY=true
+      shift
+      ;;
+    --worktree)
+      [[ $# -ge 2 && "$2" == /* ]] || {
+        echo 'error: --worktree requires an absolute registered path' >&2
+        exit 64
+      }
+      TARGETS+=("$2")
+      shift 2
+      ;;
+    --help | -h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "error: unknown argument: $1" >&2
+      usage >&2
+      exit 64
+      ;;
+  esac
+done
+if $APPLY && ((${#TARGETS[@]} == 0)); then
+  echo 'error: --apply requires at least one explicit --worktree target' >&2
+  exit 64
 fi
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
-
-log() { echo "[cleanup] $*"; }
-info() { echo "[info]    $*"; }
-
-###############################################################################
-# 1. Worktree cleanup: remove agent-* worktrees whose lock PID is dead
-###############################################################################
-log "=== Worktree cleanup ==="
-
-removed_wt=0
-skipped_wt=0
-
-# Parse porcelain output to build (path -> lock_pid) map
-declare -A WT_PID_MAP
-current_wt=""
-while IFS= read -r line; do
-  if [[ "$line" =~ ^worktree\ (.+)$ ]]; then
-    current_wt="${BASH_REMATCH[1]}"
-  elif [[ "$line" =~ ^locked.*\(pid\ ([0-9]+)\)$ ]]; then
-    WT_PID_MAP["$current_wt"]="${BASH_REMATCH[1]}"
+INVENTORY=$(mktemp)
+UNLOCKED_PATH=""
+UNLOCKED_REASON=""
+cleanup() {
+  if [[ -n "$UNLOCKED_PATH" && -d "$UNLOCKED_PATH" ]]; then
+    git -C "$REPO_ROOT" worktree lock --reason "$UNLOCKED_REASON" "$UNLOCKED_PATH" ||
+      echo "warning: could not restore lock for $UNLOCKED_PATH" >&2
   fi
-done < <(git -C "$REPO_ROOT" worktree list --porcelain 2>&1)
+  rm -f -- "$INVENTORY"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-for wt_path in "${!WT_PID_MAP[@]}"; do
-  pid="${WT_PID_MAP[$wt_path]}"
+declare -A WT_HEAD=() WT_LOCK=()
+WORKTREES=()
+MAIN_WORKTREE=""
+load_worktrees() {
+  local field current=""
+  WT_HEAD=() WT_LOCK=() WORKTREES=() MAIN_WORKTREE=""
+  git -C "$REPO_ROOT" worktree list --porcelain -z >"$INVENTORY"
+  while IFS= read -r -d '' field; do
+    case "$field" in
+      'worktree '*)
+        current="${field#worktree }"
+        WORKTREES+=("$current")
+        [[ -n "$MAIN_WORKTREE" ]] || MAIN_WORKTREE="$current"
+        ;;
+      'HEAD '*) WT_HEAD["$current"]="${field#HEAD }" ;;
+      'locked '*) WT_LOCK["$current"]="${field#locked }" ;;
+    esac
+  done <"$INVENTORY"
+}
 
-  # Never touch the main worktree or our own worktree
-  if [[ "$wt_path" == "$REPO_ROOT" ]]; then
-    continue
-  fi
-  if [[ "$wt_path" == "$(pwd -P 2>/dev/null || pwd)" ]]; then
-    log "  SKIP (self): $(basename "$wt_path")"
-    continue
-  fi
-  # Only auto-remove "agent-*" worktrees to stay conservative
-  if [[ "$(basename "$wt_path")" != agent-* ]]; then
-    info "  SKIP (non-agent worktree, manual review needed): $(basename "$wt_path")"
-    continue
-  fi
+REASON=""
+eligible() {
+  local path="$1" pid status refs gitdir state ps_code head
+  REASON='not a registered worktree'
+  [[ -n "${WT_HEAD[$path]:-}" ]] || return 1
+  REASON='main or current worktree'
+  [[ "$path" != "$MAIN_WORKTREE" && "$path" != "$REPO_ROOT" ]] || return 1
+  REASON='not an agent-* worktree'
+  [[ "${path##*/}" == agent-* ]] || return 1
+  REASON='missing directory or symlink; review ownership manually'
+  [[ -d "$path" && ! -L "$path" ]] || return 1
+  REASON='missing or unrecognized owner PID in lock reason'
+  [[ "${WT_LOCK[$path]:-}" =~ \(pid\ ([1-9][0-9]*)\)$ ]] || return 1
+  pid="${BASH_REMATCH[1]}"
+  REASON="owner PID $pid is alive or cannot be checked"
+  if kill -0 "$pid" 2>/dev/null; then return 1; fi
+  if ps -p "$pid" -o pid= >/dev/null 2>&1; then return 1; else ps_code=$?; fi
+  [[ "$ps_code" == 1 ]] || return 1
+  REASON='could not inspect worktree state'
+  gitdir=$(git -C "$path" rev-parse --absolute-git-dir) || return 1
+  for state in index.lock MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD BISECT_START rebase-merge rebase-apply; do
+    REASON="operation in progress: $state"
+    [[ ! -e "$gitdir/$state" ]] || return 1
+  done
+  REASON='could not inspect tracked, untracked and ignored files'
+  status=$(git -C "$path" status --porcelain=v1 --untracked-files=all --ignored=matching) || return 1
+  REASON='tracked changes, untracked files or ignored artifacts need review'
+  [[ -z "$status" ]] || return 1
+  REASON='HEAD changed during inspection; retry after its writer is idle'
+  head=$(git -C "$path" rev-parse HEAD) || return 1
+  [[ "$head" == "${WT_HEAD[$path]}" ]] || return 1
+  REASON='HEAD has no preserving branch/tag ref, or reachability check failed'
+  refs=$(git -C "$REPO_ROOT" for-each-ref --contains="${WT_HEAD[$path]}" --format='%(refname)') || return 1
+  [[ -n "$refs" ]] || return 1
+  REASON="clean checkout; recorded owner PID $pid has exited; refs retain HEAD"
+}
 
-  if kill -0 "$pid" 2>/dev/null; then
-    info "  ALIVE (pid $pid): $(basename "$wt_path")"
-    skipped_wt=$((skipped_wt + 1))
+load_worktrees
+printf 'Worktrees (%s):\n' "${#WORKTREES[@]}"
+for path in "${WORKTREES[@]}"; do
+  if eligible "$path"; then
+    printf 'REVIEW %q — %s\n' "$path" "$REASON"
   else
-    log "  REMOVE (dead pid $pid): $(basename "$wt_path")"
-    if ! $DRY_RUN; then
-      git -C "$REPO_ROOT" worktree unlock "$wt_path" 2>/dev/null || true
-      if git -C "$REPO_ROOT" worktree remove --force "$wt_path" 2>&1; then
-        removed_wt=$((removed_wt + 1))
-      else
-        echo "  WARNING: failed to remove $wt_path"
-      fi
-    else
-      echo "[DRY-RUN] would remove: $wt_path"
-      removed_wt=$((removed_wt + 1))
-    fi
+    printf 'KEEP   %q — %s\n' "$path" "$REASON"
   fi
 done
+printf '\nStashes (all retained; branch existence does not prove redundancy):\n'
+git -C "$REPO_ROOT" stash list --format='%H %gd %s'
 
-log "  Worktrees: removed=$removed_wt, skipped-alive=$skipped_wt"
-
-###############################################################################
-# 2. Stash cleanup: drop stashes on master / no-branch / still-existing branches
-###############################################################################
-log "=== Stash cleanup ==="
-
-dropped_stashes=0
-kept_stashes=0
-
-# Build set of local branch names
-declare -A LOCAL_BRANCHES
-while IFS= read -r branch; do
-  LOCAL_BRANCHES["$branch"]=1
-done < <(git -C "$REPO_ROOT" branch --format='%(refname:short)' 2>/dev/null)
-
-# Process stashes in reverse order so indices stay valid after drops
-mapfile -t STASH_LINES < <(git -C "$REPO_ROOT" stash list 2>/dev/null)
-total=${#STASH_LINES[@]}
-
-for ((i = total - 1; i >= 0; i--)); do
-  line="${STASH_LINES[$i]}"
-
-  # Extract branch from "stash@{N}: WIP on <branch>: ..." or "stash@{N}: On <branch>: ..."
-  if [[ "$line" =~ stash@\{[0-9]+\}:\ (WIP\ on|On)\ ([^:]+): ]]; then
-    branch="${BASH_REMATCH[2]}"
-  else
-    continue
-  fi
-
-  reason=""
-  if [[ "$branch" == "master" ]]; then
-    reason="on master (work preserved in commits)"
-  elif [[ "$branch" == "(no branch)" ]]; then
-    reason="detached HEAD ephemeral state"
-  elif [[ -v "LOCAL_BRANCHES[$branch]" ]]; then
-    reason="branch still exists locally (stash is redundant)"
-  fi
-
-  if [[ -n "$reason" ]]; then
-    log "  DROP stash@{$i} [$branch] — $reason"
-    if ! $DRY_RUN; then
-      git -C "$REPO_ROOT" stash drop "stash@{$i}" 2>/dev/null &&
-        dropped_stashes=$((dropped_stashes + 1)) || true
-    else
-      echo "[DRY-RUN] would drop stash@{$i}: $line"
-      dropped_stashes=$((dropped_stashes + 1))
-    fi
-  else
-    kept_stashes=$((kept_stashes + 1))
+# Validate every selected target before changing any checkout. Recheck each
+# immediately before removal; Git's non-force remove is the final guard.
+declare -A SELECTED=()
+for path in "${TARGETS[@]}"; do
+  [[ -z "${SELECTED[$path]:-}" ]] || {
+    echo "error: duplicate worktree target: $path" >&2
+    exit 64
+  }
+  SELECTED["$path"]=1
+  if ! eligible "$path"; then
+    printf 'error: refusing %q: %s\n' "$path" "$REASON" >&2
+    exit 1
   fi
 done
-
-log "  Stashes: dropped=$dropped_stashes, kept=$kept_stashes"
-
-###############################################################################
-# 3. Summary
-###############################################################################
-log "=== Done ==="
-log "  Worktrees remaining: $(git -C "$REPO_ROOT" worktree list 2>/dev/null | wc -l)"
-log "  Stashes remaining:   $(git -C "$REPO_ROOT" stash list 2>/dev/null | wc -l)"
+if ! $APPLY; then
+  printf '\nReport only; no worktrees, branches or stashes changed.\n'
+  exit 0
+fi
+for path in "${TARGETS[@]}"; do
+  load_worktrees
+  if ! eligible "$path"; then
+    printf 'error: target changed; refusing %q: %s\n' "$path" "$REASON" >&2
+    exit 1
+  fi
+  UNLOCKED_PATH="$path"
+  UNLOCKED_REASON="${WT_LOCK[$path]}"
+  git -C "$REPO_ROOT" worktree unlock "$path"
+  git -C "$REPO_ROOT" worktree remove "$path"
+  UNLOCKED_PATH=""
+  printf 'Removed selected checkout %q; branch refs retained.\n' "$path"
+done

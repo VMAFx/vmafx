@@ -248,6 +248,6 @@ python ai/scripts/measure_quant_drop.py model/tiny/vmaf_tiny_v3.onnx
 ## See also
 
 - [`vmaf_tiny_v2` model card](vmaf_tiny_v2.md) — production default
-- [ADR-0241 — vmaf_tiny_v3 ship decision](../../adr/0241-vmaf-tiny-v3-mlp-medium.md)
+- [ADR-0389 — vmaf_tiny_v3 ship decision](../../adr/0389-vmaf-tiny-v3-mlp-medium.md)
 - [Research-0046 — v2-vs-v3 mlp-medium evaluation](../../research/0046-vmaf-tiny-v3-mlp-medium-evaluation.md)
 - [Phase-3 research chain](../../research/0027-phase2-feature-importance.md)

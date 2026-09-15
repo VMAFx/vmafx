@@ -243,8 +243,9 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
           sudo apt-get update
-          sudo -E apt-get -yq install intel-oneapi-compiler-dpcpp-cpp-2025.3
-          git clone --depth=1 --branch v1.29.0 \
+          set -a; . ./build-config.env; set +a
+          sudo -E apt-get -yq install "${ONEAPI_APT_PACKAGE}"
+          git clone --depth=1 --branch "v${LEVEL_ZERO_VERSION}" \
             https://github.com/oneapi-src/level-zero.git /tmp/level-zero
           cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr
           cmake --build /tmp/level-zero/build -j"$(nproc)"
@@ -297,13 +298,15 @@ jobs:
       # comparable to the apt install it replaces.
       - name: Install ROCm / HIP toolchain (Linux)
         if: matrix.hip && startsWith(matrix.os, 'ubuntu')
-        env:
-          ROCM_IMAGE: "rocm/dev-ubuntu-24.04@sha256:a90cf047f615abe70fbef83c64def0a2d549ef37a39c8ea545430aba4981b374"
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install --no-install-recommends jq
+          # The ROCm image is defined once in build-config.env (ADR-1231),
+          # never pinned again here. It was previously a digest literal in
+          # this file and a second one in libvmaf-build-matrix.yml.
+          set -a; . ./build-config.env; set +a
           ./scripts/ci/install-rocm-from-image.sh \
-            --image "$ROCM_IMAGE" --dest /opt/rocm
+            --image "$ROCM_BUILDER" --dest /opt/rocm
           # Surface the ROCm tooling on PATH / pkg-config / ld so meson's
           # `dependency('hip-lang')` and the link of `amdhip64` resolve
           # without per-step exports.

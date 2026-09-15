@@ -5,8 +5,8 @@ The fork runs `mkdocs build --strict` in CI (the `docs.yml` lane) on
 every push that touches `docs/` or `mkdocs.yml`. Before this hook
 landed, audit slice G found that 38 of 50 master pushes failed that
 lane for trivial breakage (broken anchors, orphan pages, missing nav
-entries). Each CI failure cost ~6 minutes. The pre-push hook catches
-the same errors in ~5 seconds locally, before any network traffic.
+entries). The pre-push hook catches the same errors locally before the
+push. Build duration depends on the documentation tree and installed plugins.
 
 See [ADR-0466](../adr/0466-mkdocs-strict-pre-push-hook.md) for the
 decision record.
@@ -18,7 +18,6 @@ decision record.
 make hooks-install
 
 # Run the mkdocs check manually (without pushing):
-SKIP=mkdocs-strict git push --dry-run  # skips the hook
 scripts/git-hooks/pre-push-mkdocs-strict.sh  # runs directly
 
 # Install the docs toolchain if mkdocs is not on PATH:
@@ -30,9 +29,9 @@ pip install -r docs/requirements.txt
 1. **Scope check** — if the push does not touch `docs/` or
    `mkdocs.yml`, the hook exits 0 immediately (no latency on
    non-docs pushes).
-2. **Toolchain check** — if `mkdocs` is not on PATH, the hook
-   exits 0 with a one-line notice. Install via
-   `pip install -r docs/requirements.txt`.
+2. **Toolchain check** — once documentation is selected, missing `mkdocs`
+   blocks the push with an installation hint. Install via
+   `pip install -r docs/requirements.txt` in the active environment.
 3. **Build** — runs `mkdocs build --strict --quiet` against a
    temporary `--site-dir`. The temporary directory is cleaned up
    on exit regardless of outcome.
@@ -60,8 +59,11 @@ Install the docs toolchain:
 pip install -r docs/requirements.txt
 ```
 
-If you work only on C / Python / GPU code and never edit docs, the
-hook will skip silently on every push — no action needed.
+If the framework selects no documentation paths, this check does not run.
+A direct script invocation also skips a confirmed non-doc change before
+checking for MkDocs. It consumes the complete changed-path list, including
+large diffs, and runs the build if Git cannot determine that list.
+Documentation changes must pass the build.
 
 ### "WARNING - Doc file … contains a link … but the target"
 
@@ -88,18 +90,17 @@ governs which categories are `warn` vs. `info`.
 
 ## Wire-up details
 
-The hook is registered in two places so all contributor workflows
-are covered:
+`make install-hooks` installs a regular dispatcher for the framework's
+`pre-push` stage. `.pre-commit-config.yaml` registers `mkdocs-strict` as an
+independent check selected by changed `docs/` or `mkdocs.yml` paths in
+Git's pushed-ref range. A skipped PR-body check cannot skip this build.
+The build validates the active working tree, as other local source checks
+do; CI validates the submitted commit in a clean checkout.
 
-1. **`scripts/git-hooks/pre-push`** (the omnibus hook symlinked to
-   `.git/hooks/pre-push` by `make hooks-install`) — delegates to
-   `scripts/git-hooks/pre-push-mkdocs-strict.sh` at the end of its
-   check sequence. Existing contributors do **not** need to re-run
-   `make hooks-install`; the delegation call is picked up via the
-   existing symlink.
-
-2. **`.pre-commit-config.yaml`** — a `stages: [pre-push]` local
-   hook (`id: mkdocs-strict`, `files: '^(docs/|mkdocs\.yml)'`) so
-   `pre-commit run --hook-stage pre-push` exercises the gate in
-   isolation. This is consistent with the `validate-pr-body` hook
-   pattern (ADR-0435).
+A direct invocation of `pre-push-mkdocs-strict.sh` selects documentation
+changes relative to `origin/master`, and runs conservatively when that
+base is unavailable. Installations predating
+[ADR-1241](../adr/1241-worktree-hook-dispatch.md) must rerun
+`make install-hooks`, particularly if an old source symlink points into a
+removed worktree. See [local hooks](pre-commit-hooks.md) for migration and
+custom-hook preservation.

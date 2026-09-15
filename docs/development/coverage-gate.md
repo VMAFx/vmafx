@@ -311,6 +311,6 @@ a green Codecov badge alone; check the workflow step outcomes.
 | [ADR-0114](../adr/0114-coverage-gate-per-file-overrides.md) | `PER_FILE_MIN` map and structural ceiling rationale. |
 | [ADR-0117](../adr/0117-coverage-gate-warning-noise-suppression.md) | stderr filter for gcovr suspicious-hits noise. |
 | [ADR-0637](../adr/0637-ci-test-failures-omnibus.md) | Committed to ratcheting upward as targeted tests landed. |
-| [ADR-0881](../adr/0881-coverage-gate-tiny-extractor-template-floor.md) | `tiny_extractor_template.h` floor rationale. |
-| [ADR-0903](../adr/0903-codecov-oidc-integration.md) | Codecov OIDC integration (informational dashboard). |
+| [ADR-0881](../adr/0881-coverage-overrides-audit-2026-05-30.md) | `tiny_extractor_template.h` floor rationale. |
+| [ADR-0903](../adr/0903-wire-codecov-upload.md) | Codecov OIDC integration (informational dashboard). |
 | [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md) | Aggressive ratchet (37 % → 70 %) + per-PR delta gate. |

@@ -10,7 +10,7 @@ Generated Go server stubs live at
 [`gen/go/oapi/vmafx_server_v1.gen.go`](../../gen/go/oapi/vmafx_server_v1.gen.go)
 and are produced by [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen).
 
-See [ADR-0703](../adr/0703-vmafx-server-grpc-http.md) for the overall server
+See [ADR-0703](../adr/0703-vmafx-server-go-grpc.md) for the overall server
 design and [ADR-0797](../adr/0797-openapi-rest-schema.md) for the OpenAPI
 contract decisions.
 

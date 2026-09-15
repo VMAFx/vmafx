@@ -423,7 +423,8 @@ described below are **no longer present**. ADR references:
 
 ### Header
 
-[`core/include/libvmaf/libvmaf_vulkan.h`](../../core/include/libvmaf/libvmaf_vulkan.h)
+`core/include/libvmaf/libvmaf_vulkan.h` — removed historical header;
+see [ADR-0726](../adr/0726-drop-vulkan-backend.md).
 
 ### State
 

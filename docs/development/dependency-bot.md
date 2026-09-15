@@ -43,6 +43,28 @@ An exact-root `pep621` package rule excludes only that metadata entry from
 Renovate. Patch-pinned workflow runtimes and each installable subpackage's own
 `requires-python` range continue to receive normal dependency maintenance.
 
+### Custom manager file selection
+
+Custom managers use anchored regexes with exactly one delimiter at each end,
+for example `"/^build-config\\.env$/"` in JSON. `"//^build-config\\.env$//"`
+is a valid regex that matches no repository path: schema validation alone
+cannot catch that mistake.
+
+Run the file-selection fixtures after editing `managerFilePatterns`:
+
+```bash
+python3 -m unittest discover -s scripts/ci/tests -p test_renovate_file_patterns.py -v
+```
+
+The pre-commit hook runs the same tests locally and in CI. Every custom pattern
+must select a tracked input and exclude archived copies and backup suffixes.
+The base-image manager must cover `build-config.env` and all eight Dockerfile
+mirrors whose built-in Docker manager is disabled. Keep those two lists aligned
+when adding a consumer. These tests check selection, not whether a scheduled
+Renovate run has opened an update PR. The
+[research note](../research/renovate-file-pattern-delimiters.md) records the
+installed Renovate matcher used to reproduce the defect.
+
 ## Disable / rollback to Dependabot
 
 1. Uninstall the App at `https://github.com/settings/installations`.

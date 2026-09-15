@@ -8,7 +8,7 @@ file.
 
 ## Workflows
 
-The fork ships nine `pull_request`-triggered workflows:
+The main `pull_request`-triggered workflows include:
 
 | File | Purpose |
 | --- | --- |
@@ -16,6 +16,7 @@ The fork ships nine `pull_request`-triggered workflows:
 | [`security-scans.yml`](../../.github/workflows/security-scans.yml) | Semgrep / CodeQL / Gitleaks / Dependency Review. |
 | [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy (changed files + whole-tree ratchet, ADR-1142), cppcheck, mypy, registry validate, twin-drift gate (ADR-1135). |
 | [`required-aggregator.yml`](../../.github/workflows/required-aggregator.yml) | Single required-check aggregator (ADR-0313). |
+| [`go-ci.yml`](../../.github/workflows/go-ci.yml) | Required Go vet, security scan, runner smoke, and tests (ADR-1238). |
 | [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) | FFmpeg + libvmaf build (gcc / clang / SYCL / Vulkan). |
 | [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform / cross-backend libvmaf build matrix. |
 | [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100 / 0106 / 0108 / 0165 process gates. |
@@ -25,11 +26,12 @@ The fork ships nine `pull_request`-triggered workflows:
 For the complete inventory, mapping of shortened names, and conventions,
 see [CI job display names](ci-job-names.md).
 
-## Draft pull requests do not trigger CI
+## Draft pull requests defer heavy CI
 
 Per [ADR-0331](../adr/0331-skip-ci-on-draft-prs.md), every
 `pull_request`-triggered workflow above is gated to skip when the PR
-is in `draft` state. Concretely:
+is in `draft` state, except the aggregator, which explicitly fails drafts.
+Concretely:
 
 - Each workflow's `pull_request:` block lists
   `types: [opened, synchronize, reopened, ready_for_review]`.
@@ -38,11 +40,10 @@ is in `draft` state. Concretely:
 
 What this means for contributors:
 
-1. **A draft PR shows no green checks.** The required-checks
-   aggregator skips on drafts and branch protection treats the
-   missing aggregator as "required check absent". This is benign —
-   GitHub blocks merging a draft PR by definition, so the gate cannot
-   be bypassed.
+1. **A draft PR cannot satisfy the required aggregator.** The aggregator
+   starts and fails with a request to mark the PR ready. Heavy jobs remain
+   skipped until ready-for-review. This prevents skipped draft-era checks
+   from being mistaken for completed validation.
 2. **Promoting the draft to ready-for-review fires CI exactly once.**
    GitHub's `ready_for_review` event is what re-triggers the
    workflows; subsequent `synchronize` events on the now-ready PR
@@ -79,7 +80,8 @@ the selectors declared in `.github/ci-impact.json`:
 | `python_lint` | `python` ∪ `ai` | CodeQL Python |
 | `docs` | `docs/`, `mkdocs.yml`, `*.md`, `changelog.d/` | Docs build |
 | `actions` | `.github/` | CodeQL Actions |
-| `go`, `rust`, `shell`, `container` | their trees | (non-required workflows — still path-filtered, follow-up) |
+| `go_checks` | `go` ∪ `c_core` | Go vet, security scan, native/ORT smoke, and Go tests |
+| `rust`, `shell`, `container` | their trees | (non-required workflows — still path-filtered, follow-up) |
 
 Steps gated on a selector that is **not** impacted are skipped and the job
 emits `::notice::<selector> not impacted (mode=… reason=…)` before reporting
@@ -111,11 +113,18 @@ mode on every PR that touches it.
 The single required check on `master` branch protection is the
 **Required Checks Aggregator** (see
 [ADR-0313](../adr/0313-ci-required-checks-aggregator.md)). It runs on
-every non-draft PR, polls for the named sibling check_runs to reach a
-terminal state, and accepts `success`, `skipped`, or `neutral` per
-check. Because the aggregator itself skips on drafts, draft PRs
-display "missing required check" — same situation as item 1 above
-and unmergeable for the same reason.
+every PR and master push. Draft PRs fail immediately; ready PRs poll for
+the named sibling check runs to reach a terminal state and accept
+`success`, `skipped`, or `neutral` per check. Results predating the current
+run are excluded, so skipped draft-era checks cannot mask ready validation.
+
+The `go vet + go test` job is required under
+[ADR-1238](../adr/1238-go-security-required-gate.md). Its native build,
+security scan, runner smoke, and tests run for Go or core/model inputs;
+unrelated documentation changes report success after an explicit impact
+notice. A failing `gosec` scan blocks merging even though it prevents later
+Go tests from running. The job also starts on ready-for-review events, so
+draft-era results cannot replace the current validation run.
 
 For the hardware-dependent `SYCL Parity (Arc A380)` check
 ([ADR-1177](../adr/1177-sycl-arc-self-hosted-runner.md)), the aggregator

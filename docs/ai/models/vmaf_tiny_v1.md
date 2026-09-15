@@ -91,8 +91,8 @@ production PLCC / SROCC / RMSE numbers, see
   analysis against v1.
 - [`docs/ai/quant-eps.md`](../quant-eps.md) — quant-eps regression fixture
   uses v1.
-- [ADR-0203](../../adr/0203-vmaf-tiny-v1-quant-eps.md) — v1 as quant-eps
-  fixture decision.
+- `docs/adr/0203-vmaf-tiny-v1-quant-eps.md` — unavailable historical
+  citation for the v1 quant-eps fixture decision; retained as provenance.
 - [ADR-0244](../../adr/0244-vmaf-tiny-v2.md) — v2 ship decision (supersedes
   v1 as default).
 - [ADR-0042](../../adr/0042-tinyai-docs-required-per-pr.md) — tiny-AI

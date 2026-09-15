@@ -1,0 +1,115 @@
+name: FFmpeg Patch Stack
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    - cron: "43 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ffmpeg-patch-stack-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    # required-aggregator
+    name: FFmpeg Patch Stack
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Test patch automation contracts
+        run: python3 -m unittest discover -s scripts/ci -p 'test_ffmpeg_patch*.py' -v
+
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+
+      - name: Check configured FFmpeg release
+        id: replay
+        if: steps.impact.outputs.mode == 'full' || steps.impact.outputs.c_core == 'true' || steps.impact.outputs.actions == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          output_dir="$RUNNER_TEMP/ffmpeg-patch-check"
+          mkdir -p "$output_dir"
+          python3 scripts/ci/ffmpeg_patch_stack.py --check --output-dir "$output_dir" \
+            2>&1 | tee "$output_dir/workflow-command.log"
+
+      - name: Report no replay needed
+        if: steps.impact.outputs.mode != 'full' && steps.impact.outputs.c_core != 'true' && steps.impact.outputs.actions != 'true'
+        run: echo 'Patch automation contracts passed; this change does not require FFmpeg replay.'
+
+      - name: Retain replay diagnostics
+        if: always() && (steps.replay.outcome == 'success' || steps.replay.outcome == 'failure')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ffmpeg-patch-check-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ffmpeg-patch-check/
+          if-no-files-found: error
+          retention-days: 14
+
+  refresh:
+    if: github.event_name == 'schedule'
+    name: FFmpeg Release Refresh
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out master
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: master
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Test patch automation contracts
+        run: python3 -m unittest discover -s scripts/ci -p 'test_ffmpeg_patch*.py' -v
+
+      - name: Refresh to the latest stable release
+        id: refresh
+        shell: bash
+        run: |
+          set -euo pipefail
+          output_dir="$RUNNER_TEMP/ffmpeg-patch-refresh"
+          mkdir -p "$output_dir"
+          python3 scripts/ci/ffmpeg_patch_stack.py --refresh --latest --output-dir "$output_dir" \
+            2>&1 | tee "$output_dir/workflow-command.log"
+
+      - name: Record proposed refresh
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          output_dir="$RUNNER_TEMP/ffmpeg-patch-refresh"
+          mkdir -p "$output_dir"
+          git diff --binary > "$output_dir/proposed-refresh.patch"
+          git status --short > "$output_dir/worktree-status.txt"
+          git rev-parse HEAD > "$output_dir/source-revision.txt"
+
+      - name: Retain refresh proposal
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ffmpeg-patch-refresh-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ffmpeg-patch-refresh/
+          if-no-files-found: error
+          retention-days: 14

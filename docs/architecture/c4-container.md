@@ -63,7 +63,7 @@ Rel(gh, testdata, "CI validates snapshot JSONs against backends")
 | core/test | C11 | C unit tests (µnit-style) | [../../core/test/AGENTS.md](../../core/test/AGENTS.md) |
 | ai/ | Python + PyTorch + Lightning | Tiny-AI training + ONNX export (`vmaf-train` CLI) | [../../ai/AGENTS.md](../../ai/AGENTS.md) |
 | mcp-server/vmaf-mcp | Python JSON-RPC | MCP tool surface | [../../mcp-server/AGENTS.md](../../mcp-server/AGENTS.md) |
-| python/vmaf | Python | Classic SVM harness + bindings + golden-data tests | [../../python/vmaf/AGENTS.md](../../python/vmaf/AGENTS.md) |
+| compat/python-vmaf | Python | Classic SVM harness + bindings; golden-data tests remain in `python/test/` | [Python compatibility invariants](https://github.com/VMAFx/vmafx/blob/master/compat/python-vmaf/AGENTS.md) |
 | model/ | Files | Shipped models (`.json`, `.pkl`, `.onnx` + registry.json) | n/a |
 | testdata/ | Files | YUV fixtures + fork benchmark JSONs | n/a |
 

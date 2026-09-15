@@ -5,10 +5,17 @@
 # Digest-pinned (sha256) for supply-chain reproducibility; update when upgrading the
 # CUDA tag. Gives us nvcc + cudart-dev without Ubuntu's stale 'nvidia-cuda-toolkit'
 # apt package.
-FROM nvidia/cuda:13.3.1-devel-ubuntu26.04@sha256:8cf42b8dc4c34d47fb42ffb0923f8a5e363469a7149181c094da336d311bb466
+# Base images come from build-config.env -- the single source of truth for
+# every container base in this repository. These defaults are mirrors kept in
+# sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
+# these lines, then run that script with --write.
+ARG CUDA_BUILDER="nvidia/cuda:13.3.1-devel-ubuntu26.04@sha256:8cf42b8dc4c34d47fb42ffb0923f8a5e363469a7149181c094da336d311bb466"
+
+FROM ${CUDA_BUILDER}
 
 ARG NV_CODEC_TAG="n13.1.15.0"
 ARG FFMPEG_TAG=n9.0.1
+ARG FFMPEG_REMOTE=https://github.com/FFmpeg/FFmpeg.git
 # Broadened gencode: Turing baseline (sm_75) + Ampere (sm_80) + Hopper (sm_90) +
 # Blackwell consumer (sm_120). CUDA 13 dropped sm_50/60/70.
 # Experimental nvcc feature flags (ADR D27): relaxed-constexpr lets us reuse host
@@ -44,9 +51,19 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # skip the network fetch. `sharing=locked` serialises concurrent BuildKit jobs
 # against the same cache. We INTENTIONALLY drop `rm -rf /var/lib/apt/lists/*`
 # here — with the cache mount the lists never make it into the image layer.
+# The CUDA apt list shipped in the base image is dropped first. NVIDIA's
+# ubuntu2604 index is currently malformed — `apt-get update` inside the pinned
+# digest fails with "Encountered a section with no Package: header ...
+# developer.download.nvidia.com_compute_cuda_repos_ubuntu2604_x86%5f64_Packages.lz4",
+# reproduced by running the pinned image directly, so it is upstream and not
+# ours. None of the packages below come from that repo and the CUDA toolkit is
+# baked into the image (nvcc 13.3 still resolves after the removal), so dropping
+# the list costs nothing. Same shape as the Microsoft/Azure source removal in
+# .github/workflows/go-ci.yml, which exists for this class of breakage.
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/sources.list.d/cuda-*.list && \
     apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ccache \
@@ -112,7 +129,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked \
 RUN echo /usr/local/lib/x86_64-linux-gnu > /etc/ld.so.conf.d/vmaf-local.conf && ldconfig
 
 # ---------- build FFmpeg ----------
-RUN wget -q "https://github.com/FFmpeg/FFmpeg/archive/${FFMPEG_TAG}.zip" && \
+RUN wget -q "${FFMPEG_REMOTE%.git}/archive/${FFMPEG_TAG}.zip" && \
     unzip -q "${FFMPEG_TAG}.zip" && rm "${FFMPEG_TAG}.zip"
 
 COPY ffmpeg-patches /tmp/ffmpeg-patches

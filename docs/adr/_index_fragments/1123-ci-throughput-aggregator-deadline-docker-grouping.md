@@ -1,0 +1,1 @@
+| [ADR-1123](1123-ci-throughput-aggregator-deadline-docker-grouping.md) | Raise the required-checks aggregator deadline to 240 minutes and group Docker digest updates to reduce CI queue starvation. | Accepted | ci, renovate, dependencies, gates, fork-local |

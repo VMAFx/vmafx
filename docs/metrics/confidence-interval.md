@@ -71,7 +71,7 @@ Here each data point (color representing different content) is associated with a
 
 ## Training Bootstrap Models
 
-To train a bootstrap model, one can use [`run_vmaf_training`](../usage/python.md#train-a-new-model) command line. In the parameter file, the `model_type` must be `BOOTSTRAP_LIBSVMNUSVR`. In `model_param_dict`, one can optionally specify the number of models to be used via `num_models`. See [`vmaf_v6_bootstrap.py`](../../python/vmaf/resource/param/vmaf_v6_bootstrap.py) for an example parameter file.
+To train a bootstrap model, one can use [`run_vmaf_training`](../usage/python.md#train-a-new-model) command line. In the parameter file, the `model_type` must be `BOOTSTRAP_LIBSVMNUSVR`. In `model_param_dict`, one can optionally specify the number of models to be used via `num_models`. See [`vmaf_v6_bootstrap.py`](https://github.com/VMAFx/vmafx/blob/master/compat/python-vmaf/resource/param/vmaf_v6_bootstrap.py) for an example parameter file.
 
 Running the command line below will generate a bootstrap model `test_b_model.json`.
 

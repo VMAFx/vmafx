@@ -301,7 +301,9 @@ CPU and each GPU backend. See [usage/bench.md](../usage/bench.md) for more detai
 > on a modern GPU. Real MCP clients hold the connection open. The heredoc test pattern
 > (`docker exec -i ... vmaf-mcp << EOF ... EOF`) causes the server to shut down on
 > stdin EOF before the benchmark completes. Use a persistent pipe (`sleep 120 |`)
-> when testing from the command line. See [Finding 9 in the E2E test matrix](../../.workingdir/bbb_reports/E2E_TEST_MATRIX_v9.md).
+> when testing from the command line. The original Finding 9 citation names
+> `.workingdir/bbb_reports/E2E_TEST_MATRIX_v9.md`; that report is unavailable
+> in the current repository.
 >
 > **Error contract**: `run_benchmark` raises `RuntimeError("benchmark failed — no
 > output line containing pooled score / Pearson correlation")` on partial / silent
@@ -548,7 +550,7 @@ CUDA ADM kernel requires at least 36px in each dimension; a sub-36px frame
 silently returns a null score on a CUDA build, which would otherwise be
 misreported as `runtime_healthy: true`. A null or non-finite score now sets
 `runtime_healthy: false` with an explanatory `error` string. Added in
-[ADR-0613](../adr/0613-mcp-p0-iserror-and-probe-version-encoded.md).
+[ADR-0634](../adr/0634-mcp-p0-iserror-and-probe-version-encoded.md).
 
 ### Input schema
 
@@ -592,7 +594,7 @@ backend is a valid result, not a protocol error).
 
 Return the local `vmaf` binary's identity and build flags. Useful for
 confirming which fork build is running before scoring. Added in
-[ADR-0613](../adr/0613-mcp-p0-iserror-and-probe-version-encoded.md).
+[ADR-0634](../adr/0634-mcp-p0-iserror-and-probe-version-encoded.md).
 
 ### Input schema — no arguments.
 
@@ -633,7 +635,7 @@ Y4M, WebM, etc.) by decoding them to raw YUV via `ffmpeg`, then scoring
 with the standard `vmaf_score` pipeline. Geometry (width, height, pixel
 format, bit depth) is probed automatically from the reference stream — no
 manual size entry required. Added in
-[ADR-0613](../adr/0613-mcp-p0-iserror-and-probe-version-encoded.md).
+[ADR-0634](../adr/0634-mcp-p0-iserror-and-probe-version-encoded.md).
 
 Requires `ffmpeg` and `ffprobe` on `PATH`.
 
@@ -695,7 +697,7 @@ Same shape as `vmaf_score`, plus two extra keys:
 
 ## Cross-tool error conventions
 
-**ADR-0613 (isError spec-correctness):** From ADR-0613 onward, all tool
+**ADR-0634 (isError spec-correctness):** From ADR-0634 onward, all tool
 handler exceptions are propagated as raises rather than being caught and
 returned as `TextContent({"error": ...})`. This allows the `mcp` library's
 outer handler (`_make_error_result`) to set `isError=True` on the
@@ -719,7 +721,7 @@ implicitly `False`, causing clients to misclassify errors as successes.
 - [`vmaf_bench`](../usage/bench.md) — what `run_benchmark` drives.
 - [Tiny-AI inference](../ai/inference.md) — what
   `eval_model_on_split` / `compare_models` are scoring.
-- [ADR-0613](../adr/0613-mcp-p0-iserror-and-probe-version-encoded.md) — P0 fixes.
+- [ADR-0634](../adr/0634-mcp-p0-iserror-and-probe-version-encoded.md) — P0 fixes.
 - [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
 
 ## `list_extractors`
