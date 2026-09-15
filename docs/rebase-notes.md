@@ -31,9 +31,15 @@ No native/public API, numerical or FFmpeg rebase impact.
 ## Repository security enforcement (2026-09-08)
 
 Keep the canonical master policy and read-only checker together. REST omission
-of bypass actors requires a verified GraphQL zero count, never an assumed empty
-list. Preserve strict checks, the GitHub Actions app binding, independent review
-and no bypass actors. No native or public C API rebase impact. See
+of bypass actors requires a verified GraphQL count compared with the declared
+actor list, never an assumed match. Preserve strict checks, the GitHub Actions
+app binding, and the review requirement on the ruleset. **Amended 2026-09-15 by
+[ADR-1252](adr/1252-solo-maintainer-declared-bypass.md)**: the policy now
+declares exactly one `User` bypass actor because a single-maintainer repository
+cannot satisfy its own independent-review requirement. Do not "restore" the
+zero-bypass assertion on a rebase without removing that actor from the live
+ruleset first, or the Scorecard master gate fails. No native or public C API
+rebase impact. See
 [ADR-1248](adr/1248-repository-security-enforcement.md).
 Preserve the short purpose and participation links in `docs/index.md`; the
 website evidence uses GitHub Pages URLs with source links and a deployment

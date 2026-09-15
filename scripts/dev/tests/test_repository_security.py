@@ -55,17 +55,38 @@ class RepositorySecurityTests(unittest.TestCase):
         self.responses[key].append({"id": 8999, "name": self.rule["name"]})
         self.assertIn("exactly one", " ".join(self.inspect()))
 
-    def test_admin_bypass_is_detected(self) -> None:
+    def test_declared_bypass_actor_is_accepted(self) -> None:
+        # ADR-1252 declares exactly one User bypass actor. The live list must be
+        # that actor and nothing else; the fixture inherits it from the policy.
+        self.assertEqual(self.policy["ruleset"]["bypass_actors"], self.rule["bypass_actors"])
+        self.assertEqual(len(self.rule["bypass_actors"]), 1)
+        self.assertEqual(self.inspect(), [])
+
+    def test_undeclared_bypass_actor_is_detected(self) -> None:
         self.rule["bypass_actors"] = [{"actor_type": "OrganizationAdmin", "bypass_mode": "always"}]
         self.assertIn("bypass_actors", " ".join(self.inspect()))
 
-    def test_hidden_bypass_actors_require_a_verified_zero_count(self) -> None:
+    def test_extra_bypass_actor_alongside_the_declared_one_is_detected(self) -> None:
+        self.rule["bypass_actors"] = [
+            *self.policy["ruleset"]["bypass_actors"],
+            {"actor_id": 1, "actor_type": "OrganizationAdmin", "bypass_mode": "always"},
+        ]
+        self.assertIn("bypass_actors", " ".join(self.inspect()))
+
+    def test_bypass_mode_widening_is_detected(self) -> None:
+        widened = [dict(actor, bypass_mode="exempt") for actor in self.rule["bypass_actors"]]
+        self.rule["bypass_actors"] = widened
+        self.assertIn("bypass_mode", " ".join(self.inspect()))
+
+    def test_hidden_bypass_actors_require_a_count_matching_the_policy(self) -> None:
+        declared = len(self.policy["ruleset"]["bypass_actors"])
         del self.rule["bypass_actors"]
-        with patch.object(CHECK, "bypass_count", return_value=0) as query:
+        with patch.object(CHECK, "bypass_count", return_value=declared) as query:
             self.assertEqual(self.inspect(), [])
             query.assert_called_once_with(8123)
-        with patch.object(CHECK, "bypass_count", return_value=1):
-            self.assertIn("bypass_actors", " ".join(self.inspect()))
+        for wrong in (declared - 1, declared + 1):
+            with patch.object(CHECK, "bypass_count", return_value=wrong):
+                self.assertIn("bypass_actors", " ".join(self.inspect()))
         with patch.object(CHECK, "bypass_count", side_effect=ValueError("unavailable")):
             with self.assertRaisesRegex(ValueError, "unavailable"):
                 self.inspect()

@@ -10,10 +10,13 @@ its disposable-repository tests and the operator guide in
 `docs/development/merge-train.md`. Runtime scripts remain local state; shipping
 source is separate from reviewing and migrating running processes.
 
-Repository security policy (ADR-1248) is checked by
+Repository security policy (ADR-1248, amended by ADR-1252) is checked by
 `check_repository_security.py` against the named active master ruleset and its
 effective rules. Preserve fixed repository/HTTPS-host targeting, exact lists and
-scalar types, the GitHub Actions origin on the aggregate check, and a verified
-zero bypass count even when REST hides actors. Missing/truncated/error API data
+scalar types, the GitHub Actions origin on the aggregate check, and a bypass
+count verified against the **declared** actor list even when REST hides actors.
+The policy declares exactly one `User` bypass actor (ADR-1252); do not relax this
+to a role tier and do not restore an unconditional zero-bypass assertion without
+first removing that actor from the live ruleset. Missing/truncated/error API data
 must fail. The checker only reads; CI must never gain administration credentials
 or an automatic apply path. Run its offline adversarial controls after changes.
