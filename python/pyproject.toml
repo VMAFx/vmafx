@@ -20,7 +20,7 @@ dependencies = [
     "sureal>=0.9.0",
     "dill>=0.4.1",
     "PyWavelets>=1.10.0",
-    "python-slugify>=8.0.4",
+    "python-slugify>=9.0.0",
     "libsvm-official>=3.37",
     "defusedxml>=0.7.1",
 ]
