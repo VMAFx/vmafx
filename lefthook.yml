@@ -1,0 +1,36 @@
+# Lefthook Configuration (Go 1.27+ & HISS-16 Governance)
+pre-commit:
+  parallel: true
+  commands:
+    gofmt:
+      glob: "*.go"
+      run: gofmt -w {staged_files}
+      stage_fixed: true
+    govet:
+      glob: "*.go"
+      run: go vet ./...
+    context-check:
+      run: which praetorctl >/dev/null 2>&1 && praetorctl compile-context --verify || ([ -d "./cmd/standardsctl" ] && go run ./cmd/standardsctl compile-context --verify || true)
+    hiss-audit:
+      run: which praetorctl >/dev/null 2>&1 && praetorctl audit || ([ -d "./cmd/standardsctl" ] && go run ./cmd/standardsctl audit || true)
+    block-evasion:
+      run: python3 .config/agent/hooks/block_evasion.py
+
+post-commit:
+  commands:
+    state-sync:
+      run: which praetorctl >/dev/null 2>&1 && praetorctl state sync . || ([ -d "./cmd/standardsctl" ] && go run ./cmd/standardsctl state sync . || true)
+    dedupe-cadence:
+      run: which praetorctl >/dev/null 2>&1 && praetorctl dedupe cadence --threshold=20 --record . || ([ -d "./cmd/standardsctl" ] && go run ./cmd/standardsctl dedupe cadence --threshold=20 --record . || true)
+
+pre-push:
+  parallel: false
+  commands:
+    security:
+      run: which govulncheck >/dev/null 2>&1 && govulncheck ./... || true
+    flavor-audit:
+      run: which praetorctl >/dev/null 2>&1 && praetorctl flavor audit . || ([ -d "./cmd/standardsctl" ] && go run ./cmd/standardsctl flavor audit . || true)
+    audit:
+      run: which praetorctl >/dev/null 2>&1 && praetorctl audit || ([ -d "./cmd/standardsctl" ] && go run ./cmd/standardsctl audit || true)
+    gate:
+      run: which praetorctl >/dev/null 2>&1 && praetorctl gate run --path=. || ([ -d "./cmd/standardsctl" ] && go run ./cmd/standardsctl gate run --path=. || true)

@@ -541,3 +541,15 @@ help:
 	@echo "  make setup-envtest    — install kubebuilder envtest binaries for vmafx-operator suite"
 	@echo ""
 	@echo "Upstream targets: build, test, debug, install, clean, distclean, cythonize"
+
+# cordanaLLM/praetor Governance Targets
+.PHONY: verify-all compile-context audit
+
+verify-all:
+	@standardsctl audit && standardsctl compile-context --verify
+
+compile-context:
+	@standardsctl compile-context
+
+audit:
+	@standardsctl audit

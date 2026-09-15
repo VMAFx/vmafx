@@ -1,35 +1,44 @@
 {
-  "name": "vmaf-dev (Ubuntu 26.04)",
+  "name": "vmafx",
   "build": {
-    "dockerfile": "../docker/dev/ubuntu-26.04.Dockerfile",
+    "dockerfile": "../docker/dev/Dockerfile",
     "context": ".."
   },
-  "workspaceFolder": "/src",
-  "workspaceMount": "source=${localWorkspaceFolder},target=/src,type=bind,consistency=cached",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": false,
+      "upgradePackages": true
+    },
+    "ghcr.io/devcontainers/features/go:1": {
+      "version": "1.27"
+    }
+  },
   "customizations": {
     "vscode": {
       "extensions": [
+        "GitHub.vscode-pull-request-github",
+        "aquasecurity.trivy-vulnerability-scanner",
+        "davidanson.vscode-markdownlint",
+        "eamodio.gitlens",
+        "github.copilot",
         "llvm-vs-code-extensions.vscode-clangd",
         "mesonbuild.mesonbuild",
+        "ms-azuretools.vscode-docker",
         "ms-python.python",
-        "charliermarsh.ruff",
-        "tamasfe.even-better-toml",
-        "timonwong.shellcheck",
-        "eamodio.gitlens",
-        "github.vscode-pull-request-github"
+        "ms-vscode.cmake-tools",
+        "redhat.vscode-yaml"
       ],
       "settings": {
-        "C_Cpp.intelliSenseEngine": "disabled",
         "clangd.arguments": [
-          "--compile-commands-dir=${workspaceFolder}/build",
-          "--background-index",
-          "--clang-tidy",
-          "--header-insertion=iwyu"
-        ]
+          "--compile-commands-dir=core/build",
+          "--header-insertion=never"
+        ],
+        "clangd.path": "clangd",
+        "editor.formatOnSave": true,
+        "security.workspace.trust.enabled": true
       }
     }
   },
-  "postCreateCommand": "cd libvmaf && meson setup ../build -Denable_cuda=false -Denable_sycl=false && ln -sf build/compile_commands.json ../compile_commands.json",
-  "remoteUser": "root",
-  "features": {}
+  "remoteUser": "vscode",
+  "postCreateCommand": "make verify-all"
 }

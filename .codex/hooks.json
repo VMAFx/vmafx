@@ -1,0 +1,58 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/home/kilian/dev/vmaf/.codex/hooks/block-unsafe-bash.sh'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/home/kilian/dev/vmaf/.codex/hooks/auto-format-on-edit.sh'"
+          },
+          {
+            "type": "command",
+            "command": "'/home/kilian/dev/vmaf/.codex/hooks/auto-snapshot-warn.sh'"
+          },
+          {
+            "type": "command",
+            "command": "'/home/kilian/dev/vmaf/.codex/hooks/docs-drift-warn.sh'"
+          },
+          {
+            "type": "command",
+            "command": "'/home/kilian/dev/vmaf/.codex/hooks/compile-commands-sync.sh'"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/home/kilian/dev/vmaf/.codex/hooks/session-start.sh'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/home/kilian/dev/vmaf/.codex/hooks/stop.sh'"
+          }
+        ]
+      }
+    ]
+  }
+}

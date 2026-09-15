@@ -1,3 +1,9 @@
+---
+description: Canonical agent instructions
+globs: "*"
+alwaysApply: true
+---
+
 <!-- markdownlint-disable MD013 -->
 <!-- Compiled automatically by standardsctl compile-context from AGENTS.md. DO NOT EDIT DIRECTLY. -->
 
