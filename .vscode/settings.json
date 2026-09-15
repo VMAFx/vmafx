@@ -15,9 +15,5 @@
   "standards.lsp.enabled": true,
   "standards.lsp.path": "${workspaceFolder}/bin/standards-lsp",
   "standards.lsp.trace.server": "messages",
-  "standards.mcp.enabled": true,
-  "standards.mcp.path": "${workspaceFolder}/bin/standards-mcp",
-  "standards.modelTier": "gemini-2.5-pro",
-  "standards.sentinel.headroomMB": 1024,
-  "mesonbuild.selectRootDir": false
+  "standards.sentinel.headroomMB": 1024
 }

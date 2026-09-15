@@ -1,6 +1,6 @@
 version: 1
 repository:
-    owner: VMAFx
+    owner: vmafx
     name: vmafx
     visibility: public
     description: ""

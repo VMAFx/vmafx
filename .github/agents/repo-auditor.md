@@ -16,5 +16,4 @@ to declared standards.
 
 ```bash
 standardsctl audit
-
 ```

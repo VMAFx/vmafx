@@ -1,0 +1,10 @@
+id: "docs:seo-portal"
+name: "Documentation SEO & Web Vitals Portal"
+description: "Enforces Schema.org JSON-LD structured data, sitemap generation, robots.txt integrity, and Core Web Vitals optimizations"
+
+linters:
+  - "markdownlint"
+  - "spectral"
+
+devcontainer_features:
+  - "ghcr.io/devcontainers/features/common-utils:2"

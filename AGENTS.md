@@ -60,7 +60,8 @@ flowchart LR
 
 ```bash
 # Fast local test suite
-meson test -C core/build --suite=fast
+# Declared commands only; run them before claiming application verification.
+'make' 'verify-all'
 
 # Recompile and verify cross-agent context outputs
 standardsctl compile-context --verify
@@ -71,6 +72,8 @@ standardsctl audit
 # Run all formatting, linting, and security gates
 make verify-all
 ```
+
+<!-- praetor:harness:end -->
 
 ---
 

@@ -1,19 +1,27 @@
 {
-  "name": "vmafx",
+  "name": "vmafx/vmafx",
   "build": {
-    "dockerfile": "../docker/dev/Dockerfile",
-    "context": ".."
+    "dockerfile": "Dockerfile.praetor",
+    "context": "."
   },
   "features": {
-    "ghcr.io/devcontainers/features/common-utils:2": {
-      "installZsh": false,
-      "upgradePackages": true
-    },
-    "ghcr.io/devcontainers/features/go:1": {
-      "version": "1.27"
-    }
+    "ghcr.io/devcontainers/features/common-utils:2": {},
+    "ghcr.io/devcontainers/features/nix:1": {},
+    "ghcr.io/devcontainers/features/rust:1": {}
   },
   "customizations": {
+    "praetor": {
+      "bootstrap": {
+        "version": 1,
+        "state": "source-bundle",
+        "builderImage": "docker.io/library/golang:1.27-alpine@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125",
+        "baseImage": "ghcr.io/vmafx/vmafx-dev-mcp@sha256:3956ebc9342a75cc0120804cee37144fff402dc1bab83849c68bf73a2cd6c9cc",
+        "sourceSHA256": "sha256:1709083216a1717e518b1b113f8a359336651126e969d65c9e732a14198ab96e",
+        "archiveSHA256": "sha256:79e1272b4525918291c4790bd0995153473f7f63b2ff5794835f3b6c27c8ce68",
+        "archiveParts": 3,
+        "dockerfileSHA256": "sha256:41b7b2dce26d2397aca1f01f816f15aaf424190ff2de3cf0ab32f1d820dada1e"
+      }
+    },
     "vscode": {
       "extensions": [
         "GitHub.vscode-pull-request-github",
@@ -40,5 +48,5 @@
     }
   },
   "remoteUser": "vscode",
-  "postCreateCommand": "make verify-all"
+  "postCreateCommand": "export PATH=\"/usr/local/bin:$PATH\"; /usr/local/bin/praetorctl compile-context && /usr/bin/make verify-all"
 }

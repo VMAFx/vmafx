@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "platform": "VMAFx/vmafx",
+  "platform": "vmafx/vmafx",
   "operating_contract": [
     "Pushing a branch is NOT shipping: an open PR is required, but still not shipped work until merged.",
     "Rebase onto main immediately: run git fetch origin \u0026\u0026 git rebase origin/main before proposing.",

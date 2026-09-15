@@ -2,6 +2,7 @@
   "recommendations": [
     "cordanaLLM.standards-vscode",
     "github.copilot",
+    "eamodio.gitlens",
     "llvm-vs-code-extensions.vscode-clangd",
     "mesonbuild.mesonbuild"
   ]

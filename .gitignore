@@ -221,3 +221,4 @@ relcache/
 # Vendor skill mirrors. `.claude/skills/` is canonical and tracked; the
 # per-vendor copies drift and are regenerated from it.
 .agents/skills/
+/.workingdir/
