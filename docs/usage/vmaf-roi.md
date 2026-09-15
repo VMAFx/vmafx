@@ -39,8 +39,9 @@ ninja -C build tools/vmaf_roi
 The binary depends only on libvmaf's public DNN surface
 ([`libvmaf/dnn.h`](../../core/include/libvmaf/dnn.h)); when libvmaf is
 built with `-Denable_dnn=disabled` the `--saliency-model` path returns
-`-ENOSYS` and the tool falls back to a deterministic radial placeholder
-useful only for smoke-testing the sidecar plumbing.
+`-ENOSYS` and the invocation fails. A deterministic radial placeholder is
+used only when `--saliency-model` is absent; it is useful only for
+smoke-testing the sidecar plumbing.
 
 ## Synopsis
 
@@ -154,8 +155,11 @@ done
 - **High-bit-depth input is luma8-normalised.** `--bitdepth 10|12|16`
   accepts little-endian 16-bit planar YUV, skips chroma using the
   selected `--pixel_format`, and downscales luma to the saliency
-  model's existing 8-bit input contract. The ROI sidecar itself remains
-  per-CTU QP offsets, not a high-bit-depth image output.
+  model's existing 8-bit input contract. Conversion rounds half up and
+  saturates at 255: maximum luma values 1023, 4095 and 65535 remain white
+  rather than wrapping to zero. Encoded samples above the declared
+  bit-depth range are first clamped to that range. The ROI sidecar itself
+  remains per-CTU QP offsets, not a high-bit-depth image output.
 - **Single frame per invocation.** Wave 1 keeps the sidecar one-frame at
   a time so callers can reuse it from any encoder driver. A streaming
   variant is a follow-up.

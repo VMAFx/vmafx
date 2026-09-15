@@ -5,7 +5,24 @@ Scoped orientation for any coding agent working directly inside `core/src/`.
 Parent scope: [`../AGENTS.md`](../AGENTS.md) (core) and
 [`../../AGENTS.md`](../../AGENTS.md) (root).
 
+## Windows CUDA compiler discovery
+
+`meson.build` must assign `cl_path` on both the `vswhere` and `PATH` discovery
+routes. NVCC's `-ccbin` and MSVC include discovery consume that same path.
+Keep the configure regression in `../test/test_windows_cuda_compiler_discovery.py`
+when rebasing the Windows discovery block from Netflix PR #1472.
+
 ## Mandatory safety invariants
+
+`pdjson.c` enforces the ADR-1061 limit as **512 containers**, not a zero-based
+maximum stack index. `push()` checks the next depth and completes allocation
+before publishing `stack_top`; depth or allocation failure must leave the
+accepted stack intact. Reject zero or oversized `PDJSON_STACK_INC` overrides
+before invoking the allocator; retain the separately compiled growth tests.
+Preserve the first-error diagnostic, streaming/peek/reset
+contract, UTF-8 validation and the private getter const qualifiers. The dedicated
+`core/test/test_pdjson.c` suite covers these contracts. Do not restore the old
+blanket NOLINT; the only file-wide exception is ADR-1138's C `NULL` compatibility.
 
 The following invariants were established during the 2026-05-16 memory-safety
 audit (findings #7, #8, #10). Every PR that touches the affected files — or

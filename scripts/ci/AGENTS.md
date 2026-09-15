@@ -10,6 +10,70 @@ upstream Netflix/vmaf has no equivalent tree, so the rebase risk is
 
 ## Rebase-sensitive surfaces
 
+### Exact-source Scorecard reports (ADR-1247)
+
+`scorecard_gate.py` validates the complete reviewed check sets and tool identity,
+recomputes the risk-weighted unrounded score, and rejects scanner errors. Keep
+all zero and inconclusive states in its summaries; only Signed-Releases/-1 with
+exact reason `no releases found` is unassessed rather than an error. PR-local
+reports have no upstream commit identity: preserve Git-object byte/mode checks,
+extra-input rejection and before/after run-bound receipts. Every followed
+symlink component must be tracked; do not permit links through Git metadata or
+other mutable inputs even when the final file is tracked. Preserve literal
+symlink targets and legitimate directory chains, with bounded cycle rejection.
+Git subprocesses and
+fixtures must clear inherited GIT_* and caller global/system configuration.
+Never use latest public API results, merge SHA instead of PR head, or omit a
+check to improve the denominator. The workflow/aggregator and source-tamper
+controls run through the `scorecard-policy-contract` hook and both gate jobs.
+Preserve the companion ADR-1248 offline repository-policy hook and live master
+checker; neither a local fixture pass nor an aggregate score proves settings.
+
+### Configured native lint (ADR-1142)
+
+`lint-configured.py` owns local `make lint-c` selection. Make first regenerates
+Meson metadata with `--reconfigure BUILD_DIR LIBVMAF_DIR`, without option
+overrides, then builds generated prerequisites. Intersect Meson's native database with tracked native sources, including engine roots, tests,
+C++ tools and tracked vendored code. Preserve every configured command variant;
+never infer commands for inactive backends or regenerate the database with
+unfiltered `ninja -t compdb`. Only positive numeric `-flto=N` becomes `-flto`
+in a private analyzer copy. Keep missing/invalid inputs fatal, report excluded
+scope, and run cppcheck even after clang-tidy fails. The scratch-Git fixture
+`tests/test_lint_configured.py` executes the real Make target and both analyzer
+boundaries; required Pre-Commit runs it when the driver or Makefile changes.
+This does not replace lane-specific ratchet measurements or their baselines.
+
+The real-Make fixtures create their failing/recording pip sentinel before fake
+Meson and Ninja, satisfying the recursive build dependency graph without tool
+bootstrap. GNU Make does not propagate `-o` to sub-makes. Keep `PIP_NO_INDEX=1`
+and assertions that no pip call, real venv or sentinel overwrite occurred;
+host network access must never turn a broken fixture into a passing test.
+
+Both local and required CI cppcheck invocations load its shipped `posix` model.
+The fork uses pthread types on POSIX and through its Windows compatibility shim;
+these are C aggregates, not unknown C++ classes with implicit constructors.
+Keep `--library=posix` separate from target selection: preserve database defines,
+include paths and language settings, with no forced platform or language.
+`tests/test_cppcheck_posix_model.py` runs actual cppcheck on shared headers and
+uninitialized-member/constructor negative controls in the Cppcheck job after
+installation. Missing tools/models fail that test; no diagnostic category is
+disabled. See the [model investigation](../../docs/research/cppcheck-pthread-model-2026-09-08.md).
+
+Both paths select `--check-level=exhaustive` (ADR-1245). Preserve this value-flow
+policy alongside the existing severity sets and all command variants; never
+suppress `normalCheckLevelMaxBranches` to hide incomplete analysis. The real-tool
+suite includes normal/exhaustive branch-budget controls and defect controls.
+
+Both paths also load `cppcheck-public-entrypoints.cfg` (ADR-1246). Keep its exact
+public names shared; adding a private helper to remove an unused warning is not
+an export contract. The configured-driver hook validates the model against
+`VMAF_EXPORT` declarations and Meson's explicit installed-header lists, including
+option-conditional headers. Preserve its cfg/header/workflow/test trigger paths.
+The real-tool Cppcheck suite must reject missing/invalid models and still find
+unlisted unused helpers and defects inside listed bodies. Entry names are
+scope/linkage-blind: do not reuse them for private/static functions. Keep the
+measured collision control and both existing severity selections unchanged.
+
 ### Base-image references (ADR-1231)
 
 `check-base-image-single-source.sh` delegates FROM/COPY instruction parsing to
@@ -301,7 +365,8 @@ Alpha pre-releases (`X.Y.Za<N>`) are never an acceptable pin.
   `/* ... */` block comment that holds the marker; `NOLINTEND` never counts) are
   load-bearing: the baselines were measured with exactly these rules, so
   changing either requires re-measuring every lane in the same PR (the `cpu`
-  baseline is CI's own `tidy-ratchet-cpu` artifact, never a workstation run).
+  full baseline is CI's own `tidy-ratchet-cpu` artifact; ADR-1243 permits
+  only guarded scoped tightening afterward).
 - The `Tidy Ratchet` job starts unconditionally and gates its
   work on the ADR-1140 planner's `c_core` selector; `.clang-tidy`, this
   directory (ratchet + baselines) and the workflow are CI-authority inputs, so
@@ -309,6 +374,20 @@ Alpha pre-releases (`X.Y.Za<N>`) are never an acceptable pin.
   `paths:` filter or a custom early-skip probe to the job.
 - A `clang-diagnostic-error` in any TU is a measurement failure (exit 4), never a
   zero. Build (generated headers) before measuring.
+- **Scoped writer (ADR-1243):** `--only` plus `--write` requires exact nonempty
+  measured-TU coverage, the original tool version/lane and no observed debt
+  increase. Preserve every unselected TU/header entry and all full-report
+  metadata; append explicit scoped provenance. Validate report/baseline aliases
+  before output, and replace the validated baseline atomically. Full and scoped
+  writers share a resolved-path advisory lock; preserve baseline-drift checks
+  around measurement/replacement and fail on unreadable NOLINT inputs. A diagnostic
+  `--only` run is not a full comparison. Keep failure/zero-tightening cases in
+  `tests/test_tidy_scoped_write.py`; never make CI's full lane use `--only`.
+- Promoted clang-tidy checks (`-warnings-as-errors`) remain counted debt. Only
+  the recognized promotion exit/summary may bypass the nonzero-tool-exit guard;
+  parse/compile failures still invalidate that measurement. Reports retain
+  actual `measured_sources` and `compile_failures` so partial/error output is
+  never presented as a successful whole-tree scan.
 
 ## release-pr-exempt.sh invariants (ADR-1151)
 
@@ -413,3 +492,31 @@ write only after the whole candidate succeeds. Disposable Git must discard
 inherited `GIT_*` repository variables and caller Git configuration. Discovery
 is scheduled and accepts only stable tags; ordinary checks use the reviewed tag.
 The required aggregator name is exactly `FFmpeg Patch Stack`.
+
+Fixture setup and assertions obey the same isolation rule as the production
+replayer. `test_ffmpeg_patch_stack.py`, `test_ffmpeg_patch_smoke_safety.py`
+and the dependency-classifier shell fixture discard inherited `GIT_*` before
+their first Git command and disable caller global/system Git configuration.
+Never rely on `git -C` alone. `test_git_fixture_isolation.py` runs those
+fixtures plus the agent-cleanup fixture with disposable caller variables,
+checks byte-for-byte metadata/work preservation, and remains registered in
+pre-commit/pre-push and required Pre-Commit CI. Poison only fresh temporary
+caller paths; never export the real repository's Git paths into a test.
+
+Level Zero fixture setup and its checker subprocess use the same Git isolation.
+Preserve the real linked-worktree hook regression: Git itself exports `GIT_DIR`,
+so a clean parent shell is insufficient. The old-command control may mutate
+only a disposable caller; the fixed helper must preserve every shared Git and
+linked-worktree file, including both indexes and staged/unstaged work.
+
+## Shared envtest installer (ADR-1231)
+
+`setup-envtest.sh` is the executable consumer of the envtest tool/version
+fields in `build-config.env`. Both Make and Go CI call it; keep the Go module
+metadata check, direct GOBIN/first-GOPATH executable path, and installed-only
+`path`/`env` lookup. Only `install` may fetch assets; inherited
+`ENVTEST_USE_ENV` must not bypass configured selection. Do not restore
+`@latest`, PATH-existence acceptance or a second Kubernetes default in CI.
+Preserve install/asset failures and shell-quoted export output, and keep
+`tests/test_envtest_single_source.py` wired to commit/push checks. See
+[Research-2058](../../docs/research/2058-envtest-version-owner.md).

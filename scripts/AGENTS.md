@@ -68,6 +68,12 @@ Do not restore forced worktree removal or infer stash redundancy from branch
 existence. All stashes and branch refs are retained. The temporary-repository
 regression is `bash scripts/dev/test-cleanup-agent-state.sh`.
 
+The regression itself must clear inherited `GIT_*` and disable caller
+global/system Git configuration before creating fixtures. `git -C` does not
+isolate repository, shared metadata or index paths supplied by the environment.
+Keep the disposable-caller preservation matrix in
+`ci/test_git_fixture_isolation.py` registered in the local/CI hooks.
+
 ### `release/concat-changelog-fragments.sh` is the source of truth for `CHANGELOG.md`
 
 Per [ADR-0221](../docs/adr/0221-changelog-adr-fragment-pattern.md),
@@ -266,6 +272,19 @@ validation, and selected docs must fail if MkDocs is unavailable. Direct
 non-doc invocations select scope before requiring the docs toolchain.
 Paired updates to the config, dispatcher, fixture, and
 `docs/development/pre-commit-hooks.md` preserve this contract.
+
+### Python pre-push scope follows the PR merge base
+
+`git-hooks/pre-push-mypy.py` implements parent §12.10 for the existing
+`ai/` and `scripts/` Python scope. Preserve full merge-base ownership,
+including type changes, rather than intersecting with pre-commit's
+old-tip/new-tip filenames. Rebases can change imports without changing an
+owned source file. Keep `always_run: true` and `pass_filenames: false` so
+even an empty outgoing diff rechecks that set. Resolve symlinks only for
+safety validation; keep lexical Git paths for selection and mypy. Reject
+outgoing refs different from the checked-out HEAD and fail closed on missing
+base/tool/file state. Keep `git-hooks/test-pre-push-mypy.py` registered in
+local hooks and required Pre-Commit CI. No new lint policy is introduced.
 
 ### `run_unittests.sh` is upstream-mirror
 

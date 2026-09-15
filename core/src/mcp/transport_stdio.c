@@ -49,7 +49,7 @@ static ssize_t read_line(int fd, char *buf, size_t max_len)
          * server->write_mtx and returns) on a previous iteration
          * before re-entering read_line() on the next iteration.
          * No mutex is held across this read. */
-        /* NOLINTNEXTLINE(clang-analyzer-unix.BlockInCriticalSection) */
+        /* NOLINTNEXTLINE(clang-analyzer-unix.BlockInCriticalSection) — ADR-0141 / ADR-0209 / ADR-0278 */
         ssize_t r = read(fd, &c, 1);
         if (r == 0) {
             if (n == 0u)
@@ -149,7 +149,7 @@ void *vmaf_mcp_stdio_thread_main(void *arg)
              * that function returns. */
             for (;;) {
                 char c = 0;
-                /* NOLINTNEXTLINE(clang-analyzer-unix.BlockInCriticalSection) */
+                /* NOLINTNEXTLINE(clang-analyzer-unix.BlockInCriticalSection) — ADR-0141 / ADR-0209 / ADR-0278 */
                 ssize_t r = read(server->stdio_fd_in, &c, 1);
                 if (r < 0) {
                     if (errno == EINTR)

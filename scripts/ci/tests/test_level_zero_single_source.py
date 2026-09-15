@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import shlex
 import shutil
@@ -18,6 +19,7 @@ from typing import Protocol, cast
 
 ROOT = Path(__file__).resolve().parents[3]
 BASH = shutil.which("bash") or "/bin/bash"
+GIT = shutil.which("git") or "/usr/bin/git"
 SPEC = importlib.util.spec_from_file_location(
     "workflow_versions", ROOT / "scripts/ci/check-workflow-versions.py"
 )
@@ -45,6 +47,8 @@ class LevelZeroSingleSource(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.repo = Path(self.temporary.name)
+        self.env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        self.env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
         (self.repo / "dev").mkdir()
 
     def check(self, text: str) -> list[str]:
@@ -53,6 +57,32 @@ class LevelZeroSingleSource(unittest.TestCase):
 
     def test_existing_container_passes(self) -> None:
         self.assertEqual(self.check(self.text), [])
+
+    def test_workflow_checker_entrypoint_retains_container_validation(self) -> None:
+        subprocess.run(  # noqa: S603 -- isolated disposable Git fixture
+            [GIT, "init", "-q", str(self.repo)], check=True, env=self.env
+        )
+        (self.repo / "build-config.env").write_text((ROOT / "build-config.env").read_text())
+        for text, status in (
+            (self.text, 0),
+            (self.text.replace(f". {GATE.LEVEL_ZERO_CONFIG}", "true"), 1),
+        ):
+            with self.subTest(status=status):
+                (self.repo / "dev/Containerfile").write_text(text)
+                result = (
+                    subprocess.run(  # noqa: S603 -- shipped checker in a disposable Git fixture
+                        [
+                            shutil.which("python3") or "/usr/bin/python3",
+                            str(ROOT / "scripts/ci/check-workflow-versions.py"),
+                        ],
+                        cwd=self.repo,
+                        env=self.env,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                )
+                self.assertEqual(result.returncode, status, result.stdout + result.stderr)
 
     def test_missing_copy_source_or_reintroduced_argument_fails(self) -> None:
         for text in (
@@ -122,10 +152,7 @@ class LevelZeroSingleSource(unittest.TestCase):
     def test_rocm_pins_are_owned_by_the_base_manager(self) -> None:
         config = json.loads((ROOT / "renovate.json").read_text())
         self.assertFalse(
-            any(
-                m.get("depNameTemplate") == "rocm/dev-ubuntu-24.04"
-                for m in config["customManagers"]
-            )
+            any(m.get("depNameTemplate", "").startswith("rocm/") for m in config["customManagers"])
         )
         manager = next(
             m
@@ -140,8 +167,11 @@ class LevelZeroSingleSource(unittest.TestCase):
                 match = re.search(pattern, f'{key}="{values[key]}"')
                 self.assertIsNotNone(match)
                 assert match is not None
-                self.assertEqual(match["depName"], "rocm/dev-ubuntu-24.04")
-                self.assertTrue(match["currentDigest"].startswith("sha256:"))
+                image_tag, digest = values[key].split("@", 1)
+                name, version = image_tag.rsplit(":", 1)
+                self.assertEqual(match["depName"], name)
+                self.assertEqual(match["currentValue"], version)
+                self.assertEqual(match["currentDigest"], digest)
 
 
 if __name__ == "__main__":

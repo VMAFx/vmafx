@@ -465,3 +465,84 @@ Guarded by `core/test/test_hip_speed_singular_parity.c`. The older
 chroma planes give 4x2 = 8 blocks for a 25x25 covariance — singular on
 every frame — so they never exercise the regular path. A SpEED test that
 needs a regular frame must be at least 960x960.
+
+## CAMBI: use the shared TVI helper and the CPU's border rules (ADR-1219)
+
+Three exact-logic traps, all of which the HIP twin fell into and which
+together collapsed its CAMBI score to **exactly 0.0** on banding
+content the CPU scores at 5.85.
+
+1. **Call `vmaf_cambi_init_tvi_and_vlt()`; never re-derive the TVI
+   table.** It runs the CPU's own bisection of
+   `tvi_hard_threshold_condition` between `luma_range.foot` and
+   `luma_range.head - diff - 1`, plus `vlt_luma` and the derived-band
+   validation. Two independent hand-ports (HIP and Metal) both searched
+   the *negated* predicate seeded from luma 0, giving
+   `tvi_for_diff = [1026, 1025, 1024, 4]` against the CPU's
+   `[182, 309, 436, 563]`. It is host-side scalar work done once in
+   `init()`, so a per-backend copy buys nothing.
+
+2. **`cambi.c::filter_mode` leaves output rows 0 and `height-1`
+   UNFILTERED.** Its vertical writeback is under `if (i > 1)` and covers
+   rows `1 .. height-2`; the horizontal results for the border rows live
+   only in the 3-row ring and are never written back. The kernel guard
+   is `if (axis == 1 && (y == 0 || y >= height - 1)) return;` — the V
+   pass writes into the buffer that still holds the pre-filter image, so
+   returning early preserves the original pixels exactly.
+
+3. **`get_spatial_mask_for_index()` ZERO-PADS its 7x7 box sum.** The
+   summed-area table is `memset` to zero and gated by
+   `deriv_valid = (i < height)`, so an out-of-frame tap adds nothing.
+   Clamping taps to the border pixel counts its zero-derivative flag up
+   to three extra times per axis and flips `box_sum > mask_index` on a
+   band of border pixels.
+
+A CAMBI parity fixture must actually band: CAMBI counts neighbour
+differences of `1 .. num_diffs` (4 at the default), so an 8-bit gradient
+stepping 32 levels every 32 columns scores 0.0 on the CPU too and makes
+the assertion `0 == 0`. Use a 10-bit gradient of one level every two
+columns inside the TVI band (200..900) and assert the CPU score is
+non-degenerate first.
+
+## float_adm options must reach the kernels (ADR-1220)
+
+`adm_p_norm` (alias `apn`) is a `VMAF_OPT_FLAG_FEATURE_PARAM` that
+`float_adm_hip` declares with the CPU's name, alias, default and range.
+Until ADR-1220 `float_adm/float_adm_score.hip` hardcoded the cube sum
+and `float_adm_hip.c` hardcoded the `1.0f / 3.0f` pooling root, so the
+option moved only the AIM exponent and produced a hybrid quantity.
+
+Invariants:
+
+- `adm_p_norm` has **four** application points in `adm_tools.c` — the
+  DLM numerator sum, the CSF denominator sum, the pooling root
+  `powf(accum, 1.0f / adm_p_norm)`, and
+  `get_noise_constant(w, h, weight, p)`. Change them together.
+- Keep the CPU's `p == 3` literal-cube fast path in the kernel
+  (`fadm_pnorm_term`). Device `powf(x, 3.0f)` is not guaranteed to equal
+  `x * x * x`, and the default path is what every shipped model uses.
+- `hipModuleLaunchKernel` silently ignores surplus `kernelParams` and
+  reads uninitialised memory for missing ones, so the kernel signature
+  and the `args[]` arrays for **both** `func_csf_cm` and `func_aim_cm`
+  change together.
+
+This twin does not declare `adm_bypass_cm` and rejects it; that is
+deliberate, and adding it is tracked in `docs/state.md`. Guarded by
+`test_hip_float_adm_parity.c::test_float_adm_p_norm_reaches_kernel`.
+
+## MS-SSIM clip_db is a dB ceiling (ADR-1221)
+
+`float_ms_ssim.c` derives `max_db = ceil(10 * log10(peak * peak / mse))`
+with `mse = 0.5 / (w * h)` at `init()`, and `convert_to_db()` returns
+`MIN(-10*log10(1 - score), max_db)`, short-circuiting to `max_db` when
+`score >= 1.0`. Until ADR-1221 `integer_ms_ssim_hip.c` clamped the
+LINEAR score into `[0, 1]` and converted with no ceiling, and had no
+`max_db` field: an identical reference/distorted pair returned `+Inf`,
+and every high-similarity pair returned an uncapped dB value.
+
+`max_db` is derived once in `init_fex_hip` right after
+`ms_ssim_hip_init_dims()`, using the CPU's exact expression and integer
+types, and the dB conversion goes through `ms_ssim_convert_to_db()`.
+The guard is `test_hip_ms_ssim_parity.c::test_ms_ssim_clip_db_ceiling`,
+which feeds an IDENTICAL pair — on a merely high-similarity fixture the
+ceiling never binds and the variant passes against the unfixed twin.

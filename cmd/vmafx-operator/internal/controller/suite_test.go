@@ -10,8 +10,8 @@
 //
 // To run the tests you need the envtest binaries installed:
 //
-//	go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-//	export KUBEBUILDER_ASSETS=$(setup-envtest use 1.31 -p path)
+//	make setup-envtest
+//	eval "$(make -s setup-envtest-env)"
 //	go test ./cmd/vmafx-operator/internal/controller/...
 //
 // ADR-0714: vmafx-operator kubebuilder skeleton + CRDs.
@@ -45,8 +45,7 @@ import (
 // arrange this automatically; this skip path is defense in depth for ad-hoc
 // `go test` invocations from a fresh checkout where the assets are missing.
 const envtestSkipMessage = "skipping envtest suite: KUBEBUILDER_ASSETS is unset. " +
-	"Run `make setup-envtest` (or `go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest && " +
-	"export KUBEBUILDER_ASSETS=$(setup-envtest use 1.31 -p path)`) and re-run."
+	"Run `make setup-envtest`, then `eval \"$(make -s setup-envtest-env)\"`, and re-run."
 
 var (
 	cfg       *rest.Config

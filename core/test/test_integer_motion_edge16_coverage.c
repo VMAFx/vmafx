@@ -17,7 +17,7 @@
  *  {3571, 16004, 26386, 16004, 3571} and a known source pattern,
  *  the expected accumulator value is computable by hand.
  */
-
+// NOLINTBEGIN(modernize-use-nullptr) — ADR-1138/ADR-1166: MSVC C NULL.
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -36,7 +36,7 @@
  * reads img[0..4] dotted with the 5-tap. Expected: */
 static char *test_edge16_horizontal_interior(void)
 {
-    uint16_t src[7] = {10, 20, 30, 40, 50, 60, 70};
+    const uint16_t src[7] = {10, 20, 30, 40, 50, 60, 70};
     /* j=3, k=0..4 -> j_tap = 3-2+k = 1..5 -> src[1..5] */
     uint32_t expected = 3571u * 20u + 16004u * 30u + 26386u * 40u + 16004u * 50u + 3571u * 60u;
     uint32_t got = edge_16(true, src, /*width=*/7, /*height=*/1, /*stride=*/7, 0, 3);
@@ -48,7 +48,7 @@ static char *test_edge16_horizontal_interior(void)
  * j_tap=-2 -> 2 (mirror), j_tap=-1 -> 1 (mirror). */
 static char *test_edge16_horizontal_left_mirror(void)
 {
-    uint16_t src[7] = {100, 200, 300, 400, 500, 600, 700};
+    const uint16_t src[7] = {100, 200, 300, 400, 500, 600, 700};
     /* j_tap sequence with mirror: 2, 1, 0, 1, 2 -> src[2], src[1], src[0], src[1], src[2] */
     uint32_t expected = 3571u * 300u + 16004u * 200u + 26386u * 100u + 16004u * 200u + 3571u * 300u;
     uint32_t got = edge_16(true, src, 7, 1, 7, 0, 0);
@@ -61,7 +61,7 @@ static char *test_edge16_horizontal_left_mirror(void)
  * j_tap=6: 6 >= 5 -> width - (6 - 5 + 2) = 5 - 3 = 2. */
 static char *test_edge16_horizontal_right_mirror(void)
 {
-    uint16_t src[5] = {1, 2, 3, 4, 5};
+    const uint16_t src[5] = {1, 2, 3, 4, 5};
     /* indices: 2, 3, 4, 3, 2 -> src[2..4] folded back */
     uint32_t expected = 3571u * 3u + 16004u * 4u + 26386u * 5u + 16004u * 4u + 3571u * 3u;
     uint32_t got = edge_16(true, src, 5, 1, 5, 0, 4);
@@ -80,7 +80,7 @@ static char *test_edge16_vertical_top_mirror(void)
 {
     /* stride=1 to keep indexing trivial; arrange values 10..70 down
      * the column. */
-    uint16_t src[7] = {10, 20, 30, 40, 50, 60, 70};
+    const uint16_t src[7] = {10, 20, 30, 40, 50, 60, 70};
     /* i_tap sequence with mirror at i=0: -2, -1, 0, 1, 2 -> 2, 1, 0, 1, 2.
      * src[i_tap*stride+j] with stride=1, j=0 -> src[2], src[1], src[0], src[1], src[2]. */
     uint32_t expected = 3571u * 30u + 16004u * 20u + 26386u * 10u + 16004u * 20u + 3571u * 30u;
@@ -94,7 +94,7 @@ static char *test_edge16_vertical_top_mirror(void)
  * i_tap=6 -> height - (6 - 5 + 2) = 2. */
 static char *test_edge16_vertical_bottom_mirror(void)
 {
-    uint16_t src[5] = {7, 11, 13, 17, 19};
+    const uint16_t src[5] = {7, 11, 13, 17, 19};
     /* indices: 2, 3, 4, 3, 2 -> 13, 17, 19, 17, 13 */
     uint32_t expected = 3571u * 13u + 16004u * 17u + 26386u * 19u + 16004u * 17u + 3571u * 13u;
     uint32_t got = edge_16(false, src, 1, 5, 1, 4, 0);
@@ -111,3 +111,5 @@ char *run_tests(void)
     mu_run_test(test_edge16_vertical_bottom_mirror);
     return NULL;
 }
+
+// NOLINTEND(modernize-use-nullptr) — ADR-1138/ADR-1166.

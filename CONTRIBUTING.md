@@ -14,7 +14,9 @@ extractors, quality runners, models).
 2. Install pre-commit hooks: `make hooks-install` (runs `pre-commit install`).
    Required for fresh clones — missing hooks cause CI round-trips on
    trivial formatter failures.
-3. Configure: `meson setup build -Denable_cuda=false -Denable_sycl=false`
+3. Configure a build from the repository root: follow the
+   [source-build guide](docs/getting-started/index.md#build-from-source-any-platform)
+   (`meson setup build core ...`; the Meson source directory is `core/`).
 4. Build: `ninja -C build`
 5. Test: `meson test -C build`
 6. Format + lint before pushing: `make format && make lint`
@@ -130,6 +132,10 @@ not a public issue.
 
 ## Review expectations
 
+- Major new functionality must include automated tests in the same change.
+  Cover the new behavior and its relevant failure paths, document how to run
+  the tests, and preserve existing numerical assertions. Reviewers check this
+  policy against the actual change; green CI alone does not prove new coverage.
 - CI must be green (ci, lint, security workflows).
 - PRs that touch a feature with SIMD / GPU twins must either touch every
   twin or explicitly call out the gap in the PR body so a follow-up can be

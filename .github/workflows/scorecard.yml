@@ -4,7 +4,7 @@
 # and uploads SARIF into the GitHub Security tab so maintainers can see delta
 # regressions on pinning, branch-protection, and dependency-review postures.
 #
-# Badge: README "OpenSSF Scorecard" links here.
+# ADR-1247: publisher stays restricted; the separate gate consumes its same-run JSON.
 
 name: scorecard
 on:
@@ -45,17 +45,73 @@ jobs:
       - name: Upload artifact (debug / replay)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: scorecard-sarif
-          path: results.sarif
+          name: scorecard-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: |
+            results.sarif
+            results.json
+          if-no-files-found: error
           retention-days: 14
       - name: Upload to GitHub Security tab
-        # SHA pinned to the head commit of github/codeql-action's v4 tag
-        # (resolved 2026-05-03). The previous pin (b25d0ebf...) was an
-        # "imposter commit" — a SHA that no longer exists in the action
-        # repository — which made Scorecard's webapp publish step fail
-        # with a workflow-verification 400 error. See
-        # docs/research/0053-ossf-scorecard-investigation.md and
-        # docs/adr/0253-ossf-scorecard-policy.md.
+        # Keep a resolving immutable action pin; ADR-1247 preserves publishing restrictions.
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
         with:
           sarif_file: results.sarif
+
+  gate:
+    # required-aggregator
+    name: Scorecard Master Gate
+    needs: analysis
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Require successful authenticated analysis
+        env:
+          ANALYSIS_RESULT: ${{ needs.analysis.result }}
+        run: test "$ANALYSIS_RESULT" = success
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: scorecard-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: ${{ runner.temp }}/scorecard-master
+          digest-mismatch: error
+      - name: Test report and repository policy controls
+        run: |
+          python3 -B -m unittest discover -s scripts/ci/tests -p 'test_scorecard_*.py' -v
+          python3 -B scripts/dev/tests/test_repository_security.py -v
+      - name: Enforce exact-head full repository policy
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --hostname github.com "repos/$EXPECTED_REPOSITORY/git/ref/heads/master" \
+            > "$RUNNER_TEMP/scorecard-master/final-master-ref.json"
+          python3 -B scripts/ci/scorecard_gate.py master \
+            --sha "$EXPECTED_SHA" --repository "$EXPECTED_REPOSITORY" \
+            --report "$RUNNER_TEMP/scorecard-master/results.json" \
+            --master-ref "$RUNNER_TEMP/scorecard-master/final-master-ref.json" \
+            --receipt "$RUNNER_TEMP/scorecard-master/gate.json" \
+            --summary "$GITHUB_STEP_SUMMARY"
+      - name: Verify live repository protection
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/scorecard-master"
+          python3 -B scripts/dev/check_repository_security.py \
+            --report "$RUNNER_TEMP/scorecard-master/repository-security.json"
+      - name: Preserve gate receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scorecard-master-gate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scorecard-master
+          if-no-files-found: error
+          retention-days: 14

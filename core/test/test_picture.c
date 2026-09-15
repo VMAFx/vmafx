@@ -25,7 +25,13 @@
 #include "libvmaf/picture.h"
 #include "ref.h"
 
-// NOLINTNEXTLINE(readability-function-size): test scaffolding — explicitly walks every alloc / fill / ref / unref state to keep failures localised; splitting hides the assertion that fired.
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — explicitly walks every alloc / fill / ref / unref state to keep failures localised; splitting hides the assertion that fired.
 static char *test_picture_alloc_ref_and_unref()
 {
     int err;
@@ -78,13 +84,14 @@ static char *test_picture_data_alignment()
  *   chroma: w=ceil(577/2)=289, h=ceil(323/2)=162   (correct, post-fix)
  *           w=floor(577/2)=288, h=floor(323/2)=161  (wrong, pre-fix)
  */
-static char *test_picture_odd_dim_chroma_ceiling()
+/* One case per pixel format. The combined test tripped the
+ * readability-function-size branch budget (ADR-1142) -- every mu_assert is a
+ * branch -- and each format is an independent assertion anyway, so a failure
+ * now names the format it came from. */
+static char *test_picture_chroma_ceiling_420_odd(void)
 {
-    int err;
     VmafPicture pic;
-
-    /* 4:2:0, both luma dims odd. */
-    err = vmaf_picture_alloc(&pic, VMAF_PIX_FMT_YUV420P, 8, 577, 323);
+    int err = vmaf_picture_alloc(&pic, VMAF_PIX_FMT_YUV420P, 8, 577, 323);
     mu_assert("vmaf_picture_alloc failed for 577x323 YUV420", !err);
     mu_assert("chroma w must be ceil(577/2)=289 for odd-width 4:2:0", pic.w[1] == 289);
     mu_assert("chroma w[2] must equal w[1]", pic.w[2] == pic.w[1]);
@@ -92,31 +99,45 @@ static char *test_picture_odd_dim_chroma_ceiling()
     mu_assert("chroma h[2] must equal h[1]", pic.h[2] == pic.h[1]);
     err = vmaf_picture_unref(&pic);
     mu_assert("vmaf_picture_unref failed", !err);
+    return NULL;
+}
 
-    /* 4:2:0, even dims — ceiling must equal floor (no change). */
-    err = vmaf_picture_alloc(&pic, VMAF_PIX_FMT_YUV420P, 8, 576, 324);
+static char *test_picture_chroma_ceiling_420_even(void)
+{
+    VmafPicture pic;
+    /* Even dims — the ceiling must equal the floor (no change). */
+    int err = vmaf_picture_alloc(&pic, VMAF_PIX_FMT_YUV420P, 8, 576, 324);
     mu_assert("vmaf_picture_alloc failed for 576x324 YUV420", !err);
     mu_assert("chroma w must be 288 for even-width 4:2:0", pic.w[1] == 288);
     mu_assert("chroma h must be 162 for even-height 4:2:0", pic.h[1] == 162);
     err = vmaf_picture_unref(&pic);
     mu_assert("vmaf_picture_unref failed", !err);
+    return NULL;
+}
 
-    /* 4:2:2, odd width only — height must be full luma height. */
-    err = vmaf_picture_alloc(&pic, VMAF_PIX_FMT_YUV422P, 8, 577, 323);
+static char *test_picture_chroma_ceiling_422(void)
+{
+    VmafPicture pic;
+    /* Odd width only — height must stay the full luma height. */
+    int err = vmaf_picture_alloc(&pic, VMAF_PIX_FMT_YUV422P, 8, 577, 323);
     mu_assert("vmaf_picture_alloc failed for 577x323 YUV422", !err);
     mu_assert("chroma w must be ceil(577/2)=289 for odd-width 4:2:2", pic.w[1] == 289);
     mu_assert("chroma h must equal luma h for 4:2:2", pic.h[1] == 323);
     err = vmaf_picture_unref(&pic);
     mu_assert("vmaf_picture_unref failed", !err);
+    return NULL;
+}
 
-    /* 4:4:4, odd dims — no subsampling, chroma == luma. */
-    err = vmaf_picture_alloc(&pic, VMAF_PIX_FMT_YUV444P, 8, 577, 323);
+static char *test_picture_chroma_ceiling_444(void)
+{
+    VmafPicture pic;
+    /* No subsampling — chroma dims equal luma dims. */
+    int err = vmaf_picture_alloc(&pic, VMAF_PIX_FMT_YUV444P, 8, 577, 323);
     mu_assert("vmaf_picture_alloc failed for 577x323 YUV444", !err);
     mu_assert("chroma w must equal luma w for 4:4:4", pic.w[1] == 577);
     mu_assert("chroma h must equal luma h for 4:4:4", pic.h[1] == 323);
     err = vmaf_picture_unref(&pic);
     mu_assert("vmaf_picture_unref failed", !err);
-
     return NULL;
 }
 
@@ -217,13 +238,26 @@ static char *test_picture_unref_null_error_paths()
     return NULL;
 }
 
+/* Grouped so neither runner trips the readability-function-size branch budget:
+ * every mu_run_test expands to a branch (ADR-1142). */
+static char *run_chroma_ceiling_tests(void)
+{
+    mu_run_test(test_picture_chroma_ceiling_420_odd);
+    mu_run_test(test_picture_chroma_ceiling_420_even);
+    mu_run_test(test_picture_chroma_ceiling_422);
+    mu_run_test(test_picture_chroma_ceiling_444);
+    return NULL;
+}
+
 char *run_tests()
 {
     mu_run_test(test_picture_alloc_ref_and_unref);
     mu_run_test(test_picture_data_alignment);
-    mu_run_test(test_picture_odd_dim_chroma_ceiling);
+    mu_run_test(run_chroma_ceiling_tests);
     mu_run_test(test_picture_alloc_rejects_overflow_dimensions);
     mu_run_test(test_picture_ref_null_error_paths);
     mu_run_test(test_picture_unref_null_error_paths);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

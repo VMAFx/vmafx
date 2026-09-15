@@ -54,6 +54,13 @@
 
 #if ARCH_X86
 #include "feature/x86/psnr_hvs_avx2.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #endif
 
 #if ARCH_X86
@@ -66,7 +73,7 @@ typedef int32_t od_coeff;
 #define OD_UNBIASED_RSHIFT32(_a, _b) (((int32_t)(((uint32_t)(_a) >> (32 - (_b))) + (_a))) >> (_b))
 #define OD_DCT_RSHIFT(_a, _b) OD_UNBIASED_RSHIFT32(_a, _b)
 
-// NOLINTNEXTLINE(readability-function-size) load-bearing upstream scalar reference.
+// NOLINTNEXTLINE(readability-function-size) — load-bearing upstream scalar reference (ADR-0138 / ADR-0141 / ADR-0278).
 static void ref_od_bin_fdct8(od_coeff y[8], const od_coeff *x, int xstride)
 {
     const ptrdiff_t xs = (ptrdiff_t)xstride;
@@ -212,3 +219,5 @@ char *run_tests(void)
 #endif
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

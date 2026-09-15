@@ -153,3 +153,12 @@ go test ./cmd/vmafx-operator/ -run 'TestOptions|TestEnv|TestWith' -v
 
 See [docs/development/operator.md#running-tests](../../docs/development/operator.md#running-tests)
 for full instructions including CI environment setup.
+
+## Canonical envtest setup
+
+The controller suite's setup/skip guidance must use `make setup-envtest` and
+`eval "$(make -s setup-envtest-env)"`. The shared helper verifies the tool
+release from `build-config.env`; do not reintroduce an independent `@latest`
+installer in comments, messages or CI. Kubernetes 1.31 remains the default
+fixture generation. See
+[Research-2058](../../docs/research/2058-envtest-version-owner.md).

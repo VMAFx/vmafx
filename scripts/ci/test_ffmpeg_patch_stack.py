@@ -36,6 +36,11 @@ class ReleaseSelection(unittest.TestCase):
 class RealReplay(unittest.TestCase):
     def git(self, path: Path, *args: str) -> str:
         # Fixed Git executable and fixture-owned arguments; no shell.
+        # Fixture setup needs isolation too: -C does not override hook GIT_*.
+        environment = {
+            key: value for key, value in os.environ.items() if not key.startswith("GIT_")
+        }
+        environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
         return subprocess.check_output(  # noqa: S603
             [
                 shutil.which("git") or "/usr/bin/git",
@@ -53,6 +58,7 @@ class RealReplay(unittest.TestCase):
             ],
             text=True,
             stderr=subprocess.DEVNULL,
+            env=environment,
         )
 
     def setUp(self) -> None:

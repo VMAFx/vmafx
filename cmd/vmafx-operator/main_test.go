@@ -17,7 +17,7 @@ package main
 import (
 	"testing"
 
-	"github.com/golusoris/golusoris/config"
+	"github.com/golusoris/golusoris/core/config"
 	"github.com/golusoris/golusoris/k8s/operator"
 	"github.com/golusoris/golusoris/otel"
 	"go.uber.org/fx"

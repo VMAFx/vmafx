@@ -18,6 +18,15 @@ make base-images-sync         # push it into every Dockerfile
 git diff                      # review, then commit both
 ```
 
+The ROCm builder and runtime source use AMD's released Ubuntu 26.04
+`10.0.0-full` image, pinned through `ROCM_BUILDER` and `ROCM_RUNTIME`.
+The `rocm-src` stage compiles and links a small HIP kernel after pruning the
+SDK, then runs its host-only entry point. This checks the compiler and loader
+without requiring an AMD GPU; device execution remains a separate test.
+The node runtime retains the vendor library directory structure when copying
+the HIP dependency closure into Debian 13. See the
+[26.04 verification](../research/rocm-2604-restoration-2026-09-08.md).
+
 `make base-images-sync` rewrites the `ARG` defaults in every Dockerfile from
 the config and then re-runs the check, so a clean run means the tree agrees
 with the config.
@@ -94,6 +103,33 @@ The top of the config carries the human-meaningful version of each pin
 pinned tag actually carries the version its knob claims, so `RELEASE_DEBIAN=13`
 cannot sit above a `debian:12` pin. That check is what would have caught the
 drift this file exists to prevent.
+
+### Python and ONNX Runtime ownership
+
+Scientific Python dependency floors remain in each package's `pyproject.toml`.
+For the classic `vmaf` package, `python/pyproject.toml` owns runtime dependencies;
+`make python-deps-sync` derives `python/requirements.txt`, and the requirements
+single-source gate rejects drift. The AI and MCP manifests own their own
+runtime and optional dependencies. Build-system requirements are separate
+metadata and must retain dependency updates already merged into the base.
+
+The five scientific-stack globals originally proposed in ADR-1236 had no
+consumers or drift checks. They are deferred until that consumption is wired;
+adding a declaration alone does not move ownership out of package metadata.
+
+Native ONNX Runtime pins also represent different contracts. The main build,
+Go runner and dev container use the CPU archive; the Go smoke expectation is
+coupled to that runtime. The older DNN matrix uses the CPU archive described in
+[ADR-0120](../adr/0120-ai-enabled-ci-matrix-legs.md). Coverage uses a GPU archive
+and CUDA 12 runtime to exercise provider attachment and CPU session fallback
+without a GPU driver, as documented in
+[ADR-0113](../adr/0113-ort-create-session-fallback-multi-ep-ci.md).
+
+Preserve those lane roles when consolidating pins. An upgrade must verify the
+exact archive name, runtime-library closure and relevant tests: the 1.29 GPU
+release names select `gpu_cuda12` or `gpu_cuda13`, while the 1.22 coverage URL
+uses `gpu`. A version-only replacement therefore does not preserve the download
+contract. None of these lane pins defines every Python package's ORT floor.
 
 ## Everything is digest-pinned
 

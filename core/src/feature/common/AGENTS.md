@@ -12,7 +12,7 @@ feature/common/
   convolution.{c,h}          # scalar separable convolution (used by float_adm / float_vif / motion / SpEED-class extractors)
   convolution_avx.c          # ADR-0143 generalised AVX2 scanlines (8-wide FMA)
   convolution_avx512.c       # ADR-0504 AVX-512F port of same scanlines (16-wide FMA)
-  convolution_internal.h     # private helpers (RESTRICT, MAX_FWIDTH_AVX_CONV, ...)
+  convolution_internal.h     # private helpers (RESTRICT, border folding, ...)
   macros.h                   # cross-toolchain FORCE_INLINE / RESTRICT / UNUSED_FUNCTION
 ```
 
@@ -64,10 +64,21 @@ SSIM-specific scalar reference — do not confuse it with the
   → different rounding) — this is accepted for the float path per
   ADR-0214.
 
-- **`MAX_FWIDTH_AVX_CONV` in `convolution_internal.h`** sizes the
+- **Horizontal convolution bounds preserve arithmetic regions**:
+  `j_vec_end` denotes the first final scalar output. The horizontal SIMD
+  source-start count is `max(j_vec_end - radius, 0)`. Full vectors plus
+  masked final loads/stores cover only those outputs; never compute discarded
+  lanes past a row, even when a caller often pads its workspace. Keep the
+  original final scalar start and the AVX2 multiply/add versus AVX-512 FMA
+  operations. Clamp tiny-width scalar borders to the plane. Normal, squared
+  and cross-product wrappers share their ISA's horizontal pass. Preserve
+  `test_convolution_horizontal` and its tight final-row allocation contract.
+  See [boundary investigation](../../../../docs/research/convolution-horizontal-boundary-2026-09-08.md).
+
+- **`MAX_FWIDTH_AVX_CONV` in `convolution.h`** sizes the
   `__m256 f[]` filter-tap buffer in `convolution_avx.c`. Bumping
   this constant changes the per-call stack frame for the convolution
-  fast path; keep it the upstream-canonical 33 unless an ADR
+  fast path; keep it the current supported limit of 17 unless an ADR
   justifies the bump.
 
 - **Header-level Netflix copyright on `convolution.{c,h}` and
@@ -84,12 +95,12 @@ SSIM-specific scalar reference — do not confuse it with the
 
 - **`alignment.{c,h}`** is consumed by every SIMD TU (`__m256` /
   `__m512` / `float64x2_t` aligned spills) and most GPU host-glue
-  TUs (CUDA pinned host, SYCL USM host, Vulkan staging buffers).
+  TUs (CUDA pinned host, SYCL USM host, other host staging buffers).
   Renaming `vmaf_align` is a project-wide event; don't.
 
 - **`blur_array.{c,h}`** is consumed by `motion.c`, `motion_v2.c`,
   and several GPU motion twins (`../cuda/integer_motion_*_cuda.c`,
-  `../sycl/integer_motion_*_sycl.cpp`, `../vulkan/motion*_vulkan.c`).
+  `../sycl/integer_motion_*_sycl.cpp`).
   The ring-buffer carry semantics are part of the GPU twins'
   ping-pong contract — see [../AGENTS.md §"motion3_score GPU
   contract"](../AGENTS.md).

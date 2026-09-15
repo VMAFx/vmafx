@@ -117,7 +117,8 @@ cythonize-deps: $(VENV_PIP)
 # ============================================================================
 
 .PHONY: lint lint-c lint-py lint-sh lint-md lint-go tidy-ratchet tidy-ratchet-write \
-	base-images-sync \
+	base-images-sync python-deps-sync \
+	preflight \
 	format format-check sec sbom \
         test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
         coverage coverage-html coverage-check assertion-density pr-check
@@ -151,22 +152,16 @@ docs-fragments-write:
 	@bash scripts/docs/generate-adr-by-tag.sh --write
 	@bash scripts/docs/generate-adr-nav.sh --write
 
-lint-c: $(BUILD_DIR) $(NINJA)
-	$(call require-tool,clang-tidy,install clang-tools)
-	$(call require-tool,cppcheck,install cppcheck)
-	@echo "--- compile database ---"
-	@PATH="$(VENV)/bin:$$PATH" $(NINJA) -C $(BUILD_DIR) -t compdb \
-	    > $(BUILD_DIR)/compile_commands.json
-	@echo "--- clang-tidy ---"
-	@FILES=$$(git ls-files 'core/src/**/*.c' 'core/src/**/*.cpp' 'core/tools/*.c' \
-	         | grep -v '^subprojects/' \
-	         | grep -v '^core/src/interop/pelorus_'); \
-	 clang-tidy -p $(BUILD_DIR) --quiet $$FILES
-	@echo "--- cppcheck ---"
-	cppcheck --enable=all --inline-suppr \
-	         --suppressions-list=.cppcheck-suppressions.txt \
-	         --project=$(BUILD_DIR)/compile_commands.json \
-	         --error-exitcode=1
+# Analyze only this Meson profile, retaining all configured command variants.
+# Backend-specific clang-tidy options can be supplied with repeated
+# --clang-tidy-arg=... operands in LINT_CONFIGURED_ARGS.
+LINT_JOBS ?= 4
+LINT_CONFIGURED_ARGS ?=
+lint-c: $(BUILD_DIR) $(MESON) $(NINJA)
+	PATH="$(VENV)/bin:$$PATH" $(MESON_SETUP) --reconfigure "$(BUILD_DIR)" "$(LIBVMAF_DIR)"
+	$(MAKE) build
+	$(PYTHON_INTERPRETER) scripts/ci/lint-configured.py --build-dir "$(BUILD_DIR)" \
+	    --jobs "$(LINT_JOBS)" $(LINT_CONFIGURED_ARGS)
 
 # ADR-1142 — whole-tree clang-tidy debt ratchet. LANE=cpu|cuda|sycl|hip
 # (default cpu). The build dir must be configured for the lane
@@ -198,7 +193,20 @@ base-images-sync:
 	scripts/ci/check-base-image-single-source.sh --write
 	scripts/ci/check-base-image-single-source.sh
 
+# Rewrite python/requirements.txt from python/pyproject.toml [project].dependencies.
+python-deps-sync:
+	scripts/ci/check-python-requirements-single-source.sh --write
+	scripts/ci/check-python-requirements-single-source.sh
+
+# Run the CI lanes that a single-compiler local build cannot catch: clang,
+# 32-bit, sanitizers, MSVC-hostile constructs, clang-tidy, cppcheck (ADR-1234).
+# `make preflight` before pushing; `scripts/dev/preflight.sh --list` explains
+# which CI context each stage stands in for.
+preflight:
+	scripts/dev/preflight.sh
+
 lint-py:
+	@scripts/ci/check-python-requirements-single-source.sh
 	$(call require-tool,ruff,pip install ruff==0.15.17)
 	ruff check python/ ai/ scripts/
 	$(call require-tool,black,pip install black==26.5.1)
@@ -469,28 +477,20 @@ go-ort-runner:
 #   eval $$(make -s setup-envtest-env)              # export KUBEBUILDER_ASSETS
 #   go test ./cmd/vmafx-operator/internal/controller/...
 #
-# The CI workflow (.github/workflows/go-ci.yml) runs this target before
+# The CI workflow (.github/workflows/go-ci.yml) calls the same installer before
 # `go test ./...` so the operator suite executes for real instead of skipping.
 
-ENVTEST_K8S_VERSION ?= 1.31
+# Optional command-line override; the default lives in build-config.env.
+ENVTEST_K8S_VERSION ?=
 
 setup-envtest:
-	@command -v go >/dev/null || { echo "go not found — install Go ≥ 1.23 (https://go.dev/dl/)"; exit 1; }
-	@command -v setup-envtest >/dev/null || \
-	    go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-	@setup-envtest use $(ENVTEST_K8S_VERSION) -p path >/dev/null
-	@echo "envtest assets installed; export with:"
-	@echo "  export KUBEBUILDER_ASSETS=\$$(setup-envtest use $(ENVTEST_K8S_VERSION) -p path)"
+	@ENVTEST_K8S_VERSION="$(ENVTEST_K8S_VERSION)" scripts/ci/setup-envtest.sh install >/dev/null
+	@echo 'envtest assets installed; export with: eval "$$(make -s setup-envtest-env)"'
 
-# setup-envtest-env: print the export line on stdout (machine-readable form).
-# Use as `eval $(make -s setup-envtest-env)` to wire KUBEBUILDER_ASSETS into the
-# current shell.
+# Print a shell-quoted export after checking the installed tool's exact version.
+# This mode never installs a tool; setup-envtest must have completed first.
 setup-envtest-env:
-	@command -v setup-envtest >/dev/null || { \
-	    echo 'setup-envtest not installed — run `make setup-envtest` first' >&2; \
-	    exit 1; \
-	}
-	@printf 'export KUBEBUILDER_ASSETS=%s\n' "$$(setup-envtest use $(ENVTEST_K8S_VERSION) -p path)"
+	@ENVTEST_K8S_VERSION="$(ENVTEST_K8S_VERSION)" scripts/ci/setup-envtest.sh env
 
 # ── Rust workspace (ADR-0702) ────────────────────────────────────────────────
 #
@@ -509,7 +509,8 @@ rust-test:
 
 help:
 	@echo "Fork-specific targets:"
-	@echo "  make lint             — clang-tidy + cppcheck + ruff + shellcheck + markdownlint"
+	@echo "  make lint             — configured C/C++ + Python, shell, Markdown, Go and docs checks"
+	@echo "  make lint-c           — tracked native sources in BUILD_DIR (LINT_JOBS=4; receipts under build)"
 	@echo "  make lint-md          — markdownlint-cli2 on changed *.md (MDLINT_SCOPE=all for full tree, ADR-0866)"
 	@echo "  make format           — clang-format + black + ruff + shfmt (writes)"
 	@echo "  make format-check     — same, no writes (CI gate)"

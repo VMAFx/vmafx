@@ -78,6 +78,13 @@ tools/
     planar YUV uses little-endian 16-bit containers; frame seeking must
     count the chroma planes and sample width even though only luma enters
     the saliency path. The DNN-facing tensor remains luma8.
+  - Private input helpers live in `vmaf_roi_input.h`, shared directly with
+    `test_vmaf_roi_bounds`. Keep local depth/extent guards before shifts,
+    allocation and reads; rounded high-bit-depth samples saturate at 255
+    before the `uint8_t` cast. `VMAF_ROI_MAX_DIM` remains the existing
+    16384 CLI limit. Placeholder traversal validates and uses the caller's
+    allocation count while preserving radial coordinate arithmetic.
+    See [ROI boundary evidence](../../docs/research/roi-reader-bounds-2026-09-08.md).
 - **Long-only options must not pass synthesised short-option
   chars to `error()`** (rebase-sensitive). Handlers for
   `ARG_THREADS`, `ARG_SUBSAMPLE`, `ARG_CPUMASK`, and any
@@ -266,3 +273,17 @@ Keep it that way — the golden-gate CLI invocations parse this stream.
 `goto cleanup` target**, which is what makes the restore run on the error
 paths. Moving its declaration below a jump target is ill-formed C++ and would
 silently leave the user's console in UTF-8 + VT mode after an error exit.
+
+## `parse_unsigned` rejects negatives on purpose (ADR-1209)
+
+`parse_unsigned` refuses a leading `'-'` before calling `strtoul`, because
+POSIX `strtoul` silently converts `"-1"` to `ULONG_MAX` without setting
+`errno`. Upstream relies on that wraparound — its own
+`test_vmaf_cuda_gpumask.sh` passes `--gpumask -1` and expects it to mean "all
+bits set". Do not loosen the check to make an inherited script pass; fix the
+caller instead. `--gpumask 1` means the same thing and says so.
+
+More generally, `--gpumask` is not a per-op bitmask despite the `$bitmask`
+placeholder: passing the flag opts into GPU backend selection, and any non-zero
+value then disables the GPU feature extractors, so the run falls back to CPU.
+`--gpumask 0` = use the GPU, `--gpumask 1` = use the CPU.

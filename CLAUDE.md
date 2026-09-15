@@ -33,25 +33,10 @@ Non-Claude agents: see [AGENTS.md](AGENTS.md) (same content, tool-agnostic).
 
 ## 2. How to build
 
-Meson + Ninja (NOT CMake).
-
-```bash
-# CPU only (fastest build, no GPU deps required)
-meson setup build -Denable_cuda=false -Denable_sycl=false
-ninja -C build
-
-# With CUDA (requires /opt/cuda + nvcc)
-meson setup build -Denable_cuda=true -Denable_sycl=false
-ninja -C build
-
-# With SYCL (requires oneAPI / icpx)
-meson setup build -Denable_cuda=false -Denable_sycl=true
-ninja -C build
-
-# Full (both backends)
-meson setup build -Denable_cuda=true -Denable_sycl=true
-ninja -C build
-```
+Meson + Ninja. Run from the repository root; Meson's source directory is
+`core/`. Follow the [source-build guide](docs/getting-started/index.md#build-from-source-any-platform)
+for the CPU configuration and [backend guides](docs/backends/index.md) for
+SDK setup and GPU configurations.
 
 Shortcut: `/build-vmaf --backend=cpu|cuda|sycl|all` (skill).
 
@@ -77,7 +62,11 @@ make test-netflix-golden                # the 3 Netflix CPU golden-data tests (s
 ## 4. How to lint
 
 ```bash
-make lint        # clang-tidy + cppcheck + iwyu + ruff + semgrep
+make preflight   # the CI compiler matrix locally: clang, 32-bit,
+                 # sanitizers, MSVC-hostile constructs, tidy, cppcheck.
+                 # Run this before pushing — `make lint` builds with ONE
+                 # compiler and misses portability breaks (ADR-1234).
+make lint        # configured native + Python, shell, Markdown, Go and docs checks
 make format      # clang-format + black + ruff (write)
 make format-check  # same, no writes (pre-commit / CI)
 ```

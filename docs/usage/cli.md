@@ -114,6 +114,14 @@ The `--model / -m` flag takes a colon-delimited key/value string (see
 --model version=...:enable_transform      # apply transform
 ```
 
+JSON model files may contain at most **512 simultaneously nested arrays or
+objects**, including the outermost container. A 513th level causes model loading
+to fail; the internal parser records `maximum depth of nesting reached` (the
+CLI may report only the enclosing model-load failure).
+This implements the existing parser resource limit; it does not limit the number
+of features or array elements at one level. Flatten unnecessarily nested custom
+model data instead of increasing its nesting depth.
+
 Built-in model versions (compiled into `libvmaf` via `-Dbuilt_in_models=true`,
 default `true`):
 
@@ -161,6 +169,14 @@ the same escaping rules — see [Option-string grammar](#option-string-grammar):
 --feature brisque
 --feature brisque=model_path=/path/to/brisque_live.model
 ```
+
+Repeated registrations share work only when their option-derived feature keys
+match. For example, `--feature motion` and
+`--feature motion=motion_force_zero=true` retain separate contexts and output
+keys; the latter adds the `_force_0` suffix. Explicit default values and option
+aliases resolve to the same keys as their equivalent canonical settings.
+Equivalent CPU/GPU twins retain the first registered context. These rules also
+apply when several loaded models request different feature parameters.
 
 The `brisque` no-reference metric ships its trained model embedded in the
 binary, so it needs no extra arguments; `model_path` overrides it with an
@@ -224,8 +240,14 @@ variable that overrides it.
 | `--metal_device <N>` | disabled (opt-in) | Pick Metal GPU by ordinal (macOS only). Pass `0` for the first Metal device (typically the integrated Apple GPU on Apple Silicon). Without this flag the Metal backend is never used, even on macOS builds. See [../backends/metal/index.md](../backends/metal/index.md). |
 | `--backend <name>` | `auto` | Exclusive backend selector — `auto` (default; whichever backends are built compete by registry order), `cpu`, `cuda`, `sycl`, `hip`, `metal`. Setting a specific backend disables the others via the matching `--no_X` flags BEFORE dispatch and pins the device index for the chosen backend (`gpumask=0` for CUDA, `sycl_device=0` for SYCL, `hip_device=0` for HIP, `metal_device=0` for Metal). (The `vulkan` token and `--no_vulkan` / `--vulkan_device` flags were removed in ADR-0726.) |
 | `--cpumask <bitmask>` (`-c`) | all ISAs enabled | Mask out specific CPU ISAs (e.g. force scalar, disable AVX-512). Values are fork-internal — see `core/src/cpu.h`. |
-| `--gpumask <bitmask>` | all GPU ops enabled | Mask out specific GPU ops. |
+| `--gpumask <mask>` | GPU enabled | Despite the `$bitmask` placeholder in the usage string, this is **not** a per-op mask: passing the flag at all opts into GPU backend selection, and then **any non-zero value disables the GPU feature extractors** for both CUDA and SYCL, so the run falls back to the CPU implementations. `--gpumask 0` therefore means "use the GPU" and `--gpumask 1` means "use the CPU" — the latter is byte-identical to `--no_cuda --no_sycl`. **Negative values are rejected** (`should be a non-negative integer`). Upstream accepts `--gpumask -1` only because POSIX `strtoul` silently converts `"-1"` to `ULONG_MAX`; this fork refuses a value the caller did not mean rather than wrap it (ADR-1209). Write `--gpumask 1` instead. |
 | `--threads <N>` | host `nproc` | Worker thread count. Valid with every backend, including `cuda` and `sycl`, and the result is identical to a serial run. |
+
+Threaded CPU submission keeps at most one pending frame job per worker, in
+addition to jobs already running. When decoding runs ahead of feature extraction,
+submission waits for queue capacity instead of retaining an unbounded backlog.
+This bounds pending work; score storage and backend buffers still contribute to
+memory use. See [thread-pool behavior](../development/thread-pool.md).
 
 > **`--threads` with a GPU backend.** Builds before
 > [ADR-1197](../adr/1197-gpu-threaded-flush-ownership.md) aborted with

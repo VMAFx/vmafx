@@ -122,7 +122,7 @@ void vmaf_cambi_calculate_c_values(VmafPicture *pic, const VmafPicture *mask_pic
 double vmaf_cambi_spatial_pooling(float *c_values, double topk, unsigned width, unsigned height);
 
 /* Per-scale weight × 16/8/4/2/1 normalisation. */
-double vmaf_cambi_weight_scores_per_scale(double *scores_per_scale, uint16_t normalization);
+double vmaf_cambi_weight_scores_per_scale(const double *scores_per_scale, uint16_t normalization);
 
 /* (2 * (window/2) + 1)^2 — divisor for the per-scale score weighting. */
 uint16_t vmaf_cambi_get_pixels_in_window(uint16_t window_length);

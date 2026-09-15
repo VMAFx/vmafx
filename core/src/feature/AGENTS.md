@@ -70,6 +70,25 @@ feature/
 
 ## Rebase-sensitive invariants
 
+- **CAMBI read-only views and retained private helpers** (ADR-0205 / ADR-1146):
+  keep the CPU validation/preprocessing views and paired scale-score wrapper
+  declaration read-only without changing the shared extractor callback types.
+  Ten exact `unusedFunction` annotations preserve seven exports with GPU
+  callers outside CPU builds and three documented helper scaffolds. They do
+  not authorize general unused-function exemptions. Preserve every numerical
+  body and all trampolines; see
+  [the measured source and binary equivalence](../../../docs/research/2043-cambi-production-lint-2026-09-08.md).
+
+- **Floating-point VIF lint decomposition** (ADR-0141 / ADR-1142):
+  `vif.c` keeps the ten-plane aligned layout and original convolution,
+  decimation, statistic and scale-reduction order. Preserve float intermediate
+  values before double score storage. `vif.h` declares all three legacy
+  external symbols, including `vifdiff`; do not make them static to satisfy
+  per-TU lint. The temporal first-frame placeholders and offset/difference/
+  previous-frame-copy order are unchanged. Debug dumps write one initialized
+  float for each reduced numerator/denominator. See
+  [the focused investigation](../../../docs/research/vif-native-lint-2026-09-08.md).
+
 - **The CAMBI GPU twins mirror `cambi.c`'s host-side semantics, not "something
   reasonable" (branch `fix/gpu-cambi-parity-drift`, 2026-09-05)**. `cambi.c` is
   pinned by the Netflix golden gate, so when a twin and the reference disagree
@@ -1444,6 +1463,18 @@ never catch it.
 
 ## GPU-twin `VmafOption` tables mirror the CPU table (2026-09-05)
 
+Option iteration terminates on the table entry's null `name`, not the address
+of the entry. Preserve that sentinel, aliases and default-value omission when
+rebasing `feature_extractor.cpp` or `feature_name.cpp`; the existing
+`test_feature` and `test_feature_extractor` cases pin those behaviors.
+
+The two shared pool structs in `feature_extractor.h` keep C-compatible layouts
+under ADR-0772. Their narrowly scoped `uninitMemberVarNoCtor` markers depend
+on `vmaf_fex_ctx_pool_create()` zero-initializing the outer pool and all three
+slot construction paths value-initializing entries before activation. New
+construction sites must preserve and re-verify that contract; do not broaden
+those markers to other types or uninitialized-use checks.
+
 `vmaf_feature_name_from_options()` (`feature_name.cpp`) builds the emitted
 feature key from the extractor's **own** `options[]` table: every entry that
 carries `VMAF_OPT_FLAG_FEATURE_PARAM` and holds a non-default value appends
@@ -1576,3 +1607,48 @@ gain limit, so it moves `adm` scores directly. The four historical spellings
 of this predicate disagreed on about 4e-5 of near-parallel scale-0 band
 quadruples; see
 [`docs/research/2030-adm-angle-flag-fp64-free.md`](../../../docs/research/2030-adm-angle-flag-fp64-free.md).
+
+## Feature-context pool entry lifetime
+
+`VmafFeatureExtractorContextPool::fex_list` is a growable pointer table;
+`get_fex_list_entry()` separately allocates each `fex_list_entry` and publishes
+it only after `init_fex_list_slot()` succeeds. Do not move an initialized entry:
+`vmaf_fex_ctx_pool_aquire()` retains it while `pthread_cond_wait()` releases the
+pool mutex, and release must signal the same condition-variable address.
+Preserve pointer-table and context-array size checks, and free each options copy
+even if its first context allocation failed. The Linux
+`test_fex_pool_growth` regression forces a table relocation while another
+acquisition waits. See
+[the pool-growth digest](../../../docs/research/fex-pool-growth-2026-09-08.md).
+
+## High-bit-depth samples are normalised before accumulation (ADR-1212)
+
+`picture_copy()` divides every 10/12/16-bit sample by 4 / 16 / 256 before the
+float extractors see it, so a CPU "sum of samples" is a sum of *normalised*
+samples. A GPU twin that reads the raw plane and accumulates codewords must
+apply that scaler itself — on the host, to the exact integer sums, which is
+bit-identical to the CPU at 10 and 12 bpc. `float_moment` on CUDA, SYCL and HIP
+shipped without it and was 4x–256x off above 8 bpc; nothing caught it because
+every parity fixture was 8-bit. Register a `-DFIXTURE_BPC=10u` variant of any
+new parity test whose extractor consumes samples.
+
+## A score must not depend on the host ISA (ADR-1207, ADR-1208)
+
+Every SIMD kernel in this tree is required to be bit-exact with its scalar
+reference, so the same input must produce the same bits on an AVX-512 host, an
+AVX2 host and a host with no SIMD. Two things follow for anyone touching a
+kernel here:
+
+- The per-feature `test_<feature>_simd.c` files compare a SIMD kernel against a
+  scalar reference **defined inside the test TU**, because the shipped scalar
+  functions are `static`. That reference can drift away from the shipped one —
+  it did, twice (ADR-1205, ADR-1208). Passing `test_<feature>_simd` is
+  therefore necessary but not sufficient.
+- `core/test/test_feature_isa_invariance.c` is the gate that actually compares
+  the shipped SIMD path against the shipped scalar path, end to end, via
+  `VmafConfiguration.cpumask`. Run it after any kernel change.
+
+Concretely, when a kernel promotes `float` inputs to `double`, do the promotion
+**before** the arithmetic, not after. `(double)a - (double)b` is exact for two
+floats; `(double)(a - b)` is not, and mixing the two between a vector body and
+its scalar tail makes the result depend on the vector width.

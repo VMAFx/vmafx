@@ -9,6 +9,18 @@ endif
 
 test_inc = include_directories('.')
 
+# Execute Windows discovery with stubbed tools on POSIX build hosts. This
+# exercises Meson control flow without requiring a Windows SDK or CUDA device.
+if build_machine.system() != 'windows'
+    test('test_windows_cuda_compiler_discovery',
+        import('python').find_installation(),
+        args : files('test_windows_cuda_compiler_discovery.py'),
+        env : ['VMAFX_TEST_MESON=' + find_program('meson', native : true).full_path()],
+        suite : ['fast'],
+        timeout : 90,
+    )
+endif
+
 # Aggregate of all GPU/compute backend dependency objects so test
 # binaries that must link against ANY enabled backend can reference
 # one variable instead of repeating the per-backend list.
@@ -198,6 +210,28 @@ test_thread_pool = executable('test_thread_pool',
     dependencies : [pthread_dependency, thread_lib, sycl_dependency],
 )
 
+# Source inclusion allows deterministic pthread failure and wakeup injection.
+test_thread_pool_backpressure = executable('test_thread_pool_backpressure',
+    ['test.c', 'test_thread_pool_backpressure.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    dependencies : [pthread_dependency, thread_lib],
+)
+
+test_pdjson = executable('test_pdjson',
+    ['test.c', 'test_pdjson.c', '../src/pdjson.c'],
+    include_directories : [test_inc, include_directories('../src')],
+)
+
+foreach increment_case : [['zero', '0'], ['oversized', 'SIZE_MAX']]
+    increment_test_name = 'test_pdjson_stack_increment_' + increment_case[0]
+    increment_test = executable(increment_test_name,
+        ['test.c', 'test_pdjson_stack_increment.c', '../src/pdjson.c'],
+        include_directories : [test_inc, include_directories('../src')],
+        c_args : ['-DPDJSON_STACK_INC=' + increment_case[1]],
+    )
+    test(increment_test_name, increment_test, suite : ['fast'])
+endforeach
+
 test_model = executable('test_model',
     ['test.c', 'test_model.c', '../src/dict.cpp', '../src/pdjson.c', json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
@@ -236,6 +270,26 @@ test_model_feature_overload_ownership = executable('test_model_feature_overload_
     objects : [libsvm_static_lib.extract_all_objects(recursive: true),
                read_json_model_cpp23_lib.extract_all_objects(recursive: true)],
 )
+
+# Public-only failed-registration ownership regression (Research-2048).
+test_model_registration_ownership = executable('test_model_registration_ownership',
+    ['test.c', 'test_model_registration_ownership.cpp'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : libvmaf_public_link,
+    dependencies : [math_lib, pthread_dependency, thread_lib],
+)
+
+# ELF fault control: private dictionary-copy failure, public registration callers.
+# It deliberately interposes one symbol and must use the actual shared library.
+if host_machine.system() == 'linux' and get_option('default_library') != 'static'
+    test_registration_partial_copy = executable('test_registration_partial_copy',
+        ['test.c', 'test_registration_partial_copy.cpp'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+        link_with : libvmaf_public_link,
+        dependencies : [math_lib, pthread_dependency, thread_lib, cc.find_library('dl')],
+    )
+    test('test_registration_partial_copy', test_registration_partial_copy, suite : ['fast'])
+endif
 
 # Coverage for model-collection public API: vmaf_model_collection_load,
 # vmaf_use_features_from_model_collection, vmaf_score_at_index_model_collection,
@@ -352,6 +406,72 @@ test_feature_extractor = executable('test_feature_extractor',
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects
 )
+
+# Registration identity and checked growth, through private and public callers.
+fex_vector_test_args = []
+fex_vector_link_args = []
+if host_machine.system() == 'linux'
+  fex_vector_test_args = ['-DFEX_VECTOR_ALLOC_TEST=1']
+  fex_vector_link_args = ['-Wl,--wrap=realloc', '-Wl,--wrap=vmaf_feature_name_from_options']
+endif
+test_fex_ctx_vector = executable('test_fex_ctx_vector',
+    # Compile private vector dependencies without interposing on a public-API test.
+    ['test.c', 'test_fex_ctx_vector.cpp', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     '../src/fex_ctx_vector.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    cpp_args : fex_vector_test_args,
+    link_args : fex_vector_link_args,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+
+# Keep public calls in a separate executable: private objects in the caller
+# can interpose on ELF shared-library internals and invalidate an old/new control.
+test_fex_ctx_vector_public = executable('test_fex_ctx_vector_public',
+    ['test.c', 'test_fex_ctx_vector_public.cpp'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : libvmaf_public_link,
+    dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+)
+
+# Link-time shims synchronize normal pool growth and force legal realloc moves.
+# No production hook or GPU execution: GNU-compatible --wrap is Linux-only here.
+if host_machine.system() == 'linux'
+test_fex_pool_growth = executable('test_fex_pool_growth',
+    ['test.c', 'test_fex_pool_growth.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    link_args : ['-Wl,--wrap=pthread_cond_wait', '-Wl,--wrap=realloc',
+                 '-Wl,--wrap=malloc', '-Wl,--wrap=calloc', '-Wl,--wrap=strdup', '-Wl,--wrap=pthread_cond_init',
+                 '-Wl,--wrap=pthread_cond_destroy'],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_fex_pool_growth', test_fex_pool_growth, suite : ['fast'], timeout : 15)
+endif
 
 test_dict = executable('test_dict',
     ['test.c', 'test_dict.cpp', '../src/dict.cpp'],
@@ -1325,6 +1445,21 @@ _ssimulacra2_test_x86_fma_args = []
 if host_machine.cpu_family() in ['x86_64', 'x86']
     _ssimulacra2_test_x86_fma_args = ['-mavx2', '-mfma']
 endif
+# ADR-1207 — a score must not depend on the host instruction set.
+# Drives the public API twice over one fixture, once with the host ISA and
+# once with cpumask disabling every SIMD flag, and asserts bit-identical
+# scores. Complements the per-feature *_simd tests, which compare a SIMD
+# kernel against a scalar reference defined inside the test TU rather than
+# against the shipped one.
+test_feature_isa_invariance = executable('test_feature_isa_invariance',
+    ['test.c', 'test_feature_isa_invariance.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_feature_isa_invariance', test_feature_isa_invariance,
+    suite : ['fast'])
+
 test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
     ['test.c', 'test_ssimulacra2_simd.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
@@ -1972,6 +2107,19 @@ test_cuda_float_moment_parity = executable('test_cuda_float_moment_parity',
 test('test_cuda_float_moment_parity', test_cuda_float_moment_parity,
     suite : ['fast', 'gpu'])
 
+# ADR-1212 — the same TU at 10 bpc. Every parity fixture in this tree was 8-bit,
+# so a twin that accumulates the raw codeword instead of the bit-depth-normalised
+# sample the CPU uses could never be caught. This one was (4x / 16x too large).
+test_cuda_float_moment_parity_10bit = executable('test_cuda_float_moment_parity_10bit',
+    ['test.c', 'test_cuda_float_moment_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_BPC=10u']
+)
+test('test_cuda_float_moment_parity_10bit', test_cuda_float_moment_parity_10bit,
+    suite : ['fast', 'gpu'])
+
 test_cuda_ssimulacra2_parity = executable('test_cuda_ssimulacra2_parity',
     ['test.c', 'test_cuda_ssimulacra2_parity.c'],
     include_directories : [libvmaf_inc, test_inc],
@@ -2085,6 +2233,19 @@ test_cuda_psnr_parity = executable('test_cuda_psnr_parity',
 test('test_cuda_psnr_parity', test_cuda_psnr_parity,
     suite : ['fast', 'gpu'])
 
+# ADR-1215 — the same TU at 10 bpc with non-flat chroma. The 16-bpc CUDA PSNR
+# kernel read data[0] for every plane, so high-bit-depth chroma PSNR was a luma
+# value; every psnr fixture was 8-bit and flat-chroma, which is how it survived.
+test_cuda_psnr_parity_10bit = executable('test_cuda_psnr_parity_10bit',
+    ['test.c', 'test_cuda_psnr_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_BPC=10u']
+)
+test('test_cuda_psnr_parity_10bit', test_cuda_psnr_parity_10bit,
+    suite : ['fast', 'gpu'])
+
 # GPU-kernel coverage gap-fill — ciede2000 CPU vs. CUDA parity (places=4).
 # Covers integer_ciede_cuda.c + integer_ciede/ciede_score.cu, which had
 # no cross-backend gate before. GPU-gated: skips when no CUDA device.
@@ -2151,6 +2312,14 @@ test_vmaf_roi = executable('test_vmaf_roi',
     dependencies: [pthread_dependency, test_vmaf_roi_libm],
 )
 test('test_vmaf_roi', test_vmaf_roi, suite : ['fast'])
+
+# Exercise the production private ROI reader and placeholder, not copied math.
+test_vmaf_roi_bounds = executable('test_vmaf_roi_bounds',
+    ['test.c', 'test_vmaf_roi_bounds.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    dependencies : [test_vmaf_roi_libm],
+)
+test('test_vmaf_roi_bounds', test_vmaf_roi_bounds, suite : ['fast'])
 
 # picture pool test - exercises vmaf_preallocate_pictures / vmaf_fetch_preallocated_picture.
 # These symbols are always linked into libvmaf (no build gate), so this test
@@ -2324,6 +2493,27 @@ test_convolution_edge_small = executable('test_convolution_edge_small',
 )
 test('test_convolution_edge_small', test_convolution_edge_small, suite : ['fast'])
 
+# Exercise the configured convolution objects directly, including shared builds.
+# No float-feature dependency: float motion also consumes these common kernels.
+if is_asm_enabled and host_machine.cpu_family().startswith('x86')
+    convolution_horizontal_objects = [
+        x86_avx2_static_lib.extract_objects(feature_src_dir + 'common/convolution_avx.c'),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+    ]
+    if is_avx512_enabled
+        convolution_horizontal_objects += x86_avx512_static_lib.extract_objects(
+            feature_src_dir + 'common/convolution_avx512.c')
+    endif
+    test_convolution_horizontal = executable('test_convolution_horizontal',
+        ['test.c', 'test_convolution_horizontal.c', '../src/feature/common/alignment.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        c_args : vmaf_cflags_common,
+        dependencies : [math_lib, thread_lib],
+        objects : convolution_horizontal_objects,
+    )
+    test('test_convolution_horizontal', test_convolution_horizontal, suite : ['fast'])
+endif
+
 # Netflix/vmaf#1551 (retracting Netflix/vmaf#1422): the MSVC __builtin_clz shim
 # must derive the leading-zero count from BSR, not from the ungated LZCNT
 # instruction. The arithmetic is portable and unit-tested here; the "must not
@@ -2473,6 +2663,25 @@ test_float_vif_coverage = executable('test_float_vif_coverage',
     ] + wave8_opt_only_objects
 )
 test('test_float_vif_coverage', test_float_vif_coverage, suite : ['fast'])
+
+# Exercise internal VIF symbols with the same float gate/object recipe as coverage,
+# including shared-only builds where these helpers are not public exports.
+test_vif_lifecycle = executable('test_vif_lifecycle',
+    ['test.c', 'test_vif_lifecycle.c'] + _float_fex_test_sources_common + dnn_sources,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        log_cpp23_test_objects,
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_vif_lifecycle', test_vif_lifecycle, suite : ['fast'])
 
 test_float_adm_coverage = executable('test_float_adm_coverage',
     ['test.c', 'test_float_adm_coverage.c'] + _float_fex_test_sources_common + dnn_sources,
@@ -2726,6 +2935,19 @@ test_sycl_float_moment_parity = executable('test_sycl_float_moment_parity',
 test('test_sycl_float_moment_parity', test_sycl_float_moment_parity,
     suite : ['fast', 'gpu', 'sycl'])
 
+# ADR-1212 — the same TU at 10 bpc. Every parity fixture in this tree was 8-bit,
+# so a twin that accumulates the raw codeword instead of the bit-depth-normalised
+# sample the CPU uses could never be caught. This one was (4x / 16x too large).
+test_sycl_float_moment_parity_10bit = executable('test_sycl_float_moment_parity_10bit',
+    ['test.c', 'test_sycl_float_moment_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1', '-DFIXTURE_BPC=10u']
+)
+test('test_sycl_float_moment_parity_10bit', test_sycl_float_moment_parity_10bit,
+    suite : ['fast', 'gpu'])
+
 # ADR-0884 — SYCL kernel coverage round 2.
 # Five additional CPU-vs-SYCL parity gates: adm, ciede, integer_ssim,
 # float_ms_ssim, motion_v2. Round 1 (ADR-0868 / PR #351) added psnr +
@@ -2885,6 +3107,57 @@ test_sycl_cambi_parity = executable('test_sycl_cambi_parity',
 )
 test('test_sycl_cambi_parity', test_sycl_cambi_parity,
     suite : ['fast', 'gpu', 'sycl'])
+# ADR-1206 — large-fixture parity variants (resolution blind spot).
+#
+# Same rationale as the CUDA family above: every parity test here pins one
+# small fixture, so the shared SSIM/MS-SSIM auto-scale
+# `max(1, round(min(w, h) / 256))` never leaves 1 and the ADM border crop
+# `(int)(dim * 0.1 - 0.5)` never leaves 0. Both of the defects fixed in
+# ADR-1204 / ADR-1205 lived in exactly that unreachable region. These variants
+# rebuild the same TUs against 960x540 (auto-scale 2, and 540 is not a multiple
+# of the 16/32-wide kernel blocks so tail bounds are exercised too).
+# `test_sycl_motion_add_uv_parity` is deliberately absent from the list below.
+# It does not compare two implementations of the same arithmetic: the CPU side
+# is `float_motion` and the SYCL side is the fixed-point `motion_sycl`, so its
+# 2e-4 tolerance is a fixed-point-vs-float budget calibrated for one fixture
+# rather than a bit-exactness bound. At 960x540 it lands at 2.30e-04 — 15% over
+# a budget that was never derived for that resolution. Registering a large
+# variant would assert something the test was never designed to assert; giving
+# it a second, separately derived tolerance is tracked as a follow-up.
+sycl_parity_large_fixture_tests = [
+    'test_sycl_adm_parity',
+    'test_sycl_cambi_parity',
+    'test_sycl_ciede_parity',
+    'test_sycl_float_adm_parity',
+    'test_sycl_float_moment_parity',
+    'test_sycl_float_motion_parity',
+    'test_sycl_float_psnr_parity',
+    'test_sycl_float_ssim_parity',
+    'test_sycl_float_vif_parity',
+    'test_sycl_motion3_parity',
+    'test_sycl_motion_v2_parity',
+    'test_sycl_ms_ssim_parity',
+    'test_sycl_psnr_hvs_parity',
+    'test_sycl_psnr_parity',
+    'test_sycl_speed_chroma_parity',
+    'test_sycl_speed_temporal_parity',
+    'test_sycl_ssim_parity',
+    'test_sycl_ssimulacra2_parity',
+    'test_sycl_vif_parity',
+]
+foreach parity_test : sycl_parity_large_fixture_tests
+    parity_large_exe = executable(parity_test + '_large',
+        ['test.c', parity_test + '.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        dependencies: [pthread_dependency, sycl_dependency,  math_lib],
+        c_args: ['-DHAVE_SYCL=1', '-DFIXTURE_W=960u', '-DFIXTURE_H=540u']
+    )
+    test(parity_test + '_large', parity_large_exe,
+        suite : ['fast', 'gpu', 'sycl'])
+endforeach
+
+
 endif
 
 # ADR-0209 / T5-2: embedded MCP scaffold smoke. Pins the -ENOSYS
@@ -3145,6 +3418,21 @@ test_hip_float_vif_parity = executable('test_hip_float_vif_parity',
 test('test_hip_float_vif_parity', test_hip_float_vif_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
+# ADR-1212 — float_moment CPU vs. HIP parity, at 8 bpc and (via
+# -DFIXTURE_BPC=10u) at 10 bpc. The HIP twin had no cross-backend gate at all,
+# which is how it shipped accumulating the raw high-bit-depth codeword.
+foreach variant : [['', []], ['_10bit', ['-DFIXTURE_BPC=10u']]]
+    hip_moment_exe = executable('test_hip_float_moment_parity' + variant[0],
+        ['test.c', 'test_hip_float_moment_parity.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        dependencies: [pthread_dependency, hip_deps, math_lib],
+        c_args: ['-DHAVE_HIP=1'] + variant[1]
+    )
+    test('test_hip_float_moment_parity' + variant[0], hip_moment_exe,
+        suite : ['fast', 'gpu'],
+        timeout : 60)
+endforeach
 
 # ADR-0883 round-2 — HIP kernel parity gap-fill (5 extractors).
 # Closes the gaps left after PR #351 (psnr_hip + vif_hip) and the
@@ -3162,6 +3450,21 @@ test_hip_ciede_parity = executable('test_hip_ciede_parity',
     c_args: ['-DHAVE_HIP=1']
 )
 test('test_hip_ciede_parity', test_hip_ciede_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+# ADR-1213 — the same TU at an odd luma width. `ciede_hip` sized its chroma
+# staging with floor(w/2) where picture.c allocates ceil, so at 577 the last
+# chroma column was never uploaded and the kernel read past the staged row.
+# Every ciede parity fixture was even-sized, which is how that survived.
+test_hip_ciede_parity_oddw = executable('test_hip_ciede_parity_oddw',
+    ['test.c', 'test_hip_ciede_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1', '-DFIXTURE_W=577u', '-DFIXTURE_H=325u']
+)
+test('test_hip_ciede_parity_oddw', test_hip_ciede_parity_oddw,
     suite : ['fast', 'gpu'],
     timeout : 60)
 
@@ -3285,6 +3588,47 @@ test_hip_speed_singular_parity = executable('test_hip_speed_singular_parity',
 test('test_hip_speed_singular_parity', test_hip_speed_singular_parity,
     suite : ['fast', 'gpu'],
     timeout : 90)
+# ADR-1206 — large-fixture parity variants (resolution blind spot).
+# Same rationale as the CUDA and SYCL families. Verified on a gfx1030 once
+# ADR-1211 made the HIP ADM extractor able to run at all.
+# `test_hip_ssim_parity` is deliberately absent below. `integer_ssim_score.hip`
+# implements an 11-tap float Gaussian where the CPU uses a 9-tap int64 kernel, a
+# divergence formally deferred under ADR-0564 and tracked as
+# T-GAP-HIP-INTEGER-SSIM-FLOAT-KERNEL-DEFERRED-2026-09-02 (4.5e-3 vs a 1e-3
+# gate). A second fixture would only re-report that deferred gap at another
+# resolution; register it together with the int64 kernel port.
+hip_parity_large_fixture_tests = [
+    'test_hip_adm_parity',
+    'test_hip_cambi_parity',
+    'test_hip_ciede_parity',
+    'test_hip_float_adm_parity',
+    'test_hip_float_motion_parity',
+    'test_hip_float_psnr_parity',
+    'test_hip_float_ssim_parity',
+    'test_hip_motion3_parity',
+    'test_hip_motion_parity',
+    'test_hip_motion_v2_parity',
+    'test_hip_ms_ssim_parity',
+    'test_hip_psnr_hvs_parity',
+    'test_hip_psnr_parity',
+    'test_hip_speed_chroma_parity',
+    'test_hip_speed_temporal_parity',
+    'test_hip_ssimulacra2_parity',
+    'test_hip_vif_parity',
+]
+foreach parity_test : hip_parity_large_fixture_tests
+    parity_large_exe = executable(parity_test + '_large',
+        ['test.c', parity_test + '.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        dependencies: [pthread_dependency, hip_deps, math_lib],
+        c_args: ['-DHAVE_HIP=1', '-DFIXTURE_W=960u', '-DFIXTURE_H=540u']
+    )
+    test(parity_test + '_large', parity_large_exe,
+        suite : ['fast', 'gpu'],
+        timeout : 60)
+endforeach
+
 endif
 
 # ADR-0338 / T8-1: Metal (Apple Silicon) backend scaffold smoke. Same
@@ -3508,6 +3852,7 @@ test_metal_kernel_registration = executable('test_metal_kernel_registration',
 )
 test('test_metal_kernel_registration', test_metal_kernel_registration,
     suite : ['fast', 'gpu'])
+
 endif
 
 test('test_context', test_context, suite : ['fast'])
@@ -3525,9 +3870,12 @@ test('test_output', test_output, suite : ['fast'])
 test('test_log', test_log, suite : ['fast'])
 test('test_public_api_score', test_public_api_score, suite : ['fast'])
 test('test_thread_pool', test_thread_pool, suite : ['fast'])
+test('test_thread_pool_backpressure', test_thread_pool_backpressure, suite : ['fast'])
+test('test_pdjson', test_pdjson, suite : ['fast'])
 test('test_model', test_model, suite : ['fast'])
 test('test_model_libsvm_dup_key', test_model_libsvm_dup_key, suite : ['fast'])
 test('test_model_feature_overload_ownership', test_model_feature_overload_ownership, suite : ['fast'])
+test('test_model_registration_ownership', test_model_registration_ownership, suite : ['fast'])
 test('test_model_collection_api', test_model_collection_api, suite : ['fast'])
 test('test_predict', test_predict, suite : ['fast'])
 test('test_svm_api', test_svm_api, suite : ['fast'])
@@ -3535,6 +3883,8 @@ test('test_svm_parser', test_svm_parser, suite : ['fast'])
 test('test_svm_multiclass', test_svm_multiclass, suite : ['fast'])
 test('test_iqa_helpers', test_iqa_helpers, suite : ['fast'])
 test('test_feature_extractor', test_feature_extractor, suite : ['fast'])
+test('test_fex_ctx_vector', test_fex_ctx_vector, suite : ['fast'])
+test('test_fex_ctx_vector_public', test_fex_ctx_vector_public, suite : ['fast'])
 test('test_dict', test_dict, suite : ['fast'])
 test('test_opt', test_opt, suite : ['fast'])
 test('test_cpu', test_cpu, suite : ['fast'])
@@ -3731,3 +4081,55 @@ test_mkdirp = executable('test_mkdirp',
     dependencies: [pthread_dependency, sycl_dependency],
 )
 test('test_mkdirp', test_mkdirp, suite : ['fast'])
+
+# Research-2045: configured private integer-VIF objects also work in shared builds.
+if is_asm_enabled and host_machine.cpu_family().startswith('x86')
+test_integer_vif_avx2_stages = executable('test_integer_vif_avx2_stages',
+    # dnn_sources pulled in directly so feature_lpips.c can resolve its
+    # libvmaf/dnn.h references (session_open/run/close,
+    # vmaf_tensor_from_rgb_imagenet) without linking against libvmaf.so.
+    ['test.c', 'test_integer_vif_avx2_stages.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_integer_vif_avx2_stages', test_integer_vif_avx2_stages, suite : ['fast', 'simd'])
+endif
+
+# Research-2046: configured private integer-VIF objects also work in shared builds.
+if is_avx512_enabled and host_machine.cpu_family().startswith('x86')
+test_integer_vif_avx512_stages = executable('test_integer_vif_avx512_stages',
+    # dnn_sources pulled in directly so feature_lpips.c can resolve its
+    # libvmaf/dnn.h references (session_open/run/close,
+    # vmaf_tensor_from_rgb_imagenet) without linking against libvmaf.so.
+    ['test.c', 'test_integer_vif_avx512_stages.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_integer_vif_avx512_stages', test_integer_vif_avx512_stages, suite : ['fast', 'simd'])
+endif

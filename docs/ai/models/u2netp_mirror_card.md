@@ -124,6 +124,17 @@ In every case, run both models against your own validation set before
 committing — the absolute scores differ (the upstream model has ~40x
 more parameters; expect mIoU and saliency distribution differences).
 
+## Known limitations
+
+- **Heavyweight checkpoint**: ~4.7 M parameters compared to ~500 K for
+  `saliency_student_v2`.
+- **License**: upstream weights are licensed under Apache-2.0 rather than
+  BSD-2-Clause-Patent.
+- **Fixed input layout**: input tensor is `[1, 3, H, W]` float32 (requires
+  3-channel tiled luma input).
+- **Not committed to git**: generated via export script as a release asset,
+  not tracked in repository git history.
+
 ## 7. Operator workflow
 
 The operator-facing fetch and verification recipe lives at

@@ -17,7 +17,7 @@ The main `pull_request`-triggered workflows include:
 | [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy (changed files + whole-tree ratchet, ADR-1142), cppcheck, mypy, registry validate, twin-drift gate (ADR-1135). |
 | [`required-aggregator.yml`](../../.github/workflows/required-aggregator.yml) | Single required-check aggregator (ADR-0313). |
 | [`go-ci.yml`](../../.github/workflows/go-ci.yml) | Required Go vet, security scan, runner smoke, and tests (ADR-1238). |
-| [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) | FFmpeg + libvmaf build (gcc / clang / SYCL / Vulkan). |
+| [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) | FFmpeg + libvmaf build (Linux GCC / macOS Clang / SYCL). |
 | [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform / cross-backend libvmaf build matrix. |
 | [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100 / 0106 / 0108 / 0165 process gates. |
 | [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml) | Netflix golden, sanitizers, tiny-AI, MCP, coverage, assertion-density. |
@@ -210,8 +210,8 @@ instead of a touched-files rule:
 - The rule is *baseline equals measurement*. Exit codes: `0` match, `2` a file
   is above its baseline (fix the code, never raise the baseline), `3` a file is
   below its baseline (tighten it: `make tidy-ratchet-write`, commit the JSON
-  in the same PR), `4` clang-tidy could not compile a TU (fail closed), `5`
-  usage/IO error.
+  in the same PR), `4` a compilation, tool or diagnostic-parse failure made
+  the measurement unusable (fail closed), `5` usage/IO or scoped-validation error.
 - **`cpu` lane** — the required context `Tidy Ratchet` in
   `lint-and-format.yml` (aggregator list, ADR-0313). Like every required job
   it always starts and first runs the [ADR-1140](../adr/1140-ci-impact-planner.md)
@@ -223,9 +223,11 @@ instead of a touched-files rule:
   or baseline edit always runs the lane. It uploads `tidy-ratchet-cpu` (the
   measurement JSON): when the job fails with exit 3 after a cleanup, download
   that artifact and commit it as `scripts/ci/tidy-baseline-cpu.json` — the
-  committed `cpu` baseline is always CI's own measurement (the hosted build
+  full `cpu` baseline comes from CI's own measurement (the hosted build
   lacks optional dependencies, so its TU set differs from a workstation
-  build). The compile database also lists the model-JSON → C translation
+  build). The guarded scoped update below can subsequently tighten measured
+  translation units while retaining that full-report metadata. The compile
+  database also lists the model-JSON → C translation
   units meson generates under `build/src/` (`vmaf_v0.6.1.json.c`, …); they are
   measured like every other TU and appear in the baseline under that path, so
   the `cpu` lane is always measured with `--build-dir build` at the repository
@@ -245,6 +247,49 @@ instead of a touched-files rule:
   feedback and keeps the `WarningsAsErrors` hard stop; ADR-0141's "a touched
   file ends the PR at zero" is unchanged. The ratchet adds the bound on
   untouched files.
+
+When a full matching CPU build is unavailable, [ADR-1243](../adr/1243-tidy-scoped-baseline-tightening.md)
+allows an existing compilation database to measure and tighten selected source
+files without replacing other entries:
+
+```bash
+python3 scripts/ci/tidy-ratchet.py --lane cpu --build-dir build \
+  --only core/src/thread_pool.c \
+  --only core/test/test_thread_pool_backpressure.c \
+  --report /tmp/thread-pool-tidy.json --write
+```
+
+Run from the repository root after building the selected targets so generated
+headers exist. Every `--only` path must be a translation unit in that database;
+a missing/empty selection, failed tool, unparsed diagnostic or compiler error
+leaves the baseline unchanged. The clang-tidy version must exactly match the
+baseline. Existing checks promoted by `WarningsAsErrors` are still counted as
+warning debt; genuine tool failures cannot produce a clean measurement.
+
+A scoped write may only lower allowances. It rejects every observed increase,
+including in included headers, and preserves **all** unselected source/header
+entries. It removes a selected entry measured at zero, updates aggregate totals,
+and records selected sources, before/after counts and the preceding baseline's
+canonical JSON hash in `scoped_updates`. Original `tus`, generator and tool
+metadata describe the last full measurement, not a new whole-tree scan. The
+separate report records the actual measured sources and failures; it must not
+alias the baseline. Replacement is atomic after validation, and repeating an
+unchanged scoped measurement leaves the baseline byte-identical.
+
+Both full and scoped baseline writes require POSIX advisory locking, available
+in the Linux CI and Linux/macOS developer lanes. A second writer fails with exit
+5 while the first owns the resolved baseline path; retry after that process
+exits. Lock ownership releases on exit, and the empty lock file under the
+per-user temporary directory is retained to keep its inode stable. Writers also
+reject content drift since measurement and before replacement. External editors
+and Git operations do not honor this lock, so keep the checkout stable during
+measurement; a successful write does not certify safety against arbitrary
+concurrent repository mutation. Unreadable NOLINT source/header files also fail
+closed instead of clearing their allowance.
+
+`--only` without `--write` remains diagnostic-only and skips comparison. Required
+CI continues to measure the full configured tree; a successful scoped write
+cannot stand in for that gate or clear unmeasured debt.
 
 Baselines at the time this landed (2026-09-02): cpu 5,241 warnings / 281 TUs /
 83 uncited NOLINTs; cuda 1,650; sycl 716; hip 1,173 (whole tree ≈ 8,780).
@@ -404,8 +449,8 @@ Before pushing, run the local subset of CI to catch the common
 formatter / lint / fast-test failures:
 
 ```bash
-make format-check   # clang-format + black + isort, no writes
-make lint           # clang-tidy + cppcheck + iwyu + ruff + semgrep
+make format-check   # clang-format + black + ruff, no writes
+make lint           # configured native + Python, shell, Markdown, Go and docs checks
 meson test -C build --suite=fast
 bash scripts/ci/twin-drift-check.sh  # .c/.cpp twin drift + stale source refs (ADR-1135)
 pre-commit run --all-files  # if .pre-commit-config.yaml hooks are installed
@@ -414,6 +459,118 @@ pre-commit run --all-files  # if .pre-commit-config.yaml hooks are installed
 The format-check + pre-commit pair catches roughly the same surface as
 `lint-and-format.yml`'s `pre-commit` job in seconds, vs. a 10-minute
 CI round-trip.
+
+### Local lint build profile and receipts
+
+`make lint` runs clang-tidy and cppcheck for the configured tracked native
+sources, Ruff and Black for `python/`, `ai/` and `scripts/`, shell checks,
+Markdown checks, gosec, and generated-document consistency checks. Mypy
+remains advisory. IWYU and Semgrep are separate tools/jobs; this Make target
+does not invoke them. Markdown defaults to changed files against
+`origin/master`; use `MDLINT_SCOPE=all` for the configured whole-document
+scope.
+
+Configure the intended profile before linting. `lint-c` asks Meson to
+reconfigure the existing build with no option overrides, then runs the
+existing `build` target so generated headers and sources exist. For a CPU
+profile without optional backends:
+
+```bash
+meson setup core/build-cpu core --buildtype=release \
+  -Denable_cuda=false -Denable_sycl=false -Denable_hip=false \
+  -Denable_metal=disabled -Denable_dnn=disabled -Denable_mcp=false
+make lint BUILD_DIR=core/build-cpu LINT_JOBS=4
+```
+
+`make lint-c` reads Meson's regenerated `compile_commands.json`. Regeneration
+repairs databases previously overwritten by unfiltered Ninja export, including
+phony entries with empty commands, while retaining the configured build
+options. It selects every tracked native source with a configured command,
+including top-level engine files, C++ CLI tools, tests and tracked vendored
+sources. It keeps all command variants for a source, including different test
+defines and include paths. Unconfigured backends are listed as outside the
+profile; a CPU result does not validate CUDA, SYCL, HIP, ARM or Metal sources
+absent from that database. Untracked/generated sources are recorded as
+excluded; the separate whole-tree ratchet retains its generated-source and
+lane policies.
+
+Each run prints a private `BUILD_DIR/lint-configured-*/` receipt directory:
+`scope.json` records the input database hash, selected sources, command count,
+excluded scope and LTO adaptations; `compile_commands.json` is the analyzer
+copy; per-source clang-tidy logs, `cppcheck.log` and `result.json` retain
+results. The helper leaves Meson's resulting native database and build options
+unchanged. Positive numeric GCC `-flto=N` becomes clang-compatible `-flto`
+only in that copy; other spellings, including invalid options, remain visible
+to the analyzer. Missing source files, missing/invalid/empty databases and
+missing tools fail the gate. Both analyzers run when clang-tidy reports source
+diagnostics; either failure fails `lint-c`.
+
+Local and CI cppcheck load the official `posix` library model shipped with the
+installed tool. It describes the pthread types and functions used by the fork,
+including the Windows pthread compatibility surface; it does not select a Unix
+target or replace compile-database platform defines. Without this model,
+cppcheck can mistake an opaque `pthread_mutex_t` member for a C++ object that
+initializes itself and incorrectly demand constructors for the surrounding C
+aggregate. Keep the shipped model installed with the cppcheck binary. A missing
+model is an error, not an ignored diagnostic.
+
+The Cppcheck job also runs actual-tool controls against the repository's shared
+C headers. Valid zero-initialized C and C++ uses must pass; an uninitialized
+member read and a broken C++ constructor must still fail. Run those controls
+locally with an installed cppcheck (`CPPCHECK_BIN` selects an explicit binary):
+
+```bash
+python3 -m unittest discover -s scripts/ci/tests -p test_cppcheck_posix_model.py
+```
+
+This configuration adds type/function knowledge without disabling any diagnostic
+category. Local `--enable=all` and the CI job's existing
+`warning,performance,portability` selection remain unchanged.
+
+Both paths also load the shared
+[`cppcheck-public-entrypoints.cfg`](../../scripts/ci/cppcheck-public-entrypoints.cfg)
+model ([ADR-1246](../adr/1246-cppcheck-public-entrypoints.md)). It identifies
+16 reviewed public C functions whose external callers are absent from the CPU
+database, including disabled HIP/Metal fallbacks. It does not mark private
+helpers or every backend scaffold as public. The model does not disable body
+checks: unlisted unused functions and defects inside listed functions still
+fail their applicable checks. Missing or invalid model files fail analysis.
+
+Before adding a name, verify its `VMAF_EXPORT` declaration and the header's
+unconditional or conditional installation in `core/include/libvmaf/meson.build`.
+The existing configured-driver tests enforce those declarations and reject empty,
+duplicate, misspelled and non-public entries. The real-tool suite above checks
+the external-root behavior, private-function/body-defect negatives and malformed
+models. Cppcheck compares names without linkage or scope: a same-named static
+function is also treated as an entrypoint. Keep public C names unique; this
+model is not a visibility or ABI checker. See
+[the verified roots and version limits](../research/1246-cppcheck-public-entrypoints.md).
+
+Both paths use `--check-level=exhaustive` ([ADR-1245](../adr/1245-cppcheck-exhaustive-configured-analysis.md)).
+This removes Cppcheck's normal forward-branch budget instead of suppressing its
+coverage notice. It can take substantially longer and can expose additional
+real findings. The existing CI timeout and diagnostic selections remain in
+force: timeout, memory exhaustion or any analyzer failure is a failed run.
+The real-tool suite above also checks a small branch-heavy function against
+normal and exhaustive analysis; actual uninitialized reads must still fail.
+See the [measured profile and tool-version limits](../research/1245-cppcheck-exhaustive-configured-analysis.md).
+
+`LINT_JOBS` limits concurrent clang-tidy source jobs (default four). Use
+`LINT_CONFIGURED_ARGS` for helper options such as repeated
+`--clang-tidy-arg=--extra-arg=...` when the configured backend needs explicit
+clang frontend arguments, or `--clang-tidy=/path/to/analyzer` and
+`--cppcheck=/path/to/analyzer` for explicit tool paths. Backend toolchains
+must exist; the helper does not install SDKs or convert unavailable backend
+checks into passes. Receipts are disposable build output and can be archived
+before normal build cleanup.
+
+This local source lint does not replace required CI, the Tidy Ratchet, Netflix
+golden tests, sanitizer tests or backend runtime/parity checks. Regression
+coverage runs locally and in the required Pre-Commit job:
+
+```bash
+python3 -m unittest discover -s scripts/ci/tests -p test_lint_configured.py
+```
 
 ## Flaky legs (2026-09-04 audit)
 

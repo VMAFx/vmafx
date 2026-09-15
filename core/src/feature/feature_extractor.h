@@ -219,7 +219,8 @@ typedef struct VmafFeatureExtractorContext {
 } VmafFeatureExtractorContext;
 
 int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
-                                          VmafFeatureExtractor *fex, VmafDictionary *opts_dict);
+                                          const VmafFeatureExtractor *fex,
+                                          VmafDictionary *opts_dict);
 
 int vmaf_feature_extractor_context_init(VmafFeatureExtractorContext *fex_ctx,
                                         enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
@@ -255,20 +256,38 @@ int vmaf_feature_extractor_context_destroy(VmafFeatureExtractorContext *fex_ctx)
 /* Hoisted out of VmafFeatureExtractorContextPool so that C++ TUs
  * (e.g. feature_extractor.cpp) can reference struct fex_list_entry
  * by its unqualified tag — in C++ a struct tag nested inside a
- * typedef struct is scoped to that struct (ADR-0772). */
+ * typedef struct is scoped to that struct (ADR-0772).
+ *
+ * ADR-0772: this C-compatible layout has no C++ constructor. Every slot is
+ * separately allocated by get_fex_list_entry() and value-initialized by
+ * init_fex_list_slot(), which stores both atomics and initializes the
+ * condition variable before publication. Keep cppcheck's official POSIX
+ * library model enabled for the pthread fields; preserve uninitialized-use
+ * checks. See docs/research/fex-pool-growth-2026-09-08.md. Entries remain at
+ * fixed addresses until pool destruction, including across waits.
+ * Consumer TUs such as fex_ctx_vector.cpp cannot see the factory assignments;
+ * their std::atomic members trigger constructor analysis of these four raw
+ * fields. Suppress only that declaration warning, not uninitialized reads. */
 struct fex_list_entry {
+    // cppcheck-suppress uninitMemberVarNoCtor
     VmafFeatureExtractor *fex;
+    // cppcheck-suppress uninitMemberVarNoCtor
     VmafDictionary *opts_dict;
     struct {
         VmafFeatureExtractorContext *fex_ctx;
         bool in_use;
+        // cppcheck-suppress uninitMemberVarNoCtor
     } *ctx_list;
     atomic_int capacity, in_use;
+    // cppcheck-suppress uninitMemberVarNoCtor
     pthread_cond_t full;
 };
 
+/* ADR-0772: vmaf_fex_ctx_pool_create() zero-initializes this C-compatible
+ * aggregate, then initializes capacity, thread count and mutex before a
+ * successful return. No other construction site exists in the source tree. */
 typedef struct VmafFeatureExtractorContextPool {
-    struct fex_list_entry *fex_list;
+    struct fex_list_entry **fex_list;
     unsigned cnt, capacity;
     pthread_mutex_t lock;
     unsigned n_threads;

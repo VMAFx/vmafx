@@ -68,6 +68,12 @@
 #include "feature/niqe_model.h"
 #include "mem.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* Algorithm constants (VERIFIED against the fork harness, scikit-video,
  * guptapraful, and the LIVE MATLAB sources — see ADR-1112). */
 #define NIQE_PATCH 96
@@ -625,7 +631,7 @@ static const char *provided_features[] = {"niqe", NULL};
 
 /* External linkage is required — the extractor registry iterates over
  * `vmaf_fex_*` externs in core/src/feature/feature_extractor.cpp. */
-// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables)
+// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables) — ADR-0141 / ADR-0278: extractor registry external linkage
 VmafFeatureExtractor vmaf_fex_niqe = {
     .name = "niqe",
     .init = init,
@@ -634,3 +640,5 @@ VmafFeatureExtractor vmaf_fex_niqe = {
     .priv_size = sizeof(NiqeState),
     .provided_features = provided_features,
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

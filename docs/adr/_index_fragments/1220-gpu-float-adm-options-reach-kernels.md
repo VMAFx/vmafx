@@ -1,0 +1,1 @@
+| [ADR-1220](1220-gpu-float-adm-options-reach-kernels.md) | The GPU float-ADM kernels honour `adm_p_norm`, `adm_bypass_cm` and `adm_skip_scale0` | Proposed | cuda, sycl, hip, metal, correctness, feature-extractor, testing |

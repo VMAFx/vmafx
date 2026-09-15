@@ -36,7 +36,7 @@ opened in this repo. For Claude Code–specific tooling (skills, hooks), see
 Meson + Ninja.
 
 ```text
-meson setup build [-Denable_cuda=true|false] [-Denable_sycl=true|false]
+meson setup build core [-Denable_cuda=true|false] [-Denable_sycl=true|false]
 ninja -C build
 ```
 
@@ -52,7 +52,7 @@ make test-netflix-golden                # Netflix CPU golden-data gate (see §8)
 ## 4. Lint / format
 
 ```text
-make lint          # clang-tidy + cppcheck + iwyu + ruff + semgrep
+make lint          # configured native + Python, shell, Markdown, Go and docs checks
 make format        # clang-format + black + ruff (writes)
 make format-check  # dry-run (CI / pre-commit)
 ```
@@ -340,6 +340,13 @@ mechanics) live in the relevant `AGENTS.md` under that subtree; this
 list is the index. When a rebase touches the cited TUs, walk the
 linked AGENTS.md before resolving conflicts.
 
+- **Documentation entry points**: keep `README.md` concise and link to the
+  topic guides for changing build requirements, backend coverage and model
+  defaults. `docs/index.md` and `docs/backends/index.md` should link to backend
+  guides rather than repeat kernel counts or maturity summaries. Keep the
+  repository-root build instructions in `docs/getting-started/index.md` and
+  include Meson's `core/` source directory when showing a configure command.
+
 - **GPU long-tail terminus reached** — every registered feature
   extractor has at least one GPU twin (lpips remains ORT-delegated
   per [ADR-0022](docs/adr/0022-inference-runtime-onnx.md)).
@@ -437,10 +444,10 @@ linked AGENTS.md before resolving conflicts.
   `dev/Containerfile` pins `cuda-toolkit-13-3`, the unversioned
   `intel-basekit` meta-package (Intel does not publish a
   `intel-basekit-2025.3` apt package), and the digest-pinned
-  `rocm/dev-ubuntu-24.04:10.0.0-full` image in the `rocm-src` stage
-  (ADR-1225 — ROCm has no apt channel past 7.2.4). If SDK versions are
-  bumped (routine security maintenance), update the version pins and the
-  apt repo URL paths in `dev/Containerfile` before merging; a ROCm bump
+  `rocm/dev-ubuntu-26.04:10.0.0-full` image in the `rocm-src` stage
+  (ADR-1225 / ADR-1231). If SDK versions are bumped (routine security
+  maintenance), update their shared pins in `build-config.env` and regenerate
+  the mirrors before merging; a ROCm bump
   additionally means re-validating the `rocm-src` prune list against its
   hipcc smoke check.
   `dev/scripts/smoke-probe-loop.sh` assumes the golden pair lives at
@@ -462,6 +469,15 @@ linked AGENTS.md before resolving conflicts.
   The `python_harness` session intentionally delegates to `tox -c
   python` rather than duplicating the Cython + Netflix golden-data
   setup that lives in `python/tox.ini`; do not collapse them.
+
+- **Security support and badge evidence** — `SECURITY.md` describes actual
+  VMAFx release support, not inherited Netflix/libvmaf version strings.
+  Keep [the passing worksheet](docs/development/best-practices-assessment.md)
+  tied to a reviewed source revision and the live project record. Configuration,
+  future releases and agent-authored prose cannot establish historical response
+  times, a human developer's knowledge or a completed external badge. The
+  project website is GitHub Pages; keep the short purpose and participation
+  links in `docs/index.md`, and verify deployed pages before citing new text.
 
 ## 14. Interaction style — prefer structured popup questions
 

@@ -55,13 +55,15 @@
 #ifndef FIXTURE_H
 #define FIXTURE_H 144u
 #endif
+#ifndef FIXTURE_BPC
 #define FIXTURE_BPC 8u
+#endif
 
 /* Tolerance matching ADR-0214 cross-backend gate (places=4 → 1e-4). */
 #define PARITY_TOL 1e-4
 
 /* Fill a YUV420P 8-bpc reference picture with a deterministic ramp. */
-static int fill_ref(VmafPicture *pic)
+static int fill_ref8(VmafPicture *pic)
 {
     int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
     if (err)
@@ -86,7 +88,7 @@ static int fill_ref(VmafPicture *pic)
 
 /* Distorted picture: ref + small deterministic perturbation so PSNR is
  * finite and the SSE reduction touches every pixel. */
-static int fill_dist(VmafPicture *pic)
+static int fill_dist8(VmafPicture *pic)
 {
     int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
     if (err)
@@ -121,6 +123,67 @@ static int fill_dist(VmafPicture *pic)
         }
     }
     return 0;
+}
+
+/* ADR-1215: the 8-bit fixtures above are kept byte-identical; above 8 bpc they
+ * are widened into a FIXTURE_BPC picture with the 8-bit value in the high bits
+ * and a second pattern in the low bits. Chroma is additionally made non-flat
+ * and different between ref and dist — the 8-bit fixture keeps chroma flat, so
+ * psnr_cb / psnr_cr sit at the psnr_max sentinel on both sides, and a twin that
+ * reads the wrong plane for chroma could only be caught here if chroma carries
+ * a real signal. */
+#if FIXTURE_BPC > 8u
+static int widen_fixture(VmafPicture *dst, const VmafPicture *src8, unsigned salt)
+{
+    int err = vmaf_picture_alloc(dst, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
+    if (err)
+        return err;
+    const unsigned sh = FIXTURE_BPC - 8u;
+    const unsigned low = (1u << sh) - 1u;
+    for (unsigned p = 0; p < 3; p++) {
+        for (unsigned row = 0; row < dst->h[p]; row++) {
+            const uint8_t *sp = (const uint8_t *)src8->data[p] + (size_t)row * src8->stride[p];
+            uint16_t *dp = (uint16_t *)((uint8_t *)dst->data[p] + (size_t)row * dst->stride[p]);
+            for (unsigned col = 0; col < dst->w[p]; col++) {
+                unsigned v8 = sp[col];
+                if (p != 0)
+                    v8 = (v8 + row * 5u + col * 3u + p * 40u + salt * 9u) & 0xFFu;
+                dp[col] = (uint16_t)((v8 << sh) | ((row * 7u + col + salt) & low));
+            }
+        }
+    }
+    return 0;
+}
+#endif
+
+static int fill_ref(VmafPicture *pic)
+{
+#if FIXTURE_BPC > 8u
+    VmafPicture p8;
+    int err = fill_ref8(&p8);
+    if (err)
+        return err;
+    err = widen_fixture(pic, &p8, 0u);
+    (void)vmaf_picture_unref(&p8);
+    return err;
+#else
+    return fill_ref8(pic);
+#endif
+}
+
+static int fill_dist(VmafPicture *pic)
+{
+#if FIXTURE_BPC > 8u
+    VmafPicture p8;
+    int err = fill_dist8(&p8);
+    if (err)
+        return err;
+    err = widen_fixture(pic, &p8, 1u);
+    (void)vmaf_picture_unref(&p8);
+    return err;
+#else
+    return fill_dist8(pic);
+#endif
 }
 
 static int feed_one_frame(VmafContext *vmaf)

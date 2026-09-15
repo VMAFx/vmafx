@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools", "wheel", "Cython", "numpy"]
+requires = ["setuptools", "wheel", "Cython", "numpy>=2.5.3"]
 
 [project]
 name = "vmaf"
@@ -7,7 +7,7 @@ name = "vmaf"
 dynamic = ["version"]
 description = "VMAF — Video Multimethod Assessment Fusion (VMAFx fork)"
 readme = "README.rst"
-license = { text = "BSD-2-Clause-Patent" }
+license = "BSD-2-Clause-Patent"
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=2.5.3",

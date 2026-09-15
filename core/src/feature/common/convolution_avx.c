@@ -34,7 +34,14 @@ static void convolution_f32_avx_s_1d_h_scanline(const float *RESTRICT filter, in
                                                 const float *RESTRICT src, float *RESTRICT dst,
                                                 int j_end)
 {
-    int radius = filter_width / 2;
+    const int radius = filter_width / 2;
+    /* j_end is the first final scalar output, not a source-start count.
+     * Keep the old SIMD/FMA pixel region; discarded lanes must not read/write
+     * beyond the plane. See docs/research/convolution-horizontal-boundary-2026-09-08.md. */
+    const int count = j_end - radius;
+    if (count <= 0)
+        return;
+    const int full_count = vmaf_floorn(count, AVX_STEP);
 
     __m256 f[MAX_FWIDTH_AVX_CONV];
 
@@ -42,7 +49,7 @@ static void convolution_f32_avx_s_1d_h_scanline(const float *RESTRICT filter, in
         f[k] = _mm256_broadcast_ss(filter + k);
     }
 
-    for (int j = 0; j < j_end; j += AVX_STEP) {
+    for (int j = 0; j < full_count; j += AVX_STEP) {
         __m256 sum = _mm256_setzero_ps();
 
         for (int k = 0; k < filter_width; k++) {
@@ -52,6 +59,19 @@ static void convolution_f32_avx_s_1d_h_scanline(const float *RESTRICT filter, in
         }
 
         _mm256_storeu_ps(dst + j + radius, sum);
+    }
+
+    const int remaining = count - full_count;
+    if (remaining > 0) {
+        const __m256i mask = _mm256_cmpgt_epi32(_mm256_set1_epi32(remaining),
+                                                _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7));
+        __m256 sum = _mm256_setzero_ps();
+        for (int k = 0; k < filter_width; k++) {
+            __m256 g = _mm256_maskload_ps(src + full_count + k, mask);
+            g = _mm256_mul_ps(f[k], g);
+            sum = _mm256_add_ps(sum, g);
+        }
+        _mm256_maskstore_ps(dst + full_count + radius, mask, sum);
     }
 }
 
@@ -142,6 +162,31 @@ static void convolution_f32_avx_s_1d_v_xy_scanline(const float *RESTRICT filter,
     }
 }
 
+static void convolution_f32_avx_horizontal(const float *RESTRICT filter, int filter_width,
+                                           const float *RESTRICT tmp, float *RESTRICT dst,
+                                           int width, int height, int dst_stride)
+{
+    const int radius = filter_width / 2;
+    const int tmp_stride = vmaf_ceiln(width, AVX_STEP);
+    const ptrdiff_t tmp_pdt = (ptrdiff_t)tmp_stride;
+    const ptrdiff_t dst_pdt = (ptrdiff_t)dst_stride;
+    int j_vec_end = vmaf_floorn(width - radius, AVX_STEP);
+    int j_border_left = radius;
+    convolution_clamp_borders(width, &j_border_left, &j_vec_end);
+    for (int i = 0; i < height; ++i) {
+        for (int j = 0; j < j_border_left; ++j) {
+            dst[(ptrdiff_t)i * dst_pdt + j] = convolution_edge_s(true, filter, filter_width, tmp,
+                                                                 width, height, tmp_stride, i, j);
+        }
+        convolution_f32_avx_s_1d_h_scanline(filter, filter_width, tmp + (ptrdiff_t)i * tmp_pdt,
+                                            dst + (ptrdiff_t)i * dst_pdt, j_vec_end);
+        for (int j = j_vec_end; j < width; ++j) {
+            dst[(ptrdiff_t)i * dst_pdt + j] = convolution_edge_s(true, filter, filter_width, tmp,
+                                                                 width, height, tmp_stride, i, j);
+        }
+    }
+}
+
 void convolution_f32_avx_s(const float *RESTRICT filter, int filter_width,
                            const float *RESTRICT src, float *RESTRICT dst, float *RESTRICT tmp,
                            int width, int height, int src_stride, int dst_stride)
@@ -156,10 +201,8 @@ void convolution_f32_avx_s(const float *RESTRICT filter, int filter_width,
     int i_border_top = radius;
     int i_vec_end = height - radius;
     convolution_clamp_borders(height, &i_border_top, &i_vec_end);
-    int j_vec_end = vmaf_floorn(width - radius, AVX_STEP);
 
     const ptrdiff_t src_pdt = (ptrdiff_t)src_stride;
-    const ptrdiff_t dst_pdt = (ptrdiff_t)dst_stride;
     const ptrdiff_t tmp_pdt = (ptrdiff_t)tmp_stride;
 
     // Vertical pass.
@@ -186,21 +229,7 @@ void convolution_f32_avx_s(const float *RESTRICT filter, int filter_width,
         }
     }
 
-    // Horizontal pass.
-    for (int i = 0; i < height; ++i) {
-        for (int j = 0; j < radius; ++j) {
-            dst[(ptrdiff_t)i * dst_pdt + j] = convolution_edge_s(true, filter, filter_width, tmp,
-                                                                 width, height, tmp_stride, i, j);
-        }
-
-        convolution_f32_avx_s_1d_h_scanline(filter, filter_width, tmp + (ptrdiff_t)i * tmp_pdt,
-                                            dst + (ptrdiff_t)i * dst_pdt, j_vec_end);
-
-        for (int j = j_vec_end; j < width; ++j) {
-            dst[(ptrdiff_t)i * dst_pdt + j] = convolution_edge_s(true, filter, filter_width, tmp,
-                                                                 width, height, tmp_stride, i, j);
-        }
-    }
+    convolution_f32_avx_horizontal(filter, filter_width, tmp, dst, width, height, dst_stride);
 }
 
 void convolution_f32_avx_sq_s(const float *RESTRICT filter, int filter_width,
@@ -217,10 +246,8 @@ void convolution_f32_avx_sq_s(const float *RESTRICT filter, int filter_width,
     int i_border_top = radius;
     int i_vec_end = height - radius;
     convolution_clamp_borders(height, &i_border_top, &i_vec_end);
-    int j_vec_end = vmaf_floorn(width - radius, AVX_STEP);
 
     const ptrdiff_t src_pdt = (ptrdiff_t)src_stride;
-    const ptrdiff_t dst_pdt = (ptrdiff_t)dst_stride;
     const ptrdiff_t tmp_pdt = (ptrdiff_t)tmp_stride;
 
     // Vertical pass.
@@ -247,21 +274,7 @@ void convolution_f32_avx_sq_s(const float *RESTRICT filter, int filter_width,
         }
     }
 
-    // Horizontal pass.
-    for (int i = 0; i < height; ++i) {
-        for (int j = 0; j < radius; ++j) {
-            dst[(ptrdiff_t)i * dst_pdt + j] = convolution_edge_s(true, filter, filter_width, tmp,
-                                                                 width, height, tmp_stride, i, j);
-        }
-
-        convolution_f32_avx_s_1d_h_scanline(filter, filter_width, tmp + (ptrdiff_t)i * tmp_pdt,
-                                            dst + (ptrdiff_t)i * dst_pdt, j_vec_end);
-
-        for (int j = j_vec_end; j < width; ++j) {
-            dst[(ptrdiff_t)i * dst_pdt + j] = convolution_edge_s(true, filter, filter_width, tmp,
-                                                                 width, height, tmp_stride, i, j);
-        }
-    }
+    convolution_f32_avx_horizontal(filter, filter_width, tmp, dst, width, height, dst_stride);
 }
 
 void convolution_f32_avx_xy_s(const float *RESTRICT filter, int filter_width,
@@ -279,11 +292,9 @@ void convolution_f32_avx_xy_s(const float *RESTRICT filter, int filter_width,
     int i_border_top = radius;
     int i_vec_end = height - radius;
     convolution_clamp_borders(height, &i_border_top, &i_vec_end);
-    int j_vec_end = vmaf_floorn(width - radius, AVX_STEP);
 
     const ptrdiff_t src1_pdt = (ptrdiff_t)src1_stride;
     const ptrdiff_t src2_pdt = (ptrdiff_t)src2_stride;
-    const ptrdiff_t dst_pdt = (ptrdiff_t)dst_stride;
     const ptrdiff_t tmp_pdt = (ptrdiff_t)tmp_stride;
 
     // Vertical pass.
@@ -313,19 +324,5 @@ void convolution_f32_avx_xy_s(const float *RESTRICT filter, int filter_width,
         }
     }
 
-    // Horizontal pass.
-    for (int i = 0; i < height; ++i) {
-        for (int j = 0; j < radius; ++j) {
-            dst[(ptrdiff_t)i * dst_pdt + j] = convolution_edge_s(true, filter, filter_width, tmp,
-                                                                 width, height, tmp_stride, i, j);
-        }
-
-        convolution_f32_avx_s_1d_h_scanline(filter, filter_width, tmp + (ptrdiff_t)i * tmp_pdt,
-                                            dst + (ptrdiff_t)i * dst_pdt, j_vec_end);
-
-        for (int j = j_vec_end; j < width; ++j) {
-            dst[(ptrdiff_t)i * dst_pdt + j] = convolution_edge_s(true, filter, filter_width, tmp,
-                                                                 width, height, tmp_stride, i, j);
-        }
-    }
+    convolution_f32_avx_horizontal(filter, filter_width, tmp, dst, width, height, dst_stride);
 }

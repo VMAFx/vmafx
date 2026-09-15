@@ -33,11 +33,10 @@
  *   - `nullptr` replaces `NULL` throughout this TU.
  */
 
+#include <algorithm>
 #include <array>
-#include <cerrno>
 #include <optional>
 #include <string_view>
-#include <utility>
 
 #include "psnr_tools.h"
 
@@ -56,10 +55,10 @@ struct PsnrParams {
  */
 struct FormatEntry {
     std::string_view fmt;
-    PsnrParams params;
+    PsnrParams params{};
 };
 
-// NOLINTNEXTLINE(cert-err58-cpp) — constexpr aggregate; no dynamic init
+// NOLINTNEXTLINE(cert-err58-cpp) — constexpr aggregate; no dynamic init (ADR-0141 / ADR-0278)
 constexpr std::array<FormatEntry, 12> kFormatTable{{
     {.fmt = "yuv420p", .params = {.peak = 255.0, .psnr_max = 60.0}},
     {.fmt = "yuv422p", .params = {.peak = 255.0, .psnr_max = 60.0}},
@@ -77,10 +76,9 @@ constexpr std::array<FormatEntry, 12> kFormatTable{{
 
 [[nodiscard]] static std::optional<PsnrParams> lookup_format(std::string_view fmt) noexcept
 {
-    for (const auto &entry : kFormatTable) {
-        if (entry.fmt == fmt)
-            return entry.params;
-    }
+    const auto entry = std::ranges::find(kFormatTable, fmt, &FormatEntry::fmt);
+    if (entry != kFormatTable.end())
+        return entry->params;
     return std::nullopt;
 }
 
@@ -91,7 +89,7 @@ extern "C" int psnr_constants(const char *fmt, double *peak, double *psnr_max)
     if (!fmt || !peak || !psnr_max)
         return 1;
 
-    auto result = lookup_format(fmt);
+    const auto result = lookup_format(fmt);
     if (!result)
         return 1;
 
