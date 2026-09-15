@@ -123,44 +123,43 @@ int feature_extractor_vector_init(RegisteredFeatureExtractors *rfe)
  * function inside the readability-function-size budget (ADR-1142). */
 namespace
 {
-    if (!rfe || !fex_ctx)
-        return -EINVAL;
+if (!rfe || !fex_ctx)
+    return -EINVAL;
 
-    (void)flags;
-    for (unsigned i = 0; i < rfe->cnt; i++) {
-        const int overlap = provided_features_overlap(rfe->fex_ctx[i]->fex, fex_ctx->fex);
-        if (overlap < 0)
-            return overlap;
-        if (overlap != 0) {
-            vmaf_log(VMAF_LOG_LEVEL_DEBUG,
-                     "feature extractor \"%s\" skipped: provided features already covered "
-                     "by registered extractor \"%s\"\n",
-                     fex_ctx->fex->name, rfe->fex_ctx[i]->fex->name);
-            *out_rc = vmaf_feature_extractor_context_destroy(fex_ctx);
-            return true;
-        }
-
-        /* Legacy path: both extractors omit provided_features — fall back to
-         * comparing the vmaf_feature_name_from_options()-derived key so that
-         * same-named extractors with identical option sets are still deduped. */
-        if (!fex_ctx->fex->provided_features || !rfe->fex_ctx[i]->fex->provided_features) {
-            char *feature_a = vmaf_feature_name_from_options(rfe->fex_ctx[i]->fex->name,
-                                                             rfe->fex_ctx[i]->fex->options,
-                                                             rfe->fex_ctx[i]->fex->priv);
-            char *feature_b = vmaf_feature_name_from_options(
-                fex_ctx->fex->name, fex_ctx->fex->options, fex_ctx->fex->priv);
-            int ret = 1;
-            if (feature_a && feature_b)
-                ret = strcmp(feature_a, feature_b);
-            free(feature_a); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0141 C ABI string
-            free(feature_b); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0141 C ABI string
-            if (ret == 0)
-                *out_rc = vmaf_feature_extractor_context_destroy(fex_ctx);
-            return true;
-        }
+(void)flags;
+for (unsigned i = 0; i < rfe->cnt; i++) {
+    const int overlap = provided_features_overlap(rfe->fex_ctx[i]->fex, fex_ctx->fex);
+    if (overlap < 0)
+        return overlap;
+    if (overlap != 0) {
+        vmaf_log(VMAF_LOG_LEVEL_DEBUG,
+                 "feature extractor \"%s\" skipped: provided features already covered "
+                 "by registered extractor \"%s\"\n",
+                 fex_ctx->fex->name, rfe->fex_ctx[i]->fex->name);
+        *out_rc = vmaf_feature_extractor_context_destroy(fex_ctx);
+        return true;
     }
 
-    return false;
+    /* Legacy path: both extractors omit provided_features — fall back to
+         * comparing the vmaf_feature_name_from_options()-derived key so that
+         * same-named extractors with identical option sets are still deduped. */
+    if (!fex_ctx->fex->provided_features || !rfe->fex_ctx[i]->fex->provided_features) {
+        char *feature_a = vmaf_feature_name_from_options(
+            rfe->fex_ctx[i]->fex->name, rfe->fex_ctx[i]->fex->options, rfe->fex_ctx[i]->fex->priv);
+        char *feature_b = vmaf_feature_name_from_options(fex_ctx->fex->name, fex_ctx->fex->options,
+                                                         fex_ctx->fex->priv);
+        int ret = 1;
+        if (feature_a && feature_b)
+            ret = strcmp(feature_a, feature_b);
+        free(feature_a); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0141 C ABI string
+        free(feature_b); // NOLINT(cppcoreguidelines-no-malloc) — ADR-0141 C ABI string
+        if (ret == 0)
+            *out_rc = vmaf_feature_extractor_context_destroy(fex_ctx);
+        return true;
+    }
+}
+
+return false;
 }
 
 } // namespace
