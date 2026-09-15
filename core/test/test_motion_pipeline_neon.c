@@ -35,7 +35,6 @@
  */
 
 #include <stdint.h>
-#include <stdlib.h>
 
 #include "cpu.h"
 #include "test.h"
@@ -43,22 +42,43 @@
 #include "feature/feature_extractor.h"
 #include "feature/feature_collector.h"
 
-/* Deterministic per-plane fill. rand() is seeded per call so the scalar and the
- * NEON run see byte-identical input; the values themselves only need to span
- * the sample range, which is what makes the vertical accumulator work hard. */
-static void fill_random_luma(VmafPicture *pic, unsigned bpc, unsigned seed)
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
+/* Deterministic xorshift32 — the same generator the other SIMD parity tests use.
+ * The libc generator is forbidden here (.semgrep.yml rule vmaf-no-system-rand),
+ * and it would be wrong on the merits anyway: its sequence differs between
+ * glibc, musl and macOS, so the fixture this test compares against would not be
+ * the same data on every platform. */
+static uint32_t next_u32(uint32_t *state)
 {
-    srand(seed);
+    uint32_t s = *state;
+    s ^= s << 13;
+    s ^= s >> 17;
+    s ^= s << 5;
+    *state = s;
+    return s;
+}
+
+/* Fills the luma plane from an explicit seed so the scalar and the NEON run see
+ * byte-identical input. The values only need to span the sample range, which is
+ * what makes the vertical accumulator work hard. */
+static void fill_deterministic_luma(VmafPicture *pic, unsigned bpc, uint32_t seed)
+{
+    uint32_t state = seed ? seed : 1u;
     const unsigned max = (1u << bpc) - 1u;
     for (unsigned i = 0; i < pic->h[0]; i++) {
         if (bpc == 8) {
             uint8_t *row = (uint8_t *)pic->data[0] + i * pic->stride[0];
             for (unsigned j = 0; j < pic->w[0]; j++)
-                row[j] = (uint8_t)((unsigned)rand() % (max + 1u));
+                row[j] = (uint8_t)((next_u32(&state) >> 8) & max);
         } else {
             uint16_t *row = (uint16_t *)((uint8_t *)pic->data[0] + i * pic->stride[0]);
             for (unsigned j = 0; j < pic->w[0]; j++)
-                row[j] = (uint16_t)((unsigned)rand() % (max + 1u));
+                row[j] = (uint16_t)((next_u32(&state) >> 8) & max);
         }
     }
 }
@@ -79,7 +99,8 @@ static int motion_sad_under_mask(unsigned w, unsigned h, unsigned bpc, unsigned 
     if (err)
         return err;
 
-    VmafPicture prev_pic, cur_pic;
+    VmafPicture prev_pic;
+    VmafPicture cur_pic;
     err = vmaf_picture_alloc(&prev_pic, VMAF_PIX_FMT_YUV420P, bpc, w, h);
     if (err)
         return err;
@@ -89,8 +110,8 @@ static int motion_sad_under_mask(unsigned w, unsigned h, unsigned bpc, unsigned 
         return err;
     }
 
-    fill_random_luma(&prev_pic, bpc, seed_prev);
-    fill_random_luma(&cur_pic, bpc, seed_cur);
+    fill_deterministic_luma(&prev_pic, bpc, seed_prev);
+    fill_deterministic_luma(&cur_pic, bpc, seed_cur);
 
     VmafFeatureCollector *vfc;
     err = vmaf_feature_collector_init(&vfc);
@@ -127,6 +148,26 @@ static int motion_sad_under_mask(unsigned w, unsigned h, unsigned bpc, unsigned 
     return 0;
 }
 
+/* One geometry, one bit depth, one seed: scalar against NEON. Split out of the
+ * loop nest below so neither function exceeds the readability-function-size
+ * nesting threshold the repository gates on. */
+static char *compare_one(unsigned w, unsigned h, unsigned bpc, unsigned seed)
+{
+    double scalar_score = -1.0;
+    double neon_score = -2.0;
+
+    int err = motion_sad_under_mask(w, h, bpc, 100 + seed, 200 + seed, 0, &scalar_score);
+    mu_assert("scalar motion extraction failed", !err);
+
+    err = motion_sad_under_mask(w, h, bpc, 100 + seed, 200 + seed, ~0u, &neon_score);
+    mu_assert("neon motion extraction failed", !err);
+
+    mu_assert("NEON motion SAD must bit-exactly match the scalar reference at "
+              "every geometry and bit depth",
+              scalar_score == neon_score);
+    return NULL;
+}
+
 static char *test_motion_pipeline_neon_matches_scalar(void)
 {
     static const struct {
@@ -136,25 +177,17 @@ static char *test_motion_pipeline_neon_matches_scalar(void)
         {17, 17}, {20, 4}, {31, 5}, {32, 6}, {33, 9}, {64, 48}, {65, 63},
     };
     static const unsigned depths[] = {8, 10, 12};
+    const unsigned n_sizes = sizeof(sizes) / sizeof(sizes[0]);
+    const unsigned n_depths = sizeof(depths) / sizeof(depths[0]);
 
     vmaf_init_cpu();
 
-    for (unsigned d = 0; d < sizeof(depths) / sizeof(depths[0]); d++) {
-        for (unsigned s = 0; s < sizeof(sizes) / sizeof(sizes[0]); s++) {
+    for (unsigned d = 0; d < n_depths; d++) {
+        for (unsigned s = 0; s < n_sizes; s++) {
             for (unsigned seed = 0; seed < 3; seed++) {
-                double scalar_score = -1.0, neon_score = -2.0;
-
-                int err = motion_sad_under_mask(sizes[s].w, sizes[s].h, depths[d], 100 + seed,
-                                                200 + seed, 0, &scalar_score);
-                mu_assert("scalar motion extraction failed", !err);
-
-                err = motion_sad_under_mask(sizes[s].w, sizes[s].h, depths[d], 100 + seed,
-                                            200 + seed, ~0u, &neon_score);
-                mu_assert("neon motion extraction failed", !err);
-
-                mu_assert("NEON motion SAD must bit-exactly match the scalar "
-                          "reference at every geometry and bit depth",
-                          scalar_score == neon_score);
+                char *msg = compare_one(sizes[s].w, sizes[s].h, depths[d], seed);
+                if (msg)
+                    return msg;
             }
         }
     }
@@ -168,3 +201,5 @@ char *run_tests(void)
     mu_run_test(test_motion_pipeline_neon_matches_scalar);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
