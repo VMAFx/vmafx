@@ -151,7 +151,8 @@ typedef struct MsSsimStateCuda {
     /* CPU-option parity (wiring-audit-2026-05-16): enable_db / clip_db match
      * float_ms_ssim.c options. At defaults (both false) output is bit-identical. */
     bool enable_db; /* return dB-domain score: -10*log10(1 - ms_ssim) */
-    bool clip_db;   /* clip linear ms_ssim to [0, 1] before dB conversion */
+    bool clip_db;   /* cap the dB output at the geometry-derived max_db */
+    double max_db;  /* ADR-1221: dB ceiling, INFINITY when !clip_db */
     /* PTX module backing the MS-SSIM kernels — owned here so
      * `close_fex_cuda` can unload it. Skipping the unload leaks
      * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
@@ -185,6 +186,17 @@ static const VmafOption options[] = {
 
 static int close_fex_cuda(VmafFeatureExtractor *fex);
 
+/* Mirrors float_ms_ssim.c::convert_to_db exactly. ADR-1221. */
+static double ms_ssim_convert_to_db(double score, double max_db)
+{
+    /* score >= 1.0 makes log10(1-score) undefined (log10 of zero or negative)
+     * yielding -Inf / NaN.  Return max_db directly for perfect similarity.  */
+    if (score >= 1.0)
+        return max_db;
+    const double db = -10. * log10(1.0 - score);
+    return db < max_db ? db : max_db;
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -204,6 +216,26 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->width = w;
     s->height = h;
     s->bpc = bpc;
+
+    /* ADR-1221 — `clip_db` is a CEILING on the dB output, not a clamp on the
+     * linear score. float_ms_ssim.c derives it from the frame geometry:
+     *
+     *     mse    = 0.5 / (w * h);
+     *     max_db = ceil(10. * log10(peak * peak / mse));
+     *
+     * and `convert_to_db()` returns `MIN(-10*log10(1 - score), max_db)`, with
+     * `score >= 1.0` short-circuiting to `max_db`. The twin used to clamp the
+     * linear score into [0, 1] and then convert with no ceiling, which returns
+     * +Inf for an identical reference/distorted pair. */
+    {
+        const unsigned peak = (1u << bpc) - 1u;
+        if (s->clip_db) {
+            const double mse = 0.5 / (w * h);
+            s->max_db = ceil(10. * log10(peak * peak / mse));
+        } else {
+            s->max_db = INFINITY;
+        }
+    }
 
     s->scale_w[0] = w;
     s->scale_h[0] = h;
@@ -517,12 +549,8 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 
     /* dB conversion — mirrors CPU float_ms_ssim.c behaviour exactly. */
     double score = msssim;
-    if (s->enable_db) {
-        if (s->clip_db) {
-            score = score < 0.0 ? 0.0 : (score > 1.0 ? 1.0 : score);
-        }
-        score = -10.0 * log10(1.0 - score);
-    }
+    if (s->enable_db)
+        score = ms_ssim_convert_to_db(score, s->max_db);
 
     /* Append the (possibly dB-converted) score, not the raw msssim.
      * Mirrors CPU float_ms_ssim.c:extract() which converts before appending. */
