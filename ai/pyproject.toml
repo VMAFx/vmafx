@@ -44,7 +44,7 @@ dependencies = [
   "pyyaml>=6.0.3",
   "typer>=0.27.2",
   "rich>=15.0.0",
-  "tqdm>=4.70.0",
+  "tqdm>=4.70.1",
 ]
 
 [project.optional-dependencies]
