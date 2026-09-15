@@ -302,11 +302,12 @@ selectively dispatched between GPU and CPU based on option support ([ADR-1183](.
   CUDA backend in general — the golden gate is CPU-only and pooled `vmaf` still differs by
   1.1e-5 on the Tennis pair because of the ADM / VIF / motion twins.
 - **Motion** (`integer_motion_cuda`) computes motion scores on device while honoring `motion_max_val`.
-- **ADM** (`integer_adm_cuda`) lacks support for `adm_csf_mode: 2` (required by `vmaf_v1.0.16_3d0h`),
-  so libvmaf automatically dispatches ADM to the CPU reference extractor with an informational
-  notice (`adm_cuda extractor lacks option 'adm_csf_mode', computing it on the CPU`). This ensures
-  complete numerical correctness without breaking model evaluation until `adm_csf_mode` is ported
-  to CUDA device kernels (`T-GPU-ADM-CSF-MODE-NOT-PORTED-2026-09-05`).
+- **ADM** (`integer_adm_cuda`) runs the default model's ADM **on the device**, including
+  `adm_csf_mode: 2`. `T-GPU-ADM-CSF-MODE-NOT-PORTED-2026-09-05` is closed; see
+  [the section below](#integer_adm_cuda-runs-the-default-models-adm-on-the-device-2026-09-05)
+  for the full option list. This bullet previously claimed the opposite — that the option was
+  missing and libvmaf fell back to the CPU reference extractor — which contradicted that section
+  from the day both were written.
 
 - **CIEDE2000** — no CUDA kernel (same CPU-fallback behaviour).
 - **PSNR** — `psnr_cuda` ships with the full luma + chroma set

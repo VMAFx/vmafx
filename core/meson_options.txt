@@ -112,6 +112,13 @@ option('enable_float_vif_hip_autodispatch',
     value: false,
     description: 'Enable automatic model-driven dispatch of float_vif_hip by setting VMAF_FEATURE_EXTRACTOR_HIP on its descriptor (ADR-0623). Default OFF pending T7-10c picture-pool plumbing: without the pool, pictures arrive as CPU VmafPictures and the extractor performs explicit HtoD copies rather than zero-copy from the HIP picture pool. Enable only after T7-10c lands.')
 
+option('nvcc_threads',
+    type: 'integer',
+    min: 1,
+    max: 32,
+    value: 4,
+    description: 'nvcc --threads value for the per-kernel fatbin compiles. nvcc parallelises across the gencode architectures (6 of them), so this shortens the critical-path kernel: measured 8.5s -> 2.1s on adm_cm.cu at 4, with all 22 fatbins byte-identical to a serial build. Note ninja already builds the 22 fatbins concurrently, so the effective thread count is this value times the ninja job count -- lower it on a small runner. 1 disables (nvcc ignores --threads 1). See ADR-1224.')
+
 option('hip_gfx_targets',
     type: 'string',
     value: '',

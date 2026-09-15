@@ -1240,6 +1240,16 @@ if is_cuda_enabled
         # upstream tree; upstream commits dff4082b (batch threading) and
         # 46d3a154 (picture pool) are now ported (ADR-1051); this comment
         # was updated from the old experimental-flag framing.
+        # nvcc parallelises across the gencode architectures, so --threads
+        # shortens the critical-path kernel without changing output: measured
+        # byte-identical fatbins for all 22 kernels at -t 4 (`cmp`), serial
+        # wall 41.9s -> 14.2s, adm_cm.cu 8.5s -> 2.1s. ninja already runs the
+        # 22 fatbin targets concurrently, so the effective thread count is
+        # this value x the ninja job count -- hence the meson option rather
+        # than a hardcoded number. ADR-1224.
+        nvcc_threads = get_option('nvcc_threads')
+        nvcc_thread_flags = nvcc_threads > 1 ? ['--threads', nvcc_threads.to_string()] : []
+
         gencode = [
             '--fatbin',
             '-gencode=arch=compute_80,code=sm_80',
@@ -1267,6 +1277,9 @@ if is_cuda_enabled
 
     else
         nvcc_exe = find_program('clang')
+        # clang's CUDA driver has no --threads equivalent; the flag list stays
+        # empty so the shared custom_target below works on both paths.
+        nvcc_thread_flags = []
         gencode = [
             # ADR-1223: matches the nvcc path's compute-capability 8.0 floor.
             '--cuda-gpu-arch=sm_80',
@@ -1344,7 +1357,7 @@ if is_cuda_enabled
                 cuda_inc_flags,
                 cuda_extra_includes,
                 '-DDEVICE_CODE',
-            ] + cuda_flags + nvcc_ccbin_flags + nvcc_host_includes + per_kernel_flags
+            ] + nvcc_thread_flags + cuda_flags + nvcc_ccbin_flags + nvcc_host_includes + per_kernel_flags
         )
         ptx_files += {name : [t]}
     endforeach

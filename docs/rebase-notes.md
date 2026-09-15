@@ -49615,3 +49615,30 @@ fork-added.
 4. **stdout belongs to JSON-RPC.** The Go server logs to stderr. Any change that
    sends log output to stdout corrupts the protocol stream and shows up as
    `mcp stdio returned empty response` rather than as a logging bug.
+## ADR-1224 — CUDA Tile not adopted; audit findings banked (2026-09-07)
+
+Branch: `fix/cuda-audit-followups`.
+
+1. **`int64` warp reductions must reassemble before adding.** CUDA has no
+   64-bit shuffle, so each step shuffles two 32-bit halves — but summing the
+   halves as independent `int32` accumulators and recombining at the end drops
+   the carry out of the low half and can overflow a signed `int32` (UB).
+   `warp_reduce(int64_t)` in `core/src/cuda/cuda_helper.cuh` does it correctly;
+   use it rather than hand-rolling a second copy, which is how
+   `integer_ssim_score.cu` acquired the bug.
+
+2. **`nvcc --threads` is output-neutral, `--split-compile` is not.** Measured:
+   `-t 4` vs `-t 1` gives 22/22 byte-identical fatbins. `--split-compile`
+   produced three different fatbin hashes across three identical invocations —
+   never adopt it while the release story depends on reproducible builds for
+   keyless Sigstore/SLSA signing.
+
+3. **Do not re-litigate CUDA Tile from the weak arguments.** The
+   compute-capability floor and the CUDA CI pin are NOT reasons against it
+   (ADR-1223 removes both), `ct::mma()` does accept float/double, and NVIDIA
+   never said scheduling is "not user-controllable". The surviving objections
+   are: no contraction to accelerate (and a rounding shift *inside* the ADM
+   accumulation, which is not a sum of products at any dtype), power-of-two
+   tile extents vs 576/1920-wide rows, no reduction-order guarantee, and
+   `--fatbin`/`--tilefatbin` not being composable with `--tilefatbin` emitting
+   no PTX.
