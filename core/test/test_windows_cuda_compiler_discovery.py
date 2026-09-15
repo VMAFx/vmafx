@@ -115,8 +115,8 @@ class WindowsCudaCompilerDiscovery(unittest.TestCase):
             # fixture directory, which is the point of the case, not tainted
             # input: argv is a fixed list of literals and paths this test just
             # created under its own tmpdir.
-            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
             return subprocess.run(  # noqa: S603
+                # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
                 [
                     str(MESON),
                     "setup",

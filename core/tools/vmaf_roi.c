@@ -22,8 +22,11 @@
  *  T6-2b. ADR-0247.
  */
 
-/* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: preserve C/upstream NULL
- * compatibility; required Windows MSVC /std:clatest does not document nullptr. */
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 #include <errno.h>
 #include <getopt.h>
@@ -38,12 +41,6 @@
 #include "libvmaf/dnn.h"
 #include "vmaf_roi_core.h"
 #include "vmaf_roi_input.h"
-
-/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 /* x265 / SVT-AV1 ROI sidecars use a small integer offset range. We clamp
  * to +-12 which is comfortably inside both encoders' accepted bands. */

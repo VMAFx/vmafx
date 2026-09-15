@@ -330,10 +330,12 @@ static char *read_whole_file(const char *path, char **out, long *out_len)
     size_t got = fread(buf, 1, (size_t)len, in);
     (void)fclose(in);
     mu_assert("short read of model json", got == (size_t)len);
-    /* NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) — buf is
-     * malloc((size_t)len + 1), so index len is the terminator slot and
-     * is in bounds (ADR-0278) */
-    buf[len] = '\0';
+    /* buf is malloc((size_t)len + 1), so index len is the terminator slot and is
+     * in bounds; the analyzer loses that relationship across the fread. The
+     * suppression is trailing on purpose: clang-tidy honours a next-line
+     * directive only on the line directly before the diagnostic, so putting one
+     * above a multi-line justification suppresses nothing. */
+    buf[len] = '\0'; // NOLINT(clang-analyzer-security.ArrayBound) — ADR-0278
     *out = buf;
     *out_len = len;
     return NULL;
