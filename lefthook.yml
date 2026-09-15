@@ -49,5 +49,12 @@ pre-push:
       run: if command -v praetorctl >/dev/null 2>&1; then praetorctl flavor audit .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl flavor audit .; else echo HISS-16 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
     audit:
       run: if command -v praetorctl >/dev/null 2>&1; then praetorctl audit; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl audit; else echo HISS-16 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
-    gate:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl gate run --path=.; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl gate run --path=.; else echo HISS-16 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+    # The praetor gating pipeline is deliberately NOT run pre-push here. Its
+    # race-detector stage runs `go test -race ./...` in a bare isolated worktree,
+    # and every Go package in this repository is cgo over libvmaf
+    # (-L core/build-cpu/src -lvmaf), so all six binaries fail to build before a
+    # single test runs. The stage cannot pass without first building the C library,
+    # which the gate has no way to declare. Its other five stages already run
+    # above as `audit`, `flavor-audit` and `security`, and anti-direct-merge is
+    # enforced by branch protection plus the required aggregator. Filed upstream
+    # so the stage can use the repository's declared test command (ADR-1249).
