@@ -63,6 +63,7 @@
       ],
       "groupName": "GitHub Actions (minor + patch)",
       "automerge": true,
+      "draftPR": false,
       "automergeType": "pr",
       "schedule": [
         "before 6am on Monday"
@@ -85,7 +86,8 @@
         "pre-commit"
       ],
       "groupName": "pre-commit hooks",
-      "automerge": true
+      "automerge": true,
+      "draftPR": false
     },
     {
       "description": "Python patch updates auto-merge; minor + major need review.",
@@ -99,7 +101,8 @@
         "patch"
       ],
       "groupName": "Python (patch)",
-      "automerge": true
+      "automerge": true,
+      "draftPR": false
     },
     {
       "description": "Keep the tool-only root Python floor at minor-series granularity so Dependabot's updater image can satisfy it; workflow runtime pins still receive patch updates.",
@@ -150,6 +153,7 @@
       ],
       "groupName": "Go deps (minor + patch)",
       "automerge": true,
+      "draftPR": false,
       "automergeType": "pr",
       "schedule": [
         "before 6am on Monday"
@@ -177,6 +181,7 @@
       ],
       "groupName": "Cargo deps (minor + patch)",
       "automerge": true,
+      "draftPR": false,
       "automergeType": "pr",
       "schedule": [
         "before 6am on Monday"
@@ -203,7 +208,8 @@
         "pin"
       ],
       "groupName": "Docker digests",
-      "automerge": true
+      "automerge": true,
+      "draftPR": false
     },
     {
       "description": "Renovate's own action \u2014 manual review on bumps to retain auditability of the dep-bot itself.",
@@ -379,6 +385,7 @@
       "dependencies"
     ],
     "automerge": false,
+    "draftPR": false,
     "schedule": [
       "at any time"
     ],
