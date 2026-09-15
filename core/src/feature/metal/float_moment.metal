@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Metal compute kernel for float_moment (T8-1e / ADR-0421).
  *  Emits four per-frame statistics across ref and dis planes:

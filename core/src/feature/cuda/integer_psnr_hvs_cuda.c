@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  psnr_hvs feature extractor on the CUDA backend
  *  (T7-23 / ADR-0188 / ADR-0191, GPU long-tail batch 2 part 3b).

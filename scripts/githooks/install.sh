@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # scripts/githooks/install.sh — install git hooks (framework or native).
 #
 # Default behaviour matches the historical `make install-hooks` target:

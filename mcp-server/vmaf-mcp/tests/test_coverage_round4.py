@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Round-4 coverage uplift for vmaf-mcp.
 
 Closes the remaining 6-8 pp gap after PR #580 (round 1) and the round-2 and

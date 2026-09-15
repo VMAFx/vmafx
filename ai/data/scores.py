@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Distillation scores: per-frame teacher VMAF predictions as targets.
 
 The fork's default teacher model is single-sourced from

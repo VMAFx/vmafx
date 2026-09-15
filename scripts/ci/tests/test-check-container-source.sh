@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Tests for scripts/dev/check-container-source.sh (ADR-1195).
 #
 # Hermetic: builds throwaway git repositories in a temp dir. The --image mode

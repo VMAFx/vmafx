@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 #
 # Operator-run orchestration for multi-corpus aggregated training.
 # ADR-0340. Discovers which per-corpus MOS JSONLs are present under

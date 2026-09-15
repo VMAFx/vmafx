@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for :mod:`ai.scripts.konvid_1k_to_corpus_jsonl` (ADR-0325 Phase 1).
 
 These tests exercise the adapter's pure-Python contract end-to-end on

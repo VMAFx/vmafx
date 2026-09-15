@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Generate SYCL scores on the current GPU for all resolutions.
 Usage: python3 run_sycl_scores.py <gpu_tag>
 Example: python3 run_sycl_scores.py a380

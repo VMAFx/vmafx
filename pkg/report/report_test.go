@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 //
 // pkg/report/report_test.go — unit tests for the Markdown/JSON report
 // renderer. Covers nanToNull's NaN/Inf coercion, Best() row selection,

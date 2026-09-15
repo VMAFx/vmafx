@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # scaffold.sh — create a new perceptual feature extractor skeleton.
 # Usage: bash .claude/skills/add-feature-extractor/scaffold.sh <name>
 

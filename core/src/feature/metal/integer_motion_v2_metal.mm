@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  motion_v2 feature extractor on the Metal backend — first
  *  real kernel (T8-1c / ADR-0421). Replaces the T8-1 scaffold's

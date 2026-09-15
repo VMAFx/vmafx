@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for :mod:`ai.scripts.eval_probabilistic_proxy`.
 
 Covers the pure-numpy helpers (``_z_for_coverage``, ``_coverage_metrics``,

@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 
 // Package oteltest is the test-only seam for asserting that a vmafx request
 // path emits the OpenTelemetry span ADR-0782 promises. It installs an SDK

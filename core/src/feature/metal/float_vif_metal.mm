@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  float_vif feature extractor on the Metal backend. ObjC++ wrapper that
  *  drives the two MSL kernels in `float_vif.metal` (float_vif_compute,

@@ -1,4 +1,7 @@
 # Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Copyright 2026 Lusoris
 """Cover the HDR-aware + HFR-aware feature-option emission added to
 ``ai/scripts/extract_k150k_features.py``.
 

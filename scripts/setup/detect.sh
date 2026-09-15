@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Dispatcher: detect host OS/distro and run the matching setup script.
 # Idempotent. Safe to re-run. Never sudo-escalates without user input.
 set -euo pipefail

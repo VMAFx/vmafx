@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Smoke tests for the PTQ harness (ADR-0173 / T5-3).
 
 These don't run a full quantisation round-trip — that needs

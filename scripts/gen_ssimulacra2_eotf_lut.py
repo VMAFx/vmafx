@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Generate the 1024-entry sRGB EOTF LUT committed at
 core/src/feature/ssimulacra2_eotf_lut.h.
 
@@ -19,7 +22,7 @@ print("/**")
 print(" *")
 print(" *  Copyright 2026 Lusoris")
 print(" *")
-print(' *     Licensed under the BSD+Patent License (the "License");')
+print(" * SPDX-License-Identifier: EUPL-1.2")
 print(" *")
 print(" */")
 print("")

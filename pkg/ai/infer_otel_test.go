@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 
 // infer_otel_test.go — Registry.Infer emits the ADR-0782 ONNX inference span
 // around the vmafx-ort-runner subprocess (the runner itself is OTel-exempt,

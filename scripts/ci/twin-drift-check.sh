@@ -2,7 +2,7 @@
 # .c/.cpp twin-drift + stale-source-reference gate (ADR-1135).
 #
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 #
 # Policy: two mechanically-decidable predicates, both blocking.
 #

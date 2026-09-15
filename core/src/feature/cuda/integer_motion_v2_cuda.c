@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  motion_v2 feature kernel on the CUDA backend (T7-23 / batch 3
  *  part 1b — ADR-0192 / ADR-0193). CUDA twin of motion_v2_vulkan

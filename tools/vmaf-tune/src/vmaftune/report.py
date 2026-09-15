@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Profile-card report renderer for a tuned video.
 
 Takes the structured outputs of the vmaf-tune pipeline (ladder build,

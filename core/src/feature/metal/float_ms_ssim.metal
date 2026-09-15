@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Metal compute kernels for float_ms_ssim (T8-2b / ADR-0488).
  *  Port of `libvmaf/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`

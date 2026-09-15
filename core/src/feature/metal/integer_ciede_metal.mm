@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  ciede2000 feature extractor on the Metal backend (Metal parity
  *  sweep — ciede twin). Dispatches `integer_ciede_kernel_{8,16}bpc`

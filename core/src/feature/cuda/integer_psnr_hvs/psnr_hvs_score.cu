@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  CUDA compute kernel for the psnr_hvs feature extractor
  *  (T7-23 / batch 2 part 3b / ADR-0188 / ADR-0191). Mirrors

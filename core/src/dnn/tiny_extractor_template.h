@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Tiny-AI extractor template — shared scaffolding for ONNX-Runtime-backed
  *  feature extractors (`feature_lpips.c`, `fastdvdnet_pre.c`,

@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  psnr_hvs feature extractor on the HIP backend.
  *  Direct port of `libvmaf/src/feature/cuda/integer_psnr_hvs_cuda.c`

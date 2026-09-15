@@ -3,7 +3,7 @@
 # conflict the way ADR-0165 requires.
 #
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 #
 """Resolve a docs/state.md rebase conflict the way ADR-0165 requires.
 

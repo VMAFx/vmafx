@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """LSVQ -> MOS-corpus JSONL adapter (ADR-0367).
 
 LSVQ -- LIVE Large-Scale Social Video Quality (Ying, Mandal,

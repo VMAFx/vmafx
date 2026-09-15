@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Metal compute kernels for the integer_vif feature extractor (feature
  *  name "vif" on the CPU). Fixed-point twin of float_vif.metal — mirrors

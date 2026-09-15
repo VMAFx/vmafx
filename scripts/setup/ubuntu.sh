@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Ubuntu 26.04 LTS (Plucky) — also works on 24.04 LTS, 22.04 LTS, Debian 12, Mint 21.
 # Installs the build toolchain, Python dev deps, and (optionally) CUDA / oneAPI.
 set -euo pipefail

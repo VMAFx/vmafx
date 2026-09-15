@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Performance benchmark over BBB raw/encoded fixtures via FFmpeg.
 
 The harness is intentionally operator-facing, not a CI gate. It defaults to

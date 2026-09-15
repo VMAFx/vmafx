@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  HIP host glue for the integer VIF feature extractor.
  *  Mirrors libvmaf/src/feature/cuda/integer_vif_cuda.h field-for-field,

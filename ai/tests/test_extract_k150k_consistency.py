@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Crash-restart row-loss regression guard for ``extract_k150k_features.py``.
 
 Bug-3 RCA (2026-05-30): the K150K extractor reported 152 265 ``.done`` clips

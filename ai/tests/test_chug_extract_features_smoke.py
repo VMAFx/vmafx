@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """End-to-end VMAF-floor smoke for ``ai/scripts/chug_extract_features.py``.
 
 ADR-0510 regression guard.  The 2026-05-18 CHUG re-extract produced 5992

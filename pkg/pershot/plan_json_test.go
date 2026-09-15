@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-2-Clause-Patent
+// SPDX-License-Identifier: EUPL-1.2
 //
 // Tests for the plan JSON emitter's byte-compatibility with Python's
 // json.dumps(..., indent=2, sort_keys=True).

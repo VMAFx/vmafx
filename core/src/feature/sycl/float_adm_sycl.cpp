@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  float_adm feature kernel on the SYCL backend (T7-23 / batch 3
  *  part 6c — ADR-0192 / ADR-0202). SYCL twin of float_adm_vulkan

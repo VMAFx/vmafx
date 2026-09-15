@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  float_moment feature extractor on the Metal backend (T8-1e / ADR-0421).
  *  Dispatches `float_moment_kernel_{8,16}bpc` from float_moment.metal.

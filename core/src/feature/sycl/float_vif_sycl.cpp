@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  float_vif feature kernel on the SYCL backend (T7-23 / batch 3
  *  part 5c — ADR-0192 / ADR-0197). SYCL twin of float_vif_vulkan +

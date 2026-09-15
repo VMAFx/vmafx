@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Included from libvmaf/src/meson.build via `subdir('hip')`. Paths
 # below are relative to libvmaf/src/hip/. The feature stubs live
 # under libvmaf/src/feature/hip/, so we use a `..` walk to reach

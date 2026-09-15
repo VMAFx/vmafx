@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Phase A.5 fast-path — proxy + Bayesian + GPU-verify recommend.
 
 This module wires the production ``vmaf-tune fast`` subcommand

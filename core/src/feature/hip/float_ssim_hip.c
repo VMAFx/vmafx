@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  float_ssim feature extractor on the HIP backend — eighth consumer
  *  of `libvmaf/src/hip/kernel_template.h` (T7-10b batch-3 / ADR-0374).

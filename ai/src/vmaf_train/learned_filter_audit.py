@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Pre-deploy audit for C3 (learned-filter) ONNX models.
 
 A learned filter is an ONNX model that takes a single-channel frame

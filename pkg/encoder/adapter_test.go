@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-2-Clause-Patent
+// SPDX-License-Identifier: EUPL-1.2
 //
 // Tests for the codec-adapter policy table. Every expected argv slice was
 // produced by calling the corresponding Python adapter's

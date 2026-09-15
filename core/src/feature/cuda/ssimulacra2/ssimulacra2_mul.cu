@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  CUDA kernel for the ssimulacra2 elementwise plane multiply.
  *  Mirrors `multiply_3plane` in libvmaf/src/feature/ssimulacra2.c

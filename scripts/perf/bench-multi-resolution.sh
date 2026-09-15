@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 #
 # bench-multi-resolution.sh — multi-resolution, multi-backend, multi-metric
 # throughput benchmark for VMAF (ADR-0752).

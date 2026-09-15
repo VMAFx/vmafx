@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  integer_adm init() must reject inputs where min(w,h) <= 16 with -EINVAL
  *  instead of SIGSEGV-ing mid-run. The 4-level DWT2 pyramid requires at

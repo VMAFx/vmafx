@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # PostToolUse hook: warn when a numerical-code file was edited, reminding the agent
 # that snapshot regeneration may be required via /regen-snapshots.
 # Does not block; informational only.

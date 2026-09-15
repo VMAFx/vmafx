@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Phase D — per-shot CRF tuning.
 
 The "Netflix per-shot encoding" table-stakes feature for `vmaf-tune`.

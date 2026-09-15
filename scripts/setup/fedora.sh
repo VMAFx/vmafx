@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Fedora 40+ / RHEL 9 / Rocky 9 / Alma 9. RHEL-family needs EPEL for shellcheck.
 set -euo pipefail
 

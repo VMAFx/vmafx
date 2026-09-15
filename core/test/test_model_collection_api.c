@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Coverage for model-collection public API entry points that had zero
  *  C-unit-test coverage per audit-test-coverage-2026-05-16.md §2, and

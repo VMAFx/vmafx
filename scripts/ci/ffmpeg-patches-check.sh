@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # ffmpeg-patches-check.sh — local pre-push gate that mirrors the
 # `ffmpeg-integration.yml` apply step. For each patch listed in
 # `ffmpeg-patches/series.txt` (oldest to newest), applies the patch

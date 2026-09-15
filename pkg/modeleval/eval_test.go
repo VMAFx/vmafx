@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 //
 // End-to-end tests for the native eval path, exercised against the
 // committed pandas/pyarrow fixture ai/testdata/bisect/features.parquet

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # scripts/adr/test-next-free.sh — smoke tests for the atomic ADR allocator.
 #
 # Verifies:

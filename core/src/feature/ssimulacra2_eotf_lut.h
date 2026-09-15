@@ -2,7 +2,7 @@
  *
  *  Copyright 2026 Lusoris
  *
- *     Licensed under the BSD+Patent License (the "License");
+ * SPDX-License-Identifier: EUPL-1.2
  *
  */
 

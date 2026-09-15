@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 
 // Package fast is the Go port of the Phase A.5 fast-path
 // (tools/vmaf-tune/src/vmaftune/fast.py) — proxy + Bayesian + GPU-verify

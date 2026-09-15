@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Wrapper for DOVER-Mobile (no-reference video quality predictor).
 #
 # Upstream: https://github.com/QualityAssessment/DOVER (CC-BY-NC-SA

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Compare SYCL A380 scores frame-by-frame against CPU golden.
 Shows per-frame diffs for frames with diff > 0.0001.
 """

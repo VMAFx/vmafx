@@ -1,4 +1,7 @@
 # Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Copyright 2026 Lusoris
 """Regression tests for the five MCP probe findings of 2026-05-17.
 
 See `docs/adr/0495-mcp-probe-bug-fixes.md` for the cluster write-up.

@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """libaom-av1 codec adapter.
 
 libaom is Google's reference AV1 encoder. Compared with the SVT-AV1

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # check-container-source.sh — is the dev container built from the code you think?
 #
 # CLAUDE.md rule 15 says to rebuild the container when "its image predates the

@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Metal backend common surface — runtime implementation (T8-1b /
  *  ADR-0420). Replaces the C scaffold from T8-1 (ADR-0361) with real
