@@ -154,9 +154,9 @@ static_assert(VMAF_POOL_METHOD_NB == 9,
  * silently widen every log file. The percentile methods are reachable through
  * the C API — vmaf_feature_score_pooled / vmaf_score_pooled — and are simply
  * not auto-reported. Writers iterate this array instead of [1, NB). */
-constexpr VmafPoolingMethod pool_report_order[] = {
-    VMAF_POOL_METHOD_MIN, VMAF_POOL_METHOD_MAX, VMAF_POOL_METHOD_MEAN,
-    VMAF_POOL_METHOD_HARMONIC_MEAN};
+constexpr VmafPoolingMethod pool_report_order[] = {VMAF_POOL_METHOD_MIN, VMAF_POOL_METHOD_MAX,
+                                                   VMAF_POOL_METHOD_MEAN,
+                                                   VMAF_POOL_METHOD_HARMONIC_MEAN};
 
 /* Returns a NUL-terminated format string. It is handed straight to
  * std::fprintf as the *format* argument, so it must be terminated;
@@ -411,7 +411,8 @@ void json_write_pooled_entry(VmafContext *vmaf, FILE *outfile, const char *featu
         bool first = true;
         for (const VmafPoolingMethod j : pool_report_order) {
             double score;
-            const int err = vmaf_feature_score_pooled(vmaf, feature_name, j, &score, 0, pic_cnt - 1);
+            const int err =
+                vmaf_feature_score_pooled(vmaf, feature_name, j, &score, 0, pic_cnt - 1);
             if (!err)
                 json_write_pool_score(outfile, &first, j, score, sf);
         }
