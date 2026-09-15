@@ -28462,6 +28462,19 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
 - Refuse unknown custom hooks and preserve managed replacements in unique backups.
 
 
+- **The `--wrap` interposers are exported, so the SYCL and MSVC+CUDA lanes link
+  again.** libvmaf builds with `-fvisibility=hidden`, and that applies to the
+  tests too. `--wrap` rewrites libvmaf's own `calloc`/`malloc`/`strdup`/`realloc`
+  references to `__wrap_*`, but a hidden definition in the executable cannot
+  satisfy a reference coming from a shared object. GNU ld with gcc tolerated it;
+  icpx did not, failing with `hidden symbol '__wrap_calloc' ... is referenced by
+  DSO` and `final link failed: bad value` on `Ubuntu SYCL`, `Ubuntu SYCL+CUDA`,
+  `FFmpeg SYCL` and `Windows MSVC+CUDA`. Every wrapper in
+  `test_fex_pool_growth.c` and `test_fex_ctx_vector.cpp` now carries
+  `__attribute__((visibility("default")))`; `nm` confirms all four allocator
+  wrappers are global symbols.
+
+
 - **`y4m_convert_411_422jpeg` 1-byte heap-buffer-overflow on
   4:1:1 streams whose destination chroma row reduces to a single
   pixel (`dst_c_w == 1`).** The Daala-derived 4:1:1 → 4:2:2-jpeg

@@ -29,10 +29,15 @@ extern "C" char *__real_vmaf_feature_name_from_options(const char *, const VmafO
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ADR-0723; Research-2047: GNU link wrapping ABI.
 extern "C" void *__real_realloc(void *, size_t);
 
+/* Visible on purpose — the library builds `-fvisibility=hidden` and a `--wrap`
+ * interposer that a DSO has to reach cannot be hidden. See the same note in
+ * test_fex_pool_growth.c, where icpx rejected the hidden form outright. */
+#define VMAF_WRAP_EXPORT __attribute__((visibility("default")))
+
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0723; Research-2047: GNU linker calls this entry point.
-extern "C" char *__wrap_vmaf_feature_name_from_options(const char *name, const VmafOption *opts,
-                                                       const void *obj)
+extern "C" VMAF_WRAP_EXPORT char *
+__wrap_vmaf_feature_name_from_options(const char *name, const VmafOption *opts, const void *obj)
 {
     if (fail_name_call && ++name_calls == fail_name_call)
         return nullptr;
@@ -41,7 +46,7 @@ extern "C" char *__wrap_vmaf_feature_name_from_options(const char *name, const V
 
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0723; Research-2047: GNU linker calls this entry point.
-extern "C" void *__wrap_realloc(void *ptr, size_t bytes)
+extern "C" VMAF_WRAP_EXPORT void *__wrap_realloc(void *ptr, size_t bytes)
 {
     if (fail_grow_pointer && ptr == fail_grow_pointer) {
         fail_grow_pointer = nullptr;

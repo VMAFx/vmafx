@@ -60,9 +60,20 @@ extern int __real_pthread_cond_init(pthread_cond_t *, const pthread_condattr_t *
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ADR-0772; docs/research/fex-pool-growth-2026-09-08.md: GNU linker wrapping ABI.
 extern int __real_pthread_cond_destroy(pthread_cond_t *);
 
+/* The library is compiled `-fvisibility=hidden` (core/src/meson.build), which
+ * applies to this test too. A `--wrap` interposer must stay visible: libvmaf's
+ * shared object calls calloc/malloc/strdup/realloc, `--wrap` rewrites those
+ * references to `__wrap_*`, and a hidden definition in the executable cannot
+ * satisfy a reference from a DSO. icpx says so outright —
+ * `hidden symbol '__wrap_calloc' ... is referenced by DSO / final link failed:
+ * bad value` — which broke Ubuntu SYCL, Ubuntu SYCL+CUDA, FFmpeg SYCL and
+ * Windows MSVC+CUDA. Keep this attribute on every wrapper below.
+ * ADR-0772; docs/research/fex-pool-growth-2026-09-08.md. */
+#define VMAF_WRAP_EXPORT __attribute__((visibility("default")))
+
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0772; docs/research/fex-pool-growth-2026-09-08.md: external GNU linker wrapping entry point.
-int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
+VMAF_WRAP_EXPORT int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 {
     if (cond == target_cond) {
         target_cond = NULL;
@@ -73,7 +84,7 @@ int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0772; docs/research/fex-pool-growth-2026-09-08.md: external GNU linker wrapping entry point.
-void *__wrap_realloc(void *old, size_t size)
+VMAF_WRAP_EXPORT void *__wrap_realloc(void *old, size_t size)
 {
     if (old == target_table && fail_table_growth) {
         fail_table_growth = false;
@@ -104,7 +115,7 @@ static bool allocation_fails(void)
 
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0772; docs/research/fex-pool-growth-2026-09-08.md: external GNU linker wrapping entry point.
-void *__wrap_malloc(size_t size)
+VMAF_WRAP_EXPORT void *__wrap_malloc(size_t size)
 {
     if (allocation_fails())
         return NULL;
@@ -113,7 +124,7 @@ void *__wrap_malloc(size_t size)
 
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0772; docs/research/fex-pool-growth-2026-09-08.md: external GNU linker wrapping entry point.
-void *__wrap_calloc(size_t count, size_t size)
+VMAF_WRAP_EXPORT void *__wrap_calloc(size_t count, size_t size)
 {
     if (allocation_fails())
         return NULL;
@@ -122,7 +133,7 @@ void *__wrap_calloc(size_t count, size_t size)
 
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0772; docs/research/fex-pool-growth-2026-09-08.md: external GNU linker wrapping entry point.
-char *__wrap_strdup(const char *value)
+VMAF_WRAP_EXPORT char *__wrap_strdup(const char *value)
 {
     if (allocation_fails())
         return NULL;
@@ -131,7 +142,7 @@ char *__wrap_strdup(const char *value)
 
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0772; docs/research/fex-pool-growth-2026-09-08.md: external GNU linker wrapping entry point.
-int __wrap_pthread_cond_init(pthread_cond_t *cond, const pthread_condattr_t *attr)
+VMAF_WRAP_EXPORT int __wrap_pthread_cond_init(pthread_cond_t *cond, const pthread_condattr_t *attr)
 {
     if (fail_condition_init) {
         fail_condition_init = false;
@@ -145,7 +156,7 @@ int __wrap_pthread_cond_init(pthread_cond_t *cond, const pthread_condattr_t *att
 
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0772; docs/research/fex-pool-growth-2026-09-08.md: external GNU linker wrapping entry point.
-int __wrap_pthread_cond_destroy(pthread_cond_t *cond)
+VMAF_WRAP_EXPORT int __wrap_pthread_cond_destroy(pthread_cond_t *cond)
 {
     const int err = __real_pthread_cond_destroy(cond);
     if (!err)
