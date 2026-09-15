@@ -66,6 +66,11 @@ func IsStubPredictorModel(modelPath string) bool {
 	ext := filepath.Ext(modelPath)
 	stem := strings.TrimSuffix(modelPath, ext)
 	cardPath := stem + "_card.md"
+	// #nosec G304 -- cardPath is derived from modelPath, the operator-supplied
+	// model this predictor was constructed for, by swapping its extension for
+	// `_card.md`. It reaches no directory the model itself does not, a read
+	// failure is the expected path for a model that ships no card, and the
+	// contents are only substring-matched for provenance markers.
 	if data, err := os.ReadFile(cardPath); err == nil {
 		cardText := string(data)
 		if strings.Contains(cardText, "synthetic-stub") {

@@ -1,7 +1,5 @@
 {
   "global": {
-    "exclude-generated": true,
-    "quiet": true,
-    "exclude": ""
+    "exclude": "G103,G115"
   }
 }
