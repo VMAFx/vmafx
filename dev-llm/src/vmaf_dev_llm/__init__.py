@@ -15,6 +15,6 @@ Per ADR-0911 the package surface is a namespace — there are no
 re-exported symbols at package level.
 """
 
-__version__ = "3.2.1"  # x-release-please-version
+__version__ = "1.0.0-rc.1"  # x-release-please-version
 
 __all__ = ["__version__"]
