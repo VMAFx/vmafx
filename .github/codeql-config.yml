@@ -36,10 +36,24 @@ paths:
   - pkg
   - api
 
+# NOTE — `paths` / `paths-ignore` apply to interpreted languages (Python here)
+# and to compiled languages analysed WITHOUT building. This repo builds C/C++
+# with meson + ninja, so for the `cpp` analysis these lists are inert: every
+# translation unit the build compiles is extracted and analysed regardless of
+# what is listed below. That is why alerts still appear on `core/test/*` and on
+# meson's generated probe files under `core/build/meson-private/`. Controlling
+# the C/C++ surface means changing what the CodeQL build step compiles, or
+# filtering by rule id in `query-filters` above.
+# https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/customizing-your-advanced-setup-for-code-scanning
+#
+# Glob rules: a bare `build` matches only a TOP-LEVEL `build` directory. The
+# fork's build directories live at `core/build`, `core/build-cuda`, ... so the
+# entry has to be `**/build*` to match at any depth.
 paths-ignore:
   - subprojects
-  - build
-  - builddir
+  - "**/build"
+  - "**/build-*"
+  - "**/builddir"
   - core/test
   - python/test
   - testdata
