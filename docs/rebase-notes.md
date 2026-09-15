@@ -1,6 +1,31 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## port/upstream-2026-08-sync — August upstream reconciliation (2026-09-15)
+
+Three things a future upstream sync must know about this range.
+
+1. **`core/src/ext/x86/x86inc.asm` now carries upstream's CET block.** The
+   `.note.gnu.property` / `GNU_PROPERTY_X86_FEATURE_1_SHSTK` stanza was taken
+   verbatim from upstream `f85a85369`, so the next sync should resolve this file
+   in upstream's favour rather than re-applying ours. The file is otherwise a
+   vendored dav1d/x264 header and must stay that way. Note that meson does not
+   track it as a dependency of `cpuid.asm`: after touching it, delete the object
+   or the change is silently ignored by an incremental build.
+2. **The AVX-512 targets no longer pass `-mavx512vbmi`.** This matches upstream
+   `eb1045795`, so the four `c_args` lists in `core/src/meson.build` converge with
+   upstream instead of diverging. Do not reintroduce the flag: no source in the
+   tree uses a VBMI intrinsic, and requiring it excludes Skylake-SP and Cascade
+   Lake. If a future kernel does use one, give that kernel its own target.
+3. **Do NOT take upstream's `arm64/motion_neon.c` 8-bit pipeline.** Upstream
+   `3137d5525` adds `motion_score_pipeline_8_neon` in `arm64/motion_neon.h`. This
+   fork already exports that symbol from `arm64/motion_v2_neon.c`, alongside a
+   16-bit twin upstream does not have, and `integer_motion.c` dispatches both.
+   Taking upstream's file duplicates the symbol and would lose the 16-bit path.
+   Its test was ported instead as `core/test/test_motion_pipeline_neon.c`, which
+   asserts both pipelines are bit-exact against the scalar reference; keep that
+   test when resolving, and keep ours registered inside the arm64 guard.
+
 ## fix/ai-1270-blockers — DISTS, MobileSal, and predictor stub triage (2026-09-08)
 
 Triage and point-of-use guards for issue #1270 blockers:
