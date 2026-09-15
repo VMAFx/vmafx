@@ -414,3 +414,31 @@ ninja -C build_full
 The CI lane `Build — Ubuntu HIP (T7-10 scaffold)` uses
 `-Denable_hipcc=false` so it runs without a ROCm SDK. Kernel-enabled
 builds (`-Denable_hipcc=true`) require `hipcc` in `PATH` and ROCm 6+.
+
+## The HIP backend is host-pic — stage before you launch (ADR-1211)
+
+`VmafPicture::data[]` points at HOST memory for HIP (ADR-0530). A HIP kernel
+that reads picture planes therefore needs a device copy the extractor makes
+itself; handing it `pic->data[i]` faults the GPU:
+
+```text
+Memory access fault by GPU node-1 on address 0x... Reason: Page not present
+```
+
+and takes the whole process with it — there is no graceful error and no skip,
+so a single extractor doing this makes `--backend hip` look completely dead.
+
+The correct shape is in `core/src/feature/hip/integer_psnr_hip.c`: allocate
+per-plane device buffers in init (`hipMalloc`), copy in extract
+(`hipMemcpy2DAsync`, host-to-device), free in close. Two things to get right:
+
+- The staged buffer is tightly packed, so the stride you pass to the kernel is
+  the plane **width**, not `pic->stride[i]`.
+- Do not port the CUDA twin's call shape verbatim. CUDA extractors receive a
+  device picture from the pool, so their helpers take a device pointer the
+  caller never had to produce. That mismatch is precisely how
+  `integer_adm_hip` ended up faulting.
+
+When debugging a fault here, `AMD_SERIALIZE_KERNEL=3 HIP_LAUNCH_BLOCKING=1
+AMD_LOG_LEVEL=3` names the offending kernel, and a faulting address in the host
+heap range is the tell that a host pointer reached the device.
