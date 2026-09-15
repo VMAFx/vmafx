@@ -50656,3 +50656,26 @@ scan still reports the marker as cited, so nothing but a clang-tidy run against
 the merge base catches it.
 
 No upstream identifier, kernel body, or numeric expression was modified.
+
+## test_feature_isa_invariance — the float_vif quarantine is load-bearing (2026-09-16)
+
+`float_vif` is deliberately absent from `CASES[]` in
+`core/test/test_feature_isa_invariance.c`. Do not put it back on a rebase
+without fixing both defects it trips, and do not "fix" the test by relaxing its
+bit-identical assertion to a tolerance — a tolerance hides exactly the class of
+defect the test exists to catch (that is how ADR-1208's ssimulacra2 bug survived
+`test_ssimulacra2_simd` for so long).
+
+Two independent things go wrong when the row is enabled:
+
+1. **T-FLOAT-VIF-ISA-DIVERGENCE-2026-09-16.** SIMD and scalar disagree by
+   1.789e-08 under clang. gcc contracts the scalar path's multiply-add and
+   accidentally matches the AVX kernel, so a gcc-only run looks clean. Always
+   check this test under clang as well as gcc.
+2. **T-CONVOLUTION-AVX-SCANLINE-OVERREAD-2026-09-16.** Under ASan the AVX
+   horizontal convolution reads past the row buffer and aborts the process,
+   which takes the remaining nine features down with it.
+
+Both were verified present on unmodified `master`, so a future rebase that sees
+this test fail should first check whether the failure is inherited rather than
+assuming the branch caused it.
