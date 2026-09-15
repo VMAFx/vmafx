@@ -216,3 +216,41 @@ a real kernel lands; they are removed from `metal_sources` in
   to CPU `integer_motion_v2.c::mirror`, CUDA `motion_v2_score.cu::mv2_mirror`,
   SYCL `integer_motion_v2_sycl.cpp::dev_mirror_mv2`, and HIP `motion_v2_score.hip::mv2_mirror`.
   Do not revert to the single-bounce or `- 1` edge-replicating form.
+
+## CAMBI: use the shared TVI helper and the CPU's border rules (ADR-1219)
+
+Three exact-logic traps, all of which the HIP twin fell into and which
+together collapsed its CAMBI score to **exactly 0.0** on banding
+content the CPU scores at 5.85.
+
+1. **Call `vmaf_cambi_init_tvi_and_vlt()`; never re-derive the TVI
+   table.** It runs the CPU's own bisection of
+   `tvi_hard_threshold_condition` between `luma_range.foot` and
+   `luma_range.head - diff - 1`, plus `vlt_luma` and the derived-band
+   validation. Two independent hand-ports (HIP and Metal) both searched
+   the *negated* predicate seeded from luma 0, giving
+   `tvi_for_diff = [1026, 1025, 1024, 4]` against the CPU's
+   `[182, 309, 436, 563]`. It is host-side scalar work done once in
+   `init()`, so a per-backend copy buys nothing.
+
+2. **`cambi.c::filter_mode` leaves output rows 0 and `height-1`
+   UNFILTERED.** Its vertical writeback is under `if (i > 1)` and covers
+   rows `1 .. height-2`; the horizontal results for the border rows live
+   only in the 3-row ring and are never written back. The kernel guard
+   is `if (axis == 1 && (y == 0 || y >= height - 1)) return;` — the V
+   pass writes into the buffer that still holds the pre-filter image, so
+   returning early preserves the original pixels exactly.
+
+3. **`get_spatial_mask_for_index()` ZERO-PADS its 7x7 box sum.** The
+   summed-area table is `memset` to zero and gated by
+   `deriv_valid = (i < height)`, so an out-of-frame tap adds nothing.
+   Clamping taps to the border pixel counts its zero-derivative flag up
+   to three extra times per axis and flips `box_sum > mask_index` on a
+   band of border pixels.
+
+A CAMBI parity fixture must actually band: CAMBI counts neighbour
+differences of `1 .. num_diffs` (4 at the default), so an 8-bit gradient
+stepping 32 levels every 32 columns scores 0.0 on the CPU too and makes
+the assertion `0 == 0`. Use a 10-bit gradient of one level every two
+columns inside the TVI band (200..900) and assert the CPU score is
+non-degenerate first.

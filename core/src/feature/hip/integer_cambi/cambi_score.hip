@@ -48,22 +48,27 @@ __global__ void cambi_spatial_mask_kernel(const uint16_t *image, uint16_t *mask,
     if (x >= (int)width || y >= (int)height)
         return;
 
-    /* 7×7 SAT — each thread computes its own window independently.
-     * 49 global reads per thread; warp-parallel at 64-lane GCN/RDNA. */
+    /* 7×7 box sum — each thread computes its own window independently.
+     * 49 global reads per thread; warp-parallel at 64-lane GCN/RDNA.
+     *
+     * Taps outside the image contribute ZERO; they are NOT clamped to the
+     * border pixel. cambi.c::get_spatial_mask_for_index builds a zero-padded
+     * summed-area table (`memset(dp, 0, ...)`, `dp_width = width + 2*pad_size
+     * + 1`, and `deriv_valid = (i < height)` for the row dimension), so an
+     * out-of-range tap adds nothing to the count. Clamping instead counted the
+     * border pixel's zero-derivative flag up to three extra times per axis,
+     * which flipped `box_sum > mask_index` on a band of border pixels and
+     * moved the pooled score. The CUDA twin already zero-pads. ADR-1219. */
     const int HALF = 3; /* (MASK_FILTER_SIZE=7) >> 1 */
     unsigned box_sum = 0u;
     for (int dy = -HALF; dy <= HALF; dy++) {
-        int ry = y + dy;
-        if (ry < 0)
-            ry = 0;
-        if (ry >= (int)height)
-            ry = (int)height - 1;
+        const int ry = y + dy;
+        if (ry < 0 || ry >= (int)height)
+            continue;
         for (int dx = -HALF; dx <= HALF; dx++) {
-            int rx = x + dx;
-            if (rx < 0)
-                rx = 0;
-            if (rx >= (int)width)
-                rx = (int)width - 1;
+            const int rx = x + dx;
+            if (rx < 0 || rx >= (int)width)
+                continue;
             const uint16_t p = image[(size_t)ry * stride_words + (unsigned)rx];
             const uint16_t r =
                 image[(size_t)ry * stride_words +
@@ -119,6 +124,16 @@ __global__ void cambi_filter_mode_kernel(const uint16_t *in, uint16_t *out, unsi
     const int x = (int)(blockIdx.x * blockDim.x + threadIdx.x);
     const int y = (int)(blockIdx.y * blockDim.y + threadIdx.y);
     if (x >= (int)width || y >= (int)height)
+        return;
+
+    /* Vertical pass mirrors cambi.c::filter_mode: its `if (i > 1)` writeback
+     * covers output rows 1 .. height-2 only, so rows 0 and height-1 keep the
+     * ORIGINAL pre-filter pixels — not the horizontally-filtered ones, which
+     * live in the CPU's 3-row ring buffer and are never written back for those
+     * rows. `out` still holds the pre-filter image here, so returning early
+     * reproduces that exactly. The CUDA and SYCL twins already carry this
+     * guard; this one was missing. ADR-1219. */
+    if (axis == 1 && (y == 0 || y >= (int)height - 1))
         return;
 
     uint16_t a, b, c;
