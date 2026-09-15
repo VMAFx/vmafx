@@ -70,6 +70,13 @@ SOFTWARE.
 
 #if ARCH_AARCH64
 #include "arm64/ciede_neon.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #endif
 
 typedef struct CiedeState {
@@ -134,20 +141,13 @@ static void scale_chroma_planes(VmafPicture *in, VmafPicture *out)
     }
 }
 
-static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
-                unsigned h)
+/* Pick the widest available SIMD preprocess pair for this CPU. Split out of
+ * init() so that function stays inside the readability-function-size budget
+ * (ADR-1142); the selection order is unchanged, so AVX-512 still wins over
+ * AVX2 where both are present. */
+static void ciede_select_preprocess(CiedeState *s)
 {
-    CiedeState *s = fex->priv;
-    int err = 0;
-
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P)
-        return -EINVAL;
-
-    s->width = w;
-    s->preprocess_8 = NULL;
-    s->preprocess_16 = NULL;
-    memset(s->tmp, 0, sizeof(s->tmp));
-
+    (void)s;
 #if ARCH_X86
     {
         unsigned flags = vmaf_get_cpu_flags();
@@ -171,6 +171,23 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         }
     }
 #endif
+}
+
+static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
+                unsigned h)
+{
+    CiedeState *s = fex->priv;
+    int err = 0;
+
+    if (pix_fmt == VMAF_PIX_FMT_YUV400P)
+        return -EINVAL;
+
+    s->width = w;
+    s->preprocess_8 = NULL;
+    s->preprocess_16 = NULL;
+    memset((void *)s->tmp, 0, sizeof(s->tmp));
+
+    ciede_select_preprocess(s);
 
     if (s->preprocess_8 || s->preprocess_16) {
         for (int i = 0; i < 6; i++) {
@@ -221,6 +238,11 @@ static float get_h_prime(const float x, const float y)
 {
     if ((x == 0.0) && (y == 0.0))
         return 0.0;
+    /* CIEDE2000 is specified in double precision and the fork's scores are
+ * gated against the Netflix golden values at that precision. Switching to
+ * the float variants (atan2f / fabsf / sqrtf / sinf / expf) would change
+ * the output, so the promotion is deliberate. ADR-0141 / ADR-0278. */
+    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn)
     float hue_angle = atan2(x, y);
     if (hue_angle < 0.0)
         hue_angle += 2. * M_PI;
@@ -243,6 +265,11 @@ static float get_delta_h_prime(const float c1, const float c2, const float h_pri
 
 static float get_upcase_h_bar_prime(const float h_prime_1, const float h_prime_2)
 {
+    /* CIEDE2000 is specified in double precision and the fork's scores are
+ * gated against the Netflix golden values at that precision. Switching to
+ * the float variants (atan2f / fabsf / sqrtf / sinf / expf) would change
+ * the output, so the promotion is deliberate. ADR-0141 / ADR-0278. */
+    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn)
     return fabs((h_prime_1 - h_prime_2)) > M_PI ? (h_prime_1 + h_prime_2 + 2.0 * M_PI) / 2.0 :
                                                   (h_prime_1 + h_prime_2) / 2.0;
 }
@@ -269,8 +296,14 @@ static float get_r_sub_t(const float c_bar_prime, const float upcase_h_bar_prime
 {
     const float degrees = (radians_to_degrees(upcase_h_bar_prime) - 275.0) * (1.0 / 25.0);
 
+    /* CIEDE2000 is specified in double precision and the fork's scores are
+ * gated against the Netflix golden values at that precision. Switching to
+ * the float variants (atan2f / fabsf / sqrtf / sinf / expf) would change
+ * the output, so the promotion is deliberate. ADR-0141 / ADR-0278. */
+    // NOLINTBEGIN(performance-type-promotion-in-math-fn)
     return -2.0 * sqrt(powf(c_bar_prime, 7) / (powf(c_bar_prime, 7) + powf(25., 7))) *
            sin(degrees_to_radians(60.0 * exp(-(powf(degrees, 2)))));
+    // NOLINTEND(performance-type-promotion-in-math-fn)
 }
 
 typedef struct LABColor {
@@ -386,6 +419,121 @@ static LABColor get_lab_color(double y, double u, double v, unsigned bpc)
     return lab_color;
 }
 
+/* The 8-bit and 16-bit SIMD-preprocessed accumulation loops, lifted out of
+ * extract() for the readability-function-size budget (ADR-1142). Both keep
+ * their arithmetic and iteration order exactly, so the accumulated sum is
+ * bit-identical to the previous inline form. */
+static double ciede_accumulate_8(const CiedeState *s, const VmafPicture *ref,
+                                 const VmafPicture *dist, int w, KSubArgs ksub)
+{
+    double de00_sum = 0.0;
+    float *ry = s->tmp[0];
+    float *ru = s->tmp[1];
+    float *rv = s->tmp[2];
+    float *dy = s->tmp[3];
+    float *du = s->tmp[4];
+    float *dv = s->tmp[5];
+    for (unsigned i = 0; i < ref->h[0]; i++) {
+        const uint8_t *ref_y = (uint8_t *)ref->data[0] + i * ref->stride[0];
+        const uint8_t *ref_u = (uint8_t *)ref->data[1] + i * ref->stride[1];
+        const uint8_t *ref_v = (uint8_t *)ref->data[2] + i * ref->stride[2];
+        const uint8_t *dis_y = (uint8_t *)dist->data[0] + i * dist->stride[0];
+        const uint8_t *dis_u = (uint8_t *)dist->data[1] + i * dist->stride[1];
+        const uint8_t *dis_v = (uint8_t *)dist->data[2] + i * dist->stride[2];
+        s->preprocess_8(ref_y, ref_u, ref_v, ry, ru, rv, w);
+        s->preprocess_8(dis_y, dis_u, dis_v, dy, du, dv, w);
+        for (unsigned j = 0; j < (unsigned)w; j++) {
+            const LABColor c1 = get_lab_color(ry[j], ru[j], rv[j], ref->bpc);
+            const LABColor c2 = get_lab_color(dy[j], du[j], dv[j], dist->bpc);
+            de00_sum += ciede2000(c1, c2, ksub);
+        }
+    }
+    return de00_sum;
+}
+
+static double ciede_accumulate_16(const CiedeState *s, const VmafPicture *ref,
+                                  const VmafPicture *dist, int w, KSubArgs ksub)
+{
+    double de00_sum = 0.0;
+    float *ry = s->tmp[0];
+    float *ru = s->tmp[1];
+    float *rv = s->tmp[2];
+    float *dy = s->tmp[3];
+    float *du = s->tmp[4];
+    float *dv = s->tmp[5];
+    int stride16_r0 = ref->stride[0] / 2;
+    int stride16_r1 = ref->stride[1] / 2;
+    int stride16_r2 = ref->stride[2] / 2;
+    int stride16_d0 = dist->stride[0] / 2;
+    int stride16_d1 = dist->stride[1] / 2;
+    int stride16_d2 = dist->stride[2] / 2;
+    for (unsigned i = 0; i < ref->h[0]; i++) {
+        const uint16_t *ref_y = (uint16_t *)ref->data[0] + (size_t)i * stride16_r0;
+        const uint16_t *ref_u = (uint16_t *)ref->data[1] + (size_t)i * stride16_r1;
+        const uint16_t *ref_v = (uint16_t *)ref->data[2] + (size_t)i * stride16_r2;
+        const uint16_t *dis_y = (uint16_t *)dist->data[0] + (size_t)i * stride16_d0;
+        const uint16_t *dis_u = (uint16_t *)dist->data[1] + (size_t)i * stride16_d1;
+        const uint16_t *dis_v = (uint16_t *)dist->data[2] + (size_t)i * stride16_d2;
+        s->preprocess_16(ref_y, ref_u, ref_v, ry, ru, rv, w);
+        s->preprocess_16(dis_y, dis_u, dis_v, dy, du, dv, w);
+        for (unsigned j = 0; j < (unsigned)w; j++) {
+            const LABColor c1 = get_lab_color(ry[j], ru[j], rv[j], ref->bpc);
+            const LABColor c2 = get_lab_color(dy[j], du[j], dv[j], dist->bpc);
+            de00_sum += ciede2000(c1, c2, ksub);
+        }
+    }
+    return de00_sum;
+}
+
+/* Scalar fallback: no SIMD preprocess for this bit depth. Lifted out of
+ * extract() for the readability-function-size budget (ADR-1142); the sample
+ * fetch, iteration order and accumulation are unchanged. */
+static double ciede_accumulate_scalar(const VmafPicture *ref, const VmafPicture *dist,
+                                      KSubArgs ksub)
+{
+    double de00_sum = 0.0;
+    for (unsigned i = 0; i < ref->h[0]; i++) {
+        for (unsigned j = 0; j < ref->w[0]; j++) {
+            float r_y;
+            float r_u;
+            float r_v;
+            float d_y;
+            float d_u;
+            float d_v;
+
+            switch (ref->bpc) {
+            case 8:
+                r_y = ((uint8_t *)ref->data[0])[i * ref->stride[0] + j];
+                r_u = ((uint8_t *)ref->data[1])[i * ref->stride[1] + j];
+                r_v = ((uint8_t *)ref->data[2])[i * ref->stride[2] + j];
+                d_y = ((uint8_t *)dist->data[0])[i * dist->stride[0] + j];
+                d_u = ((uint8_t *)dist->data[1])[i * dist->stride[1] + j];
+                d_v = ((uint8_t *)dist->data[2])[i * dist->stride[2] + j];
+                break;
+            case 10:
+            case 12:
+            case 16:
+                // NOLINTBEGIN(bugprone-integer-division) — ADR-0141 / ADR-0278: the `stride / 2` is the byte→element step for a uint16_t array index, not a value flowing into the float `r_*` / `d_*` destinations. clang-tidy flags the integer division because the surrounding subscript result eventually lands in float, but the index arithmetic itself is correct integer math.
+                r_y = ((uint16_t *)ref->data[0])[i * (ref->stride[0] / 2) + j];
+                r_u = ((uint16_t *)ref->data[1])[i * (ref->stride[1] / 2) + j];
+                r_v = ((uint16_t *)ref->data[2])[i * (ref->stride[2] / 2) + j];
+                d_y = ((uint16_t *)dist->data[0])[i * (dist->stride[0] / 2) + j];
+                d_u = ((uint16_t *)dist->data[1])[i * (dist->stride[1] / 2) + j];
+                d_v = ((uint16_t *)dist->data[2])[i * (dist->stride[2] / 2) + j];
+                // NOLINTEND(bugprone-integer-division)
+                break;
+            default:
+                return -EINVAL;
+            }
+
+            const LABColor color_1 = get_lab_color(r_y, r_u, r_v, ref->bpc);
+            const LABColor color_2 = get_lab_color(d_y, d_u, d_v, dist->bpc);
+            de00_sum += ciede2000(color_1, color_2, ksub);
+        }
+    }
+    return de00_sum;
+}
+
 static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                    VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
@@ -413,95 +561,11 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     const KSubArgs default_ksub = {.l = 0.65, .c = 1.0, .h = 4.0};
 
     if (ref->bpc == 8 && s->preprocess_8) {
-        float *ry = s->tmp[0];
-        float *ru = s->tmp[1];
-        float *rv = s->tmp[2];
-        float *dy = s->tmp[3];
-        float *du = s->tmp[4];
-        float *dv = s->tmp[5];
-        for (unsigned i = 0; i < ref->h[0]; i++) {
-            const uint8_t *ref_y = (uint8_t *)ref->data[0] + i * ref->stride[0];
-            const uint8_t *ref_u = (uint8_t *)ref->data[1] + i * ref->stride[1];
-            const uint8_t *ref_v = (uint8_t *)ref->data[2] + i * ref->stride[2];
-            const uint8_t *dis_y = (uint8_t *)dist->data[0] + i * dist->stride[0];
-            const uint8_t *dis_u = (uint8_t *)dist->data[1] + i * dist->stride[1];
-            const uint8_t *dis_v = (uint8_t *)dist->data[2] + i * dist->stride[2];
-            s->preprocess_8(ref_y, ref_u, ref_v, ry, ru, rv, w);
-            s->preprocess_8(dis_y, dis_u, dis_v, dy, du, dv, w);
-            for (unsigned j = 0; j < (unsigned)w; j++) {
-                const LABColor c1 = get_lab_color(ry[j], ru[j], rv[j], ref->bpc);
-                const LABColor c2 = get_lab_color(dy[j], du[j], dv[j], dist->bpc);
-                de00_sum += ciede2000(c1, c2, default_ksub);
-            }
-        }
+        de00_sum += ciede_accumulate_8(s, ref, dist, w, default_ksub);
     } else if (ref->bpc > 8 && s->preprocess_16) {
-        float *ry = s->tmp[0];
-        float *ru = s->tmp[1];
-        float *rv = s->tmp[2];
-        float *dy = s->tmp[3];
-        float *du = s->tmp[4];
-        float *dv = s->tmp[5];
-        int stride16_r0 = ref->stride[0] / 2;
-        int stride16_r1 = ref->stride[1] / 2;
-        int stride16_r2 = ref->stride[2] / 2;
-        int stride16_d0 = dist->stride[0] / 2;
-        int stride16_d1 = dist->stride[1] / 2;
-        int stride16_d2 = dist->stride[2] / 2;
-        for (unsigned i = 0; i < ref->h[0]; i++) {
-            const uint16_t *ref_y = (uint16_t *)ref->data[0] + i * stride16_r0;
-            const uint16_t *ref_u = (uint16_t *)ref->data[1] + i * stride16_r1;
-            const uint16_t *ref_v = (uint16_t *)ref->data[2] + i * stride16_r2;
-            const uint16_t *dis_y = (uint16_t *)dist->data[0] + i * stride16_d0;
-            const uint16_t *dis_u = (uint16_t *)dist->data[1] + i * stride16_d1;
-            const uint16_t *dis_v = (uint16_t *)dist->data[2] + i * stride16_d2;
-            s->preprocess_16(ref_y, ref_u, ref_v, ry, ru, rv, w);
-            s->preprocess_16(dis_y, dis_u, dis_v, dy, du, dv, w);
-            for (unsigned j = 0; j < (unsigned)w; j++) {
-                const LABColor c1 = get_lab_color(ry[j], ru[j], rv[j], ref->bpc);
-                const LABColor c2 = get_lab_color(dy[j], du[j], dv[j], dist->bpc);
-                de00_sum += ciede2000(c1, c2, default_ksub);
-            }
-        }
+        de00_sum += ciede_accumulate_16(s, ref, dist, w, default_ksub);
     } else {
-        for (unsigned i = 0; i < ref->h[0]; i++) {
-            for (unsigned j = 0; j < ref->w[0]; j++) {
-                float r_y;
-                float r_u;
-                float r_v;
-                float d_y;
-                float d_u;
-                float d_v;
-
-                switch (ref->bpc) {
-                case 8:
-                    r_y = ((uint8_t *)ref->data[0])[i * ref->stride[0] + j];
-                    r_u = ((uint8_t *)ref->data[1])[i * ref->stride[1] + j];
-                    r_v = ((uint8_t *)ref->data[2])[i * ref->stride[2] + j];
-                    d_y = ((uint8_t *)dist->data[0])[i * dist->stride[0] + j];
-                    d_u = ((uint8_t *)dist->data[1])[i * dist->stride[1] + j];
-                    d_v = ((uint8_t *)dist->data[2])[i * dist->stride[2] + j];
-                    break;
-                case 10:
-                case 12:
-                case 16:
-                    // NOLINTBEGIN(bugprone-integer-division): the `stride / 2` is the byte→element step for a uint16_t array index, not a value flowing into the float `r_*` / `d_*` destinations. clang-tidy flags the integer division because the surrounding subscript result eventually lands in float, but the index arithmetic itself is correct integer math.
-                    r_y = ((uint16_t *)ref->data[0])[i * (ref->stride[0] / 2) + j];
-                    r_u = ((uint16_t *)ref->data[1])[i * (ref->stride[1] / 2) + j];
-                    r_v = ((uint16_t *)ref->data[2])[i * (ref->stride[2] / 2) + j];
-                    d_y = ((uint16_t *)dist->data[0])[i * (dist->stride[0] / 2) + j];
-                    d_u = ((uint16_t *)dist->data[1])[i * (dist->stride[1] / 2) + j];
-                    d_v = ((uint16_t *)dist->data[2])[i * (dist->stride[2] / 2) + j];
-                    // NOLINTEND(bugprone-integer-division)
-                    break;
-                default:
-                    return -EINVAL;
-                }
-
-                const LABColor color_1 = get_lab_color(r_y, r_u, r_v, ref->bpc);
-                const LABColor color_2 = get_lab_color(d_y, d_u, d_v, dist->bpc);
-                de00_sum += ciede2000(color_1, color_2, default_ksub);
-            }
-        }
+        de00_sum += ciede_accumulate_scalar(ref, dist, default_ksub);
     }
 
     const double score = 45. - 20. * log10(de00_sum / (ref_pic->w[0] * ref_pic->h[0]));
@@ -527,6 +591,12 @@ static int close(VmafFeatureExtractor *fex)
 
 static const char *provided_features[] = {"ciede2000", NULL};
 
+/* Registered by feature_extractor.cpp's extractor table, which declares it
+ * with a bare extern. Without a declaration in this TU clang-tidy sees a
+ * definition used nowhere and proposes internal linkage, which would drop
+ * the extractor from the build. */
+extern VmafFeatureExtractor vmaf_fex_ciede;
+
 VmafFeatureExtractor vmaf_fex_ciede = {
     .name = "ciede",
     .init = init,
@@ -546,3 +616,5 @@ VmafFeatureExtractor vmaf_fex_ciede = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

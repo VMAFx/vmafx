@@ -38,6 +38,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #if ARCH_X86
 #include "x86/integer_ssim_avx2.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #endif
 
 #define KERNEL_SHIFT (8)
@@ -127,7 +134,7 @@ static void ssim_accumulate_row(const unsigned char *src, const unsigned char *d
             x + hkernel_offs - w + 1 <= 0 ? hkernel_sz : hkernel_sz - (x + hkernel_offs - w + 1);
         // k_min/k_max clamp to in-bounds — analyzer can't prove kernel
         // offsets stay within hkernel[0..hkernel_sz) and src/dst[0.._w) here.
-        // NOLINTBEGIN(clang-analyzer-security.ArrayBound)
+        // NOLINTBEGIN(clang-analyzer-security.ArrayBound) — ADR-0141 §2 / ADR-0278: upstream-parity bounds clamp
         for (k = k_min; k < k_max; k++) {
             signed s;
             signed d;
@@ -230,7 +237,7 @@ static void ssim_reduce_row_range(ssim_moments *const *lines, int line_mask, int
         memset(&m, 0, sizeof(m));
         // k_min/k_max clamp to in-bounds — analyzer can't prove kernel
         // offsets stay within vkernel[0..vkernel_sz) here.
-        // NOLINTBEGIN(clang-analyzer-security.ArrayBound)
+        // NOLINTBEGIN(clang-analyzer-security.ArrayBound) — ADR-0141 §2 / ADR-0278: upstream-parity bounds clamp
         for (k = k_min; k < k_max; k++) {
             signed window;
             buf = lines[(y + 1 - vkernel_sz + k) & line_mask] + x;
@@ -255,6 +262,12 @@ static void ssim_reduce_row_range(ssim_moments *const *lines, int line_mask, int
     }
 }
 
+/* Kept whole for upstream parity. This file is Xiph.Org code (see the
+ * copyright header) and calc_ssim is a verbatim transliteration of its
+ * scalar SSIM accumulate -- the same reason the ArrayBound suppressions
+ * above cite upstream parity. Restructuring it would break the rebase story
+ * this file exists to preserve. ADR-0141 §2 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 static double calc_ssim(const unsigned char *_src, int _systride, const unsigned char *_dst,
                         int _dystride, double _par, int depth, int _w, int _h,
                         ssim_accum_row_fn_8 accum8, ssim_accum_row_fn_16 accum16)
@@ -439,3 +452,5 @@ VmafFeatureExtractor vmaf_fex_ssim = {
     .priv_size = sizeof(IntegerSsimState),
     .provided_features = provided_features,
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

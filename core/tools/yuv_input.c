@@ -72,6 +72,12 @@ typedef __int64 off_t;
 
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /** Linkage will break without this if using a C++ compiler, and will issue
  * warnings without this for a C compiler*/
 #if defined(__cplusplus)
@@ -124,8 +130,10 @@ static void yuv_check_file_size(FILE *fin, const yuv_input *yuv)
                       "got %lld bytes\n",
                       frame_sz, yuv->width, yuv->height, yuv->bitdepth, fmt_name,
                       (long long)file_sz);
-        exit(
-            2); // NOLINT(concurrency-mt-unsafe) — CLI single-threaded at open time; mirrors cli_parse.c exit() pattern
+        /* CLI is single-threaded at open time; mirrors the cli_parse.c exit()
+         * pattern. ADR-0141 / ADR-0278. */
+        // NOLINTNEXTLINE(concurrency-mt-unsafe)
+        exit(2);
     }
     if (file_sz % (off_t)frame_sz != 0) {
         (void)fprintf(stderr,
@@ -135,8 +143,10 @@ static void yuv_check_file_size(FILE *fin, const yuv_input *yuv)
                       "%u-bit frames need %u byte%s per sample)\n",
                       frame_sz, yuv->width, yuv->height, yuv->bitdepth, fmt_name,
                       (long long)file_sz, yuv->bitdepth, bpp, bpp == 1u ? "" : "s");
-        exit(
-            2); // NOLINT(concurrency-mt-unsafe) — CLI single-threaded at open time; mirrors cli_parse.c exit() pattern
+        /* CLI is single-threaded at open time; mirrors the cli_parse.c exit()
+         * pattern. ADR-0141 / ADR-0278. */
+        // NOLINTNEXTLINE(concurrency-mt-unsafe)
+        exit(2);
     }
 }
 
@@ -276,35 +286,51 @@ static void yuv_input_close(yuv_input *_yuv)
     free(_yuv->dst_buf);
 }
 
+/* Read one plane. Returns 1 on success, 0 for a clean EOF at the very first
+ * read of the frame (the caller turns that into "no more frames"), -1 on a
+ * short or failed read. Split out of yuv_fetch_into_vmaf_picture so that
+ * function stays inside the readability-function-size budget (ADR-1142); the
+ * contiguous and strided paths and their EOF handling are unchanged. */
+static int yuv_read_plane(FILE *fin, VmafPicture *pic, unsigned i, size_t bytes_per_sample,
+                          bool first_plane)
+{
+    const size_t row_bytes = (size_t)pic->w[i] * bytes_per_sample;
+
+    if (pic->stride[i] == (ptrdiff_t)row_bytes) {
+        const size_t total = row_bytes * pic->h[i];
+        const size_t bytes_read = fread(pic->data[i], 1, total, fin);
+        if (bytes_read == 0 && first_plane)
+            return 0;
+        if (bytes_read != total) {
+            (void)fprintf(stderr, "Error reading YUV frame data.\n");
+            return -1;
+        }
+        return 1;
+    }
+
+    uint8_t *dst = pic->data[i];
+    for (unsigned j = 0; j < pic->h[i]; j++) {
+        const size_t bytes_read = fread(dst, 1, row_bytes, fin);
+        if (bytes_read == 0 && first_plane && j == 0)
+            return 0;
+        if (bytes_read != row_bytes) {
+            (void)fprintf(stderr, "Error reading YUV frame data.\n");
+            return -1;
+        }
+        dst += pic->stride[i];
+    }
+    return 1;
+}
+
 static int yuv_fetch_into_vmaf_picture(yuv_input *yuv, FILE *fin, VmafPicture *pic)
 {
     (void)yuv;
-    size_t bytes_per_sample = (pic->bpc + 7) / 8;
+    const size_t bytes_per_sample = (pic->bpc + 7) / 8;
 
     for (unsigned i = 0; i < 3; i++) {
-        size_t row_bytes = (size_t)pic->w[i] * bytes_per_sample;
-        if (pic->stride[i] == (ptrdiff_t)row_bytes) {
-            size_t total = row_bytes * pic->h[i];
-            size_t bytes_read = fread(pic->data[i], 1, total, fin);
-            if (bytes_read == 0 && i == 0)
-                return 0;
-            if (bytes_read != total) {
-                (void)fprintf(stderr, "Error reading YUV frame data.\n");
-                return -1;
-            }
-        } else {
-            uint8_t *dst = pic->data[i];
-            for (unsigned j = 0; j < pic->h[i]; j++) {
-                size_t bytes_read = fread(dst, 1, row_bytes, fin);
-                if (bytes_read == 0 && i == 0 && j == 0)
-                    return 0;
-                if (bytes_read != row_bytes) {
-                    (void)fprintf(stderr, "Error reading YUV frame data.\n");
-                    return -1;
-                }
-                dst += pic->stride[i];
-            }
-        }
+        const int rc = yuv_read_plane(fin, pic, i, bytes_per_sample, i == 0);
+        if (rc <= 0)
+            return rc;
     }
 
     return 1;
@@ -343,7 +369,9 @@ static int yuv_vtbl_fetch_into_vmaf_picture(void *ctx, FILE *fin, VmafPicture *p
     return yuv_fetch_into_vmaf_picture((yuv_input *)ctx, fin, pic);
 }
 
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) — extern linkage required: vidinput.c references this symbol via `extern video_input_vtbl YUV_INPUT_VTBL`
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) — extern linkage required: vidinput.c references this symbol via `extern video_input_vtbl YUV_INPUT_VTBL` (ADR-0141 / ADR-0278)
 OC_EXTERN const video_input_vtbl YUV_INPUT_VTBL = {
     yuv_vtbl_open_raw,    NULL,           yuv_vtbl_get_info,
     yuv_vtbl_fetch_frame, yuv_vtbl_close, yuv_vtbl_fetch_into_vmaf_picture};
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -51,7 +51,7 @@ extern VmafFeatureExtractor *vmaf_get_feature_extractor_by_name(const char *name
  * is unknown (e.g. extractor disabled at compile time) we skip it.
  * v2 will replace this with a public iterator.
  *
- * NOTE: NOLINT-justification: this static table mirrors the
+ * NOTE: lint justification (ADR-0209 / ADR-0278): this static table mirrors the
  * canonical extractor list in libvmaf/src/feature/feature_extractor.c.
  * Its drift cost is bounded — a missing extractor only shortens
  * the MCP listing; bit-exact correctness is unaffected.

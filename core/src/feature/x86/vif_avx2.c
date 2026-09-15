@@ -25,6 +25,7 @@
 #include <assert.h>
 #include "feature/integer_vif.h"
 #include "feature/common/macros.h"
+#include "feature/x86/vif_avx2.h"
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
@@ -62,8 +63,8 @@ static FORCE_INLINE void copy_and_pad(const VifBuffer *buf, unsigned w, unsigned
 
     for (unsigned i = 0; i < h / 2; ++i) {
         for (unsigned j = 0; j < w / 2; ++j) {
-            ref[i * stride + j] = buf->mu1[i * mu_stride + j];
-            dis[i * stride + j] = buf->mu2[i * mu_stride + j];
+            ref[(ptrdiff_t)i * stride + j] = buf->mu1[i * mu_stride + j];
+            dis[(ptrdiff_t)i * stride + j] = buf->mu2[i * mu_stride + j];
         }
     }
     pad_top_and_bottom(buf, h / 2, vif_filter1d_width[scale]);
@@ -73,45 +74,52 @@ static FORCE_INLINE void copy_and_pad(const VifBuffer *buf, unsigned w, unsigned
 #define multiply2(acc_left, acc_right, r0, f)                                                      \
     {                                                                                              \
         __m256i zero = _mm256_setzero_si256();                                                     \
-        acc_left = _mm256_madd_epi16(_mm256_unpacklo_epi16(r0, zero), f);                          \
-        acc_right = _mm256_madd_epi16(_mm256_unpackhi_epi16(r0, zero), f);                         \
+        (acc_left) = _mm256_madd_epi16(_mm256_unpacklo_epi16((r0), zero), f);                      \
+        (acc_right) = _mm256_madd_epi16(_mm256_unpackhi_epi16((r0), zero), f);                     \
     }
 
 // multiply r0 * f and r1 * f and store in 32-bit accumulators (shuffled 0 1 2 3 8 9 10 11 / 4 5 6 7 12 13 14 15)
 #define multiply2_and_accumulate(acc_left, acc_right, r0, r1, f)                                   \
-    acc_left = _mm256_add_epi32(acc_left, _mm256_madd_epi16(_mm256_unpacklo_epi16(r0, r1), f));    \
-    acc_right = _mm256_add_epi32(acc_right, _mm256_madd_epi16(_mm256_unpackhi_epi16(r0, r1), f));
+    (acc_left) =                                                                                   \
+        _mm256_add_epi32((acc_left), _mm256_madd_epi16(_mm256_unpacklo_epi16((r0), r1), f));       \
+    (acc_right) =                                                                                  \
+        _mm256_add_epi32((acc_right), _mm256_madd_epi16(_mm256_unpackhi_epi16((r0), r1), f));
 
 // compute r0 * r1 * f and set 32-bit accumulators (shuffled 0 1 2 3 8 9 10 11 / 4 5 6 7 12 13 14 15)
 #define multiply3(accum_ref_left, accum_ref_right, r0, r1, f)                                      \
     {                                                                                              \
-        __m256i mul = _mm256_mullo_epi16(r0, r1);                                                  \
+        __m256i mul = _mm256_mullo_epi16((r0), r1);                                                \
         __m256i lo = _mm256_mullo_epi16(mul, f);                                                   \
         __m256i hi = _mm256_mulhi_epu16(mul, f);                                                   \
-        accum_ref_left = _mm256_unpacklo_epi16(lo, hi);                                            \
-        accum_ref_right = _mm256_unpackhi_epi16(lo, hi);                                           \
+        (accum_ref_left) = _mm256_unpacklo_epi16(lo, hi);                                          \
+        (accum_ref_right) = _mm256_unpackhi_epi16(lo, hi);                                         \
     }
 
 // compute r0 * r1 * f and add to 32-bit accumulators (shuffled 0 1 2 3 8 9 10 11 / 4 5 6 7 12 13 14 15)
 #define multiply3_and_accumulate(accum_ref_left, accum_ref_right, r0, r1, f)                       \
     {                                                                                              \
-        __m256i mul = _mm256_mullo_epi16(r0, r1);                                                  \
+        __m256i mul = _mm256_mullo_epi16((r0), r1);                                                \
         __m256i lo = _mm256_mullo_epi16(mul, f);                                                   \
         __m256i hi = _mm256_mulhi_epu16(mul, f);                                                   \
         __m256i left = _mm256_unpacklo_epi16(lo, hi);                                              \
         __m256i right = _mm256_unpackhi_epi16(lo, hi);                                             \
-        accum_ref_left = _mm256_add_epi32(accum_ref_left, left);                                   \
-        accum_ref_right = _mm256_add_epi32(accum_ref_right, right);                                \
+        (accum_ref_left) = _mm256_add_epi32((accum_ref_left), left);                               \
+        (accum_ref_right) = _mm256_add_epi32((accum_ref_right), right);                            \
     }
 
 #define shuffle_and_save(addr, x, y)                                                               \
     {                                                                                              \
-        __m256i left = _mm256_permute2x128_si256(x, y, 0x20);                                      \
-        __m256i right = _mm256_permute2x128_si256(x, y, 0x31);                                     \
+        __m256i left = _mm256_permute2x128_si256((x), (y), 0x20);                                  \
+        __m256i right = _mm256_permute2x128_si256((x), (y), 0x31);                                 \
         _mm256_storeu_si256((__m256i *)(addr), left);                                              \
         _mm256_storeu_si256(((__m256i *)(addr)) + 1, right);                                       \
     }
 
+/* A fully unrolled AVX2 kernel. Splitting it changes register allocation
+ * and scheduling, which is what the bit-exactness contracts in ADR-0138 /
+ * ADR-0139 pin down; the size is the unrolling, not accidental
+ * complexity. ADR-0141 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 void vif_statistic_8_avx2(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h)
 {
     assert(vif_filter1d_width[0] == 17);
@@ -678,6 +686,11 @@ void vif_statistic_8_avx2(struct VifPublicState *s, float *num, float *den, unsi
     den[0] = accum_den_log / 2048.0 + accum_den_non_log;
 }
 
+/* A fully unrolled AVX2 kernel. Splitting it changes register allocation
+ * and scheduling, which is what the bit-exactness contracts in ADR-0138 /
+ * ADR-0139 pin down; the size is the unrolling, not accidental
+ * complexity. ADR-0141 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 void vif_statistic_16_avx2(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h,
                            int bpc, int scale)
 {
@@ -749,7 +762,7 @@ void vif_statistic_16_avx2(struct VifPublicState *s, float *num, float *den, uns
             __m256i accumdis2;
             __m256i accumdis3;
             __m256i accumdis4;
-            // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores): chained zero-init of every SIMD accumulator before the inner loop. The analyzer flags the rmul1/rmul2/dmul1/dmul2 slots because their values are reset on every fi iteration before being read (i.e. the zero-init is never the value that flows into a read), but the chain is preserved verbatim from upstream Netflix to keep the kernel byte-exact.
+            // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores) — ADR-0138 / ADR-0141 / ADR-0278: chained zero-init of every SIMD accumulator before the inner loop. The analyzer flags the rmul1/rmul2/dmul1/dmul2 slots because their values are reset on every fi iteration before being read (i.e. the zero-init is never the value that flows into a read), but the chain is preserved verbatim from upstream Netflix to keep the kernel byte-exact.
             accumr_lo = accumr_hi = accumd_lo = accumd_hi = rmul1 = rmul2 = dmul1 = dmul2 =
                 accumref1 = accumref2 = accumref3 = accumref4 = accumrefdis1 = accumrefdis2 =
                     accumrefdis3 = accumrefdis4 = accumdis1 = accumdis2 = accumdis3 = accumdis4 =
@@ -906,8 +919,8 @@ void vif_statistic_16_avx2(struct VifPublicState *s, float *num, float *den, uns
                 const uint16_t fcoeff = vif_filt[fi];
                 uint16_t *ref = buf.ref;
                 uint16_t *dis = buf.dis;
-                uint16_t imgcoeff_ref = ref[ii_check * stride + j];
-                uint16_t imgcoeff_dis = dis[ii_check * stride + j];
+                uint16_t imgcoeff_ref = ref[(ptrdiff_t)ii_check * stride + j];
+                uint16_t imgcoeff_dis = dis[(ptrdiff_t)ii_check * stride + j];
                 uint32_t img_coeff_ref = fcoeff * (uint32_t)imgcoeff_ref;
                 uint32_t img_coeff_dis = fcoeff * (uint32_t)imgcoeff_dis;
                 accum_mu1 += img_coeff_ref;
@@ -1409,6 +1422,11 @@ void vif_statistic_16_avx2(struct VifPublicState *s, float *num, float *den, uns
  * filter rounding bias; `vif_filt_s1` is the symmetric 9-tap fixed-
  * point coefficient table for VIF scale 1.
  */
+/* A fully unrolled AVX2 kernel. Splitting it changes register allocation
+ * and scheduling, which is what the bit-exactness contracts in ADR-0138 /
+ * ADR-0139 pin down; the size is the unrolling, not accidental
+ * complexity. ADR-0141 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 void vif_subsample_rd_8_avx2(const VifBuffer *buf, unsigned w, unsigned h)
 {
     assert(buf != NULL);
@@ -1664,9 +1682,9 @@ void vif_subsample_rd_8_avx2(const VifBuffer *buf, unsigned w, unsigned h)
             result = _mm256_permutevar8x32_epi32(result, mask1);
             resultd = _mm256_packus_epi32(resultd, resultd);
             result = _mm256_packus_epi32(result, result);
-            _mm_storel_epi64((__m128i *)(buf->mu1 + i * stride + (j >> 1)),
+            _mm_storel_epi64((__m128i *)(buf->mu1 + (ptrdiff_t)i * stride + (j >> 1)),
                              _mm256_castsi256_si128(resultd));
-            _mm_storel_epi64((__m128i *)(buf->mu2 + i * stride + (j >> 1)),
+            _mm_storel_epi64((__m128i *)(buf->mu2 + (ptrdiff_t)i * stride + (j >> 1)),
                              _mm256_castsi256_si128(result));
         }
         for (unsigned j = n << 3; j < w; j += 2) {
@@ -1679,13 +1697,18 @@ void vif_subsample_rd_8_avx2(const VifBuffer *buf, unsigned w, unsigned h)
                 accum_ref += fcoeff * buf->tmp.ref_convol[jj_check];
                 accum_dis += fcoeff * buf->tmp.dis_convol[jj_check];
             }
-            buf->mu1[i * stride + (j >> 1)] = (uint16_t)((accum_ref + 32768) >> 16);
-            buf->mu2[i * stride + (j >> 1)] = (uint16_t)((accum_dis + 32768) >> 16);
+            buf->mu1[(ptrdiff_t)i * stride + (j >> 1)] = (uint16_t)((accum_ref + 32768) >> 16);
+            buf->mu2[(ptrdiff_t)i * stride + (j >> 1)] = (uint16_t)((accum_dis + 32768) >> 16);
         }
     }
     copy_and_pad(buf, w, h, 0);
 }
 
+/* A fully unrolled AVX2 kernel. Splitting it changes register allocation
+ * and scheduling, which is what the bit-exactness contracts in ADR-0138 /
+ * ADR-0139 pin down; the size is the unrolling, not accidental
+ * complexity. ADR-0141 / ADR-0278. */
+// NOLINTNEXTLINE(readability-function-size)
 void vif_subsample_rd_16_avx2(const VifBuffer *buf, unsigned w, unsigned h, int scale, int bpc)
 {
     assert(buf != NULL);
@@ -1725,7 +1748,7 @@ void vif_subsample_rd_16_avx2(const VifBuffer *buf, unsigned w, unsigned h, int 
             __m256i rmul2;
             __m256i dmul1;
             __m256i dmul2;
-            // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores): chained zero-init reset every fi iteration before the per-element reads inside the inner loop. Upstream-verbatim.
+            // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores) — ADR-0138 / ADR-0141 / ADR-0278: chained zero-init reset every fi iteration before the per-element reads inside the inner loop. Upstream-verbatim.
             accumr_lo = accumr_hi = accumd_lo = accumd_hi = rmul1 = rmul2 = dmul1 = dmul2 =
                 _mm256_setzero_si256();
             for (unsigned fi = 0; fi < fwidth; ++fi, ii_check = ii + fi) {
@@ -1774,8 +1797,8 @@ void vif_subsample_rd_16_avx2(const VifBuffer *buf, unsigned w, unsigned h, int 
             int ii_check = ii;
             for (unsigned fi = 0; fi < fwidth; ++fi, ii_check = ii + fi) {
                 const uint16_t fcoeff = vif_filt[fi];
-                accum_ref += fcoeff * ((uint32_t)ref[ii_check * stride + j]);
-                accum_dis += fcoeff * ((uint32_t)dis[ii_check * stride + j]);
+                accum_ref += fcoeff * ((uint32_t)ref[(ptrdiff_t)ii_check * stride + j]);
+                accum_dis += fcoeff * ((uint32_t)dis[(ptrdiff_t)ii_check * stride + j]);
             }
             buf->tmp.ref_convol[j] = (uint16_t)((accum_ref + add_shift_round_VP) >> shift_VP);
             buf->tmp.dis_convol[j] = (uint16_t)((accum_dis + add_shift_round_VP) >> shift_VP);
@@ -1822,13 +1845,13 @@ void vif_subsample_rd_16_avx2(const VifBuffer *buf, unsigned w, unsigned h, int 
             __m256i resulttmp = _mm256_srli_si256(resultd, 2);
             resultd = _mm256_blend_epi16(resultd, resulttmp, 0xAA);
             resultd = _mm256_permutevar8x32_epi32(resultd, mask1);
-            _mm_storeu_si128((__m128i *)(buf->mu1 + i * stride16 + j),
+            _mm_storeu_si128((__m128i *)(buf->mu1 + (ptrdiff_t)i * stride16 + j),
                              _mm256_castsi256_si128(resultd));
 
             resulttmp = _mm256_srli_si256(result, 2);
             result = _mm256_blend_epi16(result, resulttmp, 0xAA);
             result = _mm256_permutevar8x32_epi32(result, mask1);
-            _mm_storeu_si128((__m128i *)(buf->mu2 + i * stride16 + j),
+            _mm_storeu_si128((__m128i *)(buf->mu2 + (ptrdiff_t)i * stride16 + j),
                              _mm256_castsi256_si128(result));
         }
 
@@ -1842,8 +1865,8 @@ void vif_subsample_rd_16_avx2(const VifBuffer *buf, unsigned w, unsigned h, int 
                 accum_ref += fcoeff * ((uint32_t)buf->tmp.ref_convol[jj_check]);
                 accum_dis += fcoeff * ((uint32_t)buf->tmp.dis_convol[jj_check]);
             }
-            buf->mu1[i * stride16 + j] = (uint16_t)((accum_ref + 32768) >> 16);
-            buf->mu2[i * stride16 + j] = (uint16_t)((accum_dis + 32768) >> 16);
+            buf->mu1[(ptrdiff_t)i * stride16 + j] = (uint16_t)((accum_ref + 32768) >> 16);
+            buf->mu2[(ptrdiff_t)i * stride16 + j] = (uint16_t)((accum_dis + 32768) >> 16);
         }
     }
 
@@ -1852,8 +1875,8 @@ void vif_subsample_rd_16_avx2(const VifBuffer *buf, unsigned w, unsigned h, int 
 
     for (unsigned i = 0; i < h / 2; ++i) {
         for (unsigned j = 0; j < w / 2; ++j) {
-            ref[i * stride + j] = buf->mu1[i * stride16 + (j * 2)];
-            dis[i * stride + j] = buf->mu2[i * stride16 + (j * 2)];
+            ref[(ptrdiff_t)i * stride + j] = buf->mu1[(ptrdiff_t)i * stride16 + ((ptrdiff_t)j * 2)];
+            dis[(ptrdiff_t)i * stride + j] = buf->mu2[(ptrdiff_t)i * stride16 + ((ptrdiff_t)j * 2)];
         }
     }
     pad_top_and_bottom(buf, h / 2, vif_filter1d_width[scale]);
