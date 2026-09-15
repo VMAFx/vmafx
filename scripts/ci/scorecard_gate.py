@@ -280,6 +280,13 @@ def source_identity(root: Path, sha: str, allowed_output: str | None = None) -> 
         data, target = blob_bytes(path, mode)
         if target is not None:
             targets[name] = target
+        # A git blob object id IS SHA-1 — this recomputes the oid git itself
+        # recorded and compares it, so the algorithm is dictated by the object
+        # format and cannot be "upgraded" to SHA-256 without reading a different
+        # value than git stored. It is an integrity check against a name git
+        # chose, not a signature. `usedforsecurity=False` already says so to
+        # hashlib; this says it to semgrep.
+        # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
         actual = hashlib.sha1(
             b"blob " + str(len(data)).encode() + b"\0" + data, usedforsecurity=False
         ).hexdigest()

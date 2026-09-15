@@ -110,7 +110,12 @@ class WindowsCudaCompilerDiscovery(unittest.TestCase):
             )
             # No real cl/PowerShell may leak into the missing-tool cases.
             environment = {**os.environ, "PATH": str(binary_dir)}
-            # Controlled Meson executable and test-owned paths; no shell.
+            # Controlled Meson executable and test-owned paths; no shell. The
+            # environment is os.environ with PATH repointed at this test's own
+            # fixture directory, which is the point of the case, not tainted
+            # input: argv is a fixed list of literals and paths this test just
+            # created under its own tmpdir.
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
             return subprocess.run(  # noqa: S603
                 [
                     str(MESON),
