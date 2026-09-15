@@ -74,7 +74,28 @@ FORCE_INLINE float convolution_edge_s(bool horizontal, const float *filter, int 
         else
             i_tap = convolution_reflect101(i_tap, height);
 
-        accum += filter[k] * src[i_tap * stride + j_tap];
+        /* Two roundings, never one. This helper computes the border pixels
+         * of the SIMD convolutions in convolution_avx.c / convolution_avx512.c
+         * while their interiors use explicit _mm*_mul_ps + _mm*_add_ps, and the
+         * scalar fallback in vif_tools.c computes the same pixels with its own
+         * non-contracted loop. Left as `accum += filter[k] * src[...]`, this is
+         * a single expression a compiler may contract into one FMA: clang does,
+         * at every optimisation level, and the border pixels of a SIMD run then
+         * differ from a scalar run of the same input. Measured on a 256x192
+         * fixture as VMAF_feature_vif_scale0_score 0.24375427845259967 with SIMD
+         * against 0.24375426056033248 without — a delta of 1.789e-08 that
+         * violates ADR-0891 and is caught by ADR-1207's
+         * test_feature_isa_invariance. gcc happens not to contract here, which
+         * is why a gcc-only test run never saw it.
+         *
+         * Assigning the product to a named float forces the intermediate
+         * rounding, because C requires an assignment to discard extra
+         * precision. That is a property of this source, so it survives a change
+         * of compiler, optimisation level or -ffp-contract default, which a
+         * build-system carve-out would not. Do not collapse it back into one
+         * expression. T-FLOAT-VIF-ISA-DIVERGENCE-2026-09-16. */
+        const float product = filter[k] * src[i_tap * stride + j_tap];
+        accum += product;
     }
     return accum;
 }
@@ -99,7 +120,9 @@ FORCE_INLINE float convolution_edge_sq_s(bool horizontal, const float *filter, i
         else
             i_tap = convolution_reflect101(i_tap, height);
         src_val = src[i_tap * stride + j_tap];
-        accum += filter[k] * (src_val * src_val);
+        /* Two roundings, never one — see convolution_edge_s above. */
+        const float product = filter[k] * (src_val * src_val);
+        accum += product;
     }
     return accum;
 }
@@ -125,7 +148,9 @@ FORCE_INLINE float convolution_edge_xy_s(bool horizontal, const float *filter, i
             i_tap = convolution_reflect101(i_tap, height);
         src_val1 = src1[i_tap * stride1 + j_tap];
         src_val2 = src2[i_tap * stride2 + j_tap];
-        accum += filter[k] * (src_val1 * src_val2);
+        /* Two roundings, never one — see convolution_edge_s above. */
+        const float product = filter[k] * (src_val1 * src_val2);
+        accum += product;
     }
     return accum;
 }

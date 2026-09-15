@@ -83,24 +83,10 @@ typedef struct {
 /* One representative score per feature that has a SIMD path on at least one
  * supported host ISA. Features whose only implementation is scalar are
  * deliberately absent — they would assert nothing. */
-/* QUARANTINED — `float_vif` is excluded until
- * T-FLOAT-VIF-ISA-DIVERGENCE-2026-09-16 is fixed. It is **not** a regression
- * from this branch: unmodified `master` built with clang produces the same
- * divergence, `VMAF_feature_vif_scale0_score` host-isa 0.24375427845259967 vs
- * scalar 0.24375426056033248, delta 1.789e-08. gcc happens to hide it because
- * it contracts the scalar path's multiply-add the same way the AVX kernel does
- * explicitly; clang at -O0 does not, so the two paths disagree.
- *
- * Driving `float_vif` here also trips a **separate** pre-existing defect,
- * T-CONVOLUTION-AVX-SCANLINE-OVERREAD-2026-09-16: under ASan the AVX
- * horizontal convolution reads 32 bytes starting 3 bytes past the end of the
- * row buffer (`convolution_f32_avx_s_1d_h_scanline` <- `vif_filter1d_s` <-
- * `compute_vif`), which aborts the whole test before the remaining features
- * are checked. Re-enable this row only when both are fixed; do not widen the
- * assertion to a tolerance, which would defeat the test's purpose. */
 static const IsaCase CASES[] = {
     {"ssimulacra2", "ssimulacra2"},
     {"float_adm", "VMAF_feature_adm2_score"},
+    {"float_vif", "VMAF_feature_vif_scale0_score"},
     {"float_motion", "VMAF_feature_motion2_score"},
     {"float_ssim", "float_ssim"},
     {"float_ms_ssim", "float_ms_ssim"},

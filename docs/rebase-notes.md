@@ -50657,25 +50657,37 @@ the merge base catches it.
 
 No upstream identifier, kernel body, or numeric expression was modified.
 
-## test_feature_isa_invariance — the float_vif quarantine is load-bearing (2026-09-16)
+## convolution_internal.h — the named-float products are load-bearing (2026-09-16)
 
-`float_vif` is deliberately absent from `CASES[]` in
-`core/test/test_feature_isa_invariance.c`. Do not put it back on a rebase
-without fixing both defects it trips, and do not "fix" the test by relaxing its
-bit-identical assertion to a tolerance — a tolerance hides exactly the class of
-defect the test exists to catch (that is how ADR-1208's ssimulacra2 bug survived
-`test_ssimulacra2_simd` for so long).
+`convolution_edge_s`, `convolution_edge_sq_s` and `convolution_edge_xy_s` each
+compute their accumulation as
 
-Two independent things go wrong when the row is enabled:
+```c
+const float product = filter[k] * src[i_tap * stride + j_tap];
+accum += product;
+```
 
-1. **T-FLOAT-VIF-ISA-DIVERGENCE-2026-09-16.** SIMD and scalar disagree by
-   1.789e-08 under clang. gcc contracts the scalar path's multiply-add and
-   accidentally matches the AVX kernel, so a gcc-only run looks clean. Always
-   check this test under clang as well as gcc.
-2. **T-CONVOLUTION-AVX-SCANLINE-OVERREAD-2026-09-16.** Under ASan the AVX
-   horizontal convolution reads past the row buffer and aborts the process,
-   which takes the remaining nine features down with it.
+Do **not** collapse that back into `accum += filter[k] * src[...]` on a rebase,
+and do not "tidy" the temporary away. It is not style: these helpers compute the
+border pixels of the AVX and AVX-512 convolutions, whose interiors use explicit
+`_mm*_mul_ps` + `_mm*_add_ps` — two roundings. As one expression the C is a
+contraction candidate, clang fuses it into a single-rounding FMA at every
+optimisation level, and a SIMD run's border pixels then disagree with a scalar
+run's. That is T-FLOAT-VIF-ISA-DIVERGENCE-2026-09-16: 1.789e-08 on
+`VMAF_feature_vif_scale0_score`, a breach of ADR-0891 caught by ADR-1207's
+`test_feature_isa_invariance`.
 
-Both were verified present on unmodified `master`, so a future rebase that sees
-this test fail should first check whether the failure is inherited rather than
-assuming the branch caused it.
+Two practical consequences for future work:
+
+1. **Run the ISA-invariance test under clang as well as gcc.** gcc does not
+   contract at this site, so a gcc-only run cannot observe the defect. That is
+   exactly how it survived until this branch.
+2. **A `-ffp-contract=off` carve-out in `meson.build` is not an equivalent
+   fix.** The pinning belongs in the source, where it survives a change of
+   compiler, optimisation level or flag default. `vif_tools.c` has no per-file
+   `c_args` hook anyway — it is compiled as part of a plain source list.
+
+If this test ever fails again, bisect the same way rather than guessing: build
+with `-ffp-contract=off` globally to confirm contraction is the cause, then
+re-enable it one translation unit at a time with
+`#pragma clang fp contract(fast)` until the failure returns.

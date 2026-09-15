@@ -22622,6 +22622,29 @@ score aggregation. The host-side collect path now suppresses scale-0 emission
 matching `float_vif.c`, SYCL, and Vulkan.
 
 
+- **`float_vif` no longer scores differently with and without SIMD.** ADR-1207's
+  `test_feature_isa_invariance` drives the public API twice — once on the host's
+  real ISA, once with `cpumask` disabling every SIMD flag — and asserts
+  bit-identical scores. Its first run under clang failed:
+  `VMAF_feature_vif_scale0_score` was `0.24375427845259967` with SIMD against
+  `0.24375426056033248` without, a delta of **1.789e-08** and a breach of the
+  ADR-0891 bit-exactness contract. The test had only ever run under gcc, which
+  does not contract at the offending site, so a gcc-only run could not see it.
+  The offender is the trio of `FORCE_INLINE` border helpers in
+  `convolution_internal.h` — `convolution_edge_s`, `_sq_s` and `_xy_s` — that
+  the AVX and AVX-512 convolutions inline to compute their border pixels. Each
+  accumulated as `accum += filter[k] * src[...]`, a single expression a compiler
+  may contract into one fused multiply-add, while the SIMD interior of the very
+  same convolution uses explicit `_mm*_mul_ps` followed by `_mm*_add_ps` — two
+  roundings. clang contracted the borders at every optimisation level, so a SIMD
+  run's border pixels disagreed with a scalar run's. Each product is now
+  materialised into a named `float` before the add, which C requires to discard
+  extra precision, pinning both roundings in the source instead of in a build
+  flag that a future toolchain change could drop. **No shipped score moves**:
+  compiled non-LTO with gcc before and after, the instruction streams are
+  byte-identical at 1,900 instructions with zero FMA.
+
+
 Wire `vif_skip_scale0` into `float_vif_sycl`, `float_vif_hip`, and
 `float_vif_metal` backends. The option was registered on the CPU
 `float_vif` extractor but absent from all three remaining GPU paths;
@@ -23609,25 +23632,6 @@ close) and adds the missing `<math.h>` / `<stdbool.h>` includes.
   scale-0 suppression in `collect_fex_sycl`, matching `integer_vif.c` and
   `integer_vif_cuda` behavior. Previously the option was unregistered;
   callers setting `vif_skip_scale0=true` had no effect on SYCL.
-
-
-- **The ISA-invariance gate runs green by quarantining one feature, and names
-  two pre-existing defects it found.** ADR-1207's
-  `test_feature_isa_invariance` drives the public API twice — once on the
-  host's real ISA, once with `cpumask` disabling every SIMD flag — and asserts
-  bit-identical scores. Its first run under clang and under a sanitizer build
-  surfaced two defects that `master` already had and no other test reached:
-  `float_vif` scores differ between the SIMD and scalar paths by **1.789e-08**
-  under clang (gcc hides it by contracting the scalar multiply-add into an FMA
-  that happens to match the AVX kernel), and driving `float_vif` through the
-  AVX path under AddressSanitizer reports a **heap-buffer-overflow** — the
-  horizontal convolution scanline reads 32 bytes starting 3 bytes past the end
-  of the row buffer, in a user-reachable path. Both are verified against
-  unmodified `master`, so neither is a regression from this branch. `float_vif`
-  is excluded from the gate's table with both bug ids inline; the other nine
-  features stay covered. Tracked as
-  `T-FLOAT-VIF-ISA-DIVERGENCE-2026-09-16` and
-  `T-CONVOLUTION-AVX-SCANLINE-OVERREAD-2026-09-16`.
 
 
 - **Nightly bisect tracker (issue #40) unsticks: `--check` parquet
