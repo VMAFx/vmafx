@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  HIP compute kernels for the PSNR feature extractor (T7-10b batch-1 /
  *  ADR-0372). Direct port of the CUDA twin at

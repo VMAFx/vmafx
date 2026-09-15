@@ -1,7 +1,7 @@
 /**
  * Copyright 2026 Lusoris
  *
- * SPDX-License-Identifier: BSD-2-Clause-Patent
+ * SPDX-License-Identifier: EUPL-1.2
  *
  * NEON-vs-scalar bit-exactness for the float-ADM helper kernels
  * (`float_adm_csf_neon`, `float_adm_csf_den_scale_neon`,

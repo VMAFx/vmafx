@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Evaluation harness for tiny-AI checkpoints.
 
 Reports correlation metrics (PLCC, SROCC, KROCC), error (RMSE), and

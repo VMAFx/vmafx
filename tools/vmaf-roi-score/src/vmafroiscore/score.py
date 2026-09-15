@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """vmaf binary driver for the Option C ROI-VMAF tool.
 
 Wraps two invocations of the libvmaf CLI:

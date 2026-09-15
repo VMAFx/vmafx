@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 
 // bootstrap_test.go — the OpenTelemetry contract every vmafx binary inherits
 // from Base (ADR-0782, ADR-1119):

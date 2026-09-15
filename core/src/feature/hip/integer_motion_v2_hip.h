@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  HIP host glue for the motion_v2 feature extractor -- sixth
  *  kernel-template consumer (T7-10b follow-up / ADR-0267).

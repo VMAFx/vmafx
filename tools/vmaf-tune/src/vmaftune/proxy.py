@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """ONNX inference seam for `fr_regressor_v2` (vmaf-tune fast-path proxy).
 
 This module is the single seam every fast-path consumer goes through

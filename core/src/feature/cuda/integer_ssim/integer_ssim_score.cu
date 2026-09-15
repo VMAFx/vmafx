@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  CUDA compute kernels for the real integer_ssim feature extractor
  *  (ADR-0553). Bit-exact port of `libvmaf/src/feature/integer_ssim.c`.

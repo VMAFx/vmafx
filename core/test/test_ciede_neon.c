@@ -1,7 +1,7 @@
 /**
  * Copyright 2026 Lusoris
  *
- * SPDX-License-Identifier: BSD-2-Clause-Patent
+ * SPDX-License-Identifier: EUPL-1.2
  *
  * NEON-vs-scalar bit-exactness and read-bounds coverage for the CIEDE2000
  * plane-preprocessing kernels (`core/src/feature/arm64/ciede_neon.c`).

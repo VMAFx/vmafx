@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # scripts/ci/test-state-md-touch-check.sh — fixtures for state-md-touch-check.sh.
 #
 # Stand-alone bash-only test driver. Builds a throw-away git repo

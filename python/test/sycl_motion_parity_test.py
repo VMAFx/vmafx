@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """SYCL integer motion parity tests (ADR-0214, ADR-0219).
 
 Verifies per-frame motion2 parity between the CPU reference and SYCL backend

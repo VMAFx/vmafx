@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Per-frame CPU/GPU score collector for the calibration corpus (T7-GPU-ULP-CAL).
 
 Companion to :mod:`scripts.ci.cross_backend_parity_gate`. Where the

@@ -1,4 +1,7 @@
 # Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Copyright 2026 Lusoris
 """Regression tests for the four P0 fixes shipped in ADR-0608.
 
 Fixes covered:

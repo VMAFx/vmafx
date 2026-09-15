@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Calibrate the δ_fast threshold for NR early-elimination (ADR-0615 / ADR-0624).
 
 Walks the Netflix corpus (`.corpus/netflix/`) or a fallback subset of

@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Fork-added snapshot gate for the SSIMULACRA 2 feature extractor (T3-3,
 ADR-0164). Pins the CPU output of `vmaf --feature ssimulacra2` against
 reference values generated on the current master.

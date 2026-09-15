@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Metal compute kernel for the psnr_hvs feature extractor — Metal twin
  *  of the CUDA reference

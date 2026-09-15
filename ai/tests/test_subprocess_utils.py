@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Tests for aiutils.subprocess_utils.run_cmd.
 
 Exercises capture mode, timeout, and the check=False / check=True branches

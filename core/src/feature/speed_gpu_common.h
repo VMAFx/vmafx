@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Shared types and constants for the SpEED GPU-backend implementations
  *  (ADR-0567: real on-device GPU kernels for speed_chroma + speed_temporal).

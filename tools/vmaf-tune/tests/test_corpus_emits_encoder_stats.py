@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """End-to-end corpus row test for encoder-stats columns (ADR-0332).
 
 Mocks ffmpeg + vmaf + the x264 stats file, then drives ``iter_rows``

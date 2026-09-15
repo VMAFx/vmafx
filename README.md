@@ -245,8 +245,17 @@ truth for that address). The same content, browsable in-tree, lives under
 - **Upstream Project**: [Netflix/vmaf](https://github.com/Netflix/vmaf).
   The VMAF algorithm, scoring methodology, and reference test datasets
   remain the intellectual property of Netflix.
-- **License**: [BSD-2-Clause-Patent](LICENSE) — preserved from upstream
-  Netflix/vmaf. Fork additions are licensed under identical terms.
+- **License**: two sets of terms, separated by provenance and recorded per file
+  as an `SPDX-License-Identifier` ([ADR-1250](docs/adr/1250-eupl-fork-relicense.md)).
+  Code inherited from or derived from Netflix/vmaf keeps
+  [BSD-2-Clause-Patent](LICENSE), unchanged. Fork-authored code is licensed under
+  [EUPL-1.2](LICENSES/EUPL-1.2.txt), a reciprocal licence.
+  **What that means in practice**: because the shipped `libvmaf` links both
+  together, redistributing a modified library obliges you to offer its source
+  under EUPL-1.2. If you need permissive terms, use
+  [Netflix/vmaf](https://github.com/Netflix/vmaf) upstream, which is unaffected
+  by this. `reuse lint` and the per-file tags are authoritative; this paragraph
+  is a summary.
 - **Maintainers**: [Lusoris](https://github.com/Lusoris).
 
 ---

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Generate the tiny-AI smoke ONNX fixture.
 
 The smoke model is a one-op probe (Conv → Identity) whose only purpose is to

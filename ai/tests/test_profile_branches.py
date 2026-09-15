@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Branch-coverage top-up for ``vmaf_train.profile``.
 
 Targets the two unexercised guards: the no-graph-input ValueError and the

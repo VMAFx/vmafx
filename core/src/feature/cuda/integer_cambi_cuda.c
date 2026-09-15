@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  CAMBI banding-detection feature extractor on the CUDA backend
  *  (T3-15 / ADR-0360). The Vulkan twin (cambi_vulkan.c, ADR-0210)

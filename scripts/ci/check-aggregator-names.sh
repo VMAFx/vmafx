@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 #
 # check-aggregator-names.sh — verify that required-aggregator.yml's required list
 # and the set of # required-aggregator check names in .github/workflows/*.yml are identical.

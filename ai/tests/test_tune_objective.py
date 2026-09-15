@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Tests for NaN-propagation guard in :func:`vmaf_train.tune._read_best_metric`.
 
 Round-25 audit C.2: when every epoch produces NaN for the objective metric

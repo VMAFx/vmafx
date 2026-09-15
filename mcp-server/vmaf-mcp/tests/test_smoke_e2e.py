@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """End-to-end MCP smoke tests — exercising the JSON-RPC protocol layer.
 
 These tests run through the server's *public* dispatch path (``_list_tools``

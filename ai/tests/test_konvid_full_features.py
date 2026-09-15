@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Tests for ``ai/scripts/konvid_to_full_features.py``.
 
 The real script runs ffmpeg + libvmaf over KoNViD-1k. These tests keep

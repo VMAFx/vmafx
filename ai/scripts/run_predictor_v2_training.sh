@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 #
 # Phase 2 orchestration wrapper for the per-codec predictor v2
 # real-corpus trainer. Runs locally on the operator's machine — the

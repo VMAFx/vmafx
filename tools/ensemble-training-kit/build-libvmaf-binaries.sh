@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 #
 # Build the right libvmaf flavour for the kit's per-platform binaries
 # directory (see binaries/README.md). Operator runs this once per box,

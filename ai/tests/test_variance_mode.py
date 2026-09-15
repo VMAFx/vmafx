@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Variance-mode smoke tests — FRRegressor / NRMetric emit (score, logvar).
 
 These exercise the architectural change only; we are not training the

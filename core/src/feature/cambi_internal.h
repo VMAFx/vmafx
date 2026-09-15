@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Internal header exposing cambi.c's per-stage helpers to the GPU
  *  twins (integer_cambi_cuda.c, integer_cambi_hip.c).

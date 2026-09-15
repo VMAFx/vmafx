@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """FR-from-NR corpus adapter (ADR-0346).
 
 Converts a no-reference (NR) corpus row — a distorted MP4 plus a

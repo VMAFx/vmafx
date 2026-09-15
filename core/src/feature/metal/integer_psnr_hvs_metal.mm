@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  psnr_hvs feature extractor on the Metal backend — Metal twin of the
  *  CUDA reference libvmaf/src/feature/cuda/integer_psnr_hvs_cuda.c (+

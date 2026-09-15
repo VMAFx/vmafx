@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Tests for VmafDnnConfig.device execution-provider selection and
  *  VmafDnnConfig.fp16_io round-trip conversion. Runs only when libvmaf

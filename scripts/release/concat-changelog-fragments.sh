@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Concatenate per-PR changelog fragments under changelog.d/<section>/*.md
 # into the rendered "Unreleased" body that lives in CHANGELOG.md.
 #

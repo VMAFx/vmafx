@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 //
 // pkg/modeleval/eval.go — native Go implementation of the MCP
 // `eval_model_on_split` / `compare_models` tools.

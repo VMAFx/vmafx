@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Metal compute kernels for the float_adm feature extractor.
  *  Port of `core/src/feature/cuda/float_adm/float_adm_score.cu` (CUDA twin,

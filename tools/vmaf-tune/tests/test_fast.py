@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Phase A.5 fast-path smoke + production-wiring tests
 (ADR-0276 scaffold + ADR-0304 prod wiring).
 

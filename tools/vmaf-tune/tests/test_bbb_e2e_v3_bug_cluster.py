@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Regression tests for the 2026-05-18 BBB end-to-end v3 bug cluster.
 
 The v3 follow-up smoke run (after PR #1255 / ADR-0498 closed the v2

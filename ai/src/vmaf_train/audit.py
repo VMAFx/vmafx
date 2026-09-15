@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Audit shipped tiny models for compatibility with libvmaf's feature contract.
 
 Feature extractors in core/src/feature/ evolve independently from the

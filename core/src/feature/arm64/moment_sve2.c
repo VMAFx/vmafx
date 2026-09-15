@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  aarch64 SVE2 port of compute_1st_moment / compute_2nd_moment for the
  *  float_moment feature extractor (ADR-0584).

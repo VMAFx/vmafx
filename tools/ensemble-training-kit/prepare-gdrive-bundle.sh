@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 #
 # prepare-gdrive-bundle.sh — kilian-side bundler for the gdrive
 # contributor share. Compresses the local BVI-DVC + Netflix raw YUVs

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Real-corpus LOSO validator for the ``fr_regressor_v2`` deep ensemble.
 
 Companion to ``ai/scripts/run_ensemble_v2_real_corpus_loso.sh``

@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for the F.3 confidence-aware escalation policy (ADR-0364 §F.3).
 
 F.3 makes the F.2 GOSPEL/FALL_BACK gate continuous by consulting the

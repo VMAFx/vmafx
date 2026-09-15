@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  float_ms_ssim feature extractor on the Metal backend (T8-2b / ADR-0488).
  *  Port of `libvmaf/src/feature/float_ms_ssim.c` — same 5-scale pyramid,

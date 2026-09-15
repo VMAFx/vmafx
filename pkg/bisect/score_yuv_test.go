@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-2-Clause-Patent
+// SPDX-License-Identifier: EUPL-1.2
 //
 // Tests for the raw-YUV ScoreFunc. The argv expectations mirror
 // tools/vmaf-tune/src/vmaftune/score.py build_vmaf_command, whose flag order

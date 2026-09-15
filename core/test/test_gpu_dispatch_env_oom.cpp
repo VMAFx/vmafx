@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Regression test for finding R2-9: a transient allocation failure while
  *  snapshotting a *set* GPU-dispatch env variable must NOT permanently cache

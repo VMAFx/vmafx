@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Codec-comparison mode (research-0061 Bucket #7).
 
 Given a single source and one or more target VMAFs, run the per-codec

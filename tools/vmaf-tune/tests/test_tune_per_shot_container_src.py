@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Fix A smoke tests — tune-per-shot accepts container sources directly.
 
 ADR-0542: when --src is a container (mp4/mkv/mov/etc.) the CLI now

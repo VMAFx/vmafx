@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Tests for NaN-propagation guards in :func:`vmaf_train.eval.correlations`.
 
 Round-25 audit C.1: guard empty / degenerate inputs in ``correlations()``.

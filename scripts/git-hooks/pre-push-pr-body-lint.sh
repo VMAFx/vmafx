@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # scripts/git-hooks/pre-push-pr-body-lint.sh — standalone PR-body lint entry point.
 #
 # This script is the named, standalone sibling to scripts/git-hooks/pre-push.

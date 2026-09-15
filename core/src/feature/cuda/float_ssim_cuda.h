@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  CUDA host glue for the float_ssim feature extractor.
  *  See integer_ssim_cuda.h for the legacy name; this file is

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Permutation feature importance for vmaf_tiny_v2.onnx (canonical-6).
 
 Loads the shipped ONNX model, samples a held-out slice from the 4-corpus

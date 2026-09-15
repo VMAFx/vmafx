@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Tests for B1 (_vmaf_binary path resolution) and B2 (_run_benchmark env injection).
 
 ADR-0517: ``_run_benchmark`` takes NO positional arguments (bench_all.sh is a

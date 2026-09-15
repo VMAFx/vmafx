@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for cross_backend_parity_gate.py (T6-8 / ADR-0214).
 
 All tests are pure-Python — no vmaf binary, no GPU, no YUV fixtures.

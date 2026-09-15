@@ -1,3 +1,9 @@
+/*
+ * Copyright 2026 Lusoris
+ *
+ * SPDX-License-Identifier: EUPL-1.2
+ */
+
 // Package model exposes the fork's single source of truth for which VMAF
 // model is used when a caller names none.
 //

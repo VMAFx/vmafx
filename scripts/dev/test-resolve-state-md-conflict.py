@@ -3,7 +3,7 @@
 # docs/state.md conflict resolver.
 #
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 #
 """Feed the resolver a synthetic conflict covering the three cases that matter.
 

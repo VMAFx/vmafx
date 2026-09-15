@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 # Copyright 2026 Lusoris
 #
 # scripts/ci/tests/test-runner-supervisor.sh — Test suite for dev/scripts/runner-supervisor.sh

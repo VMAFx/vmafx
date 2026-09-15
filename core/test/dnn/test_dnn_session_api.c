@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Public-surface tests for vmaf_dnn_session_run() and its data types.
  *  Runs against the public headers only (no private dnn/ includes) so it

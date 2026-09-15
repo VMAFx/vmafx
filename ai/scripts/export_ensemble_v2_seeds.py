@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Export production-quality ``fr_regressor_v2_ensemble_v1_seed{0..4}`` ONNX members.
 
 Companion to ``ai/scripts/train_fr_regressor_v2_ensemble_loso.py`` (ADR-0319,

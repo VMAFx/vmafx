@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Dataset manifests for NFLX / KoNViD / LIVE-VQC / YouTube-UGC / BVI-DVC.
 
 Manifests (`manifests/<name>.yaml`) declare the authoritative file list with

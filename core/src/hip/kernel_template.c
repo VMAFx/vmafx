@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  HIP kernel-template helper bodies — runtime PR (T7-10b /
  *  ADR-0212 §"What lands next" step 1).

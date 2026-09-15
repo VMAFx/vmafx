@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # scripts/git-hooks/pre-push-mkdocs-strict.sh — pre-push mkdocs strict-mode gate.
 #
 # Detects whether the push touches docs/ or mkdocs.yml; skips entirely if it

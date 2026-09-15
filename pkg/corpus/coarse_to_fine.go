@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 //
 // pkg/corpus/coarse_to_fine.go — 2-pass coarse-to-fine CRF search (ADR-0296 /
 // ADR-0306).
