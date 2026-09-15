@@ -347,7 +347,9 @@ nav:
       - Project modernization audit: development/project-modernization-audit.md
       - Self-hosted runner: development/self-hosted-runner.md
       - Agent dispatch: development/agent-dispatch.md
+      - Agent hard rules: development/agent-hard-rules.md
       - Agent worktree discipline: development/agent-worktree-discipline.md
+      - Rebase-sensitive invariants: development/rebase-sensitive-invariants.md
       - Automated rule enforcement: development/automated-rule-enforcement.md
       - PR body validator: development/pr-body-validator.md
       - mkdocs strict pre-push hook: development/pre-push-mkdocs-strict.md
