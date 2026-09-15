@@ -15522,6 +15522,14 @@ audit needed before the abs() refactor can land safely.
   beyond the documentation entries themselves.
 
 
+- Single-source package versions across the repository and eliminate Python dependency triplication ([ADR-1236](docs/adr/1236-version-single-source-tree.md)):
+  - `python/pyproject.toml` `[project].dependencies` is now the single owner of the `vmaf` Python package runtime dependencies. Duplicate `install_requires` in `python/setup.py` is removed, relying on standard setuptools reading `pyproject.toml`.
+  - `python/requirements.txt` is mechanically derived from `python/pyproject.toml` via `scripts/ci/check-python-requirements-single-source.sh --write` (`make python-deps-sync`), verified by CI and pre-commit hooks.
+  - `renovate.json` adds `python/requirements.txt` to `ignorePaths`, eliminating duplicate competing PRs caused by Renovate managing `pip_requirements` and `pep621` simultaneously.
+  - Resolves repository-wide package version disagreements using the newest-version policy: `numpy` (current `vmaf` runtime/build floor `>=2.5.3`), `scipy` (unified to `>=1.18.1`), `matplotlib` (unified to `>=3.11.1`), and `pyarrow` (unified to `>=25.0.1`).
+  - Synchronizes package metadata versions: `tools/vmaf-tune/pyproject.toml` aligned to `0.0.2` matching `src/vmaftune/__init__.py`. Added release-owned `VMAFX_VERSION="3.2.1"` to `build-config.env`, with version-marker checks in `scripts/ci/check-workflow-versions.py`. Scientific Python floors remain in package manifests; unused proposed global knobs were removed during review.
+
+
 - **`vif.comp` + `ciede.comp` shaders — `precise` decorations on the
   load-bearing FP reductions (ADR-0269 / Step A of the Vulkan 1.4 bump
   path)** — tags the FP accumulators in
@@ -24859,6 +24867,13 @@ Fix 23 pre-existing test failures across three packages.
   exposition Content-Type is preserved; added
   `test_metrics_full_content_type_header_preserved` to pin the
   wire-level invariant.
+
+
+- Fix pre-push mypy scope after rebases: recheck every branch-owned Python
+  file under `ai/` and `scripts/` against the master merge base, including
+  unchanged outgoing files and Git type changes. Preserve internal symlink
+  filenames, reject unsafe targets and refuse validation of a pushed ref
+  different from the checked-out HEAD.
 
 
 - markdownlint no longer lints golden fixtures as prose. The exclude pattern was

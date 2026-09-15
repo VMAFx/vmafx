@@ -1337,6 +1337,7 @@ nav:
         - "ADR-1229: mcp-go-runtime": adr/1229-mcp-go-runtime.md
         - "ADR-1231: base-image-single-source": adr/1231-base-image-single-source.md
         - "ADR-1235: pkgconfig-advertises-abi-version": adr/1235-pkgconfig-advertises-abi-version.md
+        - "ADR-1236: version-single-source-tree": adr/1236-version-single-source-tree.md
         - "ADR-1237: perf-pass-1245": adr/1237-perf-pass-1245.md
         - "ADR-1238: go-security-required-gate": adr/1238-go-security-required-gate.md
         - "ADR-1239: agent-cleanup-preserve-work": adr/1239-agent-cleanup-preserve-work.md
