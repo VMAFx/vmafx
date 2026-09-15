@@ -994,7 +994,7 @@ if is_asm_enabled
             x86_avx512_sources,
             include_directories : vmaf_base_include,
             c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vbmi', '-mavx512vl'] +
+                      '-mavx512vl'] +
                      _x86_simd_strict_fp_extra +
                      vmaf_cflags_common,
             # b_lto=false: with b_lto=true at meson.build top, LTO over
@@ -1014,7 +1014,7 @@ if is_asm_enabled
             feature_src_dir + 'x86/ssimulacra2_avx512.c',
             include_directories : vmaf_base_include,
             c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vbmi', '-mavx512vl', '-ffp-contract=off'] +
+                      '-mavx512vl', '-ffp-contract=off'] +
                      _x86_simd_strict_fp_extra + vmaf_cflags_common,
         )
 
@@ -1028,7 +1028,7 @@ if is_asm_enabled
             feature_src_dir + 'x86/float_adm_avx512.c',
             include_directories : vmaf_base_include,
             c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vbmi', '-mavx512vl', '-ffp-contract=off'] +
+                      '-mavx512vl', '-ffp-contract=off'] +
                      _x86_simd_strict_fp_extra + vmaf_cflags_common,
         )
         platform_specific_cpu_objects += x86_float_adm_avx512_lib.extract_all_objects(recursive: true)
@@ -1040,7 +1040,7 @@ if is_asm_enabled
             feature_src_dir + 'x86/speed_matmul_avx512.c',
             include_directories : vmaf_base_include,
             c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vbmi', '-mavx512vl', '-ffp-contract=off'] +
+                      '-mavx512vl', '-ffp-contract=off'] +
                      _x86_simd_strict_fp_extra + vmaf_cflags_common,
         )
         platform_specific_cpu_objects += x86_speed_matmul_avx512_lib.extract_all_objects(recursive: true)
