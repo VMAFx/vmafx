@@ -70,6 +70,15 @@ conclusion.
     root `LICENSE` is `BSD-2-Clause-Patent`. Correcting those identifiers
     asserts a licence and needs its own reviewed change.
   - The five epic tasks (#1444–#1448) are scheduled after 1.0.0.
+  - The CI gate runs the baseline-only `audit`, not `audit -base <ref>`. The
+    `-base` mode adds a touched-file clean rule that reports 220 infractions on an
+    ordinary change set here, because HISS-04 flags every function over 60 lines in
+    any file a PR opens; it would block routine fixes to legacy C for reasons
+    unrelated to the fix. Enable it once the baseline is low enough.
+  - The engine is pinned by commit because the HISS count is a property of the
+    engine build: two builds measured this same commit deterministically and
+    disagreed (1,687 against 1,688). An unpinned engine would move the ratchet on
+    its own.
   - Praetor issues worth filing upstream: generated markdown should satisfy a
     standard markdownlint profile; `audit`, `plan` and the archetype disagree on
     the HISS-04 function-length limit (60 vs 100 vs 75); the flavor gate fails in
