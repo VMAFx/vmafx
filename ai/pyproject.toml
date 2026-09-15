@@ -32,7 +32,8 @@ dependencies = [
   # distribution.
   "pytorch-lightning>=2.6.5,<3.0",
   "onnx>=1.22.0,<2.0",
-  "onnxruntime>=1.29.0,<2.0",  # container pins 1.26.0 (ADR-0568); floor kept at 1.20 for host installs
+  # Python runtime floor; the native libvmaf ORT library is installed separately.
+  "onnxruntime>=1.29.0,<2.0",
   "onnxscript>=0.7.1",
   "numpy>=2.5.3,<3.0",
   "pandas>=3.0.5,<3.1",

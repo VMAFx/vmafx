@@ -24602,6 +24602,12 @@ clear diagnostic: `enable_nvtx=true requires enable_cuda=true`.
   populate FLOAT16). Found by PR #112 ORT audit.
 
 
+- **Dev container documentation:** clarify that the native ONNX Runtime CPU
+  archive does not contain CUDA or ROCm execution providers and that the Python
+  runtime dependency floor is owned separately. Remove stale version and ADR
+  claims without changing runtime pins.
+
+
 - Added three unit tests to `core/test/test_output.c` covering
   previously untested public API entry points identified in the
   2026-05-16 test-coverage audit (§2):
@@ -27744,6 +27750,11 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   last one in its list failed. GitHub runs `shell: cmd` with `/V:OFF`, so the
   step reported only the final executable's exit code; each test is now
   checked with `|| exit /b 1`. `test_output` was also added to that list.
+
+
+- Fix Windows CUDA configuration when `vswhere` cannot find MSVC but `cl.exe`
+  is on `PATH`: NVCC and MSVC include discovery now share the resolved compiler
+  path. Add a Meson configure regression for discovery, fallback and missing tools.
 
 
 - Keep installed Git hooks functional after an installer worktree is removed.

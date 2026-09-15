@@ -63,6 +63,18 @@ of digest presence. Preserve the Python instruction scanner, the exact local
 consumer exceptions and the fixture suite in `scripts/ci/tests/`. Shared image
 ARG defaults remain one per physical line for the shell mirror writer. No
 upstream rebase impact: these guard scripts and fixtures are fork-local.
+## fix/windows-cuda-cl-fallback (2026-09-08)
+
+In `core/src/meson.build`, the PATH fallback must assign `cl_path` from
+`cl_exe.full_path()` before forming `nvcc_ccbin_flags`. The next PowerShell
+command derives MSVC includes from `cl_path`; assigning only the flags leaves
+an undefined variable when `vswhere` fails. Netflix PR #1472 at `b7b65e64`
+has the same defect. Preserve the assignment when porting that discovery block.
+
+`core/test/test_windows_cuda_compiler_discovery.py` executes the current block
+through Meson using Windows host metadata and stubbed tool responses. It covers
+successful discovery, empty/error fallback and missing `cl`, and is registered
+in `fast` on POSIX build hosts. This is configure coverage, not a Windows GPU test.
 
 ## fix/ai-1270-blockers — DISTS, MobileSal, and predictor stub triage (2026-09-08)
 

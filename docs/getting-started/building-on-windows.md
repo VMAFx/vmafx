@@ -41,6 +41,25 @@ meson setup core core\build \
 meson install -C core/build
 ```
 
-The fork's GPU backends (`-Denable_cuda=true`, `-Denable_sycl=true`) are not
-supported on Windows via MSYS2. For GPU-accelerated builds on Windows,
-follow the vendor SDKs directly (CUDA Toolkit for MSVC, oneAPI DPC++).
+## Native MSVC and CUDA
+
+The native MSVC CUDA build is exercised by the `Windows MSVC+CUDA` CI job
+in `.github/workflows/libvmaf-build-matrix.yml`. It compiles, links and installs;
+the hosted Windows runner does not execute GPU scoring tests.
+
+CUDA needs Visual Studio Build Tools and the Windows SDK even when the host
+library uses MinGW. The Meson build first discovers `cl.exe` through `vswhere`.
+If that search is empty or fails, it uses `cl.exe` from `PATH`, such as the one
+exposed by an x64 Native Tools Command Prompt. Both routes use the selected
+compiler path for NVCC's `-ccbin` and MSVC header discovery. If neither route
+finds a compiler, configuration reports that Visual Studio Build Tools are required.
+
+The discovery regression runs on POSIX build hosts without a Windows SDK or GPU:
+
+```sh
+python3 core/test/test_windows_cuda_compiler_discovery.py -v
+```
+
+It also runs in the Meson `fast` suite. It verifies Meson control flow with
+stubbed compiler-discovery responses; native compilation and GPU runtime
+validation remain separate checks.
