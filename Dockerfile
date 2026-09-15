@@ -51,9 +51,19 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # skip the network fetch. `sharing=locked` serialises concurrent BuildKit jobs
 # against the same cache. We INTENTIONALLY drop `rm -rf /var/lib/apt/lists/*`
 # here — with the cache mount the lists never make it into the image layer.
+# The CUDA apt list shipped in the base image is dropped first. NVIDIA's
+# ubuntu2604 index is currently malformed — `apt-get update` inside the pinned
+# digest fails with "Encountered a section with no Package: header ...
+# developer.download.nvidia.com_compute_cuda_repos_ubuntu2604_x86%5f64_Packages.lz4",
+# reproduced by running the pinned image directly, so it is upstream and not
+# ours. None of the packages below come from that repo and the CUDA toolkit is
+# baked into the image (nvcc 13.3 still resolves after the removal), so dropping
+# the list costs nothing. Same shape as the Microsoft/Azure source removal in
+# .github/workflows/go-ci.yml, which exists for this class of breakage.
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/sources.list.d/cuda-*.list && \
     apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ccache \
