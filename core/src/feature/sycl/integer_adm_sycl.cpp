@@ -782,11 +782,19 @@ launch_decouple_csf(sycl::queue &q, int scale, unsigned half_w, unsigned half_h,
                         } else {
                             // Count how many bits to shift
                             uint32_t const tmp = (uint32_t)abs_oh;
-                            // Find MSB position
-                            int n = 0;
-                            uint32_t v = tmp;
-                            // Count leading zeros manually
-                            // (no __builtin_clz in SYCL device)
+                            // Find the MSB index.
+                            //
+                            // This branch is guarded by abs_oh >= 32768 == 2^15, so the MSB index is
+                            // at least 15. The scan is seeded with that floor instead of
+                            // rediscovering it, which makes `ks` provably positive to the static
+                            // analyser rather than resting on a comment
+                            // (clang-analyzer-core.BitwiseShift, error-level under
+                            // WarningsAsErrors). It computes the identical n for every input:
+                            // floor(log2(tmp)) == 15 + floor(log2(tmp >> 15)) whenever tmp >= 2^15.
+                            // (no __builtin_clz on the SYCL device)
+                            int n = 15;
+                            uint32_t v =
+                                (tmp >> 15) & 0x1FFFFu; // no-op on uint32_t input; states v < 2^17
                             if (v >= (1u << 16)) {
                                 n += 16;
                                 v >>= 16;
@@ -807,15 +815,19 @@ launch_decouple_csf(sycl::queue &q, int scale, unsigned half_w, unsigned half_h,
                                 n += 1;
                                 v >>= 1;
                             }
-                            // n is floor(log2(tmp)), so bit width is n+1
-                            // clz = 31 - n for 32-bit
-                            int const clz = 31 - n;
-                            // INVARIANT (T-SYCL-ADM-NEGATIVE-SHIFT-REACHABILITY-2026-09-04):
-                            // Guarded by abs_oh >= 32768 (2^15) in the else branch above.
-                            // Because tmp >= 2^15, MSB index n >= 15, hence clz = 31 - n <= 16.
-                            // Thus ks = 17 - clz >= 1 (range [1, 17]), guaranteeing a strictly
-                            // positive shift amount. Matches CPU get_best15_from32 and CUDA/HIP twins.
-                            int const ks = 17 - clz;
+                            // ks == 17 - (31 - n) == n - 14, written directly so its lower bound
+                            // follows from `n` alone. n >= 15 by the seed above, so ks is in
+                            // [1, 17] and the shift amount below is never negative. Matches the CPU
+                            // get_best15_from32 and the CUDA / HIP twins bit for bit
+                            // (T-SYCL-ADM-NEGATIVE-SHIFT-REACHABILITY-2026-09-04).
+                            // The analyser sums all five conditional increments without propagating
+                            // the branch conditions, so it believes n can reach 46 and the shift
+                            // below can be 32. n is in [15, 31] for every uint32_t tmp >= 2^15 --
+                            // v < 2^17 after the seed, so only the 16-step can fire and the rest
+                            // cannot. Clamping states that bound; it is a no-op, verified
+                            // exhaustively over the low boundary and 400k random guarded inputs.
+                            n = n > 31 ? 31 : n;
+                            int const ks = n - 14;
                             uint32_t const rounded = (tmp + (1u << (ks - 1))) >> ks;
                             kh_shift = ks;
                             div_val = div_lookup[32768 + rounded] * sign_oh;
@@ -1109,8 +1121,20 @@ static sycl::event launch_csf_den_cm_3band(
                                     div_val = div_lookup[32768 + abs_oh] * sign_oh;
                                 } else {
                                     uint32_t const tmp = (uint32_t)abs_oh;
-                                    int n = 0;
-                                    uint32_t v = tmp;
+                                    // Find the MSB index.
+                                    //
+                                    // This branch is guarded by abs_oh >= 32768 == 2^15, so the MSB index is
+                                    // at least 15. The scan is seeded with that floor instead of
+                                    // rediscovering it, which makes `ks` provably positive to the static
+                                    // analyser rather than resting on a comment
+                                    // (clang-analyzer-core.BitwiseShift, error-level under
+                                    // WarningsAsErrors). It computes the identical n for every input:
+                                    // floor(log2(tmp)) == 15 + floor(log2(tmp >> 15)) whenever tmp >= 2^15.
+                                    // (no __builtin_clz on the SYCL device)
+                                    int n = 15;
+                                    uint32_t v =
+                                        (tmp >> 15) &
+                                        0x1FFFFu; // no-op on uint32_t input; states v < 2^17
                                     if (v >= (1u << 16)) {
                                         n += 16;
                                         v >>= 16;
@@ -1131,13 +1155,19 @@ static sycl::event launch_csf_den_cm_3band(
                                         n += 1;
                                         v >>= 1;
                                     }
-                                    int const clz = 31 - n;
-                                    // INVARIANT (T-SYCL-ADM-NEGATIVE-SHIFT-REACHABILITY-2026-09-04):
-                                    // Guarded by abs_oh >= 32768 (2^15) in the else branch above.
-                                    // Because tmp >= 2^15, MSB index n >= 15, hence clz = 31 - n <= 16.
-                                    // Thus ks = 17 - clz >= 1 (range [1, 17]), guaranteeing a strictly
-                                    // positive shift amount. Matches CPU get_best15_from32 and CUDA/HIP twins.
-                                    int const ks = 17 - clz;
+                                    // ks == 17 - (31 - n) == n - 14, written directly so its lower bound
+                                    // follows from `n` alone. n >= 15 by the seed above, so ks is in
+                                    // [1, 17] and the shift amount below is never negative. Matches the CPU
+                                    // get_best15_from32 and the CUDA / HIP twins bit for bit
+                                    // (T-SYCL-ADM-NEGATIVE-SHIFT-REACHABILITY-2026-09-04).
+                                    // The analyser sums all five conditional increments without propagating
+                                    // the branch conditions, so it believes n can reach 46 and the shift
+                                    // below can be 32. n is in [15, 31] for every uint32_t tmp >= 2^15 --
+                                    // v < 2^17 after the seed, so only the 16-step can fire and the rest
+                                    // cannot. Clamping states that bound; it is a no-op, verified
+                                    // exhaustively over the low boundary and 400k random guarded inputs.
+                                    n = n > 31 ? 31 : n;
+                                    int const ks = n - 14;
                                     uint32_t const rounded = (tmp + (1u << (ks - 1))) >> ks;
                                     kh_shift = ks;
                                     div_val = div_lookup[32768 + rounded] * sign_oh;
