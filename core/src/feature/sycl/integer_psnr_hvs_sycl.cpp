@@ -591,8 +591,17 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     }
     q.wait();
 
-    /* Per-plane reduction matching CPU's float `ret` register. */
-    double plane_score[PSNR_HVS_NUM_PLANES];
+    /* Per-plane reduction matching CPU's float `ret` register.
+     *
+     * Zero-initialised because the combined score below reads indices 1 and 2
+     * whenever `n_active_planes != 1`, while this loop writes only
+     * `[0, n_active_planes)`. The two agree today — `n_active_planes` is set to
+     * exactly 1 or PSNR_HVS_NUM_PLANES at init — but nothing in the type says
+     * so, and clang-analyzer-core.UndefinedBinaryOperatorResult flags the read
+     * as a garbage value on that basis. The initialiser costs nothing, removes
+     * the undefined read if that invariant is ever broken, and changes no
+     * score while it holds. */
+    double plane_score[PSNR_HVS_NUM_PLANES] = {};
     for (int p = 0; p < (int)s->n_active_planes; p++) {
         float ret = 0.0f;
         for (unsigned i = 0; i < s->num_blocks[p]; i++)
