@@ -634,6 +634,20 @@ feature/
   under icx. Traced via the 2026-05-30 all-backends CI failure. See
   [ADR-0160](../../../docs/adr/0160-psnr-hvs-neon-bitexact.md)
   and [rebase-notes 0052](../../../docs/rebase-notes.md).
+  **The two flags are order-sensitive and must not be re-sorted.**
+  `-fp-model=precise` implies `-ffp-contract=on`, so it goes FIRST and
+  `-ffp-contract=off` LAST; the other way round it re-enables the
+  contraction the pair exists to disable. Measured on the
+  `speed_matmul_avx2` scalar tail with icx 2026.0: `-mfma
+  -ffp-contract=off` emits zero `vfmadd`, adding `-fp-model=precise`
+  after it emits nine, and putting `-fp-model=precise` before it emits
+  zero again. `core/src/meson.build` and `core/test/meson.build` must
+  be changed **together** — the SIMD tests compile their own copies of
+  the scalar references, so reordering only one file puts the two sides
+  of every bit-exactness comparison on different contraction settings.
+  That is what broke `test_ssimulacra2_simd` the first time the reorder
+  was tried; see `T-ICX-FP-CONTRACT-FLAG-ORDER-2026-09-07` in
+  [state.md](../../../docs/state.md).
 - **`fastdvdnet_pre.c` 5-frame-window contract** (fork-local,
   ADR-0215): the FastDVDnet temporal pre-filter extractor is wired
   to the I/O contract `frames: float32 NCHW [1, 5, H, W]` (channel

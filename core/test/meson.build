@@ -67,11 +67,19 @@ wave8_opt_only_objects = [
 # Intel icx (meson id 'intel-llvm') additionally ignores
 # #pragma STDC FP_CONTRACT OFF unless -fp-model=precise is also on the
 # command line, so we detect icx and append that flag. See ADR-0161.
+#
+# ORDER MATTERS, measured. `-fp-model=precise` implies `-ffp-contract=on`, so
+# when it lands AFTER `-ffp-contract=off` it silently re-enables contraction --
+# which is the opposite of what this list is for. It therefore goes FIRST and
+# the contract flag LAST. Same hazard, same fix, as the carve-outs in
+# core/src/meson.build; see T-ICX-FP-CONTRACT-FLAG-ORDER-2026-09-07 in
+# docs/state.md for the vfmadd counts that measured it.
 _cc_id = cc.get_id()
-_simd_strict_fp_args = ['-ffp-contract=off']
+_simd_strict_fp_args = []
 if _cc_id == 'intel-llvm' or _cc_id == 'intel-llvm-cl'
-    _simd_strict_fp_args += ['-fp-model=precise']
+    _simd_strict_fp_args = ['-fp-model=precise']
 endif
+_simd_strict_fp_args += ['-ffp-contract=off']
 
 # PR #850 regression — HIP wavefront warpSize fix.
 # Pure host-side tree-reduce logic: verifies the shared-memory warp-partial

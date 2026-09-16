@@ -893,7 +893,7 @@ if is_asm_enabled
           'x86_ssim_avx2',
           feature_src_dir + 'x86/ssim_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + _x86_simd_strict_fp_extra + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma'] + _x86_simd_strict_fp_extra + ['-ffp-contract=off'] + vmaf_cflags_common,
       )
 
 
@@ -908,13 +908,13 @@ if is_asm_enabled
           'x86_psnr_hvs_avx2',
           feature_src_dir + 'x86/psnr_hvs_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + _x86_simd_strict_fp_extra + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma'] + _x86_simd_strict_fp_extra + ['-ffp-contract=off'] + vmaf_cflags_common,
       )
       x86_ms_ssim_decimate_avx2_lib = static_library(
           'x86_ms_ssim_decimate_avx2',
           feature_src_dir + 'x86/ms_ssim_decimate_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + _x86_simd_strict_fp_extra + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma'] + _x86_simd_strict_fp_extra + ['-ffp-contract=off'] + vmaf_cflags_common,
       )
 
       # ssimulacra2 AVX2 compiles in its own static lib with
@@ -932,7 +932,7 @@ if is_asm_enabled
               feature_src_dir + 'x86/ssimulacra2_host_avx2.c',
           ],
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + _x86_simd_strict_fp_extra + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma'] + _x86_simd_strict_fp_extra + ['-ffp-contract=off'] + vmaf_cflags_common,
       )
 
       platform_specific_cpu_objects += x86_avx2_static_lib.extract_all_objects(recursive: true)
@@ -952,7 +952,7 @@ if is_asm_enabled
           'x86_float_adm_avx2',
           feature_src_dir + 'x86/float_adm_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + _x86_simd_strict_fp_extra + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma'] + _x86_simd_strict_fp_extra + ['-ffp-contract=off'] + vmaf_cflags_common,
       )
       platform_specific_cpu_objects += x86_float_adm_avx2_lib.extract_all_objects(recursive: true)
 
@@ -967,7 +967,7 @@ if is_asm_enabled
           'x86_speed_matmul_avx2',
           feature_src_dir + 'x86/speed_matmul_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + _x86_simd_strict_fp_extra + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma'] + _x86_simd_strict_fp_extra + ['-ffp-contract=off'] + vmaf_cflags_common,
       )
       platform_specific_cpu_objects += x86_speed_matmul_avx2_lib.extract_all_objects(recursive: true)
 
@@ -1014,8 +1014,8 @@ if is_asm_enabled
             feature_src_dir + 'x86/ssimulacra2_avx512.c',
             include_directories : vmaf_base_include,
             c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vbmi', '-mavx512vl', '-ffp-contract=off'] +
-                     _x86_simd_strict_fp_extra + vmaf_cflags_common,
+                      '-mavx512vbmi', '-mavx512vl'] + _x86_simd_strict_fp_extra +
+                     ['-ffp-contract=off'] + vmaf_cflags_common,
         )
 
         platform_specific_cpu_objects += x86_avx512_static_lib.extract_all_objects(recursive: true)
@@ -1028,8 +1028,8 @@ if is_asm_enabled
             feature_src_dir + 'x86/float_adm_avx512.c',
             include_directories : vmaf_base_include,
             c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vbmi', '-mavx512vl', '-ffp-contract=off'] +
-                     _x86_simd_strict_fp_extra + vmaf_cflags_common,
+                      '-mavx512vbmi', '-mavx512vl'] + _x86_simd_strict_fp_extra +
+                     ['-ffp-contract=off'] + vmaf_cflags_common,
         )
         platform_specific_cpu_objects += x86_float_adm_avx512_lib.extract_all_objects(recursive: true)
 
@@ -1040,8 +1040,8 @@ if is_asm_enabled
             feature_src_dir + 'x86/speed_matmul_avx512.c',
             include_directories : vmaf_base_include,
             c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vbmi', '-mavx512vl', '-ffp-contract=off'] +
-                     _x86_simd_strict_fp_extra + vmaf_cflags_common,
+                      '-mavx512vbmi', '-mavx512vl'] + _x86_simd_strict_fp_extra +
+                     ['-ffp-contract=off'] + vmaf_cflags_common,
         )
         platform_specific_cpu_objects += x86_speed_matmul_avx512_lib.extract_all_objects(recursive: true)
       endif
@@ -1925,7 +1925,7 @@ libvmaf_psnr_hvs_scalar_static_lib = static_library(
     feature_src_dir + 'third_party/xiph/psnr_hvs.c',
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency],
-    c_args: vmaf_cflags_common + ['-ffp-contract=off'] + _libvmaf_feature_icx_args,
+    c_args: vmaf_cflags_common + _libvmaf_feature_icx_args + ['-ffp-contract=off'],
 )
 
 libvmaf_ssimulacra2_static_lib = static_library(
@@ -1933,7 +1933,7 @@ libvmaf_ssimulacra2_static_lib = static_library(
     feature_src_dir + 'ssimulacra2.c',
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency],
-    c_args: vmaf_cflags_common + ['-ffp-contract=off'] + _libvmaf_feature_icx_args,
+    c_args: vmaf_cflags_common + _libvmaf_feature_icx_args + ['-ffp-contract=off'],
 )
 
 # Y-FUNQUE+ atoms-only extractor (ADR-1114) compiles with `-ffp-contract=off`
@@ -1947,7 +1947,7 @@ libvmaf_y_funque_plus_static_lib = static_library(
     feature_src_dir + 'y_funque_plus.c',
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency],
-    c_args: vmaf_cflags_common + ['-ffp-contract=off'] + _libvmaf_feature_icx_args,
+    c_args: vmaf_cflags_common + _libvmaf_feature_icx_args + ['-ffp-contract=off'],
 )
 
 # ADR-0858: gpu_dispatch_env.cpp is compiled as an isolated C++23 static lib
