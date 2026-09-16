@@ -50888,3 +50888,36 @@ the fix is to cut vector register pressure, not to suppress the finding.
 
 See [ADR-1254](adr/1254-win64-cannot-realign-the-stack.md) and
 [Research-2061](research/2061-win64-cannot-realign-the-stack.md).
+
+## Two memory-safety fixes in code an upstream sync will overwrite (2026-09-16)
+
+Both were found by libFuzzer + ASan and both live in files a sync touches.
+
+**`core/tools/y4m_input.c` — `y4m_convert_42xpaldv_42xjpeg()`.** The scratch
+base is now captured once and each chroma plane restarts from it:
+
+```c
+unsigned char *const scratch = (unsigned char *)aux + 2U * (size_t)c_sz;
+for (int pli = 1; pli < 3; pli++) {
+    unsigned char *tmp = scratch;
+```
+
+Upstream does not have this shape, because upstream never advances `tmp` — it
+indexes a fixed base as `tmp[y * c_w]`. The fork extracted
+`y4m_horizontal_filter_row()` and made `tmp` a running pointer, which is what
+lost the per-plane reuse and overran `aux_buf` by a whole plane. If a sync
+re-inlines the upstream loop, this fix becomes unnecessary; if it keeps the
+fork's helpers, **the reset is load-bearing** and must survive. Either way,
+re-run `fuzz_y4m_input` against
+`core/test/fuzz/y4m_input_corpus/y4m_420paldv_scratch_overrun.y4m` afterwards.
+
+**`core/src/svm.cpp` — `parse_support_vectors()`.** Two additions upstream
+libsvm does not have: a rejection of non-positive feature indices (libsvm
+indices are 1-based; `-1` is the reserved terminator, and accepting it from the
+file lets a model forge a sentinel and overrun the `total_sv`-sized pointer
+array), and a bound tying the number of parsed runs to `total_sv`. Re-syncing
+libsvm drops both. This is the same file that already carries the ADR-1142
+rework noted above, so treat the whole of `svm.cpp` as fork-modified and
+reapply — then re-run `fuzz_json_model` against
+`core/test/fuzz/json_model_corpus/svm_forged_sv_sentinel.bin` and the Netflix
+golden gate.

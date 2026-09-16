@@ -3202,6 +3202,16 @@ template <typename TSource> class SVMModelParser
 
             // parse SVs
             while (line.good() && line >> node_buffer.index) {
+                // libsvm feature indices are 1-based and strictly positive;
+                // `index == -1` is the reserved end-of-vector sentinel. Taking
+                // the index from the file unchecked lets a model forge that
+                // sentinel mid-line ("1.0-1:1.0" parses the coefficient as 1.0
+                // and the index as -1), which splits one support vector into
+                // two runs. The pointer-array below is sized by the declared
+                // `total_sv`, so an extra run writes past it — an 8-byte heap
+                // overflow reachable from any model JSON. Rejecting a
+                // non-positive index makes the sentinel unforgeable.
+                exceptAssert(node_buffer.index > 0, "Support-vector index must be positive");
                 exceptAssert(line.ignore(1, ':') && line >> node_buffer.value,
                              "Failed to read support vector");
                 sv_buffer.push_back(node_buffer);
@@ -3227,13 +3237,19 @@ template <typename TSource> class SVMModelParser
         // create and populate the pointer array, that points into the memory plane
         model->SV = Malloc(svm_node *, model->l);
         exceptAssert(model->SV != nullptr, "Failed to allocate SV pointer array");
+        // Defence in depth: the run count is derived from the parsed data while
+        // the array is sized by the declared `total_sv`. The index check above
+        // is what keeps the two equal; this bound is what keeps a future
+        // divergence a clean error instead of a heap overflow.
         size_t s = 0;
         for (size_t i = 0; i < sv_buffer.size(); ++i) {
+            exceptAssert(s < (size_t)model->l, "More support vectors than total_sv declares");
             model->SV[s++] = &support_vectors[i];
             while (support_vectors[i].index != -1) {
                 ++i;
             }
         }
+        exceptAssert(s == (size_t)model->l, "Fewer support vectors than total_sv declares");
 
         model->free_sv = 1; // XXX
     }

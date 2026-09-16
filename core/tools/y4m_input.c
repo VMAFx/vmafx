@@ -291,8 +291,21 @@ static void y4m_convert_42xpaldv_42xjpeg(y4m_input *const y4m, unsigned char *ds
     const ptrdiff_t c_w = (y4m->pic_w + 1) / 2;
     const ptrdiff_t c_h = (y4m->pic_h + y4m->dst_c_dec_h - 1) / y4m->dst_c_dec_h;
     const ptrdiff_t c_sz = c_w * c_h;
-    unsigned char *tmp = (unsigned char *)aux + 2U * (size_t)c_sz;
+    /* The horizontal pass writes one plane's worth of scratch and the vertical
+     * filters rewind by `c_sz` to read it back, so the scratch is per-plane and
+     * must be REUSED by the second plane, not appended after the first.
+     * `aux_buf_sz` is `3 * c_sz` — two source chroma planes plus one scratch —
+     * and letting `tmp` run on from where plane 1 left it needs `4 * c_sz`,
+     * overrunning the allocation by the whole second plane. Upstream indexes a
+     * fixed `tmp` base instead of advancing it, which is why upstream's 3*c_sz
+     * is correct there; this fork's extraction of the row helpers turned that
+     * base into a running pointer and lost the reuse.
+     *
+     * Reachable from any `.y4m` file declaring `C420paldv` — a 1-byte heap
+     * WRITE past the buffer on a 4x4 frame, growing with the picture. */
+    unsigned char *const scratch = (unsigned char *)aux + 2U * (size_t)c_sz;
     for (int pli = 1; pli < 3; pli++) {
+        unsigned char *tmp = scratch;
         for (ptrdiff_t y = 0; y < c_h; y++) {
             y4m_horizontal_filter_row(tmp, aux, c_w);
             tmp += c_w;

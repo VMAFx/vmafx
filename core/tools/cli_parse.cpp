@@ -579,6 +579,30 @@ void apply_model_opt(CLIModelConfig &model_cfg, char *key, char *val, const char
     }
 }
 
+/* Release the option-string buffer before reporting a parse error.
+ *
+ * `usage()` is `_Noreturn` and ends the process in the shipped CLI, so this
+ * free is unobservable there. It matters for the libFuzzer harness, which
+ * intercepts `exit` via `-Wl,--wrap=exit` and longjmps back into its own
+ * frame: the half-built CLIModelConfig / CLIFeatureConfig never reaches
+ * `CLISettings`, so `cli_free()` cannot release its buffer and 32 bytes leak.
+ * LeakSanitizer only reports it when its conservative scan no longer sees the
+ * stale pointer, which made the nightly fuzz job fail intermittently rather
+ * than reproducibly. Freeing here also keeps the function correct if `usage()`
+ * ever stops exiting. */
+[[noreturn]] static void usage_free(void *buf, const char *const app, const char *const fmt,
+                                    const char *const arg)
+{
+    /* `arg` points INTO `buf` — it is a slice of the option string, not a
+     * separate allocation — so it must be copied before the buffer goes away.
+     * Freeing first and passing the original pointer prints freed memory: the
+     * message came out as `bad option string ""`. */
+    char arg_copy[256];
+    (void)snprintf(arg_copy, sizeof(arg_copy), "%s", (arg != nullptr) ? arg : "");
+    free(buf);
+    usage(app, fmt, arg_copy);
+}
+
 CLIModelConfig parse_model_config(const char *const optarg, const char *const app)
 {
     const size_t optarg_sz = strnlen(optarg, 1024);
@@ -614,10 +638,10 @@ CLIModelConfig parse_model_config(const char *const optarg, const char *const ap
             if (!strcmp(key, "disable_clip") || !strcmp(key, "enable_transform")) {
                 val = const_cast<char *>("true");
             } else {
-                usage(app,
-                      "Problem parsing model, "
-                      "bad option string \"%s\".",
-                      key);
+                usage_free(model_cfg.buf, app,
+                           "Problem parsing model, "
+                           "bad option string \"%s\".",
+                           key);
             }
         }
         apply_model_opt(model_cfg, key, val, app);
@@ -681,14 +705,33 @@ CLIFeatureConfig parse_feature_config(const char *const optarg, const char *cons
         cli_unescape(key);
         cli_unescape(val);
         if (!val) {
+            /* Same ownership problem as parse_model_config(): this config has
+             * not reached CLISettings yet, so cli_free() cannot release it.
+             * Harmless in the shipped CLI, where usage() exits; load-bearing
+             * under the fuzz harness, which longjmps out of exit().
+             *
+             * Both `feature_cfg.name` and `key` point INTO the buffer, so they
+             * are copied before it is released. */
+            char name_copy[256];
+            char key_copy[256];
+            (void)snprintf(name_copy, sizeof(name_copy), "%s",
+                           (feature_cfg.name != nullptr) ? feature_cfg.name : "");
+            (void)snprintf(key_copy, sizeof(key_copy), "%s", (key != nullptr) ? key : "");
+            (void)vmaf_feature_dictionary_free(&feature_cfg.opts_dict);
+            free(feature_cfg.buf);
             usage(app,
                   "Problem parsing feature \"%s\", "
                   "bad option string \"%s\".\n",
-                  feature_cfg.name, key);
+                  name_copy, key_copy);
         }
         const int err = vmaf_feature_dictionary_set(&feature_cfg.opts_dict, key, val);
-        if (err)
+        if (err) {
+            /* `optarg` is the caller's argv string, not our buffer, so it
+             * stays valid across the free. */
+            (void)vmaf_feature_dictionary_free(&feature_cfg.opts_dict);
+            free(feature_cfg.buf);
             usage(app, "Problem parsing feature \"%s\"\n", optarg);
+        }
     }
 
     return feature_cfg;

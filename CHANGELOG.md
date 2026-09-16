@@ -20785,6 +20785,25 @@ mean VMAF 94.32301 on CPU.
   are identical.
 
 
+- **The CLI option parsers leaked their option-string buffer on every
+  error path.** `parse_model_config()` and `parse_feature_config()`
+  `malloc` a working copy of the option string and hand ownership to
+  the returned config, which `cli_free()` releases once it reaches
+  `CLISettings`. On a parse error they called `usage()` before that
+  handover, so the buffer — and, for features, the partially built
+  `VmafFeatureDictionary` — became unreachable. Invisible in the
+  shipped CLI, where `usage()` is `_Noreturn` and ends the process, but
+  the libFuzzer harness intercepts `exit` via `-Wl,--wrap=exit` and
+  longjmps back into its own frame, so the leak is real there: it made
+  the nightly `fuzz_cli_parse` leg fail intermittently, and only
+  intermittently, because LeakSanitizer reports the block just when its
+  conservative scan no longer sees the stale pointer. Both functions
+  now release the buffer and the dictionary before reporting the error.
+  The error strings point *into* that buffer, so they are copied first
+  — freeing before formatting printed freed memory and turned
+  `bad option string "bogusflag"` into `bad option string ""`.
+
+
 - **`vmaf` CLI assertion crash on bad `--threads` / `--subsample` /
   `--cpumask` arguments.** Three handlers in
   `core/tools/cli_parse.c` passed a synthesised short-option char
@@ -26849,6 +26868,25 @@ backtick code spans.
 - Move four merged-fix rows (T-HIP-PSNR-CHROMA-MCP-PARITY-2026-06-20, T-CI-TOX-PY311-SCIPY-118-2026-06-20, T-NEON-FMA-FLOAT-ADM-DWT2-2026-06-06, T-CI-DOCKER-SMOKE-NO-OUTPUT-2026-06-13) out of Open bugs in docs/state.md.
 
 
+- **Heap buffer overflow loading a model whose support-vector data
+  forges the end-of-vector sentinel.** `SVMModelParser::parse_support_vectors()`
+  read each feature index straight from the file with no validation.
+  libsvm indices are 1-based and strictly positive, and `index == -1`
+  is the reserved terminator — so a line like `1.0-1:1.0` parses the
+  coefficient as `1.0` and the index as `-1`, splitting one support
+  vector into two sentinel-terminated runs. The pointer array is
+  `Malloc(svm_node *, model->l)`, sized by the declared `total_sv`,
+  while the fill loop writes one entry per run: with `total_sv 1` and
+  two runs it writes 8 bytes past a one-element array. Reachable from
+  any model JSON, including one fetched over the network. The parser
+  now rejects a non-positive index, which makes the sentinel
+  unforgeable, and the fill loop additionally bounds itself against
+  `total_sv` and requires the two counts to agree — so a future
+  divergence is a clean parse error rather than a heap overflow. Found
+  by libFuzzer + ASan; reproducer promoted to
+  `core/test/fuzz/json_model_corpus/svm_forged_sv_sentinel.bin`.
+
+
 - **test(svm):** Add `test_svm_multiclass` — 17-class and 32-class C_SVC fixtures
   plus a 17-class NU_SVC fixture to exercise the `max_nr_class=16→32` realloc
   doubling in `svm_group_classes()` and `svm_check_parameter()`.  Under
@@ -28779,6 +28817,26 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   post-fix, faulting at `y4m_input.c:507` with `WRITE of size 1`
   pre-fix. Netflix CPU golden tests unaffected (none use 4:1:1 with
   `dst_c_w == 1`).
+
+
+- **Heap buffer overflow parsing any `.y4m` file that declares
+  `C420paldv`.** `y4m_convert_42xpaldv_42xjpeg()` runs a horizontal
+  filter into a scratch area carved out of `aux_buf`, and the vertical
+  filters rewind by `c_sz` to read it back — so the scratch is
+  per-plane and must be reused by the second chroma plane. It was not:
+  `tmp` ran on from where plane 1 left it, so plane 2 wrote the whole
+  of its scratch past the end of the allocation. `aux_buf_sz` is
+  `3 * c_sz` (two source chroma planes plus one scratch); the
+  running pointer needs `4 * c_sz`. Upstream indexes a fixed `tmp`
+  base rather than advancing it, which is why upstream's sizing is
+  correct there — this fork's extraction of `y4m_horizontal_filter_row`
+  turned that base into a running pointer and lost the reuse. A 4x4
+  frame overflows by 1 byte (ASan: `WRITE of size 1` past a 12-byte
+  region); the overrun grows with the picture. Reachable from any
+  untrusted `.y4m` input, so this is a write-what-where from a file
+  format the CLI opens by default. Found by libFuzzer + ASan;
+  reproducer promoted to
+  `core/test/fuzz/y4m_input_corpus/y4m_420paldv_scratch_overrun.y4m`.
 
 
 ### Security
