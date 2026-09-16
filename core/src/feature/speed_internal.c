@@ -192,6 +192,21 @@ static float si_compute_covariance(const SpeedInternalDimensions *dim, const flo
     return denom > 0.0 ? (float)(result / denom) : 0.0f;
 }
 
+void speed_internal_compute_means(const SpeedInternalDimensions *dim, const float *data,
+                                  float *means, size_t stride_px)
+{
+    assert(dim != NULL);
+    assert(data != NULL);
+    assert(means != NULL);
+
+    for (size_t start_row = 0; start_row < dim->block_size; start_row++) {
+        for (size_t start_col = 0; start_col < dim->block_size; start_col++) {
+            means[start_row * dim->block_size + start_col] =
+                si_compute_mean(dim, data, stride_px, start_row, start_col);
+        }
+    }
+}
+
 void speed_internal_compute_cov_matrix(const SpeedInternalDimensions *dim, const float *data,
                                        float *cov_mat, float *tmp_means, size_t stride_px)
 {
@@ -200,12 +215,7 @@ void speed_internal_compute_cov_matrix(const SpeedInternalDimensions *dim, const
     assert(tmp_means != NULL);
     assert(dim->block_size > 0);
 
-    for (size_t start_row = 0; start_row < dim->block_size; start_row++) {
-        for (size_t start_col = 0; start_col < dim->block_size; start_col++) {
-            tmp_means[start_row * dim->block_size + start_col] =
-                si_compute_mean(dim, data, stride_px, start_row, start_col);
-        }
-    }
+    speed_internal_compute_means(dim, data, tmp_means, stride_px);
     const size_t elements_in_block = dim->block_size * dim->block_size;
 
     for (size_t x_index = 0; x_index < dim->elements_in_block; x_index++) {

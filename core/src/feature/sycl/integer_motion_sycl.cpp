@@ -43,6 +43,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 #include "config.h"
 #include "feature_collector.h"
@@ -230,7 +231,7 @@ static const VmafOption options[] = {
         .default_val = {.b = false},
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
-    {nullptr}};
+    {.name = nullptr}};
 
 /* ------------------------------------------------------------------ */
 /* Device helpers                                                      */
@@ -285,7 +286,8 @@ static sycl::event launch_blur_sad_fused(sycl::queue &q, const void *input, int3
     constexpr int TILE_W = WG_X + 2 * HALF_FW; // 36
     constexpr int WG_SIZE = WG_X * WG_Y;       // 256
 
-    sycl::range<2> global(((height + WG_Y - 1) / WG_Y) * WG_Y, ((width + WG_X - 1) / WG_X) * WG_X);
+    sycl::range<2> global((size_t)((height + WG_Y - 1) / WG_Y) * WG_Y,
+                          (size_t)((width + WG_X - 1) / WG_X) * WG_X);
     sycl::range<2> local(WG_Y, WG_X);
 
     return q.submit([&](sycl::handler &cgh) {
@@ -301,7 +303,7 @@ static sycl::event launch_blur_sad_fused(sycl::queue &q, const void *input, int3
                 const unsigned lid = item.get_local_linear_id();
                 const unsigned lx = item.get_local_id(1);
                 const unsigned ly = item.get_local_id(0);
-                const bool valid = (gx < (int)e_w && gy < (int)e_h);
+                const bool valid = (std::cmp_less(gx, e_w) && std::cmp_less(gy, e_h));
 
                 // --- Phase 1: Cooperative 2D tile load ---
                 int const tile_origin_y = (int)(item.get_group(0) * WG_Y) - HALF_FW;
@@ -420,6 +422,7 @@ static void motion_post_graph(void *queue_ptr, void *priv);
 static void config_motion_slot(void *priv, int slot);
 static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -698,6 +701,7 @@ static void config_motion_slot(void *priv, int slot)
 /* Submit / Collect                                                    */
 /* ------------------------------------------------------------------ */
 
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
@@ -726,7 +730,7 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         uint8_t *u_dst = static_cast<uint8_t *>(s->d_ref_u[cur]);
         uint8_t *v_dst = static_cast<uint8_t *>(s->d_ref_v[cur]);
 
-        if (ref_pic->stride[1] == (ptrdiff_t)(s->chroma_w * bpp)) {
+        if (std::cmp_equal(ref_pic->stride[1], (s->chroma_w * bpp))) {
             // Contiguous — single H2D copy
             int const eu = vmaf_sycl_memcpy_h2d_async(state, u_dst, u_src, uv_raw_bytes);
             int const ev = vmaf_sycl_memcpy_h2d_async(state, v_dst, v_src, uv_raw_bytes);
@@ -924,6 +928,7 @@ static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
     return (ret < 0) ? ret : !ret; // 1 = done, negative = error
 }
 
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<MotionStateSycl *>(fex->priv);

@@ -19,7 +19,9 @@
 
 #include <cerrno>
 #include <cmath>
+#include <numbers>
 #include <cstring>
+#include <utility>
 
 #include "config.h"
 #include "feature_collector.h"
@@ -47,39 +49,6 @@ constexpr uint32_t SOLVE_WG = 32u; /* one warp per column */
 /* SYCL GPU kernels                                                    */
 /* ------------------------------------------------------------------ */
 
-/* Kernel 1: means[25] (one global scalar value per element)
- *
- * CPU parity (compute_mean, called from compute_covariance_matrix): each of
- * the 25 means is over a single GLOBAL window across the whole truncated plane
- * at start (er, ec) — NOT per-tile. The historic per-tile origin
- * (tile_y*5 + er) over-read the plane and produced 25*num_blocks block-local
- * means, giving a wrong covariance and ~7x-low SpEED scores. One work-item per
- * element position writes means[elem] (scalar). means[] stays over-allocated
- * (25*num_blocks); only [0, 25) are written/read now. */
-static void launch_means(sycl::queue &q, const float *plane, float *means, uint32_t op_w,
-                         uint32_t stride_px, uint32_t num_blocks_h, uint32_t num_blocks,
-                         uint32_t submatrix_w, uint32_t submatrix_h)
-{
-    (void)op_w;
-    (void)num_blocks_h;
-    (void)num_blocks;
-    const size_t global = ((SP_ELEMENTS + MEANS_WG - 1u) / MEANS_WG) * MEANS_WG;
-    q.submit([&](sycl::handler &cgh) {
-        cgh.parallel_for(sycl::nd_range<1>(global, MEANS_WG), [=](sycl::nd_item<1> it) {
-            const uint32_t elem = (uint32_t)it.get_global_id(0);
-            if (elem >= SP_ELEMENTS)
-                return;
-            const uint32_t er = elem / SP_BLOCK_SIZE;
-            const uint32_t ec = elem % SP_BLOCK_SIZE;
-            float acc = 0.0f;
-            for (uint32_t i = 0; i < submatrix_h; ++i)
-                for (uint32_t j = 0; j < submatrix_w; ++j)
-                    acc += plane[(er + i) * stride_px + (ec + j)];
-            means[elem] = acc / (float)(submatrix_w * submatrix_h);
-        });
-    });
-}
-
 /* Kernel 2: covariance matrix (625 work-groups, one per (x_index, y_index))
  *
  * CPU parity (compute_covariance): one GLOBAL submatrix sweep with the scalar
@@ -88,6 +57,7 @@ static void launch_means(sycl::queue &q, const float *plane, float *means, uint3
  * block-local covariances instead — wrong matrix, ~7x-low scores. The work-
  * group's threads stride over the submatrix_h × submatrix_w pixels at
  * (xr+i, xc+j)/(yr+i, yc+j), reduce in local memory, and divide by N once. */
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static void launch_cov(sycl::queue &q, const float *plane, const float *means, float *cov_mat,
                        uint32_t stride_px, uint32_t num_blocks_h, uint32_t num_blocks,
                        uint32_t submatrix_w, uint32_t submatrix_h)
@@ -95,7 +65,7 @@ static void launch_cov(sycl::queue &q, const float *plane, const float *means, f
     (void)num_blocks_h;
     (void)num_blocks;
     /* 625 work-groups of COV_WG threads, one per (x_index, y_index) pair. */
-    const size_t total_wg = SP_ELEMENTS * SP_ELEMENTS;
+    const size_t total_wg = (size_t)SP_ELEMENTS * SP_ELEMENTS;
     q.submit([&](sycl::handler &cgh) {
         /* Two local arrays, not one: the accumulator is a compensated (hi, lo)
          * float pair. See the note in the kernel. */
@@ -147,13 +117,13 @@ static void launch_cov(sycl::queue &q, const float *plane, const float *means, f
                  * Folding the errors into `lo` without renormalising lets `lo`
                  * itself lose precision over the ~45,000 terms, which is what
                  * left the stored covariance one ulp out. */
-                const float s1 = hi + prod;
-                const float b1 = s1 - hi;
-                const float e1 = (hi - (s1 - b1)) + (prod - b1);
-                const float t = lo + perr + e1;
-                const float s2 = s1 + t;
-                lo = t - (s2 - s1);
-                hi = s2;
+                const float sum_hi = hi + prod;
+                const float bias = sum_hi - hi;
+                const float err = (hi - (sum_hi - bias)) + (prod - bias);
+                const float t = lo + perr + err;
+                const float renorm = sum_hi + t;
+                lo = t - (renorm - sum_hi);
+                hi = renorm;
             }
             {
                 const float t = hi + lo;
@@ -170,17 +140,17 @@ static void launch_cov(sycl::queue &q, const float *plane, const float *means, f
                      * way the per-work-item loop does. Adding the `lo` halves
                      * without folding the result back into `hi` loses the
                      * compensation across the eight reduction levels. */
-                    const float a = s_partial[tid];
-                    const float al = s_partial_lo[tid];
-                    const float b = s_partial[tid + s];
-                    const float bl = s_partial_lo[tid + s];
-                    const float s1 = a + b;
-                    const float b1 = s1 - a;
-                    const float e1 = (a - (s1 - b1)) + (b - b1);
-                    const float t = al + bl + e1;
-                    const float s2 = s1 + t;
-                    s_partial[tid] = s2;
-                    s_partial_lo[tid] = t - (s2 - s1);
+                    const float a_hi = s_partial[tid];
+                    const float a_lo = s_partial_lo[tid];
+                    const float b_hi = s_partial[tid + s];
+                    const float b_lo = s_partial_lo[tid + s];
+                    const float sum_hi = a_hi + b_hi;
+                    const float bias = sum_hi - a_hi;
+                    const float err = (a_hi - (sum_hi - bias)) + (b_hi - bias);
+                    const float t = a_lo + b_lo + err;
+                    const float renorm = sum_hi + t;
+                    s_partial[tid] = renorm;
+                    s_partial_lo[tid] = t - (renorm - sum_hi);
                 }
                 it.barrier(sycl::access::fence_space::local_space);
             }
@@ -198,7 +168,7 @@ static void launch_indterm(sycl::queue &q, const float *plane, float *indterm, u
                            uint32_t num_blocks_h, uint32_t num_blocks)
 {
     const uint32_t total = SP_ELEMENTS * num_blocks;
-    const size_t global = ((total + INDTERM_WG - 1u) / INDTERM_WG) * INDTERM_WG;
+    const size_t global = (size_t)((total + INDTERM_WG - 1u) / INDTERM_WG) * INDTERM_WG;
     q.submit([&](sycl::handler &cgh) {
         cgh.parallel_for(sycl::nd_range<1>(global, INDTERM_WG), [=](sycl::nd_item<1> it) {
             const uint32_t idx = (uint32_t)it.get_global_id(0);
@@ -218,12 +188,13 @@ static void launch_indterm(sycl::queue &q, const float *plane, float *indterm, u
 }
 
 /* Kernel 4: backward substitution (one sub-group per column) */
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static void launch_solve(sycl::queue &q, const float *R, float *rhs, uint32_t num_blocks)
 {
     /* Each warp (32 threads) handles one column; threads 25-31 idle. */
-    const size_t warps = ((num_blocks + 7u) / 8u) * 8u; /* round up to 8 warps per block */
+    const size_t warps = (size_t)((num_blocks + 7u) / 8u) * 8u; /* round up to 8 warps per block */
     const size_t global = warps * SOLVE_WG;
-    const size_t local = SOLVE_WG * 8u;
+    const size_t local = (size_t)SOLVE_WG * 8u;
     q.submit([&](sycl::handler &cgh) {
         cgh.parallel_for(sycl::nd_range<1>(global, local), [=](sycl::nd_item<1> it) {
             const uint32_t warp_id = (uint32_t)(it.get_global_id(0) / SOLVE_WG);
@@ -238,7 +209,7 @@ static void launch_solve(sycl::queue &q, const float *R, float *rhs, uint32_t nu
             const bool active = (warp_id < num_blocks && lane < SP_ELEMENTS);
             const uint32_t col = warp_id;
             for (int32_t i = (int32_t)(SP_ELEMENTS - 1u); i >= 0; --i) {
-                if (active && (int32_t)lane == i) {
+                if (active && std::cmp_equal(lane, i)) {
                     float val = rhs[(uint32_t)i * num_blocks + col];
                     const float denom = R[(uint32_t)i * SP_ELEMENTS + (uint32_t)i];
                     for (uint32_t k = (uint32_t)(i + 1); k < SP_ELEMENTS; ++k)
@@ -269,8 +240,8 @@ static void launch_score(sycl::queue &q, const float *ref_eigenvalues, const flo
                          const float *dis_indterm, float *ref_ent, float *ref_var, float *dis_ent,
                          float *dis_var, uint32_t num_blocks, float sigma_nn)
 {
-    const size_t global = ((num_blocks + SCORE_WG - 1u) / SCORE_WG) * SCORE_WG;
-    const float log2e_2pi = sycl::log2(2.0f * 3.14159265358979323846f * 2.71828182845904523536f);
+    const size_t global = (size_t)((num_blocks + SCORE_WG - 1u) / SCORE_WG) * SCORE_WG;
+    const float log2e_2pi = sycl::log2(2.0f * std::numbers::pi_v<float> * std::numbers::e_v<float>);
     q.submit([&](sycl::handler &cgh) {
         cgh.parallel_for(sycl::nd_range<1>(global, SCORE_WG), [=](sycl::nd_item<1> it) {
             const uint32_t tile = (uint32_t)it.get_global_id(0);
@@ -366,6 +337,7 @@ struct SpeedChromaSyclState {
     VmafDictionary *feature_name_dict;
 };
 
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static void free_sycl_state(SpeedChromaSyclState *s)
 {
     sycl::queue const *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
@@ -433,13 +405,13 @@ static float combine_chroma_uv(float score_u, float score_v, bool singular_u, bo
     return (score_u + score_v) * 0.5f;
 }
 
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static int run_channel(SpeedChromaSyclState *s, float *h_plane, float *h_indterm, float *d_indterm,
                        float *d_sol, bool *singular_out)
 {
     sycl::queue &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
     const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
     const uint32_t num_blocks_h = (uint32_t)s->dim.num_blocks_horizontal;
-    const uint32_t op_w = (uint32_t)s->dim.truncated_width;
     const uint32_t stride_px = (uint32_t)(s->float_stride / sizeof(float));
     const uint32_t submatrix_w = (uint32_t)s->dim.submatrix_width;
     const uint32_t submatrix_h = (uint32_t)s->dim.submatrix_height;
@@ -450,16 +422,31 @@ static int run_channel(SpeedChromaSyclState *s, float *h_plane, float *h_indterm
     q.memcpy(s->d_plane, h_plane, plane_bytes);
     q.wait();
 
+    /* The per-element means are computed on the HOST with the CPU reference's
+     * own routine, then uploaded.
+     *
+     * They are 1/25th of the covariance work — 25 elements against 625 pairs
+     * over the same submatrix — so offloading them buys nothing, and a device
+     * reduction that differs from the CPU's by one ulp propagates that ulp into
+     * every covariance term. This matters here more than the magnitudes suggest:
+     * the covariance is 25x25 estimated from a submatrix that can be as small as
+     * 6x6 (the parity fixture reduces to a 10x10 plane), so the system is badly
+     * under-determined and the downstream eigen/QR/solve amplifies a single ulp
+     * by ~70x on the final score. Using the CPU routine makes the means
+     * bit-identical by construction rather than by coincidence. */
+    float h_means[SP_ELEMENTS];
+    speed_internal_compute_means(&s->dim, h_plane, h_means, stride_px);
+    q.memcpy(s->d_means, h_means, sizeof(h_means));
+    q.wait();
+
     /* GPU kernels. */
-    launch_means(q, s->d_plane, s->d_means, op_w, stride_px, num_blocks_h, num_blocks, submatrix_w,
-                 submatrix_h);
     launch_cov(q, s->d_plane, s->d_means, s->d_cov_mat, stride_px, num_blocks_h, num_blocks,
                submatrix_w, submatrix_h);
     launch_indterm(q, s->d_plane, d_indterm, stride_px, num_blocks_h, num_blocks);
     q.wait();
 
     /* D2H: cov_mat and indterm. */
-    q.memcpy(s->h_cov_mat, s->d_cov_mat, SP_ELEMENTS * SP_ELEMENTS * sizeof(float));
+    q.memcpy(s->h_cov_mat, s->d_cov_mat, (size_t)SP_ELEMENTS * SP_ELEMENTS * sizeof(float));
     q.memcpy(h_indterm, d_indterm, indterm_bytes);
     q.wait();
 
@@ -530,6 +517,7 @@ static int run_channel(SpeedChromaSyclState *s, float *h_plane, float *h_indterm
 /* Lifecycle (C wrappers)                                             */
 /* ------------------------------------------------------------------ */
 
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static int score_aggregate(SpeedChromaSyclState *s, float *score_out)
 {
     sycl::queue &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
@@ -552,7 +540,7 @@ static int score_aggregate(SpeedChromaSyclState *s, float *score_out)
     const float base_entropy =
         (float)SP_ELEMENTS *
         (std::log2f((1.0f + (float)s->opt.speed_nn_floor) * (float)s->opt.speed_sigma_nn) +
-         std::log2f(2.0f * 3.14159265358979323846f * 2.71828182845904523536f));
+         std::log2f(2.0f * std::numbers::pi_v<float> * std::numbers::e_v<float>));
 
     float total = 0.0f;
     for (uint32_t i = 0; i < num_blocks; ++i) {
@@ -674,12 +662,22 @@ static const VmafOption options_chroma[] = {
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
         .alias = "wvm",
     },
-    {0},
+    {.name = nullptr},
 };
 
 /* forward decl for init failure cleanup — SY-2a */
+// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
+// `init_chroma_sycl` / `extract_chroma_sycl` / `close_chroma_sycl` entry points
+// and the `provided_features_chroma` table use C-style `static` rather than an
+// anonymous namespace because their addresses are stored in the
+// `extern "C" VmafFeatureExtractor` struct at the bottom of this file, which the
+// C ABI consumes through the function-pointer types in `feature_extractor.h`.
+// Same band, same reason, as integer_motion_sycl.cpp and integer_adm_sycl.cpp.
+// Per CLAUDE.md section 12 r12 these are load-bearing invariants of the
+// SYCL <-> libvmaf C-API ABI.
 static int close_chroma_sycl(VmafFeatureExtractor *fex);
 
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                             unsigned w, unsigned h)
 {
@@ -724,7 +722,7 @@ static int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_
     const size_t nb = s->dim.num_blocks;
     const size_t plane_bytes = s->dim.alloc_height * stride_px * sizeof(float);
     const size_t indterm_bytes = SP_ELEMENTS * nb * sizeof(float);
-    const size_t cov_bytes = SP_ELEMENTS * SP_ELEMENTS * sizeof(float);
+    const size_t cov_bytes = (size_t)SP_ELEMENTS * SP_ELEMENTS * sizeof(float);
     const size_t score_bytes = nb * sizeof(float);
 
 #define ALLOC_D(field, sz) s->field = sycl::malloc_device<float>((sz) / sizeof(float), q)
@@ -780,6 +778,7 @@ static int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_
     return 0;
 }
 
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static int extract_chroma_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                                VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                                VmafPicture *dist_pic_90, unsigned index,
@@ -822,10 +821,11 @@ static int extract_chroma_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
         int e = run_channel(s, s->h_plane_ref, s->h_indterm_ref, s->d_indterm_ref, s->d_sol_ref,
                             &singular_ref);
         if (e) {
-            if (ch == 1)
+            if (ch == 1) {
                 err_u = e;
-            else
+            } else {
                 err_v = e;
+            }
             continue;
         }
         /* Stash the reference eigenvalues aside before the distorted linalg pass
@@ -906,6 +906,8 @@ static const char *provided_features_chroma[] = {
 };
 
 /* ADR-0567: real SYCL GPU kernels for speed_chroma. */
+// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
+
 VmafFeatureExtractor vmaf_fex_speed_chroma_sycl = {
     .name = "speed_chroma_sycl",
     .init = init_chroma_sycl,

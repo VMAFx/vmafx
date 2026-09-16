@@ -184,6 +184,15 @@ void speed_internal_filter_and_downscale(const SpeedInternalDimensions *dim,
  * @param tmp_means    Scratch buffer [25] for means.
  * @param stride_px    float_stride / sizeof(float).
  */
+/* Per-element submatrix means, the same routine `speed_internal_compute_cov_matrix`
+ * uses internally. Exposed so a GPU path can compute them with the CPU's exact
+ * rounding instead of reimplementing the reduction on device: they are 1/25th of
+ * the covariance work (25 elements vs 625 pairs over the same submatrix), and a
+ * one-ulp difference here propagates into every covariance term. `means` must
+ * hold dim->elements_in_block floats. */
+void speed_internal_compute_means(const SpeedInternalDimensions *dim, const float *data,
+                                  float *means, size_t stride_px);
+
 void speed_internal_compute_cov_matrix(const SpeedInternalDimensions *dim, const float *data,
                                        float *cov_mat, float *tmp_means, size_t stride_px);
 
