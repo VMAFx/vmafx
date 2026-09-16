@@ -185,6 +185,7 @@ static char *feed(VmafContext *vmaf, unsigned index, unsigned ref_pattern, unsig
 /* Run `fex_name` over the fixture selected by `mode` and read `key` at
  * `read_index`. On a machine without a SYCL device (or under no oneAPI runtime)
  * `*skipped` is set and the score is left NaN. */
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
                    unsigned read_index, double *out_score, int *skipped)
 {
