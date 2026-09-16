@@ -73,6 +73,80 @@ cat >"$tmp/dotted.md" <<'MD'
 MD
 expect "an id containing a dot fails" 1 "$tmp/dotted.md"
 
+# Regression: the id is not always bold. Requiring `**` hid 95 of 576
+# id-bearing rows in docs/state.md, among them a byte-identical duplicate of
+# T-CUDA-MUL24-AUDIT-2026-05-28 that this gate reported as clean.
+cat >"$tmp/plain.md" <<'MD'
+## Recently closed
+
+| ID | Description |
+| --- | --- |
+| T-EPSILON-2026-01-04 | not bold, and filed twice |
+| T-EPSILON-2026-01-04 | not bold, and filed twice |
+MD
+expect "a duplicate NON-BOLD id fails" 1 "$tmp/plain.md"
+
+# Regression: upstream rows are keyed by the Netflix issue, not by a T- tag.
+# 34 such rows existed and 13 of them were duplicated.
+cat >"$tmp/netflix.md" <<'MD'
+## Confirmed not-affected (or already-fixed upstream of the fork's master)
+
+| ID | Description |
+| --- | --- |
+| Netflix#1234 — some upstream report | not affected |
+| Netflix#1234 — the same report, kept twice by a rebase | not affected |
+MD
+expect "a duplicate Netflix# id fails" 1 "$tmp/netflix.md"
+
+# Regression: tranche ids (**T6-1**, **T7-16**) are neither `T-` nor Netflix#.
+cat >"$tmp/tranche.md" <<'MD'
+## Deferred (waiting on external trigger)
+
+| ID | Description |
+| --- | --- |
+| **T7-42** — a tranche id | deferred |
+| **T7-42** — the same tranche id | deferred |
+MD
+expect "a duplicate tranche id fails" 1 "$tmp/tranche.md"
+
+# Regression: ~143 rows open with prose and carry no id at all, so the id check
+# cannot see them. A later verification sweep appends `_(verified ...)_` to one
+# copy, which also defeats a naive verbatim-row comparison. 13 rows were
+# duplicated in exactly this shape and were invisible to both checks.
+cat >"$tmp/prose.md" <<'MD'
+## Recently closed
+
+| Item | Description |
+| --- | --- |
+| **`foo.c` overflowed on empty input** — one-line summary | fixed in #1 |
+| **`foo.c` overflowed on empty input** — one-line summary _(verified 2026-05-09: PR #1 MERGED 2026-05-01.)_ | fixed in #1 |
+MD
+expect "a prose-led row duplicated modulo a verified-suffix fails" 1 "$tmp/prose.md"
+
+# The row check must NOT fire on the column header, which repeats once per
+# section by design. This is the false positive that the first version of the
+# row check produced.
+cat >"$tmp/headers.md" <<'MD'
+## Open bugs
+
+| ID | Description |
+| --- | --- |
+| **T-ZETA-2026-01-05** | open |
+
+## Recently closed
+
+| ID | Description |
+| --- | --- |
+| **T-ETA-2026-01-06** | closed |
+
+## Deferred (waiting on external trigger)
+
+| ID | Description |
+| --- | --- |
+| **T-THETA-2026-01-07** | deferred |
+MD
+expect "repeated column headers do NOT fail" 0 "$tmp/headers.md"
+
 expect "a missing file is rc=2" 2 "$tmp/nope.md"
 
 # the real file must be clean
