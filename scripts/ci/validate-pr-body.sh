@@ -84,12 +84,37 @@ if [ -n "${body_path}" ]; then
     exit 2
   fi
   body_text="$(cat -- "${body_path}")"
+  body_src="--body ${body_path}"
+elif [ -n "${PR_BODY:-}" ]; then
+  # Honour the same env var `make pr-check` and the CI workflow set, so the two
+  # entry points to the same parser take the same input the same way.
+  body_text="${PR_BODY}"
+  body_src="\$PR_BODY"
 elif [ ! -t 0 ]; then
   body_text="$(cat)"
+  body_src="stdin"
 else
-  echo "validate-pr-body: no PR body supplied — pass --body PATH or pipe on stdin." >&2
+  echo "validate-pr-body: no PR body supplied — pass --body PATH, set \$PR_BODY, or pipe on stdin." >&2
   usage
   exit 2
+fi
+
+# `[ ! -t 0 ]` is true in ANY non-interactive shell, pipe or not, so the stdin
+# branch is reached with nothing to read whenever this runs from a script, a
+# hook or a CI step. The parser would then report all six deliverables missing,
+# which is true of an empty string and misleading about the PR.
+if [ -z "$(printf '%s' "${body_text}" | tr -d '[:space:]')" ]; then
+  if [ "${body_src}" = "stdin" ]; then
+    echo "validate-pr-body: nothing arrived on stdin." >&2
+    echo "  '[ ! -t 0 ]' cannot distinguish an empty pipe from no pipe, so this" >&2
+    echo "  is reported here rather than as six missing deliverables." >&2
+    echo "  Pipe the body, or pass --body PATH, or set \$PR_BODY." >&2
+    usage
+    exit 2
+  fi
+  echo "validate-pr-body: the PR description is empty (source: ${body_src})." >&2
+  echo "  This would fail the CI gate. Fill in .github/PULL_REQUEST_TEMPLATE.md." >&2
+  exit 1
 fi
 
 # ---------- Resolve diff source ----------

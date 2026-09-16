@@ -172,6 +172,65 @@ canonical_body >"${work}/case8.body"
 } >"${work}/case8.diff"
 expect_exit "ticked Rebase note, no rebase-notes.md in diff" 1 "${work}/case8.body" "${work}/case8.diff"
 
+# ---------- Case 9: an explicitly-supplied EMPTY body reports itself ----------
+# `[ ! -t 0 ]` is true in ANY non-interactive shell, pipe or not, so the stdin
+# branch used to be taken with nothing to read: `cat` yielded "" and the parser
+# reported all six deliverables missing. True of an empty string, useless about
+# the PR. An empty body must say it is empty.
+: >"${work}/case9.body"
+: >"${work}/case9.diff"
+expect_exit "an empty --body file reports empty, not six missing items" 1 \
+  "${work}/case9.body" "${work}/case9.diff"
+
+out9="$("${validator}" --body "${work}/case9.body" --diff "${work}/case9.diff" 2>&1 || true)"
+if printf '%s' "${out9}" | grep -q 'description is empty'; then
+  echo "PASS: the empty-body message names the real fault"
+  pass_count=$((pass_count + 1))
+else
+  echo "FAIL: the empty-body message does not name the real fault"
+  printf '%s\n' "${out9}"
+  fail_count=$((fail_count + 1))
+fi
+if printf '%s' "${out9}" | grep -q 'missing deliverable'; then
+  echo "FAIL: an empty body still reports missing deliverables"
+  fail_count=$((fail_count + 1))
+else
+  echo "PASS: an empty body does not report missing deliverables"
+  pass_count=$((pass_count + 1))
+fi
+
+# ---------- Case 10: no body at all on a non-tty stdin is a usage error ----------
+# This is the shape that made the ledger entry: running the validator from a
+# script or hook with stdin on /dev/null. It must not be mistaken for a PR whose
+# checklist is unticked.
+: >"${work}/case10.diff"
+exit10=0
+"${validator}" --diff "${work}/case10.diff" </dev/null >/dev/null 2>&1 || exit10=$?
+if [ "${exit10}" -eq 2 ]; then
+  echo "PASS: empty stdin is a usage error (exit=2), not a gate failure"
+  pass_count=$((pass_count + 1))
+else
+  echo "FAIL: empty stdin gave exit=${exit10}, expected 2"
+  fail_count=$((fail_count + 1))
+fi
+
+# ---------- Case 11: $PR_BODY is honoured, like `make pr-check` ----------
+# The two entry points to the same parser should take the same input the same
+# way; before this, setting PR_BODY and running the validator silently read
+# empty stdin instead.
+: >"${work}/case11.diff"
+exit11=0
+PR_BODY="$(canonical_body)" "${validator}" --diff "${work}/case11.diff" >/dev/null 2>&1 || exit11=$?
+# The canonical body ticks all six but the empty diff has none of the files, so
+# the parser runs and fails on file-presence (1) rather than on an empty body.
+if [ "${exit11}" -eq 1 ]; then
+  echo "PASS: \$PR_BODY is read and the parser runs against it"
+  pass_count=$((pass_count + 1))
+else
+  echo "FAIL: \$PR_BODY path gave exit=${exit11}, expected 1"
+  fail_count=$((fail_count + 1))
+fi
+
 # ---------- Summary ----------
 echo ""
 echo "test-validate-pr-body: ${pass_count} passed, ${fail_count} failed"

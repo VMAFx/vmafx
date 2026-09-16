@@ -4,7 +4,7 @@
   enforce it — but it only matched ids that were **bold** and began
   with `T-`. That hid 95 of 576 id-bearing rows (17%), including a
   byte-identical duplicate of `T-CUDA-MUL24-AUDIT-2026-05-28`; it hid
-  all 34 `Netflix#NNN` rows, which had accumulated 13 duplicate pairs;
+  all 34 `Netflix#<issue>` rows, which had accumulated 13 duplicate pairs;
   and it hid the `**T6-1**` / `**T7-16**` tranche ids, which had four
   more. Roughly 143 rows open with prose and carry no id at all, so a
   further 13 duplicates were unreachable by any id-based check. The

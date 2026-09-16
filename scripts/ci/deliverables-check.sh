@@ -43,6 +43,24 @@ else
   exit 2
 fi
 
+# `[ ! -t 0 ]` is true in ANY non-interactive shell, pipe or not — a CI step, a
+# git hook, a `bash script.sh </dev/null`. So the stdin branch is taken with
+# nothing to read, `cat` yields "", and the parser then reports all six
+# deliverables missing. That is a true statement about an empty string and a
+# useless one about the PR: it sends the author looking for a checklist bug
+# when the real fault is that no body ever arrived. Say which it is.
+if [ -z "$(printf '%s' "${PR_BODY}" | tr -d '[:space:]')" ]; then
+  echo "::error title=ADR-0108 empty PR description::the PR body is empty" >&2
+  echo "deliverables-check: the PR description is empty (source: ${body_src})." >&2
+  echo "  The six ADR-0108 deliverables cannot be checked against an empty" >&2
+  echo "  body. Fill in .github/PULL_REQUEST_TEMPLATE.md." >&2
+  if [ "${body_src}" = "stdin" ]; then
+    echo "  Nothing arrived on stdin. If you meant to pipe the body, check the" >&2
+    echo "  producer: 'gh pr view <num> --json body -q .body | $0'." >&2
+  fi
+  exit 1
+fi
+
 # Strip markdown emphasis/code characters (backticks, asterisks,
 # underscores, backslashes) before grepping: the PR template wraps
 # labels like `AGENTS.md` in backticks, which would otherwise insert

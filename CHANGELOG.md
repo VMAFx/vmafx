@@ -25430,6 +25430,27 @@ matching `kh_shift_epi32` zero-clear.
   `.claude/skills/add-model/SKILL.md`.
 
 
+- **An empty PR body was reported as six missing deliverables.** Both
+  `scripts/ci/deliverables-check.sh` and
+  `scripts/ci/validate-pr-body.sh` selected their input with
+  `[ ! -t 0 ]`, which is true in *any* non-interactive shell — a CI
+  step, a git hook, `bash script.sh </dev/null` — whether or not
+  anything is actually piped. The stdin branch was therefore taken with
+  nothing to read, `cat` yielded an empty string, and the ADR-0108
+  parser dutifully reported all six deliverables missing. That is a
+  true statement about an empty string and a misleading one about the
+  PR: it sends the author hunting for a checklist-syntax bug when the
+  real fault is that no body ever arrived. Both scripts now detect a
+  blank body and say which it is — "nothing arrived on stdin" (usage
+  error, exit 2) when the producer is at fault, and "the PR description
+  is empty" (exit 1) when a body was supplied and is genuinely blank.
+  `validate-pr-body.sh` also honours `$PR_BODY`, so it and
+  `make pr-check` — two entry points to the same parser — take the same
+  input the same way; previously setting `PR_BODY` and running the
+  validator silently read empty stdin instead. Five new cases in
+  `scripts/ci/test-validate-pr-body.sh` (13 total).
+
+
 PR #1067 (bootstrap name-builder refactor) clobbered four GPU feature options:
 restore `enable_chroma` in `float_psnr_metal` and `integer_psnr_metal`;
 restore `vif_skip_scale0` in `vif_vulkan`; restore ceiling-division chroma
@@ -26762,7 +26783,7 @@ Fix three broken ADR slug refs in `docs/state.md` that pointed to renamed ADR fi
   enforce it — but it only matched ids that were **bold** and began
   with `T-`. That hid 95 of 576 id-bearing rows (17%), including a
   byte-identical duplicate of `T-CUDA-MUL24-AUDIT-2026-05-28`; it hid
-  all 34 `Netflix#NNN` rows, which had accumulated 13 duplicate pairs;
+  all 34 `Netflix#<issue>` rows, which had accumulated 13 duplicate pairs;
   and it hid the `**T6-1**` / `**T7-16**` tranche ids, which had four
   more. Roughly 143 rows open with prose and carry no id at all, so a
   further 13 duplicates were unreachable by any id-based check. The
