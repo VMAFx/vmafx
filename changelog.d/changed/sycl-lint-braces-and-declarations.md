@@ -3,7 +3,7 @@
   everything else, and the SYCL lane had never been swept.
   `readability-braces-around-statements` and
   `readability-isolate-declaration` are now clean across all 23 SYCL
-  translation units (392 → 332 warnings). Both are purely syntactic, so
+  translation units. Both are purely syntactic, so
   they cannot move a score; verified anyway by rebuilding with `icpx`
   and running the full SYCL suite on the Arc A380 — 195/195 pass,
   including every cross-backend parity test.

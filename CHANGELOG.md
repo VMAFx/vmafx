@@ -15605,7 +15605,7 @@ See [ADR-0458](../docs/adr/0458-sycl-cambi-ssim-slm-staging.md) and
   everything else, and the SYCL lane had never been swept.
   `readability-braces-around-statements` and
   `readability-isolate-declaration` are now clean across all 23 SYCL
-  translation units (392 → 332 warnings). Both are purely syntactic, so
+  translation units. Both are purely syntactic, so
   they cannot move a score; verified anyway by rebuilding with `icpx`
   and running the full SYCL suite on the Arc A380 — 195/195 pass,
   including every cross-backend parity test.
@@ -15619,8 +15619,26 @@ See [ADR-0458](../docs/adr/0458-sycl-cambi-ssim-slm-staging.md) and
   atomic_ref — clang-tidy cannot see") is now backed by a measurement.
 
 
-- **SYCL lint, second pass: 332 → 220 warnings.** Three more families
-  cleared. The `extern "C"` linkage band (ADR-0278 citation form) now
+- **SYCL lint, third pass, and a correction to the counts.**
+  `modernize-use-nullptr` is now clean in the SYCL C++ translation units.
+  ADR-1138 exempts only *C* TUs — where MSVC's `/std:clatest` has no C23
+  `nullptr` — so the `.cpp` kernels get the keyword rather than a
+  suppression band.
+  **The warning counts reported in the two preceding entries were wrong.**
+  They were measured while `ninja` had regenerated
+  `build-sycl/compile_commands.json` and dropped the entries
+  `scripts/ci/gen-sycl-compile-commands.py` synthesises for the SYCL TUs,
+  so clang-tidy silently fell back to default flags and under-counted.
+  Re-measured with the database regenerated immediately before each run,
+  the SYCL lane went **517 → 345 → 303**. The code changes were never in
+  doubt — each was verified by building with `icpx` and running 195/195
+  on the Arc A380 — only the numbers were. The lesson is the one the
+  repo already learned once: a tool that silently degrades when its
+  input is stale will report progress you did not make, so regenerate
+  the database and check the parse-error count before trusting a delta.
+
+
+- **SYCL lint, second pass.** Three more families cleared. The `extern "C"` linkage band (ADR-0278 citation form) now
   covers the 12 SYCL translation units that lacked it — these `static`
   entry points cannot move into an anonymous namespace because their
   addresses live in an `extern "C" VmafFeatureExtractor` struct and a

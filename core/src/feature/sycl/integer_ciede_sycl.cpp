@@ -318,7 +318,7 @@ static void launch_ciede(sycl::queue &q, void *ref_y, void *ref_u, void *ref_v, 
 
 extern "C" {
 
-static const VmafOption options_ciede_sycl[] = {{0}};
+static const VmafOption options_ciede_sycl[] = {{nullptr}};
 
 // NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
 // `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
@@ -492,13 +492,13 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
     return 0;
 }
 
-static const char *provided_features_ciede_sycl[] = {"ciede2000", NULL};
+static const char *provided_features_ciede_sycl[] = {"ciede2000", nullptr};
 
 extern "C" VmafFeatureExtractor vmaf_fex_ciede_sycl = {
     .name = "ciede_sycl",
     .init = init_fex_sycl,
-    .extract = NULL,
-    .flush = NULL,
+    .extract = nullptr,
+    .flush = nullptr,
     .close = close_fex_sycl,
     .submit = submit_fex_sycl,
     .collect = collect_fex_sycl,

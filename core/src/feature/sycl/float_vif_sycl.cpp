@@ -497,7 +497,7 @@ static const VmafOption options_float_vif_sycl[] = {
      .type = VMAF_OPT_TYPE_BOOL,
      .default_val = {.b = false},
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {0}};
+    {nullptr}};
 
 // NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
 // `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
@@ -803,13 +803,13 @@ static const char *provided_features_float_vif_sycl[] = {"VMAF_feature_vif_scale
                                                          "vif_den_scale2",
                                                          "vif_num_scale3",
                                                          "vif_den_scale3",
-                                                         NULL};
+                                                         nullptr};
 
 extern "C" VmafFeatureExtractor vmaf_fex_float_vif_sycl = {
     .name = "float_vif_sycl",
     .init = init_fex_sycl,
-    .extract = NULL,
-    .flush = NULL,
+    .extract = nullptr,
+    .flush = nullptr,
     .close = close_fex_sycl,
     .submit = submit_fex_sycl,
     .collect = collect_fex_sycl,

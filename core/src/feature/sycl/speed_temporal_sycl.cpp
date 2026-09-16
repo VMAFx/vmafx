@@ -549,7 +549,7 @@ static const VmafOption options_temporal[] = {
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
         .alias = "urd",
     },
-    {0},
+    {nullptr},
 };
 
 // NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the

@@ -729,7 +729,7 @@ const VmafOption options_ssimulacra2_sycl[] = {
      .default_val = {.i = SS2S_MATRIX_BT709_LIMITED},
      .min = 0,
      .max = 3},
-    {0},
+    {nullptr},
 };
 
 int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,

@@ -324,7 +324,7 @@ static const VmafOption options_ssim_sycl[] = {
         .min = 0,
         .max = 10,
     },
-    {0},
+    {nullptr},
 };
 
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
@@ -488,13 +488,13 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
     return 0;
 }
 
-static const char *provided_features_ssim_sycl[] = {"float_ssim", NULL};
+static const char *provided_features_ssim_sycl[] = {"float_ssim", nullptr};
 
 extern "C" VmafFeatureExtractor vmaf_fex_float_ssim_sycl = {
     .name = "float_ssim_sycl",
     .init = init_fex_sycl,
-    .extract = NULL,
-    .flush = NULL,
+    .extract = nullptr,
+    .flush = nullptr,
     .close = close_fex_sycl,
     .submit = submit_fex_sycl,
     .collect = collect_fex_sycl,
@@ -973,10 +973,10 @@ static int close_fex_issim_sycl(VmafFeatureExtractor *fex)
 extern "C" {
 
 static const VmafOption options_issim_sycl[] = {
-    {0},
+    {nullptr},
 };
 
-static const char *provided_features_issim_sycl[] = {"ssim", NULL};
+static const char *provided_features_issim_sycl[] = {"ssim", nullptr};
 
 /* Real integer_ssim SYCL extractor (ADR-0564). Uses 9-tap int64 moments
  * matching the CPU algorithm. The SSIM formula is computed in float32
@@ -985,8 +985,8 @@ static const char *provided_features_issim_sycl[] = {"ssim", NULL};
 VmafFeatureExtractor vmaf_fex_integer_ssim_sycl = {
     .name = "integer_ssim_sycl",
     .init = init_fex_issim_sycl,
-    .extract = NULL,
-    .flush = NULL,
+    .extract = nullptr,
+    .flush = nullptr,
     .close = close_fex_issim_sycl,
     .submit = submit_fex_issim_sycl,
     .collect = collect_fex_issim_sycl,

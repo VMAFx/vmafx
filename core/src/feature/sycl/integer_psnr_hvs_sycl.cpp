@@ -413,7 +413,7 @@ static const VmafOption options_psnr_hvs_sycl[] = {
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = true,
     },
-    {0},
+    {nullptr},
 };
 
 // NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
@@ -646,13 +646,13 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 }
 
 static const char *provided_features_psnr_hvs_sycl[] = {"psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs_cr",
-                                                        "psnr_hvs", NULL};
+                                                        "psnr_hvs", nullptr};
 
 extern "C" VmafFeatureExtractor vmaf_fex_psnr_hvs_sycl = {
     .name = "psnr_hvs_sycl",
     .init = init_fex_sycl,
-    .extract = NULL,
-    .flush = NULL,
+    .extract = nullptr,
+    .flush = nullptr,
     .close = close_fex_sycl,
     .submit = submit_fex_sycl,
     .collect = collect_fex_sycl,

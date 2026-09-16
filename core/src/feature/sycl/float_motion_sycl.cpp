@@ -249,7 +249,7 @@ static const VmafOption options_float_motion_sycl[] = {
      .min = 0.0,
      .max = 5.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {0}};
+    {nullptr}};
 
 // NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
 // `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
@@ -453,12 +453,12 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 }
 
 static const char *provided_features_float_motion_sycl[] = {"VMAF_feature_motion_score",
-                                                            "VMAF_feature_motion2_score", NULL};
+                                                            "VMAF_feature_motion2_score", nullptr};
 
 extern "C" VmafFeatureExtractor vmaf_fex_float_motion_sycl = {
     .name = "float_motion_sycl",
     .init = init_fex_sycl,
-    .extract = NULL,
+    .extract = nullptr,
     .flush = flush_fex_sycl,
     .close = close_fex_sycl,
     .submit = submit_fex_sycl,

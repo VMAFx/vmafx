@@ -246,7 +246,7 @@ static const VmafOption options_psnr_sycl[] = {{
                                                    .type = VMAF_OPT_TYPE_BOOL,
                                                    .default_val.b = false,
                                                },
-                                               {0}};
+                                               {nullptr}};
 
 // NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
 // `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
@@ -466,13 +466,13 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
  * `n_planes` to 1 and chroma dispatches are skipped at runtime,
  * but the static list still claims chroma so the dispatcher routes
  * `psnr_cb` / `psnr_cr` requests through the SYCL twin. */
-static const char *provided_features_psnr_sycl[] = {"psnr_y", "psnr_cb", "psnr_cr", NULL};
+static const char *provided_features_psnr_sycl[] = {"psnr_y", "psnr_cb", "psnr_cr", nullptr};
 
 extern "C" VmafFeatureExtractor vmaf_fex_psnr_sycl = {
     .name = "psnr_sycl",
     .init = init_fex_sycl,
-    .extract = NULL,
-    .flush = NULL,
+    .extract = nullptr,
+    .flush = nullptr,
     .close = close_fex_sycl,
     .submit = submit_fex_sycl,
     .collect = collect_fex_sycl,

@@ -1,5 +1,4 @@
-- **SYCL lint, second pass: 332 → 220 warnings.** Three more families
-  cleared. The `extern "C"` linkage band (ADR-0278 citation form) now
+- **SYCL lint, second pass.** Three more families cleared. The `extern "C"` linkage band (ADR-0278 citation form) now
   covers the 12 SYCL translation units that lacked it — these `static`
   entry points cannot move into an anonymous namespace because their
   addresses live in an `extern "C" VmafFeatureExtractor` struct and a

@@ -442,7 +442,7 @@ static const VmafOption options_cambi_sycl[] = {
     {
         .name = "topk",
         .help = "Ratio of pixels for the spatial pooling computation",
-        .alias = NULL,
+        .alias = nullptr,
         .offset = offsetof(CambiStateSycl, topk),
         .type = VMAF_OPT_TYPE_DOUBLE,
         .default_val.d = CAMBI_SYCL_DEFAULT_TOPK,
@@ -497,7 +497,7 @@ static const VmafOption options_cambi_sycl[] = {
     {
         .name = "eotf",
         .help = "EOTF for visibility-threshold conversion (bt1886 / pq)",
-        .alias = NULL,
+        .alias = nullptr,
         .offset = offsetof(CambiStateSycl, eotf),
         .type = VMAF_OPT_TYPE_STRING,
         .default_val.s = CAMBI_SYCL_DEFAULT_EOTF,
@@ -528,7 +528,7 @@ static const VmafOption options_cambi_sycl[] = {
         .max = CAMBI_4K_HEIGHT,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
-    {0},
+    {nullptr},
 };
 
 // NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
@@ -948,13 +948,13 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
     return 0;
 }
 
-static const char *provided_features_cambi_sycl[] = {"Cambi_feature_cambi_score", NULL};
+static const char *provided_features_cambi_sycl[] = {"Cambi_feature_cambi_score", nullptr};
 
 extern "C" VmafFeatureExtractor vmaf_fex_cambi_sycl = {
     .name = "cambi_sycl",
     .init = init_fex_sycl,
-    .extract = NULL,
-    .flush = NULL,
+    .extract = nullptr,
+    .flush = nullptr,
     .close = close_fex_sycl,
     .submit = submit_fex_sycl,
     .collect = collect_fex_sycl,
