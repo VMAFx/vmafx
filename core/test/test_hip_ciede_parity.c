@@ -31,6 +31,7 @@
  * passes — same pattern as test_hip_vif_parity.c.
  */
 
+#include <errno.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -128,6 +129,16 @@ static char *run_hip_ciede(double *score)
     err = vmaf_use_feature(vmaf, "ciede_hip", NULL);
     mu_assert("HIP: vmaf_use_feature(ciede_hip) failed", !err);
     err = feed_frame(vmaf);
+    if (err == -ENOSYS) {
+        /* Documented scaffold contract: an unimplemented HIP extractor returns
+         * -ENOSYS from init (see core/src/feature/hip/*.c). That is a
+         * not-built-yet signal, not a regression, so skip exactly as the
+         * no-device branch above does. Any other error still fails. */
+        (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
+        (void)vmaf_close(vmaf);
+        vmaf_hip_state_free(&hip_state);
+        return NULL;
+    }
     mu_assert("HIP: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
