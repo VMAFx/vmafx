@@ -2,7 +2,7 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
- *  Real integer_ssim feature extractor on the CUDA backend (ADR-0553).
+ *  Real integer_ssim feature extractor on the CUDA backend (ADR-0564).
  *
  *  This extractor provides the `"ssim"` feature (same name as the CPU
  *  `vmaf_fex_ssim` in `libvmaf/src/feature/integer_ssim.c`) using a
@@ -387,7 +387,7 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 
 static const char *provided_features[] = {"ssim", NULL};
 
-/* Real integer_ssim GPU extractor (ADR-0553). Bit-exact with the CPU
+/* Real integer_ssim GPU extractor (ADR-0564). Bit-exact with the CPU
  * `vmaf_fex_ssim` using fixed-point int64 accumulation and boundary-
  * truncation matching the CPU's ring-buffer algorithm.
  * Named `integer_ssim_cuda` to distinguish it from the CPU `ssim`

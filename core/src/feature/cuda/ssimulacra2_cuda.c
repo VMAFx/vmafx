@@ -3,7 +3,7 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  ssimulacra2 feature kernel on the CUDA backend (T7-23 / GPU
- *  long-tail batch 3 part 7b — ADR-0192 / ADR-0204). CUDA twin of
+ *  long-tail batch 3 part 7b — ADR-0192 / ADR-0206). CUDA twin of
  *  ssimulacra2_vulkan (PR #156 / ADR-0201).
  *
  *  Pipeline (per ADR-0201 — same shape as the Vulkan port):

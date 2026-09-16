@@ -3,7 +3,7 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  CUDA compute kernels for the real integer_ssim feature extractor
- *  (ADR-0553). Bit-exact port of `libvmaf/src/feature/integer_ssim.c`.
+ *  (ADR-0564). Bit-exact port of `libvmaf/src/feature/integer_ssim.c`.
  *
  *  The CPU integer_ssim uses a 9-tap Gaussian kernel with INTEGER weights
  *  (sigma=1.5, KERNEL_WEIGHT=256, kernel=[2,9,28,55,68,55,28,9,2]).

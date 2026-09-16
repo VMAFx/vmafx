@@ -24,7 +24,7 @@
 #              CI lane.
 #   --write    Rewrite CHANGELOG.md in place with the rendered body.
 #
-# Splice contract (ADR-0900):
+# Splice contract (ADR-0913):
 #   The Unreleased block lives between the "## [Unreleased] ..." header
 #   and the *next bracketed* "## [version] - date" header that release-please
 #   writes at release time. The boundary regex is `^## \[` — NOT `^## ` —
