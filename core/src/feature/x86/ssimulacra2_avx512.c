@@ -77,6 +77,39 @@ static inline double quartic_d(double x)
     return x * x;
 }
 
+/* One pixel of the ADR-1208 edge-diff accumulation, taken in double.
+ *
+ * The vector body and the scalar tail below used to carry identical copies of
+ * these ten lines. Sharing one definition is what stops them drifting apart,
+ * which is precisely the defect ADR-1208 records: the SIMD path subtracted in
+ * float while every scalar reference promoted first, and the ssimulacra2 score
+ * came to depend on whether the host had SIMD. The operations and their order
+ * are unchanged by the extraction, so the accumulated bits are unchanged.
+ *
+ * `a1`/`am1`/`a2`/`am2` are `double` parameters on purpose: the callers pass
+ * floats and the promotion happens at the call, exactly as the explicit
+ * `(double)` casts did before. */
+typedef struct {
+    double artifact;
+    double artifact_quartic;
+    double detail;
+    double detail_quartic;
+} edge_diff_acc_t;
+
+static inline void edge_diff_accum_d(edge_diff_acc_t *acc, double a1, double am1, double a2,
+                                     double am2)
+{
+    const double ed1 = fabs(a1 - am1);
+    const double ed2 = fabs(a2 - am2);
+    const double d = (1.0 + ed2) / (1.0 + ed1) - 1.0;
+    const double art = d > 0.0 ? d : 0.0;
+    const double det = d < 0.0 ? -d : 0.0;
+    acc->artifact += art;
+    acc->artifact_quartic += quartic_d(art);
+    acc->detail += det;
+    acc->detail_quartic += quartic_d(det);
+}
+
 void ssimulacra2_multiply_3plane_avx512(const float *a, const float *b, float *mul, unsigned w,
                                         unsigned h)
 {
@@ -320,10 +353,7 @@ void ssimulacra2_edge_diff_map_avx512(const float *img1, const float *mu1, const
     const double one_per_pixels = 1.0 / (double)plane;
 
     for (int c = 0; c < 3; c++) {
-        double s0 = 0.0;
-        double s1 = 0.0;
-        double s2 = 0.0;
-        double s3 = 0.0;
+        edge_diff_acc_t acc = {0.0, 0.0, 0.0, 0.0};
         const float *r1 = img1 + (size_t)c * plane;
         const float *rm1 = mu1 + (size_t)c * plane;
         const float *r2 = img2 + (size_t)c * plane;
@@ -335,14 +365,8 @@ void ssimulacra2_edge_diff_map_avx512(const float *img1, const float *mu1, const
             const __m512 a2 = _mm512_loadu_ps(r2 + i);
             const __m512 am1 = _mm512_loadu_ps(rm1 + i);
             const __m512 am2 = _mm512_loadu_ps(rm2 + i);
-            /* ADR-1208: the reference difference is taken in DOUBLE.
-             * `a` and `am` are floats, so `(double)a - (double)am` is exact,
-             * whereas subtracting in float rounds first. The scalar
-             * `edge_diff_map`, this function's own scalar tail, and the test's
-             * reference all promote before subtracting; vectorising the
-             * subtract in float made the ssimulacra2 score depend on whether
-             * the host had SIMD. The per-lane loop below is scalar anyway, so
-             * nothing is lost by folding the subtraction into it. */
+            /* ADR-1208: the difference is taken in double, per-lane — see
+             * edge_diff_accum_d above. */
             alignas(64) float a1f[16];
             alignas(64) float am1f[16];
             alignas(64) float a2f[16];
@@ -351,33 +375,15 @@ void ssimulacra2_edge_diff_map_avx512(const float *img1, const float *mu1, const
             _mm512_store_ps(am1f, am1);
             _mm512_store_ps(a2f, a2);
             _mm512_store_ps(am2f, am2);
-            for (int k = 0; k < 16; k++) {
-                double ed1 = fabs((double)a1f[k] - (double)am1f[k]);
-                double ed2 = fabs((double)a2f[k] - (double)am2f[k]);
-                double d = (1.0 + ed2) / (1.0 + ed1) - 1.0;
-                double art = d > 0.0 ? d : 0.0;
-                double det = d < 0.0 ? -d : 0.0;
-                s0 += art;
-                s1 += quartic_d(art);
-                s2 += det;
-                s3 += quartic_d(det);
-            }
+            for (int k = 0; k < 16; k++)
+                edge_diff_accum_d(&acc, a1f[k], am1f[k], a2f[k], am2f[k]);
         }
-        for (; i < plane; i++) {
-            double ed1 = fabs((double)r1[i] - (double)rm1[i]);
-            double ed2 = fabs((double)r2[i] - (double)rm2[i]);
-            double d = (1.0 + ed2) / (1.0 + ed1) - 1.0;
-            double art = d > 0.0 ? d : 0.0;
-            double det = d < 0.0 ? -d : 0.0;
-            s0 += art;
-            s1 += quartic_d(art);
-            s2 += det;
-            s3 += quartic_d(det);
-        }
-        plane_averages[c * 4 + 0] = one_per_pixels * s0;
-        plane_averages[c * 4 + 1] = sqrt(sqrt(one_per_pixels * s1));
-        plane_averages[c * 4 + 2] = one_per_pixels * s2;
-        plane_averages[c * 4 + 3] = sqrt(sqrt(one_per_pixels * s3));
+        for (; i < plane; i++)
+            edge_diff_accum_d(&acc, r1[i], rm1[i], r2[i], rm2[i]);
+        plane_averages[c * 4 + 0] = one_per_pixels * acc.artifact;
+        plane_averages[c * 4 + 1] = sqrt(sqrt(one_per_pixels * acc.artifact_quartic));
+        plane_averages[c * 4 + 2] = one_per_pixels * acc.detail;
+        plane_averages[c * 4 + 3] = sqrt(sqrt(one_per_pixels * acc.detail_quartic));
     }
 }
 
