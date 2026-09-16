@@ -37,7 +37,7 @@ files. The current dual-notice form decodes to two parties:
 
 ```text
 Copyright 2026 Lusoris and Claude (Anthropic)
-SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+SPDX-License-Identifier: BSD-2-Clause-Patent
 ```
 
 Scanners that key on the copyright string surface "Claude (Anthropic)"

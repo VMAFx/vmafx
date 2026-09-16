@@ -1,6 +1,6 @@
 <!-- markdownlint-disable MD013 MD060 -->
 <!--
-  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+  SPDX-License-Identifier: BSD-2-Clause-Patent
   Copyright 2026 Lusoris
 -->
 

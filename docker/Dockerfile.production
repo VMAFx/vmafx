@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 # Copyright 2026 Lusoris
 #
 # docker/Dockerfile.production — VMAFX production runtime image
@@ -36,7 +36,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 LABEL org.opencontainers.image.title="vmafx-builder"
 LABEL org.opencontainers.image.description="Build stage: libvmaf + vmaf CLI (release/stripped)"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
 
 # Install only build-time deps; nothing carried into the runtime stage
 # hadolint ignore=DL3008
@@ -109,7 +109,7 @@ FROM ${RELEASE_RUNTIME_CC} AS runtime-base
 LABEL org.opencontainers.image.title="vmafx"
 LABEL org.opencontainers.image.description="VMAFX production runtime — libvmaf + vmaf CLI / MCP server"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
 
 # Copy libvmaf.so* into /usr/local/lib and set up symlinks
@@ -146,7 +146,7 @@ FROM ${RELEASE_PYTHON_BASE} AS server
 LABEL org.opencontainers.image.title="vmafx-server"
 LABEL org.opencontainers.image.description="VMAFX MCP server — libvmaf + vmaf CLI + Python 3.14"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
 
 COPY --from=builder /dist/lib/ /usr/local/lib/

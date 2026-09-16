@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 <!--
   Copyright 2026 Lusoris
-  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 -->
 # Research-0751: Cross-backend 4K Baseline + PR #79 adm_cm A/B at 4K
 

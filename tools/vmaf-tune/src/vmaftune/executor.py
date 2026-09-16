@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 """Phase F execute mode — drive real encodes + scores for a ``vmaf-tune auto`` plan.
 
 ``run_plan`` iterates the ``selected`` cell(s) from an :class:`~vmaftune.auto.AutoPlan`,

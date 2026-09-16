@@ -3,7 +3,7 @@
 #
 # Copyright 2026 Lusoris
 # Copyright 2026 Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 
 set -euo pipefail
 

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.27@sha256:bde3983e9c939224420ddaf6b784cc30e09b035a4dea01f581230c50809f372e
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 # Copyright 2026 Lusoris
 #
 # dev/Containerfile — VMAF fork dev-MCP container
@@ -127,7 +127,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 LABEL org.opencontainers.image.title="vmaf-dev-mcp-build-deps"
 LABEL org.opencontainers.image.description="Base build tools for VMAF fork dev-MCP container"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
 
 # Container-only publishing marker (ADR-1102, docs/development/publishing.md).
 # `scripts/ci/check-container-build.sh` reads this file to tell a container

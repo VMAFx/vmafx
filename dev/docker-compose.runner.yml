@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 # Copyright 2026 Lusoris
 #
 # dev/docker-compose.runner.yml — Containerised self-hosted GitHub Actions runner for Intel Arc A380 SYCL parity

@@ -1,6 +1,6 @@
 <!--
   Copyright 2026 Lusoris
-  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 -->
 ## [perf] CUDA F3 struct-by-value kernel audit (ADR-0756)
 

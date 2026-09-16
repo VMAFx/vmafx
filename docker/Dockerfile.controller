@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 # Copyright 2026 Lusoris
 #
 # docker/Dockerfile.controller — multi-stage build for the vmafx-controller Go binary.
@@ -118,7 +118,7 @@ FROM ${RELEASE_RUNTIME_CC} AS controller
 LABEL org.opencontainers.image.title="vmafx-controller"
 LABEL org.opencontainers.image.description="VMAFX controller — distributed job queue + node registry, gRPC + HTTP, backed by libvmaf"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
 
 # Copy libvmaf.so* and the vmaf CLI from the vmaf-builder stage.

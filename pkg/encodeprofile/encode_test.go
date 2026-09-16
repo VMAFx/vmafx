@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: BSD-2-Clause-Patent OR MIT
 //
 // pkg/encodeprofile/encode_test.go — tests for the argv builder, the version
 // parsers and the encode driver.

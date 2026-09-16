@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 # Copyright 2026 Lusoris
 # Copyright 2026 Claude (Anthropic)
 # Regression tests for ADR-1239; all mutations use disposable repositories.

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.27@sha256:bde3983e9c939224420ddaf6b784cc30e09b035a4dea01f581230c50809f372e
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 # Copyright 2026 Lusoris
 #
 # dev/Containerfile.runner — Self-hosted GitHub Actions runner image for Intel Arc SYCL CI
@@ -16,7 +16,7 @@ FROM ${BASE_IMAGE}
 LABEL org.opencontainers.image.title="vmaf-sycl-arc-runner"
 LABEL org.opencontainers.image.description="Containerised GitHub Actions runner for Intel Arc A380 SYCL CI"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
 
 ARG RUNNER_VERSION=2.337.0
 ARG RUNNER_SHA256=70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613

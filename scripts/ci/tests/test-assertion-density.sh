@@ -9,7 +9,7 @@
 # Exit 0 on all-pass, 1 on any failure.
 #
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 
 set -euo pipefail
 
@@ -100,7 +100,7 @@ run_test() {
 legacy_header_file="$TMPDIR_TESTS/legacy_header.c"
 cat >"$legacy_header_file" <<'EOF'
 // Copyright 2025 Lusoris and Claude (Anthropic)
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: BSD-2-Clause-Patent
 
 #include <assert.h>
 
@@ -114,7 +114,7 @@ EOF
 new_header_file="$TMPDIR_TESTS/new_header.c"
 cat >"$new_header_file" <<'EOF'
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: BSD-2-Clause-Patent
 
 #include <assert.h>
 
@@ -128,7 +128,7 @@ EOF
 netflix_header_file="$TMPDIR_TESTS/netflix_header.c"
 cat >"$netflix_header_file" <<'EOF'
 // Copyright 2016-2024 Netflix, Inc.
-// SPDX-License-Identifier: BSD+Patent
+// SPDX-License-Identifier: BSD-2-Clause-Patent
 
 int netflix_func(int x) {
     return x + 1;

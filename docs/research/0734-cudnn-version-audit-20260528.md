@@ -1,6 +1,6 @@
 <!-- markdownlint-disable MD013 MD028 MD060 -->
 # Research digest 0734 — cuDNN version audit for ONNX Runtime / tiny-AI inference
-<!-- SPDX-License-Identifier: BSD-3-Clause-Plus-Patent -->
+<!-- SPDX-License-Identifier: BSD-2-Clause-Patent -->
 <!-- Copyright 2026 Lusoris -->
 
 **Date:** 2026-05-28

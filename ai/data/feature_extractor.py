@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 """Per-frame feature extraction via the libvmaf CLI.
 
 The extractor mirrors the canonical-6 student contract (the ``vmaf_v0.6.1``

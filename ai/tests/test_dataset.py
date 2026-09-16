@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 """Tests for :class:`ai.train.dataset.NetflixFrameDataset`.
 
 Mocks libvmaf via the ``payload_provider`` injection point so the suite

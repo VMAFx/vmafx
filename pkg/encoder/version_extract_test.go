@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: BSD-2-Clause-Patent
 // Copyright 2026 Lusoris
 //
 // pkg/encoder/version_extract_test.go — table-driven unit tests for the

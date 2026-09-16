@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 # Copyright 2026 Lusoris
 #
 # docker/Dockerfile.operator — multi-stage build for the vmafx-operator Go binary.
@@ -89,7 +89,7 @@ FROM ${RELEASE_RUNTIME_STATIC} AS operator
 LABEL org.opencontainers.image.title="vmafx-operator"
 LABEL org.opencontainers.image.description="VMAFX Kubernetes operator — CRD reconciliation for VmafxJob / VmafxNode / VmafxModelTraining"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
 
 COPY --from=go-builder /out/vmafx-operator /usr/local/bin/vmafx-operator

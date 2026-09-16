@@ -1,6 +1,6 @@
 <!-- markdownlint-disable MD060 -->
 <!--
-SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+SPDX-License-Identifier: BSD-2-Clause-Patent
 Copyright 2026 Lusoris
 -->
 # Research-0734: CUDA `__mul24` silent-corruption sweep (CUDA 13.3 fix surface)

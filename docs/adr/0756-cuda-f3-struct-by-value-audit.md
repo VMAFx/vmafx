@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 <!--
   Copyright 2026 Lusoris
-  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 -->
 # ADR-0756: CUDA F3 struct-by-value kernel audit (scope + dispatch order)
 

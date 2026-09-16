@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 """Export the *real* upstream TransNet V2 shot-boundary detector into the
 fork's [1, 100, 3, 27, 48] -> [1, 100] ONNX contract (T6-3a-followup).
 

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.27@sha256:bde3983e9c939224420ddaf6b784cc30e09b035a4dea01f581230c50809f372e
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 # Copyright 2026 Lusoris
 #
 # docker/Dockerfile.production-gpu — VMAFX production GPU-augmented runtime image
@@ -272,7 +272,7 @@ FROM ${RELEASE_RUNTIME_CC} AS runtime-base
 LABEL org.opencontainers.image.title="vmafx"
 LABEL org.opencontainers.image.description="VMAFX production GPU runtime"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
 
 ENV LD_LIBRARY_PATH="/usr/local/lib"
@@ -295,7 +295,7 @@ FROM ${CUDA_RUNTIME} AS final-cuda13
 LABEL org.opencontainers.image.title="vmafx"
 LABEL org.opencontainers.image.description="VMAFX production CUDA 13.3.1 runtime"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
 ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
 ENV VMAF_MODEL_PATH="/usr/local/share/vmafx/model"
@@ -312,7 +312,7 @@ FROM ${ROCM_RUNTIME} AS final-rocm10
 LABEL org.opencontainers.image.title="vmafx"
 LABEL org.opencontainers.image.description="VMAFX production ROCm 10.0.0 runtime"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
 ENV LD_LIBRARY_PATH="/usr/local/lib:/opt/rocm/lib:/opt/rocm/lib64"
 ENV VMAF_MODEL_PATH="/usr/local/share/vmafx/model"
@@ -329,7 +329,7 @@ FROM ${ONEAPI_RUNTIME} AS final-oneapi2025
 LABEL org.opencontainers.image.title="vmafx"
 LABEL org.opencontainers.image.description="VMAFX oneAPI 2025.3.1 runtime built from basekit 2025.3.2"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
 ENV LD_LIBRARY_PATH="/usr/local/lib:/opt/intel/oneapi/redist/lib"
 ENV VMAF_MODEL_PATH="/usr/local/share/vmafx/model"

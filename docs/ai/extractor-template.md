@@ -41,7 +41,7 @@ The shortest case: one input frame in, one scalar feature out.
 ```c
 /**
  *  Copyright 2026 <author>
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  */
 
 #include <assert.h>
