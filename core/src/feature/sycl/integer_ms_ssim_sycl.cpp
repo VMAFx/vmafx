@@ -136,6 +136,7 @@ static inline int mirror_idx(int idx, int n)
     return r;
 }
 
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static void launch_decimate(sycl::queue &q, const float *src, float *dst, unsigned w, unsigned h,
                             unsigned w_out, unsigned h_out)
 {
@@ -192,7 +193,11 @@ static void launch_horiz(sycl::queue &q, const float *ref, const float *cmp, flo
             const size_t x = id[1];
             if (x >= (size_t)e_w_horiz || y >= (size_t)e_h_horiz)
                 return;
-            float ref_mu = 0.0f, cmp_mu = 0.0f, ref_sq = 0.0f, cmp_sq = 0.0f, refcmp = 0.0f;
+            float ref_mu = 0.0f;
+            float cmp_mu = 0.0f;
+            float ref_sq = 0.0f;
+            float cmp_sq = 0.0f;
+            float refcmp = 0.0f;
             for (int u = 0; u < MS_SSIM_K; ++u) {
                 const size_t src_idx = y * (size_t)e_w + (x + (size_t)u);
                 const float r = e_ref[src_idx];
@@ -214,6 +219,7 @@ static void launch_horiz(sycl::queue &q, const float *ref, const float *cmp, flo
     });
 }
 
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static void launch_vert_lcs(sycl::queue &q, const float *h_ref_mu, const float *h_cmp_mu,
                             const float *h_ref_sq, const float *h_cmp_sq, const float *h_refcmp,
                             float *l_partials, float *c_partials, float *s_partials,
@@ -227,7 +233,9 @@ static void launch_vert_lcs(sycl::queue &q, const float *h_ref_mu, const float *
     const unsigned e_w_horiz = w_horiz;
     const unsigned e_w_final = w_final;
     const unsigned e_h_final = h_final;
-    const float e_c1 = c1, e_c2 = c2, e_c3 = c3;
+    const float e_c1 = c1;
+    const float e_c2 = c2;
+    const float e_c3 = c3;
     const size_t e_wg_count_x = wg_count_x;
     const float *e_h_ref_mu = h_ref_mu;
     const float *e_h_cmp_mu = h_cmp_mu;
@@ -242,9 +250,15 @@ static void launch_vert_lcs(sycl::queue &q, const float *h_ref_mu, const float *
         h_.parallel_for(ndr, [=](sycl::nd_item<2> it) {
             const size_t x = it.get_global_id(1);
             const size_t y = it.get_global_id(0);
-            float my_l = 0.0f, my_c = 0.0f, my_s = 0.0f;
+            float my_l = 0.0f;
+            float my_c = 0.0f;
+            float my_s = 0.0f;
             if (x < (size_t)e_w_final && y < (size_t)e_h_final) {
-                float ref_mu = 0.0f, cmp_mu = 0.0f, ref_sq = 0.0f, cmp_sq = 0.0f, refcmp = 0.0f;
+                float ref_mu = 0.0f;
+                float cmp_mu = 0.0f;
+                float ref_sq = 0.0f;
+                float cmp_sq = 0.0f;
+                float refcmp = 0.0f;
                 for (int v = 0; v < MS_SSIM_K; ++v) {
                     const size_t src_idx = (y + (size_t)v) * (size_t)e_w_horiz + x;
                     const float w = G[v];
@@ -314,8 +328,19 @@ static const VmafOption options_ms_ssim_sycl[] = {
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
     },
-    {0},
+    {.name = nullptr},
 };
+
+// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
+// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
+// entry points, `ms_ssim_convert_to_db` and the `provided_features_*` table use
+// C-style `static` rather than an anonymous namespace because their addresses
+// are stored in the `extern "C" VmafFeatureExtractor` struct at the bottom of
+// this file, which the C ABI consumes through the function-pointer types in
+// `feature_extractor.h`. A namespace cannot appear inside this linkage
+// specification at all. Same band, same reason, as integer_motion_sycl.cpp and
+// integer_adm_sycl.cpp. Per CLAUDE.md §12 r12 these are load-bearing
+// invariants of the SYCL <-> libvmaf C-API ABI.
 
 /* Mirrors float_ms_ssim.c::convert_to_db exactly. ADR-1221. */
 static double ms_ssim_convert_to_db(double score, double max_db)
@@ -328,6 +353,7 @@ static double ms_ssim_convert_to_db(double score, double max_db)
     return db < max_db ? db : max_db;
 }
 
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -389,7 +415,9 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         s->scale_wg_count[i] = s->scale_wg_count_x[i] * s->scale_wg_count_y[i];
     }
 
-    const float L = 255.0f, K1 = 0.01f, K2 = 0.03f;
+    const float L = 255.0f;
+    const float K1 = 0.01f;
+    const float K2 = 0.03f;
     s->c1 = (K1 * L) * (K1 * L);
     s->c2 = (K2 * L) * (K2 * L);
     s->c3 = s->c2 * 0.5f;
@@ -477,6 +505,7 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     return 0;
 }
 
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
@@ -489,8 +518,9 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     /* Per-scale SSIM compute + readback. The intermediates are
      * shared so scales must run sequentially with q.wait()
      * between them so the host readback gets fresh partials. */
-    double l_means[MS_SSIM_SCALES] = {0}, c_means[MS_SSIM_SCALES] = {0},
-           s_means[MS_SSIM_SCALES] = {0};
+    double l_means[MS_SSIM_SCALES] = {0};
+    double c_means[MS_SSIM_SCALES] = {0};
+    double s_means[MS_SSIM_SCALES] = {0};
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
         launch_horiz(q, s->d_pyramid_ref[i], s->d_pyramid_cmp[i], s->d_h_ref_mu, s->d_h_cmp_mu,
                      s->d_h_ref_sq, s->d_h_cmp_sq, s->d_h_refcmp, s->scale_w[i],
@@ -505,7 +535,9 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         q.memcpy(s->h_s_partials, s->d_s_partials, partials_bytes);
         q.wait();
 
-        double total_l = 0.0, total_c = 0.0, total_s = 0.0;
+        double total_l = 0.0;
+        double total_c = 0.0;
+        double total_s = 0.0;
         for (unsigned j = 0; j < s->scale_wg_count[i]; j++) {
             total_l += (double)s->h_l_partials[j];
             total_c += (double)s->h_c_partials[j];
@@ -552,6 +584,7 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     return err;
 }
 
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<MsSsimStateSycl *>(fex->priv);
@@ -594,13 +627,15 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
     return 0;
 }
 
-static const char *provided_features_ms_ssim_sycl[] = {"float_ms_ssim", NULL};
+static const char *provided_features_ms_ssim_sycl[] = {"float_ms_ssim", nullptr};
+
+// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
 
 extern "C" VmafFeatureExtractor vmaf_fex_float_ms_ssim_sycl = {
     .name = "float_ms_ssim_sycl",
     .init = init_fex_sycl,
-    .extract = NULL,
-    .flush = NULL,
+    .extract = nullptr,
+    .flush = nullptr,
     .close = close_fex_sycl,
     .submit = submit_fex_sycl,
     .collect = collect_fex_sycl,

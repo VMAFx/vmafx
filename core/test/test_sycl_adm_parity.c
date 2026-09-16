@@ -51,6 +51,12 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* Fixture geometry — large enough to clear ADM's 5-tap filter and
  * 4-scale dyadic pyramid (min 32x32 after scale-3 decimation), small
  * enough for fast CI. */
@@ -191,6 +197,7 @@ static const char *const MODEL_KEYS[] = {
 };
 #define NUM_MODEL_KEYS (sizeof(MODEL_KEYS) / sizeof(MODEL_KEYS[0]))
 
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_adm_with_model_opts(bool use_sycl, double out[NUM_MODEL_KEYS])
 {
     for (unsigned k = 0; k < NUM_MODEL_KEYS; k++)
@@ -244,6 +251,7 @@ static char *run_adm_with_model_opts(bool use_sycl, double out[NUM_MODEL_KEYS])
 /* Every option the CPU table declares must also exist, with the same alias,
  * type and feature-param flag, in the SYCL table — otherwise the emitted
  * feature-name key diverges. */
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *test_adm_sycl_option_table_mirrors_cpu(void)
 {
     VmafFeatureExtractor *cpu = vmaf_get_feature_extractor_by_name("adm");
@@ -400,3 +408,5 @@ char *run_tests(void)
     mu_run_test(test_adm_cpu_sycl_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

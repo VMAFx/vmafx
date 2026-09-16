@@ -51,6 +51,12 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* Fixture must be ≥ 32x32 for the 4-scale DWT2 + CSF footprint;
  * 256x144 matches the round-2 ADM parity test sizing. */
 #ifndef FIXTURE_W
@@ -126,6 +132,7 @@ static int adm_opts_build(VmafFeatureDictionary **opts, const char *name, const 
     return vmaf_feature_dictionary_set(opts, name, val);
 }
 
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_cpu(const char *opt_name, const char *opt_val, const char *const *keys,
                      double *scores)
 {
@@ -153,6 +160,7 @@ static char *run_cpu(const char *opt_name, const char *opt_val, const char *cons
     return NULL;
 }
 
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_sycl(const char *opt_name, const char *opt_val, const char *const *keys,
                       double *scores)
 {
@@ -264,3 +272,5 @@ char *run_tests(void)
     mu_run_test(test_float_adm_p_norm_reaches_kernel);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -62,6 +62,12 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* Fixture geometry — large enough for the 5-tap Gaussian. */
 #ifndef FIXTURE_W
 #define FIXTURE_W 256u
@@ -112,6 +118,7 @@ static int fill_yuv_fixture(VmafPicture *pic, unsigned frame_idx)
 /* NOLINTNEXTLINE(readability-function-size): test harness — setup +
  * per-frame loop + teardown; splitting would obscure the single linear
  * pipeline under test.  ADR-0141 §2 load-bearing test invariant. */
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_cpu_float_motion_uv(double *out_score)
 {
     int err = 0;
@@ -169,6 +176,7 @@ static char *run_cpu_float_motion_uv(double *out_score)
  * sycl_state pointer through the mu_assert return-by-pointer protocol,
  * obscuring the ownership model.  ADR-0141 §2 load-bearing test
  * invariant. */
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_sycl_motion_uv(double *out_score, double *out_score_y_only)
 {
     *out_score = NAN;
@@ -336,3 +344,5 @@ char *run_tests(void)
     mu_run_test(test_motion_add_uv_cpu_sycl_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

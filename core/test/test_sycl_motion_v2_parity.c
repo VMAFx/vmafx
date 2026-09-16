@@ -53,6 +53,12 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* Use a slightly larger fixture than the static-image parity tests
  * so the motion SAD has enough block-aligned area for the SYCL
  * tile-aligned reduction to converge with the CPU scalar path. */
@@ -97,6 +103,7 @@ static int fill_pic(VmafPicture *pic, unsigned frame_idx)
     return 0;
 }
 
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_cpu_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
@@ -126,6 +133,7 @@ static char *run_cpu_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
     return NULL;
 }
 
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_sycl_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
 {
     for (unsigned k = 0; k < NUM_MOTION_V2_FEATURES; k++)
@@ -214,3 +222,5 @@ char *run_tests(void)
     mu_run_test(test_motion_v2_cpu_sycl_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -49,6 +49,12 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* Test fixture geometry — large enough for the 5-tap Gaussian, small enough
  * for a fast CI run. Motion3 requires ≥ 2 frames (index 0 and index 1). */
 #ifndef FIXTURE_W
@@ -93,6 +99,7 @@ static int fill_fixture(VmafPicture *pic, unsigned frame_idx)
 /* CPU path — run the "motion" extractor for NUM_FRAMES frames.        */
 /* Returns the motion3_score at frame index 1 via *out_score.         */
 /* ------------------------------------------------------------------ */
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_cpu_motion3(const char *fps_weight, const char *key, double *out_score)
 {
     int err = 0;
@@ -114,7 +121,8 @@ static char *run_cpu_motion3(const char *fps_weight, const char *key, double *ou
     mu_assert("CPU: vmaf_use_feature(motion) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = fill_fixture(&ref, i);
         mu_assert("CPU: fill_fixture(ref) failed", !err);
         err = fill_fixture(&dist, i);
@@ -141,6 +149,7 @@ static char *run_cpu_motion3(const char *fps_weight, const char *key, double *ou
 /* Returns the motion3_score at frame index 1 via *out_score.         */
 /* Returns a skip sentinel (out_score = NaN) if no SYCL device.      */
 /* ------------------------------------------------------------------ */
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_sycl_motion3(const char *fps_weight, const char *key, double *out_score)
 {
     *out_score = NAN;
@@ -175,7 +184,8 @@ static char *run_sycl_motion3(const char *fps_weight, const char *key, double *o
     mu_assert("SYCL: vmaf_use_feature(motion_sycl) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = fill_fixture(&ref, i);
         mu_assert("SYCL: fill_fixture(ref) failed", !err);
         err = fill_fixture(&dist, i);
@@ -281,7 +291,8 @@ static char *run_cpu_checkerboard(double *m2_f1, double *m2_f2, double *m3_f1, d
     mu_assert("CPU: vmaf_use_feature(motion) failed", !err);
 
     for (unsigned i = 0; i < CHK_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = fill_checkerboard_fixture(&ref, i);
         mu_assert("CPU: fill_checkerboard_fixture(ref) failed", !err);
         err = fill_checkerboard_fixture(&dist, i);
@@ -343,7 +354,8 @@ static char *run_sycl_checkerboard(double *m2_f1, double *m2_f2, double *m3_f1, 
     mu_assert("SYCL: vmaf_use_feature(motion_sycl) failed", !err);
 
     for (unsigned i = 0; i < CHK_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = fill_checkerboard_fixture(&ref, i);
         mu_assert("SYCL: fill_checkerboard_fixture(ref) failed", !err);
         err = fill_checkerboard_fixture(&dist, i);
@@ -372,6 +384,7 @@ static char *run_sycl_checkerboard(double *m2_f1, double *m2_f2, double *m3_f1, 
     return NULL;
 }
 
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *test_motion_checkerboard_1080p_parity(void)
 {
     double cpu_m2_f1 = 0.0;
@@ -459,3 +472,5 @@ char *run_tests(void)
     mu_run_test(test_motion_checkerboard_1080p_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

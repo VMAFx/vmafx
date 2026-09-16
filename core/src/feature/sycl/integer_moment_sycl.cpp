@@ -127,7 +127,17 @@ static void config_moment_slot(void *priv, int slot)
 
 extern "C" {
 
-static const VmafOption options_moment_sycl[] = {{0}};
+// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
+// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
+// entry points and the `provided_features_*` table use C-style `static` rather
+// than an anonymous namespace because their addresses are stored in the
+// `extern "C" VmafFeatureExtractor` struct at the bottom of this file, which
+// the C ABI consumes through the function-pointer types in
+// `feature_extractor.h`. A namespace cannot appear inside this linkage
+// specification at all. Same band, same reason, as integer_motion_sycl.cpp and
+// integer_adm_sycl.cpp. Per CLAUDE.md §12 r12 these are load-bearing
+// invariants of the SYCL <-> libvmaf C-API ABI.
+static const VmafOption options_moment_sycl[] = {{.name = nullptr}};
 
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
@@ -224,15 +234,18 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
 
     int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "float_moment_ref1st", ref1, index);
-    if (!err)
+    if (!err) {
         err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "float_moment_dis1st", dis1, index);
-    if (!err)
+    }
+    if (!err) {
         err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "float_moment_ref2nd", ref2, index);
-    if (!err)
+    }
+    if (!err) {
         err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "float_moment_dis2nd", dis2, index);
+    }
     return err;
 }
 
@@ -262,14 +275,16 @@ static const char *provided_features_moment_sycl[] = {
     "float_moment_dis1st",
     "float_moment_ref2nd",
     "float_moment_dis2nd",
-    NULL,
+    nullptr,
 };
+
+// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
 
 extern "C" VmafFeatureExtractor vmaf_fex_float_moment_sycl = {
     .name = "float_moment_sycl",
     .init = init_fex_sycl,
-    .extract = NULL,
-    .flush = NULL,
+    .extract = nullptr,
+    .flush = nullptr,
     .close = close_fex_sycl,
     .submit = submit_fex_sycl,
     .collect = collect_fex_sycl,

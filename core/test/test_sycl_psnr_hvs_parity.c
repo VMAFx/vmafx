@@ -51,6 +51,12 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* Fixture must be ≥ 8x8 for the DCT block size and ideally a
  * multiple of 8 in both dimensions; 256x144 satisfies both
  * (256 % 8 == 0, 144 % 8 == 0). */
@@ -184,3 +190,5 @@ char *run_tests(void)
     mu_run_test(test_psnr_hvs_cpu_sycl_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

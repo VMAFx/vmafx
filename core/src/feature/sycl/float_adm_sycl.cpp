@@ -22,6 +22,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 
 #include "config.h"
 #include "feature/adm_options.h"
@@ -160,6 +161,7 @@ static void copy_y_plane(const VmafPicture *pic, void *dst, unsigned w, unsigned
 /* Stage 0 — DWT vertical.                                             */
 /* ------------------------------------------------------------------ */
 template <int SCALE>
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static sycl::event launch_dwt_vert(sycl::queue &q, const void *ref_raw, const void *dis_raw,
                                    unsigned raw_stride_bytes, const float *parent_ref_band,
                                    const float *parent_dis_band, unsigned parent_buf_stride,
@@ -167,8 +169,8 @@ static sycl::event launch_dwt_vert(sycl::queue &q, const void *ref_raw, const vo
                                    float *dwt_tmp_dis, unsigned cur_w, unsigned cur_h,
                                    unsigned half_h, unsigned bpc, float scaler, float pixel_offset)
 {
-    const size_t global_x = ((cur_w + FADM_BX - 1u) / FADM_BX) * FADM_BX;
-    const size_t global_y = ((half_h + FADM_BY - 1u) / FADM_BY) * FADM_BY;
+    const size_t global_x = (size_t)((cur_w + FADM_BX - 1u) / FADM_BX) * FADM_BX;
+    const size_t global_y = (size_t)((half_h + FADM_BY - 1u) / FADM_BY) * FADM_BY;
     const unsigned e_cur_w = cur_w;
     const unsigned e_cur_h = cur_h;
     const unsigned e_half_h = half_h;
@@ -194,7 +196,7 @@ static sycl::event launch_dwt_vert(sycl::queue &q, const void *ref_raw, const vo
                 const int gx = (int)item.get_global_id(2);
                 const int gy = (int)item.get_global_id(1);
                 const int plane_is_dis = (int)item.get_global_id(0);
-                if (gx >= (int)e_cur_w || gy >= (int)e_half_h)
+                if (std::cmp_greater_equal(gx, e_cur_w) || std::cmp_greater_equal(gy, e_half_h))
                     return;
 
                 auto mirror = [](int idx, int sup) -> int {
@@ -208,21 +210,21 @@ static sycl::event launch_dwt_vert(sycl::queue &q, const void *ref_raw, const vo
                     y = mirror(y, (int)e_cur_h);
                     if (x < 0)
                         x = 0;
-                    if (x >= (int)e_cur_w)
+                    if (std::cmp_greater_equal(x, e_cur_w))
                         x = (int)e_cur_w - 1;
                     if (e_bpc <= 8u) {
                         return (float)static_cast<const uint8_t *>(plane)[y * e_raw_stride + x] +
                                e_pixel_offset;
                     }
                     const uint16_t v = reinterpret_cast<const uint16_t *>(
-                        static_cast<const uint8_t *>(plane) + y * e_raw_stride)[x];
+                        static_cast<const uint8_t *>(plane) + (size_t)y * e_raw_stride)[x];
                     return (float)v / e_scaler + e_pixel_offset;
                 };
                 auto read_parent = [&](const float *band, int y, int x) -> float {
                     y = mirror(y, (int)e_parent_h);
                     if (x < 0)
                         x = 0;
-                    if (x >= (int)e_parent_w)
+                    if (std::cmp_greater_equal(x, e_parent_w))
                         x = (int)e_parent_w - 1;
                     return band[y * (int)e_parent_buf_stride + x];
                 };
@@ -258,8 +260,8 @@ static sycl::event launch_dwt_hori(sycl::queue &q, const float *dwt_tmp_ref,
                                    unsigned cur_w, unsigned half_w, unsigned half_h,
                                    unsigned buf_stride)
 {
-    const size_t global_x = ((half_w + FADM_BX - 1u) / FADM_BX) * FADM_BX;
-    const size_t global_y = ((half_h + FADM_BY - 1u) / FADM_BY) * FADM_BY;
+    const size_t global_x = (size_t)((half_w + FADM_BX - 1u) / FADM_BX) * FADM_BX;
+    const size_t global_y = (size_t)((half_h + FADM_BY - 1u) / FADM_BY) * FADM_BY;
     const unsigned e_cur_w = cur_w;
     const unsigned e_half_w = half_w;
     const unsigned e_half_h = half_h;
@@ -277,7 +279,7 @@ static sycl::event launch_dwt_hori(sycl::queue &q, const float *dwt_tmp_ref,
                 const int gx = (int)item.get_global_id(2);
                 const int gy = (int)item.get_global_id(1);
                 const int plane_is_dis = (int)item.get_global_id(0);
-                if (gx >= (int)e_half_w || gy >= (int)e_half_h)
+                if (std::cmp_greater_equal(gx, e_half_w) || std::cmp_greater_equal(gy, e_half_h))
                     return;
 
                 auto mirror = [](int idx, int sup) -> int {
@@ -319,13 +321,14 @@ static sycl::event launch_dwt_hori(sycl::queue &q, const float *dwt_tmp_ref,
 /* ------------------------------------------------------------------ */
 /* Stage 2 — Decouple + CSF.                                           */
 /* ------------------------------------------------------------------ */
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static sycl::event launch_decouple_csf(sycl::queue &q, const float *ref_band, const float *dis_band,
                                        float *csf_a, float *csf_f, unsigned half_w, unsigned half_h,
                                        unsigned buf_stride, float rfactor_h, float rfactor_v,
                                        float rfactor_d, float gain_limit)
 {
-    const size_t global_x = ((half_w + FADM_BX - 1u) / FADM_BX) * FADM_BX;
-    const size_t global_y = ((half_h + FADM_BY - 1u) / FADM_BY) * FADM_BY;
+    const size_t global_x = (size_t)((half_w + FADM_BX - 1u) / FADM_BX) * FADM_BX;
+    const size_t global_y = (size_t)((half_h + FADM_BY - 1u) / FADM_BY) * FADM_BY;
     const unsigned e_half_w = half_w;
     const unsigned e_half_h = half_h;
     const unsigned e_buf_stride = buf_stride;
@@ -344,7 +347,7 @@ static sycl::event launch_decouple_csf(sycl::queue &q, const float *ref_band, co
             [=](sycl::nd_item<2> item) {
                 const int gx = (int)item.get_global_id(1);
                 const int gy = (int)item.get_global_id(0);
-                if (gx >= (int)e_half_w || gy >= (int)e_half_h)
+                if (std::cmp_greater_equal(gx, e_half_w) || std::cmp_greater_equal(gy, e_half_h))
                     return;
                 const int slice = (int)e_buf_stride * (int)e_half_h;
                 auto rb = [&](int band, int y, int x) -> float {
@@ -373,10 +376,11 @@ static sycl::event launch_decouple_csf(sycl::queue &q, const float *ref_band, co
                     float k = tarr[b] / (oarr[b] + FADM_EPS);
                     k = sycl::fmax(0.0f, sycl::fmin(k, 1.0f));
                     float rst = k * oarr[b];
-                    if (angle_flag && rst > 0.0f)
+                    if (angle_flag && rst > 0.0f) {
                         rst = sycl::fmin(rst * e_gl, tarr[b]);
-                    else if (angle_flag && rst < 0.0f)
+                    } else if (angle_flag && rst < 0.0f) {
                         rst = sycl::fmax(rst * e_gl, tarr[b]);
+                    }
                     const float a_val = tarr[b] - rst;
                     const float csf_a_val = rfac[b] * a_val;
                     e_csf_a[b * slice + gy * (int)e_buf_stride + gx] = csf_a_val;
@@ -392,13 +396,14 @@ static sycl::event launch_decouple_csf(sycl::queue &q, const float *ref_band, co
 /* ADR-0574: mirrors stage 2 but computes CSF of r_val = k*o rather   */
 /* than the anomaly a_val = t - r.                                     */
 /* ------------------------------------------------------------------ */
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static sycl::event launch_csf_r(sycl::queue &q, const float *ref_band, const float *dis_band,
                                 float *csf_a_aim, float *csf_f_aim, unsigned half_w,
                                 unsigned half_h, unsigned buf_stride, float rfactor_h,
                                 float rfactor_v, float rfactor_d, float gain_limit)
 {
-    const size_t global_x = ((half_w + FADM_BX - 1u) / FADM_BX) * FADM_BX;
-    const size_t global_y = ((half_h + FADM_BY - 1u) / FADM_BY) * FADM_BY;
+    const size_t global_x = (size_t)((half_w + FADM_BX - 1u) / FADM_BX) * FADM_BX;
+    const size_t global_y = (size_t)((half_h + FADM_BY - 1u) / FADM_BY) * FADM_BY;
     const unsigned e_half_w = half_w;
     const unsigned e_half_h = half_h;
     const unsigned e_buf_stride = buf_stride;
@@ -417,7 +422,7 @@ static sycl::event launch_csf_r(sycl::queue &q, const float *ref_band, const flo
             [=](sycl::nd_item<2> item) {
                 const int gx = (int)item.get_global_id(1);
                 const int gy = (int)item.get_global_id(0);
-                if (gx >= (int)e_half_w || gy >= (int)e_half_h)
+                if (std::cmp_greater_equal(gx, e_half_w) || std::cmp_greater_equal(gy, e_half_h))
                     return;
                 const int slice = (int)e_buf_stride * (int)e_half_h;
                 auto rb = [&](int band, int y, int x) -> float {
@@ -447,10 +452,11 @@ static sycl::event launch_csf_r(sycl::queue &q, const float *ref_band, const flo
                     float k = tarr[b] / (oarr[b] + FADM_EPS);
                     k = sycl::fmax(0.0f, sycl::fmin(k, 1.0f));
                     float r_val = k * oarr[b];
-                    if (angle_flag && r_val > 0.0f)
+                    if (angle_flag && r_val > 0.0f) {
                         r_val = sycl::fmin(r_val * e_gl, tarr[b]);
-                    else if (angle_flag && r_val < 0.0f)
+                    } else if (angle_flag && r_val < 0.0f) {
                         r_val = sycl::fmax(r_val * e_gl, tarr[b]);
+                    }
                     /* CSF on decouple_r — matches adm_csf(&decouple_r, ...) in adm.c. */
                     const float csf_a_val = rfac[b] * r_val;
                     e_csf_a_aim[b * slice + gy * (int)e_buf_stride + gx] = csf_a_val;
@@ -474,6 +480,7 @@ static inline float fadm_pnorm_term(float x, float p_norm)
     return (p_norm == 3.0f) ? (x * x * x) : sycl::pow(x, p_norm);
 }
 
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static sycl::event launch_aim_cm(sycl::queue &q, const float *ref_band, const float *dis_band,
                                  const float *csf_a_aim, const float *csf_f_aim, float *accum_out,
                                  unsigned half_w, unsigned half_h, unsigned buf_stride,
@@ -485,8 +492,8 @@ static sycl::event launch_aim_cm(sycl::queue &q, const float *ref_band, const fl
     const int active_w = active_right - active_left;
     if (active_h <= 0 || active_w <= 0)
         return sycl::event{};
-    const size_t num_groups = (size_t)(3 * active_h);
-    const size_t WG_SIZE = FADM_BX * FADM_BY;
+    const size_t num_groups = (size_t)3 * active_h;
+    const size_t WG_SIZE = (size_t)FADM_BX * FADM_BY;
     const size_t global_x = num_groups * WG_SIZE;
 
     const unsigned e_half_w = half_w;
@@ -534,30 +541,30 @@ static sycl::event launch_aim_cm(sycl::queue &q, const float *ref_band, const fl
                              auto read_csf_f_aim = [&](int band, int y, int x) -> float {
                                  if (x < 0)
                                      x = -x;
-                                 if (x >= (int)e_half_w)
+                                 if (std::cmp_greater_equal(x, e_half_w))
                                      x = (int)e_half_w - 1;
                                  if (y < 0)
                                      y = -y;
-                                 if (y >= (int)e_half_h)
+                                 if (std::cmp_greater_equal(y, e_half_h))
                                      y = (int)e_half_h - 1;
                                  if (x < 0)
                                      x = 0;
                                  if (y < 0)
                                      y = 0;
-                                 if (x >= (int)e_half_w)
+                                 if (std::cmp_greater_equal(x, e_half_w))
                                      x = (int)e_half_w - 1;
-                                 if (y >= (int)e_half_h)
+                                 if (std::cmp_greater_equal(y, e_half_h))
                                      y = (int)e_half_h - 1;
                                  return e_csf_f_aim[band * slice + y * (int)e_buf_stride + x];
                              };
                              auto read_csf_a_aim = [&](int band, int y, int x) -> float {
                                  if (x < 0)
                                      x = 0;
-                                 if (x >= (int)e_half_w)
+                                 if (std::cmp_greater_equal(x, e_half_w))
                                      x = (int)e_half_w - 1;
                                  if (y < 0)
                                      y = 0;
-                                 if (y >= (int)e_half_h)
+                                 if (std::cmp_greater_equal(y, e_half_h))
                                      y = (int)e_half_h - 1;
                                  return e_csf_a_aim[band * slice + y * (int)e_buf_stride + x];
                              };
@@ -584,10 +591,11 @@ static sycl::event launch_aim_cm(sycl::queue &q, const float *ref_band, const fl
                                  float k = tarr[band_idx] / (oarr[band_idx] + FADM_EPS);
                                  k = sycl::fmax(0.0f, sycl::fmin(k, 1.0f));
                                  float r_val = k * oarr[band_idx];
-                                 if (angle_flag && r_val > 0.0f)
+                                 if (angle_flag && r_val > 0.0f) {
                                      r_val = sycl::fmin(r_val * e_gl, tarr[band_idx]);
-                                 else if (angle_flag && r_val < 0.0f)
+                                 } else if (angle_flag && r_val < 0.0f) {
                                      r_val = sycl::fmax(r_val * e_gl, tarr[band_idx]);
+                                 }
                                  /* decouple_a[band] = t - r (the anomaly component). */
                                  const float a_val = tarr[band_idx] - r_val;
 
@@ -641,6 +649,7 @@ static sycl::event launch_aim_cm(sycl::queue &q, const float *ref_band, const fl
 /* ------------------------------------------------------------------ */
 /* Stage 3 — CSF denominator + CM fused.                               */
 /* ------------------------------------------------------------------ */
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static sycl::event launch_csf_cm(sycl::queue &q, const float *ref_band, const float *dis_band,
                                  const float *csf_a, const float *csf_f, float *accum_out,
                                  unsigned half_w, unsigned half_h, unsigned buf_stride,
@@ -652,8 +661,8 @@ static sycl::event launch_csf_cm(sycl::queue &q, const float *ref_band, const fl
     const int active_w = active_right - active_left;
     if (active_h <= 0 || active_w <= 0)
         return sycl::event{};
-    const size_t num_groups = (size_t)(3 * active_h);
-    const size_t WG_SIZE = FADM_BX * FADM_BY;
+    const size_t num_groups = (size_t)3 * active_h;
+    const size_t WG_SIZE = (size_t)FADM_BX * FADM_BY;
     const size_t global_x = num_groups * WG_SIZE;
 
     const unsigned e_half_w = half_w;
@@ -698,30 +707,30 @@ static sycl::event launch_csf_cm(sycl::queue &q, const float *ref_band, const fl
                              auto read_csf_f = [&](int band, int y, int x) -> float {
                                  if (x < 0)
                                      x = -x;
-                                 if (x >= (int)e_half_w)
+                                 if (std::cmp_greater_equal(x, e_half_w))
                                      x = (int)e_half_w - 1;
                                  if (y < 0)
                                      y = -y;
-                                 if (y >= (int)e_half_h)
+                                 if (std::cmp_greater_equal(y, e_half_h))
                                      y = (int)e_half_h - 1;
                                  if (x < 0)
                                      x = 0;
                                  if (y < 0)
                                      y = 0;
-                                 if (x >= (int)e_half_w)
+                                 if (std::cmp_greater_equal(x, e_half_w))
                                      x = (int)e_half_w - 1;
-                                 if (y >= (int)e_half_h)
+                                 if (std::cmp_greater_equal(y, e_half_h))
                                      y = (int)e_half_h - 1;
                                  return e_csf_f[band * slice + y * (int)e_buf_stride + x];
                              };
                              auto read_csf_a = [&](int band, int y, int x) -> float {
                                  if (x < 0)
                                      x = 0;
-                                 if (x >= (int)e_half_w)
+                                 if (std::cmp_greater_equal(x, e_half_w))
                                      x = (int)e_half_w - 1;
                                  if (y < 0)
                                      y = 0;
-                                 if (y >= (int)e_half_h)
+                                 if (std::cmp_greater_equal(y, e_half_h))
                                      y = (int)e_half_h - 1;
                                  return e_csf_a[band * slice + y * (int)e_buf_stride + x];
                              };
@@ -753,10 +762,11 @@ static sycl::event launch_csf_cm(sycl::queue &q, const float *ref_band, const fl
                                  float k = tarr[band_idx] / (oarr[band_idx] + FADM_EPS);
                                  k = sycl::fmax(0.0f, sycl::fmin(k, 1.0f));
                                  float r_val = k * oarr[band_idx];
-                                 if (angle_flag && r_val > 0.0f)
+                                 if (angle_flag && r_val > 0.0f) {
                                      r_val = sycl::fmin(r_val * e_gl, tarr[band_idx]);
-                                 else if (angle_flag && r_val < 0.0f)
+                                 } else if (angle_flag && r_val < 0.0f) {
                                      r_val = sycl::fmax(r_val * e_gl, tarr[band_idx]);
+                                 }
 
                                  float thr = 0.0f;
                                  for (int b = 0; b < FADM_NUM_BANDS; b++) {
@@ -918,8 +928,19 @@ static const VmafOption options_float_adm_sycl[] = {
      .min = 0.0,
      .max = 1.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {0}};
+    {.name = nullptr}};
 
+// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
+// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
+// entry points use C-style `static` rather than an anonymous namespace because
+// their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
+// the bottom of this file, which the C ABI consumes through the
+// function-pointer types in `feature_extractor.h`. A namespace cannot appear
+// inside this linkage specification at all. Same band, same reason, as
+// integer_motion_sycl.cpp and integer_adm_sycl.cpp. Per CLAUDE.md §12 r12 these
+// are load-bearing invariants of the SYCL <-> libvmaf C-API ABI.
+
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -1024,6 +1045,7 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     return 0;
 }
 
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
@@ -1055,12 +1077,13 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     }
 
     float scaler = 1.0f;
-    if (s->bpc == 10u)
+    if (s->bpc == 10u) {
         scaler = 4.0f;
-    else if (s->bpc == 12u)
+    } else if (s->bpc == 12u) {
         scaler = 16.0f;
-    else if (s->bpc == 16u)
+    } else if (s->bpc == 16u) {
         scaler = 256.0f;
+    }
     const float pixel_offset = -128.0f;
 
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
@@ -1085,26 +1108,27 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         const int bottom = (int)half_h - top;
         const int right = (int)half_w - left;
 
-        if (scale == 0)
+        if (scale == 0) {
             launch_dwt_vert<0>(q, s->d_ref_raw, s->d_dis_raw, raw_stride, parent_ref, parent_dis,
                                s->buf_stride, parent_w, parent_h, s->d_dwt_tmp_ref,
                                s->d_dwt_tmp_dis, cur_w, cur_h, half_h, s->bpc, scaler,
                                pixel_offset);
-        else if (scale == 1)
+        } else if (scale == 1) {
             launch_dwt_vert<1>(q, s->d_ref_raw, s->d_dis_raw, raw_stride, parent_ref, parent_dis,
                                s->buf_stride, parent_w, parent_h, s->d_dwt_tmp_ref,
                                s->d_dwt_tmp_dis, cur_w, cur_h, half_h, s->bpc, scaler,
                                pixel_offset);
-        else if (scale == 2)
+        } else if (scale == 2) {
             launch_dwt_vert<2>(q, s->d_ref_raw, s->d_dis_raw, raw_stride, parent_ref, parent_dis,
                                s->buf_stride, parent_w, parent_h, s->d_dwt_tmp_ref,
                                s->d_dwt_tmp_dis, cur_w, cur_h, half_h, s->bpc, scaler,
                                pixel_offset);
-        else
+        } else {
             launch_dwt_vert<3>(q, s->d_ref_raw, s->d_dis_raw, raw_stride, parent_ref, parent_dis,
                                s->buf_stride, parent_w, parent_h, s->d_dwt_tmp_ref,
                                s->d_dwt_tmp_dis, cur_w, cur_h, half_h, s->bpc, scaler,
                                pixel_offset);
+        }
 
         launch_dwt_hori(q, s->d_dwt_tmp_ref, s->d_dwt_tmp_dis, s->d_ref_band[scale],
                         s->d_dis_band[scale], cur_w, half_w, half_h, s->buf_stride);
@@ -1140,6 +1164,7 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     return 0;
 }
 
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
 {
     auto *s = static_cast<FloatAdmStateSycl *>(fex->priv);
@@ -1253,7 +1278,7 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index, VmafFeatu
                                                        score_num, index);
         err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, "adm_den",
                                                        score_den, index);
-        const char const *names[8] = {"adm_num_scale0", "adm_den_scale0", "adm_num_scale1",
+        const char *const names[8] = {"adm_num_scale0", "adm_den_scale0", "adm_num_scale1",
                                       "adm_den_scale1", "adm_num_scale2", "adm_den_scale2",
                                       "adm_num_scale3", "adm_den_scale3"};
         for (int i = 0; i < 8 && !err; i++) {
@@ -1264,6 +1289,7 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index, VmafFeatu
     return err;
 }
 
+// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<FloatAdmStateSycl *>(fex->priv);
@@ -1323,13 +1349,15 @@ static const char *provided_features_float_adm_sycl[] = {"VMAF_feature_adm2_scor
                                                          "adm_den_scale2",
                                                          "adm_num_scale3",
                                                          "adm_den_scale3",
-                                                         NULL};
+                                                         nullptr};
+
+// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
 
 extern "C" VmafFeatureExtractor vmaf_fex_float_adm_sycl = {
     .name = "float_adm_sycl",
     .init = init_fex_sycl,
-    .extract = NULL,
-    .flush = NULL,
+    .extract = nullptr,
+    .flush = nullptr,
     .close = close_fex_sycl,
     .submit = submit_fex_sycl,
     .collect = collect_fex_sycl,

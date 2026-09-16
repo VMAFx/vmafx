@@ -56,6 +56,12 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* Fixture must be ≥ 64x64 for the 4-scale Gaussian footprint;
  * 256x144 matches the round-1 / round-2 fixture sizing. */
 #ifndef FIXTURE_W
@@ -114,6 +120,7 @@ static int feed_frame(VmafContext *vmaf)
 #define NEG_SNSQ "1.5"
 #define NEG_SCALE0_KEY "vif_scale0_egl_1_snsq_1.5"
 
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_cpu(bool neg_opts, const char *key, double *score)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
@@ -142,6 +149,7 @@ static char *run_cpu(bool neg_opts, const char *key, double *score)
     return NULL;
 }
 
+// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
 static char *run_sycl(bool neg_opts, const char *key, double *score)
 {
     *score = NAN;
@@ -252,3 +260,5 @@ char *run_tests(void)
     mu_run_test(test_float_vif_options_reach_kernel);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
