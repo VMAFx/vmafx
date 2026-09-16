@@ -56,6 +56,11 @@ static int write_tmp(const char *suffix, const char *body, char *out_path, size_
         return -1;
     FILE *f = fdopen(fd, "wb");
     if (!f) {
+        /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
+         * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
+         * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
+         * second free.  2.21 no longer does. */
+        /* cppcheck-suppress doubleFree ; see the note above */
         (void)close(fd);
         return -1;
     }
@@ -150,6 +155,11 @@ static int write_in_dir(const char *dir, const char *name, const char *body)
         return -1;
     FILE *f = fdopen(fd, "wb");
     if (!f) {
+        /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
+         * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
+         * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
+         * second free.  2.21 no longer does. */
+        /* cppcheck-suppress doubleFree ; see the note above */
         (void)close(fd);
         return -1;
     }
@@ -254,6 +264,11 @@ static int write_fake_cosign(const char *dir, int exit_code)
         return -1;
     FILE *f = fdopen(fd, "w");
     if (!f) {
+        /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
+         * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
+         * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
+         * second free.  2.21 no longer does. */
+        /* cppcheck-suppress doubleFree ; see the note above */
         (void)close(fd);
         return -1;
     }

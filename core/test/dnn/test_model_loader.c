@@ -108,8 +108,14 @@ static FILE *fopen_w_600(const char *path)
     if (fd < 0)
         return NULL;
     FILE *fp = fdopen(fd, "w");
-    if (!fp)
+    if (!fp) {
+        /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
+         * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
+         * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
+         * second free.  2.21 no longer does. */
+        /* cppcheck-suppress doubleFree ; see the note above */
         (void)close(fd);
+    }
     return fp;
 }
 

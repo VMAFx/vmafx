@@ -672,6 +672,11 @@ static int per_shot_write_plan(const struct vmaf_per_shot_settings *s,
             /* strerror() is concurrency-mt-unsafe; the path is enough
              * context for the user to diagnose. */
             (void)fprintf(stderr, "vmaf-perShot: cannot open output %s\n", s->output);
+            /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
+             * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
+             * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
+             * second free.  2.21 no longer does. */
+            /* cppcheck-suppress doubleFree ; see the note above */
             (void)close(fd);
             return -EIO;
         }

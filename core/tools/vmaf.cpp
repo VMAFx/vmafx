@@ -152,8 +152,14 @@ void write_backend_error_json(const char *output_path, enum VmafOutputFormat fmt
 #else
     const int raw_fd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     FILE *fp = (raw_fd >= 0) ? fdopen(raw_fd, "wb") : nullptr;
-    if (!fp && raw_fd >= 0)
+    if (!fp && raw_fd >= 0) {
+        /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
+         * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
+         * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
+         * second free.  2.21 no longer does. */
+        /* cppcheck-suppress doubleFree ; see the note above */
         (void)close(raw_fd);
+    }
 #endif
     if (!fp)
         return;
