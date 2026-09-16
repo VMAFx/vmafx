@@ -76,9 +76,10 @@ static void launch_means(sycl::queue &q, const float *plane, float *means, uint3
             const uint32_t er = elem / SP_BLOCK_SIZE;
             const uint32_t ec = elem % SP_BLOCK_SIZE;
             float acc = 0.0f;
-            for (uint32_t i = 0; i < submatrix_h; ++i)
+            for (uint32_t i = 0; i < submatrix_h; ++i) {
                 for (uint32_t j = 0; j < submatrix_w; ++j)
                     acc += plane[(er + i) * stride_px + (ec + j)];
+            }
             means[elem] = acc / (float)(submatrix_w * submatrix_h);
         });
     });
@@ -352,9 +353,10 @@ static void free_sycl_state_st(SpeedTemporalSyclState *s)
 static void subtract_plane(float *a, const float *b, int w, int h, size_t stride_bytes)
 {
     const size_t stride_px = stride_bytes / sizeof(float);
-    for (int i = 0; i < h; ++i)
+    for (int i = 0; i < h; ++i) {
         for (int j = 0; j < w; ++j)
             a[(size_t)i * stride_px + (size_t)j] -= b[(size_t)i * stride_px + (size_t)j];
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -664,10 +666,11 @@ static int extract_temporal_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic
     const int orig_w = (int)s->dim.original_width;
     const int orig_h = (int)s->dim.original_height;
     subtract_plane(s->h_ref[other], s->h_ref[cyclic], orig_w, orig_h, s->float_stride);
-    if (s->speed_temporal_use_ref_diff)
+    if (s->speed_temporal_use_ref_diff) {
         subtract_plane(s->h_dis[other], s->h_ref[cyclic], orig_w, orig_h, s->float_stride);
-    else
+    } else {
         subtract_plane(s->h_dis[other], s->h_dis[cyclic], orig_w, orig_h, s->float_stride);
+    }
 
     /* Filter+downscale the temporal-diff planes. */
     const size_t stride_px = s->float_stride / sizeof(float);

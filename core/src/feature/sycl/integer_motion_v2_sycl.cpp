@@ -374,10 +374,11 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
     /* Pack cur ref Y into pinned host staging (handles arbitrary
      * pic stride), then upload to d_pix[index%2]. */
-    if (s->bpc <= 8)
+    if (s->bpc <= 8) {
         copy_y_plane<uint8_t>(ref_pic, s->h_pix, s->width, s->height);
-    else
+    } else {
         copy_y_plane<uint16_t>(ref_pic, s->h_pix, s->width, s->height);
+    }
 
     const unsigned cur_idx = index % 2u;
     q.memcpy(s->d_pix[cur_idx], s->h_pix, s->plane_bytes);

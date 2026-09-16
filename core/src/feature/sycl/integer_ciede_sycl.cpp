@@ -103,12 +103,13 @@ static inline void yuv_to_lab(float y_lim, float u_lim, float v_lim, unsigned bp
                               float &A, float &B)
 {
     float scale = 1.0f;
-    if (bpc == 10)
+    if (bpc == 10) {
         scale = 4.0f;
-    else if (bpc == 12)
+    } else if (bpc == 12) {
         scale = 16.0f;
-    else if (bpc == 16)
+    } else if (bpc == 16) {
         scale = 256.0f;
+    }
     float const y = (y_lim - 16.0f * scale) * (1.0f / (219.0f * scale));
     float const u = (u_lim - 128.0f * scale) * (1.0f / (224.0f * scale));
     float const v = (v_lim - 128.0f * scale) * (1.0f / (224.0f * scale));
@@ -271,7 +272,12 @@ static void launch_ciede(sycl::queue &q, void *ref_y, void *ref_u, void *ref_v, 
             float my_de = 0.0f;
             if (x < (size_t)e_w && y < (size_t)e_h) {
                 const size_t off = y * (size_t)e_w + x;
-                float r_y, r_u, r_v, d_y, d_u, d_v;
+                float r_y;
+                float r_u;
+                float r_v;
+                float d_y;
+                float d_u;
+                float d_v;
                 if (e_bpc <= 8) {
                     r_y = (float)static_cast<const uint8_t *>(e_ref_y)[off];
                     r_u = (float)static_cast<const uint8_t *>(e_ref_u)[off];
@@ -287,7 +293,12 @@ static void launch_ciede(sycl::queue &q, void *ref_y, void *ref_u, void *ref_v, 
                     d_u = (float)static_cast<const uint16_t *>(e_dis_u)[off];
                     d_v = (float)static_cast<const uint16_t *>(e_dis_v)[off];
                 }
-                float l1, a1, b1, l2, a2, b2;
+                float l1;
+                float a1;
+                float b1;
+                float l2;
+                float a2;
+                float b2;
                 yuv_to_lab(r_y, r_u, r_v, e_bpc, l1, a1, b1);
                 yuv_to_lab(d_y, d_u, d_v, e_bpc, l2, a2, b2);
                 my_de = ciede2000_dev(l1, a1, b1, l2, a2, b2);

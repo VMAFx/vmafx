@@ -113,12 +113,13 @@ static sycl::event launch_float_motion(sycl::queue &q, const void *ref, float *c
                 const bool valid = (gx < (int)e_w && gy < (int)e_h);
 
                 float scaler = 1.0f;
-                if (e_bpc == 10)
+                if (e_bpc == 10) {
                     scaler = 4.0f;
-                else if (e_bpc == 12)
+                } else if (e_bpc == 12) {
                     scaler = 16.0f;
-                else if (e_bpc == 16)
+                } else if (e_bpc == 16) {
                     scaler = 256.0f;
+                }
                 const float inv_scaler = 1.0f / scaler;
 
                 /* Phase 1: tile load */
@@ -321,10 +322,11 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         return -EINVAL;
     sycl::queue &q = *qptr;
 
-    if (s->bpc <= 8)
+    if (s->bpc <= 8) {
         copy_y_plane<uint8_t>(ref_pic, s->h_ref, s->width, s->height);
-    else
+    } else {
         copy_y_plane<uint16_t>(ref_pic, s->h_ref, s->width, s->height);
+    }
     q.memcpy(s->d_ref, s->h_ref, s->plane_bytes);
 
     const unsigned cur_idx = (unsigned)s->cur_blur;
@@ -362,9 +364,10 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     if (s->frame_index == 0) {
         err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "VMAF_feature_motion2_score", 0.0, index);
-        if (s->debug && !err)
+        if (s->debug && !err) {
             err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                           "VMAF_feature_motion_score", 0.0, index);
+        }
         s->cur_blur = 1 - s->cur_blur;
         s->frame_index++;
         return err;
@@ -387,10 +390,11 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "VMAF_feature_motion2_score", motion2,
                                                       index - 1);
-        if (s->debug && !err)
+        if (s->debug && !err) {
             err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                           "VMAF_feature_motion_score", motion_score,
                                                           index);
+        }
     }
 
     s->prev_motion_score = motion_score;

@@ -138,7 +138,9 @@ static void od_bin_fdct8(int &y0, int &y1, int &y2, int &y3, int &y4, int &y5, i
     int t3 = x5;
     int t5 = x6;
     int t1 = x7;
-    int t1h, t4h, t6h;
+    int t1h;
+    int t4h;
+    int t6h;
     t1 = t0 - t1;
     t1h = od_dct_rshift(t1, 1);
     t0 -= t1h;
@@ -187,7 +189,14 @@ static void od_bin_fdct8x8(int blk[64])
 {
     int z[64];
     for (int i = 0; i < 8; i++) {
-        int y0, y1, y2, y3, y4, y5, y6, y7;
+        int y0;
+        int y1;
+        int y2;
+        int y3;
+        int y4;
+        int y5;
+        int y6;
+        int y7;
         od_bin_fdct8(y0, y1, y2, y3, y4, y5, y6, y7, blk[0 * 8 + i], blk[1 * 8 + i], blk[2 * 8 + i],
                      blk[3 * 8 + i], blk[4 * 8 + i], blk[5 * 8 + i], blk[6 * 8 + i],
                      blk[7 * 8 + i]);
@@ -201,7 +210,14 @@ static void od_bin_fdct8x8(int blk[64])
         z[i * 8 + 7] = y7;
     }
     for (int i = 0; i < 8; i++) {
-        int y0, y1, y2, y3, y4, y5, y6, y7;
+        int y0;
+        int y1;
+        int y2;
+        int y3;
+        int y4;
+        int y5;
+        int y6;
+        int y7;
         od_bin_fdct8(y0, y1, y2, y3, y4, y5, y6, y7, z[0 * 8 + i], z[1 * 8 + i], z[2 * 8 + i],
                      z[3 * 8 + i], z[4 * 8 + i], z[5 * 8 + i], z[6 * 8 + i], z[7 * 8 + i]);
         blk[i * 8 + 0] = y0;
@@ -284,9 +300,12 @@ static void launch_psnr_hvs(sycl::queue &q, const float *ref, const float *dist,
             float d_means[4] = {0.f, 0.f, 0.f, 0.f};
             float s_vars[4] = {0.f, 0.f, 0.f, 0.f};
             float d_vars[4] = {0.f, 0.f, 0.f, 0.f};
-            float s_gmean = 0.f, d_gmean = 0.f;
-            float s_gvar = 0.f, d_gvar = 0.f;
-            float s_mc = 0.f, d_mc = 0.f;
+            float s_gmean = 0.f;
+            float d_gmean = 0.f;
+            float s_gvar = 0.f;
+            float d_gvar = 0.f;
+            float s_mc = 0.f;
+            float d_mc = 0.f;
 
             for (int i = 0; i < 8; i++) {
                 for (int j = 0; j < 8; j++) {

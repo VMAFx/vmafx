@@ -190,12 +190,13 @@ static sycl::event launch_compute(sycl::queue &q, const void *ref_raw, const voi
                     const uint16_t v = reinterpret_cast<const uint16_t *>(
                         static_cast<const uint8_t *>(plane) + y * e_raw_stride)[x];
                     float scaler = 1.0f;
-                    if (e_bpc == 10u)
+                    if (e_bpc == 10u) {
                         scaler = 4.0f;
-                    else if (e_bpc == 12u)
+                    } else if (e_bpc == 12u) {
                         scaler = 16.0f;
-                    else if (e_bpc == 16u)
+                    } else if (e_bpc == 16u) {
                         scaler = 256.0f;
+                    }
                     return (float)v / scaler - 128.0f;
                 };
 
@@ -205,7 +206,8 @@ static sycl::event launch_compute(sycl::queue &q, const void *ref_raw, const voi
                     const int tc = i - tr * tile_w;
                     const int py = mirror_v(tile_oy + tr, (int)e_h);
                     const int px = mirror_h(tile_ox + tc, (int)e_w);
-                    float r, d;
+                    float r;
+                    float d;
                     if (is_raw) {
                         r = read_raw(e_ref_raw, py, px);
                         d = read_raw(e_dis_raw, py, px);
@@ -244,7 +246,8 @@ static sycl::event launch_compute(sycl::queue &q, const void *ref_raw, const voi
                 item.barrier(sycl::access::fence_space::local_space);
 
                 /* Phase 3: horizontal filter + vif_stat. */
-                float my_num = 0.0f, my_den = 0.0f;
+                float my_num = 0.0f;
+                float my_den = 0.0f;
                 if (valid) {
                     float mu1 = 0.0f, mu2 = 0.0f, xx = 0.0f, yy = 0.0f, xy = 0.0f;
 #pragma unroll
@@ -313,7 +316,8 @@ static sycl::event launch_compute(sycl::queue &q, const void *ref_raw, const voi
                 }
                 item.barrier(sycl::access::fence_space::local_space);
                 if (lid == 0) {
-                    float total_n = 0.0f, total_d = 0.0f;
+                    float total_n = 0.0f;
+                    float total_d = 0.0f;
                     for (uint32_t i = 0; i < n_sg; i++) {
                         total_n += s_num_warps[i];
                         total_d += s_den_warps[i];
@@ -394,12 +398,13 @@ static sycl::event launch_decimate(sycl::queue &q, const void *ref_raw, const vo
                     const uint16_t v = reinterpret_cast<const uint16_t *>(
                         static_cast<const uint8_t *>(plane) + y * e_raw_stride)[x];
                     float scaler = 1.0f;
-                    if (e_bpc == 10u)
+                    if (e_bpc == 10u) {
                         scaler = 4.0f;
-                    else if (e_bpc == 12u)
+                    } else if (e_bpc == 12u) {
                         scaler = 16.0f;
-                    else if (e_bpc == 16u)
+                    } else if (e_bpc == 16u) {
                         scaler = 256.0f;
+                    }
                     return (float)v / scaler - 128.0f;
                 };
 
@@ -413,7 +418,8 @@ static sycl::event launch_decimate(sycl::queue &q, const void *ref_raw, const vo
                     for (int ki = 0; ki < FW; ki++) {
                         const float c_i = local_coeff[ki];
                         const int py = mirror_v(in_y - HFW + ki, (int)e_in_h);
-                        float r, d;
+                        float r;
+                        float d;
                         if (is_raw) {
                             r = read_raw(e_ref_raw, py, px);
                             d = read_raw(e_dis_raw, py, px);
@@ -631,32 +637,34 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         float *ref_out = (dst_idx == 0) ? s->d_ref_buf[0] : s->d_ref_buf[1];
         float *dis_out = (dst_idx == 0) ? s->d_dis_buf[0] : s->d_dis_buf[1];
         const unsigned out_stride = s->scale_w[n];
-        if (n == 1)
+        if (n == 1) {
             launch_decimate<1>(q, s->d_ref_raw, s->d_dis_raw, raw_stride_bytes, ref_in_f, dis_in_f,
                                in_f_stride, ref_out, dis_out, out_stride, s->scale_w[n],
                                s->scale_h[n], s->scale_w[n - 1], s->scale_h[n - 1], s->bpc);
-        else if (n == 2)
+        } else if (n == 2) {
             launch_decimate<2>(q, s->d_ref_raw, s->d_dis_raw, raw_stride_bytes, ref_in_f, dis_in_f,
                                in_f_stride, ref_out, dis_out, out_stride, s->scale_w[n],
                                s->scale_h[n], s->scale_w[n - 1], s->scale_h[n - 1], s->bpc);
-        else
+        } else {
             launch_decimate<3>(q, s->d_ref_raw, s->d_dis_raw, raw_stride_bytes, ref_in_f, dis_in_f,
                                in_f_stride, ref_out, dis_out, out_stride, s->scale_w[n],
                                s->scale_h[n], s->scale_w[n - 1], s->scale_h[n - 1], s->bpc);
+        }
 
         const unsigned grid_x = (s->scale_w[n] + FVIF_BX - 1u) / FVIF_BX;
-        if (n == 1)
+        if (n == 1) {
             launch_compute<1>(q, nullptr, nullptr, 0, ref_out, dis_out, s->scale_w[n], s->d_num[n],
                               s->d_den[n], s->scale_w[n], s->scale_h[n], s->bpc, grid_x, vif_nsq_f,
                               vif_egl_f, sigma_max_inv);
-        else if (n == 2)
+        } else if (n == 2) {
             launch_compute<2>(q, nullptr, nullptr, 0, ref_out, dis_out, s->scale_w[n], s->d_num[n],
                               s->d_den[n], s->scale_w[n], s->scale_h[n], s->bpc, grid_x, vif_nsq_f,
                               vif_egl_f, sigma_max_inv);
-        else
+        } else {
             launch_compute<3>(q, nullptr, nullptr, 0, ref_out, dis_out, s->scale_w[n], s->d_num[n],
                               s->d_den[n], s->scale_w[n], s->scale_h[n], s->bpc, grid_x, vif_nsq_f,
                               vif_egl_f, sigma_max_inv);
+        }
     }
 
     for (int i = 0; i < 4; i++) {
@@ -680,7 +688,8 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
 
     double scores[8];
     for (int i = 0; i < 4; i++) {
-        double n = 0.0, d = 0.0;
+        double n = 0.0;
+        double d = 0.0;
         for (unsigned j = 0; j < s->wg_count[i]; j++) {
             n += (double)s->h_num[i][j];
             d += (double)s->h_den[i][j];

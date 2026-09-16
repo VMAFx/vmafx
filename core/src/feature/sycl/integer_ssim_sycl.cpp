@@ -181,8 +181,11 @@ static void launch_horiz(sycl::queue &q, const float *d_ref, const float *d_cmp,
 
             /* Phase 2: compute 11-tap horizontal convolution from SLM. */
             if (gx < (size_t)e_w_horiz && gy < (size_t)e_h_horiz) {
-                float ref_mu_h = 0.0f, cmp_mu_h = 0.0f;
-                float ref_sq_h = 0.0f, cmp_sq_h = 0.0f, refcmp_h = 0.0f;
+                float ref_mu_h = 0.0f;
+                float cmp_mu_h = 0.0f;
+                float ref_sq_h = 0.0f;
+                float cmp_sq_h = 0.0f;
+                float refcmp_h = 0.0f;
                 for (int u = 0; u < SSIM_K; u++) {
                     /* SLM index: row ly, column lx + u. */
                     const size_t si = ly * SSIM_TILE_W + lx + (size_t)u;
@@ -238,8 +241,11 @@ static void launch_vert_combine(sycl::queue &q, const float *d_ref_mu, const flo
             const size_t y = it.get_global_id(0);
             float my_ssim = 0.0f;
             if (x < (size_t)e_w_final && y < (size_t)e_h_final) {
-                float ref_mu = 0.0f, cmp_mu = 0.0f;
-                float ref_sq = 0.0f, cmp_sq = 0.0f, refcmp = 0.0f;
+                float ref_mu = 0.0f;
+                float cmp_mu = 0.0f;
+                float ref_sq = 0.0f;
+                float cmp_sq = 0.0f;
+                float refcmp = 0.0f;
                 for (int v = 0; v < SSIM_K; v++) {
                     const size_t src_idx = (y + (size_t)v) * (size_t)e_w_horiz + x;
                     const float w = G[v];
@@ -342,7 +348,9 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->wg_count_x = (s->w_final + (unsigned)SSIM_WG_X - 1) / (unsigned)SSIM_WG_X;
     s->wg_count_y = (s->h_final + (unsigned)SSIM_WG_Y - 1) / (unsigned)SSIM_WG_Y;
     s->wg_count = s->wg_count_x * s->wg_count_y;
-    const float L = 255.0f, K1 = 0.01f, K2 = 0.03f;
+    const float L = 255.0f;
+    const float K1 = 0.01f;
+    const float K2 = 0.03f;
     s->c1 = (K1 * L) * (K1 * L);
     s->c2 = (K2 * L) * (K2 * L);
 
@@ -593,7 +601,12 @@ static void launch_issim_horiz_8bpc(sycl::queue &q, const uint8_t *d_ref, const 
                 const int k_max = ((int)x + ISSIM_HALF_K >= (int)e_width) ?
                                       ISSIM_K_SZ - ((int)x + ISSIM_HALF_K - (int)e_width + 1) :
                                       ISSIM_K_SZ;
-                int64_t mux = 0LL, muy = 0LL, x2 = 0LL, xy = 0LL, y2 = 0LL, w = 0LL;
+                int64_t mux = 0LL;
+                int64_t muy = 0LL;
+                int64_t x2 = 0LL;
+                int64_t xy = 0LL;
+                int64_t y2 = 0LL;
+                int64_t w = 0LL;
                 for (int k = k_min; k < k_max; k++) {
                     const int src_x = (int)x - ISSIM_HALF_K + k;
                     const int64_t s = (int64_t)d_ref[(size_t)y * e_width + (unsigned)src_x];
@@ -638,7 +651,12 @@ static void launch_issim_horiz_16bpc(sycl::queue &q, const uint16_t *d_ref, cons
                 const int k_max = ((int)x + ISSIM_HALF_K >= (int)e_width) ?
                                       ISSIM_K_SZ - ((int)x + ISSIM_HALF_K - (int)e_width + 1) :
                                       ISSIM_K_SZ;
-                int64_t mux = 0LL, muy = 0LL, x2 = 0LL, xy = 0LL, y2 = 0LL, w = 0LL;
+                int64_t mux = 0LL;
+                int64_t muy = 0LL;
+                int64_t x2 = 0LL;
+                int64_t xy = 0LL;
+                int64_t y2 = 0LL;
+                int64_t w = 0LL;
                 for (int k = k_min; k < k_max; k++) {
                     const int src_x = (int)x - ISSIM_HALF_K + k;
                     const int64_t s = (int64_t)d_ref[(size_t)y * e_width + (unsigned)src_x];
@@ -696,7 +714,12 @@ static void launch_issim_vert_combine(sycl::queue &q, const int64_t *d_mux_h,
                     const int k_max = ((int)y + ISSIM_HALF_K >= (int)e_height) ?
                                           ISSIM_K_SZ - ((int)y + ISSIM_HALF_K - (int)e_height + 1) :
                                           ISSIM_K_SZ;
-                    int64_t mux = 0LL, muy = 0LL, x2 = 0LL, xy = 0LL, y2 = 0LL, w = 0LL;
+                    int64_t mux = 0LL;
+                    int64_t muy = 0LL;
+                    int64_t x2 = 0LL;
+                    int64_t xy = 0LL;
+                    int64_t y2 = 0LL;
+                    int64_t w = 0LL;
                     for (int k = k_min; k < k_max; k++) {
                         const unsigned src_y = (unsigned)((int)y - ISSIM_HALF_K + k);
                         const size_t hidx = (size_t)src_y * e_width + x;

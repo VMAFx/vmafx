@@ -259,9 +259,10 @@ void ss2s_setup_gaussian(Ssimu2StateSycl *s, double sigma)
     double beta[3];
     for (int col = 0; col < 3; col++) {
         double M[3][3];
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 3; j++)
                 M[i][j] = A[i][j];
+        }
         for (int i = 0; i < 3; i++)
             M[i][col] = gamma[i];
         beta[col] = (M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) -
@@ -536,8 +537,12 @@ sycl::event launch_blur(sycl::queue &q, const float *in_buf, float *out_buf, uns
                            if (line >= e_lines)
                                return;
 
-                           float prev1_0 = 0.f, prev1_1 = 0.f, prev1_2 = 0.f;
-                           float prev2_0 = 0.f, prev2_1 = 0.f, prev2_2 = 0.f;
+                           float prev1_0 = 0.f;
+                           float prev1_1 = 0.f;
+                           float prev1_2 = 0.f;
+                           float prev2_0 = 0.f;
+                           float prev2_1 = 0.f;
+                           float prev2_2 = 0.f;
 
                            const int xsize = (PASS == 0) ? (int)e_w : (int)e_h;
                            /* base addresses depend on pass */
@@ -591,10 +596,11 @@ sycl::event launch_blur(sycl::queue &q, const float *in_buf, float *out_buf, uns
                                if (n >= 0) {
                                    const float s01 = o0 + o1;
                                    const float s_total = s01 + o2;
-                                   if (PASS == 0)
+                                   if (PASS == 0) {
                                        out_buf[out_off + row * width_v + (unsigned)n] = s_total;
-                                   else
+                                   } else {
                                        out_buf[out_off + (unsigned)n * width_v + col] = s_total;
+                                   }
                                }
                            }
                        });
@@ -846,13 +852,15 @@ int extract_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPictur
             if (!scratch)
                 return -ENOMEM;
             ss2s_downsample_2x2(s->h_ref_lin, cw, ch, scratch, nw, nh, plane_full);
-            for (int c = 0; c < 3; c++)
+            for (int c = 0; c < 3; c++) {
                 std::memcpy(s->h_ref_lin + (size_t)c * plane_full, scratch + (size_t)c * plane_full,
                             (size_t)nw * (size_t)nh * sizeof(float));
+            }
             ss2s_downsample_2x2(s->h_dis_lin, cw, ch, scratch, nw, nh, plane_full);
-            for (int c = 0; c < 3; c++)
+            for (int c = 0; c < 3; c++) {
                 std::memcpy(s->h_dis_lin + (size_t)c * plane_full, scratch + (size_t)c * plane_full,
                             (size_t)nw * (size_t)nh * sizeof(float));
+            }
             std::free(scratch);
             cw = nw;
             ch = nh;

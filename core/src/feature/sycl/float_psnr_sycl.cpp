@@ -88,12 +88,13 @@ static sycl::event launch_float_psnr(sycl::queue &q, const void *ref, const void
                              const unsigned lid = item.get_local_linear_id();
 
                              float scaler = 1.0f;
-                             if (e_bpc == 10)
+                             if (e_bpc == 10) {
                                  scaler = 4.0f;
-                             else if (e_bpc == 12)
+                             } else if (e_bpc == 12) {
                                  scaler = 16.0f;
-                             else if (e_bpc == 16)
+                             } else if (e_bpc == 16) {
                                  scaler = 256.0f;
+                             }
                              const float inv_scaler = 1.0f / scaler;
 
                              float my_noise = 0.0f;

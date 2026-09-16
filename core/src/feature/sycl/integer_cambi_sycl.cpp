@@ -341,7 +341,9 @@ static sycl::event launch_filter_mode(sycl::queue &q, const uint16_t *in, uint16
             if (e_axis == 1 && (y == 0 || y >= (int)e_h - 1))
                 return;
 
-            uint16_t a, b, c;
+            uint16_t a;
+            uint16_t b;
+            uint16_t c;
             if (e_axis == 0) {
                 /* Horizontal: neighbours in x. */
                 const int xl = (x > 0) ? x - 1 : 0;
