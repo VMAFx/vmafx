@@ -38,6 +38,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 
 #include "config.h"
 #include "feature_collector.h"
@@ -307,9 +308,9 @@ inline float ss2s_read_plane(const VmafPicture *pic, int plane, int x, int y)
         sx = 0;
     if (sy < 0)
         sy = 0;
-    if ((unsigned)sx >= pw)
+    if (std::cmp_greater_equal(sx, pw))
         sx = (int)pw - 1;
-    if ((unsigned)sy >= ph)
+    if (std::cmp_greater_equal(sy, ph))
         sy = (int)ph - 1;
     if (pic->bpc > 8) {
         const uint16_t *row =
@@ -487,8 +488,10 @@ void ss2s_downsample_2x2(const float *in, unsigned iw, unsigned ih, float *out, 
 sycl::event launch_mul3(sycl::queue &q, const float *a, const float *b, float *out, unsigned width,
                         unsigned height, unsigned plane_stride)
 {
-    const size_t global_x = ((width + SS2S_MUL_BX - 1u) / SS2S_MUL_BX) * SS2S_MUL_BX;
-    const size_t global_y = ((height + SS2S_MUL_BY - 1u) / SS2S_MUL_BY) * SS2S_MUL_BY;
+    const size_t global_x =
+        ((static_cast<size_t>(width) + SS2S_MUL_BX - 1u) / SS2S_MUL_BX) * SS2S_MUL_BX;
+    const size_t global_y =
+        ((static_cast<size_t>(height) + SS2S_MUL_BY - 1u) / SS2S_MUL_BY) * SS2S_MUL_BY;
     return q.submit([&](sycl::handler &h) {
         const unsigned e_w = width;
         const unsigned e_h = height;
@@ -517,7 +520,8 @@ sycl::event launch_blur(sycl::queue &q, const float *in_buf, float *out_buf, uns
                         float d1_2, int radius, unsigned in_offset, unsigned out_offset,
                         unsigned lines)
 {
-    const size_t global = ((lines + SS2S_BLUR_BLOCK - 1u) / SS2S_BLUR_BLOCK) * SS2S_BLUR_BLOCK;
+    const size_t global =
+        ((static_cast<size_t>(lines) + SS2S_BLUR_BLOCK - 1u) / SS2S_BLUR_BLOCK) * SS2S_BLUR_BLOCK;
     return q.submit([&](sycl::handler &h) {
         const unsigned e_w = width;
         const unsigned e_h = height;

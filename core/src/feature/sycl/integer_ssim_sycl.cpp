@@ -288,6 +288,15 @@ static void launch_vert_combine(sycl::queue &q, const float *d_ref_mu, const flo
 
 extern "C" {
 
+// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
+// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
+// entry points use C-style `static` rather than an anonymous namespace because
+// their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
+// the bottom of this file, which the C ABI consumes through the
+// function-pointer types in `feature_extractor.h`. A namespace cannot appear
+// inside this linkage specification at all. Same band, same reason, as
+// float_adm_sycl.cpp and speed_chroma_sycl.cpp. Per CLAUDE.md §12 r12 these are
+// load-bearing invariants of the SYCL <-> libvmaf C-API ABI. ADR-0278.
 static int round_to_int(float x)
 {
     return (int)(x + (x < 0.0f ? -0.5f : 0.5f));
@@ -995,3 +1004,4 @@ VmafFeatureExtractor vmaf_fex_integer_ssim_sycl = {
 };
 
 } /* extern "C" */
+// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

@@ -37,6 +37,15 @@
 #include <string>
 #include <vector>
 
+// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
+// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
+// entry points use C-style `static` rather than an anonymous namespace because
+// their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
+// the bottom of this file, which the C ABI consumes through the
+// function-pointer types in `feature_extractor.h`. A namespace cannot appear
+// inside this linkage specification at all. Same band, same reason, as
+// float_adm_sycl.cpp and speed_chroma_sycl.cpp. Per CLAUDE.md §12 r12 these are
+// load-bearing invariants of the SYCL <-> libvmaf C-API ABI. ADR-0278.
 /* Portable monotonic timer in milliseconds. std::chrono::steady_clock
  * is guaranteed monotonic by the C++ standard and is available on
  * every supported host (Linux gcc/clang/icpx + Windows MSVC/icpx-cl).
@@ -1347,3 +1356,4 @@ extern "C" int vmaf_sycl_profiling_get_string(VmafSyclState *state, char **outpu
 }
 
 #endif /* HAVE_SYCL */
+// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

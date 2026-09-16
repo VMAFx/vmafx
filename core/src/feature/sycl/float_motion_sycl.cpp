@@ -14,6 +14,7 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 
 #include "config.h"
 #include "feature_collector.h"
@@ -84,8 +85,8 @@ static sycl::event launch_float_motion(sycl::queue &q, const void *ref, float *c
                                        unsigned height, unsigned bpc, unsigned compute_sad,
                                        unsigned wg_count_x)
 {
-    const size_t global_x = ((width + FM_WG_X - 1) / FM_WG_X) * FM_WG_X;
-    const size_t global_y = ((height + FM_WG_Y - 1) / FM_WG_Y) * FM_WG_Y;
+    const size_t global_x = ((static_cast<size_t>(width) + FM_WG_X - 1) / FM_WG_X) * FM_WG_X;
+    const size_t global_y = ((static_cast<size_t>(height) + FM_WG_Y - 1) / FM_WG_Y) * FM_WG_Y;
     const unsigned e_w = width;
     const unsigned e_h = height;
     const unsigned e_bpc = bpc;
@@ -110,7 +111,7 @@ static sycl::event launch_float_motion(sycl::queue &q, const void *ref, float *c
                 const unsigned lid = item.get_local_linear_id();
                 const unsigned lx = item.get_local_id(1);
                 const unsigned ly = item.get_local_id(0);
-                const bool valid = (gx < (int)e_w && gy < (int)e_h);
+                const bool valid = (std::cmp_less(gx, e_w) && std::cmp_less(gy, e_h));
 
                 float scaler = 1.0f;
                 if (e_bpc == 10) {
@@ -250,6 +251,15 @@ static const VmafOption options_float_motion_sycl[] = {
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {0}};
 
+// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
+// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
+// entry points use C-style `static` rather than an anonymous namespace because
+// their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
+// the bottom of this file, which the C ABI consumes through the
+// function-pointer types in `feature_extractor.h`. A namespace cannot appear
+// inside this linkage specification at all. Same band, same reason, as
+// float_adm_sycl.cpp and speed_chroma_sycl.cpp. Per CLAUDE.md §12 r12 these are
+// load-bearing invariants of the SYCL <-> libvmaf C-API ABI. ADR-0278.
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -460,3 +470,4 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_motion_sycl = {
 };
 
 } /* extern "C" */
+// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

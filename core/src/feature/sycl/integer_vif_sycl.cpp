@@ -44,6 +44,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
+#include <utility>
 
 #include "config.h"
 #include "feature_collector.h"
@@ -394,7 +395,7 @@ static sycl::event launch_vif_vert_impl(sycl::queue &q, const void *ref_data, co
                     unsigned const tc = i % WG_X;
                     int px = tile_col_x + (int)tc;
                     int const py = dev_mirror(tile_origin_y + (int)tr, (int)e_h);
-                    if (px < (int)e_w) {
+                    if (std::cmp_less(px, e_w)) {
                         px = dev_mirror(px, (int)e_w);
                         s_ref[tr][tc] = read_global(p_ref, py, px);
                         s_dis[tr][tc] = read_global(p_dis, py, px);
@@ -408,7 +409,7 @@ static sycl::event launch_vif_vert_impl(sycl::queue &q, const void *ref_data, co
             item.barrier(sycl::access::fence_space::local_space);
 
             // --- Phase 2: Vertical convolution from SLM ---
-            if (gx >= (int)e_w || gy >= (int)e_h)
+            if (std::cmp_greater_equal(gx, e_w) || std::cmp_greater_equal(gy, e_h))
                 return;
 
             // mu and rd accumulators fit uint32 (filter sums to 65536,
@@ -572,7 +573,7 @@ launch_vif_hori_impl(sycl::queue &q, unsigned width, unsigned height, float vif_
             [=](sycl::nd_item<2> item) VMAF_SYCL_REQD_SG_SIZE(SG_SIZE) {
                 const int gx = item.get_global_id(1);
                 const int gy = item.get_global_id(0);
-                const bool valid = (gx < (int)e_w && gy < (int)e_h);
+                const bool valid = (std::cmp_less(gx, e_w) && std::cmp_less(gy, e_h));
 
                 sycl::sub_group sg = item.get_sub_group();
                 const uint32_t sg_id = sg.get_group_linear_id();
@@ -596,7 +597,7 @@ launch_vif_hori_impl(sycl::queue &q, unsigned width, unsigned height, float vif_
                     auto mx = [&](int x) -> int {
                         if (x < 0)
                             return -x;
-                        if (x >= (int)e_w)
+                        if (std::cmp_greater_equal(x, e_w))
                             return 2 * ((int)e_w - 1) - x;
                         return x;
                     };
@@ -999,7 +1000,7 @@ launch_vif_fused_impl(sycl::queue &q, const void *ref_data, const void *dis_data
                 const unsigned lid = item.get_local_linear_id();
                 const unsigned lx = item.get_local_id(1);
                 const unsigned ly = item.get_local_id(0);
-                const bool valid = (gx < (int)e_w && gy < (int)e_h);
+                const bool valid = (std::cmp_less(gx, e_w) && std::cmp_less(gy, e_h));
 
                 // ============================================================
                 // Phase 1: Cooperative load of input tile into SLM

@@ -36,6 +36,7 @@
 #include <new>
 
 #include <sycl/sycl.hpp>
+#include <utility>
 
 #include "picture.h"
 #include "common.h"
@@ -59,7 +60,7 @@ extern "C" int vmaf_sycl_picture_upload(VmafSyclState *state, void *dst, VmafPic
     size_t const row_bytes = pic->w[plane] * bpp;
     size_t const total = row_bytes * pic->h[plane];
 
-    if (pic->stride[plane] == (ptrdiff_t)row_bytes) {
+    if (std::cmp_equal(pic->stride[plane], row_bytes)) {
         /* Contiguous — single memcpy */
         return vmaf_sycl_memcpy_h2d(state, dst, pic->data[plane], total);
     }
@@ -88,7 +89,7 @@ extern "C" int vmaf_sycl_picture_download(VmafSyclState *state, const void *src,
     size_t const row_bytes = pic->w[plane] * bpp;
     size_t const total = row_bytes * pic->h[plane];
 
-    if (pic->stride[plane] == (ptrdiff_t)row_bytes) {
+    if (std::cmp_equal(pic->stride[plane], row_bytes)) {
         return vmaf_sycl_memcpy_d2h(state, pic->data[plane], src, total);
     }
 
@@ -215,6 +216,15 @@ struct VmafSyclPicturePool {
  * so wrap it with the priv + ref cleanup the old SYCL-specific close
  * loop did. */
 extern "C" {
+// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
+// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
+// entry points use C-style `static` rather than an anonymous namespace because
+// their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
+// the bottom of this file, which the C ABI consumes through the
+// function-pointer types in `feature_extractor.h`. A namespace cannot appear
+// inside this linkage specification at all. Same band, same reason, as
+// float_adm_sycl.cpp and speed_chroma_sycl.cpp. Per CLAUDE.md §12 r12 these are
+// load-bearing invariants of the SYCL <-> libvmaf C-API ABI. ADR-0278.
 static int sycl_pool_free_cb(VmafPicture *pic, void *cookie)
 {
     int const err = vmaf_sycl_picture_free(pic, cookie);
@@ -287,3 +297,4 @@ extern "C" int vmaf_sycl_picture_pool_close(VmafSyclPicturePool *pool)
     delete pool;
     return err;
 }
+// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

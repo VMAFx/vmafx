@@ -23,6 +23,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 
 #include "config.h"
 #include "feature_collector.h"
@@ -115,8 +116,8 @@ static sycl::event launch_compute(sycl::queue &q, const void *ref_raw, const voi
                          (SCALE == 2) ? FVIF_COEFF_S2 :
                                         FVIF_COEFF_S3;
 
-    const size_t global_x = ((width + FVIF_BX - 1) / FVIF_BX) * FVIF_BX;
-    const size_t global_y = ((height + FVIF_BY - 1) / FVIF_BY) * FVIF_BY;
+    const size_t global_x = ((static_cast<size_t>(width) + FVIF_BX - 1) / FVIF_BX) * FVIF_BX;
+    const size_t global_y = ((static_cast<size_t>(height) + FVIF_BY - 1) / FVIF_BY) * FVIF_BY;
     const unsigned e_w = width;
     const unsigned e_h = height;
     const unsigned e_bpc = bpc;
@@ -159,7 +160,7 @@ static sycl::event launch_compute(sycl::queue &q, const void *ref_raw, const voi
                 const int lx = (int)item.get_local_id(1);
                 const int ly = (int)item.get_local_id(0);
                 const unsigned lid = (unsigned)(ly * FVIF_BX + lx);
-                const bool valid = (gx < (int)e_w && gy < (int)e_h);
+                const bool valid = (std::cmp_less(gx, e_w) && std::cmp_less(gy, e_h));
                 const int tile_w = FVIF_BX + 2 * HFW;
                 const int tile_h = FVIF_BY + 2 * HFW;
                 const int tile_oy = (int)(item.get_group(0) * FVIF_BY) - HFW;
@@ -343,8 +344,8 @@ static sycl::event launch_decimate(sycl::queue &q, const void *ref_raw, const vo
                          (SCALE == 2) ? FVIF_COEFF_S2 :
                                         FVIF_COEFF_S3;
 
-    const size_t global_x = ((out_w + FVIF_BX - 1) / FVIF_BX) * FVIF_BX;
-    const size_t global_y = ((out_h + FVIF_BY - 1) / FVIF_BY) * FVIF_BY;
+    const size_t global_x = ((static_cast<size_t>(out_w) + FVIF_BX - 1) / FVIF_BX) * FVIF_BX;
+    const size_t global_y = ((static_cast<size_t>(out_h) + FVIF_BY - 1) / FVIF_BY) * FVIF_BY;
     const unsigned e_out_w = out_w;
     const unsigned e_out_h = out_h;
     const unsigned e_in_w = in_w;
@@ -370,7 +371,7 @@ static sycl::event launch_decimate(sycl::queue &q, const void *ref_raw, const vo
             [=](sycl::nd_item<2> item) {
                 const int gx = (int)item.get_global_id(1);
                 const int gy = (int)item.get_global_id(0);
-                if (gx >= (int)e_out_w || gy >= (int)e_out_h)
+                if (std::cmp_greater_equal(gx, e_out_w) || std::cmp_greater_equal(gy, e_out_h))
                     return;
                 const int in_x = 2 * gx;
                 const int in_y = 2 * gy;
@@ -498,6 +499,15 @@ static const VmafOption options_float_vif_sycl[] = {
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {0}};
 
+// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
+// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
+// entry points use C-style `static` rather than an anonymous namespace because
+// their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
+// the bottom of this file, which the C ABI consumes through the
+// function-pointer types in `feature_extractor.h`. A namespace cannot appear
+// inside this linkage specification at all. Same band, same reason, as
+// float_adm_sycl.cpp and speed_chroma_sycl.cpp. Per CLAUDE.md §12 r12 these are
+// load-bearing invariants of the SYCL <-> libvmaf C-API ABI. ADR-0278.
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -810,3 +820,4 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_vif_sycl = {
 };
 
 } /* extern "C" */
+// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

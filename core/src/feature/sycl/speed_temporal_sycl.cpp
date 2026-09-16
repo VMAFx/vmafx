@@ -24,6 +24,7 @@
 #include <cerrno>
 #include <cmath>
 #include <cstring>
+#include <utility>
 
 #include "config.h"
 #include "feature_collector.h"
@@ -67,7 +68,8 @@ static void launch_means(sycl::queue &q, const float *plane, float *means, uint3
     (void)op_w;
     (void)num_blocks_h;
     (void)num_blocks;
-    const size_t global = ((SP_ELEMENTS + MEANS_WG - 1u) / MEANS_WG) * MEANS_WG;
+    const size_t global =
+        ((static_cast<size_t>(SP_ELEMENTS) + MEANS_WG - 1u) / MEANS_WG) * MEANS_WG;
     q.submit([&](sycl::handler &cgh) {
         cgh.parallel_for(sycl::nd_range<1>(global, MEANS_WG), [=](sycl::nd_item<1> it) {
             const uint32_t elem = (uint32_t)it.get_global_id(0);
@@ -100,7 +102,7 @@ static void launch_cov(sycl::queue &q, const float *plane, const float *means, f
     (void)num_blocks_h;
     (void)num_blocks;
     /* 625 work-groups of COV_WG threads, one per (x_index, y_index) pair. */
-    const size_t total_wg = SP_ELEMENTS * SP_ELEMENTS;
+    const size_t total_wg = static_cast<size_t>(SP_ELEMENTS) * SP_ELEMENTS;
     q.submit([&](sycl::handler &cgh) {
         sycl::local_accessor<float, 1> const s_partial(sycl::range<1>(COV_WG), cgh);
         cgh.parallel_for(sycl::nd_range<1>(total_wg * COV_WG, COV_WG), [=](sycl::nd_item<1> it) {
@@ -142,7 +144,8 @@ static void launch_indterm(sycl::queue &q, const float *plane, float *indterm, u
                            uint32_t num_blocks_h, uint32_t num_blocks)
 {
     const uint32_t total = SP_ELEMENTS * num_blocks;
-    const size_t global = ((total + INDTERM_WG - 1u) / INDTERM_WG) * INDTERM_WG;
+    const size_t global =
+        ((static_cast<size_t>(total) + INDTERM_WG - 1u) / INDTERM_WG) * INDTERM_WG;
     q.submit([&](sycl::handler &cgh) {
         cgh.parallel_for(sycl::nd_range<1>(global, INDTERM_WG), [=](sycl::nd_item<1> it) {
             const uint32_t idx = (uint32_t)it.get_global_id(0);
@@ -163,9 +166,9 @@ static void launch_indterm(sycl::queue &q, const float *plane, float *indterm, u
 
 static void launch_solve(sycl::queue &q, const float *R, float *rhs, uint32_t num_blocks)
 {
-    const size_t warps = ((num_blocks + 7u) / 8u) * 8u;
+    const size_t warps = ((static_cast<size_t>(num_blocks) + 7u) / 8u) * 8u;
     const size_t global = warps * SOLVE_WG;
-    const size_t local = SOLVE_WG * 8u;
+    const size_t local = static_cast<size_t>(SOLVE_WG) * 8u;
     q.submit([&](sycl::handler &cgh) {
         cgh.parallel_for(sycl::nd_range<1>(global, local), [=](sycl::nd_item<1> it) {
             const uint32_t warp_id = (uint32_t)(it.get_global_id(0) / SOLVE_WG);
@@ -177,7 +180,7 @@ static void launch_solve(sycl::queue &q, const float *R, float *rhs, uint32_t nu
             const bool active = (warp_id < num_blocks && lane < SP_ELEMENTS);
             const uint32_t col = warp_id;
             for (int32_t i = (int32_t)(SP_ELEMENTS - 1u); i >= 0; --i) {
-                if (active && (int32_t)lane == i) {
+                if (active && std::cmp_equal(lane, i)) {
                     float val = rhs[(uint32_t)i * num_blocks + col];
                     const float denom = R[(uint32_t)i * SP_ELEMENTS + (uint32_t)i];
                     for (uint32_t k = (uint32_t)(i + 1); k < SP_ELEMENTS; ++k)
@@ -202,7 +205,7 @@ static void launch_score(sycl::queue &q, const float *ref_eigenvalues, const flo
                          const float *dis_indterm, float *ref_ent, float *ref_var, float *dis_ent,
                          float *dis_var, uint32_t num_blocks, float sigma_nn)
 {
-    const size_t global = ((num_blocks + SCORE_WG - 1u) / SCORE_WG) * SCORE_WG;
+    const size_t global = ((static_cast<size_t>(num_blocks) + SCORE_WG - 1u) / SCORE_WG) * SCORE_WG;
     const float log2e_2pi = sycl::log2(2.0f * 3.14159265358979323846f * 2.71828182845904523536f);
     q.submit([&](sycl::handler &cgh) {
         cgh.parallel_for(sycl::nd_range<1>(global, SCORE_WG), [=](sycl::nd_item<1> it) {
@@ -549,6 +552,15 @@ static const VmafOption options_temporal[] = {
     {0},
 };
 
+// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
+// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
+// entry points use C-style `static` rather than an anonymous namespace because
+// their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
+// the bottom of this file, which the C ABI consumes through the
+// function-pointer types in `feature_extractor.h`. A namespace cannot appear
+// inside this linkage specification at all. Same band, same reason, as
+// float_adm_sycl.cpp and speed_chroma_sycl.cpp. Per CLAUDE.md §12 r12 these are
+// load-bearing invariants of the SYCL <-> libvmaf C-API ABI. ADR-0278.
 /* forward decl for init failure cleanup — SY-2a */
 static int close_temporal_sycl(VmafFeatureExtractor *fex);
 
@@ -578,8 +590,8 @@ static int init_temporal_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pi
     const size_t stride_px = s->float_stride / sizeof(float);
     const size_t nb = s->dim.num_blocks;
     const size_t plane_bytes = s->dim.alloc_height * stride_px * sizeof(float);
-    const size_t indterm_bytes = SP_ELEMENTS * nb * sizeof(float);
-    const size_t cov_bytes = SP_ELEMENTS * SP_ELEMENTS * sizeof(float);
+    const size_t indterm_bytes = static_cast<size_t>(SP_ELEMENTS) * nb * sizeof(float);
+    const size_t cov_bytes = static_cast<size_t>(SP_ELEMENTS) * SP_ELEMENTS * sizeof(float);
     const size_t score_bytes = nb * sizeof(float);
 
 #define ALLOC_D(field, sz) s->field = sycl::malloc_device<float>((sz) / sizeof(float), q)
@@ -764,3 +776,4 @@ VmafFeatureExtractor vmaf_fex_speed_temporal_sycl = {
 };
 
 } /* extern "C" */
+// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

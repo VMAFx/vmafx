@@ -80,6 +80,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 #include "config.h"
 #include "feature_collector.h"
@@ -239,7 +240,7 @@ static sycl::event launch_spatial_mask(sycl::queue &q, const uint16_t *image, ui
         h.parallel_for(ndr, [=](sycl::nd_item<2> it) {
             const int x = (int)it.get_global_id(1);
             const int y = (int)it.get_global_id(0);
-            if (x >= (int)e_w || y >= (int)e_h)
+            if (std::cmp_greater_equal(x, e_w) || std::cmp_greater_equal(y, e_h))
                 return;
 
             /* 7×7 box sum of zero_deriv field — mirrors the CUDA kernel
@@ -249,11 +250,11 @@ static sycl::event launch_spatial_mask(sycl::queue &q, const uint16_t *image, ui
             unsigned box_sum = 0u;
             for (int dy = -HALF; dy <= HALF; dy++) {
                 const int ry = y + dy;
-                if (ry < 0 || ry >= (int)e_h)
+                if (ry < 0 || std::cmp_greater_equal(ry, e_h))
                     continue;
                 for (int dx = -HALF; dx <= HALF; dx++) {
                     const int rx = x + dx;
-                    if (rx < 0 || rx >= (int)e_w)
+                    if (rx < 0 || std::cmp_greater_equal(rx, e_w))
                         continue;
                     const uint16_t p = e_image[(size_t)(unsigned)ry * e_stride + (unsigned)rx];
                     const int rx_right = (rx == (int)e_w - 1) ? rx : rx + 1;
@@ -333,7 +334,7 @@ static sycl::event launch_filter_mode(sycl::queue &q, const uint16_t *in, uint16
         h.parallel_for(ndr, [=](sycl::nd_item<2> it) {
             const int x = (int)it.get_global_id(1);
             const int y = (int)it.get_global_id(0);
-            if (x >= (int)e_w || y >= (int)e_h)
+            if (std::cmp_greater_equal(x, e_w) || std::cmp_greater_equal(y, e_h))
                 return;
 
             /* Vertical pass mirrors cambi.c: row 0 and row height-1 are never
@@ -530,6 +531,15 @@ static const VmafOption options_cambi_sycl[] = {
     {0},
 };
 
+// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
+// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
+// entry points use C-style `static` rather than an anonymous namespace because
+// their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
+// the bottom of this file, which the C ABI consumes through the
+// function-pointer types in `feature_extractor.h`. A namespace cannot appear
+// inside this linkage specification at all. Same band, same reason, as
+// float_adm_sycl.cpp and speed_chroma_sycl.cpp. Per CLAUDE.md §12 r12 these are
+// load-bearing invariants of the SYCL <-> libvmaf C-API ABI. ADR-0278.
 /* ------------------------------------------------------------------ */
 /* init_fex_sycl                                                        */
 /* ------------------------------------------------------------------ */
@@ -966,3 +976,4 @@ extern "C" VmafFeatureExtractor vmaf_fex_cambi_sycl = {
 };
 
 } /* extern "C" */
+// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

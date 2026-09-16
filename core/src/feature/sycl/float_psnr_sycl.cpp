@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 
 #include "config.h"
 #include "feature_collector.h"
@@ -67,8 +68,10 @@ static sycl::event launch_float_psnr(sycl::queue &q, const void *ref, const void
                                      float *partials, unsigned width, unsigned height, unsigned bpc,
                                      unsigned wg_count_x)
 {
-    const size_t global_x = ((width + FPSNR_WG_X - 1) / FPSNR_WG_X) * FPSNR_WG_X;
-    const size_t global_y = ((height + FPSNR_WG_Y - 1) / FPSNR_WG_Y) * FPSNR_WG_Y;
+    const size_t global_x =
+        ((static_cast<size_t>(width) + FPSNR_WG_X - 1) / FPSNR_WG_X) * FPSNR_WG_X;
+    const size_t global_y =
+        ((static_cast<size_t>(height) + FPSNR_WG_Y - 1) / FPSNR_WG_Y) * FPSNR_WG_Y;
     const unsigned e_w = width;
     const unsigned e_h = height;
     const unsigned e_bpc = bpc;
@@ -98,7 +101,7 @@ static sycl::event launch_float_psnr(sycl::queue &q, const void *ref, const void
                              const float inv_scaler = 1.0f / scaler;
 
                              float my_noise = 0.0f;
-                             if (gx < (int)e_w && gy < (int)e_h) {
+                             if (std::cmp_less(gx, e_w) && std::cmp_less(gy, e_h)) {
                                  float r;
                                  float d;
                                  if (e_bpc <= 8) {
@@ -169,6 +172,15 @@ static const VmafOption options_float_psnr_sycl[] = {
     },
     {0}};
 
+// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
+// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
+// entry points use C-style `static` rather than an anonymous namespace because
+// their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
+// the bottom of this file, which the C ABI consumes through the
+// function-pointer types in `feature_extractor.h`. A namespace cannot appear
+// inside this linkage specification at all. Same band, same reason, as
+// float_adm_sycl.cpp and speed_chroma_sycl.cpp. Per CLAUDE.md §12 r12 these are
+// load-bearing invariants of the SYCL <-> libvmaf C-API ABI. ADR-0278.
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -330,3 +342,4 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_psnr_sycl = {
 };
 
 } /* extern "C" */
+// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
