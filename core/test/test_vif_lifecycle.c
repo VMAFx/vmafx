@@ -46,9 +46,10 @@ static char *test_differencing_stride(void)
     float difference[] = {0, 0, 0, 77, 0, 0, 0, 77};
     const float expected[] = {5, -2, 2, 77, -6, 8, 0, 77};
     apply_frame_differencing(current, previous, difference, 3, 2, 4);
-    for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); ++i)
+    for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); ++i) {
         mu_assert("odd-width differencing preserves row padding",
                   float_bits_equal(difference[i], expected[i]));
+    }
     return NULL;
 }
 

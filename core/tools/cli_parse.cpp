@@ -668,6 +668,29 @@ const struct {
     {.alias = "integer_psnr", .target = "psnr"},
 };
 
+/* Report a bad feature option string, releasing the half-built config first.
+ *
+ * Same ownership problem as parse_model_config(): the config has not reached
+ * CLISettings yet, so cli_free() cannot release it. Harmless in the shipped
+ * CLI, where usage() exits; load-bearing under the fuzz harness, which
+ * longjmps out of exit(). Both the feature name and the key point INTO the
+ * buffer, so they are copied before it is released — freeing first and
+ * formatting afterwards prints freed memory. */
+[[noreturn]] static void feature_usage_free(CLIFeatureConfig *const cfg, const char *const app,
+                                            const char *const key)
+{
+    char name_copy[256];
+    char key_copy[256];
+    (void)snprintf(name_copy, sizeof(name_copy), "%s", (cfg->name != nullptr) ? cfg->name : "");
+    (void)snprintf(key_copy, sizeof(key_copy), "%s", (key != nullptr) ? key : "");
+    (void)vmaf_feature_dictionary_free(&cfg->opts_dict);
+    free(cfg->buf);
+    usage(app,
+          "Problem parsing feature \"%s\", "
+          "bad option string \"%s\".\n",
+          name_copy, key_copy);
+}
+
 CLIFeatureConfig parse_feature_config(const char *const optarg, const char *const app)
 {
     const size_t optarg_sz = strnlen(optarg, 1024);
@@ -704,26 +727,8 @@ CLIFeatureConfig parse_feature_config(const char *const optarg, const char *cons
         char *const val = key_val;
         cli_unescape(key);
         cli_unescape(val);
-        if (!val) {
-            /* Same ownership problem as parse_model_config(): this config has
-             * not reached CLISettings yet, so cli_free() cannot release it.
-             * Harmless in the shipped CLI, where usage() exits; load-bearing
-             * under the fuzz harness, which longjmps out of exit().
-             *
-             * Both `feature_cfg.name` and `key` point INTO the buffer, so they
-             * are copied before it is released. */
-            char name_copy[256];
-            char key_copy[256];
-            (void)snprintf(name_copy, sizeof(name_copy), "%s",
-                           (feature_cfg.name != nullptr) ? feature_cfg.name : "");
-            (void)snprintf(key_copy, sizeof(key_copy), "%s", (key != nullptr) ? key : "");
-            (void)vmaf_feature_dictionary_free(&feature_cfg.opts_dict);
-            free(feature_cfg.buf);
-            usage(app,
-                  "Problem parsing feature \"%s\", "
-                  "bad option string \"%s\".\n",
-                  name_copy, key_copy);
-        }
+        if (!val)
+            feature_usage_free(&feature_cfg, app, key);
         const int err = vmaf_feature_dictionary_set(&feature_cfg.opts_dict, key, val);
         if (err) {
             /* `optarg` is the caller's argv string, not our buffer, so it
