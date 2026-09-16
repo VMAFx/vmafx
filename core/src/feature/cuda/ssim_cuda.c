@@ -58,6 +58,12 @@
 #include "picture_cuda.h"
 #include "cuda_helper.cuh"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #define ISSIM_CUDA_BLOCK_X 16
 #define ISSIM_CUDA_BLOCK_Y 8
 #define ISSIM_CUDA_BLOCK_SZ (ISSIM_CUDA_BLOCK_X * ISSIM_CUDA_BLOCK_Y)
@@ -405,3 +411,5 @@ VmafFeatureExtractor vmaf_fex_integer_ssim_cuda = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

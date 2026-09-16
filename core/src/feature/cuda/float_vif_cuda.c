@@ -31,6 +31,12 @@
 #include "picture.h"
 #include "picture_cuda.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #define FVIF_BX 16
 #define FVIF_BY 16
 
@@ -415,7 +421,8 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 
     double scores[8];
     for (int i = 0; i < 4; i++) {
-        double n = 0.0, d = 0.0;
+        double n = 0.0;
+        double d = 0.0;
         for (unsigned j = 0; j < s->wg_count[i]; j++) {
             n += (double)s->num_host[i][j];
             d += (double)s->den_host[i][j];
@@ -531,3 +538,5 @@ VmafFeatureExtractor vmaf_fex_float_vif_cuda = {
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_CUDA,
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

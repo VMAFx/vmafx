@@ -57,6 +57,12 @@
 #include "../../hip/kernel_template.h"
 #include "integer_ms_ssim_hip.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* ------------------------------------------------------------------ */
 /* Constants                                                           */
 /* ------------------------------------------------------------------ */
@@ -638,10 +644,11 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     (void)pix_fmt;
     MsSsimStateHip *s = fex->priv;
 
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P || !s->enable_chroma)
+    if (pix_fmt == VMAF_PIX_FMT_YUV400P || !s->enable_chroma) {
         s->n_planes = 1u;
-    else
+    } else {
         s->n_planes = 1u; /* reserved: MS-SSIM chroma extension not yet impl. */
+    }
 
     int err = ms_ssim_hip_validate(w, h);
     if (err != 0)
@@ -925,3 +932,5 @@ VmafFeatureExtractor vmaf_fex_integer_ms_ssim_hip = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

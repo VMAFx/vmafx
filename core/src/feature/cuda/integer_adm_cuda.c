@@ -39,6 +39,12 @@
 
 #include <assert.h>
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* Layout: [adm_cm(12)] [adm_csf_den(12)] [adm_aim_cm(12)] — ADR-0746 */
 #define RES_BUFFER_SIZE (4 * 3 * 3)
 
@@ -348,7 +354,8 @@ static int adm_csf_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int
 
     const int cols_per_thread = 4;
     const int rows_per_thread = 1;
-    const int BLOCKX = 32, BLOCKY = 4;
+    const int BLOCKX = 32;
+    const int BLOCKY = 4;
 
     void *args[] = {&*buf, &top, &bottom, &left, &right, &stride, &*p};
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_adm_csf_kernel_1_4,
@@ -396,7 +403,8 @@ static int i4_adm_csf_device(AdmStateCuda *s, AdmBufferCuda *buf, int scale, int
 
     const int cols_per_thread = 4;
     const int rows_per_thread = 1;
-    const int BLOCKX = 32, BLOCKY = 4;
+    const int BLOCKX = 32;
+    const int BLOCKY = 4;
 
     void *args[] = {&*buf, &scale, &top, &bottom, &left, &right, &stride, &*p};
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_i4_adm_csf_kernel_1_4,
@@ -572,7 +580,8 @@ static int adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int 
     // fused
     {
         const int rows_per_thread = 8;
-        const int BLOCKX = 32, BLOCKY = 4;
+        const int BLOCKX = 32;
+        const int BLOCKY = 4;
 
         void *args[] = {&*buf,
                         &h,
@@ -674,7 +683,8 @@ static int adm_cm_aim_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, 
     uint32_t shift_inner_accum = (uint32_t)(ceil(log2f(h)));
     uint32_t add_shift_inner_accum = 1 << (shift_inner_accum - 1);
 
-    const int BLOCKX = 32, BLOCKY = 4;
+    const int BLOCKX = 32;
+    const int BLOCKY = 4;
 
     /* Pick `rows_per_thread` so the launch actually fills the device
      * (ADR-1226). This kernel's only parallelism is one block per
@@ -947,7 +957,9 @@ static void write_scores(write_score_parameters_adm *params)
     unsigned index = params->index;
 
     double scores[8];
-    double score, score_num, score_den;
+    double score;
+    double score_num;
+    double score_den;
 
     double num = 0;
     double den = 0;
@@ -1829,3 +1841,5 @@ VmafFeatureExtractor vmaf_fex_integer_adm_cuda = {.name = "adm_cuda",
                                                   .priv_size = sizeof(AdmStateCuda),
                                                   .provided_features = provided_features,
                                                   .flags = VMAF_FEATURE_EXTRACTOR_CUDA};
+
+/* NOLINTEND(modernize-use-nullptr) */

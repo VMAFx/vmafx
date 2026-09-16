@@ -25,6 +25,12 @@
 #include "common.h"
 #include "log.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 static int is_cudastate_empty(VmafCudaState *cu_state)
 {
     if (!cu_state)
@@ -122,7 +128,8 @@ static int init_with_primary_context(VmafCudaState *cu_state)
     CHECK_CUDA_GOTO(cu_state->f, cuCtxPushCurrent((cu_state->ctx)), fail);
     ctx_pushed = 1;
 
-    int low, high;
+    int low;
+    int high;
     CHECK_CUDA_GOTO(cu_state->f, cuCtxGetStreamPriorityRange(&low, &high), fail);
     // Use highest priority for VMAF compute to preempt lower-priority
     // work (e.g., NVENC/NVDEC) when sharing the GPU
@@ -187,7 +194,8 @@ static int init_with_provided_context(VmafCudaState *cu_state, CUcontext cu_cont
     cu_state->release_ctx = 0;
     cu_state->dev = cu_device;
 
-    int low, high;
+    int low;
+    int high;
     CHECK_CUDA_GOTO(cu_state->f, cuCtxGetStreamPriorityRange(&low, &high), fail);
     const int prio = 0;
     const int prio2 = MAX(low, MIN(high, prio));
@@ -521,3 +529,5 @@ int vmaf_cuda_buffer_get_dptr(VmafCudaBuffer *buf, CUdeviceptr *ptr)
     *ptr = buf->data;
     return 0;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

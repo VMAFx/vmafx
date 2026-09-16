@@ -24,6 +24,12 @@
 #include "common.h"
 #include "kernel_template.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /*
  * Translate a HIP error code into a negative POSIX errno. Mapping is
  * intentionally coarse — feature kernels treat any negative rc as
@@ -263,3 +269,5 @@ int vmaf_hip_kernel_submit_post_record(VmafHipKernelLifecycle *lc, VmafHipContex
     hipError_t rc = hipEventRecord((hipEvent_t)lc->finished, (hipStream_t)lc->str);
     return hip_rc_to_errno(rc);
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

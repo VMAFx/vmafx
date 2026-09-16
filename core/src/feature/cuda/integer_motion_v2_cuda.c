@@ -43,6 +43,12 @@
 #include "picture.h"
 #include "picture_cuda.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* Default maximum value allowed for motion — mirrors
  * DEFAULT_MOTION_MAX_VAL in integer_motion_v2.c (the CPU reference). */
 #define MOTION_V2_CUDA_DEFAULT_MAX_VAL (10000.0)
@@ -474,3 +480,5 @@ VmafFeatureExtractor vmaf_fex_integer_motion_v2_cuda = {
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_CUDA,
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

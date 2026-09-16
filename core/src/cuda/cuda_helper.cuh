@@ -93,9 +93,9 @@ static inline int vmaf_cuda_result_to_errno(int cu_err_code)
         const CUresult _cu_res = (funcs)->CALL;                                                    \
         if (CUDA_SUCCESS != _cu_res) {                                                             \
             const char *_err_txt = "?";                                                            \
-            (funcs)->cuGetErrorName(_cu_res, &_err_txt);                                           \
-            fprintf(stderr, "CUDA error at %s:%d: %s (%d) in %s\n", __FILE__, __LINE__, _err_txt,  \
-                    (int)_cu_res, #CALL);                                                          \
+            (void)(funcs)->cuGetErrorName(_cu_res, &_err_txt);                                     \
+            (void)fprintf(stderr, "CUDA error at %s:%d: %s (%d) in %s\n", __FILE__, __LINE__,      \
+                          _err_txt, (int)_cu_res, #CALL);                                          \
             _cuda_err = vmaf_cuda_result_to_errno((int)_cu_res);                                   \
             goto label;                                                                            \
         }                                                                                          \
@@ -106,9 +106,9 @@ static inline int vmaf_cuda_result_to_errno(int cu_err_code)
         const CUresult _cu_res = (funcs)->CALL;                                                    \
         if (CUDA_SUCCESS != _cu_res) {                                                             \
             const char *_err_txt = "?";                                                            \
-            (funcs)->cuGetErrorName(_cu_res, &_err_txt);                                           \
-            fprintf(stderr, "CUDA error at %s:%d: %s (%d) in %s\n", __FILE__, __LINE__, _err_txt,  \
-                    (int)_cu_res, #CALL);                                                          \
+            (void)(funcs)->cuGetErrorName(_cu_res, &_err_txt);                                     \
+            (void)fprintf(stderr, "CUDA error at %s:%d: %s (%d) in %s\n", __FILE__, __LINE__,      \
+                          _err_txt, (int)_cu_res, #CALL);                                          \
             return vmaf_cuda_result_to_errno((int)_cu_res);                                        \
         }                                                                                          \
     } while (0)

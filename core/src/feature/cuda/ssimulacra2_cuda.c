@@ -62,6 +62,12 @@
 #include "picture.h"
 #include "picture_cuda.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #define SS2C_NUM_SCALES 6
 #define SS2C_BLUR_BLOCK 64
 #define SS2C_TILE 32 /* Transpose tile dimension; mirrors SS2C_TILE in ssimulacra2_blur.cu. */
@@ -329,9 +335,10 @@ static void ss2c_setup_gaussian(Ssimu2StateCuda *s, double sigma)
     double beta[3];
     for (int col = 0; col < 3; col++) {
         double M[3][3];
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 3; j++)
                 M[i][j] = A[i][j];
+        }
         for (int i = 0; i < 3; i++)
             M[i][col] = gamma[i];
         beta[col] = (M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) -
@@ -1094,15 +1101,17 @@ static int extract_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
              * scale: ref is downsampled and copied back before dis is
              * touched, so a single buffer per side is sufficient. */
             ss2c_downsample_2x2(s->h_ref_lin, cw, ch, s->h_ref_lin_ds, nw, nh, plane_full);
-            for (int c = 0; c < 3; c++)
+            for (int c = 0; c < 3; c++) {
                 memcpy(s->h_ref_lin + (size_t)c * plane_full,
                        s->h_ref_lin_ds + (size_t)c * plane_full,
                        (size_t)nw * (size_t)nh * sizeof(float));
+            }
             ss2c_downsample_2x2(s->h_dis_lin, cw, ch, s->h_dis_lin_ds, nw, nh, plane_full);
-            for (int c = 0; c < 3; c++)
+            for (int c = 0; c < 3; c++) {
                 memcpy(s->h_dis_lin + (size_t)c * plane_full,
                        s->h_dis_lin_ds + (size_t)c * plane_full,
                        (size_t)nw * (size_t)nh * sizeof(float));
+            }
             cw = nw;
             ch = nh;
         }
@@ -1211,3 +1220,5 @@ VmafFeatureExtractor vmaf_fex_ssimulacra2_cuda = {
     .flags = VMAF_FEATURE_EXTRACTOR_CUDA,
     .provided_features = provided_features,
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -37,6 +37,12 @@
 #define __HIP_PLATFORM_AMD__ 1
 #include <hip/hip_runtime_api.h>
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 extern const unsigned char speed_score_hsaco[];
 extern const unsigned int speed_score_hsaco_len;
 #endif /* HAVE_HIPCC */
@@ -213,9 +219,10 @@ static const VmafOption options_temporal[] = {
 static void subtract_plane(float *a, const float *b, int w, int h, size_t stride_bytes)
 {
     const size_t stride_px = stride_bytes / sizeof(float);
-    for (int i = 0; i < h; i++)
+    for (int i = 0; i < h; i++) {
         for (int j = 0; j < w; j++)
             a[(size_t)i * stride_px + (size_t)j] -= b[(size_t)i * stride_px + (size_t)j];
+    }
 }
 
 #ifdef HAVE_HIPCC
@@ -801,3 +808,5 @@ VmafFeatureExtractor vmaf_fex_speed_temporal_hip = {
     .provided_features = provided_features_temporal,
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_HIP,
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

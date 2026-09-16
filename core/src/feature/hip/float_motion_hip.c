@@ -57,6 +57,12 @@
 #define __HIP_PLATFORM_AMD__ 1
 #include <hip/hip_runtime_api.h>
 #include "float_motion_hip.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 #endif /* HAVE_HIPCC */
 
 /* Block dimensions mirror the HIP kernel's FM_BX / FM_BY. */
@@ -611,3 +617,5 @@ VmafFeatureExtractor vmaf_fex_float_motion_hip = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -38,6 +38,12 @@
 #include "feature/speed_internal.h"
 #include "cuda/speed_temporal_cuda.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 extern const char speed_score_ptx[];
 
 /* ------------------------------------------------------------------ */
@@ -212,9 +218,10 @@ static const VmafOption options[] = {
 static void subtract_plane(float *a, const float *b, int w, int h, size_t stride_bytes)
 {
     const size_t stride_px = stride_bytes / sizeof(float);
-    for (int i = 0; i < h; i++)
+    for (int i = 0; i < h; i++) {
         for (int j = 0; j < w; j++)
             a[(size_t)i * stride_px + (size_t)j] -= b[(size_t)i * stride_px + (size_t)j];
+    }
 }
 
 static void free_cuda_buffers_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f)
@@ -655,10 +662,11 @@ static int extract_fex_st(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     const int w = (int)s->dim.original_width;
     const int h = (int)s->dim.original_height;
     subtract_plane(s->h_ref[other], s->h_ref[cyclic], w, h, s->float_stride);
-    if (s->speed_temporal_use_ref_diff)
+    if (s->speed_temporal_use_ref_diff) {
         subtract_plane(s->h_dis[other], s->h_ref[cyclic], w, h, s->float_stride);
-    else
+    } else {
         subtract_plane(s->h_dis[other], s->h_dis[cyclic], w, h, s->float_stride);
+    }
 
     /* Allocate filter tmp buffer. */
     const size_t stride_px = s->float_stride / sizeof(float);
@@ -782,3 +790,5 @@ VmafFeatureExtractor vmaf_fex_speed_temporal_cuda = {
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_CUDA,
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

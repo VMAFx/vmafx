@@ -48,6 +48,12 @@
 #include "picture.h"
 #include "ssimulacra2_hip.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #define SS2H_NUM_SCALES 6
 #define SS2H_BLUR_BLOCK 64
 #define SS2H_MUL_BX 16
@@ -288,9 +294,10 @@ static void ss2h_setup_gaussian(Ssimu2StateHip *s, double sigma)
     double beta[3];
     for (int col = 0; col < 3; col++) {
         double M[3][3];
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 3; j++)
                 M[i][j] = A[i][j];
+        }
         for (int i = 0; i < 3; i++)
             M[i][col] = gamma[i];
         beta[col] = (M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) -
@@ -1103,3 +1110,5 @@ VmafFeatureExtractor vmaf_fex_ssimulacra2_hip = {
     .flags = VMAF_FEATURE_EXTRACTOR_HIP,
     .provided_features = provided_features,
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

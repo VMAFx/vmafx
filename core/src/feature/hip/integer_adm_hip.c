@@ -44,6 +44,12 @@
 #ifdef HAVE_HIPCC
 #define __HIP_PLATFORM_AMD__ 1
 #include <hip/hip_runtime_api.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 #endif /* HAVE_HIPCC */
 
 /* ------------------------------------------------------------------ */
@@ -297,7 +303,9 @@ static void write_scores(const write_score_parameters_adm_hip *params)
     unsigned index = params->index;
 
     double scores[8];
-    double score, score_num, score_den;
+    double score;
+    double score_num;
+    double score_den;
     double num = 0;
     double den = 0;
 
@@ -1608,3 +1616,5 @@ VmafFeatureExtractor vmaf_fex_integer_adm_hip = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

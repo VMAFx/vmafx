@@ -28,6 +28,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 int vmaf_cuda_picture_download_async(VmafPicture *cuda_pic, VmafPicture *pic, uint8_t bitmask)
 {
     if (!cuda_pic)
@@ -422,3 +428,5 @@ enum VmafPixelFormat vmaf_cuda_picture_get_pix_fmt(const VmafPicture *pic)
 {
     return pic->pix_fmt;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -31,6 +31,12 @@
 #include "picture_cuda.h"
 #include "cuda_helper.cuh"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 typedef struct MomentStateCuda {
     /* Stream + event pair owned by `cuda/kernel_template.h` lifecycle
      * (ADR-0246). */
@@ -193,15 +199,18 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 
     int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "float_moment_ref1st", ref1, index);
-    if (!err)
+    if (!err) {
         err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "float_moment_dis1st", dis1, index);
-    if (!err)
+    }
+    if (!err) {
         err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "float_moment_ref2nd", ref2, index);
-    if (!err)
+    }
+    if (!err) {
         err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "float_moment_dis2nd", dis2, index);
+    }
     return err;
 }
 
@@ -249,3 +258,5 @@ VmafFeatureExtractor vmaf_fex_float_moment_cuda = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

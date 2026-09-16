@@ -81,6 +81,12 @@
 
 #include "feature/cambi_internal.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* --- Constants matching cambi.c --- */
 /* CAMBI_MIN_WIDTH_HEIGHT and CAMBI_WINDOW_DIVISOR come from cambi_internal.h */
 #define CAMBI_CUDA_NUM_SCALES 5
@@ -1208,3 +1214,5 @@ VmafFeatureExtractor vmaf_fex_cambi_cuda = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_DIRECT,
         },
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

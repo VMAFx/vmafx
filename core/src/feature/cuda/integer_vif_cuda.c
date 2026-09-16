@@ -39,6 +39,12 @@
 #include "x86/vif_avx2.h"
 #if HAVE_AVX512
 #include "x86/vif_avx512.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 #endif
 #endif
 
@@ -363,8 +369,9 @@ static int filter1d_8(VifStateCuda *s, VifBufferCuda *buf, uint8_t *ref_in, uint
 {
     {
 
-        const int size_of_alignment_type = sizeof(uint32_t), BLOCKX = 128 / size_of_alignment_type,
-                  BLOCKY = 128 / (VMAF_CUDA_CACHE_LINE_SIZE / size_of_alignment_type);
+        const int size_of_alignment_type = sizeof(uint32_t);
+        const int BLOCKX = 128 / size_of_alignment_type;
+        const int BLOCKY = 128 / (VMAF_CUDA_CACHE_LINE_SIZE / size_of_alignment_type);
         void *args_vert[] = {&*buf, &ref_in, &dis_in, &w, &h, (uint16_t *)&vif_filter1d_table};
         CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_filter1d_8_vertical_kernel_uint32_t_17_9,
                                                DIV_ROUND_UP(w, BLOCKX * size_of_alignment_type),
@@ -377,7 +384,9 @@ static int filter1d_8(VifStateCuda *s, VifBufferCuda *buf, uint8_t *ref_in, uint
          * reduced registers from 56 to 48.  vpt=2 is retained (vpt=4 evaluated and
          * rejected — smem-limited at 37.5% occupancy vs 62.5% for vpt=2).
          */
-        const int BLOCKX = 128, BLOCKY = 1, val_per_thread = 2;
+        const int BLOCKX = 128;
+        const int BLOCKY = 1;
+        const int val_per_thread = 2;
 
         void *args_hori[] = {
             &*buf, &w, &h, (uint16_t *)&vif_filter1d_table, &vif_enhn_gain_limit, &buf->accum};
@@ -394,9 +403,12 @@ static int filter1d_16(VifStateCuda *s, VifBufferCuda *buf, uint16_t *ref_in, ui
                        CudaFunctions *cu_f, CUstream stream)
 {
 
-    int32_t add_shift_round_HP, shift_HP;
-    int32_t add_shift_round_VP, shift_VP;
-    int32_t add_shift_round_VP_sq, shift_VP_sq;
+    int32_t add_shift_round_HP;
+    int32_t shift_HP;
+    int32_t add_shift_round_VP;
+    int32_t shift_VP;
+    int32_t add_shift_round_VP_sq;
+    int32_t shift_VP_sq;
     if (scale == 0) {
         shift_HP = 16;
         add_shift_round_HP = 32768;
@@ -417,13 +429,15 @@ static int filter1d_16(VifStateCuda *s, VifBufferCuda *buf, uint16_t *ref_in, ui
         unsigned x, y;
     } uint2;
 
-    const int size_of_alginment = sizeof(uint2),
-              val_per_thread = size_of_alginment / sizeof(uint16_t), BLOCKX = 128,
-              BLOCK_VERT_X = VMAF_CUDA_CACHE_LINE_SIZE / val_per_thread,
-              BLOCK_VERT_Y = 128 / (VMAF_CUDA_CACHE_LINE_SIZE / val_per_thread);
-    const int GRID_VERT_X = DIV_ROUND_UP(w, BLOCK_VERT_X * val_per_thread),
-              GRID_VERT_Y = DIV_ROUND_UP(h, BLOCK_VERT_Y), GRID_HORI_X = DIV_ROUND_UP(w, BLOCKX),
-              GRID_HORI_Y = h;
+    const int size_of_alginment = sizeof(uint2);
+    const int val_per_thread = size_of_alginment / sizeof(uint16_t);
+    const int BLOCKX = 128;
+    const int BLOCK_VERT_X = VMAF_CUDA_CACHE_LINE_SIZE / val_per_thread;
+    const int BLOCK_VERT_Y = 128 / (VMAF_CUDA_CACHE_LINE_SIZE / val_per_thread);
+    const int GRID_VERT_X = DIV_ROUND_UP(w, BLOCK_VERT_X * val_per_thread);
+    const int GRID_VERT_Y = DIV_ROUND_UP(h, BLOCK_VERT_Y);
+    const int GRID_HORI_X = DIV_ROUND_UP(w, BLOCKX);
+    const int GRID_HORI_Y = h;
 
     void *args_vert[] = {&*buf,        &ref_in,
                          &dis_in,      &w,
@@ -754,3 +768,5 @@ VmafFeatureExtractor vmaf_fex_integer_vif_cuda = {.name = "vif_cuda",
                                                   .priv_size = sizeof(VifStateCuda),
                                                   .provided_features = provided_features,
                                                   .flags = VMAF_FEATURE_EXTRACTOR_CUDA};
+
+/* NOLINTEND(modernize-use-nullptr) */

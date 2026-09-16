@@ -71,6 +71,12 @@
 #include "picture_copy.h"
 #include "cuda_helper.cuh"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #define MS_SSIM_SCALES 5
 #define MS_SSIM_GAUSSIAN_LEN 11
 #define MS_SSIM_K 11
@@ -256,7 +262,9 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     }
 
     /* ADR-0990: c1/c2/c3 computed and stored as double. */
-    const double L = 255.0, K1 = 0.01, K2 = 0.03;
+    const double L = 255.0;
+    const double K1 = 0.01;
+    const double K2 = 0.03;
     s->c1 = (K1 * L) * (K1 * L);
     s->c2 = (K2 * L) * (K2 * L);
     s->c3 = s->c2 * 0.5;
@@ -523,12 +531,15 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     if (wait_err)
         return wait_err;
 
-    double l_means[MS_SSIM_SCALES] = {0}, c_means[MS_SSIM_SCALES] = {0},
-           s_means[MS_SSIM_SCALES] = {0};
+    double l_means[MS_SSIM_SCALES] = {0};
+    double c_means[MS_SSIM_SCALES] = {0};
+    double s_means[MS_SSIM_SCALES] = {0};
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
         const unsigned w_final = s->scale_w_final[i];
         const unsigned h_final = s->scale_h_final[i];
-        double total_l = 0.0, total_c = 0.0, total_s = 0.0;
+        double total_l = 0.0;
+        double total_c = 0.0;
+        double total_s = 0.0;
         /* ADR-0990: h_*_partials are now double arrays; no cast needed. */
         for (unsigned j = 0; j < s->scale_block_count[i]; j++) {
             total_l += s->h_l_partials[i][j];
@@ -683,3 +694,5 @@ VmafFeatureExtractor vmaf_fex_float_ms_ssim_cuda = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
+
+/* NOLINTEND(modernize-use-nullptr) */
