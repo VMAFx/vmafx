@@ -482,6 +482,12 @@ int main(void) {
             nasm_format += '32'
         endif
 
+        # `-MD <file>` is what actually turns dependency generation ON; `-MF`
+        # only names the file and, on its own, makes nasm emit nothing at all
+        # (verified against nasm 3.02: no .ndep was produced, so editing
+        # `ext/x86/x86inc.asm` or the generated `config.asm` left a stale
+        # `cpuid.obj` behind). `-MD` takes the filename directly, so `-MF` is
+        # dropped rather than kept alongside it. Ledger L-01.
         nasm_gen = generator(nasm,
             output: '@BASENAME@.obj',
             depfile: '@BASENAME@.obj.ndep',
@@ -489,7 +495,7 @@ int main(void) {
                 '-f', nasm_format,
                 '-I', '@0@/src/'.format(libvmaf_src_root),
                 '-I', '@0@/'.format(meson.current_build_dir()),
-                '-MQ', '@OUTPUT@', '-MF', '@DEPFILE@',
+                '-MD', '@DEPFILE@', '-MQ', '@OUTPUT@',
                 '@EXTRA_ARGS@',
                 '@INPUT@',
                 '-o', '@OUTPUT@'
