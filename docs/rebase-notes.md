@@ -50738,3 +50738,61 @@ is identical at 889 instructions with zero FMA.
 To reproduce the aarch64 side without ARM hardware, cross-build with clang and
 run under `qemu-aarch64-static`; a gcc cross-build will not show it, for the same
 reason gcc does not show the x86 convolution case.
+
+## Strict-FP flag order: precise first, contract last (2026-09-16)
+
+Every list that turns FP contraction off for the Intel compiler has to be spelled
+in this order, and a rebase must not "tidy" it:
+
+```meson
+c_args : ['-mavx', '-mavx2', '-mfma'] + _x86_simd_strict_fp_extra +
+         ['-ffp-contract=off'] + vmaf_cflags_common,
+```
+
+`-fp-model=precise` implies `-ffp-contract=on`. Put it after `-ffp-contract=off`
+and it silently re-enables contraction, which is the opposite of why the list
+exists. Measured on the `speed_matmul_avx2` scalar tail with icx 2026.0: `-mfma
+-ffp-contract=off` gives zero `vfmadd`, `-mfma -ffp-contract=off
+-fp-model=precise` gives nine, `-mfma -fp-model=precise -ffp-contract=off` gives
+zero again.
+
+Twelve carve-outs in `core/src/meson.build` use this pair, and
+`core/test/meson.build` builds `_simd_strict_fp_args` from the same two flags.
+**They have to move together.** The SIMD tests compile their own copies of the
+scalar references with `_simd_strict_fp_args`; reordering only the kernels puts
+the two sides of every comparison on different contraction settings, which is
+what broke `test_ssimulacra2_simd` the first time the reorder was attempted and
+is why `T-ICX-FP-CONTRACT-FLAG-ORDER-2026-09-07` stood open with a warning
+against fixing it.
+
+On GCC and Clang both lists are empty, so the reorder is a no-op and the gcc
+suite is unchanged. Reproduce with `CC=icx CXX=icpx meson setup ... -Db_lto=false`
+and `meson test`; `test_feature_isa_invariance` is the test that fails before it.
+
+## cppcheck's POSIX model treats fdopen as an unconditional dealloc (2026-09-16)
+
+Eight `close()` calls on the failure path of `fdopen()` carry a cited
+`cppcheck-suppress doubleFree`. Do not delete them, and do not "fix" the code
+they sit on: POSIX leaves the descriptor open when `fdopen()` fails, so closing
+it is required. cppcheck's `posix.cfg` declares `<dealloc>fdopen</dealloc>` with
+no notion of the call failing; 2.13.0 reports the close as a second free, 2.21.1
+does not, and CI installs the Ubuntu 24.04 archive's 2.13.0.
+
+Three of the eight sites had an unbraced `if`. The braces are load-bearing for a
+different gate: a comment between an unbraced `if` and its statement makes
+clang-tidy's `readability-braces-around-statements` fire, so removing them trades
+a cppcheck finding for a clang-tidy one.
+
+## The clang-tidy baseline belongs to the lane's compiler (2026-09-16)
+
+`scripts/ci/tidy-baseline-cpu.json` is measured with gcc-15 and clang-tidy-22,
+because gcc supplies the system headers clang-tidy parses. Re-measuring it on a
+developer box with a different gcc produces a baseline CI will reject:
+`core/src/dict.cpp` and `core/src/feature/feature_collector.cpp` each report one
+extra `cert-dcl03-c,misc-static-assert` under gcc-16 that gcc-15 does not.
+
+Rebuild the lane's environment instead — gcc-15 from
+`ppa:ubuntu-toolchain-r/test`, clang-tidy-22 from apt.llvm.org, meson from PyPI,
+on `ubuntu:24.04` — and run `tidy-ratchet.py --write` there. `xxd` must be
+installed in that image or the eighteen embedded-model translation units are
+never generated and the measurement comes out 18 TUs short of the lane's 306.
