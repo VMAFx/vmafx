@@ -3,8 +3,318 @@
   "lane": "cpu",
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
-  "tus": 292,
-  "total_warnings": 1229,
+  "cc_version": "gcc-15 (Ubuntu 15.2.0-14ubuntu1~24~ppa1) 15.2.0",
+  "tus": 306,
+  "measured_sources": [
+    "build/src/brisque_live.model.c",
+    "build/src/vmaf_4k_v0.6.1.json.c",
+    "build/src/vmaf_4k_v0.6.1neg.json.c",
+    "build/src/vmaf_b_v0.6.3.json.c",
+    "build/src/vmaf_float_4k_v0.6.1.json.c",
+    "build/src/vmaf_float_b_v0.6.3.json.c",
+    "build/src/vmaf_float_v0.6.1.json.c",
+    "build/src/vmaf_float_v0.6.1neg.json.c",
+    "build/src/vmaf_v0.6.1.json.c",
+    "build/src/vmaf_v0.6.1neg.json.c",
+    "build/src/vmaf_v1.0.16_1d5h_2160.json.c",
+    "build/src/vmaf_v1.0.16_3d0h.json.c",
+    "build/src/vmaf_v1.0.16_3d0h_2160.json.c",
+    "build/src/vmaf_v1.0.16_5d0h.json.c",
+    "build/src/vmaf_v1.0.16_hfr_1d5h_2160.json.c",
+    "build/src/vmaf_v1.0.16_hfr_3d0h.json.c",
+    "build/src/vmaf_v1.0.16_hfr_3d0h_2160.json.c",
+    "build/src/vmaf_v1.0.16_hfr_5d0h.json.c",
+    "core/src/cpu.cpp",
+    "core/src/cuda/dispatch_strategy.c",
+    "core/src/dict.cpp",
+    "core/src/dnn/dnn_api.c",
+    "core/src/dnn/dnn_attach_api.c",
+    "core/src/dnn/model_loader.c",
+    "core/src/dnn/onnx_scan.c",
+    "core/src/dnn/op_allowlist.c",
+    "core/src/dnn/ort_backend.c",
+    "core/src/dnn/tensor_io.c",
+    "core/src/feature/adm.c",
+    "core/src/feature/adm_tools.c",
+    "core/src/feature/alias.c",
+    "core/src/feature/brisque.c",
+    "core/src/feature/cambi.c",
+    "core/src/feature/ciede.c",
+    "core/src/feature/common/alignment.c",
+    "core/src/feature/common/blur_array.c",
+    "core/src/feature/common/convolution.c",
+    "core/src/feature/common/convolution_avx.c",
+    "core/src/feature/common/convolution_avx512.c",
+    "core/src/feature/delta_e_itp.c",
+    "core/src/feature/fastdvdnet_pre.c",
+    "core/src/feature/feature_collector.c",
+    "core/src/feature/feature_collector.cpp",
+    "core/src/feature/feature_dists.c",
+    "core/src/feature/feature_extractor.cpp",
+    "core/src/feature/feature_lpips.c",
+    "core/src/feature/feature_mobilesal.c",
+    "core/src/feature/feature_name.cpp",
+    "core/src/feature/float_adm.c",
+    "core/src/feature/float_moment.c",
+    "core/src/feature/float_motion.c",
+    "core/src/feature/float_ms_ssim.c",
+    "core/src/feature/float_psnr.c",
+    "core/src/feature/float_ssim.c",
+    "core/src/feature/float_vif.c",
+    "core/src/feature/integer_adm.c",
+    "core/src/feature/integer_motion.c",
+    "core/src/feature/integer_motion_v2.c",
+    "core/src/feature/integer_psnr.c",
+    "core/src/feature/integer_ssim.c",
+    "core/src/feature/integer_vif.c",
+    "core/src/feature/iqa/convolve.c",
+    "core/src/feature/iqa/decimate.c",
+    "core/src/feature/iqa/math_utils.c",
+    "core/src/feature/iqa/ssim_tools.c",
+    "core/src/feature/luminance_tools.cpp",
+    "core/src/feature/mkdirp.cpp",
+    "core/src/feature/moment.c",
+    "core/src/feature/motion.c",
+    "core/src/feature/ms_ssim.c",
+    "core/src/feature/ms_ssim_decimate.c",
+    "core/src/feature/niqe.c",
+    "core/src/feature/null.c",
+    "core/src/feature/offset.c",
+    "core/src/feature/perceptual_weight.c",
+    "core/src/feature/picture_copy.cpp",
+    "core/src/feature/psnr.c",
+    "core/src/feature/psnr_tools.cpp",
+    "core/src/feature/pu21.c",
+    "core/src/feature/pu21_ssim.c",
+    "core/src/feature/speed.c",
+    "core/src/feature/speed_internal.c",
+    "core/src/feature/speed_qa.c",
+    "core/src/feature/ssim.c",
+    "core/src/feature/ssimulacra2.c",
+    "core/src/feature/third_party/xiph/psnr_hvs.c",
+    "core/src/feature/transnet_v2.c",
+    "core/src/feature/vif.c",
+    "core/src/feature/vif_tools.c",
+    "core/src/feature/x86/adm_avx2.c",
+    "core/src/feature/x86/adm_avx512.c",
+    "core/src/feature/x86/cambi_avx2.c",
+    "core/src/feature/x86/cambi_avx512.c",
+    "core/src/feature/x86/ciede_avx2.c",
+    "core/src/feature/x86/ciede_avx512.c",
+    "core/src/feature/x86/convolve_avx2.c",
+    "core/src/feature/x86/convolve_avx512.c",
+    "core/src/feature/x86/float_adm_avx2.c",
+    "core/src/feature/x86/float_adm_avx512.c",
+    "core/src/feature/x86/float_motion_avx2.c",
+    "core/src/feature/x86/float_motion_avx512.c",
+    "core/src/feature/x86/float_psnr_avx2.c",
+    "core/src/feature/x86/float_psnr_avx512.c",
+    "core/src/feature/x86/integer_ssim_avx2.c",
+    "core/src/feature/x86/moment_avx2.c",
+    "core/src/feature/x86/moment_avx512.c",
+    "core/src/feature/x86/motion_avx2.c",
+    "core/src/feature/x86/motion_avx512.c",
+    "core/src/feature/x86/ms_ssim_decimate_avx2.c",
+    "core/src/feature/x86/ms_ssim_decimate_avx512.c",
+    "core/src/feature/x86/psnr_avx2.c",
+    "core/src/feature/x86/psnr_avx512.c",
+    "core/src/feature/x86/psnr_hvs_avx2.c",
+    "core/src/feature/x86/speed_avx2.c",
+    "core/src/feature/x86/speed_avx512.c",
+    "core/src/feature/x86/speed_matmul_avx2.c",
+    "core/src/feature/x86/speed_matmul_avx512.c",
+    "core/src/feature/x86/ssim_avx2.c",
+    "core/src/feature/x86/ssim_avx512.c",
+    "core/src/feature/x86/ssimulacra2_avx2.c",
+    "core/src/feature/x86/ssimulacra2_avx512.c",
+    "core/src/feature/x86/ssimulacra2_host_avx2.c",
+    "core/src/feature/x86/vif_avx2.c",
+    "core/src/feature/x86/vif_avx512.c",
+    "core/src/feature/x86/vif_statistic_avx2.c",
+    "core/src/feature/y_funque_plus.c",
+    "core/src/fex_ctx_vector.cpp",
+    "core/src/framesync.c",
+    "core/src/gpu_dispatch_env.cpp",
+    "core/src/gpu_picture_pool.cpp",
+    "core/src/hip/dispatch_strategy.c",
+    "core/src/hip/stubs.c",
+    "core/src/interop/pelorus_deband_params.c",
+    "core/src/interop/pelorus_denoise_params.c",
+    "core/src/interop/pelorus_interop.c",
+    "core/src/interop/pelorus_qp_report_csv.c",
+    "core/src/interop/pelorus_version.c",
+    "core/src/libvmaf.c",
+    "core/src/log.cpp",
+    "core/src/mem.cpp",
+    "core/src/metadata_handler.cpp",
+    "core/src/metal/stubs.c",
+    "core/src/model.c",
+    "core/src/opt.cpp",
+    "core/src/output.cpp",
+    "core/src/pdjson.c",
+    "core/src/picture.c",
+    "core/src/picture_pool.c",
+    "core/src/picture_pool.cpp",
+    "core/src/picture_v2.c",
+    "core/src/predict.c",
+    "core/src/read_json_model.cpp",
+    "core/src/ref.cpp",
+    "core/src/svm.cpp",
+    "core/src/sycl/dispatch_strategy.cpp",
+    "core/src/thread_locale.cpp",
+    "core/src/thread_pool.c",
+    "core/src/x86/cpu.c",
+    "core/test/dnn/test_dnn_session_api.c",
+    "core/test/dnn/test_ep_fp16.c",
+    "core/test/dnn/test_model_loader.c",
+    "core/test/dnn/test_onnx_scan.c",
+    "core/test/dnn/test_op_allowlist.c",
+    "core/test/dnn/test_ort_internals.c",
+    "core/test/dnn/test_tensor_io.c",
+    "core/test/dnn/test_tiny_model_verify.c",
+    "core/test/dnn/test_vmaf_use_tiny_model.c",
+    "core/test/test.c",
+    "core/test/test_adm_angle_flag.c",
+    "core/test/test_adm_coverage.c",
+    "core/test/test_adm_csf.c",
+    "core/test/test_adm_csf_representable.c",
+    "core/test/test_adm_csf_tools_coverage.c",
+    "core/test/test_adm_dwt2_x86.c",
+    "core/test/test_barten_csf.c",
+    "core/test/test_barten_csf_coverage.c",
+    "core/test/test_brisque.c",
+    "core/test/test_cambi.c",
+    "core/test/test_cambi_simd.c",
+    "core/test/test_ciede.c",
+    "core/test/test_ciede_simd_parity.c",
+    "core/test/test_cli_parse.c",
+    "core/test/test_cli_parse_long_only_args.c",
+    "core/test/test_compat_clz.c",
+    "core/test/test_context.c",
+    "core/test/test_convolution_edge_small.c",
+    "core/test/test_convolution_horizontal.c",
+    "core/test/test_cpu.c",
+    "core/test/test_delta_e_itp.c",
+    "core/test/test_dict.cpp",
+    "core/test/test_dists.c",
+    "core/test/test_fastdvdnet_pre.c",
+    "core/test/test_feature.cpp",
+    "core/test/test_feature_collector.c",
+    "core/test/test_feature_collector_coverage.c",
+    "core/test/test_feature_extractor.c",
+    "core/test/test_feature_isa_invariance.c",
+    "core/test/test_fex_ctx_vector.cpp",
+    "core/test/test_fex_ctx_vector_public.cpp",
+    "core/test/test_fex_pool_growth.c",
+    "core/test/test_float_adm_coverage.c",
+    "core/test/test_float_moment_coverage.c",
+    "core/test/test_float_motion_coverage.c",
+    "core/test/test_float_ms_ssim_coverage.c",
+    "core/test/test_float_ms_ssim_min_dim.c",
+    "core/test/test_float_psnr_coverage.c",
+    "core/test/test_float_ssim_coverage.c",
+    "core/test/test_float_vif_coverage.c",
+    "core/test/test_float_vif_min_dim.c",
+    "core/test/test_flush_context_ordering.c",
+    "core/test/test_framesync.c",
+    "core/test/test_gpu_dispatch_env_oom.cpp",
+    "core/test/test_gpu_dispatch_parse.c",
+    "core/test/test_gpu_dispatch_runtime.c",
+    "core/test/test_gpu_picture_pool_partial_init.c",
+    "core/test/test_gpu_picture_pool_uaf.c",
+    "core/test/test_hip_wavefront_reduce.c",
+    "core/test/test_integer_adm_min_dim.c",
+    "core/test/test_integer_adm_simd.c",
+    "core/test/test_integer_motion_coverage.c",
+    "core/test/test_integer_motion_edge16_coverage.c",
+    "core/test/test_integer_motion_v2_coverage.c",
+    "core/test/test_integer_psnr_coverage.c",
+    "core/test/test_integer_ssim_simd.c",
+    "core/test/test_integer_vif_avx2_stages.c",
+    "core/test/test_integer_vif_avx512_stages.c",
+    "core/test/test_integer_vif_log2.c",
+    "core/test/test_iqa_convolve.c",
+    "core/test/test_iqa_convolve_coverage.c",
+    "core/test/test_iqa_helpers.c",
+    "core/test/test_locale_handling.c",
+    "core/test/test_log.c",
+    "core/test/test_lpips.c",
+    "core/test/test_luminance_tools.cpp",
+    "core/test/test_mkdirp.c",
+    "core/test/test_mobilesal.c",
+    "core/test/test_model.c",
+    "core/test/test_model_collection_api.c",
+    "core/test/test_model_feature_overload_ownership.c",
+    "core/test/test_model_libsvm_dup_key.c",
+    "core/test/test_model_registration_ownership.cpp",
+    "core/test/test_moment_simd.c",
+    "core/test/test_motion_avx512_parity.c",
+    "core/test/test_motion_convolution_oob.c",
+    "core/test/test_motion_min_dim.c",
+    "core/test/test_motion_v2_simd.c",
+    "core/test/test_ms_ssim_decimate.c",
+    "core/test/test_ms_ssim_decimate_coverage.c",
+    "core/test/test_niqe.c",
+    "core/test/test_opt.c",
+    "core/test/test_output.c",
+    "core/test/test_pdjson.c",
+    "core/test/test_pdjson_stack_increment.c",
+    "core/test/test_pelorus_interop.c",
+    "core/test/test_perceptual_weight.c",
+    "core/test/test_pic_preallocation.c",
+    "core/test/test_picture.c",
+    "core/test/test_picture_pool_error_paths.c",
+    "core/test/test_picture_v2.c",
+    "core/test/test_pixel_format_edge_coverage.c",
+    "core/test/test_pool_percentile.c",
+    "core/test/test_predict.c",
+    "core/test/test_propagate_metadata.c",
+    "core/test/test_psnr.c",
+    "core/test/test_psnr_hvs_avx2.c",
+    "core/test/test_psnr_hvs_coverage.c",
+    "core/test/test_psnr_hvs_simd.c",
+    "core/test/test_psnr_uncapped.c",
+    "core/test/test_pu21.c",
+    "core/test/test_public_api_score.c",
+    "core/test/test_read_pictures_monotonic.c",
+    "core/test/test_ref.c",
+    "core/test/test_registration_partial_copy.cpp",
+    "core/test/test_score_pooled_eagain.c",
+    "core/test/test_speed.c",
+    "core/test/test_speed_qa.c",
+    "core/test/test_speed_simd.c",
+    "core/test/test_spinner.cpp",
+    "core/test/test_ssim_coverage.c",
+    "core/test/test_ssimulacra2_coverage.c",
+    "core/test/test_ssimulacra2_simd.c",
+    "core/test/test_svm_api.c",
+    "core/test/test_svm_multiclass.c",
+    "core/test/test_svm_parser.c",
+    "core/test/test_thread_pool.c",
+    "core/test/test_thread_pool_backpressure.c",
+    "core/test/test_thread_safety_batch.c",
+    "core/test/test_transnet_v2.c",
+    "core/test/test_validate_pic_params_bpc.c",
+    "core/test/test_version.c",
+    "core/test/test_vif_lifecycle.c",
+    "core/test/test_vif_simd.c",
+    "core/test/test_vif_skip_scale0.c",
+    "core/test/test_vmaf_roi.c",
+    "core/test/test_vmaf_roi_bounds.c",
+    "core/test/test_y4m_411_oob.c",
+    "core/test/test_y4m_alloc_failure.c",
+    "core/test/test_y_funque_plus.c",
+    "core/tools/cli_parse.cpp",
+    "core/tools/vidinput.c",
+    "core/tools/vmaf.cpp",
+    "core/tools/vmaf_bench.c",
+    "core/tools/vmaf_per_shot.c",
+    "core/tools/vmaf_roi.c",
+    "core/tools/y4m_input.c",
+    "core/tools/yuv_input.c"
+  ],
+  "compile_failures": [],
+  "total_warnings": 1048,
   "total_nolint_uncited": 0,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
@@ -28,10 +338,7 @@
     "core/src/dict.cpp": 15,
     "core/src/feature/adm.c": 31,
     "core/src/feature/alias.c": 1,
-    "core/src/feature/brisque.c": 3,
-    "core/src/feature/ciede.c": 18,
     "core/src/feature/common/blur_array.c": 6,
-    "core/src/feature/delta_e_itp.c": 3,
     "core/src/feature/fastdvdnet_pre.c": 7,
     "core/src/feature/feature_collector.cpp": 13,
     "core/src/feature/feature_dists.c": 8,
@@ -44,21 +351,16 @@
     "core/src/feature/float_vif.c": 8,
     "core/src/feature/integer_motion.c": 11,
     "core/src/feature/integer_motion_v2.c": 4,
-    "core/src/feature/integer_ssim.c": 3,
-    "core/src/feature/iqa/ssim_tools.c": 18,
+    "core/src/feature/iqa/ssim_tools.c": 4,
     "core/src/feature/moment.c": 2,
     "core/src/feature/motion.c": 2,
     "core/src/feature/ms_ssim.c": 6,
-    "core/src/feature/niqe.c": 1,
     "core/src/feature/null.c": 1,
-    "core/src/feature/offset.c": 1,
     "core/src/feature/perceptual_weight.c": 5,
     "core/src/feature/picture_copy.cpp": 1,
     "core/src/feature/pu21.c": 4,
     "core/src/feature/pu21_ssim.c": 15,
     "core/src/feature/ssim.c": 6,
-    "core/src/feature/ssimulacra2.c": 7,
-    "core/src/feature/third_party/xiph/psnr_hvs.c": 2,
     "core/src/feature/transnet_v2.c": 7,
     "core/src/feature/x86/float_adm_avx2.c": 7,
     "core/src/feature/x86/float_adm_avx512.c": 26,
@@ -67,7 +369,6 @@
     "core/src/feature/x86/motion_avx512.c": 18,
     "core/src/feature/x86/ssimulacra2_avx2.c": 3,
     "core/src/feature/x86/ssimulacra2_avx512.c": 3,
-    "core/src/feature/x86/ssimulacra2_host_avx2.c": 1,
     "core/src/feature/y_funque_plus.c": 10,
     "core/src/framesync.c": 7,
     "core/src/gpu_picture_pool.cpp": 1,
@@ -76,11 +377,8 @@
     "core/src/interop/pelorus_denoise_params.c": 1,
     "core/src/interop/pelorus_interop.c": 10,
     "core/src/interop/pelorus_qp_report_csv.c": 4,
-    "core/src/metadata_handler.cpp": 2,
     "core/src/metal/stubs.c": 3,
     "core/src/model.c": 8,
-    "core/src/opt.cpp": 6,
-    "core/src/output.cpp": 29,
     "core/src/picture_pool.c": 5,
     "core/src/picture_pool.cpp": 8,
     "core/src/thread_locale.cpp": 9,
@@ -93,17 +391,14 @@
     "core/test/test_adm_coverage.c": 5,
     "core/test/test_adm_csf.c": 2,
     "core/test/test_adm_csf_tools_coverage.c": 7,
-    "core/test/test_barten_csf.c": 2,
     "core/test/test_barten_csf_coverage.c": 14,
     "core/test/test_brisque.c": 4,
     "core/test/test_cambi_simd.c": 8,
     "core/test/test_ciede.c": 11,
     "core/test/test_ciede_simd_parity.c": 12,
-    "core/test/test_cli_parse.c": 1,
     "core/test/test_cli_parse_long_only_args.c": 11,
     "core/test/test_context.c": 14,
     "core/test/test_cpu.c": 2,
-    "core/test/test_delta_e_itp.c": 15,
     "core/test/test_dict.cpp": 33,
     "core/test/test_dists.c": 4,
     "core/test/test_fastdvdnet_pre.c": 3,
@@ -118,7 +413,6 @@
     "core/test/test_float_vif_coverage.c": 2,
     "core/test/test_flush_context_ordering.c": 5,
     "core/test/test_framesync.c": 8,
-    "core/test/test_gpu_dispatch_env_oom.cpp": 6,
     "core/test/test_gpu_dispatch_parse.c": 16,
     "core/test/test_gpu_picture_pool_uaf.c": 6,
     "core/test/test_hip_wavefront_reduce.c": 4,
@@ -136,7 +430,6 @@
     "core/test/test_mobilesal.c": 3,
     "core/test/test_model_collection_api.c": 5,
     "core/test/test_model_libsvm_dup_key.c": 6,
-    "core/test/test_moment_simd.c": 8,
     "core/test/test_motion_avx512_parity.c": 14,
     "core/test/test_motion_v2_simd.c": 3,
     "core/test/test_ms_ssim_decimate.c": 10,
@@ -146,16 +439,13 @@
     "core/test/test_pelorus_interop.c": 9,
     "core/test/test_perceptual_weight.c": 6,
     "core/test/test_pic_preallocation.c": 16,
-    "core/test/test_picture.c": 11,
     "core/test/test_picture_pool_error_paths.c": 10,
     "core/test/test_picture_v2.c": 6,
     "core/test/test_pixel_format_edge_coverage.c": 3,
     "core/test/test_predict.c": 13,
     "core/test/test_propagate_metadata.c": 7,
     "core/test/test_psnr.c": 4,
-    "core/test/test_psnr_hvs_avx2.c": 5,
     "core/test/test_psnr_hvs_coverage.c": 4,
-    "core/test/test_psnr_hvs_simd.c": 14,
     "core/test/test_pu21.c": 16,
     "core/test/test_public_api_score.c": 15,
     "core/test/test_read_pictures_monotonic.c": 6,
@@ -164,7 +454,7 @@
     "core/test/test_speed_simd.c": 5,
     "core/test/test_ssimulacra2_coverage.c": 4,
     "core/test/test_svm_multiclass.c": 6,
-    "core/test/test_thread_pool.c": 5,
+    "core/test/test_thread_pool.c": 8,
     "core/test/test_thread_safety_batch.c": 10,
     "core/test/test_transnet_v2.c": 5,
     "core/test/test_validate_pic_params_bpc.c": 8,
@@ -172,299 +462,7 @@
     "core/test/test_vif_simd.c": 9,
     "core/test/test_vif_skip_scale0.c": 20,
     "core/test/test_vmaf_roi.c": 11,
-    "core/test/test_y4m_411_oob.c": 3,
-    "core/test/test_y4m_alloc_failure.c": 3,
-    "core/tools/vidinput.c": 2,
-    "core/tools/vmaf_per_shot.c": 20,
-    "core/tools/yuv_input.c": 7
+    "core/test/test_y4m_411_oob.c": 3
   },
-  "nolint_uncited": {},
-  "scoped_updates": [
-    {
-      "sources": [
-        "core/src/thread_pool.c",
-        "core/test/test_thread_pool_backpressure.c"
-      ],
-      "clang_tidy_version": "22.1.8",
-      "changes": {
-        "core/src/thread_pool.c": {
-          "warnings": [
-            15,
-            0
-          ]
-        }
-      },
-      "previous_baseline_sha256": "f7964f3e650529ed82487e1eca7c4964e5621ffd06927b955b0169e45ff58665"
-    },
-    {
-      "sources": [
-        "core/test/test_vmaf_roi_bounds.c",
-        "core/tools/vmaf_roi.c"
-      ],
-      "clang_tidy_version": "22.1.8",
-      "changes": {
-        "core/tools/vmaf_roi.c": {
-          "warnings": [
-            22,
-            0
-          ],
-          "nolint_uncited": [
-            1,
-            0
-          ]
-        }
-      },
-      "previous_baseline_sha256": "41f189b7d87413195b1b54093423c259714251d165db557ff252199733a70891"
-    },
-    {
-      "sources": [
-        "core/src/feature/feature_extractor.cpp",
-        "core/src/feature/feature_name.cpp",
-        "core/src/feature/vif.c",
-        "core/test/test_vif_lifecycle.c",
-        "core/test/test_vmaf_roi_bounds.c",
-        "core/tools/vmaf_roi.c"
-      ],
-      "clang_tidy_version": "22.1.8",
-      "changes": {
-        "core/src/feature/feature_name.cpp": {
-          "warnings": [
-            7,
-            0
-          ],
-          "nolint_uncited": [
-            2,
-            0
-          ]
-        },
-        "core/src/feature/vif.c": {
-          "warnings": [
-            48,
-            0
-          ]
-        }
-      },
-      "previous_baseline_sha256": "10995fea1f40ed6ae6ee3f95234fe4fdad50014a9b894c3e3d6f9c7a26a08a38"
-    },
-    {
-      "sources": [
-        "core/src/feature/feature_extractor.cpp",
-        "core/src/feature/feature_name.cpp",
-        "core/src/feature/vif.c",
-        "core/test/dnn/test_tensor_io.c",
-        "core/test/test_vif_lifecycle.c",
-        "core/test/test_vmaf_roi_bounds.c",
-        "core/tools/vmaf_roi.c"
-      ],
-      "clang_tidy_version": "22.1.8",
-      "changes": {
-        "core/test/dnn/test_tensor_io.c": {
-          "warnings": [
-            9,
-            0
-          ]
-        }
-      },
-      "previous_baseline_sha256": "893cb6411937edfa6c8e3952df183a74faf6e86ebd098cb9173584873be3ddb2"
-    },
-    {
-      "sources": [
-        "core/test/test_cambi.c"
-      ],
-      "clang_tidy_version": "22.1.8",
-      "changes": {
-        "core/test/test_cambi.c": {
-          "warnings": [
-            12,
-            0
-          ]
-        }
-      },
-      "previous_baseline_sha256": "f52c186bcefbfa8204458329204854db605b0c5751b492df11dd0ac4249ada36"
-    },
-    {
-      "sources": [
-        "core/src/feature/cambi.c",
-        "core/src/feature/feature_extractor.cpp",
-        "core/src/feature/psnr_tools.cpp",
-        "core/src/feature/x86/adm_avx2.c",
-        "core/src/feature/x86/adm_avx512.c",
-        "core/src/fex_ctx_vector.cpp",
-        "core/src/pdjson.c",
-        "core/test/test_cambi.c",
-        "core/test/test_pdjson.c",
-        "core/test/test_pdjson_stack_increment.c"
-      ],
-      "clang_tidy_version": "22.1.8",
-      "changes": {
-        "core/src/feature/psnr_tools.cpp": {
-          "nolint_uncited": [
-            1,
-            0
-          ]
-        },
-        "core/src/pdjson.c": {
-          "nolint_uncited": [
-            1,
-            0
-          ]
-        }
-      },
-      "previous_baseline_sha256": "20967c562930b6c549ce7843484d275b341cb908e40d95de9f2fca11ceff1e0d"
-    },
-    {
-      "sources": [
-        "core/src/fex_ctx_vector.cpp",
-        "core/test/test_fex_ctx_vector.cpp",
-        "core/test/test_fex_ctx_vector_public.cpp"
-      ],
-      "clang_tidy_version": "22.1.8",
-      "changes": {
-        "core/src/fex_ctx_vector.cpp": {
-          "warnings": [
-            3,
-            0
-          ],
-          "nolint_uncited": [
-            5,
-            0
-          ]
-        }
-      },
-      "previous_baseline_sha256": "1285502257ecf2d5dc7ce8bced4806ac8de7236c5ecdf2a1014b193132fcde04"
-    },
-    {
-      "sources": [
-        "core/src/feature/x86/adm_avx2.c",
-        "core/src/feature/x86/vif_avx2.c",
-        "core/src/feature/x86/vif_avx512.c",
-        "core/src/fex_ctx_vector.cpp",
-        "core/src/libvmaf.c",
-        "core/test/test_fex_ctx_vector.cpp",
-        "core/test/test_fex_ctx_vector_public.cpp",
-        "core/test/test_integer_vif_avx2_stages.c",
-        "core/test/test_integer_vif_avx512_stages.c",
-        "core/test/test_model_registration_ownership.cpp",
-        "core/test/test_registration_partial_copy.cpp",
-        "core/test/test_svm_api.c",
-        "core/test/test_svm_parser.c"
-      ],
-      "clang_tidy_version": "22.1.8",
-      "changes": {
-        "core/src/feature/x86/vif_avx2.c": {
-          "warnings": [
-            17,
-            0
-          ],
-          "nolint_uncited": [
-            2,
-            0
-          ]
-        },
-        "core/src/feature/x86/vif_avx512.c": {
-          "warnings": [
-            15,
-            0
-          ],
-          "nolint_uncited": [
-            2,
-            0
-          ]
-        },
-        "core/test/test_svm_api.c": {
-          "warnings": [
-            17,
-            0
-          ]
-        },
-        "core/test/test_svm_parser.c": {
-          "warnings": [
-            11,
-            0
-          ]
-        },
-        "core/src/libvmaf.c": {
-          "nolint_uncited": [
-            1,
-            0
-          ]
-        }
-      },
-      "previous_baseline_sha256": "cd23d8057e441eac0686ae7cc51d92b7a919890d8279c14a4ee02b4888192871"
-    },
-    {
-      "sources": [
-        "core/src/feature/x86/cambi_avx2.c",
-        "core/test/test_speed.c",
-        "core/test/test_speed_qa.c"
-      ],
-      "clang_tidy_version": "22.1.8",
-      "changes": {
-        "core/test/test_speed.c": {
-          "warnings": [
-            6,
-            0
-          ]
-        },
-        "core/test/test_speed_qa.c": {
-          "warnings": [
-            20,
-            0
-          ]
-        }
-      },
-      "previous_baseline_sha256": "481bbfd6c4dd336c8f65865c1327f440bde7d93ecc2db5de8948b9c74cd6f86b"
-    },
-    {
-      "sources": [
-        "core/test/dnn/test_dnn_session_api.c",
-        "core/test/dnn/test_ort_internals.c",
-        "core/test/test_integer_motion_edge16_coverage.c",
-        "core/test/test_integer_motion_v2_coverage.c",
-        "core/test/test_integer_psnr_coverage.c",
-        "core/test/test_iqa_convolve_coverage.c",
-        "core/test/test_ssim_coverage.c"
-      ],
-      "clang_tidy_version": "22.1.8",
-      "changes": {
-        "core/test/dnn/test_dnn_session_api.c": {
-          "warnings": [
-            2,
-            0
-          ]
-        },
-        "core/test/test_integer_motion_edge16_coverage.c": {
-          "warnings": [
-            6,
-            0
-          ]
-        },
-        "core/test/test_integer_motion_v2_coverage.c": {
-          "warnings": [
-            5,
-            0
-          ]
-        },
-        "core/test/test_integer_psnr_coverage.c": {
-          "warnings": [
-            2,
-            0
-          ]
-        },
-        "core/test/test_iqa_convolve_coverage.c": {
-          "warnings": [
-            19,
-            0
-          ]
-        },
-        "core/test/test_ssim_coverage.c": {
-          "warnings": [
-            7,
-            0
-          ]
-        }
-      },
-      "previous_baseline_sha256": "56fbc87392a200772e044ff6286a7de2c5d2c4846ec08f424d9ff14fe9b49bb5"
-    }
-  ]
+  "nolint_uncited": {}
 }

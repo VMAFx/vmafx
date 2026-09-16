@@ -21392,6 +21392,18 @@ All four functions are declared in `motion_avx512.h` and use scalar fallback pat
 for edge pixels, with AVX-512 SIMD for interior pixels.
 
 
+
+- **Eight false `doubleFree` reports from the POSIX cppcheck model.**
+  cppcheck's `posix.cfg` lists `fdopen` as an unconditional deallocator of the
+  descriptor, so 2.13.0 — the version CI installs from the Ubuntu 24.04
+  archive — reads the POSIX-mandated `close()` after a *failed* `fdopen()` as
+  a second free. 2.21.1 does not report it. Each of the eight sites now
+  carries a cited inline suppression explaining the model's limitation, and
+  the three sites whose `if` had no braces gained them, because a comment
+  between an unbraced `if` and its statement makes clang-tidy's
+  `readability-braces-around-statements` fire.
+
+
 - **Cppcheck pthread modeling:** Load the official POSIX API model in local
   and CI analysis so shared C aggregates are not mistaken for C++ classes
   needing constructors. Real-header controls still reject uninitialized
@@ -23601,6 +23613,23 @@ to pass cleanly on CPU-only CI runners.
   limitation, not introduced by this fix).  Motion metrics are bit-exact vs CPU
   (delta = 0.000000).  See [ADR-0688](../../docs/adr/0688-hip-wave32-vif-motion-fix.md)
   and [Research-0688](../../docs/research/0688-hip-raphael-igpu-divergence.md).
+
+
+
+- **FMA contraction was silently on in every strict-FP carve-out under the
+  Intel compiler.** `-fp-model=precise` implies `-ffp-contract=on`, so
+  spelling the pair as `['-ffp-contract=off'] + _x86_simd_strict_fp_extra`
+  re-enabled the very contraction the list exists to disable. Twelve
+  carve-outs were affected — six AVX2, three AVX-512 and the three
+  scalar-reference libraries — and `core/test/meson.build` built the SIMD
+  tests' own copies of the scalar references the same way, which is why an
+  earlier attempt to reorder only the source side broke
+  `test_ssimulacra2_simd`: it moved one side of every comparison. Both files
+  now put `-fp-model=precise` first and `-ffp-contract=off` last. Under icx
+  2026.0 this takes `ssimulacra2` from `host-isa=-38.37695186087862` against
+  `scalar=-38.376932759633718` to bit-identical, and the full suite is green
+  at 150 tests. On GCC and Clang the icx list is empty, so nothing changes.
+  Closes `T-ICX-FP-CONTRACT-FLAG-ORDER-2026-09-07`.
 
 
 - IDE and lint configs updated for the ADR-0700 `libvmaf/` → `core/`
@@ -27162,6 +27191,19 @@ ADR-0513.
   added in `test_thread_safety_batch.c`
   (`test_batch_two_prev_ref_extractors`). Scores are unchanged
   (threaded == single-threaded, verified on KoNViD-150K).
+
+
+
+- **The whole-tree clang-tidy baseline is re-measured against the lane's own
+  toolchain.** Moving the lint lane from gcc-14 to gcc-15 changed the system
+  headers clang-tidy parses and therefore the warning counts, but the baseline
+  was not re-measured in the same change: it claimed 1,229 warnings over 292
+  translation units against a measured 1,059 over 306. Twenty-five files had
+  improved without the baseline tightening and one untouched file had drifted
+  upward. The five genuine regressions are fixed in the code rather than
+  baselined — the two ssimulacra2 SIMD files by extracting the per-pixel
+  edge-diff accumulation both their vector body and their scalar tail carried,
+  which also removes the duplication ADR-1208 exists to prevent.
 
 
 - CI: the required `Tidy Changed` and `Tidy Ratchet` gates failed on every C/C++
