@@ -123,14 +123,20 @@ namespace
 
 [[nodiscard]] int set_double(const VmafOption *opt, uint8_t *base, const char *val) noexcept
 {
-    double *dst = reinterpret_cast<double *>(base);
-    *dst = opt->default_val.d;
-    if (!val)
-        return 0;
-    const auto result = parse_double(val, opt->min, opt->max);
-    if (!result)
-        return -EINVAL;
-    *dst = *result;
+    /* `base` is `struct_base + offsetof(...)`, so it is correctly aligned for
+     * the member by construction — but nothing in the type system says so, and
+     * `double` is the one setter whose alignment requirement exceeds the
+     * `uint8_t *` it arrives as. std::memcpy states the store without relying
+     * on the reader knowing where `base` came from, and the compiler emits the
+     * same instruction. */
+    double value = opt->default_val.d;
+    if (val) {
+        const auto result = parse_double(val, opt->min, opt->max);
+        if (!result)
+            return -EINVAL;
+        value = *result;
+    }
+    std::memcpy(base, &value, sizeof(value));
     return 0;
 }
 

@@ -230,8 +230,13 @@ static int try_append_rocm(struct VmafOrtSession *sess)
  * option. */
 static int try_append_coreml(struct VmafOrtSession *sess, const char *compute_units)
 {
-    const char *keys[1];
-    const char *values[1];
+    /* Initialised even though `nk` gates every read: passing an array whose
+     * elements the callee may not read is still a value the analyser has to
+     * reason about, and cppcheck 2.21 reports both as `uninitvar`. ADR-1142
+     * holds this file to the same standard as any other, so it is initialised
+     * rather than suppressed. */
+    const char *keys[1] = {NULL};
+    const char *values[1] = {NULL};
     size_t nk = 0u;
     if (compute_units != NULL) {
         keys[nk] = "MLComputeUnits";

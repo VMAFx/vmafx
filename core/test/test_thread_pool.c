@@ -54,7 +54,7 @@ static int fn_d(void *data, void **thread_data)
 {
     (void)thread_data;
     Fps *fps = data;
-    (void)printf("FPS: %d/%d ", fps->num, fps->den);
+    (void)printf("FPS: %u/%u ", fps->num, fps->den);
     return 0;
 }
 

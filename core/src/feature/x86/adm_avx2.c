@@ -4384,8 +4384,12 @@ void adm_csf_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_norm_view
     int right_mod_8 = right - ((right - left) % 8);
 
     for (int i = top; i < bottom; ++i) {
-        int src_offset = i * stride;
-        int dst_offset = i * stride;
+        /* Source and destination share one stride in this pass, so the row
+         * offset is literally the same value; deriving one from the other says
+         * so and stops cppcheck reading two identical initialisers as a
+         * copy-paste slip (duplicateAssignExpression). */
+        const int src_offset = i * stride;
+        const int dst_offset = src_offset;
 
         for (int j = left; j < right_mod_8; j += 8) {
             __m256i src0 =
@@ -4549,8 +4553,12 @@ void i4_adm_csf_avx2(AdmBuffer *buf, int scale, int w, int h, int stride, double
     int right_mod_8 = right - ((right - left) % 8);
 
     for (int i = top; i < bottom; ++i) {
-        int src_offset = i * stride;
-        int dst_offset = i * stride;
+        /* Source and destination share one stride in this pass, so the row
+         * offset is literally the same value; deriving one from the other says
+         * so and stops cppcheck reading two identical initialisers as a
+         * copy-paste slip (duplicateAssignExpression). */
+        const int src_offset = i * stride;
+        const int dst_offset = src_offset;
 
         for (int j = left; j < right_mod_8; j += 8) {
             __m256i src0 = _mm256_loadu_si256((__m256i *)(src_angles[0] + src_offset + j));

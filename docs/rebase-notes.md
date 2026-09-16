@@ -50730,10 +50730,15 @@ by accident. On aarch64 FMA is baseline, clang contracted, and ADR-1207's
 `test_feature_isa_invariance` reported psnr_hvs host-isa 14.191670308986598
 against scalar 14.191669969203765.
 
-The policy lives in `meson.build` rather than in the file because the file is
-vendored from xiph; keeping the source untouched keeps the next upstream sync a
-clean diff. x86 codegen is unaffected: compiled both ways the instruction stream
-is identical at 889 instructions with zero FMA.
+The policy lives in `meson.build` because it is a *build* policy: the same
+source has to round the same way whatever compiles it, and a `#pragma` in the
+file would be honoured by some compilers and silently ignored by others (icx
+ignores `#pragma STDC FP_CONTRACT OFF` at `-O3` without `-fp-model=precise`).
+That the file happens to be vendored from xiph is not the reason and must not
+be used as one: ADR-1142 §1 removed the upstream-mirror tier, so this file is
+held to the same standards as any other. x86 codegen is unaffected: compiled
+both ways the instruction stream is identical at 889 instructions with zero
+FMA.
 
 To reproduce the aarch64 side without ARM hardware, cross-build with clang and
 run under `qemu-aarch64-static`; a gcc cross-build will not show it, for the same
@@ -50821,3 +50826,40 @@ Cross-build in a container and run the `.exe` under wine — `--cpumask 48` give
 the AVX2 path, `--cpumask 56` the scalar one, and the two should agree bit for
 bit. Leave AVX-512 out of it (`--cpumask 48`, not `0`): under wine
 `ssim_accumulate_avx512` faults, which is a separate matter.
+
+## The cppcheck suppressions file has no vendored tier (2026-09-16)
+
+`.cppcheck-suppressions.txt` is down to what ADR-1142 section 5 allows:
+generated files, third-party test fixtures, and two entries about cppcheck's
+own mechanics. Do not re-add a path-wide entry for `core/src/svm.cpp`, the
+pelorus interop mirror, or any `invalidPrintfArgType_sint` / `invalidPointerCast`
+/ `duplicateAssignExpression` / `shiftNegativeLHS` line that a rebase drags back
+in. There is no "upstream code" tier any more; the findings behind those 31
+entries are fixed in the source.
+
+**`unusedFunction` is covered by a mechanism, not a suppression.** The six
+`unusedFunction:` entries are gone because ADR-1246's
+`scripts/ci/cppcheck-public-entrypoints.cfg` models the exported roots. If a new
+`VMAF_EXPORT` entry point appears, add it there.
+
+**Never write a bare `#` line in that file.** cppcheck 2.13 — the version CI
+installs from the Ubuntu 24.04 archive — strips the leading `#` and then fails
+to parse the empty remainder with `Failed to add suppression. No id.`, which
+aborts the entire run before a single file is checked. Blank lines are fine;
+comment lines must carry text. 2.21 accepts both, so this only reproduces
+against the CI version.
+
+## libsvm is held to the tree's standards (2026-09-16)
+
+`core/src/svm.cpp` is vendored but not exempt. It now carries default member
+initialisers on `Solver`, deleted copy operations on `Kernel` / `SVC_Q` /
+`ONE_CLASS_Q` / `SVR_Q`, a virtual `Solver::Solve` that `Solver_NU` overrides,
+and a destructor on `SVMModelParser`. Re-syncing from upstream libsvm will drop
+all of that — reapply it, and re-run the Netflix golden gate afterwards, which
+is the hard invariant ADR-1142 keeps above every lint rule.
+
+Making `Solve` virtual is safe **because every call site constructs a concrete
+`Solver` or `Solver_NU` and calls through the object**, so dispatch is static
+either way. If a future change ever calls `Solve` through a `Solver *`, that
+equivalence stops holding and the nu-SVC path would start running
+`Solver_NU::Solve` where it used to run the base version.

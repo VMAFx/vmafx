@@ -69,7 +69,7 @@ void set_meta(void *data, VmafMetadata *metadata)
     MetaStruct *meta = data;
     char key[128];
     char value[128];
-    (void)snprintf(key, sizeof(value), "%s_%d", metadata->feature_name, metadata->picture_index);
+    (void)snprintf(key, sizeof(key), "%s_%u", metadata->feature_name, metadata->picture_index);
     (void)snprintf(value, sizeof(value), "%f", metadata->score);
     vmaf_dictionary_set(meta->metadata, key, value, meta->flags);
 }

@@ -173,7 +173,7 @@ void float_adm_csf_avx2(const float *src, float *dst, float *flt, int w, int h, 
     int src_px_stride = src_stride / sizeof(float);
     int dst_px_stride = dst_stride / sizeof(float);
 
-    __m256 abs_mask = _mm256_broadcast_ss((const float *)&FLOAT_ABS_MASK_I);
+    __m256 abs_mask = _mm256_castsi256_ps(_mm256_set1_epi32(FLOAT_ABS_MASK_I));
     __m256 vfactor = _mm256_set1_ps(factor);
     __m256 vone_by_30 = _mm256_set1_ps(one_by_30);
 
@@ -230,7 +230,7 @@ float float_adm_csf_den_scale_avx2(const float *src, int w, int h, int src_strid
     (void)h;
     int src_px_stride = src_stride / sizeof(float);
 
-    __m256 abs_mask = _mm256_broadcast_ss((const float *)&FLOAT_ABS_MASK_I);
+    __m256 abs_mask = _mm256_castsi256_ps(_mm256_set1_epi32(FLOAT_ABS_MASK_I));
     __m256 vfactor = _mm256_set1_ps(factor);
 
     double accum = 0;
@@ -278,7 +278,7 @@ float float_adm_sum_cube_avx2(const float *x, int w, int h, int stride, int left
     (void)h;
     int px_stride = stride / sizeof(float);
 
-    __m256 abs_mask = _mm256_broadcast_ss((const float *)&FLOAT_ABS_MASK_I);
+    __m256 abs_mask = _mm256_castsi256_ps(_mm256_set1_epi32(FLOAT_ABS_MASK_I));
 
     double accum = 0;
 

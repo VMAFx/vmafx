@@ -314,6 +314,13 @@ class Kernel : public QMatrix
   public:
     Kernel(int l, svm_node *const *x, const svm_parameter &param);
     virtual ~Kernel();
+    /* ADR-1142: this class owns raw `new[]` storage that its destructor releases,
+     * so a copy would double-free. Every use constructs a temporary and binds it
+     * to `const QMatrix &`, never copies, so deleting the copy operations states
+     * the existing contract and turns any future copy into a compile error.
+     * Behaviour of the present code is unchanged. */
+    Kernel(const Kernel &) = delete;
+    Kernel &operator=(const Kernel &) = delete;
 
     static double k_function(const svm_node *x, const svm_node *y, const svm_parameter &param);
     virtual Qfloat *get_Q(int column, int len) const = 0;
@@ -495,25 +502,34 @@ class Solver
         double r; // for Solver_NU
     };
 
-    void Solve(int l, const QMatrix &Q, const double *p_, const schar *y_, double *alpha_,
-               double Cp, double Cn, double eps, SolutionInfo *si, int shrinking);
+    /* ADR-1142: virtual so Solver_NU::Solve overrides rather than hides it
+     * (cppcheck duplInheritedMember). Every call site constructs a concrete
+     * `Solver` or `Solver_NU` and calls through the object, so dispatch is
+     * static in both cases and no solver result changes. */
+    virtual void Solve(int l, const QMatrix &Q, const double *p_, const schar *y_, double *alpha_,
+                       double Cp, double Cn, double eps, SolutionInfo *si, int shrinking);
 
   protected:
-    int active_size;
-    schar *y;
-    double *G; // gradient of objective function
+    /* ADR-1142: every member carries a default initialiser. `Solve` assigns all
+     * of them before any read, so this changes no value the solver computes —
+     * it removes the window in which a future edit could read one before that
+     * assignment, which is what cppcheck's uninitMemberVar reports. */
+    int active_size = 0;
+    schar *y = nullptr;
+    double *G = nullptr; // gradient of objective function
     enum { LOWER_BOUND, UPPER_BOUND, FREE };
-    char *alpha_status; // LOWER_BOUND, UPPER_BOUND, FREE
-    double *alpha;
-    const QMatrix *Q;
-    const double *QD;
-    double eps;
-    double Cp, Cn;
-    double *p;
-    int *active_set;
-    double *G_bar; // gradient, if we treat free variables as 0
-    int l;
-    bool unshrink; // XXX
+    char *alpha_status = nullptr; // LOWER_BOUND, UPPER_BOUND, FREE
+    double *alpha = nullptr;
+    const QMatrix *Q = nullptr;
+    const double *QD = nullptr;
+    double eps = 0.0;
+    double Cp = 0.0;
+    double Cn = 0.0;
+    double *p = nullptr;
+    int *active_set = nullptr;
+    double *G_bar = nullptr; // gradient, if we treat free variables as 0
+    int l = 0;
+    bool unshrink = false; // XXX
 
     double get_C(int i)
     {
@@ -1034,14 +1050,14 @@ class Solver_NU : public Solver
     {
     }
     void Solve(int l, const QMatrix &Q, const double *p, const schar *y, double *alpha, double Cp,
-               double Cn, double eps, SolutionInfo *si, int shrinking)
+               double Cn, double eps, SolutionInfo *si, int shrinking) override
     {
         this->si = si;
         Solver::Solve(l, Q, p, y, alpha, Cp, Cn, eps, si, shrinking);
     }
 
   private:
-    SolutionInfo *si;
+    SolutionInfo *si = nullptr;
     int select_working_set(int &i, int &j);
     double calculate_rho();
     bool be_shrunk(int i, double Gmax1, double Gmax2, double Gmax3, double Gmax4);
@@ -1266,6 +1282,13 @@ class SVC_Q : public Kernel
         for (int i = 0; i < prob.l; i++)
             QD[i] = (this->*kernel_function)(i, i);
     }
+    /* ADR-1142: this class owns raw `new[]` storage that its destructor releases,
+     * so a copy would double-free. Every use constructs a temporary and binds it
+     * to `const QMatrix &`, never copies, so deleting the copy operations states
+     * the existing contract and turns any future copy into a compile error.
+     * Behaviour of the present code is unchanged. */
+    SVC_Q(const SVC_Q &) = delete;
+    SVC_Q &operator=(const SVC_Q &) = delete;
 
     Qfloat *get_Q(int i, int len) const
     {
@@ -1314,6 +1337,13 @@ class ONE_CLASS_Q : public Kernel
         for (int i = 0; i < prob.l; i++)
             QD[i] = (this->*kernel_function)(i, i);
     }
+    /* ADR-1142: this class owns raw `new[]` storage that its destructor releases,
+     * so a copy would double-free. Every use constructs a temporary and binds it
+     * to `const QMatrix &`, never copies, so deleting the copy operations states
+     * the existing contract and turns any future copy into a compile error.
+     * Behaviour of the present code is unchanged. */
+    ONE_CLASS_Q(const ONE_CLASS_Q &) = delete;
+    ONE_CLASS_Q &operator=(const ONE_CLASS_Q &) = delete;
 
     Qfloat *get_Q(int i, int len) const
     {
@@ -1371,6 +1401,13 @@ class SVR_Q : public Kernel
         buffer[1] = new Qfloat[2 * l];
         next_buffer = 0;
     }
+    /* ADR-1142: this class owns raw `new[]` storage that its destructor releases,
+     * so a copy would double-free. Every use constructs a temporary and binds it
+     * to `const QMatrix &`, never copies, so deleting the copy operations states
+     * the existing contract and turns any future copy into a compile error.
+     * Behaviour of the present code is unchanged. */
+    SVR_Q(const SVR_Q &) = delete;
+    SVR_Q &operator=(const SVR_Q &) = delete;
 
     void swap_index(int i, int j) const
     {
@@ -1480,8 +1517,12 @@ static void solve_nu_svc(const svm_problem *prob, const svm_parameter *param, do
         else
             y[i] = -1;
 
-    double sum_pos = nu * l / 2;
-    double sum_neg = nu * l / 2;
+    /* nu-SVC splits the budget equally between the two classes; naming it makes
+     * that explicit and stops cppcheck reading two identical initialisers as a
+     * copy-paste slip (duplicateAssignExpression). Same value, same order. */
+    const double half_budget = nu * l / 2;
+    double sum_pos = half_budget;
+    double sum_neg = half_budget;
 
     for (i = 0; i < l; i++)
         if (y[i] == +1) {
@@ -2584,6 +2625,11 @@ int svm_save_model(const char *model_file_name, const svm_model *model)
 #ifdef _WIN32
         _close(fd);
 #else
+        /* POSIX leaves the descriptor open when fdopen() fails, so closing it here is
+         * required.  cppcheck's posix.cfg lists fdopen as a deallocator of the fd
+         * unconditionally, so 2.13 — the version CI installs from apt — reads this as a
+         * second free.  2.21 no longer does. */
+        /* cppcheck-suppress doubleFree ; see the note above */
         close(fd);
 #endif
         return -1;
@@ -2982,10 +3028,28 @@ template <typename TSource> class SVMModelParser
     {
     }
 
+    /* The parser owns `model` until get_model() hands it over. Without this
+     * destructor a parse that succeeds but is never collected — or a second
+     * parse() on the same object — leaks it (cppcheck publicAllocationError).
+     * After get_model() the member is null and this frees nothing. */
+    ~SVMModelParser()
+    {
+        if (model)
+            svm_free_and_destroy_model(&model);
+    }
+
+    SVMModelParser(const SVMModelParser &) = delete;
+    SVMModelParser &operator=(const SVMModelParser &) = delete;
+
     bool parse()
     {
+        if (model)
+            svm_free_and_destroy_model(&model);
         model = Malloc(svm_model, 1);
-        memset(model, 0, sizeof(struct svm_model));
+        /* Value-initialisation rather than memset: identical bytes for every
+         * member, and it does not ask the reader to trust that all-bits-zero is
+         * 0.0 for the struct's doubles (cppcheck memsetClassFloat). */
+        *model = svm_model{};
         try {
             parse_header();
             parse_support_vectors();

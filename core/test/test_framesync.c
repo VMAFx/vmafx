@@ -91,7 +91,7 @@ static int my_worker(void *data, void **tpool_thread_data)
         const uint8_t expected = (uint8_t)(2u * thread_data->index);
         if (dependent_buf[ctr] != expected) {
             (void)fprintf(stderr,
-                          "framesync verification error at frame %d byte %d: "
+                          "framesync verification error at frame %u byte %d: "
                           "got %u expected %u\n",
                           thread_data->index, ctr, dependent_buf[ctr], (unsigned)expected);
             abort(); /* fail the test process — mu_assert cannot be used in void workers */
