@@ -147,7 +147,25 @@ int vmaf_hip_kernel_submit_pre_launch(VmafHipKernelLifecycle *lc, VmafHipContext
         return -EINVAL;
     }
 
-    hipError_t rc = hipMemsetAsync(rb->device, 0, rb->bytes, (hipStream_t)lc->str);
+    /* Zero the accumulators on the SAME stream the kernel will launch on.
+     *
+     * This used to target `lc->str`, the private readback stream, while the
+     * kernel runs on `picture_stream`. HIP, like CUDA, only orders work within
+     * a stream, so the memset and the accumulating kernel could overlap in
+     * either direction; when the memset landed after some atomic adds it
+     * erased them and the feature reported a sum that was too low. The CUDA
+     * twin had the identical defect and it was caught there by
+     * `test_cuda_float_moment_parity*` failing roughly one loaded full-suite
+     * run in three (see the commit that fixed
+     * `vmaf_cuda_kernel_submit_pre_launch`). Fixed here by inspection of the
+     * twin, not by reproduction: this machine has no AMD device.
+     *
+     * A zero `picture_stream` keeps the documented single-frame convention and
+     * falls back to the private stream, which is safe because that consumer
+     * launches its kernel there too. */
+    const hipStream_t zero_stream =
+        (picture_stream != 0) ? (hipStream_t)picture_stream : (hipStream_t)lc->str;
+    hipError_t rc = hipMemsetAsync(rb->device, 0, rb->bytes, zero_stream);
     if (rc != hipSuccess) {
         return hip_rc_to_errno(rc);
     }

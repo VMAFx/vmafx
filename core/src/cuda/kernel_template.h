@@ -212,7 +212,24 @@ static inline int vmaf_cuda_kernel_submit_pre_launch(VmafCudaKernelLifecycle *lc
                                                      CUevent dist_ready_event)
 {
     CudaFunctions *cu_f = cu_state->f;
-    CHECK_CUDA_RETURN(cu_f, cuMemsetD8Async(rb->device->data, 0, rb->bytes, lc->str));
+    /* The zeroing MUST be issued on `picture_stream`, the same stream the
+     * kernel launches on.
+     *
+     * It used to go to `lc->str`, the extractor's private readback stream.
+     * Nothing ordered the two: CUDA only guarantees ordering within a stream,
+     * so the memset on `lc->str` and the accumulating kernel on
+     * `picture_stream` could overlap in either direction. When the memset
+     * landed after some atomic adds had already run it erased them, and the
+     * feature reported a sum that was too LOW — the CPU/CUDA parity tests saw
+     * e.g. `cpu=127.50000000 cuda=120.87500000`. It reproduced only on a
+     * loaded GPU (the full 203-test suite at -j32), roughly one run in three,
+     * and never standalone, which is why it read as flakiness rather than as
+     * the race it is.
+     *
+     * Issuing it here lets program order on a single stream do the work:
+     * memset, then kernel. The readback stays fenced separately by
+     * `lc->submit`. */
+    CHECK_CUDA_RETURN(cu_f, cuMemsetD8Async(rb->device->data, 0, rb->bytes, picture_stream));
     CHECK_CUDA_RETURN(cu_f,
                       cuStreamWaitEvent(picture_stream, dist_ready_event, CU_EVENT_WAIT_DEFAULT));
     return 0;
@@ -266,6 +283,16 @@ static inline int vmaf_cuda_kernel_submit_post_record(VmafCudaKernelLifecycle *l
                                                       VmafCudaState *cu_state)
 {
     CudaFunctions *cu_f = cu_state->f;
+    /* Invalidate any drain left over from an earlier frame before recording
+     * this frame's fence. `lc->drained` tells `vmaf_cuda_kernel_collect_wait`
+     * it may skip its `cuStreamSynchronize`; it is set by a batch flush and
+     * cleared only by a matching `collect()`, and
+     * `vmaf_cuda_drain_batch_close()` clears the batch table but not the
+     * per-entry flags. A flag can therefore outlive its frame whenever a
+     * registered extractor's `collect()` does not run, letting the next
+     * frame's collect skip a sync it still needs. Clearing here makes the flag
+     * mean exactly "a flush completed since this submit". */
+    lc->drained = false;
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(lc->finished, lc->str));
     /* Best-effort: drain-batch registration failure (overflow, no
      * batch open) silently degrades to per-stream sync; never
