@@ -567,7 +567,7 @@ RUN chown vmaf:vmaf /build /build/vmaf
 # providers. Provider-enabled ORT distributions need their matching runtime
 # dependencies (ADR-0113). The Python runtime floor is owned independently
 # by ai/pyproject.toml.
-ARG ORT_VERSION=1.29.0
+ARG ORT_VERSION=1.30.0
 RUN curl -fsSL \
         "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
         -o /tmp/ort.tgz \
