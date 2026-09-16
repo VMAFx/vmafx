@@ -24,6 +24,9 @@ gate = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(gate)
 
 
+# The BROKEN fixture carries four unsafe accesses: three stores and one reload.
+EXPECTED_BROKEN_FINDINGS = 4
+
 BROKEN = """
 0000000000000520 <ssim_accumulate_avx512>:
  520:\tpush   %r15
@@ -75,7 +78,7 @@ XMM_ONLY = """
 
 def test_flags_unrealigned_zmm_spill():
     findings = gate.scan_disassembly(BROKEN)
-    assert len(findings) == 4, findings
+    assert len(findings) == EXPECTED_BROKEN_FINDINGS, findings
     assert all(fn == "ssim_accumulate_avx512" for fn, _ in findings)
     # Both directions of the move are reported, store and reload.
     assert any("%zmm28,0x1a0(%rsp)" in insn for _, insn in findings)
@@ -103,4 +106,4 @@ def test_ignores_128_bit_saves():
 def test_realignment_does_not_leak_into_the_next_function():
     """A realigned frame must not excuse the function that follows it."""
     findings = gate.scan_disassembly(REALIGNED + BROKEN)
-    assert len(findings) == 4, findings
+    assert len(findings) == EXPECTED_BROKEN_FINDINGS, findings

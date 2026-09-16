@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD013 -->
+
 # ADR-1254: Wide vector register pressure is a Win64 correctness constraint, not a performance one
 
 - **Status**: Accepted
@@ -51,7 +53,7 @@ lane produces.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Rebuild vector constants per block + objdump gate (**chosen**) | Removes the spill at the source; the gate catches any recurrence in code nobody is looking at, on the exact compiler CI uses | Costs seven broadcasts per 16 pixels; the gate needs a disassembler on the Windows lane | — |
 | Fix nothing, document the hazard | Zero code change | Ships a crash to every Windows user with AVX-512 | A known crash in shipped code is not a documentation problem |
 | `-mprefer-vector-width=256` on the Windows lane | One build flag | Measured: does not help. The kernels use explicit `__m512` intrinsics, which the flag does not override; the spill remains | Falsified by measurement |

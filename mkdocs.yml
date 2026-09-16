@@ -1374,6 +1374,7 @@ nav:
         - "ADR-1251: renovate-draft-automerge-deadlock": adr/1251-renovate-draft-automerge-deadlock.md
         - "ADR-1252: solo-maintainer-declared-bypass": adr/1252-solo-maintainer-declared-bypass.md
         - "ADR-1253: scalar-fma-not-fused-on-msvcrt": adr/1253-scalar-fma-not-fused-on-msvcrt.md
+        - "ADR-1254: win64-cannot-realign-the-stack": adr/1254-win64-cannot-realign-the-stack.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

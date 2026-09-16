@@ -67,7 +67,7 @@ def _objdump_binary(explicit: str | None) -> str:
 
 
 def _disassemble(objdump: str, path: Path) -> str:
-    proc = subprocess.run(
+    proc = subprocess.run(  # noqa: S603 -- fixed argv, no shell
         [objdump, "-d", "--no-show-raw-insn", str(path)],
         capture_output=True,
         text=True,
