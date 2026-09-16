@@ -52,8 +52,12 @@ static inline int read_luma8(FILE *fp, uint8_t *dst, size_t y_sz, int bitdepth, 
         return -EIO;
     }
 
+    /* The 8-bit case returned above and the guard admits only 8/10/12/16, so
+     * `shift` is 2, 4 or 8 here — never 0. The `shift == 0` arm of the old
+     * ternary was unreachable, and hid the fact that `shift - 1U` can never
+     * underflow. */
     const unsigned shift = (unsigned)bitdepth - 8U;
-    const unsigned round = (shift == 0U) ? 0U : (1U << (shift - 1U));
+    const unsigned round = 1U << (shift - 1U);
     const unsigned max_sample = (1U << (unsigned)bitdepth) - 1U;
     for (size_t i = 0U; i < y_sz; ++i) {
         unsigned v = (unsigned)raw[i * 2U] | ((unsigned)raw[i * 2U + 1U] << 8U);

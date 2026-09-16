@@ -19,9 +19,25 @@
 /* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: preserve Netflix NULL; MSVC C nullptr support is unverified. */
 #include <limits.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <string.h>
 
 #include "test.h"
 #include "feature/vif.h"
+
+/* Bit-pattern equality, not near-equality: frame differencing is exact integer
+ * arithmetic in float, so any difference at all is a defect and a tolerance
+ * would hide exactly what this asserts. Comparing the payloads as integers
+ * states that intent — the same reasoning, and the same shape, as
+ * `scores_bit_identical()` in test_feature_isa_invariance.c. */
+static int float_bits_equal(float a, float b)
+{
+    uint32_t a_bits = 0;
+    uint32_t b_bits = 0;
+    memcpy(&a_bits, &a, sizeof(a_bits));
+    memcpy(&b_bits, &b, sizeof(b_bits));
+    return a_bits == b_bits;
+}
 
 static char *test_differencing_stride(void)
 {
@@ -31,7 +47,8 @@ static char *test_differencing_stride(void)
     const float expected[] = {5, -2, 2, 77, -6, 8, 0, 77};
     apply_frame_differencing(current, previous, difference, 3, 2, 4);
     for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); ++i)
-        mu_assert("odd-width differencing preserves row padding", difference[i] == expected[i]);
+        mu_assert("odd-width differencing preserves row padding",
+                  float_bits_equal(difference[i], expected[i]));
     return NULL;
 }
 

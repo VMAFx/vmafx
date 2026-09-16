@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include <stdint.h>
 #include "test.h"
 
 #include "../tools/vmaf_roi_input.h"
@@ -49,6 +50,20 @@ static int check_high_bitdepth(int depth)
     free(luma);
     free(raw);
     return rc;
+}
+
+/* Bit-pattern equality, not near-equality: the placeholder saliency map is
+ * required to be exactly radially symmetric and to put exactly 1.0 at a
+ * singleton centre, so a tolerance would hide the defect this asserts.
+ * Comparing the payloads as integers states that intent — same shape as
+ * `scores_bit_identical()` in test_feature_isa_invariance.c. */
+static int float_bits_equal(float a, float b)
+{
+    uint32_t a_bits = 0;
+    uint32_t b_bits = 0;
+    memcpy(&a_bits, &a, sizeof(a_bits));
+    memcpy(&b_bits, &b, sizeof(b_bits));
+    return a_bits == b_bits;
 }
 
 static char *test_high_bitdepth_saturates_without_wrapping(void)
@@ -126,11 +141,11 @@ static char *test_placeholder_boundaries(void)
             mu_assert("finite bounded saliency", isfinite(storage[i + 1U]) &&
                                                      storage[i + 1U] >= 0.0F &&
                                                      storage[i + 1U] <= 1.0F);
-            mu_assert("radial symmetry", storage[i + 1U] == storage[n - i]);
+            mu_assert("radial symmetry", float_bits_equal(storage[i + 1U], storage[n - i]));
         }
     }
-    mu_assert("singleton center",
-              fill_placeholder_saliency(1, 1, storage, 1U) == 0 && storage[0] == 1.0F);
+    mu_assert("singleton center", fill_placeholder_saliency(1, 1, storage, 1U) == 0 &&
+                                      float_bits_equal(storage[0], 1.0F));
     return NULL;
 }
 
