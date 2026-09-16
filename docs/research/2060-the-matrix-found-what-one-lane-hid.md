@@ -142,11 +142,43 @@ policy moves, both sides move together and the comparison stays true while the
 shipped scalar path drifts away from both. Driving the public API twice over one
 fixture has no such blind spot.
 
-It also found one this fork cannot yet close: on Windows the shipped scalar
-`ssimulacra2` disagrees with its own SIMD twins by 0.37 points, and
-`float_ms_ssim` by 1.5e-7. Both were reproduced outside CI by running the
-MinGW64 build under wine, which narrows it to the scalar side — `--cpumask 8`
-and `--cpumask 48` both reproduce the Linux value, `--cpumask 56` does not — and
-rules out FP contraction, since forcing contraction on in the scalar translation
-unit on Linux moves the score the other way and by a tenth as much. That one is
-tracked separately.
+Its fourth find took the longest and is the best argument for it. On Windows
+the shipped scalar `ssimulacra2` disagreed with its own SIMD twins by 0.37
+points and `float_ms_ssim` by 2.4e-7 — on master, invisible to every existing
+test, because `test_ssimulacra2_simd` compares the SIMD kernels against
+references defined in the test translation unit and those agreed with each
+other perfectly.
+
+Four hypotheses died on measurement before the right one: FP contraction (forcing
+it on in the scalar TU on Linux moves the score the *other* way and by a tenth as
+much), `sqrtf` accuracy (msvcrt's matches the hardware instruction exactly over
+the sampled range), `-fno-math-errno` (no effect), and my own first
+"reproduction", which turned out to be a broken-git artefact.
+
+What found it was building the thing. Arch's `mingw-w64-gcc` is 16.2.0 — the
+runner's exact compiler — and cross-building with it in a container reproduced
+**nothing**: scalar and SIMD agreed bit for bit. That null result was the clue.
+Arch's toolchain is UCRT-based; MSYS2's `MINGW64` links the legacy `msvcrt.dll`.
+Rebuilding with Fedora's msvcrt-based `mingw64-gcc` reproduced CI's numbers to
+the last digit, which turned the question from "what is wrong with Windows" into
+"what does msvcrt do differently".
+
+Bisecting then took one pass. A temporary knob forcing exactly one of
+ssimulacra2's seven dispatch slots back to scalar, run seven times under wine,
+put the whole 0.37 on slot 6 — `picture_to_linear_rgb` — and the mechanism was
+sitting in a comment there: `fmaf()`, chosen by ADR-0891 precisely because it is
+a *single-rounded* fused multiply-add. It is one on glibc, musl and the UCRT. On
+legacy msvcrt it is not, so the scalar path rounded twice while the SIMD path
+rounded once, and ADR-1205's warning — that one ULP here becomes a 2.6e-3 score
+delta because the pipeline is ill-conditioned downstream — came true at 0.37.
+`ms_ssim_decimate.c` had the same two calls, which is why exactly two features
+failed and not one.
+
+The fix is `vmaf_fmaf_exact()`: evaluate in `double`, round once. For binary32
+operands the product is exact in binary64 and binary64's 53 bits clear the
+2p + 2 = 50 that makes the final rounding innocuous, so it is the
+correctly-rounded fused result on every host without FMA hardware or a libm
+call. Measured against glibc `fmaf` and against `vfmadd213ss` over 20 million
+random triples: zero differences. Every Linux pooled score is unchanged to the
+last bit, and on the msvcrt build scalar and SIMD now agree exactly, both equal
+to Linux. See [ADR-1253](../adr/1253-scalar-fma-not-fused-on-msvcrt.md).

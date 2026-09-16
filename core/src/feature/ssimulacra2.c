@@ -53,6 +53,7 @@
 #include "config.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
+#include "feature/common/fmaf_exact.h"
 #include "feature/ssimulacra2_math.h"
 #include "feature/ssimulacra2_simd_common.h"
 #include "mem.h"
@@ -560,12 +561,19 @@ static void picture_to_linear_rgb(const Ssimu2State *s, const VmafPicture *pic, 
              * ill-conditioned downstream (the edge-diff term takes
              * |img - blur(img)|, a catastrophic cancellation, and the
              * 4-norm pooling amplifies the survivors), so that 1 ULP grew
-             * into a 2.6e-3 score delta. Keep these three lines
-             * fmaf()-based and in this exact order. See ADR-1205. */
-            float R = fmaf(cr_r, Vn, Yn);
-            float G = fmaf(cb_g, Un, Yn);
-            G = fmaf(cr_g, Vn, G);
-            float B = fmaf(cb_b, Un, Yn);
+             * into a 2.6e-3 score delta. See ADR-1205.
+             *
+             * These four lines used to say `fmaf()`, which is a genuine
+             * fused multiply-add on glibc, musl and the UCRT but NOT on the
+             * legacy msvcrt that MSYS2's MINGW64 links — the environment the
+             * `Windows MinGW64` lane builds in. There the scalar path rounded
+             * twice while the SIMD path rounded once, and the score moved by
+             * 0.37. `vmaf_fmaf_exact` is single-rounded on every host; see
+             * feature/common/fmaf_exact.h. Keep them in this exact order. */
+            float R = vmaf_fmaf_exact(cr_r, Vn, Yn);
+            float G = vmaf_fmaf_exact(cb_g, Un, Yn);
+            G = vmaf_fmaf_exact(cr_g, Vn, G);
+            float B = vmaf_fmaf_exact(cb_b, Un, Yn);
 
             R = clampf(R, 0.0f, 1.0f);
             G = clampf(G, 0.0f, 1.0f);

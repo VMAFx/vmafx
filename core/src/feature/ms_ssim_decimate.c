@@ -16,6 +16,7 @@
  *
  */
 
+#include "feature/common/fmaf_exact.h"
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
@@ -92,7 +93,7 @@ static void h_pass_scalar(const float *src, int w, int h, float *tmp, int w_out)
             float acc = 0.0f;
             for (int k = 0; k < MS_SSIM_DECIMATE_LPF_LEN; ++k) {
                 const int xi = ms_ssim_decimate_mirror(x_src + k - half, w);
-                acc = fmaf(src_row[xi], ms_ssim_lpf_h[k], acc);
+                acc = vmaf_fmaf_exact(src_row[xi], ms_ssim_lpf_h[k], acc);
             }
             tmp_row[x_out] = acc;
         }
@@ -110,7 +111,8 @@ static void v_pass_scalar(const float *tmp, int h, float *dst, int w_out, int h_
             float acc = 0.0f;
             for (int k = 0; k < MS_SSIM_DECIMATE_LPF_LEN; ++k) {
                 const int yi = ms_ssim_decimate_mirror(y_src + k - half, h);
-                acc = fmaf(tmp[(size_t)yi * (size_t)w_out + (size_t)x_out], ms_ssim_lpf_v[k], acc);
+                acc = vmaf_fmaf_exact(tmp[(size_t)yi * (size_t)w_out + (size_t)x_out],
+                                      ms_ssim_lpf_v[k], acc);
             }
             dst_row[x_out] = acc;
         }

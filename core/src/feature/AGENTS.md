@@ -648,6 +648,19 @@ feature/
   That is what broke `test_ssimulacra2_simd` the first time the reorder
   was tried; see `T-ICX-FP-CONTRACT-FLAG-ORDER-2026-09-07` in
   [state.md](../../../docs/state.md).
+- **Scalar references never call libm `fmaf()`** (ADR-1253). Where a scalar
+  reference must be bit-exact with a SIMD kernel that fuses — `_mm256_fmadd_ps`,
+  `vfmla` — it calls `vmaf_fmaf_exact()` from
+  [`common/fmaf_exact.h`](common/fmaf_exact.h), which evaluates the product and
+  sum in `double` and rounds once. `fmaf()` is a genuine fused multiply-add on
+  glibc, musl and the UCRT but **not** on the legacy `msvcrt.dll` that MSYS2's
+  `MINGW64` links, which is the environment the required `Windows MinGW64` lane
+  builds in; there the scalar path rounds twice and the SIMD path once.
+  ADR-1207's gate measured `ssimulacra2` 0.37 points apart on a 48-frame clip
+  before the fix. The two call sites today are `picture_to_linear_rgb` in
+  `ssimulacra2.c` and both passes of `ms_ssim_decimate.c`. `grep -rn
+  '\bfmaf\?('` over the scalar feature sources must stay empty for any
+  reference with an FMA-using twin.
 - **`fastdvdnet_pre.c` 5-frame-window contract** (fork-local,
   ADR-0215): the FastDVDnet temporal pre-filter extractor is wired
   to the I/O contract `frames: float32 NCHW [1, 5, H, W]` (channel

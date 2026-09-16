@@ -50796,3 +50796,28 @@ Rebuild the lane's environment instead — gcc-15 from
 on `ubuntu:24.04` — and run `tidy-ratchet.py --write` there. `xxd` must be
 installed in that image or the eighteen embedded-model translation units are
 never generated and the measurement comes out 18 TUs short of the lane's 306.
+
+## Scalar references must not call libm `fmaf()` (2026-09-16)
+
+`core/src/feature/common/fmaf_exact.h` exists because `fmaf()` is not a fused
+multiply-add everywhere. On glibc, musl and the UCRT it is. On the legacy
+`msvcrt.dll` that MSYS2's `MINGW64` links — the environment the required
+`Windows MinGW64` lane builds in — it is not, so a scalar reference that spells
+its single rounding `fmaf()` rounds twice there while its SIMD twin rounds once.
+That breaks the ADR-0891 contract on exactly one lane and nowhere else, which is
+why it survived until ADR-1207's gate drove the public API both ways.
+
+Do not "simplify" `vmaf_fmaf_exact()` back to `fmaf()`, and do not replace it
+with `a * b + c`: the first is not fused on legacy msvcrt, the second is not
+fused anywhere unless the compiler contracts it, which `-ffp-contract=off`
+exists to prevent. The two call sites are `picture_to_linear_rgb` in
+`ssimulacra2.c` and both passes of `ms_ssim_decimate.c`; a new scalar reference
+whose SIMD twin uses `_mm256_fmadd_ps` or `vfmla` needs the same treatment.
+
+**Reproducing it on Linux** needs an msvcrt-based mingw, not just any mingw.
+Arch's `mingw-w64-gcc` is UCRT-based and shows no divergence at all; Fedora's
+`mingw64-gcc` is msvcrt-based and reproduces CI's numbers to the last digit.
+Cross-build in a container and run the `.exe` under wine — `--cpumask 48` gives
+the AVX2 path, `--cpumask 56` the scalar one, and the two should agree bit for
+bit. Leave AVX-512 out of it (`--cpumask 48`, not `0`): under wine
+`ssim_accumulate_avx512` faults, which is a separate matter.
