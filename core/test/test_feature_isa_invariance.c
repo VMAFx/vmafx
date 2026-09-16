@@ -136,12 +136,12 @@ static int fill_pic(VmafPicture *pic, unsigned frame_idx, int distorted)
 static int run_feature(const IsaCase *c, uint64_t cpumask, double *out_score)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .cpumask = cpumask};
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = nullptr;
     int err = vmaf_init(&vmaf, cfg);
     if (err)
         return err;
 
-    err = vmaf_use_feature(vmaf, c->feature, NULL);
+    err = vmaf_use_feature(vmaf, c->feature, nullptr);
     if (err)
         goto out;
 
@@ -160,7 +160,7 @@ static int run_feature(const IsaCase *c, uint64_t cpumask, double *out_score)
         if (err)
             goto out;
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    err = vmaf_read_pictures(vmaf, nullptr, nullptr, 0);
     if (err)
         goto out;
 
@@ -169,6 +169,19 @@ static int run_feature(const IsaCase *c, uint64_t cpumask, double *out_score)
 out:
     (void)vmaf_close(vmaf);
     return err;
+}
+
+/* Bit-pattern equality of two scores — not near-equality, see the header
+ * comment. The payloads are compared as integers rather than with memcmp()
+ * because that states the intent: this is a bit-pattern test, and clang-tidy is
+ * right that memcmp() over floating-point operands is usually a mistake. */
+static int scores_bit_identical(double a, double b)
+{
+    uint64_t a_bits = 0;
+    uint64_t b_bits = 0;
+    memcpy(&a_bits, &a, sizeof(a_bits));
+    memcpy(&b_bits, &b, sizeof(b_bits));
+    return a_bits == b_bits;
 }
 
 static char *test_isa_invariance(void)
@@ -208,8 +221,7 @@ static char *test_isa_invariance(void)
             continue;
         }
 
-        /* Bit-identical, not near-equal — see the header comment. */
-        if (memcmp(&simd_score, &scalar_score, sizeof(double)) != 0) {
+        if (!scores_bit_identical(simd_score, scalar_score)) {
             (void)fprintf(stderr,
                           "\nISA invariance FAIL %s (%s): host-isa=%.17g scalar=%.17g "
                           "delta=%.3e\n",
@@ -221,15 +233,15 @@ static char *test_isa_invariance(void)
 
     if (unavailable == NUM_CASES) {
         (void)fprintf(stderr, "[skip: no feature in the table is available in this build] ");
-        return NULL;
+        return nullptr;
     }
 
     mu_assert("at least one feature scores differently with and without SIMD", failures == 0);
-    return NULL;
+    return nullptr;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_isa_invariance);
-    return NULL;
+    return nullptr;
 }

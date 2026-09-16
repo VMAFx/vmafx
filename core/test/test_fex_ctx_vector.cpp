@@ -35,7 +35,11 @@ extern "C" void *__real_realloc(void *, size_t);
 #define VMAF_WRAP_EXPORT __attribute__((visibility("default")))
 
 // cppcheck-suppress unusedFunction
-// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0723; Research-2047: GNU linker calls this entry point.
+// The signature does not fit on one line once VMAF_WRAP_EXPORT is in it, so
+// clang-format breaks after the return type and the identifier lands two lines
+// below the marker. A begin/end band is used instead of a next-line marker
+// because it survives any future reflow of this signature.
+// NOLINTBEGIN(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0723; Research-2047: GNU linker calls this entry point.
 extern "C" VMAF_WRAP_EXPORT char *
 __wrap_vmaf_feature_name_from_options(const char *name, const VmafOption *opts, const void *obj)
 {
@@ -43,6 +47,7 @@ __wrap_vmaf_feature_name_from_options(const char *name, const VmafOption *opts, 
         return nullptr;
     return __real_vmaf_feature_name_from_options(name, opts, obj);
 }
+// NOLINTEND(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage)
 
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0723; Research-2047: GNU linker calls this entry point.
