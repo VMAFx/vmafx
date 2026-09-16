@@ -148,15 +148,43 @@ static inline void ssim_block_double_half_avx512(__m256 rm_f, __m256 cm_f, __m25
  * profile. The final lane-by-lane summation into `local_*` stays
  * scalar left-to-right so the running-sum associativity required by
  * ADR-0139 is unchanged.
+ *
+ * ADR-1254 — the seven `__m512` / `__m512d` broadcast constants are rebuilt
+ * here per block rather than hoisted into `ssim_accumulate_avx512` and passed
+ * in. Hoisting them keeps them live across the loop, which pushes this
+ * function past 32 live vector values; gcc then spills five `zmm` registers to
+ * the stack. On Windows that spill is a crash, not a slowdown: the MS x64
+ * unwind contract prevents the `and $-64, %rsp` frame realignment gcc emits on
+ * SysV, so it spills with `vmovaps` at a fixed `%rsp` offset while the ABI
+ * guarantees only 16-byte alignment — a general-protection fault on three call
+ * paths in four, surfacing as an access violation on `0xFFFFFFFFFFFFFFFF`.
+ * `scripts/ci/check-win64-stack-alignment.py` enforces this on the
+ * `Windows MinGW64` lane, because CI's runners have no AVX-512 and the test
+ * leg never executes this code. **Do not hoist these constants out.**
+ *
+ * The rebuild is seven broadcasts per 16 pixels and changes no arithmetic, so
+ * bit-exactness against the scalar reference is unaffected — same values, same
+ * operations. `(double)C1` mirrors scalar's implicit float→double promotion in
+ * `2.0 * rm * cm + C1` (the `2.0` literal is `double`, dragging C1 up via the
+ * usual arithmetic conversions). See
+ * docs/research/2061-win64-cannot-realign-the-stack.md.
  */
 static inline void ssim_accumulate_block_avx512(const float *ref_mu, const float *cmp_mu,
                                                 const float *ref_sigma_sqd,
                                                 const float *cmp_sigma_sqd, const float *sigma_both,
-                                                int i, __m512 vC1, __m512 vC2, __m512 vC3,
-                                                __m512 vzero, __m512d vC1d, __m512d vC2d,
-                                                __m512d v2d, double *local_ssim, double *local_l,
+                                                int i, float C1, float C2, float C3,
+                                                double *local_ssim, double *local_l,
                                                 double *local_c, double *local_s)
 {
+    /* Broadcast constants — rebuilt here, never hoisted. See above. */
+    const __m512 vC1 = _mm512_set1_ps(C1);
+    const __m512 vC2 = _mm512_set1_ps(C2);
+    const __m512 vC3 = _mm512_set1_ps(C3);
+    const __m512 vzero = _mm512_setzero_ps();
+    const __m512d vC1d = _mm512_set1_pd((double)C1);
+    const __m512d vC2d = _mm512_set1_pd((double)C2);
+    const __m512d v2d = _mm512_set1_pd(2.0);
+
     const __m512 rm = _mm512_loadu_ps(ref_mu + i);
     const __m512 cm = _mm512_loadu_ps(cmp_mu + i);
     const __m512 rs = _mm512_loadu_ps(ref_sigma_sqd + i);
@@ -171,32 +199,23 @@ static inline void ssim_accumulate_block_avx512(const float *ref_mu, const float
     const __m512 clamped_sb = _mm512_mask_blend_ps(sb_neg & srsc_le0, sb, vzero);
     const __m512 sv_f = _mm512_div_ps(_mm512_add_ps(clamped_sb, vC3), _mm512_add_ps(srsc, vC3));
 
-    /* Split the 16-lane float vectors into two 8-lane __m256 halves
-     * for the __m512d widening. Lane order is preserved: low half =
-     * lanes 0..7, high half = lanes 8..15 — matching the linear
-     * scalar reduction order of the previous implementation. */
-    const __m256 rm_lo = _mm512_castps512_ps256(rm);
-    const __m256 rm_hi = _mm512_extractf32x8_ps(rm, 1);
-    const __m256 cm_lo = _mm512_castps512_ps256(cm);
-    const __m256 cm_hi = _mm512_extractf32x8_ps(cm, 1);
-    const __m256 srsc_lo = _mm512_castps512_ps256(srsc);
-    const __m256 srsc_hi = _mm512_extractf32x8_ps(srsc, 1);
-    const __m256 l_den_lo = _mm512_castps512_ps256(l_den);
-    const __m256 l_den_hi = _mm512_extractf32x8_ps(l_den, 1);
-    const __m256 c_den_lo = _mm512_castps512_ps256(c_den);
-    const __m256 c_den_hi = _mm512_extractf32x8_ps(c_den, 1);
-    const __m256 sv_lo = _mm512_castps512_ps256(sv_f);
-    const __m256 sv_hi = _mm512_extractf32x8_ps(sv_f, 1);
-
+    /* Split the 16-lane float vectors into two 8-lane __m256 halves for the
+     * __m512d widening, one half at a time. Lane order is preserved: low half
+     * = lanes 0..7, high half = lanes 8..15 — matching the linear scalar
+     * reduction order of the previous implementation. */
     _Alignas(64) double t_lv[16];
     _Alignas(64) double t_cv[16];
     _Alignas(64) double t_sv[16];
     _Alignas(64) double t_ssim[16];
 
-    ssim_block_double_half_avx512(rm_lo, cm_lo, srsc_lo, l_den_lo, c_den_lo, sv_lo, vC1d, vC2d, v2d,
-                                  t_lv, t_cv, t_sv, t_ssim);
-    ssim_block_double_half_avx512(rm_hi, cm_hi, srsc_hi, l_den_hi, c_den_hi, sv_hi, vC1d, vC2d, v2d,
-                                  &t_lv[8], &t_cv[8], &t_sv[8], &t_ssim[8]);
+    ssim_block_double_half_avx512(_mm512_castps512_ps256(rm), _mm512_castps512_ps256(cm),
+                                  _mm512_castps512_ps256(srsc), _mm512_castps512_ps256(l_den),
+                                  _mm512_castps512_ps256(c_den), _mm512_castps512_ps256(sv_f), vC1d,
+                                  vC2d, v2d, t_lv, t_cv, t_sv, t_ssim);
+    ssim_block_double_half_avx512(_mm512_extractf32x8_ps(rm, 1), _mm512_extractf32x8_ps(cm, 1),
+                                  _mm512_extractf32x8_ps(srsc, 1), _mm512_extractf32x8_ps(l_den, 1),
+                                  _mm512_extractf32x8_ps(c_den, 1), _mm512_extractf32x8_ps(sv_f, 1),
+                                  vC1d, vC2d, v2d, &t_lv[8], &t_cv[8], &t_sv[8], &t_ssim[8]);
 
     /* Lane-by-lane left-to-right scalar accumulation — preserves
      * the running-sum order of the prior implementation (and of
@@ -216,17 +235,6 @@ void ssim_accumulate_avx512(const float *ref_mu, const float *cmp_mu, const floa
                             float C2, float C3, double *ssim_sum, double *l_sum, double *c_sum,
                             double *s_sum)
 {
-    const __m512 vC1 = _mm512_set1_ps(C1);
-    const __m512 vC2 = _mm512_set1_ps(C2);
-    const __m512 vC3 = _mm512_set1_ps(C3);
-    const __m512 vzero = _mm512_setzero_ps();
-    /* Double-precision broadcast constants for the per-lane reduction.
-     * `(double)C1` mirrors scalar's implicit float→double promotion in
-     * `2.0 * rm * cm + C1` (the `2.0` literal is `double`, dragging C1
-     * up via the usual arithmetic conversions). */
-    const __m512d vC1d = _mm512_set1_pd((double)C1);
-    const __m512d vC2d = _mm512_set1_pd((double)C2);
-    const __m512d v2d = _mm512_set1_pd(2.0);
     double local_ssim = 0.0;
     double local_l = 0.0;
     double local_c = 0.0;
@@ -235,8 +243,7 @@ void ssim_accumulate_avx512(const float *ref_mu, const float *cmp_mu, const floa
     int i = 0;
     for (; i + 16 <= n; i += 16) {
         ssim_accumulate_block_avx512(ref_mu, cmp_mu, ref_sigma_sqd, cmp_sigma_sqd, sigma_both, i,
-                                     vC1, vC2, vC3, vzero, vC1d, vC2d, v2d, &local_ssim, &local_l,
-                                     &local_c, &local_s);
+                                     C1, C2, C3, &local_ssim, &local_l, &local_c, &local_s);
     }
     for (; i < n; i++) {
         ssim_accumulate_scalar_step(ref_mu[i], cmp_mu[i], ref_sigma_sqd[i], cmp_sigma_sqd[i],

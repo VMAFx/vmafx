@@ -233,3 +233,23 @@ vertical planes and bit-exact numerator/denominator checks. The 8-bit vertical
 vector extent is rounded down to 16 samples but loads/stores 32 at a time;
 production scratch padding owns those extra lanes, while scalar tails overwrite
 valid residual pixels. See [Research-2046](../../../../docs/research/2046-integer-vif-avx512-stage-lint.md).
+
+## Wide vector register pressure is a Windows correctness constraint (ADR-1254)
+
+A kernel here must not hold enough `__m512` / `__m256` values live to make the
+compiler spill one to the stack. gcc's MinGW target allocates 32/64-byte-aligned
+spill slots addressed off `%rsp`, but the MS x64 ABI guarantees only 16-byte
+alignment and its unwind contract prevents the frame realignment gcc performs on
+SysV — so a spilled `ymm` / `zmm` is a general-protection fault on most call
+paths, surfacing as an access violation on `0xFFFFFFFFFFFFFFFF`.
+
+Concretely: `ssim_accumulate_avx512` rebuilds its broadcast constants per block
+instead of hoisting them across the loop. Keep it that way; the same applies to
+any kernel that gains vector-valued loop invariants.
+
+Review cannot see this — it is a register-allocator decision, and CI's Windows
+runners have no AVX-512, so the test leg never executes these kernels.
+`scripts/ci/check-win64-stack-alignment.py` reads the emitted code on the
+`Windows MinGW64` lane instead. When it fires, reduce pressure in the named
+function rather than suppressing it. See
+[Research-2061](../../../../docs/research/2061-win64-cannot-realign-the-stack.md).

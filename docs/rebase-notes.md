@@ -50863,3 +50863,28 @@ Making `Solve` virtual is safe **because every call site constructs a concrete
 either way. If a future change ever calls `Solve` through a `Solver *`, that
 equivalence stops holding and the nu-SVC path would start running
 `Solver_NU::Solve` where it used to run the base version.
+
+## AVX-512 vector register pressure is load-bearing on Windows (2026-09-16)
+
+`ssim_accumulate_avx512` rebuilds its seven `__m512` / `__m512d` broadcast
+constants inside `ssim_accumulate_block_avx512` rather than hoisting them into
+the enclosing function and passing them down. That reads like a pessimisation
+and an upstream sync, a refactor, or a reviewer optimising for the obvious will
+be tempted to hoist them back out. **Do not.**
+
+Hoisting them puts the function over 32 live vector values, gcc spills five
+`zmm` registers, and on Windows that spill is a crash: the MS x64 unwind
+contract prevents the `and $-64, %rsp` realignment gcc uses on SysV, so it
+emits `vmovaps %zmm28,0x1a0(%rsp)` against a stack the ABI only guarantees to
+16 bytes. Three call sites in four take a general-protection fault, which
+Windows reports as an access violation on a read of `0xFFFFFFFFFFFFFFFF`.
+
+Neither the unit tests nor the ADR-1207 ISA-invariance gate will catch a
+regression here, because GitHub's Windows runners have no AVX-512 and never
+execute the path. `scripts/ci/check-win64-stack-alignment.py` on the
+`Windows MinGW64` lane is what catches it — it disassembles the built objects
+rather than running them. If that gate fires on a function you just touched,
+the fix is to cut vector register pressure, not to suppress the finding.
+
+See [ADR-1254](adr/1254-win64-cannot-realign-the-stack.md) and
+[Research-2061](research/2061-win64-cannot-realign-the-stack.md).

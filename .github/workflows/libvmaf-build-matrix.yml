@@ -801,6 +801,16 @@ jobs:
       - name: Build vmaf
         run: meson install -C core/build
 
+      # ADR-1254. The MS x64 ABI guarantees only 16-byte stack alignment and
+      # its unwind contract prevents the frame realignment gcc emits on SysV,
+      # but gcc's MinGW target still allocates 64-byte-aligned zmm spill slots
+      # addressed off %rsp — a #GP on most call paths, surfacing as an access
+      # violation on 0xFFFFFFFFFFFFFFFF. The test step below cannot catch it
+      # because the runner's CPU has no AVX-512, so the AVX-512 kernels never
+      # execute here. This reads the emitted code instead of running it.
+      - name: Check Win64 stack alignment
+        run: python3 scripts/ci/check-win64-stack-alignment.py core/build
+
       - name: Test vmaf
         # --print-errorlogs surfaces the failing test's stdout/stderr
         # inline in the CI log instead of only writing it to
