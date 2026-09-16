@@ -51,7 +51,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#define SI_EIGENVALUE_EPS (1e-6f)
+#define SI_EIGENVALUE_EPS SPEED_INTERNAL_EIGENVALUE_EPS
 #define SI_MAX(x, y) ((x) > (y) ? (x) : (y))
 #define SI_ALMOST_EQUAL(x, c) (fabs((x) - (c)) < 1.0e-3)
 

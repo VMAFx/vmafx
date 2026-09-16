@@ -97,7 +97,10 @@ static void launch_cov(sycl::queue &q, const float *plane, const float *means, f
     /* 625 work-groups of COV_WG threads, one per (x_index, y_index) pair. */
     const size_t total_wg = SP_ELEMENTS * SP_ELEMENTS;
     q.submit([&](sycl::handler &cgh) {
+        /* Two local arrays, not one: the accumulator is a compensated (hi, lo)
+         * float pair. See the note in the kernel. */
         sycl::local_accessor<float, 1> const s_partial(sycl::range<1>(COV_WG), cgh);
+        sycl::local_accessor<float, 1> const s_partial_lo(sycl::range<1>(COV_WG), cgh);
         cgh.parallel_for(sycl::nd_range<1>(total_wg * COV_WG, COV_WG), [=](sycl::nd_item<1> it) {
             const uint32_t x_index = (uint32_t)(it.get_group(0) / SP_ELEMENTS);
             const uint32_t y_index = (uint32_t)(it.get_group(0) % SP_ELEMENTS);
@@ -110,25 +113,82 @@ static void launch_cov(sycl::queue &q, const float *plane, const float *means, f
             const float mean_x = means[x_index];
             const float mean_y = means[y_index];
 
+            /* CPU-parity accumulation.
+             *
+             * `si_compute_covariance` in speed_internal.c promotes both pixels
+             * and both means to double, so every product is exact (a float
+             * product needs 48 bits, which double holds) and ~45,000 of them
+             * are summed with double rounding. `submatrix_w * submatrix_h` is
+             * nearly the whole plane, so plain fp32 accumulation drifted
+             * 1.37e-4 on the 576x324 fixture — past the places=4 parity
+             * tolerance the test asserts.
+             *
+             * This device has no fp64 (`aspect::fp64` is false on Arc A380, and
+             * a double kernel is rejected outright), so the sum is carried as a
+             * compensated (hi, lo) float pair instead: each product is split
+             * exactly with one FMA, and each addition is a two-sum whose
+             * rounding error is folded into `lo`. That removes both the
+             * per-term product rounding and the O(N * eps) summation drift
+             * using only fp32 arithmetic the device has. */
             const uint32_t total = submatrix_h * submatrix_w;
-            float local_sum = 0.0f;
+            float hi = 0.0f;
+            float lo = 0.0f;
             for (uint32_t p = tid; p < total; p += COV_WG) {
                 const uint32_t i = p / submatrix_w;
                 const uint32_t j = p % submatrix_w;
                 const float vx = plane[(xr + i) * stride_px + (xc + j)];
                 const float vy = plane[(yr + i) * stride_px + (yc + j)];
-                local_sum += (vx - mean_x) * (vy - mean_y);
+                const float dx = vx - mean_x;
+                const float dy = vy - mean_y;
+                /* two_product: dx * dy == prod + perr, exactly. */
+                const float prod = dx * dy;
+                const float perr = sycl::fma(dx, dy, -prod);
+                /* Add (prod, perr) into the (hi, lo) expansion and RENORMALISE.
+                 * Folding the errors into `lo` without renormalising lets `lo`
+                 * itself lose precision over the ~45,000 terms, which is what
+                 * left the stored covariance one ulp out. */
+                const float s1 = hi + prod;
+                const float b1 = s1 - hi;
+                const float e1 = (hi - (s1 - b1)) + (prod - b1);
+                const float t = lo + perr + e1;
+                const float s2 = s1 + t;
+                lo = t - (s2 - s1);
+                hi = s2;
             }
-            s_partial[tid] = local_sum;
+            {
+                const float t = hi + lo;
+                lo = lo - (t - hi);
+                hi = t;
+            }
+            s_partial[tid] = hi;
+            s_partial_lo[tid] = lo;
             it.barrier(sycl::access::fence_space::local_space);
 
             for (uint32_t s = COV_WG / 2u; s > 0u; s >>= 1u) {
-                if (tid < s)
-                    s_partial[tid] += s_partial[tid + s];
+                if (tid < s) {
+                    /* Combine two (hi, lo) expansions and RENORMALISE, the same
+                     * way the per-work-item loop does. Adding the `lo` halves
+                     * without folding the result back into `hi` loses the
+                     * compensation across the eight reduction levels. */
+                    const float a = s_partial[tid];
+                    const float al = s_partial_lo[tid];
+                    const float b = s_partial[tid + s];
+                    const float bl = s_partial_lo[tid + s];
+                    const float s1 = a + b;
+                    const float b1 = s1 - a;
+                    const float e1 = (a - (s1 - b1)) + (b - b1);
+                    const float t = al + bl + e1;
+                    const float s2 = s1 + t;
+                    s_partial[tid] = s2;
+                    s_partial_lo[tid] = t - (s2 - s1);
+                }
                 it.barrier(sycl::access::fence_space::local_space);
             }
-            if (tid == 0u)
-                cov_mat[x_index * SP_ELEMENTS + y_index] = s_partial[0] / (float)total;
+            if (tid == 0u) {
+                const float denom = (float)total;
+                cov_mat[x_index * SP_ELEMENTS + y_index] =
+                    s_partial[0] / denom + s_partial_lo[0] / denom;
+            }
         });
     });
 }
@@ -183,8 +243,13 @@ static void launch_solve(sycl::queue &q, const float *R, float *rhs, uint32_t nu
                     const float denom = R[(uint32_t)i * SP_ELEMENTS + (uint32_t)i];
                     for (uint32_t k = (uint32_t)(i + 1); k < SP_ELEMENTS; ++k)
                         val -= rhs[k * num_blocks + col] * R[(uint32_t)i * SP_ELEMENTS + k];
+                    /* Same epsilon as the CPU reference. The host-side pivot
+                     * check in run_channel() means this branch is unreachable
+                     * in practice, but it must not disagree with it: it used to
+                     * say 1e-8f, so a pivot between the two thresholds was
+                     * regular here and singular on the CPU. */
                     rhs[(uint32_t)i * num_blocks + col] =
-                        (sycl::fabs(denom) > 1e-8f) ? val / denom : 0.0f;
+                        (sycl::fabs(denom) > SPEED_INTERNAL_EIGENVALUE_EPS) ? val / denom : 0.0f;
                 }
                 /* Fence to ensure row-i result is visible before row i-1. */
                 sycl::group_barrier(it.get_group());
@@ -211,15 +276,22 @@ static void launch_score(sycl::queue &q, const float *ref_eigenvalues, const flo
             const uint32_t tile = (uint32_t)it.get_global_id(0);
             if (tile >= num_blocks)
                 return;
+            /* CPU parity on the ROUNDING, not just the value. The reference
+             * divides every term before summing —
+             * compute_pointwise_product_and_division() writes
+             * `(X[i][j] * Y[i][j]) / denominator` back per element and
+             * sum_columns() then adds them — so there are 25 divisions each
+             * rounded to float. Summing first and dividing once is the same
+             * number in exact arithmetic and a different one in fp32; on the
+             * parity test's XOR fixture the two disagreed by 1.45e-4, past the
+             * places=4 tolerance. denominator is B * B == SP_ELEMENTS. */
             float rv = 0.0f;
             float dv = 0.0f;
             for (uint32_t elem = 0; elem < SP_ELEMENTS; ++elem) {
                 const uint32_t idx = elem * num_blocks + tile;
-                rv += ref_sol[idx] * ref_indterm[idx];
-                dv += dis_sol[idx] * dis_indterm[idx];
+                rv += (ref_sol[idx] * ref_indterm[idx]) / (float)SP_ELEMENTS;
+                dv += (dis_sol[idx] * dis_indterm[idx]) / (float)SP_ELEMENTS;
             }
-            rv /= (float)SP_ELEMENTS;
-            dv /= (float)SP_ELEMENTS;
             ref_var[tile] = rv;
             dis_var[tile] = dv;
             float re = 0.0f;
@@ -414,6 +486,31 @@ static int run_channel(SpeedChromaSyclState *s, float *h_plane, float *h_indterm
         q.wait();
     } else {
         speed_internal_qr_factorize(s->h_cov_mat, sz, s->h_Q, s->h_R, s->h_qr_scratch);
+        /* CPU parity. `speed_internal_backward_substitution` returns -EINVAL if
+         * any R diagonal pivot is below SPEED_INTERNAL_EIGENVALUE_EPS, and
+         * est_params() folds that into `cannot_invert` — the SAME path a
+         * non-regular covariance takes. The device kernel has no way to report
+         * failure and used to zero just that row and carry on, with a threshold
+         * two orders looser (1e-8f), so a pivot between the two produced a
+         * solution the CPU never computes. The eigenvalue regularity check
+         * above does not cover it: those are eigenvalues of the covariance, not
+         * the diagonal of its QR R factor. `h_R` is already on the host here, so
+         * the check costs 25 comparisons. */
+        bool pivot_singular = false;
+        for (int i = 0; i < sz; i++) {
+            if (std::fabs(s->h_R[i * sz + i]) < SPEED_INTERNAL_EIGENVALUE_EPS) {
+                pivot_singular = true;
+                break;
+            }
+        }
+        if (pivot_singular) {
+            *singular_out = true;
+            vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                     "speed_chroma_sycl: R pivot below regularity epsilon, zeroing solution\n");
+            q.memset(d_sol, 0, indterm_bytes);
+            q.wait();
+            return 0;
+        }
         speed_internal_qt_multiply(s->h_Q, h_indterm, sz, nb, s->h_qt_scratch);
         /* H2D: R and Q^T×indterm. */
         q.memcpy(s->d_R, s->h_R, (size_t)sz * (size_t)sz * sizeof(float));

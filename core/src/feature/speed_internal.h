@@ -243,6 +243,12 @@ void speed_internal_qt_multiply(const float *Q, float *B, int size, int num_cols
  * @param num_cols Number of RHS columns.
  * @return 0 on success, -EINVAL if R diagonal has a near-zero entry.
  */
+/* Pivot / eigenvalue regularity epsilon, shared so the GPU twins cannot drift
+ * from the CPU reference's value. `speed_internal_backward_substitution` returns
+ * -EINVAL when an R diagonal pivot falls below this, and `est_params` folds that
+ * into the same `cannot_invert` path a non-regular covariance takes. */
+#define SPEED_INTERNAL_EIGENVALUE_EPS (1e-6f)
+
 int speed_internal_backward_substitution(const float *R, float *B, int size, int num_cols);
 
 /**

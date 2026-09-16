@@ -908,6 +908,18 @@ static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
             if (ret_m3 < 0)
                 ret = ret_m3;
         }
+    } else if (s->frame_index == 1) {
+        /* Single-frame run. collect() wrote motion2[0] = 0, but motion3[0] is
+         * back-filled only when a second frame arrives (the frame_index == 1
+         * branch there), so on a one-frame run it was never written at all. The
+         * model needs it, and libvmaf reports the gap as "problem generating
+         * pooled VMAF score" with no indication of which feature is missing.
+         *
+         * The CPU twin's flush emits both for every frame: with n == 1 its
+         * `i < min_idx` branch gives motion2 = 0 and motion3 = stamp_value,
+         * and stamp_value is 0 because `n > min_idx` is false. Match that. */
+        ret = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                      "VMAF_integer_feature_motion3_score", 0.0, 0);
     }
     return (ret < 0) ? ret : !ret; // 1 = done, negative = error
 }
