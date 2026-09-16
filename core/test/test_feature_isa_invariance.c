@@ -97,6 +97,12 @@ static const IsaCase CASES[] = {
 };
 #define NUM_CASES (sizeof(CASES) / sizeof(CASES[0]))
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 static int fill_pic(VmafPicture *pic, unsigned frame_idx, int distorted)
 {
     int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
@@ -136,12 +142,12 @@ static int fill_pic(VmafPicture *pic, unsigned frame_idx, int distorted)
 static int run_feature(const IsaCase *c, uint64_t cpumask, double *out_score)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .cpumask = cpumask};
-    VmafContext *vmaf = nullptr;
+    VmafContext *vmaf = NULL;
     int err = vmaf_init(&vmaf, cfg);
     if (err)
         return err;
 
-    err = vmaf_use_feature(vmaf, c->feature, nullptr);
+    err = vmaf_use_feature(vmaf, c->feature, NULL);
     if (err)
         goto out;
 
@@ -160,7 +166,7 @@ static int run_feature(const IsaCase *c, uint64_t cpumask, double *out_score)
         if (err)
             goto out;
     }
-    err = vmaf_read_pictures(vmaf, nullptr, nullptr, 0);
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     if (err)
         goto out;
 
@@ -233,15 +239,17 @@ static char *test_isa_invariance(void)
 
     if (unavailable == NUM_CASES) {
         (void)fprintf(stderr, "[skip: no feature in the table is available in this build] ");
-        return nullptr;
+        return NULL;
     }
 
     mu_assert("at least one feature scores differently with and without SIMD", failures == 0);
-    return nullptr;
+    return NULL;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_isa_invariance);
-    return nullptr;
+    return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
