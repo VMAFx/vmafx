@@ -81,7 +81,7 @@ jobs:
       - name: Install ONNX Runtime (CPU)
         if: steps.impact.outputs.go_checks == 'true'
         env:
-          ORT_VERSION: "1.29.0"
+          ORT_VERSION: "1.30.0"
         run: |
           set -euo pipefail
           ort_name="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
