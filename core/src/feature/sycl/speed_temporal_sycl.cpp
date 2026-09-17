@@ -275,6 +275,9 @@ struct SpeedTemporalSyclState {
     float *h_dis_ent;
     float *h_dis_var;
 
+    /* Singular covariance matrices are counted, not logged per solve. */
+    SpeedInternalSingularTally singular_tally;
+
     /* CPU-only scratch. */
     float *h_eigenvalues;
     float *h_eig_scratch;
@@ -403,10 +406,9 @@ static int run_channel_st(SpeedTemporalSyclState *s, float *h_plane, float *h_in
     speed_internal_compute_eigenvalues(s->h_cov_mat, s->h_eigenvalues, sz, s->h_eig_scratch);
     bool const regular = speed_internal_is_matrix_regular(s->h_eigenvalues, SP_ELEMENTS);
     *singular_out = !regular;
+    speed_internal_tally_solve(&s->singular_tally, !regular, "speed_temporal_sycl");
 
     if (!regular) {
-        vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                 "speed_temporal_sycl: covariance matrix singular, zeroing solution\n");
         /* Zero the DEVICE solution, not the host staging buffer. The score
          * kernel reads `d_sol`; `h_indterm` is re-downloaded from `d_indterm`
          * at the top of every pipeline run, so zeroing it changed nothing.
@@ -749,6 +751,7 @@ static int extract_temporal_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic
 static int close_temporal_sycl(VmafFeatureExtractor *fex)
 {
     SpeedTemporalSyclState *s = (SpeedTemporalSyclState *)fex->priv;
+    speed_internal_report_singular(&s->singular_tally, "speed_temporal_sycl");
     if (s->sycl_state)
         free_sycl_state_st(s);
     if (s->feature_name_dict)

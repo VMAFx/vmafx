@@ -27,6 +27,7 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "libvmaf/picture.h"
 
@@ -269,6 +270,42 @@ int speed_internal_backward_substitution(const float *R, float *B, int size, int
  * @return true if all eigenvalues > EIGENVALUE_EPS.
  */
 bool speed_internal_is_matrix_regular(const float *eigenvalues, size_t num_elements);
+
+/* ------------------------------------------------------------------ */
+/* Singular-covariance notice, rate-limited                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Per-extractor tally of singular covariance matrices.
+ *
+ * A singular covariance matrix is an ordinary outcome, not a failure: flat or
+ * linearly-graded chroma has no rank-25 covariance, so every solve on such a
+ * frame is singular, and every backend zeroes the solution and carries on.
+ * Emitted per solve, the notice arrives four times a frame per channel and
+ * buries every other line of a long run. Counting the solves and saying so
+ * once keeps the signal without the flood.
+ */
+typedef struct {
+    uint64_t singular; /**< solves whose covariance matrix was singular */
+    uint64_t solves;   /**< solves attempted */
+} SpeedInternalSingularTally;
+
+/**
+ * Record one solve, and log the first singular one.
+ *
+ * @param tally     Caller-owned counter, zero-initialised with the state.
+ * @param singular  Whether this solve's covariance matrix was singular.
+ * @param who       Name used in the message, e.g. "speed_chroma_cuda".
+ */
+void speed_internal_tally_solve(SpeedInternalSingularTally *tally, bool singular, const char *who);
+
+/**
+ * Report the tally once, at close. No-op when nothing was singular.
+ *
+ * @param tally  The counter `speed_internal_tally_solve` has been feeding.
+ * @param who    Name used in the message.
+ */
+void speed_internal_report_singular(const SpeedInternalSingularTally *tally, const char *who);
 
 #ifdef __cplusplus
 } /* extern "C" */

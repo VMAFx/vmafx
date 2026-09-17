@@ -313,6 +313,9 @@ struct SpeedChromaSyclState {
     float *h_dis_ent;
     float *h_dis_var;
 
+    /* Singular covariance matrices are counted, not logged per solve. */
+    SpeedInternalSingularTally singular_tally;
+
     /* CPU-only scratch buffers. */
     float *h_plane_ref;
     float *h_plane_dis;
@@ -460,9 +463,8 @@ static int run_channel(SpeedChromaSyclState *s, float *h_plane, float *h_indterm
      * the solution and reports it separately so the caller can impute. The
      * return value stays reserved for hard failures. See ADR-1202. */
     *singular_out = !regular;
+    speed_internal_tally_solve(&s->singular_tally, !regular, "speed_chroma_sycl");
     if (!regular) {
-        vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                 "speed_chroma_sycl: covariance matrix singular, zeroing solution\n");
         /* Zero the DEVICE solution, not the host staging buffer. The score
          * kernel reads `d_sol`; `h_indterm` is re-downloaded from `d_indterm`
          * at the top of every pipeline run, so zeroing it changed nothing.
@@ -891,6 +893,7 @@ static int extract_chroma_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 static int close_chroma_sycl(VmafFeatureExtractor *fex)
 {
     SpeedChromaSyclState *s = (SpeedChromaSyclState *)fex->priv;
+    speed_internal_report_singular(&s->singular_tally, "speed_chroma_sycl");
     if (s->sycl_state)
         free_sycl_state(s);
     if (s->feature_name_dict)

@@ -195,6 +195,34 @@ specific backend for a cross-backend parity check, use the fork's `--backend`
 selector. See [backends/cuda/overview](../backends/cuda/overview.md) and
 [backends/sycl/overview](../backends/sycl/overview.md).
 
+## "Covariance matrix singular" in the log
+
+On content whose chroma is flat or a smooth gradient — a desaturated scene, a
+solid background, animation with large constant areas — the 25x25 covariance
+matrix SpEED solves per frame has no rank-25 estimate, and the run prints:
+
+```text
+libvmaf WARNING speed_chroma_cuda: covariance matrix singular, zeroing solution
+  — further occurrences are counted and reported once at close
+libvmaf WARNING speed_chroma_cuda: covariance matrix was singular on 192 of 192 solves
+```
+
+**This is not an error and not a backend defect.** Every implementation, CPU and
+GPU alike, handles it the same way: the solution is zeroed for that solve and
+scoring continues. Where exactly one of the two chroma channels is singular, the
+`uv` score is imputed from the other channel, matching the CPU reference.
+
+What the two lines tell you is how much of the run was affected. `192 of 192`
+means every solve was singular, so the SpEED chroma scores for that clip carry
+no information and should not be read as quality differences; a small count on a
+long run is ordinary and can be ignored. The notice is emitted once when it
+first happens and once at close, rather than once per solve — a per-solve notice
+is four lines a frame per channel and buries the rest of the output.
+
+If you need the scores on such content, there is nothing to configure: the
+covariance is singular because the content has no chroma detail at the
+5x5 block scale SpEED works on, not because of a setting.
+
 ## Python compat wrappers
 
 The compat Python harness (`compat/python-vmaf/`) ships Python wrappers for
