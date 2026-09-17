@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Apple VideoToolbox HEVC codec adapter.
 
 FFmpeg encoder name: ``hevc_videotoolbox``. Hardware-accelerated HEVC

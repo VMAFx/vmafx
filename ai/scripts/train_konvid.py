@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Drive C2 + C3 training on KoNViD-1k frames extracted by
 ``ai/scripts/extract_konvid_frames.py``.
 

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # scripts/ci/validate-pr-body.sh — local PR-body deliverables validator.
 #
 # Closes the loop where the strict deliverables-checklist parser at

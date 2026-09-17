@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Generate a tiny placeholder ONNX for the DISTS-SQ extractor.
 
 Produces a smoke-only ONNX that exercises the DISTS-SQ C extractor load /

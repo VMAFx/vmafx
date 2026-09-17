@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Coverage push round 2 — bisect, ladder, recommend, cache, hdr.
 
 Targets the uncovered lines identified after round 1:

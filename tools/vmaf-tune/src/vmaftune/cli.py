@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """argparse entry-point for ``vmaf-tune``.
 
 Phase A exposes one subcommand: ``corpus``. It expands a (preset, crf)

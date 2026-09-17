@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Phase A real-corpus runner — hardware encoder x CUDA-VMAF pipeline.
 
 Encodes a raw YUV with NVENC / QSV / VAAPI at a CRF/CQ grid, decodes back

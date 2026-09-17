@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Alpine 3.20+. Alpine uses musl libc; CUDA and oneAPI do NOT officially
 # support musl — GPU backends are effectively unavailable on Alpine.
 # Included for minimal CPU-only container images.

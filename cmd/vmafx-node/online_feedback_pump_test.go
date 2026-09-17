@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 // Copyright 2026 Lusoris
 //
 // cmd/vmafx-node/online_feedback_pump_test.go — table-driven tests that

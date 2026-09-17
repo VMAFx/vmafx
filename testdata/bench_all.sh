@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # shellcheck disable=SC1091  # setvars.sh is Intel-provided, not part of the repo
 #
 # Per-backend bench across the three canonical fixture sizes

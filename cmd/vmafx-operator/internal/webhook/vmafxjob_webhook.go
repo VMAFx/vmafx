@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 // Copyright 2026 Lusoris
 //
 // cmd/vmafx-operator/internal/webhook/vmafxjob_webhook.go — VmafxJob admission webhook.

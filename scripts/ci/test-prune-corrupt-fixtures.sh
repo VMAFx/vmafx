@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # scripts/ci/test-prune-corrupt-fixtures.sh — fixtures for prune-corrupt-fixtures.sh.
 #
 # The pruner deletes files, so its false-positive rate is the thing that

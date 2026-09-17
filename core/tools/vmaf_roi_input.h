@@ -1,5 +1,5 @@
 /* Copyright 2026 Lusoris
- * SPDX-License-Identifier: BSD-2-Clause-Patent
+ * SPDX-License-Identifier: EUPL-1.2
  * Private vmaf-roi input and placeholder helpers, shared with boundary tests.
  * Header-only like vmaf_roi_core.h; no libvmaf API or duplicate CLI is exposed.
  */

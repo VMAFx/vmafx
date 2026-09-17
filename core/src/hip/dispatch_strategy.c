@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Dispatch support table for the HIP backend (ADR-0212 / T7-10).
  *  Mirrors CUDA / Metal dispatch predicates: callers query whether a

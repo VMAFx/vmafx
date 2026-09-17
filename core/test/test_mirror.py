@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 def old_mirror(idx, sup):
     v = abs(idx)
     return v if v < sup else sup - (v - sup + 1)

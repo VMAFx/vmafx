@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Real-corpus LOSO trainer for the per-codec predictor models (Phase 2).
 
 Companion to PR #450 (predictor training pipeline + 14 stub ONNX models —

@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Branch-coverage top-up for ``vmaf_train.validate_norm``.
 
 The existing ``test_validate_norm.py`` covers the matched-distribution +

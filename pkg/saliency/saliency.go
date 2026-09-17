@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 
 // Package saliency is the Go port of tools/vmaf-tune/src/vmaftune/
 // saliency.py — saliency-aware ROI encoding (ADR-0287 / ADR-0293, companion

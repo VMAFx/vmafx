@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Fork-added coverage: the GPU integer-ADM twins honour the default model's
 ADM option dict and emit the *same feature-name key* as the CPU twin.
 

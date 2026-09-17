@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # DNN runtime — ONNX Runtime wrapper for tiny-model inference.
 #
 # `enable_dnn` is a `feature` option (auto / enabled / disabled).

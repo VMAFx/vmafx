@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Smoke tests for ``run_plan_per_shot`` and ``run_plan_saliency`` (ADR-0468).
 
 No real FFmpeg, ``vmaf``, or ``vmaf-perShot`` binary is required — all

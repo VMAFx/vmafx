@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """ProRes VideoToolbox codec adapter smoke tests.
 
 Mirrors ``test_codec_adapter_videotoolbox.py``: mocks ``subprocess.run``

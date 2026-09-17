@@ -1,4 +1,7 @@
 #!/bin/sh -x
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Regression: `vmaf --threads N` on a GPU backend must succeed AND agree with
 # the serial run.
 #

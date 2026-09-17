@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Regression test for T-UPSTREAM-1109 (Netflix/vmaf#1109) — the
  *  `psnr_max` ceiling used to serve two incompatible roles at once:

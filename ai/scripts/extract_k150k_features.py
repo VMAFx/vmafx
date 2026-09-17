@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Extract FULL_FEATURES (Research-0026) from KoNViD-150k-A using FR-from-NR adapter.
 
 KoNViD-150k-A (K150K-A) is a no-reference corpus: each clip carries a human MOS

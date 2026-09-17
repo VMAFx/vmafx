@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2016-2026 Netflix, Inc.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  float_motion feature extractor on the Metal backend (T8-1h / ADR-0421).
  *  Dispatches `float_motion_kernel_{8,16}bpc` from float_motion.metal.

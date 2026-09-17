@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for the ``--bvi-dir`` input mode of ``bvi_dvc_to_full_features.py``.
 
 ADR-0524.  These tests cover the two new helpers without invoking the real

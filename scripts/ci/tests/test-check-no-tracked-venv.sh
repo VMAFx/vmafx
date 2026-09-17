@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Tests for scripts/ci/check-no-tracked-venv.sh: a throwaway repo with tracked
 # paths; the gate must flag real virtualenv paths and pass look-alike names.
 set -euo pipefail

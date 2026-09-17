@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Smoke-test that packaged prompt templates are discoverable and template-
 substitutable. Does NOT exercise Ollama."""
 

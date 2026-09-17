@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # scripts/ci/ffmpeg-patches-surface-check.sh — local + CI gate for
 # CLAUDE.md §12 r14 (ADR-0186 + ADR-0356): every PR that changes a
 # libvmaf public-surface symbol consumed by ffmpeg-patches/*.patch

@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Internal bridge between libvmaf.c (HAVE_METAL block) and the
  *  Objective-C++ IOSurface import TU (picture_import.mm). The C-API

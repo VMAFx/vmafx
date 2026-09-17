@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Train ``saliency_student_v2`` from scratch on DUTS-TR.
 
 This is a fork of ``train_saliency_student.py`` (v1) with **one**

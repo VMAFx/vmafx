@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 //
 // cmd/vmafx-tune/cmd/auto_test.go — in-package tests for the "auto"
 // subcommand wired in as part of the Stage-2 Python-to-Go port.

@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Smoke test for ``ai/scripts/qat_train.py --smoke`` and the
 ``ai.train.qat.run_qat`` Python API.
 

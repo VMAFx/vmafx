@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 //
 // pkg/libvmaf/dnn.go — cgo binding for libvmaf's standalone ONNX
 // Runtime session API (core/include/libvmaf/dnn.h).

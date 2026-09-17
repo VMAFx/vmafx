@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Build a bounded, fail-closed CI plan from the exact Git revisions of an event.
 
 The plan decides which *surfaces* a change touches so that every required

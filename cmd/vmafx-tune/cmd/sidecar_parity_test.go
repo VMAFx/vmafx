@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 //
 // cmd/vmafx-tune/cmd/sidecar_parity_test.go — replays the operator sequence
 // recorded from the Python `vmaf-tune sidecar` CLI (testdata/sidecar/regen.sh)

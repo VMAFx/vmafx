@@ -1,6 +1,8 @@
 /**
+ *  Copyright 2016-2026 Netflix, Inc.
+ *  Copyright (c) 2019 Joshua Holmer
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent AND MIT
  *
  *  HIP host glue for the ciede2000 feature extractor — third
  *  kernel-template consumer (T7-10b follow-up / ADR-0259).

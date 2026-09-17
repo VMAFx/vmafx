@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for VIF injection and canonical-6 parsing under default model.
 
 When scoring with a model lacking VIF (such as the default vmaf_v1.0.16_3d0h

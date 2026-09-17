@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Internal helpers exposed for unit testing only. Production callers
  *  must use ort_backend.h. Helpers declared here have zero ORT-API

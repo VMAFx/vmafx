@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """ffmpeg-decoded frame batches for NR / learned-filter training (C2, C3)."""
 
 from __future__ import annotations

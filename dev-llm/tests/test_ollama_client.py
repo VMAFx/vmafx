@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """OllamaClient tests — no network. We monkey-patch urlopen."""
 
 from __future__ import annotations

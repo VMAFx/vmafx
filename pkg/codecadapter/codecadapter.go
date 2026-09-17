@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 
 // Package codecadapter is the Go port of tools/vmaf-tune/src/vmaftune/
 // codec_adapters/ (ADR-0237 Phase A, ADR-0294 dispatcher, ADR-0326 HP-1).

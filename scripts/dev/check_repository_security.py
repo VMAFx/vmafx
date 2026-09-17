@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Read public GitHub metadata and fail on repository security policy drift."""
 
 from __future__ import annotations

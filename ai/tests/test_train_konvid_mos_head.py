@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Phase 3 of ADR-0325 — synthetic-corpus smoke + gate tests for the MOS head.
 
 The trainer in :mod:`ai.scripts.train_konvid_mos_head` produces a

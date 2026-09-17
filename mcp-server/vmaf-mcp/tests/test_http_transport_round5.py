@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Round-5 coverage uplift for vmaf_mcp.http_transport (ADR-0701, ADR-0967).
 
 Closes the residual 19 pp gap after rounds 1-4 for http_transport.py.

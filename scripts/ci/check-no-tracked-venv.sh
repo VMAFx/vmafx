@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Refuse to let a virtualenv — directory OR symlink — into the tree.
 #
 # `.gitignore`'s `.venv*/` matches only directories. #1231 committed a symlink

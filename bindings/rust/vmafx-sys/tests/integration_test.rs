@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause
+// SPDX-License-Identifier: EUPL-1.2
 //
 // integration_test.rs — scores the Netflix golden YUV pair through vmafx-sys
 // and asserts the mean VMAF equals 76.669 (places=3).

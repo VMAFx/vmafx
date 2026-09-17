@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  C++23 implementation of the once-snapshotted GPU dispatch env helper.
  *  See gpu_dispatch_env.h for the public contract and ADR-0488 for rationale.

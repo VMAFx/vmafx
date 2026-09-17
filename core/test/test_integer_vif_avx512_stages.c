@@ -1,6 +1,6 @@
 /*
  * Copyright 2026 Lusoris
- * SPDX-License-Identifier: BSD-2-Clause-Patent
+ * SPDX-License-Identifier: EUPL-1.2
  *
  * Research-2046: compare the configured integer AVX512 statistic with the
  * independent scalar implementation, including its final vertical planes.

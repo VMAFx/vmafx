@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """x264 / x265 FFmpeg pass-1 stats-file parser.
 
 Captures encoder-internal per-frame signal that x264 already emits during

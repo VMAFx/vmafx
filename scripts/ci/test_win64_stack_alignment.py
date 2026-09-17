@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Tests for ``check-win64-stack-alignment.py`` (ADR-1254).
 
 The fixtures are real disassembly, trimmed: the ``BROKEN`` sample is the

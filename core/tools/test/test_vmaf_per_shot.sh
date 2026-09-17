@@ -1,4 +1,7 @@
 #!/bin/sh
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Smoke test for the vmaf-perShot per-shot CRF predictor sidecar
 # (T6-3b / ADR-0222). Invoked from `meson test`; the binary lives
 # under <build>/tools/vmaf-perShot.

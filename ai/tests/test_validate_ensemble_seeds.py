@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Tests for ``ai/scripts/validate_ensemble_seeds.py`` (ADR-0309).
 
 Synthesises ``loso_seed{N}.json`` fixtures matching the schema emitted

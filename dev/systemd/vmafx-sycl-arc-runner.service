@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 # Copyright 2026 Lusoris
 #
 # dev/systemd/vmafx-sycl-arc-runner.service — systemd --user service for the

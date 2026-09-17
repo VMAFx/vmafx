@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Find non-constant initialisers inside `static` aggregates in C sources.
 
 In C, a `static const double x = 1.0;` declares a *const-qualified object*,

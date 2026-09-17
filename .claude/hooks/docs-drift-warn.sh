@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # PostToolUse hook (matcher: Edit|Write): warn when an edit touches a
 # user-discoverable surface (per CLAUDE.md §12 rule 10 / ADR-0100) but
 # no matching `docs/<topic>/` file has been touched in this session.

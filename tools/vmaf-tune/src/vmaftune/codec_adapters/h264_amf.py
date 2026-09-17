@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """AMD AMF H.264 codec adapter (``h264_amf``).
 
 Hardware-accelerated H.264 encoding through AMD's Advanced Media

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # scaffold.sh — create a new SIMD path for an existing feature extractor.
 # Usage: bash .claude/skills/add-simd-path/scaffold.sh <isa> <feature>
 #   <isa>     one of: avx2, avx512, avx10, neon, sve, rvv

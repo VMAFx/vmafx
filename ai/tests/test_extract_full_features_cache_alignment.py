@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """R3-8 regression: stale / feature-set-mismatched per-clip caches must not
 silently misalign feature columns in extract_full_features.
 

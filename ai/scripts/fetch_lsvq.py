@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Fetch the LSVQ (Large Scale Video Quality) dataset for NR training.
 
 Downloads LSVQ clips and MOS labels, validates checksums, and writes

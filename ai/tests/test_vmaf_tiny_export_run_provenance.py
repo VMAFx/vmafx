@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Run-provenance sidecar tests for vmaf_tiny v2/v3/v4 exporters."""
 
 from __future__ import annotations

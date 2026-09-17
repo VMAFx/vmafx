@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # T7-13(b) — icpx-aware clang-tidy wrapper.
 #
 # Stock LLVM clang-tidy does not pick up Intel oneAPI's SYCL include path

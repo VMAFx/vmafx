@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Unit tests for ADR-0620 — scaffold-audit P0 silent-correctness fixes.
 
 Three bugs covered:
@@ -20,7 +23,7 @@ from vmaf.tools.exceptions import (
 )
 
 __copyright__ = "Copyright 2026 Lusoris"
-__license__ = "BSD+Patent"
+__license__ = "EUPL-1.2"
 
 
 # ---------------------------------------------------------------------------

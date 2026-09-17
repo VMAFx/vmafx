@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Saliency-aware ROI tuning — Bucket #2 of the PR #354 audit.
 
 Wires the fork's `saliency_student_v1` ONNX model

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Generate a tiny placeholder ONNX for the MobileSal saliency extractor.
 
 This script produces a smoke-only 3-channel-input → 1-channel-output ONNX

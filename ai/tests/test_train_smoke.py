@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Smoke test for ``ai/train/train.py --epochs 0``.
 
 Runs the training entry point as a subprocess against the mock corpus

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # scripts/ci/deliverables-check.sh — local + CI gate for ADR-0108
 # six-deliverable checklist + ticked-file-references coherence.
 #

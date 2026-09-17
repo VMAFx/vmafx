@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Pins the ``conftest.requires_pytorch_lightning`` guard contract.
 
 The guard exists to convert a ``RuntimeError: operator torchvision::nms

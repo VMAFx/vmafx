@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Minimal Ollama HTTP client using stdlib urllib (no third-party HTTP dep)."""
 
 from __future__ import annotations

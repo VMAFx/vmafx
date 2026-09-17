@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Shared helpers for Intel QSV codec adapters.
 
 The three QSV encoders (`h264_qsv`, `hevc_qsv`, `av1_qsv`) share the

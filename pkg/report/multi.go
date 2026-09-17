@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 
 // This file extends package report with the multi-file rendering surface
 // introduced in Stage 4 (ADR-0770).

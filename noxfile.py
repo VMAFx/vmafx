@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Unified developer entry point for Python test orchestration.
 
 This file lets a developer run any package's pytest suite via a single

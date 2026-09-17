@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # scripts/ci/state-md-touch-check.sh — local + CI gate for ADR-0165
 # bug-status-hygiene rule (CLAUDE.md §12 rule 13).
 #

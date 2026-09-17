@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Build + init smoke test for the Metal backend runtime (T8-1b /
  *  ADR-0420). Replaces the T8-1 scaffold-only test (which pinned

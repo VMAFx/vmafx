@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 # Copyright 2026 Lusoris
 """Tests for ``ai/scripts/batch_materialize_second_opinion_features.py``."""
 

@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # DNN unit tests.
 #
 # These exercise the internal helpers in libvmaf/src/dnn/ directly (tensor I/O,

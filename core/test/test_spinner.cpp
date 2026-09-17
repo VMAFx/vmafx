@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Netflix/vmaf#743 regression test — the CLI progress spinner must not emit
  *  UTF-8 braille (or a bare CSI erase-to-EOL) to a console that cannot render

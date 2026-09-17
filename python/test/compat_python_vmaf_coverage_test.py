@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Clear
+# SPDX-License-Identifier: EUPL-1.2
 #
 # Focused unit tests lifting coverage on fork-touched and previously-untested
 # pure-Python modules under compat/python-vmaf/. Targets the easy wins where
@@ -44,7 +44,7 @@ from vmaf.tools.typing_utils import RdPoint
 from vmaf.tools.writer import YuvWriter
 
 __copyright__ = "Copyright 2026 Lusoris"
-__license__ = "BSD-3-Clause-Clear"
+__license__ = "EUPL-1.2"
 
 
 class TypingUtilsTest(unittest.TestCase):

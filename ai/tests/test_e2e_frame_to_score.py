@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """End-to-end: YUV → libvmaf features → ONNX FR model → score.
 
 Stitches the pieces that normally live in different phases of the

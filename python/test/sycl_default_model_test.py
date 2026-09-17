@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Regression test for default model under SYCL backend.
 
 Asserts that running vmaf with the default model under `--backend sycl`

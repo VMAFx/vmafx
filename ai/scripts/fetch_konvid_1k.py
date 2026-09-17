@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Download KoNViD-1k UGC video dataset for tiny-AI training (T6-1 / C2 / C3).
 
 The repository deliberately does not redistribute the dataset (license +

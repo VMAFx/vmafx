@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Wall-clock perf regression gate over the ADR-0752 multi-resolution baseline.
 
 Reads the committed baseline at testdata/perf_multi_resolution.json and a fresh

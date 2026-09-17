@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 //
 // cmd/vmafx-tune/cmd/unit_internal_fixtures_test.go — fixture builders for
 // unit_internal_test.go. Kept in a separate file so the production-code

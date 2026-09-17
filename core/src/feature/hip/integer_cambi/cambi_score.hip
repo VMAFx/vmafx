@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2016-2026 Netflix, Inc.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  HIP compute kernels for the CAMBI banding-detection feature extractor.
  *  Direct port of `libvmaf/src/feature/cuda/integer_cambi/cambi_score.cu`

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """LOSO eval harness for vmaf_tiny_v4 (mlp_large) on the Netflix parquet.
 
 Mirrors the methodology used to validate v2 (PLCC 0.9978 ± 0.0021) and

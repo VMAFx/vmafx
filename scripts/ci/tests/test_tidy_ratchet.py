@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for scripts/ci/tidy-ratchet.py (ADR-1142)."""
 
 from __future__ import annotations

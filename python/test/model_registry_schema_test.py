@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Tests for ``model/tiny/registry.json`` and its JSON Schema (T6-9 / ADR-0209).
 
 Validates two invariants:

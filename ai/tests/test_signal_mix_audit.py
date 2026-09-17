@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Tests for the signal-mix audit CLI.
 
 The audit is intentionally table-only: synthetic JSONL fixtures are enough to

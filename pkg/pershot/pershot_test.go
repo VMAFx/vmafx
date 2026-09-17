@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-2-Clause-Patent
+// SPDX-License-Identifier: EUPL-1.2
 //
 // Table-driven tests for the per-shot tuner's pure logic: shot-range
 // validation, the uniform-window splitter, the detector output parsers, the

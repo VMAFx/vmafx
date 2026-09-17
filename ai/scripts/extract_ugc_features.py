@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Extract FULL_FEATURES (+ teacher VMAF) over a UGC manifest.
 
 For each (orig, dis) pair in the YouTube UGC vp9 manifest written by

@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Positive, negative and boundary controls for the working-directory GC."""
 
 from __future__ import annotations

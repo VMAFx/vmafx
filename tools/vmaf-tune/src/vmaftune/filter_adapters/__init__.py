@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Pre-encode filter adapter registry (control-plane workstream D1).
 
 Sibling family to :mod:`vmaftune.codec_adapters`. A *filter adapter*

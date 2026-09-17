@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Codec-id vocabulary + one-hot encoding for the codec-aware FR regressor.
 
 Distortion signatures from x264 (block edges), x265 (CTU-boundary blur),

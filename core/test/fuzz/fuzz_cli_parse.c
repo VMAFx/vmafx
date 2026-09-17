@@ -1,7 +1,7 @@
 /*
  * Copyright 2026 Lusoris
  *
- * SPDX-License-Identifier: BSD-3-Clause
+ * SPDX-License-Identifier: EUPL-1.2
  *
  * libFuzzer harness for the `vmaf` CLI argument parser
  * (libvmaf/tools/cli_parse.c) — exercised through the public

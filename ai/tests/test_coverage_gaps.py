@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Coverage gap-fill tests for ai/src modules.
 
 Exercises error paths and branches missed by the primary test suite:

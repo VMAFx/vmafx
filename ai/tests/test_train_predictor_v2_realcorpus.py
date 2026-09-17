@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Tests for the predictor v2 real-corpus LOSO trainer + ADR-0303 gate.
 
 Pins three load-bearing properties:

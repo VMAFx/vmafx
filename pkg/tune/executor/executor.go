@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 
 // Package executor is the Go port of vmaftune.executor.run_plan — Phase F
 // execute mode (ADR-0454).

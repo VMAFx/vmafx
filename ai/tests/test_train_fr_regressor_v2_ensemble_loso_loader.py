@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for ``_load_corpus`` in the ensemble LOSO trainer (ADR-0319).
 
 Covers the canonical-6 schema validation, codec one-hot lookup against

@@ -1,6 +1,5 @@
 // Copyright 2026 Lusoris. All rights reserved.
-// Use of this source code is governed by the BSD-3-Clause-Plus-Patent
-// license that can be found in the LICENSE file.
+// SPDX-License-Identifier: EUPL-1.2
 //
 // impl_eval_native_test.go — end-to-end coverage for the native
 // eval_model_on_split / compare_models path that replaced the python3

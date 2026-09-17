@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Hardware-device discovery helpers for vmaf-tune.
 
 The helpers stay small and filesystem-driven so unit tests can inject a

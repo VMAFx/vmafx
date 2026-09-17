@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 #
 # Smoke tests for tools/ensemble-training-kit/_platform_detect.sh.
 # Exercises detect_platform / detect_default_encoders against mocked

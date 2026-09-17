@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """KoNViD-1k → VMAF-pair acquisition pipeline.
 
 Takes the raw KoNViD-1k .mp4 sources (acquired via

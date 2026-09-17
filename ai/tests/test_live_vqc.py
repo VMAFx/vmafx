@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for :mod:`ai.scripts.live_vqc_to_corpus_jsonl` (ADR-0370).
 
 These tests exercise the LIVE-VQC adapter's pure-Python contract

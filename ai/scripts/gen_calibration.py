@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Generate a PTQ calibration dataset from clip paths and frame counts.
 
 Takes a set of clip paths and (optionally) a frame-count specification,

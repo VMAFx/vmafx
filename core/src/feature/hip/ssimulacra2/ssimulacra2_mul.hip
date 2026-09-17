@@ -1,6 +1,7 @@
 /**
+ *  Copyright (c) the JPEG XL Project Authors.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause
  *
  *  HIP kernel for the ssimulacra2 elementwise plane multiply.
  *  Direct port of the CUDA twin at

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Validate the exported ``vmaf_tiny_v2.onnx`` against ground truth.
 
 Loads the exported ONNX, runs inference on a slice of the Netflix

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Train ``fr_regressor_v3`` — codec-aware FR regressor on ENCODER_VOCAB v3 (16-slot).
 
 Closes the v3 retrain deferral documented in

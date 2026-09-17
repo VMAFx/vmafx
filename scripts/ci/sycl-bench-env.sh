@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # T7-13(a) — emit oneAPI environment variables for a chosen install version.
 #
 # Background: the local 2025.0.4 install at /opt/intel/oneapi/ ships device

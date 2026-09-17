@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Encoder runtime-token parsing for ``vmaf-tune compare``.
 
 Codec adapters describe the FFmpeg argv shape (``libsvtav1`` uses

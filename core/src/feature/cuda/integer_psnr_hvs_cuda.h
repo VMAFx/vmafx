@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2001-2012 Xiph.Org and contributors.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-2-Clause
  *
  *  CUDA host glue for the psnr_hvs feature extractor
  *  (T7-23 / batch 2 part 3b). See ADR-0188 / ADR-0191 for the

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # check-state-md-rows.sh — docs/state.md row hygiene (ADR-0165).
 #
 # Every bug id may appear as a table row exactly once. Two ways this breaks:

@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Coverage push round 3 — targeted tests for remaining uncovered branches.
 
 Modules targeted (by coverage gap as of master 2026-06-13):

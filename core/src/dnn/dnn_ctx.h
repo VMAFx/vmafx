@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Internal bridge between the public `dnn.h` surface (dnn_api.c) and the
  *  VmafContext-owning translation unit (libvmaf.c). Keeps VmafContext opaque

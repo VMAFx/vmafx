@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Research-0027 Phase-3 — LOSO MLP arch sweep on Top-K subsets.
 
 Reads the full-feature parquet produced by

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Compute DWT subband dimensions and ADM borders for 576x324 at each scale,
 to verify SYCL vs CPU iteration domain."""
 import math

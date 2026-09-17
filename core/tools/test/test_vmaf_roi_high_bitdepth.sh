@@ -1,4 +1,7 @@
 #!/bin/sh
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Smoke test for vmaf-roi high-bit-depth YUV frame seeking / luma load.
 set -eu
 

@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 //
 // Parquet-reader tests. The committed fixture has no "key" column, so
 // the split-filtering path is exercised here against parquet files

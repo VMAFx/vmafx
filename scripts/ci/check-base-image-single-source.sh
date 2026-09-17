@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Enforce that every container base image is defined in exactly one place.
 #
 # The authoritative definition is build-config.env at the repo root. Dockerfiles

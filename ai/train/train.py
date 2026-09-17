@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Training entry point for tiny-AI on the Netflix corpus.
 
 Lightning-driven; minimal — the heavy lifting (data, eval) lives in the

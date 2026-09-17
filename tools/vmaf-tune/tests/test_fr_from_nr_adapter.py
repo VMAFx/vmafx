@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Smoke tests for the FR-from-NR adapter (ADR-0346).
 
 All ffprobe / ffmpeg / vmaf invocations are mocked via the

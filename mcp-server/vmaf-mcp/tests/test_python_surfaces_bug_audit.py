@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Regression tests for the 2026-05-31 Python-surfaces bug-audit bundle.
 
 Covers six defects in ``mcp-server/vmaf-mcp/src/vmaf_mcp/server.py``:

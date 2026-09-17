@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """PyTorch :class:`Dataset` adapter over the Netflix corpus loader.
 
 Each sample is one *frame* — feature vector :math:`x \\in \\mathbb{R}^{6}`

@@ -207,7 +207,7 @@ jobs:
             echo "u2netp_mirror: verbatim .pth staged"
           fi
           if [ -f model/u2netp_mirror.onnx ] || [ -f model/u2netp_mirror.pth ]; then
-            cp LICENSES/Apache-2.0-u2netp.txt artifacts/
+            cp LICENSES/LicenseRef-Apache-2.0-u2netp.txt artifacts/
             echo "u2netp_mirror: license text staged"
           else
             echo "u2netp_mirror: binary not present, skipping (scaffold-only state per ADR-0325)"

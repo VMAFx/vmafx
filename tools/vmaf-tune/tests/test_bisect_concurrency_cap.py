@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Tests for ADR-0577: decode concurrency cap + aggressive workdir cleanup.
 
 Three test classes mirror the structure of ``test_workdir_enospc.py``:

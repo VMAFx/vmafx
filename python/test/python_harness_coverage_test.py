@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Clear
+# SPDX-License-Identifier: EUPL-1.2
 #
 # Round-2 coverage uplift on pure-Python utility surfaces under
 # compat/python-vmaf/. PR #412 (test/compat-python-vmaf-coverage) covered
@@ -105,7 +105,7 @@ from vmaf.tools.testutils import (
 )
 
 __copyright__ = "Copyright 2026 Lusoris"
-__license__ = "BSD-3-Clause-Clear"
+__license__ = "EUPL-1.2"
 
 
 class TopLevelInitTest(unittest.TestCase):

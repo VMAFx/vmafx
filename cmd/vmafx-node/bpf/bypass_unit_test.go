@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 
 // bypass_unit_test.go — unit tests for Loader lifecycle methods and the
 // bpf2go-stub Close helpers.

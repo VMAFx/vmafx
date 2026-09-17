@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """ADR-0331: corpus schema v3 (canonical-6 per-feature aggregates).
 
 Round-trips a freshly-emitted v3 row through ``write_jsonl`` +

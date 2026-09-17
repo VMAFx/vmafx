@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """BVI-DVC → full-feature VMAF parquet (corpus-3 for tiny-AI v2).
 
 Mirrors :mod:`ai.scripts.konvid_to_full_features` (the canonical-feature

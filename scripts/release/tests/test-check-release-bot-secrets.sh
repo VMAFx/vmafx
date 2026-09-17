@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Tests for scripts/release/check-release-bot-secrets.sh (ADR-1171).
 # A stub `gh` on PATH returns a configurable secret-name list, so the script's
 # three exit codes are exercised without network or credentials.

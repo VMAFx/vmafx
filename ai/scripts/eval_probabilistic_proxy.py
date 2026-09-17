@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Evaluate the empirical coverage of a ``fr_regressor_v2`` ensemble.
 
 Companion to ``ai/scripts/train_fr_regressor_v2_ensemble.py``. Loads the

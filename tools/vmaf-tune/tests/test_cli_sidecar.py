@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """CLI surface tests for ``vmaf-tune sidecar``.
 
 The sidecar model already has unit tests in ``test_sidecar.py``. This

@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """``vmaf-train`` — train, export, and register tiny perceptual-quality models for libvmaf.
 
 This is the installable Python package (``pyproject.toml`` at

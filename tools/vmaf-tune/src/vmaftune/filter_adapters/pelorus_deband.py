@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Pelorus deband pre-filter adapter (control-plane workstream D1).
 
 The Pelorus ``vf_pelorus_deband_vulkan`` filter is a *pre-encode*

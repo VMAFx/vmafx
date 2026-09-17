@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 //
 // cmd/vmafx-tune/cmd/unit_internal_test.go — in-package unit tests covering
 // the pure-Go helpers in compare.go, ladder.go, and root.go that the existing

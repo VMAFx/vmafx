@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for :mod:`ai.scripts.fetch_konvid_1k`.
 
 Mocks ``urllib.request.urlopen`` + ``zipfile`` to exercise the

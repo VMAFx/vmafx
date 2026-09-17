@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Smoke tests for the Research-0026 Phase 2 correlation analyser.
 
 The harness lives at ``ai/scripts/feature_correlation.py``. These

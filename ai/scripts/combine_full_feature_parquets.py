@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Combine refreshed per-corpus FULL_FEATURES parquet shards.
 
 The tiny-model training chain uses aggregate parquet files such as

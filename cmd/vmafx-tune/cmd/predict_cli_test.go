@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 //
 // CLI-level tests for the `predict` and `recommend-saliency` subcommands.
 // Both need external binaries for their happy path, so these cover the report

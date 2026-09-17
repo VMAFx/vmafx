@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Train the video-temporal saliency student (Phase 2 of ADR-0396).
 
 The student is a TinyU-Net with a learned per-channel EMA gate on the

@@ -1,6 +1,8 @@
 /**
+ *  Copyright 2016-2026 Netflix, Inc.
+ *  Copyright (c) 2011, Tom Distler (http://tdistler.com)
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause
  *
  *  CUDA host glue for the float_ms_ssim feature extractor
  *  (T7-23 / batch 2 part 2b). See ADR-0188 / ADR-0190 for the

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Convert an HDR/SDR VQA dataset to the shared CORPUS_ROW_KEYS JSONL format.
 
 Adapter for ingesting HDR/SDR paired VQA corpora — used by the

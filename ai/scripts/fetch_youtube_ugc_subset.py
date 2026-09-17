@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Fetch a small subset of the YouTube UGC dataset for tiny-AI corpus
 expansion (T6-x — vmaf_tiny_v5 candidate).
 

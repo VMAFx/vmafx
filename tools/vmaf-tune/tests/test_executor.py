@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Smoke tests for ``vmaftune.executor.run_plan`` (ADR-0454).
 
 No real FFmpeg or ``vmaf`` binary is required — both the encode runner and

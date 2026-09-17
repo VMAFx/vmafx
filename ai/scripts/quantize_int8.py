@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Quantize a trained ONNX model to INT8 using static PTQ.
 
 Produces a quantized ``model/*_int8.onnx`` alongside the float32 original.

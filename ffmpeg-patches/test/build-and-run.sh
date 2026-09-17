@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # build-and-run.sh — smoke-test the ffmpeg-patches/ series against a pinned
 # upstream FFmpeg release tag from build-config.env.
 #

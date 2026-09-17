@@ -2,7 +2,7 @@
 # preflight.sh — run the CI checks that a gcc-only local build cannot catch.
 #
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 #
 # The repository's documented local gate (`make lint`, `meson test`) builds with
 # ONE compiler. CI builds with several, and the difference is not academic: on

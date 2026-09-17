@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Tests for the vmafx CLI alias and --netflix-compat flag (ADR-0690, ADR-0696)."""
 
 import json

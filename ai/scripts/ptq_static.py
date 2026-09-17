@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """ONNX static post-training quantisation (ADR-0173 / T5-3).
 
 Static PTQ runs the model on a representative calibration set to

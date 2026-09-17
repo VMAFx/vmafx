@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Stop hook: brief session exit summary. Only prints if something is actionable.
 set -euo pipefail
 

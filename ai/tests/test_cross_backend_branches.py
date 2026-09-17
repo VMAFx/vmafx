@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Branch-coverage top-up for ``vmaf_train.cross_backend``.
 
 Targets the remaining branches not exercised by ``test_cross_backend.py``:

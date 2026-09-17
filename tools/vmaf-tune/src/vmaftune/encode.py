@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """ffmpeg/libx264 driver — Phase A.
 
 Wraps a single ffmpeg invocation that re-encodes a raw YUV source with

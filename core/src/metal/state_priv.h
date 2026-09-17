@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Private state-struct definitions shared between common.mm and the
  *  IOSurface import TU. Kept out of common.h because consumer TUs

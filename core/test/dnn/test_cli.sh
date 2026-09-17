@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # test_cli.sh — smoke-test the `vmaf --tiny-model` option.
 #
 # Requires: meson build with -Denable_dnn=enabled, an ONNX model under

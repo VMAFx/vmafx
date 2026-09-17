@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Resolution-aware VMAF model selection + per-resolution CRF offsets.
 
 Background — VMAF ships two production-grade pooled-mean models in this

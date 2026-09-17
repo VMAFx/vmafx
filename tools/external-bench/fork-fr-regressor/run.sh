@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Wrapper for the fork's `fr_regressor_v2_ensemble` predictor.
 #
 # Unlike the external-competitor wrappers, this one calls the

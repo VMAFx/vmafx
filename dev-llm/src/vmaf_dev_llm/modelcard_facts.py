@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Gather all verifiable facts about a shipped tiny-AI model.
 
 The LLM writes the prose, but it is not allowed to invent facts. This

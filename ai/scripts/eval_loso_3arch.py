@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """3-arch LOSO evaluation harness — extends ``eval_loso_mlp_small.py``.
 
 Scores each architecture's 9 leave-one-source-out fold ONNX

@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Branch-coverage tests for the lazy ``__getattr__`` in :mod:`aiutils`.
 
 Also nails down the remaining missing line in :mod:`aiutils.jsonl_utils`

@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for :mod:`ai.scripts.youtube_ugc_to_corpus_jsonl` (ADR-0368).
 
 These tests exercise the YouTube UGC adapter's pure-Python

@@ -1,6 +1,5 @@
 // Copyright 2026 Lusoris. All rights reserved.
-// Use of this source code is governed by the BSD-3-Clause-Plus-Patent
-// license that can be found in the LICENSE file.
+// SPDX-License-Identifier: EUPL-1.2
 
 // impl.go contains the handler implementations for the classic 15 MCP tools.
 // The four sidecar-binary tools live in impl_sidecar.go and the five Phase-4b

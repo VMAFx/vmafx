@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for ``ai/scripts/calibrate_phase_f_recipes.py`` helper functions.
 
 The existing ``test_calibrate_phase_f_recipes.py`` covers only the top-level

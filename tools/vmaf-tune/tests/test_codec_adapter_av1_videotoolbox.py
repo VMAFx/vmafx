@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """``av1_videotoolbox`` placeholder-adapter tests (ADR-0339).
 
 The adapter ships in placeholder mode: it registers in

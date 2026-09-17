@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Shared GOP / keyframe / probe helpers for every codec adapter.
 
 The per-shot predictor PR (see ``docs/adr/`` and ``docs/usage/vmaf-tune-predict.md``)

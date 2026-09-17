@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Arch / Manjaro / CachyOS / EndeavourOS setup.
 # CUDA and oneAPI are both available in official repos — no AUR required for core deps.
 set -euo pipefail

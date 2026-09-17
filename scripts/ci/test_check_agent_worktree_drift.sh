@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Sanity tests for scripts/ci/check-agent-worktree-drift.sh (ADR-0332).
 #
 # Exercises three branches of the guard:

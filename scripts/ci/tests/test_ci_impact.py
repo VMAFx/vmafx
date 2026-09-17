@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Contract tests for scripts/ci/plan-ci-impact.py and .github/ci-impact.json.
 
 Run with:  python3 -m unittest scripts/ci/tests/test_ci_impact.py

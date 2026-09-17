@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Predicate-driven CRF recommendation over a corpus.
 
 The Phase A corpus already produces ``(preset, crf, bitrate_kbps,

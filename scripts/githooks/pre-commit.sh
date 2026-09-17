@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # scripts/githooks/pre-commit.sh — native pre-commit hook (opt-in).
 #
 # Native bash alternative to the pre-commit-framework hook

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # repro-cuda-ffmpeg-nondeterminism.sh — reproduce T-CUDA-FFMPEG-FILTER-NONDETERMINISM-2026-09-06.
 #
 # FFmpeg's `libvmaf_cuda` filter intermittently returns a pooled VMAF score that

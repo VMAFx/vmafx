@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 //
 // pkg/pyjson/marshal_test.go — container layout, struct handling and the
 // non-finite policy.

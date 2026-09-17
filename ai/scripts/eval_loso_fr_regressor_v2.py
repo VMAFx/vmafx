@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Evaluate the codec-aware FR regressor v2 with leave-one-source-out cross-validation.
 
 Runs LOSO CV across all corpus sources in the parquet feature table and

@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Tracker abstraction for `.workingdir2/BACKLOG.md` and GitHub PRs.
 
 Symphony §3.1 / §4.1.1 normalises the issue tracker behind a typed

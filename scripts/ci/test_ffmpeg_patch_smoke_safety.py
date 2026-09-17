@@ -1,7 +1,7 @@
 """Exercise the real smoke Git operations without a native FFmpeg build."""
 
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 
 import os
 import shutil

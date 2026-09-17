@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 //
 // pkg/predictor/python_curve_parity_test.go — bit-exact parity of the
 // analytical curve and its CRF inversion against vmaftune.predictor.

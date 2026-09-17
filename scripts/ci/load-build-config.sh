@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Export every knob in build-config.env into the GitHub Actions environment.
 #
 # GitHub Actions cannot `source` a file at workflow-parse time, so a workflow

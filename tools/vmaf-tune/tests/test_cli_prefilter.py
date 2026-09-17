@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """``vmaf-tune prefilter`` subcommand tests (ADR-1116 / pelorus ADR-0110).
 
 Unit-level only — no real ffmpeg / vmaf binary is invoked. The smoke

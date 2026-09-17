@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Regenerate the controllerv1 Go bindings from controller.proto (ADR-1119).
 #
 # These bindings live at gen/go/controller/ and MUST be generated, never

@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause
+// SPDX-License-Identifier: EUPL-1.2
 //
 // examples/score.rs — smoke test: score the Netflix golden pair through the safe API.
 //

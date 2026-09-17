@@ -2,7 +2,7 @@
 # testdata/bench_upstream_ab.py — A/B this fork against upstream Netflix/vmaf.
 #
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """A/B the fork's CPU throughput against upstream Netflix/vmaf at a pinned tag.
 
 Every other benchmark in this repo compares the fork against *itself* — one

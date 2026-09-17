@@ -1,5 +1,6 @@
 /**
  *
+ *  Copyright 2016-2026 Netflix, Inc.
  *  Copyright 2026 Lusoris
  *
  *     Licensed under the BSD+Patent License (the "License");

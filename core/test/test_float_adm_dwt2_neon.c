@@ -1,7 +1,7 @@
 /**
  * Copyright 2026 Lusoris
  *
- * SPDX-License-Identifier: BSD-2-Clause-Patent
+ * SPDX-License-Identifier: EUPL-1.2
  *
  * NEON-vs-scalar bit-exactness for the float-ADM DWT2 kernel
  * (`float_adm_dwt2_neon`, core/src/feature/arm64/float_adm_dwt2_neon.c).

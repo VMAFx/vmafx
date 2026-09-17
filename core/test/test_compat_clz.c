@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Netflix/vmaf#1551 / Netflix/vmaf#1422 regression test — the MSVC
  *  __builtin_clz / __builtin_clzll shim in core/src/feature/compat_builtin.h.

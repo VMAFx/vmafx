@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Train a local CHUG HDR subjective-MOS head.
 
 CHUG is an HDR MOS corpus, not a KonViD variant. This entry point keeps

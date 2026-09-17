@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Shared predicate: "is this pull request the machine-generated release PR?"
 #
 # ADR-1151. The six process gates in .github/workflows/rule-enforcement.yml

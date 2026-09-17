@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """vmaf-dev-llm CLI — review | commitmsg | docgen."""
 
 from __future__ import annotations

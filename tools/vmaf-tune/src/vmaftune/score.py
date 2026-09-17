@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """vmaf binary driver — Phase A.
 
 Spawns the libvmaf CLI (`vmaf`) against a (reference YUV, distorted

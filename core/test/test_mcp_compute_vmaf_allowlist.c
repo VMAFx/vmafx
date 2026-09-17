@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  R2-4 regression — the in-process C MCP `compute_vmaf` scoring binding
  *  (core/src/mcp/compute_vmaf.c) must reject caller-supplied reference /

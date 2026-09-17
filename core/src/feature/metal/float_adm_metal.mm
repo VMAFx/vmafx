@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2016-2020 Netflix, Inc.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  float_adm feature extractor on the Metal backend.
  *  Port of `core/src/feature/cuda/float_adm_cuda.c` (CUDA twin,

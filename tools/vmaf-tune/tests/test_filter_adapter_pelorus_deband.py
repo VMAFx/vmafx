@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Pelorus deband filter-adapter tests (ADR-1116 / pelorus ADR-0110).
 
 Unit-level only — no live encode. Validates:

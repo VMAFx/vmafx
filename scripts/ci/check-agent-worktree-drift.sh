@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # ADR-0332 — Agent worktree-drift hard guard (pre-commit).
 #
 # Policy: when one or more agent worktrees exist under

@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Fact-collection for the model-card generator.
 
 These tests stay in-process: no Ollama, no network. The fact collector

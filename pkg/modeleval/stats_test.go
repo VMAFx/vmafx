@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 //
 // Golden values in this file were generated with the same scipy the
 // Python MCP server uses (scipy 1.18.1 / numpy 2.5.2) via

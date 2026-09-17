@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 
 // Package corpusrow ports the parts of tools/vmaf-tune/src/vmaftune/corpus.py
 // that the `recommend` subcommand's encode-driven path needs: the schema-v3

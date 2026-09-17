@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 //
 // cmd/vmafx-tune/cmd/ladder_nan_test.go — regression coverage for the
 // ladder emitter's NaN/Inf handling. The prior emitLadderJSON only

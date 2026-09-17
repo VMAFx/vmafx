@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """SVT-AV1 codec adapter unit + smoke tests.
 
 The harness mocks ``subprocess.run`` so these tests pass without

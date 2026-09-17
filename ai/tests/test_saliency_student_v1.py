@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Contract tests for `model/tiny/saliency_student_v1.onnx`.
 
 Locks down four invariants that the C-side `feature_mobilesal.c`

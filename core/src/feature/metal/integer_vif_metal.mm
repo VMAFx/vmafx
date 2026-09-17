@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2016-2026 Netflix, Inc.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  integer_vif feature extractor on the Metal backend (feature name "vif").
  *  ObjC++ wrapper that drives the four MSL kernels in `integer_vif.metal`

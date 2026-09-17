@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Adversarial readback controls for the repository's live security policy."""
 
 from __future__ import annotations

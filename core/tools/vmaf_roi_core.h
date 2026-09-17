@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Pure helpers for vmaf-roi: per-CTU mean reducer + saliency-to-QP-offset
  *  mapper. Header-only so both the binary and the unit test compile their

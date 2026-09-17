@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Hardware-capability fingerprint loader (ADR-0335).
 
 Reads ``ai/data/hardware_caps.csv`` and emits per-row capability

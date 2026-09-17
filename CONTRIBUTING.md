@@ -163,25 +163,39 @@ If you would like to contribute code to the VMAF repository, you can do so throu
 
 ## License
 
-By contributing your code, you agree to license your contribution under the terms of the [BSD+Patent](https://opensource.org/licenses/BSDplusPatent). Your contributions should also include the following header:
+Which licence your contribution falls under depends on which file you touch, and
+every file says so in its `SPDX-License-Identifier` tag. See
+[ADR-1250](docs/adr/1250-eupl-fork-relicense.md) for the decision and
+[the README](README.md#upstream-and-license) for what it means downstream.
+
+- **A new file, or an existing fork-authored file** — [EUPL-1.2](LICENSES/EUPL-1.2.txt),
+  a reciprocal licence. By contributing you agree to license that contribution
+  under EUPL-1.2.
+- **A file inherited from or derived from [Netflix/vmaf](https://github.com/Netflix/vmaf),
+  or one that carries libjxl, Xiph or IQA code** — it keeps its existing terms and
+  so does your change to it. Do not retag such a file, and leave its copyright
+  notices alone.
+
+If you are unsure which case you are in, read the tag already in the file; if it
+has none, ask in the pull request rather than guessing.
+`scripts/dev/relicense_fork_files.py --check` answers the same question
+mechanically.
+
+New files start with this header, and the copyright line names you or your
+employer, not the project:
 
 ```text
-/**
- * Copyright 2016-2020 [the original author or authors].
+/*
+ * Copyright <year> <the author or authors>
  *
- * Licensed under the BSD+Patent License (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * https://opensource.org/licenses/BSDplusPatent
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-License-Identifier: EUPL-1.2
  */
 ```
+
+Shell, Python and meson files use the same two lines with `#` comments, below any
+shebang. The `check-copyright` pre-commit hook enforces the header on C, C++ and
+CUDA sources; `reuse lint` checks that every identifier the tree uses resolves to
+a licence text under `LICENSES/`.
 
 ## Ways to Contribute
 

@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """NVENC codec-adapter smoke tests — mocks subprocess so no GPU required."""
 
 from __future__ import annotations

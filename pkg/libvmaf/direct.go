@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 // Copyright 2026 Lusoris
 //
 // pkg/libvmaf/direct.go — direct libvmaf cgo scoring path (ADR-0931 Phase 1).

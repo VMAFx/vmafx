@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Predictor training pipeline — fits a per-codec MLP to a Phase A corpus.
 
 The predict-then-verify loop (:mod:`vmaftune.predictor`) loads one ONNX

@@ -1,5 +1,5 @@
 /* Copyright 2026 Lusoris
- * SPDX-License-Identifier: BSD-2-Clause-Patent
+ * SPDX-License-Identifier: EUPL-1.2
  */
 
 #ifndef VMAF_FEX_CTX_VECTOR_INTERNAL_H

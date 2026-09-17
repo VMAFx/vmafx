@@ -1,6 +1,8 @@
 /**
+ *  Copyright 2016-2026 Netflix, Inc.
+ *  Copyright (c) 2019 Joshua Holmer
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent AND MIT
  *
  *  ciede2000 feature extractor on the CUDA backend (T7-23 /
  *  ADR-0182, GPU long-tail batch 1c part 2). CUDA twin of

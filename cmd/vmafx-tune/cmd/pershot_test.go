@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-2-Clause-Patent
+// SPDX-License-Identifier: EUPL-1.2
 //
 // End-to-end tests for the tune-per-shot subcommand, driving the built
 // binary the way an operator would.

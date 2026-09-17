@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Generate the SSIMULACRA2 EOTF look-up table baked into the extractor.
 
 The LUT maps 10-bit PQ-encoded values to linear light for SSIMULACRA2's

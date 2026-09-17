@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Encoder knob-space Pareto-frontier analysis (ADR-0305 / Research-0077).
 
 Consumes a `comprehensive.jsonl` knob-sweep file (one row per

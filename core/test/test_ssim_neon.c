@@ -1,7 +1,7 @@
 /**
  * Copyright 2026 Lusoris
  *
- * SPDX-License-Identifier: BSD-2-Clause-Patent
+ * SPDX-License-Identifier: EUPL-1.2
  *
  * NEON-vs-scalar bit-exactness for the three SSIM SIMD kernels in
  * `core/src/feature/arm64/ssim_neon.c` — `ssim_precompute_neon`,

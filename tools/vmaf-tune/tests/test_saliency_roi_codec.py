@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """End-to-end dispatch tests for saliency-aware ROI encoding.
 
 One test per target encoder (x265 / SVT-AV1 / libaom / libvvenc) verifying that

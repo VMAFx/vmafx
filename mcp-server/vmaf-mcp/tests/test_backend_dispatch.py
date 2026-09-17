@@ -1,4 +1,5 @@
 # Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
 """Verify ``_run_vmaf_score`` emits the correct ``--no_<backend>`` flag set
 for each backend selector — including ``hip``, ``metal``, which were missing
 before PR-1228 and silently fell through to ``auto``. ADR-0726 dropped the

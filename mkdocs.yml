@@ -1371,6 +1371,7 @@ nav:
         - "ADR-1246: cppcheck-public-entrypoints": adr/1246-cppcheck-public-entrypoints.md
         - "ADR-1247: scorecard-exact-head-gates": adr/1247-scorecard-exact-head-gates.md
         - "ADR-1248: repository-security-enforcement": adr/1248-repository-security-enforcement.md
+        - "ADR-1250: eupl-fork-relicense": adr/1250-eupl-fork-relicense.md
         - "ADR-1251: renovate-draft-automerge-deadlock": adr/1251-renovate-draft-automerge-deadlock.md
         - "ADR-1252: solo-maintainer-declared-bypass": adr/1252-solo-maintainer-declared-bypass.md
         - "ADR-1253: scalar-fma-not-fused-on-msvcrt": adr/1253-scalar-fma-not-fused-on-msvcrt.md

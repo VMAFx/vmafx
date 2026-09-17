@@ -1,4 +1,7 @@
 #!/usr/bin/env sh
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # POSIX sh strict mode: -e errexit, -u nounset. pipefail is not in POSIX so it
 # is opt-in below only when the host shell supports it. Stops the script from
 # silently swallowing a failing python invocation or an unset $1 typo.

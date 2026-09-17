@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # check-cuda-extern-c.sh — CI gate: every __global__ kernel referenced
 # by cuModuleGetFunction must be inside an extern "C" block.
 #

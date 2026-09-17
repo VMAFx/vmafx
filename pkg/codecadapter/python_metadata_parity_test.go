@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 //
 // pkg/codecadapter/python_metadata_parity_test.go — the registry-metadata
 // parity gate, replayed from testdata/python_adapters.json.

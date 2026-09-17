@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Generate the tiny-AI attached multi-output ONNX fixture.
 
 The fixture is intentionally tiny and deterministic: one luma NCHW input

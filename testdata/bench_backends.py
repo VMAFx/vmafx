@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """Per-backend performance baseline harness (repetition + median).
 
 Companion to ``testdata/bench_all.sh``. ``bench_all.sh`` answers "do the

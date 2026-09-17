@@ -102,7 +102,7 @@ shapes carry over to any future drop-in unchanged.
 **fork-local release-artefact mirror scaffold** named in this
 ADR's "Neutral / follow-ups" §`T6-2a-mirror-u2netp-via-release`.
 The scaffold ships the licence text
-(`LICENSES/Apache-2.0-u2netp.txt`), the model-card stub
+(`LICENSES/LicenseRef-Apache-2.0-u2netp.txt`), the model-card stub
 (`docs/ai/models/u2netp_mirror_card.md`), the operator workflow
 doc (`docs/ai/u2netp-mirror.md`), and an idempotent
 release-pipeline guard in `.github/workflows/supply-chain.yml`

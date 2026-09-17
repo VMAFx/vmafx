@@ -1,12 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
- *
- *  Licensed under the BSD+Patent License (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *      https://opensource.org/licenses/BSDplusPatent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  -ENOSYS fallbacks for the public `libvmaf/libvmaf_metal.h` surface
  *  when libvmaf is built without `-Denable_metal=enabled` (or the

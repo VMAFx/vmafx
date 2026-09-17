@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Execute the shipped Windows compiler-discovery block in a tiny Meson project.
 
 Run on a POSIX build host with Python and Meson; no Windows SDK or GPU is needed.

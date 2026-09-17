@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Export roundtrip — torch.eval() vs onnxruntime must agree to atol=1e-5."""
 
 from __future__ import annotations

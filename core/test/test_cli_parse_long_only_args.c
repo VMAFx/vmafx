@@ -1,7 +1,7 @@
 /*
  * Copyright 2026 Lusoris
  *
- * SPDX-License-Identifier: BSD-3-Clause
+ * SPDX-License-Identifier: EUPL-1.2
  *
  * Regression test for the `cli_parse.c` long-only-error-fix
  * (ADR-0316, follow-up to ADR-0311 / PR #408 fuzzer-parked

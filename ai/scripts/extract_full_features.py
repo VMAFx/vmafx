@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Extract the FULL_FEATURES (Research-0026) over the Netflix corpus.
 
 Phase 1 (PR #185) added ``FULL_FEATURES`` to

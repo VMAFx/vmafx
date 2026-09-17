@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Parse libvmaf's ONNX op allowlist and check models against it.
 
 Single source of truth is core/src/dnn/op_allowlist.c — parsing the C

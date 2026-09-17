@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Validate same-run Scorecard reports without confusing local and remote scopes.
 
 ADR-1247; schema/risk weights are pinned to Scorecard 5.5.0. The upstream

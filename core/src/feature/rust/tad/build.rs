@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 //
 // build.rs — generate the C header for the TAD extractor via cbindgen.
 //
@@ -29,7 +29,7 @@ fn main() {
             " * DO NOT EDIT — regenerate via `cargo build` inside the tad crate.\n",
             " *\n",
             " * Copyright 2026 Lusoris\n",
-            " * SPDX-License-Identifier: BSD-3-Clause-Plus-Patent\n",
+            " * SPDX-License-Identifier: EUPL-1.2\n",
             " */",
         ))
         .generate()

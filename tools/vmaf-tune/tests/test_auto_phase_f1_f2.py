@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for the three additional F.1/F.2 short-circuit predicates.
 
 Short-circuits #8 (low-complexity), #9 (baseline-meets-target), and #10

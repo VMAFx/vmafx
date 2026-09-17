@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Measure fp32-vs-int8 drift for a quantised tiny-AI model (T5-3b / ADR-0174).
 
 Drives both the fp32 ONNX and the matching ``<basename>.int8.onnx``

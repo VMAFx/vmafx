@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Regression for the parse_libsvm_model memory leak found by the nightly
  *  fuzz_json_model LeakSanitizer lane (master 042c48adc7 reported

@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Tiny-AI training entry points for the Netflix corpus.
 
 * :mod:`ai.train.dataset`              — PyTorch :class:`Dataset` over

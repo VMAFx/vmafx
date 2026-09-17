@@ -10,7 +10,7 @@
 # Exit 0 on all-pass, 1 on any failure.
 #
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 
 set -euo pipefail
 

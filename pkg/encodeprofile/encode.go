@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 //
 // pkg/encodeprofile/encode.go — the single-pass slice of vmaftune.encode:
 // argv composition, the ffmpeg/encoder version parser, and the subprocess

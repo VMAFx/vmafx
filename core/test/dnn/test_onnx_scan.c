@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Tests for the ONNX-protobuf field scanner (src/dnn/onnx_scan.c).
  *  Buffers are hand-crafted: we don't want to depend on a real protobuf
