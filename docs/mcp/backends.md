@@ -125,3 +125,11 @@ subset, not glob.
 - [Container operator guide](../development/dev-mcp.md) — full
   walkthrough of the `vmaf-dev-mcp` container the default allowlist
   fix targets.
+
+## Licensing (ADR-1250)
+
+The MCP server is fork-authored and is licensed under EUPL-1.2, like the rest of
+the fork's own code. The Go and Python implementations that were dual-licensed
+`... OR MIT` lose the MIT alternative; anyone who already received those files
+under MIT keeps that grant for those versions. See
+[ADR-1250](../adr/1250-eupl-fork-relicense.md).

@@ -44,6 +44,12 @@
 #include "libvmaf/libvmaf_metal.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 #define FIXTURE_W 256u
 #define FIXTURE_H 144u
 #define FIXTURE_BPC 8u
@@ -110,6 +116,43 @@ typedef struct {
     double psnr_cr;
 } PsnrTriple;
 
+/* Both sides feed the same fixture pair, so the sequence lives here once.
+ * Extracting it also keeps each run_* function inside the branch budget the
+ * lint profile sets, which is the refactor ADR-0141 asks for rather than a
+ * suppression. */
+/* Opening a Metal-backed context is the same two calls every time; folding
+ * them into one keeps run_metal inside the branch budget (ADR-0141). */
+static char *open_metal_context(VmafContext **vmaf, VmafMetalState *mstate)
+{
+    const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(vmaf, cfg);
+    if (err)
+        return "Metal: vmaf_init failed";
+    err = vmaf_metal_import_state(*vmaf, mstate);
+    if (err)
+        return "Metal: vmaf_metal_import_state failed";
+    return NULL;
+}
+
+static char *feed_fixture_pair(VmafContext *vmaf)
+{
+    VmafPicture ref;
+    VmafPicture dist;
+    int err = fill_fixture_ref(&ref);
+    if (err)
+        return "fill_fixture_ref failed";
+    err = fill_fixture_dist(&dist);
+    if (err)
+        return "fill_fixture_dist failed";
+    err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
+    if (err)
+        return "vmaf_read_pictures failed";
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    if (err)
+        return "vmaf_read_pictures(EOS) failed";
+    return NULL;
+}
+
 static char *run_cpu_psnr(PsnrTriple *out)
 {
     int err = 0;
@@ -121,15 +164,9 @@ static char *run_cpu_psnr(PsnrTriple *out)
     err = vmaf_use_feature(vmaf, "psnr", NULL);
     mu_assert("CPU: vmaf_use_feature(psnr) failed", !err);
 
-    VmafPicture ref, dist;
-    err = fill_fixture_ref(&ref);
-    mu_assert("CPU: fill_fixture_ref failed", !err);
-    err = fill_fixture_dist(&dist);
-    mu_assert("CPU: fill_fixture_dist failed", !err);
-    err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-    mu_assert("CPU: vmaf_read_pictures failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
+    char *feed_err = feed_fixture_pair(vmaf);
+    if (feed_err)
+        return feed_err;
 
     err = vmaf_feature_score_at_index(vmaf, "psnr_y", &out->psnr_y, 0u);
     mu_assert("CPU: psnr_y read failed", !err);
@@ -156,24 +193,16 @@ static char *run_metal_psnr(PsnrTriple *out)
         return NULL;
     }
 
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("Metal: vmaf_init failed", !err);
-    err = vmaf_metal_import_state(vmaf, mstate);
-    mu_assert("Metal: vmaf_metal_import_state failed", !err);
+    char *open_err = open_metal_context(&vmaf, mstate);
+    if (open_err)
+        return open_err;
     err = vmaf_use_feature(vmaf, "integer_psnr_metal", NULL);
     mu_assert("Metal: vmaf_use_feature(integer_psnr_metal) failed", !err);
 
-    VmafPicture ref, dist;
-    err = fill_fixture_ref(&ref);
-    mu_assert("Metal: fill_fixture_ref failed", !err);
-    err = fill_fixture_dist(&dist);
-    mu_assert("Metal: fill_fixture_dist failed", !err);
-    err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-    mu_assert("Metal: vmaf_read_pictures failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("Metal: vmaf_read_pictures(EOS) failed", !err);
+    char *feed_err = feed_fixture_pair(vmaf);
+    if (feed_err)
+        return feed_err;
 
     err = vmaf_feature_score_at_index(vmaf, "psnr_y", &out->psnr_y, 0u);
     mu_assert("Metal: psnr_y read failed", !err);
@@ -190,7 +219,8 @@ static char *run_metal_psnr(PsnrTriple *out)
 
 static char *test_integer_psnr_cpu_metal_parity(void)
 {
-    PsnrTriple cpu = {0}, metal = {NAN, NAN, NAN};
+    PsnrTriple cpu = {0};
+    PsnrTriple metal = {NAN, NAN, NAN};
     char *msg = run_cpu_psnr(&cpu);
     if (msg)
         return msg;
@@ -220,3 +250,5 @@ char *run_tests(void)
     mu_run_test(test_integer_psnr_cpu_metal_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

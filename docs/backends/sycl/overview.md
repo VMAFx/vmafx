@@ -551,3 +551,12 @@ emitting a `0.0` score. The twin also adopts the CPU rule that a channel with
 exactly one singular side (reference or distorted) scores 0 rather than an
 inflated value. The launch-geometry half of ADR-1202 was CUDA-only — this
 twin's solve launch was already correct.
+
+
+## Licensing of the SYCL kernels (ADR-1250)
+
+As with the other backends, a SYCL kernel implementing an upstream Netflix
+metric keeps that code's terms and copyright notice, while fork-original SYCL
+code is EUPL-1.2. Four files in `core/src/sycl/` additionally carry an outside
+contributor's work and stay on their current terms until that contributor
+agrees to a change. See [ADR-1250](../../adr/1250-eupl-fork-relicense.md).

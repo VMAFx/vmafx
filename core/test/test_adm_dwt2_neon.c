@@ -35,6 +35,12 @@
 #if ARCH_AARCH64
 #include "feature/arm64/adm_neon.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* Mirrors dwt2_src_indices_filt() in integer_adm.c, which is static there. */
 static void ref_src_indices(int **ind_y, int **ind_x, int w, int h)
 {
@@ -168,6 +174,12 @@ static void ref_adm_dwt2_8(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuf
 }
 #endif /* ARCH_AARCH64 */
 
+/* The branch count is one allocation check per buffer — twenty of them — and
+ * every buffer has to be freed in this same scope on every path out. Splitting
+ * the allocation away from the use would either leak on the error paths or
+ * thread a cleanup struct through two functions for no reader's benefit.
+ * ADR-0141 §2. */
+/* NOLINTNEXTLINE(readability-function-size) */
 static char *test_adm_dwt2_8_neon_matches_scalar(void)
 {
 #if !ARCH_AARCH64
@@ -302,3 +314,5 @@ char *run_tests(void)
 #endif
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

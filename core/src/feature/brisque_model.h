@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: EUPL-1.2
  */
 
-#ifndef __VMAF_FEATURE_BRISQUE_MODEL_H__
-#define __VMAF_FEATURE_BRISQUE_MODEL_H__
+#ifndef VMAF_FEATURE_BRISQUE_MODEL_H_
+#define VMAF_FEATURE_BRISQUE_MODEL_H_
 
 /*
  * brisque_model.h — declarations for the build-time-embedded libsvm model.
@@ -44,4 +44,4 @@ extern const unsigned char src_brisque_live_model[];
 extern const unsigned int src_brisque_live_model_len;
 #endif /* VMAF_BRISQUE_BUILT_IN_MODEL */
 
-#endif /* __VMAF_FEATURE_BRISQUE_MODEL_H__ */
+#endif /* VMAF_FEATURE_BRISQUE_MODEL_H_ */

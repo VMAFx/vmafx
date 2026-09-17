@@ -22,8 +22,8 @@
  * see docs/adr/1112-niqe-nr-metric.md).
  */
 
-#ifndef __VMAF_FEATURE_NIQE_MATH_H__
-#define __VMAF_FEATURE_NIQE_MATH_H__
+#ifndef VMAF_FEATURE_NIQE_MATH_H_
+#define VMAF_FEATURE_NIQE_MATH_H_
 
 #include <assert.h>
 #include <math.h>
@@ -96,6 +96,11 @@ typedef struct NiqeAggd {
 /* Fit AGGD parameters of the float32 sample buffer x[0..n). `prec` is the
  * gamma table from niqe_build_gamma_table(). Zeros are classified RIGHT
  * (the x >= 0 boundary, matching the harness). */
+/* One numerical procedure — the AGGD moment fit — whose intermediate sums feed
+ * a snapshot-gated score. Splitting it would either pass a dozen live
+ * accumulators between functions or change the order they combine in, and the
+ * fork pins these values. ADR-0141 §2. */
+/* NOLINTNEXTLINE(readability-function-size) */
 static inline NiqeAggd niqe_extract_aggd(const float *x, size_t n, const double *prec)
 {
     assert(n > 0 && prec);
@@ -281,6 +286,11 @@ static inline void niqe_jacobi_init(int n, const double *in, double *A, double *
 }
 
 /* ---- Jacobi helper 2: cyclic Jacobi sweeps (the rotation inner loop). ---- */
+/* One Jacobi sweep: the rotation is applied to four matrix regions in sequence
+ * and the branch count is the convergence tests. Splitting the sweep changes the
+ * order the rotations are applied in, which changes the eigenvectors.
+ * ADR-0141 §2. */
+/* NOLINTNEXTLINE(readability-function-size) */
 static inline void niqe_jacobi_sweep_pass(int n, double *A, double *V)
 {
     /* Cyclic Jacobi sweeps. n=36 converges well within this bound. */
@@ -337,6 +347,10 @@ static inline void niqe_jacobi_sweep_pass(int n, double *A, double *V)
 }
 
 /* ---- Jacobi helper 3: eigenvalue cutoff + V diag(e+) V^T reconstruction. */
+/* One pseudo-inverse reconstruction. The branch count is the singular-value
+ * cutoff test inside the accumulation loops; hoisting those loops out would
+ * change the accumulation order of a snapshot-gated result. ADR-0141 §2. */
+/* NOLINTNEXTLINE(readability-function-size) */
 static inline void niqe_pinv_reconstruct(int n, const double *A, const double *V, double *out,
                                          double rtol)
 {
@@ -377,4 +391,4 @@ static inline void niqe_sym_pinv(const double *in, double *out, int n, double rt
     niqe_pinv_reconstruct(n, A, V, out, rtol);
 }
 
-#endif /* __VMAF_FEATURE_NIQE_MATH_H__ */
+#endif /* VMAF_FEATURE_NIQE_MATH_H_ */

@@ -37,6 +37,12 @@
 #include "libvmaf/libvmaf_cuda.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 #define FIX_W 64u
 #define FIX_H 64u
 #define FIX_BPC 8u
@@ -48,9 +54,10 @@ static int alloc_picture(VmafPicture *pic, uint8_t fill_y)
         return err;
     for (unsigned row = 0; row < pic->h[0]; row++)
         memset((uint8_t *)pic->data[0] + row * pic->stride[0], fill_y, pic->w[0]);
-    for (unsigned p = 1; p < 3; p++)
+    for (unsigned p = 1; p < 3; p++) {
         for (unsigned row = 0; row < pic->h[p]; row++)
             memset((uint8_t *)pic->data[p] + row * pic->stride[p], 128, pic->w[p]);
+    }
     return 0;
 }
 
@@ -78,7 +85,8 @@ static char *test_cuda_only_no_host_no_crash(void)
     err = vmaf_use_feature(vmaf, "adm_cuda", NULL);
     mu_assert("vmaf_use_feature(adm_cuda) failed", !err);
 
-    VmafPicture ref, dis;
+    VmafPicture ref;
+    VmafPicture dis;
     err = alloc_picture(&ref, 100);
     mu_assert("alloc ref failed", !err);
     err = alloc_picture(&dis, 90);
@@ -104,3 +112,5 @@ char *run_tests(void)
     mu_run_test(test_cuda_only_no_host_no_crash);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

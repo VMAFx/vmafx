@@ -5,8 +5,6 @@
  * SPDX-License-Identifier: EUPL-1.2
  */
 
-#pragma once
-
 #ifndef VMAF_FEATURE_COMMON_FMAF_EXACT_H_
 #define VMAF_FEATURE_COMMON_FMAF_EXACT_H_
 

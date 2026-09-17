@@ -65,7 +65,7 @@ typedef enum VmafBackendHandle {
     VMAF_BACKEND_HANDLE_HIP = 3,    /**< `backend_handle` is `hipStream_t`. */
     VMAF_BACKEND_HANDLE_METAL = 4,  /**< `backend_handle` is `id<MTLCommandQueue>` (bridged). */
     VMAF_BACKEND_HANDLE_VULKAN = 5, /**< Reserved — Vulkan import (ADR-0186 / ADR-0726). */
-    VMAF_BACKEND_HANDLE__COUNT      /**< Sentinel — not a valid handle. */
+    VMAF_BACKEND_HANDLE__COUNT = 6  /**< Sentinel — not a valid handle. */
 } VmafBackendHandle;
 
 /**

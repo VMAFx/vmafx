@@ -1168,3 +1168,13 @@ for the dictionary ownership rules.
   feed into the shipped VMAF models.
 - [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md) — the
   per-surface doc bar this page satisfies.
+
+
+## Licensing of the extractors (ADR-1250)
+
+Extractor sources carry their terms per file as an `SPDX-License-Identifier`.
+An extractor the fork wrote is EUPL-1.2. One that carries Netflix's, libjxl's,
+Xiph's or IQA's code — every SIMD and GPU kernel of an upstream metric, and the
+scalar ports of third-party references — keeps that code's terms and its
+copyright notice. `scripts/dev/relicense_fork_files.py --list` prints the verdict
+and the reason for every file. See [ADR-1250](../adr/1250-eupl-fork-relicense.md).

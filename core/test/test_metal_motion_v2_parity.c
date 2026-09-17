@@ -54,6 +54,12 @@
 #include "libvmaf/libvmaf_metal.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* Fixture geometry — large enough for the Metal threadgroup partial-sum
  * grid (32x8 = 256 threads per group), small enough for a fast CI run. */
 #define FIXTURE_W 256u
@@ -100,6 +106,40 @@ static int fill_fixture(VmafPicture *pic, unsigned frame_idx)
 /* CPU path — run `motion_v2` for NUM_FRAMES frames, return the SAD,
  * motion2_v2 and motion3_v2 scores at frame index 1.                  */
 /* ------------------------------------------------------------------ */
+/* Both sides feed the same fixture pair, so the sequence lives here once.
+ * Extracting it also keeps each run_* function inside the branch budget the
+ * lint profile sets, which is the refactor ADR-0141 asks for rather than a
+ * suppression. */
+/* Reading every feature is the same loop on both sides; extracting it keeps
+ * each run_* function inside the lint profile's branch budget (ADR-0141 asks
+ * for the refactor rather than a suppression). */
+static char *read_feature_scores(VmafContext *vmaf, const char *const *names, unsigned count,
+                                 double *out_scores, unsigned index)
+{
+    for (unsigned i = 0; i < count; i++) {
+        const int err = vmaf_feature_score_at_index(vmaf, names[i], &out_scores[i], index);
+        if (err)
+            return "vmaf_feature_score_at_index failed";
+    }
+    return NULL;
+}
+
+static char *feed_fixture_pair(VmafContext *vmaf, unsigned frame)
+{
+    VmafPicture ref;
+    VmafPicture dist;
+    int err = fill_fixture(&ref, frame);
+    if (err)
+        return "fill_fixture(ref) failed";
+    err = fill_fixture(&dist, frame);
+    if (err)
+        return "fill_fixture(dist) failed";
+    err = vmaf_read_pictures(vmaf, &ref, &dist, frame);
+    if (err)
+        return "vmaf_read_pictures failed";
+    return NULL;
+}
+
 static char *run_cpu_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
 {
     int err = 0;
@@ -112,21 +152,17 @@ static char *run_cpu_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
     mu_assert("CPU: vmaf_use_feature(motion_v2) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_fixture(&ref, i);
-        mu_assert("CPU: fill_fixture(ref) failed", !err);
-        err = fill_fixture(&dist, i);
-        mu_assert("CPU: fill_fixture(dist) failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CPU: vmaf_read_pictures failed", !err);
+        char *feed_err = feed_fixture_pair(vmaf, i);
+        if (feed_err)
+            return feed_err;
     }
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
-    for (unsigned k = 0; k < NUM_MOTION_V2_FEATURES; k++) {
-        err = vmaf_feature_score_at_index(vmaf, MOTION_V2_FEATURES[k], &scores_out[k], 1u);
-        mu_assert("CPU: vmaf_feature_score_at_index(motion_v2, idx=1) failed", !err);
-    }
+    char *score_err = read_feature_scores(vmaf, MOTION_V2_FEATURES, NUM_MOTION_V2_FEATURES,
+                                          scores_out, 1u);
+    if (score_err)
+        return score_err;
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
@@ -169,21 +205,17 @@ static char *run_metal_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
     mu_assert("Metal: vmaf_use_feature(motion_v2_metal) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_fixture(&ref, i);
-        mu_assert("Metal: fill_fixture(ref) failed", !err);
-        err = fill_fixture(&dist, i);
-        mu_assert("Metal: fill_fixture(dist) failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("Metal: vmaf_read_pictures failed", !err);
+        char *feed_err = feed_fixture_pair(vmaf, i);
+        if (feed_err)
+            return feed_err;
     }
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("Metal: vmaf_read_pictures(EOS) failed", !err);
 
-    for (unsigned k = 0; k < NUM_MOTION_V2_FEATURES; k++) {
-        err = vmaf_feature_score_at_index(vmaf, MOTION_V2_FEATURES[k], &scores_out[k], 1u);
-        mu_assert("Metal: vmaf_feature_score_at_index(motion_v2, idx=1) failed", !err);
-    }
+    char *score_err = read_feature_scores(vmaf, MOTION_V2_FEATURES, NUM_MOTION_V2_FEATURES,
+                                          scores_out, 1u);
+    if (score_err)
+        return score_err;
 
     err = vmaf_close(vmaf);
     mu_assert("Metal: vmaf_close failed", !err);
@@ -240,3 +272,5 @@ char *run_tests(void)
     mu_run_test(test_motion_v2_cpu_metal_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

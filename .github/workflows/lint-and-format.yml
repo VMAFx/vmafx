@@ -207,6 +207,14 @@ jobs:
           # lint a file that no longer exists on disk; without this filter
           # the script passes a missing path to clang-tidy and fails with
           # `clang-diagnostic-error: no such file or directory`.
+          #   - cmd/vmafx-node/bpf/ — eBPF programs. They include `vmlinux.h`,
+          #     which is generated from the running kernel's BTF and does not
+          #     exist on the runner, so clang-tidy cannot parse them at all
+          #     (`clang-diagnostic-error: 'vmlinux.h' file not found`). What it
+          #     does report is an artefact of reading an eBPF object as ordinary
+          #     C++: libbpf's `SEC()` macro identifiers, and programs and maps
+          #     that must keep external linkage for the loader to find them.
+          #     Same posture as the CUDA/SYCL/HIP families above.
           #   - core/src/interop/pelorus_*.c +
           #     core/include/libvmaf/pelorus/ — vendored verbatim mirror of
           #     the Pelorus interop ABI (ADR-1113), byte-identical to its
@@ -237,6 +245,7 @@ jobs:
               | grep -v '^core/src/compat/win32/' \
               | grep -v '^core/src/interop/pelorus_' \
               | grep -v '^core/include/libvmaf/pelorus/' \
+              | grep -v '^cmd/vmafx-node/bpf/' \
               | tr '\n' ' ')
           elif [ "$GH_EVENT_NAME" = "push" ]; then
             before="$PUSH_BEFORE_SHA"
@@ -266,6 +275,7 @@ jobs:
               | grep -v '^core/src/compat/win32/' \
               | grep -v '^core/src/interop/pelorus_' \
               | grep -v '^core/include/libvmaf/pelorus/' \
+              | grep -v '^cmd/vmafx-node/bpf/' \
               | tr '\n' ' ')
               else
                 files=""
@@ -292,6 +302,7 @@ jobs:
               | grep -v '^core/src/compat/win32/' \
               | grep -v '^core/src/interop/pelorus_' \
               | grep -v '^core/include/libvmaf/pelorus/' \
+              | grep -v '^cmd/vmafx-node/bpf/' \
               | tr '\n' ' ')
             fi
           else
@@ -318,6 +329,7 @@ jobs:
               | grep -v '^core/src/compat/win32/' \
               | grep -v '^core/src/interop/pelorus_' \
               | grep -v '^core/include/libvmaf/pelorus/' \
+              | grep -v '^cmd/vmafx-node/bpf/' \
               | tr '\n' ' ')
           fi
           [ -z "$files" ] && { echo "no C/C++ changes"; exit 0; }

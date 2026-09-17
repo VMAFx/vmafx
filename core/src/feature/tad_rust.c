@@ -22,6 +22,12 @@
 #include "log.h"
 #include "picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* ---------------------------------------------------------------------------
  * Gate on HAVE_RUST_TAD: defined by Meson when the Rust staticlib is linked.
  * When the define is absent (enable_rust_features=false or cargo not found),
@@ -124,6 +130,7 @@ static const char *const tad_provided_features[] = {
  * Public extractor descriptor — registered in feature_extractor.c.
  * --------------------------------------------------------------------------- */
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_tad = {
     .name = "tad",
     .init = tad_init,
@@ -136,3 +143,5 @@ VmafFeatureExtractor vmaf_fex_tad = {
     .priv_size = 0, /* Rust allocates state internally; priv_size is unused. */
     .chars = {0},
 };
+
+/* NOLINTEND(modernize-use-nullptr) */
