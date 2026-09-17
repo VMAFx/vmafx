@@ -133,6 +133,8 @@ typedef struct SpeedTemporalHipState {
     bool speed_temporal_use_ref_diff;
 
     VmafDictionary *feature_name_dict;
+    /* Singular covariance matrices are counted, not logged per solve. */
+    SpeedInternalSingularTally singular_tally;
 } SpeedTemporalHipState;
 
 static const VmafOption options_temporal[] = {
@@ -434,9 +436,8 @@ static int run_cpu_linalg_st(SpeedTemporalHipState *s, float *h_indterm, void *d
 
     hipError_t rc = hipSuccess;
     *singular_out = !regular;
+    speed_internal_tally_solve(&s->singular_tally, !regular, "speed_temporal_hip");
     if (!regular) {
-        vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                 "speed_temporal_hip: covariance matrix singular, zeroing solution\n");
         /* Zero the DEVICE solution, not the host staging buffer. The score
          * kernel reads `d_sol`; the host `h_indterm` is re-downloaded from
          * `d_indterm` at the top of every pipeline run, so zeroing it changed
@@ -770,6 +771,7 @@ static int extract_temporal_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 static int close_temporal_hip(VmafFeatureExtractor *fex)
 {
     SpeedTemporalHipState *s = fex->priv;
+    speed_internal_report_singular(&s->singular_tally, "speed_temporal_hip");
 #ifdef HAVE_HIPCC
     free_hip_buffers_st(s);
 #endif

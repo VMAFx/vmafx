@@ -132,6 +132,8 @@ typedef struct SpeedTemporalCudaState {
      * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
     CUmodule module;
     VmafDictionary *feature_name_dict;
+    /* Singular covariance matrices are counted, not logged per solve. */
+    SpeedInternalSingularTally singular_tally;
 } SpeedTemporalCudaState;
 
 static const VmafOption options[] = {
@@ -362,10 +364,9 @@ static int run_cpu_linalg_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, flo
     speed_internal_compute_eigenvalues(s->h_cov_mat, s->h_eigenvalues, sz, s->h_eig_scratch);
     bool regular = speed_internal_is_matrix_regular(s->h_eigenvalues, (size_t)sz);
     *singular_out = !regular;
+    speed_internal_tally_solve(&s->singular_tally, !regular, "speed_temporal_cuda");
 
     if (!regular) {
-        vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                 "speed_temporal_cuda: covariance matrix singular, zeroing solution\n");
         /* Zero the DEVICE solution, not the host staging buffer. The score
          * kernel reads `d_sol`; the host `h_indterm` is re-downloaded from
          * `d_indterm` at the top of every pipeline run, so zeroing it changed
@@ -762,6 +763,7 @@ fail:
 static int close_fex_st(VmafFeatureExtractor *fex)
 {
     SpeedTemporalCudaState *s = fex->priv;
+    speed_internal_report_singular(&s->singular_tally, "speed_temporal_cuda");
     if (fex->cu_state && fex->cu_state->f) {
         free_cuda_buffers_st(s, fex->cu_state->f);
         release_cuda_module_and_stream_st(s, fex->cu_state->f);

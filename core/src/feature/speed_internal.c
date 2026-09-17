@@ -735,6 +735,33 @@ int speed_internal_backward_substitution(const float *R, float *B, int size, int
 /* Regularity check                                                    */
 /* ------------------------------------------------------------------ */
 
+void speed_internal_tally_solve(SpeedInternalSingularTally *tally, bool singular, const char *who)
+{
+    assert(tally != NULL);
+    assert(who != NULL);
+    tally->solves++;
+    if (!singular) {
+        return;
+    }
+    if (tally->singular++ == 0) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "%s: covariance matrix singular, zeroing solution — further occurrences are "
+                 "counted and reported once at close\n",
+                 who);
+    }
+}
+
+void speed_internal_report_singular(const SpeedInternalSingularTally *tally, const char *who)
+{
+    assert(tally != NULL);
+    assert(who != NULL);
+    if (tally->singular == 0) {
+        return;
+    }
+    vmaf_log(VMAF_LOG_LEVEL_WARNING, "%s: covariance matrix was singular on %llu of %llu solves\n",
+             who, (unsigned long long)tally->singular, (unsigned long long)tally->solves);
+}
+
 bool speed_internal_is_matrix_regular(const float *eigenvalues, size_t num_elements)
 {
     assert(eigenvalues != NULL);

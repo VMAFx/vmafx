@@ -168,6 +168,8 @@ typedef struct SpeedChromaCudaState {
      * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
     CUmodule module;
     VmafDictionary *feature_name_dict;
+    /* Singular covariance matrices are counted, not logged per solve. */
+    SpeedInternalSingularTally singular_tally;
 } SpeedChromaCudaState;
 
 /* ------------------------------------------------------------------ */
@@ -476,9 +478,8 @@ static int run_cpu_linalg(SpeedChromaCudaState *s, CudaFunctions *cu_f, float *h
      * the solution and reports it separately so the caller can impute. The
      * return value stays reserved for hard failures. See ADR-1202. */
     *singular_out = !regular;
+    speed_internal_tally_solve(&s->singular_tally, !regular, "speed_chroma_cuda");
     if (!regular) {
-        vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                 "speed_chroma_cuda: covariance matrix singular, zeroing solution\n");
         /* Zero the DEVICE solution, not the host staging buffer. The score
          * kernel reads `d_sol`; the host `h_indterm` is re-downloaded from
          * `d_indterm` at the top of every pipeline run, so zeroing it changed
@@ -982,6 +983,7 @@ fail:
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     SpeedChromaCudaState *s = fex->priv;
+    speed_internal_report_singular(&s->singular_tally, "speed_chroma_cuda");
     if (fex->cu_state && fex->cu_state->f) {
         free_cuda_buffers(s, fex->cu_state->f);
         release_cuda_module_and_stream(s, fex->cu_state->f);

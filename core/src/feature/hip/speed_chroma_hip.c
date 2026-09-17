@@ -144,6 +144,8 @@ typedef struct SpeedChromaHipState {
     int speed_weight_var_mode;
 
     VmafDictionary *feature_name_dict;
+    /* Singular covariance matrices are counted, not logged per solve. */
+    SpeedInternalSingularTally singular_tally;
 } SpeedChromaHipState;
 
 static const VmafOption options_chroma[] = {
@@ -455,9 +457,8 @@ static int run_cpu_linalg_sc(SpeedChromaHipState *s, float *h_indterm, void *d_s
      * the solution and reports it separately so the caller can impute. The
      * return value stays reserved for hard failures. See ADR-1202. */
     *singular_out = !regular;
+    speed_internal_tally_solve(&s->singular_tally, !regular, "speed_chroma_hip");
     if (!regular) {
-        vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                 "speed_chroma_hip: covariance matrix singular, zeroing solution\n");
         /* Zero the DEVICE solution, not the host staging buffer. The score
          * kernel reads `d_sol`; the host `h_indterm` is re-downloaded from
          * `d_indterm` at the top of every pipeline run, so zeroing it changed
@@ -843,6 +844,7 @@ static int extract_chroma_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 static int close_chroma_hip(VmafFeatureExtractor *fex)
 {
     SpeedChromaHipState *s = fex->priv;
+    speed_internal_report_singular(&s->singular_tally, "speed_chroma_hip");
 #ifdef HAVE_HIPCC
     free_hip_buffers(s);
 #endif

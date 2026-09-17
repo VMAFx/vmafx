@@ -3297,6 +3297,16 @@ endif
 # Scaffold-shape sub-tests pin the public-API contract; the T7-10b
 # runtime sub-tests probe `hipGetDeviceCount` and skip the device-
 # resident assertions when no AMD GPU is visible to the runtime.
+# The singular-covariance notice is shared by the CPU extractor and every GPU
+# twin, so its counting contract is tested once, on the CPU, with no device.
+test_speed_singular_tally = executable('test_speed_singular_tally',
+    ['test.c', 'test_speed_singular_tally.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, math_lib],
+)
+test('test_speed_singular_tally', test_speed_singular_tally, suite : ['fast'])
+
 if get_option('enable_hip') == true
 test_hip_smoke = executable('test_hip_smoke',
     ['test.c', 'test_hip_smoke.c'],

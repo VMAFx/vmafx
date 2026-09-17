@@ -46,6 +46,7 @@
 #include "opt.h"
 #include "picture.h"
 #include "picture_copy.h"
+#include "speed_internal.h"
 #include "speed_matmul.h"
 #include "vif_tools.h"
 #include "cpu.h"
@@ -116,6 +117,10 @@ typedef struct SpeedState {
     size_t float_stride;
     compute_cov_kernel_fn compute_cov_kernel;
     speed_matmul_fn matmul;
+    /* Singular covariance matrices are counted, not logged per solve: flat or
+     * linearly-graded content makes every solve singular, and one line per
+     * solve buries the rest of a run's output. Reported once by speed_close. */
+    SpeedInternalSingularTally singular_tally;
 } SpeedState;
 
 #define DEFAULT_BLOCK_SIZE (5)
@@ -895,8 +900,8 @@ static bool solve_covariance_system(SpeedState *s, const float *data, const Spee
     }
 
     bool cannot_invert = !regular || err;
+    speed_internal_tally_solve(&s->singular_tally, cannot_invert, "est_params");
     if (cannot_invert) {
-        vmaf_log(VMAF_LOG_LEVEL_WARNING, "est_params: covariance matrix is singular\n");
         memset(s->buffers.linear_system_sol, 0,
                dim->elements_in_block * dim->num_blocks * sizeof(float));
     }
@@ -1202,6 +1207,7 @@ static int speed_init(SpeedState *s, SpeedOptions *opt, int w, int h)
 
 static int speed_close(SpeedState *s)
 {
+    speed_internal_report_singular(&s->singular_tally, "est_params");
     if (s->buffers.independent_term)
         aligned_free(s->buffers.independent_term);
     if (s->buffers.linear_system_sol)
