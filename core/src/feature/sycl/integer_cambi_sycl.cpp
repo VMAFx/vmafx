@@ -852,16 +852,17 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
          * unrelated in-flight work (SY-1 fix). */
         ev_prev.wait();
 
-        /* D2H: cur_image → h_image, cur_mask → h_mask. */
+        /* D2H: cur_image → h_image, cur_mask → h_mask.
+         *
+         * One copy each, not one per row: both sides are packed at
+         * `scaled_w` and the loop walked them contiguously, so the region is
+         * a single run of bytes. Per-row enqueues cost `scaled_h` submissions
+         * per scale per frame for a copy the runtime does in one. */
         {
-            const size_t row_bytes = scaled_w * sizeof(uint16_t);
-            for (unsigned row = 0; row < scaled_h; row++) {
-                q.memcpy(s->h_image + (size_t)row * scaled_w, cur_image + (size_t)row * scaled_w,
-                         row_bytes);
-                q.memcpy(s->h_mask + (size_t)row * scaled_w, cur_mask + (size_t)row * scaled_w,
-                         row_bytes);
-            }
-            q.wait(); /* drain D2H row copies before CPU residual */
+            const size_t plane_bytes = (size_t)scaled_w * (size_t)scaled_h * sizeof(uint16_t);
+            q.memcpy(s->h_image, cur_image, plane_bytes);
+            q.memcpy(s->h_mask, cur_mask, plane_bytes);
+            q.wait(); /* drain the D2H copies before the CPU residual */
         }
 
         /* Copy h_image / h_mask → pics[0] / pics[1] (stride-aware). */
