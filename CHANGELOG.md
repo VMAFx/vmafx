@@ -9140,6 +9140,24 @@ non-empty, printable string. Closes a coverage gap noted in
   ADR-0306).
 
 
+- **The arm64 integer-motion pipelines now have bit-exactness coverage**
+  (adapted from upstream Netflix/vmaf `3137d5525`). That upstream commit adds an
+  8-bit NEON motion pipeline this fork already had — `motion_v2_neon.c` has
+  exported `motion_score_pipeline_8_neon` **and** a 16-bit twin upstream still
+  lacks, both dispatched from `integer_motion.c` under
+  `VMAF_ARM_CPU_FLAG_NEON` — so its implementation was not taken. Its *test* was
+  the part missing here: the header claimed bit-exactness against the scalar
+  references and nothing asserted it, while the sibling `test_motion_neon.c`
+  covers only `x_convolution_16_neon`, one kernel inside the 16-bit pipeline.
+  New `core/test/test_motion_pipeline_neon.c` drives the registered `motion`
+  extractor twice over identical pictures, once with the CPU-flag mask cleared
+  and once with NEON enabled, and requires the pooled SAD to be equal
+  bit-for-bit across 15 geometries, three bit depths (8, 10 and 12, so both
+  pipelines are covered) and three seeds. Verified by cross-compiling for
+  aarch64 and executing under emulation, and confirmed to have teeth: changing
+  one filter tap from 16004 to 16005 makes it fail.
+
+
 - Active monitoring for the Netflix#955 / Netflix#1494 upstream
   deferral via the new `.github/workflows/upstream-netflix-955-watcher.yml`
   workflow. Runs every Sunday 06:00 UTC, polls `Netflix/vmaf#1494`,
@@ -27774,6 +27792,21 @@ legs. (ADR-0603, triggered by Renovate PR #1402)
   (`scripts/ci/check-no-tracked-venv.sh`, pre-commit + `make lint-sh`) refuses
   any tracked virtualenv path. **If you pulled master between 2026-09-03 20:10
   and this fix, your `.venv` is gone: delete the symlink and recreate the venv.**
+
+
+- **AVX-512 builds no longer require VBMI, and x86 assembly declares CET
+  shadow-stack support** (ports of upstream Netflix/vmaf `eb1045795` and
+  `f85a85369`). The four AVX-512 build targets passed `-mavx512vbmi`, an
+  extension no source in the tree uses: no VBMI intrinsic appears anywhere under
+  `core/src/`. Requiring it narrowed the CPUs the AVX-512 objects were valid for
+  — Skylake-SP and Cascade Lake implement AVX-512F/DQ/BW/CD/VL but not VBMI — for
+  no gain. The flag is dropped from all four targets; the full CPU build and
+  132/133 unit tests pass unchanged. Separately, `core/src/ext/x86/x86inc.asm`
+  now emits the `.note.gnu.property` section advertising
+  `GNU_PROPERTY_X86_FEATURE_1_SHSTK`, so binaries linking the assembled x86
+  objects are no longer silently opted out of Intel CET shadow-stack enforcement
+  by one unmarked object. Verified with `readelf -n`: the assembled `cpuid.obj`
+  reports `x86 feature: SHSTK`.
 
 
 - **Upstream issue harvest (ADR-1166): nine stale Netflix/vmaf reports
