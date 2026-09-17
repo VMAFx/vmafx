@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Regression test for the ADR allocator's shallow-safety guard.
 #
 # `scripts/adr/next-free.sh` fetches from origin on every claim. Before this

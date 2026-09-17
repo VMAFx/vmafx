@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 //
 // pkg/fast/tpe_test.go — table-driven tests for the goptuna-backed TPE search
 // that replaces Optuna in the Go port of vmaftune/fast.py.

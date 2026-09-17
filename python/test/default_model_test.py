@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Fork-added coverage for the built-in default model (ADR-1169).
 
 The fork scores with ``vmaf_v1.0.16_3d0h`` when the caller names no model,

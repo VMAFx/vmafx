@@ -3,7 +3,7 @@
 
 - **Status**: Accepted
 - **Status update 2026-05-15**: scaffold implemented;
-  `LICENSES/Apache-2.0-u2netp.txt` and
+  `LICENSES/LicenseRef-Apache-2.0-u2netp.txt` and
   `docs/ai/models/u2netp_mirror_card.md` present on master;
   attribution + licence compliance recipe landed. Binary upload
   (`model/u2netp_mirror.onnx`) is a user-triggered release step
@@ -96,7 +96,7 @@ the path `model/u2netp_mirror.onnx` (gitignored — binary blob,
 shipped via GitHub Release attachment, not source control), with
 the following pieces landing in this PR:
 
-1. **`LICENSES/Apache-2.0-u2netp.txt`** — full Apache-2.0 licence
+1. **`LICENSES/LicenseRef-Apache-2.0-u2netp.txt`** — full Apache-2.0 licence
    text + attribution block citing upstream copyright, paper, and
    source URL. Satisfies §4 (a) + (c). New top-level directory
    `LICENSES/` per the SPDX licenses-list convention; future
@@ -255,7 +255,7 @@ downstream pipeline already pins to upstream u2netp behaviour.
   merging this draft (paraphrased — collected for reviewer
   visibility, not yet answered):
   1. Apache-2.0 §4 redistribution: the fork's read is that the
-     mirror needs `LICENSES/Apache-2.0-u2netp.txt` + an
+     mirror needs `LICENSES/LicenseRef-Apache-2.0-u2netp.txt` + an
      attribution block in the model card; no `NOTICE` file
      pass-through is required because upstream ships none.
      Confirm or flag a stricter read.

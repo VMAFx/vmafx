@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Enforce that the fork's default VMAF model is defined in exactly one place.
 #
 # The authoritative definition is VMAF_DEFAULT_MODEL_VERSION in

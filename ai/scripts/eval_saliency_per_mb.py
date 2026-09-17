@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Evaluate saliency masks at encoder block granularity.
 
 ADR-0396 Phase 2 needs a metric that matches what ROI encoders consume:

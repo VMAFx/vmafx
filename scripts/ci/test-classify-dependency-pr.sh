@@ -2,7 +2,7 @@
 # scripts/ci/test-classify-dependency-pr.sh — test suite for classify-dependency-pr.sh (ADR-1152).
 #
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 #
 # Exercises the dependency PR classifier against canonical test cases:
 #   - Dependency-only manifests / lockfiles -> exempt (exit 0)

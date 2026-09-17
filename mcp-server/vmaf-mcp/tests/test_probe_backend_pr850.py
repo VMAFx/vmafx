@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Regression tests for PR #850 fix — MCP probe size 32→64.
 
 Before PR #850 the probe YUV was 32×32, which is below the CUDA ADM

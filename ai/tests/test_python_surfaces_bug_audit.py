@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Regression tests for the 2026-05-31 Python-surfaces bug-audit bundle.
 
 Covers eight defects across ``ai/src/corpus/base.py`` and

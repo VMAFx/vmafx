@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """libvvenc codec adapter — VVC / H.266.
 
 VVenC is Fraunhofer HHI's open-source VVC (H.266) encoder. VVC is the

@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 //
 // pkg/fast/integration_test.go — end-to-end exercise of the production
 // probe-encode / decode / libvmaf-score pipeline against the real ffmpeg and

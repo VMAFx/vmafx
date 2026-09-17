@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for :mod:`ai.scripts.phase3_subset_sweep` helpers.
 
 Targets the pure-numpy + LOSO pipeline functions:

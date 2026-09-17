@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Public-surface tests for vmaf_use_tiny_model() — the ctx-attach path
  *  that was identified as having zero C-unit-test coverage in the 2026-05-16

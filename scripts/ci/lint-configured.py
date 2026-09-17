@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Lint the tracked native sources configured by Meson (ADR-1142).
 
 Keep the build database unchanged. A private analyzer database retains every

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 # Copyright 2026 Lusoris
 #
 # dev/scripts/smoke-probe-loop.sh — periodic smoke probe loop

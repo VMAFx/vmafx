@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Targeted coverage for the small ``aiutils`` modules.
 
 Closes uncovered branches in ``time_utils``, ``jsonl_utils``, and the

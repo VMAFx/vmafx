@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Implementation of the Windows MSVC getopt / getopt_long shim declared in
  *  core/tools/compat/win32/getopt.h. See the header for scope and known

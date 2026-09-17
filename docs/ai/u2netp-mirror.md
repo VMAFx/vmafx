@@ -50,7 +50,7 @@ The upstream `u2netp.pth` lives at
 `README.md` pointing at Google Drive. The fork's mirror is built
 from that upstream artefact (or its ONNX rewrap), redistributed
 under Apache-2.0 §4 with the attribution receipt at
-[`LICENSES/Apache-2.0-u2netp.txt`](../../LICENSES/Apache-2.0-u2netp.txt).
+[`LICENSES/LicenseRef-Apache-2.0-u2netp.txt`](../../LICENSES/LicenseRef-Apache-2.0-u2netp.txt).
 
 You can audit the lineage at any time: download the upstream
 `u2netp.pth` from Google Drive, run
@@ -200,7 +200,7 @@ their own product or research artefact), they inherit
 Apache-2.0 §4's redistribution conditions:
 
 - Ship the licence text alongside (the
-  [`LICENSES/Apache-2.0-u2netp.txt`](../../LICENSES/Apache-2.0-u2netp.txt)
+  [`LICENSES/LicenseRef-Apache-2.0-u2netp.txt`](../../LICENSES/LicenseRef-Apache-2.0-u2netp.txt)
   file from the same release is sufficient).
 - Preserve the attribution block (the same file carries it).
 - For modified ONNX rewraps: state the modification (Apache-2.0

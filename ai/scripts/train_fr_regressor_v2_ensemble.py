@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Train a deep ensemble of ``fr_regressor_v2`` for probabilistic VMAF.
 
 PR-#354 audit Bucket #18 (top-3 ranked) calls for a *probabilistic* head

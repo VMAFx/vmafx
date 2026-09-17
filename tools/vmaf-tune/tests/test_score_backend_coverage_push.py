@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Coverage push for vmaftune.score_backend — gaps identified by inspection.
 
 Covers branches not exercised by the existing test_score_backend.py:

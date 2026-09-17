@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 //
 // pkg/fast/pipeline_test.go — table-driven tests for the production
 // probe-encode / libvmaf-score plumbing ported from cli._build_fast_* and

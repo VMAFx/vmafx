@@ -1,5 +1,6 @@
 /* Upstream-mirror filename: defines float_psnr symbol despite the integer_ prefix (matches Netflix upstream). See ADR-0549. */
 /**
+ *  Copyright 2016-2026 Netflix, Inc.
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *

@@ -1,6 +1,8 @@
 /**
+ *  Copyright 2016-2026 Netflix, Inc.
+ *  Copyright (c) 2011, Tom Distler (http://tdistler.com)
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause
  *
  *  HIP compute kernels for the integer_ms_ssim feature extractor
  *  (HIP ninth consumer / ADR-0285). Direct port of the CUDA twin at

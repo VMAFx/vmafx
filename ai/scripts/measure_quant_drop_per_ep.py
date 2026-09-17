@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Measure fp32-vs-int8 PLCC drop across multiple Execution Providers (T5-3e).
 
 Sibling of ``ai/scripts/measure_quant_drop.py`` — same gate semantics,

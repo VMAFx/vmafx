@@ -1,4 +1,5 @@
 /**
+ *  Copyright 2016-2026 Netflix, Inc.
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  */

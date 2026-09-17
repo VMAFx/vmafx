@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 // Copyright 2026 Lusoris
 
 // Package proto holds the controllerv1 gRPC contract (controller.proto) and the

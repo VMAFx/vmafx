@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Round-3 coverage uplift for vmaf-mcp (mcp-server coverage push PR).
 
 Targets residual gaps not owned by any earlier test file.  Tests exercise

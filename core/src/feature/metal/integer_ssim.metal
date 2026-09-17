@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2001-2012 Xiph.Org and contributors.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-2-Clause
  *
  *  Metal compute kernels for integer_ssim (fixed-point SSIM).
  *  Integer twin of float_ssim.metal — mirrors the float twin's

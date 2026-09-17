@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 // Copyright 2026 Lusoris
 //
 // pkg/observability/otel_extra_test.go — additional branch coverage for

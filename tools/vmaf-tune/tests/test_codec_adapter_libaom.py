@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Smoke tests for the libaom-av1 codec adapter.
 
 Mocks ``subprocess`` style — no actual ffmpeg / libaom binary required.

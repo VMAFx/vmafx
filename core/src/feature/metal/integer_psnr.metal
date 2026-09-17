@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2016-2026 Netflix, Inc.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Metal compute kernel for integer_psnr (T8-1g / ADR-0421).
  *  Emits `psnr_y`, `psnr_cb`, `psnr_cr` — one kernel invocation per plane.

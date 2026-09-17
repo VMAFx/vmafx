@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 // Copyright 2026 Lusoris
 //
 // pkg/ai/infer_runner_test.go — the subprocess contract between

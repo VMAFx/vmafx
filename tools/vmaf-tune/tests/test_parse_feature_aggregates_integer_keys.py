@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for parse_feature_aggregates with real libvmaf integer_* JSON keys.
 
 Modern libvmaf emits pooled_metrics keys prefixed with ``integer_``

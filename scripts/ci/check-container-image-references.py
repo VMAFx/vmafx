@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Check FROM/COPY references for the ADR-1231 base-image gate.
 
 The shell caller supplies image-key names and tracked Dockerfiles. This helper

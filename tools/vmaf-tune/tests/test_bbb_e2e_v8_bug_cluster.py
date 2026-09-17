@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Regression tests for the BBB end-to-end probe v8 bug cluster (ADR-0508).
 
 The v8 probe surfaced one follow-up against the v6 V6-1 fix:

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # scripts/adr/tests/test-next-free-remote-aware.sh
 #
 # Acceptance tests for the remote-aware ADR allocator (next-free.sh).

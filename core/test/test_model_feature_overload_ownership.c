@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Netflix/vmaf#1242 regression test — the VmafFeatureDictionary ownership
  *  contract of vmaf_model_feature_overload() and

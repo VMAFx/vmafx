@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2016-2025 Netflix, Inc.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  HIP compute kernels for speed_chroma and speed_temporal feature
  *  extractors (ADR-0567).  Direct port of the CUDA twin at

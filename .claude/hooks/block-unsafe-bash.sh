@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # PreToolUse hook: block dangerous Bash commands before they execute.
 # Exit 0  -> allow. Exit non-zero -> deny and surface stderr to the agent.
 set -euo pipefail

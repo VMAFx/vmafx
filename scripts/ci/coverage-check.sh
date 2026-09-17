@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Enforce coverage thresholds from docs/principles.md §3.
 # Usage: coverage-check.sh <gcovr-summary.json> <overall_min%> <critical_min%>
 #

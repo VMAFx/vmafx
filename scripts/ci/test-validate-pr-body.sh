@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # scripts/ci/test-validate-pr-body.sh — exercises the local PR-body
 # deliverables validator against the same parser shapes that have
 # tripped real PRs (#461, #438, #470, #473, #486, #511, #468, #526).

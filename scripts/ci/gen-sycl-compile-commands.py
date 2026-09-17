@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 """gen-sycl-compile-commands.py — Augment compile_commands.json with SYCL TU entries.
 
 meson generates CUSTOM_COMMAND rules for icpx-compiled SYCL translation units,
@@ -17,12 +20,6 @@ Arguments:
 
 The script writes the augmented compile_commands.json in-place.  Existing entries
 are preserved unchanged; duplicates (same file already present) are skipped.
-
-Copyright 2026 Lusoris
-Licensed under the BSD+Patent License (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-    https://opensource.org/licenses/BSDplusPatent
 """
 
 import json

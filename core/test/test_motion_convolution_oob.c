@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Regression test for two heap out-of-bounds WRITES reachable from the public
  *  C API through `float_motion`, found by adversarial review of the

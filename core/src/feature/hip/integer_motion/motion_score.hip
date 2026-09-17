@@ -1,6 +1,8 @@
 /**
+ *  Copyright 2016-2023 Netflix, Inc.
+ *  Copyright 2021 NVIDIA Corporation.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  HIP compute kernel for the integer_motion feature extractor.
  *  Direct port of the CUDA twin at

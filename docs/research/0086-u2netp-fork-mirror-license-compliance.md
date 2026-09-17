@@ -64,7 +64,7 @@ preserve.
 
 §4 (a) — *"You must give any other recipients of the Work ... a
 copy of this License"*. **Satisfied by** shipping the full
-license text at `LICENSES/Apache-2.0-u2netp.txt`. Operators
+license text at `LICENSES/LicenseRef-Apache-2.0-u2netp.txt`. Operators
 fetching the binary from the GitHub release see the licence in
 the same release attachment list (the scaffold's release-workflow
 step uploads both the binary and the licence text alongside).
@@ -86,7 +86,7 @@ file modification.
 and attribution notices from the Source form of the Work ...
 excluding those notices that do not pertain to any part of the
 Derivative Works"*. **Satisfied by** the attribution block in
-`LICENSES/Apache-2.0-u2netp.txt` and the model card. The block
+`LICENSES/LicenseRef-Apache-2.0-u2netp.txt` and the model card. The block
 cites:
 
 - Upstream copyright: 2020 The U^2-Net Authors (per the LICENSE

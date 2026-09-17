@@ -1072,7 +1072,7 @@ binary upload is a separate PR.
   `model/u2netp_mirror.pth` to git.** Both paths are gitignored
   (see `.gitignore`). The binary lives in GitHub Release assets
   only — signed via Sigstore, hashed for SLSA, paired with
-  `LICENSES/Apache-2.0-u2netp.txt` at upload time. If a binary
+  `LICENSES/LicenseRef-Apache-2.0-u2netp.txt` at upload time. If a binary
   upload PR ever attempts to commit either file, the ADR-0412
   contract is broken; reject the PR.
 - **The exporter imports upstream code; it does not vendor it.**
@@ -1091,7 +1091,7 @@ binary upload is a separate PR.
   superseding ADR-0286.
 - **Apache-2.0 §4 (a) + (c) compliance is non-negotiable.**
   Every release that carries `u2netp_mirror_v*` must also carry
-  `LICENSES/Apache-2.0-u2netp.txt` with its attribution block
+  `LICENSES/LicenseRef-Apache-2.0-u2netp.txt` with its attribution block
   intact. The supply-chain.yml staging step pairs them
   automatically; if a future refactor decouples them, downstream
   operators inherit a license-non-compliant artefact. §4 (b)

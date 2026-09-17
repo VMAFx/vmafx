@@ -1,6 +1,9 @@
 /**
+ *  Copyright 2016-2026 Netflix, Inc.
+ *  Copyright (c) 2011, Tom Distler (http://tdistler.com)
+ *  Copyright 2001-2012 Xiph.Org and contributors.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause
  *
  *  CUDA compute kernels for the real integer_ssim feature extractor
  *  (ADR-0564). Bit-exact port of `libvmaf/src/feature/integer_ssim.c`.

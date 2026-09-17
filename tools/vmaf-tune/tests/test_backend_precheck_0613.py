@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Regression tests for ADR-0613 P1-1 — select_backend() pre-check in
 ``vmaf-tune compare`` and ``vmaf-tune tune-per-shot``.
 

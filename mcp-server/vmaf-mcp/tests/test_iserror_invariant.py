@@ -1,4 +1,5 @@
 # Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
 """Comprehensive ``isError=True`` invariant + error-path tests for the MCP
 server (`mcp-server/vmaf-mcp/src/vmaf_mcp/`).
 

@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for :mod:`ai.scripts.measure_quant_drop` (T5-3b / ADR-0174).
 
 Mocks ``onnxruntime.InferenceSession`` so we can drive the quant-drop

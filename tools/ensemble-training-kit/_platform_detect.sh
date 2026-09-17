@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 #
 # Shared platform-detection helper sourced by 01-prereqs.sh,
 # 02-generate-corpus.sh, and run-full-pipeline.sh. Defines two

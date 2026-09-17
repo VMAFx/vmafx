@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 //
 // cmd/vmafx-tune/cmd/root_test.go — in-package tests for the clikit (cobra+fx)
 // root wiring introduced in ADR-1119 Phase-1 PR-6.

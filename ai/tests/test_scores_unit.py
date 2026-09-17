@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for :mod:`ai.data.scores` — teacher VMAF score loader.
 
 Covers ``TeacherScores`` round-trip, ``resolve_teacher_model`` precedence,

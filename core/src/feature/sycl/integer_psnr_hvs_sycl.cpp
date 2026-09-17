@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2001-2012 Xiph.Org and contributors.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-2-Clause
  *
  *  psnr_hvs feature extractor on the SYCL backend
  *  (T7-23 / ADR-0188 / ADR-0191, GPU long-tail batch 2 part 3c).

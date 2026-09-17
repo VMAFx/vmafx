@@ -1,6 +1,5 @@
 // Copyright 2026 Lusoris. All rights reserved.
-// Use of this source code is governed by the BSD-3-Clause-Plus-Patent
-// license that can be found in the LICENSE file.
+// SPDX-License-Identifier: EUPL-1.2
 
 // http_security.go ports the Python MCP HTTP transport hardening (ADR-0967)
 // to the Go streamable-HTTP transport: bearer-token auth, a request-body size

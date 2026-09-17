@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Exercise guarded baseline writes and real filesystem failure paths (ADR-1243)."""
 
 from __future__ import annotations

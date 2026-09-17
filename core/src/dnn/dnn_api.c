@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Standalone `libvmaf/dnn.h` entry points: session open / run / close,
  *  capability probe, and tensor helpers. None of these reference

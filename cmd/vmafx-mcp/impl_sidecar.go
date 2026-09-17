@@ -1,6 +1,5 @@
 // Copyright 2026 Lusoris. All rights reserved.
-// Use of this source code is governed by the BSD-3-Clause-Plus-Patent
-// license that can be found in the LICENSE file.
+// SPDX-License-Identifier: EUPL-1.2
 
 // impl_sidecar.go bridges the four sidecar CLI binaries that ship alongside
 // the main `vmaf` tool into the MCP tool surface (epic #1240 item (b)):

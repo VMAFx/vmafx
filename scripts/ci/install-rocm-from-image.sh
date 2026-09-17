@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Install a pruned ROCm tree onto a CI runner from a digest-pinned OCI image.
 #
 # Why this exists (ADR-1225): since ROCm 7.14 AMD builds and releases through

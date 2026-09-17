@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Static PTQ: fp32 → INT8 with a parquet calibration source.
 
 These tests build a trivial linear fp32 model + synthetic calibration

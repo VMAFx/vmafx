@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """x265 codec adapter — smoke tests (ADR-0288).
 
 Mocks ``subprocess.run`` end-to-end so the suite passes regardless of

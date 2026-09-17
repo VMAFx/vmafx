@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Require positive file-selection fixtures for Renovate custom managers.
 
 The repository uses anchored, flag-free regexes with the /regex/ delimiter

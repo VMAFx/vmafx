@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for the fr_regressor_v3 trainer (ADR-0323).
 
 Covers the canonical-6 + ENCODER_VOCAB_V3 schema validation in

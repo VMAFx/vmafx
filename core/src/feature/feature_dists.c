@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  DISTS (Deep Image Structure and Texture Similarity) full-reference
  *  extractor. Backed by a two-input ONNX model that accepts

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 # VMAFx managed hook dispatcher (ADR-1241). Installed as a regular file.
 set -euo pipefail
 
