@@ -51,6 +51,15 @@
 #ifndef LIBVMAF_MCP_H_
 #define LIBVMAF_MCP_H_
 
+/* NOLINTBEGIN(modernize-use-using, modernize-deprecated-headers, performance-enum-size):
+ * public C API header. clang-tidy reads it as C++ and proposes `using`,
+ * `<cstdint>` and a narrower enum base type; all three are wrong here. This
+ * header has to compile as C for every consumer of the shipped library, where
+ * `using` does not exist and the C spellings of the standard headers are the
+ * only ones available, and the enum's base type is part of the ABI the fork
+ * publishes. CLAUDE.md rule 12 reserves NOLINT for exactly this: a rule that
+ * cannot be followed without breaking a load-bearing invariant. */
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -260,5 +269,7 @@ VMAF_EXPORT void vmaf_mcp_close(VmafMcpServer **server);
 #ifdef __cplusplus
 }
 #endif
+
+/* NOLINTEND(modernize-use-using, modernize-deprecated-headers, performance-enum-size) */
 
 #endif /* LIBVMAF_MCP_H_ */

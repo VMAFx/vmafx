@@ -564,3 +564,11 @@ row, which cost 0.602 s of a 1.03 s run over 48 frames of 1080p. See
 [the CUDA overview](../cuda/overview.md#cambi-reads-its-device-buffers-in-one-transfer-2026-09-17)
 for the measurements. **If you add a GPU twin that reads a plane back, copy it
 in one transfer.**
+
+## Licensing of the SYCL kernels (ADR-1250)
+
+As with the other backends, a SYCL kernel implementing an upstream Netflix
+metric keeps that code's terms and copyright notice, while fork-original SYCL
+code is EUPL-1.2. Four files in `core/src/sycl/` additionally carry an outside
+contributor's work and stay on their current terms until that contributor
+agrees to a change. See [ADR-1250](../../adr/1250-eupl-fork-relicense.md).

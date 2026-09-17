@@ -625,3 +625,12 @@ gates and the rest of the GPU suite pass.
 **If you add a GPU twin that reads a plane back**, copy it in one transfer.
 A per-row loop looks harmless and is the single most expensive thing this
 pipeline has done.
+
+## Licensing of the CUDA kernels (ADR-1250)
+
+A CUDA kernel implementing an upstream Netflix metric carries that metric's
+upstream code and keeps its terms (BSD-2-Clause-Patent) plus its copyright
+notice; the files ported from the NVIDIA-contributed upstream CUDA extractors
+also carry NVIDIA's. Fork-original CUDA code — the runtime, the dispatch layer,
+the kernels for fork-only metrics — is EUPL-1.2. The per-file tag is
+authoritative; see [ADR-1250](../../adr/1250-eupl-fork-relicense.md).

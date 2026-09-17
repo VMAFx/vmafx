@@ -25,6 +25,12 @@
 #include "../src/feature/feature_collector.h"
 #include "../src/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* ---------------------------------------------------------------------------
  * Forward-declare the Rust-exported symbols (same as in tad_rust.c).
  * --------------------------------------------------------------------------- */
@@ -49,11 +55,27 @@ static int alloc_8bit_grey(VmafPicture *pic, unsigned w, unsigned h, uint8_t fil
     return 0;
 }
 
+/* Reading one score and checking it is the same four lines everywhere in this
+ * file; folding them into a helper keeps each test inside the lint profile's
+ * branch budget (ADR-0141 asks for the refactor, not a suppression). */
+static char *expect_score(VmafFeatureCollector *fc, const char *name, unsigned index,
+                          double expected, const char *what)
+{
+    double score = -1.0;
+    const int err = vmaf_feature_collector_get_score(fc, name, &score, index);
+    if (err)
+        return "get_score error";
+    if (fabs(score - expected) >= EPS)
+        return what;
+    return NULL;
+}
+
 /* --------------------------------------------------------------------------- */
 
 static char *test_tad_identical_frames(void)
 {
-    VmafPicture ref, dis;
+    VmafPicture ref;
+    VmafPicture dis;
     VmafFeatureCollector *fc = NULL;
     void *state = NULL;
     int err = 0;
@@ -71,15 +93,12 @@ static char *test_tad_identical_frames(void)
     err = vmafx_tad_extract(state, &ref, &dis, 0, fc);
     mu_assert("vmafx_tad_extract error", err == 0);
 
-    double tad = -1.0;
-    err = vmaf_feature_collector_get_score(fc, "tad", &tad, 0);
-    mu_assert("get_score error", err == 0);
-    mu_assert("identical frames: tad should be 0.0", fabs(tad) < EPS);
-
-    double tad_sad = -1.0;
-    err = vmaf_feature_collector_get_score(fc, "tad_sad", &tad_sad, 0);
-    mu_assert("get_score tad_sad error", err == 0);
-    mu_assert("identical frames: tad_sad should be 0.0", fabs(tad_sad) < EPS);
+    char *score_err = expect_score(fc, "tad", 0, 0.0, "identical frames: tad should be 0.0");
+    if (score_err)
+        return score_err;
+    score_err = expect_score(fc, "tad_sad", 0, 0.0, "identical frames: tad_sad should be 0.0");
+    if (score_err)
+        return score_err;
 
     (void)vmafx_tad_close(state);
     vmaf_feature_collector_destroy(fc);
@@ -90,7 +109,8 @@ static char *test_tad_identical_frames(void)
 
 static char *test_tad_max_diff(void)
 {
-    VmafPicture ref, dis;
+    VmafPicture ref;
+    VmafPicture dis;
     VmafFeatureCollector *fc = NULL;
     void *state = NULL;
     int err = 0;
@@ -123,7 +143,8 @@ static char *test_tad_max_diff(void)
 static char *test_tad_partial_diff(void)
 {
     /* ref all-0, dis all-128: expected TAD = 128/255 */
-    VmafPicture ref, dis;
+    VmafPicture ref;
+    VmafPicture dis;
     VmafFeatureCollector *fc = NULL;
     void *state = NULL;
     int err = 0;
@@ -158,7 +179,10 @@ static char *test_tad_partial_diff(void)
 static char *test_tad_multi_frame(void)
 {
     /* Verify that the extractor accumulates across multiple frame indices. */
-    VmafPicture ref0, dis0, ref1, dis1;
+    VmafPicture ref0;
+    VmafPicture dis0;
+    VmafPicture ref1;
+    VmafPicture dis1;
     VmafFeatureCollector *fc = NULL;
     void *state = NULL;
     int err = 0;
@@ -180,12 +204,12 @@ static char *test_tad_multi_frame(void)
     err = vmafx_tad_extract(state, &ref1, &dis1, 1, fc);
     mu_assert("extract frame 1 error", err == 0);
 
-    double tad0 = -1.0, tad1 = -1.0;
-    err = vmaf_feature_collector_get_score(fc, "tad", &tad0, 0);
-    err |= vmaf_feature_collector_get_score(fc, "tad", &tad1, 1);
-    mu_assert("get_score multi-frame error", err == 0);
-    mu_assert("multi-frame: frame 0 tad should be 0.0", fabs(tad0) < EPS);
-    mu_assert("multi-frame: frame 1 tad should be 1.0", fabs(tad1 - 1.0) < EPS);
+    char *score_err = expect_score(fc, "tad", 0, 0.0, "multi-frame: frame 0 tad should be 0.0");
+    if (score_err)
+        return score_err;
+    score_err = expect_score(fc, "tad", 1, 1.0, "multi-frame: frame 1 tad should be 1.0");
+    if (score_err)
+        return score_err;
 
     (void)vmafx_tad_close(state);
     vmaf_feature_collector_destroy(fc);
@@ -208,3 +232,5 @@ char *run_tests(void)
     mu_run_test(test_tad_multi_frame);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

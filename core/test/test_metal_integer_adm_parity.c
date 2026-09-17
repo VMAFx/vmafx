@@ -53,6 +53,12 @@
 #include "libvmaf/libvmaf_metal.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* >= 17x17 (CPU integer_adm min) and large enough for a meaningful 4-scale
  * pyramid; matches the float_adm parity fixture geometry. */
 #define FIXTURE_W 256u
@@ -128,6 +134,49 @@ static int fill_dist(VmafPicture *pic, unsigned frame_idx)
     return 0;
 }
 
+/* The frame loop and the score loop are identical on both sides; extracting
+ * them keeps each run_* inside the lint profile's branch budget (ADR-0141 asks
+ * for the refactor rather than a suppression). */
+static char *feed_all_frames(VmafContext *vmaf)
+{
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = fill_ref(&ref, i);
+        if (err)
+            return "fill_ref failed";
+        err = fill_dist(&dist, i);
+        if (err)
+            return "fill_dist failed";
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        if (err)
+            return "vmaf_read_pictures failed";
+    }
+    return NULL;
+}
+
+static char *read_adm_scores(VmafContext *vmaf, const char *const *keys, double *out_scores)
+{
+    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
+        const int err = vmaf_feature_score_at_index(vmaf, keys[m], &out_scores[m], 1u);
+        if (err)
+            return "vmaf_feature_score_at_index failed";
+    }
+    return NULL;
+}
+
+static char *open_metal_context(VmafContext **vmaf, VmafMetalState *mstate)
+{
+    const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(vmaf, cfg);
+    if (err)
+        return "Metal: vmaf_init failed";
+    err = vmaf_metal_import_state(*vmaf, mstate);
+    if (err)
+        return "Metal: vmaf_metal_import_state failed";
+    return NULL;
+}
+
 static char *run_cpu(double *out_scores, const char *const *keys, int use_apn)
 {
     int err = 0;
@@ -147,22 +196,15 @@ static char *run_cpu(double *out_scores, const char *const *keys, int use_apn)
         (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CPU: vmaf_use_feature(adm) failed", !err);
 
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_ref(&ref, i);
-        mu_assert("CPU: fill_ref failed", !err);
-        err = fill_dist(&dist, i);
-        mu_assert("CPU: fill_dist failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CPU: vmaf_read_pictures failed", !err);
-    }
+    char *feed_err = feed_all_frames(vmaf);
+    if (feed_err)
+        return feed_err;
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
-    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
-        err = vmaf_feature_score_at_index(vmaf, keys[m], &out_scores[m], 1u);
-        mu_assert("CPU: vmaf_feature_score_at_index(adm[i], idx=1) failed", !err);
-    }
+    char *score_err = read_adm_scores(vmaf, keys, out_scores);
+    if (score_err)
+        return score_err;
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
@@ -185,13 +227,10 @@ static char *run_metal(double *out_scores, int *skipped, const char *const *keys
         return NULL;
     }
 
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("Metal: vmaf_init failed", !err);
-
-    err = vmaf_metal_import_state(vmaf, mstate);
-    mu_assert("Metal: vmaf_metal_import_state failed", !err);
+    char *open_err = open_metal_context(&vmaf, mstate);
+    if (open_err)
+        return open_err;
 
     VmafFeatureDictionary *opts = NULL;
     if (use_apn) {
@@ -204,22 +243,15 @@ static char *run_metal(double *out_scores, int *skipped, const char *const *keys
         (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("Metal: vmaf_use_feature(integer_adm_metal) failed", !err);
 
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_ref(&ref, i);
-        mu_assert("Metal: fill_ref failed", !err);
-        err = fill_dist(&dist, i);
-        mu_assert("Metal: fill_dist failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("Metal: vmaf_read_pictures failed", !err);
-    }
+    char *feed_err = feed_all_frames(vmaf);
+    if (feed_err)
+        return feed_err;
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("Metal: vmaf_read_pictures(EOS) failed", !err);
 
-    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
-        err = vmaf_feature_score_at_index(vmaf, keys[m], &out_scores[m], 1u);
-        mu_assert("Metal: vmaf_feature_score_at_index(adm[i], idx=1) failed", !err);
-    }
+    char *score_err = read_adm_scores(vmaf, keys, out_scores);
+    if (score_err)
+        return score_err;
 
     err = vmaf_close(vmaf);
     mu_assert("Metal: vmaf_close failed", !err);
@@ -305,3 +337,5 @@ char *run_tests(void)
     mu_run_test(test_integer_adm_p_norm_reaches_kernel);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

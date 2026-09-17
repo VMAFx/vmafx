@@ -50,7 +50,8 @@ static inline int vmaf_validate_feature_dimensions(const char *feature_name, uns
 
     /* SpEED chroma resolution constraint: chroma width and height >= SPEED_INTERNAL_MIN_DIMENSION (80). */
     if (strstr(feature_name, "speed_chroma") || strstr(feature_name, "Speed_chroma")) {
-        unsigned cw = 0, ch = 0;
+        unsigned cw = 0;
+        unsigned ch = 0;
         const int rc = speed_chroma_dimensions(w, h, pix_fmt, &cw, &ch);
         if (rc) {
             if (err_msg && sz > 0) {
@@ -105,14 +106,15 @@ static inline int vmaf_validate_model_dimensions(const VmafModel *model, const c
             continue;
 
         const char *canonical_name = feat_name;
-        if (strstr(feat_name, "cambi") || strstr(feat_name, "Cambi"))
+        if (strstr(feat_name, "cambi") || strstr(feat_name, "Cambi")) {
             canonical_name = "cambi";
-        else if (strstr(feat_name, "speed_chroma") || strstr(feat_name, "Speed_chroma"))
+        } else if (strstr(feat_name, "speed_chroma") || strstr(feat_name, "Speed_chroma")) {
             canonical_name = "speed_chroma";
-        else if (strstr(feat_name, "speed_temporal") || strstr(feat_name, "Speed_temporal"))
+        } else if (strstr(feat_name, "speed_temporal") || strstr(feat_name, "Speed_temporal")) {
             canonical_name = "speed_temporal";
-        else if (strstr(feat_name, "speed_qa") || strstr(feat_name, "Speed_qa"))
+        } else if (strstr(feat_name, "speed_qa") || strstr(feat_name, "Speed_qa")) {
             canonical_name = "speed_qa";
+        }
 
         char reason[256] = {0};
         const int rc =

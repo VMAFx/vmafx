@@ -7,8 +7,8 @@
  * SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause
  */
 
-#ifndef __VMAF_MS_SSIM_DECIMATE_AVX512_H__
-#define __VMAF_MS_SSIM_DECIMATE_AVX512_H__
+#ifndef VMAF_MS_SSIM_DECIMATE_AVX512_H_
+#define VMAF_MS_SSIM_DECIMATE_AVX512_H_
 
 /*
  * AVX-512 specialisation of ms_ssim_decimate_scalar.
@@ -29,4 +29,4 @@
 
 int ms_ssim_decimate_avx512(const float *src, int w, int h, float *dst, int *rw, int *rh);
 
-#endif /* __VMAF_MS_SSIM_DECIMATE_AVX512_H__ */
+#endif /* VMAF_MS_SSIM_DECIMATE_AVX512_H_ */

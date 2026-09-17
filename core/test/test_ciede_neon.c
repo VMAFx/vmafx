@@ -49,6 +49,12 @@
 
 #include "feature/arm64/ciede_neon.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* Widths chosen to straddle every plausible vector stride (4, 8, 16) and to
  * include the pathological small cases where no vector iteration runs at all. */
 static const int kWidths[] = {1,  2,  3,  4,  5,  6,  7,  8,  9,  11,  15,  16,  17,  23,
@@ -406,3 +412,5 @@ char *run_tests(void)
 #endif
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

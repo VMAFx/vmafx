@@ -87,6 +87,12 @@
 #if ARCH_AARCH64
 #include "feature/arm64/float_motion_neon.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* Widest line the sweep allocates, plus room for the unaligned-start
  * offsets (0..3 floats) the sweep applies to both operands. */
 #define MAX_W 2048
@@ -279,3 +285,5 @@ char *run_tests(void)
 #endif
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

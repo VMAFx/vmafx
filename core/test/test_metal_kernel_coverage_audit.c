@@ -68,6 +68,12 @@
 #include "metal/common.h"
 #include "metal/dispatch_strategy.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* The authoritative list of Metal kernel basenames living under
  * core/src/feature/metal/. Must stay in lock-step with the .mm files
  * referenced from core/src/metal/meson.build's `metal_objcpp_lib`
@@ -242,3 +248,5 @@ char *run_tests(void)
     }
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

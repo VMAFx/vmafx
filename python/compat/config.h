@@ -18,7 +18,8 @@
  * fallback code is used instead.
  */
 
-#pragma once
+#ifndef VMAF_PYTHON_COMPAT_CONFIG_H_
+#define VMAF_PYTHON_COMPAT_CONFIG_H_
 
 #define ARCH_X86 0
 #define ARCH_X86_32 0
@@ -28,3 +29,5 @@
 #define HAVE_AVX512 0
 #define HAVE_CUDA 0
 #define HAVE_SYCL 0
+
+#endif /* VMAF_PYTHON_COMPAT_CONFIG_H_ */

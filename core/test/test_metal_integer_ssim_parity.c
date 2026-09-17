@@ -49,6 +49,12 @@
 #include "libvmaf/libvmaf_metal.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 #define FIXTURE_W 256u
 #define FIXTURE_H 144u
 #define FIXTURE_BPC 8u
@@ -81,6 +87,29 @@ static int fill_fixture(VmafPicture *pic, unsigned variant)
     return 0;
 }
 
+/* Both sides feed the same fixture pair, so the sequence lives here once.
+ * Extracting it also keeps each run_* function inside the branch budget the
+ * lint profile sets, which is the refactor ADR-0141 asks for rather than a
+ * suppression. */
+static char *feed_fixture_pair(VmafContext *vmaf)
+{
+    VmafPicture ref;
+    VmafPicture dist;
+    int err = fill_fixture(&ref, 0u);
+    if (err)
+        return "fill_fixture(ref) failed";
+    err = fill_fixture(&dist, 1u);
+    if (err)
+        return "fill_fixture(dist) failed";
+    err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
+    if (err)
+        return "vmaf_read_pictures failed";
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    if (err)
+        return "vmaf_read_pictures(EOS) failed";
+    return NULL;
+}
+
 static char *run_cpu_integer_ssim(double *out_score)
 {
     int err = 0;
@@ -92,15 +121,9 @@ static char *run_cpu_integer_ssim(double *out_score)
     err = vmaf_use_feature(vmaf, "ssim", NULL);
     mu_assert("CPU: vmaf_use_feature(ssim) failed", !err);
 
-    VmafPicture ref, dist;
-    err = fill_fixture(&ref, 0u);
-    mu_assert("CPU: fill_fixture(ref) failed", !err);
-    err = fill_fixture(&dist, 1u);
-    mu_assert("CPU: fill_fixture(dist) failed", !err);
-    err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-    mu_assert("CPU: vmaf_read_pictures failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
+    char *feed_err = feed_fixture_pair(vmaf);
+    if (feed_err)
+        return feed_err;
 
     err = vmaf_feature_score_at_index(vmaf, "ssim", out_score, 0u);
     mu_assert("CPU: vmaf_feature_score_at_index(ssim, idx=0) failed", !err);
@@ -136,15 +159,9 @@ static char *run_metal_integer_ssim(double *out_score, int *skipped)
     err = vmaf_use_feature(vmaf, "integer_ssim_metal", NULL);
     mu_assert("Metal: vmaf_use_feature(integer_ssim_metal) failed", !err);
 
-    VmafPicture ref, dist;
-    err = fill_fixture(&ref, 0u);
-    mu_assert("Metal: fill_fixture(ref) failed", !err);
-    err = fill_fixture(&dist, 1u);
-    mu_assert("Metal: fill_fixture(dist) failed", !err);
-    err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-    mu_assert("Metal: vmaf_read_pictures failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("Metal: vmaf_read_pictures(EOS) failed", !err);
+    char *feed_err = feed_fixture_pair(vmaf);
+    if (feed_err)
+        return feed_err;
 
     err = vmaf_feature_score_at_index(vmaf, "ssim", out_score, 0u);
     mu_assert("Metal: vmaf_feature_score_at_index(ssim, idx=0) failed", !err);
@@ -187,3 +204,5 @@ char *run_tests(void)
     mu_run_test(test_integer_ssim_cpu_metal_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

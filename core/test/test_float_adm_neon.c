@@ -71,6 +71,12 @@
 #if ARCH_AARCH64
 #include "feature/arm64/float_adm_neon.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* FLOAT_ONE_BY_30 from adm_tools.c, which does not export it. */
 #define TEST_ONE_BY_30 0.0333333351f
 
@@ -367,3 +373,5 @@ char *run_tests(void)
 #endif
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

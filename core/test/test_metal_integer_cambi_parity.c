@@ -50,6 +50,12 @@
 #include "libvmaf/picture.h"
 #include "feature/feature_extractor.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* CAMBI requires >= 216 on at least one dimension; 640x480 is safely above. */
 #define FIXTURE_W 640u
 #define FIXTURE_H 480u
@@ -84,9 +90,10 @@ static int fill_fixture(VmafPicture *pic, unsigned salt)
     for (unsigned p = 1; p < 3; p++) {
         uint16_t *plane = (uint16_t *)pic->data[p];
         const unsigned cstride = pic->stride[p] / 2u;
-        for (unsigned row = 0; row < pic->h[p]; row++)
+        for (unsigned row = 0; row < pic->h[p]; row++) {
             for (unsigned col = 0; col < pic->w[p]; col++)
                 plane[row * cstride + col] = 512u;
+        }
     }
     return 0;
 }
@@ -314,3 +321,5 @@ char *run_tests(void)
     mu_run_test(test_cambi_cpu_metal_hrs_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
