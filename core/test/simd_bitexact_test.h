@@ -259,4 +259,96 @@ static inline int simd_test_have_avx512(void)
         }                                                                                          \
     } while (0)
 
+/* ---------------------------------------------------------------------
+ * Guard-band (untouched-outside-region) helpers.
+ *
+ * A bit-exact comparison only covers the region a kernel is meant to
+ * write. A kernel that also stores past it -- a vector loop whose last
+ * iteration runs beyond `right`, a last-row store that lands in the next
+ * band of a shared slab -- passes such a comparison, because nothing
+ * ever looks there. Netflix/vmaf 03b5562c5 (adm_decouple_avx2) and
+ * ea012e387 (adm_dwt2_8_neon) were both of that shape and both went
+ * unnoticed by the fork's parity tests.
+ *
+ * The pattern: fill the whole output allocation with
+ * SIMD_TEST_GUARD_BYTE (`simd_test_guard_fill`), run the kernel, then
+ * count the elements outside the declared write rectangle that no longer
+ * hold the guard pattern (`simd_test_guard_count_outside`). Allocate a
+ * few trailing slack elements past the last row and include them in the
+ * count so a store past the end of the plane is caught too.
+ * ------------------------------------------------------------------- */
+
+#define SIMD_TEST_GUARD_BYTE 0xA5u
+
+/* Rows [row0, row1) x columns [col0, col1), in elements. */
+typedef struct SimdTestRect {
+    size_t row0;
+    size_t row1;
+    size_t col0;
+    size_t col1;
+} SimdTestRect;
+
+/* A plane of `rows` x `stride` elements of `elem_size` bytes, followed by
+ * `slack` further elements that nothing may write. */
+typedef struct SimdTestPlane {
+    const void *base;
+    size_t elem_size;
+    size_t stride;
+    size_t rows;
+    size_t slack;
+} SimdTestPlane;
+
+static inline void simd_test_guard_fill(void *buf, size_t n_bytes)
+{
+    (void)memset(buf, (int)SIMD_TEST_GUARD_BYTE, n_bytes);
+}
+
+static inline int simd_test_guard_elem_intact(const unsigned char *elem, size_t elem_size)
+{
+    for (size_t b = 0; b < elem_size; ++b) {
+        if (elem[b] != SIMD_TEST_GUARD_BYTE) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static inline int simd_test_rect_contains(SimdTestRect rect, size_t row, size_t col)
+{
+    return row >= rect.row0 && row < rect.row1 && col >= rect.col0 && col < rect.col1;
+}
+
+/* Number of elements of `plane` (rows x stride plus the trailing slack)
+ * that lie outside `rect` and no longer hold the guard pattern. */
+static inline size_t simd_test_guard_count_outside(SimdTestPlane plane, SimdTestRect rect)
+{
+    const unsigned char *bytes = (const unsigned char *)plane.base;
+    const size_t total = (plane.rows * plane.stride) + plane.slack;
+    size_t touched = 0;
+
+    for (size_t k = 0; k < total; ++k) {
+        const size_t row = k / plane.stride;
+        const size_t col = k % plane.stride;
+        if (row < plane.rows && simd_test_rect_contains(rect, row, col)) {
+            continue;
+        }
+        if (!simd_test_guard_elem_intact(bytes + (k * plane.elem_size), plane.elem_size)) {
+            ++touched;
+        }
+    }
+    return touched;
+}
+
+/* mu_assert-compatible: fails when `count` elements outside the region
+ * were written. */
+#define SIMD_GUARD_ASSERT_UNTOUCHED(count, label)                                                  \
+    do {                                                                                           \
+        const size_t _touched = (size_t)(count);                                                   \
+        if (_touched != 0) {                                                                       \
+            (void)fprintf(stderr, "  %s: %zu element(s) written outside the declared region\n",    \
+                          (label), _touched);                                                      \
+            return (label);                                                                        \
+        }                                                                                          \
+    } while (0)
+
 #endif /* LIBVMAF_TEST_SIMD_BITEXACT_TEST_H */

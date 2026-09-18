@@ -31,6 +31,12 @@
  *      adm_cm reference from integer_adm.c (accessed via static-inline
  *      replica for linkage purposes).
  *
+ *   3. test_adm_decouple_guard_band: sweeps every band width from 8 to 80
+ *      over several heights and requires adm_decouple_avx2 (and, where the
+ *      host has it, adm_decouple_avx512) to leave every sample outside the
+ *      decouple region untouched, with AVX2 and AVX-512 agreeing inside it.
+ *      Regression test for Netflix/vmaf 03b5562c5.
+ *
  * Boilerplate provided by `simd_bitexact_test.h` (ADR-0245).
  */
 
@@ -55,9 +61,13 @@
 /* clang-format on */
 
 #include "feature/integer_adm.h"
+#include "mem.h"
 
 #if ARCH_X86
 #include "feature/x86/adm_avx2.h"
+#if HAVE_AVX512
+#include "feature/x86/adm_avx512.h"
+#endif
 #endif
 
 /* ---------------------------------------------------------------------
@@ -386,6 +396,192 @@ static char *test_i4_adm_cm_avx2_p_norm(void)
     return check_i4_adm_cm_avx2_p_norm_result(r_p3, r_p2);
 }
 
+/* ---------------------------------------------------------------------
+ * Test 3: guard band + small-size sweep for adm_decouple_avx2 / _avx512.
+ *
+ * Netflix/vmaf 03b5562c5: adm_decouple_avx2 computed its 8-wide tail bound
+ * from column 0 instead of from `left`, so the last vector store ran up to
+ * seven columns past `right` -- into border columns nothing reads, and for
+ * band widths 32 and 40 past the end of the row into the next row or band.
+ * Nothing compared the samples outside [left, right). Here every output
+ * plane is filled with the guard pattern first, using the band stride
+ * integer_adm.c derives, and the kernel must leave everything outside the
+ * decouple region intact.
+ * ------------------------------------------------------------------- */
+
+#define DEC_SLACK 32
+#define DEC_PLANES 12
+
+typedef void (*adm_decouple_fn)(AdmBuffer *buf, int w, int h, int stride,
+                                double adm_enhn_gain_limit, int32_t *adm_div_lookup);
+
+/* planes[0..5] are the inputs (ref h/v/d, dis h/v/d), planes[6..11] the
+ * outputs (decouple_r h/v/d, decouple_a h/v/d). */
+typedef struct DecoupleFixture {
+    int w;
+    int h;
+    int stride;
+    size_t plane_elems;
+    int16_t *planes[DEC_PLANES];
+    AdmBuffer buf;
+} DecoupleFixture;
+
+static void decouple_fixture_free(DecoupleFixture *f)
+{
+    for (int k = 0; k < DEC_PLANES; ++k) {
+        simd_test_aligned_free(f->planes[k]);
+        f->planes[k] = NULL;
+    }
+}
+
+static void decouple_fixture_bind(DecoupleFixture *f)
+{
+    f->buf.ref_dwt2.band_h = f->planes[0];
+    f->buf.ref_dwt2.band_v = f->planes[1];
+    f->buf.ref_dwt2.band_d = f->planes[2];
+    f->buf.dis_dwt2.band_h = f->planes[3];
+    f->buf.dis_dwt2.band_v = f->planes[4];
+    f->buf.dis_dwt2.band_d = f->planes[5];
+    f->buf.decouple_r.band_h = f->planes[6];
+    f->buf.decouple_r.band_v = f->planes[7];
+    f->buf.decouple_r.band_d = f->planes[8];
+    f->buf.decouple_a.band_h = f->planes[9];
+    f->buf.decouple_a.band_v = f->planes[10];
+    f->buf.decouple_a.band_d = f->planes[11];
+}
+
+/* Inputs get DWT-sized random samples, outputs the guard pattern. Returns 0,
+ * or -1 after freeing whatever was allocated. */
+static int decouple_fixture_alloc(DecoupleFixture *f, int w, int h, uint32_t seed)
+{
+    (void)memset(f, 0, sizeof(*f));
+    f->w = w;
+    f->h = h;
+    /* integer_adm.c: buf_stride = ALIGN_CEIL(band width * 4) >> 2. */
+    f->stride = ALIGN_CEIL(w * (int)sizeof(int32_t)) / (int)sizeof(int32_t);
+    f->plane_elems = ((size_t)f->stride * (size_t)h) + DEC_SLACK;
+
+    uint32_t state = seed;
+    for (int k = 0; k < DEC_PLANES; ++k) {
+        f->planes[k] = (int16_t *)simd_test_aligned_malloc(f->plane_elems * sizeof(int16_t), 32);
+        if (!f->planes[k]) {
+            decouple_fixture_free(f);
+            return -1;
+        }
+        if (k >= 6) {
+            simd_test_guard_fill(f->planes[k], f->plane_elems * sizeof(int16_t));
+            continue;
+        }
+        for (size_t i = 0; i < f->plane_elems; ++i) {
+            f->planes[k][i] = (int16_t)((int)(simd_test_xorshift32(&state) % 8192u) - 4096);
+        }
+    }
+    decouple_fixture_bind(f);
+    return 0;
+}
+
+/* The decouple region, derived exactly as the kernels derive it. */
+static SimdTestRect decouple_region(int w, int h)
+{
+    int left = (int)((w * ADM_BORDER_FACTOR) - 0.5 - 1);
+    int top = (int)((h * ADM_BORDER_FACTOR) - 0.5 - 1);
+    int right = w - left + 2;
+    int bottom = h - top + 2;
+
+    left = left < 0 ? 0 : left;
+    top = top < 0 ? 0 : top;
+    right = right > w ? w : right;
+    bottom = bottom > h ? h : bottom;
+
+    const SimdTestRect rect = {(size_t)top, (size_t)bottom, (size_t)left, (size_t)right};
+    return rect;
+}
+
+static size_t decouple_outputs_touched(const DecoupleFixture *f, SimdTestRect rect)
+{
+    size_t touched = 0;
+    for (int k = 6; k < DEC_PLANES; ++k) {
+        const SimdTestPlane plane = {f->planes[k], sizeof(int16_t), (size_t)f->stride, (size_t)f->h,
+                                     DEC_SLACK};
+        touched += simd_test_guard_count_outside(plane, rect);
+    }
+    return touched;
+}
+
+static int decouple_regions_equal(const DecoupleFixture *a, const DecoupleFixture *b,
+                                  SimdTestRect rect)
+{
+    for (int k = 6; k < DEC_PLANES; ++k) {
+        for (size_t i = rect.row0; i < rect.row1; ++i) {
+            const size_t row = i * (size_t)a->stride;
+            const size_t n = (rect.col1 - rect.col0) * sizeof(int16_t);
+            if (memcmp(a->planes[k] + row + rect.col0, b->planes[k] + row + rect.col0, n) != 0) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+/* Runs `kernel` on one geometry and checks its guard band; when `cross` is
+ * set, runs it on an identical fixture and requires the same guard band and
+ * the same in-region samples. */
+static char *check_decouple_geometry(adm_decouple_fn kernel, adm_decouple_fn cross, int w, int h)
+{
+    DecoupleFixture a;
+    DecoupleFixture b;
+    const uint32_t seed = 0xdec0u ^ (uint32_t)((w * 131) + h);
+
+    mu_assert("allocation failed for the decouple fixture",
+              decouple_fixture_alloc(&a, w, h, seed) == 0);
+    if (decouple_fixture_alloc(&b, w, h, seed) != 0) {
+        decouple_fixture_free(&a);
+        return "allocation failed for the decouple fixture";
+    }
+
+    const SimdTestRect rect = decouple_region(w, h);
+    kernel(&a.buf, w, h, a.stride, DEFAULT_ADM_ENHN_GAIN_LIMIT, div_lookup);
+    size_t touched = decouple_outputs_touched(&a, rect);
+    int same = 1;
+    if (cross) {
+        cross(&b.buf, w, h, b.stride, DEFAULT_ADM_ENHN_GAIN_LIMIT, div_lookup);
+        touched += decouple_outputs_touched(&b, rect);
+        same = decouple_regions_equal(&a, &b, rect);
+    }
+    decouple_fixture_free(&a);
+    decouple_fixture_free(&b);
+
+    if (touched != 0 || !same) {
+        (void)fprintf(stderr, "  decouple band %dx%d region [%zu,%zu)x[%zu,%zu)\n", w, h, rect.row0,
+                      rect.row1, rect.col0, rect.col1);
+    }
+    SIMD_GUARD_ASSERT_UNTOUCHED(touched, "adm_decouple wrote outside the decouple region");
+    mu_assert("adm_decouple AVX2 and AVX-512 disagree inside the decouple region", same);
+    return NULL;
+}
+
+static char *test_adm_decouple_guard_band(void)
+{
+    /* Band heights: full-height regions (top == 0) up to a clipped border. */
+    static const int heights[] = {8, 12, 17, 24, 36};
+    adm_decouple_fn cross = NULL;
+#if HAVE_AVX512
+    if (simd_test_have_avx512()) {
+        cross = adm_decouple_avx512;
+    }
+#endif
+
+    for (size_t t = 0; t < sizeof(heights) / sizeof(heights[0]); ++t) {
+        for (int w = 8; w <= 80; ++w) {
+            char *msg = check_decouple_geometry(adm_decouple_avx2, cross, w, heights[t]);
+            if (msg) {
+                return msg;
+            }
+        }
+    }
+    return NULL;
+}
+
 #endif /* ARCH_X86 */
 
 char *run_tests(void)
@@ -397,8 +593,10 @@ char *run_tests(void)
     if (!simd_test_have_avx2()) {
         return NULL;
     }
+    div_lookup_generator();
     mu_run_test(test_adm_cm_avx2_smoke);
     mu_run_test(test_i4_adm_cm_avx2_p_norm);
+    mu_run_test(test_adm_decouple_guard_band);
 #else
     (void)fprintf(stderr, "skipping SIMD smoke: non-x86 arch\n");
 #endif
