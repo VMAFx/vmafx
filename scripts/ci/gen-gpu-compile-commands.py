@@ -29,7 +29,8 @@ import sys
 from pathlib import Path
 
 RULE_RE = re.compile(
-    r"^build\s+\S+:\s+CUSTOM_COMMAND\s+(?P<src>\S+\.(?:cu|hip))\s+\|\s*(?P<tool>\S+)\s*\n"
+    # meson names the rule CUSTOM_COMMAND_DEP when the target has a depfile.
+    r"^build\s+\S+:\s+CUSTOM_COMMAND(?:_DEP)?\s+(?P<src>\S+\.(?:cu|hip))\s+\|\s*(?P<tool>\S+)\s*\n"
     r"(?:[ \t]+\S[^\n]*\n)*?"
     r"[ \t]+COMMAND\s*=\s*(?P<cmd>[^\n]+)",
     re.MULTILINE,
