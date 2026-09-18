@@ -1247,8 +1247,9 @@ static sycl::event launch_csf_den_cm_3band(
                                  * which only diverges once a scale's border crop
                                  * collapses to 0 — band dimensions <= 14 — since
                                  * only then are row 0 / col 0 inside the CM
-                                 * region. CUDA (adm_cm.cu) and HIP already carry
-                                 * the ADR-1167 fix; this twin was missed. */
+                                 * region. The CUDA and HIP scale 1-3 kernels had
+                                 * the ADR-1167 fix; their scale-0 kernels got it
+                                 * with T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18. */
                                 int ny = row + dy;
                                 int nx = col + dx;
                                 if (ny < 0)
@@ -1442,6 +1443,13 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 {
     (void)pix_fmt;
     auto *s = static_cast<AdmStateSycl *>(fex->priv);
+
+    /* Same frame-size bound as the CPU reference, checked before any device
+     * resource is claimed. */
+    const int size_err = adm_frame_size_check("adm_sycl", w, h);
+    if (size_err != 0) {
+        return size_err;
+    }
 
     s->width = w;
     s->height = h;

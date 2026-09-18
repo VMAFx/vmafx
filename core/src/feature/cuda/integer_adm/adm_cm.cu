@@ -334,8 +334,11 @@ adm_cm_line_kernel(AdmBufferCuda buf, int h, int w, int top, int bottom, int lef
 
     for (int x = start_col + (int)threadIdx.x; x < end_col; x += (int)blockDim.x) {
         int pos_x[3] = {x - 1, x, x + 1};
+        /* ADR-1210's asymmetric rule, as the CPU's adm_cm_thresh(): x - 1 mirrors
+         * to 1 at the left edge, x + 1 clamps to w - 1 at the right edge. Both
+         * edges are inside the CM region only for bands of 14 samples or less. */
         pos_x[0] = abs(pos_x[0]);
-        pos_x[2] = pos_x[2] - max(0, 2 * (x - w) + 1);
+        pos_x[2] = min(pos_x[2], w - 1);
 
         int32_t thr[rows_per_thread] = {0};
 
@@ -345,7 +348,7 @@ adm_cm_line_kernel(AdmBufferCuda buf, int h, int w, int top, int bottom, int lef
             for (int row = 0; row < total_rows; ++row) {
                 int pos_y = y - 1 + row;
                 pos_y = abs(pos_y);
-                pos_y = pos_y - max(0, 2 * (y - h) + 1);
+                pos_y = min(pos_y, h - 1);
 
                 /* Inline csf_a at center pixel */
                 int16_t csf_a_val = inline_s0_csf_a(ref, dis, pos_y * src_stride + x, theta,
@@ -676,8 +679,11 @@ adm_cm_aim_line_kernel(AdmBufferCuda buf, int h, int w, int top, int bottom, int
     for (int x = start_col + (int)threadIdx.x; x < end_col; x += (int)blockDim.x) {
         /* Reflected x-positions for the 3 columns (matches adm_cm_line_kernel). */
         int pos_x[3] = {x - 1, x, x + 1};
+        /* ADR-1210's asymmetric rule, as the CPU's adm_cm_thresh(): x - 1 mirrors
+         * to 1 at the left edge, x + 1 clamps to w - 1 at the right edge. Both
+         * edges are inside the CM region only for bands of 14 samples or less. */
         pos_x[0] = abs(pos_x[0]);
-        pos_x[2] = pos_x[2] - max(0, 2 * (x - w) + 1);
+        pos_x[2] = min(pos_x[2], w - 1);
 
         int32_t thr[rows_per_thread] = {0};
 
@@ -687,7 +693,7 @@ adm_cm_aim_line_kernel(AdmBufferCuda buf, int h, int w, int top, int bottom, int
             for (int row = 0; row < total_rows; ++row) {
                 int pos_y = y - 1 + row;
                 pos_y = abs(pos_y);
-                pos_y = pos_y - max(0, 2 * (y - h) + 1);
+                pos_y = min(pos_y, h - 1);
 
                 /* Compute csf_r at each of the 3 column positions for this row. */
                 int16_t csf_r0 = inline_s0_csf_r(ref, dis, pos_y * src_stride + pos_x[0], theta,

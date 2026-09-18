@@ -570,12 +570,12 @@ static int adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int 
             ws.shift_sq[band] = 30;
             ws.add_shift_sq[band] = (1 << (ws.shift_sq[band] - 1));
         }
-        ws.add_shift_cub[band] = 1 << (ws.shift_cub[band] - 1);
+        ws.add_shift_cub[band] = adm_half_shift(ws.shift_cub[band]);
     }
 
     // precompute global shift
     uint32_t shift_inner_accum = (uint32_t)(ceil(log2f(h)));
-    uint32_t add_shift_inner_accum = 1 << (shift_inner_accum - 1);
+    uint32_t add_shift_inner_accum = adm_half_shift(shift_inner_accum);
 
     // fused
     {
@@ -678,10 +678,10 @@ static int adm_cm_aim_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, 
         ws.shift_cub[band] -= fixed_shift[band];
         ws.shift_sq[band] = shift_xsq[band];
         ws.add_shift_sq[band] = add_shift_xsq[band];
-        ws.add_shift_cub[band] = 1 << (ws.shift_cub[band] - 1);
+        ws.add_shift_cub[band] = adm_half_shift(ws.shift_cub[band]);
     }
     uint32_t shift_inner_accum = (uint32_t)(ceil(log2f(h)));
-    uint32_t add_shift_inner_accum = 1 << (shift_inner_accum - 1);
+    uint32_t add_shift_inner_accum = adm_half_shift(shift_inner_accum);
 
     const int BLOCKX = 32;
     const int BLOCKY = 4;
@@ -1444,6 +1444,13 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     (void)pix_fmt;
     (void)bpc;
+
+    /* Same frame-size bound as the CPU reference, checked before any device
+     * resource is claimed. */
+    const int size_err = adm_frame_size_check("adm_cuda", w, h);
+    if (size_err) {
+        return size_err;
+    }
 
     /* ADR-1191: reject CSF configurations the fixed-point pipeline cannot
      * represent before any device resource is claimed, so an unsupported
