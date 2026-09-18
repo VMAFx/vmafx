@@ -2,7 +2,6 @@
 name: profile-hotpath
 description: Profile a hot path (feature + backend) using the appropriate profiler (perf / ncu / Vtune / rocprof), produce flamegraph + top-N hot functions, and suggest concrete optimizations. Delegates to the perf-profiler agent.
 ---
-
 <!-- markdownlint-disable MD013 -->
 
 # /profile-hotpath
@@ -15,18 +14,18 @@ description: Profile a hot path (feature + backend) using the appropriate profil
 
 ## Behavior
 
-Delegates the profiling + interpretation work to the `perf-profiler` agent (see
-`.claude/agents/perf-profiler.md`), which:
+Delegates profiling + interpretation -> `perf-profiler` agent
+(see `.claude/agents/perf-profiler.md`):
 
-1. Builds (if needed) with `--config=relwithdebinfo` for symbolicated profiles.
-2. Selects the profiler for the backend.
-3. Runs `build/tools/vmaf_bench` with fixed seed + frame count.
-4. Produces a flamegraph under `build/profiles/<date>/flame.svg`.
-5. Emits a top-10 hot-function list + recommendations.
+1. Build (if needed) with `--config=relwithdebinfo` for symbolicated profiles.
+2. Select profiler for backend.
+3. Run `build/tools/vmaf_bench` with fixed seed + frame count.
+4. Produce flamegraph under `build/profiles/<date>/flame.svg`.
+5. Emit top-10 hot-function list + recommendations.
 
 ## Notes
 
-- The `perf-profiler` agent owns the actual interpretation — this skill just sets up
-  the environment and invokes it.
-- If the profiler isn't installed (`ncu` missing for CUDA, `vtune` for SYCL), the skill
-  degrades to `perf record` as a fallback, with a clear note in the report.
+- `perf-profiler` agent owns interpretation — skill only sets up environment
+  and invokes it.
+- Profiler not installed (`ncu` missing for CUDA, `vtune` for SYCL) -> degrade
+  to `perf record` fallback with clear note in report.

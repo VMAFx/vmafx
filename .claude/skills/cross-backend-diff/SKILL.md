@@ -2,7 +2,6 @@
 name: cross-backend-diff
 description: Core debugging skill. Runs the same (ref, dist) through every enabled backend (cpu, cuda, sycl, vulkan), reports per-frame per-feature ULP divergence, flags anything beyond configurable tolerance. Use after any SIMD / GPU change. Mirrors the T6-8 GPU-parity CI gate (ADR-0214) locally.
 ---
-
 # /cross-backend-diff
 
 ## Invocation
@@ -15,14 +14,14 @@ description: Core debugging skill. Runs the same (ref, dist) through every enabl
 
 ## Steps
 
-1. Build every backend in `--backends` (reuses cached builds where possible).
-2. Run `build/tools/vmaf` per backend with `--json --precision=17` for every feature
-   of interest (default: adm, vif, motion, psnr, ssim).
-3. Parse each JSON into `(backend, frame, feature) -> score` tables.
+1. Build every backend in `--backends` (reuse cached builds where possible).
+2. Run `build/tools/vmaf` per backend with `--json --precision=17` for every
+   feature (default: adm, vif, motion, psnr, ssim).
+3. Parse JSON into `(backend, frame, feature) -> score` tables.
 4. For every pair of backends, compute:
    - Absolute max diff
    - ULP distance (double bits XOR)
-5. Report a table:
+5. Report table:
 
    ```text
    Feature   Pair           MaxAbsDiff   MaxULP  WorstFrame   Verdict
@@ -35,16 +34,15 @@ description: Core debugging skill. Runs the same (ref, dist) through every enabl
 
 ## Notes
 
-- ULP > tolerance is a blocker. Either fix the reduction to use double accumulation
-  (see `simd-reviewer`), or open a CODEOWNERS-approved exception.
-- Default test clip: the Netflix normal pair (`src01_hrc00_576x324.yuv` ↔
-  `src01_hrc01_576x324.yuv`). For checkerboard variants, use the two
+- ULP > tolerance = blocker. Fix reduction to use double accumulation
+  (see `simd-reviewer`) or open CODEOWNERS-approved exception.
+- Default test clip: Netflix normal pair (`src01_hrc00_576x324.yuv` ↔
+  `src01_hrc01_576x324.yuv`). Checkerboard variants: use two
   `checkerboard_1920_1080_10_3_*_0.yuv` pairs.
-- This skill is the local-dev mirror of the **T6-8 GPU-parity CI gate**
-  ([ADR-0214](../../../docs/adr/0214-gpu-parity-ci-gate.md)) — the gate
-  enforces the same per-feature cross-device variance budget on every PR.
-  Run this skill before pushing to catch a parity break locally instead of
-  burning a CI cycle.
-- GPUs are NOT bit-identical to CPU as a class invariant; they're close but
-  the Netflix golden gate is CPU-only by design. Don't claim CUDA/SYCL/Vulkan
-  parity stricter than the per-feature variance budget in ADR-0214.
+- Local-dev mirror of **T6-8 GPU-parity CI gate**
+  ([ADR-0214](../../../docs/adr/0214-gpu-parity-ci-gate.md)): gate enforces
+  same per-feature cross-device variance budget on every PR. Run before push
+  to catch parity break locally, not burn CI cycle.
+- GPUs NOT bit-identical to CPU as class invariant: close, but Netflix golden
+  gate CPU-only by design. Don't claim CUDA/SYCL/Vulkan parity stricter than
+  per-feature variance budget in ADR-0214.
