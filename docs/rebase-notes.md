@@ -248,6 +248,14 @@ sync touches these files, keep the fork form:
   `pos_y = min(pos_y, h - 1)`. Upstream's `pos - max(0, 2 * (x - w) + 1)` uses
   the base index and reads one column and one row past the band.
   `test_cuda_adm_tiny_frames` fails on either upstream form.
+- `integer_adm_cuda.c`, 10/16-bit path: `curr_ref_stride` comes from
+  `ref_pic` and `curr_dis_stride` from `dis_pic`; upstream swaps them. Keep the
+  fork form.
+- Both files were restructured to zero clang-tidy findings (ADR-1142):
+  helpers in anonymous namespaces, unused kernel parameters unnamed, the host
+  glue split into single-purpose functions. Kernel names and parameter layouts
+  are unchanged. A sync that touches them ports upstream's intent into the
+  fork structure rather than taking upstream's text.
 
 The HIP (`integer_adm_hip.c`, `integer_adm/adm_cm.hip`) and SYCL
 (`integer_adm_sycl.cpp`) twins are fork-only; the same rules apply to them.
