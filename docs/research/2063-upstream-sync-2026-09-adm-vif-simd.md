@@ -108,6 +108,42 @@ compared region. The fork therefore ports the lesson and not the framework:
 guard-band helpers in `simd_bitexact_test.h`, real strides and sentinels in
 the ADM/VIF parity tests, and small-size sweeps.
 
+### Int32 overflow in the 16-bit vertical DWT pass
+
+Found while checking a report from the SYCL work: scale 0's vertical DWT pass
+forms `sum(filter[k] * s[k])` before subtracting `46342 * 2^(bpc - 1)`. The
+low-pass taps are `15826, 27411, 7345, -4240`, and the first three sum to
+50582, so at 16 bpc the partial sum passes `INT32_MAX` once three consecutive
+samples reach 42456. The scalar `adm_dwt2_vpass_16()` and the scalar vertical
+loops inside `adm_dwt2_16_avx2()` and `adm_dwt2_16_avx512()` all summed in
+`int32_t`. Upstream Netflix/vmaf has the same code.
+
+Measured with a clang `-fsanitize=undefined` build on 176x144 16-bit frames
+with luma in `[49152, 65535]`: nine reports, three per kernel (scalar
+`integer_adm.c:1463/1464/1513`, AVX2 `adm_avx2.c:3392/3393/3397`, AVX-512
+`adm_avx512.c:3495/3496/3500`). Scores were nevertheless right. The
+normalised value is at most `54822 * 32768` in magnitude, inside int32, so
+two's-complement wrap-around undoes itself. That is also why no parity test
+could see it: every path wrapped the same way.
+
+Options weighed for the fix:
+
+| Option | UB-free for | Cost | Taken |
+| --- | --- | --- | --- |
+| Accumulate in int64, then narrow | every input | one 64-bit add per tap | yes |
+| Centre each sample first, `sum(filter[k] * (s[k] - 2^(bpc-1)))` | in-range samples only; a 10-bit plane holding 16-bit garbage still overflows | one subtract per sample | no |
+| Accumulate in `uint32_t`, convert back | nothing: the final unsigned-to-signed conversion of a negative result is implementation-defined | none | no |
+
+The int64 form matches the file's own `i4_dwt2_tap4()`, which scales 1 to 3
+already use. It is `adm_dwt2_vpass16_tap4()` in `integer_adm.h`, shared by the
+scalar pass and both x86 kernels. For in-range input the narrowed result
+equals the old wrapped one, so no score moves: 12 runs (10, 12 and 16 bpc,
+scalar, AVX2 and AVX-512) are identical at `%.17g` before and after. NEON has
+no 16-bit DWT; it falls back to scalar. The CUDA, HIP and Metal twins carry
+the same int32 sum and are tracked in `docs/state.md`
+(`T-GPU-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18`); the SYCL twin already
+forms it in int64.
+
 ## Alternatives explored
 
 - Taking upstream's `-2/-3` DWT2 bound for the NEON tail. It is correct but one

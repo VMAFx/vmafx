@@ -1495,11 +1495,12 @@ static inline void adm_dwt2_vpass_8(const uint8_t *src, int *const *ind_y, int i
 }
 
 /* 16-bit twin of adm_dwt2_vpass_8; the normalisation shift follows the
- * input bit depth. */
+ * input bit depth, and the response is formed in int64 because a bright
+ * 16-bit column overflows int32 (adm_dwt2_vpass16_tap4). */
 static inline void adm_dwt2_vpass_16(const uint16_t *src, int *const *ind_y, int i, int src_stride,
                                      int w, int inp_size_bits, int16_t *tmplo, int16_t *tmphi)
 {
-    const int16_t shift_VP = inp_size_bits;
+    const int shift_VP = inp_size_bits;
     const int32_t add_shift_VP = 1 << (inp_size_bits - 1);
 
     for (int j = 0; j < w; ++j) {
@@ -1508,15 +1509,12 @@ static inline void adm_dwt2_vpass_16(const uint16_t *src, int *const *ind_y, int
         const uint16_t u_s2 = src[ind_y[2][i] * src_stride + j];
         const uint16_t u_s3 = src[ind_y[3][i] * src_stride + j];
 
-        int32_t accum = adm_dwt2_tap4(dwt2_db2_coeffs_lo, u_s0, u_s1, u_s2, u_s3);
-        /* normalizing is done for range from(0 to N) to (-N/2 to N/2) */
-        accum -= (int32_t)dwt2_db2_coeffs_lo_sum * add_shift_VP;
-        tmplo[j] = (accum + add_shift_VP) >> shift_VP;
-
+        tmplo[j] = (int16_t)adm_dwt2_vpass16_tap4(dwt2_db2_coeffs_lo, dwt2_db2_coeffs_lo_sum, u_s0,
+                                                  u_s1, u_s2, u_s3, add_shift_VP, shift_VP);
         if (tmphi) {
-            accum = adm_dwt2_tap4(dwt2_db2_coeffs_hi, u_s0, u_s1, u_s2, u_s3);
-            accum -= (int32_t)dwt2_db2_coeffs_hi_sum * add_shift_VP;
-            tmphi[j] = (accum + add_shift_VP) >> shift_VP;
+            tmphi[j] =
+                (int16_t)adm_dwt2_vpass16_tap4(dwt2_db2_coeffs_hi, dwt2_db2_coeffs_hi_sum, u_s0,
+                                               u_s1, u_s2, u_s3, add_shift_VP, shift_VP);
         }
     }
 }
