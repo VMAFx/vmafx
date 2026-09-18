@@ -33,9 +33,11 @@ build src/adm_cm.fatbin: CUSTOM_COMMAND ../core/src/feature/cuda/adm_cm.cu | /op
 --threads 4 --std c++20
  description = Generating$ adm_cm.fatbin
 
-build src/adm_cm.hsaco: CUSTOM_COMMAND ../core/src/feature/hip/adm_cm.hip | /opt/rocm/bin/hipcc
+build src/adm_cm.hsaco: CUSTOM_COMMAND_DEP ../core/src/feature/hip/adm_cm.hip | /opt/rocm/bin/hipcc
  COMMAND = /opt/rocm/bin/hipcc --genco --offload-arch=gfx1036 -I /opt/rocm/include \
--I /r/core/src ../core/src/feature/hip/adm_cm.hip -o src/adm_cm.hsaco
+-I /r/core/src -Xclang -dependency-file -Xclang src/adm_cm.hsaco.d -Xclang -MT -Xclang \
+src/adm_cm.hsaco ../core/src/feature/hip/adm_cm.hip -o src/adm_cm.hsaco
+ depfile = src/adm_cm.hsaco.d
 
 build src/picture.o: CUSTOM_COMMAND ../core/src/sycl/picture.cpp | /opt/intel/icpx
  COMMAND = icpx -fsycl -c ../core/src/sycl/picture.cpp -o src/picture.o
@@ -70,6 +72,9 @@ class KernelEntries(unittest.TestCase):
         hip = entries["adm_cm.hip"]
         self.assertIn("-I/opt/rocm/include", hip)
         self.assertNotIn("--genco", hip)
+        # A depfile target (CUSTOM_COMMAND_DEP) is found, and its dependency
+        # flags stay out of the analysis command.
+        self.assertFalse(any("dependency-file" in arg or arg == "-MT" for arg in hip))
         self.assertFalse(any(arg.startswith("--cuda-path") for arg in hip))
 
     def test_existing_entries_are_kept_and_kernels_replaced(self) -> None:
