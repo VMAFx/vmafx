@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 47,
-  "total_warnings": 1598,
+  "total_warnings": 1424,
   "total_nolint_uncited": 3,
   "warnings": {
     "core/src/cuda/common.c": 65,
@@ -22,7 +22,6 @@
     "core/src/feature/cuda/float_psnr_cuda.c": 25,
     "core/src/feature/cuda/float_vif/float_vif_score.cu": 20,
     "core/src/feature/cuda/float_vif_cuda.c": 30,
-    "core/src/feature/cuda/integer_adm/adm_cm.cu": 174,
     "core/src/feature/cuda/integer_adm/adm_csf.cu": 38,
     "core/src/feature/cuda/integer_adm/adm_csf_den.cu": 25,
     "core/src/feature/cuda/integer_adm/adm_decouple_inline.cuh": 20,
@@ -64,5 +63,22 @@
     "core/src/feature/cuda/integer_vif_cuda.c": 1,
     "core/src/feature/cuda/ssimulacra2_cuda.c": 1
   },
-  "source": "converted 2026-09-02 from the agy gpu-debt measurement (clang-tidy 22.1.8, -p build-gpu, same (path,line,column,check) dedup); see docs/research/2027-lint-carveout-inventory-2026-09-02.md"
+  "source": "converted 2026-09-02 from the agy gpu-debt measurement (clang-tidy 22.1.8, -p build-gpu, same (path,line,column,check) dedup); see docs/research/2027-lint-carveout-inventory-2026-09-02.md",
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/src/feature/cuda/integer_adm/adm_cm.cu"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/cuda/integer_adm/adm_cm.cu": {
+          "warnings": [
+            174,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "568be5e4d2054ddddf7c48e7166debccf3c57e8884fa785d7d49b9c947a92963"
+    }
+  ]
 }
