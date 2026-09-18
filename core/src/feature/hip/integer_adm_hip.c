@@ -116,6 +116,13 @@ typedef struct AdmStateHip {
     hipFunction_t func_adm_cm_line_kernel_8;
     hipFunction_t func_i4_adm_cm_line_kernel;
 
+    /* ADR-0759: device copy of `buf`. The two CSF and the two CM compute
+     * kernels take `const AdmBufferHip *` and read their band pointers from
+     * here instead of receiving the whole struct by value on every launch.
+     * Uploaded once by adm_hip_upload_buf(); `buf` does not change after
+     * that, so the copy stays equal to it until close(). */
+    AdmBufferHip *buf_dev;
+
     /* ADR-1211: device staging for the scale-0 luma plane.
      * The HIP backend is host-pic (ADR-0530): `VmafPicture::data[]` points at
      * HOST memory. The DWT2 kernel is a device kernel, so the plane has to be
@@ -759,7 +766,7 @@ static int adm_csf_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, i
     const int BLOCKX = 32;
     const int BLOCKY = 4;
 
-    void *args[] = {buf, &top, &bottom, &left, &right, &stride, p};
+    void *args[] = {(void *)&s->buf_dev, &top, &bottom, &left, &right, &stride, p};
     hipError_t rc = hipModuleLaunchKernel(
         s->func_adm_csf_kernel_1_4, (uint32_t)DIV_ROUND_UP(right - left, BLOCKX * cols_per_thread),
         (uint32_t)DIV_ROUND_UP(bottom - top, BLOCKY * rows_per_thread), 3, (uint32_t)BLOCKX,
@@ -794,7 +801,7 @@ static int i4_adm_csf_device_hip(AdmStateHip *s, AdmBufferHip *buf, int scale, i
     const int BLOCKX = 32;
     const int BLOCKY = 4;
 
-    void *args[] = {buf, &scale, &top, &bottom, &left, &right, &stride, p};
+    void *args[] = {(void *)&s->buf_dev, &scale, &top, &bottom, &left, &right, &stride, p};
     hipError_t rc =
         hipModuleLaunchKernel(s->func_i4_adm_csf_kernel_1_4,
                               (uint32_t)DIV_ROUND_UP(right - left, BLOCKX * cols_per_thread),
@@ -888,7 +895,7 @@ static int i4_adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h,
     /* inner CM kernel */
     {
         const int BLOCKX = 128;
-        void *args[] = {buf,
+        void *args[] = {(void *)&s->buf_dev,
                         &h,
                         &w,
                         &top,
@@ -976,7 +983,7 @@ static int adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, in
     const int rows_per_thread = 8;
     const int BLOCKX = 32;
     const int BLOCKY = 4;
-    void *args[] = {buf,
+    void *args[] = {(void *)&s->buf_dev,
                     &h,
                     &w,
                     &top,
@@ -1476,6 +1483,35 @@ static void adm_hip_slice_results(AdmStateHip *s)
     }
 }
 
+/* ADR-0759: upload `s->buf` to the device copy the CSF and CM kernels read.
+ * Call it after adm_hip_slice_bands() and adm_hip_slice_results(), once every
+ * pointer in the struct is final. Nothing writes `s->buf` between init and
+ * close, so one upload serves every launch; code that changes `s->buf` after
+ * init must upload it again before the next launch. On failure, frees what
+ * it allocated. */
+static int adm_hip_upload_buf(AdmStateHip *s)
+{
+    void *dev = NULL;
+    hipError_t hip_err = hipMalloc(&dev, sizeof(s->buf));
+    if (hip_err != hipSuccess)
+        return hip_rc(hip_err);
+    hip_err = hipMemcpy(dev, &s->buf, sizeof(s->buf), hipMemcpyHostToDevice);
+    if (hip_err != hipSuccess) {
+        (void)hipFree(dev);
+        return hip_rc(hip_err);
+    }
+    s->buf_dev = dev;
+    return 0;
+}
+
+static void adm_hip_free_buf_dev(AdmStateHip *s)
+{
+    if (s->buf_dev != NULL) {
+        (void)hipFree(s->buf_dev);
+        s->buf_dev = NULL;
+    }
+}
+
 /* Every device resource init_fex_hip() needs, in dependency order. On
  * failure, releases what it created. */
 static int adm_hip_init_device(AdmStateHip *s, unsigned w, unsigned h, unsigned bpc)
@@ -1506,7 +1542,14 @@ static int adm_hip_init_device(AdmStateHip *s, unsigned w, unsigned h, unsigned 
 
     adm_hip_slice_bands(s, h);
     adm_hip_slice_results(s);
-    return 0;
+    err = adm_hip_upload_buf(s);
+    if (err) {
+        adm_hip_free_luma(s);
+        adm_hip_free_buffers(s);
+        adm_hip_unload_modules(s);
+        adm_hip_destroy_stream(s);
+    }
+    return err;
 }
 
 #endif /* HAVE_HIPCC */
@@ -1569,6 +1612,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (s->feature_name_dict == NULL) {
         /* The framework never calls close() after a failed init(), so every
          * device resource is released here. */
+        adm_hip_free_buf_dev(s);
         adm_hip_free_luma(s);
         adm_hip_free_buffers(s);
         adm_hip_unload_modules(s);
@@ -1648,6 +1692,7 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
 #ifdef HAVE_HIPCC
     rc = adm_hip_close_stream(s);
     adm_hip_unload_modules(s);
+    adm_hip_free_buf_dev(s);
     adm_hip_free_luma(s);
     adm_hip_free_buffers(s);
 #endif /* HAVE_HIPCC */

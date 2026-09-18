@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 50,
-  "total_warnings": 1005,
+  "total_warnings": 970,
   "total_nolint_uncited": 16,
   "warnings": {
     "core/src/feature/hip/ciede_hip.c": 13,
@@ -21,7 +21,6 @@
     "core/src/feature/hip/float_vif/float_vif_score.hip": 21,
     "core/src/feature/hip/float_vif_hip.c": 29,
     "core/src/feature/hip/hip_hsaco_stubs.c": 1,
-    "core/src/feature/hip/integer_adm/adm_csf.hip": 35,
     "core/src/feature/hip/integer_adm/adm_csf_den.hip": 15,
     "core/src/feature/hip/integer_adm/adm_decouple.hip": 49,
     "core/src/feature/hip/integer_adm/adm_decouple_inline.hip": 31,
@@ -104,6 +103,21 @@
         }
       },
       "previous_baseline_sha256": "990b0aad4fedf3e3adc1d834e7d80dad56bb06294cb0c12cffa2a65b2b6ae5ea"
+    },
+    {
+      "sources": [
+        "core/src/feature/hip/integer_adm/adm_csf.hip"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/hip/integer_adm/adm_csf.hip": {
+          "warnings": [
+            35,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "c90b1a4ce1da9eda866956484bbf885395ad5dc3f1b7448f29f10bc8b410321c"
     }
   ]
 }
