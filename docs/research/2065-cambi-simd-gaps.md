@@ -13,7 +13,9 @@ mode filter and the frame-level c-values driver (histogram range updates plus
 the c-values row). AVX-512 and NEON covered only part of that, and several of
 their kernels were built but never called. Which AVX-512 and NEON kernels beat
 the path they would replace (AVX2 on an AVX-512 host, scalar on aarch64), and
-are they bit-exact?
+are they bit-exact? And since upstream's AVX2 c-values driver turned out slower
+than scalar in icx builds: does an AVX2 driver on the same scanned walk beat
+both it and scalar?
 
 ## Starting state
 
@@ -97,7 +99,7 @@ Range of the AVX-512 speed-up over AVX2 across all seven inputs:
 A whole CAMBI frame, single thread, CLI `--feature cambi`, frames per second
 (best of 3):
 
-| Input | GCC before | GCC now | Clang AVX2 only / now | icx AVX2 only / now |
+| Input | GCC before | GCC now | Clang AVX2 only¹ / now | icx AVX2 only¹ / now |
 | --- | --- | --- | --- | --- |
 | src01 576x324 8-bit | 2024 | 2668 (1.32x) | 1410 / 2896 | 1446 / 2917 |
 | Clouds 1920x1088 8-bit | 191 | 252 (1.32x) | 131 / 273 | 134 / 271 |
@@ -106,6 +108,7 @@ A whole CAMBI frame, single thread, CLI `--feature cambi`, frames per second
 | src01 3840x2160 10-bit | 89.2 | 109.9 (1.23x) | 62.1 / 122.6 | 63.6 / 124.2 |
 
 "Before" is the pre-change binary's default dispatch on this AVX-512 host.
+¹ With upstream's AVX2 c-values walk, before the AVX2 scanned driver below.
 
 What made the picture kernels fast: 32 lanes and, above all, **masked row
 tails**. The first AVX-512 derivative row stopped its vector loop one vector
@@ -157,6 +160,61 @@ version and leaves no zmm/ymm stack access in the GCC or Clang object. The
 MinGW object itself could not be built here; `check-win64-stack-alignment.py`
 reports nothing on the Linux object.
 
+### AVX2: the scanned walk replaces upstream's c-values driver
+
+Upstream's `calculate_c_values_avx2` visits every column like the scalar walk
+and is layout-sensitive: under icx it measured 0.81–0.83x of scalar in every
+build here, under Clang 0.80x in one build and 1.04–1.11x in another with the
+same source, under GCC 0.97–1.08x. The published container is built with icx,
+so on a CPU with AVX2 but no AVX-512 the c-values stage ran slower than the
+scalar code.
+
+`calculate_c_values_scan_avx2` is the AVX2 twin of the AVX-512 and NEON
+drivers: the shared scanned walk, AVX2 column scans (16 uint16 lanes per
+compare, `packs` + `movemask` into the 32-bit column masks, the unsigned band
+test as `min_epu16(v - base, size - 1) == v - base`, a scalar tail so no row
+is read past its last column), and the existing AVX2 row kernel and range
+updaters. Like the AVX-512 scans they are out of line and build their
+constants per call. The only ymm stack accesses in the object are unaligned
+`vmovdqu` stores (the zeroed column-mask array; under icx an inlined range
+updater that uses `%rbp` as a data pointer), and
+`check-win64-stack-alignment.py` reports nothing.
+
+c-values stage, µs per frame (5 scales), same method (7 inputs x 3 runs, min),
+new builds of all three compilers:
+
+| Compiler | Scalar vs upstream AVX2 | Scanned AVX2 vs scalar | Scanned AVX2 vs upstream AVX2 | AVX-512 vs scanned AVX2 |
+| --- | --- | --- | --- | --- |
+| GCC | upstream 0.97–1.08x | 2.09–2.78x | 1.93–2.85x | 1.04–1.16x |
+| Clang | upstream 1.04–1.11x | 3.50–5.52x | 3.14–5.21x | 1.14–1.28x |
+| icx | upstream 0.81–0.83x | 2.87–4.48x | 3.43–5.38x | 1.06–1.27x |
+
+1920x1088 8-bit (CloudsStatic), scalar / upstream AVX2 / scanned AVX2: GCC
+1868 / 1759 / 673 µs, Clang 3657 / 3457 / 736 µs, icx 3718 / 4509 / 913 µs.
+3840x2160 10-bit: GCC 7005 / 6903 / 2880, Clang 14288 / 13760 / 3148, icx
+14580 / 18070 / 3943. Run-to-run spread 1–9 %.
+
+A whole CAMBI frame at AVX2 only (`--cpumask 48`), single thread, frames per
+second, best of 3, pre-change binary against this branch built with the same
+compiler in the same session:
+
+| Input | GCC before / after | Clang before / after | icx before / after |
+| --- | --- | --- | --- |
+| src01 576x324 8-bit | 1981 / 2409 (1.22x) | 1571 / 2540 (1.62x) | 1388 / 2437 (1.76x) |
+| src01 576x324 10-bit | 2750 / 3378 (1.23x) | 2229 / 3513 (1.58x) | 2033 / 3623 (1.78x) |
+| Clouds 1920x1088 8-bit | 185 / 229 (1.23x) | 147 / 240 (1.64x) | 128 / 227 (1.77x) |
+| Skyscraper 1920x1088 8-bit | 186 / 226 (1.22x) | 146 / 240 (1.64x) | 126 / 222 (1.76x) |
+| src01 1920x1080 10-bit | 259 / 313 (1.21x) | 207 / 338 (1.63x) | 180 / 318 (1.77x) |
+| Skyscraper 3840x2176 8-bit | 46.4 / 56.4 (1.21x) | 36.3 / 57.4 (1.58x) | 33.1 / 56.7 (1.71x) |
+| src01 3840x2160 10-bit | 86.2 / 106.4 (1.23x) | 66.7 / 110.3 (1.65x) | 62.6 / 109.6 (1.75x) |
+
+AVX2 only against scalar, whole frame: 1.39–1.63x before and 1.68–2.07x after
+(GCC), 1.31–1.49x / 2.05–2.45x (Clang), 1.10–1.24x / 1.81–2.08x (icx). The
+scanned driver beats both the upstream walk and scalar on every input under
+every compiler, so the AVX2 block binds it. Upstream's `calculate_c_values_avx2`
+stays built: `test_cambi` and `test_cambi_stage_simd` still check it, and a
+later upstream change to it still merges.
+
 ### aarch64: NEON removes most instructions except in the mode filter
 
 Instructions per frame pass, NEON / scalar (1920x1088 8-bit; the other inputs
@@ -186,10 +244,14 @@ C loops, which both compilers turn into the same eight-lane adds.
 | `get_derivative_data_for_row_*` (dead) | re-wired, rewritten with a masked tail | re-wired (tidied) | 1.12–1.79x vs AVX2; NEON 0.09–0.12 |
 | `decimate_*` (new) | dispatched | dispatched | 1.25–1.47x; NEON 0.16–0.24 |
 | `filter_mode_*` (new) | dispatched | **not dispatched**, parity-tested | 1.08–1.42x; NEON 0.93 (GCC) / 1.02 (Clang) |
-| `calculate_c_values_*` frame driver (new) | dispatched | dispatched | 2.0–8.8x; NEON 0.21–0.44 |
+| `calculate_c_values_*` frame driver (new) | dispatched | dispatched | 2.0–8.8x vs upstream AVX2, 1.04–1.28x vs the scanned AVX2 driver that now replaces it; NEON 0.21–0.44 |
 | `calculate_c_values_row_*` (dead) | re-wired inside the driver | re-wired inside the driver | 3–6 % over the AVX2 row; NEON saves 20–47 % |
 | `cambi_increment/decrement_range_avx512` (dead) | re-wired inside the driver (masked tail) | — | no worse than any 256-bit alternative (±3 %) |
 | `cambi_increment/decrement_range_neon` (dead) | — | **retired** | 0.3–0.9 % more instructions than plain C |
+
+AVX2: `calculate_c_values_scan_avx2` (new) is dispatched (2.09–5.52x scalar,
+1.93–5.38x upstream AVX2); upstream's `calculate_c_values_avx2` is kept built
+and parity-tested but no longer dispatched.
 
 ### Bit-exactness
 
@@ -202,7 +264,14 @@ C loops, which both compilers turn into the same eight-lane adds.
   wrong tie-break, a scan that misses columns, a derivative that reads past the
   row) all fail it.
 - `test_cambi_dispatch_invariance` drives the extractor through the public API
-  at each dispatch level and requires bit-identical per-frame scores.
+  at each dispatch level and requires bit-identical per-frame scores, including
+  ramps across the first and onto the last value of the scored band.
+- On AVX2 both frame drivers (scanned and upstream) are checked, on a banded
+  ramp and on a fixture made of the band's edge values with random masks.
+  Planted faults in the AVX2 scans (slide cancel without the band test or with
+  one side in band, band first or last value excluded, slide flags from one
+  row only, a tail dropping the last column, swapped pack halves, a dropped
+  second 32-column mask, an inverted mask test) all fail both tests.
 - CLI `--feature cambi --precision max` JSON (minus `fps` and `version`) is
   byte-identical across default, AVX2-only (`--cpumask 48`) and scalar
   (`--cpumask 65535`) dispatch, across GCC, Clang and icx builds, and against
@@ -214,14 +283,9 @@ C loops, which both compilers turn into the same eight-lane adds.
 
 ### Outside this change
 
-- **Under Clang and icx the dispatched AVX2 c-values driver is slower than
-  scalar**: 4454 against 3581 µs at 1080p (0.80x), 20013 against 16714 µs at
-  2160p (Clang; icx the same). The published container is built with icx, so
-  an AVX2-only host runs this stage slower than the scalar code would. GCC
-  gives 1.07x. The upstream AVX2 walk is also layout-sensitive: the same object
-  code measured 1.05x of scalar in an earlier Clang build. Routing AVX2 through
-  the shared walk with an AVX2 scan is the obvious fix; it is not measured
-  here. Tracked in `docs/state.md`.
+- Closed on this branch: under icx (and in some Clang builds) the upstream AVX2
+  c-values driver was slower than scalar; the AVX2 scanned driver above
+  replaces it in dispatch.
 - The test that should have caught a divergence in the AVX2 c-values driver
   was not running (see *Starting state*); it now gates on CPUID.
 
@@ -230,9 +294,11 @@ C loops, which both compilers turn into the same eight-lane adds.
 - **Re-wire the dead kernels as they were.** AVX-512 would gain 1.05–1.17x
   (inside the layout noise); NEON would execute 31–36 % more instructions than
   scalar. Rejected.
-- **Put the column scan into the upstream AVX2 walk too.** Out of scope here
-  and a change to upstream-mirror code; recorded as the fix for the AVX2 row in
-  `docs/state.md`.
+- **Patch the column scan into upstream's `calculate_c_values_avx2` instead
+  of adding a driver.** Rewrites an upstream-mirror function, so every sync of
+  it would conflict. A fork-local driver on the shared walk leaves upstream's
+  function as upstream wrote it, still built and tested, and only the one
+  dispatch line diverges.
 - **Keep the scans inlined.** 2–21 % faster, but Clang spills two zmm
   broadcasts around every row-kernel call (ADR-1254). Rejected.
 - **512-bit range updaters vs 256-bit.** Measured equal; the AVX-512 TU keeps
