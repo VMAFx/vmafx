@@ -19,7 +19,6 @@
     "core/src/feature/hip/integer_adm/adm_decouple.hip": 49,
     "core/src/feature/hip/integer_adm/adm_decouple_inline.hip": 31,
     "core/src/feature/hip/integer_adm/adm_dwt2.hip": 14,
-    "core/src/feature/hip/integer_adm_hip.c": 70,
     "core/src/feature/hip/integer_adm_hip.h": 4,
     "core/src/feature/hip/integer_cambi/cambi_score.hip": 4,
     "core/src/feature/hip/integer_cambi_hip.c": 30,
