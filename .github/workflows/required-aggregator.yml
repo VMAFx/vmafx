@@ -100,6 +100,9 @@ jobs:
               // to docs/ trees a bot never touches, so without that they would
               // be red on every release PR. `Release Script Contract` and
               // `ADR Number Collision Guard` stay armed there on purpose.
+              // ADR-1249 — praetor / HISS-16 governance gate: context
+              // integrity plus the debt ratchet. Cheap, always reports.
+              'Standards & Invariant Verification Gate',
               'Deliverables Checklist',
               'Doc-Substance Gate',
               'docs/state.md Gate',

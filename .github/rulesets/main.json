@@ -44,6 +44,9 @@
           },
           {
             "context": "Scorecard PR Gate"
+          },
+          {
+            "context": "Standards \u0026 Invariant Verification Gate"
           }
         ],
         "strict_required_status_checks_policy": true
