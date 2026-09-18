@@ -51060,3 +51060,26 @@ one guard spanning its full pick/ref/test helper section for exactly this
 reason). Adding a new SIMD variant under a narrower guard than its test file's
 existing union will reopen this class of warning on whichever configuration
 drops out of the new, narrower condition.
+
+## `core/src/feature/arm64/vif_neon.c` is split into helpers (T-NO-ASM-SIMD-TEST-WARNINGS-2026-09-18)
+
+Rebase impact. The same branch brings `vif_neon.c` from 36 clang-tidy findings
+to zero (ADR-1142, ADR-0141), without a single NOLINT. Upstream's four
+macro-expanded kernels are now row loops over `static FORCE_INLINE` helpers:
+per-plane vertical and horizontal passes that operate on small lane structs
+(`VifU32x4Pair`, `VifU64x2Quad`, ...), with the 16-bit rounding and shifts held
+in a `VifFilterPlan`. The `NEON_FILTER_*` macros are gone. Each helper issues
+the same intrinsics as the macro code, in the same lane order, and the first
+filter tap keeps its own `*_init` helper wherever upstream seeds an accumulator
+with a plain product instead of a multiply-accumulate. The output is
+byte-identical to the pre-split kernels and to scalar dispatch. The two
+statistic kernels carry the same Research-2045 `constParameterPointer` exception
+as their x86 twins. The dead `i_dst_stride` counters that upstream still has
+were dropped on this branch too.
+
+Do not take upstream's `vif_neon.c` wholesale on a sync. Re-apply each upstream
+change onto the helper structure, then re-run `test_vif_neon` on an AArch64
+build and
+`scripts/ci/tidy-ratchet.py --lane cpu --build-dir <aarch64-clang-build> --only core/src/feature/arm64/vif_neon.c`,
+which must stay at zero. No CI lane measures the arm64 tree, so nothing else
+catches a regression here.
