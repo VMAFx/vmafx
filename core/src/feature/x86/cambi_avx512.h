@@ -24,6 +24,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+struct VmafPicture;
+void decimate_avx512(struct VmafPicture *image, unsigned width, unsigned height);
+void anti_dithering_filter_avx512(struct VmafPicture *pic, unsigned width, unsigned height);
+void filter_mode_avx512(const struct VmafPicture *image, int width, int height, uint16_t *buffer);
+
 void cambi_increment_range_avx512(uint16_t *arr, int left, int right);
 
 void cambi_decrement_range_avx512(uint16_t *arr, int left, int right);
@@ -37,6 +42,12 @@ void calculate_c_values_row_avx512(float *c_values, const uint16_t *histograms,
                                    const uint16_t *tvi_thresholds, uint16_t vlt_luma,
                                    const int *diff_weights, const int *all_diffs,
                                    const float *reciprocal_lut);
+
+void calculate_c_values_avx512(struct VmafPicture *pic, const struct VmafPicture *mask_pic,
+                               float *c_values, uint16_t *histograms, uint16_t window_size,
+                               const uint16_t num_diffs, const uint16_t *tvi_for_diff,
+                               uint16_t vlt_luma, const int *diff_weights, const int *all_diffs,
+                               int width, int height);
 
 void compute_dp_row_avx512(uint32_t *dp_curr, const uint32_t *dp_prev, const uint16_t *deriv,
                            int width, int pad_size, bool deriv_valid);
