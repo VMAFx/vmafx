@@ -12,7 +12,7 @@
 #
 #   * a `static_assert` on `UINT_MAX <= SIZE_MAX/2/sizeof(ptr)` — true on LP64,
 #     FALSE on 32-bit, so the i686 lane of the time would not compile the file
-#     (that lane is retired: the fork is 64-bit only, ADR-0728 / ADR-1258);
+#     (that lane is retired: the fork is 64-bit only, ADR-1258);
 #   * `#define ALIGNED(x) __declspec(align((x)))` — MSVC needs a literal there,
 #     so `Windows MSVC+CUDA` failed C2059 on every use;
 #   * `__attribute__(noinline)` (a paren accidentally stripped) — gcc accepted
