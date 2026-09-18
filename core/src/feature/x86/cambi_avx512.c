@@ -17,84 +17,84 @@
  *
  */
 
+#include <assert.h>
 #include <immintrin.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "libvmaf/picture.h"
 #include "cambi_avx512.h"
+#include "cambi.h"
+#include "cambi_c_values_frame.h"
+
+/* Lane mask for the first n (0 .. 32) of 32 uint16 lanes. */
+static inline __mmask32 first_lanes32(int n)
+{
+    return (__mmask32)(0xFFFFFFFFull >> (unsigned)(32 - n));
+}
+
+/* arr[left, right) += delta (modulo 2^16, like the scalar ++ / --). The last
+ * partial block is a masked load / store, so no element outside the range is
+ * read or written, and a window narrower than one vector (every window below
+ * 1080p) costs one masked block instead of a scalar loop. */
+static FORCE_INLINE void cambi_add_range_avx512(uint16_t *arr, int left, int right, __m512i delta)
+{
+    int col = left;
+    for (; col + 32 <= right; col += 32) {
+        const __m512i v = _mm512_loadu_si512((const void *)&arr[col]);
+        _mm512_storeu_si512((void *)&arr[col], _mm512_add_epi16(v, delta));
+    }
+    const int rest = right - col;
+    if (rest > 0) {
+        const __mmask32 k = first_lanes32(rest);
+        const __m512i v = _mm512_maskz_loadu_epi16(k, &arr[col]);
+        _mm512_mask_storeu_epi16(&arr[col], k, _mm512_add_epi16(v, delta));
+    }
+}
 
 void cambi_increment_range_avx512(uint16_t *arr, int left, int right)
 {
-    __m512i val_vector = _mm512_set1_epi16(1);
-    int col = left;
-    for (; col + 31 < right; col += 32) {
-        __m512i data = _mm512_loadu_si512((__m512i *)&arr[col]);
-        data = _mm512_add_epi16(data, val_vector);
-        _mm512_storeu_si512((__m512i *)&arr[col], data);
-    }
-    for (; col < right; col++) {
-        arr[col]++;
-    }
+    cambi_add_range_avx512(arr, left, right, _mm512_set1_epi16(1));
 }
 
 void cambi_decrement_range_avx512(uint16_t *arr, int left, int right)
 {
-    __m512i val_vector = _mm512_set1_epi16(1);
-    int col = left;
-    for (; col + 31 < right; col += 32) {
-        __m512i data = _mm512_loadu_si512((__m512i *)&arr[col]);
-        data = _mm512_sub_epi16(data, val_vector);
-        _mm512_storeu_si512((__m512i *)&arr[col], data);
-    }
-    for (; col < right; col++) {
-        arr[col]--;
-    }
+    /* Adding 0xFFFF is subtracting 1 modulo 2^16. */
+    cambi_add_range_avx512(arr, left, right, _mm512_set1_epi16(-1));
+}
+
+/* 1 where px[col] equals its right neighbour and the pixel below, for the
+ * lanes in k; loads are masked, so nothing outside k is read. */
+static inline __m512i zero_derivative_avx512(const uint16_t *px, const uint16_t *below, __mmask32 k)
+{
+    const __m512i v = _mm512_maskz_loadu_epi16(k, px);
+    const __mmask32 eq = _mm512_mask_cmpeq_epi16_mask(k, v, _mm512_maskz_loadu_epi16(k, px + 1)) &
+                         _mm512_cmpeq_epi16_mask(v, _mm512_maskz_loadu_epi16(k, below));
+    return _mm512_maskz_mov_epi16(eq, _mm512_set1_epi16(1));
 }
 
 void get_derivative_data_for_row_avx512(const uint16_t *image_data, uint16_t *derivative_buffer,
                                         int width, int height, int row, int stride)
 {
-    if (row == height - 1) {
-        __m512i ones = _mm512_set1_epi16(1);
-        int col = 0;
-        for (; col + 31 < width - 1; col += 32) {
-            __m512i vals1 = _mm512_loadu_si512((__m512i *)&image_data[row * stride + col]);
-            __m512i vals2 = _mm512_loadu_si512((__m512i *)&image_data[row * stride + col + 1]);
-            __mmask32 eq_mask = _mm512_cmpeq_epi16_mask(vals1, vals2);
-            _mm512_storeu_si512((__m512i *)&derivative_buffer[col],
-                                _mm512_maskz_mov_epi16(eq_mask, ones));
-        }
-        for (; col < width - 1; col++) {
-            derivative_buffer[col] =
-                (image_data[row * stride + col] == image_data[row * stride + col + 1]);
-        }
-        derivative_buffer[width - 1] = 1;
-    } else {
-        __m512i ones = _mm512_set1_epi16(1);
-        int col = 0;
-        for (; col + 31 < width - 1; col += 32) {
-            __m512i horiz_vals1 = _mm512_loadu_si512((__m512i *)&image_data[row * stride + col]);
-            __m512i horiz_vals2 =
-                _mm512_loadu_si512((__m512i *)&image_data[row * stride + col + 1]);
-            __mmask32 horiz_mask = _mm512_cmpeq_epi16_mask(horiz_vals1, horiz_vals2);
-            __m512i vert_vals1 = _mm512_loadu_si512((__m512i *)&image_data[row * stride + col]);
-            __m512i vert_vals2 =
-                _mm512_loadu_si512((__m512i *)&image_data[(row + 1) * stride + col]);
-            __mmask32 vert_mask = _mm512_cmpeq_epi16_mask(vert_vals1, vert_vals2);
-            __mmask32 combined = horiz_mask & vert_mask;
-            _mm512_storeu_si512((__m512i *)&derivative_buffer[col],
-                                _mm512_maskz_mov_epi16(combined, ones));
-        }
-        for (; col < width; col++) {
-            bool horizontal_derivative =
-                (col == width - 1 ||
-                 image_data[row * stride + col] == image_data[row * stride + col + 1]);
-            bool vertical_derivative =
-                image_data[row * stride + col] == image_data[(row + 1) * stride + col];
-            derivative_buffer[col] = horizontal_derivative && vertical_derivative;
-        }
+    const uint16_t *px = &image_data[(ptrdiff_t)row * stride];
+    /* The last row compares with itself vertically, which is always equal:
+     * the scalar's `row == height - 1 ||` short cut. */
+    const uint16_t *below = (row == height - 1) ? px : &px[stride];
+    int col = 0;
+    /* Reads px[col + 32]; the last column (no right neighbour) is the scalar's
+     * `col == width - 1` case and is written after the loop. */
+    for (; col + 32 < width; col += 32) {
+        _mm512_storeu_si512((void *)&derivative_buffer[col],
+                            zero_derivative_avx512(&px[col], &below[col], 0xFFFFFFFFu));
     }
+    const int rest = width - 1 - col; /* 0 .. 31 columns left before the last */
+    if (rest > 0) {
+        const __mmask32 k = first_lanes32(rest);
+        _mm512_mask_storeu_epi16(&derivative_buffer[col], k,
+                                 zero_derivative_avx512(&px[col], &below[col], k));
+    }
+    derivative_buffer[width - 1] = (uint16_t)(px[width - 1] == below[width - 1]);
 }
 
 /*
@@ -378,4 +378,296 @@ void compute_mask_row_avx512(uint16_t *mask_row, const uint32_t *dp_bottom, cons
         const uint32_t result = dp_bottom[j + delta] + dp_top[j] - dp_bottom[j] - dp_top[j + delta];
         mask_row[j] = (uint16_t)(result > mask_index);
     }
+}
+
+/*
+ * Preprocessing and per-scale kernels: 32-lane twins of decimate_avx2,
+ * anti_dithering_filter_avx2 and filter_mode_avx2. All three are integer-only
+ * and bit-exact against the scalar decimate / anti_dithering_filter /
+ * filter_mode in cambi.c for every uint16 input. Row tails are one masked
+ * block instead of up to 31 scalar steps: CAMBI's smaller scales are only a
+ * few vectors wide, so the tail is a large share of each row.
+ */
+
+/* vpermt2w selector: the even elements of the 64-element pair (lo, hi). */
+static const uint16_t k_even_lanes[32] = {0,  2,  4,  6,  8,  10, 12, 14, 16, 18, 20,
+                                          22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42,
+                                          44, 46, 48, 50, 52, 54, 56, 58, 60, 62};
+
+/* dst[i, j] = src[2i, 2j] in place. Reads stay ahead of writes within a row and
+ * across rows, as in the scalar loop. The full blocks read up to
+ * src[2 * width - 1], the same bound as decimate_avx2; the masked tail reads
+ * exactly the even elements the scalar reads. */
+void decimate_avx512(VmafPicture *image, unsigned width, unsigned height)
+{
+    assert(image->data[0]);
+    assert(width > 0u && height > 0u);
+    uint16_t *data = image->data[0];
+    const ptrdiff_t stride = image->stride[0] >> 1;
+    const __m512i even = _mm512_loadu_si512((const void *)k_even_lanes);
+    for (unsigned i = 0; i < height; i++) {
+        const uint16_t *src = &data[(ptrdiff_t)2 * (ptrdiff_t)i * stride];
+        uint16_t *dst = &data[(ptrdiff_t)i * stride];
+        unsigned j = 0;
+        for (; j + 32 <= width; j += 32) {
+            const __m512i lo = _mm512_loadu_si512((const void *)&src[(size_t)2 * j]);
+            const __m512i hi = _mm512_loadu_si512((const void *)&src[(size_t)2 * j + 32]);
+            _mm512_storeu_si512((void *)&dst[j], _mm512_permutex2var_epi16(lo, even, hi));
+        }
+        const unsigned rest = width - j; /* 0 .. 31 outputs */
+        if (rest > 0) {
+            /* 2 * rest - 1 source elements, split over the two 32-lane loads. */
+            const uint64_t src_lanes = (1ull << (2u * rest - 1u)) - 1u;
+            const __m512i lo = _mm512_maskz_loadu_epi16((__mmask32)src_lanes, &src[(size_t)2 * j]);
+            const __m512i hi =
+                _mm512_maskz_loadu_epi16((__mmask32)(src_lanes >> 32), &src[(size_t)2 * j + 32]);
+            _mm512_mask_storeu_epi16(&dst[j], first_lanes32((int)rest),
+                                     _mm512_permutex2var_epi16(lo, even, hi));
+        }
+    }
+}
+
+/* floor((a + b + c + d) / 4) for the lanes in k of a 2x2 window, exact for any
+ * uint16 input without widening: with x = 4 * (x >> 2) + (x & 3) for each tap,
+ * floor(sum / 4) = sum(x >> 2) + floor(sum(x & 3) / 4), and neither partial
+ * sum can exceed 65535. */
+static inline __m512i box_average_2x2_avx512(const uint16_t *row0, const uint16_t *row1,
+                                             __mmask32 k)
+{
+    const __m512i three = _mm512_set1_epi16(3);
+    const __m512i a = _mm512_maskz_loadu_epi16(k, row0);
+    const __m512i b = _mm512_maskz_loadu_epi16(k, row0 + 1);
+    const __m512i c = _mm512_maskz_loadu_epi16(k, row1);
+    const __m512i d = _mm512_maskz_loadu_epi16(k, row1 + 1);
+    const __m512i quarters =
+        _mm512_add_epi16(_mm512_add_epi16(_mm512_srli_epi16(a, 2), _mm512_srli_epi16(b, 2)),
+                         _mm512_add_epi16(_mm512_srli_epi16(c, 2), _mm512_srli_epi16(d, 2)));
+    const __m512i remainders =
+        _mm512_add_epi16(_mm512_add_epi16(_mm512_and_si512(a, three), _mm512_and_si512(b, three)),
+                         _mm512_add_epi16(_mm512_and_si512(c, three), _mm512_and_si512(d, three)));
+    return _mm512_add_epi16(quarters, _mm512_srli_epi16(remainders, 2));
+}
+
+/* floor((a + b) / 2) for the lanes in k of a horizontal pair, without
+ * overflow: a + b = 2 * (a & b) + (a ^ b). */
+static inline __m512i pair_average_avx512(const uint16_t *row, __mmask32 k)
+{
+    const __m512i a = _mm512_maskz_loadu_epi16(k, row);
+    const __m512i b = _mm512_maskz_loadu_epi16(k, row + 1);
+    return _mm512_add_epi16(_mm512_and_si512(a, b), _mm512_srli_epi16(_mm512_xor_si512(a, b), 1));
+}
+
+/* One row of the 2x2 average in place; the last column averages vertically.
+ * Every block reads row0[j + 32] before a later block overwrites it. */
+static void anti_dithering_row_avx512(uint16_t *row0, const uint16_t *row1, unsigned width)
+{
+    unsigned j = 0;
+    for (; j + 32 < width; j += 32) {
+        _mm512_storeu_si512((void *)&row0[j],
+                            box_average_2x2_avx512(&row0[j], &row1[j], 0xFFFFFFFFu));
+    }
+    const int rest = (int)(width - 1 - j); /* 0 .. 31 columns before the last */
+    if (rest > 0) {
+        const __mmask32 k = first_lanes32(rest);
+        _mm512_mask_storeu_epi16(&row0[j], k, box_average_2x2_avx512(&row0[j], &row1[j], k));
+    }
+    row0[width - 1] = (uint16_t)((row0[width - 1] + row1[width - 1]) >> 1);
+}
+
+/* The last row averages each pixel with its right neighbour, in place. */
+static void anti_dithering_last_row_avx512(uint16_t *row, unsigned width)
+{
+    unsigned j = 0;
+    for (; j + 32 < width; j += 32) {
+        _mm512_storeu_si512((void *)&row[j], pair_average_avx512(&row[j], 0xFFFFFFFFu));
+    }
+    const int rest = (int)(width - 1 - j);
+    if (rest > 0) {
+        const __mmask32 k = first_lanes32(rest);
+        _mm512_mask_storeu_epi16(&row[j], k, pair_average_avx512(&row[j], k));
+    }
+}
+
+void anti_dithering_filter_avx512(VmafPicture *pic, unsigned width, unsigned height)
+{
+    assert(pic->data[0]);
+    assert(width > 0u && height > 0u);
+    uint16_t *data = pic->data[0];
+    const ptrdiff_t stride = pic->stride[0] >> 1;
+    for (unsigned i = 0; i + 1 < height; i++) {
+        anti_dithering_row_avx512(&data[(ptrdiff_t)i * stride], &data[(ptrdiff_t)(i + 1) * stride],
+                                  width);
+    }
+    anti_dithering_last_row_avx512(&data[(ptrdiff_t)(height - 1) * stride], width);
+}
+
+/* The duplicate among (a, b, c) if any pair matches, otherwise the unsigned
+ * minimum: the scalar mode3() in cambi.c, one mask per predicate. */
+static inline __m512i mode3_avx512(__m512i a, __m512i b, __m512i c)
+{
+    const __mmask32 a_dup = _mm512_cmpeq_epi16_mask(a, b) | _mm512_cmpeq_epi16_mask(a, c);
+    const __mmask32 bc_eq = _mm512_cmpeq_epi16_mask(b, c);
+    const __m512i min_abc = _mm512_min_epu16(_mm512_min_epu16(a, b), c);
+    return _mm512_mask_blend_epi16(a_dup, _mm512_mask_blend_epi16(bc_eq, min_abc, b), a);
+}
+
+/* mode3 of (p[-1], p[0], p[1]) for the lanes in k. */
+static inline __m512i mode3_horizontal_avx512(const uint16_t *p, __mmask32 k)
+{
+    return mode3_avx512(_mm512_maskz_loadu_epi16(k, p - 1), _mm512_maskz_loadu_epi16(k, p),
+                        _mm512_maskz_loadu_epi16(k, p + 1));
+}
+
+/* Horizontal pass of one row into buf: mode3 of each interior pixel and its two
+ * neighbours; the first and last columns are copied. */
+static void filter_mode_row_avx512(const uint16_t *row, uint16_t *buf, int width)
+{
+    buf[0] = row[0];
+    int j = 1;
+    /* Writes buf[j .. j + 31] and reads row[j + 32]: both need j + 32 <= width - 1
+     * (the last mode3 column is width - 2). */
+    for (; j + 32 < width; j += 32) {
+        _mm512_storeu_si512((void *)&buf[j], mode3_horizontal_avx512(&row[j], 0xFFFFFFFFu));
+    }
+    const int rest = width - 1 - j; /* 0 .. 31 mode3 columns left */
+    if (rest > 0) {
+        const __mmask32 k = first_lanes32(rest);
+        _mm512_mask_storeu_epi16(&buf[j], k, mode3_horizontal_avx512(&row[j], k));
+    }
+    buf[width - 1] = row[width - 1];
+}
+
+/* Vertical pass: out = mode3 of the three buffered rows, column by column. */
+static void filter_mode_column_avx512(const uint16_t *buffer, uint16_t *out, int width)
+{
+    const uint16_t *b0 = buffer;
+    const uint16_t *b1 = &buffer[width];
+    const uint16_t *b2 = &buffer[(ptrdiff_t)2 * width];
+    int j = 0;
+    for (; j + 32 <= width; j += 32) {
+        const __m512i a = _mm512_loadu_si512((const void *)&b0[j]);
+        const __m512i b = _mm512_loadu_si512((const void *)&b1[j]);
+        const __m512i c = _mm512_loadu_si512((const void *)&b2[j]);
+        _mm512_storeu_si512((void *)&out[j], mode3_avx512(a, b, c));
+    }
+    const int rest = width - j;
+    if (rest > 0) {
+        const __mmask32 k = first_lanes32(rest);
+        const __m512i a = _mm512_maskz_loadu_epi16(k, &b0[j]);
+        const __m512i b = _mm512_maskz_loadu_epi16(k, &b1[j]);
+        const __m512i c = _mm512_maskz_loadu_epi16(k, &b2[j]);
+        _mm512_mask_storeu_epi16(&out[j], k, mode3_avx512(a, b, c));
+    }
+}
+
+void filter_mode_avx512(const VmafPicture *image, int width, int height, uint16_t *buffer)
+{
+    assert(image->data[0]);
+    assert(width > 0 && height > 0 && buffer);
+    uint16_t *data = image->data[0];
+    const ptrdiff_t stride = image->stride[0] >> 1;
+    int curr_line = 0;
+    for (int i = 0; i < height; i++) {
+        filter_mode_row_avx512(&data[(ptrdiff_t)i * stride], &buffer[(ptrdiff_t)curr_line * width],
+                               width);
+        if (i > 1) {
+            filter_mode_column_avx512(buffer, &data[(ptrdiff_t)(i - 1) * stride], width);
+        }
+        curr_line = (curr_line + 1 == 3 ? 0 : curr_line + 1);
+    }
+}
+
+/*
+ * Frame-level c-values driver: the shared calculate_c_values walk
+ * (cambi_c_values_frame.h) with the range updaters and row kernel above, and
+ * column scans that test 32 pixels per compare for "this column needs a
+ * histogram update". Histogram updates are integer and commute per cell, and
+ * the row kernel matches calculate_c_values_row bit for bit, so the c-values
+ * equal the scalar calculate_c_values output byte for byte.
+ */
+
+/* The two scans stay out of line: each call builds its own broadcast
+ * constants for a block of up to CAMBI_SCAN_BLOCK columns, so the frame walk
+ * keeps no vector value live across its calls to the row kernel. Inlined,
+ * Clang hoisted those broadcasts and spilled them around every call, and a
+ * wide spill is what faults under the Win64 ABI (ADR-1254). cl.exe has no
+ * __attribute__. */
+#if defined(_MSC_VER)
+#define CAMBI_SCAN_NOINLINE __declspec(noinline)
+#else
+#define CAMBI_SCAN_NOINLINE __attribute__((noinline))
+#endif
+
+/* Lanes in k whose pixel is unmasked and in the scored band [base, base +
+ * size); *value gets the pixel values (zero outside k). */
+static inline __mmask32 in_band_avx512(const CambiCValuesFrame *f, ptrdiff_t at, __mmask32 k,
+                                       __m512i base, __m512i size, __m512i *value)
+{
+    const __m512i m = _mm512_maskz_loadu_epi16(k, &f->mask[at]);
+    const __m512i v = _mm512_maskz_loadu_epi16(k, &f->image[at]);
+    *value = v;
+    return _mm512_mask_test_epi16_mask(k, m, m) &
+           _mm512_cmplt_epu16_mask(_mm512_sub_epi16(v, base), size);
+}
+
+CAMBI_SCAN_NOINLINE static void scan_row_avx512(const CambiCValuesFrame *f, int row, int j0, int n,
+                                                uint32_t *masks)
+{
+    const __m512i base = _mm512_set1_epi16((short)f->v_band_base);
+    const __m512i size = _mm512_set1_epi16((short)f->v_band_size);
+    const ptrdiff_t at = (ptrdiff_t)row * f->stride + j0;
+    for (int b = 0; b < n; b += 32) {
+        __m512i v;
+        masks[b / 32] =
+            (uint32_t)in_band_avx512(f, at + b, first_lanes32(MIN(32, n - b)), base, size, &v);
+    }
+}
+
+CAMBI_SCAN_NOINLINE static void scan_slide_avx512(const CambiCValuesFrame *f, int row_sub,
+                                                  int row_add, int j0, int n, uint32_t *masks)
+{
+    const __m512i base = _mm512_set1_epi16((short)f->v_band_base);
+    const __m512i size = _mm512_set1_epi16((short)f->v_band_size);
+    const ptrdiff_t at_sub = (ptrdiff_t)row_sub * f->stride + j0;
+    const ptrdiff_t at_add = (ptrdiff_t)row_add * f->stride + j0;
+    for (int b = 0; b < n; b += 32) {
+        const __mmask32 k = first_lanes32(MIN(32, n - b));
+        __m512i v_sub;
+        __m512i v_add;
+        const __mmask32 sub_in = in_band_avx512(f, at_sub + b, k, base, size, &v_sub);
+        const __mmask32 add_in = in_band_avx512(f, at_add + b, k, base, size, &v_add);
+        /* uh_slide skips a column whose two pixels are both in with one value. */
+        const __mmask32 cancel = sub_in & add_in & _mm512_cmpeq_epi16_mask(v_sub, v_add);
+        masks[b / 32] = (uint32_t)((sub_in | add_in) & ~cancel);
+    }
+}
+
+void calculate_c_values_avx512(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
+                               uint16_t *histograms, uint16_t window_size, const uint16_t num_diffs,
+                               const uint16_t *tvi_for_diff, uint16_t vlt_luma,
+                               const int *diff_weights, const int *all_diffs, int width, int height)
+{
+    CambiCValuesFrame f = {
+        .c_values = c_values,
+        .histograms = histograms,
+        .image = pic->data[0],
+        .mask = mask_pic->data[0],
+        .tvi_for_diff = tvi_for_diff,
+        .diff_weights = diff_weights,
+        .all_diffs = all_diffs,
+        .stride = pic->stride[0] >> 1,
+        .width = width,
+        .height = height,
+        .pad_size = (uint16_t)(window_size >> 1),
+        .num_diffs = num_diffs,
+        .vlt_luma = vlt_luma,
+    };
+    const CambiCValuesKernels k = {
+        .inc = cambi_increment_range_avx512,
+        .dec = cambi_decrement_range_avx512,
+        .row = calculate_c_values_row_avx512,
+        .scan_row = scan_row_avx512,
+        .scan_slide = scan_slide_avx512,
+    };
+    cambi_calculate_c_values_frame(&f, k);
 }

@@ -820,16 +820,25 @@ static void setup_callbacks(CambiState *s)
     }
 #if HAVE_AVX512
     if (flags & VMAF_X86_CPU_FLAG_AVX512) {
+        s->derivative_callback = get_derivative_data_for_row_avx512;
+        s->calc_c_values_callback = calculate_c_values_avx512;
+        s->filter_mode_callback = filter_mode_avx512;
+        s->decimate_callback = decimate_avx512;
         s->compute_dp_row_callback = compute_dp_row_avx512;
         s->compute_mask_row_callback = compute_mask_row_avx512;
     }
 #endif
 #elif ARCH_AARCH64
-    /* compute_mask_row stays scalar here: GCC and Clang auto-vectorize its loop
-     * into the same NEON sequence compute_mask_row_neon spells out, so the
-     * twin is kept (and parity-tested) but not dispatched. */
-    if (vmaf_get_cpu_flags() & VMAF_ARM_CPU_FLAG_NEON)
+    /* filter_mode and compute_mask_row stay scalar here: GCC and Clang
+     * auto-vectorize their loops into the same NEON sequences filter_mode_neon
+     * and compute_mask_row_neon spell out, so those twins are kept (and
+     * parity-tested) but not dispatched (ADR-1256, Research-2062/2065). */
+    if (vmaf_get_cpu_flags() & VMAF_ARM_CPU_FLAG_NEON) {
+        s->derivative_callback = get_derivative_data_for_row_neon;
+        s->calc_c_values_callback = calculate_c_values_neon;
+        s->decimate_callback = decimate_neon;
         s->compute_dp_row_callback = compute_dp_row_neon;
+    }
 #endif
 }
 
@@ -1031,8 +1040,19 @@ static void anti_dithering_filter(VmafPicture *pic, unsigned width, unsigned hei
 {
 #if ARCH_X86
     unsigned flags = vmaf_get_cpu_flags();
+#if HAVE_AVX512
+    if (flags & VMAF_X86_CPU_FLAG_AVX512) {
+        anti_dithering_filter_avx512(pic, width, height);
+        return;
+    }
+#endif
     if (flags & VMAF_X86_CPU_FLAG_AVX2) {
         anti_dithering_filter_avx2(pic, width, height);
+        return;
+    }
+#elif ARCH_AARCH64
+    if (vmaf_get_cpu_flags() & VMAF_ARM_CPU_FLAG_NEON) {
+        anti_dithering_filter_neon(pic, width, height);
         return;
     }
 #endif

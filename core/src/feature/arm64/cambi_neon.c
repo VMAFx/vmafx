@@ -17,84 +17,63 @@
  *
  */
 
+#include <assert.h>
 #include <arm_neon.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
+#include "libvmaf/picture.h"
 #include "cambi_neon.h"
+#include "cambi.h"
+#include "cambi_c_values_frame.h"
 
-void cambi_increment_range_neon(uint16_t *arr, int left, int right)
+/* Histogram range updates for the c-values driver, in plain C on purpose: GCC
+ * and Clang vectorize these loops into the same eight-lane NEON adds (plus a
+ * four-lane step and a scalar tail) that a hand-written kernel spells out, and
+ * the measured instruction count of the whole driver was no lower with
+ * intrinsics (Research-2065). Same modular uint16 arithmetic as
+ * increment_range / decrement_range in cambi.c. */
+static void cambi_increment_range_c(uint16_t *arr, int left, int right)
 {
-    uint16x8_t one = vdupq_n_u16(1);
-    int col = left;
-    for (; col + 8 <= right; col += 8) {
-        uint16x8_t data = vld1q_u16(&arr[col]);
-        data = vaddq_u16(data, one);
-        vst1q_u16(&arr[col], data);
-    }
-    for (; col < right; col++) {
-        arr[col]++;
+    for (int i = left; i < right; i++) {
+        arr[i]++;
     }
 }
 
-void cambi_decrement_range_neon(uint16_t *arr, int left, int right)
+static void cambi_decrement_range_c(uint16_t *arr, int left, int right)
 {
-    uint16x8_t one = vdupq_n_u16(1);
-    int col = left;
-    for (; col + 8 <= right; col += 8) {
-        uint16x8_t data = vld1q_u16(&arr[col]);
-        data = vsubq_u16(data, one);
-        vst1q_u16(&arr[col], data);
+    for (int i = left; i < right; i++) {
+        arr[i]--;
     }
-    for (; col < right; col++) {
-        arr[col]--;
-    }
+}
+
+/* 1 where the pixel equals its right neighbour and the pixel below, else 0;
+ * vceqq gives 0xFFFF, the shift turns that into 1. */
+static inline uint16x8_t zero_derivative_neon(const uint16_t *px, const uint16_t *below)
+{
+    const uint16x8_t v = vld1q_u16(px);
+    const uint16x8_t eq =
+        vandq_u16(vceqq_u16(v, vld1q_u16(px + 1)), vceqq_u16(v, vld1q_u16(below)));
+    return vshrq_n_u16(eq, 15);
 }
 
 void get_derivative_data_for_row_neon(const uint16_t *image_data, uint16_t *derivative_buffer,
                                       int width, int height, int row, int stride)
 {
-    uint16x8_t ones = vdupq_n_u16(1);
-
-    if (row == height - 1) {
-        /* Last row: only horizontal derivatives */
-        int col = 0;
-        for (; col + 8 <= width - 1; col += 8) {
-            uint16x8_t vals1 = vld1q_u16(&image_data[row * stride + col]);
-            uint16x8_t vals2 = vld1q_u16(&image_data[row * stride + col + 1]);
-            /* cmpeq returns 0xFFFF for equal, 0 for not */
-            uint16x8_t eq = vceqq_u16(vals1, vals2);
-            /* AND with 1 to get 1/0 instead of 0xFFFF/0 */
-            vst1q_u16(&derivative_buffer[col], vandq_u16(ones, eq));
-        }
-        for (; col < width - 1; col++) {
-            derivative_buffer[col] =
-                (image_data[row * stride + col] == image_data[row * stride + col + 1]);
-        }
-        derivative_buffer[width - 1] = 1;
-    } else {
-        /* Interior rows: horizontal AND vertical derivatives */
-        int col = 0;
-        for (; col + 8 <= width - 1; col += 8) {
-            uint16x8_t h1 = vld1q_u16(&image_data[row * stride + col]);
-            uint16x8_t h2 = vld1q_u16(&image_data[row * stride + col + 1]);
-            uint16x8_t horiz_eq = vandq_u16(ones, vceqq_u16(h1, h2));
-
-            uint16x8_t v1 = vld1q_u16(&image_data[row * stride + col]);
-            uint16x8_t v2 = vld1q_u16(&image_data[(row + 1) * stride + col]);
-            uint16x8_t vert_eq = vandq_u16(ones, vceqq_u16(v1, v2));
-
-            vst1q_u16(&derivative_buffer[col], vandq_u16(horiz_eq, vert_eq));
-        }
-        for (; col < width; col++) {
-            bool horizontal_derivative =
-                (col == width - 1 ||
-                 image_data[row * stride + col] == image_data[row * stride + col + 1]);
-            bool vertical_derivative =
-                image_data[row * stride + col] == image_data[(row + 1) * stride + col];
-            derivative_buffer[col] = horizontal_derivative && vertical_derivative;
-        }
+    const uint16_t *px = &image_data[(ptrdiff_t)row * stride];
+    /* The last row compares with itself vertically, which is always equal:
+     * the scalar's `row == height - 1 ||` short cut. */
+    const uint16_t *below = (row == height - 1) ? px : &px[stride];
+    int col = 0;
+    /* Reads px[col + 8]: the vector loop stops one column early, and the last
+     * column (no right neighbour) is the scalar's `col == width - 1` case. */
+    for (; col + 8 < width; col += 8) {
+        vst1q_u16(&derivative_buffer[col], zero_derivative_neon(&px[col], &below[col]));
+    }
+    for (; col < width; col++) {
+        const bool horizontal = (col == width - 1) || (px[col] == px[col + 1]);
+        derivative_buffer[col] = (uint16_t)(horizontal && (px[col] == below[col]));
     }
 }
 
@@ -295,4 +274,290 @@ void compute_mask_row_neon(uint16_t *mask_row, const uint32_t *dp_bottom, const 
         const uint32_t result = dp_bottom[j + delta] + dp_top[j] - dp_bottom[j] - dp_top[j + delta];
         mask_row[j] = (uint16_t)(result > mask_index);
     }
+}
+
+/*
+ * Preprocessing and per-scale kernels: NEON twins of decimate_avx2,
+ * anti_dithering_filter_avx2 and filter_mode_avx2. All three are integer-only
+ * and bit-exact against the scalar decimate / anti_dithering_filter /
+ * filter_mode in cambi.c for every uint16 input.
+ */
+
+/* dst[i, j] = src[2i, 2j] in place: ld2 de-interleaves sixteen elements and the
+ * even half is the output. Reads stay ahead of writes within a row and across
+ * rows, as in the scalar loop; the vector loop reads up to src[2 * width - 1],
+ * the same bound as decimate_avx2. */
+static void decimate_row_neon(const uint16_t *src, uint16_t *dst, unsigned width)
+{
+    unsigned j = 0;
+    for (; j + 8 <= width; j += 8) {
+        vst1q_u16(&dst[j], vld2q_u16(&src[(size_t)2 * j]).val[0]);
+    }
+    for (; j < width; j++) {
+        dst[j] = src[(size_t)2 * j];
+    }
+}
+
+void decimate_neon(VmafPicture *image, unsigned width, unsigned height)
+{
+    assert(image->data[0]);
+    assert(width > 0u && height > 0u);
+    uint16_t *data = image->data[0];
+    const ptrdiff_t stride = image->stride[0] >> 1;
+    for (unsigned i = 0; i < height; i++) {
+        decimate_row_neon(&data[(ptrdiff_t)2 * (ptrdiff_t)i * stride], &data[(ptrdiff_t)i * stride],
+                          width);
+    }
+}
+
+/* floor((a + b + c + d) / 4) for eight columns of a 2x2 window: widening
+ * adds, so the sum is exact for any uint16 input, and the narrowing shift
+ * cannot truncate because the quotient is at most 65535. */
+static inline uint16x8_t box_average_2x2_neon(const uint16_t *row0, const uint16_t *row1)
+{
+    const uint16x8_t a = vld1q_u16(row0);
+    const uint16x8_t b = vld1q_u16(row0 + 1);
+    const uint16x8_t c = vld1q_u16(row1);
+    const uint16x8_t d = vld1q_u16(row1 + 1);
+    const uint32x4_t lo = vaddq_u32(vaddl_u16(vget_low_u16(a), vget_low_u16(b)),
+                                    vaddl_u16(vget_low_u16(c), vget_low_u16(d)));
+    const uint32x4_t hi = vaddq_u32(vaddl_high_u16(a, b), vaddl_high_u16(c, d));
+    return vshrn_high_n_u32(vshrn_n_u32(lo, 2), hi, 2);
+}
+
+void anti_dithering_filter_neon(VmafPicture *pic, unsigned width, unsigned height)
+{
+    assert(pic->data[0]);
+    assert(width > 0u && height > 0u);
+    uint16_t *data = pic->data[0];
+    const ptrdiff_t stride = pic->stride[0] >> 1;
+
+    for (unsigned i = 0; i + 1 < height; i++) {
+        uint16_t *row0 = &data[(ptrdiff_t)i * stride];
+        const uint16_t *row1 = &data[(ptrdiff_t)(i + 1) * stride];
+        unsigned j = 0;
+        /* j + 8 < width keeps the row0[j + 8] / row1[j + 8] loads inside the row;
+         * row0[j + 8] is read before the next block overwrites it. */
+        for (; j + 8 < width; j += 8) {
+            vst1q_u16(&row0[j], box_average_2x2_neon(&row0[j], &row1[j]));
+        }
+        for (; j + 1 < width; j++) {
+            row0[j] = (uint16_t)((row0[j] + row0[j + 1] + row1[j] + row1[j + 1]) >> 2);
+        }
+        row0[width - 1] = (uint16_t)((row0[width - 1] + row1[width - 1]) >> 1);
+    }
+    /* Last row: floor((a + b) / 2) with its right neighbour; vhadd is exactly
+     * that, without overflow. */
+    uint16_t *last_row = &data[(ptrdiff_t)(height - 1) * stride];
+    unsigned j = 0;
+    for (; j + 8 < width; j += 8) {
+        vst1q_u16(&last_row[j], vhaddq_u16(vld1q_u16(&last_row[j]), vld1q_u16(&last_row[j + 1])));
+    }
+    for (; j + 1 < width; j++) {
+        last_row[j] = (uint16_t)((last_row[j] + last_row[j + 1]) >> 1);
+    }
+}
+
+/* The duplicate among (a, b, c) if any pair matches, otherwise the unsigned
+ * minimum: the scalar mode3() in cambi.c. */
+static inline uint16x8_t mode3_neon(uint16x8_t a, uint16x8_t b, uint16x8_t c)
+{
+    const uint16x8_t a_dup = vorrq_u16(vceqq_u16(a, b), vceqq_u16(a, c));
+    const uint16x8_t min_abc = vminq_u16(vminq_u16(a, b), c);
+    return vbslq_u16(a_dup, a, vbslq_u16(vceqq_u16(b, c), b, min_abc));
+}
+
+static inline uint16_t mode3_scalar_neon(uint16_t a, uint16_t b, uint16_t c)
+{
+    if (a == b || a == c)
+        return a;
+    if (b == c)
+        return b;
+    const uint16_t ab = a < b ? a : b;
+    return ab < c ? ab : c;
+}
+
+/* Horizontal pass of one row into buf: mode3 of each interior pixel and its two
+ * neighbours; the first and last columns are copied. */
+static void filter_mode_row_neon(const uint16_t *row, uint16_t *buf, int width)
+{
+    buf[0] = row[0];
+    int j = 1;
+    /* Writes buf[j .. j + 7] and reads row[j + 8]: both need j + 8 <= width - 1
+     * (the last mode3 column is width - 2). */
+    for (; j + 8 < width; j += 8) {
+        const uint16x8_t a = vld1q_u16(&row[j - 1]);
+        const uint16x8_t b = vld1q_u16(&row[j]);
+        const uint16x8_t c = vld1q_u16(&row[j + 1]);
+        vst1q_u16(&buf[j], mode3_neon(a, b, c));
+    }
+    for (; j < width - 1; j++) {
+        buf[j] = mode3_scalar_neon(row[j - 1], row[j], row[j + 1]);
+    }
+    buf[width - 1] = row[width - 1];
+}
+
+/* Vertical pass: out = mode3 of the three buffered rows, column by column. */
+static void filter_mode_column_neon(const uint16_t *buffer, uint16_t *out, int width)
+{
+    const uint16_t *b0 = buffer;
+    const uint16_t *b1 = &buffer[width];
+    const uint16_t *b2 = &buffer[(ptrdiff_t)2 * width];
+    int j = 0;
+    for (; j + 8 <= width; j += 8) {
+        vst1q_u16(&out[j], mode3_neon(vld1q_u16(&b0[j]), vld1q_u16(&b1[j]), vld1q_u16(&b2[j])));
+    }
+    for (; j < width; j++) {
+        out[j] = mode3_scalar_neon(b0[j], b1[j], b2[j]);
+    }
+}
+
+void filter_mode_neon(const VmafPicture *image, int width, int height, uint16_t *buffer)
+{
+    assert(image->data[0]);
+    assert(width > 0 && height > 0 && buffer);
+    uint16_t *data = image->data[0];
+    const ptrdiff_t stride = image->stride[0] >> 1;
+    int curr_line = 0;
+    for (int i = 0; i < height; i++) {
+        filter_mode_row_neon(&data[(ptrdiff_t)i * stride], &buffer[(ptrdiff_t)curr_line * width],
+                             width);
+        if (i > 1) {
+            filter_mode_column_neon(buffer, &data[(ptrdiff_t)(i - 1) * stride], width);
+        }
+        curr_line = (curr_line + 1 == 3 ? 0 : curr_line + 1);
+    }
+}
+
+/*
+ * Frame-level c-values driver: the shared calculate_c_values walk
+ * (cambi_c_values_frame.h) with the range updaters and row kernel above, and
+ * column scans that test eight pixels per compare for "this column needs a
+ * histogram update". Histogram updates are integer and commute per cell, and
+ * the row kernel is the scalar per-pixel code, so the c-values equal the scalar
+ * calculate_c_values output byte for byte.
+ */
+
+/* One bit per lane of an all-ones / all-zeros uint16x8 condition. */
+static inline uint32_t lane_bits_neon(uint16x8_t cond)
+{
+    static const uint16_t weights[8] = {1, 2, 4, 8, 16, 32, 64, 128};
+    return vaddvq_u16(vandq_u16(cond, vld1q_u16(weights)));
+}
+
+/* Unmasked and in the scored band [base, base + size), eight lanes; *value
+ * gets the pixels. */
+static inline uint16x8_t in_band_neon(const CambiCValuesFrame *f, ptrdiff_t at, uint16x8_t base,
+                                      uint16x8_t size, uint16x8_t *value)
+{
+    const uint16x8_t m = vld1q_u16(&f->mask[at]);
+    const uint16x8_t v = vld1q_u16(&f->image[at]);
+    *value = v;
+    return vandq_u16(vtstq_u16(m, m), vcltq_u16(vsubq_u16(v, base), size));
+}
+
+/* The same test for one pixel (row tails: NEON has no masked load, and a
+ * vector load past the last column could leave the picture). */
+static inline bool in_band_scalar_neon(const CambiCValuesFrame *f, ptrdiff_t at)
+{
+    return f->mask[at] && (uint16_t)(f->image[at] - f->v_band_base) < f->v_band_size;
+}
+
+/* One mask of up to 32 columns starting at `at`. */
+static inline uint32_t scan_row_mask_neon(const CambiCValuesFrame *f, ptrdiff_t at, int n,
+                                          uint16x8_t base, uint16x8_t size)
+{
+    uint32_t flags = 0;
+    int b = 0;
+    for (; b + 8 <= n; b += 8) {
+        uint16x8_t v;
+        flags |= lane_bits_neon(in_band_neon(f, at + b, base, size, &v)) << b;
+    }
+    for (; b < n; b++) {
+        flags |= (uint32_t)in_band_scalar_neon(f, at + b) << b;
+    }
+    return flags;
+}
+
+static void scan_row_neon(const CambiCValuesFrame *f, int row, int j0, int n, uint32_t *masks)
+{
+    const uint16x8_t base = vdupq_n_u16(f->v_band_base);
+    const uint16x8_t size = vdupq_n_u16(f->v_band_size);
+    const ptrdiff_t at = (ptrdiff_t)row * f->stride + j0;
+    for (int b = 0; b < n; b += 32) {
+        masks[b / 32] = scan_row_mask_neon(f, at + b, MIN(32, n - b), base, size);
+    }
+}
+
+/* uh_slide's test for one column: neither pixel in, or both in with one value,
+ * is a no-op. */
+static inline bool slide_needed_scalar_neon(const CambiCValuesFrame *f, ptrdiff_t at_sub,
+                                            ptrdiff_t at_add)
+{
+    const bool sub_in = in_band_scalar_neon(f, at_sub);
+    const bool add_in = in_band_scalar_neon(f, at_add);
+    return (sub_in || add_in) && !(sub_in && add_in && f->image[at_sub] == f->image[at_add]);
+}
+
+/* One slide mask of up to 32 columns. */
+static inline uint32_t scan_slide_mask_neon(const CambiCValuesFrame *f, ptrdiff_t at_sub,
+                                            ptrdiff_t at_add, int n, uint16x8_t base,
+                                            uint16x8_t size)
+{
+    uint32_t flags = 0;
+    int b = 0;
+    for (; b + 8 <= n; b += 8) {
+        uint16x8_t v_sub;
+        uint16x8_t v_add;
+        const uint16x8_t sub_in = in_band_neon(f, at_sub + b, base, size, &v_sub);
+        const uint16x8_t add_in = in_band_neon(f, at_add + b, base, size, &v_add);
+        const uint16x8_t cancel = vandq_u16(vandq_u16(sub_in, add_in), vceqq_u16(v_sub, v_add));
+        flags |= lane_bits_neon(vbicq_u16(vorrq_u16(sub_in, add_in), cancel)) << b;
+    }
+    for (; b < n; b++) {
+        flags |= (uint32_t)slide_needed_scalar_neon(f, at_sub + b, at_add + b) << b;
+    }
+    return flags;
+}
+
+static void scan_slide_neon(const CambiCValuesFrame *f, int row_sub, int row_add, int j0, int n,
+                            uint32_t *masks)
+{
+    const uint16x8_t base = vdupq_n_u16(f->v_band_base);
+    const uint16x8_t size = vdupq_n_u16(f->v_band_size);
+    const ptrdiff_t at_sub = (ptrdiff_t)row_sub * f->stride + j0;
+    const ptrdiff_t at_add = (ptrdiff_t)row_add * f->stride + j0;
+    for (int b = 0; b < n; b += 32) {
+        masks[b / 32] = scan_slide_mask_neon(f, at_sub + b, at_add + b, MIN(32, n - b), base, size);
+    }
+}
+
+void calculate_c_values_neon(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
+                             uint16_t *histograms, uint16_t window_size, const uint16_t num_diffs,
+                             const uint16_t *tvi_for_diff, uint16_t vlt_luma,
+                             const int *diff_weights, const int *all_diffs, int width, int height)
+{
+    CambiCValuesFrame f = {
+        .c_values = c_values,
+        .histograms = histograms,
+        .image = pic->data[0],
+        .mask = mask_pic->data[0],
+        .tvi_for_diff = tvi_for_diff,
+        .diff_weights = diff_weights,
+        .all_diffs = all_diffs,
+        .stride = pic->stride[0] >> 1,
+        .width = width,
+        .height = height,
+        .pad_size = (uint16_t)(window_size >> 1),
+        .num_diffs = num_diffs,
+        .vlt_luma = vlt_luma,
+    };
+    const CambiCValuesKernels k = {
+        .inc = cambi_increment_range_c,
+        .dec = cambi_decrement_range_c,
+        .row = calculate_c_values_row_neon,
+        .scan_row = scan_row_neon,
+        .scan_slide = scan_slide_neon,
+    };
+    cambi_calculate_c_values_frame(&f, k);
 }
