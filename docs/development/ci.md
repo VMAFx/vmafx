@@ -243,7 +243,8 @@ instead of a touched-files rule:
   custom targets, which leave them out of `compile_commands.json`, so the
   target first runs `scripts/ci/gen-gpu-compile-commands.py` (CUDA and HIP
   kernels) or `scripts/ci/gen-sycl-compile-commands.py` (SYCL) against the
-  build directory. Without that step the lane measures the host files only. They become PR-required contexts as soon as a hosted
+  build directory. Without that step the lane measures the host files only.
+  They become PR-required contexts as soon as a hosted
   toolchain exists for the lane; until then a lane that cannot run is reported
   as *not run*, never as clean. Metal (`.mm` / `.metal`) has no Linux
   toolchain and is tracked by structural proxy only.

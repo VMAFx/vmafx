@@ -1,6 +1,27 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/gpu-adm-tiny-frames — GPU integer ADM on frames 17 to 32 pixels wide (2026-09-18)
+
+Upstream Netflix/vmaf ships the CUDA integer ADM this fork mirrors, and it
+carries both defects fixed here (T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18). When a
+sync touches these files, keep the fork form:
+
+- `core/src/feature/cuda/integer_adm_cuda.c`: the scale-0 cube and inner-accum
+  rounding constants are `adm_half_shift(x)` from
+  `core/src/feature/adm_csf_fixed_point.h`, where upstream writes
+  `1 << (x - 1)`; `init_fex_cuda()` starts with `adm_frame_size_check()`.
+- `core/src/feature/cuda/integer_adm/adm_cm.cu`, both scale-0 kernels: the
+  neighbour clamps are `pos_x[2] = min(pos_x[2], w - 1)` and
+  `pos_y = min(pos_y, h - 1)`. Upstream's `pos - max(0, 2 * (x - w) + 1)` uses
+  the base index and reads one column and one row past the band.
+  `test_cuda_adm_tiny_frames` fails on either upstream form.
+
+The HIP (`integer_adm_hip.c`, `integer_adm/adm_cm.hip`) and SYCL
+(`integer_adm_sycl.cpp`) twins are fork-only; the same rules apply to them.
+`integer_adm_sycl.cpp`'s internals now sit in an anonymous namespace rather
+than behind C-style `static`.
+
 ## port/upstream-2026-09 — Netflix/vmaf `03b5562c5`..`86da14d03` (2026-09-18)
 
 Reconciles upstream through `86da14d03` (previous mark `f85a85369`, PR #1456).
