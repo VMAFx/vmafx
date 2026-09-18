@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-09-18T18:37:56Z",
+  "generated_at": "2026-09-18T20:13:37Z",
   "repository": "",
   "commit_sha": "",
-  "total_infractions": 1627,
+  "total_infractions": 1619,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -6111,75 +6111,18 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_ssim/integer_ssim_score.hip",
-      "line_number": 67,
-      "symbol": "extern \"C\" {",
-      "message": "Function 'extern \"C\" {' (173 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_ssim/integer_ssim_score.hip:67:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/hip/integer_ssim_hip.c",
-      "line_number": 216,
-      "symbol": "issim_hip_bufs_alloc",
-      "message": "Function 'issim_hip_bufs_alloc' (77 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_ssim_hip.c:216:HISS-04"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/hip/integer_ssim_hip.c",
-      "line_number": 430,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ssim_hip.c:430:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/hip/integer_ssim_hip.c",
-      "line_number": 437,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ssim_hip.c:437:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/hip/integer_ssim_hip.c",
-      "line_number": 442,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ssim_hip.c:442:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/hip/integer_ssim_hip.c",
-      "line_number": 445,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ssim_hip.c:445:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/hip/integer_ssim_hip.c",
-      "line_number": 452,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ssim_hip.c:452:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/hip/integer_ssim_hip.c",
-      "line_number": 461,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ssim_hip.c:461:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/hip/integer_ssim_hip.c",
-      "line_number": 463,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ssim_hip.c:463:HISS-01"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/hip/integer_ssim_hip.c",
-      "line_number": 409,
+      "line_number": 78,
       "symbol": "{",
-      "message": "Function '{' (73 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_ssim_hip.c:409:HISS-04"
+      "message": "Function '{' (80 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/feature/hip/integer_ssim/integer_ssim_score.hip:78:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "core/src/feature/hip/integer_ssim/integer_ssim_score.hip",
+      "line_number": 159,
+      "symbol": "extern \"C\" {",
+      "message": "Function 'extern \"C\" {' (89 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/feature/hip/integer_ssim/integer_ssim_score.hip:159:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -7835,10 +7778,10 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/hip/dispatch_strategy.c",
-      "line_number": 18,
+      "line_number": 24,
       "symbol": "static const char *const g_hip_features[] = {",
-      "message": "Function 'static const char *const g_hip_features[] = {' (99 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/hip/dispatch_strategy.c:18:HISS-04"
+      "message": "Function 'static const char *const g_hip_features[] = {' (102 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/hip/dispatch_strategy.c:24:HISS-04"
     },
     {
       "rule_id": "HISS-04",
