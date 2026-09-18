@@ -16,7 +16,7 @@ vmaf_cflags_common = cc.get_supported_arguments([
     '-Wimplicit-fallthrough',
     # -DOC_NEW_STYLE_INCLUDES removed: dead legacy define from upstream libogg era;
     # no C consumer exists anywhere in the tree.
-    # ADR-0377: hide all symbols by default; only vmaf_*-prefixed entry
+    # ADR-0379: hide all symbols by default; only vmaf_*-prefixed entry
     # points annotated with VMAF_EXPORT in the public headers are visible
     # in the final libvmaf.so. This eliminates the 207-symbol leak
     # found by Research-0092 (libsvm C API, pdjson, SIMD internals, etc.)
@@ -695,6 +695,10 @@ libvmaf_cpu_static_lib = static_library(
     'libvmaf_cpu',
     libvmaf_cpu_sources,
     include_directories : [libvmaf_include],
+    # Defined before the backend defines are appended; CPU feature detection
+    # includes no layout-dependent header, so the flags as of here suffice.
+    c_args : vmaf_cflags_common,
+    cpp_args : cxx.get_supported_arguments(vmaf_cflags_common),
 )
 
 platform_specific_cpu_objects = []
@@ -1085,6 +1089,20 @@ endif
 if is_sycl_enabled
     vmaf_cflags_common += '-DHAVE_SYCL'
 endif
+
+# The same flags for every C++ TU that ends up in libvmaf. Each C++ target
+# used to pick its own subset (or none): six TUs compiled straight into the
+# library, the C++ sources of libvmaf_feature and the isolated *_cpp20/23 libs
+# all built without -fvisibility=hidden, so libvmaf.so exported aligned_malloc,
+# picture_copy, feature_extractor_vector_* and friends against ADR-0379, and
+# the picture-pool libs needed hand-copied HAVE_CUDA / HAVE_SYCL lists after
+# two ODR crashes (PR #840). Every define is appended above this point, so one
+# list carries all of them; get_supported_arguments() drops any C-only warning
+# flag the C++ compiler rejects. Pass it as cpp_args to every C++ target.
+# core/test/check_exported_symbols.py pins the result: libvmaf.so exports the
+# public vmaf_* API and, of C++ symbols, only libstdc++ template members, which
+# namespace std declares with default visibility.
+vmaf_cppflags_common = cxx.get_supported_arguments(vmaf_cflags_common)
 
 if is_cuda_enabled
     # Check for required CUDA headers
@@ -1964,6 +1982,7 @@ gpu_dispatch_env_cpp23_lib = static_library(
     'gpu_dispatch_env_cpp23',
     src_dir + 'gpu_dispatch_env.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
+    cpp_args : vmaf_cppflags_common,
     pic : true,
     install : false,
 )
@@ -1977,6 +1996,7 @@ libvmaf_feature_static_lib = static_library(
     libvmaf_feature_sources + brisque_model_c_sources + hip_sources + hip_hsaco_sources + metal_sources,
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
     c_args : vmaf_cflags_common + _libvmaf_feature_icx_args,
+    cpp_args : vmaf_cppflags_common,
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency, hip_deps, metal_deps],
     objects: [common_cuda_objects, common_sycl_objects, sycl_feature_objects,
               libvmaf_psnr_hvs_scalar_static_lib.extract_all_objects(recursive: false),
@@ -2006,6 +2026,7 @@ metadata_handler_cpp20_lib = static_library(
     'metadata_handler_cpp20',
     src_dir + 'metadata_handler.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
+    cpp_args : vmaf_cppflags_common,
     pic : true,
     install : false,
 )
@@ -2019,6 +2040,7 @@ log_cpp23_lib = static_library(
     'log_cpp23',
     src_dir + 'log.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
+    cpp_args : vmaf_cppflags_common,
     pic : true,
     install : false,
 )
@@ -2029,6 +2051,7 @@ opt_cpp23_lib = static_library(
     'opt_cpp23',
     src_dir + 'opt.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
+    cpp_args : vmaf_cppflags_common,
     pic : true,
     install : false,
 )
@@ -2042,15 +2065,14 @@ picture_pool_cpp23_lib = static_library(
     'picture_pool_cpp23',
     src_dir + 'picture_pool.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
-    # ODR fix: picture_pool.cpp must see the same HAVE_CUDA / HAVE_SYCL defines
+    # ODR: picture_pool.cpp must see the same HAVE_CUDA / HAVE_SYCL defines
     # as libvmaf.c so that VmafPicturePrivate has an identical layout in both
-    # the pool allocator TU and every consumer TU.  Without this, the 40-byte
+    # the pool allocator TU and every consumer TU.  Without them, the 40-byte
     # CUDA sub-struct inside VmafPicturePrivate shifts buf_type from offset 16
     # (no-CUDA layout) to offset 56 (CUDA layout); validate_pic_params then
     # reads garbage at the wrong offset and returns -EINVAL on every
-    # vmaf_read_pictures call.  See test_pic_preallocation failure analysis.
-    cpp_args : (is_cuda_enabled ? ['-DHAVE_CUDA'] : []) +
-               (is_sycl_enabled ? ['-DHAVE_SYCL'] : []),
+    # vmaf_read_pictures call (PR #840). vmaf_cppflags_common carries them.
+    cpp_args : vmaf_cppflags_common,
     dependencies : [pthread_dependency],
     pic : true,
     install : false,
@@ -2062,15 +2084,10 @@ gpu_picture_pool_cpp23_lib = static_library(
     'gpu_picture_pool_cpp23',
     src_dir + 'gpu_picture_pool.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
-    # ODR fix (follow-up to PR #840): gpu_picture_pool.cpp includes picture.h
-    # (line 30) and gpu_picture_pool.h (line 31, which re-includes picture.h).
-    # VmafPicturePrivate's cuda sub-struct changes size when HAVE_CUDA is absent,
-    # shifting buf_type and other fields.  This lib does not inherit vmaf_cflags_common
-    # (it carries no c_args at all), so the defines must be passed explicitly —
-    # mirroring the same fix applied to picture_pool_cpp23_lib in PR #840.
-    cpp_args : (is_cuda_enabled ? ['-DHAVE_CUDA'] : []) +
-               (is_nvtx_enabled ? ['-DHAVE_NVTX'] : []) +
-               (is_sycl_enabled ? ['-DHAVE_SYCL'] : []),
+    # ODR (follow-up to PR #840): gpu_picture_pool.cpp includes picture.h,
+    # whose VmafPicturePrivate changes size with HAVE_CUDA; the backend defines
+    # come with vmaf_cppflags_common.
+    cpp_args : vmaf_cppflags_common,
     dependencies : [pthread_dependency],
     pic : true,
     install : false,
@@ -2080,6 +2097,7 @@ read_json_model_cpp23_lib = static_library(
     'read_json_model_cpp23',
     src_dir + 'read_json_model.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
+    cpp_args : vmaf_cppflags_common,
     pic : true,
     install : false,
     # read_json_model.cpp includes model.h which carries pthread_mutex_t
@@ -2166,6 +2184,7 @@ libvmaf = library(
     [libvmaf_sources, rev_target, json_model_c_sources, dnn_sources, dnn_libvmaf_only_sources, mcp_sources],
     include_directories : [libvmaf_inc, vmaf_include, dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
+    cpp_args : vmaf_cppflags_common + dnn_defines,
     link_args : vmaf_link_args,
     dependencies : [
       thread_lib,

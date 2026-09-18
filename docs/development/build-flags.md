@@ -169,7 +169,9 @@ meson configure build | head -40
 ## Symbol visibility
 
 All translation units in `libvmaf` are compiled with `-fvisibility=hidden`
-(see `core/src/meson.build`). Only symbols explicitly annotated with
+(see `core/src/meson.build`): C sources through `vmaf_cflags_common`, C++
+sources through `vmaf_cppflags_common`, which every C++ target passes as
+`cpp_args`. Only symbols explicitly annotated with
 `VMAF_EXPORT` (defined in `core/include/libvmaf/macros.h`) appear in
 the dynamic symbol table of `libvmaf.so`. This eliminates silent symbol
 interposition from embedded third-party code (libsvm, pdjson) and internal
@@ -180,12 +182,29 @@ the `VMAF_EXPORT` attribute on every declaration in the installed public headers
 means you do **not** need to add manual visibility overrides for libvmaf entry
 points.
 
-**Verification gate**:
+**Verification gate**: the `check_exported_symbols` test in the `fast` suite
+runs [`core/test/check_exported_symbols.py`](../../core/test/check_exported_symbols.py)
+against the built `libvmaf.so` on Linux and fails on any export that is not a
+`vmaf_*` name declared in a public header:
 
 ```bash
-nm -D --defined-only build/src/libvmaf.so.* | grep ' [TW] ' | grep -v ' vmaf_' | wc -l
-# Must print 0
+meson test -C build check_exported_symbols
+python3 core/test/check_exported_symbols.py build/src/libvmaf.so.3.0.0 core/include
 ```
+
+Two kinds of C++ symbol are exempt because they are the runtime's own
+definitions, not libvmaf's: members of namespace `std`, and in SYCL builds
+members of namespace `sycl`. Both runtimes declare those namespaces with default
+visibility, so a template member a libvmaf TU instantiates (for example the
+`std::basic_stringbuf` destructor behind an `std::ostringstream`) is exported
+whatever the compile flags.
+
+Until September 2026 the C++ sources compiled directly into the library, the
+C++ sources of the feature library and the isolated `*_cpp20` / `*_cpp23`
+libraries got none of these flags, and `libvmaf.so` exported 72 internal
+symbols, among them `aligned_malloc`, `picture_copy` and 64 private `vmaf_*`
+functions. A host application defining any of those names would have replaced
+libvmaf's own.
 
 See [ADR-0379](../adr/0379-libvmaf-symbol-visibility.md) and
 [Research-0092](../research/0092-round4-symbol-visibility-audit.md) for

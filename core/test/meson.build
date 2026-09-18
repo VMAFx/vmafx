@@ -21,6 +21,18 @@ if build_machine.system() != 'windows'
     )
 endif
 
+# ADR-0379: libvmaf.so exports its public vmaf_* API and nothing else of ours.
+# ELF only (nm -D); skips with 77 when nm is missing.
+if host_machine.system() == 'linux' and get_option('default_library') != 'static'
+    test('check_exported_symbols',
+        import('python').find_installation(),
+        args : [files('check_exported_symbols.py'),
+                get_option('default_library') == 'both' ? libvmaf.get_shared_lib() : libvmaf,
+                meson.project_source_root() / 'include'],
+        suite : ['fast'],
+    )
+endif
+
 # Aggregate of all GPU/compute backend dependency objects so test
 # binaries that must link against ANY enabled backend can reference
 # one variable instead of repeating the per-backend list.
@@ -300,19 +312,21 @@ test_model_registration_ownership = executable('test_model_registration_ownershi
     dependencies : [math_lib, pthread_dependency, thread_lib],
 )
 
-# ELF fault control: private dictionary-copy failure, public registration callers.
-# It deliberately interposes one symbol and must use the actual shared library.
-# ELF interposition has the same LTO constraint as the `--wrap` harness above:
-# with LTO the library inlines its own call to `vmaf_dictionary_copy`, so the
-# definition this executable provides is never reached and "copy failure must
-# propagate" fails. Build it only where interposition can work.
-if host_machine.system() == 'linux' and get_option('default_library') != 'static' \
+# Fault control: private dictionary-copy failure, public registration callers.
+# `-Wl,--wrap=vmaf_dictionary_copy` redirects the library's references to the
+# test's wrapper, so the test links the static archive. It used to interpose the
+# symbol in libvmaf.so, which only worked while the shared library leaked this
+# internal function against ADR-0379. Same LTO constraint as the `--wrap`
+# harness below: LTO resolves the call before the linker sees a reference, so
+# "copy failure must propagate" would fail. Build it only where wrapping works.
+if host_machine.system() == 'linux' and get_option('default_library') != 'shared' \
         and not get_option('b_lto')
     test_registration_partial_copy = executable('test_registration_partial_copy',
         ['test.c', 'test_registration_partial_copy.cpp'],
         include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
-        link_with : libvmaf_public_link,
-        dependencies : [math_lib, pthread_dependency, thread_lib, cc.find_library('dl')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        link_args : ['-Wl,--wrap=vmaf_dictionary_copy'],
+        dependencies : [math_lib, pthread_dependency, thread_lib],
     )
     test('test_registration_partial_copy', test_registration_partial_copy, suite : ['fast'])
 endif

@@ -12,6 +12,13 @@ routes. NVCC's `-ccbin` and MSVC include discovery consume that same path.
 Keep the configure regression in `../test/test_windows_cuda_compiler_discovery.py`
 when rebasing the Windows discovery block from Netflix PR #1472.
 
+## C++ targets take `vmaf_cppflags_common` (ADR-0379)
+
+- every C++ target linked into libvmaf passes `cpp_args : vmaf_cppflags_common` (`core/src/meson.build`). No per-target define lists.
+- missing -> no `-fvisibility=hidden` -> internal symbols exported from `libvmaf.so` (72 did, until 2026-09-18); also no `HAVE_CUDA` / `HAVE_SYCL` -> `VmafPicturePrivate` layout skew (PR #840).
+- `vmaf_cppflags_common` is derived after the last `vmaf_cflags_common +=`; new defines go before that line.
+- gate: `meson test -C build check_exported_symbols` (`core/test/check_exported_symbols.py`).
+
 ## Mandatory safety invariants
 
 `pdjson.c` enforces the ADR-1061 limit as **512 containers**, not a zero-based

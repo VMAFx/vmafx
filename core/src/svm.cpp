@@ -1670,7 +1670,7 @@ static decision_function svm_train_one(const svm_problem *prob, const svm_parame
                                        double Cp, double Cn)
 {
     double *alpha = Malloc(double, prob->l);
-    Solver::SolutionInfo si;
+    Solver::SolutionInfo si = {};
     switch (param->svm_type) {
     case C_SVC:
         solve_c_svc(prob, param, alpha, &si, Cp, Cn);

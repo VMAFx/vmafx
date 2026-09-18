@@ -9,7 +9,6 @@
 
 #include <atomic>
 #include <cerrno>
-#include <dlfcn.h>
 #include <memory>
 
 namespace
@@ -88,9 +87,22 @@ mu_message_t test_model_partial_copy()
 
 } // namespace
 
-// Research-2048: Linux ELF interposition changes only the requested copy call.
-// Successful calls still execute the linked library's actual implementation.
-extern "C" int vmaf_dictionary_copy(VmafDictionary **src, VmafDictionary **dst)
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ADR-0723; Research-2047: GNU link wrapping ABI.
+extern "C" int __real_vmaf_dictionary_copy(VmafDictionary **src, VmafDictionary **dst);
+
+/* Visible on purpose, as in test_fex_ctx_vector.cpp: the library builds with
+ * -fvisibility=hidden, and the linker must reach this wrapper. */
+#define VMAF_WRAP_EXPORT __attribute__((visibility("default")))
+
+// Research-2048: `-Wl,--wrap=vmaf_dictionary_copy` routes every library call to
+// this wrapper, which fails only the requested copy; every other call runs the
+// real implementation. The test links the static archive because --wrap rewrites
+// references at link time. It used to interpose the symbol in libvmaf.so, which
+// worked only while the shared library exported this internal function.
+// cppcheck-suppress unusedFunction
+// NOLINTBEGIN(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0723; Research-2047: GNU linker calls this entry point.
+extern "C" VMAF_WRAP_EXPORT int __wrap_vmaf_dictionary_copy(VmafDictionary **src,
+                                                            VmafDictionary **dst)
 {
     if (fail_next_copy.exchange(false)) {
         if (!src || !*src || !dst || (*src)->cnt < 2)
@@ -102,10 +114,9 @@ extern "C" int vmaf_dictionary_copy(VmafDictionary **src, VmafDictionary **dst)
         partial_copy_observed.store((*dst)->cnt == 1 && (*src)->cnt >= 2);
         return -ENOMEM;
     }
-    using CopyFunction = int (*)(VmafDictionary **, VmafDictionary **);
-    const auto copy = reinterpret_cast<CopyFunction>(dlsym(RTLD_NEXT, "vmaf_dictionary_copy"));
-    return copy ? copy(src, dst) : -ENOSYS;
+    return __real_vmaf_dictionary_copy(src, dst);
 }
+// NOLINTEND(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage)
 
 mu_message_t run_tests()
 {
