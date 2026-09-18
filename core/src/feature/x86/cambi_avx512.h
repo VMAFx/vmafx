@@ -20,6 +20,7 @@
 #ifndef X86_AVX512_CAMBI_H_
 #define X86_AVX512_CAMBI_H_
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -36,5 +37,11 @@ void calculate_c_values_row_avx512(float *c_values, const uint16_t *histograms,
                                    const uint16_t *tvi_thresholds, uint16_t vlt_luma,
                                    const int *diff_weights, const int *all_diffs,
                                    const float *reciprocal_lut);
+
+void compute_dp_row_avx512(uint32_t *dp_curr, const uint32_t *dp_prev, const uint16_t *deriv,
+                           int width, int pad_size, bool deriv_valid);
+
+void compute_mask_row_avx512(uint16_t *mask_row, const uint32_t *dp_bottom, const uint32_t *dp_top,
+                             int width, int pad_size, uint32_t mask_index);
 
 #endif /* X86_AVX512_CAMBI_H_ */

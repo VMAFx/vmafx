@@ -20,6 +20,7 @@
 #ifndef ARM64_NEON_CAMBI_H_
 #define ARM64_NEON_CAMBI_H_
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -35,5 +36,11 @@ void calculate_c_values_row_neon(float *c_values, const uint16_t *histograms, co
                                  const uint16_t num_diffs, const uint16_t *tvi_thresholds,
                                  uint16_t vlt_luma, const int *diff_weights, const int *all_diffs,
                                  const float *reciprocal_lut);
+
+void compute_dp_row_neon(uint32_t *dp_curr, const uint32_t *dp_prev, const uint16_t *deriv,
+                         int width, int pad_size, bool deriv_valid);
+
+void compute_mask_row_neon(uint16_t *mask_row, const uint32_t *dp_bottom, const uint32_t *dp_top,
+                           int width, int pad_size, uint32_t mask_index);
 
 #endif /* ARM64_NEON_CAMBI_H_ */
