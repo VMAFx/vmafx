@@ -1599,11 +1599,14 @@ test('test_integer_adm_tiny_frames', test_integer_adm_tiny_frames,
 # against scalar on full-range noise.
 test_integer_adm_simd_noise = executable('test_integer_adm_simd_noise',
     ['test.c', 'test_integer_adm_simd_noise.c'],
+test_integer_adm_dwt16_range = executable('test_integer_adm_dwt16_range',
+    ['test.c', 'test_integer_adm_dwt16_range.c'],
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, math_lib],
 )
 test('test_integer_adm_simd_noise', test_integer_adm_simd_noise,
+test('test_integer_adm_dwt16_range', test_integer_adm_dwt16_range,
     suite : ['fast'])
 
 test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
