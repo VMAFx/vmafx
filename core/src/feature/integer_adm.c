@@ -22,6 +22,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "adm_angle_flag.h"
 #include "adm_csf_fixed_point.h"
@@ -428,14 +429,21 @@ static void dwt2_src_indices_1d(int *const *ind, int n, unsigned n_half)
         ind[2][0] = 1;
         ind[3][0] = 2;
     }
-    for (unsigned i = 1; i < n_half - 2; ++i) { /* i : 1 to  n_half - 3*/
+    /* `i + 2 < n_half`, not `i < n_half - 2`: the unsigned subtraction wraps
+     * for n_half < 2. */
+    for (unsigned i = 1; i + 2 < n_half; ++i) { /* i : 1 to  n_half - 3*/
         const int ind1 = 2 * i;
         ind[0][i] = ind1 - 1;
         ind[1][i] = ind1;
         ind[2][i] = ind1 + 1;
         ind[3][i] = ind1 + 2;
     }
-    for (unsigned i = n_half - 2; i < n_half; ++i) { /* i : n_half - 3 to  n_half */
+    /* The mirrored tail must never start below 1. With n_half == 2 (a scale-3
+     * input of 3 or 4 samples, i.e. any frame dimension from 17 to 32) the
+     * upstream bound `n_half - 2` restarts it at 0 and overwrites the i == 0
+     * entries above with {-1, 0, 1, 2}: the DWT then reads row / column -1,
+     * before the band and, horizontally, before the tmp_ref allocation. */
+    for (unsigned i = (n_half > 2u) ? n_half - 2u : 1u; i < n_half; ++i) {
         int ind1 = 2 * i;
         int ind0 = ind1 - 1;
         int ind2 = ind1 + 1;
@@ -2068,11 +2076,7 @@ static void init_dispatch_simd(AdmState *s, unsigned w)
     const unsigned flags = vmaf_get_cpu_flags();
     if (flags & VMAF_ARM_CPU_FLAG_NEON) {
         if (!(w % 8)) {
-#if defined(__APPLE__)
-            s->dwt2_8 = adm_dwt2_8_neon_apple_legacy;
-#else
             s->dwt2_8 = adm_dwt2_8_neon;
-#endif
         }
     }
 #else
@@ -2117,6 +2121,11 @@ static int init_buffers(AdmState *s, unsigned w, unsigned h)
     if (!s->buf.data_buf) {
         return -ENOMEM;
     }
+    /* Start every slab from a defined state (Netflix/vmaf 1786bd961 zeroes it
+     * in adm_buffer_alloc()). No stage reads a sample it has not written once
+     * the DWT index tables are correct, so this is defence in depth: a future
+     * out-of-region read yields a reproducible value, not heap residue. */
+    (void)memset(s->buf.data_buf, 0, buf_sz_one * NUM_BUFS_ADM);
     s->buf.tmp_ref = aligned_malloc(s->integer_stride * 4, MAX_ALIGN);
     if (!s->buf.tmp_ref) {
         return -ENOMEM;
