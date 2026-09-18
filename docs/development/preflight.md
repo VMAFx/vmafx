@@ -53,7 +53,7 @@ A stage whose toolchain is missing is **skipped with a notice**, not failed, so
 the script is still useful on a partially provisioned machine. For the 32-bit
 stage you want `gcc-multilib`.
 
-## Two behaviours worth knowing
+## Behaviours worth knowing
 
 **It looks at uncommitted work.** Not just `origin/master...HEAD` — the edit
 you are about to commit is exactly what you want checked. (The first version of
