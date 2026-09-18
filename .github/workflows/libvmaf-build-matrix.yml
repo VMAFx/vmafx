@@ -62,22 +62,6 @@ jobs:
             CXX: ccache clang++-22
             name: Ubuntu ARM clang
 
-          # --- i686 (32-bit x86) build — reproduces Netflix#1481 ---
-          # Verifies libvmaf still compiles on 32-bit x86 with
-          # -Denable_asm=false. The documented workaround for the
-          # `_mm256_extract_epi64` implicit-declaration failure on
-          # 32-bit x86 is to disable the asm path; this job pins
-          # that contract so any future 32-bit-only regression trips
-          # the matrix. Tests are skipped (meson cross-build marks
-          # them SKIP 77 — host can run i686 binaries natively but
-          # meson doesn't know that). See ADR-0151.
-          - os: ubuntu-latest
-            CC: ccache gcc-14
-            CXX: ccache g++-14
-            i686: true
-            meson_extra: --cross-file=build-aux/i686-linux-gnu.ini -Denable_asm=false
-            name: Ubuntu i686 gcc
-
           # --- DNN-enabled builds (ADR-0120) ---
           # Build with -Denable_dnn=enabled across compiler/OS combinations
           # to ensure the ORT C-API surface compiles on every CPU leg, not
@@ -273,7 +257,7 @@ jobs:
           pip install meson
 
       - name: Install dependencies (ubuntu)
-        if: ${{ (startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.i686 && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
+        if: ${{ (startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install ccache ninja-build nasm libomp-dev pkg-config
@@ -296,14 +280,6 @@ jobs:
           *gcc)      sudo -E apt-get -yq install gcc g++ ;;
           *clang)    sudo -E apt-get -yq install clang ;;
           esac
-
-      - name: Install dependencies (ubuntu i686)
-        if: ${{ (matrix.i686) && steps.impact.outputs.c_core == 'true' }}
-        run: |
-          sudo dpkg --add-architecture i386
-          sudo apt-get update
-          sudo -E apt-get -yq install ccache ninja-build pkg-config \
-            gcc g++ gcc-multilib g++-multilib
 
       - name: Install dependencies (mac)
         if: ${{ (matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
@@ -378,7 +354,7 @@ jobs:
           # to preserve the rest of the DNN suite for macOS coverage.
           brew install -q onnxruntime
           ORT_PREFIX=$(brew --prefix onnxruntime)
-          echo "PKG_CONFIG_PATH=${ORT_PREFIX}/lib/pkgconfig" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=${ORT_PREFIX}/lib/pkgconfig" >> "$GITHUB_ENV"
 
       # ---------- Intel oneAPI (SYCL) ----------
       # Pinned to oneAPI 2025.3 (icpx 2025.3.x) and Level Zero v1.28.0.
@@ -415,10 +391,10 @@ jobs:
           git clone --depth=1 --branch "v${LEVEL_ZERO_VERSION}" \
             https://github.com/oneapi-src/level-zero.git /tmp/level-zero
           cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr
-          cmake --build /tmp/level-zero/build -j$(nproc)
+          cmake --build /tmp/level-zero/build -j"$(nproc)"
           sudo cmake --install /tmp/level-zero/build
           rm -rf /tmp/level-zero
-          echo "/opt/intel/oneapi/compiler/latest/bin" >> $GITHUB_PATH
+          echo "/opt/intel/oneapi/compiler/latest/bin" >> "$GITHUB_PATH"
           echo "/opt/intel/oneapi/compiler/latest/lib" | sudo tee /etc/ld.so.conf.d/oneapi.conf
           sudo ldconfig
 
@@ -525,7 +501,7 @@ jobs:
             source /opt/intel/oneapi/setvars.sh
           fi
           meson setup core core/build --buildtype release \
-            --prefix $PWD/install \
+            --prefix "$PWD/install" \
             -Denable_float=true \
             ${{ matrix.meson_extra }}
 
@@ -552,7 +528,7 @@ jobs:
         run: |
           export PKG_CONFIG_PATH=$PWD/install/lib/pkgconfig:$PWD/install/lib/x86_64-linux-gnu/pkgconfig
           echo "=== libvmaf.pc ==="
-          cat $PWD/install/lib/pkgconfig/libvmaf.pc || cat $PWD/install/lib/x86_64-linux-gnu/pkgconfig/libvmaf.pc
+          cat "$PWD/install/lib/pkgconfig/libvmaf.pc" || cat "$PWD/install/lib/x86_64-linux-gnu/pkgconfig/libvmaf.pc"
           echo ""
           echo "=== pkg-config --static --libs libvmaf ==="
           pkg-config --static --libs libvmaf
@@ -585,8 +561,12 @@ jobs:
           # SYCL/CUDA legs, so the archive holds plain objects rather than LTO
           # IR — a plugin mismatch is not in play, but matching the compiler
           # still costs nothing.)
-          ${CC:-cc} /tmp/pc_static_smoke.c $(pkg-config --cflags libvmaf) \
-             $(pkg-config --static --libs libvmaf) -o /tmp/pc_static_smoke
+          # pkg-config prints space-separated flags; read them into arrays
+          # rather than relying on unquoted word splitting.
+          read -ra pc_cflags <<< "$(pkg-config --cflags libvmaf)"
+          read -ra pc_libs <<< "$(pkg-config --static --libs libvmaf)"
+          ${CC:-cc} /tmp/pc_static_smoke.c "${pc_cflags[@]}" "${pc_libs[@]}" \
+             -o /tmp/pc_static_smoke
           echo "static link OK"
 
       # DNN legs: run the dedicated dnn suite first so its logs are easy
@@ -600,14 +580,11 @@ jobs:
         # user's $HOME so a bare `sudo meson` reports "command not found".
         # Sudo is needed because the preceding `sudo ninja install` step
         # left build artifacts owned by root.
-        run: sudo $(which meson) test -C core/build --suite=dnn --print-errorlogs
+        run: sudo "$(which meson)" test -C core/build --suite=dnn --print-errorlogs
 
-      # CPU-only: full test suite + tox (skipped for i686 cross-build
-      # because meson marks cross-compiled tests SKIP 77 regardless of
-      # whether the host can actually run them; the build itself is
-      # what Netflix#1481 needs to pin).
+      # CPU-only: full test suite + tox.
       - name: Run tests
-        if: ${{ (!matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) && steps.impact.outputs.c_core == 'true' }}
+        if: ${{ (!matrix.sycl && !matrix.cuda && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
         run: sudo ninja -vC core/build test
 
       # ---------- SSH debug session (macOS × workflow_dispatch only) ----------
@@ -650,7 +627,7 @@ jobs:
         # Insulates the tox lanes from the recurring HTTP-502s on
         # raw.githubusercontent.com when fetching python/test/resource/
         # fixtures via download_reactively (compat/python-vmaf/config.py).
-        if: ${{ ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
+        if: ${{ ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: python/test/resource
@@ -666,20 +643,20 @@ jobs:
         # never repaired and the test fails with "no frames decoded". The
         # success()-gated save below stops new poisoning; this heals caches
         # already poisoned, which otherwise need a manual cache deletion.
-        if: ${{ ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
+        if: ${{ ((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
         run: bash scripts/ci/prune-corrupt-fixtures.sh python/test/resource
 
       - name: Run tox tests (ubuntu)
-        if: ${{ (startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) && steps.impact.outputs.c_core == 'true' }}
+        if: ${{ (startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
         run: |
-          mkdir -p ~/.ccache && sudo chown -R $(whoami) ~/.ccache
+          mkdir -p ~/.ccache && sudo chown -R "$(whoami)" ~/.ccache
           pip install tox
           tox -c python
 
       - name: Run tox tests (mac)
         if: ${{ (matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true' }}
         run: |
-          mkdir -p ~/.ccache && sudo chown -R $(whoami) ~/.ccache
+          mkdir -p ~/.ccache && sudo chown -R "$(whoami)" ~/.ccache
           pip install tox
           PATH=$(brew --prefix)/opt/llvm/bin:$PATH \
           CC=$(brew --prefix)/opt/llvm/bin/clang \
@@ -689,7 +666,7 @@ jobs:
       - name: Save Netflix vmaf_resource fixtures
         # success() only: a cancelled or failing run must never publish a
         # partial fixture tree under this key. Placed after both tox legs.
-        if: ${{ success() && (((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true') && steps.fixtures.outputs.cache-hit != 'true' }}
+        if: ${{ success() && (((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) || matrix.os == 'macos-latest') && steps.impact.outputs.c_core == 'true') && steps.fixtures.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: python/test/resource
@@ -745,9 +722,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # - msystem: MINGW32
-          #   MINGW_PACKAGE_PREFIX: mingw-w64-i686
-          #   CFLAGS: -msse2 -mfpmath=sse -mstackrealign
           # required-aggregator
           - name: Windows MinGW64
             msystem: MINGW64

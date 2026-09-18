@@ -78,7 +78,7 @@ endif
 is_avx512_enabled = get_option('enable_avx512') == true
 is_nvtx_enabled = get_option('enable_nvtx') == true
 # AVX-512 is a pure assembly path and requires enable_asm=true to have any
-# effect.  When enable_asm=false (e.g. i686 cross-compile or --no-asm builds)
+# effect.  When enable_asm=false (a --no-asm build)
 # silently disabling would produce a confusing build; warn and force-disable
 # instead of hard-erroring, so no-asm consumer builds configure cleanly.
 if is_avx512_enabled and not is_asm_enabled

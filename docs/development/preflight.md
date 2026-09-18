@@ -5,7 +5,7 @@
 ```bash
 make preflight                       # everything, on the files you changed
 scripts/dev/preflight.sh --full      # everything, on the whole tree
-scripts/dev/preflight.sh --stage m32 # just one stage
+scripts/dev/preflight.sh --stage clang # just one stage
 scripts/dev/preflight.sh --list      # which CI context each stage mirrors
 ```
 
@@ -19,7 +19,7 @@ afternoon. All three were green under local gcc:
 
 | What was written | Locally | In CI |
 | --- | --- | --- |
-| `static_assert(UINT_MAX <= SIZE_MAX/2/sizeof(ptr))` | fine on 64-bit | `Ubuntu i686 gcc` cannot compile it — the claim is false on 32-bit |
+| `static_assert(UINT_MAX <= SIZE_MAX/2/sizeof(ptr))` | fine on 64-bit | the i686 lane of the time could not compile it (that lane is retired: the fork is 64-bit only, ADR-0728 / ADR-1258) |
 | `__declspec(align((x)))` | gcc never compiles the MSVC branch | `Windows MSVC+CUDA` → C2059 on every use; `align()` needs a literal |
 | `__attribute__(noinline)` | gcc accepts the single paren | `Ubuntu clang`, `clang+DNN` and four Sanitizer lanes fail to compile |
 | `nullptr` in a `.c` file | gcc and clang accept it under `-std=c23` | `Windows MSVC+CUDA` → C2065 at every site; ADR-1138 keeps C TUs on `NULL` |
@@ -43,15 +43,16 @@ for about three hours.
 | --- | --- | --- |
 | `gcc` | Ubuntu gcc(+DNN) | the baseline build and fast tests |
 | `clang` | Ubuntu clang(+DNN) | clang-only syntax; gcc is far more permissive about attributes and extensions |
-| `m32` | Ubuntu i686 gcc | assumptions about the width of `size_t` / `ptrdiff_t` / pointers |
 | `msvcism` | Windows MSVC+CUDA / +SYCL | constructs MSVC rejects, checked statically so no MSVC is needed |
 | `sanitizers` | Sanitizers (address) / (undefined) | UB the plain build hides |
 | `tidy` | Tidy Changed | clang-tidy on the touched files, using the workflow's own exclusion list |
 | `cppcheck` | Cppcheck | cppcheck's findings |
 
 A stage whose toolchain is missing is **skipped with a notice**, not failed, so
-the script is still useful on a partially provisioned machine. For the 32-bit
-stage you want `gcc-multilib`.
+the script is still useful on a partially provisioned machine.
+
+There is no 32-bit stage. The fork is 64-bit only (ADR-0728), and the
+`m32` stage went with the i686 lane it mirrored (ADR-1258).
 
 ## Behaviours worth knowing
 
@@ -66,20 +67,6 @@ into executables, not shared libraries, so `libvmaf.so` is left with undefined
 the link. The repo's own `fuzz.yml` pairs the same two options. Without it the
 stage fails on every branch, including ones that change no code at all — and a
 stage that cries wolf is a stage people learn to ignore.
-
-**`m32` needs a configured build.** It compiles `-fsyntax-only` with
-`-I build/src` so the generated `config.h` resolves. Without that the compile
-aborts at the first `#include` and the stage silently becomes a no-op — run the
-`gcc` stage first, or just use `make preflight`, which orders them correctly.
-
-**`m32` sweeps only what the i686 lane builds.** It takes the changed files
-that the `gcc` stage's CPU build compiles (its `compile_commands.json`), so GPU
-sources and the per-backend GPU tests are left out, and it skips the `x86/`,
-`arm64/` and `arm/` trees because that lane configures `-Denable_asm=false`.
-Under `-m32` those files report missing intrinsics and headers, not width
-assumptions. An error about a missing header (`No such file or directory`, or
-clang's `file not found`) is ignored for the same reason. The `gcc` stage
-reuses `build/` only when it holds a configured build (`build/build.ninja`).
 
 ## What it does not cover
 
