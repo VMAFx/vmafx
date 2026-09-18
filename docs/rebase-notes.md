@@ -1,6 +1,19 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## ci/retire-i686-lane — the fork stays 64-bit only; x86 SIMD sources use no x86-64-only intrinsics (2026-09-18)
+
+- `.github/workflows/libvmaf-build-matrix.yml`: there is no i686 row
+  (ADR-0728, ADR-1258). Upstream Netflix/vmaf has its own 32-bit cross build
+  (`f6d6dde1`); do not port it. A merge that restores `i686: true` rows is
+  wrong: that is how the lane came back in `384d97d03`.
+- `core/src/feature/x86/adm_avx2.c`, `adm_avx512.c`: 64-bit lane extraction
+  from an `__m128i` goes through `extract_epi64_128()`, defined beside
+  `extract_epi64()`. Upstream calls `_mm_extract_epi64` directly; keep the fork
+  form.
+- `core/src/feature/x86/psnr_avx2.c`, `psnr_sse_line_16_avx2()`: the final
+  64-bit sum is read with `_mm_storel_epi64`, not `_mm_cvtsi128_si64`.
+
 ## Canonical envtest installer (2026-09-08)
 
 Keep Make, Go CI and controller-suite guidance on `scripts/ci/setup-envtest.sh`.
