@@ -33,21 +33,18 @@ Each `test_*.c` compiles into its own binary. `meson.build` registers them
 with `meson test`. No fixtures, no shared state — each test owns its setup
 and teardown.
 
-**Function size.** `readability-function-size` counts every `mu_assert` and
-`mu_run_test` as *two* branches (the `if` and its `do { } while (0)`), so a
-function with more than seven of them is over the 15-branch budget. Register
-more than seven tests through the table runner in
-[mu_table.h](mu_table.h) — `MU_TEST(fn)` rows and `mu_run_table()`, which has
-no branches however long the table gets — and split assertion-heavy tests
-into `check_*` helpers called as `char *msg = check_x(...); if (msg) return
-msg;` (one branch each).
+**Function size** (`readability-function-size`, 15-branch budget):
 
-**Clean up before asserting.** A failing `mu_assert` returns at once. Free
-heap memory, close files, remove temp files and restore any environment
-variable the test changed *before* the assertions that could fail, keeping
-the result in a local — otherwise one failure leaks, and a changed variable
-such as `VMAF_TINY_MODEL_DIR` breaks every test that runs after it. The
-static analyzer in the Tidy Changed gate reports the leak paths.
+- `mu_assert` / `mu_run_test` = 2 branches each (`if` + `do { } while (0)`) -> more than 7 in one function fails.
+- more than 7 tests -> `MU_TEST(fn)` rows + `mu_run_table()` from [mu_table.h](mu_table.h). 0 branches at any length.
+- assertion-heavy test -> `check_*` helpers, called as `char *msg = check_x(...); if (msg) return msg;` = 1 branch.
+
+**Clean up before asserting:**
+
+- failing `mu_assert` returns at once -> live heap, `FILE`, temp file or changed env var leaks.
+- free, close, remove, restore env first; keep result in a local; assert last.
+- `VMAF_TINY_MODEL_DIR` left set -> every later test in the binary breaks.
+- Tidy Changed analyzer reports these paths (`clang-analyzer-unix.Malloc`, `clang-analyzer-unix.Stream`).
 
 ## Ground rules
 

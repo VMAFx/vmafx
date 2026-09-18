@@ -433,24 +433,13 @@ until then, keep the full command line.
 
 ## Invariant — int8 loader redirect and scaler declaration contract
 
-- **Sidecar `quant_mode` drives the redirect**: `vmaf_use_tiny_model()` in
-  `dnn_attach_api.c` mirrors `vmaf_dnn_session_open()` in `dnn_api.c`. When the
-  companion sidecar declares `quant_mode != VMAF_QUANT_FP32`, the runtime
-  redirects to load sibling `<basename>.int8.onnx` if present and valid; if
-  absent or invalid, it gracefully falls back to the fp32 baseline per
-  ADR-1032 (`VMAF_LOG_LEVEL_DEBUG`). The fallback has **two** triggers and both
-  entry points must honour both: the int8 file fails the size cap or the op
-  allowlist (each entry point's own path resolver), *and* `vmaf_ort_open()`
-  fails on the int8 path even though it passed those gates (an ONNX Runtime
-  build with no kernel for one of its quantised ops — `ConvInteger` is the one
-  seen in practice). The second trigger lives in exactly one place,
-  `vmaf_ort_open_with_fallback()` in `ort_backend.c`, and both entry points must
-  open their session through it rather than calling `vmaf_ort_open()` directly;
-  the two private copies it replaced had already drifted once
-  (`T-DNN-ATTACH-INT8-REDIRECT-MISSING-2026-09-04`). The redirect must never turn
-  an invocation that worked against the fp32 baseline into a hard failure;
-  `core/test/dnn/test_cli.sh` covers this through
-  `--tiny-model model/tiny/nr_metric_v1.onnx`.
+- **Sidecar `quant_mode` drives the redirect**:
+  - entry points: `vmaf_use_tiny_model()` (`dnn_attach_api.c`), `vmaf_dnn_session_open()` (`dnn_api.c`).
+  - sidecar `quant_mode != VMAF_QUANT_FP32` -> load sibling `<basename>.int8.onnx` when present and valid; else fp32 baseline, logged at `VMAF_LOG_LEVEL_DEBUG` (ADR-1032).
+  - trigger 1: int8 file fails size cap or op allowlist -> each entry point's own path resolver.
+  - trigger 2: `vmaf_ort_open()` fails on an int8 graph that passed those gates (ONNX Runtime build without a kernel for a quantised op; seen: `ConvInteger`) -> `vmaf_ort_open_with_fallback()` in `ort_backend.c`, only home. First attempt logs its `CreateSession` failure at DEBUG.
+  - both entry points open sessions through `vmaf_ort_open_with_fallback()`; never `vmaf_ort_open()` on an int8 path directly. Two private copies drifted once: `T-DNN-ATTACH-INT8-REDIRECT-MISSING-2026-09-04`.
+  - never turn an invocation that works on the fp32 baseline into a hard failure. Covered by `core/test/dnn/test_cli.sh` (`--tiny-model model/tiny/nr_metric_v1.onnx`).
 - **`onnx_has_scaler` must match the graph**: If an int8 model's ONNX graph
   bakes in input normalisation / scaling ops (`Sub`/`Div` or scalar constants),
   its companion sidecar `.json` must declare `"onnx_has_scaler": true` so the
