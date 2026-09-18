@@ -280,7 +280,12 @@ def run_one(
     binary: str, build_dir: Path, extra_args: list[str], unit: tuple[Path, Path]
 ) -> tuple[str, str, int]:
     source, directory = unit
-    argv = [binary, "-p", str(build_dir), *extra_args, str(source)]
+    # Each extra argument is a compiler argument for the TU, which is what
+    # clang-tidy's own --extra-arg carries; the lanes use it for the CUDA and
+    # HIP language flags. clang-tidy runs in the TU's directory, so the
+    # database path must not be relative.
+    forwarded = [f"--extra-arg={arg}" for arg in extra_args]
+    argv = [binary, "-p", str(build_dir.resolve()), *forwarded, str(source)]
     proc = subprocess.run(  # noqa: S603 -- argv built from compile_commands, no shell
         argv, capture_output=True, text=True, check=False, cwd=str(directory)
     )
@@ -308,6 +313,10 @@ def measure(
         units = [u for u in units if u[0].resolve() in wanted]
     if not units:
         raise ValueError("compile database selected no translation units")
+    # clang-tidy runs in each TU's directory, so a path-like binary (the SYCL
+    # lane's wrapper script) must not stay relative to the caller's directory.
+    if os.sep in binary:
+        binary = str(Path(binary).resolve())
     result = Measurement(lane=lane, tus=len(units))
     result.sources = sorted(source.relative_to(repo_root).as_posix() for source, _ in units)
     result.clang_tidy_version = clang_tidy_version(binary)
@@ -594,7 +603,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--clang-tidy", default=os.environ.get("CLANG_TIDY_BIN", "clang-tidy"))
     parser.add_argument(
-        "--extra-arg", action="append", default=[], help="passed through to clang-tidy"
+        "--extra-arg",
+        action="append",
+        default=[],
+        help="compiler argument for every TU, forwarded as clang-tidy --extra-arg (repeatable)",
     )
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 2)
     parser.add_argument(
