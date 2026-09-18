@@ -2324,6 +2324,18 @@ test_cuda_adm_small_border = executable('test_cuda_adm_small_border',
 test('test_cuda_adm_small_border', test_cuda_adm_small_border,
     suite : ['fast', 'gpu'])
 
+# T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
+# wide (scale-0 cube shift 0) against scalar CPU, and rejection below 17x17.
+test_cuda_adm_tiny_frames = executable('test_cuda_adm_tiny_frames',
+    ['test.c', 'test_gpu_adm_tiny_frames.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_adm_tiny_frames', test_cuda_adm_tiny_frames,
+    suite : ['fast', 'gpu'])
+
 # ADR-1167 — ADM wide-frame row-level rounding parity test (spans 60 warps).
 test_cuda_adm_wide_rounding = executable('test_cuda_adm_wide_rounding',
     ['test.c', 'test_adm_wide_rounding.c'],
@@ -3136,6 +3148,18 @@ test_sycl_adm_parity = executable('test_sycl_adm_parity',
 test('test_sycl_adm_parity', test_sycl_adm_parity,
     suite : ['fast', 'gpu', 'sycl'])
 
+# T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
+# wide (scale-0 cube shift 0) against scalar CPU, and rejection below 17x17.
+test_sycl_adm_tiny_frames = executable('test_sycl_adm_tiny_frames',
+    ['test.c', 'test_gpu_adm_tiny_frames.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_adm_tiny_frames', test_sycl_adm_tiny_frames,
+    suite : ['fast', 'gpu', 'sycl'])
+
 test_sycl_ciede_parity = executable('test_sycl_ciede_parity',
     ['test.c', 'test_sycl_ciede_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -3474,6 +3498,19 @@ test_hip_adm_small_border = executable('test_hip_adm_small_border',
     c_args: ['-DHAVE_HIP=1']
 )
 test('test_hip_adm_small_border', test_hip_adm_small_border,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+# T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
+# wide (scale-0 cube shift 0) against scalar CPU, and rejection below 17x17.
+test_hip_adm_tiny_frames = executable('test_hip_adm_tiny_frames',
+    ['test.c', 'test_gpu_adm_tiny_frames.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_adm_tiny_frames', test_hip_adm_tiny_frames,
     suite : ['fast', 'gpu'],
     timeout : 60)
 
