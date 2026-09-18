@@ -7,8 +7,13 @@ this page rather than inlining it so every vendor context file stays inside its
 line budget. Changing a rule here changes it for every agent.
 
 1. Never modify Netflix golden-score assertions (§8).
-2. Never `git push --force` to `master`.
+2. Never `git push --force` to `master`. Branch protection also rejects
+   force-push and deletion on the host; see
+   [ADR-0037](../adr/0037-master-branch-protection.md) and
+   [the release guide](release.md#master-branch-protection).
 3. Never commit directly to `master` — PR with squash or fast-forward only.
+   The host also enforces `required_linear_history: true` and the required
+   status checks.
 4. Never merge without `make lint` + `make test` green locally.
 5. Every commit message is Conventional Commits (`type(scope): subject`) — enforced by
    the `commit-msg` git hook.
@@ -84,9 +89,13 @@ line budget. Changing a rule here changes it for every agent.
     invariant (ADR-0138 / ADR-0139 bit-exactness pattern,
     upstream-parity identifier the rebase story depends on). Every
     NOLINT cites inline the ADR / research digest / rebase invariant
-    that forces it. Historical pre-2026-04-21 NOLINTs are scoped to
-    backlog item T7-5 (one sweep-PR). See
-    [ADR-0141](../adr/0141-touched-file-cleanup-rule.md).
+    that forces it; a NOLINT without a justification comment is itself a
+    lint violation. The debt from before this rule (pre-2026-04-21, about 18
+    `readability-function-size` NOLINTs plus upstream `_iqa_*` suppressions)
+    was discharged by PR #327 (refactor pass) and PR #388 (citation closeout),
+    so every NOLINT now in the tree carries an inline citation. See
+    [ADR-0141](../adr/0141-touched-file-cleanup-rule.md) and
+    [ADR-0278](../adr/0278-t7-5-nolint-sweep.md).
 11. Every PR that touches a libvmaf public surface (C-API entry
     points, public headers, CLI flags, `meson_options.txt`
     entries, or any symbol probed by the `enabled libvmaf*`
@@ -130,6 +139,14 @@ line budget. Changing a rule here changes it for every agent.
       Containerfile rather than the host build-flag soup. Host-side
       builds remain available (`build/`, `core/build-cuda`,
       `core/build-all`) but are no longer the default mental model.
+    - **The container is canonical for published artifacts
+      ([ADR-1102](../adr/1102-phase4b9-container-only-publishing.md)).**
+      Release binaries, published container images (`ghcr.io/vmafx/vmafx:*`)
+      and CI benchmark or snapshot artifacts used downstream must be produced
+      inside the container. Host-side builds are diagnostic-only (IDE/clangd,
+      debugger, sanitizer sweeps); never publish a host-built binary as a
+      release artifact. See [publishing](publishing.md) for the rebuild
+      triggers and the approved host-side uses.
     - **Don't multiplex the same device across parallel jobs.** When
       a long-running job (CHUG re-extract, BVI-DVC sweep) is pinned
       to one device (e.g. CUDA), schedule sibling parallel work on a
@@ -140,3 +157,19 @@ line budget. Changing a rule here changes it for every agent.
 
     See [docs/development/dev-mcp.md](dev-mcp.md) for
     the operator guide.
+13. **Never commit benchmark output files.** An ad-hoc run rewrites
+    `testdata/netflix_benchmark_results.json` with noise; stash it unless the
+    run is formal.
+14. **Every session re-reads [the ADR index](../adr/README.md) at the start**
+    and writes the missing `docs/adr/NNNN-*.md` files and index rows for any
+    decision inherited from context before the next commit.
+15. **Every PR that closes a bug, opens a bug, or rules a Netflix upstream
+    report not-affecting-the-fork updates [`docs/state.md`](../state.md) in the
+    same PR.** The update lands a row in the right section (Open / Recently
+    closed / Confirmed not-affected / Deferred) and cross-links the ADR, the PR
+    and commit, and the Netflix issue if there is one. State drift compounds
+    across sessions; the rule trades a 30-second edit for hours of
+    re-investigation after a context reset. The
+    [pull request template](../../.github/PULL_REQUEST_TEMPLATE.md) carries a
+    checkbox and reviewers verify it. See
+    [ADR-0165](../adr/0165-state-md-bug-tracking.md).
