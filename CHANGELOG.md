@@ -19568,6 +19568,17 @@ integer reformulation of it. CPU scores are unchanged (the compiled
   Supersedes ADR-0539 with ADR-1167. Added regression parity tests `test_cuda_adm_small_border` and `test_cuda_adm_wide_rounding` (and HIP twins).
 
 
+- **The AVX2 and AVX-512 integer ADM paths now match the scalar path on
+  high-contrast content.** Part of scale 0's masking threshold is computed in
+  16 bits and wraps on very large values in the scalar path, as it does in
+  upstream Netflix/vmaf's C code; the SIMD paths kept 32 bits there. Content
+  that reaches those values, such as full-range noise or sharp synthetic
+  ramps, scored up to 7e-4 differently on AVX2/AVX-512 than on the scalar
+  path. The SIMD paths now wrap the same way. Scalar scores do not change,
+  and neither do SIMD scores on the Netflix reference clips, which never reach
+  the wrap.
+
+
 **fix(adm):** Remove stale dead-code block and replace the `adm_p_norm` TODO
 comment in `integer_adm.c` with a brief explanatory note. The exponent is fixed
 at 3.0f per the Netflix training-data contract; no runtime parameterisation is
