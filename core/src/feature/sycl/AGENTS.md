@@ -432,4 +432,16 @@ tests catch per-kernel regressions automatically.
 - `integer_adm_sycl.cpp` internals live in one anonymous namespace; only the
   `extern "C"` extractor struct has external linkage. No C-style `static` at
   file scope, no linkage NOLINT band.
-- Guard: `test_sycl_adm_tiny_frames`.
+- Scale 0 = CPU int16 semantics (T-SYCL-ADM-INT16-SEMANTICS-2026-09-18). CPU
+  stores bands as `int16_t`; kernels compute wider, so wrap explicitly with
+  `adm_i16()` (mod 2^16, compiler-independent) wherever the CPU narrows:
+  `csf_a`, `csf_f`, CM 1/15 centre tap. Centre tap = the one default weights
+  reach (`|csf_a| >= 15360`). Diagonal `csf_a` rounds with 65535, not
+  `1 << 16`. Scale-0 CM measure is int32, mod 2^32. Never widen these.
+- Scales 1-3 `>> 32` rounding term = `I4_FLT_ROUND` = -2^31: the CPU's
+  wrapped `(int32_t)(1u << 31)` (Netflix#955, ADR-0155), same as CUDA / HIP.
+  Netflix fixes #955 -> change CPU and this constant together.
+- Residual vs scalar CPU (~1e-7) = double host finalisation. With the CPU's
+  float finalisation swapped in, every score matched the CPU exactly (noise
+  at five sizes, src01, checkerboards).
+- Guard: `test_sycl_adm_tiny_frames` (tiny frames + full-range noise).
