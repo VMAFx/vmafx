@@ -142,7 +142,7 @@ The aggregator looks required checks up by name and keeps one run per name,
 the one that started last (`newestByName()` in `required-aggregator.yml`).
 Since #1286 (`f93a0037f`) shortened the display names, the required ADR-0121
 lane and the `build.yml` row both report as `Windows MSVC+CUDA`, so either can
-hide a failure of the other. On `7cc0cc91b` (origin/master) the `build.yml`
+hide a failure of the other. On master commit `7cc0cc91b` the `build.yml`
 run was cancelled and the matrix run, which started one second later,
 succeeded; only the success counts. `scripts/ci/check-aggregator-names.sh`
 compares sets of names, so it cannot see a duplicate. This ADR records the
