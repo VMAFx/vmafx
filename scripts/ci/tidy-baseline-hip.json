@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 50,
-  "total_warnings": 1173,
+  "total_warnings": 1019,
   "total_nolint_uncited": 16,
   "warnings": {
     "core/src/feature/hip/ciede_hip.c": 13,
@@ -21,13 +21,11 @@
     "core/src/feature/hip/float_vif/float_vif_score.hip": 21,
     "core/src/feature/hip/float_vif_hip.c": 29,
     "core/src/feature/hip/hip_hsaco_stubs.c": 1,
-    "core/src/feature/hip/integer_adm/adm_cm.hip": 84,
     "core/src/feature/hip/integer_adm/adm_csf.hip": 35,
     "core/src/feature/hip/integer_adm/adm_csf_den.hip": 15,
     "core/src/feature/hip/integer_adm/adm_decouple.hip": 49,
     "core/src/feature/hip/integer_adm/adm_decouple_inline.hip": 31,
     "core/src/feature/hip/integer_adm/adm_dwt2.hip": 14,
-    "core/src/feature/hip/integer_adm_hip.c": 70,
     "core/src/feature/hip/integer_adm_hip.h": 4,
     "core/src/feature/hip/integer_cambi/cambi_score.hip": 4,
     "core/src/feature/hip/integer_cambi_hip.c": 30,
@@ -60,5 +58,37 @@
   "nolint_uncited": {
     "core/src/feature/hip/integer_vif_hip.c": 16
   },
-  "source": "converted 2026-09-02 from the agy gpu-debt measurement (clang-tidy 22.1.8, -p build-gpu, same (path,line,column,check) dedup); see docs/research/2027-lint-carveout-inventory-2026-09-02.md"
+  "source": "converted 2026-09-02 from the agy gpu-debt measurement (clang-tidy 22.1.8, -p build-gpu, same (path,line,column,check) dedup); see docs/research/2027-lint-carveout-inventory-2026-09-02.md",
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/src/feature/hip/integer_adm/adm_cm.hip"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/hip/integer_adm/adm_cm.hip": {
+          "warnings": [
+            84,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "748d15a2b9466bc8f84874681aec464bba3cd317e4f2979335466cc6e5be1622"
+    },
+    {
+      "sources": [
+        "core/src/feature/hip/integer_adm_hip.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/hip/integer_adm_hip.c": {
+          "warnings": [
+            70,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "83d1d511274a36c194aa023b41a59cad3175507239802cb76a045a6ad5d27075"
+    }
+  ]
 }

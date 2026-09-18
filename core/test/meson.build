@@ -2252,6 +2252,18 @@ test_cuda_adm_small_border = executable('test_cuda_adm_small_border',
 test('test_cuda_adm_small_border', test_cuda_adm_small_border,
     suite : ['fast', 'gpu'])
 
+# T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
+# wide (scale-0 cube shift 0) against scalar CPU, and rejection below 17x17.
+test_cuda_adm_tiny_frames = executable('test_cuda_adm_tiny_frames',
+    ['test.c', 'test_gpu_adm_tiny_frames.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_adm_tiny_frames', test_cuda_adm_tiny_frames,
+    suite : ['fast', 'gpu'])
+
 # ADR-1167 — ADM wide-frame row-level rounding parity test (spans 60 warps).
 test_cuda_adm_wide_rounding = executable('test_cuda_adm_wide_rounding',
     ['test.c', 'test_adm_wide_rounding.c'],
@@ -3064,6 +3076,18 @@ test_sycl_adm_parity = executable('test_sycl_adm_parity',
 test('test_sycl_adm_parity', test_sycl_adm_parity,
     suite : ['fast', 'gpu', 'sycl'])
 
+# T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
+# wide (scale-0 cube shift 0) against scalar CPU, and rejection below 17x17.
+test_sycl_adm_tiny_frames = executable('test_sycl_adm_tiny_frames',
+    ['test.c', 'test_gpu_adm_tiny_frames.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_adm_tiny_frames', test_sycl_adm_tiny_frames,
+    suite : ['fast', 'gpu', 'sycl'])
+
 test_sycl_ciede_parity = executable('test_sycl_ciede_parity',
     ['test.c', 'test_sycl_ciede_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -3387,16 +3411,13 @@ test_hip_adm_parity = executable('test_hip_adm_parity',
     dependencies: [pthread_dependency, hip_deps],
     c_args: ['-DHAVE_HIP=1']
 )
-# Deferred per ADR-1154 (T-GAP-HIP-INTEGER-ADM-PICTURE-STAGING-DEFERRED-2026-09-02):
-# integer_adm_hip passes CPU host memory directly to device kernels without staging
-# buffers, causing GPU access faults until staging buffers (~350 LOC) or device picture pool (T7-10c) lands.
+# The picture-staging deferral (ADR-1154) ended with ADR-1211; the parity
+# tests below pass on a gfx1036 device.
 test('test_hip_adm_parity', test_hip_adm_parity,
     suite : ['fast', 'gpu'],
-    should_fail : true,
     timeout : 60)
 
 # ADR-1167 — ADM small-frame border parity test (i == 0 && top <= 0 branch).
-# Deferred per ADR-1154 (T-GAP-HIP-INTEGER-ADM-PICTURE-STAGING-DEFERRED-2026-09-02) on HIP.
 test_hip_adm_small_border = executable('test_hip_adm_small_border',
     ['test.c', 'test_adm_small_border.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -3406,11 +3427,22 @@ test_hip_adm_small_border = executable('test_hip_adm_small_border',
 )
 test('test_hip_adm_small_border', test_hip_adm_small_border,
     suite : ['fast', 'gpu'],
-    should_fail : true,
+    timeout : 60)
+
+# T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
+# wide (scale-0 cube shift 0) against scalar CPU, and rejection below 17x17.
+test_hip_adm_tiny_frames = executable('test_hip_adm_tiny_frames',
+    ['test.c', 'test_gpu_adm_tiny_frames.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_adm_tiny_frames', test_hip_adm_tiny_frames,
+    suite : ['fast', 'gpu'],
     timeout : 60)
 
 # ADR-1167 — ADM wide-frame row-level rounding parity test (spans 60 warps).
-# Deferred per ADR-1154 (T-GAP-HIP-INTEGER-ADM-PICTURE-STAGING-DEFERRED-2026-09-02) on HIP.
 test_hip_adm_wide_rounding = executable('test_hip_adm_wide_rounding',
     ['test.c', 'test_adm_wide_rounding.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -3420,7 +3452,6 @@ test_hip_adm_wide_rounding = executable('test_hip_adm_wide_rounding',
 )
 test('test_hip_adm_wide_rounding', test_hip_adm_wide_rounding,
     suite : ['fast', 'gpu'],
-    should_fail : true,
     timeout : 60)
 
 # ADR-0958 round-4 — HIP kernel parity gap-fill (2 extractors).

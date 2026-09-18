@@ -13080,6 +13080,13 @@ values in divergent-branch kernels. The 25 `.cu` files with nested `if`-divergen
 all candidates for silent score corruption under the 13.2 toolchain.
 
 
+- **The CUDA integer ADM extractor allocates about 50 MB less device memory
+  at 1080p.** Two scratch buffers sized to the frame (`tmp_accum`,
+  3 x w x h x 8 bytes, and `tmp_accum_h`) were allocated at init and passed to
+  kernels that never read them, a leftover from an earlier reduction scheme.
+  They are gone; scores are unchanged.
+
+
 - **chore(deps): Bump pinned CUDA version from 13.2.0 to 13.3.0** across Dockerfile, `dev/Containerfile`, and CI workflow files (`build.yml`, `libvmaf-build-matrix.yml`).
 
 
@@ -23418,6 +23425,17 @@ is addressed.
   the correct key.
 
 
+- **The CUDA and HIP `integer_adm` twins now score frames 17 to 32 pixels wide
+  correctly, and every GPU twin refuses frames below 17x17.** At those widths
+  one of scale 0's right shifts is by zero bits. The CUDA and HIP host code
+  set its rounding term to 2^31 instead of 0, and their scale-0 kernels read
+  one column and one row past the band at the right and bottom edges. Scale 0
+  came out up to 0.2 away from the CPU, and 32x32 frames scored NaN. The CUDA,
+  HIP and SYCL twins also accepted frames smaller than 17x17, which the CPU
+  and Metal extractors refuse; they now fail with `-EINVAL` and an error that
+  names the extractor. Scores for frames wider than 32 pixels do not change.
+
+
 - **CUDA and SYCL CAMBI scores drifted from the CPU reference on real
   content.** Both GPU twins mis-mirrored two host-side stages of
   `cambi.c`. (1) The spatial-mask kernel clamped (replicated) out-of-image
@@ -23505,6 +23523,13 @@ is addressed.
   valid image reference, so none of them could ever build; nothing referenced
   them but a line in `docs/rebase-notes.md`. The publishing workflow already
   uses `-f docker/Dockerfile.node --target <stage>` directly.
+
+
+- **Editing a header now rebuilds the CUDA and HIP kernels that include it.**
+  The nvcc and hipcc build steps did not record header dependencies, so an
+  incremental build after a header change could link host code against
+  kernels compiled for an older struct layout, which crashed or, worse,
+  computed wrong results. Clean builds were never affected.
 
 
 - **GPU `motion_v2` twins emit `motion3_v2_score` (SYCL / HIP / Metal).** The
@@ -27200,6 +27225,19 @@ backtick code spans.
   ADR-1066).
 
 
+- **The SYCL `integer_adm` twin now scores full-range content like the CPU.**
+  The CPU keeps its scale-0 intermediate values in 16 bits, so very large
+  values wrap around there, and the SYCL twin kept them in 32 or 64 bits.
+  On noisy content, such as two frames of independent random noise,
+  `integer_adm_scale0` came out 2.1e-4 away from the CPU, over the 1e-4
+  cross-backend tolerance, and up to 4.4e-3 away with larger CSF weights.
+  The SYCL twin now wraps at the same points. It also rounds two scale 1-3
+  terms the way the CPU, CUDA and HIP do (the long-standing Netflix#955
+  quirk). That moves SYCL's scale 1-3 and `integer_adm2` scores on ordinary
+  content by less than 1e-6, toward the CPU. The remaining differences are
+  below 3e-7.
+
+
 
 - **The SYCL integer-ADM bit-scan proves its own shift bound.** Both
   `get_best15_from32` equivalents in `core/src/feature/sycl/integer_adm_sycl.cpp`
@@ -27765,6 +27803,17 @@ ADR-0513.
   baselined — the two ssimulacra2 SIMD files by extracting the per-pixel
   edge-diff accumulation both their vector body and their scalar tail carried,
   which also removes the duplication ADR-1208 exists to prevent.
+
+
+- **`make tidy-ratchet LANE=cuda`, `LANE=hip` and `LANE=sycl` run again, and
+  measure the CUDA and HIP kernel files.** `tidy-ratchet.py` handed the lanes'
+  compiler flags to clang-tidy as clang-tidy options, and resolved the build
+  directory and the SYCL wrapper relative to each translation unit's
+  directory, so every GPU lane failed before measuring anything. The `.cu` and
+  `.hip` files were also missing from `compile_commands.json`, because meson
+  builds them through custom targets; the new
+  `scripts/ci/gen-gpu-compile-commands.py` adds them, and the make target runs
+  it first. The Tidy Ratchet job now tests this tooling on every pull request.
 
 
 - CI: the required `Tidy Changed` and `Tidy Ratchet` gates failed on every C/C++

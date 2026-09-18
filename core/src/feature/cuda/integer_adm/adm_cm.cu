@@ -31,6 +31,13 @@
 #include <iostream>
 #endif
 
+/* Device helpers are looked up by nobody but the kernels of this translation
+ * unit, so they live in anonymous namespaces (internal linkage). Only the
+ * `extern "C"` kernels keep external linkage: the host resolves them by name
+ * through cuModuleGetFunction (ADR-0747). */
+namespace
+{
+
 /* Inline helper: compute csf_a for a single band at a given pixel position
  * for scales 1-3 (i4 path). Returns the csf_a value = rfactor * a_val. */
 __device__ __forceinline__ int32_t inline_i4_csf_a(const cuda_i4_adm_dwt_band_t *ref,
@@ -50,25 +57,27 @@ __device__ __forceinline__ int32_t inline_i4_csf_a(const cuda_i4_adm_dwt_band_t 
     const int32_t *__restrict__ dh = dis->band_h;
     const int32_t *__restrict__ dv = dis->band_v;
     const int32_t *__restrict__ dd = dis->band_d;
-    int32_t oh = __ldg(&rh[idx]);
-    int32_t ov = __ldg(&rv[idx]);
-    int32_t od = __ldg(&rd[idx]);
-    int32_t th = __ldg(&dh[idx]);
-    int32_t tv = __ldg(&dv[idx]);
-    int32_t td = __ldg(&dd[idx]);
+    const int32_t oh = __ldg(&rh[idx]);
+    const int32_t ov = __ldg(&rv[idx]);
+    const int32_t od = __ldg(&rd[idx]);
+    const int32_t th = __ldg(&dh[idx]);
+    const int32_t tv = __ldg(&dv[idx]);
+    const int32_t td = __ldg(&dd[idx]);
 
-    int angle_flag = decouple_angle_flag_s123(oh, ov, th, tv);
-    int32_t r_val = decouple_r_s123(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);
+    const int angle_flag = decouple_angle_flag_s123(oh, ov, th, tv);
+    const int32_t r_val =
+        decouple_r_s123(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);
 
     int32_t t_val;
-    if (theta == 0)
+    if (theta == 0) {
         t_val = th;
-    else if (theta == 1)
+    } else if (theta == 1) {
         t_val = tv;
-    else
+    } else {
         t_val = td;
+    }
 
-    int32_t a_val = t_val - r_val;
+    const int32_t a_val = t_val - r_val;
 
     /* dst_val = rfactor * a_val — this is csf_a */
     return (int32_t)(((rfactor[theta] * int64_t(a_val)) + add_bef_shift_dst) >> shift_dst);
@@ -88,14 +97,14 @@ __device__ __forceinline__ int32_t inline_i4_decouple_r(const cuda_i4_adm_dwt_ba
     const int32_t *__restrict__ dh = dis->band_h;
     const int32_t *__restrict__ dv = dis->band_v;
     const int32_t *__restrict__ dd = dis->band_d;
-    int32_t oh = __ldg(&rh[idx]);
-    int32_t ov = __ldg(&rv[idx]);
-    int32_t od = __ldg(&rd[idx]);
-    int32_t th = __ldg(&dh[idx]);
-    int32_t tv = __ldg(&dv[idx]);
-    int32_t td = __ldg(&dd[idx]);
+    const int32_t oh = __ldg(&rh[idx]);
+    const int32_t ov = __ldg(&rv[idx]);
+    const int32_t od = __ldg(&rd[idx]);
+    const int32_t th = __ldg(&dh[idx]);
+    const int32_t tv = __ldg(&dv[idx]);
+    const int32_t td = __ldg(&dd[idx]);
 
-    int angle_flag = decouple_angle_flag_s123(oh, ov, th, tv);
+    const int angle_flag = decouple_angle_flag_s123(oh, ov, th, tv);
     return decouple_r_s123(oh, ov, od, th, tv, td, band_idx, angle_flag, adm_enhn_gain_limit);
 }
 
@@ -116,28 +125,30 @@ __device__ __forceinline__ int16_t inline_s0_csf_a(const cuda_adm_dwt_band_t *re
     const int16_t *__restrict__ dh = dis->band_h;
     const int16_t *__restrict__ dv = dis->band_v;
     const int16_t *__restrict__ dd = dis->band_d;
-    int16_t oh = __ldg(&rh[idx]);
-    int16_t ov = __ldg(&rv[idx]);
-    int16_t od = __ldg(&rd[idx]);
-    int16_t th = __ldg(&dh[idx]);
-    int16_t tv = __ldg(&dv[idx]);
-    int16_t td = __ldg(&dd[idx]);
+    const int16_t oh = __ldg(&rh[idx]);
+    const int16_t ov = __ldg(&rv[idx]);
+    const int16_t od = __ldg(&rd[idx]);
+    const int16_t th = __ldg(&dh[idx]);
+    const int16_t tv = __ldg(&dv[idx]);
+    const int16_t td = __ldg(&dd[idx]);
 
-    int angle_flag = decouple_angle_flag_s0(oh, ov, th, tv);
-    int16_t r_val = decouple_r_s0(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);
+    const int angle_flag = decouple_angle_flag_s0(oh, ov, th, tv);
+    const int16_t r_val =
+        decouple_r_s0(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);
 
     int16_t t_val;
-    if (theta == 0)
+    if (theta == 0) {
         t_val = th;
-    else if (theta == 1)
+    } else if (theta == 1) {
         t_val = tv;
-    else
+    } else {
         t_val = td;
+    }
 
-    int16_t a_val = t_val - r_val;
+    const int16_t a_val = t_val - r_val;
 
-    int band = theta + 1; // band index 1..3
-    int32_t dst_val = i_rfactor[theta] * (uint32_t)a_val;
+    const int band = theta + 1; // band index 1..3
+    const int32_t dst_val = i_rfactor[theta] * (uint32_t)a_val;
     return (dst_val + i_shiftsadd_cm[band]) >> i_shifts_cm[band];
 }
 
@@ -154,16 +165,177 @@ __device__ __forceinline__ int16_t inline_s0_decouple_r(const cuda_adm_dwt_band_
     const int16_t *__restrict__ dh = dis->band_h;
     const int16_t *__restrict__ dv = dis->band_v;
     const int16_t *__restrict__ dd = dis->band_d;
-    int16_t oh = __ldg(&rh[idx]);
-    int16_t ov = __ldg(&rv[idx]);
-    int16_t od = __ldg(&rd[idx]);
-    int16_t th = __ldg(&dh[idx]);
-    int16_t tv = __ldg(&dv[idx]);
-    int16_t td = __ldg(&dd[idx]);
+    const int16_t oh = __ldg(&rh[idx]);
+    const int16_t ov = __ldg(&rv[idx]);
+    const int16_t od = __ldg(&rd[idx]);
+    const int16_t th = __ldg(&dh[idx]);
+    const int16_t tv = __ldg(&dv[idx]);
+    const int16_t td = __ldg(&dd[idx]);
 
-    int angle_flag = decouple_angle_flag_s0(oh, ov, th, tv);
+    const int angle_flag = decouple_angle_flag_s0(oh, ov, th, tv);
     return decouple_r_s0(oh, ov, od, th, tv, td, band_idx, angle_flag, adm_enhn_gain_limit);
 }
+
+/* The two neighbours of `pos` along one axis of the 3x3 CM window of scales
+ * 1-3. When the CM region reaches the first sample of the axis, the low
+ * neighbour mirrors to pos + 1; when it reaches the last one, the high
+ * neighbour clamps to pos. */
+struct CmNeighbours {
+    int lo;
+    int hi;
+};
+
+__device__ __forceinline__ CmNeighbours i4_cm_neighbours(int pos, int n, int lo_border,
+                                                         int hi_border)
+{
+    CmNeighbours nb = {.lo = pos - 1, .hi = pos + 1};
+    if (pos == 0 && lo_border <= 0) {
+        nb.lo = pos + 1;
+    } else if (pos == (n - 1) && hi_border > (n - 1)) {
+        nb.hi = pos;
+    }
+    return nb;
+}
+
+/* Rounding shifts of the cubic CM accumulation of one band:
+ * x_sq = (x * x + add_shift_sq) >> shift_sq, then
+ * term = (x_sq * x + add_shift_cub) >> shift_cub. */
+struct CmCubeShifts {
+    int32_t add_shift_sq;
+    uint32_t shift_sq;
+    int32_t add_shift_cub;
+    uint32_t shift_cub;
+};
+
+__device__ __forceinline__ int64_t cm_cube(int32_t x, CmCubeShifts s)
+{
+    const int32_t x_sq = (int32_t)((((int64_t)x * x) + s.add_shift_sq) >> s.shift_sq);
+    return (((int64_t)x_sq * x) + s.add_shift_cub) >> s.shift_cub;
+}
+
+/* Launch-wide inputs of a scale 1-3 CM kernel. */
+struct I4CmParams {
+    const cuda_i4_adm_dwt_band_t *ref;
+    const cuda_i4_adm_dwt_band_t *dis;
+    const uint32_t *rfactor;
+    double adm_enhn_gain_limit;
+    CmCubeShifts cube;
+    uint32_t shift_inner_accum;
+    int32_t add_shift_inner_accum;
+};
+
+__device__ __forceinline__ I4CmParams i4_cm_params(const AdmBufferCuda &buf,
+                                                   const AdmFixedParametersCuda &params, int scale,
+                                                   int w, int h)
+{
+    /* Cubic-accumulation shifts — match adm_cm_reduce_line_kernel for scale != 0. */
+    const uint32_t shift_cub = __float2uint_ru(__log2f((float)w));
+    const uint32_t shift_inner_accum = __float2uint_ru(__log2f((float)h));
+    const int rfactor_base = scale * 3;
+    return {
+        .ref = &buf.i4_ref_dwt2,
+        .dis = &buf.i4_dis_dwt2,
+        .rfactor = &params.i_rfactor[rfactor_base],
+        .adm_enhn_gain_limit = params.adm_enhn_gain_limit,
+        .cube = {.add_shift_sq = 536870912, /* 1 << 29 */
+                 .shift_sq = 30,
+                 .add_shift_cub = (int32_t)(1u << (shift_cub - 1)),
+                 .shift_cub = shift_cub},
+        .shift_inner_accum = shift_inner_accum,
+        .add_shift_inner_accum = (int32_t)(1u << (shift_inner_accum - 1)),
+    };
+}
+
+/* coeff * |v| in the 2^32 fixed point of the scale 1-3 CM threshold. */
+__device__ __forceinline__ int32_t i4_cm_weight(uint32_t coeff, int32_t v)
+{
+    const uint32_t shift_flt = 32;
+    /* 1u << 31 wraps to INT32_MIN, so the rounding term is subtracted rather
+     * than added. The CPU reference rounds the same way and the Netflix golden
+     * scores encode it (ADR-0155); do not widen it. */
+    const int32_t add_bef_shift_flt = (int32_t)(1u << (shift_flt - 1));
+    return (int32_t)((((int64_t)coeff * abs(v)) + add_bef_shift_flt) >> shift_flt);
+}
+
+/* Reduce the per-thread sums of one scale 1-3 row across the block and add the
+ * row's rounded total to the band accumulator. Every thread of the block must
+ * call this, because it synchronises the block. */
+__device__ __forceinline__ void i4_cm_flush_row(int64_t thread_accum, bool row_in_range,
+                                                int64_t *band_accum, const I4CmParams &p)
+{
+    const int64_t lane_accum = warp_reduce(thread_accum);
+    __shared__ int64_t warp_sums[8];
+    if ((threadIdx.x % VMAF_CUDA_THREADS_PER_WARP) == 0) {
+        warp_sums[threadIdx.x / VMAF_CUDA_THREADS_PER_WARP] = lane_accum;
+    }
+    __syncthreads();
+
+    if (threadIdx.x == 0 && row_in_range) {
+        int64_t row_total = 0;
+        for (int w_idx = 0; w_idx < (blockDim.x / VMAF_CUDA_THREADS_PER_WARP); ++w_idx) {
+            row_total += warp_sums[w_idx];
+        }
+        atomicAdd_int64(band_accum, (row_total + p.add_shift_inner_accum) >> p.shift_inner_accum);
+    }
+}
+
+/* The csf_f rows above, at and below the current scale 1-3 row, per angle. */
+struct I4FltRows {
+    const int32_t *top[3];
+    const int32_t *mid[3];
+    const int32_t *bot[3];
+};
+
+/* DLM CM threshold of one scale 1-3 pixel: the 3x3 csf_f neighbourhood of
+ * every angle, its centre replaced by the pixel's own I4_ONE_BY_15 * |csf_a|. */
+__device__ __forceinline__ int32_t i4_dlm_threshold(const I4CmParams &p, const I4FltRows &flt,
+                                                    CmNeighbours cols, int j, int idx)
+{
+    int32_t thr = 0;
+    for (int theta = 0; theta < 3; ++theta) {
+        int32_t sum = 0;
+        /* Inline csf_a at center pixel [i, j] */
+        const int32_t csf_a_val =
+            inline_i4_csf_a(p.ref, p.dis, idx, theta, p.rfactor, p.adm_enhn_gain_limit);
+
+        sum += flt.top[theta][cols.lo];
+        sum += flt.top[theta][j];
+        sum += flt.top[theta][cols.hi];
+
+        sum += flt.mid[theta][cols.lo];
+        sum += i4_cm_weight(I4_ONE_BY_15, csf_a_val);
+        sum += flt.mid[theta][cols.hi];
+
+        sum += flt.bot[theta][cols.lo];
+        sum += flt.bot[theta][j];
+        sum += flt.bot[theta][cols.hi];
+
+        thr += sum;
+    }
+    return thr;
+}
+
+/* DLM CM contribution of scale 1-3 pixel [i, j] (flat index idx) to the
+ * band blockIdx.z. */
+__device__ __forceinline__ int64_t i4_dlm_pixel(const I4CmParams &p, const I4FltRows &flt,
+                                                CmNeighbours cols, int j, int idx)
+{
+    const uint32_t shift_dst = 28;
+    const int32_t add_bef_shift_dst = (1u << (shift_dst - 1));
+    const int32_t shift_sub = 0;
+
+    const int32_t thr = i4_dlm_threshold(p, flt, cols, j, idx);
+    /* Inline decouple_r at pixel [i, j] */
+    const int32_t r_val =
+        inline_i4_decouple_r(p.ref, p.dis, idx, (int)blockIdx.z, p.adm_enhn_gain_limit);
+    int32_t x =
+        (int32_t)((((int64_t)r_val * p.rfactor[blockIdx.z]) + add_bef_shift_dst) >> shift_dst);
+    x = abs(x) - (thr >> shift_sub);
+    const int32_t accum_thread = x < 0 ? 0 : x;
+    return cm_cube(accum_thread, p.cube);
+}
+
+} // namespace
 
 /* Fused compute + warp-reduce + atomicAdd kernel for ADM CM scales 1-3 (i4 path).
  * Eliminates the separate adm_cm_reduce_line_kernel_4 launch and the accum_per_thread
@@ -173,120 +345,41 @@ extern "C" {
 __global__ void i4_adm_cm_line_kernel_fused(AdmBufferCuda buf, int h, int w, int top, int bottom,
                                             int left, int right, int start_row, int end_row,
                                             int start_col, int end_col, int src_stride,
-                                            int csf_a_stride, int scale, int64_t *accum_global,
-                                            AdmFixedParametersCuda params)
+                                            int /* csf_a_stride */, int scale,
+                                            int64_t *accum_global, AdmFixedParametersCuda params)
 {
-    const cuda_i4_adm_dwt_band_t *ref = &buf.i4_ref_dwt2;
-    const cuda_i4_adm_dwt_band_t *dis = &buf.i4_dis_dwt2;
-    const cuda_i4_adm_dwt_band_t *csf_f = &buf.i4_csf_f;
-    const int band = blockIdx.z + 1;
-    int32_t *const *flt_angles = csf_f->bands + 1;
+    const I4CmParams p = i4_cm_params(buf, params, scale, w, h);
+    int32_t *const *flt_angles = buf.i4_csf_f.bands + 1;
 
-    const uint32_t *rfactor = &params.i_rfactor[scale * 3];
-    const double adm_enhn_gain_limit = params.adm_enhn_gain_limit;
-
-    const uint32_t shift_flt = 32;
-    const int32_t add_bef_shift_flt = (1u << (shift_flt - 1));
-    const uint32_t shift_dst = 28;
-    const int32_t add_bef_shift_dst = (1u << (shift_dst - 1));
-
-    /* Cubic-accumulation shifts — match adm_cm_reduce_line_kernel for scale != 0. */
-    const uint32_t shift_sq = 30;
-    const int32_t add_shift_sq = 536870912; /* 1 << 29 */
-    const uint32_t shift_cub = __float2uint_ru(__log2f((float)w));
-    const int32_t add_shift_cub = (int32_t)(1u << (shift_cub - 1));
-    const uint32_t shift_inner_accum = __float2uint_ru(__log2f((float)h));
-    const int32_t add_shift_inner_accum = (int32_t)(1u << (shift_inner_accum - 1));
-
-    const int32_t shift_sub = 0;
-
-    int i = start_row + (int)blockIdx.y;
+    const int i = start_row + (int)blockIdx.y;
     int64_t thread_accum = 0;
 
     if (i < end_row) {
-        int16_t offset_i[2] = {-1, 1};
-        if (i == 0 && top <= 0) {
-            offset_i[0] = 1;
-        } else if (i == (h - 1) && bottom > (h - 1)) {
-            offset_i[1] = 0;
-        }
-
-        const int row_top = i + offset_i[0];
-        const int row_bot = i + offset_i[1];
-        const int32_t *flt_top[3];
-        const int32_t *flt_mid[3];
-        const int32_t *flt_bot[3];
+        const CmNeighbours rows = i4_cm_neighbours(i, h, top, bottom);
+        const int top_offset = rows.lo * src_stride;
+        const int mid_offset = i * src_stride;
+        const int bot_offset = rows.hi * src_stride;
+        I4FltRows flt;
         for (int theta = 0; theta < 3; ++theta) {
-            flt_top[theta] = flt_angles[theta] + row_top * src_stride;
-            flt_mid[theta] = flt_angles[theta] + i * src_stride;
-            flt_bot[theta] = flt_angles[theta] + row_bot * src_stride;
+            flt.top[theta] = flt_angles[theta] + top_offset;
+            flt.mid[theta] = flt_angles[theta] + mid_offset;
+            flt.bot[theta] = flt_angles[theta] + bot_offset;
         }
 
         for (int j = start_col + (int)threadIdx.x; j < end_col; j += (int)blockDim.x) {
-            int16_t offset_j[2] = {-1, 1};
-            if (j == 0 && left <= 0) {
-                offset_j[0] = 1;
-            } else if (j == (w - 1) && right > (w - 1)) {
-                offset_j[1] = 0;
-            }
-
-            const int col_l = j + offset_j[0];
-            const int col_r = j + offset_j[1];
-
-            int32_t thr = 0;
-            for (int theta = 0; theta < 3; ++theta) {
-                int32_t sum = 0;
-                /* Inline csf_a at center pixel [i, j] */
-                int32_t csf_a_val = inline_i4_csf_a(ref, dis, i * src_stride + j, theta, rfactor,
-                                                    adm_enhn_gain_limit);
-
-                sum += flt_top[theta][col_l];
-                sum += flt_top[theta][j];
-                sum += flt_top[theta][col_r];
-
-                sum += flt_mid[theta][col_l];
-                sum += (int32_t)((((int64_t)I4_ONE_BY_15 * abs(csf_a_val)) + add_bef_shift_flt) >>
-                                 shift_flt);
-                sum += flt_mid[theta][col_r];
-
-                sum += flt_bot[theta][col_l];
-                sum += flt_bot[theta][j];
-                sum += flt_bot[theta][col_r];
-
-                thr += sum;
-            }
-            /* Inline decouple_r at pixel [i, j] */
-            int32_t r_val =
-                inline_i4_decouple_r(ref, dis, i * src_stride + j, band - 1, adm_enhn_gain_limit);
-            int32_t x = (int32_t)((((int64_t)r_val * rfactor[blockIdx.z]) + add_bef_shift_dst) >>
-                                  shift_dst);
-            x = abs(x) - (thr >> shift_sub);
-            int32_t accum_thread = x < 0 ? 0 : x;
-
-            const int32_t x_sq =
-                (int32_t)(((int64_t)accum_thread * accum_thread + add_shift_sq) >> shift_sq);
-            thread_accum += (((int64_t)x_sq * accum_thread) + add_shift_cub) >> shift_cub;
+            thread_accum +=
+                i4_dlm_pixel(p, flt, i4_cm_neighbours(j, w, left, right), j, mid_offset + j);
         }
     }
 
-    int64_t lane_accum = warp_reduce(thread_accum);
-    __shared__ int64_t warp_sums[8];
-    if ((threadIdx.x % VMAF_CUDA_THREADS_PER_WARP) == 0) {
-        warp_sums[threadIdx.x / VMAF_CUDA_THREADS_PER_WARP] = lane_accum;
-    }
-    __syncthreads();
-
-    if (threadIdx.x == 0 && i < end_row) {
-        int64_t row_total = 0;
-        for (int w_idx = 0; w_idx < (blockDim.x / VMAF_CUDA_THREADS_PER_WARP); ++w_idx) {
-            row_total += warp_sums[w_idx];
-        }
-        atomicAdd_int64(&accum_global[blockIdx.z],
-                        (row_total + add_shift_inner_accum) >> shift_inner_accum);
-    }
+    i4_cm_flush_row(thread_accum, i < end_row, &accum_global[blockIdx.z], p);
 }
 }
 __constant__ const int32_t shift_sub[3] = {10, 10, 12};
+
+namespace
+{
+
 // HACK: the 256 byte alignment is required to ensure that the struct is not moved to lmem
 struct WarpShift {
     uint32_t shift_cub[3];
@@ -295,124 +388,187 @@ struct WarpShift {
     uint32_t add_shift_sq[3];
 };
 
+/* Launch-wide inputs of a scale-0 CM kernel. */
+struct S0CmParams {
+    const cuda_adm_dwt_band_t *ref;
+    const cuda_adm_dwt_band_t *dis;
+    const uint32_t *i_rfactor;
+    double adm_enhn_gain_limit;
+    int h;
+    int src_stride;
+};
+
+__device__ __forceinline__ S0CmParams s0_cm_params(const AdmBufferCuda &buf,
+                                                   const AdmFixedParametersCuda &params, int h,
+                                                   int src_stride)
+{
+    return {
+        .ref = &buf.ref_dwt2,
+        .dis = &buf.dis_dwt2,
+        .i_rfactor = params.i_rfactor,
+        .adm_enhn_gain_limit = params.adm_enhn_gain_limit,
+        .h = h,
+        .src_stride = src_stride,
+    };
+}
+
+/* The host-computed cubic-accumulation shifts of scale-0 band `band`. */
+__device__ __forceinline__ CmCubeShifts s0_cm_cube_shifts(const WarpShift &ws, int band)
+{
+    return {
+        .add_shift_sq = (int32_t)ws.add_shift_sq[band],
+        .shift_sq = ws.shift_sq[band],
+        .add_shift_cub = (int32_t)ws.add_shift_cub[band],
+        .shift_cub = ws.shift_cub[band],
+    };
+}
+
+/* Row `pos` of a scale-0 band reflected into the band: -1 mirrors to 1, h
+ * clamps to h - 1. */
+__device__ __forceinline__ int s0_cm_row(int pos, int h)
+{
+    return min(abs(pos), h - 1);
+}
+
+/* Add input row `row` of a column's 3x3 windows to the thresholds of the
+ * output rows it borders. A thread owns rows_per_thread consecutive output
+ * rows, so input row `row` is the top, centre or bottom row of the windows of
+ * outputs row - 2 .. row. The centre sample of a window takes `center`
+ * instead of `mid`. */
+template <int rows_per_thread>
+__device__ __forceinline__ void s0_cm_add_row(int32_t (&thr)[rows_per_thread], int row,
+                                              int16_t left, int16_t mid, int16_t right,
+                                              int16_t center)
+{
+#pragma unroll
+    for (int thread_item = 0; thread_item < rows_per_thread; ++thread_item) {
+        const int thread_row = row - thread_item;
+        if (thread_row >= 0 && thread_row < 3) {
+            thr[thread_item] += left + right;
+            if (thread_row != 1) {
+                thr[thread_item] += mid;
+            } else {
+                thr[thread_item] += center;
+            }
+        }
+    }
+}
+
+/* DLM CM thresholds of the rows_per_thread scale-0 pixels of column pos_x[1]
+ * from row y: per angle, the 3x3 csf_f neighbourhood with the centre replaced
+ * by the pixel's own ONE_BY_15 * |csf_a|. */
+template <int rows_per_thread>
+__device__ __forceinline__ void s0_dlm_thresholds(const S0CmParams &p, int16_t *const *flt_angles,
+                                                  const int (&pos_x)[3], int y,
+                                                  int32_t (&thr)[rows_per_thread])
+{
+    const int total_rows = (3 + rows_per_thread - 1);
+
+#pragma unroll
+    for (int theta = 0; theta < 3; ++theta) {
+#pragma unroll
+        for (int row = 0; row < total_rows; ++row) {
+            const int row_offset = s0_cm_row(y - 1 + row, p.h) * p.src_stride;
+
+            /* Inline csf_a at center pixel */
+            const int16_t csf_a_val = inline_s0_csf_a(p.ref, p.dis, row_offset + pos_x[1], theta,
+                                                      p.i_rfactor, p.adm_enhn_gain_limit);
+            const int16_t *flt_ptr = flt_angles[theta] + row_offset;
+            const int16_t center = (int16_t)(((ONE_BY_15 * abs((int32_t)csf_a_val)) + 2048) >> 12);
+            s0_cm_add_row<rows_per_thread>(thr, row, flt_ptr[pos_x[0]], flt_ptr[pos_x[1]],
+                                           flt_ptr[pos_x[2]], center);
+        }
+    }
+}
+
+/* Warp-reduce each output row of a scale-0 thread and add the row's rounded
+ * total to the band accumulator. */
+template <int rows_per_thread>
+__device__ __forceinline__ void s0_cm_flush_rows(const int64_t (&accum_row)[rows_per_thread], int y,
+                                                 int end_row, int64_t *band_accum,
+                                                 const uint32_t shift_inner_accum,
+                                                 const uint32_t add_shift_inner_accum)
+{
+#pragma unroll
+    for (int row = 0; row < rows_per_thread; ++row) {
+        const int64_t row_total = warp_reduce(accum_row[row]);
+        if (threadIdx.x == 0 && (y + row) < end_row) {
+            const int64_t shifted = (row_total + add_shift_inner_accum) >> shift_inner_accum;
+            atomicAdd_int64(band_accum, shifted);
+        }
+    }
+}
+
 template <int rows_per_thread>
 __device__ __forceinline__ void
-adm_cm_line_kernel(AdmBufferCuda buf, int h, int w, int top, int bottom, int left, int right,
-                   int start_row, int end_row, int start_col, int end_col, int src_stride,
-                   int csf_a_stride, int buffer_h, int buffer_stride, int32_t *accum_per_block,
-                   AdmFixedParametersCuda params,
-                   // reduce
-                   int scale, int64_t *accum_global,
-
-                   // shift warp
-                   WarpShift ws,
-                   // shift global
-                   const uint32_t shift_inner_accum, const uint32_t add_shift_inner_accum)
+adm_cm_line_kernel(const AdmBufferCuda &buf, int h, int w, int start_row, int end_row,
+                   int start_col, int end_col, int src_stride, const AdmFixedParametersCuda &params,
+                   int64_t *accum_global, const WarpShift &ws, const uint32_t shift_inner_accum,
+                   const uint32_t add_shift_inner_accum)
 {
-    const cuda_adm_dwt_band_t *ref = &buf.ref_dwt2;
-    const cuda_adm_dwt_band_t *dis = &buf.dis_dwt2;
-    const cuda_adm_dwt_band_t *csf_f = &buf.csf_f;
-    const int band = blockIdx.z + 1;
-    int16_t *const *flt_angles = csf_f->bands + 1;
+    const S0CmParams p = s0_cm_params(buf, params, h, src_stride);
+    int16_t *const *flt_angles = buf.csf_f.bands + 1;
 
-    uint32_t *i_rfactor = params.i_rfactor;
-    const double adm_enhn_gain_limit = params.adm_enhn_gain_limit;
+    const int cta_y = (blockDim.y * blockIdx.y + threadIdx.y) * rows_per_thread;
+    const int y = start_row + cta_y;
 
-    int cta_y = (blockDim.y * blockIdx.y + threadIdx.y) * rows_per_thread;
-    int y = start_row + cta_y;
-
-    const int total_rows = (3 + rows_per_thread - 1);
     const int band2 = blockIdx.z;
-
-    int32_t add_shift_cub = ws.add_shift_cub[band2];
-    int32_t shift_cub = ws.shift_cub[band2];
-    int32_t add_shift_sq = ws.add_shift_sq[band2];
-    int32_t shift_sq = ws.shift_sq[band2];
-    int32_t shift_sub_block = shift_sub[blockIdx.z];
+    const CmCubeShifts cube = s0_cm_cube_shifts(ws, band2);
+    const int32_t shift_sub_block = shift_sub[blockIdx.z];
 
     int64_t accum_row[rows_per_thread] = {0};
 
     for (int x = start_col + (int)threadIdx.x; x < end_col; x += (int)blockDim.x) {
-        int pos_x[3] = {x - 1, x, x + 1};
-        pos_x[0] = abs(pos_x[0]);
-        pos_x[2] = pos_x[2] - max(0, 2 * (x - w) + 1);
+        /* ADR-1210's asymmetric rule, as the CPU's adm_cm_thresh(): x - 1 mirrors
+         * to 1 at the left edge, x + 1 clamps to w - 1 at the right edge. Both
+         * edges are inside the CM region only for bands of 14 samples or less. */
+        const int pos_x[3] = {abs(x - 1), x, min(x + 1, w - 1)};
 
         int32_t thr[rows_per_thread] = {0};
-
-#pragma unroll
-        for (int theta = 0; theta < 3; ++theta) {
-#pragma unroll
-            for (int row = 0; row < total_rows; ++row) {
-                int pos_y = y - 1 + row;
-                pos_y = abs(pos_y);
-                pos_y = pos_y - max(0, 2 * (y - h) + 1);
-
-                /* Inline csf_a at center pixel */
-                int16_t csf_a_val = inline_s0_csf_a(ref, dis, pos_y * src_stride + x, theta,
-                                                    i_rfactor, adm_enhn_gain_limit);
-                int16_t *flt_ptr = flt_angles[theta] + pos_y * src_stride;
-                int16_t flt_row[3] = {flt_ptr[pos_x[0]], flt_ptr[pos_x[1]], flt_ptr[pos_x[2]]};
-
-#pragma unroll
-                for (int thread_item = 0; thread_item < rows_per_thread; ++thread_item) {
-                    int thread_row = row - thread_item;
-                    if (thread_row >= 0 && thread_row < 3) {
-                        thr[thread_item] += flt_row[0] + flt_row[2];
-                        if (thread_row != 1) {
-                            thr[thread_item] += flt_row[1];
-                        } else {
-                            thr[thread_item] +=
-                                (int16_t)(((ONE_BY_15 * abs((int32_t)csf_a_val)) + 2048) >> 12);
-                        }
-                    }
-                }
-            }
-        }
+        s0_dlm_thresholds<rows_per_thread>(p, flt_angles, pos_x, y, thr);
 
         for (int row = 0; row < rows_per_thread; ++row) {
             int16_t sb = 0;
             if ((y + row) < end_row) {
                 /* Inline decouple_r at pixel [y + row, x] */
-                sb = inline_s0_decouple_r(ref, dis, (y + row) * src_stride + x, band - 1,
-                                          adm_enhn_gain_limit);
+                sb = inline_s0_decouple_r(p.ref, p.dis, (y + row) * src_stride + x, band2,
+                                          p.adm_enhn_gain_limit);
             }
-            int32_t val = abs(int32_t(i_rfactor[blockIdx.z] * sb)) - (thr[row] << shift_sub_block);
-            int32_t accum_thread = max(0, val);
-            const int32_t x_sq =
-                (int32_t)(((((int64_t)accum_thread * accum_thread) + add_shift_sq) >> shift_sq));
-            accum_row[row] += (((int64_t)x_sq * accum_thread) + add_shift_cub) >> shift_cub;
+            const int32_t val =
+                abs(int32_t(p.i_rfactor[blockIdx.z] * sb)) - (thr[row] << shift_sub_block);
+            const int32_t accum_thread = max(0, val);
+            accum_row[row] += cm_cube(accum_thread, cube);
         }
     }
 
-#pragma unroll
-    for (int row = 0; row < rows_per_thread; ++row) {
-        int64_t row_total = warp_reduce(accum_row[row]);
-        if (threadIdx.x == 0 && (y + row) < end_row) {
-            int64_t shifted = (row_total + add_shift_inner_accum) >> shift_inner_accum;
-            atomicAdd_int64(&accum_global[band2], shifted);
-        }
-    }
+    s0_cm_flush_rows<rows_per_thread>(accum_row, y, end_row, &accum_global[band2],
+                                      shift_inner_accum, add_shift_inner_accum);
 }
+
+} // namespace
 
 /* adm_cm_reduce_line_kernel template and ADM_CM_REDUCE_LINE macro removed.
  * The two-kernel reduce pattern (compute → global scratch, then reduce separately)
  * has been superseded by i4_adm_cm_line_kernel_fused which integrates the
  * warp-reduce + atomicAdd_int64 step directly into the compute kernel.
  * Scale 0 already used the fused pattern (adm_cm_line_kernel_8); scales 1-3
- * were migrated in PR perf/adm-cm-cuda-warp-reduce-fusion. */
+ * were migrated in PR perf/adm-cm-cuda-warp-reduce-fusion.
+ *
+ * The unnamed parameters are unused by the kernel but stay in the signature:
+ * the host launches it with a fixed `void *args[]` layout. */
 
 #define ADM_CM_LINE(rows_per_thread)                                                               \
     __global__ void adm_cm_line_kernel_##rows_per_thread(                                          \
-        AdmBufferCuda buf, int h, int w, int top, int bottom, int left, int right, int start_row,  \
-        int end_row, int start_col, int end_col, int src_stride, int csf_a_stride, int buffer_h,   \
-        int buffer_stride, int32_t *accum_per_block, AdmFixedParametersCuda params, int scale,     \
+        AdmBufferCuda buf, int h, int w, int /* top */, int /* bottom */, int /* left */,          \
+        int /* right */, int start_row, int end_row, int start_col, int end_col, int src_stride,   \
+        int /* csf_a_stride */, int /* buffer_h */, int /* buffer_stride */,                       \
+        int32_t * /* accum_per_block */, AdmFixedParametersCuda params, int /* scale */,           \
         int64_t *accum_global, WarpShift ws, const uint32_t shift_inner_accum,                     \
         const uint32_t add_shift_inner_accum)                                                      \
     {                                                                                              \
-        adm_cm_line_kernel<rows_per_thread>(                                                       \
-            buf, h, w, top, bottom, left, right, start_row, end_row, start_col, end_col,           \
-            src_stride, csf_a_stride, buffer_h, buffer_stride, accum_per_block, params, scale,     \
-            accum_global, ws, shift_inner_accum, add_shift_inner_accum);                           \
+        adm_cm_line_kernel<rows_per_thread>(buf, h, w, start_row, end_row, start_col, end_col,     \
+                                            src_stride, params, accum_global, ws,                  \
+                                            shift_inner_accum, add_shift_inner_accum);             \
     }
 
 extern "C" {
@@ -443,6 +599,9 @@ ADM_CM_LINE(8); // adm_cm_line_kernel_8
  * I4_ONE_BY_15 = 2 × I4_FIX_ONE_BY_30 (already defined in integer_adm.h). */
 #define I4_FIX_ONE_BY_30 143165577u
 
+namespace
+{
+
 /* Inline helper: CSF-scaled r_val for a single pixel, i4 path (scales 1-3).
  * Returns rfactor[theta] * r_val — used as the per-pixel AIM threshold. */
 __device__ __forceinline__ int32_t inline_i4_csf_r(const cuda_i4_adm_dwt_band_t *ref,
@@ -460,15 +619,16 @@ __device__ __forceinline__ int32_t inline_i4_csf_r(const cuda_i4_adm_dwt_band_t 
     const int32_t *__restrict__ dh = dis->band_h;
     const int32_t *__restrict__ dv = dis->band_v;
     const int32_t *__restrict__ dd = dis->band_d;
-    int32_t oh = __ldg(&rh[idx]);
-    int32_t ov = __ldg(&rv[idx]);
-    int32_t od = __ldg(&rd[idx]);
-    int32_t th = __ldg(&dh[idx]);
-    int32_t tv = __ldg(&dv[idx]);
-    int32_t td = __ldg(&dd[idx]);
+    const int32_t oh = __ldg(&rh[idx]);
+    const int32_t ov = __ldg(&rv[idx]);
+    const int32_t od = __ldg(&rd[idx]);
+    const int32_t th = __ldg(&dh[idx]);
+    const int32_t tv = __ldg(&dv[idx]);
+    const int32_t td = __ldg(&dd[idx]);
 
-    int angle_flag = decouple_angle_flag_s123(oh, ov, th, tv);
-    int32_t r_val = decouple_r_s123(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);
+    const int angle_flag = decouple_angle_flag_s123(oh, ov, th, tv);
+    const int32_t r_val =
+        decouple_r_s123(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);
     return (int32_t)(((rfactor[theta] * (int64_t)r_val) + add_bef_shift_dst) >> shift_dst);
 }
 
@@ -488,19 +648,85 @@ __device__ __forceinline__ int16_t inline_s0_csf_r(const cuda_adm_dwt_band_t *re
     const int16_t *__restrict__ dh = dis->band_h;
     const int16_t *__restrict__ dv = dis->band_v;
     const int16_t *__restrict__ dd = dis->band_d;
-    int16_t oh = __ldg(&rh[idx]);
-    int16_t ov = __ldg(&rv[idx]);
-    int16_t od = __ldg(&rd[idx]);
-    int16_t th = __ldg(&dh[idx]);
-    int16_t tv = __ldg(&dv[idx]);
-    int16_t td = __ldg(&dd[idx]);
+    const int16_t oh = __ldg(&rh[idx]);
+    const int16_t ov = __ldg(&rv[idx]);
+    const int16_t od = __ldg(&rd[idx]);
+    const int16_t th = __ldg(&dh[idx]);
+    const int16_t tv = __ldg(&dv[idx]);
+    const int16_t td = __ldg(&dd[idx]);
 
-    int angle_flag = decouple_angle_flag_s0(oh, ov, th, tv);
-    int16_t r_val = decouple_r_s0(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);
-    int band = theta + 1;
-    int32_t dst_val = i_rfactor[theta] * (uint32_t)r_val;
+    const int angle_flag = decouple_angle_flag_s0(oh, ov, th, tv);
+    const int16_t r_val =
+        decouple_r_s0(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);
+    const int band = theta + 1;
+    const int32_t dst_val = i_rfactor[theta] * (uint32_t)r_val;
     return (dst_val + i_shiftsadd_cm[band]) >> i_shifts_cm[band];
 }
+
+/* AIM CM threshold of one scale 1-3 pixel: sum across theta of the 3×3 csf_r
+ * neighbourhood. Each position is computed inline to avoid extra device
+ * buffers. Convention matches CPU I4_ADM_CM_THRESH_S_I_J macro:
+ *   neighbors → I4_FIX_ONE_BY_30 * |csf_r|
+ *   center    → I4_ONE_BY_15     * |csf_r|  (stored as angles[] in CPU)
+ * row_offset holds the flat offsets of the rows above, at and below. */
+__device__ __forceinline__ int32_t i4_aim_threshold(const I4CmParams &p, const int (&row_offset)[3],
+                                                    CmNeighbours cols, int j)
+{
+    const double egl = p.adm_enhn_gain_limit;
+    int32_t thr = 0;
+    for (int theta = 0; theta < 3; ++theta) {
+        /* Compute csf_r for all 9 positions in the 3×3 window. */
+        const int32_t cr_tl =
+            inline_i4_csf_r(p.ref, p.dis, row_offset[0] + cols.lo, theta, p.rfactor, egl);
+        const int32_t cr_tc =
+            inline_i4_csf_r(p.ref, p.dis, row_offset[0] + j, theta, p.rfactor, egl);
+        const int32_t cr_tr =
+            inline_i4_csf_r(p.ref, p.dis, row_offset[0] + cols.hi, theta, p.rfactor, egl);
+        const int32_t cr_ml =
+            inline_i4_csf_r(p.ref, p.dis, row_offset[1] + cols.lo, theta, p.rfactor, egl);
+        const int32_t cr_mc =
+            inline_i4_csf_r(p.ref, p.dis, row_offset[1] + j, theta, p.rfactor, egl);
+        const int32_t cr_mr =
+            inline_i4_csf_r(p.ref, p.dis, row_offset[1] + cols.hi, theta, p.rfactor, egl);
+        const int32_t cr_bl =
+            inline_i4_csf_r(p.ref, p.dis, row_offset[2] + cols.lo, theta, p.rfactor, egl);
+        const int32_t cr_bc =
+            inline_i4_csf_r(p.ref, p.dis, row_offset[2] + j, theta, p.rfactor, egl);
+        const int32_t cr_br =
+            inline_i4_csf_r(p.ref, p.dis, row_offset[2] + cols.hi, theta, p.rfactor, egl);
+
+        int32_t sum = 0;
+        sum += i4_cm_weight(I4_FIX_ONE_BY_30, cr_tl);
+        sum += i4_cm_weight(I4_FIX_ONE_BY_30, cr_tc);
+        sum += i4_cm_weight(I4_FIX_ONE_BY_30, cr_tr);
+        sum += i4_cm_weight(I4_FIX_ONE_BY_30, cr_ml);
+        sum += i4_cm_weight(I4_ONE_BY_15, cr_mc); /* center: I4_ONE_BY_15 */
+        sum += i4_cm_weight(I4_FIX_ONE_BY_30, cr_mr);
+        sum += i4_cm_weight(I4_FIX_ONE_BY_30, cr_bl);
+        sum += i4_cm_weight(I4_FIX_ONE_BY_30, cr_bc);
+        sum += i4_cm_weight(I4_FIX_ONE_BY_30, cr_br);
+
+        thr += sum;
+    }
+    return thr;
+}
+
+/* AIM CM contribution of scale 1-3 pixel [i, j] to the band blockIdx.z. */
+__device__ __forceinline__ int64_t i4_aim_pixel(const I4CmParams &p, const int (&row_offset)[3],
+                                                CmNeighbours cols, int j)
+{
+    const int32_t shift_sub = 0;
+
+    const int32_t thr = i4_aim_threshold(p, row_offset, cols, j);
+    /* Signal: rfactor * a_val = CSF of decouple_a. */
+    int32_t x = inline_i4_csf_a(p.ref, p.dis, row_offset[1] + j, (int)blockIdx.z, p.rfactor,
+                                p.adm_enhn_gain_limit);
+    x = abs(x) - (thr >> shift_sub);
+    const int32_t accum_thread = x < 0 ? 0 : x;
+    return cm_cube(accum_thread, p.cube);
+}
+
+} // namespace
 
 extern "C" {
 
@@ -510,250 +736,143 @@ extern "C" {
 __global__ void i4_adm_cm_aim_line_kernel_fused(AdmBufferCuda buf, int h, int w, int top,
                                                 int bottom, int left, int right, int start_row,
                                                 int end_row, int start_col, int end_col,
-                                                int src_stride, int csf_a_stride, int scale,
+                                                int src_stride, int /* csf_a_stride */, int scale,
                                                 int64_t *accum_global,
                                                 AdmFixedParametersCuda params)
 {
-    const cuda_i4_adm_dwt_band_t *ref = &buf.i4_ref_dwt2;
-    const cuda_i4_adm_dwt_band_t *dis = &buf.i4_dis_dwt2;
+    const I4CmParams p = i4_cm_params(buf, params, scale, w, h);
 
-    const uint32_t *rfactor = &params.i_rfactor[scale * 3];
-    const double adm_enhn_gain_limit = params.adm_enhn_gain_limit;
-
-    const uint32_t shift_flt = 32;
-    const int32_t add_bef_shift_flt = (1u << (shift_flt - 1));
-    const uint32_t shift_sq = 30;
-    const int32_t add_shift_sq = 536870912; /* 1 << 29 */
-    const uint32_t shift_cub = __float2uint_ru(__log2f((float)w));
-    const int32_t add_shift_cub = (int32_t)(1u << (shift_cub - 1));
-    const uint32_t shift_inner_accum = __float2uint_ru(__log2f((float)h));
-    const int32_t add_shift_inner_accum = (int32_t)(1u << (shift_inner_accum - 1));
-    const int32_t shift_sub = 0;
-
-    int i = start_row + (int)blockIdx.y;
+    const int i = start_row + (int)blockIdx.y;
     int64_t thread_accum = 0;
 
     if (i < end_row) {
-        int16_t offset_i[2] = {-1, 1};
-        if (i == 0 && top <= 0)
-            offset_i[0] = 1;
-        else if (i == (h - 1) && bottom > (h - 1))
-            offset_i[1] = 0;
-
-        int row_top = i + offset_i[0];
-        int row_bot = i + offset_i[1];
+        const CmNeighbours rows = i4_cm_neighbours(i, h, top, bottom);
+        const int row_offset[3] = {rows.lo * src_stride, i * src_stride, rows.hi * src_stride};
 
         for (int j = start_col + (int)threadIdx.x; j < end_col; j += (int)blockDim.x) {
-            int16_t offset_j[2] = {-1, 1};
-            if (j == 0 && left <= 0)
-                offset_j[0] = 1;
-            else if (j == (w - 1) && right > (w - 1))
-                offset_j[1] = 0;
-
-            int col_l = j + offset_j[0];
-            int col_r = j + offset_j[1];
-
-            /* Threshold: sum across theta of the 3×3 csf_r neighbourhood.
-             * Each position is computed inline to avoid extra device buffers.
-             * Convention matches CPU I4_ADM_CM_THRESH_S_I_J macro:
-             *   neighbors → I4_FIX_ONE_BY_30 * |csf_r|
-             *   center    → I4_ONE_BY_15     * |csf_r|  (stored as angles[] in CPU) */
-            int32_t thr = 0;
-            for (int theta = 0; theta < 3; ++theta) {
-                /* Compute csf_r for all 9 positions in the 3×3 window. */
-                int32_t cr_tl = inline_i4_csf_r(ref, dis, row_top * src_stride + col_l, theta,
-                                                rfactor, adm_enhn_gain_limit);
-                int32_t cr_tc = inline_i4_csf_r(ref, dis, row_top * src_stride + j, theta, rfactor,
-                                                adm_enhn_gain_limit);
-                int32_t cr_tr = inline_i4_csf_r(ref, dis, row_top * src_stride + col_r, theta,
-                                                rfactor, adm_enhn_gain_limit);
-                int32_t cr_ml = inline_i4_csf_r(ref, dis, i * src_stride + col_l, theta, rfactor,
-                                                adm_enhn_gain_limit);
-                int32_t cr_mc = inline_i4_csf_r(ref, dis, i * src_stride + j, theta, rfactor,
-                                                adm_enhn_gain_limit);
-                int32_t cr_mr = inline_i4_csf_r(ref, dis, i * src_stride + col_r, theta, rfactor,
-                                                adm_enhn_gain_limit);
-                int32_t cr_bl = inline_i4_csf_r(ref, dis, row_bot * src_stride + col_l, theta,
-                                                rfactor, adm_enhn_gain_limit);
-                int32_t cr_bc = inline_i4_csf_r(ref, dis, row_bot * src_stride + j, theta, rfactor,
-                                                adm_enhn_gain_limit);
-                int32_t cr_br = inline_i4_csf_r(ref, dis, row_bot * src_stride + col_r, theta,
-                                                rfactor, adm_enhn_gain_limit);
-
-                /* Inline I4_FIX_ONE_BY_30 * |csf_r| for each neighbor position. */
-#define AIM_NEIGHBOR(cr)                                                                           \
-    ((int32_t)((((int64_t)I4_FIX_ONE_BY_30 * abs(cr)) + add_bef_shift_flt) >> shift_flt))
-#define AIM_CENTER(cr)                                                                             \
-    ((int32_t)((((int64_t)I4_ONE_BY_15 * abs(cr)) + add_bef_shift_flt) >> shift_flt))
-
-                int32_t sum = 0;
-                sum += AIM_NEIGHBOR(cr_tl);
-                sum += AIM_NEIGHBOR(cr_tc);
-                sum += AIM_NEIGHBOR(cr_tr);
-                sum += AIM_NEIGHBOR(cr_ml);
-                sum += AIM_CENTER(cr_mc); /* center: I4_ONE_BY_15 */
-                sum += AIM_NEIGHBOR(cr_mr);
-                sum += AIM_NEIGHBOR(cr_bl);
-                sum += AIM_NEIGHBOR(cr_bc);
-                sum += AIM_NEIGHBOR(cr_br);
-
-#undef AIM_NEIGHBOR
-#undef AIM_CENTER
-
-                thr += sum;
-            }
-
-            /* Signal: rfactor * a_val = CSF of decouple_a. */
-            int32_t x = inline_i4_csf_a(ref, dis, i * src_stride + j, (int)blockIdx.z, rfactor,
-                                        adm_enhn_gain_limit);
-            x = abs(x) - (thr >> shift_sub);
-            int32_t accum_thread = x < 0 ? 0 : x;
-
-            const int32_t x_sq =
-                (int32_t)(((int64_t)accum_thread * accum_thread + add_shift_sq) >> shift_sq);
-            thread_accum += (((int64_t)x_sq * accum_thread) + add_shift_cub) >> shift_cub;
+            thread_accum += i4_aim_pixel(p, row_offset, i4_cm_neighbours(j, w, left, right), j);
         }
     }
 
-    int64_t lane_accum = warp_reduce(thread_accum);
-    __shared__ int64_t warp_sums[8];
-    if ((threadIdx.x % VMAF_CUDA_THREADS_PER_WARP) == 0) {
-        warp_sums[threadIdx.x / VMAF_CUDA_THREADS_PER_WARP] = lane_accum;
-    }
-    __syncthreads();
-
-    if (threadIdx.x == 0 && i < end_row) {
-        int64_t row_total = 0;
-        for (int w_idx = 0; w_idx < (blockDim.x / VMAF_CUDA_THREADS_PER_WARP); ++w_idx) {
-            row_total += warp_sums[w_idx];
-        }
-        atomicAdd_int64(&accum_global[blockIdx.z],
-                        (row_total + add_shift_inner_accum) >> shift_inner_accum);
-    }
+    i4_cm_flush_row(thread_accum, i < end_row, &accum_global[blockIdx.z], p);
 }
 
 } /* extern "C" */
+
+namespace
+{
+
+/* AIM signal of scale-0 pixel idx in the band blockIdx.z: |rfactor * a_val|,
+ * the CSF of decouple_a. */
+__device__ __forceinline__ int32_t s0_aim_signal(const S0CmParams &p, int idx)
+{
+    /* Pre-load dis band pointers for a_val computation (mirrors DLM signal path). */
+    const int16_t *__restrict__ dh_aim = p.dis->band_h;
+    const int16_t *__restrict__ dv_aim = p.dis->band_v;
+    const int16_t *__restrict__ dd_aim = p.dis->band_d;
+
+    const int16_t r_val =
+        inline_s0_decouple_r(p.ref, p.dis, idx, (int)blockIdx.z, p.adm_enhn_gain_limit);
+    /* Select distorted band value for this theta (blockIdx.z = 0:h, 1:v, 2:d). */
+    int16_t t_val;
+    if (blockIdx.z == 0) {
+        t_val = __ldg(&dh_aim[idx]);
+    } else if (blockIdx.z == 1) {
+        t_val = __ldg(&dv_aim[idx]);
+    } else {
+        t_val = __ldg(&dd_aim[idx]);
+    }
+    const int16_t a_val = t_val - r_val;
+    return abs(int32_t(p.i_rfactor[blockIdx.z] * (uint32_t)a_val));
+}
+
+/* AIM CM thresholds of the rows_per_thread scale-0 pixels of column pos_x[1]
+ * from row y: per angle, the 3x3 csf_r neighbourhood. */
+template <int rows_per_thread>
+__device__ __forceinline__ void s0_aim_thresholds(const S0CmParams &p, const int (&pos_x)[3], int y,
+                                                  int32_t (&thr)[rows_per_thread])
+{
+    /* FIX_ONE_BY_30 for scale-0: (1/30) * 2^17 = 4369, applied with >>12 shift. */
+    const uint16_t FIX_ONE_BY_30_S0 = 4369u;
+    const int total_rows = (3 + rows_per_thread - 1);
+    const double egl = p.adm_enhn_gain_limit;
+
+#pragma unroll
+    for (int theta = 0; theta < 3; ++theta) {
+#pragma unroll
+        for (int row = 0; row < total_rows; ++row) {
+            const int row_offset = s0_cm_row(y - 1 + row, p.h) * p.src_stride;
+
+            /* Compute csf_r at each of the 3 column positions for this row. */
+            const int16_t csf_r0 =
+                inline_s0_csf_r(p.ref, p.dis, row_offset + pos_x[0], theta, p.i_rfactor, egl);
+            const int16_t csf_r1 =
+                inline_s0_csf_r(p.ref, p.dis, row_offset + pos_x[1], theta, p.i_rfactor, egl);
+            const int16_t csf_r2 =
+                inline_s0_csf_r(p.ref, p.dis, row_offset + pos_x[2], theta, p.i_rfactor, egl);
+
+            /* flt values: neighbor columns use FIX_ONE_BY_30, center column uses
+             * ONE_BY_15 only for the center row (thread_row == 1). */
+            const int16_t flt0 =
+                (int16_t)(((FIX_ONE_BY_30_S0 * abs((int32_t)csf_r0)) + 2048) >> 12);
+            const int16_t flt1_neighbor =
+                (int16_t)(((FIX_ONE_BY_30_S0 * abs((int32_t)csf_r1)) + 2048) >> 12);
+            const int16_t flt1_center =
+                (int16_t)(((ONE_BY_15 * abs((int32_t)csf_r1)) + 2048) >> 12);
+            const int16_t flt2 =
+                (int16_t)(((FIX_ONE_BY_30_S0 * abs((int32_t)csf_r2)) + 2048) >> 12);
+
+            s0_cm_add_row<rows_per_thread>(thr, row, flt0, flt1_neighbor, flt2, flt1_center);
+        }
+    }
+}
 
 /* AIM CM device function for scale 0 (int16 path).
  * Mirrors adm_cm_line_kernel<rows_per_thread> with signal/threshold swapped.
  * Signal = inline_s0_csf_a; threshold = inline_s0_csf_r 3×3 neighbourhood. */
 template <int rows_per_thread>
-__device__ __forceinline__ void
-adm_cm_aim_line_kernel(AdmBufferCuda buf, int h, int w, int top, int bottom, int left, int right,
-                       int start_row, int end_row, int start_col, int end_col, int src_stride,
-                       int csf_a_stride, int buffer_h, int buffer_stride, int32_t *accum_per_block,
-                       AdmFixedParametersCuda params, int scale, int64_t *accum_global,
-                       WarpShift ws, const uint32_t shift_inner_accum,
-                       const uint32_t add_shift_inner_accum)
+__device__ __forceinline__ void adm_cm_aim_line_kernel(
+    const AdmBufferCuda &buf, int h, int w, int start_row, int end_row, int start_col, int end_col,
+    int src_stride, const AdmFixedParametersCuda &params, int64_t *accum_global,
+    const WarpShift &ws, const uint32_t shift_inner_accum, const uint32_t add_shift_inner_accum)
 {
-    const cuda_adm_dwt_band_t *ref = &buf.ref_dwt2;
-    const cuda_adm_dwt_band_t *dis = &buf.dis_dwt2;
-    uint32_t *i_rfactor = params.i_rfactor;
-    const double adm_enhn_gain_limit = params.adm_enhn_gain_limit;
+    const S0CmParams p = s0_cm_params(buf, params, h, src_stride);
 
-    /* FIX_ONE_BY_30 for scale-0: (1/30) * 2^17 = 4369, applied with >>12 shift. */
-    const uint16_t FIX_ONE_BY_30_S0 = 4369u;
+    const int cta_y = (blockDim.y * blockIdx.y + threadIdx.y) * rows_per_thread;
+    const int y = start_row + cta_y;
 
-    int cta_y = (blockDim.y * blockIdx.y + threadIdx.y) * rows_per_thread;
-    int y = start_row + cta_y;
-
-    const int total_rows = (3 + rows_per_thread - 1);
     const int band2 = blockIdx.z;
-
-    int32_t add_shift_cub = ws.add_shift_cub[band2];
-    int32_t shift_cub = ws.shift_cub[band2];
-    int32_t add_shift_sq = ws.add_shift_sq[band2];
-    int32_t shift_sq = ws.shift_sq[band2];
-    int32_t shift_sub_block = shift_sub[blockIdx.z];
-
-    /* Pre-load dis band pointers for a_val computation (mirrors DLM signal path). */
-    const int16_t *__restrict__ dh_aim = dis->band_h;
-    const int16_t *__restrict__ dv_aim = dis->band_v;
-    const int16_t *__restrict__ dd_aim = dis->band_d;
+    const CmCubeShifts cube = s0_cm_cube_shifts(ws, band2);
+    const int32_t shift_sub_block = shift_sub[blockIdx.z];
 
     int64_t accum_row[rows_per_thread] = {0};
 
     for (int x = start_col + (int)threadIdx.x; x < end_col; x += (int)blockDim.x) {
-        /* Reflected x-positions for the 3 columns (matches adm_cm_line_kernel). */
-        int pos_x[3] = {x - 1, x, x + 1};
-        pos_x[0] = abs(pos_x[0]);
-        pos_x[2] = pos_x[2] - max(0, 2 * (x - w) + 1);
+        /* Reflected x-positions for the 3 columns (matches adm_cm_line_kernel).
+         * ADR-1210's asymmetric rule, as the CPU's adm_cm_thresh(): x - 1 mirrors
+         * to 1 at the left edge, x + 1 clamps to w - 1 at the right edge. Both
+         * edges are inside the CM region only for bands of 14 samples or less. */
+        const int pos_x[3] = {abs(x - 1), x, min(x + 1, w - 1)};
 
         int32_t thr[rows_per_thread] = {0};
-
-#pragma unroll
-        for (int theta = 0; theta < 3; ++theta) {
-#pragma unroll
-            for (int row = 0; row < total_rows; ++row) {
-                int pos_y = y - 1 + row;
-                pos_y = abs(pos_y);
-                pos_y = pos_y - max(0, 2 * (y - h) + 1);
-
-                /* Compute csf_r at each of the 3 column positions for this row. */
-                int16_t csf_r0 = inline_s0_csf_r(ref, dis, pos_y * src_stride + pos_x[0], theta,
-                                                 i_rfactor, adm_enhn_gain_limit);
-                int16_t csf_r1 = inline_s0_csf_r(ref, dis, pos_y * src_stride + pos_x[1], theta,
-                                                 i_rfactor, adm_enhn_gain_limit);
-                int16_t csf_r2 = inline_s0_csf_r(ref, dis, pos_y * src_stride + pos_x[2], theta,
-                                                 i_rfactor, adm_enhn_gain_limit);
-
-                /* flt values: neighbor columns use FIX_ONE_BY_30, center column uses
-                 * ONE_BY_15 only for the center row (thread_row == 1). */
-                int16_t flt0 = (int16_t)(((FIX_ONE_BY_30_S0 * abs((int32_t)csf_r0)) + 2048) >> 12);
-                int16_t flt1_neighbor =
-                    (int16_t)(((FIX_ONE_BY_30_S0 * abs((int32_t)csf_r1)) + 2048) >> 12);
-                int16_t flt1_center = (int16_t)(((ONE_BY_15 * abs((int32_t)csf_r1)) + 2048) >> 12);
-                int16_t flt2 = (int16_t)(((FIX_ONE_BY_30_S0 * abs((int32_t)csf_r2)) + 2048) >> 12);
-
-#pragma unroll
-                for (int thread_item = 0; thread_item < rows_per_thread; ++thread_item) {
-                    int thread_row = row - thread_item;
-                    if (thread_row >= 0 && thread_row < 3) {
-                        thr[thread_item] += flt0 + flt2; /* left + right columns always neighbor */
-                        if (thread_row != 1) {
-                            thr[thread_item] += flt1_neighbor; /* top/bot center: FIX_ONE_BY_30 */
-                        } else {
-                            thr[thread_item] += flt1_center; /* center pixel: ONE_BY_15 */
-                        }
-                    }
-                }
-            }
-        }
+        s0_aim_thresholds<rows_per_thread>(p, pos_x, y, thr);
 
         for (int row = 0; row < rows_per_thread; ++row) {
             int32_t aim_signal = 0;
             if ((y + row) < end_row) {
-                int aim_idx = (y + row) * src_stride + x;
-                int16_t r_val =
-                    inline_s0_decouple_r(ref, dis, aim_idx, (int)blockIdx.z, adm_enhn_gain_limit);
-                /* Select distorted band value for this theta (blockIdx.z = 0:h, 1:v, 2:d). */
-                int16_t t_val;
-                if (blockIdx.z == 0)
-                    t_val = __ldg(&dh_aim[aim_idx]);
-                else if (blockIdx.z == 1)
-                    t_val = __ldg(&dv_aim[aim_idx]);
-                else
-                    t_val = __ldg(&dd_aim[aim_idx]);
-                int16_t a_val = t_val - r_val;
-                aim_signal = abs(int32_t(i_rfactor[blockIdx.z] * (uint32_t)a_val));
+                aim_signal = s0_aim_signal(p, (y + row) * src_stride + x);
             }
-            int32_t val = aim_signal - (thr[row] << shift_sub_block);
-            int32_t accum_thread_val = max(0, val);
-            const int32_t x_sq = (int32_t)((
-                (((int64_t)accum_thread_val * accum_thread_val) + add_shift_sq) >> shift_sq));
-            accum_row[row] += (((int64_t)x_sq * accum_thread_val) + add_shift_cub) >> shift_cub;
+            const int32_t val = aim_signal - (thr[row] << shift_sub_block);
+            const int32_t accum_thread_val = max(0, val);
+            accum_row[row] += cm_cube(accum_thread_val, cube);
         }
     }
 
-#pragma unroll
-    for (int row = 0; row < rows_per_thread; ++row) {
-        int64_t row_total = warp_reduce(accum_row[row]);
-        if (threadIdx.x == 0 && (y + row) < end_row) {
-            int64_t shifted = (row_total + add_shift_inner_accum) >> shift_inner_accum;
-            atomicAdd_int64(&accum_global[band2], shifted);
-        }
-    }
+    s0_cm_flush_rows<rows_per_thread>(accum_row, y, end_row, &accum_global[band2],
+                                      shift_inner_accum, add_shift_inner_accum);
 }
+
+} // namespace
 
 /* The AIM CM kernel is the fork's most register-hungry CUDA kernel: three
  * theta planes x ten reflected rows of `inline_s0_csf_r` results, live across
@@ -766,23 +885,26 @@ adm_cm_aim_line_kernel(AdmBufferCuda buf, int h, int w, int top, int bottom, int
  * sm_89. It bought nothing (0.808 ms vs 0.803 ms per call), because this
  * kernel is not occupancy-limited but grid-limited, and stacking it on top of
  * the `rows_per_thread` fix below made things slower (0.572 ms vs 0.553 ms).
- * See ADR-1226 for the full sweep before re-adding it. */
+ * See ADR-1226 for the full sweep before re-adding it.
+ *
+ * The unnamed parameters are unused by the kernel but stay in the signature:
+ * the host launches it with a fixed `void *args[]` layout. */
 #define ADM_CM_AIM_LINE(rows_per_thread)                                                           \
     __global__ void adm_cm_aim_line_kernel_##rows_per_thread(                                      \
-        AdmBufferCuda buf, int h, int w, int top, int bottom, int left, int right, int start_row,  \
-        int end_row, int start_col, int end_col, int src_stride, int csf_a_stride, int buffer_h,   \
-        int buffer_stride, int32_t *accum_per_block, AdmFixedParametersCuda params, int scale,     \
+        AdmBufferCuda buf, int h, int w, int /* top */, int /* bottom */, int /* left */,          \
+        int /* right */, int start_row, int end_row, int start_col, int end_col, int src_stride,   \
+        int /* csf_a_stride */, int /* buffer_h */, int /* buffer_stride */,                       \
+        int32_t * /* accum_per_block */, AdmFixedParametersCuda params, int /* scale */,           \
         int64_t *accum_global, WarpShift ws, const uint32_t shift_inner_accum,                     \
         const uint32_t add_shift_inner_accum)                                                      \
     {                                                                                              \
-        adm_cm_aim_line_kernel<rows_per_thread>(                                                   \
-            buf, h, w, top, bottom, left, right, start_row, end_row, start_col, end_col,           \
-            src_stride, csf_a_stride, buffer_h, buffer_stride, accum_per_block, params, scale,     \
-            accum_global, ws, shift_inner_accum, add_shift_inner_accum);                           \
+        adm_cm_aim_line_kernel<rows_per_thread>(buf, h, w, start_row, end_row, start_col, end_col, \
+                                                src_stride, params, accum_global, ws,              \
+                                                shift_inner_accum, add_shift_inner_accum);         \
     }
 
 /* Two instantiations, picked at launch by SM occupancy (see
- * `integer_adm_cuda.c::adm_cm_aim_line`). The kernel emits one block per
+ * `integer_adm_cuda.c::adm_cm_aim_rows_per_thread`). The kernel emits one block per
  * `BLOCKY * rows_per_thread` rows of a `buffer_h`-row band, times three
  * orientation bands, and nothing else parallelises it — so `rows_per_thread`
  * is what decides whether the launch fills the GPU. At the previous fixed

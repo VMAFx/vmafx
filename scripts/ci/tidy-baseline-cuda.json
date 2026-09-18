@@ -4,8 +4,8 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 47,
-  "total_warnings": 1598,
-  "total_nolint_uncited": 3,
+  "total_warnings": 1288,
+  "total_nolint_uncited": 2,
   "warnings": {
     "core/src/cuda/common.c": 65,
     "core/src/cuda/common.h": 3,
@@ -22,12 +22,10 @@
     "core/src/feature/cuda/float_psnr_cuda.c": 25,
     "core/src/feature/cuda/float_vif/float_vif_score.cu": 20,
     "core/src/feature/cuda/float_vif_cuda.c": 30,
-    "core/src/feature/cuda/integer_adm/adm_cm.cu": 174,
     "core/src/feature/cuda/integer_adm/adm_csf.cu": 38,
     "core/src/feature/cuda/integer_adm/adm_csf_den.cu": 25,
     "core/src/feature/cuda/integer_adm/adm_decouple_inline.cuh": 20,
     "core/src/feature/cuda/integer_adm/adm_dwt2.cu": 14,
-    "core/src/feature/cuda/integer_adm_cuda.c": 136,
     "core/src/feature/cuda/integer_adm_cuda.h": 4,
     "core/src/feature/cuda/integer_cambi/cambi_score.cu": 4,
     "core/src/feature/cuda/integer_cambi_cuda.c": 33,
@@ -60,9 +58,44 @@
     "core/src/feature/cuda/ssimulacra2_cuda.c": 50
   },
   "nolint_uncited": {
-    "core/src/feature/cuda/integer_adm_cuda.c": 1,
     "core/src/feature/cuda/integer_vif_cuda.c": 1,
     "core/src/feature/cuda/ssimulacra2_cuda.c": 1
   },
-  "source": "converted 2026-09-02 from the agy gpu-debt measurement (clang-tidy 22.1.8, -p build-gpu, same (path,line,column,check) dedup); see docs/research/2027-lint-carveout-inventory-2026-09-02.md"
+  "source": "converted 2026-09-02 from the agy gpu-debt measurement (clang-tidy 22.1.8, -p build-gpu, same (path,line,column,check) dedup); see docs/research/2027-lint-carveout-inventory-2026-09-02.md",
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/src/feature/cuda/integer_adm/adm_cm.cu"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/cuda/integer_adm/adm_cm.cu": {
+          "warnings": [
+            174,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "568be5e4d2054ddddf7c48e7166debccf3c57e8884fa785d7d49b9c947a92963"
+    },
+    {
+      "sources": [
+        "core/src/feature/cuda/integer_adm_cuda.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/cuda/integer_adm_cuda.c": {
+          "warnings": [
+            136,
+            0
+          ],
+          "nolint_uncited": [
+            1,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "4dc8874155c08f72767d9c4134b6f1c88c7e6413ce526773215614cfcd56b5f2"
+    }
+  ]
 }

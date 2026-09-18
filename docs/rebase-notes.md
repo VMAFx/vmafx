@@ -1,6 +1,45 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/gpu-adm-tiny-frames — GPU integer ADM on frames 17 to 32 pixels wide (2026-09-18)
+
+Upstream Netflix/vmaf ships the CUDA integer ADM this fork mirrors, and it
+carries both defects fixed here (T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18). When a
+sync touches these files, keep the fork form:
+
+- `core/src/feature/cuda/integer_adm_cuda.c`: the scale-0 cube and inner-accum
+  rounding constants are `adm_half_shift(x)` from
+  `core/src/feature/adm_csf_fixed_point.h`, where upstream writes
+  `1 << (x - 1)`; `init_fex_cuda()` starts with `adm_frame_size_check()`.
+- `core/src/feature/cuda/integer_adm/adm_cm.cu`, both scale-0 kernels: the
+  neighbour clamps are `pos_x[2] = min(pos_x[2], w - 1)` and
+  `pos_y = min(pos_y, h - 1)`. Upstream's `pos - max(0, 2 * (x - w) + 1)` uses
+  the base index and reads one column and one row past the band.
+  `test_cuda_adm_tiny_frames` fails on either upstream form.
+- `integer_adm_cuda.c`, 10/16-bit path: `curr_ref_stride` comes from
+  `ref_pic` and `curr_dis_stride` from `dis_pic`; upstream swaps them. Keep the
+  fork form.
+- Both files were restructured to zero clang-tidy findings (ADR-1142):
+  helpers in anonymous namespaces, unused kernel parameters unnamed, the host
+  glue split into single-purpose functions. Kernel names and parameter layouts
+  are unchanged. A sync that touches them ports upstream's intent into the
+  fork structure rather than taking upstream's text.
+
+The HIP (`integer_adm_hip.c`, `integer_adm/adm_cm.hip`) and SYCL
+(`integer_adm_sycl.cpp`) twins are fork-only; the same rules apply to them.
+`integer_adm_sycl.cpp`'s internals now sit in an anonymous namespace rather
+than behind C-style `static`.
+
+SYCL now reproduces the CPU's integer semantics exactly where it used to
+widen (T-SYCL-ADM-INT16-SEMANTICS-2026-09-18): scale-0 intermediates wrap to
+16 bits through `adm_i16()`, the diagonal `csf_a` rounds with 65535, and the
+scale 1-3 filter terms round with `I4_FLT_ROUND`, the wrapped `-2^31` of the
+Netflix#955 quirk that ADR-0155 keeps for the golden values (entry 0048
+below covers the CPU and CUDA/HIP forms; this is the SYCL one). If an
+upstream change to `integer_adm.c` alters any of those narrowings or rounding
+terms, change the SYCL twin with it; `test_sycl_adm_tiny_frames` (noise
+geometries) catches a mismatch.
+
 ## port/upstream-2026-09 — Netflix/vmaf `03b5562c5`..`86da14d03` (2026-09-18)
 
 Reconciles upstream through `86da14d03` (previous mark `f85a85369`, PR #1456).

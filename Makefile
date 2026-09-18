@@ -177,13 +177,20 @@ TIDY_RATCHET_EXTRA_cuda := --extra-arg=--cuda-host-only --extra-arg=-nocudalib
 TIDY_RATCHET_EXTRA_hip := --extra-arg=-x --extra-arg=hip \
 	--extra-arg=-D__HIP_PLATFORM_AMD__=1 --extra-arg=-I/opt/rocm/include
 TIDY_RATCHET_EXTRA_sycl := --clang-tidy scripts/ci/clang-tidy-sycl.sh
+# nvcc, hipcc and icpx compile through meson custom targets, which leave their
+# translation units out of compile_commands.json; add them before measuring.
+TIDY_RATCHET_PREP_cuda := python3 scripts/ci/gen-gpu-compile-commands.py $(TIDY_RATCHET_BUILD_DIR)
+TIDY_RATCHET_PREP_hip := python3 scripts/ci/gen-gpu-compile-commands.py $(TIDY_RATCHET_BUILD_DIR)
+TIDY_RATCHET_PREP_sycl := python3 scripts/ci/gen-sycl-compile-commands.py $(TIDY_RATCHET_BUILD_DIR)
 tidy-ratchet:
 	$(call require-tool,clang-tidy,install clang-tools)
+	$(TIDY_RATCHET_PREP_$(LANE))
 	python3 scripts/ci/tidy-ratchet.py --lane $(LANE) \
 	    --build-dir $(TIDY_RATCHET_BUILD_DIR) $(TIDY_RATCHET_EXTRA_$(LANE)) $(TIDY_RATCHET_ARGS)
 
 tidy-ratchet-write:
 	$(call require-tool,clang-tidy,install clang-tools)
+	$(TIDY_RATCHET_PREP_$(LANE))
 	python3 scripts/ci/tidy-ratchet.py --lane $(LANE) --write \
 	    --build-dir $(TIDY_RATCHET_BUILD_DIR) $(TIDY_RATCHET_EXTRA_$(LANE)) $(TIDY_RATCHET_ARGS)
 
