@@ -187,11 +187,25 @@ static char *test_validate_symlink_to_dir(void)
 static const unsigned char kAllowedOnnx[] = {0x3A, 0x08, 0x0A, 0x06, 0x22,
                                              0x04, 'C',  'o',  'n',  'v'};
 
+/* Validate @p model_path with VMAF_TINY_MODEL_DIR set to @p jail, then unset
+ * it again. Returns -1 when setenv itself failed (and leaves @p err_out
+ * untouched), else 0 with the validation result in @p err_out. The jail tests
+ * clean up their files before asserting on either, so a failure cannot leak
+ * or leave the variable set for the tests that follow. */
+static int validate_in_jail(const char *jail, const char *model_path, int *err_out)
+{
+    if (setenv("VMAF_TINY_MODEL_DIR", jail, 1) != 0)
+        return -1;
+    *err_out = vmaf_dnn_validate_onnx(model_path, 0);
+    (void)unsetenv("VMAF_TINY_MODEL_DIR");
+    return 0;
+}
+
 static char *test_jail_unset_accepts_anywhere(void)
 {
     /* With VMAF_TINY_MODEL_DIR unset the jail is a no-op; a valid model
      * anywhere in the filesystem must still validate. */
-    unsetenv("VMAF_TINY_MODEL_DIR");
+    (void)unsetenv("VMAF_TINY_MODEL_DIR");
     char *path = write_temp(kAllowedOnnx, sizeof(kAllowedOnnx));
     mu_assert("temp file creation failed", path != NULL);
     const int err = vmaf_dnn_validate_onnx(path, 0);
@@ -209,14 +223,13 @@ static char *test_jail_accepts_model_inside(void)
 
     char model_path[PATH_MAX];
     (void)snprintf(model_path, sizeof(model_path), "%s/allowed.onnx", jail);
-    mu_assert("write_file_600 model failed",
-              write_file_600(model_path, kAllowedOnnx, sizeof(kAllowedOnnx)) == 0);
-
-    mu_assert("setenv failed", setenv("VMAF_TINY_MODEL_DIR", jail, 1) == 0);
-    const int err = vmaf_dnn_validate_onnx(model_path, 0);
-    unsetenv("VMAF_TINY_MODEL_DIR");
+    const int wrc = write_file_600(model_path, kAllowedOnnx, sizeof(kAllowedOnnx));
+    int err = -1;
+    const int set_rc = (wrc == 0) ? validate_in_jail(jail, model_path, &err) : 0;
     (void)remove(model_path);
-    rmdir(jail);
+    (void)rmdir(jail);
+    mu_assert("write_file_600 model failed", wrc == 0);
+    mu_assert("setenv failed", set_rc == 0);
     mu_assert("model inside jail → 0", err == 0);
     return NULL;
 }
@@ -229,14 +242,15 @@ static char *test_jail_rejects_model_outside(void)
     mu_assert("mkdtemp failed", mkdtemp(jail) != NULL);
 
     char *outside = write_temp(kAllowedOnnx, sizeof(kAllowedOnnx));
+    int err = 0;
+    const int set_rc = outside ? validate_in_jail(jail, outside, &err) : 0;
+    if (outside) {
+        (void)remove(outside);
+        free(outside);
+    }
+    (void)rmdir(jail);
     mu_assert("write_temp failed", outside != NULL);
-
-    mu_assert("setenv failed", setenv("VMAF_TINY_MODEL_DIR", jail, 1) == 0);
-    const int err = vmaf_dnn_validate_onnx(outside, 0);
-    unsetenv("VMAF_TINY_MODEL_DIR");
-    (void)remove(outside);
-    free(outside);
-    rmdir(jail);
+    mu_assert("setenv failed", set_rc == 0);
     mu_assert("model outside jail → -EACCES", err == -EACCES);
     return NULL;
 }
@@ -252,21 +266,34 @@ static char *test_jail_rejects_sibling_prefix(void)
 
     char sibling_dir[PATH_MAX];
     (void)snprintf(sibling_dir, sizeof(sibling_dir), "%s-sibling", jail);
-    mu_assert("sibling mkdir failed", mkdir(sibling_dir, 0700) == 0);
+    const int mrc = mkdir(sibling_dir, 0700);
 
     char model_path[PATH_MAX];
     (void)snprintf(model_path, sizeof(model_path), "%s/escape.onnx", sibling_dir);
-    mu_assert("write_file_600 sibling model failed",
-              write_file_600(model_path, kAllowedOnnx, sizeof(kAllowedOnnx)) == 0);
-
-    mu_assert("setenv failed", setenv("VMAF_TINY_MODEL_DIR", jail, 1) == 0);
-    const int err = vmaf_dnn_validate_onnx(model_path, 0);
-    unsetenv("VMAF_TINY_MODEL_DIR");
+    const int wrc =
+        (mrc == 0) ? write_file_600(model_path, kAllowedOnnx, sizeof(kAllowedOnnx)) : -1;
+    int err = 0;
+    const int set_rc = (wrc == 0) ? validate_in_jail(jail, model_path, &err) : 0;
     (void)remove(model_path);
-    rmdir(sibling_dir);
-    rmdir(jail);
+    (void)rmdir(sibling_dir);
+    (void)rmdir(jail);
+    mu_assert("sibling mkdir failed", mrc == 0);
+    mu_assert("write_file_600 sibling model failed", wrc == 0);
+    mu_assert("setenv failed", set_rc == 0);
     mu_assert("sibling prefix must be rejected → -EACCES", err == -EACCES);
     return NULL;
+}
+
+/* Symlink @p link_path → @p target inside the jail and validate the link.
+ * Returns the symlink() result; on success @p set_rc / @p err hold the
+ * validate_in_jail() outcome. */
+static int validate_symlink_in_jail(const char *jail, const char *target, const char *link_path,
+                                    int *set_rc, int *err)
+{
+    const int lrc = symlink(target, link_path);
+    if (lrc == 0)
+        *set_rc = validate_in_jail(jail, link_path, err);
+    return lrc;
 }
 
 static char *test_jail_rejects_symlink_escape(void)
@@ -279,19 +306,20 @@ static char *test_jail_rejects_symlink_escape(void)
     mu_assert("mkdtemp failed", mkdtemp(jail) != NULL);
 
     char *outside = write_temp(kAllowedOnnx, sizeof(kAllowedOnnx));
-    mu_assert("write_temp failed", outside != NULL);
-
     char link_path[PATH_MAX];
     (void)snprintf(link_path, sizeof(link_path), "%s/escape.onnx", jail);
-    mu_assert("symlink() failed", symlink(outside, link_path) == 0);
-
-    mu_assert("setenv failed", setenv("VMAF_TINY_MODEL_DIR", jail, 1) == 0);
-    const int err = vmaf_dnn_validate_onnx(link_path, 0);
-    unsetenv("VMAF_TINY_MODEL_DIR");
+    int set_rc = 0;
+    int err = 0;
+    const int lrc = outside ? validate_symlink_in_jail(jail, outside, link_path, &set_rc, &err) : 0;
     (void)remove(link_path);
-    (void)remove(outside);
-    free(outside);
-    rmdir(jail);
+    if (outside) {
+        (void)remove(outside);
+        free(outside);
+    }
+    (void)rmdir(jail);
+    mu_assert("write_temp failed", outside != NULL);
+    mu_assert("symlink() failed", lrc == 0);
+    mu_assert("setenv failed", set_rc == 0);
     mu_assert("symlink escape must be rejected → -EACCES", err == -EACCES);
     return NULL;
 }
@@ -303,12 +331,11 @@ static char *test_jail_rejects_nonexistent_jail(void)
     char *model = write_temp(kAllowedOnnx, sizeof(kAllowedOnnx));
     mu_assert("write_temp failed", model != NULL);
 
-    mu_assert("setenv failed",
-              setenv("VMAF_TINY_MODEL_DIR", "/tmp/vmaf-does-not-exist-zzzyx", 1) == 0);
-    const int err = vmaf_dnn_validate_onnx(model, 0);
-    unsetenv("VMAF_TINY_MODEL_DIR");
+    int err = 0;
+    const int set_rc = validate_in_jail("/tmp/vmaf-does-not-exist-zzzyx", model, &err);
     (void)remove(model);
     free(model);
+    mu_assert("setenv failed", set_rc == 0);
     mu_assert("nonexistent jail dir → -EACCES", err == -EACCES);
     return NULL;
 }
@@ -320,15 +347,16 @@ static char *test_jail_rejects_non_directory(void)
     char *jail_file = write_temp((const unsigned char *)"x", 1u);
     mu_assert("write_temp failed", jail_file != NULL);
     char *model = write_temp(kAllowedOnnx, sizeof(kAllowedOnnx));
-    mu_assert("write_temp failed", model != NULL);
-
-    mu_assert("setenv failed", setenv("VMAF_TINY_MODEL_DIR", jail_file, 1) == 0);
-    const int err = vmaf_dnn_validate_onnx(model, 0);
-    unsetenv("VMAF_TINY_MODEL_DIR");
-    (void)remove(model);
+    int err = 0;
+    const int set_rc = model ? validate_in_jail(jail_file, model, &err) : 0;
+    if (model) {
+        (void)remove(model);
+        free(model);
+    }
     (void)remove(jail_file);
-    free(model);
     free(jail_file);
+    mu_assert("write_temp failed", model != NULL);
+    mu_assert("setenv failed", set_rc == 0);
     mu_assert("jail-is-file → -EACCES", err == -EACCES);
     return NULL;
 }
@@ -345,14 +373,13 @@ static char *test_jail_accepts_trailing_slash(void)
 
     char model_path[PATH_MAX];
     (void)snprintf(model_path, sizeof(model_path), "%s/allowed.onnx", jail);
-    mu_assert("write_file_600 model failed",
-              write_file_600(model_path, kAllowedOnnx, sizeof(kAllowedOnnx)) == 0);
-
-    mu_assert("setenv failed", setenv("VMAF_TINY_MODEL_DIR", jail_with_slash, 1) == 0);
-    const int err = vmaf_dnn_validate_onnx(model_path, 0);
-    unsetenv("VMAF_TINY_MODEL_DIR");
+    const int wrc = write_file_600(model_path, kAllowedOnnx, sizeof(kAllowedOnnx));
+    int err = -1;
+    const int set_rc = (wrc == 0) ? validate_in_jail(jail_with_slash, model_path, &err) : 0;
     (void)remove(model_path);
-    rmdir(jail);
+    (void)rmdir(jail);
+    mu_assert("write_file_600 model failed", wrc == 0);
+    mu_assert("setenv failed", set_rc == 0);
     mu_assert("jail with trailing slash → 0", err == 0);
     return NULL;
 }

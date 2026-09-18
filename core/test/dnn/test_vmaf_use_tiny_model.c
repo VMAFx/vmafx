@@ -210,6 +210,7 @@ static char *test_codec_context_and_resize_reject_bad_args(void)
 
     VmafContext *ctx = alloc_ctx();
     mu_assert("vmaf_init must succeed", ctx != NULL);
+    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) — the test's subject is an out-of-range resize mode (ADR-0141) */
     rc = vmaf_dnn_set_resize_mode(ctx, (VmafDnnResizeMode)99);
     mu_assert("invalid resize mode rejected", rc == -EINVAL);
     rc = vmaf_dnn_set_codec_context(ctx, "libx264", "medium", 23);

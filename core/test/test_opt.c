@@ -57,6 +57,7 @@ static char *test_dispatch_unknown_type(void)
     struct cfg c = {0};
     const VmafOption opt = {
         .name = "x",
+        /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) — the test's subject is an out-of-range option type (ADR-0141) */
         .type = (enum VmafOptionType)9999,
         .offset = offsetof(struct cfg, i),
         .default_val.i = 0,

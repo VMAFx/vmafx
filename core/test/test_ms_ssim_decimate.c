@@ -102,6 +102,41 @@ static char *check_variant(const float *src, int w, int h, const float *dst_scal
     return NULL;
 }
 
+/* Compare every SIMD variant this build and host offer against the scalar
+ * output. Returns the first failure message, or NULL when all agree. */
+static char *check_simd_variants(const float *src, int w, int h, const float *dst_scalar,
+                                 size_t dst_n)
+{
+    char *msg = NULL;
+    /* Unused on hosts with neither an x86 nor an aarch64 SIMD variant. */
+    (void)src;
+    (void)w;
+    (void)h;
+    (void)dst_scalar;
+    (void)dst_n;
+#if ARCH_X86
+    if (g_has_avx2) {
+        msg = check_variant(src, w, h, dst_scalar, dst_n, ms_ssim_decimate_avx2, 0x55,
+                            "avx2 decimate failed", "avx2 output not bit-identical to scalar");
+        if (msg)
+            return msg;
+    }
+#if HAVE_AVX512
+    if (g_has_avx512) {
+        msg = check_variant(src, w, h, dst_scalar, dst_n, ms_ssim_decimate_avx512, 0x33,
+                            "avx512 decimate failed", "avx512 output not bit-identical to scalar");
+        if (msg)
+            return msg;
+    }
+#endif
+#endif
+#if ARCH_AARCH64
+    msg = check_variant(src, w, h, dst_scalar, dst_n, ms_ssim_decimate_neon, 0x66,
+                        "neon decimate failed", "neon output not bit-identical to scalar");
+#endif
+    return msg;
+}
+
 static char *check_case(int w, int h, uint32_t seed)
 {
     const int w_out = (w / 2) + (w & 1);
@@ -121,35 +156,8 @@ static char *check_case(int w, int h, uint32_t seed)
     memset(dst_scalar, 0xAA, dst_n * sizeof(float));
 
     const int rc_scalar = ms_ssim_decimate_scalar(src, w, h, dst_scalar, NULL, NULL);
-    char *msg = NULL;
-    if (rc_scalar != 0) {
-        msg = "scalar decimate failed";
-        goto done;
-    }
-#if ARCH_X86
-    if (g_has_avx2) {
-        msg = check_variant(src, w, h, dst_scalar, dst_n, ms_ssim_decimate_avx2, 0x55,
-                            "avx2 decimate failed", "avx2 output not bit-identical to scalar");
-        if (msg)
-            goto done;
-    }
-#if HAVE_AVX512
-    if (g_has_avx512) {
-        msg = check_variant(src, w, h, dst_scalar, dst_n, ms_ssim_decimate_avx512, 0x33,
-                            "avx512 decimate failed", "avx512 output not bit-identical to scalar");
-        if (msg)
-            goto done;
-    }
-#endif
-#endif
-#if ARCH_AARCH64
-    msg = check_variant(src, w, h, dst_scalar, dst_n, ms_ssim_decimate_neon, 0x66,
-                        "neon decimate failed", "neon output not bit-identical to scalar");
-    if (msg)
-        goto done;
-#endif
-
-done:
+    char *msg = (rc_scalar != 0) ? "scalar decimate failed" :
+                                   check_simd_variants(src, w, h, dst_scalar, dst_n);
     free(src);
     free(dst_scalar);
     return msg;

@@ -340,10 +340,11 @@ int vmaf_read_json_model_collection_from_buffer(VmafModel **model,
  * (*model_collection) were torn down. Under ASan/LSan the same path also
  * proves the heap is clean.
  */
-static char *read_whole_file(const char *path, char **out, long *out_len)
+/* Read all of @p in into a new NUL-terminated buffer. Returns the failure
+ * message, or NULL with *out / *out_len set; the buffer is freed on every
+ * failure path. The caller owns and closes @p in. */
+static char *read_open_file(FILE *in, char **out, long *out_len)
 {
-    FILE *in = fopen(path, "rb");
-    mu_assert("could not open source model json", in != NULL);
     mu_assert("seek end failed", fseek(in, 0L, SEEK_END) == 0);
     long len = ftell(in);
     mu_assert("ftell failed", len > 0);
@@ -351,8 +352,10 @@ static char *read_whole_file(const char *path, char **out, long *out_len)
     char *buf = malloc((size_t)len + 1);
     mu_assert("oom reading model json", buf != NULL);
     size_t got = fread(buf, 1, (size_t)len, in);
-    (void)fclose(in);
-    mu_assert("short read of model json", got == (size_t)len);
+    if (got != (size_t)len) {
+        free(buf);
+        return "short read of model json";
+    }
     /* buf is malloc((size_t)len + 1), so index len is the terminator slot and is
      * in bounds; the analyzer loses that relationship across the fread. The
      * suppression is trailing on purpose: clang-tidy honours a next-line
@@ -362,6 +365,15 @@ static char *read_whole_file(const char *path, char **out, long *out_len)
     *out = buf;
     *out_len = len;
     return NULL;
+}
+
+static char *read_whole_file(const char *path, char **out, long *out_len)
+{
+    FILE *in = fopen(path, "rb");
+    mu_assert("could not open source model json", in != NULL);
+    char *msg = read_open_file(in, out, out_len);
+    (void)fclose(in);
+    return msg;
 }
 
 static char *test_model_collection_partial_failure_no_leak(void)

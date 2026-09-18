@@ -55,8 +55,10 @@ static char *test_backend_handle_name_out_of_range(void)
     mu_assert("sentinel maps to 'unknown'",
               strcmp(vmaf_backend_handle_name(VMAF_BACKEND_HANDLE__COUNT), "unknown") == 0);
     /* Large value is also out of range. */
+    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) — the test's subject is an out-of-range handle (ADR-0141) */
+    const VmafBackendHandle out_of_range = (VmafBackendHandle)9999;
     mu_assert("large value maps to 'unknown'",
-              strcmp(vmaf_backend_handle_name((VmafBackendHandle)9999), "unknown") == 0);
+              strcmp(vmaf_backend_handle_name(out_of_range), "unknown") == 0);
     /* Never returns NULL. */
     mu_assert("return is never NULL", vmaf_backend_handle_name(VMAF_BACKEND_HANDLE_NONE) != NULL);
     return NULL;

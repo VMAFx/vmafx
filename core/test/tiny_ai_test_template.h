@@ -150,6 +150,18 @@ static int vmaf_tiny_ai_test_unsetenv(const char *name)
         (void)vmaf_tiny_ai_test_unsetenv(env_var);                                                   \
                                                                                                      \
         int rc = fex->init(fex, VMAF_PIX_FMT_YUV420P, 8u, 64u, 64u);                                 \
+                                                                                                     \
+        /* close() must be safe after a failed init. Restore the environment and */                  \
+        /* free before asserting, so a failure cannot leak or leave the variable */                  \
+        /* unset for the tests that run after this one. */                                           \
+        (void)fex->close(fex);                                                                       \
+        if (saved_copy) {                                                                            \
+            (void)vmaf_tiny_ai_test_setenv(env_var, saved_copy);                                     \
+            free(saved_copy);                                                                        \
+        }                                                                                            \
+        free(priv);                                                                                  \
+        fex->priv = NULL;                                                                            \
+                                                                                                     \
         mu_assert("init must fail when no model path is provided", rc < 0);                          \
         if (vmaf_dnn_available()) {                                                                  \
             mu_assert("DNN-enabled build must report missing model path as -EINVAL",                 \
@@ -158,16 +170,6 @@ static int vmaf_tiny_ai_test_unsetenv(const char *name)
             mu_assert("DNN-disabled build must report optional runtime as -ENOSYS",                  \
                       rc == -ENOSYS);                                                                \
         }                                                                                            \
-                                                                                                     \
-        /* close() must be safe after a failed init. */                                              \
-        (void)fex->close(fex);                                                                       \
-                                                                                                     \
-        if (saved_copy) {                                                                            \
-            (void)vmaf_tiny_ai_test_setenv(env_var, saved_copy);                                     \
-            free(saved_copy);                                                                        \
-        }                                                                                            \
-        free(priv);                                                                                  \
-        fex->priv = NULL;                                                                            \
         return NULL;                                                                                 \
     }
 
