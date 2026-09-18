@@ -19623,6 +19623,16 @@ at 3.0f per the Netflix training-data contract; no runtime parameterisation is
 planned until a model retrain occurs.
 
 
+- **Integer ADM no longer overflows a 32-bit sum on bright 16-bit input.**
+  Scale 0's vertical wavelet pass added up four weighted 16-bit samples in a
+  signed 32-bit integer, which is undefined behaviour once three neighbouring
+  samples reach about 42,000, as in bright HDR or synthetic content. The
+  scalar, AVX2 and AVX-512 paths now form that sum in 64 bits. Scores do not
+  change: the overflow happened to cancel out on the hardware we test, which
+  is also why only a sanitizer build could see it. Upstream Netflix/vmaf has
+  the same code.
+
+
 - `adm_dwt2_8_neon` now matches the scalar `adm_dwt2_8` bit-for-bit. Two
   divergences had gone undetected because **no unit test covered this kernel on
   any architecture** — the same blind spot that let ADR-1057's dropped filter

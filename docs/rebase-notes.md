@@ -260,6 +260,14 @@ Ported:
 
 Fork-only fix upstream still needs:
 
+- `integer_adm.c` `adm_dwt2_vpass_16()` and the scalar vertical loops of
+  `adm_dwt2_16_avx2()` / `adm_dwt2_16_avx512()`: the 16-bit vertical DWT
+  response is formed by `adm_dwt2_vpass16_tap4()` in `integer_adm.h`, in
+  int64. Upstream sums `filter[k] * s[k]` in `int32_t`, which overflows once
+  three consecutive 16-bit samples reach 42456
+  (T-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18). When a sync touches these
+  loops, keep the helper; `test_integer_adm_dwt16_range` aborts on the
+  sanitizer lane with the upstream form. Scores are identical either way.
 - `integer_adm.c` `dwt2_src_indices_1d()`: the mirrored tail starts at
   `(n_half > 2u) ? n_half - 2u : 1u` and the first loop is bounded with
   `i + 2 < n_half`. Upstream's `n_half - 2` restarts the tail at 0 when

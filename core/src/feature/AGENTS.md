@@ -1697,3 +1697,16 @@ Concretely, when kernel promotes `float` inputs to `double`, do promotion
 **before** arithmetic, not after. `(double)a - (double)b` is exact for two
 floats; `(double)(a - b)` is not, and mixing two between vector body and
 its scalar tail makes result depend on vector width.
+
+## Integer ADM's 16-bit vertical DWT sums in int64
+
+- `adm_dwt2_vpass16_tap4()` (`integer_adm.h`) = only 16-bit vertical DWT
+  response. Scalar `adm_dwt2_vpass_16()`, `adm_dwt2_16_avx2()`,
+  `adm_dwt2_16_avx512()` call it.
+- Low-pass taps 1-3 sum 50582 -> int32 partial sum overflows at 16 bpc once
+  3 samples >= 42456. Upstream form = int32 = UB.
+- Normalised result fits int32 -> int64 form bit-exact with old wrap. Never
+  "optimise" back to int32; outputs match, UB returns.
+- Guard: `test_integer_adm_dwt16_range` (sanitizer lane halts on the UB).
+- 8-bit pass stays int32: 255 * 50582 fits.
+- T-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18.
