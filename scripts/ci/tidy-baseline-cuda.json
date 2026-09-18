@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 47,
-  "total_warnings": 1288,
+  "total_warnings": 1274,
   "total_nolint_uncited": 2,
   "warnings": {
     "core/src/cuda/common.c": 65,
@@ -25,7 +25,6 @@
     "core/src/feature/cuda/integer_adm/adm_csf.cu": 38,
     "core/src/feature/cuda/integer_adm/adm_csf_den.cu": 25,
     "core/src/feature/cuda/integer_adm/adm_decouple_inline.cuh": 20,
-    "core/src/feature/cuda/integer_adm/adm_dwt2.cu": 14,
     "core/src/feature/cuda/integer_adm_cuda.h": 4,
     "core/src/feature/cuda/integer_cambi/cambi_score.cu": 4,
     "core/src/feature/cuda/integer_cambi_cuda.c": 33,
@@ -96,6 +95,22 @@
         }
       },
       "previous_baseline_sha256": "4dc8874155c08f72767d9c4134b6f1c88c7e6413ce526773215614cfcd56b5f2"
+    },
+    {
+      "sources": [
+        "core/src/feature/cuda/integer_adm/adm_dwt2.cu",
+        "core/test/test_gpu_adm_tiny_frames.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/cuda/integer_adm/adm_dwt2.cu": {
+          "warnings": [
+            14,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "507ff2d975e6066f8ae026d597cd7482c2eb7f577e23053278c750c017544ea5"
     }
   ]
 }
