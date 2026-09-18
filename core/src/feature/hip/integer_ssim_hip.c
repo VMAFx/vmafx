@@ -7,34 +7,36 @@
  *
  *  integer_ssim feature extractor on the HIP backend (ADR-0564).
  *
- *  Two-pass 11-tap separable Gaussian SSIM on AMD/HIP, mirroring the CUDA
- *  float_ssim twin (integer_ssim_cuda.c) call-graph-for-call-graph:
+ *  Provides the `"ssim"` feature of the CPU reference `integer_ssim.c`
+ *  (`vmaf_fex_ssim`) and mirrors its CUDA twin `cuda/ssim_cuda.c`
+ *  (`vmaf_fex_integer_ssim_cuda`) call for call. The kernels live in
+ *  `integer_ssim/integer_ssim_score.hip`:
  *
- *    Pass 1 (calculate_integer_ssim_hip_horiz_{8,16}bpc): horizontal
- *      11-tap Gaussian over ref / cmp / ref^2 / cmp^2 / ref*cmp into five
- *      intermediate float buffers, each (W-10) x H.
- *    Pass 2 (calculate_integer_ssim_hip_vert_combine): vertical 11-tap +
- *      per-pixel SSIM combine + per-block float partial sum (warp reduce in
- *      shared memory). Output: one float per block in `partials`.
- *  Host accumulates partials in double, divides by (W-10)*(H-10).
+ *    Pass 1 (integer_ssim_horiz_{8,16}bpc): 9-tap integer Gaussian over each
+ *      row, int64 moments into six W x H int64 planes.
+ *    Pass 2 (integer_ssim_vert_combine): 9-tap over the columns of those
+ *      planes, the per-pixel SSIM term in double, and one (term sum, int64
+ *      weight sum) pair per 16x8 block.
+ *  collect() adds the block pairs and returns sum(term) / sum(weight), the
+ *  `ssim / ssimw` that calc_ssim() returns on the CPU.
  *
- *  HIP adaptations from CUDA:
- *  - hipModuleLoadData / hipModuleGetFunction / hipModuleLaunchKernel
- *    instead of cuModuleLoadData / cuModuleGetFunction / cuLaunchKernel.
- *  - Five intermediate float buffers allocated via hipMalloc (raw device
- *    pointers) instead of VmafCudaBuffer wrappers.
- *  - Pictures arrive as CPU VmafPictures; luma planes are copied HtoD via
- *    hipMemcpy2DAsync on the private readback stream (T7-10b posture).
+ *  HIP adaptations from the CUDA twin:
+ *  - Pictures arrive as host VmafPictures; the two luma planes are staged
+ *    into packed device buffers with hipMemcpy2DAsync on the private stream
+ *    before pass 1 (T7-10b posture, no HIP picture pool yet).
+ *  - hipModuleLoadData / hipModuleGetFunction / hipModuleLaunchKernel stand
+ *    in for the cuModule* / cuLaunchKernel calls; the kernels are extern "C"
+ *    so the lookups by name resolve.
+ *  - Device buffers are raw hipMalloc pointers instead of VmafCudaBuffer.
  *
- *  When enable_hipcc=false (CI without ROCm), HAVE_HIPCC is undefined and
- *  init() returns -ENOSYS, same scaffold contract as other HIP consumers.
+ *  Without enable_hipcc there is no kernel blob to load and init() returns
+ *  -ENOSYS, the scaffold contract every HIP extractor shares.
  */
 
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#define __HIP_PLATFORM_AMD__ 1
 #include <hip/hip_runtime_api.h>
 
 #include "dict.h"
@@ -54,23 +56,19 @@
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
-/* ------------------------------------------------------------------ */
-/* Block geometry constants (must match integer_ssim_score.hip)        */
-/* ------------------------------------------------------------------ */
-
+/* Launch geometry; must match ISSIM_BLOCK_X / ISSIM_BLOCK_Y in
+ * integer_ssim_score.hip, whose block reduction is sized for it. */
 #define ISSIM_HIP_BLOCK_X 16u
 #define ISSIM_HIP_BLOCK_Y 8u
-#define ISSIM_HIP_K 11u
 
-/* ------------------------------------------------------------------ */
-/* HIP-to-errno translation                                            */
-/* ------------------------------------------------------------------ */
+/* Pass-1 output planes, in kernel argument order: mux, muy, x2, xy, y2, w. */
+#define ISSIM_HIP_MOMENTS 6u
 
 static int issim_hip_rc(hipError_t rc)
 {
-    if (rc == hipSuccess)
-        return 0;
     switch (rc) {
+    case hipSuccess:
+        return 0;
     case hipErrorInvalidValue:
     case hipErrorInvalidHandle:
         return -EINVAL;
@@ -86,49 +84,34 @@ static int issim_hip_rc(hipError_t rc)
     }
 }
 
-/* ------------------------------------------------------------------ */
-/* Private state                                                       */
-/* ------------------------------------------------------------------ */
-
 typedef struct IssimStateHip {
     VmafHipKernelLifecycle lc;
-    /* Per-block float partials: device + pinned host. */
-    VmafHipKernelReadback rb;
+    /* One double term sum and one int64 weight sum per block. */
+    VmafHipKernelReadback rb_ssim;
+    VmafHipKernelReadback rb_wgt;
     VmafHipContext *ctx;
 
-    /* Five intermediate float device buffers for horizontal moment pass.
-     * Sized (w_horiz * h_horiz * sizeof(float)) each. */
-    void *d_ref_mu;
-    void *d_cmp_mu;
-    void *d_ref_sq;
-    void *d_cmp_sq;
-    void *d_refcmp;
+    /* Pass-1 planes, width * height int64_t each. */
+    void *d_moment[ISSIM_HIP_MOMENTS];
 
-    /* Staging buffers: CPU luma planes -> device (HtoD). One per
-     * ref/cmp (luma-only). Sized width * height * bpp. */
+    /* Packed luma staging, width * bytes-per-sample per row. */
     void *ref_in;
     void *cmp_in;
 
-    /* HIP module + per-bpc horiz kernel + vert-combine kernel handles. */
     hipModule_t module;
     hipFunction_t func_horiz_8;
     hipFunction_t func_horiz_16;
     hipFunction_t func_vert;
 
-    unsigned partials_capacity;
-    unsigned partials_count;
-
     unsigned width;
     unsigned height;
-    unsigned w_horiz; /* width - (ISSIM_HIP_K - 1) — horiz output stride */
-    unsigned h_horiz; /* height — horiz output height */
-    unsigned w_final; /* width - (ISSIM_HIP_K - 1) — vert output width */
-    unsigned h_final; /* height - (ISSIM_HIP_K - 1) — vert output height */
     unsigned bpc;
-    float c1;
-    float c2;
+    unsigned grid_x;
+    unsigned grid_y;
+    unsigned block_count;
+    /* (1 << bpc) - 1, the CPU's `samplemax`, as the kernel's double. */
+    double samplemax;
 
-    unsigned index;
     VmafDictionary *feature_name_dict;
 } IssimStateHip;
 
@@ -136,369 +119,132 @@ static const VmafOption options[] = {
     {0},
 };
 
-/* ------------------------------------------------------------------ */
-/* Dimension initialisation helper                                     */
-/* ------------------------------------------------------------------ */
+static size_t issim_hip_bytes_per_sample(unsigned bpc)
+{
+    return (bpc <= 8u) ? 1u : 2u;
+}
+
+/* kernel_template.h carries the HIP handles as uintptr_t so that it stays
+ * free of <hip/hip_runtime_api.h> (ADR-0241). Read the stored bits back as
+ * the handle type through a union rather than cast an integer to a
+ * pointer. */
+typedef union IssimHipHandle {
+    uintptr_t bits;
+    hipStream_t stream;
+    hipEvent_t event;
+} IssimHipHandle;
+
+static hipStream_t issim_hip_stream(const VmafHipKernelLifecycle *lc)
+{
+    const IssimHipHandle h = {.bits = lc->str};
+    return h.stream;
+}
+
+static hipEvent_t issim_hip_submit_event(const VmafHipKernelLifecycle *lc)
+{
+    const IssimHipHandle h = {.bits = lc->submit};
+    return h.event;
+}
 
 static void issim_hip_init_dims(IssimStateHip *s, unsigned w, unsigned h, unsigned bpc)
 {
     s->width = w;
     s->height = h;
     s->bpc = bpc;
-    s->w_horiz = w - (ISSIM_HIP_K - 1u);
-    s->h_horiz = h;
-    s->w_final = w - (ISSIM_HIP_K - 1u);
-    s->h_final = h - (ISSIM_HIP_K - 1u);
-
-    /* SSIM stability constants: L = 255.0, K1 = 0.01, K2 = 0.03.
-     * Pinned at 8-bpc scale (L=255) for cross-backend numeric parity. */
-    const float L = 255.0f;
-    const float K1 = 0.01f;
-    const float K2 = 0.03f;
-    s->c1 = (K1 * L) * (K1 * L);
-    s->c2 = (K2 * L) * (K2 * L);
-
-    const unsigned grid_x = (s->w_final + ISSIM_HIP_BLOCK_X - 1u) / ISSIM_HIP_BLOCK_X;
-    const unsigned grid_y = (s->h_final + ISSIM_HIP_BLOCK_Y - 1u) / ISSIM_HIP_BLOCK_Y;
-    s->partials_capacity = grid_x * grid_y;
+    s->grid_x = (w + ISSIM_HIP_BLOCK_X - 1u) / ISSIM_HIP_BLOCK_X;
+    s->grid_y = (h + ISSIM_HIP_BLOCK_Y - 1u) / ISSIM_HIP_BLOCK_Y;
+    s->block_count = s->grid_x * s->grid_y;
+    s->samplemax = (double)((1u << bpc) - 1u);
 }
 
-/* ------------------------------------------------------------------ */
-/* HAVE_HIPCC helpers                                                  */
-/* ------------------------------------------------------------------ */
-
+/* Load the kernel blob and resolve the three kernels by their extern "C"
+ * names. */
+static int issim_hip_module_load(IssimStateHip *s, const char *fex_name)
+{
 #ifdef HAVE_HIPCC
-
-/*
- * Load the HSACO fat binary; resolve the three kernel function handles.
- * Kernel names must match the __global__ symbols in integer_ssim_score.hip
- * (all prefixed with "calculate_integer_ssim_hip_").
- */
-static int issim_hip_module_load(IssimStateHip *s)
-{
-    hipError_t hip_rc = hipModuleLoadData(&s->module, integer_ssim_score_hsaco);
-    if (hip_rc != hipSuccess)
-        return issim_hip_rc(hip_rc);
-
-    /* Bug 1 fix: names must match the calculate_ prefix used in the HSACO. */
-    hip_rc =
-        hipModuleGetFunction(&s->func_horiz_8, s->module, "calculate_integer_ssim_hip_horiz_8bpc");
-    if (hip_rc != hipSuccess) {
+    (void)fex_name;
+    hipError_t rc = hipModuleLoadData(&s->module, integer_ssim_score_hsaco);
+    if (rc != hipSuccess)
+        return issim_hip_rc(rc);
+    rc = hipModuleGetFunction(&s->func_horiz_8, s->module, "integer_ssim_horiz_8bpc");
+    if (rc == hipSuccess)
+        rc = hipModuleGetFunction(&s->func_horiz_16, s->module, "integer_ssim_horiz_16bpc");
+    if (rc == hipSuccess)
+        rc = hipModuleGetFunction(&s->func_vert, s->module, "integer_ssim_vert_combine");
+    if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
         s->module = NULL;
-        return issim_hip_rc(hip_rc);
     }
-    hip_rc = hipModuleGetFunction(&s->func_horiz_16, s->module,
-                                  "calculate_integer_ssim_hip_horiz_16bpc");
-    if (hip_rc != hipSuccess) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-        return issim_hip_rc(hip_rc);
-    }
-    hip_rc =
-        hipModuleGetFunction(&s->func_vert, s->module, "calculate_integer_ssim_hip_vert_combine");
-    if (hip_rc != hipSuccess) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-        return issim_hip_rc(hip_rc);
-    }
-    return 0;
-}
-
-/*
- * Allocate five intermediate float device buffers (horiz pass output) +
- * two luma staging buffers.
- *
- * Bug 2 fix: buffers are float (sizeof(float)), sized over w_horiz*h_horiz,
- * not int64_t over full width*height.
- */
-static int issim_hip_bufs_alloc(IssimStateHip *s)
-{
-    const size_t horiz_bytes = (size_t)s->w_horiz * s->h_horiz * sizeof(float);
-    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-    const size_t stage_bytes = (size_t)s->width * s->height * bpp;
-
-    hipError_t hip_rc;
-    hip_rc = hipMalloc(&s->d_ref_mu, horiz_bytes);
-    if (hip_rc != hipSuccess)
-        return issim_hip_rc(hip_rc);
-    hip_rc = hipMalloc(&s->d_cmp_mu, horiz_bytes);
-    if (hip_rc != hipSuccess) {
-        (void)hipFree(s->d_ref_mu);
-        s->d_ref_mu = NULL;
-        return issim_hip_rc(hip_rc);
-    }
-    hip_rc = hipMalloc(&s->d_ref_sq, horiz_bytes);
-    if (hip_rc != hipSuccess) {
-        (void)hipFree(s->d_cmp_mu);
-        s->d_cmp_mu = NULL;
-        (void)hipFree(s->d_ref_mu);
-        s->d_ref_mu = NULL;
-        return issim_hip_rc(hip_rc);
-    }
-    hip_rc = hipMalloc(&s->d_cmp_sq, horiz_bytes);
-    if (hip_rc != hipSuccess) {
-        (void)hipFree(s->d_ref_sq);
-        s->d_ref_sq = NULL;
-        (void)hipFree(s->d_cmp_mu);
-        s->d_cmp_mu = NULL;
-        (void)hipFree(s->d_ref_mu);
-        s->d_ref_mu = NULL;
-        return issim_hip_rc(hip_rc);
-    }
-    hip_rc = hipMalloc(&s->d_refcmp, horiz_bytes);
-    if (hip_rc != hipSuccess) {
-        (void)hipFree(s->d_cmp_sq);
-        s->d_cmp_sq = NULL;
-        (void)hipFree(s->d_ref_sq);
-        s->d_ref_sq = NULL;
-        (void)hipFree(s->d_cmp_mu);
-        s->d_cmp_mu = NULL;
-        (void)hipFree(s->d_ref_mu);
-        s->d_ref_mu = NULL;
-        return issim_hip_rc(hip_rc);
-    }
-    hip_rc = hipMalloc(&s->ref_in, stage_bytes);
-    if (hip_rc != hipSuccess) {
-        (void)hipFree(s->d_refcmp);
-        s->d_refcmp = NULL;
-        (void)hipFree(s->d_cmp_sq);
-        s->d_cmp_sq = NULL;
-        (void)hipFree(s->d_ref_sq);
-        s->d_ref_sq = NULL;
-        (void)hipFree(s->d_cmp_mu);
-        s->d_cmp_mu = NULL;
-        (void)hipFree(s->d_ref_mu);
-        s->d_ref_mu = NULL;
-        return issim_hip_rc(hip_rc);
-    }
-    hip_rc = hipMalloc(&s->cmp_in, stage_bytes);
-    if (hip_rc != hipSuccess) {
-        (void)hipFree(s->ref_in);
-        s->ref_in = NULL;
-        (void)hipFree(s->d_refcmp);
-        s->d_refcmp = NULL;
-        (void)hipFree(s->d_cmp_sq);
-        s->d_cmp_sq = NULL;
-        (void)hipFree(s->d_ref_sq);
-        s->d_ref_sq = NULL;
-        (void)hipFree(s->d_cmp_mu);
-        s->d_cmp_mu = NULL;
-        (void)hipFree(s->d_ref_mu);
-        s->d_ref_mu = NULL;
-        return issim_hip_rc(hip_rc);
-    }
-    return 0;
-}
-
-/* Free all seven device buffers. Safe to call with NULL pointers. */
-static void issim_hip_bufs_free(IssimStateHip *s)
-{
-    if (s->cmp_in != NULL) {
-        (void)hipFree(s->cmp_in);
-        s->cmp_in = NULL;
-    }
-    if (s->ref_in != NULL) {
-        (void)hipFree(s->ref_in);
-        s->ref_in = NULL;
-    }
-    if (s->d_refcmp != NULL) {
-        (void)hipFree(s->d_refcmp);
-        s->d_refcmp = NULL;
-    }
-    if (s->d_cmp_sq != NULL) {
-        (void)hipFree(s->d_cmp_sq);
-        s->d_cmp_sq = NULL;
-    }
-    if (s->d_ref_sq != NULL) {
-        (void)hipFree(s->d_ref_sq);
-        s->d_ref_sq = NULL;
-    }
-    if (s->d_cmp_mu != NULL) {
-        (void)hipFree(s->d_cmp_mu);
-        s->d_cmp_mu = NULL;
-    }
-    if (s->d_ref_mu != NULL) {
-        (void)hipFree(s->d_ref_mu);
-        s->d_ref_mu = NULL;
-    }
-}
-
-/*
- * Pass 1 — horizontal 11-tap Gaussian kernel launch.
- *
- * Bug 3 fix: grid is sized over w_horiz x h_horiz (not full width x height),
- * and the horiz kernel receives the actual input width as the OOB guard. The
- * kernel's x-guard is `x >= w_horiz` which prevents reading past the row end
- * (the kernel accesses ref[y*stride + x + u] for u in [0,11); x is bounded
- * to w_horiz-1 = width-11, so max read is x+10 = width-1 — exactly in bounds).
- */
-static int issim_hip_launch_horiz(IssimStateHip *s, hipStream_t str)
-{
-    const unsigned grid_horiz_x = (s->w_horiz + ISSIM_HIP_BLOCK_X - 1u) / ISSIM_HIP_BLOCK_X;
-    const unsigned grid_horiz_y = (s->h_horiz + ISSIM_HIP_BLOCK_Y - 1u) / ISSIM_HIP_BLOCK_Y;
-
-    const ptrdiff_t ref_stride = (ptrdiff_t)(s->width * ((s->bpc <= 8u) ? 1u : 2u));
-    hipError_t hip_rc;
-    if (s->bpc == 8u) {
-        void *args[] = {
-            &s->ref_in,   (void *)&ref_stride, &s->cmp_in,   (void *)&ref_stride,
-            &s->d_ref_mu, &s->d_cmp_mu,        &s->d_ref_sq, &s->d_cmp_sq,
-            &s->d_refcmp, &s->w_horiz,         &s->h_horiz,
-        };
-        hip_rc =
-            hipModuleLaunchKernel(s->func_horiz_8, grid_horiz_x, grid_horiz_y, 1u,
-                                  ISSIM_HIP_BLOCK_X, ISSIM_HIP_BLOCK_Y, 1u, 0, str, args, NULL);
-    } else {
-        void *args[] = {
-            &s->ref_in,   (void *)&ref_stride, &s->cmp_in,   (void *)&ref_stride,
-            &s->d_ref_mu, &s->d_cmp_mu,        &s->d_ref_sq, &s->d_cmp_sq,
-            &s->d_refcmp, &s->w_horiz,         &s->h_horiz,  &s->bpc,
-        };
-        hip_rc =
-            hipModuleLaunchKernel(s->func_horiz_16, grid_horiz_x, grid_horiz_y, 1u,
-                                  ISSIM_HIP_BLOCK_X, ISSIM_HIP_BLOCK_Y, 1u, 0, str, args, NULL);
-    }
-    return issim_hip_rc(hip_rc);
-}
-
-/*
- * Pass 2 — vertical 11-tap + SSIM combine + per-block partial sum,
- * followed by DtoH readback and finished-event record.
- * Grid sized over w_final x h_final. Block 16x8.
- *
- * Bug 2 fix: args are the five float intermediate buffers + rb.device
- * (float partials), then dimension/constant params — matching the kernel
- * signature in integer_ssim_score.hip exactly.
- */
-static int issim_hip_launch_vert_readback(IssimStateHip *s, hipStream_t str)
-{
-    const unsigned grid_x = (s->w_final + ISSIM_HIP_BLOCK_X - 1u) / ISSIM_HIP_BLOCK_X;
-    const unsigned grid_y = (s->h_final + ISSIM_HIP_BLOCK_Y - 1u) / ISSIM_HIP_BLOCK_Y;
-
-    void *args2[] = {
-        &s->d_ref_mu, &s->d_cmp_mu, &s->d_ref_sq, &s->d_cmp_sq, &s->d_refcmp, &s->rb.device,
-        &s->w_horiz,  &s->w_final,  &s->h_final,  &s->c1,       &s->c2,
-    };
-    hipError_t hip_rc = hipModuleLaunchKernel(s->func_vert, grid_x, grid_y, 1u, ISSIM_HIP_BLOCK_X,
-                                              ISSIM_HIP_BLOCK_Y, 1u, 0, str, args2, NULL);
-    if (hip_rc != hipSuccess)
-        return issim_hip_rc(hip_rc);
-
-    hip_rc = hipEventRecord((hipEvent_t)s->lc.submit, str);
-    if (hip_rc != hipSuccess)
-        return issim_hip_rc(hip_rc);
-
-    const size_t copy_bytes = (size_t)s->partials_count * sizeof(float);
-    hip_rc =
-        hipMemcpyAsync(s->rb.host_pinned, s->rb.device, copy_bytes, hipMemcpyDeviceToHost, str);
-    if (hip_rc != hipSuccess)
-        return issim_hip_rc(hip_rc);
-
-    return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
-}
-
-#endif /* HAVE_HIPCC */
-
-/* ------------------------------------------------------------------ */
-/* init / close                                                        */
-/* ------------------------------------------------------------------ */
-
-static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                        unsigned w, unsigned h)
-{
-    (void)pix_fmt;
-    IssimStateHip *s = fex->priv;
-
-    if (w < ISSIM_HIP_K || h < ISSIM_HIP_K) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "integer_ssim_hip: input %ux%u smaller than 11x11 Gaussian footprint.\n", w, h);
-        return -EINVAL;
-    }
-
-    /* Bug 3 + 5 fix: populate w_horiz/h_horiz/w_final/h_final before
-     * allocating readback buffer so partials_capacity is computed correctly
-     * from w_final*h_final grid, not the full w*h grid. */
-    issim_hip_init_dims(s, w, h, bpc);
-
-    int err = vmaf_hip_context_new(&s->ctx, 0);
-    if (err != 0)
-        return err;
-
-    err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err != 0)
-        goto fail_after_ctx;
-
-    /* Bug 4 + 5 fix: single float-partial readback slot sized for
-     * partials_capacity blocks (from w_final/h_final grid). No rb_wgt. */
-    err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx,
-                                         (size_t)s->partials_capacity * sizeof(float));
-    if (err != 0)
-        goto fail_after_lc;
-
-#ifdef HAVE_HIPCC
-    err = issim_hip_module_load(s);
-    if (err != 0)
-        goto fail_after_rb;
-    err = issim_hip_bufs_alloc(s);
-    if (err != 0)
-        goto fail_after_module;
+    return issim_hip_rc(rc);
 #else
+    (void)s;
     vmaf_log(VMAF_LOG_LEVEL_ERROR,
              "feature '%s' requires HIP device kernels compiled with -Denable_hipcc=true\n",
-             fex->name);
-    err = -ENOSYS;
-    if (err != 0)
-        goto fail_after_rb;
+             fex_name);
+    return -ENOSYS;
 #endif
+}
 
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) {
-        err = -ENOMEM;
-#ifdef HAVE_HIPCC
-        issim_hip_bufs_free(s);
-        goto fail_after_module;
-#else
-        goto fail_after_rb;
-#endif
+/* Release every device buffer. Safe on a partially allocated state. */
+static int issim_hip_bufs_free(IssimStateHip *s)
+{
+    void **bufs[ISSIM_HIP_MOMENTS + 2u];
+    for (unsigned i = 0u; i < ISSIM_HIP_MOMENTS; i++)
+        bufs[i] = &s->d_moment[i];
+    bufs[ISSIM_HIP_MOMENTS] = &s->ref_in;
+    bufs[ISSIM_HIP_MOMENTS + 1u] = &s->cmp_in;
+
+    int err = 0;
+    for (unsigned i = 0u; i < ISSIM_HIP_MOMENTS + 2u; i++) {
+        if (*bufs[i] == NULL)
+            continue;
+        const int e = issim_hip_rc(hipFree(*bufs[i]));
+        *bufs[i] = NULL;
+        if (err == 0)
+            err = e;
     }
-    return 0;
-
-#ifdef HAVE_HIPCC
-fail_after_module:
-    (void)hipModuleUnload(s->module);
-    s->module = NULL;
-#endif
-fail_after_rb:
-    (void)vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
-fail_after_lc:
-    (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_after_ctx:
-    vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
     return err;
 }
 
-static int close_fex_hip(VmafFeatureExtractor *fex)
+static int issim_hip_bufs_alloc(IssimStateHip *s)
 {
-    IssimStateHip *s = fex->priv;
-    int rc = 0;
+    const size_t plane_bytes = (size_t)s->width * s->height * sizeof(int64_t);
+    const size_t stage_bytes = (size_t)s->width * s->height * issim_hip_bytes_per_sample(s->bpc);
 
-#ifdef HAVE_HIPCC
-    issim_hip_bufs_free(s);
+    hipError_t rc = hipSuccess;
+    for (unsigned i = 0u; i < ISSIM_HIP_MOMENTS && rc == hipSuccess; i++)
+        rc = hipMalloc(&s->d_moment[i], plane_bytes);
+    if (rc == hipSuccess)
+        rc = hipMalloc(&s->ref_in, stage_bytes);
+    if (rc == hipSuccess)
+        rc = hipMalloc(&s->cmp_in, stage_bytes);
+    if (rc != hipSuccess) {
+        (void)issim_hip_bufs_free(s);
+        return issim_hip_rc(rc);
+    }
+    return 0;
+}
+
+/* Tear down everything init() may have set up, in reverse order. Every step
+ * tolerates a handle that was never created, so this serves both a failed
+ * init() and close(). Returns the first error. */
+static int issim_hip_release(IssimStateHip *s)
+{
+    /* Drains the private stream first, so no kernel still uses a buffer. */
+    int rc = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
+    int e = issim_hip_bufs_free(s);
+    if (rc == 0)
+        rc = e;
     if (s->module != NULL) {
-        int e = issim_hip_rc(hipModuleUnload(s->module));
+        e = issim_hip_rc(hipModuleUnload(s->module));
         s->module = NULL;
         if (rc == 0)
             rc = e;
     }
-#endif /* HAVE_HIPCC */
-
-    int e = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
+    e = vmaf_hip_kernel_readback_free(&s->rb_wgt, s->ctx);
     if (rc == 0)
         rc = e;
-    e = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
+    e = vmaf_hip_kernel_readback_free(&s->rb_ssim, s->ctx);
     if (rc == 0)
         rc = e;
     if (s->feature_name_dict != NULL) {
@@ -506,105 +252,178 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
         if (rc == 0)
             rc = e;
     }
-    if (s->ctx != NULL) {
-        vmaf_hip_context_destroy(s->ctx);
-        s->ctx = NULL;
-    }
+    vmaf_hip_context_destroy(s->ctx);
+    s->ctx = NULL;
     return rc;
 }
 
-/* ------------------------------------------------------------------ */
-/* submit / collect                                                    */
-/* ------------------------------------------------------------------ */
+static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                        unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    IssimStateHip *s = fex->priv;
+
+    /* Any size works: near the border the window is truncated, as on the
+     * CPU. Only an empty frame has no pixel to average over. */
+    if (w == 0u || h == 0u) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "integer_ssim_hip: empty input %ux%u\n", w, h);
+        return -EINVAL;
+    }
+    issim_hip_init_dims(s, w, h, bpc);
+
+    int err = vmaf_hip_context_new(&s->ctx, 0);
+    if (err == 0)
+        err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
+    if (err == 0)
+        err = issim_hip_module_load(s, fex->name);
+    if (err == 0) {
+        err = vmaf_hip_kernel_readback_alloc(&s->rb_ssim, s->ctx,
+                                             (size_t)s->block_count * sizeof(double));
+    }
+    if (err == 0) {
+        err = vmaf_hip_kernel_readback_alloc(&s->rb_wgt, s->ctx,
+                                             (size_t)s->block_count * sizeof(int64_t));
+    }
+    if (err == 0)
+        err = issim_hip_bufs_alloc(s);
+    if (err == 0) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (s->feature_name_dict == NULL)
+            err = -ENOMEM;
+    }
+    if (err != 0)
+        (void)issim_hip_release(s);
+    return err;
+}
+
+static int close_fex_hip(VmafFeatureExtractor *fex)
+{
+    return issim_hip_release(fex->priv);
+}
+
+/* Pass 1. The staged planes are packed, so one row is `width` samples. */
+static int issim_hip_launch_horiz(IssimStateHip *s, hipStream_t str)
+{
+    ptrdiff_t stride = (ptrdiff_t)s->width * (ptrdiff_t)issim_hip_bytes_per_sample(s->bpc);
+    void *args[] = {
+        (void *)&s->ref_in,      (void *)&stride,         (void *)&s->cmp_in,
+        (void *)&stride,         (void *)&s->d_moment[0], (void *)&s->d_moment[1],
+        (void *)&s->d_moment[2], (void *)&s->d_moment[3], (void *)&s->d_moment[4],
+        (void *)&s->d_moment[5], (void *)&s->width,       (void *)&s->height,
+    };
+    hipFunction_t fn = (s->bpc <= 8u) ? s->func_horiz_8 : s->func_horiz_16;
+    return issim_hip_rc(hipModuleLaunchKernel(fn, s->grid_x, s->grid_y, 1u, ISSIM_HIP_BLOCK_X,
+                                              ISSIM_HIP_BLOCK_Y, 1u, 0u, str, args, NULL));
+}
+
+/* Pass 2. Implicitly ordered after pass 1: both run on `str`. */
+static int issim_hip_launch_vert(IssimStateHip *s, hipStream_t str)
+{
+    void *args[] = {
+        (void *)&s->d_moment[0],    (void *)&s->d_moment[1],   (void *)&s->d_moment[2],
+        (void *)&s->d_moment[3],    (void *)&s->d_moment[4],   (void *)&s->d_moment[5],
+        (void *)&s->rb_ssim.device, (void *)&s->rb_wgt.device, (void *)&s->width,
+        (void *)&s->height,         (void *)&s->samplemax,
+    };
+    return issim_hip_rc(hipModuleLaunchKernel(s->func_vert, s->grid_x, s->grid_y, 1u,
+                                              ISSIM_HIP_BLOCK_X, ISSIM_HIP_BLOCK_Y, 1u, 0u, str,
+                                              args, NULL));
+}
+
+/* Copy both per-block partial arrays back and record the `finished` event
+ * that collect() waits on. */
+static int issim_hip_readback(IssimStateHip *s, hipStream_t str)
+{
+    hipError_t rc = hipEventRecord(issim_hip_submit_event(&s->lc), str);
+    if (rc == hipSuccess) {
+        rc = hipMemcpyAsync(s->rb_ssim.host_pinned, s->rb_ssim.device,
+                            (size_t)s->block_count * sizeof(double), hipMemcpyDeviceToHost, str);
+    }
+    if (rc == hipSuccess) {
+        rc = hipMemcpyAsync(s->rb_wgt.host_pinned, s->rb_wgt.device,
+                            (size_t)s->block_count * sizeof(int64_t), hipMemcpyDeviceToHost, str);
+    }
+    if (rc != hipSuccess)
+        return issim_hip_rc(rc);
+    return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
+}
+
+/* Stage both host luma planes into the packed device buffers, and wait for
+ * the copies before returning.
+ *
+ * The wait is load-bearing. The pictures are pageable host memory that the
+ * caller may recycle as soon as submit() returns: the CLI's picture pool
+ * refills a slot with the next frame right away. hipMemcpy2DAsync from
+ * pageable memory can still be reading the source after it returns, and
+ * without the wait some frames were scored against a mix of their own and
+ * the next frame's samples (off by up to 0.2 on the Netflix 576x324 pair,
+ * a different set of frames on every run). Only the two copies are waited
+ * for: collect() of the previous frame already drained the stream. */
+static int issim_hip_upload(IssimStateHip *s, const VmafPicture *ref_pic,
+                            const VmafPicture *dist_pic, hipStream_t str)
+{
+    const size_t row_bytes = (size_t)s->width * issim_hip_bytes_per_sample(s->bpc);
+    hipError_t rc =
+        hipMemcpy2DAsync(s->ref_in, row_bytes, ref_pic->data[0], (size_t)ref_pic->stride[0],
+                         row_bytes, s->height, hipMemcpyHostToDevice, str);
+    if (rc == hipSuccess) {
+        rc = hipMemcpy2DAsync(s->cmp_in, row_bytes, dist_pic->data[0], (size_t)dist_pic->stride[0],
+                              row_bytes, s->height, hipMemcpyHostToDevice, str);
+    }
+    if (rc == hipSuccess)
+        rc = hipStreamSynchronize(str);
+    return issim_hip_rc(rc);
+}
 
 static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
-
-#ifndef HAVE_HIPCC
-    (void)fex;
-    (void)ref_pic;
-    (void)dist_pic;
     (void)index;
-    vmaf_log(VMAF_LOG_LEVEL_ERROR,
-             "feature '%s' requires HIP device kernels compiled with -Denable_hipcc=true\n",
-             fex->name);
-    return -ENOSYS;
-#else
     IssimStateHip *s = fex->priv;
-    s->index = index;
+    hipStream_t str = issim_hip_stream(&s->lc);
 
-    const unsigned grid_x = (s->w_final + ISSIM_HIP_BLOCK_X - 1u) / ISSIM_HIP_BLOCK_X;
-    const unsigned grid_y = (s->h_final + ISSIM_HIP_BLOCK_Y - 1u) / ISSIM_HIP_BLOCK_Y;
-    s->partials_count = grid_x * grid_y;
-
-    const hipStream_t str = (hipStream_t)s->lc.str;
-    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-    const ptrdiff_t row_w = (ptrdiff_t)(s->width * bpp);
-
-    hipError_t hip_rc =
-        hipMemcpy2DAsync(s->ref_in, (size_t)row_w, ref_pic->data[0], (size_t)ref_pic->stride[0],
-                         (size_t)row_w, (size_t)s->height, hipMemcpyHostToDevice, str);
-    if (hip_rc != hipSuccess)
-        return issim_hip_rc(hip_rc);
-
-    hip_rc =
-        hipMemcpy2DAsync(s->cmp_in, (size_t)row_w, dist_pic->data[0], (size_t)dist_pic->stride[0],
-                         (size_t)row_w, (size_t)s->height, hipMemcpyHostToDevice, str);
-    if (hip_rc != hipSuccess)
-        return issim_hip_rc(hip_rc);
-
-    int err = issim_hip_launch_horiz(s, str);
-    if (err != 0)
-        return err;
-
-    return issim_hip_launch_vert_readback(s, str);
-#endif /* HAVE_HIPCC */
+    int err = issim_hip_upload(s, ref_pic, dist_pic, str);
+    if (err == 0)
+        err = issim_hip_launch_horiz(s, str);
+    if (err == 0)
+        err = issim_hip_launch_vert(s, str);
+    if (err == 0)
+        err = issim_hip_readback(s, str);
+    return err;
 }
 
 static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                            VmafFeatureCollector *feature_collector)
 {
-#ifndef HAVE_HIPCC
-    (void)fex;
-    (void)index;
-    (void)feature_collector;
-    vmaf_log(VMAF_LOG_LEVEL_ERROR,
-             "feature '%s' requires HIP device kernels compiled with -Denable_hipcc=true\n",
-             fex->name);
-    return -ENOSYS;
-#else
     IssimStateHip *s = fex->priv;
 
-    int err = vmaf_hip_kernel_collect_wait(&s->lc, s->ctx);
+    const int err = vmaf_hip_kernel_collect_wait(&s->lc, s->ctx);
     if (err != 0)
         return err;
 
-    /* Bug 4 fix: accumulate float partials in double, divide by effective
-     * pixel count (W-10)*(H-10). No rb_wgt buffer or total_wgt needed —
-     * mirrors the CUDA twin's collect_fex_cuda exactly. */
-    const float *partials = (const float *)s->rb.host_pinned;
-    double total = 0.0;
-    for (unsigned i = 0; i < s->partials_count; i++)
-        total += (double)partials[i];
-    const double n_pixels = (double)s->w_final * (double)s->h_final;
-    const double score = total / n_pixels;
+    const double *term_partials = s->rb_ssim.host_pinned;
+    const int64_t *weight_partials = s->rb_wgt.host_pinned;
+    double total_term = 0.0;
+    int64_t total_weight = 0;
+    for (unsigned i = 0u; i < s->block_count; i++) {
+        total_term += term_partials[i];
+        total_weight += weight_partials[i];
+    }
+    if (total_weight == 0)
+        return -EINVAL;
 
     return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, "ssim",
-                                                   score, index);
-#endif /* HAVE_HIPCC */
+                                                   total_term / (double)total_weight, index);
 }
-
-/* ------------------------------------------------------------------ */
-/* Registration                                                        */
-/* ------------------------------------------------------------------ */
 
 static const char *provided_features[] = {"ssim", NULL};
 
-/* Real integer_ssim HIP extractor (ADR-0564). Load-bearing: declared
- * via extern in feature_extractor.c. */
+/* integer_ssim on HIP (ADR-0564): the 9-tap int64 algorithm of the CPU
+ * `ssim` extractor, flagged for model-driven dispatch under --backend hip.
+ * Declared via extern in feature_extractor.cpp. */
 // NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_ssim_hip = {
     .name = "integer_ssim_hip",
@@ -615,11 +434,7 @@ VmafFeatureExtractor vmaf_fex_integer_ssim_hip = {
     .options = options,
     .priv_size = sizeof(IssimStateHip),
     .provided_features = provided_features,
-    /* Flags cleared (.flags = 0): integer_ssim_score.hip currently uses
-     * the 11-tap float Gaussian rather than the bit-exact 9-tap int64
-     * kernel from integer_ssim_score.cu. Model falls back to CPU to ensure
-     * numerical ground truth per ADR-0564. Deferred to follow-up. */
-    .flags = 0,
+    .flags = VMAF_FEATURE_EXTRACTOR_HIP,
     .chars =
         {
             .n_dispatches_per_frame = 2,

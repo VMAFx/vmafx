@@ -3617,12 +3617,11 @@ test_hip_ssim_parity = executable('test_hip_ssim_parity',
     dependencies: [pthread_dependency, hip_deps, math_lib],
     c_args: ['-DHAVE_HIP=1']
 )
-# Deferred per ADR-1154 (T-GAP-HIP-INTEGER-SSIM-FLOAT-KERNEL-DEFERRED-2026-09-02):
-# integer_ssim_score.hip implements the 11-tap float Gaussian instead of the 9-tap int64 kernel,
-# causing 4.5e-3 divergence vs CPU ground truth. Preserved CPU fallback per ADR-0564 until int64 kernel lands.
+# ADR-0564: integer_ssim_score.hip now runs the CPU's 9-tap int64 kernel, so the
+# parity gate is expected to pass (it was should_fail while the kernel was an
+# 11-tap float Gaussian, 4.5e-3 off the CPU).
 test('test_hip_ssim_parity', test_hip_ssim_parity,
     suite : ['fast', 'gpu'],
-    should_fail : true,
     timeout : 60)
 
 test_hip_ms_ssim_parity = executable('test_hip_ms_ssim_parity',

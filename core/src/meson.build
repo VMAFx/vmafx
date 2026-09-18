@@ -320,8 +320,13 @@ if is_hipcc_enabled and is_hip_enabled
     # FMA and shifts the recursion past places=2 vs the CPU / Vulkan
     # `precise` twin). The CUDA twin passes `--fmad=false` for the same
     # reason; HIP's amdclang++-driven hipcc honours `-ffp-contract=off`.
+    # `integer_ssim_score` evaluates the CPU's per-pixel SSIM expression
+    # (integer_ssim.c::ssim_reduce_row_range) operand for operand; without
+    # the flag the variance / covariance products fuse into FMAs and each
+    # per-pixel term rounds differently from the CPU's (ADR-0564).
     hip_cu_extra_flags = {
         'ssimulacra2_blur' : ['-ffp-contract=off'],
+        'integer_ssim_score' : ['-ffp-contract=off'],
     }
     foreach name, src : hip_kernel_sources
         per_kernel_flags = hip_cu_extra_flags.get(name, [])
