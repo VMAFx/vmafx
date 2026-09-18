@@ -406,14 +406,6 @@ static AdmBorder adm_border_filt(int w, int h)
     return b;
 }
 
-/* Half-LSB rounding term for a right shift by `shift`. Guarded so that a
- * zero shift (log2 of a very small scaled width) does not wrap `shift - 1`
- * to UINT32_MAX and cast +Inf to an integer. */
-static inline uint32_t adm_half_shift(uint32_t shift)
-{
-    return (shift > 0u) ? (uint32_t)pow(2.0, (double)(shift - 1u)) : 0u;
-}
-
 /* ------------------------------------------------------------------------- */
 /* DWT source-index tables                                                   */
 /* ------------------------------------------------------------------------- */
@@ -2175,10 +2167,9 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     (void)pix_fmt;
     (void)bpc;
 
-    if (w < 17u || h < 17u) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "integer_adm requires width >= 17 and height >= 17 (got %ux%u)\n", w, h);
-        return -EINVAL;
+    const int size_err = adm_frame_size_check("integer_adm", w, h);
+    if (size_err) {
+        return size_err;
     }
 
     /* ADR-1191: evaluate once here whether the configured CSF weights fit

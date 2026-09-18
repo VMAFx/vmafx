@@ -21,6 +21,14 @@
  * one or both dimensions in that range, twice per geometry with the heap
  * scribbled on between the runs, and requires finite, bit-identical scores. On
  * the ASan CI lane the out-of-bounds read aborts the test outright.
+ *
+ * The same widths give scale-0 bands of 9 to 16 samples, where the horizontal
+ * and vertical cube shift is 0. The SIMD twins computed its rounding constant
+ * as (uint32_t)pow(2, shift - 1) = (uint32_t)inf, which is undefined; AVX-512
+ * converts it to UINT32_MAX and scored scale 0 up to 0.01 off scalar
+ * (T-ADM-AVX512-SMALL-WIDTH-SCALE0-2026-09-18). The second test requires the
+ * default SIMD dispatch to match the scalar path bit for bit at every width in
+ * the range.
  */
 
 #include <math.h>
@@ -125,9 +133,11 @@ static int read_scores(VmafContext *vmaf, double scores[NUM_FRAMES * NUM_SCALES]
     return 0;
 }
 
-static int run_adm(Geometry g, double scores[NUM_FRAMES * NUM_SCALES])
+/* `cpumask` 0 lets the extractor dispatch every SIMD level the host has; all
+ * bits set forces the scalar path. */
+static int run_adm(Geometry g, uint64_t cpumask, double scores[NUM_FRAMES * NUM_SCALES])
 {
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .cpumask = cpumask};
     VmafContext *vmaf = NULL;
     int err = vmaf_init(&vmaf, cfg);
     if (err) {
@@ -187,9 +197,9 @@ static char *check_geometry(Geometry g)
     double first[NUM_FRAMES * NUM_SCALES] = {0};
     double second[NUM_FRAMES * NUM_SCALES] = {0};
 
-    const int err_first = run_adm(g, first);
+    const int err_first = run_adm(g, 0u, first);
     scribble_heap();
-    const int err_second = run_adm(g, second);
+    const int err_second = run_adm(g, 0u, second);
     if (err_first || err_second) {
         (void)fprintf(stderr, "  %ux%u: extraction failed (%d, %d)\n", g.w, g.h, err_first,
                       err_second);
@@ -216,9 +226,40 @@ static char *test_integer_adm_tiny_frames_deterministic(void)
     return NULL;
 }
 
+static char *check_simd_matches_scalar(Geometry g)
+{
+    double simd[NUM_FRAMES * NUM_SCALES] = {0};
+    double scalar[NUM_FRAMES * NUM_SCALES] = {0};
+
+    const int err_simd = run_adm(g, 0u, simd);
+    const int err_scalar = run_adm(g, ~(uint64_t)0, scalar);
+    mu_assert("integer ADM failed on a tiny frame", !err_simd && !err_scalar);
+    const int identical = scores_bit_identical(simd, scalar);
+    if (!identical) {
+        (void)fprintf(stderr, "  %ux%u: scale0 SIMD %.17g vs scalar %.17g\n", g.w, g.h, simd[0],
+                      scalar[0]);
+    }
+    mu_assert("integer ADM SIMD dispatch differs from scalar on a tiny frame", identical);
+    return NULL;
+}
+
+/* Every width whose scale-0 band is 9 to 16 samples, at the height the
+ * T-ADM-AVX512-SMALL-WIDTH-SCALE0-2026-09-18 sweep used. */
+static char *test_integer_adm_tiny_widths_simd_matches_scalar(void)
+{
+    for (unsigned w = 17u; w <= 32u; w++) {
+        char *msg = check_simd_matches_scalar((Geometry){w, 70u});
+        if (msg) {
+            return msg;
+        }
+    }
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_integer_adm_tiny_frames_deterministic);
+    mu_run_test(test_integer_adm_tiny_widths_simd_matches_scalar);
     return NULL;
 }
 

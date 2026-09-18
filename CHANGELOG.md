@@ -19600,6 +19600,17 @@ integer reformulation of it. CPU scores are unchanged (the compiled
 `integer_adm.c` is byte-identical to before).
 
 
+- **AVX-512 `integer_adm_scale0` now matches the scalar path on frames 17 to
+  32 pixels wide.** At those widths one of scale 0's right shifts is by zero
+  bits, and the AVX2 and AVX-512 paths computed its rounding term by
+  converting infinity to an integer, which is undefined behaviour. The
+  AVX-512 build turned it into `0xFFFFFFFF` and scored scale 0 up to 0.01
+  away from scalar; the AVX2 build happened to produce the correct 0. Both now
+  use the scalar path's guarded helper, so the scalar, AVX2, AVX-512 and NEON
+  paths give identical scores at every such width. Scalar and AVX2 scores do
+  not change, and neither does any frame wider than 32 pixels.
+
+
 - CUDA & HIP backends: fixed two GPU numerical defects in integer ADM contrast masking kernels (`adm_cm.cu` and `adm_cm.hip`):
   (1) Fixed border row selection at `i == 0 && top <= 0` (scale 3 height <= 14 px) by replacing running pointer offsets with explicit absolute indexing `{row_top, row_bot, col_l, col_r}` and evaluating `csf_a` at the row 0 center instead of row 2.
   (2) Fixed distributed rounding shift by enforcing row-level accumulation across columns in 64-bit precision before applying `(row_total + add_shift_inner_accum) >> shift_inner_accum` once per row, eliminating warp-distributed (CUDA) and thread-distributed (HIP) rounding bias drift on wide frames (>= 1920 px).
