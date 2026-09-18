@@ -118,7 +118,12 @@ resolve which file to load using the exact same redirect logic:
    `model/tiny/nr_metric_v1.int8.onnx` (dynamic PTQ, `ConvInteger`) hits on
    such a build. The allowlist scan cannot see this — it checks op *names*
    against `core/src/dnn/op_allowlist.c`, not whether the local runtime has a
-   kernel for them.
+   kernel for them. Because the failure is expected and handled, the int8
+   attempt's session-creation error is logged at `VMAF_LOG_LEVEL_DEBUG`, like
+   step 5; only a failure of the fp32 retry itself reaches `WARNING`. Run with
+   debug logging to see why a model loaded its fp32 weights. Both loaders get
+   this step from one function, `vmaf_ort_open_with_fallback()` in
+   [`core/src/dnn/ort_backend.c`](../../core/src/dnn/ort_backend.c).
 
 The redirect keys off `quant_mode != fp32` alone. It does not distinguish
 `dynamic` from `static` from `qat`, and neither the registry nor the sidecar

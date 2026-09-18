@@ -269,15 +269,17 @@ static char *test_jail_rejects_sibling_prefix(void)
     const int mrc = mkdir(sibling_dir, 0700);
 
     char model_path[PATH_MAX];
-    (void)snprintf(model_path, sizeof(model_path), "%s/escape.onnx", sibling_dir);
+    const int plen = snprintf(model_path, sizeof(model_path), "%s/escape.onnx", sibling_dir);
+    const int path_ok = plen > 0 && (size_t)plen < sizeof(model_path);
     const int wrc =
-        (mrc == 0) ? write_file_600(model_path, kAllowedOnnx, sizeof(kAllowedOnnx)) : -1;
+        (mrc == 0 && path_ok) ? write_file_600(model_path, kAllowedOnnx, sizeof(kAllowedOnnx)) : -1;
     int err = 0;
     const int set_rc = (wrc == 0) ? validate_in_jail(jail, model_path, &err) : 0;
     (void)remove(model_path);
     (void)rmdir(sibling_dir);
     (void)rmdir(jail);
     mu_assert("sibling mkdir failed", mrc == 0);
+    mu_assert("sibling model path fits PATH_MAX", path_ok);
     mu_assert("write_file_600 sibling model failed", wrc == 0);
     mu_assert("setenv failed", set_rc == 0);
     mu_assert("sibling prefix must be rejected → -EACCES", err == -EACCES);
@@ -1653,8 +1655,8 @@ static char *test_codec_block_fill_h264_alias(void)
 typedef struct {
     const char *alias;
     int expected_slot;
-    const char *msg_rc;
-    const char *msg_buf;
+    char *msg_rc;
+    char *msg_buf;
 } CodecAliasCase;
 
 static const CodecAliasCase CODEC_ALIAS_CASES[] = {
@@ -1753,8 +1755,8 @@ static char *test_codec_block_fill_crf_clamp(void)
 typedef struct {
     const char *codec;
     const char *preset;
-    const char *msg_rc;
-    const char *msg_val;
+    char *msg_rc;
+    char *msg_val;
     bool has_lo;
     float lo;
     float hi;
@@ -1823,8 +1825,8 @@ static char *test_codec_block_fill_preset_tables(void)
 typedef struct {
     const char *codec;
     const char *preset;
-    const char *msg_rc;
-    const char *msg_val;
+    char *msg_rc;
+    char *msg_val;
 } UnknownPresetCase;
 
 static const UnknownPresetCase UNKNOWN_PRESET_CASES[] = {
