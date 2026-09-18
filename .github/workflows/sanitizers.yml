@@ -10,11 +10,11 @@
 # CFI is a future hardening step once the C23 bump (ADR-0692) and the
 # Rust FFI boundary stabilise.
 #
-# Replaces the 3-way `matrix.sanitizer: [address, undefined, thread]`
-# job in tests-and-quality-gates.yml and the separate fuzz.yml schedule.
-# fuzz.yml is retained as the single source-of-truth for libFuzzer but
-# its schedule block is kept there; this file adds the PR-gate sanitizer
-# jobs that were previously embedded in tests-and-quality-gates.yml.
+# ADR-0710 meant these jobs to replace the 3-way
+# `matrix.sanitizer: [address, undefined, thread]` job in
+# tests-and-quality-gates.yml. That never happened: the matrix still runs on
+# every PR and its three `Sanitizers (...)` checks are required, while none of
+# the jobs in this file is (ADR-1259). fuzz.yml keeps its own nightly schedule.
 
 name: Sanitizers
 
@@ -28,6 +28,11 @@ on:
     # Fuzz nightly at 04:30 UTC. TSan fires on push to master (above).
     - cron: "30 4 * * *"
   workflow_dispatch:
+    inputs:
+      max_total_time:
+        description: "Per-target wall-clock seconds for fuzz-nightly (libFuzzer -max_total_time)."
+        required: false
+        default: "60"
 
 permissions:
   contents: read
@@ -41,9 +46,9 @@ env:
 
 jobs:
   # ── ASan + UBSan combined (every PR) ─────────────────────────────────
-  # Single job: `-fsanitize=address,undefined` in one clang build.
-  # Replaces the two separate address + undefined matrix rows from
-  # tests-and-quality-gates.yml. Per ADR-0347, the `function` UBSan
+  # Single job: `-fsanitize=address,undefined` in one clang build, next to
+  # the separate address + undefined rows in tests-and-quality-gates.yml,
+  # which stay the required checks. Per ADR-0347, the `function` UBSan
   # check is suppressed because ~50 K&R-prototype test harness files
   # trip it unconditionally (rewrite tracked separately).
   asan-ubsan:
@@ -344,7 +349,7 @@ jobs:
           mkdir -p fuzz-runtime-corpus
           set +e
           ./build-fuzz/test/fuzz/${{ matrix.target }} \
-            -max_total_time=${MAX_TOTAL_TIME} \
+            -max_total_time="${MAX_TOTAL_TIME}" \
             -rss_limit_mb=2048 \
             -malloc_limit_mb=1024 \
             -timeout=10 \
