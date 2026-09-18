@@ -188,12 +188,30 @@ static inline int iadm_mirror_hi(int idx, int sup)
 static inline int iadm_af_bitlen(ulong v)
 {
     int n = 0;
-    if (v >> 32) { v >>= 32; n += 32; }
-    if (v >> 16) { v >>= 16; n += 16; }
-    if (v >> 8)  { v >>= 8;  n += 8;  }
-    if (v >> 4)  { v >>= 4;  n += 4;  }
-    if (v >> 2)  { v >>= 2;  n += 2;  }
-    if (v >> 1)  { v >>= 1;  n += 1;  }
+    if (v >> 32) {
+        v >>= 32;
+        n += 32;
+    }
+    if (v >> 16) {
+        v >>= 16;
+        n += 16;
+    }
+    if (v >> 8) {
+        v >>= 8;
+        n += 8;
+    }
+    if (v >> 4) {
+        v >>= 4;
+        n += 4;
+    }
+    if (v >> 2) {
+        v >>= 2;
+        n += 2;
+    }
+    if (v >> 1) {
+        v >>= 1;
+        n += 1;
+    }
     return n + (int)v;
 }
 
@@ -214,7 +232,10 @@ static inline void iadm_af_norm24(ulong v, thread ulong *m, thread int *e)
     const ulong halfway = 1ul << (s - 1);
     if (rem > halfway || (rem == halfway && (q & 1ul) != 0ul)) {
         q++;
-        if (q == (1ul << 24)) { q >>= 1; s++; }
+        if (q == (1ul << 24)) {
+            q >>= 1;
+            s++;
+        }
     }
     *m = q;
     *e = s;
@@ -232,7 +253,9 @@ static inline ulong iadm_af_round53_v(ulong mo, ulong mt, thread int *p_out)
 
     int n = iadm_af_bitlen(s_val);
     const ulong below = s_val - (1ul << (n - 1));
-    if (below < IADM_AF_D && (below << 24) < dr) { n--; }
+    if (below < IADM_AF_D && (below << 24) < dr) {
+        n--;
+    }
 
     const int p = 53 - n;
     const ulong u = dr << p;
@@ -271,8 +294,12 @@ static inline bool iadm_angle_flag(long ot_dp, long o_mag_sq, long t_mag_sq)
     iadm_af_norm24((ulong)t_mag_sq, &mt, &et);
 
     const int sp = 2 * ep - eo - et;
-    if (sp >= 3) { return true; }
-    if (sp <= -3) { return false; }
+    if (sp >= 3) {
+        return true;
+    }
+    if (sp <= -3) {
+        return false;
+    }
 
     int p = 0;
     const ulong rounded = iadm_af_round53_v(mo, mt, &p);
@@ -450,19 +477,23 @@ static void iadm_dwt_vert_s0_impl(const device uchar *ref_raw_u8, const device u
         }
     }
 
-    int accum_lo = 0, accum_hi = 0;
+    /* 64-bit sums: the first three low-pass taps add up to 50582, so a 16-bit
+     * sum passes INT_MAX once three samples reach 42456. The CPU forms it in
+     * int64 too (adm_dwt2_vpass16_tap4); the normalised value fits in int. */
+    long accum_lo = 0;
+    long accum_hi = 0;
     for (int k = 0; k < 4; ++k) {
-        accum_lo += IADM_LO[k] * s[k];
-        accum_hi += IADM_HI[k] * s[k];
+        accum_lo += (long)IADM_LO[k] * s[k];
+        accum_hi += (long)IADM_HI[k] * s[k];
     }
     /* normalise range (0..N) -> (-N/2..N/2): subtract coeff_sum * v_add_shift. */
-    accum_lo -= IADM_LO_SUM * c.v_add_shift;
+    accum_lo -= (long)IADM_LO_SUM * c.v_add_shift;
     accum_hi -= 0 * c.v_add_shift; /* hi_sum == 0 */
 
     const int out_stride = d.cur_w * 2;
     device int *dst = (plane_is_dis == 0) ? dwt_tmp_ref : dwt_tmp_dis;
-    dst[gy * out_stride + gx] = (accum_lo + c.v_add_shift) >> c.v_shift;
-    dst[gy * out_stride + d.cur_w + gx] = (accum_hi + c.v_add_shift) >> c.v_shift;
+    dst[gy * out_stride + gx] = (int)((accum_lo + c.v_add_shift) >> c.v_shift);
+    dst[gy * out_stride + d.cur_w + gx] = (int)((accum_hi + c.v_add_shift) >> c.v_shift);
 }
 
 kernel void integer_adm_dwt_vert_8bpc(const device uchar *ref_raw [[buffer(0)]],
