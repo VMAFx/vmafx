@@ -608,6 +608,8 @@ static int adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int 
         const int rows_per_thread = 8;
         const int BLOCKX = 32;
         const int BLOCKY = 4;
+        /* The kernel's accum_per_block parameter is unused. */
+        CUdeviceptr no_accum = 0;
 
         void *args[] = {buf,
                         &h,
@@ -624,7 +626,7 @@ static int adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int 
                         &csf_a_stride,
                         &buffer_h,
                         &buffer_stride,
-                        &buf->tmp_accum->data,
+                        &no_accum,
                         p,
                         &scale,
                         (void *)&buf->adm_cm[scale],
@@ -725,6 +727,8 @@ static int adm_cm_aim_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, 
     const int rows_per_thread = adm_cm_aim_rows_per_thread(s, buffer_h, BLOCKY);
     CUfunction aim_line_kernel = (rows_per_thread == 4) ? s->func_adm_cm_aim_line_kernel_4 :
                                                           s->func_adm_cm_aim_line_kernel_2;
+    /* The kernel's accum_per_block parameter is unused. */
+    CUdeviceptr no_accum = 0;
     void *args[] = {buf,
                     &h,
                     &w,
@@ -740,7 +744,7 @@ static int adm_cm_aim_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, 
                     &csf_a_stride,
                     &buffer_h,
                     &buffer_stride,
-                    &buf->tmp_accum->data,
+                    &no_accum,
                     p,
                     &scale,
                     (void *)&buf->adm_aim_cm[scale],
@@ -1710,8 +1714,6 @@ static int adm_cuda_free_buffers(VmafCudaState *cu_state, AdmBufferCuda *buf)
     ret |= adm_cuda_free_device_buffer(cu_state, buf->data_buf);
     ret |= adm_cuda_free_device_buffer(cu_state, buf->tmp_ref);
     ret |= adm_cuda_free_device_buffer(cu_state, buf->tmp_dis);
-    ret |= adm_cuda_free_device_buffer(cu_state, buf->tmp_accum);
-    ret |= adm_cuda_free_device_buffer(cu_state, buf->tmp_accum_h);
     ret |= adm_cuda_free_device_buffer(cu_state, buf->tmp_res);
     if (buf->results_host) {
         ret |= vmaf_cuda_buffer_host_free(cu_state, buf->results_host);
@@ -1719,9 +1721,9 @@ static int adm_cuda_free_buffers(VmafCudaState *cu_state, AdmBufferCuda *buf)
     return ret;
 }
 
-/* Allocate the device buffers and the pinned result buffer of a `w` x `h`
- * frame, `buf_sz_one` bytes being one int32 band of scale 0. */
-static int adm_cuda_alloc_buffers(VmafCudaState *cu_state, AdmStateCuda *s, unsigned w, unsigned h,
+/* Allocate the device buffers and the pinned result buffer of a frame `h`
+ * rows high, `buf_sz_one` bytes being one int32 band of scale 0. */
+static int adm_cuda_alloc_buffers(VmafCudaState *cu_state, AdmStateCuda *s, unsigned h,
                                   size_t buf_sz_one)
 {
     /* Buffer layout after decouple/csf_a elimination:
@@ -1740,14 +1742,6 @@ static int adm_cuda_alloc_buffers(VmafCudaState *cu_state, AdmStateCuda *s, unsi
     }
     ret =
         vmaf_cuda_buffer_alloc(cu_state, &s->buf.tmp_dis, (s->integer_stride * 4 * ((h + 1) / 2)));
-    if (ret) {
-        return ret;
-    }
-    ret = vmaf_cuda_buffer_alloc(cu_state, &s->buf.tmp_accum, sizeof(uint64_t) * 3 * w * h);
-    if (ret) {
-        return ret;
-    }
-    ret = vmaf_cuda_buffer_alloc(cu_state, &s->buf.tmp_accum_h, sizeof(uint64_t) * 3 * h);
     if (ret) {
         return ret;
     }
@@ -1799,7 +1793,7 @@ static int adm_cuda_init_buffers(VmafFeatureExtractor *fex, AdmStateCuda *s, uns
     s->buf.ind_size_y = ALIGN_CEIL(((h + 1) / 2) * sizeof(int32_t));
     const size_t buf_sz_one = s->buf.ind_size_x * ((h + 1) / 2);
 
-    int ret = adm_cuda_alloc_buffers(fex->cu_state, s, w, h, buf_sz_one);
+    int ret = adm_cuda_alloc_buffers(fex->cu_state, s, h, buf_sz_one);
     if (!ret) {
         ret = adm_cuda_carve_buffers(fex->cu_state, s, buf_sz_one);
     }
