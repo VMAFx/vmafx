@@ -763,6 +763,17 @@ test_cambi_simd = executable('test_cambi_simd',
     ] + wave8_opt_only_objects,
 )
 
+# Every other CAMBI per-stage SIMD kernel (decimate, anti-dithering, mode
+# filter, derivative row, histogram range updates, c-values row and frame) on
+# AVX2, AVX-512 and NEON against the production scalar stages. The TU includes
+# cambi.c for those static references, so it links libvmaf like test_cambi.
+test_cambi_stage_simd = executable('test_cambi_stage_simd',
+    ['test.c', 'test_cambi_stage_simd.c', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, gpu_all_deps],
+)
+
 # CAMBI spatial-mask row kernels (compute_dp_row / compute_mask_row):
 # AVX2, AVX-512 and NEON twins against the production scalar in cambi.c.
 test_cambi_spatial_mask_simd = executable('test_cambi_spatial_mask_simd',
@@ -1549,6 +1560,20 @@ test_feature_isa_invariance = executable('test_feature_isa_invariance',
 )
 test('test_feature_isa_invariance', test_feature_isa_invariance,
     suite : ['fast'])
+
+# CAMBI end-to-end dispatch invariance: every option path that routes through
+# different CAMBI stages (10-bit, full reference, max_log_contrast 5, high-res
+# speedup, window 33, 4:4:4 odd size), scored at each dispatch level the host
+# offers (host / AVX2 only / scalar on x86, host / scalar on aarch64), must
+# give bit-identical per-frame scores.
+test_cambi_dispatch_invariance = executable('test_cambi_dispatch_invariance',
+    ['test.c', 'test_cambi_dispatch_invariance.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_cambi_dispatch_invariance', test_cambi_dispatch_invariance,
+    suite : ['fast', 'simd'])
 
 test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
     ['test.c', 'test_ssimulacra2_simd.c',
@@ -4027,6 +4052,7 @@ test('test_cambi', test_cambi, suite : ['fast'])
 if cambi_simd_test_archs.contains(host_machine.cpu_family())
 test('test_cambi_simd', test_cambi_simd, suite : ['fast', 'simd'])
 test('test_cambi_spatial_mask_simd', test_cambi_spatial_mask_simd, suite : ['fast', 'simd'])
+test('test_cambi_stage_simd', test_cambi_stage_simd, suite : ['fast', 'simd'])
 endif
 if get_option('enable_float')
 test('test_speed', test_speed, suite : ['fast'])

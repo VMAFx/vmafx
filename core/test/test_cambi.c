@@ -1048,15 +1048,17 @@ static char *test_compute_mask_row()
 
 /*
  * test_calculate_c_values_scalar_avx2_parity — bit-exactness guard for the
- * AVX2 / scalar calculate_c_values paths introduced by PR #463 cluster
- * commits 3/10 and 4/10.
+ * AVX2 frame-level calculate_c_values_avx2() against the scalar
+ * calculate_c_values() on the 8x8 fixture (get_sample_image_8x8): every
+ * c_value output float must be identical. The per-stage SIMD twins, AVX-512
+ * and NEON included, are swept in test_cambi_stage_simd.c.
  *
- * The macro CAMBI_CALC_C_VALUES_BODY dispatches the increment/decrement/row
- * callbacks. On x86 with AVX2, init() selects calculate_c_values_avx2()
- * instead of the scalar calculate_c_values(). This test calls both on the
- * same 8x8 fixture (get_sample_image_8x8) and asserts that every c_value
- * output float is identical (bit-exact). On non-x86 hosts the AVX2 path is
- * compiled out; the test falls through and passes as a no-op.
+ * The gate reads CPUID directly (vmaf_get_cpu_flags_x86). It used to test
+ * vmaf_get_cpu_flags(), which is 0 until vmaf_init_cpu() runs -- and nothing
+ * in this binary runs it -- so the AVX2 branch never executed and the test
+ * passed without comparing anything. The AVX2 helpers build AVX2 constants at
+ * entry, so the runtime gate is still required (T-CAMBI-AVX2-CI-SIGILL);
+ * MSVC has no __builtin_cpu_supports, hence the in-tree CPUID probe.
  */
 #if ARCH_X86
 /* AVX2 leg of the parity test below. x86-only, so non-x86 and
