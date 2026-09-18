@@ -480,6 +480,12 @@ Netflix ADM.
 **Backends** — `adm`: AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal.
 `float_adm`: AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal.
 
+The `adm` SIMD paths (AVX2, AVX-512, NEON) produce the same scores as the
+scalar path bit for bit, on any content. Until this release the AVX2 and
+AVX-512 paths differed from scalar by up to 7e-4 on content with very large
+band coefficients, such as full-range noise; ordinary video, including the
+Netflix reference clips, was already identical.
+
 **32-bit x86** — the fork is 64-bit only (ADR-1258). The ADM x86
 sources still extract 64-bit lanes through 32-bit-safe helpers
 (`extract_epi64()`, `extract_epi64_128()`), ported from upstream Netflix
