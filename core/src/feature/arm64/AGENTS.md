@@ -82,12 +82,27 @@ to other halves in **same PR**:
 | **MS-SSIM decimate LPF** (ADR-0125) | `ms_ssim_decimate_neon.c` + `../x86/ms_ssim_decimate_avx2.c` + `../x86/ms_ssim_decimate_avx512.c` + scalar `../ms_ssim_decimate.c`. The 9-tap filter table appears verbatim in all four. |
 | **PSNR-HVS DCT** (ADR-0160) | `psnr_hvs_neon.c` + `../x86/psnr_hvs_avx2.c` + scalar `../third_party/xiph/psnr_hvs.c`. Butterfly block byte-identical across the three; threading `ret` by pointer is load-bearing. |
 | **SSIMULACRA 2 SIMD** (ADR-0161 / 0162 / 0163 / 0213 / 0252) | `ssimulacra2_neon.c` + `ssimulacra2_sve2.c` + `../x86/ssimulacra2_avx2.c` + `../x86/ssimulacra2_avx512.c` + `ssimulacra2_host_neon.c` + `../x86/ssimulacra2_host_avx2.c` + scalar `../ssimulacra2.c` + Vulkan host-path `../vulkan/ssimulacra2_vulkan.c` |
-| **CAMBI calculate_c_values_row** (ADR-0452) | `cambi_neon.c` (`calculate_c_values_row_neon`) + `../x86/cambi_avx2.c` (`calculate_c_values_row_avx2`) + `../x86/cambi_avx512.c` (`calculate_c_values_row_avx512`) + scalar in `../cambi.c` (`calculate_c_values_row`). Every cambi inner-loop function ported to AVX2 **must** have AVX-512 + NEON siblings in the **same PR**. NEON uses vectorised mask-zero detection (vmaxvq_u16) + scalar per-pixel inner loop for bit-exact output (no gather instruction on NEON). Tested in `../../test/test_cambi_simd.c`. |
+| **CAMBI stage kernels** (ADR-1256, Research-2065) | `cambi_neon.c` + `../x86/cambi_avx2.c` (upstream mirror) + `../x86/cambi_avx512.c` + scalar `../cambi.c`; NEON / AVX-512 c-values drivers share walk `../cambi_c_values_frame.h`. Dispatched on NEON: anti-dither, derivative, decimate, dp row, c-values. Kept scalar: mask row, mode filter. Tests: `test_cambi_stage_simd.c`, `test_cambi_dispatch_invariance.c`, `test_cambi_simd.c` (run under `qemu-aarch64` without aarch64 host). |
 | **CAMBI spatial-mask rows** (ADR-1256) | `cambi_neon.c` (`compute_dp_row_neon`, `compute_mask_row_neon`) + `../x86/cambi_avx2.c` + `../x86/cambi_avx512.c` twins + scalar reference in `../cambi.c`. Only the dp row is dispatched on aarch64: GCC and Clang auto-vectorize the scalar mask row into the same `cmhi` / `uzp1` sequence, so `compute_mask_row_neon` stays built, parity-tested and undispatched — re-check the compiled scalar before wiring it. The dp row keeps a single add on the loop-carried chain; keep that shape. Tested in `../../test/test_cambi_spatial_mask_simd.c` (run under `qemu-aarch64` when no aarch64 host is available). |
 | **Motion v2 NEON** (ADR-0145) | `motion_v2_neon.c` uses **arithmetic** right-shift (`vshrq_n_s64(v, 16)` / `vshlq_s64(v, -(int64_t)bpc)`); matches scalar. Sister `../x86/motion_v2_avx2.c` uses `_mm256_srlv_epi64` (logical) — knowingly out-of-spec until the AVX2 audit. **Do NOT port the AVX2 logical pattern here.** 4-lane stride + scalar tails on both sides of the row are load-bearing for the x_conv edge-mirror contract. |
 
 Complete invariants in [../AGENTS.md
 §"Rebase-sensitive invariants"](../AGENTS.md).
+
+## CAMBI NEON invariants (Research-2065)
+
+- `filter_mode_neon`, `compute_mask_row_neon`: built, parity-tested, not
+  dispatched. GCC + Clang vectorise scalar loop same way (insn count 0.93x /
+  1.02x). Re-count with qemu insn plugin before wiring.
+- NEON c-values driver uses plain C range updaters on purpose: compilers emit
+  same 8-lane adds; intrinsic versions cost +0.3–0.9 % insns, retired. No
+  `cambi_*_range_neon`.
+- Scans: no masked load → scalar tail < 8 cols. Never vector-load past last
+  column (last row may end at buffer end).
+- Scan may over-flag, never under-flag; mirrors `uh_slide` skip + band test.
+- `cambi_neon.c` lives in integer lib `arm64_v8` (no `-ffp-contract=off`):
+  c-value is one mul, no add, so nothing to fuse. Adding `a * b + c` float math
+  here → move TU to `arm64_v8_fp`.
 
 ## SVE2 invariants (ADR-0213, ADR-0584)
 
