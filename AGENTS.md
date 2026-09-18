@@ -1,21 +1,13 @@
 <!-- markdownlint-disable MD013 MD025 -->
 # vmafx Agent Operating Harness
 
-Run verification before concluding any turn:
+Before concluding any turn:
 
 ```bash
 make verify-all
 ```
 
-```mermaid
-flowchart LR
-    AGENT["Autonomous Agent"] --> CHECK["make verify-all"]
-    CHECK --> AUDIT["standardsctl audit"]
-    CHECK --> COMPILER["standardsctl compile-context --verify"]
-    CHECK --> GATE{"All checks Pass?"}
-    GATE -- Yes --> RECEIPT["Ed25519 Exit-0 Receipt"]
-    GATE -- No --> DISTILL["SARIF Diagnostic Distillation (<= 1500 tokens)"]
-```
+`make verify-all` = `praetorctl audit` + `praetorctl compile-context --verify` + repository tests. All pass -> Ed25519 Exit-0 receipt. Fail -> SARIF diagnostic distillation (<= 1500 tokens).
 
 ## Core Directives & Invariants (Modernized NASA JPL Power-of-10)
 
@@ -30,43 +22,56 @@ flowchart LR
 | **HISS-09** | Reference Safety | Rule 9 | Mandatory `// SAFETY:` proofs for all pointer arithmetic and `unsafe` blocks. | AST check blocker |
 | **HISS-10** | Warning Hygiene | Rule 10 | Zero-warning tolerance across compiler, linter, and format sweeps. | Exit code 1 |
 | **HISS-15** | 3D Testing | Rule 5 | Positive, negative, and boundary tests mandatory for all public interfaces. | CI coverage gate |
-| **HISS-16** | Context Integrity | Fleet | Single canonical `AGENTS.md`; vendor files compiled via `standardsctl compile-context`. | Pre-commit blocker |
+| **HISS-16** | Context Integrity | Fleet | Single canonical `AGENTS.md`; vendor files compiled via `praetorctl compile-context`. | Pre-commit blocker |
 
 ## Operational Rules
 
-1. **Act on Verified State**:
-   Read source files and run real commands before hypothesizing or editing. Never guess flag names, library signatures, or repo configurations from memory.
+1. **Act on verified state.** Read source files, run real commands before hypothesis or edit. Never guess flag names, library signatures, repo configuration from memory.
 
-2. **Lead with Output**:
-   Provide direct answers, diffs, and commands. Avoid filler preambles, "Based on", restatements, or conversational chatter.
+2. **Lead with output.** Direct answers, diffs, commands. No filler preamble, no "Based on", no restatement, no chatter.
 
-3. **Context Transpiler First**:
-   Never edit `CLAUDE.md`, `.cursor/rules/*.mdc`, `.windsurfrules`, or `.github/copilot-instructions.md` manually. Make all agent instruction updates in `AGENTS.md` and execute:
+3. **Context transpiler first.** Never edit `CLAUDE.md`, `.cursor/rules/*.mdc`, `.windsurfrules`, `.github/copilot-instructions.md` manually. All agent instruction updates -> `AGENTS.md`, then:
 
    ```bash
-   standardsctl compile-context
+   praetorctl compile-context
    ```
 
-4. **SARIF Diagnostic Distillation**:
-   When reporting compiler or linter errors, distill output to $\le 1,500$ tokens ($< 60$ lines). Print the top 3 root-cause failures with file/line pointers and write full SARIF logs to ephemeral storage.
+   - `AGENTS.md` = agent-only text -> caveman (internal register). `praetorctl compile-context --verify` + `praetorctl audit` run caveman lint; findings fail gate; no opt-out. Check first:`praetorctl caveman check AGENTS.md`.
 
-5. **No Evasion Tolerated**:
-   Do not attempt `--no-verify`, `LEFTHOOK=0`, or modifying `.git/hooks`. All pull requests are authoritatively re-checked in an ephemeral isolated sandbox by `cordana-standards[bot]`.
+4. **SARIF diagnostic distillation.** Compiler/linter errors -> distill to $\le 1,500$ tokens ($< 60$ lines): top 3 root-cause failures with file/line pointers; full SARIF logs -> ephemeral storage.
 
-6. **Anti-Loop Interception**:
-   If the same AST diff and error category repeats $\ge 3$ times, halt execution immediately. Re-evaluate the underlying design instead of making micro-textual retries.
+5. **No evasion.** Never attempt `--no-verify`, `LEFTHOOK=0`, or modifying `.git/hooks`. `cordana-standards[bot]` re-checks every pull request in ephemeral isolated sandbox.
+
+6. **Anti-loop interception.** Same AST diff + error category repeats $\ge 3$ times -> halt immediately. Re-evaluate design; no micro-textual retries.
+
+## Text Register
+
+<!-- praetor:register:start -->
+Register follows the audience, then the task label of your brief (`register:` in `.standards.yaml`; labels are the router's `target_tasks`).
+
+| Register | Where | Form |
+| :--- | :--- | :--- |
+| social | forge: issues, PR bodies, review comments, commit bodies | `social-text` skill: BLUF, full sentences, scannable, enough and no more; PR template, receipt fence, conventional commit subject and changelog fragment unchanged |
+| docs | docs/, README, ADR bodies | complete without bloat: newcomer path first, expert reference after; every claim points at a file, command or test; no restated code |
+| internal | briefs, agent-to-agent traffic, research fan-outs, workflow returns | `caveman` skill: fragments, no filler, verbatim code/paths/errors; facts, paths, commands, verdict |
+
+- Task rows: social = commit_message_synthesis, waiver_signoff; docs = architecture_synthesis, function_docstrings; every other label and any brief without one = internal.
+- Evidence above 58 lines or 1500 tokens leaves the message as a file under `.workingdir/evidence/`; return `evidence: <path> sha256:<12 hex> lines:<n>` and fetch it only when a decision needs it.
+- An internal return carries verdict, changed paths, commands run, evidence pointers and open questions, nothing else.
+<!-- praetor:register:end -->
 
 ## Primary Verification Commands
 
 ```bash
 # Fast local test suite
-meson test -C core/build --suite=fast
+# Declared commands only; run them before claiming application verification.
+'make' 'verify-all'
 
 # Recompile and verify cross-agent context outputs
-standardsctl compile-context --verify
+praetorctl compile-context --verify
 
 # Audit repository against declared HISS-16 standards
-standardsctl audit
+praetorctl audit
 
 # Run all formatting, linting, and security gates
 make verify-all

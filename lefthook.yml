@@ -1,0 +1,66 @@
+# Lefthook Configuration (Go 1.27+ & HISS-16 Governance)
+# Governance commands fail closed: a failing or missing praetorctl blocks the commit or push.
+agent-checkpoint-tool:
+  commands:
+    checkpoint:
+      run: python3 -B .config/lefthook/scripts/checkpoint.py --event tool --json --marker
+agent-checkpoint-stop:
+  commands:
+    checkpoint:
+      run: python3 -B .config/lefthook/scripts/checkpoint.py --event stop --json --marker
+pre-commit:
+  parallel: true
+  commands:
+    gofmt:
+      glob: "*.go"
+      run: gofmt -w {staged_files}
+      stage_fixed: true
+    govet:
+      glob: "*.go"
+      run: go vet ./...
+    framework-hooks:
+      # ADR-1249: lefthook owns .git/hooks and delegates to the pre-commit
+      # framework so this repository's existing hooks (clang-format, ruff,
+      # markdownlint, the ADR, state.md and aggregator gates, semgrep, the
+      # ADR-0332 worktree-drift guard) keep running unchanged. Superseding note
+      # for ADR-0924. Fails closed like the ADR-1241 dispatcher it replaces.
+      run: |
+        if [ -x .venv/bin/pre-commit ]; then .venv/bin/pre-commit run; \
+        elif command -v pre-commit >/dev/null 2>&1; then pre-commit run; \
+        else echo "VMAFx hooks: pre-commit is missing; activate the environment used by make install-hooks." >&2; exit 1; fi
+    context-check:
+      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl compile-context --verify; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl compile-context --verify; else echo HISS-16 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+    hiss-audit:
+      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl audit; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl audit; else echo HISS-16 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+
+post-commit:
+  commands:
+    state-sync:
+      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl state sync .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl state sync .; else echo HISS-16 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+    dedupe-cadence:
+      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl dedupe cadence --threshold=20 --record .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl dedupe cadence --threshold=20 --record .; else echo HISS-16 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+
+pre-push:
+  parallel: false
+  commands:
+    framework-hooks:
+      # ADR-1241 wires the framework's pre-push stage (the MkDocs strict build,
+      # the PR-body deliverables check, the push-range mypy scope). Lefthook owns
+      # pre-push here (ADR-1249), so it hands that stage the same remote
+      # arguments and push-ref stdin the dispatcher would; without them
+      # hook-impl cannot compute the pushed range.
+      use_stdin: true
+      run: |
+        if [ -x .venv/bin/pre-commit ]; then fw=.venv/bin/pre-commit; \
+        elif command -v pre-commit >/dev/null 2>&1; then fw=pre-commit; \
+        else echo "VMAFx hooks: pre-commit is missing; activate the environment used by make install-hooks." >&2; exit 1; fi; \
+        "$fw" hook-impl --config=.pre-commit-config.yaml --hook-type=pre-push \
+          --hook-dir "$(git rev-parse --git-path hooks)" -- {1} {2}
+    security:
+      run: if command -v govulncheck >/dev/null 2>&1; then govulncheck ./...; else echo govulncheck is not installed, skipping >&2; fi
+    flavor-audit:
+      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl flavor audit .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl flavor audit .; else echo HISS-16 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+    audit:
+      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl audit; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl audit; else echo HISS-16 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+    gate:
+      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl gate run --path=.; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl gate run --path=.; else echo HISS-16 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi

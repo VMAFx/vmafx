@@ -1,0 +1,16 @@
+{
+  "configurations": [
+    {
+      "type": "command",
+      "name": "Standards: Verify All",
+      "program": "make",
+      "args": ["verify-all"]
+    },
+    {
+      "type": "command",
+      "name": "Standards: Audit",
+      "program": "standardsctl",
+      "args": ["audit"]
+    }
+  ]
+}

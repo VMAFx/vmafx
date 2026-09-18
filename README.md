@@ -1,5 +1,6 @@
 # VMAFx
 
+[![HISS-16 Compliant](https://img.shields.io/badge/Standards-HISS--16%20Compliant-brightgreen)](AGENTS.md)
 [![Tests](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
 [![Builds](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml)
 [![Release](https://img.shields.io/github/v/release/VMAFx/vmafx?include_prereleases&sort=semver)](https://github.com/VMAFx/vmafx/releases)
@@ -83,3 +84,14 @@ together, redistributing a modified library obliges you to offer its source unde
 EUPL-1.2. If you need permissive terms, use
 [Netflix/vmaf](https://github.com/Netflix/vmaf) upstream, which is unaffected.
 The per-file tags are authoritative; this paragraph is a summary.
+
+## Standards & Governance
+
+This repository conforms to High-Integrity Systems Standards (HISS-16)
+and modernized NASA JPL Power-of-10 rules.
+
+| Gate | Command | Description |
+| :--- | :--- | :--- |
+| **Verification** | `make verify-all` | Runs full audit, test suite, and context integrity check |
+| **HISS Audit** | `standardsctl audit` | Enforces zero technical debt regression against baseline |
+| **Context Sync** | `standardsctl compile-context` | Transpiles canonical `AGENTS.md` to all AI targets |

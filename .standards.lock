@@ -1,0 +1,21 @@
+version: 1
+pinned_version: v1.0.0
+digest: sha256:786adc0930fe8f23fbe9d19702f622abeabc519d685997a5a4b525031c06ccbe
+generated_at: ""
+profiles:
+    - id: native-gpu-systems
+      version: v1.0.0
+      digest: sha256:aabdfa13501105032bbecfb39eac49b482be4f426d7b409999e12e28f17b59c9
+facets:
+    - id: security:high
+      version: v1.0.0
+      digest: sha256:34de9dc4fe2b7da48c152c2e7457891ebc41ace8e671fd1db0f49e1fafcb567f
+    - id: api:public-contract
+      version: v1.0.0
+      digest: sha256:19963be9ae6292bc4ea0dcb44cbbc5f903886209387d33fbeb3bed8af9cde486
+    - id: docs:seo-portal
+      version: v1.0.0
+      digest: sha256:3381e1b7ab5cfb1029fa1b96cd84c7d3d5a890bc2d1f340a7b4e8b5bf61e2256
+    - id: agent:sandboxed
+      version: v1.0.0
+      digest: sha256:1a89a7a93d8f054d03edd203bb15006431468641d59ac61999b1997fa0a3233f

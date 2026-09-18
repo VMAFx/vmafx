@@ -1,0 +1,25 @@
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "build_systems": [
+    {
+      "name": "Standards: Verify All",
+      "shell_cmd": "make verify-all",
+      "working_dir": "$project_path"
+    },
+    {
+      "name": "Standards: Audit",
+      "shell_cmd": "standardsctl audit",
+      "working_dir": "$project_path"
+    }
+  ],
+  "settings": {
+    "tab_size": 4,
+    "translate_tabs_to_spaces": true,
+    "trim_trailing_white_space_on_save": true,
+    "ensure_newline_at_eof_on_save": true
+  }
+}
