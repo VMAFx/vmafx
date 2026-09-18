@@ -16552,6 +16552,13 @@ No build/test/runtime impact — the `enable_vulkan` meson option was already re
   `integer_cambi_hip.c` updated to reflect the removal.
 
 
+- **CI: the 32-bit x86 (`Ubuntu i686 gcc`) lane is removed again.** ADR-0728
+  retired 32-bit x86 in May, but a merge the same day brought the lane back,
+  and it kept running compile-only with no tests. The fork stays 64-bit only
+  (ADR-1258). `scripts/dev/preflight.sh` drops its `m32` stage, which only
+  mirrored that lane.
+
+
 - **core: delete dead C translation units `core/src/gpu_picture_pool.c` and `core/src/opt.c`** — both translation units were superseded by modern C++23 implementations (`core/src/gpu_picture_pool.cpp` under ADR-0768, `core/src/opt.cpp` under ADR-0761) compiled into `libvmaf`. Their lingering inclusion in isolated test targets (`test_integer_ssim_simd` and `test_motion_avx512_parity`) in `core/test/meson.build` was updated to link against the standard C++23 libraries and objects (`gpu_picture_pool.cpp`, `log_cpp23_test_objects`, `wave8_opt_only_objects`), collapsing the twin pairs from 6 to 4 in `twin-drift-check.sh`.
 - **test: rescue orphaned `core/test/test_gpu_picture_pool_partial_init.c`** — wired into `core/test/meson.build` under the fast test suite, testing `vmaf_gpu_picture_pool_init` error-unwind paths against `gpu_picture_pool.cpp`.
 - **docs: fix stale pre-rename `libvmaf/` and `python/vmaf/` paths** — updated path references across `core/tools/meson.build`, `core/tools/compat/win32/getopt.{c,h}`, `core/tools/vmaf_roi_core.h`, `testdata/bench_all.sh`, and `docs/usage/{bd-rate,matlab,python}.md` to point to `core/` and `compat/python-vmaf/` (ADR-0700).
@@ -29260,6 +29267,13 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   `test_fex_pool_growth.c` and `test_fex_ctx_vector.cpp` now carries
   `__attribute__((visibility("default")))`; `nm` confirms all four allocator
   wrappers are global symbols.
+
+
+- **The AVX2 and AVX-512 sources no longer use x86-64-only intrinsics.**
+  `_mm_extract_epi64` in the ADM kernels and `_mm_cvtsi128_si64` in the PSNR
+  kernel were the cause of Netflix#1481 (no 32-bit x86 build with asm). They
+  now go through 32-bit-safe forms. Nothing changes on x86-64, and 32-bit x86
+  remains unsupported.
 
 
 - **`y4m_convert_411_422jpeg` 1-byte heap-buffer-overflow on
