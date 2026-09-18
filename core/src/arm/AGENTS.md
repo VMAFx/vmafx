@@ -42,7 +42,7 @@ detection (verbatim from dav1d, no fork-local modifications -> no AGENTS.md).
 
 ## Why this matters on rebase
 
-SVE2 dispatch in [`../feature/arm64/`](../feature/arm64/) (currently just
+SVE2 dispatch in [`../feature/arm64/`](../feature/arm64/) (currently only
 `ssimulacra2_sve2.c` per ADR-0213) reads `cpu_flags & VMAF_ARM_CPU_FLAG_SVE2`
 to decide call to SVE2 kernel. If runtime probe regresses (e.g. returns
 only `VMAF_ARM_CPU_FLAG_NEON`), every SVE2 kernel falls back to NEON silently.

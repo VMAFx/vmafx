@@ -5,8 +5,8 @@ training kit. Parent: [../../AGENTS.md](../../AGENTS.md).
 
 ## Scope
 
-A self-contained shell-script kit that produces an FR-regressor v2
-ensemble end-to-end on a single host:
+Self-contained shell-script kit; produces FR-regressor v2 ensemble
+end-to-end, single host:
 
 ```text
 tools/ensemble-training-kit/
@@ -28,111 +28,107 @@ tools/ensemble-training-kit/
   tests/test_platform_detect.sh    # shellcheck + smoke for _platform_detect.sh
 ```
 
-The kit is **fork-original** — there is no upstream Netflix/vmaf
-equivalent. It bundles existing in-tree pieces unchanged
-(`scripts/dev/hw_encoder_corpus.py`,
+Kit = **fork-original** — no upstream Netflix/vmaf equivalent. Bundles
+existing in-tree pieces unchanged (`scripts/dev/hw_encoder_corpus.py`,
 `ai/scripts/run_ensemble_v2_real_corpus_loso.sh`,
 `ai/scripts/validate_ensemble_seeds.py`,
 `ai/scripts/export_ensemble_v2_seeds.py`,
-`scripts/ci/ensemble_prod_gate.py`). No engine changes; this is a
-distribution + orchestration surface.
+`scripts/ci/ensemble_prod_gate.py`). No engine changes; distribution +
+orchestration surface only.
 
 ## Ground rules
 
-- **Parent rules** apply (see [../../AGENTS.md](../../AGENTS.md)).
-- **All kit shell scripts ship the dual Lusoris/Claude (Anthropic)
-  copyright header** per [ADR-0025](../../../docs/adr/0025-copyright-handling-dual-notice.md).
-- **`set -euo pipefail` at the top of every script.** Pipes carry
-  errors; unset variables are fatal. The kit aims for one-fault
-  visibility — operators should see one problem at a time, not a
-  cascade.
-- **Numbered-step contract**: `01-` through `05-` are usable
-  individually for retries. `run-full-pipeline.sh` orchestrates them
-  end-to-end. Renumbering or merging steps is a breaking change for
-  any operator following the runbook from a previous bundle.
-- **Operator-facing log lines are stable**. The `[prereqs] platform=...`
-  / `[prereqs] repo_root=...` / `[prereqs] libvmaf_bin=...` triplet
-  printed by `01-prereqs.sh` is grep'd by `run-full-pipeline.sh` for
-  the smoke + by external diagnostics tooling; do not change the
-  bracket prefix or the key=value spelling.
+- **Parent rules** apply: see [../../AGENTS.md](../../AGENTS.md).
+- **All kit shell scripts ship dual Lusoris/Claude (Anthropic) copyright
+  header** per [ADR-0025](../../../docs/adr/0025-copyright-handling-dual-notice.md).
+- **`set -euo pipefail` at top of every script.** Pipes carry errors;
+  unset variables fatal. Kit aims for one-fault visibility — operators
+  see one problem at a time, not cascade.
+- **Numbered-step contract**: `01-` through `05-` usable individually
+  for retries. `run-full-pipeline.sh` orchestrates end-to-end.
+  Renumbering or merging steps = breaking change for operator following
+  runbook from previous bundle.
+- **Operator-facing log lines are stable**. `[prereqs] platform=...` /
+  `[prereqs] repo_root=...` / `[prereqs] libvmaf_bin=...` triplet
+  printed by `01-prereqs.sh` gets grep'd by `run-full-pipeline.sh` for
+  smoke + by external diagnostics tooling; do not change bracket prefix
+  or key=value spelling.
 
 ## Rebase-sensitive invariants
 
-- **`_platform_detect.sh` returns a fixed set of platform tokens**
+- **`_platform_detect.sh` returns fixed set of platform tokens**
   (`linux-x86_64-cuda`, `linux-x86_64-sycl`, `linux-x86_64-vulkan`,
-  `darwin-arm64-cpu`, `darwin-x86_64-cpu`, `unknown`). The
-  `binaries/<platform>/vmaf` lookup in every numbered script
-  depends on these tokens being lower-case-hyphen-separated.
-  Adding a new token (e.g. for a future ROCm/HIP lane) requires
-  the matching `binaries/<platform>/` directory.
+  `darwin-arm64-cpu`, `darwin-x86_64-cpu`, `unknown`).
+  `binaries/<platform>/vmaf` lookup in every numbered script depends on
+  tokens staying lower-case-hyphen-separated. New token (e.g. future
+  ROCm/HIP lane) requires matching `binaries/<platform>/` directory.
 
-- **`KIT_FAKE_*` env-var hooks are part of the public test contract**.
-  `tests/test_platform_detect.sh` and any external consumer that
-  wants to mock `uname` / `nvidia-smi` / `vainfo` / `ffmpeg
+- **`KIT_FAKE_*` env-var hooks = part of public test contract**.
+  `tests/test_platform_detect.sh` and any external consumer mocking
+  `uname` / `nvidia-smi` / `vainfo` / `ffmpeg
   videotoolbox` go through `KIT_FAKE_UNAME_S` / `_M`,
   `KIT_FAKE_HAS_NVIDIA_SMI`, `KIT_FAKE_HAS_IHD`,
   `KIT_FAKE_HAS_VIDEOTOOLBOX`. Renaming these silently breaks
   every external test harness.
 
-- **`LIBVMAF_BIN` env override semantics**: when set explicitly,
-  the kit bypasses the `binaries/<platform>/vmaf` auto-discovery.
-  Operators use this to point at a system-wide libvmaf install
-  or a fork-built binary outside the kit's tree. **Do not**
-  introduce new env vars that override `LIBVMAF_BIN` or take
-  precedence over it — operator surprise compounds.
+- **`LIBVMAF_BIN` env override semantics**: set explicitly -> kit
+  bypasses `binaries/<platform>/vmaf` auto-discovery. Operators use
+  this to point at system-wide libvmaf install or fork-built binary
+  outside kit's tree. **Do not** introduce new env vars overriding
+  `LIBVMAF_BIN` or taking precedence over it — operator surprise
+  compounds.
 
 - **`02-generate-corpus.sh` reuses `scripts/dev/hw_encoder_corpus.py`
-  unchanged** (per ADR-0324). The kit imports it via path; renaming
-  the producer or its CLI breaks every kit run. The corpus
-  schema-version field is also load-bearing for `analyze_knob_sweep.py`
-  consumers (see `ai/AGENTS.md` for the schema-version SCHEMA_VERSION=3
-  follow-up notes).
+  unchanged** (per ADR-0324). Kit imports it via path; renaming
+  producer or its CLI breaks every kit run. Corpus schema-version field
+  also load-bearing for `analyze_knob_sweep.py` consumers (see
+  `ai/AGENTS.md` for schema-version SCHEMA_VERSION=3 follow-up notes).
 
-- **Darwin gate skips CUDA/NVIDIA probes.** macOS runs the CPU
-  path (NEON / AVX2) and probes ffmpeg's VideoToolbox availability
-  instead. Adding a `darwin-arm64-metal` token (future Metal-on-Apple
-  port) requires updating the Darwin gate so it continues to skip
-  the NVIDIA probes — currently the gate matches `darwin-*` prefix.
+- **Darwin gate skips CUDA/NVIDIA probes.** macOS runs CPU path (NEON /
+  AVX2), probes ffmpeg's VideoToolbox availability instead. Adding
+  `darwin-arm64-metal` token (future Metal-on-Apple port) requires
+  updating Darwin gate to keep skipping NVIDIA probes — gate currently
+  matches `darwin-*` prefix.
 
-- **The kit is a distribution surface, not a code surface.** Edits
-  here that touch the in-tree producers (e.g. silently rewriting
-  `hw_encoder_corpus.py` from inside the kit) are out of scope —
-  send a separate PR against `scripts/dev/` instead.
+- **Kit = distribution surface, not code surface.** Edits here
+  touching in-tree producers (e.g. silently rewriting
+  `hw_encoder_corpus.py` from inside kit) out of scope — send separate
+  PR against `scripts/dev/` instead.
 
 ## Twin-update awareness
 
-The kit bundles in-tree scripts. When editing kit scripts, walk:
+Kit bundles in-tree scripts. Editing kit scripts -> walk:
 
 - `scripts/dev/hw_encoder_corpus.py` — corpus producer.
 - `ai/scripts/run_ensemble_v2_real_corpus_loso.sh` — LOSO retrain.
 - `ai/scripts/validate_ensemble_seeds.py` — verdict emission.
 - `ai/scripts/export_ensemble_v2_seeds.py` — model export.
 - `scripts/ci/ensemble_prod_gate.py` — production gate.
-- `docs/development/ensemble-training-kit.md` — runbook (if it
-  exists; otherwise the kit's `README.md` is canonical).
+- `docs/development/ensemble-training-kit.md` — runbook (if exists;
+  else kit's `README.md` canonical).
 
-If the kit changes any of these consumers' invocation contracts,
-the `README.md` operator runbook updates in the same PR.
+Kit changing any of these consumers' invocation contracts ->
+`README.md` operator runbook updates in same PR.
 
 ## Build kit-bundled binaries
 
-Operators build the per-platform bundled binary once via:
+Operators build per-platform bundled binary once via:
 
 ```bash
 bash tools/ensemble-training-kit/build-libvmaf-binaries.sh --platform linux-x86_64-cuda
 ```
 
-The script writes to `tools/ensemble-training-kit/binaries/<platform>/vmaf`.
-The `binaries/` subtree is gitignored (per the project's git policy
-on built artefacts) — operators rebuild for their own host.
+Script writes to `tools/ensemble-training-kit/binaries/<platform>/vmaf`.
+`binaries/` subtree gitignored (per project's git policy on built
+artefacts) — operators rebuild for own host.
 
 ## Governing ADRs
 
 - [ADR-0025](../../../docs/adr/0025-copyright-handling-dual-notice.md) —
   dual-copyright policy.
 - [ADR-0303](../../../docs/adr/0303-fr-regressor-v2-ensemble-prod-flip.md) —
-  production-flip criteria for FR-regressor v2 (the verdict
-  consumed by `04-validate.sh`).
+  production-flip criteria for FR-regressor v2 (verdict consumed by
+  `04-validate.sh`).
 - ADR-0309
   ([`0309-fr-regressor-v2-ensemble-real-corpus-retrain.md`](../../../docs/adr/0309-fr-regressor-v2-ensemble-real-corpus-retrain.md))
   — ensemble retrain runbook (companion to this kit).

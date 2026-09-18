@@ -38,7 +38,7 @@ Review documentation for VMAFx fork. Scope: `docs/` (mkdocs site),
    Proposed` ADRs whose decisions demonstrably implemented.
 7. **Code-comment vs doc-page accuracy** — when doc page describes
    flag / API / kernel, sample cited source line to confirm claim. (Audit
-   slice A found multiple cases of docs claiming flags work that actually
+   slice A found multiple cases of docs claiming flags work that
    silently no-op.)
 8. **Markdown lint hygiene** — touched files must be lint-clean (line length
    per `.markdownlint.json`, table-column-style consistency, code-fence language

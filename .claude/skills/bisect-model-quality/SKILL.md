@@ -11,11 +11,12 @@ description: Binary-search a timeline of ONNX checkpoints for the first one that
 - Ordered list of model checkpoints (training-run intermediates, release
   history).
 - Held-out feature parquet with `mos` target column.
-- Goal: find *first* checkpoint breaking quality, not just that *something*
-  broke.
+- Goal: find *first* checkpoint breaking quality, not merely that
+  *something* broke somewhere in range.
 
 Differs from `/bisect-regression`: does not rebuild anything; runs only ORT
-inference against each candidate. Runs in O(log N) evaluations.
+inference against each candidate, no compile step. Runs in O(log N)
+evaluations, not linear scan.
 
 ## Invocation
 
@@ -51,9 +52,11 @@ checkpoints in training order.
 
 ## Guardrails
 
-- Needs at least 2 models and parquet with `mos` column.
-- Assumes monotonic quality. If both endpoints good or both bad -> tool emits
-  verdict, skips binary search (no nonsense answer).
+- Needs at least 2 models and parquet with `mos` column; else immediate
+  error, no partial run.
+- Assumes monotonic quality. If both endpoints good or both bad -> tool
+  emits verdict, skips binary search entirely (no nonsense answer, no
+  wasted evaluations).
 
 ## Shared helpers
 

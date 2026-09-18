@@ -1,6 +1,6 @@
 ---
 name: add-feature-extractor
-description: Scaffold a new feature extractor (e.g. a novel metric) with C source+header, registry entry, doc stub, and a smoke test. Does not produce a SIMD or GPU path — those come via /add-simd-path and /add-gpu-backend.
+description: Scaffold new feature extractor (e.g. novel metric) with C source+header, registry entry, doc stub, smoke test. Produces no SIMD or GPU path — those come via /add-simd-path and /add-gpu-backend.
 ---
 <!-- markdownlint-disable MD060 -->
 

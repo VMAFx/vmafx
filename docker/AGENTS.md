@@ -2,35 +2,32 @@
 
 ## Node model root
 
-`Dockerfile.node` stages the contents of `model/` with
-`cp -r model/. /dist/model/`; do not copy the directory itself. The runtime
-copy maps that staging root to `/usr/local/share/vmafx/model`, which is also the
-exact `VMAFX_MODEL_DIR`. The builder must continue to assert that
-`/dist/model/vmaf_v0.6.1.json` exists so a nested `model/model/` layout fails at
-build time instead of producing a worker that cannot resolve its packaged
-model.
+`Dockerfile.node` stages contents of `model/` via
+`cp -r model/. /dist/model/`; do not copy the directory itself. Runtime copy
+maps that staging root to `/usr/local/share/vmafx/model` = exact
+`VMAFX_MODEL_DIR`. Builder must keep asserting `/dist/model/vmaf_v0.6.1.json`
+exists, so nested `model/model/` layout fails at build time, not as a worker
+unable to resolve its packaged model.
 
 ## Base images come from `build-config.env` (ADR-1231)
 
-Do not write a base image into a Dockerfile in this directory. Every base is an
-`ARG` whose default mirrors the root-level `build-config.env`; edit that file
-and run `make base-images-sync`, never the `ARG` line by hand.
+Do not write base image into Dockerfile in this directory. Every base = `ARG`
+whose default mirrors root-level `build-config.env`; edit that file, run
+`make base-images-sync`, never edit `ARG` line by hand.
 
-`COPY --from=<digest-pinned image>` counts as a base-image pin and is rejected
-by `scripts/ci/check-base-image-single-source.sh`. Declare a named stage
-instead — `FROM ${CUDA_RUNTIME} AS cuda-runtime-libs`, then
-`COPY --from=cuda-runtime-libs …`. BuildKit prunes unused stages, so the extra
-stage is free. Four pins hidden this way were the most out-of-date images in
-the repository.
+`COPY --from=<digest-pinned image>` = base-image pin, rejected by
+`scripts/ci/check-base-image-single-source.sh`. Declare named stage instead —
+`FROM ${CUDA_RUNTIME} AS cuda-runtime-libs`, then
+`COPY --from=cuda-runtime-libs …`. BuildKit prunes unused stages, so extra
+stage = free. Four pins hidden this way were most out-of-date images in repo.
 
 See [docs/development/base-images.md](../docs/development/base-images.md).
 
 ## Fedora optional SYCL repository
 
-`dev/fedora-40.Dockerfile` writes its seven literal oneAPI repository lines
-with `printf '%s\n'` inside `ENABLE_SYCL=true`. Keep both signature checks,
-repository-write → install → cleanup short-circuiting and the default-off
-branch. Literal `\n` text cannot terminate a Dockerfile heredoc: it breaks
-parsing even when the branch is disabled. The root Dockerfile's redirected
-while loop is unrelated. See
-[Research-2056](../docs/research/2056-fedora-scorecard-heredoc.md).
+`dev/fedora-40.Dockerfile` writes seven literal oneAPI repository lines with
+`printf '%s\n'` inside `ENABLE_SYCL=true`. Keep both signature checks,
+repository-write → install → cleanup short-circuiting, and default-off
+branch. Literal `\n` text cannot terminate Dockerfile heredoc: breaks parsing
+even with branch disabled. Root Dockerfile's redirected while loop unrelated.
+See [Research-2056](../docs/research/2056-fedora-scorecard-heredoc.md).

@@ -87,7 +87,7 @@ emit JSON by default; downstream automation can.
 
 - **Never** edits tracked file. Output lands under `/tmp/` only.
 - **Never** runs git, network, or build commands: pure local scan.
-- **Never** auto-dispatches agents based on findings: audit = read-only seed
+- **Never** auto-dispatches agents from findings: audit = read-only seed
   list; human decides what becomes PR.
 - If script missing or fails: report error, exit non-zero (do not silently fall
   back to degraded scan).

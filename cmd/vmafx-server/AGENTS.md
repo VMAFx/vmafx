@@ -20,7 +20,7 @@ Go gRPC + HTTP scoring service. See
    strictly monotonic from 0 — gaps = error. Phase 2 implementation MUST
    preserve contract so existing clients keep working.
 
-3. **`ScoreStream` per-frame scores are emitted after EOF** (`grpc_server.go`,
+3. **`ScoreStream` per-frame scores emitted after EOF** (`grpc_server.go`,
    ADR-0933 Phase 2): handler ingests every `FramePair` into
    `pkg/libvmaf.StreamScorer` first; client half-closes -> flush, harvest
    per-frame + pooled scores, stream back `FrameScore` messages then terminal
@@ -36,13 +36,13 @@ Go gRPC + HTTP scoring service. See
    every RPC has real implementation; generator regenerates unimplemented
    stub on every proto change.
 
-5. **Panic-recovery interceptors are not optional** (`grpc_server.go`,
+5. **Panic-recovery interceptors not optional** (`grpc_server.go`,
    ADR-0978): handler panic (notably cgo libvmaf call path) MUST convert to
    `codes.Internal` reply, keeping server alive across bad request — otherwise
    bad request tears down gRPC worker goroutine, crashes process. golusoris
    `grpc.Module` (ADR-1119) keeps process ALIVE (bakes `go-grpc-middleware/v2`
    recovery interceptors into constructed `*grpc.Server`), but installs them
-   with NO recovery handler. ⚠ Verified against pin (go-grpc-middleware/v2
+   with NO recovery handler. ! verified against pin (go-grpc-middleware/v2
    v2.3.3): default returns `*recovery.PanicError` (plain error); gRPC maps to
    `codes.Unknown`, NOT `codes.Internal`. Production golusoris path panic
    surfaces as `codes.Unknown`; ADR-0978 `codes.Internal` mapping BLOCKED on
@@ -59,7 +59,7 @@ Go gRPC + HTTP scoring service. See
    request needs > 1 MiB (e.g. inlined picture data), raise
    `maxScoreRequestBodyBytes`, do not remove cap.
 
-7. **R1 — scorer closes AFTER the gRPC server drains** (`main.go`, ADR-1119):
+7. **R1 — scorer closes AFTER gRPC server drains** (`main.go`, ADR-1119):
    cgo `*libvmaf.Scorer` (and per-call `StreamScorer` C contexts) must release
    only after in-flight `Score` / `ScoreStream` RPCs drain. Composition root
    guarantees this: scorer constructed before golusoris `*grpc.Server` —

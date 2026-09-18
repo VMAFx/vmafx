@@ -69,8 +69,8 @@
    `config/rbac/role_vmafxnode.yaml`, and
    `config/rbac/role_vmafxmodeltraining.yaml` = minimum-permission roles.
    Combined `config/rbac/role.yaml` = convenience aggregate. When adding verbs
-   to reconciler, update corresponding per-controller role, not just
-   aggregate.
+   to reconciler, update corresponding per-controller role, not
+   aggregate alone.
 
 10. **fx owns signals and the run loop — do NOT call
     `ctrl.SetupSignalHandler()` or `mgr.Start()` anywhere.** `main.go` is

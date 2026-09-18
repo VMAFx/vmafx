@@ -42,10 +42,11 @@ Defaults: `--backend=cpu --config=release --sanitizers=none`.
 
 ## Constraints
 
-- Sanitizers force `--buildtype=debug` (ASan+UBSan need debug).
-- TSan mutually exclusive with ASan.
-- CUDA + SYCL build requires both compilers; error early if `nvcc` or `icpx`
-  missing.
+- Sanitizers force `--buildtype=debug`: ASan+UBSan need debug builds, else
+  overflow checks silently vanish.
+- TSan never combines with ASan in one build.
+- CUDA + SYCL build needs both compilers; error early if `nvcc` or `icpx`
+  missing, not mid-build.
 
 ## Uses
 

@@ -4,9 +4,9 @@ description: Build FFmpeg from the configured released tag with the complete VMA
 ---
 # /build-ffmpeg-with-vmaf
 
-- Native integration: use dev-MCP container in `AGENTS.md`.
-- Confirm installed libvmaf matches source tested; rebuild when required by
-  container freshness rule.
+- Native integration path: use dev-MCP container described in `AGENTS.md`.
+- Confirm installed libvmaf version matches source under test; rebuild
+  when required by container freshness rule.
 
 Validate patch series:
 
@@ -21,18 +21,18 @@ bash ffmpeg-patches/test/build-and-run.sh
 ```
 
 - Helper uses `FFMPEG_REMOTE` and `FFMPEG_TAG` from `build-config.env`.
-- Applies `series.txt` in order.
-- Builds against installed libvmaf.
+- Applies every patch in `series.txt`, in listed order.
+- Builds ffmpeg against installed libvmaf.
 - Checks `libvmaf` tiny-model option and `vmaf_pre` filter.
 - Set `VMAF_PREFIX` for nonstandard libvmaf installation.
-- Missing prerequisites -> exit 77 = unavailable result, not a pass.
+- Missing prerequisites -> exit 77 = unavailable result, not pass or fail.
 - Default source checkout = disposable.
 - Explicit `FFMPEG_SRC` must be new path; existing checkouts rejected intact.
 - `KEEP_BUILD=1` retains successful build; failures remain available for
   diagnosis.
 - `FFMPEG_SHA` can select another stable released tag; development and
   arbitrary commit refs rejected.
-- Empty or failed series = not a valid integration result.
+- Empty or failed series = not valid integration result.
 - Report source revision, installed libvmaf version, applied patch count,
   actual smoke results.
 

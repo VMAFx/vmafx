@@ -1,18 +1,22 @@
 <!-- markdownlint-disable MD013 -->
 # Research Digests — Agent Invariants
 
-Parent: [../../AGENTS.md](../../AGENTS.md). The deep-dive deliverable
-contract that makes research digests required PR artifacts is set by
+Parent: [../../AGENTS.md](../../AGENTS.md). Deep-dive deliverable contract
+(research digests = required PR artifacts) set by
 [ADR-0108](../adr/0108-deep-dive-deliverables-rule.md).
 
 ## Header ID normalization
 
-Research digest filename IDs and `# Research-NNNN` header IDs must match. Cross-links in the codebase and in other documents use the filename ID (e.g., `docs/research/0033-*.md`), so the header must mirror the filename to maintain consistency.
+Filename ID and `# Research-NNNN` header ID must match. Cross-links
+(codebase, other docs) use filename ID (e.g., `docs/research/0033-*.md`) ->
+header must mirror filename.
 
-**Normalization rule:** For any new or renamed research digest file:
+**Normalization rule:** new or renamed research digest file:
 
-- Extract the numeric ID from the filename (e.g., `0033` from `0033-foo.md`)
-- Ensure the file starts with `# Research-0033` to match
-- If a file lacks a header, add one as the first line (before any subtitle or content)
+- extract numeric ID from filename (e.g., `0033` from `0033-foo.md`)
+- file starts with `# Research-0033` to match
+- no header -> add one as first line (before any subtitle or content)
 
-**Rationale:** Filename IDs are stable cross-link targets (they appear in git diffs, PR descriptions, ADR references, and commit messages). Headers must track filenames to prevent audit mismatches and stale references.
+**Rationale:** filename IDs = stable cross-link targets (git diffs, PR
+descriptions, ADR references, commit messages). Headers must track
+filenames: prevents audit mismatches, stale references.

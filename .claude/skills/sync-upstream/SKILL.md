@@ -1,6 +1,6 @@
 ---
 name: sync-upstream
-description: Reconcile fork master with Netflix/vmaf master. Detects the fork's port-only topology (no shared merge-base) and emits a coverage report; falls back to merge-based sync when the histories are actually connected.
+description: Reconcile fork master with Netflix/vmaf master. Detects the fork's port-only topology (no shared merge-base) and emits a coverage report; falls back to merge-based sync when the histories are connected.
 ---
 <!-- markdownlint-disable MD029 MD046 -->
 
@@ -100,7 +100,7 @@ regardless of content). Skill must detect topology before merge attempt.
     - `PORTED` (Pass 1 hit) -> fork commit cites SHA in subject.
     - `PORTED-SILENTLY` (Pass 2 hit) -> semantic content present, no SHA
       citation. Surface in report for maintainer citation backfill decision.
-      NOT a `/port-upstream-commit` candidate.
+      NOT `/port-upstream-commit` candidate.
     - `UNPORTED` (neither pass hit) -> genuinely missing. Recommend
       `/port-upstream-commit <sha>`.
 

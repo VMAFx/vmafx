@@ -24,8 +24,8 @@ python3 scripts/ci/ffmpeg_patch_stack.py --check
 - Do not reset or clean existing checkouts.
 - Failure -> inspect printed diagnostics directory; resolve integration source
   deliberately, replay complete series.
-- Later patches depend on earlier ones -> continuing after failed patch is not
-  a valid series check.
+- Later patches depend on earlier ones -> continuing after failed patch
+  does not satisfy full series check.
 - Review generated diff and validation before commit within user authorized
   scope.
 - Patch refresh cannot invent semantics of new public API.
