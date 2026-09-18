@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0710: VMAFX CI Slim-Down v2 — One Build per OS + State-of-the-Art Sanitizers
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-1259](1259-ci-build-matrix-as-it-runs.md)
 - **Date**: 2026-05-28
 - **Deciders**: lusoris
 - **Tags**: `ci`, `build`, `sanitizers`, `vmafx`

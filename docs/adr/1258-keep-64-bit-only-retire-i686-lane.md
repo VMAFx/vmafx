@@ -84,7 +84,8 @@ the same day; the lane ADR-0151 set up ran until this ADR removed it.
   including x87 score drift unless they build with `-msse2 -mfpmath=sse`.
 - **Neutral / follow-ups**: the other lanes ADR-0691 and ADR-0689 removed,
   which the same merge restored, and the lane removals ADR-0728 describes but
-  never made, are recorded in ADR-1259.
+  never made, are recorded in
+  [ADR-1259](1259-ci-build-matrix-as-it-runs.md).
 
 ## References
 
