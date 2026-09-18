@@ -309,3 +309,73 @@ void calculate_c_values_row_avx512(float *c_values, const uint16_t *histograms,
                                               num_diffs, tvi_thresholds, vlt_luma, diff_weights,
                                               all_diffs, reciprocal_lut, v_band_base, v_band_size);
 }
+
+/*
+ * Spatial-mask row kernels: 16-lane twins of compute_dp_row_avx2 /
+ * compute_mask_row_avx2 (adapted from upstream Netflix/vmaf 86da14d03).
+ * Integer-only and bit-exact against the scalar compute_dp_row /
+ * compute_mask_row in cambi.c for every input.
+ */
+
+/* Inclusive prefix sum of the sixteen uint32 lanes (modular, like the
+ * scalar). valignd against zero shifts the vector up by k lanes. */
+static inline __m512i inclusive_prefix_epi32_avx512(__m512i x)
+{
+    const __m512i zero = _mm512_setzero_si512();
+    x = _mm512_add_epi32(x, _mm512_alignr_epi32(x, zero, 15));
+    x = _mm512_add_epi32(x, _mm512_alignr_epi32(x, zero, 14));
+    x = _mm512_add_epi32(x, _mm512_alignr_epi32(x, zero, 12));
+    x = _mm512_add_epi32(x, _mm512_alignr_epi32(x, zero, 8));
+    return x;
+}
+
+void compute_dp_row_avx512(uint32_t *dp_curr, const uint32_t *dp_prev, const uint16_t *deriv,
+                           int width, int pad_size, bool deriv_valid)
+{
+    const int dp_offset = pad_size + 1;
+    const int actual_width = deriv_valid ? width : 0;
+    const __m512i last_lane = _mm512_set1_epi32(15);
+    __m512i carry = _mm512_setzero_si512();
+    int j = 0;
+    for (; j + 16 <= actual_width; j += 16) {
+        const __m512i d = _mm512_cvtepu16_epi32(_mm256_loadu_si256((const __m256i *)&deriv[j]));
+        const __m512i scan = inclusive_prefix_epi32_avx512(d);
+        const __m512i prev = _mm512_loadu_si512((const void *)&dp_prev[dp_offset + j]);
+        _mm512_storeu_si512((void *)&dp_curr[dp_offset + j],
+                            _mm512_add_epi32(prev, _mm512_add_epi32(scan, carry)));
+        /* Only this add is loop-carried; the block total does not wait on carry. */
+        carry = _mm512_add_epi32(carry, _mm512_permutexvar_epi32(last_lane, scan));
+    }
+    uint32_t prefix = (uint32_t)_mm_cvtsi128_si32(_mm512_castsi512_si128(carry));
+    for (; j < actual_width; j++) {
+        prefix += deriv[j];
+        dp_curr[dp_offset + j] = dp_prev[dp_offset + j] + prefix;
+    }
+    const int n = width + pad_size;
+    for (; j < n; j++) {
+        dp_curr[dp_offset + j] = dp_prev[dp_offset + j] + prefix;
+    }
+}
+
+void compute_mask_row_avx512(uint16_t *mask_row, const uint32_t *dp_bottom, const uint32_t *dp_top,
+                             int width, int pad_size, uint32_t mask_index)
+{
+    const int delta = 2 * pad_size + 1;
+    const __m512i midx = _mm512_set1_epi32((int32_t)mask_index);
+    const __m256i one = _mm256_set1_epi16(1);
+    int j = 0;
+    for (; j + 16 <= width; j += 16) {
+        const __m512i bd = _mm512_loadu_si512((const void *)&dp_bottom[j + delta]);
+        const __m512i t = _mm512_loadu_si512((const void *)&dp_top[j]);
+        const __m512i b = _mm512_loadu_si512((const void *)&dp_bottom[j]);
+        const __m512i td = _mm512_loadu_si512((const void *)&dp_top[j + delta]);
+        const __m512i result = _mm512_sub_epi32(_mm512_add_epi32(bd, t), _mm512_add_epi32(b, td));
+        /* AVX-512F has the unsigned compare the scalar performs. */
+        const __mmask16 gt = _mm512_cmpgt_epu32_mask(result, midx);
+        _mm256_storeu_si256((__m256i *)&mask_row[j], _mm256_maskz_mov_epi16(gt, one));
+    }
+    for (; j < width; j++) {
+        const uint32_t result = dp_bottom[j + delta] + dp_top[j] - dp_bottom[j] - dp_top[j + delta];
+        mask_row[j] = (uint16_t)(result > mask_index);
+    }
+}

@@ -213,3 +213,86 @@ void calculate_c_values_row_neon(float *c_values, const uint16_t *histograms, co
         c_row[col] = c_value_pixel_neon(&r, mask_row[col], image_row[col], col);
     }
 }
+
+/*
+ * Spatial-mask row kernels: NEON twins of compute_dp_row_avx2 /
+ * compute_mask_row_avx2 (adapted from upstream Netflix/vmaf 86da14d03).
+ * Integer-only and bit-exact against the scalar compute_dp_row /
+ * compute_mask_row in cambi.c for every input.
+ */
+
+/* Inclusive prefix sum of the four uint32 lanes (modular, like the scalar).
+ * vextq_u32 against zero shifts the vector up by k lanes. */
+static inline uint32x4_t inclusive_prefix_u32_neon(uint32x4_t x)
+{
+    const uint32x4_t zero = vdupq_n_u32(0);
+    x = vaddq_u32(x, vextq_u32(zero, x, 3));
+    x = vaddq_u32(x, vextq_u32(zero, x, 2));
+    return x;
+}
+
+void compute_dp_row_neon(uint32_t *dp_curr, const uint32_t *dp_prev, const uint16_t *deriv,
+                         int width, int pad_size, bool deriv_valid)
+{
+    const int dp_offset = pad_size + 1;
+    const int actual_width = deriv_valid ? width : 0;
+    uint32x4_t carry = vdupq_n_u32(0);
+    int j = 0;
+    for (; j + 8 <= actual_width; j += 8) {
+        const uint16x8_t d = vld1q_u16(&deriv[j]);
+        /* Eight-lane prefix: the high half also gets the low half's total. */
+        const uint32x4_t lo = inclusive_prefix_u32_neon(vmovl_u16(vget_low_u16(d)));
+        const uint32x4_t hi =
+            vaddq_u32(inclusive_prefix_u32_neon(vmovl_high_u16(d)), vdupq_laneq_u32(lo, 3));
+        uint32_t *out = &dp_curr[dp_offset + j];
+        const uint32_t *prev = &dp_prev[dp_offset + j];
+        vst1q_u32(out, vaddq_u32(vld1q_u32(prev), vaddq_u32(lo, carry)));
+        vst1q_u32(out + 4, vaddq_u32(vld1q_u32(prev + 4), vaddq_u32(hi, carry)));
+        /* Only this add is loop-carried; the block total does not wait on carry. */
+        carry = vaddq_u32(carry, vdupq_laneq_u32(hi, 3));
+    }
+    uint32_t prefix = vgetq_lane_u32(carry, 0);
+    for (; j < actual_width; j++) {
+        prefix += deriv[j];
+        dp_curr[dp_offset + j] = dp_prev[dp_offset + j] + prefix;
+    }
+    const int n = width + pad_size;
+    for (; j < n; j++) {
+        dp_curr[dp_offset + j] = dp_prev[dp_offset + j] + prefix;
+    }
+}
+
+/* Four-lane box sum: dp_bottom[j + delta] + dp_top[j] - dp_bottom[j] - dp_top[j + delta]. */
+static inline uint32x4_t box_sum_u32_neon(const uint32_t *dp_bottom, const uint32_t *dp_top, int j,
+                                          int delta)
+{
+    const uint32x4_t bd = vld1q_u32(&dp_bottom[j + delta]);
+    const uint32x4_t t = vld1q_u32(&dp_top[j]);
+    const uint32x4_t b = vld1q_u32(&dp_bottom[j]);
+    const uint32x4_t td = vld1q_u32(&dp_top[j + delta]);
+    return vsubq_u32(vaddq_u32(bd, t), vaddq_u32(b, td));
+}
+
+/* Not dispatched: GCC and Clang already auto-vectorize the scalar
+ * compute_mask_row into this instruction sequence (cmhi + uzp1, eight columns
+ * per iteration), so it would not reduce the op count. It is kept as the NEON
+ * twin and stays under the parity test. */
+void compute_mask_row_neon(uint16_t *mask_row, const uint32_t *dp_bottom, const uint32_t *dp_top,
+                           int width, int pad_size, uint32_t mask_index)
+{
+    const int delta = 2 * pad_size + 1;
+    const uint32x4_t midx = vdupq_n_u32(mask_index);
+    const uint16x8_t one = vdupq_n_u16(1);
+    int j = 0;
+    for (; j + 8 <= width; j += 8) {
+        /* vcgtq_u32 is the unsigned compare the scalar performs. */
+        const uint32x4_t gt_lo = vcgtq_u32(box_sum_u32_neon(dp_bottom, dp_top, j, delta), midx);
+        const uint32x4_t gt_hi = vcgtq_u32(box_sum_u32_neon(dp_bottom, dp_top, j + 4, delta), midx);
+        const uint16x8_t gt = vcombine_u16(vmovn_u32(gt_lo), vmovn_u32(gt_hi));
+        vst1q_u16(&mask_row[j], vandq_u16(gt, one));
+    }
+    for (; j < width; j++) {
+        const uint32_t result = dp_bottom[j + delta] + dp_top[j] - dp_bottom[j] - dp_top[j + delta];
+        mask_row[j] = (uint16_t)(result > mask_index);
+    }
+}
