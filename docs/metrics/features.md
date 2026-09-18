@@ -637,9 +637,10 @@ smaller inputs with `-EINVAL` and a clear log message — see
 | `clip_db`    | bool | `false` | —      | Cap dB values based on the minimum representable MSE                  |
 | `scale`      | int  | `0`     | `0–10` | Downsampling factor for `float_ssim`; `0` = auto per Wang 2003        |
 
-**Backends** — `ssim` (fixed): scalar (CPU) plus the HIP twin
-(`integer_ssim_hip`); the integer pyramid + SIMD windows stay scalar by
-design. `float_ssim` / `float_ms_ssim`: AVX2, AVX-512, NEON, plus the GPU
+**Backends** — `ssim` (fixed): CPU with AVX2 / NEON, plus the GPU twins
+`integer_ssim_cuda`, `integer_ssim_sycl`, `integer_ssim_hip` and
+`integer_ssim_metal` (see [SSIM](ssim.md) for their precision against the CPU).
+`float_ssim` / `float_ms_ssim`: AVX2, AVX-512, NEON, plus the GPU
 twins `float_ms_ssim_cuda`, `float_ms_ssim_sycl` and
 `integer_ms_ssim_hip`. The `enable_lcs` option ships across **all**
 backends — CPU + CUDA emit the same 15

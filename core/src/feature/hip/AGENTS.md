@@ -405,15 +405,44 @@ with non-zero defaults before creating dictionary causes
 `_full_w_576_full_h_324`), which breaks feature lookups and parity
 tests.
 
-## Integer SSIM bit-exact CPU contract (ADR-0564, ADR-1154)
+## Integer SSIM CPU contract (ADR-0564)
 
-`integer_ssim_hip` must retain `.flags = 0` until
-`integer_ssim_score.hip` re-implemented using 9-tap separable int64
-kernel (`integer_ssim_score.cu`). Current 11-tap float Gaussian
-kernel deviates by 4.5e-3 from CPU integer SSIM. Under ADR-0564,
-silent numerical drift under canonical `"ssim"` feature name
-prohibited; keeping `.flags = 0` allows VMAF dispatcher to select
-CPU integer SSIM path, preserve bit-exact numerical ground truth.
+`integer_ssim_hip` publishes the canonical `"ssim"` feature and carries
+`VMAF_FEATURE_EXTRACTOR_HIP`, so model-driven dispatch under `--backend hip`
+runs it instead of the CPU `ssim`. That is only acceptable while it computes
+what `integer_ssim.c::calc_ssim()` computes. ADR-0564 rules out drift under
+this name; before the int64 port the twin ran an 11-tap float Gaussian 4.5e-3
+off the CPU and had to stay unflagged (ADR-1154).
+
+Invariants:
+
+- **Same kernel as the CPU.** 9 integer taps `[2,9,28,55,68,55,28,9,2]`, int64
+  moments, and boundary *truncation*: taps outside the frame are skipped and
+  the weight counts only the in-bounds taps. Do not mirror or clamp at the
+  border, as the VIF kernels do (ADR-1103); the CPU does neither here.
+- **Same per-pixel expression.** `issim_pixel_term()` is
+  `ssim_reduce_row_range()` operand for operand, with `SSIM_K1` / `SSIM_K2`
+  spelled `(0.01 * 0.01)` / `(0.03 * 0.03)`. The literals `0.0001` /
+  `0.0009` are different doubles. `hip_cu_extra_flags` builds the kernel with
+  `-ffp-contract=off` so nothing fuses into an FMA; with both, a 1x1 frame
+  matches the CPU exactly. The only remaining difference is summation order,
+  measured at 2e-14 on the Netflix pair and 1.06e-11 at worst (1080p
+  checkerboard), the same as the CUDA twin.
+- **Wavefront-independent reduction.** The per-block sums use a shared-memory
+  tree over all 128 threads, not `warpSize` shuffles, so wave32 (RDNA) and
+  wave64 (GCN / CDNA) add in the same order. The tree is sized for the 16x8
+  launch: `ISSIM_BLOCK_X/Y` in the kernel and `ISSIM_HIP_BLOCK_X/Y` in the
+  host must change together.
+- **Wait for the picture upload.** `submit()` uploads the host pictures with
+  `hipMemcpy2DAsync` and then `hipStreamSynchronize`s before it returns.
+  Without the wait, a pageable-source copy can still be reading when the
+  picture pool refills that buffer with the next frame, and some frames get
+  scored against the next frame's samples. The single-frame fixtures never
+  showed this. Every HIP twin that uploads from `VmafPicture::data` has the same
+  exposure until a HIP picture pool exists (T7-10c); the ones still open are
+  listed under T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18 in `docs/state.md`. A
+  parity test that only feeds one frame cannot catch this. Feed several frames
+  from a CLI-sized pool, as `test_hip_ssim_parity.c` does.
 
 ## Integer ADM staging buffer requirement (ADR-1154)
 

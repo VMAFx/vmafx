@@ -29,6 +29,47 @@ mask row") is ported, with three differences a sync must keep:
 upstream counterpart. The same branch refactors `calculate_c_values_row_neon`
 into a per-pixel helper (touched-file lint, bit-exact under `test_cambi_simd`).
 See [Research-2062](research/2062-cambi-spatial-mask-simd.md).
+## fix/hip-integer-ssim-int64-kernel — HIP integer SSIM runs the CPU kernel (2026-09-18)
+
+**Rebase impact**: none upstream. Every touched source is fork-local: Netflix
+ships no HIP backend, and `integer_ssim_hip.c`, `integer_ssim_score.hip`,
+`core/src/hip/dispatch_strategy.c` and `test_hip_ssim_parity.c` exist only in
+the fork. The `core/src/meson.build` hunk adds one `hip_cu_extra_flags` entry
+and the `core/test/meson.build` hunk replaces the `should_fail` registration
+with a variant loop; both are inside `enable_hip` blocks upstream never edits.
+
+**Invariants** (see also `core/src/feature/hip/AGENTS.md`):
+
+- `integer_ssim_score.hip` mirrors `integer_ssim.c::calc_ssim()`. The 9-tap
+  integer weights, the k_min / k_max truncation formulas, `SSIM_K1` /
+  `SSIM_K2` spelled `(0.01 * 0.01)` / `(0.03 * 0.03)`, and the operand order of
+  the per-pixel term are all load-bearing. If an upstream sync changes
+  `integer_ssim.c`, change every GPU twin (CUDA, SYCL, HIP, Metal) in the
+  same PR.
+- `hip_cu_extra_flags['integer_ssim_score']` keeps `-ffp-contract=off`.
+  Without it the per-pixel term fuses into FMAs and stops rounding like the
+  CPU's. The 1x1 case shows it: with the flag HIP matches the CPU exactly on
+  5 of 5 frames.
+- `submit()` waits for its two host-to-device uploads before returning. The
+  pictures are pageable memory that the pool recycles as soon as `submit()`
+  returns. Keep the wait until a HIP picture pool (T7-10c) hands device
+  pictures to the extractor. `test_hip_ssim_parity` feeds 8 pooled frames and
+  fails every run without it.
+- The block reduction in `integer_ssim_vert_combine` is sized for the 16x8
+  launch in `integer_ssim_hip.c`. Change `ISSIM_BLOCK_X` / `ISSIM_BLOCK_Y` and
+  `ISSIM_HIP_BLOCK_X` / `ISSIM_HIP_BLOCK_Y` together.
+
+Touched files:
+`core/src/feature/hip/integer_ssim/integer_ssim_score.hip` (rewritten),
+`core/src/feature/hip/integer_ssim_hip.c` (rewritten),
+`core/src/feature/hip/integer_ssim_hip.h` (comment),
+`core/src/hip/dispatch_strategy.c` (two table entries, ADR-1138 bracket),
+`core/src/meson.build`, `core/test/meson.build`,
+`core/test/test_hip_ssim_parity.c`, `core/src/feature/hip/AGENTS.md`,
+`docs/backends/hip/overview.md`, `docs/metrics/ssim.md`,
+`docs/metrics/features.md`, `docs/state.md`,
+`changelog.d/fixed/hip-integer-ssim-int64-kernel.md`, `CHANGELOG.md`,
+`scripts/ci/tidy-baseline-hip.json` (scoped tightening).
 
 ## Canonical envtest installer (2026-09-08)
 
