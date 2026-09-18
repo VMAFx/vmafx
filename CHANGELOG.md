@@ -21802,6 +21802,13 @@ used consistently for `s->adm_csf_module`, `s->adm_csf_den_module`, and
   its throughput.
 
 
+- **The CUDA `extern "C"` kernel check (`scripts/dev/check-cuda-extern-c.sh`)
+  checks kernels again.** It matched no `cuModuleGetFunction` call in the tree
+  and then aborted on an empty list, so it never verified anything. It now
+  reads every call, confirms that each kernel it can locate sits inside an
+  `extern "C"` block, and names the macro-generated kernels it cannot locate.
+
+
 - **`--feature ssim --backend cuda` silently broken since introduction.**
   `integer_ssim/integer_ssim_score.cu` defined three `__global__`
   kernels (`integer_ssim_horiz_8bpc`, `integer_ssim_horiz_16bpc`,
