@@ -1,0 +1,18 @@
+---
+description: VMAFx workspace build, test, and agent-integration contract
+globs:
+alwaysApply: true
+---
+
+Use the checked-in `.vscode/` tasks and settings as the canonical workspace
+defaults. The native C/C++ language server is clangd; do not enable a second
+IntelliSense provider. Meson sources live in `core/`, so configure with
+`meson setup <build-dir> core`.
+
+Keep all project agent integrations available. This includes Claude, Codex,
+Gemini, Antigravity, Ollama/local agents, Paperclip, Hindsight, and any
+repository MCP servers. Do not add these integrations to an ignore, disabled,
+or unwanted list.
+
+Before handing off a change, run the smallest applicable checked-in task and
+keep generated build output out of the source tree's tracked files.

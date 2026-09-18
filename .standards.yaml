@@ -1,0 +1,15 @@
+version: 1
+repository:
+    owner: vmafx
+    name: vmafx
+    visibility: public
+    description: ""
+    homepage: ""
+    topics: []
+profiles:
+    - native-gpu-systems
+facets:
+    - security:high
+    - api:public-contract
+    - docs:seo-portal
+    - agent:sandboxed

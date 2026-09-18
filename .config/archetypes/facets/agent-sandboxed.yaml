@@ -1,0 +1,10 @@
+id: "agent:sandboxed"
+name: "Autonomous Agent Sandboxing & Fleet Governance"
+description: "Enforces canonical AGENTS.md transpilation (HISS-16), cgroup resource caps, network isolation, anti-evasion hooks, and anti-loop interception"
+
+linters:
+  - "semgrep"
+  - "gocyclo"
+
+devcontainer_features:
+  - "ghcr.io/devcontainers/features/common-utils:2"

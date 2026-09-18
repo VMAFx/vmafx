@@ -1,0 +1,36 @@
+id: "native-gpu-systems"
+name: "Native GPU & Compute Systems"
+description: "High-performance C/C++/Rust/CUDA/Vulkan systems with deterministic memory bounds and zero dynamic frame allocations"
+runtime: "native"
+
+complexity:
+  max_cyclomatic: 10
+  max_cognitive: 12
+  max_func_loc: 75
+  max_statements: 40
+
+memory:
+  zero_frame_malloc: true
+  banned_alloc_in_ticks: true
+
+branch_protection:
+  enforce_linear_history: true
+  require_signed_commits: true
+  required_approving_reviewers: 2
+  dismiss_stale_reviews: true
+
+supply_chain:
+  slsa_level: 3
+  enforce_cosign: true
+  require_sbom: true
+
+linters:
+  - "clang-tidy"
+  - "clippy"
+  - "semgrep"
+  - "cppcheck"
+
+devcontainer_features:
+  - "ghcr.io/devcontainers/features/rust:1"
+  - "ghcr.io/devcontainers/features/common-utils:2"
+  - "ghcr.io/devcontainers/features/nix:1"

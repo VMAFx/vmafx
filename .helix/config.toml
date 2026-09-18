@@ -1,0 +1,16 @@
+theme = "default"
+
+[editor]
+line-number = "relative"
+cursorline = true
+color-modes = true
+auto-format = true
+
+[editor.whitespace.render]
+space = "all"
+tab = "all"
+newline = "none"
+
+[editor.indent-guides]
+render = true
+character = "│"
