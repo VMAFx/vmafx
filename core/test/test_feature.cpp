@@ -58,32 +58,46 @@ struct TestState {
  * construction using C++20 designated initialiser syntax. */
 VmafOption g_options[] = {{
                               .name = "opt_bool",
+                              .help = nullptr,
+                              .alias = nullptr,
                               .offset = offsetof(TestState, opt_bool),
                               .type = VMAF_OPT_TYPE_BOOL,
                               .default_val = {.b = kOptBoolDefault},
+                              .min = 0.0,
+                              .max = 0.0,
                               .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
                           },
                           {
                               .name = "opt_double",
+                              .help = nullptr,
                               .alias = "opt_double_alias",
                               .offset = offsetof(TestState, opt_double),
                               .type = VMAF_OPT_TYPE_DOUBLE,
                               .default_val = {.d = kOptDoubleDefault},
+                              .min = 0.0,
+                              .max = 0.0,
                               .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
                           },
                           {
                               .name = "opt_int",
+                              .help = nullptr,
                               .alias = "opt_int_alias",
                               .offset = offsetof(TestState, opt_int),
                               .type = VMAF_OPT_TYPE_INT,
                               .default_val = {.i = kOptIntDefault},
+                              .min = 0.0,
+                              .max = 0.0,
                               .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
                           },
                           {
                               .name = "opt_bool2",
+                              .help = nullptr,
+                              .alias = nullptr,
                               .offset = offsetof(TestState, opt_bool),
                               .type = VMAF_OPT_TYPE_BOOL,
                               .default_val = {.b = kOptBoolDefault},
+                              .min = 0.0,
+                              .max = 0.0,
                               .flags = 0,
                           },
                           {}};
@@ -191,8 +205,16 @@ mu_message_t test_feature_name_null_inputs()
     free(out);
     mu_assert("opts=nullptr must produce the unadorned name", bare_ok);
 
-    static VmafOption opts[] = {
-        {.name = "dummy", .type = VMAF_OPT_TYPE_INT, .flags = VMAF_OPT_FLAG_FEATURE_PARAM}, {}};
+    static VmafOption opts[] = {{.name = "dummy",
+                                 .help = nullptr,
+                                 .alias = nullptr,
+                                 .offset = 0,
+                                 .type = VMAF_OPT_TYPE_INT,
+                                 .default_val = {.i = 0},
+                                 .min = 0.0,
+                                 .max = 0.0,
+                                 .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+                                {}};
 
     out = vmaf_feature_name_from_options("bare2", opts, nullptr);
     const bool bare2_ok = out && !strcmp(out, "bare2");
@@ -211,9 +233,13 @@ mu_message_t test_feature_name_string_option()
     static char default_mode[] = "auto";
     static VmafOption opts[] = {{
                                     .name = "mode",
+                                    .help = nullptr,
+                                    .alias = nullptr,
                                     .offset = offsetof(StringState, mode),
                                     .type = VMAF_OPT_TYPE_STRING,
                                     .default_val = {.s = default_mode},
+                                    .min = 0.0,
+                                    .max = 0.0,
                                     .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
                                 },
                                 {}};

@@ -50983,3 +50983,16 @@ Three results outlive it:
 - **Tidy Changed** in `.github/workflows/lint-and-format.yml` defines its
   exclusion list once, as `exclude_untidyable()`. Add a family there, not in the
   four trigger branches that used to carry copies of it.
+## libvmaf C++ flags and the exported-symbol gate (ADR-0379 follow-up)
+
+- **`core/src/svm.cpp`** (upstream libsvm mirror) changes one line:
+  `Solver::SolutionInfo si = {};` in `svm_train_one()`, so GCC can see `si` is
+  initialised when no solver case runs. An upstream sync that touches
+  `svm_train_one()` keeps the initialiser.
+- **`core/src/meson.build`**: every C++ target takes
+  `cpp_args : vmaf_cppflags_common`. A sync that adds a C++ source to the library
+  inherits it; a new C++ target has to pass it, or `check_exported_symbols`
+  fails on the symbols it leaks.
+- **`core/test/test_registration_partial_copy.cpp`** injects its fault through
+  `-Wl,--wrap=vmaf_dictionary_copy` and links the static archive; it no longer
+  builds where `default_library` is `shared`.
