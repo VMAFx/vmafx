@@ -238,5 +238,34 @@ class ProvenanceData(unittest.TestCase):
         self.assertIsNone(prov.port_sources("core/src/mcp/dispatcher.c"))
 
 
+class DerivationDetector(unittest.TestCase):
+    UP = REL.Upstream(
+        frozenset({"libvmaf/test/test.h", "libvmaf/src/feature/integer_adm.c"}),
+        frozenset({"test.h", "integer_adm.c"}),
+        frozenset({"integer_adm.c"}),
+    )
+
+    def test_a_port_statement_is_found(self) -> None:
+        text = "/* Scalar oracle ported from integer_adm.c in upstream. */\nint x;\n"
+        self.assertTrue(REL.derivation_statements(text, self.UP))
+
+    def test_a_nolint_justification_is_not_a_port_statement(self) -> None:
+        # The ADR-1138 band says the file "mirrors" the C spelling it exercises;
+        # next to a header reference that read as a derivation claim.
+        text = (
+            "/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The\n"
+            " * required Windows build compiles this TU with cl.exe, and this file mirrors\n"
+            " * the C spelling of the surface it exercises. ADR-1138. */\n"
+            '#include "test.h"\n'
+            "/* Checks integer_adm.c's scale bands. */\n"
+            "int x;\n"
+        )
+        self.assertEqual(REL.derivation_statements(text, self.UP), [])
+
+    def test_a_line_comment_suppression_is_dropped_too(self) -> None:
+        text = "x = 0; // NOLINT(bugprone-foo): mirrors integer_adm.c exactly\nint y;\n"
+        self.assertEqual(REL.derivation_statements(text, self.UP), [])
+
+
 if __name__ == "__main__":
     unittest.main()

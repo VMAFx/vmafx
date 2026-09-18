@@ -399,15 +399,42 @@ def prose_blocks(lines: Sequence[str]) -> list[tuple[int, int]]:
     return spans
 
 
+def suppression_lines(lines: list[str]) -> set[int]:
+    """Indices of clang-tidy suppression comments, block comments in full.
+
+    A NOLINT justification explains a lint exception ("this file mirrors the C
+    spelling of the surface it exercises"); it never says where code came from,
+    and its wording would otherwise read as a derivation statement.
+    """
+    found: set[int] = set()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        at = line.find("NOLINT")
+        opener = line.rfind("/*", 0, at) if at >= 0 else -1
+        if at < 0 or (opener < 0 and "//" not in line[:at]):
+            i += 1
+            continue
+        end = i
+        if opener >= 0:
+            while end < len(lines) - 1 and "*/" not in lines[end][opener if end == i else 0 :]:
+                end += 1
+        found.update(range(i, end + 1))
+        i = end + 1
+    return found
+
+
 def descriptive_lines(text: str) -> list[str]:
-    """The file's lines minus its licence scaffolding and its includes.
+    """The file's lines minus its licence scaffolding, includes and lint notes.
 
     Grants, tags, copyright notices and blank comment lines are dropped so the
     window the detector reads is the same before and after a rewrite; includes
-    name dependencies, which are not origins.
+    name dependencies, which are not origins; clang-tidy suppression comments
+    justify an exception, which is not an origin either.
     """
     lines = text.splitlines()
     grant = {i for start, end in prose_blocks(lines) for i in range(start, end + 1)}
+    grant |= suppression_lines(lines)
     return [
         line
         for i, line in enumerate(lines)
