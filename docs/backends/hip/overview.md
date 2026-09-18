@@ -257,7 +257,7 @@ Each returns `-ENOSYS` at `init()`. Tracked in
   `uintptr_t`. This keeps `libvmaf_hip.h` free of `<hip/hip_runtime.h>`,
   mirroring the pattern Vulkan adopted in ADR-0184.
 - No CI runner with a real AMD GPU exists on GitHub-hosted infrastructure.
-  The CI compile lane (`Build — Ubuntu HIP`) runs with `-Denable_hip=true`
+  The CI compile lane (`Ubuntu HIP`) runs with `-Denable_hip=true`
   but `-Denable_hipcc=false`, so kernels are not compiled or exercised on CI.
 
 ## References

@@ -24,7 +24,7 @@ Or from the GitHub UI: **Actions → Builds → Run workflow**.
 ## Finding the tmate URL in the logs
 
 1. Open the Actions run that you triggered.
-2. Select the failing macOS job (e.g. `Build — macOS clang (CPU)`).
+2. Select the failing macOS job (e.g. `macOS clang`).
 3. Expand the **SSH debug session on test failure** step.
 4. The step prints two lines:
 
