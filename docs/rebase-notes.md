@@ -233,6 +233,32 @@ Touched files:
 `docs/metrics/features.md`, `docs/state.md`,
 `changelog.d/fixed/hip-integer-ssim-int64-kernel.md`, `CHANGELOG.md`,
 `scripts/ci/tidy-baseline-hip.json` (scoped tightening).
+## perf/hip-adm-buffer-by-pointer — HIP integer ADM buffer by pointer, re-applied (2026-09-18)
+
+ADR-0759 (the four HIP ADM kernels that read `AdmBufferHip` take it by
+pointer) landed in #101 and was silently reverted by the next merge, #102,
+whose branch predated it (T-HIP-ADM-ADR0759-REVERTED-2026-09-18). The HIP
+twin is fork-only, so an upstream sync cannot conflict with it; the risk is
+another fork branch cut before this change. When merging or rebasing anything
+that touches these files, keep:
+
+- `core/src/feature/hip/integer_adm/adm_csf.hip` and `adm_cm.hip`:
+  `adm_csf_kernel_1_4`, `i4_adm_csf_kernel_1_4`, `i4_adm_cm_line_kernel` and
+  `adm_cm_line_kernel_8` take `const AdmBufferHip *__restrict__ buf_ptr`.
+  `adm_csf.hip` also carries its lint restructure (helpers in an anonymous
+  namespace, `csf_band_sample()`); kernel names and launch layouts are
+  unchanged.
+- `core/src/feature/hip/integer_adm_hip.c`: `AdmStateHip::buf_dev`, uploaded
+  by `adm_hip_upload_buf()` at the end of `adm_hip_init_device()` and freed by
+  `adm_hip_free_buf_dev()` in `close_fex_hip()` and the init failure paths;
+  the four launches pass `(void *)&s->buf_dev`.
+
+Check after any merge that touches them:
+`grep -n 'AdmBufferHip buf' core/src/feature/hip/integer_adm/*.hip` must print
+nothing. Kernel and host must change together: a by-value kernel launched
+with `&s->buf_dev` gets 328 bytes copied from that address as the struct and
+dereferences whatever follows `buf_dev` in `AdmStateHip`.
+
 ## fix/gpu-adm-dwt2-16bit-overflow — GPU integer ADM 16-bit vertical DWT sum (2026-09-18)
 
 Upstream Netflix/vmaf's CUDA integer ADM sums the scale-0 vertical DWT response

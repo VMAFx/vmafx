@@ -293,7 +293,7 @@ Pattern is load-bearing. Do not "fix" it by adding additional
 `extern "C"` which is legal in C++ but redundant and confusing to
 reviewers.
 
-## AdmBufferHip MUST be passed by pointer — invariant (ADR-0759)
+## AdmBufferHip is passed by pointer — invariant (ADR-0759, T-HIP-ADM-ADR0759-REVERTED-2026-09-18)
 
 **Resolved**: P1 known issue documented above (struct-by-value in
 ADM kernel signatures) fixed by ADR-0759 (PR
@@ -327,6 +327,37 @@ Same rule applies to `AdmFixedParametersHip` (~244 bytes) once that
 follow-up scoped; see ADR-0759 alternatives table. Do not add new
 by-value large struct parameters to ADM kernels without explicit ADR
 justification.
+- `adm_csf_kernel_1_4`, `i4_adm_csf_kernel_1_4` (`integer_adm/adm_csf.hip`),
+  `i4_adm_cm_line_kernel` and `adm_cm_line_kernel_8` (`integer_adm/adm_cm.hip`)
+  take `const AdmBufferHip *__restrict__ buf_ptr`. By value, the 328-byte
+  struct was copied into every launch's kernel arguments.
+- Host: `AdmStateHip::buf_dev` is a device copy of `s->buf`.
+  `adm_hip_upload_buf()` (`hipMalloc` + `hipMemcpy` HtoD) runs at the end of
+  `adm_hip_init_device()`, after `adm_hip_slice_bands()` and
+  `adm_hip_slice_results()`. `adm_hip_free_buf_dev()` frees it in
+  `close_fex_hip()` and on both init failure paths.
+- Launch argument = `(void *)&s->buf_dev`, the address of the variable that
+  holds the device pointer (ADR-0537 rule above).
+- Precondition: nothing writes `s->buf` between init and close, and no launch
+  passes a modified copy. Code that changes `s->buf` after init (per-scale
+  band pointers, a resize) must upload it again before the next launch, or
+  the kernels read stale pointers.
+- New ADM kernels that need `AdmBufferHip` take a pointer.
+  `AdmFixedParametersHip` (248 bytes) and `WarpShift` are still passed by
+  value; changing them needs its own measurement.
+- History: #101 (`31a51afb2`) implemented this; #102 (`92ea978a4`, a CUDA
+  ciede change cut from an older base) reverted it in a merge without
+  mentioning it. On a conflict in these files keep the pointer form;
+  `grep -n 'AdmBufferHip buf' core/src/feature/hip/integer_adm/*.hip` must
+  print nothing.
+- Measured on gfx1036: each kernel's argument segment is 320 bytes smaller;
+  per-thread scratch and VGPRs do not change because of the pointer. The
+  936-byte scratch of `adm_cm_line_kernel_8` is VGPR spilling (239 spills at
+  the 128-register cap), not the struct. End-to-end fps is unchanged within
+  noise.
+- Not a CUDA mirror: the CUDA twin passes `AdmBufferCuda` by value and always
+  has (the ADR-0756 audit lists those kernels). Research-0759's statement that
+  CUDA uses a pointer, and ADR-0759's "matches the CUDA pattern", are wrong.
 
 ## ms_ssim_vert_lcs kernel and host partials must both be `double` (ADR-1071)
 

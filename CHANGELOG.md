@@ -23803,6 +23803,12 @@ See ADR-0792.
   lowbias32 texture instead of a smooth ramp, on which the border defect
   ADR-1167 fixed is detectable (adm2 moves by 4.0e-4 against the 1e-4 gate;
   the ramp gave 7.5e-6). Clean HIP scores stay bit-identical to the CPU.
+- **The HIP integer ADM kernels read their buffer description through a
+  pointer again (ADR-0759).** The change listed as "HIP ADM: AdmBufferHip
+  passed by pointer" had been undone by a later merge, so four kernels were
+  still copying the 328-byte struct into their arguments on every launch. It
+  is back: each launch now passes one device pointer. Scores are
+  byte-identical and 1080p throughput is unchanged within run-to-run noise.
 
 
 - **`float_ansnr_hip`: `hipMemcpy2DAsync` direction tagged
