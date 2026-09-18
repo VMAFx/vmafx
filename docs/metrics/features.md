@@ -1169,7 +1169,6 @@ for the dictionary ownership rules.
 - [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md) — the
   per-surface doc bar this page satisfies.
 
-
 ## Licensing of the extractors (ADR-1250)
 
 Extractor sources carry their terms per file as an `SPDX-License-Identifier`.

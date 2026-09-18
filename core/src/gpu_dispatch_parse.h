@@ -26,8 +26,13 @@
 #ifndef LIBVMAF_GPU_DISPATCH_PARSE_H_
 #define LIBVMAF_GPU_DISPATCH_PARSE_H_
 
+/* NOLINTBEGIN(modernize-deprecated-headers): shared C header, also included
+ * from C++ (SYCL) translation units, which is how clang-tidy analyses it.
+ * The <cstring>/<cstddef> spellings do not exist in C. Same reasoning as
+ * feature/feature_extractor.h. */
 #include <stddef.h>
 #include <string.h>
+/* NOLINTEND(modernize-deprecated-headers) */
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's

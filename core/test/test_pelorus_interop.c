@@ -175,7 +175,7 @@ static void test_abi_major_mismatch(void)
     size_t len = 0;
     const void *p = NULL;
     size_t got = 0;
-    PelorusSideData *hdr;
+    PelorusSideData hdr;
 
     fill_meta(&meta);
     memset(&band, 0, sizeof(band));
@@ -184,8 +184,11 @@ static void test_abi_major_mismatch(void)
     sec.size = (uint32_t)sizeof(band);
     CHECK(pel_blob_pack(&meta, &sec, 1, &blob, &len) == PEL_OK);
 
-    hdr = (PelorusSideData *)(void *)(blob + PELORUS_SIDEDATA_UUID_LEN);
-    hdr->abi_major = (uint16_t)(PELORUS_ABI_MAJOR + 1u);
+    /* Patch through a copy: the blob is a byte buffer, so reading it through a
+     * struct pointer would be an aliasing access (CERT EXP39-C). */
+    (void)memcpy(&hdr, blob + PELORUS_SIDEDATA_UUID_LEN, sizeof(hdr));
+    hdr.abi_major = (uint16_t)(PELORUS_ABI_MAJOR + 1u);
+    (void)memcpy(blob + PELORUS_SIDEDATA_UUID_LEN, &hdr, sizeof(hdr));
 
     CHECK(pel_blob_is_present(blob, len) == 0);
     CHECK(pel_blob_find_section(blob, len, PEL_SEC_BANDING, sizeof(PelorusBandingSection), &p,
@@ -261,8 +264,9 @@ static void test_misaligned_offset(void)
     size_t len = 0;
     const void *p = NULL;
     size_t got = 0;
-    PelorusSideData *hdr;
-    PelorusSectionDir *dir;
+    PelorusSideData hdr;
+    PelorusSectionDir dir0;
+    uint8_t *dir0_bytes;
 
     fill_meta(&meta);
     memset(&grain, 0, sizeof(grain));
@@ -278,9 +282,11 @@ static void test_misaligned_offset(void)
 
     /* Now hand-patch dir[0].offset to a misaligned value (+4). The section then
      * still fits the buffer but its start is no longer 8-aligned. */
-    hdr = (PelorusSideData *)(void *)(blob + PELORUS_SIDEDATA_UUID_LEN);
-    dir = (PelorusSectionDir *)(void *)(blob + PELORUS_SIDEDATA_UUID_LEN + hdr->header_size);
-    dir[0].offset += 4u;
+    (void)memcpy(&hdr, blob + PELORUS_SIDEDATA_UUID_LEN, sizeof(hdr));
+    dir0_bytes = blob + PELORUS_SIDEDATA_UUID_LEN + hdr.header_size;
+    (void)memcpy(&dir0, dir0_bytes, sizeof(dir0));
+    dir0.offset += 4u;
+    (void)memcpy(dir0_bytes, &dir0, sizeof(dir0));
 
     CHECK(pel_blob_find_section(blob, len, PEL_SEC_FILMGRAIN, sizeof(PelorusFilmGrainSection), &p,
                                 &got) == PEL_ERR_ABI);

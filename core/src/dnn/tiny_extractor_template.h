@@ -326,9 +326,12 @@ static inline int vmaf_tiny_ai_yuv_to_rgb8_planes(const VmafPicture *pic, uint8_
         uint8_t *brow = dst_b + (size_t)i * w;
         for (unsigned j = 0; j < w; ++j) {
             const unsigned cj = ss_hor ? (j >> 1) : j;
-            const uint16_t y = (uint16_t)yrow[(size_t)j * 2u] | ((uint16_t)yrow[(size_t)j * 2u + 1u] << 8u);
-            const uint16_t u = (uint16_t)urow[(size_t)cj * 2u] | ((uint16_t)urow[(size_t)cj * 2u + 1u] << 8u);
-            const uint16_t v = (uint16_t)vrow[(size_t)cj * 2u] | ((uint16_t)vrow[(size_t)cj * 2u + 1u] << 8u);
+            const uint16_t y =
+                (uint16_t)yrow[(size_t)j * 2u] | ((uint16_t)yrow[(size_t)j * 2u + 1u] << 8u);
+            const uint16_t u =
+                (uint16_t)urow[(size_t)cj * 2u] | ((uint16_t)urow[(size_t)cj * 2u + 1u] << 8u);
+            const uint16_t v =
+                (uint16_t)vrow[(size_t)cj * 2u] | ((uint16_t)vrow[(size_t)cj * 2u + 1u] << 8u);
             const int y8 = vmaf_tiny_ai_sample_to_8bit(y, pic->bpc);
             const int u8 = vmaf_tiny_ai_sample_to_8bit(u, pic->bpc);
             const int v8 = vmaf_tiny_ai_sample_to_8bit(v, pic->bpc);

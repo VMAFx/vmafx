@@ -177,8 +177,7 @@ static char *run_cpu(double *out_scores)
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
-    char *score_err = read_feature_scores(vmaf, VIF_SCALE_FEATURES, NUM_VIF_SCALES,
-                                          out_scores, 1u);
+    char *score_err = read_feature_scores(vmaf, VIF_SCALE_FEATURES, NUM_VIF_SCALES, out_scores, 1u);
     if (score_err)
         return score_err;
 
@@ -222,8 +221,7 @@ static char *run_metal(double *out_scores, int *skipped)
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("Metal: vmaf_read_pictures(EOS) failed", !err);
 
-    char *score_err = read_feature_scores(vmaf, VIF_SCALE_FEATURES, NUM_VIF_SCALES,
-                                          out_scores, 1u);
+    char *score_err = read_feature_scores(vmaf, VIF_SCALE_FEATURES, NUM_VIF_SCALES, out_scores, 1u);
     if (score_err)
         return score_err;
 

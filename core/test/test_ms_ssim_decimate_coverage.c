@@ -80,8 +80,13 @@ static char *test_decimate_dispatch_matches_scalar(void)
     mu_assert("scalar reports correct h_out", rh_s == h_out);
     mu_assert("dispatch reports correct w_out", rw_d == w_out);
     mu_assert("dispatch reports correct h_out", rh_d == h_out);
+    /* Compared as bytes, not float values: bit-exactness must also catch
+     * a signed-zero or NaN-payload difference (ADR-0125). */
+    const unsigned char *bytes_scalar = (const unsigned char *)dst_scalar;
+    const unsigned char *bytes_dispatch = (const unsigned char *)dst_dispatch;
     mu_assert("dispatch byte-identical to scalar",
-              memcmp(dst_scalar, dst_dispatch, sizeof(float) * (size_t)w_out * (size_t)h_out) == 0);
+              memcmp(bytes_scalar, bytes_dispatch, sizeof(float) * (size_t)w_out * (size_t)h_out) ==
+                  0);
     return NULL;
 }
 

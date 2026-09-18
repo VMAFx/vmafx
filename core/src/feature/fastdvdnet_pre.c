@@ -312,6 +312,7 @@ static const VmafOption fastdvdnet_pre_options[] = {
 
 static const char *fastdvdnet_pre_provided_features[] = {"fastdvdnet_pre_l1_residual", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_fastdvdnet_pre` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_fastdvdnet_pre = {
     .name = "fastdvdnet_pre",
     .init = fastdvdnet_pre_init,

@@ -192,6 +192,27 @@ static char *run_cuda_adm(double scores_out[NUM_ADM_FEATURES])
     return NULL;
 }
 #elif defined(HAVE_HIP)
+/* feed_one_frame for the HIP arm, which skips rather than fails when the HIP
+ * kernels were not built: vmaf_read_pictures then reports -ENOSYS and
+ * *skipped tells the caller to tear down and skip. */
+static char *hip_feed_one_frame(VmafContext *vmaf, int *skipped)
+{
+    VmafPicture ref;
+    VmafPicture dist;
+    *skipped = 0;
+    int err = fill_ref(&ref);
+    mu_assert("fill_ref failed", !err);
+    err = fill_dist(&dist);
+    mu_assert("fill_dist failed", !err);
+    err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
+    if (err == -ENOSYS) {
+        *skipped = 1;
+        return NULL;
+    }
+    mu_assert("HIP: vmaf_read_pictures failed", !err);
+    return NULL;
+}
+
 static char *run_hip_adm(double scores_out[NUM_ADM_FEATURES])
 {
     VmafHipState *hip_state = NULL;
@@ -214,21 +235,17 @@ static char *run_hip_adm(double scores_out[NUM_ADM_FEATURES])
     err = vmaf_use_feature(vmaf, GPU_BACKEND_NAME, NULL);
     mu_assert("HIP: vmaf_use_feature failed", !err);
 
-    VmafPicture ref, dist;
-    err = fill_ref(&ref);
-    mu_assert("fill_ref failed", !err);
-    err = fill_dist(&dist);
-    mu_assert("fill_dist failed", !err);
-    err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-    if (err == -ENOSYS) {
+    int skipped = 0;
+    char *msg = hip_feed_one_frame(vmaf, &skipped);
+    if (msg)
+        return msg;
+    if (skipped) {
         (void)fprintf(stderr, "[skip: HIP kernels not built] ");
         mu_skipped = 1;
-        vmaf_close(vmaf);
+        (void)vmaf_close(vmaf);
         vmaf_hip_state_free(&hip_state);
         return NULL;
     }
-    mu_assert("HIP: vmaf_read_pictures failed", !err);
-
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
 

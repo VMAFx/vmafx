@@ -360,6 +360,7 @@ static const VmafOption transnet_v2_options[] = {
 static const char *transnet_v2_provided_features[] = {"shot_boundary_probability", "shot_boundary",
                                                       NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_transnet_v2` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_transnet_v2 = {
     .name = "transnet_v2",
     .init = transnet_v2_init,

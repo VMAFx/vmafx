@@ -273,6 +273,7 @@ static const VmafOption mobilesal_options[] = {
 
 static const char *mobilesal_provided_features[] = {"saliency_mean", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_mobilesal` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_mobilesal = {
     .name = "mobilesal",
     .init = mobilesal_init,

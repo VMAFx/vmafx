@@ -32,6 +32,9 @@
 
 #include "feature/feature_extractor.h"
 
+/* The registration tests set the model-path environment variable they
+ * exercise; the binary is single-threaded. */
+/* NOLINTNEXTLINE(concurrency-mt-unsafe) */
 VMAF_TINY_AI_DEFINE_REGISTRATION_TESTS("transnet_v2", "shot_boundary_probability",
                                        "VMAF_TRANSNET_V2_MODEL_PATH", transnet_v2)
 

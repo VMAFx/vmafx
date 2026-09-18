@@ -219,6 +219,7 @@ static const VmafOption lpips_options[] = {
 
 static const char *lpips_provided_features[] = {"lpips", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_lpips` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_lpips = {
     .name = "lpips",
     .init = lpips_init,

@@ -159,8 +159,8 @@ static char *run_cpu_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
-    char *score_err = read_feature_scores(vmaf, MOTION_V2_FEATURES, NUM_MOTION_V2_FEATURES,
-                                          scores_out, 1u);
+    char *score_err =
+        read_feature_scores(vmaf, MOTION_V2_FEATURES, NUM_MOTION_V2_FEATURES, scores_out, 1u);
     if (score_err)
         return score_err;
 
@@ -212,8 +212,8 @@ static char *run_metal_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("Metal: vmaf_read_pictures(EOS) failed", !err);
 
-    char *score_err = read_feature_scores(vmaf, MOTION_V2_FEATURES, NUM_MOTION_V2_FEATURES,
-                                          scores_out, 1u);
+    char *score_err =
+        read_feature_scores(vmaf, MOTION_V2_FEATURES, NUM_MOTION_V2_FEATURES, scores_out, 1u);
     if (score_err)
         return score_err;
 

@@ -9,6 +9,11 @@
  */
 
 #include <errno.h>
+
+/* NOLINTBEGIN(concurrency-mt-unsafe): this test's subject is how the library
+ * resolves paths from the process environment, so it has to set and unset
+ * variables. Each test binary is its own single-threaded process, and nothing
+ * else reads the environment while it runs. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -553,3 +558,5 @@ char *run_tests(void)
 }
 
 /* NOLINTEND(modernize-use-nullptr) */
+
+/* NOLINTEND(concurrency-mt-unsafe) */

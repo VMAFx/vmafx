@@ -214,7 +214,12 @@ static inline int simd_test_have_avx512(void)
  *
  * `SIMD_BITEXACT_ASSERT_MEMCMP` byte-compares two buffers of equal
  * size; on divergence prints the first diverging byte index so the
- * test log identifies the lane/element under audit.
+ * test log identifies the lane/element under audit. The comparison is
+ * deliberately on the object representation, not on values: for float
+ * buffers it distinguishes -0.0 from +0.0 and NaN payloads, which is
+ * exactly what a scalar-vs-SIMD bit-exactness gate must catch
+ * (ADR-0138 / ADR-0139). The buffers are viewed as unsigned char before
+ * the memcmp so the intent is explicit to readers and to clang-tidy.
  *
  * `SIMD_BITEXACT_ASSERT_RELATIVE` compares two doubles within a
  * relative tolerance — the moment-style "tolerance-bounded, not
@@ -226,11 +231,11 @@ static inline int simd_test_have_avx512(void)
 
 #define SIMD_BITEXACT_ASSERT_MEMCMP(scalar_buf, simd_buf, n_bytes, label)                          \
     do {                                                                                           \
-        if (memcmp((scalar_buf), (simd_buf), (n_bytes)) != 0) {                                    \
-            const unsigned char *_s_p = (const unsigned char *)(scalar_buf);                       \
-            const unsigned char *_v_p = (const unsigned char *)(simd_buf);                         \
+        const unsigned char *_s_p = (const unsigned char *)(scalar_buf);                           \
+        const unsigned char *_v_p = (const unsigned char *)(simd_buf);                             \
+        const size_t _n = (size_t)(n_bytes);                                                       \
+        if (memcmp(_s_p, _v_p, _n) != 0) {                                                         \
             size_t _i = 0;                                                                         \
-            const size_t _n = (size_t)(n_bytes);                                                   \
             while (_i < _n && _s_p[_i] == _v_p[_i]) {                                              \
                 ++_i;                                                                              \
             }                                                                                      \

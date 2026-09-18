@@ -213,6 +213,7 @@ static const VmafOption dists_sq_options[] = {
 
 static const char *dists_sq_provided_features[] = {"dists_sq", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_dists_sq` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_dists_sq = {
     .name = "dists_sq",
     .init = dists_sq_init,

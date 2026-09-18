@@ -16,6 +16,9 @@
  * required Windows build compiles this TU with cl.exe, and this file mirrors
  * the C spelling of the surface it exercises. ADR-1138. */
 
+/* The registration tests set the model-path environment variable they
+ * exercise; the binary is single-threaded. */
+/* NOLINTNEXTLINE(concurrency-mt-unsafe) */
 VMAF_TINY_AI_DEFINE_REGISTRATION_TESTS("mobilesal", "saliency_mean", "VMAF_MOBILESAL_MODEL_PATH",
                                        mobilesal)
 

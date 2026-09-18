@@ -24,6 +24,7 @@
  * the C spelling of the surface it exercises. ADR-1138. */
 
 #include "test.h"
+// NOLINTNEXTLINE(bugprone-suspicious-include): white-box test deliberately includes pu21.c to reach the static pu21_compute_psnr and encode helpers, as test_ciede.c does (ADR-0141 / ADR-0278).
 #include "feature/pu21.c"
 
 /* places=4 → tolerance 5e-5 (the fork's non-negotiable golden tolerance).

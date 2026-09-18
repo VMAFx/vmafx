@@ -717,7 +717,6 @@ Metal runtime contract for those devices.
   [ADR-0027](../adr/0027-non-conservative-image-pins.md) —
   governing decisions
 
-
 ## Licensing of the GPU headers (ADR-1250)
 
 `libvmaf_sycl.h`, `libvmaf_cuda.h`, `libvmaf_hip.h` and `libvmaf_metal.h` are

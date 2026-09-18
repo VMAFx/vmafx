@@ -35,7 +35,7 @@
 static void build_log2_table(uint16_t *t)
 {
     for (unsigned i = 0; i < VIF_LOG2_TABLE_SIZE; ++i) {
-        t[i] = (uint16_t)round(log2f((float)(VIF_LOG2_TABLE_OFFSET + i)) * 2048);
+        t[i] = (uint16_t)roundf(log2f((float)(VIF_LOG2_TABLE_OFFSET + i)) * 2048);
     }
 }
 

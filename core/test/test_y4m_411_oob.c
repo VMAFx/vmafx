@@ -26,6 +26,7 @@
  * broken one. ASan in CI is the load-bearing gate.
  */
 
+/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — POSIX feature-test macro for fmemopen (ADR-0141 / ADR-0278) */
 #define _POSIX_C_SOURCE 200809L
 
 #include <stdio.h>
