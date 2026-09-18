@@ -19,6 +19,7 @@
 
 #include <stdbool.h>
 
+#include "feature/adm_csf_fixed_point.h"
 #include "feature/barten_csf_tools.h"
 #include "feature/compat_builtin.h"
 #include "feature/integer_adm.h"
@@ -799,7 +800,10 @@ void adm_decouple_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_enhn
         bottom = h;
     }
 
-    int right_mod8 = right - (right % 8);
+    /* The vector loop starts at `left`, so the tail bound must be a multiple of
+     * 8 columns away from `left`, not from zero; otherwise the last 8-wide
+     * store runs past `right` (Netflix/vmaf 03b5562c5). */
+    int right_mod8 = right - ((right - left) % 8);
 
     for (int i = top; i < bottom; ++i) {
         for (int j = left; j < right_mod8; j += 8) {
@@ -2363,16 +2367,16 @@ float adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride
     const int32_t add_shift_xdsq = 536870912;
 
     const uint32_t shift_xhcub = (uint32_t)ceil(log2(w) - 4);
-    const uint32_t add_shift_xhcub = (uint32_t)pow(2, (shift_xhcub - 1));
+    const uint32_t add_shift_xhcub = adm_half_shift(shift_xhcub);
 
     const uint32_t shift_xvcub = (uint32_t)ceil(log2(w) - 4);
-    const uint32_t add_shift_xvcub = (uint32_t)pow(2, (shift_xvcub - 1));
+    const uint32_t add_shift_xvcub = adm_half_shift(shift_xvcub);
 
     const uint32_t shift_xdcub = (uint32_t)ceil(log2(w) - 3);
-    const uint32_t add_shift_xdcub = (uint32_t)pow(2, (shift_xdcub - 1));
+    const uint32_t add_shift_xdcub = adm_half_shift(shift_xdcub);
 
     const uint32_t shift_inner_accum = (uint32_t)ceil(log2(h));
-    const uint32_t add_shift_inner_accum = (uint32_t)pow(2, (shift_inner_accum - 1));
+    const uint32_t add_shift_inner_accum = adm_half_shift(shift_inner_accum);
 
     const int32_t shift_xhsub = 10;
     const int32_t shift_xvsub = 10;
@@ -2837,10 +2841,10 @@ float i4_adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_str
     }
 
     uint32_t shift_cub = (uint32_t)ceil(log2(w));
-    uint32_t add_shift_cub = (uint32_t)pow(2, (shift_cub - 1));
+    uint32_t add_shift_cub = adm_half_shift(shift_cub);
 
     uint32_t shift_inner_accum = (uint32_t)ceil(log2(h));
-    uint32_t add_shift_inner_accum = (uint32_t)pow(2, (shift_inner_accum - 1));
+    uint32_t add_shift_inner_accum = adm_half_shift(shift_inner_accum);
 
     const float final_shift[3] = {pow(2, (45 - shift_cub - shift_inner_accum)),
                                   pow(2, (39 - shift_cub - shift_inner_accum)),
@@ -4737,9 +4741,9 @@ float adm_csf_den_s123_avx2(const i4_adm_dwt_band_t *src, int scale, int w, int 
     const int bottom = h - top;
 
     uint32_t shift_cub = (uint32_t)ceil(log2(right - left));
-    uint32_t add_shift_cub = (uint32_t)pow(2, (shift_cub - 1));
+    uint32_t add_shift_cub = adm_half_shift(shift_cub);
     uint32_t shift_accum = (uint32_t)ceil(log2(bottom - top));
-    uint32_t add_shift_accum = (uint32_t)pow(2, (shift_accum - 1));
+    uint32_t add_shift_accum = adm_half_shift(shift_accum);
 
     int32_t *src_h = src->band_h + (ptrdiff_t)top * src_stride;
     int32_t *src_v = src->band_v + (ptrdiff_t)top * src_stride;

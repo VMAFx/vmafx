@@ -36,17 +36,19 @@ feature/arm64/
   regression tests in [`../../../test/`](../../test/) (`test_*_simd.c`,
   migrated through the [`simd_bitexact_test.h`](../../test/simd_bitexact_test.h)
   harness per ADR-0245) catch ULP drift.
-- **Integer-ADM has one named Apple production compatibility boundary
-  (ADR-1057, 2026-08-31).** `adm_dwt2_8_neon()` itself remains the universal
-  four-tap, scalar-bit-exact kernel and `test_adm_dwt2_neon` must keep proving
-  that on every AArch64 platform. On Apple AArch64 only, `integer_adm.c`
-  dispatches production calls through `adm_dwt2_8_neon_apple_legacy()`. That
-  wrapper overwrites only the first output column with the historical
-  three-tap boundary result recorded by the immutable Darwin Python goldens.
-  Do not move the three-tap rule back into the universal kernel, broaden it to
-  Linux AArch64, or replace it with a score offset. The same test separately
-  proves that the compatibility wrapper matches its legacy reference and
-  changes no column except `j == 0`.
+- **Integer-ADM DWT2 has one NEON path on every AArch64 platform
+  ([ADR-1257](../../../../docs/adr/1257-retire-darwin-adm-dwt2-legacy-dispatch.md),
+  which supersedes ADR-1057's Apple wrapper).** `integer_adm.c` dispatches
+  `adm_dwt2_8_neon()` on Apple and Linux alike. Do not reintroduce a
+  platform-specific first-column rule or a score offset.
+- **`adm_dwt2_8_neon()`'s horizontal 8-wide loop stops at
+  `half_w >= 2 ? half_w - 1 - ((half_w - 2) % 8) : 1`** (Netflix/vmaf
+  `ea012e387`, adapted). Column 0 and every column from that bound on go
+  through `adm_dwt2_8_neon_hpass_column()` and `ind_x`, which applies the
+  mirror. Without the bound the vector store runs past the half-resolution
+  row and, on the last row, into the next band of the ADM slab.
+  `test_adm_dwt2_neon` checks both bit-exactness and a guard band at the
+  production band stride.
 - **`#pragma STDC FP_CONTRACT OFF` is kept at TU level** even though
   aarch64 GCC ignores it with a non-fatal `-Wunknown-pragmas`. The
   pragma is portable and aarch64 GCC does not contract `a + b * c`

@@ -1,6 +1,79 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## port/upstream-2026-09 — Netflix/vmaf `03b5562c5`..`86da14d03` (2026-09-18)
+
+Reconciles upstream through `86da14d03` (previous mark `f85a85369`, PR #1456).
+See [Research-2063](research/2063-upstream-sync-2026-09-adm-vif-simd.md) for
+the evidence behind each verdict.
+
+Ported:
+
+- `03b5562c5`: `core/src/feature/x86/adm_avx2.c` `adm_decouple_avx2` bounds
+  its tail with `right - ((right - left) % 8)`. The loop starts at `left`, so a
+  bound computed from column 0 stores past `right`. The scale-0 AVX2 kernel is
+  now consistent with `adm_decouple_s123_avx2` and every AVX-512 decouple.
+- `ea012e387` (adapted): `core/src/feature/arm64/adm_neon.c` horizontal pass.
+  The 8-wide loop stops at the same guarded bound the x86 DWT2 kernels use,
+  `half_w >= 2 ? half_w - 1 - ((half_w - 2) % 8) : 1`, not at upstream's
+  `(w_half - 2) - ((w_half - 3) % 8)`. Everything from there on, and column 0,
+  goes through `adm_dwt2_8_neon_hpass_column()` and `ind_x`. The fork's
+  earlier "redo the last column" block is gone because the tail subsumes it.
+  The kernel is split into row helpers, and the NEON accumulate/store macros
+  are now `adm_neon_macc4()` / `adm_neon_store_shifted()`. On a conflict,
+  keep the fork structure and re-apply only upstream's arithmetic intent.
+- `1786bd961` (one hunk): `integer_adm.c` `init_buffers()` zeroes `data_buf`,
+  mirroring upstream's `adm_buffer_alloc()`. The checkasm framework, the
+  un-static refactor and `adm_buffer_alloc()` itself are not ported.
+
+Fork-only fix upstream still needs:
+
+- `integer_adm.c` `dwt2_src_indices_1d()`: the mirrored tail starts at
+  `(n_half > 2u) ? n_half - 2u : 1u` and the first loop is bounded with
+  `i + 2 < n_half`. Upstream's `n_half - 2` restarts the tail at 0 when
+  `n_half == 2` (any frame dimension from 17 to 32 at scale 3) and reads index
+  -1. Keep the fork form on every sync. The zeroing above does not make the
+  upstream form safe. `core/test/test_integer_adm_tiny_frames.c` guards it,
+  and on the ASan lane it aborts on the old bound.
+- `x86/adm_avx2.c` and `x86/adm_avx512.c`: every rounding constant of a right
+  shift is `adm_half_shift(x)` from `adm_csf_fixed_point.h`, where upstream
+  writes `(uint32_t)pow(2, (x - 1))`. At frame widths 17 to 32 the scale-0 cube
+  shift is 0, and upstream's form converts infinity to an integer; the
+  AVX-512 build turns that into `0xFFFFFFFF`. When a sync touches these
+  lines, keep the helper. `test_integer_adm_tiny_widths_simd_matches_scalar`
+  fails at 17x70 with the upstream form on an AVX-512 host, and the UBSan
+  lane flags it on any x86 host. `adm_half_shift()` moved there from
+  `integer_adm.c`, whose frame-size check is now `adm_frame_size_check()`.
+
+Retired (ADR-1257): `adm_dwt2_8_neon_apple_legacy()` and the
+`#if defined(__APPLE__)` NEON dispatch branch in `integer_adm.c`. Apple
+AArch64 dispatches `adm_dwt2_8_neon()` like every other AArch64 host. Do not
+reintroduce a platform-specific DWT2 path. The three akiyo assertions in
+`python/test/vmafexec_test.py` whose Darwin branch recorded the old three-tap
+result (`88.030322 if _IS_DARWIN else 88.030463`) are to assert `88.030463` on
+all platforms. That file is protected by the golden-file edit guard, so the
+change is applied by a maintainer. The other two `_IS_DARWIN` branches
+(ADR-0418 libm) stay.
+
+Skipped:
+
+- `8f7d50d29`: keep the fork's x86 DWT2 bound (`0ed57f9f1`, PR #1339). It
+  already covers all six kernels. Upstream's form covers only the two s123
+  kernels and is one column more conservative.
+- `cba9343ed`, `c023bb7cb`: already fixed by `a013c1410` (PR #1134) and
+  `6d61106ed` (PR #1156).
+- `1801915be`: checkasm CI workflow. Not applicable without the framework.
+- `86da14d03`: CAMBI AVX2 dp/mask row. Handled by the separate CAMBI PR.
+
+Tests: `core/test/simd_bitexact_test.h` gains guard-band helpers
+(`simd_test_guard_fill`, `simd_test_guard_count_outside`,
+`SIMD_GUARD_ASSERT_UNTOUCHED`). `test_integer_adm_simd`, `test_adm_dwt2_x86`,
+`test_adm_dwt2_neon` and `test_vif_neon` use them with the production band
+strides, and add small-size sweeps. `test_integer_vif_avx2_stages` and
+`test_integer_vif_avx512_stages` sweep heights. When porting upstream checkasm
+cases later, keep the guard bands: they are what catches out-of-region
+stores.
+
 ## Canonical envtest installer (2026-09-08)
 
 Keep Make, Go CI and controller-suite guidance on `scripts/ci/setup-envtest.sh`.

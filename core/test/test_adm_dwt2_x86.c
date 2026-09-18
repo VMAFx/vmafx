@@ -10,6 +10,12 @@
  * Tests scalar adm_dwt2_8 against adm_dwt2_8_avx2 and adm_dwt2_8_avx512
  * on widths where (w + 1) / 2 % N == 1, ensuring the last column is correctly
  * handled by the scalar mirror path and not the vector contiguous load path.
+ *
+ * The SIMD bands use the band stride integer_adm.c derives and start out
+ * filled with the simd_bitexact_test.h guard pattern, so a store outside the
+ * half-resolution band (into the stride padding, the next row, or past the
+ * band) fails the test even when the in-band samples match. A small-size
+ * sweep covers every frame width from 17 to 96.
  */
 
 #include <stddef.h>
@@ -20,7 +26,11 @@
 
 #include "config.h"
 #include "test.h"
+/* clang-format off — test.h has no header guard; must precede harness. */
+#include "simd_bitexact_test.h"
+/* clang-format on */
 #include "cpu.h"
+#include "mem.h"
 
 #include "feature/integer_adm.h"
 
@@ -138,6 +148,9 @@ static void ref_adm_dwt2_8(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuf
 typedef void (*adm_dwt2_8_fn)(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w,
                               int h, int src_stride, int dst_stride);
 
+/* Trailing elements past each band that no kernel may write. */
+#define DWT2_SLACK 64
+
 /* Everything one (w, h) comparison needs. bands[0..3] receive the scalar
  * reference, bands[4..7] the SIMD kernel, so band b and band b + 4 hold the
  * two implementations of the same band. */
@@ -184,7 +197,8 @@ static int fixture_alloc(Dwt2Fixture *f, int w, int h)
     f->h = h;
     f->w_half = (w + 1) / 2;
     f->h_half = (h + 1) / 2;
-    f->dst_stride = f->w_half;
+    /* integer_adm.c: buf_stride = ALIGN_CEIL(half width * 4) >> 2. */
+    f->dst_stride = ALIGN_CEIL(f->w_half * (int)sizeof(int32_t)) / (int)sizeof(int32_t);
     f->band_elems = (size_t)f->h_half * (size_t)f->dst_stride;
     f->tmp_elems = ((size_t)w * 8) + 256;
 
@@ -199,8 +213,10 @@ static int fixture_alloc(Dwt2Fixture *f, int w, int h)
         f->buf.ind_x[k] = f->ix[k];
     }
     for (int k = 0; k < 8; ++k) {
-        f->bands[k] = calloc(f->band_elems + 64, sizeof(int16_t));
+        f->bands[k] = calloc(f->band_elems + DWT2_SLACK, sizeof(int16_t));
         ok = ok && (f->bands[k] != NULL);
+        if (ok && k >= 4)
+            simd_test_guard_fill(f->bands[k], (f->band_elems + DWT2_SLACK) * sizeof(int16_t));
     }
     f->buf.tmp_ref = calloc(f->tmp_elems, sizeof(int16_t));
     ok = ok && (f->buf.tmp_ref != NULL);
@@ -242,10 +258,10 @@ static int fixture_bands_match(const Dwt2Fixture *f, const char *label)
 
     for (int b = 0; b < 4; ++b) {
         for (size_t idx = 0; idx < f->band_elems; ++idx) {
-            if (f->bands[b][idx] == f->bands[b + 4][idx])
-                continue;
             const int i = (int)(idx / (size_t)f->dst_stride);
             const int j = (int)(idx % (size_t)f->dst_stride);
+            if (j >= f->w_half || f->bands[b][idx] == f->bands[b + 4][idx])
+                continue;
             (void)fprintf(stderr, "  %s %dx%d %s[%d][%d]%s: scalar %d != simd %d\n", label, f->w,
                           f->h, names[b], i, j, (j == f->w_half - 1) ? " (last col)" : "",
                           f->bands[b][idx], f->bands[b + 4][idx]);
@@ -255,6 +271,43 @@ static int fixture_bands_match(const Dwt2Fixture *f, const char *label)
     return 1;
 }
 
+/* Elements of the SIMD bands written outside the h_half x w_half band. */
+static size_t fixture_guard_touched(const Dwt2Fixture *f)
+{
+    const SimdTestRect rect = {0, (size_t)f->h_half, 0, (size_t)f->w_half};
+    size_t touched = 0;
+
+    for (int b = 4; b < 8; ++b) {
+        const SimdTestPlane plane = {f->bands[b], sizeof(int16_t), (size_t)f->dst_stride,
+                                     (size_t)f->h_half, DWT2_SLACK};
+        touched += simd_test_guard_count_outside(plane, rect);
+    }
+    return touched;
+}
+
+/* One (w, h) scalar-vs-SIMD comparison plus the guard band. */
+static char *dwt2_geometry_matches_scalar(const char *label, adm_dwt2_8_fn kernel, int w, int h)
+{
+    Dwt2Fixture f;
+
+    mu_assert("allocation failed for the ADM DWT2 fixture", fixture_alloc(&f, w, h) == 0);
+    fixture_fill_src(&f);
+    ref_src_indices(f.buf.ind_y, f.buf.ind_x, w, h);
+
+    ref_adm_dwt2_8(f.src, &f.ref_band, &f.buf, w, h, w, f.dst_stride);
+    memset(f.buf.tmp_ref, 0, f.tmp_elems * sizeof(int16_t));
+    kernel(f.src, &f.simd_band, &f.buf, w, h, w, f.dst_stride);
+
+    const int matched = fixture_bands_match(&f, label);
+    const size_t touched = fixture_guard_touched(&f);
+    fixture_free(&f);
+    if (touched != 0)
+        (void)fprintf(stderr, "  %s %dx%d\n", label, w, h);
+    mu_assert("the x86 ADM DWT2 kernel diverges from the scalar reference", matched);
+    SIMD_GUARD_ASSERT_UNTOUCHED(touched, "the x86 ADM DWT2 kernel wrote outside its band");
+    return NULL;
+}
+
 /* Widths chosen so that (w + 1) / 2 % N == 1 for the vector widths the AVX2 and
  * AVX-512 DWT2 kernels use (N in {4, 8, 16, 32, 64}) -- exactly the case the
  * old `half_w - ((half_w - 1) % N)` bound handed to the vector loop instead of
@@ -262,26 +315,21 @@ static int fixture_bands_match(const Dwt2Fixture *f, const char *label)
 static char *dwt2_kernel_matches_scalar(const char *label, adm_dwt2_8_fn kernel)
 {
     static const int widths[] = {34, 66, 130, 258, 576};
-    const int h = 32;
+    /* Small-size sweep: every frame width the extractor accepts up to 96, over
+     * heights that put the mirrored last row at every phase. */
+    static const int sweep_heights[] = {17, 18, 24, 33};
 
     for (size_t t = 0; t < sizeof(widths) / sizeof(widths[0]); ++t) {
-        Dwt2Fixture f;
-        const int w = widths[t];
-
-        if (fixture_alloc(&f, w, h) != 0)
-            return "allocation failed for the ADM DWT2 fixture";
-
-        fixture_fill_src(&f);
-        ref_src_indices(f.buf.ind_y, f.buf.ind_x, w, h);
-
-        ref_adm_dwt2_8(f.src, &f.ref_band, &f.buf, w, h, w, f.dst_stride);
-        memset(f.buf.tmp_ref, 0, f.tmp_elems * sizeof(int16_t));
-        kernel(f.src, &f.simd_band, &f.buf, w, h, w, f.dst_stride);
-
-        const int matched = fixture_bands_match(&f, label);
-        fixture_free(&f);
-        if (!matched)
-            return "the x86 ADM DWT2 kernel diverges from the scalar reference";
+        char *msg = dwt2_geometry_matches_scalar(label, kernel, widths[t], 32);
+        if (msg)
+            return msg;
+    }
+    for (size_t t = 0; t < sizeof(sweep_heights) / sizeof(sweep_heights[0]); ++t) {
+        for (int w = 17; w <= 96; ++w) {
+            char *msg = dwt2_geometry_matches_scalar(label, kernel, w, sweep_heights[t]);
+            if (msg)
+                return msg;
+        }
     }
     return NULL;
 }
