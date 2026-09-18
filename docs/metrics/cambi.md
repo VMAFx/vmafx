@@ -189,18 +189,28 @@ instructions a hand-written kernel uses, so a NEON kernel would remove no work
 filter). Both NEON kernels are still built and covered by the parity tests, so
 they are ready if a compiler stops vectorising those loops.
 
-The AVX-512 and NEON c-values drivers are much faster than the AVX2 one because
-they skip work, not because their vectors are wider. On flat, banding-prone
-content almost every pixel leaves the sliding histogram unchanged: it is masked
-out, outside the luma band CAMBI scores, or equal to the pixel it replaces. The
-AVX2 driver, like the scalar one, still visits every pixel; the AVX-512 and
-NEON drivers test a block of up to 256 pixels with vector compares and update
-the histogram only for the ones that change it. The histogram each row sees is
-the same, so the scores are too.
+The c-values stage is the expensive one, and all three SIMD drivers (AVX2,
+AVX-512, NEON) are fast because they skip work, not because their vectors are
+wider. On flat, banding-prone content almost every pixel leaves the sliding
+histogram unchanged: it is masked out, outside the luma band CAMBI scores, or
+equal to the pixel it replaces. The scalar driver visits every pixel; the SIMD
+drivers test a block of up to 256 pixels with vector compares and update the
+histogram only for the ones that change it. The histogram each row sees is the
+same, so the scores are too. (Upstream's AVX2 driver, which visits every pixel,
+is still built and tested but no longer used: in icx builds it was slower than
+the scalar code.)
 
 Measured on one AMD Zen 5 core (Ryzen 9 9950X3D), single thread, release
-builds. AVX-512 against AVX2 per stage, over seven 576x324 to 3840x2176 8- and
-10-bit inputs ([Research-2065](../research/2065-cambi-simd-gaps.md)):
+builds, over seven 576x324 to 3840x2176 8- and 10-bit inputs
+([Research-2065](../research/2065-cambi-simd-gaps.md)). The c-values stage
+against scalar:
+
+| c-values driver | GCC | Clang | icx |
+| --- | --- | --- | --- |
+| AVX2 | 2.09–2.78x | 3.50–5.52x | 2.87–4.48x |
+| AVX-512 | 2.17–3.21x | 4.00–7.08x | 3.04–5.68x |
+
+AVX-512 against AVX2, per stage:
 
 | Stage | GCC | Clang | icx |
 | --- | --- | --- | --- |
@@ -208,28 +218,23 @@ builds. AVX-512 against AVX2 per stage, over seven 576x324 to 3840x2176 8- and
 | Derivative row | 1.31–1.79x | 1.12–1.50x | 1.17–1.45x |
 | Decimate | 1.30–1.47x | 1.25–1.32x | 1.35–1.44x |
 | Mode filter | 1.37–1.42x | 1.30–1.37x | 1.08–1.18x |
-| c-values | 2.02–3.20x | 4.32–8.81x | 3.84–6.72x |
+| c-values | 1.04–1.16x | 1.14–1.28x | 1.06–1.27x |
 
-A whole CAMBI frame on that host, single thread. "Before" is the build
-without these kernels; the other columns use the default dispatch (AVX-512)
-unless marked:
+A whole CAMBI frame on that host, single thread, frames per second. "Before"
+is the build without these kernels, at its default dispatch; "default" is
+AVX-512 on this host; "AVX2 only" is `--cpumask 48`, what a CPU without
+AVX-512 runs:
 
-| Input | GCC, before | GCC | Clang, AVX2 only | Clang |
-| --- | --- | --- | --- | --- |
-| 576x324 8-bit | 2024 fps | 2668 fps | 1410 fps | 2896 fps |
-| 1920x1088 8-bit | 191 fps | 252 fps | 131 fps | 273 fps |
-| 1920x1080 10-bit | 267 fps | 339 fps | 185 fps | 370 fps |
-| 3840x2176 8-bit | 46.8 fps | 60.5 fps | 34.0 fps | 64.6 fps |
+| Input | GCC, before | GCC, default | GCC, AVX2 only | Clang, AVX2 only | icx, AVX2 only (before) |
+| --- | --- | --- | --- | --- | --- |
+| 576x324 8-bit | 2024 | 2668 | 2409 | 2540 | 2437 (1388) |
+| 1920x1088 8-bit | 191 | 252 | 229 | 240 | 227 (128) |
+| 1920x1080 10-bit | 267 | 339 | 313 | 338 | 318 (180) |
+| 3840x2176 8-bit | 46.8 | 60.5 | 56.4 | 57.4 | 56.7 (33.1) |
 
 On aarch64 there was no hardware to time; under `qemu-aarch64` the NEON
 kernels execute 9–24 % of the scalar instructions for the anti-dithering
 filter, derivative row and decimate, and 21–44 % for the c-values stage.
-
-Known gap: in Clang and icx builds (icx builds the published container) the
-AVX2 c-values driver is slower than the scalar code, about 0.8x, so on a CPU
-with AVX2 but no AVX-512 that one stage runs slower than it could. A whole
-frame is still faster with AVX2 than scalar. It is tracked in
-[`docs/state.md`](../state.md) as T-CAMBI-AVX2-CVALUES-LLVM-2026-09-18.
 
 The spatial-mask row kernels, measured on their own (1920x1080 frame, 7x7 mask
 filter, [Research-2062](../research/2062-cambi-spatial-mask-simd.md)):

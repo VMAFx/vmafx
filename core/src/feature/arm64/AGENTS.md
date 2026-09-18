@@ -97,8 +97,9 @@ Complete invariants in [../AGENTS.md
 - NEON c-values driver uses plain C range updaters on purpose: compilers emit
   same 8-lane adds; intrinsic versions cost +0.3–0.9 % insns, retired. No
   `cambi_*_range_neon`.
-- Scans: no masked load → scalar tail < 8 cols. Never vector-load past last
-  column (last row may end at buffer end).
+- Scans: no masked load → scalar tail < 8 cols via shared
+  `cambi_column_*` predicates (`../cambi_c_values_frame.h`, also AVX2). Never
+  vector-load past last column (last row may end at buffer end).
 - Scan may over-flag, never under-flag; mirrors `uh_slide` skip + band test.
 - `cambi_neon.c` lives in integer lib `arm64_v8` (no `-ffp-contract=off`):
   c-value is one mul, no add, so nothing to fuse. Adding `a * b + c` float math
