@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Unit tests for the rate-limited singular-covariance notice shared by the
  *  CPU SpEED extractor and every GPU twin.
