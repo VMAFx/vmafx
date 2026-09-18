@@ -1,6 +1,38 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## perf/cambi-simd-gaps-2 — AVX-512 and NEON for every CAMBI stage (fork-local, 2026-09-18)
+
+Everything here is fork-local: upstream Netflix/vmaf ships AVX2 CAMBI kernels
+only. What a sync must keep:
+
+- `core/src/feature/cambi.c`, `setup_callbacks()`: upstream's AVX2 block stays
+  as upstream writes it; the fork adds an AVX-512 block after it (derivative,
+  c-values, mode filter, decimate, dp and mask rows, under `HAVE_AVX512`) and an
+  aarch64 block (derivative, c-values, decimate, dp row). `filter_mode` and
+  `compute_mask_row` stay scalar on aarch64 on purpose (ADR-1256).
+  `anti_dithering_filter()` tries AVX-512, then upstream's AVX2 branch, and
+  NEON on aarch64. When upstream rewrites this block, re-add the fork's
+  branches instead of taking upstream's version wholesale; that is how
+  `e3fd1c88a` dropped the previous AVX-512 and NEON dispatch.
+- `core/src/feature/cambi_c_values_frame.h` is the fork's copy of the
+  `calculate_c_values` walk (first pass, top edge, middle slide, bottom edge,
+  the `v_band_base` / `v_band_size` derivation), driven by per-ISA column scans
+  and the `cambi.h` update helpers. If upstream changes that walk, those helpers
+  or `uh_slide`'s skip condition, mirror the change here and in the scans
+  (`scan_*_avx512` in `x86/cambi_avx512.c`, `scan_*_neon` in
+  `arm64/cambi_neon.c`). A scan may flag too many columns but never too few.
+  `test_cambi_stage_simd` compares both drivers with the scalar
+  `calculate_c_values` and fails on any mismatch.
+- `cambi_increment_range_neon` / `cambi_decrement_range_neon` were retired:
+  the NEON driver's plain C loops compile to the same adds. Do not bring them
+  back from an old branch.
+- `core/test/test_cambi.c`: `test_calculate_c_values_scalar_avx2_parity` gates
+  on `vmaf_get_cpu_flags_x86()` (CPUID). Keep it if upstream touches that
+  test; the old `vmaf_get_cpu_flags()` gate silently skipped the comparison.
+
+See [Research-2065](research/2065-cambi-simd-gaps.md).
+
 ## perf/cambi-spatial-mask-simd — upstream `86da14d03` adapted, not verbatim (2026-09-18)
 
 Upstream `86da14d03` ("feature/cambi: AVX2 vectorize spatial-mask dp row and
