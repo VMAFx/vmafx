@@ -454,19 +454,13 @@ Netflix ADM.
 **Backends** — `adm`: AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal.
 `float_adm`: AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal.
 
-**32-bit (i686) portability** — the integer ADM SSE2 path uses
-`_mm_extract_epi64`, an intrinsic that is unavailable on 32-bit x86 toolchains.
-Ports of upstream Netflix commits
-[`8a289703`](https://github.com/Netflix/vmaf/commit/8a289703) and
-[`1b6c3886`](https://github.com/Netflix/vmaf/commit/1b6c3886) add a portable
-scalar fallback for the 64-bit lane extraction and lift the 32-bit gating
-guard around the AVX/AVX-512 ADM dispatch table. Together they let the
-integer ADM scalar path build and run on i686, which is what the dedicated
-i686 CI lane introduced in
-[ADR-0151](../adr/0151-i686-ci-netflix-1481.md) (T4-8) is there to exercise; without
-the fallbacks the lane could only link, not actually score frames through
-ADM. Functional behaviour on x86-64 and aarch64 is unchanged — the fallback
-is selected at preprocess time only when `__x86_64__` is undefined.
+**32-bit x86** — the fork is 64-bit only (ADR-0728, ADR-1258). The ADM x86
+sources still extract 64-bit lanes through 32-bit-safe helpers
+(`extract_epi64()`, `extract_epi64_128()`), ported from upstream Netflix
+commits [`8a289703`](https://github.com/Netflix/vmaf/commit/8a289703) and
+[`1b6c3886`](https://github.com/Netflix/vmaf/commit/1b6c3886) and completed
+in ADR-1258, so they compile for 32-bit x86. Nothing builds or tests 32-bit in
+CI, so that is portability hygiene, not a supported configuration.
 
 **Reference** — Li S., Zhang F., Ma L., Ngan K., "Image Quality Assessment by
 Separately Evaluating Detail Losses and Additive Impairments," IEEE
