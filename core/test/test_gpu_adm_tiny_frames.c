@@ -4,20 +4,29 @@
  */
 
 /*
- * Integer-ADM GPU twins on tiny frames (T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18).
+ * Integer-ADM GPU twins against the scalar CPU on tiny frames and on
+ * full-range content.
  *
- * Frames 17 to 32 pixels wide give scale-0 bands of 9 to 16 samples, where the
- * horizontal and vertical cube shift is exactly 0. The CUDA and HIP host code
- * computed that shift's rounding constant as 1 << (shift - 1), which is 2^31
- * on x86: 32x32 frames scored NaN. Their scale-0 contrast-masking kernels also
- * read one column and one row past the band at the right and bottom edges,
- * which only fall inside the evaluated region for bands of 14 samples or less.
- * The GPU extractors also accepted frames below the 17x17 minimum the CPU
- * extractor enforces.
+ * Tiny frames (T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18): frames 17 to 32 pixels
+ * wide give scale-0 bands of 9 to 16 samples, where the horizontal and
+ * vertical cube shift is exactly 0. The CUDA and HIP host code computed that
+ * shift's rounding constant as 1 << (shift - 1), which is 2^31 on x86: 32x32
+ * frames scored NaN. Their scale-0 contrast-masking kernels also read one
+ * column and one row past the band at the right and bottom edges, which only
+ * fall inside the evaluated region for bands of 14 samples or less. The GPU
+ * extractors also accepted frames below the 17x17 minimum the CPU extractor
+ * enforces.
+ *
+ * Full-range content (T-SYCL-ADM-INT16-SEMANTICS-2026-09-18): the CPU stores
+ * the scale-0 bands as int16_t, so large values wrap. Independent 8-bit noise
+ * in the reference and the distorted picture reaches the wrap in the
+ * contrast-masking threshold. The SYCL twin computed in 32 and 64 bits and
+ * never wrapped, and integer_adm_scale0 came out 2.1e-4 off at 576x324.
+ * Smooth content such as the tiny-frame ramp never gets there.
  *
  * The rejection test calls init() directly and needs no device: the size
- * check runs before any device resource is touched. The parity test scores
- * each geometry on the GPU twin and on the scalar CPU path, and skips when the
+ * check runs before any device resource is touched. The parity tests score
+ * each geometry on the GPU twin and on the scalar CPU path, and skip when the
  * backend has no device.
  */
 
@@ -67,6 +76,13 @@ static const Geometry ACCEPTED[] = {
 };
 #define NUM_ACCEPTED (sizeof(ACCEPTED) / sizeof(ACCEPTED[0]))
 
+/* Full-range noise: a small frame and the Netflix fixture size. */
+static const Geometry NOISE[] = {
+    {96u, 64u},
+    {576u, 324u},
+};
+#define NUM_NOISE (sizeof(NOISE) / sizeof(NOISE[0]))
+
 static const Geometry REJECTED[] = {
     {8u, 8u},
     {16u, 16u},
@@ -84,8 +100,12 @@ static const char *const SCORE_KEYS[] = {
 };
 #define NUM_KEYS (sizeof(SCORE_KEYS) / sizeof(SCORE_KEYS[0]))
 
+/* Luma sample at (row, col) of the reference (distorted == 0) or the
+ * distorted picture. */
+typedef uint8_t (*SampleFn)(unsigned row, unsigned col, int distorted);
+
 /* The same ramp and periodic error as test_integer_adm_tiny_frames.c. */
-static uint8_t sample(unsigned row, unsigned col, int distorted)
+static uint8_t ramp_sample(unsigned row, unsigned col, int distorted)
 {
     unsigned v = (row * 5u + col * 3u) & 0xFFu;
     if (distorted) {
@@ -94,7 +114,21 @@ static uint8_t sample(unsigned row, unsigned col, int distorted)
     return (uint8_t)v;
 }
 
-static int fill_picture(VmafPicture *pic, Geometry g, int distorted)
+/* Full-range 8-bit noise, independent between the two pictures: the top byte
+ * of a 32-bit integer hash (lowbias32) of the position, seeded per picture.
+ * Stateless, so every backend sees the same frames. */
+static uint8_t noise_sample(unsigned row, unsigned col, int distorted)
+{
+    uint32_t x = ((uint32_t)row << 16) ^ (uint32_t)col ^ (distorted ? 0x9E3779B9u : 0x85EBCA6Bu);
+    x ^= x >> 16;
+    x *= 0x7FEB352Du;
+    x ^= x >> 15;
+    x *= 0x846CA68Bu;
+    x ^= x >> 16;
+    return (uint8_t)(x >> 24);
+}
+
+static int fill_picture(VmafPicture *pic, Geometry g, SampleFn sample, int distorted)
 {
     const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, 8u, g.w, g.h);
     if (err) {
@@ -117,12 +151,13 @@ static int fill_picture(VmafPicture *pic, Geometry g, int distorted)
 
 /* Feed one frame of `g` and read every score. `*skipped` is set when the
  * backend reports its kernels were not built (-ENOSYS). */
-static char *score_frame(VmafContext *vmaf, Geometry g, double out[NUM_KEYS], int *skipped)
+static char *score_frame(VmafContext *vmaf, Geometry g, SampleFn sample, double out[NUM_KEYS],
+                         int *skipped)
 {
     VmafPicture ref;
     VmafPicture dist;
-    mu_assert("reference picture allocation failed", !fill_picture(&ref, g, 0));
-    if (fill_picture(&dist, g, 1)) {
+    mu_assert("reference picture allocation failed", !fill_picture(&ref, g, sample, 0));
+    if (fill_picture(&dist, g, sample, 1)) {
         (void)vmaf_picture_unref(&ref);
         return "distorted picture allocation failed";
     }
@@ -131,7 +166,7 @@ static char *score_frame(VmafContext *vmaf, Geometry g, double out[NUM_KEYS], in
         *skipped = 1;
         return NULL;
     }
-    mu_assert("vmaf_read_pictures failed on a tiny frame", !err);
+    mu_assert("vmaf_read_pictures failed", !err);
     mu_assert("vmaf_read_pictures(EOS) failed", !vmaf_read_pictures(vmaf, NULL, NULL, 0));
     for (size_t k = 0; k < NUM_KEYS; k++) {
         mu_assert("ADM score missing",
@@ -140,14 +175,14 @@ static char *score_frame(VmafContext *vmaf, Geometry g, double out[NUM_KEYS], in
     return NULL;
 }
 
-static char *score_cpu_scalar(Geometry g, double out[NUM_KEYS])
+static char *score_cpu_scalar(Geometry g, SampleFn sample, double out[NUM_KEYS])
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .cpumask = ~(uint64_t)0};
     VmafContext *vmaf = NULL;
     mu_assert("CPU: vmaf_init failed", !vmaf_init(&vmaf, cfg));
     mu_assert("CPU: vmaf_use_feature(adm) failed", !vmaf_use_feature(vmaf, "adm", NULL));
     int skipped = 0;
-    char *msg = score_frame(vmaf, g, out, &skipped);
+    char *msg = score_frame(vmaf, g, sample, out, &skipped);
     (void)vmaf_close(vmaf);
     return msg;
 }
@@ -211,7 +246,7 @@ static void gpu_free(GpuState **state)
 
 /* Score `g` on the GPU twin. `*skipped` is set when there is no device or the
  * kernels were not built. */
-static char *score_gpu(Geometry g, double out[NUM_KEYS], int *skipped)
+static char *score_gpu(Geometry g, SampleFn sample, double out[NUM_KEYS], int *skipped)
 {
     GpuState *state = NULL;
     if (gpu_open(&state) != 0 || state == NULL) {
@@ -228,7 +263,7 @@ static char *score_gpu(Geometry g, double out[NUM_KEYS], int *skipped)
     } else if (vmaf_use_feature(vmaf, GPU_FEATURE, NULL)) {
         msg = "GPU: vmaf_use_feature failed";
     } else {
-        msg = score_frame(vmaf, g, out, skipped);
+        msg = score_frame(vmaf, g, sample, out, skipped);
     }
     if (vmaf) {
         (void)vmaf_close(vmaf);
@@ -237,15 +272,31 @@ static char *score_gpu(Geometry g, double out[NUM_KEYS], int *skipped)
     return msg;
 }
 
-static char *check_parity(Geometry g, int *skipped)
+/* One content family of the parity tests. */
+typedef struct {
+    SampleFn sample;
+    char *mismatch; /* failure message */
+} Content;
+
+static const Content TINY_RAMP = {
+    ramp_sample,
+    "GPU integer ADM differs from scalar CPU by more than 1e-4 on a tiny frame",
+};
+
+static const Content FULL_RANGE_NOISE = {
+    noise_sample,
+    "GPU integer ADM differs from scalar CPU by more than 1e-4 on full-range noise",
+};
+
+static char *check_parity(Geometry g, const Content *c, int *skipped)
 {
     double cpu[NUM_KEYS];
     double gpu[NUM_KEYS];
-    char *msg = score_cpu_scalar(g, cpu);
+    char *msg = score_cpu_scalar(g, c->sample, cpu);
     if (msg) {
         return msg;
     }
-    msg = score_gpu(g, gpu, skipped);
+    msg = score_gpu(g, c->sample, gpu, skipped);
     if (msg || *skipped) {
         return msg;
     }
@@ -254,17 +305,18 @@ static char *check_parity(Geometry g, int *skipped)
         if (!(delta <= PARITY_TOL)) {
             (void)fprintf(stderr, "\n  %ux%u %s: cpu=%.8f gpu=%.8f delta=%.2e\n", g.w, g.h,
                           SCORE_KEYS[k], cpu[k], gpu[k], delta);
-            return "GPU integer ADM differs from scalar CPU by more than 1e-4 on a tiny frame";
+            return c->mismatch;
         }
     }
     return NULL;
 }
 
-static char *test_gpu_adm_tiny_frame_parity(void)
+/* Parity on every geometry of `list`; a missing device skips the test. */
+static char *check_parity_list(const Geometry *list, size_t count, const Content *c)
 {
-    for (size_t i = 0; i < NUM_ACCEPTED; i++) {
+    for (size_t i = 0; i < count; i++) {
         int skipped = 0;
-        char *msg = check_parity(ACCEPTED[i], &skipped);
+        char *msg = check_parity(list[i], c, &skipped);
         if (msg) {
             return msg;
         }
@@ -275,6 +327,16 @@ static char *test_gpu_adm_tiny_frame_parity(void)
         }
     }
     return NULL;
+}
+
+static char *test_gpu_adm_tiny_frame_parity(void)
+{
+    return check_parity_list(ACCEPTED, NUM_ACCEPTED, &TINY_RAMP);
+}
+
+static char *test_gpu_adm_full_range_noise_parity(void)
+{
+    return check_parity_list(NOISE, NUM_NOISE, &FULL_RANGE_NOISE);
 }
 
 /* init() with a zeroed private state. Only rejected sizes come through here:
@@ -311,6 +373,7 @@ char *run_tests(void)
     static const MuTest tests[] = {
         MU_TEST(test_gpu_adm_rejects_below_min_dim),
         MU_TEST(test_gpu_adm_tiny_frame_parity),
+        MU_TEST(test_gpu_adm_full_range_noise_parity),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
