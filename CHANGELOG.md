@@ -11487,6 +11487,17 @@ core internal headers (`framesync.h`, `thread_pool.h`, `picture_pool.h`,
   projection).
 
 
+- **macOS on Apple silicon now computes integer ADM like every other
+  platform** (ADR-1257). Since August 2026 the Apple AArch64 build routed the
+  first column of every ADM DWT2 row through a compatibility wrapper that
+  reproduced a historical three-tap result, to keep a macOS-only expected
+  score in the Python quality tests. Upstream Netflix/vmaf fixed the same
+  dropped tap in `cba9343ed`, so the wrapper is removed. macOS scores now match
+  Linux AArch64 and x86. On the Netflix akiyo fixture, VMAF moves from the
+  recorded macOS value 88.030322 to about 88.030459, the value Linux AArch64
+  and x86 produce.
+
+
 - **docs(adm)**: replace open `//TODO: if we integrate adm_p_norm` marker in
   `integer_adm.c` with a formal DEFERRED block citing ADR-0481; documents why
   `adm_p_norm` remains hardcoded at 3.0 and what must happen before it can be
@@ -19650,6 +19661,19 @@ their defaults in `init_fex_metal` rather than being user-configurable via
   range corrected from `0–9` to `0–3`, `noise_weight` renamed to `adm_noise_weight` with
   alias `nw`, backend list updated to include HIP and Metal); fix pre-existing MD060
   table-column-style violations in the extractor overview and DISTS-Sq options tables.
+
+
+- **`integer_adm_scale3` is now correct and reproducible on frames 17 to 32
+  pixels high or wide.** For those sizes the fourth ADM DWT level has only two
+  output samples per row. The mirror-index table then replaced its first entry
+  with index -1, so scale 3 read one row before its input band and one int32
+  before its scratch allocation, which AddressSanitizer reports as a heap
+  overflow. The score depended on whatever those bytes held and could change
+  between runs on identical input. The table now keeps the symmetric mirror
+  for every size. The ADM working buffers are also zero-initialised, as
+  upstream Netflix/vmaf does since `1786bd961`, so a future out-of-region
+  read yields a reproducible value. Frames of 33 pixels or more in both
+  dimensions score exactly as before.
 
 
 - Make integer ADM AVX2/AVX-512 temporary scopes and read-only aliases analyzer-clean while preserving dispatch signatures and numerical expression order.
@@ -28141,6 +28165,23 @@ legs. (ADR-0603, triggered by Renovate PR #1402)
   objects are no longer silently opted out of Intel CET shadow-stack enforcement
   by one unmarked object. Verified with `readelf -n`: the assembled `cpuid.obj`
   reports `x86 feature: SHSTK`.
+
+
+- **Integer ADM SIMD kernels no longer store outside their output bands**
+  (ports of upstream Netflix/vmaf `03b5562c5` and `ea012e387`).
+  `adm_decouple_avx2` computed its 8-wide tail bound from column 0 although its
+  loop starts at the left border. Its last store therefore ran up to seven
+  samples past the decouple region, and for band widths 32 and 40 past the end
+  of the row. No consumer reads those samples, so x86 scores are unchanged.
+  `adm_dwt2_8_neon` had no horizontal tail and stored one sample past every
+  band row. On the last row that sample overwrote the first element of the
+  next band in the shared ADM buffer with a value computed from over-read
+  scratch. On AArch64 this changed `integer_adm_scale0` for frame widths 24,
+  32 and 40 at heights below 50, differently from run to run. Both loops now
+  stop at a bound that keeps every store inside the band, and a scalar tail
+  handles the remainder. Every NEON-dispatched width is bit-exact with the
+  scalar reference, and scores for larger frames, including every Netflix
+  golden fixture, are unchanged.
 
 
 - **Upstream issue harvest (ADR-1166): nine stale Netflix/vmaf reports

@@ -433,6 +433,18 @@ feature/
   [ADR-0155](../../../docs/adr/0155-adm-i4-rounding-deferred-netflix-955.md)
   and [rebase-notes 0048](../../../docs/rebase-notes.md).
 
+- **`integer_adm.c` DWT mirror table for tiny extents** (fork-only fix,
+  [Research-2063](../../../docs/research/2063-upstream-sync-2026-09-adm-vif-simd.md)):
+  `dwt2_src_indices_1d()` starts its mirrored tail at
+  `(n_half > 2u) ? n_half - 2u : 1u` and bounds the first loop with
+  `i + 2 < n_half`. Upstream's `n_half - 2` restarts the tail at 0 when
+  `n_half == 2` (scale 3 for any frame dimension from 17 to 32), replaces the
+  `{1, 0, 1, 2}` mirror with `{-1, 0, 1, 2}` and reads index -1 before the
+  band and before the `tmp_ref` allocation. `init_buffers()` also zeroes
+  `data_buf` (upstream `1786bd961`), but only as defence in depth: the
+  zeroing does not make upstream's bound safe. Guarded by
+  `test_integer_adm_tiny_frames`, which the ASan lane aborts on the old bound.
+
 - **`integer_adm` GPU row-level rounding invariant** (fork-local, ADR-1167):
   In integer ADM contrast masking kernels (`cuda/integer_adm/adm_cm.cu` and
   `hip/integer_adm/adm_cm.hip`), inner accumulation rounding shift

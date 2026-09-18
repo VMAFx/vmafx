@@ -37,6 +37,13 @@
  *      accumulated verbatim into `accum_num_non_log` instead of as zero.  Again
  *      the 16-bit NEON kernel (`vmaxq_s32`) and AVX2 (`_mm256_max_epi32`) get
  *      this right.
+ *
+ * The `subsample_rd` cases also check what the kernels leave *outside* their
+ * output: the mu planes start out filled with the simd_bitexact_test.h guard
+ * pattern and may only change inside the w x h image, and the whole ref/dis
+ * slab (padding rows and stride padding included) must end up byte-identical
+ * to the scalar reference's. A small-size sweep runs every width from 16 to 48
+ * over heights down to the 17-row minimum.
  */
 
 #include <math.h>
@@ -49,6 +56,9 @@
 
 #include "config.h"
 #include "test.h"
+/* clang-format off — test.h has no header guard; must precede harness. */
+#include "simd_bitexact_test.h"
+/* clang-format on */
 
 #include "mem.h"
 
@@ -465,6 +475,49 @@ static int cmp_decimated(const VifBuffer *ba, const VifBuffer *bb, unsigned w, u
     return bad;
 }
 
+/* Guard-fills both mu planes (h rows of stride_16 bytes each). */
+static void guard_mu_planes(const VifBuffer *buf, unsigned h)
+{
+    simd_test_guard_fill(buf->mu1, (size_t)h * (size_t)buf->stride_16);
+    simd_test_guard_fill(buf->mu2, (size_t)h * (size_t)buf->stride_16);
+}
+
+/* mu samples written outside the w x h image (i.e. into the stride padding). */
+static size_t mu_planes_touched(const VifBuffer *buf, unsigned w, unsigned h)
+{
+    const SimdTestRect rect = {0, h, 0, w};
+    const size_t stride = (size_t)buf->stride_16 / sizeof(uint16_t);
+    const SimdTestPlane mu1 = {buf->mu1, sizeof(uint16_t), stride, h, 0};
+    const SimdTestPlane mu2 = {buf->mu2, sizeof(uint16_t), stride, h, 0};
+    return simd_test_guard_count_outside(mu1, rect) + simd_test_guard_count_outside(mu2, rect);
+}
+
+/* The whole ref/dis slab -- both frames, their padding rows and the stride
+ * padding -- must match the scalar reference byte for byte, so a store the
+ * scalar never makes cannot hide outside the compared decimated window. */
+static int ref_dis_slabs_equal(const VifBuffer *ba, const VifBuffer *bb, unsigned h)
+{
+    const size_t frame_size = (size_t)ba->stride * h;
+    const size_t pad_size = (size_t)ba->stride * 8;
+    const size_t slab = 2 * (pad_size + frame_size + pad_size);
+    return memcmp(ba->data, bb->data, slab) == 0;
+}
+
+/* Guard band and slab comparison shared by the two subsample_rd drivers. */
+static int subsample_side_effects(const VifBuffer *sb, const VifBuffer *nb, unsigned w, unsigned h,
+                                  const char *tag)
+{
+    const size_t touched = mu_planes_touched(nb, w, h);
+    const int slab_ok = ref_dis_slabs_equal(sb, nb, h);
+    if (touched != 0) {
+        (void)fprintf(stderr, "    %s: %zu mu sample(s) written outside the image\n", tag, touched);
+    }
+    if (!slab_ok) {
+        (void)fprintf(stderr, "    %s: ref/dis slab differs outside the compared window\n", tag);
+    }
+    return (touched != 0 ? 1 : 0) + (slab_ok ? 0 : 1);
+}
+
 /* ---------------------------------------------------------------------- */
 /* Per-case drivers.  Each returns the mismatch count, or -1 if the case could
  * not be set up.                                                          */
@@ -486,12 +539,15 @@ static int run_subsample_8_case(unsigned w, unsigned h, int pattern)
     const uint32_t seed = 0x5eed0000u ^ (uint32_t)(w * 131u + h * 7u + (unsigned)pattern);
     fill_8(&sc.s->buf, w, h, pattern, seed);
     fill_8(&nc.s->buf, w, h, pattern, seed);
+    guard_mu_planes(&sc.s->buf, h);
+    guard_mu_planes(&nc.s->buf, h);
 
     ref_subsample_rd_8(&sc.s->buf, w, h);
     vif_subsample_rd_8_neon(&nc.s->buf, w, h);
 
     int bad = cmp_mu_planes(&sc.s->buf, &nc.s->buf, w, h, "subsample_rd_8");
     bad += cmp_decimated(&sc.s->buf, &nc.s->buf, w, h, 0, "subsample_rd_8");
+    bad += subsample_side_effects(&sc.s->buf, &nc.s->buf, w, h, "subsample_rd_8");
     if (bad) {
         (void)fprintf(stderr, "  %ux%u pattern %d: %d mismatches\n", w, h, pattern, bad);
     }
@@ -518,12 +574,15 @@ static int run_subsample_16_case(unsigned w, unsigned h, int scale, int bpc, int
                                                    (unsigned)bpc * 3u + (unsigned)pattern);
     fill_16(&sc.s->buf, w, h, pattern, bpc, seed);
     fill_16(&nc.s->buf, w, h, pattern, bpc, seed);
+    guard_mu_planes(&sc.s->buf, h);
+    guard_mu_planes(&nc.s->buf, h);
 
     ref_subsample_rd_16(&sc.s->buf, w, h, scale, bpc);
     vif_subsample_rd_16_neon(&nc.s->buf, w, h, scale, bpc);
 
     int bad = cmp_mu_planes(&sc.s->buf, &nc.s->buf, w, h, "subsample_rd_16");
     bad += cmp_decimated(&sc.s->buf, &nc.s->buf, w, h, scale, "subsample_rd_16");
+    bad += subsample_side_effects(&sc.s->buf, &nc.s->buf, w, h, "subsample_rd_16");
     if (bad) {
         (void)fprintf(stderr, "  %ux%u scale %d bpc %d pattern %d: %d mismatches\n", w, h, scale,
                       bpc, pattern, bad);
@@ -714,6 +773,43 @@ static char *test_vif_statistic_16_neon(void)
 #endif
 }
 
+#if ARCH_AARCH64
+/* Every kernel on one small geometry, noise pattern, 8-bit and 10-bit. */
+static char *check_small_geometry(unsigned w, unsigned h)
+{
+    const int sub8 = run_subsample_8_case(w, h, PATTERN_NOISE);
+    const int sub16 = run_subsample_16_case(w, h, 0, 10, PATTERN_NOISE);
+    const int stat8 = run_statistic_8_case(w, h, PATTERN_NOISE);
+    const int stat16 = run_statistic_16_case(w, h, 0, 10, PATTERN_NOISE);
+
+    mu_assert("allocation failed", sub8 >= 0 && sub16 >= 0 && stat8 >= 0 && stat16 >= 0);
+    mu_assert("a VIF NEON kernel diverges from the scalar reference on a small geometry",
+              sub8 + sub16 + stat8 + stat16 == 0);
+    return NULL;
+}
+#endif
+
+/* Small-size sweep: every width from 16 to 48 -- both sides of the 8- and
+ * 16-column vector strides -- over heights down to the 17-row minimum. */
+static char *test_vif_neon_small_sweep(void)
+{
+#if !ARCH_AARCH64
+    return NULL;
+#else
+    static const unsigned heights[] = {17, 18, 20, 24};
+
+    for (size_t t = 0; t < sizeof(heights) / sizeof(heights[0]); ++t) {
+        for (unsigned w = 16; w <= 48; ++w) {
+            char *msg = check_small_geometry(w, heights[t]);
+            if (msg) {
+                return msg;
+            }
+        }
+    }
+    return NULL;
+#endif
+}
+
 char *run_tests(void)
 {
 #if ARCH_AARCH64
@@ -721,12 +817,14 @@ char *run_tests(void)
     mu_run_test(test_vif_subsample_rd_16_neon);
     mu_run_test(test_vif_statistic_8_neon);
     mu_run_test(test_vif_statistic_16_neon);
+    mu_run_test(test_vif_neon_small_sweep);
 #else
     (void)fprintf(stderr, "skipping: non-aarch64 arch\n");
     (void)test_vif_subsample_rd_8_neon;
     (void)test_vif_subsample_rd_16_neon;
     (void)test_vif_statistic_8_neon;
     (void)test_vif_statistic_16_neon;
+    (void)test_vif_neon_small_sweep;
 #endif
     return NULL;
 }

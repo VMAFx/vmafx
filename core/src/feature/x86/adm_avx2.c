@@ -799,7 +799,10 @@ void adm_decouple_avx2(AdmBuffer *buf, int w, int h, int stride, double adm_enhn
         bottom = h;
     }
 
-    int right_mod8 = right - (right % 8);
+    /* The vector loop starts at `left`, so the tail bound must be a multiple of
+     * 8 columns away from `left`, not from zero; otherwise the last 8-wide
+     * store runs past `right` (Netflix/vmaf 03b5562c5). */
+    int right_mod8 = right - ((right - left) % 8);
 
     for (int i = top; i < bottom; ++i) {
         for (int j = left; j < right_mod8; j += 8) {

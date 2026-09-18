@@ -123,6 +123,68 @@ and teardown.
   **Rebase-sensitive**: any new GPU test lacking this guard will
   SIGSEGV on CPU-only CI runners (and on macOS Intel runners, where
   Metal returns `-ENODEV`).
+  Do **not** dereference a `malloc` return value before checking it.
+  An unchecked dereference is a latent SIGSEGV under ASan `MALLOC_PERTURB_=198`
+  (ADR-0971). **Rebase-sensitive**: this rule applies to every new test file.
+- **SIMD parity tests check what the kernel leaves outside its output, not
+  only what it writes inside.** A kernel that stores past its region passes a
+  region-only comparison. Netflix/vmaf `03b5562c5` and `ea012e387` were both
+  of that shape and went unnoticed here
+  ([Research-2063](../../docs/research/2063-upstream-sync-2026-09-adm-vif-simd.md)).
+  Allocate output planes at the production stride, add trailing slack, fill
+  them with `simd_test_guard_fill()` from `simd_bitexact_test.h`, and assert
+  `SIMD_GUARD_ASSERT_UNTOUCHED(simd_test_guard_count_outside(plane, rect), ...)`
+  after the call. Where inputs and outputs share a buffer, byte-compare the
+  whole allocation against the scalar run instead (`test_vif_neon.c`,
+  `test_integer_vif_avx2_stages.c`). Sweep small geometries on both sides of
+  each vector stride, down to the extractor minimum of 17. The ADM and VIF
+  parity tests are the reference.
+- **Authoritative test twins (ADR-1153)**:
+  `test_dict.cpp` and `test_feature.cpp` are the sole authoritative test files
+  for `dict` and `feature_name`; the uncompiled legacy C twins `test_dict.c`
+  and `test_feature.c` were deleted as obsolete.
+- **GPU tests must skip gracefully when no device is present.** Any test that
+  calls `vmaf_cuda_state_init`, `vmaf_hip_state_init`, or equivalent GPU-init
+  helpers must check the return value before proceeding. On failure (`err != 0`
+  or returned pointer is NULL), emit `[skip: no CUDA/HIP/Vulkan device]` to
+  stderr and `return NULL` — do not hard-fail via `mu_assert`. Replacing a
+  hard-fail `mu_assert` with a skip guard is a one-line pattern; see
+  `test_cuda_buffer_alloc_oom.c` and `test_cuda_pic_preallocation.c` for
+  reference. **Rebase-sensitive**: any new GPU test that lacks this guard will
+  SIGSEGV on CPU-only CI runners.
+- **`test_integer_cambi_sycl.c` is a smoke test; `test_sycl_cambi_parity.c` is the
+  parity gate.** Both exist intentionally. The smoke test (ADR-0371) verifies
+  registration + finite/non-negative output on a flat frame. The parity test
+  (ADR-1001, round 5) asserts the headline `Cambi_feature_cambi_score` matches the
+  CPU path within places=4 on a banding fixture. Do not merge the two files — they
+  serve different audit purposes. Do not remove `test_integer_cambi_sycl.c` in the
+  belief that the parity test supersedes it; the registration + format contract it
+  pins is a separate invariant. **Rebase-sensitive**: if `integer_cambi_sycl.cpp`
+  gains a new feature-name key or option, update both tests.
+- **GPU-only extractors get a smoke gate, not a parity gate.** When a CUDA /
+  HIP / SYCL feature extractor has no CPU twin emitting the same feature name
+  (e.g. `speed_chroma_cuda`, `speed_temporal_cuda` — emit
+  `Speed_*_feature_*_score`, no CPU producer), a CPU-vs-GPU parity assertion
+  is the wrong tool. The gate is a smoke test: register the extractor, run a
+  multi-frame fixture, assert finite scores at frame index 1. Catches the
+  high-impact failure modes (NaN/Inf drift from kernel grid changes or
+  covariance-matrix degenerate cases) without inventing a redundant CPU
+  reference. See `test_cuda_speed_chroma_smoke.c` /
+  `test_cuda_speed_temporal_smoke.c` (ADR-0956). Fixture sizing matters here:
+  the speed kernels need 640x360+ to admit a non-singular covariance matrix in
+  the ADR-0567 host-side eigendecomp path. **Rebase-sensitive**: do not "fix"
+  a smoke test by adding a fake CPU twin — the ADR-0956 alternatives table
+  documents why.
+  calls `vmaf_cuda_state_init`, `vmaf_hip_state_init`, `vmaf_metal_state_init`,
+  or equivalent GPU-init helpers must check the return value before proceeding.
+  On failure (`err != 0` or returned pointer is NULL), emit
+  `[skip: no CUDA/HIP/Metal/Vulkan device]` to stderr and `return NULL` — do
+  not hard-fail via `mu_assert`. Replacing a hard-fail `mu_assert` with a skip
+  guard is a one-line pattern; see `test_cuda_buffer_alloc_oom.c`,
+  `test_cuda_pic_preallocation.c`, `test_sycl_motion3_parity.c`, and the Metal
+  parity tests `test_metal_*_parity.c` for reference. **Rebase-sensitive**: any
+  new GPU test that lacks this guard will SIGSEGV on CPU-only CI runners (and
+  on macOS Intel runners, where Metal returns `-ENODEV`).
 - **Parent rules** apply (see [../AGENTS.md](../AGENTS.md)).
 - **POSIX-only APIs in tests** must be shimmed for MINGW. See
   [test_lpips.c](test_lpips.c) for `_putenv_s`-based shim for

@@ -9,17 +9,21 @@
  * ADR-1057: `adm_dwt2_8_neon`'s `j == 0` horizontal special case summed only
  * three of the four Daubechies-2 taps, dropping `ind_x[3][0]`. The resulting
  * drift was small enough to survive every existing test and only surfaced as a
- * Netflix golden mismatch on ARM (`akiyo 88.030322 != 88.030463`), where it sat
- * on master. No unit test covered this kernel on any architecture — the SIMD
- * suite reaches `adm_cm`, not `adm_dwt2`.
+ * Netflix golden mismatch on ARM (`akiyo 88.030322 != 88.030463`). No unit
+ * test covered this kernel on any architecture -- the SIMD suite reaches
+ * `adm_cm`, not `adm_dwt2`.
  *
- * This test closes that gap: it runs the universal NEON kernel against a scalar
- * reference transcribed from `adm_dwt2_8` in integer_adm.c and requires
- * bit-exact output across all four subbands. It separately locks the explicit
- * Apple compatibility wrapper to the historical three-tap first-column rule,
- * while proving that wrapper leaves every other column unchanged. The `j == 0`
- * and `i == 0` boundary columns/rows are exercised on every size, because that
- * is precisely where the compatibility boundary lives.
+ * This test runs the NEON kernel against a scalar reference transcribed from
+ * `adm_dwt2_8` in integer_adm.c and requires bit-exact output across all four
+ * subbands, on every width the dispatcher routes to NEON (`w % 8 == 0`) from
+ * 16 to 128 and on heights that put the mirrored last row at every phase.
+ *
+ * Netflix/vmaf ea012e387: the 8-wide horizontal loop had no tail and stored
+ * one sample past the half-resolution row on every width; on the last row that
+ * sample landed on element [0][0] of the next band in the shared ADM slab.
+ * The bands therefore use the stride integer_adm.c derives and start out
+ * filled with the simd_bitexact_test.h guard pattern: any store outside the
+ * band, including into the slack after its last row, fails the test.
  */
 
 #include <stdint.h>
@@ -29,6 +33,10 @@
 
 #include "config.h"
 #include "test.h"
+/* clang-format off — test.h has no header guard; must precede harness. */
+#include "simd_bitexact_test.h"
+/* clang-format on */
+#include "mem.h"
 
 #include "feature/integer_adm.h"
 
@@ -41,83 +49,50 @@
  * required Windows build compiles this TU with cl.exe, and this file mirrors
  * the C spelling of the surface it exercises. ADR-1138. */
 
-/* Mirrors dwt2_src_indices_filt() in integer_adm.c, which is static there. */
-static void ref_src_indices(int **ind_y, int **ind_x, int w, int h)
+/* One axis of dwt2_src_indices_filt() in integer_adm.c, which is static there.
+ * `len` is the source extent, `len_half` the subsampled extent. */
+static void ref_mirror_indices(int **ind, int len, int len_half)
 {
-    const int h_half = (h + 1) / 2;
-    const int w_half = (w + 1) / 2;
-    int i, j, ind0, ind1, ind2, ind3;
+    ind[0][0] = 1;
+    ind[1][0] = 0;
+    ind[2][0] = 1;
+    ind[3][0] = 2;
 
-    ind_y[0][0] = 1;
-    ind_y[1][0] = 0;
-    ind_y[2][0] = 1;
-    ind_y[3][0] = 2;
-    for (i = 1; i < h_half - 2; ++i) {
-        ind1 = 2 * i;
-        ind_y[0][i] = ind1 - 1;
-        ind_y[1][i] = ind1;
-        ind_y[2][i] = ind1 + 1;
-        ind_y[3][i] = ind1 + 2;
-    }
-    for (i = (h_half > 2) ? h_half - 2 : 1; i < h_half; ++i) {
-        ind1 = 2 * i;
-        ind0 = ind1 - 1;
-        ind2 = ind1 + 1;
-        ind3 = ind1 + 2;
-        if (ind0 >= h)
-            ind0 = 2 * h - ind0 - 1;
-        if (ind1 >= h)
-            ind1 = 2 * h - ind1 - 1;
-        if (ind2 >= h)
-            ind2 = 2 * h - ind2 - 1;
-        if (ind3 >= h)
-            ind3 = 2 * h - ind3 - 1;
-        ind_y[0][i] = ind0;
-        ind_y[1][i] = ind1;
-        ind_y[2][i] = ind2;
-        ind_y[3][i] = ind3;
+    for (int i = 1; i < len_half - 2; ++i) {
+        const int ind1 = 2 * i;
+        ind[0][i] = ind1 - 1;
+        ind[1][i] = ind1;
+        ind[2][i] = ind1 + 1;
+        ind[3][i] = ind1 + 2;
     }
 
-    ind_x[0][0] = 1;
-    ind_x[1][0] = 0;
-    ind_x[2][0] = 1;
-    ind_x[3][0] = 2;
-    for (j = 1; j < w_half - 2; ++j) {
-        ind1 = 2 * j;
-        ind_x[0][j] = ind1 - 1;
-        ind_x[1][j] = ind1;
-        ind_x[2][j] = ind1 + 1;
-        ind_x[3][j] = ind1 + 2;
-    }
-    for (j = (w_half > 2) ? w_half - 2 : 1; j < w_half; ++j) {
-        ind1 = 2 * j;
-        ind0 = ind1 - 1;
-        ind2 = ind1 + 1;
-        ind3 = ind1 + 2;
-        if (ind0 >= w)
-            ind0 = 2 * w - ind0 - 1;
-        if (ind1 >= w)
-            ind1 = 2 * w - ind1 - 1;
-        if (ind2 >= w)
-            ind2 = 2 * w - ind2 - 1;
-        if (ind3 >= w)
-            ind3 = 2 * w - ind3 - 1;
-        ind_x[0][j] = ind0;
-        ind_x[1][j] = ind1;
-        ind_x[2][j] = ind2;
-        ind_x[3][j] = ind3;
+    for (int i = (len_half > 2) ? len_half - 2 : 1; i < len_half; ++i) {
+        int idx[4] = {(2 * i) - 1, 2 * i, (2 * i) + 1, (2 * i) + 2};
+        for (int t = 0; t < 4; ++t) {
+            if (idx[t] >= len)
+                idx[t] = (2 * len) - idx[t] - 1;
+            ind[t][i] = idx[t];
+        }
     }
 }
 
-/* Transcribed from adm_dwt2_8() in integer_adm.c (static there). The universal
- * reference passes first_column_taps=4; Darwin compatibility passes 3. */
+/* Mirrors dwt2_src_indices_filt() in integer_adm.c, which is static there. */
+static void ref_src_indices(int **ind_y, int **ind_x, int w, int h)
+{
+    ref_mirror_indices(ind_y, h, (h + 1) / 2);
+    ref_mirror_indices(ind_x, w, (w + 1) / 2);
+}
+
+/* Transcribed from adm_dwt2_8() in integer_adm.c (static there). */
 static void ref_adm_dwt2_8(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w,
-                           int h, int src_stride, int dst_stride, int first_column_taps)
+                           int h, int src_stride, int dst_stride)
 {
     const int16_t *flo = dwt2_db2_coeffs_lo;
     const int16_t *fhi = dwt2_db2_coeffs_hi;
-    const int16_t shift_VP = 8, shift_HP = 16;
-    const int32_t add_VP = 128, add_HP = 32768;
+    const int16_t shift_VP = 8;
+    const int16_t shift_HP = 16;
+    const int32_t add_VP = 128;
+    const int32_t add_HP = 32768;
     int **ind_y = buf->ind_y;
     int **ind_x = buf->ind_x;
     int16_t *tmplo = (int16_t *)buf->tmp_ref;
@@ -145,162 +120,214 @@ static void ref_adm_dwt2_8(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuf
 
         for (int j = 0; j < (w + 1) / 2; ++j) {
             const int jx[4] = {ind_x[0][j], ind_x[1][j], ind_x[2][j], ind_x[3][j]};
-            const int horizontal_taps = j == 0 ? first_column_taps : 4;
             int16_t s[4];
 
             for (int t = 0; t < 4; ++t)
                 s[t] = tmplo[jx[t]];
             accum = 0;
-            for (int t = 0; t < horizontal_taps; ++t)
+            for (int t = 0; t < 4; ++t)
                 accum += (int32_t)flo[t] * s[t];
             dst->band_a[i * dst_stride + j] = (int16_t)((accum + add_HP) >> shift_HP);
             accum = 0;
-            for (int t = 0; t < horizontal_taps; ++t)
+            for (int t = 0; t < 4; ++t)
                 accum += (int32_t)fhi[t] * s[t];
             dst->band_v[i * dst_stride + j] = (int16_t)((accum + add_HP) >> shift_HP);
 
             for (int t = 0; t < 4; ++t)
                 s[t] = tmphi[jx[t]];
             accum = 0;
-            for (int t = 0; t < horizontal_taps; ++t)
+            for (int t = 0; t < 4; ++t)
                 accum += (int32_t)flo[t] * s[t];
             dst->band_h[i * dst_stride + j] = (int16_t)((accum + add_HP) >> shift_HP);
             accum = 0;
-            for (int t = 0; t < horizontal_taps; ++t)
+            for (int t = 0; t < 4; ++t)
                 accum += (int32_t)fhi[t] * s[t];
             dst->band_d[i * dst_stride + j] = (int16_t)((accum + add_HP) >> shift_HP);
         }
     }
 }
+/* Trailing elements past each band that no kernel may write. */
+#define DWT2_SLACK 64
+
+/* Everything one (w, h) comparison needs. bands[0..3] receive the scalar
+ * reference, bands[4..7] the NEON kernel, so band b and band b + 4 hold the
+ * two implementations of the same band. */
+typedef struct Dwt2Fixture {
+    int w;
+    int h;
+    int w_half;
+    int h_half;
+    int dst_stride;
+    size_t band_elems;
+    size_t tmp_elems;
+    uint8_t *src;
+    int16_t *bands[8];
+    int *iy[4];
+    int *ix[4];
+    AdmBuffer buf;
+    adm_dwt_band_t ref_band;
+    adm_dwt_band_t simd_band;
+} Dwt2Fixture;
+
+static void fixture_free(Dwt2Fixture *f)
+{
+    for (int k = 0; k < 4; ++k) {
+        free(f->iy[k]);
+        free(f->ix[k]);
+        f->iy[k] = NULL;
+        f->ix[k] = NULL;
+    }
+    for (int k = 0; k < 8; ++k) {
+        free(f->bands[k]);
+        f->bands[k] = NULL;
+    }
+    free(f->buf.tmp_ref);
+    f->buf.tmp_ref = NULL;
+    free(f->src);
+    f->src = NULL;
+}
+
+static void fixture_bind(Dwt2Fixture *f)
+{
+    for (int k = 0; k < 4; ++k) {
+        f->buf.ind_y[k] = f->iy[k];
+        f->buf.ind_x[k] = f->ix[k];
+    }
+    f->ref_band.band_a = f->bands[0];
+    f->ref_band.band_v = f->bands[1];
+    f->ref_band.band_h = f->bands[2];
+    f->ref_band.band_d = f->bands[3];
+    f->simd_band.band_a = f->bands[4];
+    f->simd_band.band_v = f->bands[5];
+    f->simd_band.band_h = f->bands[6];
+    f->simd_band.band_d = f->bands[7];
+}
+
+/* Allocates every buffer, or frees whatever was allocated and returns -1. The
+ * NEON bands start out filled with the guard pattern. */
+static int fixture_alloc(Dwt2Fixture *f, int w, int h)
+{
+    memset(f, 0, sizeof(*f));
+    f->w = w;
+    f->h = h;
+    f->w_half = (w + 1) / 2;
+    f->h_half = (h + 1) / 2;
+    /* integer_adm.c: buf_stride = ALIGN_CEIL(half width * 4) >> 2. */
+    f->dst_stride = ALIGN_CEIL(f->w_half * (int)sizeof(int32_t)) / (int)sizeof(int32_t);
+    f->band_elems = (size_t)f->h_half * (size_t)f->dst_stride;
+    f->tmp_elems = ((size_t)w * 8) + 256;
+
+    int ok = 1;
+    f->src = malloc((size_t)w * (size_t)h);
+    ok = ok && (f->src != NULL);
+    for (int k = 0; k < 4; ++k) {
+        f->iy[k] = calloc((size_t)f->h_half + 64, sizeof(int));
+        f->ix[k] = calloc((size_t)f->w_half + 64, sizeof(int));
+        ok = ok && (f->iy[k] != NULL) && (f->ix[k] != NULL);
+    }
+    for (int k = 0; k < 8; ++k) {
+        f->bands[k] = calloc(f->band_elems + DWT2_SLACK, sizeof(int16_t));
+        ok = ok && (f->bands[k] != NULL);
+        if (ok && k >= 4)
+            simd_test_guard_fill(f->bands[k], (f->band_elems + DWT2_SLACK) * sizeof(int16_t));
+    }
+    f->buf.tmp_ref = calloc(f->tmp_elems, sizeof(int16_t));
+    ok = ok && (f->buf.tmp_ref != NULL);
+
+    if (!ok) {
+        fixture_free(f);
+        return -1;
+    }
+    fixture_bind(f);
+    return 0;
+}
+
+/* xorshift32 -- deterministic per (w, h), so a failure is reproducible. */
+static void fixture_fill_src(Dwt2Fixture *f)
+{
+    uint32_t seed = 0x5eed0000u ^ (uint32_t)((f->w * 131) + f->h);
+
+    for (int i = 0; i < f->w * f->h; ++i)
+        f->src[i] = (uint8_t)(simd_test_xorshift32(&seed) & 0xFFu);
+}
+
+/* Returns 1 when every in-band sample matches; otherwise reports the first
+ * mismatch on stderr and returns 0. */
+static int fixture_bands_match(const Dwt2Fixture *f)
+{
+    static const char *const names[4] = {"band_a", "band_v", "band_h", "band_d"};
+
+    for (int b = 0; b < 4; ++b) {
+        for (size_t idx = 0; idx < f->band_elems; ++idx) {
+            const int i = (int)(idx / (size_t)f->dst_stride);
+            const int j = (int)(idx % (size_t)f->dst_stride);
+            if (j >= f->w_half || f->bands[b][idx] == f->bands[b + 4][idx])
+                continue;
+            (void)fprintf(stderr, "  %dx%d %s[%d][%d]%s: scalar %d != neon %d\n", f->w, f->h,
+                          names[b], i, j, (j == f->w_half - 1) ? " (last col)" : "",
+                          f->bands[b][idx], f->bands[b + 4][idx]);
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* Elements of the NEON bands written outside the h_half x w_half band. */
+static size_t fixture_guard_touched(const Dwt2Fixture *f)
+{
+    const SimdTestRect rect = {0, (size_t)f->h_half, 0, (size_t)f->w_half};
+    size_t touched = 0;
+
+    for (int b = 4; b < 8; ++b) {
+        const SimdTestPlane plane = {f->bands[b], sizeof(int16_t), (size_t)f->dst_stride,
+                                     (size_t)f->h_half, DWT2_SLACK};
+        touched += simd_test_guard_count_outside(plane, rect);
+    }
+    return touched;
+}
+
+/* One (w, h) scalar-vs-NEON comparison plus the guard band. */
+static char *dwt2_geometry_matches_scalar(int w, int h)
+{
+    Dwt2Fixture f;
+
+    mu_assert("allocation failed for the ADM DWT2 fixture", fixture_alloc(&f, w, h) == 0);
+    fixture_fill_src(&f);
+    ref_src_indices(f.buf.ind_y, f.buf.ind_x, w, h);
+
+    ref_adm_dwt2_8(f.src, &f.ref_band, &f.buf, w, h, w, f.dst_stride);
+    memset(f.buf.tmp_ref, 0, f.tmp_elems * sizeof(int16_t));
+    adm_dwt2_8_neon(f.src, &f.simd_band, &f.buf, w, h, w, f.dst_stride);
+
+    const int matched = fixture_bands_match(&f);
+    const size_t touched = fixture_guard_touched(&f);
+    fixture_free(&f);
+    if (touched != 0)
+        (void)fprintf(stderr, "  %dx%d\n", w, h);
+    mu_assert("adm_dwt2_8_neon diverges from the scalar reference", matched);
+    SIMD_GUARD_ASSERT_UNTOUCHED(touched, "adm_dwt2_8_neon wrote outside its band");
+    return NULL;
+}
 #endif /* ARCH_AARCH64 */
 
-/* The branch count is one allocation check per buffer — twenty of them — and
- * every buffer has to be freed in this same scope on every path out. Splitting
- * the allocation away from the use would either leak on the error paths or
- * thread a cleanup struct through two functions for no reader's benefit.
- * ADR-0141 §2. */
-/* NOLINTNEXTLINE(readability-function-size) */
 static char *test_adm_dwt2_8_neon_matches_scalar(void)
 {
 #if !ARCH_AARCH64
     return NULL; /* NEON kernel is aarch64-only. */
 #else
-    /* Sizes chosen so w_half/h_half exercise the j==0 / i==0 special cases and
-     * the mirrored tail, including odd extents. */
-    /* Only widths the dispatcher actually routes to NEON: integer_adm.c gates
-     * on `!(w % 8)`. Both w % 16 == 0 and w % 16 == 8 are therefore in scope. */
-    const int sizes[][2] = {{16, 16}, {24, 16}, {32, 24}, {40, 17}, {48, 32}, {64, 33}};
+    /* Only widths the dispatcher routes to NEON: integer_adm.c gates on
+     * `!(w % 8)`, so both w % 16 == 0 and w % 16 == 8 are in scope. The heights
+     * include 17 (the extractor minimum) and odd extents for the mirrored tail. */
+    static const int heights[] = {16, 17, 18, 24, 33, 48};
 
-    for (size_t t = 0; t < sizeof(sizes) / sizeof(sizes[0]); ++t) {
-        const int w = sizes[t][0], h = sizes[t][1];
-        const int w_half = (w + 1) / 2, h_half = (h + 1) / 2;
-        const int dst_stride = w_half;
-
-        uint8_t *src = malloc((size_t)w * h);
-        mu_assert("malloc failed for ADM DWT2 source", src);
-        int16_t *bands[12];
-        AdmBuffer buf = {0};
-        int *iy[4], *ix[4];
-        adm_dwt_band_t ref_band = {0}, simd_band = {0}, apple_legacy_band = {0};
-        uint32_t seed = 0x5eed0000u ^ (uint32_t)(w * 131 + h);
-
-        for (int k = 0; k < 4; ++k) {
-            iy[k] = calloc((size_t)h_half + 4, sizeof(int));
-            mu_assert("calloc failed for ADM DWT2 y indices", iy[k]);
-            ix[k] = calloc((size_t)w_half + 4, sizeof(int));
-            mu_assert("calloc failed for ADM DWT2 x indices", ix[k]);
-            buf.ind_y[k] = iy[k];
-            buf.ind_x[k] = ix[k];
+    for (size_t t = 0; t < sizeof(heights) / sizeof(heights[0]); ++t) {
+        for (int w = 16; w <= 128; w += 8) {
+            char *msg = dwt2_geometry_matches_scalar(w, heights[t]);
+            if (msg)
+                return msg;
         }
-        for (int k = 0; k < 12; ++k) {
-            bands[k] = calloc((size_t)h_half * dst_stride + 16, sizeof(int16_t));
-            mu_assert("calloc failed for ADM DWT2 band", bands[k]);
-        }
-        buf.tmp_ref = calloc((size_t)w * 4 + 64, sizeof(int16_t));
-        mu_assert("calloc failed for ADM DWT2 scratch", buf.tmp_ref);
-
-        ref_band.band_a = bands[0];
-        ref_band.band_v = bands[1];
-        ref_band.band_h = bands[2];
-        ref_band.band_d = bands[3];
-        simd_band.band_a = bands[4];
-        simd_band.band_v = bands[5];
-        simd_band.band_h = bands[6];
-        simd_band.band_d = bands[7];
-        apple_legacy_band.band_a = bands[8];
-        apple_legacy_band.band_v = bands[9];
-        apple_legacy_band.band_h = bands[10];
-        apple_legacy_band.band_d = bands[11];
-
-        for (int i = 0; i < w * h; ++i) {
-            seed ^= seed << 13;
-            seed ^= seed >> 17;
-            seed ^= seed << 5;
-            src[i] = (uint8_t)(seed & 0xFF);
-        }
-        ref_src_indices(buf.ind_y, buf.ind_x, w, h);
-
-        ref_adm_dwt2_8(src, &ref_band, &buf, w, h, w, dst_stride, 4);
-        memset(buf.tmp_ref, 0, ((size_t)w * 4 + 64) * sizeof(int16_t));
-        adm_dwt2_8_neon(src, &simd_band, &buf, w, h, w, dst_stride);
-
-        const char *names[4] = {"band_a", "band_v", "band_h", "band_d"};
-        int mismatches = 0, last_col_mismatches = 0;
-        for (int b = 0; b < 4; ++b) {
-            for (int i = 0; i < h_half; ++i) {
-                for (int j = 0; j < w_half; ++j) {
-                    const int idx = i * dst_stride + j;
-                    if (bands[b][idx] != bands[b + 4][idx]) {
-                        ++mismatches;
-                        if (j == w_half - 1)
-                            ++last_col_mismatches;
-                        if (mismatches <= 6)
-                            (void)fprintf(stderr, "  %dx%d %s[%d][%d]%s: scalar %d != neon %d\n", w,
-                                          h, names[b], i, j, (j == w_half - 1) ? " (last col)" : "",
-                                          bands[b][idx], bands[b + 4][idx]);
-                        mu_assert("adm_dwt2_8_neon diverges from the scalar reference", 0);
-                    }
-                }
-            }
-        }
-
-        (void)last_col_mismatches;
-
-        /* Reuse the SIMD band's storage for the independent legacy reference,
-         * then compare the production-only Apple wrapper against it. */
-        for (int b = 0; b < 4; ++b)
-            memset(bands[b + 4], 0, ((size_t)h_half * dst_stride + 16) * sizeof(int16_t));
-        ref_adm_dwt2_8(src, &simd_band, &buf, w, h, w, dst_stride, 3);
-        memset(buf.tmp_ref, 0, ((size_t)w * 4 + 64) * sizeof(int16_t));
-        adm_dwt2_8_neon_apple_legacy(src, &apple_legacy_band, &buf, w, h, w, dst_stride);
-
-        int first_column_differences = 0;
-        for (int b = 0; b < 4; ++b) {
-            for (int i = 0; i < h_half; ++i) {
-                for (int j = 0; j < w_half; ++j) {
-                    const int idx = i * dst_stride + j;
-                    mu_assert("Apple ADM compatibility wrapper diverges from its legacy reference",
-                              bands[b + 4][idx] == bands[b + 8][idx]);
-                    if (bands[b][idx] != bands[b + 4][idx]) {
-                        mu_assert("Apple ADM compatibility changed a non-boundary column", j == 0);
-                        ++first_column_differences;
-                    }
-                }
-            }
-        }
-        mu_assert("Apple ADM compatibility fixture did not exercise the legacy boundary",
-                  first_column_differences > 0);
-
-        for (int k = 0; k < 4; ++k) {
-            free(iy[k]);
-            free(ix[k]);
-        }
-        for (int k = 0; k < 12; ++k)
-            free(bands[k]);
-        free(buf.tmp_ref);
-        free(src);
     }
-    return NULL;
+    return dwt2_geometry_matches_scalar(576, 32); /* a Netflix golden width */
 #endif
 }
 
