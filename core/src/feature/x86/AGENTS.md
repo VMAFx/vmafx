@@ -158,6 +158,14 @@ The skill scaffolds:
   store outside the region
   ([Research-2063](../../../../docs/research/2063-upstream-sync-2026-09-adm-vif-simd.md)).
 
+- **Integer ADM shift rounding = `adm_half_shift(x)`, never
+  `(uint32_t)pow(2, (x - 1))`.** Frame width 17..32 -> scale-0 cube shift 0
+  -> upstream form converts inf. AVX-512 build: `vcvttsd2usi` ->
+  `0xFFFFFFFF`, scale 0 off by up to 0.01. Helper lives in
+  `../adm_csf_fixed_point.h`, shared with scalar. Keep on sync.
+  `test_integer_adm_tiny_frames` sweeps w 17..32 vs scalar; UBSan lane
+  flags the old form (T-ADM-AVX512-SMALL-WIDTH-SCALE0-2026-09-18).
+
 ## Governing ADRs
 
 See [../AGENTS.md §Governing ADRs](../AGENTS.md) for the full list.
