@@ -389,14 +389,14 @@ s0_cm_block_reduce(const int64_t (&accum_row)[rows_per_thread], int y, int end_r
  * -------------------------------------------------------------------- */
 template <int rows_per_thread>
 __device__ __forceinline__ void
-adm_cm_line_kernel_body(AdmBufferHip buf, int h, int w, int start_row, int end_row, int start_col,
-                        int end_col, int src_stride, AdmFixedParametersHip params,
-                        int64_t *accum_global, WarpShift ws, const uint32_t shift_inner_accum,
-                        const uint32_t add_shift_inner_accum)
+adm_cm_line_kernel_body(const AdmBufferHip *__restrict__ buf_ptr, int h, int w, int start_row,
+                        int end_row, int start_col, int end_col, int src_stride,
+                        AdmFixedParametersHip params, int64_t *accum_global, WarpShift ws,
+                        const uint32_t shift_inner_accum, const uint32_t add_shift_inner_accum)
 {
-    const hip_adm_dwt_band_t *ref = &buf.ref_dwt2;
-    const hip_adm_dwt_band_t *dis = &buf.dis_dwt2;
-    const hip_adm_dwt_band_t *csf_f = &buf.csf_f;
+    const hip_adm_dwt_band_t *ref = &buf_ptr->ref_dwt2;
+    const hip_adm_dwt_band_t *dis = &buf_ptr->dis_dwt2;
+    const hip_adm_dwt_band_t *csf_f = &buf_ptr->csf_f;
     const int band = blockIdx.z + 1;
     int16_t *const *flt_angles = csf_f->bands + 1;
 
@@ -496,16 +496,22 @@ extern "C" {
  * i4_adm_cm_line_kernel — scales 1-3 compute. Writes accum_per_thread
  * scratch consumed by adm_cm_reduce_line_kernel_4. Same launch shape as
  * the CUDA twin (host TU controls grid dims).
+ *
+ * This kernel and adm_cm_line_kernel_8 take the device-resident
+ * AdmBufferHip by pointer (ADR-0759): the host uploads it once in
+ * init_fex_hip() and never changes it, so every launch reads the bytes the
+ * by-value form used to copy into the kernel arguments.
  * -------------------------------------------------------------------- */
-__global__ void i4_adm_cm_line_kernel(AdmBufferHip buf, int h, int w, int top, int bottom, int left,
-                                      int right, int start_row, int end_row, int start_col,
-                                      int end_col, int src_stride, int /* csf_a_stride */,
-                                      int scale, int buffer_h, int buffer_stride,
-                                      int32_t *accum_per_thread, AdmFixedParametersHip params)
+__global__ void i4_adm_cm_line_kernel(const AdmBufferHip *__restrict__ buf_ptr, int h, int w,
+                                      int top, int bottom, int left, int right, int start_row,
+                                      int end_row, int start_col, int end_col, int src_stride,
+                                      int /* csf_a_stride */, int scale, int buffer_h,
+                                      int buffer_stride, int32_t *accum_per_thread,
+                                      AdmFixedParametersHip params)
 {
-    const hip_i4_adm_dwt_band_t *ref = &buf.i4_ref_dwt2;
-    const hip_i4_adm_dwt_band_t *dis = &buf.i4_dis_dwt2;
-    const hip_i4_adm_dwt_band_t *csf_f = &buf.i4_csf_f;
+    const hip_i4_adm_dwt_band_t *ref = &buf_ptr->i4_ref_dwt2;
+    const hip_i4_adm_dwt_band_t *dis = &buf_ptr->i4_dis_dwt2;
+    const hip_i4_adm_dwt_band_t *csf_f = &buf_ptr->i4_csf_f;
     const int band = blockIdx.z + 1;
     int32_t *const *flt_angles = csf_f->bands + 1;
 
@@ -532,17 +538,17 @@ __global__ void i4_adm_cm_line_kernel(AdmBufferHip buf, int h, int w, int top, i
     }
 }
 
-__global__ void adm_cm_line_kernel_8(AdmBufferHip buf, int h, int w, int /* top */,
-                                     int /* bottom */, int /* left */, int /* right */,
-                                     int start_row, int end_row, int start_col, int end_col,
-                                     int src_stride, int /* csf_a_stride */, int /* buffer_h */,
-                                     int /* buffer_stride */, int32_t * /* accum_per_block */,
-                                     AdmFixedParametersHip params, int /* scale */,
-                                     int64_t *accum_global, WarpShift ws,
+__global__ void adm_cm_line_kernel_8(const AdmBufferHip *__restrict__ buf_ptr, int h, int w,
+                                     int /* top */, int /* bottom */, int /* left */,
+                                     int /* right */, int start_row, int end_row, int start_col,
+                                     int end_col, int src_stride, int /* csf_a_stride */,
+                                     int /* buffer_h */, int /* buffer_stride */,
+                                     int32_t * /* accum_per_block */, AdmFixedParametersHip params,
+                                     int /* scale */, int64_t *accum_global, WarpShift ws,
                                      const uint32_t shift_inner_accum,
                                      const uint32_t add_shift_inner_accum)
 {
-    adm_cm_line_kernel_body<8>(buf, h, w, start_row, end_row, start_col, end_col, src_stride,
+    adm_cm_line_kernel_body<8>(buf_ptr, h, w, start_row, end_row, start_col, end_col, src_stride,
                                params, accum_global, ws, shift_inner_accum, add_shift_inner_accum);
 }
 
