@@ -1087,7 +1087,9 @@ static char *test_calculate_c_values_scalar_avx2_parity()
      * via increment/decrement_range; pre-zeroing ensures deterministic
      * sanitizer-instrumented runs on Ubuntu 24.04 CI (T-CAMBI-AVX2-CI-SIGILL). */
     uint16_t histograms_s[8 * 560] = {0};
+#if ARCH_X86
     uint16_t histograms_a[8 * 560] = {0};
+#endif
     uint16_t *diffs_to_consider = NULL;
     int *diff_weights = NULL;
     int *all_diffs = NULL;
