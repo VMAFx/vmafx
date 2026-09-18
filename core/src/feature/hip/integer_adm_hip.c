@@ -1567,14 +1567,13 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (s->feature_name_dict == NULL) {
-        /* Known defect, kept unchanged by the ADR-1142 lint refactor: this
-         * releases the device state except the luma staging buffers, yet init
-         * still returns 0, so a later submit() runs against destroyed and
-         * freed state. Fixing it changes init's failure contract and belongs
-         * in its own change. */
+        /* The framework never calls close() after a failed init(), so every
+         * device resource is released here. */
+        adm_hip_free_luma(s);
         adm_hip_free_buffers(s);
         adm_hip_unload_modules(s);
         adm_hip_destroy_stream(s);
+        return -ENOMEM;
     }
     return 0;
 #endif /* HAVE_HIPCC */
