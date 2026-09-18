@@ -188,6 +188,10 @@ if want m32; then
     while IFS= read -r f; do
       [ -f "$f" ] || continue
       case "$f" in *.h | *.hpp) continue ;; esac
+      # The i686 lane configures -Denable_asm=false and no GPU backend, so it
+      # never compiles the ISA-specific or GPU trees; sweeping them with -m32
+      # reports intrinsics that do not exist there, not width assumptions.
+      case "$f" in */x86/* | */arm64/* | */arm/* | */cuda/* | */hip/* | */sycl/* | */metal/*) continue ;; esac
       if [ "${f%.cpp}" != "$f" ]; then
         std=(-std=c++23 -x c++)
       else
@@ -203,7 +207,7 @@ if want m32; then
       # Missing generated headers (config.h) and absent intrinsics are expected
       # outside a configured build; width assumptions are not.
       if grep -qE 'error:' /tmp/preflight-m32.err &&
-        ! grep -qE "config\.h|file not found|Datei oder Verzeichnis" /tmp/preflight-m32.err; then
+        ! grep -qE "config\.h|file not found|No such file or directory|Datei oder Verzeichnis" /tmp/preflight-m32.err; then
         printf '     %s\n' "$f"
         grep -m2 -E 'error:' /tmp/preflight-m32.err | sed 's/^/       /'
         m32_fail=1

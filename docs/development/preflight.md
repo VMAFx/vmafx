@@ -72,6 +72,13 @@ stage that cries wolf is a stage people learn to ignore.
 aborts at the first `#include` and the stage silently becomes a no-op — run the
 `gcc` stage first, or just use `make preflight`, which orders them correctly.
 
+**`m32` sweeps only what the i686 lane builds.** That lane configures
+`-Denable_asm=false` and no GPU backend, so the stage skips the `x86/`,
+`arm64/`, `arm/`, `cuda/`, `hip/`, `sycl/` and `metal/` trees: under `-m32`
+they report missing intrinsics and headers, not width assumptions. An error
+about a missing header (`No such file or directory`, or clang's `file not
+found`) is ignored for the same reason.
+
 ## What it does not cover
 
 `Windows MinGW64`, the Windows MSVC lanes proper, and `Ubuntu HIP` have no
