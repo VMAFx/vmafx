@@ -17,6 +17,21 @@ extern "C" {
 typedef struct VmafOrtSession VmafOrtSession;
 
 int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConfig *cfg);
+
+/**
+ * Open @p load_path; if that fails and @p fallback_path is a different path,
+ * open @p fallback_path instead. This is the int8 → fp32 retry of the tiny-AI
+ * loader redirect (ADR-1032): the int8 graph can clear the size cap and the
+ * op allowlist and still fail session creation — an ONNX Runtime build
+ * without a kernel for one of its quantised ops reports exactly that ("Could
+ * not find an implementation for ConvInteger") — and the redirect must never
+ * turn a call that worked against the fp32 baseline into a hard failure.
+ * vmaf_ort_open() leaves @p out untouched when it fails, so the retry cannot
+ * leak the failed session. Both loader entry points (vmaf_dnn_session_open()
+ * and vmaf_use_tiny_model()) go through this one function.
+ */
+int vmaf_ort_open_with_fallback(VmafOrtSession **out, const char *load_path,
+                                const char *fallback_path, const VmafDnnConfig *cfg);
 int vmaf_ort_infer(VmafOrtSession *sess, const float *input, const int64_t *input_shape,
                    size_t input_rank, float *output, size_t output_capacity,
                    size_t *output_written);
