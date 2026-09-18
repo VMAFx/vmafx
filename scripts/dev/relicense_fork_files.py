@@ -13,15 +13,19 @@ each conservative, checked in this order:
    exists upstream.
 3. ``upstream-name`` -- no upstream file shares its name. Names that carry no
    provenance signal (``__init__.py`` and friends) are exempt.
-4. ``documented-port`` / ``provenance-unreviewed`` -- it does not carry someone
+4. ``vendored-mirror`` -- it is not a verbatim mirror of another repository
+   (``[mirrors]`` in ``relicense_provenance.toml``). A mirror's terms are decided
+   where it comes from, and a sync script diffs it byte for byte against that
+   origin, so it is never rewritten at all, not even repaired.
+5. ``documented-port`` / ``provenance-unreviewed`` -- it does not carry someone
    else's code. Which files do is recorded in ``relicense_provenance.toml``:
    kernels by the metric they implement, individual files by review. A file
    whose header claims a derivation nobody has reviewed keeps its terms until
    someone does.
-5. ``third-party-copyright`` -- no copyright notice names anyone but Lusoris.
-6. ``foreign-licence`` -- every licence it declares is one the fork has used for
+6. ``third-party-copyright`` -- no copyright notice names anyone but Lusoris.
+7. ``foreign-licence`` -- every licence it declares is one the fork has used for
    its own work.
-7. ``outside-contribution`` -- no fork-local commit that touched it, following
+8. ``outside-contribution`` -- no fork-local commit that touched it, following
    renames, was authored or co-authored by a person other than the owner. There
    is no CLA and no DCO, so such a contribution arrived under the terms the file
    had then, and relicensing it needs that contributor's consent.
@@ -221,6 +225,11 @@ class Provenance:
     families: list[Family] = field(default_factory=list)
     ports: dict[str, list[str]] = field(default_factory=dict)
     not_ports: set[str] = field(default_factory=set)
+    mirrors: dict[str, re.Pattern[str]] = field(default_factory=dict)
+
+    def mirror_of(self, path: str) -> str | None:
+        """The repository ``path`` is a verbatim mirror of, or None."""
+        return next((name for name, match in self.mirrors.items() if match.search(path)), None)
 
     def port_sources(self, path: str) -> tuple[str, ...] | None:
         """The origins ``path`` carries code from, or None when it carries none."""
@@ -293,6 +302,7 @@ def load_provenance(path: Path, repo: Path) -> Provenance:
     for file, entry in data.get("ports", {}).items():
         prov.ports[file] = list(entry["from"])
     prov.not_ports = set(data.get("not_ports", {}))
+    prov.mirrors = {name: re.compile(m["match"]) for name, m in data.get("mirrors", {}).items()}
     overlap = prov.not_ports & prov.ports.keys()
     if overlap:
         die(f"{path}: listed as both carrying and not carrying other code: {sorted(overlap)}")
@@ -721,6 +731,8 @@ def static_verdict(path: str, text: str, up: Upstream, prov: Provenance) -> str 
         reason = "upstream-path"
     elif name not in NO_SIGNAL_NAMES and name in up.names:
         reason = "upstream-name"
+    elif prov.mirror_of(path) is not None:
+        reason = "vendored-mirror"
     elif prov.port_sources(path) is not None:
         reason = "documented-port"
     elif path not in prov.not_ports and derivation_statements(text, up):
@@ -837,7 +849,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     pending = 0
     for v in verdicts:
-        if v.reason == "not-utf8":
+        if v.reason in ("not-utf8", "vendored-mirror"):
             continue
         current = (repo / v.path).read_text(encoding="utf-8")
         wanted = wanted_content(repo, args.upstream_ref, prov, v, current)

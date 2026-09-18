@@ -45,13 +45,17 @@ of these, checked in order:
 2. neither its path nor its pre-ADR-0700 `libvmaf/` path exists upstream;
 3. no upstream file shares its name (names with no provenance signal, `__init__.py`
    and friends, are exempt);
-4. it does not carry someone else's code — see below;
-5. no copyright notice in it names anyone but Lusoris;
-6. every licence it declares is one the fork has used for its own work;
-7. no fork-local commit that touched it, following renames, was authored or
+4. it is not a verbatim mirror of another repository — the ten vendored Pelorus
+   interop files (ADR-1113), whose terms are decided in VMAFx/pelorus and which
+   `scripts/sync-pelorus-interop.sh` diffs byte for byte against that origin, so
+   the tool never touches them;
+5. it does not carry someone else's code — see below;
+6. no copyright notice in it names anyone but Lusoris;
+7. every licence it declares is one the fork has used for its own work;
+8. no fork-local commit that touched it, following renames, was authored or
    co-authored by a person other than the owner.
 
-Veto 4 is recorded in `scripts/dev/relicense_provenance.toml`, in three parts.
+Veto 5 is recorded in `scripts/dev/relicense_provenance.toml`, in three parts.
 **Families** cover the SIMD and GPU kernels by role: a kernel implements the
 upstream code that defines its metric whether or not its header says so, so every
 `*_vif_*` kernel carries Netflix's VIF, every `ssimulacra2` kernel carries libjxl's,
@@ -63,7 +67,7 @@ function. **Not-ports** record the files a mechanical detector flagged and a hum
 cleared, with the reason, so the next run does not re-ask. A flagged file that
 nobody has reviewed keeps its terms until someone does.
 
-Veto 7 exists because the repository has no CLA and no DCO. Four SYCL files carry
+Veto 8 exists because the repository has no CLA and no DCO. Four SYCL files carry
 contributions from Dmitry Popovich and two more were ported with Netflix
 co-authors; those contributions arrived under the terms the files had then, and
 relicensing them needs consent this decision does not have.
@@ -83,12 +87,13 @@ unaffected.
 
 | | Files |
 | --- | --- |
-| Moved to EUPL-1.2 | **1,522** |
+| Moved to EUPL-1.2 | **1,514** |
 | Kept their terms because they carry someone else's code, and gained its notice | **269** |
 | Kept their terms: a copyright notice names someone else | 57 |
 | Kept their terms: path or name exists upstream | 244 |
 | Kept their terms: `compat/python-vmaf/` | 211 |
 | Kept their terms: an outside contributor touched them | 5 |
+| Kept their terms: vendored mirror of Pelorus, untouched | 10 |
 | Not UTF-8, left alone | 9 |
 
 Two repairs land on files that stay. An identifier that does not exist becomes the

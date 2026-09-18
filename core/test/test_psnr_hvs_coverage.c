@@ -91,14 +91,15 @@ static int alloc_grey10_420(VmafPicture *pic, uint16_t v)
  * frame with the given `pix_fmt` / `bpc` (no dictionary options are used by
  * any test in this file), then init a feature collector. Only the
  * context_create / context_init failure messages differ per caller. */
+/* @p opts (may be NULL) passes to the context, which takes ownership. */
 static char *psnr_hvs_fixture_open(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc,
-                                   enum VmafPixelFormat pix_fmt, unsigned bpc, char *create_msg,
-                                   char *init_msg)
+                                   VmafDictionary *opts, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                                   char *create_msg, char *init_msg)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr_hvs");
     mu_assert("psnr_hvs extractor missing", fex != NULL);
 
-    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, opts);
     mu_assert(create_msg, err == 0);
     err = vmaf_feature_extractor_context_init(*ctx, pix_fmt, bpc, HVS_W, HVS_H);
     mu_assert(init_msg, err == 0);
@@ -128,7 +129,7 @@ static char *test_psnr_hvs_default_extract(void)
 {
     VmafFeatureExtractorContext *ctx = NULL;
     VmafFeatureCollector *fc = NULL;
-    char *msg = psnr_hvs_fixture_open(&ctx, &fc, VMAF_PIX_FMT_YUV420P, 8u, "context_create",
+    char *msg = psnr_hvs_fixture_open(&ctx, &fc, NULL, VMAF_PIX_FMT_YUV420P, 8u, "context_create",
                                       "context_init");
     if (msg)
         return msg;
@@ -191,7 +192,7 @@ static char *test_psnr_hvs_yuv400p_luma_only(void)
      * (lines 429-430 of psnr_hvs.c). */
     VmafFeatureExtractorContext *ctx = NULL;
     VmafFeatureCollector *fc = NULL;
-    char *msg = psnr_hvs_fixture_open(&ctx, &fc, VMAF_PIX_FMT_YUV400P, 8u, "context_create",
+    char *msg = psnr_hvs_fixture_open(&ctx, &fc, NULL, VMAF_PIX_FMT_YUV400P, 8u, "context_create",
                                       "context_init YUV400P");
     if (msg)
         return msg;
@@ -232,7 +233,7 @@ static char *test_psnr_hvs_disable_chroma_option(void)
 
     VmafFeatureExtractorContext *ctx = NULL;
     VmafFeatureCollector *fc = NULL;
-    char *msg = psnr_hvs_fixture_open(&ctx, &fc, VMAF_PIX_FMT_YUV420P, 8u, "context_create",
+    char *msg = psnr_hvs_fixture_open(&ctx, &fc, opts, VMAF_PIX_FMT_YUV420P, 8u, "context_create",
                                       "context_init enable_chroma=false");
     if (msg)
         return msg;
@@ -269,8 +270,8 @@ static char *test_psnr_hvs_10bit_extract(void)
 {
     VmafFeatureExtractorContext *ctx = NULL;
     VmafFeatureCollector *fc = NULL;
-    char *msg = psnr_hvs_fixture_open(&ctx, &fc, VMAF_PIX_FMT_YUV420P, 10u, "context_create 10bit",
-                                      "context_init 10bit");
+    char *msg = psnr_hvs_fixture_open(&ctx, &fc, NULL, VMAF_PIX_FMT_YUV420P, 10u,
+                                      "context_create 10bit", "context_init 10bit");
     if (msg)
         return msg;
 

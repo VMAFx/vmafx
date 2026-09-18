@@ -50962,6 +50962,10 @@ Two things to know when replaying upstream changes:
 - **A new fork-authored file** should carry `SPDX-License-Identifier: EUPL-1.2`.
   `scripts/dev/relicense_fork_files.py --check` says so mechanically; it needs the
   `upstream/master` ref present locally (`git fetch upstream`).
+- **The vendored Pelorus files are not relicensed.** The tool's `vendored-mirror`
+  veto (`[mirrors.pelorus]` in `relicense_provenance.toml`) leaves all ten
+  byte-identical to their origin, so `scripts/sync-pelorus-interop.sh --update`
+  keeps working; their terms change only if Pelorus changes them.
 
 The same PR brought every file it relicensed inside the lint profile (ADR-1142).
 Three results outlive it:

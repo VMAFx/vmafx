@@ -20,7 +20,7 @@
 #include "dnn/tiny_extractor_template.h"
 
 /* The registration tests set the model-path environment variable they
- * exercise; the binary is single-threaded. */
+ * exercise; the binary is single-threaded (ADR-0141). */
 /* NOLINTNEXTLINE(concurrency-mt-unsafe) */
 VMAF_TINY_AI_DEFINE_REGISTRATION_TESTS("dists_sq", "dists_sq", "VMAF_DISTS_SQ_MODEL_PATH", dists_sq)
 

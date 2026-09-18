@@ -138,7 +138,7 @@ static inline const char *vmaf_tiny_ai_resolve_model_path(const char *feature_na
         /* The model path is resolved once during init, before any worker
          * thread exists. There is no thread-safe getenv in C, and nothing in
          * this library calls setenv from another thread. */
-        /* NOLINTNEXTLINE(concurrency-mt-unsafe) */
+        /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-threaded init, see above (ADR-0141). */
         const char *env = getenv(env_var);
         if (env && *env) {
             return env;

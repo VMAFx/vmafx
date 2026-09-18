@@ -57,8 +57,9 @@
  * header has to compile as C for every consumer of the shipped library, where
  * `using` does not exist and the C spellings of the standard headers are the
  * only ones available, and the enum's base type is part of the ABI the fork
- * publishes. CLAUDE.md rule 12 reserves NOLINT for exactly this: a rule that
- * cannot be followed without breaking a load-bearing invariant. */
+ * publishes. CLAUDE.md rule 12 reserves suppressions for exactly this: a rule
+ * that cannot be followed without breaking a load-bearing invariant
+ * (ADR-0141). */
 
 #include <stddef.h>
 #include <stdint.h>

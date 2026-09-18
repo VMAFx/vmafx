@@ -11144,7 +11144,7 @@ core internal headers (`framesync.h`, `thread_pool.h`, `picture_pool.h`,
   translated from someone else keeps the terms it already carried — Netflix's
   BSD-2-Clause-Patent, and the licences of the libjxl, Xiph and IQA code the fork
   builds on — and now carries that code's copyright notice, which those licences
-  require and which had been missing. 1,522 fork-authored files move to
+  require and which had been missing. 1,514 fork-authored files move to
   [EUPL-1.2](LICENSES/EUPL-1.2.txt); 269 stay because they carry someone else's
   code. Because `libvmaf` links both together, **redistributing a modified library
   now obliges you to offer its source under EUPL-1.2**. If you need permissive

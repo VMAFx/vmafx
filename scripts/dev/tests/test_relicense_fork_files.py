@@ -237,6 +237,24 @@ class ProvenanceData(unittest.TestCase):
         prov = REL.load_provenance(ROOT / "dev/relicense_provenance.toml", ROOT.parent)
         self.assertIsNone(prov.port_sources("core/src/mcp/dispatcher.c"))
 
+    def test_vendored_pelorus_files_are_mirrors(self) -> None:
+        prov = REL.load_provenance(ROOT / "dev/relicense_provenance.toml", ROOT.parent)
+        for path in (
+            "core/include/libvmaf/pelorus/interop.h",
+            "core/src/interop/pelorus_interop.c",
+            "core/test/test_pelorus_interop.c",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(prov.mirror_of(path), "pelorus")
+        # The fork's own consumer of the ABI is not a mirror.
+        self.assertIsNone(prov.mirror_of("core/src/feature/perceptual_weight.c"))
+
+    def test_a_mirror_is_vetoed_before_the_port_check(self) -> None:
+        prov = REL.load_provenance(ROOT / "dev/relicense_provenance.toml", ROOT.parent)
+        up = REL.Upstream(frozenset(), frozenset(), frozenset())
+        verdict = REL.static_verdict("core/src/interop/pelorus_interop.c", "int x;\n", up, prov)
+        self.assertEqual(verdict, "vendored-mirror")
+
 
 class DerivationDetector(unittest.TestCase):
     UP = REL.Upstream(

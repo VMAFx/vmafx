@@ -216,7 +216,8 @@ jobs:
           #     that must keep external linkage for the loader to find them.
           #     Same posture as the CUDA/SYCL/HIP families above.
           #   - core/src/interop/pelorus_*.c +
-          #     core/include/libvmaf/pelorus/ — vendored verbatim mirror of
+          #     core/include/libvmaf/pelorus/ +
+          #     core/test/test_pelorus_interop.c — vendored verbatim mirror of
           #     the Pelorus interop ABI (ADR-1113), byte-identical to its
           #     single source of truth; cannot absorb fork-local lint fixes
           #     without breaking scripts/sync-pelorus-interop.sh. Same posture
@@ -226,7 +227,8 @@ jobs:
           #     core/test/test_adm_wide_rounding.c — backend-neutral source
           #     names, but meson builds them only as test_cuda_adm_* and
           #     test_hip_adm_*, so the CPU build has no compile command for
-          #     them. The CUDA and HIP ratchet lanes lint them.
+          #     them. CI has no GPU tidy lane; lint them against a CUDA or HIP
+          #     build with `make tidy-ratchet LANE=cuda` / `LANE=hip`.
           #
           # One filter shared by every trigger path below, so adding a family
           # is a single edit.
@@ -253,6 +255,7 @@ jobs:
               -e '^core/src/compat/win32/' \
               -e '^core/src/interop/pelorus_' \
               -e '^core/include/libvmaf/pelorus/' \
+              -e '^core/test/test_pelorus_interop\.c$' \
               -e '^cmd/vmafx-node/bpf/'
           }
           if [ "$GH_EVENT_NAME" = "pull_request" ]; then

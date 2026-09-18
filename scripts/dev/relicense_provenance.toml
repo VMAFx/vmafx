@@ -17,6 +17,9 @@
 #                kernel directories or needing more origins than their family.
 # - [not_ports]  Files whose header matched the derivation detector but which
 #                were reviewed and carry no one else's code. The value says why.
+# - [mirrors.*]  Verbatim mirrors of another repository. Their terms are decided
+#                there, and a sync script diffs them byte for byte against it,
+#                so the tool never rewrites them, not even to repair a tag.
 #
 # Precedence: ports, then not_ports, then families. A file the detector flags
 # that appears in none of them keeps its terms until someone reviews it.
@@ -390,3 +393,14 @@ from = ["netflix-speed"]  # mirrors compute_cov_kernel_scalar in speed.c
 "tools/vmaf-tune/src/vmaftune/codec_adapters/svtav1.py" = "mirrors the fork's own adapter interface"
 "tools/vmaf-tune/src/vmaftune/defaultmodel.py" = "'NOT derived from' a constant"
 "tools/vmaf-tune/src/vmaftune/ladder.py" = "cites the idea of a published paper"
+
+# ---------------------------------------------------------------------------
+# Vendored mirrors
+# ---------------------------------------------------------------------------
+
+[mirrors.pelorus]
+# ADR-1113: the Pelorus interop ABI is single-sourced in VMAFx/pelorus
+# (libpelorus/). scripts/sync-pelorus-interop.sh fails on any difference from
+# the pinned commit except its banner and include rewrites; the conformance
+# fixture is compared from its first include on.
+match = '^(core/include/libvmaf/pelorus/|core/src/interop/pelorus_[^/]+\.c$|core/test/test_pelorus_interop\.c$)'

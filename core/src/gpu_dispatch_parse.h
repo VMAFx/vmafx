@@ -29,7 +29,7 @@
 /* NOLINTBEGIN(modernize-deprecated-headers): shared C header, also included
  * from C++ (SYCL) translation units, which is how clang-tidy analyses it.
  * The <cstring>/<cstddef> spellings do not exist in C. Same reasoning as
- * feature/feature_extractor.h. */
+ * feature/feature_extractor.h (ADR-0141). */
 #include <stddef.h>
 #include <string.h>
 /* NOLINTEND(modernize-deprecated-headers) */
