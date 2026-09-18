@@ -1,1 +1,1 @@
-| [ADR-0728](0728-native-build-sunset.md) | Sunset Legacy Native Build Modes — Phase 4b.9 Follow-On | Accepted | ci, build, vmafx, breaking |
+| [ADR-0728](0728-native-build-sunset.md) | Sunset Legacy Native Build Modes — Phase 4b.9 Follow-On. Never carried out: its commit changed only the ADR, a changelog fragment and `deprecations.md`, and no lane it lists was removed by it. | Superseded by [ADR-1259](1259-ci-build-matrix-as-it-runs.md) | ci, build, vmafx, breaking |
