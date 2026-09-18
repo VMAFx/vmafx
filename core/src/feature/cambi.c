@@ -812,7 +812,9 @@ static void setup_callbacks(CambiState *s)
     unsigned flags = vmaf_get_cpu_flags();
     if (flags & VMAF_X86_CPU_FLAG_AVX2) {
         s->derivative_callback = get_derivative_data_for_row_avx2;
-        s->calc_c_values_callback = calculate_c_values_avx2;
+        /* Fork: the scanned driver instead of upstream's calculate_c_values_avx2,
+         * which is slower than scalar in Clang and icx builds (Research-2065). */
+        s->calc_c_values_callback = calculate_c_values_scan_avx2;
         s->filter_mode_callback = filter_mode_avx2;
         s->decimate_callback = decimate_avx2;
         s->compute_dp_row_callback = compute_dp_row_avx2;

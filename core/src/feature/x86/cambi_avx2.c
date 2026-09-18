@@ -27,6 +27,7 @@
 #include "libvmaf/picture.h"
 #include "cambi_avx2.h"
 #include "cambi.h"
+#include "cambi_c_values_frame.h"
 
 // Picks every other uint16 in place: dst[i, j] = src[2i, 2j] for j in [0, width).
 // Reads always stay ahead of writes both within a row and across rows, so
@@ -673,6 +674,143 @@ void compute_mask_row_avx2(uint16_t *mask_row, const uint32_t *dp_bottom, const 
         const uint32_t result = dp_bottom[j + delta] + dp_top[j] - dp_bottom[j] - dp_top[j + delta];
         mask_row[j] = (uint16_t)(result > mask_index);
     }
+}
+
+/*
+ * Fork-local: calculate_c_values_scan_avx2, the AVX2 twin of
+ * calculate_c_values_avx512 / calculate_c_values_neon. It runs the shared
+ * scanned walk (../cambi_c_values_frame.h) with the AVX2 range updaters and
+ * row kernel above, and column scans that test 16 pixels per compare, so
+ * histogram updates happen only for the columns that change it. The dispatcher
+ * binds it instead of the upstream-mirror calculate_c_values_avx2, which
+ * visits every column and measured slower than scalar in Clang and icx builds
+ * (Research-2065). Output is byte-identical to the scalar calculate_c_values.
+ */
+
+/* The scans stay out of line and build their constants per call, so the walk
+ * holds no ymm value across its calls to the row kernel: a spilled ymm is a
+ * fault under the Win64 ABI (ADR-1254). cl.exe has no __attribute__. */
+#if defined(_MSC_VER)
+#define CAMBI_SCAN_NOINLINE_AVX2 __declspec(noinline)
+#else
+#define CAMBI_SCAN_NOINLINE_AVX2 __attribute__((noinline))
+#endif
+
+/* One bit per lane of an all-ones / all-zeros 16-lane condition. */
+static inline uint32_t lane_bits16_avx2(__m256i cond)
+{
+    const __m128i packed =
+        _mm_packs_epi16(_mm256_castsi256_si128(cond), _mm256_extracti128_si256(cond, 1));
+    return (uint32_t)_mm_movemask_epi8(packed);
+}
+
+/* 16 lanes from `at`: unmasked and in the scored band. The band test is
+ * unsigned (v - base) <= size - 1, written as min_epu16 because AVX2 has no
+ * unsigned 16-bit compare; *value gets the pixels. */
+static inline __m256i in_band_avx2(const CambiCValuesFrame *f, ptrdiff_t at, __m256i base,
+                                   __m256i last, __m256i *value)
+{
+    const __m256i m = _mm256_loadu_si256((const __m256i *)&f->mask[at]);
+    const __m256i v = _mm256_loadu_si256((const __m256i *)&f->image[at]);
+    const __m256i rel = _mm256_sub_epi16(v, base);
+    const __m256i in_band = _mm256_cmpeq_epi16(_mm256_min_epu16(rel, last), rel);
+    *value = v;
+    return _mm256_andnot_si256(_mm256_cmpeq_epi16(m, _mm256_setzero_si256()), in_band);
+}
+
+/* One mask of up to 32 columns starting at `at`. */
+static inline uint32_t scan_row_mask_avx2(const CambiCValuesFrame *f, ptrdiff_t at, int n,
+                                          __m256i base, __m256i last)
+{
+    uint32_t flags = 0;
+    int b = 0;
+    for (; b + 16 <= n; b += 16) {
+        __m256i v;
+        flags |= lane_bits16_avx2(in_band_avx2(f, at + b, base, last, &v)) << b;
+    }
+    for (; b < n; b++) {
+        flags |= (uint32_t)cambi_column_in_band(f, at + b) << b;
+    }
+    return flags;
+}
+
+CAMBI_SCAN_NOINLINE_AVX2 static void scan_row_avx2(const CambiCValuesFrame *f, int row, int j0,
+                                                   int n, uint32_t *masks)
+{
+    const __m256i base = _mm256_set1_epi16((short)f->v_band_base);
+    const __m256i last = _mm256_set1_epi16((short)(f->v_band_size - 1));
+    const ptrdiff_t at = (ptrdiff_t)row * f->stride + j0;
+    for (int b = 0; b < n; b += 32) {
+        masks[b / 32] = scan_row_mask_avx2(f, at + b, MIN(32, n - b), base, last);
+    }
+}
+
+/* One slide mask of up to 32 columns: uh_slide skips a column whose two
+ * pixels are both in band with one value, or neither in band. */
+static inline uint32_t scan_slide_mask_avx2(const CambiCValuesFrame *f, ptrdiff_t at_sub,
+                                            ptrdiff_t at_add, int n, __m256i base, __m256i last)
+{
+    uint32_t flags = 0;
+    int b = 0;
+    for (; b + 16 <= n; b += 16) {
+        __m256i v_sub;
+        __m256i v_add;
+        const __m256i sub_in = in_band_avx2(f, at_sub + b, base, last, &v_sub);
+        const __m256i add_in = in_band_avx2(f, at_add + b, base, last, &v_add);
+        const __m256i cancel =
+            _mm256_and_si256(_mm256_and_si256(sub_in, add_in), _mm256_cmpeq_epi16(v_sub, v_add));
+        flags |= lane_bits16_avx2(_mm256_andnot_si256(cancel, _mm256_or_si256(sub_in, add_in)))
+                 << b;
+    }
+    for (; b < n; b++) {
+        flags |= (uint32_t)cambi_column_slide_needed(f, at_sub + b, at_add + b) << b;
+    }
+    return flags;
+}
+
+CAMBI_SCAN_NOINLINE_AVX2 static void scan_slide_avx2(const CambiCValuesFrame *f, int row_sub,
+                                                     int row_add, int j0, int n, uint32_t *masks)
+{
+    const __m256i base = _mm256_set1_epi16((short)f->v_band_base);
+    const __m256i last = _mm256_set1_epi16((short)(f->v_band_size - 1));
+    const ptrdiff_t at_sub = (ptrdiff_t)row_sub * f->stride + j0;
+    const ptrdiff_t at_add = (ptrdiff_t)row_add * f->stride + j0;
+    for (int b = 0; b < n; b += 32) {
+        masks[b / 32] = scan_slide_mask_avx2(f, at_sub + b, at_add + b, MIN(32, n - b), base, last);
+    }
+}
+
+void calculate_c_values_scan_avx2(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
+                                  uint16_t *histograms, uint16_t window_size,
+                                  const uint16_t num_diffs, const uint16_t *tvi_for_diff,
+                                  uint16_t vlt_luma, const int *diff_weights, const int *all_diffs,
+                                  int width, int height)
+{
+    assert(pic != NULL && mask_pic != NULL);
+    assert(width > 0 && height > 0);
+    CambiCValuesFrame f = {
+        .c_values = c_values,
+        .histograms = histograms,
+        .image = pic->data[0],
+        .mask = mask_pic->data[0],
+        .tvi_for_diff = tvi_for_diff,
+        .diff_weights = diff_weights,
+        .all_diffs = all_diffs,
+        .stride = pic->stride[0] >> 1,
+        .width = width,
+        .height = height,
+        .pad_size = (uint16_t)(window_size >> 1),
+        .num_diffs = num_diffs,
+        .vlt_luma = vlt_luma,
+    };
+    const CambiCValuesKernels k = {
+        .inc = cambi_increment_range_avx2,
+        .dec = cambi_decrement_range_avx2,
+        .row = calculate_c_values_row_avx2,
+        .scan_row = scan_row_avx2,
+        .scan_slide = scan_slide_avx2,
+    };
+    cambi_calculate_c_values_frame(&f, k);
 }
 
 // NOLINTEND(modernize-use-nullptr) — ADR-1138.
