@@ -79,6 +79,13 @@
 #define TEST_KERNEL_SZ 9
 #define TEST_KERNEL_OFFS 4 /* kernel_sz / 2 */
 
+/* test_hkernel and the two scalar_accumulate_row_* references below are
+ * only used from the AVX2 checks under `#if ARCH_X86` further down; guard
+ * them the same way so a non-x86 build does not warn about any of the
+ * three being unused. (integer_ssim_moments_t itself stays available via
+ * the unconditional include above — see the comment on it.) */
+#if ARCH_X86
+
 /* Canonical 9-tap weights for σ=1.5, KERNEL_WEIGHT=256.
  * Verified against gaussian_filter_init() output on a reference build. */
 static const unsigned test_hkernel[TEST_KERNEL_SZ] = {
@@ -155,6 +162,8 @@ static void scalar_accumulate_row_16(const uint16_t *src, const uint16_t *dst, i
         buf[x] = m;
     }
 }
+
+#endif /* ARCH_X86 */
 
 #if ARCH_X86
 

@@ -51035,3 +51035,28 @@ Three results outlive it:
 - **`core/test/test_registration_partial_copy.cpp`** injects its fault through
   `-Wl,--wrap=vmaf_dictionary_copy` and links the static archive; it no longer
   builds where `default_library` is `shared`.
+
+## SIMD test-scaffolding definition guards mirror their `run_tests()` call sites (T-NO-ASM-SIMD-TEST-WARNINGS-2026-09-18)
+
+No rebase impact: every file touched — `core/test/test_vif_simd.c`,
+`test_ssimulacra2_simd.c`, `test_speed_simd.c`, `test_psnr_hvs_simd.c`,
+`test_ms_ssim_decimate.c`, `test_motion_v2_simd.c`, `test_iqa_convolve.c`,
+`test_integer_ssim_simd.c`, `test_cambi_simd.c`, `test_cambi.c` — is fork-added
+SIMD parity-test scaffolding (ADR-0125, ADR-0138, ADR-0161, ADR-0245) with no
+upstream Netflix/vmaf counterpart; an upstream sync never touches these paths.
+
+Worth knowing for the next SIMD path added to any of these files: several
+scalar-reference / fixture-builder helpers were defined unconditionally while
+every caller sat under an ISA guard (`#if ARCH_X86`, `#if HAVE_AVX512`,
+`#if ARCH_AARCH64`, or the `#if ARCH_X86 || ARCH_AARCH64` union `run_tests()`
+uses to gate the `mu_run_test()` list) — a `-Denable_asm=false` build compiled
+the helpers in with zero callers left, and `-Wunused-function` /
+`-Wunused-const-variable` fired. The fix wraps each helper in the exact union
+of ISA conditions its callers use, walking the *whole* dependency chain: a
+`pick_*` dispatcher or `ref_*` scalar reference that is itself only called
+from one now-guarded `test_*` function has to move under the same guard, or
+the warning just relocates one level down (`test_ssimulacra2_simd.c` needed
+one guard spanning its full pick/ref/test helper section for exactly this
+reason). Adding a new SIMD variant under a narrower guard than its test file's
+existing union will reopen this class of warning on whichever configuration
+drops out of the new, narrower condition.

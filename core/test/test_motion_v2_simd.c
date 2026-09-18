@@ -109,6 +109,12 @@
 #define TEST_W 80 /* >= 18 to exercise SIMD body for x_conv */
 #define TEST_H 12
 
+/* Both adversarial-frame builders below are only referenced from the x86
+ * (`check_pipeline_16`) and aarch64 (`check_neon_pipeline_16`) test bodies
+ * further down; guard with the union of both conditions so a build with
+ * neither ISA does not warn about either being unused. */
+#if ARCH_X86 || ARCH_AARCH64
+
 /*
  * Adversarial-frame builder: ref pixels uniformly low, dis pixels
  * uniformly high — produces large negative diffs (`prev - cur < 0`)
@@ -154,6 +160,8 @@ static void fill_adversarial_mixed(uint16_t *prev, uint16_t *cur, unsigned w, un
         }
     }
 }
+
+#endif /* ARCH_X86 || ARCH_AARCH64 */
 
 #if ARCH_X86
 

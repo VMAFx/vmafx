@@ -94,7 +94,10 @@
  * The 1e-9 gate is ~500x tighter than the snapshot gate. */
 #define SPEED_COV_REL_TOL 1e-9
 
-/* Scalar reference — mirrors compute_cov_kernel_scalar in speed.c. */
+#if ARCH_X86
+
+/* Scalar reference — mirrors compute_cov_kernel_scalar in speed.c. Only
+ * called from the AVX2 / AVX-512 checks below. */
 static double scalar_compute_cov(const float *data_x, const float *data_y, size_t stride_px,
                                  size_t height, size_t width, double mean_x, double mean_y)
 {
@@ -108,8 +111,6 @@ static double scalar_compute_cov(const float *data_x, const float *data_y, size_
     }
     return result;
 }
-
-#if ARCH_X86
 
 static char *check_avx2(uint32_t seed, int w, int h)
 {

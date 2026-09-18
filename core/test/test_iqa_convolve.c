@@ -81,12 +81,14 @@ static void fill_pattern(float *buf, size_t n, uint32_t seed)
     }
 }
 
+#if ARCH_X86 || ARCH_AARCH64
+
+/* Only referenced from check_simd_variant() below. */
 static int compare_bitexact(const float *a, const float *b, size_t n)
 {
     return memcmp(a, b, n * sizeof(float)) == 0;
 }
 
-#if ARCH_X86 || ARCH_AARCH64
 typedef void (*convolve_simd_fn)(float *img, int w, int h, const float *kernel_h,
                                  const float *kernel_v, int kw, int kh, int normalized,
                                  float *workspace, float *result, int *rw, int *rh);

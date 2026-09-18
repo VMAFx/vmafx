@@ -96,6 +96,13 @@ struct VifAvx512ConvFixture {
     float *tmp;
 };
 
+/* These AVX-512 fixture helpers are only referenced from the
+ * `#if ARCH_X86` / `#if HAVE_AVX512` block below (init/run/check for the
+ * 32-byte-alignment convolution test); guard the definitions with the same
+ * condition so a non-x86 or no-AVX512 build does not warn about unused
+ * functions / const data. */
+#if ARCH_X86 && HAVE_AVX512
+
 static const float vif_avx512_filter[17] = {0.001f, 0.004f, 0.011f, 0.027f, 0.053f, 0.088f,
                                             0.125f, 0.151f, 0.161f, 0.151f, 0.125f, 0.088f,
                                             0.053f, 0.027f, 0.011f, 0.004f, 0.001f};
@@ -143,6 +150,8 @@ static char *assert_finite_plane(const float *plane)
     }
     return NULL;
 }
+
+#endif /* ARCH_X86 && HAVE_AVX512 */
 
 #if ARCH_X86
 

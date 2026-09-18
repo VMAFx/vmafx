@@ -1087,7 +1087,6 @@ static char *test_calculate_c_values_scalar_avx2_parity()
      * via increment/decrement_range; pre-zeroing ensures deterministic
      * sanitizer-instrumented runs on Ubuntu 24.04 CI (T-CAMBI-AVX2-CI-SIGILL). */
     uint16_t histograms_s[8 * 560] = {0};
-    uint16_t histograms_a[8 * 560] = {0};
     uint16_t *diffs_to_consider = NULL;
     int *diff_weights = NULL;
     int *all_diffs = NULL;
@@ -1097,6 +1096,10 @@ static char *test_calculate_c_values_scalar_avx2_parity()
                        tvi_for_diff, vlt_luma, diff_weights, all_diffs, 8, 8);
 
 #if ARCH_X86
+    /* histograms_a is only used by the AVX2 call below; declaring it here
+     * (rather than unconditionally alongside histograms_s) avoids an
+     * unused-variable warning on non-x86 / -Denable_asm=false builds. */
+    uint16_t histograms_a[8 * 560] = {0};
     if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX2) {
         calculate_c_values_avx2(&input_avx2, &mask_avx2, c_avx2, histograms_a, window_size,
                                 num_diffs, tvi_for_diff, vlt_luma, diff_weights, all_diffs, 8, 8);
