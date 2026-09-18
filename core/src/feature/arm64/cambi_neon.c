@@ -22,6 +22,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cambi_neon.h"
+
 void cambi_increment_range_neon(uint16_t *arr, int left, int right)
 {
     uint16x8_t one = vdupq_n_u16(1);
@@ -96,6 +98,51 @@ void get_derivative_data_for_row_neon(const uint16_t *image_data, uint16_t *deri
     }
 }
 
+/* Row-invariant inputs of the per-pixel c-value, bundled so the helper below
+ * keeps a short parameter list. */
+typedef struct {
+    const uint16_t *histograms;
+    const uint16_t *tvi_thresholds;
+    const int *diff_weights;
+    const int *all_diffs;
+    const float *reciprocal_lut;
+    int width;
+    uint16_t num_diffs;
+    uint16_t vlt_luma;
+    uint16_t v_band_base;
+    uint16_t v_band_size;
+} CambiCValueRowNeon;
+
+/* The scalar per-pixel c-value, verbatim in operation order (ADR-0452). */
+static inline float c_value_pixel_neon(const CambiCValueRowNeon *r, uint16_t mask_value,
+                                       uint16_t pixel, int col)
+{
+    if (!mask_value)
+        return 0.0f;
+    const uint16_t value = (uint16_t)(pixel + r->num_diffs);
+    const int compact_v_signed = (int)pixel - (int)r->v_band_base;
+    if ((unsigned)compact_v_signed >= r->v_band_size)
+        return 0.0f;
+    const ptrdiff_t width = r->width;
+    const uint16_t p_0 = r->histograms[(ptrdiff_t)compact_v_signed * width + col];
+    float c_v = 0.0f;
+    for (int d = 0; d < r->num_diffs; d++) {
+        const int diff_up = r->all_diffs[r->num_diffs + d + 1];
+        if ((value > r->tvi_thresholds[d]) || ((value + diff_up) <= r->vlt_luma))
+            continue;
+        const int idx1 = compact_v_signed + diff_up;
+        const int idx2 = compact_v_signed + r->all_diffs[r->num_diffs - d - 1];
+        const uint16_t p_1 = r->histograms[(ptrdiff_t)idx1 * width + col];
+        const uint16_t p_2 = (idx2 >= 0) ? r->histograms[(ptrdiff_t)idx2 * width + col] : 0;
+        const uint16_t p_max = (p_1 > p_2) ? p_1 : p_2;
+        const float val =
+            (float)(r->diff_weights[d] * p_0 * p_max) * r->reciprocal_lut[p_max + p_0];
+        if (val > c_v)
+            c_v = val;
+    }
+    return c_v;
+}
+
 /*
  * calculate_c_values_row_neon — NEON-assisted port of calculate_c_values_row.
  *
@@ -126,10 +173,22 @@ void calculate_c_values_row_neon(float *c_values, const uint16_t *histograms, co
     int v_lo_signed_sc = (int)vlt_luma - 3 * (int)num_diffs + 1;
     uint16_t v_band_base = v_lo_signed_sc > 0 ? (uint16_t)v_lo_signed_sc : 0;
     uint16_t v_band_size = tvi_thresholds[num_diffs - 1] + 1 - v_band_base;
+    const CambiCValueRowNeon r = {
+        .histograms = histograms,
+        .tvi_thresholds = tvi_thresholds,
+        .diff_weights = diff_weights,
+        .all_diffs = all_diffs,
+        .reciprocal_lut = reciprocal_lut,
+        .width = width,
+        .num_diffs = num_diffs,
+        .vlt_luma = vlt_luma,
+        .v_band_base = v_band_base,
+        .v_band_size = v_band_size,
+    };
 
     const uint16_t *image_row = &image[row * stride];
     const uint16_t *mask_row = &mask[row * stride];
-    float *c_row = &c_values[row * width];
+    float *c_row = &c_values[(ptrdiff_t)row * width];
 
     int col = 0;
     /* Fast-skip 8 columns at a time when all masks are zero. */
@@ -145,66 +204,12 @@ void calculate_c_values_row_neon(float *c_values, const uint16_t *histograms, co
         /* At least one active lane: process each pixel individually via the
          * scalar reference to guarantee bit-identical output. */
         for (int k = col; k < col + 8; k++) {
-            if (!mask_row[k]) {
-                c_row[k] = 0.0f;
-                continue;
-            }
-            uint16_t value = (uint16_t)(image_row[k] + num_diffs);
-            int compact_v_signed = (int)image_row[k] - (int)v_band_base;
-            if ((unsigned)compact_v_signed >= v_band_size) {
-                c_row[k] = 0.0f;
-                continue;
-            }
-            uint16_t compact_v_sc = (uint16_t)compact_v_signed;
-            uint16_t p_0 = histograms[compact_v_sc * width + k];
-            float c_v = 0.0f;
-            for (int d = 0; d < num_diffs; d++) {
-                if ((value <= tvi_thresholds[d]) &&
-                    ((value + all_diffs[num_diffs + d + 1]) > vlt_luma)) {
-                    int idx1 = compact_v_signed + all_diffs[num_diffs + d + 1];
-                    int idx2 = compact_v_signed + all_diffs[num_diffs - d - 1];
-                    uint16_t p_1 = histograms[idx1 * width + k];
-                    uint16_t p_2 = (idx2 >= 0) ? histograms[idx2 * width + k] : 0;
-                    uint16_t p_max = (p_1 > p_2) ? p_1 : p_2;
-                    float val =
-                        (float)(diff_weights[d] * p_0 * p_max) * reciprocal_lut[p_max + p_0];
-                    if (val > c_v)
-                        c_v = val;
-                }
-            }
-            c_row[k] = c_v;
+            c_row[k] = c_value_pixel_neon(&r, mask_row[k], image_row[k], k);
         }
     }
 
     /* Scalar tail for remaining columns. */
     for (; col < width; col++) {
-        if (mask_row[col]) {
-            uint16_t value = (uint16_t)(image_row[col] + num_diffs);
-            int compact_v_signed = (int)image_row[col] - (int)v_band_base;
-            if ((unsigned)compact_v_signed >= v_band_size) {
-                c_row[col] = 0.0f;
-                continue;
-            }
-            uint16_t compact_v_sc = (uint16_t)compact_v_signed;
-            uint16_t p_0 = histograms[compact_v_sc * width + col];
-            float c_v = 0.0f;
-            for (int d = 0; d < num_diffs; d++) {
-                if ((value <= tvi_thresholds[d]) &&
-                    ((value + all_diffs[num_diffs + d + 1]) > vlt_luma)) {
-                    int idx1 = compact_v_signed + all_diffs[num_diffs + d + 1];
-                    int idx2 = compact_v_signed + all_diffs[num_diffs - d - 1];
-                    uint16_t p_1 = histograms[idx1 * width + col];
-                    uint16_t p_2 = (idx2 >= 0) ? histograms[idx2 * width + col] : 0;
-                    uint16_t p_max = (p_1 > p_2) ? p_1 : p_2;
-                    float val =
-                        (float)(diff_weights[d] * p_0 * p_max) * reciprocal_lut[p_max + p_0];
-                    if (val > c_v)
-                        c_v = val;
-                }
-            }
-            c_row[col] = c_v;
-        } else {
-            c_row[col] = 0.0f;
-        }
+        c_row[col] = c_value_pixel_neon(&r, mask_row[col], image_row[col], col);
     }
 }
