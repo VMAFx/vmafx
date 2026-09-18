@@ -323,10 +323,10 @@ must keep enumerating from `meson test --list`.
 
 ## Windows CUDA setup path (ADR-0664)
 
-`libvmaf-build-matrix.yml` installs CUDA 13.2.0 directly in
-`Build — Windows MSVC + CUDA (build only)` leg. Never restore
-`Jimver/cuda-toolkit` for that Windows leg without superseding ADR
-and green required Windows CUDA run: v0.2.35 failed before setup on
+`libvmaf-build-matrix.yml` installs CUDA 13.3.1 directly in the
+`Windows MSVC+CUDA` leg. Do not restore
+`Jimver/cuda-toolkit` for that Windows leg without a superseding ADR
+and a green required Windows CUDA run: v0.2.35 failed before setup on
 PR #1463, blocked merge train without Meson or compiler output.
 
 Linux CUDA legs still use `Jimver/cuda-toolkit`; ADR-0664 only

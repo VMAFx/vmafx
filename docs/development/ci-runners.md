@@ -62,21 +62,21 @@ at least 5 PRs, ramp up to:
 
 ## Windows GPU Build Setup
 
-`Build — Windows MSVC + CUDA (build only)` and `Build — Windows MSVC + oneAPI
-SYCL (build only)` are required compile-only gates. GitHub-hosted Windows
+`Windows MSVC+CUDA` and `Windows MSVC+SYCL` in `libvmaf-build-matrix.yml`
+are required compile-only gates. GitHub-hosted Windows
 runners do not expose GPUs, so these jobs verify that the MSVC toolchain,
 headers, libraries, and backend compile/link paths stay healthy.
 
-The CUDA leg installs CUDA 13.2.0 directly from NVIDIA's Windows network
+The CUDA leg installs CUDA 13.3.1 directly from NVIDIA's Windows network
 installer. It requests only the packages needed by the build:
 
-- `nvcc_13.2`
-- `cudart_13.2`
-- `crt_13.2`
-- `nvvm_13.2`
-- `visual_studio_integration_13.2`
+- `nvcc_13.3`
+- `cudart_13.3`
+- `crt_13.3`
+- `nvvm_13.3`
+- `visual_studio_integration_13.3`
 
-The workflow exports `CUDA_PATH`, `CUDA_PATH_V13_2`, and the CUDA `bin`
+The workflow exports `CUDA_PATH`, `CUDA_PATH_V13_3`, and the CUDA `bin`
 directory before running `nvcc.exe --version`. If a future CUDA bump changes
 Windows package names or install paths, update
 [ADR-0664](../adr/0664-windows-cuda-toolkit-installer.md) and the workflow
