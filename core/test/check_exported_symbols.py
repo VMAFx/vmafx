@@ -35,6 +35,12 @@ SPECIAL_SYMBOL = re.compile(
     r"^(?:typeinfo name for |typeinfo for |vtable for |VTT for |guard variable for "
     r"|(?:non-)?virtual thunk to |covariant return thunk to |reference temporary #\d+ for )+"
 )
+# The same test on the mangled form, for names c++filt cannot demangle: the
+# binutils on older runners returns C++20 constraint manglings (Q... requires
+# clauses, Tk concept parameters) unchanged. Matches an outermost std:: name --
+# free (_ZSt), nested with cv/ref qualifiers (_ZNKRSt, _ZNOSt), local to a std
+# function (_ZZNSt), and typeinfo, vtables and guard variables for them.
+STD_MANGLED = re.compile(r"^_Z(?:T[ISV]|GV)?Z?(?:N[rVK]*[RO]?)?St")
 # DPC++'s versioned namespace (sycl::_V1 mangles as 4sycl3_V1) also appears
 # inside typeinfo for function types built from its classes, such as the
 # async-handler type int(const sycl::device&), which no prefix test catches.
@@ -96,7 +102,7 @@ def qualified_name(plain: str) -> str:
 
 def runtime_owned(mangled: str, plain: str) -> bool:
     """True for a symbol that belongs to the C++ runtime, not to libvmaf."""
-    if SYCL_RUNTIME.match(mangled):
+    if SYCL_RUNTIME.match(mangled) or STD_MANGLED.match(mangled):
         return True
     return qualified_name(SPECIAL_SYMBOL.sub("", plain)).startswith(RUNTIME_NAMESPACES)
 
