@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0691: VMAFX Phase 1C — Drop Legacy Build Paths
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-1259](1259-ci-build-matrix-as-it-runs.md)
 - **Date**: 2026-05-28
 - **Deciders**: lusoris
 - **Tags**: `ci`, `build`, `vmafx`

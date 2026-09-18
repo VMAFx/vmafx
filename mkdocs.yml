@@ -1382,6 +1382,7 @@ nav:
         - "ADR-1255: spdx-residual-identifier-correction": adr/1255-spdx-residual-identifier-correction.md
         - "ADR-1256: cambi-spatial-mask-simd-dispatch": adr/1256-cambi-spatial-mask-simd-dispatch.md
         - "ADR-1258: keep-64-bit-only-retire-i686-lane": adr/1258-keep-64-bit-only-retire-i686-lane.md
+        - "ADR-1259: ci-build-matrix-as-it-runs": adr/1259-ci-build-matrix-as-it-runs.md
         - "ADR-1261: mypy-pre-push-delta-gate": adr/1261-mypy-pre-push-delta-gate.md
       - "By tag":
         - Overview: adr/by-tag/index.md
