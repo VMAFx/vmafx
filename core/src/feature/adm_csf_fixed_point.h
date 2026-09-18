@@ -25,6 +25,11 @@
  *  SIMD, CUDA, HIP, SYCL) rejects the same set of configurations up front.
  *  See ADR-1191 and
  *  docs/state.md :: T-UPSTREAM-1494-ADM-CSF-MODE-IRFACTOR-OVERFLOW-2026-09-03.
+ *
+ *  The frame-size bound and the rounding constant of the pipeline's right
+ *  shifts, at the end of this file, are shared for the same reason. See
+ *  docs/state.md :: T-ADM-AVX512-SMALL-WIDTH-SCALE0-2026-09-18 and
+ *  T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18.
  */
 
 #ifndef ADM_CSF_FIXED_POINT_H_
@@ -33,6 +38,7 @@
 #include <errno.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "log.h"
 
@@ -143,6 +149,40 @@ static inline int adm_csf_check_scale(int scale, const float rfactor1[3], double
         }
     }
     return 0;
+}
+
+/* Smallest frame dimension the integer-ADM pipeline accepts. Each DWT scale
+ * halves the band, rounding up: below 17 pixels the scale-3 band is a single
+ * sample, which the DWT reads past. The scale-0 horizontal and vertical cube
+ * shift, ceil(log2(band) - 4), also goes negative there. */
+#define ADM_MIN_FRAME_DIM (17u)
+
+/**
+ * 0 when a `w` x `h` frame is inside the integer-ADM range, otherwise -EINVAL
+ * after logging which extractor refused it. Called from init(), so that the
+ * backends refuse the same frames; the GPU twins that do not call it yet are
+ * T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18.
+ */
+static inline int adm_frame_size_check(const char *extractor, unsigned w, unsigned h)
+{
+    if (w >= ADM_MIN_FRAME_DIM && h >= ADM_MIN_FRAME_DIM) {
+        return 0;
+    }
+    vmaf_log(VMAF_LOG_LEVEL_ERROR, "%s requires width >= %u and height >= %u (got %ux%u)\n",
+             extractor, ADM_MIN_FRAME_DIM, ADM_MIN_FRAME_DIM, w, h);
+    return -EINVAL;
+}
+
+/**
+ * Rounding constant of a right shift by `shift`: 2^(shift - 1), or 0 when
+ * `shift` is 0. The scale-0 horizontal and vertical cube shift is exactly 0 for
+ * frames 17 to 32 pixels wide. There the unguarded 2^(shift - 1) wraps to
+ * 2^(2^32 - 1), which is undefined both as a shift and as a float-to-integer
+ * conversion (T-ADM-AVX512-SMALL-WIDTH-SCALE0-2026-09-18).
+ */
+static inline uint32_t adm_half_shift(uint32_t shift)
+{
+    return (shift > 0u) ? ((uint32_t)1u << (shift - 1u)) : 0u;
 }
 
 #endif /* ADM_CSF_FIXED_POINT_H_ */

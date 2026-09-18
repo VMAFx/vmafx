@@ -65,6 +65,37 @@ contents. Upstream carries the same index code. Its `memset` makes the read
 deterministic, but the read is still out of bounds. The GPU twins mirror with
 `abs()` and were never affected.
 
+### The zero-bit shift at frame widths 17..32
+
+Frame widths 17 to 32 give scale-0 bands of 9 to 16 samples, so the scale-0
+horizontal and vertical cube shift `ceil(log2(band) - 4)` is exactly 0. Its
+rounding constant was `(uint32_t)pow(2, shift - 1)` in `adm_avx2.c` and
+`adm_avx512.c`, and in upstream's scalar `integer_adm.c` as well. With
+`shift - 1` wrapped to `UINT32_MAX` that is `(uint32_t)inf`, which is
+undefined. The fork's scalar path already guarded it with `adm_half_shift()`.
+The ASan+UBSan lane found the AVX2 copy once `test_integer_adm_tiny_frames`
+reached those widths.
+
+What the undefined conversion produced depends on the instruction the
+compiler picked. Compiling the pre-fix files with their real build flags
+shows `vcvttsd2siq` in the AVX2 unit, whose low 32 bits of
+`0x8000000000000000` are 0, the scalar value, and `vcvttsd2usi` in the AVX-512
+unit, which gives `0xFFFFFFFF`. That is the whole of the AVX-512 small-width
+divergence recorded in the first sweep: AVX-512 scored `integer_adm_scale0`
+0.0094, 0.0103 and 4.2e-05 off scalar at 18x18, 24x24 and 20x64, and is
+bit-exact at every width 17..32 once all 16 constants call the shared
+helper. The row's guess, a stage that assumes a full vector per row, was
+wrong.
+
+The same widths expose two defects in the CUDA and HIP scale-0 path, measured
+on an RTX 4090 against scalar CPU. The host code computes the constant as
+`1 << (shift - 1)` (2^31 on x86; 32x32 scores NaN), and the scale-0
+contrast-masking kernels clamp the right and bottom neighbours with the base
+index, reading column `w` and rows past `h` for bands of 14 samples or fewer.
+`integer_adm_scale0` is 1.20296 on CUDA against 0.99174 scalar at 18x18. The
+CUDA, HIP and SYCL twins also accept frames below 17x17. The fixes are a
+separate PR because they touch GPU files outside this port.
+
 ### checkasm versus the fork's parity tests
 
 checkasm compares each shipped scalar kernel against each ISA on random data,
@@ -92,8 +123,11 @@ the ADM/VIF parity tests, and small-size sweeps.
   full-range noise: 576x324 `integer_adm_scale0` gives `0.45876092664583873`
   scalar against `0.45858330648667378` AVX2, with identical numbers upstream.
   Tracked in `docs/state.md`.
-- AVX-512 scale 0 diverges for frame widths 17..32 even on smooth content,
-  in fork and upstream alike. Tracked in `docs/state.md`.
+- Upstream's scalar and SIMD ADM still carry the `(uint32_t)pow(2, shift - 1)`
+  conversion. Worth reporting to Netflix/vmaf with the instruction evidence
+  above.
+- The CUDA and HIP tiny-frame defects are tracked in `docs/state.md` as
+  `T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18`.
 
 ## Related
 

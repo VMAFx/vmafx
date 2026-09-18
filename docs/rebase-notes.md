@@ -267,6 +267,15 @@ Fork-only fix upstream still needs:
   -1. Keep the fork form on every sync. The zeroing above does not make the
   upstream form safe. `core/test/test_integer_adm_tiny_frames.c` guards it,
   and on the ASan lane it aborts on the old bound.
+- `x86/adm_avx2.c` and `x86/adm_avx512.c`: every rounding constant of a right
+  shift is `adm_half_shift(x)` from `adm_csf_fixed_point.h`, where upstream
+  writes `(uint32_t)pow(2, (x - 1))`. At frame widths 17 to 32 the scale-0 cube
+  shift is 0, and upstream's form converts infinity to an integer; the
+  AVX-512 build turns that into `0xFFFFFFFF`. When a sync touches these
+  lines, keep the helper. `test_integer_adm_tiny_widths_simd_matches_scalar`
+  fails at 17x70 with the upstream form on an AVX-512 host, and the UBSan
+  lane flags it on any x86 host. `adm_half_shift()` moved there from
+  `integer_adm.c`, whose frame-size check is now `adm_frame_size_check()`.
 
 Retired (ADR-1257): `adm_dwt2_8_neon_apple_legacy()` and the
 `#if defined(__APPLE__)` NEON dispatch branch in `integer_adm.c`. Apple
