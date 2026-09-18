@@ -139,9 +139,10 @@ already use. It is `adm_dwt2_vpass16_tap4()` in `integer_adm.h`, shared by the
 scalar pass and both x86 kernels. For in-range input the narrowed result
 equals the old wrapped one, so no score moves: 12 runs (10, 12 and 16 bpc,
 scalar, AVX2 and AVX-512) are identical at `%.17g` before and after. NEON has
-no 16-bit DWT; it falls back to scalar. The CUDA, HIP, SYCL and Metal twins
-carry the same int32 sum and are tracked in `docs/state.md`
-(`T-GPU-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18`).
+no 16-bit DWT; it falls back to scalar. The CUDA, HIP and Metal twins carry
+the same int32 sum and are tracked in `docs/state.md`
+(`T-GPU-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18`); the SYCL twin already
+forms it in int64.
 
 ## Alternatives explored
 
