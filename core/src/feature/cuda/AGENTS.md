@@ -851,3 +851,14 @@ kernel variants at runtime. Current policy table is in ADR-0753.
 - Upstream Netflix form differs; keep fork form on sync (`docs/rebase-notes.md`).
 - Guard: `test_cuda_adm_tiny_frames` (scalar CPU ref, 1e-4; rejection test
   needs no device).
+
+## Integer ADM 16-bit vertical DWT sums in int64 (T-GPU-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18)
+
+- `core/src/feature/cuda/integer_adm/adm_dwt2.cu`, scale-0 fused kernel: vertical accumulator = `DwtVertAccum<T>::type`
+  -> int64 for `uint16_t`, int32 for `uint8_t`.
+- Low-pass taps 1-3 sum 50582 -> int32 sum overflows (UB) once 3 16-bit
+  samples >= 42456. CPU twin: `adm_dwt2_vpass16_tap4()` (int64).
+- Normalised value fits int32 -> int64 form = old wrapped result. Scores
+  identical; never narrow back to int32 for speed.
+- Guard: `test_gpu_adm_bright_16bit_parity` in `test_gpu_adm_tiny_frames.c`
+  (parity only; device wrap hides the UB itself).
