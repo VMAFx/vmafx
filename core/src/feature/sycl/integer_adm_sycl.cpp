@@ -92,6 +92,18 @@ constexpr int32_t dwt_lo_sum = 46342;
 constexpr int32_t ONE_BY_15 = 8738;
 constexpr int32_t I4_ONE_BY_15 = 286331153;
 
+/*
+ * Rounding term of the scales 1-3 filter shifts (>> 32): csf_f and the 1/15
+ * centre tap of the masking threshold. The CPU stores 1u << 31 in an int32_t
+ * (i4_adm_round_terms() in integer_adm.c), which wraps to INT32_MIN, so it
+ * subtracts 2^31 where it means to add it. The Netflix golden values encode
+ * that (Netflix#955, ADR-0155), and the CUDA and HIP twins reproduce it.
+ * Adding +2^31 here left every term one higher than the CPU's, and scales
+ * 1-3 up to 1e-6 off the scalar CPU on noise. If Netflix#955 is ever fixed
+ * upstream, this constant follows the CPU.
+ */
+constexpr int64_t I4_FLT_ROUND = -(int64_t{1} << 31);
+
 /* ------------------------------------------------------------------ */
 /* Extractor private state                                             */
 /* ------------------------------------------------------------------ */
@@ -944,7 +956,7 @@ launch_decouple_csf(sycl::queue &q, int scale, unsigned half_w, unsigned half_h,
                     int32_t const csf_a_val =
                         (int32_t)(((int64_t)irf[band] * a_val + (1LL << 27)) >> 28);
                     int32_t const abs_csf = csf_a_val < 0 ? -csf_a_val : csf_a_val;
-                    csf_f_val = (int32_t)(((int64_t)143165577 * abs_csf + (1LL << 31)) >> 32);
+                    csf_f_val = (int32_t)(((int64_t)143165577 * abs_csf + I4_FLT_ROUND) >> 32);
                 }
 
                 cf_ptr[band][idx] = csf_f_val;
@@ -1297,7 +1309,7 @@ sycl::event launch_csf_den_cm_3band(
                             // negative once |csf_a| >= 15360.
                             thr += adm_i16((ONE_BY_15 * abs_ca + 2048) >> 12);
                         } else {
-                            thr += ((int64_t)I4_ONE_BY_15 * abs_ca + (1LL << 31)) >> 32;
+                            thr += ((int64_t)I4_ONE_BY_15 * abs_ca + I4_FLT_ROUND) >> 32;
                         }
                     }
 
