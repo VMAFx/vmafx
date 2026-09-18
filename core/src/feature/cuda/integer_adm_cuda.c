@@ -1362,8 +1362,8 @@ static int integer_compute_adm_cuda(VmafFeatureExtractor *fex, AdmStateCuda *s,
         curr_ref_stride = ref_pic->stride[0];
         curr_dis_stride = dis_pic->stride[0];
     } else {
-        curr_ref_stride = dis_pic->stride[0] >> 1;
-        curr_dis_stride = ref_pic->stride[0] >> 1;
+        curr_ref_stride = ref_pic->stride[0] >> 1;
+        curr_dis_stride = dis_pic->stride[0] >> 1;
     }
 
     int err = adm_scale0_device(fex, s, ref_pic, dis_pic, buf, &p, w, h, curr_ref_stride,
@@ -1609,41 +1609,61 @@ static int adm_cuda_load_kernels(CudaFunctions *cu_f, AdmStateCuda *s)
     return err;
 }
 
+/* Destroy the fex stream and events. A handle is 0 until its create call
+ * succeeds, so only what was created is destroyed. */
+static void adm_cuda_destroy_stream_events(CudaFunctions *cu_f, AdmStateCuda *s)
+{
+    if (s->dis_event) {
+        (void)cu_f->cuEventDestroy(s->dis_event);
+        s->dis_event = 0;
+    }
+    if (s->ref_event) {
+        (void)cu_f->cuEventDestroy(s->ref_event);
+        s->ref_event = 0;
+    }
+    if (s->finished) {
+        (void)cu_f->cuEventDestroy(s->finished);
+        s->finished = 0;
+    }
+    if (s->str) {
+        (void)cu_f->cuStreamDestroy(s->str);
+        s->str = 0;
+    }
+}
+
 /* Create the fex stream and events and load the kernels, with the fex context
- * already pushed. On failure everything created here is released again. */
+ * already pushed. On failure everything created here is released again
+ * (ADR-1090). */
 static int adm_cuda_init_device_locked(CudaFunctions *cu_f, AdmStateCuda *s)
 {
     int _cuda_err = 0;
     CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0), fail);
-    /* ADR-1090 — graduated labels so earlier allocations are freed when a
-     * later step fails; previously all paths jumped to `fail` which only
-     * popped the context, leaking the stream and events. */
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT), fail_after_stream);
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->ref_event, CU_EVENT_DEFAULT), fail_after_finished);
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->dis_event, CU_EVENT_DEFAULT), fail_after_ref_event);
+    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT), fail);
+    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->ref_event, CU_EVENT_DEFAULT), fail);
+    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->dis_event, CU_EVENT_DEFAULT), fail);
 
     _cuda_err = adm_cuda_load_kernels(cu_f, s);
     if (!_cuda_err) {
         return 0;
     }
-
-    /* One or more cuModuleLoadData / cuModuleGetFunction calls failed.
-     * Unload any modules that were successfully loaded before releasing
-     * stream and events. */
+    /* Unload whatever modules loaded before the failing call. */
     adm_cuda_unload_modules(cu_f, s);
-fail_after_ref_event:
-    (void)cu_f->cuEventDestroy(s->dis_event);
-    s->dis_event = 0;
-fail_after_finished:
-    (void)cu_f->cuEventDestroy(s->ref_event);
-    s->ref_event = 0;
-fail_after_stream:
-    (void)cu_f->cuEventDestroy(s->finished);
-    s->finished = 0;
-    (void)cu_f->cuStreamDestroy(s->str);
-    s->str = 0;
 fail:
+    adm_cuda_destroy_stream_events(cu_f, s);
     return _cuda_err;
+}
+
+/* Undo adm_cuda_init_device(): used when a later init step fails, because the
+ * framework never calls close() after a failed init(). */
+static void adm_cuda_release_device(VmafFeatureExtractor *fex, AdmStateCuda *s)
+{
+    CudaFunctions *cu_f = fex->cu_state->f;
+    if (cu_f->cuCtxPushCurrent(fex->cu_state->ctx) != CUDA_SUCCESS) {
+        return;
+    }
+    adm_cuda_unload_modules(cu_f, s);
+    adm_cuda_destroy_stream_events(cu_f, s);
+    (void)cu_f->cuCtxPopCurrent(NULL);
 }
 
 /* Everything init needs from the device: stream, events, kernels and the SM
@@ -1827,9 +1847,11 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         return dev_err;
     }
 
-    // s->dwt2_8 = dwt2_8_device;
-
-    return adm_cuda_init_buffers(fex, s, w, h);
+    const int buf_err = adm_cuda_init_buffers(fex, s, w, h);
+    if (buf_err) {
+        adm_cuda_release_device(fex, s);
+    }
+    return buf_err;
 }
 
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
