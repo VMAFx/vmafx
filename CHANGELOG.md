@@ -10398,17 +10398,6 @@ capture used by the newer AI corpus/report tooling.
   `sys.path` bootstrap blocks.
 
 
-**CI matrix deduplication (VMAFX Phase 1B, ADR-0689):** Remove five redundant
-build rows from the PR matrix — three bare CPU legs subsumed by their DNN
-counterparts (`Build — Ubuntu gcc (CPU)`, `Build — Ubuntu clang (CPU)`,
-`Build — macOS clang (CPU)`), the advisory macOS MoltenVK Vulkan lane moved to
-nightly, and the dynamic-only Ubuntu CUDA leg subsumed by the SYCL+CUDA
-combined leg. Drop the duplicate `vulkan-vif-cross-backend` job in
-`tests-and-quality-gates.yml` (the `vulkan-parity-matrix-gate` is a strict
-superset). Required checks are unchanged. Approximate saving: ~15–25 min of
-runner time per PR.
-
-
 - **refactor(core):** Pilot C++20 conversion of `core/src/metadata_handler.c`
   (renamed to `.cpp` via `git mv`). `vmaf_metadata_destroy` now uses a
   `std::unique_ptr<VmafCallbackList>` with a custom `CallbackListDeleter` that
@@ -12543,28 +12532,24 @@ Ubuntu 26.04 (expected H2 2026). CUDA pins (13.2.0), Windows runners
 images remain at their existing pins. ADR-0802.
 
 
-### CI matrix slimmed to 1 build per OS + state-of-the-art sanitizers (ADR-0710)
+### CI: `build.yml` and `sanitizers.yml` added alongside the existing matrix (ADR-0710)
 
-`libvmaf-build-matrix.yml` (15 build rows post-ADR-0689) is replaced by
-`build.yml` with three matrix rows:
+`build.yml` adds one all-in-one build per OS, next to
+`libvmaf-build-matrix.yml` rather than in place of it:
 
-- **Linux** — GCC + ALL backends (CUDA + SYCL + Vulkan + HIP + CPU + DNN); runs
-  the full meson test suite including Netflix golden assertions.
-- **macOS** — Apple Clang + CPU + Metal scaffold; runs meson suite + tox.
-- **Windows** — MSVC + CPU + CUDA (build-only); runs CPU unit tests.
+- **`Linux Intel LLVM`**: icx/icpx with CUDA, SYCL, HIP and DNN; runs the meson
+  suite and the HIP smoke test.
+- **`macOS Clang+Metal`**: Apple Clang with CPU and Metal; runs the meson
+  suite and tox.
+- **`Windows MSVC+CUDA`**: MSVC with CPU and CUDA; builds and runs the CPU
+  unit tests.
 
-Sanitizer jobs moved from `tests-and-quality-gates.yml` into a new
-`sanitizers.yml`:
+`sanitizers.yml` adds a combined `Sanitizers ASan+UBSan` job on pull requests,
+`Sanitizers TSan` on pushes to master and nightly libFuzzer runs.
 
-- `Sanitizers — ASan + UBSan (PR gate)` — combined `-fsanitize=address,undefined`
-  on every non-draft PR (replaces the 3-way per-PR matrix).
-- `Sanitizers — TSan (master push)` — thread-sanitizer fires only on master push.
-- `Fuzz — * (nightly)` — libFuzzer + ASan against all harnesses nightly.
-
-`Cppcheck (Whole Project)` removed from lint-and-format.yml; clang-tidy provides
-a superset of its signal. `Required Checks Aggregator` updated accordingly.
-
-Estimated per-PR runner-time reduction: ~70% versus the pre-ADR-0689 baseline.
+None of these jobs is a required check. `libvmaf-build-matrix.yml`, `Cppcheck`
+and the required `Sanitizers (address|thread|undefined)` matrix are unchanged;
+ADR-1259 records the matrix as it runs.
 
 
 - CI merge throughput: the `Required Checks Aggregator` poll deadline is raised
@@ -16477,16 +16462,6 @@ See [ADR-0356](docs/adr/0356-vulkan-two-level-gpu-reduction.md) and
 
 ### Removed
 
-- **CI: MinGW64 Windows build removed** — the `Build — Windows MinGW64 (CPU)`
-  job (MSYS2 / MinGW-w64 GCC, static link, `vmaf.exe` artifact) is no longer
-  present in the CI matrix. Windows coverage is provided by the MSVC + CUDA
-  and MSVC + oneAPI SYCL build-only legs. (ADR-0691, VMAFX Phase 1C)
-- **CI: i686 / no-asm 32-bit Linux build removed** — the `Build — Ubuntu i686
-  gcc (CPU, no-asm)` matrix entry (`--cross-file=build-aux/i686-linux-gnu.ini
-  -Denable_asm=false`) is no longer present. The fork targets 64-bit x86-64
-  and ARM64 exclusively. (ADR-0691, VMAFX Phase 1C)
-
-
 - **testdata: orphan debug scripts and slim-schema snapshot removed** — three
   fork-added files under `testdata/` with zero in-tree references were deleted:
   `check_borders.py` (one-off DWT-subband / ADM-border arithmetic debug script
@@ -16581,38 +16556,6 @@ No build/test/runtime impact — the `enable_vulkan` meson option was already re
   `upstream-netflix-955-watcher.yml`) were all added on 2026-05-30
   with legitimate cron / release-published triggers that have not
   yet fired. No removals.
-
-
-**BREAKING: Sunset legacy native build modes (ADR-0728)**
-
-The following CI build configurations have been removed from
-`.github/workflows/libvmaf-build-matrix.yml` and the required-checks list:
-
-**Removed from CI matrix:**
-- `Build — Windows MinGW64 (CPU)` — MinGW64 is not a VMAFX production target
-- `Build — Ubuntu i686 gcc (CPU, no-asm)` — fork is 64-bit only
-- `Build — Ubuntu gcc (CPU) + DNN` — superseded by Linux full-build in build.yml
-- `Build — Ubuntu clang (CPU) + DNN` — superseded by Linux full-build in build.yml
-- `Build — macOS clang (CPU) + DNN` — superseded by macOS leg in build.yml
-- `Build — Ubuntu Vulkan (T5-1b runtime)` — folded into Linux full-build
-- `Build — macOS Vulkan via MoltenVK (advisory)` — too fragile; no required gate
-- `Build — Ubuntu HIP (T7-10b runtime)` — folded into Linux full-build
-- `Build — macOS Metal (T8-1 scaffold)` — folded into macOS leg in build.yml
-- `Build — Ubuntu gcc Static (CPU)` — pkgconfig verified within Linux full-build
-- `Build — Ubuntu CUDA Static` — NVCC-static covered by Linux full-build
-- `Build — Ubuntu SYCL` — folded into Linux full-build
-- `Build — Ubuntu SYCL + CUDA` — folded into Linux full-build
-- `Build — Windows MSVC + oneAPI SYCL (build only)` — SYCL in Linux full-build
-
-**New canonical build matrix** (`build.yml`, ADR-0710):
-- `Build — Linux (GCC, all backends)` — full stack: CUDA + SYCL + Vulkan + HIP + DNN + CPU
-- `Build — macOS (Clang, CPU + Metal)` — Apple Clang + CPU + Metal scaffold
-- `Build — Windows (MSVC + CUDA)` — MSVC + CPU + CUDA (build-only)
-
-**Required-checks aggregator updated** to use new check names from `build.yml`
-and `sanitizers.yml`. `Cppcheck (Whole Project)` removed (clang-tidy superset).
-
-Implements ADR-0691 + ADR-0710. No functional change to the C library or CLI.
 
 
 ### Removed

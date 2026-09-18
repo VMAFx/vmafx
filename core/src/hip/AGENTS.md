@@ -34,8 +34,8 @@ Two additional consumers promoted from scaffold to real kernels in
 ADR-0372 (batch-1, this PR).
 
 1. **T7-10 audit-first scaffold** (ADR-0212) — common, picture, dispatch,
-   feature stubs, public header `libvmaf_hip.h`, CI lane
-   `Build — Ubuntu HIP (T7-10 scaffold)`, smoke-only `enable_hip` build.
+   feature stubs, public header `libvmaf_hip.h`, CI lane (now `Ubuntu HIP`,
+   a required check), smoke-only `enable_hip` build.
    Every public C-API entry point returns `-ENOSYS`.
 2. **T7-10 first consumer** (ADR-0241) — `kernel_template.{h,c}` (mirror
    of `cuda/kernel_template.h`) + `feature/hip/integer_psnr_hip.{c,h}`
@@ -406,9 +406,10 @@ meson setup build_full -Denable_hip=true -Denable_hipcc=true \
 ninja -C build_full
 ```
 
-CI lane `Build — Ubuntu HIP (T7-10 scaffold)` uses
-`-Denable_hipcc=false` so it runs without ROCm SDK. Kernel-enabled
-builds (`-Denable_hipcc=true`) require `hipcc` in `PATH` and ROCm 6+.
+The required CI lane `Ubuntu HIP` leaves `enable_hipcc` at its default
+(`false`): it installs ROCm 10.0.0 from a digest-pinned image (ADR-1225) and
+builds the host side without device kernels. Kernel-enabled builds
+(`-Denable_hipcc=true`) require `hipcc` in `PATH` and ROCm 7.0+.
 
 ## The HIP backend is host-pic — stage before you launch (ADR-1211)
 

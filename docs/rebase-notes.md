@@ -86,6 +86,18 @@ See [Research-2062](research/2062-cambi-spatial-mask-simd.md).
 - `core/src/feature/x86/psnr_avx2.c`, `psnr_sse_line_16_avx2()`: the final
   64-bit sum is read with `_mm_storel_epi64`, not `_mm_cvtsi128_si64`.
 
+## ci/retire-i686-lane — the CI build matrix of record (ADR-1259) (2026-09-18)
+
+- `.github/workflows/libvmaf-build-matrix.yml` and `build.yml` both run;
+  `build.yml` does not replace the matrix. ADR-0689, ADR-0691, ADR-0710 and
+  ADR-0728 are superseded by ADR-1259. A merge resolution that drops or
+  restores a lane is wrong unless an ADR asks for it: `384d97d03` undid
+  ADR-0689 and ADR-0691 that way.
+- The unreleased changelog fragments `changelog.d/removed/native-build-sunset.md`,
+  `changelog.d/removed/0691-vmafx-drop-legacy-build-paths.md` and
+  `changelog.d/changed/0689-vmafx-ci-matrix-dedupe.md` are deleted on purpose:
+  they announced removals that never happened. Do not restore them.
+
 ## Canonical envtest installer (2026-09-08)
 
 Keep Make, Go CI and controller-suite guidance on `scripts/ci/setup-envtest.sh`.

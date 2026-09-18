@@ -224,11 +224,14 @@ available, CPU SIMD wins otherwise.
 
 ## Verification
 
-The macOS CI lane `Build — macOS Metal` is the ground-truth gate; it
-runs on every PR with `-Denable_metal=enabled` and exercises the smoke
-test plus the currently wired kernel batch. Linux-host dev sessions
-cannot reproduce the lane locally because `Metal.framework` only exists
-on macOS hosts.
+The macOS CI lane `macOS Metal` in `libvmaf-build-matrix.yml` is where the
+backend is verified; it runs on every non-draft PR that touches the C core,
+with `-Denable_metal=enabled`, and exercises the smoke test plus the currently
+wired kernel batch. `build.yml`'s `macOS Clang+Metal` row also builds and tests
+the Metal backend. Neither is a required check, so a red Metal run does not
+block a merge ([ADR-1259](../../adr/1259-ci-build-matrix-as-it-runs.md)); check
+it before merging Metal changes. Linux-host dev sessions cannot reproduce the
+lane locally because `Metal.framework` only exists on macOS hosts.
 
 Reviewers verifying locally on a Mac:
 

@@ -439,14 +439,13 @@ step in `libvmaf-build` job:
 
 Rebase-sensitive invariants:
 
-- `if:` triple condition is load-bearing. **All three clauses must be
-  preserved together.** Dropping `github.event_name == 'workflow_dispatch'`
-  causes step to open blocking SSH session on every failing PR push,
-  stranding macOS runner for up to 30 minutes per failure.
-- Step must remain **after** `Run tests` step and **before**
-  `Run Vulkan smoke tests (macOS MoltenVK)` step so it fires only when
-  test failure has already set job status to `failure()`.
-- Action is pinned to commit SHA per fork's Renovate
+- `if:` triple condition load-bearing. **All three clauses preserved
+  together.** Dropping `github.event_name == 'workflow_dispatch'` causes step
+  to open blocking SSH session on every failing PR push. Strands macOS runner
+  up to 30 minutes per failure.
+- Step stays **after** `Run tests` step -> fires only when test failure already
+  set job status to `failure()`.
+- Action pinned to commit SHA per fork's Renovate
   `helpers:pinGitHubActionDigests` policy. Renovate will propose digest bumps;
   accept only after verifying new SHA corresponds to signed release tag.
 - Step is intentionally present in shared matrix job (not separate
@@ -456,33 +455,19 @@ Rebase-sensitive invariants:
 See [ADR-0626](../docs/adr/0626-macos-ci-tmate-debug-on-failure.md) and
 [`docs/development/ci-tmate-debug.md`](../docs/development/ci-tmate-debug.md).
 
-## macOS Vulkan-via-MoltenVK lane (ADR-0338)
+## Build matrix of record (ADR-1259)
 
-`libvmaf-build-matrix.yml` carries advisory lane
-`Build — macOS Vulkan via MoltenVK (advisory)` that runs on
-`macos-latest` (Apple Silicon). Rebase-sensitive invariants:
+[ADR-1259](../docs/adr/1259-ci-build-matrix-as-it-runs.md) lists every lane in
+`libvmaf-build-matrix.yml` and `build.yml` and which ones are required.
+ADR-0689, ADR-0691, ADR-0710 and ADR-0728 are superseded: do not remove a lane
+on their authority, and do not let a merge resolution drop or restore a lane
+without an ADR. That is how `384d97d03` undid two of them.
 
-- Lane is gated `continue-on-error: ${{ matrix.experimental ==
-  true && matrix.moltenvk == true }}`. Compound predicate is
-  load-bearing — matrix has other `experimental: true` rows
-  (macOS DNN lane) that must keep their default fail-fast
-  behaviour. Naive simplification to `${{ matrix.experimental }}`
-  would silently make those other rows advisory.
-- `VK_ICD_FILENAMES` MUST point at
-  `/opt/homebrew/etc/vulkan/icd.d/MoltenVK_icd.json` — homebrew
-  formula `molten-vk` lays JSON under `etc/vulkan/`, NOT
-  `share/vulkan/`. Never "fix" path; verify against
-  `Formula/m/molten-vk.rb` if in doubt.
-- Lane must NOT be added to `required-aggregator.yml` until one
-  green run lands on `master`. See ADR-0338 §Decision.
-- Existing `Run tests` / cache / tox steps gate on
-  `!matrix.moltenvk` — moltenvk lane runs its own dedicated
-  Vulkan-only smoke step. Never unify or lane will try to run
-  tox tests against Apple-Vulkan build, which is not lane's
-  contract.
-
-See [ADR-0338](../docs/adr/0338-macos-vulkan-via-moltenvk-lane.md)
-and [`docs/backends/vulkan/moltenvk.md`](../docs/backends/vulkan/moltenvk.md).
+The MoltenVK lane (ADR-0338) went with the Vulkan backend (ADR-0726). The
+`libvmaf-build` job's `continue-on-error` is now
+`${{ matrix.experimental == true }}`, so the two `experimental: true` rows,
+`macOS clang` and `macOS clang+DNN`, are advisory: their failure does not
+fail the workflow run. Neither is a required check.
 
 ## Renovate (ADR-0363) supersedes Dependabot
 
@@ -495,7 +480,9 @@ Note: pin updates to `codeql-action/upload-sarif` now arrive via Renovate
 - [ADR-1247](../docs/adr/1247-scorecard-exact-head-gates.md) — current OSSF
   Scorecard policy; ADR-0263 is superseded
 - [ADR-0338](../docs/adr/0338-macos-vulkan-via-moltenvk-lane.md) — macOS
-  Vulkan-via-MoltenVK advisory lane
+  Vulkan-via-MoltenVK advisory lane (removed with the Vulkan backend, ADR-0726)
+- [ADR-1259](../docs/adr/1259-ci-build-matrix-as-it-runs.md) — the CI build
+  matrix as it runs
 - [Research-0002](../docs/research/0002-automated-rule-enforcement.md) — investigation
 - [Research-0053](../docs/research/0053-ossf-scorecard-investigation.md) —
   OSSF Scorecard per-check breakdown
@@ -593,9 +580,10 @@ Unknown attribute kind (102)
 ```
 
 Pass `-Db_lto=false` on every icpx/SYCL `meson setup` in CI. Both SYCL legs of
-`libvmaf-build-matrix.yml` already do, and `Clang-Tidy SYCL (Changed Files,
-Advisory)` now does too. Pinning older oneAPI does not help — mismatch
-is against *system* linker plugin, not specific compiler release.
+`libvmaf-build-matrix.yml` already do, as do `build.yml`'s `Linux Intel LLVM`
+row and the `Tidy SYCL (advisory)` job. Pinning an older oneAPI does not
+help — the mismatch is against the *system* linker plugin, not a specific
+compiler release.
 
 ## Scorecard scope and report authenticity (ADR-1247)
 
