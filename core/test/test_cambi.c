@@ -1048,24 +1048,18 @@ static char *test_compute_mask_row()
 
 /*
  * test_calculate_c_values_scalar_avx2_parity — bit-exactness guard for the
- * AVX2 / scalar calculate_c_values paths introduced by PR #463 cluster
- * commits 3/10 and 4/10.
+ * AVX2 frame-level calculate_c_values_avx2() against the scalar
+ * calculate_c_values() on the 8x8 fixture (get_sample_image_8x8): every
+ * c_value output float must be identical. The per-stage SIMD twins, AVX-512
+ * and NEON included, are swept in test_cambi_stage_simd.c.
  *
- * The macro CAMBI_CALC_C_VALUES_BODY dispatches the increment/decrement/row
- * callbacks. On x86 with AVX2, init() selects calculate_c_values_avx2()
- * instead of the scalar calculate_c_values(). This test calls both on the
- * same 8x8 fixture (get_sample_image_8x8) and asserts that every c_value
- * output float is identical (bit-exact). On non-x86 hosts the AVX2 path is
- * compiled out; the test falls through and passes as a no-op.
+ * The gate reads CPUID directly (vmaf_get_cpu_flags_x86). It used to test
+ * vmaf_get_cpu_flags(), which is 0 until vmaf_init_cpu() runs -- and nothing
+ * in this binary runs it -- so the AVX2 branch never executed and the test
+ * passed without comparing anything. The AVX2 helpers build AVX2 constants at
+ * entry, so the runtime gate is still required (T-CAMBI-AVX2-CI-SIGILL);
+ * MSVC has no __builtin_cpu_supports, hence the in-tree CPUID probe.
  */
-/* Runtime CPU-feature gate: the AVX2 helpers (`calculate_c_values_avx2`,
-     * `cambi_increment_range_avx2`, etc.) build AVX2 SIMD constants
-     * (`_mm256_setr_epi32`, `_mm256_set1_epi32`) at function entry — executing
-     * those without runtime AVX2 support raises SIGILL. The non-test dispatch
-     * path is already runtime-gated via `vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX2`
-     * (see `cambi.c::init()`); reuse the in-tree portable gate here rather
-     * than `__builtin_cpu_supports("avx2")` (MSVC has no such builtin).
-     * Closes T-CAMBI-AVX2-CI-SIGILL. */
 static char *test_calculate_c_values_scalar_avx2_parity()
 {
     VmafPicture input_scalar;
@@ -1105,7 +1099,7 @@ static char *test_calculate_c_values_scalar_avx2_parity()
                        tvi_for_diff, vlt_luma, diff_weights, all_diffs, 8, 8);
 
 #if ARCH_X86
-    if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX2) {
+    if (vmaf_get_cpu_flags_x86() & VMAF_X86_CPU_FLAG_AVX2) {
         calculate_c_values_avx2(&input_avx2, &mask_avx2, c_avx2, histograms_a, window_size,
                                 num_diffs, tvi_for_diff, vlt_luma, diff_weights, all_diffs, 8, 8);
         for (int i = 0; i < 64; i++) {
