@@ -243,7 +243,11 @@ instead of a touched-files rule:
   `--cuda-host-only -nocudalib`, HIP with `-x hip -D__HIP_PLATFORM_AMD__=1`,
   SYCL through `scripts/ci/clang-tidy-sycl.sh`). Run locally with
   `make tidy-ratchet LANE=cuda TIDY_RATCHET_BUILD_DIR=build-gpu` (same for
-  `sycl`, `hip`). They become PR-required contexts as soon as a hosted
+  `sycl`, `hip`). meson compiles `.cu`, `.hip` and SYCL `.cpp` files through
+  custom targets, which leave them out of `compile_commands.json`, so the
+  target first runs `scripts/ci/gen-gpu-compile-commands.py` (CUDA and HIP
+  kernels) or `scripts/ci/gen-sycl-compile-commands.py` (SYCL) against the
+  build directory. Without that step the lane measures the host files only. They become PR-required contexts as soon as a hosted
   toolchain exists for the lane; until then a lane that cannot run is reported
   as *not run*, never as clean. Metal (`.mm` / `.metal`) has no Linux
   toolchain and is tracked by structural proxy only.
