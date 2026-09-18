@@ -19,7 +19,7 @@ afternoon. All three were green under local gcc:
 
 | What was written | Locally | In CI |
 | --- | --- | --- |
-| `static_assert(UINT_MAX <= SIZE_MAX/2/sizeof(ptr))` | fine on 64-bit | the i686 lane of the time could not compile it (that lane is retired: the fork is 64-bit only, ADR-0728 / ADR-1258) |
+| `static_assert(UINT_MAX <= SIZE_MAX/2/sizeof(ptr))` | fine on 64-bit | the i686 lane of the time could not compile it (that lane is retired: the fork is 64-bit only, ADR-1258) |
 | `__declspec(align((x)))` | gcc never compiles the MSVC branch | `Windows MSVC+CUDA` → C2059 on every use; `align()` needs a literal |
 | `__attribute__(noinline)` | gcc accepts the single paren | `Ubuntu clang`, `clang+DNN` and four Sanitizer lanes fail to compile |
 | `nullptr` in a `.c` file | gcc and clang accept it under `-std=c23` | `Windows MSVC+CUDA` → C2065 at every site; ADR-1138 keeps C TUs on `NULL` |
@@ -51,8 +51,8 @@ for about three hours.
 A stage whose toolchain is missing is **skipped with a notice**, not failed, so
 the script is still useful on a partially provisioned machine.
 
-There is no 32-bit stage. The fork is 64-bit only (ADR-0728), and the
-`m32` stage went with the i686 lane it mirrored (ADR-1258).
+There is no 32-bit stage. The fork is 64-bit only, and the `m32` stage went
+with the i686 lane it mirrored (ADR-1258).
 
 ## Behaviours worth knowing
 
