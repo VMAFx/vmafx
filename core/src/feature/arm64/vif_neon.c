@@ -583,9 +583,6 @@ void vif_statistic_8_neon(struct VifPublicState *s, float *num, float *den, unsi
 
     const uint8_t *ref = (uint8_t *)buf.ref;
     const uint8_t *dis = (uint8_t *)buf.dis;
-    const ptrdiff_t dst_stride = buf.stride_32 / sizeof(uint32_t);
-    ptrdiff_t i_dst_stride = 0;
-
     const uint32x4_t offset_vec_v = vdupq_n_u32(128);
     const int32x4_t shift_vec_v = vdupq_n_s32(-8);
 
@@ -594,7 +591,7 @@ void vif_statistic_8_neon(struct VifPublicState *s, float *num, float *den, unsi
 
     int32_t xx[8], yy[8], xy[8];
 
-    for (unsigned i = 0; i < h; ++i, i_dst_stride += dst_stride) {
+    for (unsigned i = 0; i < h; ++i) {
         int ii = i - fwidth / 2;
         const uint8_t *p_ref = ref + ii * buf.stride;
         const uint8_t *p_dis = dis + ii * buf.stride;
@@ -931,8 +928,6 @@ void vif_statistic_16_neon(struct VifPublicState *s, float *num, float *den, uns
     const uint16_t *dis = (uint16_t *)buf.dis;
 
     const ptrdiff_t stride_16 = buf.stride / sizeof(uint16_t);
-    const ptrdiff_t stride_32 = buf.stride_32 / sizeof(uint32_t);
-    ptrdiff_t i_dst_stride = 0;
     int32_t xx[8], yy[8], xy[8];
     int64_t accum_num_log = 0.0;
     int64_t accum_den_log = 0.0;
@@ -940,7 +935,7 @@ void vif_statistic_16_neon(struct VifPublicState *s, float *num, float *den, uns
     int64_t accum_den_non_log = 0;
     static const int32_t sigma_nsq = 65536 << 1;
 
-    for (unsigned i = 0; i < h; ++i, i_dst_stride += stride_32) {
+    for (unsigned i = 0; i < h; ++i) {
         int ii = i - fwidth / 2;
         const uint16_t *p_ref = ref + ii * stride_16;
         const uint16_t *p_dis = dis + ii * stride_16;
