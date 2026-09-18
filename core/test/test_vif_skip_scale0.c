@@ -34,6 +34,12 @@
  */
 
 #include <math.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #include <stdint.h>
 #include <string.h>
 
@@ -95,7 +101,8 @@ static char *test_vif_skip_scale0_true(void)
         return NULL;
     }
 
-    VmafPicture ref_pic, dis_pic;
+    VmafPicture ref_pic;
+    VmafPicture dis_pic;
     err = alloc_flat_pic(&ref_pic, 100u);
     mu_assert("ref picture alloc", err == 0);
     err = alloc_flat_pic(&dis_pic, 120u);
@@ -147,7 +154,8 @@ static char *test_vif_skip_scale0_false(void)
         return NULL;
     }
 
-    VmafPicture ref_pic, dis_pic;
+    VmafPicture ref_pic;
+    VmafPicture dis_pic;
     err = alloc_flat_pic(&ref_pic, 100u);
     mu_assert("ref picture alloc", err == 0);
     err = alloc_flat_pic(&dis_pic, 120u);
@@ -177,3 +185,5 @@ char *run_tests(void)
     mu_run_test(test_vif_skip_scale0_false);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

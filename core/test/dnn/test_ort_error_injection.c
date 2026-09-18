@@ -172,10 +172,11 @@ static const char *ORT_API_CALL mock_GetErrorMessage(const OrtStatus *st)
 
 static void ORT_API_CALL mock_ReleaseStatus(OrtStatus *st)
 {
-    if (st == &g_status_a)
+    if (st == &g_status_a) {
         g_status_a.msg = NULL;
-    else if (st == &g_status_b)
+    } else if (st == &g_status_b) {
         g_status_b.msg = NULL;
+    }
 }
 
 static OrtStatus *ORT_API_CALL mock_CreateEnv(OrtLoggingLevel level, const char *id, OrtEnv **out)

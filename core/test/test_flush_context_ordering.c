@@ -100,7 +100,8 @@ static char *prep_threaded_context(VmafContext **out)
     mu_assert("vmaf_use_feature(motion) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = alloc_frame(&ref, i);
         mu_assert("alloc_frame(ref) failed", !err);
         err = alloc_frame(&dist, i + 1u);
@@ -197,7 +198,8 @@ static char *test_flush_via_public_api_sets_flushed(void)
     mu_assert("serial: vmaf_use_feature(motion) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = alloc_frame(&ref, i);
         mu_assert("serial: alloc_frame(ref) failed", !err);
         err = alloc_frame(&dist, i + 1u);

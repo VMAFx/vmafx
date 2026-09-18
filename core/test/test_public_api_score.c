@@ -40,6 +40,12 @@
  */
 
 #include <math.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -262,3 +268,5 @@ char *run_tests()
     mu_run_test(test_vmaf_write_output);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

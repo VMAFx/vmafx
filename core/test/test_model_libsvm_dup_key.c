@@ -24,6 +24,12 @@
  */
 
 #include <stdbool.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #include <stddef.h>
 
 #include "libvmaf/model.h"
@@ -58,10 +64,11 @@ static char *test_json_model_libsvm_duplicate_key_no_leak(void)
 
     /* Ownership contract: on a non-zero return *model is left NULL; on success
      * the caller owns it. */
-    if (err == 0)
+    if (err == 0) {
         mu_assert("successful parse must yield a model", have_model);
-    else
+    } else {
         mu_assert("rejected parse must leave *model untouched (NULL)", !have_model);
+    }
 
     return NULL;
 }
@@ -71,3 +78,5 @@ char *run_tests(void)
     mu_run_test(test_json_model_libsvm_duplicate_key_no_leak);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

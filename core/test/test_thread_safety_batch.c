@@ -142,7 +142,8 @@ static char *test_batch_prev_ref_lifecycle(void)
     mu_assert("vmaf_use_feature(motion) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = alloc_frame(&ref, i);
         mu_assert("alloc_frame(ref) failed", !err);
         err = alloc_frame(&dist, i + 1u); /* distinct to produce non-zero motion */
@@ -207,7 +208,8 @@ static char *test_batch_flush_initialized_flag(void)
         mu_assert("threaded: vmaf_use_feature(motion) failed", !err);
 
         for (unsigned i = 0; i < 3u; i++) {
-            VmafPicture ref, dist;
+            VmafPicture ref;
+            VmafPicture dist;
             err = alloc_frame(&ref, i);
             mu_assert("threaded: alloc_frame(ref) failed", !err);
             err = alloc_frame(&dist, i + 1u);
@@ -244,7 +246,8 @@ static char *test_batch_flush_initialized_flag(void)
         mu_assert("serial: vmaf_use_feature(motion) failed", !err);
 
         for (unsigned i = 0; i < 3u; i++) {
-            VmafPicture ref, dist;
+            VmafPicture ref;
+            VmafPicture dist;
             err = alloc_frame(&ref, i);
             mu_assert("serial: alloc_frame(ref) failed", !err);
             err = alloc_frame(&dist, i + 1u);
@@ -296,7 +299,8 @@ static char *test_batch_n_threads_stress(void)
     mu_assert("stress: vmaf_use_feature(motion) failed", !err);
 
     for (unsigned i = 0; i < 16u; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = alloc_frame(&ref, i);
         mu_assert("stress: alloc_frame(ref) failed", !err);
         err = alloc_frame(&dist, i + 1u);
@@ -368,7 +372,8 @@ static char *test_batch_two_prev_ref_extractors(void)
     mu_assert("two-prev-ref: vmaf_use_feature(motion_v2) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = alloc_frame(&ref, i);
         mu_assert("two-prev-ref: alloc_frame(ref) failed", !err);
         err = alloc_frame(&dist, i + 1u);
@@ -385,7 +390,8 @@ static char *test_batch_two_prev_ref_extractors(void)
     /* BOTH extractors must have produced their own per-frame SAD feature.
      * motion_v2_sad_score is the one the bug suppressed entirely. */
     for (unsigned i = 1u; i < 4u; i++) {
-        double m1 = -1.0, m2 = -1.0;
+        double m1 = -1.0;
+        double m2 = -1.0;
         err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion_sad_score", &m1, i);
         mu_assert("two-prev-ref: motion_sad_score missing", !err);
         mu_assert("two-prev-ref: motion_sad_score finite", isfinite(m1) && m1 >= 0.0);

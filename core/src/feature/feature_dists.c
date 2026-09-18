@@ -22,6 +22,12 @@
  */
 
 #include <assert.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -217,3 +223,5 @@ VmafFeatureExtractor vmaf_fex_dists_sq = {
     .provided_features = dists_sq_provided_features,
     .chars = {0},
 };
+
+/* NOLINTEND(modernize-use-nullptr) */
