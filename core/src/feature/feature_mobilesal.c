@@ -115,11 +115,9 @@ static void mobilesal_release(MobilesalState *s)
     }
 }
 
-static int mobilesal_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                          unsigned w, unsigned h)
+/* Reject the input formats the saliency model cannot take. */
+static int mobilesal_check_input(enum VmafPixelFormat pix_fmt, unsigned bpc)
 {
-    MobilesalState *s = fex->priv;
-
     if (pix_fmt == VMAF_PIX_FMT_YUV400P) {
         return -EINVAL;
     }
@@ -140,8 +138,40 @@ static int mobilesal_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
                  bpc);
         return -ENOTSUP;
     }
+    return 0;
+}
 
-    int rc = vmaf_tiny_ai_require_runtime("mobilesal");
+/* Allocate the per-frame planes. On failure the caller releases whatever
+ * was allocated through mobilesal_release(). */
+static int mobilesal_alloc_buffers(MobilesalState *s, size_t plane)
+{
+    for (int i = 0; i < 3; ++i) {
+        s->rgb8[i] = (uint8_t *)aligned_malloc(plane, 32);
+        if (!s->rgb8[i]) {
+            return -ENOMEM;
+        }
+    }
+    s->tensor_in = (float *)aligned_malloc(3u * plane * sizeof(float), 32);
+    if (!s->tensor_in) {
+        return -ENOMEM;
+    }
+    s->sal_map = (float *)aligned_malloc(plane * sizeof(float), 32);
+    if (!s->sal_map) {
+        return -ENOMEM;
+    }
+    return 0;
+}
+
+static int mobilesal_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                          unsigned w, unsigned h)
+{
+    MobilesalState *s = fex->priv;
+
+    int rc = mobilesal_check_input(pix_fmt, bpc);
+    if (rc < 0) {
+        return rc;
+    }
+    rc = vmaf_tiny_ai_require_runtime("mobilesal");
     if (rc < 0) {
         return rc;
     }
@@ -165,28 +195,12 @@ static int mobilesal_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     s->w = w;
     s->h = h;
-    const size_t plane = (size_t)w * (size_t)h;
-
-    for (int i = 0; i < 3; ++i) {
-        s->rgb8[i] = (uint8_t *)aligned_malloc(plane, 32);
-        if (!s->rgb8[i]) {
-            goto oom;
-        }
+    rc = mobilesal_alloc_buffers(s, (size_t)w * (size_t)h);
+    if (rc < 0) {
+        mobilesal_release(s);
+        return rc;
     }
-    s->tensor_in = (float *)aligned_malloc(3u * plane * sizeof(float), 32);
-    if (!s->tensor_in) {
-        goto oom;
-    }
-    s->sal_map = (float *)aligned_malloc(plane * sizeof(float), 32);
-    if (!s->sal_map) {
-        goto oom;
-    }
-
     return 0;
-
-oom:
-    mobilesal_release(s);
-    return -ENOMEM;
 }
 
 static int mobilesal_extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic,

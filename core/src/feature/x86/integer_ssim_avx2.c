@@ -148,6 +148,91 @@ static inline __m256i widen_hi_epi32_epi64(__m256i v)
     return _mm256_cvtepi32_epi64(_mm256_extracti128_si256(v, 1));
 }
 
+/* The five moment accumulators of one SIMD block: 8 x int32 lanes on the
+ * 8-bit path, 4 x int64 lanes on the 16-bit path. */
+typedef struct ssim_acc_avx2 {
+    __m256i mux;
+    __m256i muy;
+    __m256i x2;
+    __m256i xy;
+    __m256i y2;
+} ssim_acc_avx2;
+
+/* Store 8 moments.  Widen int32 accumulators to int64 for the
+ * integer_ssim_moments_t fields.  We process lanes 0..3 and 4..7
+ * separately using 256-bit epi64 stores. */
+static inline void store_moments_8px(const ssim_acc_avx2 *acc, int32_t wsum,
+                                     integer_ssim_moments_t *out)
+{
+    _Alignas(32) int64_t mux_arr[8];
+    _Alignas(32) int64_t muy_arr[8];
+    _Alignas(32) int64_t x2_arr[8];
+    _Alignas(32) int64_t xy_arr[8];
+    _Alignas(32) int64_t y2_arr[8];
+
+    /* lanes 0..3 */
+    _mm256_store_si256((__m256i *)&mux_arr[0], widen_lo_epi32_epi64(acc->mux));
+    _mm256_store_si256((__m256i *)&muy_arr[0], widen_lo_epi32_epi64(acc->muy));
+    _mm256_store_si256((__m256i *)&x2_arr[0], widen_lo_epi32_epi64(acc->x2));
+    _mm256_store_si256((__m256i *)&xy_arr[0], widen_lo_epi32_epi64(acc->xy));
+    _mm256_store_si256((__m256i *)&y2_arr[0], widen_lo_epi32_epi64(acc->y2));
+    /* lanes 4..7 */
+    _mm256_store_si256((__m256i *)&mux_arr[4], widen_hi_epi32_epi64(acc->mux));
+    _mm256_store_si256((__m256i *)&muy_arr[4], widen_hi_epi32_epi64(acc->muy));
+    _mm256_store_si256((__m256i *)&x2_arr[4], widen_hi_epi32_epi64(acc->x2));
+    _mm256_store_si256((__m256i *)&xy_arr[4], widen_hi_epi32_epi64(acc->xy));
+    _mm256_store_si256((__m256i *)&y2_arr[4], widen_hi_epi32_epi64(acc->y2));
+
+    for (int lane = 0; lane < 8; lane++) {
+        out[lane].mux = mux_arr[lane];
+        out[lane].muy = muy_arr[lane];
+        out[lane].x2 = x2_arr[lane];
+        out[lane].xy = xy_arr[lane];
+        out[lane].y2 = y2_arr[lane];
+        out[lane].w = (int64_t)wsum;
+    }
+}
+
+/* Moments of the 8 interior output pixels x..x+7 (8-bit input), written to
+ * out[0..7]. Accumulates in int32, safe per the overflow analysis above. */
+static inline void accumulate_interior_8px(const uint8_t *src, const uint8_t *dst, int x,
+                                           const unsigned *hkernel, int hkernel_sz,
+                                           int hkernel_offs, integer_ssim_moments_t *out)
+{
+    ssim_acc_avx2 acc = {_mm256_setzero_si256(), _mm256_setzero_si256(), _mm256_setzero_si256(),
+                         _mm256_setzero_si256(), _mm256_setzero_si256()};
+    int32_t wsum = 0;
+
+    for (int k = 0; k < hkernel_sz; k++) {
+        /* The k-th pixel read for output pixel x is at offset (x - hkernel_offs + k).
+         * For 8 consecutive x values x..x+7, the offsets form a contiguous run
+         * starting at (x - hkernel_offs + k). */
+        const int off = x - hkernel_offs + k;
+        /* Load 8 consecutive uint8 src pixels and widen to int32 */
+        __m128i s8 = _mm_loadl_epi64((const __m128i *)(src + off));
+        __m256i sv = _mm256_cvtepu8_epi32(s8); /* 8 x uint8 -> 8 x int32 */
+
+        __m128i d8 = _mm_loadl_epi64((const __m128i *)(dst + off));
+        __m256i dv = _mm256_cvtepu8_epi32(d8);
+
+        const int32_t w_scalar = (int32_t)hkernel[k];
+        const __m256i wv = _mm256_set1_epi32(w_scalar);
+
+        /* mux += w * s */
+        acc.mux = _mm256_add_epi32(acc.mux, _mm256_mullo_epi32(wv, sv));
+        /* muy += w * d */
+        acc.muy = _mm256_add_epi32(acc.muy, _mm256_mullo_epi32(wv, dv));
+        /* x2  += w * s * s */
+        acc.x2 = _mm256_add_epi32(acc.x2, _mm256_mullo_epi32(wv, _mm256_mullo_epi32(sv, sv)));
+        /* xy  += w * s * d */
+        acc.xy = _mm256_add_epi32(acc.xy, _mm256_mullo_epi32(wv, _mm256_mullo_epi32(sv, dv)));
+        /* y2  += w * d * d */
+        acc.y2 = _mm256_add_epi32(acc.y2, _mm256_mullo_epi32(wv, _mm256_mullo_epi32(dv, dv)));
+        wsum += w_scalar;
+    }
+    store_moments_8px(&acc, wsum, out);
+}
+
 void integer_ssim_accumulate_row_avx2(const uint8_t *src, const uint8_t *dst, int width,
                                       const unsigned *hkernel, int hkernel_sz, int hkernel_offs,
                                       integer_ssim_moments_t *buf)
@@ -169,78 +254,103 @@ void integer_ssim_accumulate_row_avx2(const uint8_t *src, const uint8_t *dst, in
     /* SIMD interior: process 8 pixels at a time.
      * For interior pixels, k_min=0 and k_max=hkernel_sz, so the k-loop is unconditional. */
     for (; x + 8 <= x_int_last + 1; x += 8) {
-        /* Accumulators for 8 output pixels, in int32 (safe per overflow analysis above). */
-        __m256i acc_mux = _mm256_setzero_si256();
-        __m256i acc_muy = _mm256_setzero_si256();
-        __m256i acc_x2 = _mm256_setzero_si256();
-        __m256i acc_xy = _mm256_setzero_si256();
-        __m256i acc_y2 = _mm256_setzero_si256();
-        int32_t wsum = 0;
-
-        for (int k = 0; k < hkernel_sz; k++) {
-            /* The k-th pixel read for output pixel x is at offset (x - hkernel_offs + k).
-             * For 8 consecutive x values x..x+7, the offsets form a contiguous run
-             * starting at (x - hkernel_offs + k). */
-            const int off = x - hkernel_offs + k;
-            /* Load 8 consecutive uint8 src pixels and widen to int32 */
-            __m128i s8 = _mm_loadl_epi64((const __m128i *)(src + off));
-            __m256i sv = _mm256_cvtepu8_epi32(s8); /* 8 x uint8 -> 8 x int32 */
-
-            __m128i d8 = _mm_loadl_epi64((const __m128i *)(dst + off));
-            __m256i dv = _mm256_cvtepu8_epi32(d8);
-
-            const int32_t w_scalar = (int32_t)hkernel[k];
-            const __m256i wv = _mm256_set1_epi32(w_scalar);
-
-            /* mux += w * s */
-            acc_mux = _mm256_add_epi32(acc_mux, _mm256_mullo_epi32(wv, sv));
-            /* muy += w * d */
-            acc_muy = _mm256_add_epi32(acc_muy, _mm256_mullo_epi32(wv, dv));
-            /* x2  += w * s * s */
-            acc_x2 = _mm256_add_epi32(acc_x2, _mm256_mullo_epi32(wv, _mm256_mullo_epi32(sv, sv)));
-            /* xy  += w * s * d */
-            acc_xy = _mm256_add_epi32(acc_xy, _mm256_mullo_epi32(wv, _mm256_mullo_epi32(sv, dv)));
-            /* y2  += w * d * d */
-            acc_y2 = _mm256_add_epi32(acc_y2, _mm256_mullo_epi32(wv, _mm256_mullo_epi32(dv, dv)));
-            wsum += w_scalar;
-        }
-
-        /* Store 8 moments.  Widen int32 accumulators to int64 for the
-         * integer_ssim_moments_t fields.  We process lanes 0..3 and 4..7
-         * separately using 256-bit epi64 stores. */
-        _Alignas(32) int64_t mux_arr[8];
-        _Alignas(32) int64_t muy_arr[8];
-        _Alignas(32) int64_t x2_arr[8];
-        _Alignas(32) int64_t xy_arr[8];
-        _Alignas(32) int64_t y2_arr[8];
-
-        /* lanes 0..3 */
-        _mm256_store_si256((__m256i *)&mux_arr[0], widen_lo_epi32_epi64(acc_mux));
-        _mm256_store_si256((__m256i *)&muy_arr[0], widen_lo_epi32_epi64(acc_muy));
-        _mm256_store_si256((__m256i *)&x2_arr[0], widen_lo_epi32_epi64(acc_x2));
-        _mm256_store_si256((__m256i *)&xy_arr[0], widen_lo_epi32_epi64(acc_xy));
-        _mm256_store_si256((__m256i *)&y2_arr[0], widen_lo_epi32_epi64(acc_y2));
-        /* lanes 4..7 */
-        _mm256_store_si256((__m256i *)&mux_arr[4], widen_hi_epi32_epi64(acc_mux));
-        _mm256_store_si256((__m256i *)&muy_arr[4], widen_hi_epi32_epi64(acc_muy));
-        _mm256_store_si256((__m256i *)&x2_arr[4], widen_hi_epi32_epi64(acc_x2));
-        _mm256_store_si256((__m256i *)&xy_arr[4], widen_hi_epi32_epi64(acc_xy));
-        _mm256_store_si256((__m256i *)&y2_arr[4], widen_hi_epi32_epi64(acc_y2));
-
-        for (int lane = 0; lane < 8; lane++) {
-            buf[x + lane].mux = mux_arr[lane];
-            buf[x + lane].muy = muy_arr[lane];
-            buf[x + lane].x2 = x2_arr[lane];
-            buf[x + lane].xy = xy_arr[lane];
-            buf[x + lane].y2 = y2_arr[lane];
-            buf[x + lane].w = (int64_t)wsum;
-        }
+        accumulate_interior_8px(src, dst, x, hkernel, hkernel_sz, hkernel_offs, &buf[x]);
     }
 
     /* Scalar right boundary (and any leftover from the SIMD loop) */
     for (; x < width; x++) {
         accumulate_pixel_8(x, src, dst, width, hkernel, hkernel_sz, hkernel_offs, &buf[x]);
     }
+}
+
+/* Store 4 moments directly from 64-bit accumulators. */
+static inline void store_moments_4px(const ssim_acc_avx2 *acc, int64_t wsum,
+                                     integer_ssim_moments_t *out)
+{
+    _Alignas(32) int64_t mux_arr[4];
+    _Alignas(32) int64_t muy_arr[4];
+    _Alignas(32) int64_t x2_arr[4];
+    _Alignas(32) int64_t xy_arr[4];
+    _Alignas(32) int64_t y2_arr[4];
+
+    _mm256_store_si256((__m256i *)mux_arr, acc->mux);
+    _mm256_store_si256((__m256i *)muy_arr, acc->muy);
+    _mm256_store_si256((__m256i *)x2_arr, acc->x2);
+    _mm256_store_si256((__m256i *)xy_arr, acc->xy);
+    _mm256_store_si256((__m256i *)y2_arr, acc->y2);
+
+    for (int lane = 0; lane < 4; lane++) {
+        out[lane].mux = mux_arr[lane];
+        out[lane].muy = muy_arr[lane];
+        out[lane].x2 = x2_arr[lane];
+        out[lane].xy = xy_arr[lane];
+        out[lane].y2 = y2_arr[lane];
+        out[lane].w = wsum;
+    }
+}
+
+/* Moments of the 4 interior output pixels x..x+3 (16-bit input), written to
+ * out[0..3]. The int64 accumulation and the (w*s)*s multiply order are
+ * explained in integer_ssim_accumulate_row_16_avx2(). */
+static inline void accumulate_interior_4px_16(const uint16_t *src, const uint16_t *dst, int x,
+                                              const unsigned *hkernel, int hkernel_sz,
+                                              int hkernel_offs, integer_ssim_moments_t *out)
+{
+    ssim_acc_avx2 acc = {_mm256_setzero_si256(), _mm256_setzero_si256(), _mm256_setzero_si256(),
+                         _mm256_setzero_si256(), _mm256_setzero_si256()};
+    int64_t wsum = 0;
+
+    for (int k = 0; k < hkernel_sz; k++) {
+        const int off = x - hkernel_offs + k;
+        /* Load 4 uint16 pixels, zero-extend to int64 in a 256i. */
+        /* Use unaligned 64-bit (8 bytes = 4 * uint16). */
+        __m128i s16_128 = _mm_loadl_epi64((const __m128i *)(src + off));
+        __m128i d16_128 = _mm_loadl_epi64((const __m128i *)(dst + off));
+
+        /* uint16 -> uint32 (128-bit, 4 lanes) */
+        __m128i sv32 = _mm_cvtepu16_epi32(s16_128);
+        __m128i dv32 = _mm_cvtepu16_epi32(d16_128);
+
+        /* uint32 -> uint64 (256-bit, 4 lanes) */
+        __m256i sv = _mm256_cvtepu32_epi64(sv32);
+        __m256i dv = _mm256_cvtepu32_epi64(dv32);
+
+        const int64_t w_scalar = (int64_t)hkernel[k];
+        const __m256i wv = _mm256_set1_epi64x(w_scalar);
+
+        /*
+         * Compute w*s and w*d first.
+         *
+         * Overflow note for 16-bit content: s and d are zero-extended from
+         * uint16, so the low 32 bits of each 64-bit lane hold a value in
+         * [0, 65535].  w (= hkernel[k]) <= 256.
+         *
+         *   w*s <= 256 * 65535 = 16,776,960 < 2^24  — fits signed int32,
+         *   bit 31 clear.  _mm256_mul_epi32 is safe.
+         *
+         * Computing s*s FIRST and then w*(s*s) is WRONG: s*s can reach
+         * 65535^2 = 4,294,836,225 > 2^31, setting bit 31 and making the
+         * value appear negative when _mm256_mul_epi32 reads it as a signed
+         * 32-bit operand, producing a corrupted 64-bit product.
+         *
+         * Reordering to (w*s)*s avoids both multiplies ever seeing a value
+         * >= 2^31.  See fix for integer-ssim-avx2-16bit-overflow.
+         */
+        /* ws = w*s  (< 2^24, safe signed 32-bit low dword) */
+        __m256i ws = _mm256_mul_epi32(wv, sv);
+        acc.mux = _mm256_add_epi64(acc.mux, ws);
+        /* x2 += ws * s  (= w*s*s; ws low-dword < 2^24, safe) */
+        acc.x2 = _mm256_add_epi64(acc.x2, _mm256_mul_epi32(ws, sv));
+        /* xy += ws * d  (= w*s*d) */
+        acc.xy = _mm256_add_epi64(acc.xy, _mm256_mul_epi32(ws, dv));
+        /* wd = w*d */
+        __m256i wd = _mm256_mul_epi32(wv, dv);
+        acc.muy = _mm256_add_epi64(acc.muy, wd);
+        /* y2 += wd * d  (= w*d*d) */
+        acc.y2 = _mm256_add_epi64(acc.y2, _mm256_mul_epi32(wd, dv));
+        wsum += w_scalar;
+    }
+    store_moments_4px(&acc, wsum, out);
 }
 
 void integer_ssim_accumulate_row_16_avx2(const uint16_t *src, const uint16_t *dst, int width,
@@ -282,85 +392,7 @@ void integer_ssim_accumulate_row_16_avx2(const uint16_t *src, const uint16_t *ds
 
     /* SIMD interior: process 4 pixels at a time (to stay in 256-bit int64). */
     for (; x + 4 <= x_int_last + 1; x += 4) {
-        __m256i acc_mux = _mm256_setzero_si256(); /* 4 x int64 */
-        __m256i acc_muy = _mm256_setzero_si256();
-        __m256i acc_x2 = _mm256_setzero_si256();
-        __m256i acc_xy = _mm256_setzero_si256();
-        __m256i acc_y2 = _mm256_setzero_si256();
-        int64_t wsum = 0;
-
-        for (int k = 0; k < hkernel_sz; k++) {
-            const int off = x - hkernel_offs + k;
-            /* Load 4 uint16 pixels, zero-extend to int64 in a 256i. */
-            /* Use unaligned 64-bit (8 bytes = 4 * uint16). */
-            __m128i s16_128 = _mm_loadl_epi64((const __m128i *)(src + off));
-            __m128i d16_128 = _mm_loadl_epi64((const __m128i *)(dst + off));
-
-            /* uint16 -> uint32 (128-bit, 4 lanes) */
-            __m128i sv32 = _mm_cvtepu16_epi32(s16_128);
-            __m128i dv32 = _mm_cvtepu16_epi32(d16_128);
-
-            /* uint32 -> uint64 (256-bit, 4 lanes) */
-            __m256i sv = _mm256_cvtepu32_epi64(sv32);
-            __m256i dv = _mm256_cvtepu32_epi64(dv32);
-
-            const int64_t w_scalar = (int64_t)hkernel[k];
-            const __m256i wv = _mm256_set1_epi64x(w_scalar);
-
-            /*
-             * Compute w*s and w*d first.
-             *
-             * Overflow note for 16-bit content: s and d are zero-extended from
-             * uint16, so the low 32 bits of each 64-bit lane hold a value in
-             * [0, 65535].  w (= hkernel[k]) <= 256.
-             *
-             *   w*s <= 256 * 65535 = 16,776,960 < 2^24  — fits signed int32,
-             *   bit 31 clear.  _mm256_mul_epi32 is safe.
-             *
-             * Computing s*s FIRST and then w*(s*s) is WRONG: s*s can reach
-             * 65535^2 = 4,294,836,225 > 2^31, setting bit 31 and making the
-             * value appear negative when _mm256_mul_epi32 reads it as a signed
-             * 32-bit operand, producing a corrupted 64-bit product.
-             *
-             * Reordering to (w*s)*s avoids both multiplies ever seeing a value
-             * >= 2^31.  See fix for integer-ssim-avx2-16bit-overflow.
-             */
-            /* ws = w*s  (< 2^24, safe signed 32-bit low dword) */
-            __m256i ws = _mm256_mul_epi32(wv, sv);
-            acc_mux = _mm256_add_epi64(acc_mux, ws);
-            /* x2 += ws * s  (= w*s*s; ws low-dword < 2^24, safe) */
-            acc_x2 = _mm256_add_epi64(acc_x2, _mm256_mul_epi32(ws, sv));
-            /* xy += ws * d  (= w*s*d) */
-            acc_xy = _mm256_add_epi64(acc_xy, _mm256_mul_epi32(ws, dv));
-            /* wd = w*d */
-            __m256i wd = _mm256_mul_epi32(wv, dv);
-            acc_muy = _mm256_add_epi64(acc_muy, wd);
-            /* y2 += wd * d  (= w*d*d) */
-            acc_y2 = _mm256_add_epi64(acc_y2, _mm256_mul_epi32(wd, dv));
-            wsum += w_scalar;
-        }
-
-        /* Store 4 moments directly from 64-bit accumulators. */
-        _Alignas(32) int64_t mux_arr[4];
-        _Alignas(32) int64_t muy_arr[4];
-        _Alignas(32) int64_t x2_arr[4];
-        _Alignas(32) int64_t xy_arr[4];
-        _Alignas(32) int64_t y2_arr[4];
-
-        _mm256_store_si256((__m256i *)mux_arr, acc_mux);
-        _mm256_store_si256((__m256i *)muy_arr, acc_muy);
-        _mm256_store_si256((__m256i *)x2_arr, acc_x2);
-        _mm256_store_si256((__m256i *)xy_arr, acc_xy);
-        _mm256_store_si256((__m256i *)y2_arr, acc_y2);
-
-        for (int lane = 0; lane < 4; lane++) {
-            buf[x + lane].mux = mux_arr[lane];
-            buf[x + lane].muy = muy_arr[lane];
-            buf[x + lane].x2 = x2_arr[lane];
-            buf[x + lane].xy = xy_arr[lane];
-            buf[x + lane].y2 = y2_arr[lane];
-            buf[x + lane].w = wsum;
-        }
+        accumulate_interior_4px_16(src, dst, x, hkernel, hkernel_sz, hkernel_offs, &buf[x]);
     }
 
     for (; x < width; x++) {
