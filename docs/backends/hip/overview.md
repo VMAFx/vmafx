@@ -30,20 +30,30 @@
 > launches per 48-frame clip confirm the HIP kernel is actually
 > dispatching.
 >
-> **Status (2026-09-02):** 17 of 19 registered HIP extractors carry
+> **Status (2026-09-18):** 18 of 19 registered HIP extractors carry
 > active GPU flags (`VMAF_FEATURE_EXTRACTOR_HIP` / `VMAF_FEATURE_EXTRACTOR_TEMPORAL`)
 > and execute on AMD GPU hardware. Each has been validated via device parity tests
 > against the CPU reference implementation.
 >
-> Two extractors legitimately retain `.flags = 0` (silently falling back to CPU):
+> `integer_ssim_hip` joined them on 2026-09-18. Its kernel used to be an 11-tap
+> float Gaussian, 4.5e-3 away from the CPU `ssim`, so it was kept out of dispatch
+> (ADR-0564). It now runs the CPU's 9-tap int64 kernel, ported from the CUDA
+> twin; see [integer_ssim_hip](#integer_ssim_hip) below.
 >
-> 1. `integer_ssim_hip`: `integer_ssim_score.hip` currently implements the 11-tap
->    float Gaussian rather than the 9-tap int64 kernel (`integer_ssim_score.cu`),
->    yielding a 4.5e-3 numeric divergence. Flags remain cleared to preserve golden
->    CPU fallback per ADR-0564 until the int64 kernel port lands (~280 LOC).
-> 2. `integer_adm_hip`: Lacks internal HtoD picture staging buffers and passes host
->    pointers directly into device kernels. Flags remain cleared until picture staging
->    (~350 LOC) or the HIP device picture pool (T7-10c, ~600 LOC) lands.
+> **Known issue (2026-09-18):** most HIP extractors upload the host pictures
+> with an asynchronous copy and do not wait for it. On a multi-frame run the
+> picture buffer can be refilled with the next frame while the copy still reads
+> it, so a few frames per run are scored against mixed samples. Seen on
+> `float_ssim_hip` (up to 8.4e-2 off) and `psnr_hip` (10.4 dB off on one frame)
+> over the 48-frame Netflix pair. `integer_ssim_hip` waits for its uploads and
+> is not affected. Tracked as T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18 in
+> [`docs/state.md`](../../state.md).
+>
+> One extractor legitimately retains `.flags = 0` (silently falling back to CPU):
+>
+> - `integer_adm_hip`: Lacks internal HtoD picture staging buffers and passes host
+>   pointers directly into device kernels. Flags remain cleared until picture staging
+>   (~350 LOC) or the HIP device picture pool (T7-10c, ~600 LOC) lands.
 >
 > | Extractor | Feature name | GPU Active | Added in |
 > | --- | --- | --- | --- |
@@ -62,7 +72,7 @@
 > | `integer_motion_hip` | `integer_motion_hip` | Yes | PR #1004 |
 > | `integer_adm_hip` | `integer_adm_hip` | Deferred | PR #1007 |
 > | `integer_ms_ssim_hip` | `ms_ssim_hip` | Yes | ADR-0285 / PR #1013 |
-> | `integer_ssim_hip` | `integer_ssim_hip` | Deferred | PR #999 |
+> | `integer_ssim_hip` | `integer_ssim_hip` | Yes | PR #999 / ADR-0564 |
 > | `float_adm_hip` | `float_adm_hip` | Yes | ADR-0468 / PR #1024 |
 > | `speed_chroma_hip` | `speed_chroma_hip` | Yes | ADR-0567 / ADR-0852 |
 > | `speed_temporal_hip` | `speed_temporal_hip` | Yes | ADR-0567 / ADR-0852 |
@@ -72,6 +82,44 @@
 > `vmaf_hip_picture_alloc` log an informative error naming `-Denable_hipcc=true`
 > before returning `-ENOSYS`. Pre-compiled HSACO fat binaries are not bundled
 > without `hipcc` because AMD ROCm requires target-specific HSACO code objects.
+
+## integer_ssim_hip
+
+`integer_ssim_hip` publishes the same `ssim` feature as the CPU `ssim`
+extractor (`integer_ssim.c`) and computes it the same way:
+
+- a 9-tap Gaussian with integer weights `[2, 9, 28, 55, 68, 55, 28, 9, 2]`;
+- int64 sums for the moments, which makes them exact;
+- near the frame border the window is truncated to the taps inside the frame,
+  as on the CPU;
+- the per-pixel SSIM term in double, built with `-ffp-contract=off` so that it
+  rounds like the CPU's.
+
+The only difference from the CPU is the order in which the per-pixel terms are
+added up, so scores agree to about 1e-14 on natural content. The worst case
+measured on a gfx1036 against the scalar CPU, over 8-, 10-, 12- and 16-bit
+inputs from 1x1 up to 1920x1080 (odd sizes included), was 1.06e-11. That was
+on a 1080p checkerboard whose score is -0.53, where terms of both signs cancel.
+The CUDA twin measures the same. Any frame size is accepted.
+
+How it gets selected:
+
+- **Models.** When a model lists `ssim` and the HIP backend is active
+  (`--backend hip`, or `vmaf_hip_import_state()` in the C API), the HIP twin
+  computes it. If the model sets an option the twin does not declare
+  (`enable_db` or `clip_db`), that feature is computed on the CPU instead.
+- **CLI `--feature`.** `--feature` takes an extractor name, so
+  `--feature ssim` always runs the CPU extractor, even with `--backend hip`.
+  Name the twin to run it on the GPU:
+
+```bash
+vmaf --reference ref.yuv --distorted dist.yuv \
+     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+     --backend hip --feature integer_ssim_hip \
+     --no_prediction --json --output ssim.json
+```
+
+The output has one `ssim` value per frame, as with `--feature ssim`.
 
 ## Building
 
@@ -182,7 +230,7 @@ core/src/feature/hip/          # per-feature kernels
   integer_motion_hip.c            # 5-tap Gaussian blur + warp-reduced SAD
   integer_moment_hip.c            # four uint64 atomic accumulator (integer)
   integer_psnr_hvs_hip.c          # PSNR-HVS frequency-weighted distortion
-  integer_ssim_hip.c              # two-pass separable Gaussian + SSIM combine
+  integer_ssim_hip.c              # 9-tap int64 moments + per-pixel SSIM (CPU kernel)
   integer_ms_ssim_hip.c           # multi-scale SSIM (5 scales, biorthogonal LPF)
   integer_adm_hip.c               # ADM DWT2 + CSF + CM + decouple pipeline
   integer_vif_hip.c               # multi-scale VIF integer pyramid
@@ -223,8 +271,10 @@ core/src/feature/hip/          # per-feature kernels
   `VMAF_feature_motion2_score`.
 - **`integer_psnr_hvs_hip`** — frequency-weighted distortion per 8×8 block,
   porting the CUDA twin. Emits `psnr_hvs` + per-channel variants.
-- **`integer_ssim_hip`** — two-pass separable 11-tap Gaussian SSIM, GCN/RDNA
-  warp-size-64 adaptation. Emits `integer_ssim`.
+- **`integer_ssim_hip`** — the CPU `ssim` extractor's algorithm, ported from
+  the CUDA twin (`ssim_cuda.c`): a 9-tap integer Gaussian, int64 moments, the
+  window truncated at the frame border, and the per-pixel SSIM term in double.
+  Emits `ssim`. See [integer_ssim_hip](#integer_ssim_hip).
 - **`integer_ms_ssim_hip`** — multi-scale SSIM over 5 pyramid levels; 9-tap
   biorthogonal LPF decimation + separable 11-tap Gaussian per scale. Emits
   `float_ms_ssim`. Per ADR-0285.
