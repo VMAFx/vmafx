@@ -30,6 +30,16 @@ The HIP (`integer_adm_hip.c`, `integer_adm/adm_cm.hip`) and SYCL
 `integer_adm_sycl.cpp`'s internals now sit in an anonymous namespace rather
 than behind C-style `static`.
 
+SYCL now reproduces the CPU's integer semantics exactly where it used to
+widen (T-SYCL-ADM-INT16-SEMANTICS-2026-09-18): scale-0 intermediates wrap to
+16 bits through `adm_i16()`, the diagonal `csf_a` rounds with 65535, and the
+scale 1-3 filter terms round with `I4_FLT_ROUND`, the wrapped `-2^31` of the
+Netflix#955 quirk that ADR-0155 keeps for the golden values (entry 0048
+below covers the CPU and CUDA/HIP forms; this is the SYCL one). If an
+upstream change to `integer_adm.c` alters any of those narrowings or rounding
+terms, change the SYCL twin with it; `test_sycl_adm_tiny_frames` (noise
+geometries) catches a mismatch.
+
 ## port/upstream-2026-09 — Netflix/vmaf `03b5562c5`..`86da14d03` (2026-09-18)
 
 Reconciles upstream through `86da14d03` (previous mark `f85a85369`, PR #1456).
