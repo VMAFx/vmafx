@@ -197,7 +197,11 @@ definitions, not libvmaf's: members of namespace `std`, and in SYCL builds
 members of namespace `sycl`. Both runtimes declare those namespaces with default
 visibility, so a template member a libvmaf TU instantiates (for example the
 `std::basic_stringbuf` destructor behind an `std::ostringstream`) is exported
-whatever the compile flags.
+whatever the compile flags. Sanitizer and debug builds keep more of those
+template members out of line, so they export more of them; the check reads
+demangled names and accepts any of them. Coverage builds
+(`-Db_coverage=true`) do not register the test, because libgcov links into
+the instrumented library and exports its own globals.
 
 Until September 2026 the C++ sources compiled directly into the library, the
 C++ sources of the feature library and the isolated `*_cpp20` / `*_cpp23`

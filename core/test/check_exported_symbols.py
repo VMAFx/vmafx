@@ -24,12 +24,20 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Mangled names inside namespace std: nested names (_ZNSt, _ZNKSt), typeinfo,
-# typeinfo names and vtables (_ZTISt, _ZTSSt, _ZTVSt) and free functions (_ZSt).
-STD_NAMESPACE = re.compile(r"^_Z(?:N|NK)?St|^_ZT[ISV]St")
-# Anything whose mangled name involves DPC++'s versioned sycl namespace
-# (sycl::_V1 mangles as 4sycl3_V1): its members, and typeinfo for types built
-# from them, such as the async-handler function type.
+# Judged on the demangled name, because the mangling grammar has too many
+# spellings for a std member to enumerate: cv- and ref-qualified members
+# (_ZNKRSt8optional..., _ZNOSt10unexpected...), entities local to a std
+# function (_ZZNSt7__cxx11...), typeinfo and vtables. Sanitizer and debug
+# builds keep more of these out of line, so they export more of them.
+RUNTIME_NAMESPACES = ("std::", "sycl::")
+# "typeinfo for std::X", "guard variable for std::X::y", ... name the entity last.
+SPECIAL_SYMBOL = re.compile(
+    r"^(?:typeinfo name for |typeinfo for |vtable for |VTT for |guard variable for "
+    r"|(?:non-)?virtual thunk to |covariant return thunk to |reference temporary #\d+ for )+"
+)
+# DPC++'s versioned namespace (sycl::_V1 mangles as 4sycl3_V1) also appears
+# inside typeinfo for function types built from its classes, such as the
+# async-handler type int(const sycl::device&), which no prefix test catches.
 SYCL_RUNTIME = re.compile(r"^_Z.*4sycl3_V\d")
 
 
@@ -44,6 +52,55 @@ def exported_symbols(library: Path) -> list[str]:
     return sorted({line.split()[-1] for line in out.splitlines() if line.strip()})
 
 
+def demangled(names: list[str]) -> dict[str, str]:
+    cxxfilt = shutil.which("c++filt")
+    if cxxfilt is None:
+        print("SKIP: c++filt not found")
+        raise SystemExit(77)
+    out = subprocess.run(
+        [cxxfilt], input="\n".join(names), check=True, capture_output=True, text=True
+    ).stdout.splitlines()
+    return dict(zip(names, out))
+
+
+def qualified_name(plain: str) -> str:
+    """The entity's qualified name: no argument list, no leading return type.
+
+    A demangled template function carries its return type in front
+    ("bool std::operator==<char, ...>(...)"), so the name is the last token
+    before the argument list, counted outside template brackets. A misread
+    here can only make the test stricter: the fallback is the whole string,
+    which then fails the namespace test and is reported.
+    """
+    depth = 0
+    head = plain
+    for i, ch in enumerate(plain):
+        if ch == "<":
+            depth += 1
+        elif ch == ">":
+            depth -= 1
+        elif ch == "(" and depth == 0 and i > 0:
+            head = plain[:i]
+            break
+    depth = 0
+    start = 0
+    for i, ch in enumerate(head):
+        if ch == "<":
+            depth += 1
+        elif ch == ">":
+            depth -= 1
+        elif ch == " " and depth == 0:
+            start = i + 1
+    return head[start:]
+
+
+def runtime_owned(mangled: str, plain: str) -> bool:
+    """True for a symbol that belongs to the C++ runtime, not to libvmaf."""
+    if SYCL_RUNTIME.match(mangled):
+        return True
+    return qualified_name(SPECIAL_SYMBOL.sub("", plain)).startswith(RUNTIME_NAMESPACES)
+
+
 def public_identifiers(include_dir: Path) -> set[str]:
     names: set[str] = set()
     for header in include_dir.rglob("*.h"):
@@ -54,11 +111,9 @@ def public_identifiers(include_dir: Path) -> set[str]:
 def main() -> int:
     library, include_dir = Path(sys.argv[1]), Path(sys.argv[2])
     public = public_identifiers(include_dir)
-    leaked = [
-        name
-        for name in exported_symbols(library)
-        if not (name in public or STD_NAMESPACE.match(name) or SYCL_RUNTIME.match(name))
-    ]
+    candidates = [name for name in exported_symbols(library) if name not in public]
+    plain = demangled(candidates)
+    leaked = [name for name in candidates if not runtime_owned(name, plain[name])]
     if leaked:
         print(f"{library.name} exports {len(leaked)} symbol(s) outside its public API:")
         for name in leaked:

@@ -22,8 +22,11 @@ if build_machine.system() != 'windows'
 endif
 
 # ADR-0379: libvmaf.so exports its public vmaf_* API and nothing else of ours.
-# ELF only (nm -D); skips with 77 when nm is missing.
-if host_machine.system() == 'linux' and get_option('default_library') != 'static'
+# ELF only (nm -D); skips with 77 when nm or c++filt is missing. Not in coverage
+# builds: libgcov links into the instrumented .so and exports its own globals
+# (__gcov_*, mangle_path), and a coverage build is never the library that ships.
+if host_machine.system() == 'linux' and get_option('default_library') != 'static' \
+        and not get_option('b_coverage')
     test('check_exported_symbols',
         import('python').find_installation(),
         args : [files('check_exported_symbols.py'),
