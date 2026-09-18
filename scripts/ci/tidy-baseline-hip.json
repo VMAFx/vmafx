@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "tus": 50,
-  "total_warnings": 1173,
+  "total_warnings": 1134,
   "total_nolint_uncited": 16,
   "warnings": {
     "core/src/feature/hip/ciede_hip.c": 13,
@@ -44,7 +44,6 @@
     "core/src/feature/hip/integer_psnr_hvs/psnr_hvs_score.hip": 18,
     "core/src/feature/hip/integer_psnr_hvs_hip.c": 26,
     "core/src/feature/hip/integer_ssim/integer_ssim_score.hip": 11,
-    "core/src/feature/hip/integer_ssim_hip.c": 39,
     "core/src/feature/hip/integer_vif/vif_statistics.hip": 95,
     "core/src/feature/hip/integer_vif_hip.c": 29,
     "core/src/feature/hip/integer_vif_hip.h": 2,
@@ -60,5 +59,23 @@
   "nolint_uncited": {
     "core/src/feature/hip/integer_vif_hip.c": 16
   },
-  "source": "converted 2026-09-02 from the agy gpu-debt measurement (clang-tidy 22.1.8, -p build-gpu, same (path,line,column,check) dedup); see docs/research/2027-lint-carveout-inventory-2026-09-02.md"
+  "source": "converted 2026-09-02 from the agy gpu-debt measurement (clang-tidy 22.1.8, -p build-gpu, same (path,line,column,check) dedup); see docs/research/2027-lint-carveout-inventory-2026-09-02.md",
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/src/feature/hip/integer_ssim_hip.c",
+        "core/src/hip/dispatch_strategy.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/hip/integer_ssim_hip.c": {
+          "warnings": [
+            39,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "748d15a2b9466bc8f84874681aec464bba3cd317e4f2979335466cc6e5be1622"
+    }
+  ]
 }
