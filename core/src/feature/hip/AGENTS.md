@@ -252,27 +252,6 @@ The `VMAF_HSACO_WEAK_STUB` macro in `hip_hsaco_stubs.c` is retained
 as a documented pattern for in-progress ports of *new* extractors;
 it is currently used by zero extractors.
 
-## AdmBufferHip struct-by-value kernel parameters — P1 known issue (Research-0755)
-
-`AdmBufferHip` (defined in `integer_adm_hip.h:70–96`) is a ~272-byte struct
-containing 6 DWT band sub-structs (each 4 device pointers) plus 8 additional
-device-pointer fields.  It is currently passed by value in multiple `__global__`
-kernel signatures in `integer_adm/adm_csf.hip` and `integer_adm/adm_cm.hip`.
-
-This mirrors the PR #93 F3 finding on the CUDA side.  Consequences:
-
-- Every GPU thread's stack receives a full 272-byte copy via the kernel-argument
-  buffer path.  On RDNA/GCN this adds measurable argument-passing overhead.
-- Structs this large risk hitting the HIP/AMDDriver kernel-argument limit (varies
-  per target; typically 1024–4096 bytes total across all args).
-
-**Recommended fix**: replace `AdmBufferHip buf` parameters with
-`const AdmBufferHip * __restrict__ buf` (pass a pointer to a device-side copy
-of the struct).  No correctness impact — only the passing convention changes.
-
-Until fixed: do NOT add new `__global__` parameters of type `AdmBufferHip` by
-value.  Any new ADM kernel should take a pointer.
-
 ## extern "C" macro-instantiation pattern is correct (Research-0755)
 
 Several ADM kernel files (`adm_csf.hip`, `adm_csf_den.hip`, `adm_dwt2.hip`)
@@ -286,37 +265,39 @@ The pattern is load-bearing.  Do not "fix" it by adding an additional
 `extern "C"` declaration inside the macro body — that would create a nested
 `extern "C"` which is legal in C++ but redundant and confusing to reviewers.
 
-## AdmBufferHip MUST be passed by pointer — invariant (ADR-0759)
+## AdmBufferHip is passed by pointer — invariant (ADR-0759, T-HIP-ADM-ADR0759-REVERTED-2026-09-18)
 
-**Resolved**: The P1 known issue documented above (struct-by-value in ADM kernel
-signatures) has been fixed by ADR-0759 (PR perf/hip-adm-buffer-by-pointer-20260529).
-
-**Invariant going forward**: Any new `__global__` kernel that needs `AdmBufferHip`
-(or any other large parameter struct) MUST accept it as a pointer parameter, not by
-value. The host launch site must:
-
-1. Hold a device-side copy of the struct allocated in `init_fex_hip` (or equivalent
-   init path) via `hipMalloc`.
-2. Populate it via `hipMemcpy(hipMemcpyHostToDevice)` after all device pointers inside
-   the struct are set.
-3. Pass `&dev_ptr_var` (address of the device pointer variable) as the kernel arg.
-
-Pattern:
-
-```c
-/* host dispatch helper — correct */
-AdmBufferHip *buf_dev = s->buf_dev;  /* device pointer, set in init */
-void *args[] = {&buf_dev, /* ... */};
-hipModuleLaunchKernel(fn, ..., args, NULL);
-```
-
-Rationale: `AdmBufferHip` is ~272 bytes. Passing by value marshals the full struct
-through the per-launch argument buffer on every call. Pointer passing reduces this
-to 8 bytes (one pointer) per launch.
-
-The same rule applies to `AdmFixedParametersHip` (~244 bytes) once that follow-up
-is scoped; see ADR-0759 alternatives table. Do not add new by-value large struct
-parameters to ADM kernels without an explicit ADR justification.
+- `adm_csf_kernel_1_4`, `i4_adm_csf_kernel_1_4` (`integer_adm/adm_csf.hip`),
+  `i4_adm_cm_line_kernel` and `adm_cm_line_kernel_8` (`integer_adm/adm_cm.hip`)
+  take `const AdmBufferHip *__restrict__ buf_ptr`. By value, the 328-byte
+  struct was copied into every launch's kernel arguments.
+- Host: `AdmStateHip::buf_dev` is a device copy of `s->buf`.
+  `adm_hip_upload_buf()` (`hipMalloc` + `hipMemcpy` HtoD) runs at the end of
+  `adm_hip_init_device()`, after `adm_hip_slice_bands()` and
+  `adm_hip_slice_results()`. `adm_hip_free_buf_dev()` frees it in
+  `close_fex_hip()` and on both init failure paths.
+- Launch argument = `(void *)&s->buf_dev`, the address of the variable that
+  holds the device pointer (ADR-0537 rule above).
+- Precondition: nothing writes `s->buf` between init and close, and no launch
+  passes a modified copy. Code that changes `s->buf` after init (per-scale
+  band pointers, a resize) must upload it again before the next launch, or
+  the kernels read stale pointers.
+- New ADM kernels that need `AdmBufferHip` take a pointer.
+  `AdmFixedParametersHip` (248 bytes) and `WarpShift` are still passed by
+  value; changing them needs its own measurement.
+- History: #101 (`31a51afb2`) implemented this; #102 (`92ea978a4`, a CUDA
+  ciede change cut from an older base) reverted it in a merge without
+  mentioning it. On a conflict in these files keep the pointer form;
+  `grep -n 'AdmBufferHip buf' core/src/feature/hip/integer_adm/*.hip` must
+  print nothing.
+- Measured on gfx1036: each kernel's argument segment is 320 bytes smaller;
+  per-thread scratch and VGPRs do not change because of the pointer. The
+  936-byte scratch of `adm_cm_line_kernel_8` is VGPR spilling (239 spills at
+  the 128-register cap), not the struct. End-to-end fps is unchanged within
+  noise.
+- Not a CUDA mirror: the CUDA twin passes `AdmBufferCuda` by value and always
+  has (the ADR-0756 audit lists those kernels). Research-0759's statement that
+  CUDA uses a pointer, and ADR-0759's "matches the CUDA pattern", are wrong.
 
 ## ms_ssim_vert_lcs kernel and host partials must both be `double` (ADR-1071)
 
