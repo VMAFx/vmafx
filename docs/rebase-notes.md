@@ -76,7 +76,7 @@ See [Research-2062](research/2062-cambi-spatial-mask-simd.md).
 ## ci/retire-i686-lane — the fork stays 64-bit only; x86 SIMD sources use no x86-64-only intrinsics (2026-09-18)
 
 - `.github/workflows/libvmaf-build-matrix.yml`: there is no i686 row
-  (ADR-0728, ADR-1258). Upstream Netflix/vmaf has its own 32-bit cross build
+  (ADR-0691, ADR-1258). Upstream Netflix/vmaf has its own 32-bit cross build
   (`f6d6dde1`); do not port it. A merge that restores `i686: true` rows is
   wrong: that is how the lane came back in `384d97d03`.
 - `core/src/feature/x86/adm_avx2.c`, `adm_avx512.c`: 64-bit lane extraction

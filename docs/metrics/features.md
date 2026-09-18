@@ -454,7 +454,7 @@ Netflix ADM.
 **Backends** — `adm`: AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal.
 `float_adm`: AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal.
 
-**32-bit x86** — the fork is 64-bit only (ADR-0728, ADR-1258). The ADM x86
+**32-bit x86** — the fork is 64-bit only (ADR-1258). The ADM x86
 sources still extract 64-bit lanes through 32-bit-safe helpers
 (`extract_epi64()`, `extract_epi64_128()`), ported from upstream Netflix
 commits [`8a289703`](https://github.com/Netflix/vmaf/commit/8a289703) and
