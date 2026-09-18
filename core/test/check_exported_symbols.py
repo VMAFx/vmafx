@@ -45,6 +45,14 @@ STD_MANGLED = re.compile(r"^_Z(?:T[ISV]|GV)?Z?(?:N[rVK]*[RO]?)?St")
 # inside typeinfo for function types built from its classes, such as the
 # async-handler type int(const sycl::device&), which no prefix test catches.
 SYCL_RUNTIME = re.compile(r"^_Z.*4sycl3_V\d")
+# The linker defines __start_<section> / __stop_<section> for every section
+# named like a C identifier. GNU ld exports them from a shared library; lld
+# hides them. Sanitizer builds emit such sections for their own metadata
+# (ASan's global descriptors, SanitizerCoverage's guards and counters), so a
+# GNU-ld sanitizer build of libvmaf exports these bounds without leaking API.
+SANITIZER_SECTION_BOUND = re.compile(
+    r"^__(?:start|stop)_(?:asan_globals|hwasan_globals|__sancov_\w+)$"
+)
 
 
 def exported_symbols(library: Path) -> list[str]:
@@ -52,7 +60,7 @@ def exported_symbols(library: Path) -> list[str]:
     if nm is None:
         print("SKIP: nm not found")
         raise SystemExit(77)
-    out = subprocess.run(
+    out = subprocess.run(  # noqa: S603 -- resolved nm path and the library path, no shell
         [nm, "-D", "--defined-only", str(library)], check=True, capture_output=True, text=True
     ).stdout
     return sorted({line.split()[-1] for line in out.splitlines() if line.strip()})
@@ -63,10 +71,11 @@ def demangled(names: list[str]) -> dict[str, str]:
     if cxxfilt is None:
         print("SKIP: c++filt not found")
         raise SystemExit(77)
-    out = subprocess.run(
+    out = subprocess.run(  # noqa: S603 -- resolved c++filt path, names on stdin, no shell
         [cxxfilt], input="\n".join(names), check=True, capture_output=True, text=True
     ).stdout.splitlines()
-    return dict(zip(names, out))
+    # c++filt answers one line per input line; a mismatch is a tool failure.
+    return dict(zip(names, out, strict=True))
 
 
 def qualified_name(plain: str) -> str:
@@ -101,8 +110,10 @@ def qualified_name(plain: str) -> str:
 
 
 def runtime_owned(mangled: str, plain: str) -> bool:
-    """True for a symbol that belongs to the C++ runtime, not to libvmaf."""
+    """True for a symbol that belongs to a runtime (C++, SYCL, a sanitizer), not to libvmaf."""
     if SYCL_RUNTIME.match(mangled) or STD_MANGLED.match(mangled):
+        return True
+    if SANITIZER_SECTION_BOUND.match(mangled):
         return True
     return qualified_name(SPECIAL_SYMBOL.sub("", plain)).startswith(RUNTIME_NAMESPACES)
 
@@ -127,7 +138,7 @@ def main() -> int:
         print("Build the defining target with vmaf_cflags_common / vmaf_cppflags_common,")
         print("or declare the symbol VMAF_EXPORT in a public header if it is API.")
         return 1
-    print(f"{library.name}: every export is public API or a C++ runtime's own")
+    print(f"{library.name}: every export is public API or a runtime's own")
     return 0
 
 

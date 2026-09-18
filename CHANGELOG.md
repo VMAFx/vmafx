@@ -21802,6 +21802,13 @@ used consistently for `s->adm_csf_module`, `s->adm_csf_den_module`, and
   its throughput.
 
 
+- **The CUDA `extern "C"` kernel check (`scripts/dev/check-cuda-extern-c.sh`)
+  checks kernels again.** It matched no `cuModuleGetFunction` call in the tree
+  and then aborted on an empty list, so it never verified anything. It now
+  reads every call, confirms that each kernel it can locate sits inside an
+  `extern "C"` block, and names the macro-generated kernels it cannot locate.
+
+
 - **`--feature ssim --backend cuda` silently broken since introduction.**
   `integer_ssim/integer_ssim_score.cu` defined three `__global__`
   kernels (`integer_ssim_horiz_8bpc`, `integer_ssim_horiz_16bpc`,
@@ -25823,6 +25830,15 @@ saliency / signalstats columns during predictor training.
 - fix(mcp/server): remove dead first definition of `_run_benchmark()` (no-parameter version, shadowed by the ADR-0608 progress-notification version); update `test_bug3_run_benchmark_surfaces_silent_pipefail` to expect `RuntimeError` raised by the new implementation rather than a returned dict with an `error` key
 - fix(ci): exclude `core/src/compat/win32/` from clang-tidy changed-files scan in `lint-and-format.yml`; the Win32 pthread shim has an intentional `#error` guard that triggers `clang-diagnostic-error` when processed by Linux clang-tidy
 - fix(ci): exclude `test_y4m_alloc_failure` from all sanitizer runs (ASan/UBSan in `sanitizers.yml`, all three matrix variants in `tests-and-quality-gates.yml`); the test uses `RLIMIT_AS` to cap address space at 256 MiB which prevents ASan/TSan/MSan from initializing their shadow-memory regions
+
+
+- **`make preflight` no longer fails on code the 32-bit CI lane never
+  builds, and `check_exported_symbols` passes in a GNU-ld sanitizer build.**
+  The 32-bit sweep now skips the ISA-specific and GPU source trees, which the
+  i686 lane leaves out (`-Denable_asm=false`), and recognises gcc's English
+  missing-header message. The exported-symbol check treats the linker-defined
+  bounds of ASan and SanitizerCoverage metadata sections as runtime symbols
+  rather than a libvmaf API leak.
 
 
 **fix(threading)**: Harden `VmafFeatureExtractor.prev_ref` thread-safety in

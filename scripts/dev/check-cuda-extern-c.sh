@@ -2,87 +2,92 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 
-# check-cuda-extern-c.sh — CI gate: every __global__ kernel referenced
-# by cuModuleGetFunction must be inside an extern "C" block.
+# check-cuda-extern-c.sh — every __global__ kernel the host looks up by name
+# with cuModuleGetFunction must be defined inside an extern "C" block
+# (ADR-0747): C++ linkage mangles the symbol and the lookup fails at runtime.
 #
-# Exit 0 = all clear.  Exit 1 = at least one broken kernel found.
+# Exit 0 = every located kernel is wrapped. Exit 1 = at least one is not.
 #
 # Usage:
 #   bash scripts/dev/check-cuda-extern-c.sh [repo-root]
 #
-# If repo-root is omitted, the script walks from the current directory.
-#
 # Algorithm:
-#   1. Find all cuModuleGetFunction calls and extract the string-literal
-#      kernel names.
-#   2. For each name, find the __global__ definition in .cu files.
-#   3. Check whether that definition falls inside an extern "C" block
-#      by walking backwards from the definition line looking for a
-#      not-yet-closed extern "C" {.
+#   1. Take the kernel-name string literal of every cuModuleGetFunction call
+#      in the CUDA host sources, including calls split across lines.
+#   2. Find each kernel's __global__ definition in the .cu / .cuh sources,
+#      with comments and string literals blanked so braces in them do not
+#      count.
+#   3. The definition is wrapped when an extern "C" { opened before it has not
+#      been closed yet.
 #
-# Known limitation: the heuristic for "inside extern C" is a simple
-# brace-balance scan backwards from the __global__ line.  It handles
-# all patterns present in this repo (flat block, macro-expanded
-# instantiation block) but would miss a kernel defined inside a
-# class scope that is itself inside extern "C".  No such pattern
-# currently exists in this tree.
+# A kernel whose name is built by a macro (`name##suffix`) has no literal
+# definition to find. Such names are listed as "not located" rather than
+# passed silently; confirm those from the built PTX (`cuobjdump -ptx`).
 
 set -euo pipefail
 
 ROOT="${1:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-CUDA_DIRS=(
-  "$ROOT/core/src/feature/cuda"
-  "$ROOT/core/src/cuda"
-)
 
-# ── Step 1: collect kernel names from cuModuleGetFunction calls ──────────────
-declare -A KERNEL_NAMES
-while IFS= read -r line; do
-  # Extract string literal: cuModuleGetFunction(..., "some_name")
-  if [[ "$line" =~ cuModuleGetFunction[^,]+,[[:space:]]*\"([^\"]+)\" ]]; then
-    KERNEL_NAMES["${BASH_REMATCH[1]}"]=1
-  fi
-done < <(grep -rn 'cuModuleGetFunction' "${CUDA_DIRS[@]}" 2>/dev/null)
+exec python3 - "$ROOT" <<'PY'
+import re
+import sys
+from pathlib import Path
 
-if [[ ${#KERNEL_NAMES[@]} -eq 0 ]]; then
-  echo "check-cuda-extern-c: no cuModuleGetFunction calls found — nothing to check." >&2
-  exit 0
-fi
+root = Path(sys.argv[1])
+dirs = [root / "core/src/feature/cuda", root / "core/src/cuda"]
+host = [p for d in dirs for p in d.rglob("*") if p.suffix in {".c", ".cpp", ".h"}]
+device = [p for d in dirs for p in d.rglob("*") if p.suffix in {".cu", ".cuh"}]
 
-# ── Step 2 + 3: for each kernel name, verify extern "C" wrapping ─────────────
-FAIL=0
+CALL = re.compile(r'cuModuleGetFunction\s*\([^;"]*"([A-Za-z_]\w*)"')
+BLANK = re.compile(r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"', re.S)
+EXTERN_C = re.compile(r'extern\s+"C"\s*\{')
 
-for kname in "${!KERNEL_NAMES[@]}"; do
-  # Find the __global__ definition line(s)
-  while IFS=: read -r filepath lineno _rest; do
-    # Walk backwards through the file counting brace depth to detect
-    # whether we are inside an extern "C" { } block.
-    in_extern_c=0
-    depth=0
-    while IFS= read -r srcline; do
-      # Count closing braces (going backwards → closing braces OPEN scope)
-      opens=$(echo "$srcline" | grep -o '}' | wc -l)
-      closes=$(echo "$srcline" | grep -o '{' | wc -l)
-      depth=$((depth + opens - closes))
-      # If depth goes negative at an extern "C" line, we've exited a block.
-      if echo "$srcline" | grep -qE '^[[:space:]]*extern[[:space:]]+"C"[[:space:]]*\{'; then
-        if ((depth <= 0)); then
-          in_extern_c=1
-          break
-        fi
-      fi
-    done < <(head -n "$lineno" "$filepath" | tac)
 
-    if [[ $in_extern_c -eq 0 ]]; then
-      echo "ERROR: __global__ kernel '$kname' in $filepath:$lineno is NOT inside extern \"C\" { }" >&2
-      FAIL=1
-    fi
-  done < <(grep -rn "__global__.*void[[:space:]]*${kname}[^a-zA-Z0-9_]" \
-    "${CUDA_DIRS[@]}" 2>/dev/null | grep '\.cu:' || true)
-done
+def blank(text: str) -> str:
+    """Comments and string literals replaced by spaces, newlines kept."""
+    return BLANK.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
 
-if [[ $FAIL -eq 0 ]]; then
-  echo "check-cuda-extern-c: all ${#KERNEL_NAMES[@]} looked-up kernels are wrapped in extern \"C\". OK."
-fi
 
-exit $FAIL
+names = sorted({m.group(1) for p in host for m in CALL.finditer(p.read_text(errors="replace"))})
+if not names:
+    print("check-cuda-extern-c: no cuModuleGetFunction calls found; nothing to check.")
+    sys.exit(0)
+
+sources = {p: p.read_text(errors="replace") for p in device}
+failed, located, missing = [], 0, []
+for name in names:
+    definition = re.compile(r"__global__[^;{]*?\b" + re.escape(name) + r"\s*\(")
+    hits = []
+    for path, text in sources.items():
+        for m in definition.finditer(text):
+            hits.append((path, text, m.start()))
+    if not hits:
+        missing.append(name)
+        continue
+    located += 1
+    for path, text, pos in hits:
+        # Blanking keeps every offset, so extern "C" (whose "C" is a string
+        # literal) is found in the source and the braces are counted in the
+        # blanked copy, where comments and strings cannot add any.
+        code = blank(text[:pos])
+        opens = [m.end() for m in EXTERN_C.finditer(text[:pos]) if code[m.start()] == "e"]
+        wrapped = False
+        for start in opens:
+            depth = 1 + code.count("{", start) - code.count("}", start)
+            if depth > 0:
+                wrapped = True
+                break
+        if not wrapped:
+            line = text.count("\n", 0, pos) + 1
+            failed.append(f"{path.relative_to(root)}:{line}: {name}")
+
+for entry in failed:
+    print(f'ERROR: __global__ kernel not inside extern "C" {{ }}: {entry}', file=sys.stderr)
+if missing:
+    print(
+        f"check-cuda-extern-c: {len(missing)} looked-up kernel(s) not located as a literal "
+        f"definition (macro-generated?): {', '.join(missing)}"
+    )
+print(f"check-cuda-extern-c: {located} of {len(names)} looked-up kernels located; {len(failed)} unwrapped.")
+sys.exit(1 if failed else 0)
+PY

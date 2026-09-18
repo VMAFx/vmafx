@@ -53,7 +53,7 @@ A stage whose toolchain is missing is **skipped with a notice**, not failed, so
 the script is still useful on a partially provisioned machine. For the 32-bit
 stage you want `gcc-multilib`.
 
-## Two behaviours worth knowing
+## Behaviours worth knowing
 
 **It looks at uncommitted work.** Not just `origin/master...HEAD` — the edit
 you are about to commit is exactly what you want checked. (The first version of
@@ -71,6 +71,15 @@ stage that cries wolf is a stage people learn to ignore.
 `-I build/src` so the generated `config.h` resolves. Without that the compile
 aborts at the first `#include` and the stage silently becomes a no-op — run the
 `gcc` stage first, or just use `make preflight`, which orders them correctly.
+
+**`m32` sweeps only what the i686 lane builds.** It takes the changed files
+that the `gcc` stage's CPU build compiles (its `compile_commands.json`), so GPU
+sources and the per-backend GPU tests are left out, and it skips the `x86/`,
+`arm64/` and `arm/` trees because that lane configures `-Denable_asm=false`.
+Under `-m32` those files report missing intrinsics and headers, not width
+assumptions. An error about a missing header (`No such file or directory`, or
+clang's `file not found`) is ignored for the same reason. The `gcc` stage
+reuses `build/` only when it holds a configured build (`build/build.ninja`).
 
 ## What it does not cover
 

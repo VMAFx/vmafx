@@ -138,7 +138,9 @@ printf 'preflight: mode=%s base=%s\n' "$MODE" "$BASE"
 # ---------------------------------------------------------------- gcc build --
 if want gcc; then
   say "gcc build + fast tests" "mirrors: Ubuntu gcc"
-  if [ -d build ] || CC=gcc CXX=g++ meson setup build core \
+  # A configured build has build.ninja; a bare build/ may only hold other
+  # build trees (build/cuda, ...), and reusing it would fail at ninja.
+  if [ -f build/build.ninja ] || CC=gcc CXX=g++ meson setup build core \
     -Denable_cuda=false -Denable_sycl=false -Db_lto=false >/dev/null 2>&1; then
     if ninja -C build >/tmp/preflight-gcc.log 2>&1 &&
       meson test -C build --suite=fast >>/tmp/preflight-gcc.log 2>&1; then
@@ -185,9 +187,20 @@ if want m32; then
     skipped m32 "build/src/config.h missing — run the gcc stage first"
   else
     m32_fail=0
+    # Sweep only what a CPU build compiles: the gcc stage's compile database
+    # lists it. That leaves out GPU sources and the per-backend GPU tests,
+    # which only build with a backend enabled.
+    cpu_units=$(python3 -c 'import json,os,sys
+for e in json.load(open("build/compile_commands.json")):
+    print(os.path.relpath(os.path.join(e["directory"], e["file"])))' 2>/dev/null)
     while IFS= read -r f; do
       [ -f "$f" ] || continue
       case "$f" in *.h | *.hpp) continue ;; esac
+      printf '%s\n' "$cpu_units" | grep -Fxq "$f" || continue
+      # The i686 lane also configures -Denable_asm=false, so it never compiles
+      # the ISA-specific trees; under -m32 they report intrinsics that do not
+      # exist there, not width assumptions.
+      case "$f" in */x86/* | */arm64/* | */arm/*) continue ;; esac
       if [ "${f%.cpp}" != "$f" ]; then
         std=(-std=c++23 -x c++)
       else
@@ -203,7 +216,7 @@ if want m32; then
       # Missing generated headers (config.h) and absent intrinsics are expected
       # outside a configured build; width assumptions are not.
       if grep -qE 'error:' /tmp/preflight-m32.err &&
-        ! grep -qE "config\.h|file not found|Datei oder Verzeichnis" /tmp/preflight-m32.err; then
+        ! grep -qE "config\.h|file not found|No such file or directory|Datei oder Verzeichnis" /tmp/preflight-m32.err; then
         printf '     %s\n' "$f"
         grep -m2 -E 'error:' /tmp/preflight-m32.err | sed 's/^/       /'
         m32_fail=1
