@@ -5,234 +5,242 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause
  *
- *  HIP compute kernels for the integer_ssim feature extractor — eleventh
- *  kernel-template consumer. Direct port of the CUDA twin at
- *  `libvmaf/src/feature/cuda/integer_ssim/ssim_score.cu`, adapted for HIP:
+ *  HIP compute kernels for the integer_ssim feature extractor (ADR-0564).
+ *  Port of the CUDA twin `cuda/integer_ssim/integer_ssim_score.cu`, which in
+ *  turn ports `calc_ssim()` from the CPU reference `integer_ssim.c`.
  *
- *    1. calculate_integer_ssim_hip_horiz_{8,16}bpc — horizontal 11-tap
- *       separable Gaussian over ref / cmp / ref^2 / cmp^2 / ref*cmp.
- *       Output: five intermediate float buffers, each (W-10) x H.
+ *  The CPU algorithm, and therefore this one:
+ *    - a 9-tap Gaussian with INTEGER weights [2,9,28,55,68,55,28,9,2]
+ *      (`gaussian_filter_init(1.5, 5)`, KERNEL_WEIGHT = 256);
+ *    - int64 accumulation of the moments mux, muy, x2, xy, y2 and the
+ *      window weight w;
+ *    - boundary truncation: taps that fall outside the frame are skipped
+ *      and w counts only the in-bounds taps (no clamping, no mirroring);
+ *    - the SSIM term of each pixel in double, from the int64 moments;
+ *    - ssim = sum(term) / sum(w) over every pixel of the frame.
  *
- *    2. calculate_integer_ssim_hip_vert_combine — vertical 11-tap on the
- *       five intermediates + per-pixel SSIM combine + per-block float
- *       partial sum (tree reduce in shared memory). Output: one float
- *       per block in `partials`.
+ *  Two passes, both over the full W x H frame:
+ *    1. integer_ssim_horiz_{8,16}bpc — horizontal 9-tap moments of one row
+ *       into six W x H int64 planes (mux, muy, x2, xy, y2, w).
+ *    2. integer_ssim_vert_combine — vertical 9-tap over those planes, the
+ *       per-pixel SSIM term, and one (double term sum, int64 weight sum)
+ *       pair per block.
+ *  The host adds the block pairs and divides.
  *
- *  Host accumulates partials in double, divides by (W-10)*(H-10).
+ *  Exactness against the CPU:
+ *    - The moments are int64 sums of int64 products, so they are exact and
+ *      identical to the CPU's.
+ *    - `issim_pixel_term` evaluates the expression of
+ *      `ssim_reduce_row_range()` operand for operand, and meson builds this
+ *      file with `-ffp-contract=off` (`hip_cu_extra_flags`), so no product
+ *      is fused into an FMA and each per-pixel term rounds exactly as the
+ *      CPU's does.
+ *    - Only the summation order differs: the CPU adds the terms in raster
+ *      order into one running double, this kernel adds them in a per-block
+ *      tree and the host adds the blocks. The weights are integers and add
+ *      exactly on both sides.
  *
- *  HIP adaptations from CUDA:
- *  - Warp size varies: 64 on GCN/RDNA1 (wave64), 32 on RDNA2+ (wave32).
- *    `warpSize` is read at runtime. Shared-memory array for warp partial
- *    sums in Pass 2 is sized for the minimum warp size (32):
- *    BLOCK_SIZE / ISSIM_MIN_WARP_SIZE = 128 / 32 = 4 slots.
- *  - VmafCudaBuffer / VmafPicture replaced by raw pointer parameters.
- *  - `__shfl_down` without mask (HIP convention).
- *  - Pictures arrive as CPU VmafPictures; luma planes are copied HtoD
- *    by the host submit() path before kernel launch (T7-10b posture).
- *
- *  v1 constraint: scale=1 only — same as float_ssim_hip / ssim_vulkan /
- *  ssim_cuda. The host init() rejects scale != 1 with -EINVAL before
- *  dispatching.
+ *  HIP adaptation from the CUDA twin: the block reduction is a shared-memory
+ *  tree over all ISSIM_BLOCK_SZ threads instead of a 32-lane
+ *  `__shfl_down_sync` reduction, so it is independent of the wavefront size
+ *  (wave32 on RDNA, wave64 on GCN / CDNA) and adds in the same order on
+ *  every target.
  */
 
 #include <hip/hip_runtime.h>
-#include <stdint.h>
 
-#define ISSIM_BX         16
-#define ISSIM_BY         8
-#define ISSIM_K          11
-#define ISSIM_BLOCK_SIZE (ISSIM_BX * ISSIM_BY)
+#include <cstddef>
+#include <cstdint>
 
-/* Minimum HIP warp size across supported targets (32 on RDNA2+, 64 on GCN/RDNA1).
- * Shared memory is sized for the worst case (wave32 = most warps per block).
- * The runtime `warpSize` device variable is used in reduction loops and lane
- * detection so the same binary runs correctly on both wave32 and wave64. */
-#define ISSIM_MIN_WARP_SIZE    32
-#define ISSIM_WARPS_PER_BLOCK (ISSIM_BLOCK_SIZE / ISSIM_MIN_WARP_SIZE)
+/* Launch geometry. integer_ssim_hip.c launches every kernel here with
+ * ISSIM_HIP_BLOCK_X x ISSIM_HIP_BLOCK_Y threads; the two must agree, the
+ * shared-memory reduction below is sized for exactly that block. */
+#define ISSIM_BLOCK_X 16
+#define ISSIM_BLOCK_Y 8
+#define ISSIM_BLOCK_SZ (ISSIM_BLOCK_X * ISSIM_BLOCK_Y)
 
-/* 11-tap Gaussian kernel — same coefficients as the CUDA twin and
- * float_ssim_hip (ssim_score.hip). */
-__device__ static const float ISSIM_G[ISSIM_K] = {
-    0.001028f, 0.007599f, 0.036001f, 0.109361f, 0.213006f, 0.266012f,
-    0.213006f, 0.109361f, 0.036001f, 0.007599f, 0.001028f,
-};
+/* kernel_len = 4 and kernel_sz = 2 * kernel_len + 1 = 9 in calc_ssim(). */
+#define ISSIM_HALF_K 4
+#define ISSIM_K_SZ 9
 
-__device__ __forceinline__ float issim_warp_reduce(float v)
+/* SSIM_K1 / SSIM_K2 of integer_ssim.c, spelled the same way so the constant
+ * folds to the same double. The literals 0.0001 / 0.0009 are different
+ * doubles. */
+#define ISSIM_K1 (0.01 * 0.01)
+#define ISSIM_K2 (0.03 * 0.03)
+
+/* gaussian_filter_init(1.5, 5) with KERNEL_WEIGHT 256: the outer taps are
+ * round(256 * exp(-i^2 / 4.5) / (1.5 * sqrt(2 * pi))) and the centre tap is
+ * 256 minus the rest, giving a sum of exactly 256. */
+__device__ static const int32_t ISSIM_KERNEL[ISSIM_K_SZ] = {2, 9, 28, 55, 68, 55, 28, 9, 2};
+
+namespace
 {
-    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
-        v += __shfl_down(v, off);
-    return v;
+
+/* The taps [k_min, k_max) of the window centred on `pos` that fall inside
+ * [0, len): the k_min / k_max formulas of ssim_accumulate_row() and
+ * calc_ssim(). */
+__device__ __forceinline__ int issim_tap_min(int pos)
+{
+    return pos < ISSIM_HALF_K ? ISSIM_HALF_K - pos : 0;
 }
+
+__device__ __forceinline__ int issim_tap_max(int pos, int len)
+{
+    return pos + ISSIM_HALF_K >= len ? ISSIM_K_SZ - (pos + ISSIM_HALF_K - len + 1) : ISSIM_K_SZ;
+}
+
+/* Pass 1 body, shared by the 8-bit and the 16-bit entry point. Reads one
+ * packed row of `Sample` values and writes the six horizontal moments of
+ * pixel (x, y). */
+template <typename Sample>
+__device__ __forceinline__ void
+issim_horiz(const uint8_t *__restrict__ ref, ptrdiff_t ref_stride, const uint8_t *__restrict__ cmp,
+            ptrdiff_t cmp_stride, int64_t *__restrict__ d_mux, int64_t *__restrict__ d_muy,
+            int64_t *__restrict__ d_x2, int64_t *__restrict__ d_xy, int64_t *__restrict__ d_y2,
+            int64_t *__restrict__ d_w, unsigned width, unsigned height)
+{
+    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= width || y >= height)
+        return;
+
+    const Sample *ref_row = reinterpret_cast<const Sample *>(ref + (ptrdiff_t)y * ref_stride);
+    const Sample *cmp_row = reinterpret_cast<const Sample *>(cmp + (ptrdiff_t)y * cmp_stride);
+    const int k_min = issim_tap_min((int)x);
+    const int k_max = issim_tap_max((int)x, (int)width);
+
+    int64_t mux = 0;
+    int64_t muy = 0;
+    int64_t x2 = 0;
+    int64_t xy = 0;
+    int64_t y2 = 0;
+    int64_t w = 0;
+    for (int k = k_min; k < k_max; k++) {
+        const int src_x = (int)x - ISSIM_HALF_K + k;
+        const int64_t s = ref_row[src_x];
+        const int64_t d = cmp_row[src_x];
+        const int64_t wk = ISSIM_KERNEL[k];
+        mux += wk * s;
+        muy += wk * d;
+        x2 += wk * s * s;
+        xy += wk * s * d;
+        y2 += wk * d * d;
+        w += wk;
+    }
+
+    const size_t idx = (size_t)y * width + x;
+    d_mux[idx] = mux;
+    d_muy[idx] = muy;
+    d_x2[idx] = x2;
+    d_xy[idx] = xy;
+    d_y2[idx] = y2;
+    d_w[idx] = w;
+}
+
+/* One pixel's SSIM term, weighted by its window weight: the expression of
+ * ssim_reduce_row_range() in integer_ssim.c with every operand in the same
+ * order, so that it rounds identically (requires -ffp-contract=off). */
+__device__ __forceinline__ double issim_pixel_term(int64_t mux, int64_t muy, int64_t x2, int64_t xy,
+                                                   int64_t y2, int64_t w, double sm)
+{
+    const double w_d = (double)w;
+    const double c1 = sm * sm * ISSIM_K1 * w_d * w_d;
+    const double c2 = sm * sm * ISSIM_K2 * w_d * w_d;
+    const double mx2 = (double)mux * (double)mux;
+    const double mxy = (double)mux * (double)muy;
+    const double my2 = (double)muy * (double)muy;
+    return w_d * (2.0 * mxy + c1) * (c2 + 2.0 * ((double)xy * w_d - mxy)) /
+           ((mx2 + my2 + c1) * ((double)x2 * w_d - mx2 + (double)y2 * w_d - my2 + c2));
+}
+
+} /* namespace */
 
 extern "C" {
 
-/**
- * Pass 1 (8-bpc): horizontal 11-tap Gaussian.
- * ref/dis are uint8_t row-major, ref_stride/dis_stride bytes per row.
- * Writes h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp (each
- * w_horiz x h_horiz floats, stride = w_horiz).
- */
-__global__ void calculate_integer_ssim_hip_horiz_8bpc(const uint8_t *__restrict__ ref,
-                                                       ptrdiff_t ref_stride,
-                                                       const uint8_t *__restrict__ cmp,
-                                                       ptrdiff_t cmp_stride,
-                                                       float *__restrict__ h_ref_mu,
-                                                       float *__restrict__ h_cmp_mu,
-                                                       float *__restrict__ h_ref_sq,
-                                                       float *__restrict__ h_cmp_sq,
-                                                       float *__restrict__ h_refcmp,
-                                                       unsigned w_horiz,
-                                                       unsigned h_horiz)
+/* Pass 1, 8-bit samples. */
+__global__ void integer_ssim_horiz_8bpc(const uint8_t *__restrict__ ref, ptrdiff_t ref_stride,
+                                        const uint8_t *__restrict__ cmp, ptrdiff_t cmp_stride,
+                                        int64_t *__restrict__ d_mux, int64_t *__restrict__ d_muy,
+                                        int64_t *__restrict__ d_x2, int64_t *__restrict__ d_xy,
+                                        int64_t *__restrict__ d_y2, int64_t *__restrict__ d_w,
+                                        unsigned width, unsigned height)
 {
-    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
-    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
-    if (x >= w_horiz || y >= h_horiz)
-        return;
-
-    float ref_mu_h = 0.0f, cmp_mu_h = 0.0f;
-    float ref_sq_h = 0.0f, cmp_sq_h = 0.0f, refcmp_h = 0.0f;
-
-    for (int u = 0; u < ISSIM_K; u++) {
-        const unsigned src_x = x + (unsigned)u;
-        const float r = (float)ref[(ptrdiff_t)y * ref_stride + src_x];
-        const float c = (float)cmp[(ptrdiff_t)y * cmp_stride + src_x];
-        const float w = ISSIM_G[u];
-        ref_mu_h += w * r;
-        cmp_mu_h += w * c;
-        ref_sq_h += w * (r * r);
-        cmp_sq_h += w * (c * c);
-        refcmp_h += w * (r * c);
-    }
-
-    const unsigned dst_idx = y * w_horiz + x;
-    h_ref_mu[dst_idx] = ref_mu_h;
-    h_cmp_mu[dst_idx] = cmp_mu_h;
-    h_ref_sq[dst_idx] = ref_sq_h;
-    h_cmp_sq[dst_idx] = cmp_sq_h;
-    h_refcmp[dst_idx] = refcmp_h;
+    issim_horiz<uint8_t>(ref, ref_stride, cmp, cmp_stride, d_mux, d_muy, d_x2, d_xy, d_y2, d_w,
+                         width, height);
 }
 
-/**
- * Pass 1 (16-bpc): horizontal 11-tap Gaussian.
- * Same as 8bpc but pixels are uint16_t (10/12/16bpc), normalised by
- * scaler (4 / 16 / 256) to the [0,255] float range the CUDA twin uses.
- */
-__global__ void calculate_integer_ssim_hip_horiz_16bpc(const uint8_t *__restrict__ ref,
-                                                        ptrdiff_t ref_stride,
-                                                        const uint8_t *__restrict__ cmp,
-                                                        ptrdiff_t cmp_stride,
-                                                        float *__restrict__ h_ref_mu,
-                                                        float *__restrict__ h_cmp_mu,
-                                                        float *__restrict__ h_ref_sq,
-                                                        float *__restrict__ h_cmp_sq,
-                                                        float *__restrict__ h_refcmp,
-                                                        unsigned w_horiz,
-                                                        unsigned h_horiz,
-                                                        unsigned bpc)
+/* Pass 1, 9..16-bit samples stored as little-endian uint16_t. The raw sample
+ * values are used, as on the CPU; the bit depth only enters pass 2 through
+ * `samplemax`. */
+__global__ void integer_ssim_horiz_16bpc(const uint8_t *__restrict__ ref, ptrdiff_t ref_stride,
+                                         const uint8_t *__restrict__ cmp, ptrdiff_t cmp_stride,
+                                         int64_t *__restrict__ d_mux, int64_t *__restrict__ d_muy,
+                                         int64_t *__restrict__ d_x2, int64_t *__restrict__ d_xy,
+                                         int64_t *__restrict__ d_y2, int64_t *__restrict__ d_w,
+                                         unsigned width, unsigned height)
 {
-    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
-    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
-    if (x >= w_horiz || y >= h_horiz)
-        return;
-
-    float scaler = 1.0f;
-    if (bpc == 10u)
-        scaler = 4.0f;
-    else if (bpc == 12u)
-        scaler = 16.0f;
-    else if (bpc == 16u)
-        scaler = 256.0f;
-    const float inv_sc = 1.0f / scaler;
-
-    float ref_mu_h = 0.0f, cmp_mu_h = 0.0f;
-    float ref_sq_h = 0.0f, cmp_sq_h = 0.0f, refcmp_h = 0.0f;
-
-    for (int u = 0; u < ISSIM_K; u++) {
-        const unsigned src_x = x + (unsigned)u;
-        const float r = (float)reinterpret_cast<const uint16_t *>(
-            ref + (ptrdiff_t)y * ref_stride)[src_x] * inv_sc;
-        const float c = (float)reinterpret_cast<const uint16_t *>(
-            cmp + (ptrdiff_t)y * cmp_stride)[src_x] * inv_sc;
-        const float w = ISSIM_G[u];
-        ref_mu_h += w * r;
-        cmp_mu_h += w * c;
-        ref_sq_h += w * (r * r);
-        cmp_sq_h += w * (c * c);
-        refcmp_h += w * (r * c);
-    }
-
-    const unsigned dst_idx = y * w_horiz + x;
-    h_ref_mu[dst_idx] = ref_mu_h;
-    h_cmp_mu[dst_idx] = cmp_mu_h;
-    h_ref_sq[dst_idx] = ref_sq_h;
-    h_cmp_sq[dst_idx] = cmp_sq_h;
-    h_refcmp[dst_idx] = refcmp_h;
+    issim_horiz<uint16_t>(ref, ref_stride, cmp, cmp_stride, d_mux, d_muy, d_x2, d_xy, d_y2, d_w,
+                          width, height);
 }
 
-/**
- * Pass 2: vertical 11-tap Gaussian + per-pixel SSIM combine +
- * per-block float partial sum. Same algorithm as the CUDA twin.
- * Grid sized over (W-10) x (H-10) = w_final x h_final.
- * `partials` receives one float per block (block_idx = blockIdx.y *
- * gridDim.x + blockIdx.x).
- */
+/* Pass 2: vertical 9-tap over the pass-1 planes, the per-pixel SSIM term,
+ * and one (term sum, weight sum) pair per block at
+ * blockIdx.y * gridDim.x + blockIdx.x. `samplemax` is (1 << bpc) - 1. */
 __global__ void
-calculate_integer_ssim_hip_vert_combine(const float *__restrict__ h_ref_mu,
-                                        const float *__restrict__ h_cmp_mu,
-                                        const float *__restrict__ h_ref_sq,
-                                        const float *__restrict__ h_cmp_sq,
-                                        const float *__restrict__ h_refcmp,
-                                        float *__restrict__ partials,
-                                        unsigned w_horiz,
-                                        unsigned w_final,
-                                        unsigned h_final,
-                                        float c1,
-                                        float c2)
+integer_ssim_vert_combine(const int64_t *__restrict__ d_mux_h, const int64_t *__restrict__ d_muy_h,
+                          const int64_t *__restrict__ d_x2_h, const int64_t *__restrict__ d_xy_h,
+                          const int64_t *__restrict__ d_y2_h, const int64_t *__restrict__ d_w_h,
+                          double *__restrict__ partials, int64_t *__restrict__ partial_weights,
+                          unsigned width, unsigned height, double samplemax)
 {
-    const unsigned x   = blockIdx.x * blockDim.x + threadIdx.x;
-    const unsigned y   = blockIdx.y * blockDim.y + threadIdx.y;
-    const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
+    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    float my_ssim = 0.0f;
-    if (x < w_final && y < h_final) {
-        float ref_mu = 0.0f, cmp_mu = 0.0f;
-        float ref_sq = 0.0f, cmp_sq = 0.0f, refcmp = 0.0f;
-        for (int v = 0; v < ISSIM_K; v++) {
-            const unsigned src_y  = y + (unsigned)v;
-            const unsigned src_idx = src_y * w_horiz + x;
-            const float w = ISSIM_G[v];
-            ref_mu += w * h_ref_mu[src_idx];
-            cmp_mu += w * h_cmp_mu[src_idx];
-            ref_sq += w * h_ref_sq[src_idx];
-            cmp_sq += w * h_cmp_sq[src_idx];
-            refcmp += w * h_refcmp[src_idx];
+    /* Threads outside the frame contribute (0, 0) and still take part in the
+     * reduction: every thread of the block must reach the barriers. */
+    double my_term = 0.0;
+    int64_t my_weight = 0;
+    if (x < width && y < height) {
+        const int k_min = issim_tap_min((int)y);
+        const int k_max = issim_tap_max((int)y, (int)height);
+        int64_t mux = 0;
+        int64_t muy = 0;
+        int64_t x2 = 0;
+        int64_t xy = 0;
+        int64_t y2 = 0;
+        int64_t w = 0;
+        for (int k = k_min; k < k_max; k++) {
+            const size_t hidx = (size_t)((int)y - ISSIM_HALF_K + k) * width + x;
+            const int64_t vk = ISSIM_KERNEL[k];
+            mux += vk * d_mux_h[hidx];
+            muy += vk * d_muy_h[hidx];
+            x2 += vk * d_x2_h[hidx];
+            xy += vk * d_xy_h[hidx];
+            y2 += vk * d_y2_h[hidx];
+            w += vk * d_w_h[hidx];
         }
-        const float ref_var = ref_sq - ref_mu * ref_mu;
-        const float cmp_var = cmp_sq - cmp_mu * cmp_mu;
-        const float covar   = refcmp - ref_mu * cmp_mu;
-        const float mu_xy   = ref_mu * cmp_mu;
-        const float num = (2.0f * mu_xy + c1) * (2.0f * covar + c2);
-        const float den = (ref_mu * ref_mu + cmp_mu * cmp_mu + c1)
-                        * (ref_var + cmp_var + c2);
-        my_ssim = num / den;
+        my_term = issim_pixel_term(mux, muy, x2, xy, y2, w, samplemax);
+        my_weight = w;
     }
 
-    /* Per-block tree reduction into shared warp partials. */
-    __shared__ float s_warp_sums[ISSIM_WARPS_PER_BLOCK];
-    const float warp_sum = issim_warp_reduce(my_ssim);
-    const unsigned lane    = lid % (unsigned)warpSize;
-    const unsigned warp_id = lid / (unsigned)warpSize;
-    if (lane == 0)
-        s_warp_sums[warp_id] = warp_sum;
+    __shared__ double s_term[ISSIM_BLOCK_SZ];
+    __shared__ int64_t s_weight[ISSIM_BLOCK_SZ];
+    const unsigned tid = threadIdx.y * blockDim.x + threadIdx.x;
+    s_term[tid] = my_term;
+    s_weight[tid] = my_weight;
     __syncthreads();
-
-    if (lid == 0) {
-        float block_sum = 0.0f;
-        const int nwarps = (int)(blockDim.x * blockDim.y) / (int)warpSize;
-        for (int i = 0; i < nwarps; i++)
-            block_sum += s_warp_sums[i];
-        const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
-        partials[block_idx] = block_sum;
+    for (unsigned half = ISSIM_BLOCK_SZ / 2u; half > 0u; half >>= 1u) {
+        if (tid < half) {
+            s_term[tid] += s_term[tid + half];
+            s_weight[tid] += s_weight[tid + half];
+        }
+        __syncthreads();
+    }
+    if (tid == 0u) {
+        const unsigned blk = blockIdx.y * gridDim.x + blockIdx.x;
+        partials[blk] = s_term[0];
+        partial_weights[blk] = s_weight[0];
     }
 }
 

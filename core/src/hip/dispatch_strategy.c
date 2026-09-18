@@ -14,6 +14,12 @@
 #include <assert.h>
 #include <string.h>
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 #ifdef HAVE_HIPCC
 static const char *const g_hip_features[] = {
     /* integer_motion_v2_hip */
@@ -46,6 +52,9 @@ static const char *const g_hip_features[] = {
     /* float_ssim_hip */
     "float_ssim_hip",
     "float_ssim",
+    /* integer_ssim_hip */
+    "integer_ssim_hip",
+    "ssim",
     /* integer_ms_ssim_hip */
     "integer_ms_ssim_hip",
     "float_ms_ssim",
@@ -163,3 +172,5 @@ int vmaf_hip_dispatch_supports(const VmafHipContext *ctx, const char *feature)
     return 0;
 #endif
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

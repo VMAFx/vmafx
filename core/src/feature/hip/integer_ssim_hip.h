@@ -8,7 +8,8 @@
  *  HIP host glue for the integer_ssim feature extractor — eleventh
  *  kernel-template consumer.
  *
- *  Mirrors `libvmaf/src/feature/cuda/integer_ssim_cuda.h`. The HIP
+ *  Mirrors `core/src/feature/cuda/ssim_cuda.h`, the host header of the
+ *  CUDA integer_ssim twin (ADR-0564). The HIP
  *  kernel artefact (`integer_ssim_score.hip`) is compiled by hipcc to
  *  a HSACO fat binary and embedded as a C byte array when
  *  `enable_hipcc=true`. The host code loads it via
@@ -24,8 +25,8 @@
 #include <stdint.h>
 
 #ifdef HAVE_HIPCC
-/* HSACO fat binary embedded by xxd -i (analogous to `ssim_score_ptx`
- * in the CUDA twin). The array is defined in the generated
+/* HSACO fat binary embedded by xxd -i (analogous to
+ * `integer_ssim_score_ptx` in the CUDA twin). The array is defined in the generated
  * `integer_ssim_score_hsaco.c` custom_target output. */
 extern const unsigned char integer_ssim_score_hsaco[];
 extern const unsigned int integer_ssim_score_hsaco_len;
