@@ -12,16 +12,18 @@
  *  extractor through the public API, as the CLI's --cpumask does, and asserts
  *  the per-frame scores are bit-identical across dispatch levels:
  *
- *    x86:     host (AVX-512 where present), AVX2 only (AVX-512 flags masked),
- *             scalar (every flag masked)
+ *    x86:     host (AVX-512 where present), AVX2 only (AVX-512 flags masked,
+ *             which also runs the AVX2 scanned c-values driver), scalar (every
+ *             flag masked)
  *    aarch64: host (NEON) and scalar
  *
  *  test_feature_isa_invariance covers one 8-bit default-option fixture for
  *  every extractor; this one covers the CAMBI option paths that route through
  *  different stages: 10-bit input (no anti-dithering), full-reference mode
  *  (two pictures per frame), max_log_contrast 5 (32 contrast steps), the
- *  cambi_high_res_speedup early decimation, a non-default window, 4:4:4 and
- *  odd sizes. Fixtures are banded gradients with a textured block, so the
+ *  cambi_high_res_speedup early decimation, a non-default window, 4:4:4,
+ *  odd sizes, and ramps across the first and onto the last value of the
+ *  scored band. Fixtures are banded gradients with a textured block, so the
  *  spatial mask is mixed and the scores are not zero.
  *
  *  Bit-identical is the assertion, not a tolerance: every CAMBI kernel is
@@ -62,6 +64,10 @@ typedef struct {
     /* Collector keys to compare, NULL-terminated: the extractor's name for the
      * default options, an option-suffixed alias otherwise. */
     const char *keys[MAX_KEYS];
+    /* Ramp start code and code step per band; 0 means 8-bit code 40 in steps
+     * of one 8-bit code, scaled to the bit depth. */
+    unsigned start;
+    unsigned step;
 } CambiCase;
 
 static const CambiCase CASES[] = {
@@ -73,7 +79,9 @@ static const CambiCase CASES[] = {
      2,
      {NULL},
      {NULL},
-     {"Cambi_feature_cambi_score"}},
+     {"Cambi_feature_cambi_score"},
+     0,
+     0},
     {"10-bit 4:2:0",
      VMAF_PIX_FMT_YUV420P,
      10,
@@ -82,7 +90,9 @@ static const CambiCase CASES[] = {
      2,
      {NULL},
      {NULL},
-     {"Cambi_feature_cambi_score"}},
+     {"Cambi_feature_cambi_score"},
+     0,
+     0},
     {"10-bit full reference",
      VMAF_PIX_FMT_YUV420P,
      10,
@@ -91,7 +101,9 @@ static const CambiCase CASES[] = {
      2,
      {"full_ref", NULL},
      {"true", NULL},
-     {"Cambi_feature_cambi_score", "cambi_source", "cambi_full_reference"}},
+     {"Cambi_feature_cambi_score", "cambi_source", "cambi_full_reference"},
+     0,
+     0},
     {"8-bit max_log_contrast 5",
      VMAF_PIX_FMT_YUV420P,
      8,
@@ -100,7 +112,9 @@ static const CambiCase CASES[] = {
      2,
      {"max_log_contrast", NULL},
      {"5", NULL},
-     {"cambi_mlc_5"}},
+     {"cambi_mlc_5"},
+     0,
+     0},
     {"8-bit 1080p high-res speedup",
      VMAF_PIX_FMT_YUV420P,
      8,
@@ -109,7 +123,9 @@ static const CambiCase CASES[] = {
      1,
      {"cambi_high_res_speedup", NULL},
      {"1080", NULL},
-     {"cambi_hrs_1080"}},
+     {"cambi_hrs_1080"},
+     0,
+     0},
     {"10-bit 4:4:4 odd size, window 33",
      VMAF_PIX_FMT_YUV444P,
      10,
@@ -118,7 +134,37 @@ static const CambiCase CASES[] = {
      1,
      {"window_size", NULL},
      {"33", NULL},
-     {"cambi_ws_33"}},
+     {"cambi_ws_33"},
+     0,
+     0},
+    /* A visibility threshold of 0.06 puts the scored band's first value at
+     * 67 (vlt_luma 78, minus 3 * 4 contrast steps, plus 1); the ramp's
+     * two-code bands land on 65, 67 and 69. */
+    {"10-bit ramp across the first value of the scored band",
+     VMAF_PIX_FMT_YUV420P,
+     10,
+     480,
+     270,
+     2,
+     {"cambi_vis_lum_threshold", NULL},
+     {"0.06", NULL},
+     {"cambi_vlt_0.06"},
+     61,
+     1},
+    /* One-code steps whose top band is 563, the last value of the default
+     * BT.1886 scored band, with sparse 564s just past it: the band edge a
+     * c-values column scan must get exactly right. */
+    {"10-bit ramp to the top of the scored band",
+     VMAF_PIX_FMT_YUV420P,
+     10,
+     480,
+     270,
+     2,
+     {NULL},
+     {NULL},
+     {"Cambi_feature_cambi_score"},
+     541,
+     1},
 };
 #define NUM_CASES (sizeof(CASES) / sizeof(CASES[0]))
 
@@ -152,11 +198,13 @@ static unsigned sample(const CambiCase *c, unsigned x, unsigned y, unsigned fram
     const unsigned scale = 1u << (c->bpc - 8u);
     if (x < c->w / 6u && y < c->h / 5u)
         return ((x ^ y) & 4u) ? max / 4u : max / 2u; /* texture */
+    const unsigned start = c->step ? c->start : 40u * scale;
+    const unsigned step = c->step ? c->step : scale;
     const unsigned period = (c->w + 2u * c->h) / 256u > 4u ? (c->w + 2u * c->h) / 256u : 4u;
     const unsigned phase = (x + 2u * y + 3u * frame) % (24u * period);
-    unsigned v = 40u * scale + (phase * scale) / period;
+    unsigned v = start + (phase * step) / period;
     if (distorted) {
-        v = (40u + ((phase / period) & ~1u)) * scale;
+        v = start + ((phase / period) & ~1u) * step;
         v += (c->bpc > 8u && (x * 7u + y * 13u) % 29u == 0u) ? 1u : 0u;
     }
     return v > max ? max : v;

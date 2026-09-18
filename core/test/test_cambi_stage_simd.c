@@ -58,6 +58,14 @@
  * documented /std:clatest C23 feature set does not include `nullptr` while the
  * required Windows build compiles this TU with cl.exe. ADR-1138. */
 
+/* A frame-level c-values driver under test. */
+typedef struct {
+    const char *name;
+    VmafCalcCValues fn;
+} CValuesDriver;
+
+#define MAX_C_VALUES_DRIVERS 2
+
 typedef struct {
     const char *name;
     VmafDecimate decimate;
@@ -67,7 +75,9 @@ typedef struct {
     VmafRangeUpdater inc;
     VmafRangeUpdater dec;
     CambiCValuesRow c_values_row;
-    VmafCalcCValues c_values;
+    /* The dispatched driver first; an ISA may carry a second, still-built one.
+     * Unused slots have fn == NULL. */
+    CValuesDriver c_values[MAX_C_VALUES_DRIVERS];
 } StageKernels;
 
 static const StageKernels g_scalar = {
@@ -79,7 +89,7 @@ static const StageKernels g_scalar = {
     increment_range,
     decrement_range,
     calculate_c_values_row,
-    calculate_c_values,
+    {{"calculate_c_values", calculate_c_values}},
 };
 
 /* Sentinel elements after every compared region. */
@@ -567,10 +577,17 @@ static char *sweep_c_values_rows(const StageKernels *simd)
 
 /* ---- frame-level c-values -------------------------------------------- */
 
+/* Frame fixtures: a banded ramp, and a low-entropy one on the band's edges
+ * where equal pixels in the two rows a slide compares, masked-out pixels equal
+ * to an unmasked one, and values one step outside the band are common: where a
+ * scan's skip test can go wrong. */
+typedef enum { FRAME_RAMP, FRAME_FEW_VALUES, NUM_FRAME_FIXTURES } FrameFixture;
+
 typedef struct {
     int window;
     int width;
     int height;
+    FrameFixture fixture;
 } FrameShape;
 
 typedef struct {
@@ -613,18 +630,37 @@ static void frame_buffers_free(FrameBuffers *b)
 /* Image: a banded ramp with some off-band pixels. Mask: 4x4 blocks, mostly
  * set, as a flat-region spatial mask looks. Scalar and SIMD sides start from
  * identical buffers, including garbage in the histogram and c-values. */
+/* One pixel of a frame fixture: (image, mask). */
+static void frame_pixel(const FrameShape *s, const CValuesConfig *c, int i, int j, uint32_t r,
+                        uint16_t *image, uint16_t *mask)
+{
+    if (s->fixture == FRAME_FEW_VALUES) {
+        /* The band's edges and their neighbours: just below (when the band
+         * does not start at 0), first, second, last, just past. Random masks. */
+        const uint16_t base = c->v_band_base;
+        const uint16_t top = (uint16_t)(base + c->v_band_size - 1u);
+        const uint16_t values[5] = {base > 0u ? (uint16_t)(base - 1u) : (uint16_t)(top + 2u), base,
+                                    (uint16_t)(base + 1u), top, (uint16_t)(top + 1u)};
+        *image = values[r % 5u];
+        *mask = (uint16_t)(((r >> 8) & 3u) != 0u);
+        return;
+    }
+    const uint32_t ramp = c->v_band_base + (uint32_t)(j / 5 + i / 3) % (c->v_band_size + 4u);
+    *image = (r & 31u) == 0u ? band_value(c, r) : (uint16_t)ramp;
+    const uint32_t block = (uint32_t)(i / 4) * 131u + (uint32_t)(j / 4) * 71u;
+    *mask = (uint16_t)(((block ^ (block >> 3)) & 7u) != 0u);
+}
+
+/* Scalar and SIMD sides start from identical buffers, including garbage in the
+ * histogram and c-values. */
 static void frame_fixture(FrameBuffers *b, const FrameShape *s, const CValuesConfig *c, int stride,
                           uint32_t *state)
 {
     for (int i = 0; i < s->height; i++) {
         for (int j = 0; j < s->width; j++) {
-            const uint32_t r = simd_test_xorshift32(state);
             const size_t at = (size_t)i * (size_t)stride + (size_t)j;
-            const uint32_t ramp =
-                c->v_band_base + (uint32_t)(j / 5 + i / 3) % (c->v_band_size + 4u);
-            b->image.s.buf[at] = (r & 31u) == 0u ? band_value(c, r) : (uint16_t)ramp;
-            const uint32_t block = (uint32_t)(i / 4) * 131u + (uint32_t)(j / 4) * 71u;
-            b->mask.s.buf[at] = (uint16_t)(((block ^ (block >> 3)) & 7u) != 0u);
+            frame_pixel(s, c, i, j, simd_test_xorshift32(state), &b->image.s.buf[at],
+                        &b->mask.s.buf[at]);
         }
     }
     memcpy(b->image.v.buf, b->image.s.buf, b->image.s.n * sizeof(uint16_t));
@@ -635,8 +671,8 @@ static void frame_fixture(FrameBuffers *b, const FrameShape *s, const CValuesCon
     memset(b->c_v, 0xA5, b->n_c * sizeof(float));
 }
 
-static char *check_c_values_frame(const StageKernels *simd, const CValuesConfig *c,
-                                  const FrameShape *s, uint32_t seed)
+static char *check_c_values_frame(const StageKernels *simd, const CValuesDriver *driver,
+                                  const CValuesConfig *c, const FrameShape *s, uint32_t seed)
 {
     const int stride = s->width + 3 + (int)(seed % 11u);
     FrameBuffers b;
@@ -645,14 +681,15 @@ static char *check_c_values_frame(const StageKernels *simd, const CValuesConfig 
     if (ok) {
         uint32_t state = seed;
         frame_fixture(&b, s, c, stride, &state);
-        g_scalar.c_values(&b.image.s.pic, &b.mask.s.pic, b.c_s, b.hist_s, (uint16_t)s->window,
-                          c->num_diffs, c->tvi_for_diff, c->vlt_luma, c->diff_weights, c->all_diffs,
-                          s->width, s->height);
-        simd->c_values(&b.image.v.pic, &b.mask.v.pic, b.c_v, b.hist_v, (uint16_t)s->window,
-                       c->num_diffs, c->tvi_for_diff, c->vlt_luma, c->diff_weights, c->all_diffs,
-                       s->width, s->height);
-        (void)snprintf(g_label, sizeof(g_label), "%s c_values window=%d w=%d h=%d diffs=%u",
-                       simd->name, s->window, s->width, s->height, (unsigned)c->num_diffs);
+        g_scalar.c_values[0].fn(&b.image.s.pic, &b.mask.s.pic, b.c_s, b.hist_s, (uint16_t)s->window,
+                                c->num_diffs, c->tvi_for_diff, c->vlt_luma, c->diff_weights,
+                                c->all_diffs, s->width, s->height);
+        driver->fn(&b.image.v.pic, &b.mask.v.pic, b.c_v, b.hist_v, (uint16_t)s->window,
+                   c->num_diffs, c->tvi_for_diff, c->vlt_luma, c->diff_weights, c->all_diffs,
+                   s->width, s->height);
+        (void)snprintf(g_label, sizeof(g_label), "%s %s window=%d w=%d h=%d diffs=%u fixture=%d",
+                       simd->name, driver->name, s->window, s->width, s->height,
+                       (unsigned)c->num_diffs, (int)s->fixture);
         err = compare_bytes(b.c_s, b.c_v, b.n_c * sizeof(float));
         if (!err)
             err = compare_bytes(b.hist_s, b.hist_v, b.n_hist * sizeof(uint16_t));
@@ -665,8 +702,8 @@ static char *check_c_values_frame(const StageKernels *simd, const CValuesConfig 
 /* Windows 3 .. 65 (576x324 uses 9, 1080p 33, 2160p 65). Heights from the
  * smallest the walk supports (pad + 1) through the top / bottom edge overlap
  * to a full middle slide; widths around every vector boundary. */
-static char *sweep_frames_for(const StageKernels *simd, const CValuesConfig *c, bool full,
-                              uint32_t *state)
+static char *sweep_frames_for(const StageKernels *simd, const CValuesDriver *driver,
+                              const CValuesConfig *c, bool full, uint32_t *state)
 {
     static const int windows[] = {3, 5, 9, 17, 21, 33, 65};
     static const int widths[] = {1, 7, 16, 17, 31, 33, 40, 64, 65, 97, 130, 257};
@@ -674,9 +711,12 @@ static char *sweep_frames_for(const StageKernels *simd, const CValuesConfig *c, 
         const int pad = windows[wi] >> 1;
         const int heights[] = {pad + 1, 2 * pad + 1, 2 * pad + 9};
         for (size_t x = 0; x < sizeof(widths) / sizeof(widths[0]); x++) {
-            for (size_t y = 0; y < (full ? 3u : 1u); y++) {
-                const FrameShape s = {windows[wi], MAX(widths[x], pad + 1), heights[y]};
-                char *err = check_c_values_frame(simd, c, &s, simd_test_xorshift32(state));
+            const size_t shapes = (size_t)(full ? 3u : 1u) * (size_t)NUM_FRAME_FIXTURES;
+            for (size_t y = 0; y < shapes; y++) {
+                const FrameShape s = {windows[wi], MAX(widths[x], pad + 1),
+                                      heights[y / NUM_FRAME_FIXTURES],
+                                      (FrameFixture)(y % NUM_FRAME_FIXTURES)};
+                char *err = check_c_values_frame(simd, driver, c, &s, simd_test_xorshift32(state));
                 if (err)
                     return err;
             }
@@ -685,7 +725,7 @@ static char *sweep_frames_for(const StageKernels *simd, const CValuesConfig *c, 
     return NULL;
 }
 
-static char *sweep_c_values_frames(const StageKernels *simd)
+static char *sweep_c_values_frames(const StageKernels *simd, const CValuesDriver *driver)
 {
     uint32_t state = 0xF4A3E5EDu;
     for (size_t i = 0; i < NUM_CONFIGS; i++) {
@@ -693,8 +733,8 @@ static char *sweep_c_values_frames(const StageKernels *simd)
         const int init_err = config_init(&c, g_configs[i].max_log_contrast, g_configs[i].eotf,
                                          g_configs[i].vis_lum_threshold);
         /* The production configuration gets every shape; the others one height each. */
-        char *err =
-            init_err ? "c-values config init failed" : sweep_frames_for(simd, &c, i == 0, &state);
+        char *err = init_err ? "c-values config init failed" :
+                               sweep_frames_for(simd, driver, &c, i == 0, &state);
         config_free(&c);
         if (err)
             return err;
@@ -738,7 +778,12 @@ static char *test_c_values_row_parity(void)
 
 static char *test_c_values_frame_parity(void)
 {
-    return sweep_c_values_frames(g_current);
+    for (size_t d = 0; d < MAX_C_VALUES_DRIVERS && g_current->c_values[d].fn; d++) {
+        char *err = sweep_c_values_frames(g_current, &g_current->c_values[d]);
+        if (err)
+            return err;
+    }
+    return NULL;
 }
 
 static char *run_isa(const StageKernels *k)
@@ -766,7 +811,10 @@ static const StageKernels g_avx2 = {
     cambi_increment_range_avx2,
     cambi_decrement_range_avx2,
     calculate_c_values_row_avx2,
-    calculate_c_values_avx2,
+    /* The scanned driver is dispatched; the upstream-mirror walk stays built
+     * and is checked too. */
+    {{"calculate_c_values_scan_avx2", calculate_c_values_scan_avx2},
+     {"calculate_c_values_avx2", calculate_c_values_avx2}},
 };
 #if HAVE_AVX512
 static const StageKernels g_avx512 = {
@@ -778,7 +826,7 @@ static const StageKernels g_avx512 = {
     cambi_increment_range_avx512,
     cambi_decrement_range_avx512,
     calculate_c_values_row_avx512,
-    calculate_c_values_avx512,
+    {{"calculate_c_values_avx512", calculate_c_values_avx512}},
 };
 #endif
 #endif
@@ -795,7 +843,7 @@ static const StageKernels g_neon = {
     NULL,
     NULL,
     calculate_c_values_row_neon,
-    calculate_c_values_neon,
+    {{"calculate_c_values_neon", calculate_c_values_neon}},
 };
 #endif
 
