@@ -3,8 +3,9 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
- *  Frame-level CAMBI c-values walk shared by the fork's AVX-512 and NEON
- *  drivers (calculate_c_values_avx512 / calculate_c_values_neon).
+ *  Frame-level CAMBI c-values walk shared by the fork's AVX2, AVX-512 and
+ *  NEON drivers (calculate_c_values_scan_avx2 / calculate_c_values_avx512 /
+ *  calculate_c_values_neon).
  *
  *  It is the walk calculate_c_values() in cambi.c and calculate_c_values_avx2()
  *  in x86/cambi_avx2.c spell out: a first pass that fills the sliding column
@@ -31,13 +32,15 @@
  *  output byte for byte. The middle columns use the clamped (edge) helpers:
  *  for them the clamp is a no-op, so the ranges are the scalar ranges.
  *
- *  cambi.c and cambi_avx2.c keep their own upstream copies of the walk
- *  (upstream-mirror code); a change to the walk there must be mirrored here.
+ *  cambi.c (calculate_c_values) and cambi_avx2.c (calculate_c_values_avx2,
+ *  built and tested, no longer dispatched) keep their own upstream copies of
+ *  the walk; a change to the walk there must be mirrored here.
  */
 
 #ifndef FEATURE_CAMBI_C_VALUES_FRAME_H_
 #define FEATURE_CAMBI_C_VALUES_FRAME_H_
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -108,6 +111,26 @@ static inline int cambi_ctz32(uint32_t x)
 #else
     return __builtin_ctz(x);
 #endif
+}
+
+/* The scan predicates for one column, for scan row tails (no masked loads on
+ * AVX2 or NEON, and a vector load past the last column could leave the
+ * picture). `at` indexes image and mask. In band: unmasked and inside the
+ * scored band, the test update_histogram_* makes before touching the
+ * histogram. */
+static inline bool cambi_column_in_band(const CambiCValuesFrame *f, ptrdiff_t at)
+{
+    return f->mask[at] && (uint16_t)(f->image[at] - f->v_band_base) < f->v_band_size;
+}
+
+/* uh_slide's test: the column changes the histogram unless neither pixel is in
+ * band, or both are with the same value. */
+static inline bool cambi_column_slide_needed(const CambiCValuesFrame *f, ptrdiff_t at_sub,
+                                             ptrdiff_t at_add)
+{
+    const bool sub_in = cambi_column_in_band(f, at_sub);
+    const bool add_in = cambi_column_in_band(f, at_add);
+    return (sub_in || add_in) && !(sub_in && add_in && f->image[at_sub] == f->image[at_add]);
 }
 
 static FORCE_INLINE int cambi_scan_width(const CambiCValuesFrame *f, int j0)

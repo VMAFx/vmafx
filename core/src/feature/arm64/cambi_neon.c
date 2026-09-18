@@ -456,13 +456,6 @@ static inline uint16x8_t in_band_neon(const CambiCValuesFrame *f, ptrdiff_t at, 
     return vandq_u16(vtstq_u16(m, m), vcltq_u16(vsubq_u16(v, base), size));
 }
 
-/* The same test for one pixel (row tails: NEON has no masked load, and a
- * vector load past the last column could leave the picture). */
-static inline bool in_band_scalar_neon(const CambiCValuesFrame *f, ptrdiff_t at)
-{
-    return f->mask[at] && (uint16_t)(f->image[at] - f->v_band_base) < f->v_band_size;
-}
-
 /* One mask of up to 32 columns starting at `at`. */
 static inline uint32_t scan_row_mask_neon(const CambiCValuesFrame *f, ptrdiff_t at, int n,
                                           uint16x8_t base, uint16x8_t size)
@@ -474,7 +467,7 @@ static inline uint32_t scan_row_mask_neon(const CambiCValuesFrame *f, ptrdiff_t 
         flags |= lane_bits_neon(in_band_neon(f, at + b, base, size, &v)) << b;
     }
     for (; b < n; b++) {
-        flags |= (uint32_t)in_band_scalar_neon(f, at + b) << b;
+        flags |= (uint32_t)cambi_column_in_band(f, at + b) << b;
     }
     return flags;
 }
@@ -487,16 +480,6 @@ static void scan_row_neon(const CambiCValuesFrame *f, int row, int j0, int n, ui
     for (int b = 0; b < n; b += 32) {
         masks[b / 32] = scan_row_mask_neon(f, at + b, MIN(32, n - b), base, size);
     }
-}
-
-/* uh_slide's test for one column: neither pixel in, or both in with one value,
- * is a no-op. */
-static inline bool slide_needed_scalar_neon(const CambiCValuesFrame *f, ptrdiff_t at_sub,
-                                            ptrdiff_t at_add)
-{
-    const bool sub_in = in_band_scalar_neon(f, at_sub);
-    const bool add_in = in_band_scalar_neon(f, at_add);
-    return (sub_in || add_in) && !(sub_in && add_in && f->image[at_sub] == f->image[at_add]);
 }
 
 /* One slide mask of up to 32 columns. */
@@ -515,7 +498,7 @@ static inline uint32_t scan_slide_mask_neon(const CambiCValuesFrame *f, ptrdiff_
         flags |= lane_bits_neon(vbicq_u16(vorrq_u16(sub_in, add_in), cancel)) << b;
     }
     for (; b < n; b++) {
-        flags |= (uint32_t)slide_needed_scalar_neon(f, at_sub + b, at_add + b) << b;
+        flags |= (uint32_t)cambi_column_slide_needed(f, at_sub + b, at_add + b) << b;
     }
     return flags;
 }
