@@ -1,9 +1,11 @@
 # Validating `vmaf_sycl_import_d3d11_surface` in a local Windows VM
 
 This doc is a reproducer for the Windows-only surface-import path added in
-ADR-0103. CI does not exercise it (the fork's Windows CI is MinGW + no-SYCL,
-and the D3D11 API requires Intel oneAPI DPC++ on Windows). Validation
-happens manually in a local Windows VM.
+ADR-0103. CI compiles and links it but never runs it: the required
+`Windows MSVC+SYCL` lane builds the SYCL backend with MSVC and Intel oneAPI,
+including `d3d11_import.cpp` against `d3d11` and `dxgi`, and the Windows
+runners have no GPU, so that lane runs no tests. Validation of the import
+itself happens manually in a local Windows VM.
 
 ## When you need to run this
 
@@ -12,8 +14,9 @@ happens manually in a local Windows VM.
   in a way that affects `vmaf_sycl_upload_plane` (the import path's sink).
 - You bumped the Intel oneAPI DPC++ toolkit version.
 
-If none of the above, the Linux SYCL + Windows MinGW no-SYCL CI jobs are
-enough.
+If none of the above, CI is enough: `Windows MSVC+SYCL` proves the import
+path still compiles and links, and the Linux SYCL lanes compile the shared
+SYCL code.
 
 ## Prerequisites on the Windows VM
 

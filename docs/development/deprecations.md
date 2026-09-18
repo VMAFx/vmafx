@@ -6,6 +6,25 @@ deprecated or removed. Entries are ordered newest-first.
 
 ---
 
+## 2026-09-18 — 32-bit x86 CI lane (ADR-1258)
+
+**Status**: Removed
+
+The `Ubuntu i686 gcc` lane (formerly `Build — Ubuntu i686 gcc (CPU, no-asm)`),
+a compile-only 32-bit cross build with asm disabled, and the `m32` stage of
+`scripts/dev/preflight.sh` that mirrored it are gone. ADR-0691 had removed the
+lane in May, but a merge restored it the same day, and it never ran a test.
+
+**Migration**: none for users of the published containers or 64-bit builds.
+32-bit x86 is unsupported; the fork is 64-bit only. If you build for 32-bit
+x86 yourself, add `-msse2 -mfpmath=sse`: without it the x87 FPU's 80-bit
+intermediates change scalar scores.
+
+**References**: [ADR-1258](../adr/1258-keep-64-bit-only-retire-i686-lane.md),
+[ADR-0691](../adr/0691-vmafx-drop-legacy-build-paths.md)
+
+---
+
 ## 2026-05-28 — `ansnr` / `float_ansnr` feature extractor (ADR-0865)
 
 **Status**: Removed
@@ -51,43 +70,31 @@ PR #87
 
 ---
 
-## 2026-05-28 — Legacy native build modes (ADR-0728)
+## 2026-05-28 — Legacy native build modes (ADR-0728): not carried out
 
-**Status**: Removed
+**Status**: Withdrawn. [ADR-0728](../adr/0728-native-build-sunset.md) is
+superseded by [ADR-1259](../adr/1259-ci-build-matrix-as-it-runs.md).
 
-**What was removed**: The following CI build configurations no longer run as
-required or advisory CI lanes:
+This entry used to list 16 CI configurations as removed. None of them was
+removed by ADR-0728: its commit changed only this page, the ADR and a changelog
+fragment. Of the configurations it listed:
 
-| Removed configuration | Last active |
-|---|---|
-| `Build — Windows MinGW64 (CPU)` (MSYS2 / MinGW-w64) | pre-ADR-0728 |
-| `Build — Ubuntu i686 gcc (CPU, no-asm)` (32-bit x86 cross-build) | pre-ADR-0728 |
-| `Build — Ubuntu gcc (CPU) + DNN` | pre-ADR-0728 |
-| `Build — Ubuntu clang (CPU) + DNN` | pre-ADR-0728 |
-| `Build — macOS clang (CPU) + DNN` | pre-ADR-0728 |
-| `Build — Ubuntu Vulkan (T5-1b runtime)` | pre-ADR-0728 |
-| `Build — macOS Vulkan via MoltenVK (advisory)` | pre-ADR-0728 |
-| `Build — Ubuntu HIP (T7-10b runtime)` | pre-ADR-0728 |
-| `Build — macOS Metal (T8-1 scaffold)` | pre-ADR-0728 |
-| `Build — Ubuntu gcc Static (CPU)` | pre-ADR-0728 |
-| `Build — Ubuntu CUDA Static` | pre-ADR-0728 |
-| `Build — Ubuntu SYCL` | pre-ADR-0728 |
-| `Build — Ubuntu SYCL + CUDA` | pre-ADR-0728 |
-| `Build — Windows MSVC + oneAPI SYCL (build only)` | pre-ADR-0728 |
-| `Cppcheck (Whole Project)` (required-check) | pre-ADR-0728 |
-| `Sanitizers — ASan + UBSan + MSan (address/thread/undefined)` (3 separate required-checks) | pre-ADR-0728 |
+- `Build — Ubuntu i686 gcc (CPU, no-asm)` was removed on 2026-09-18 (see the
+  entry above).
+- `Build — Ubuntu Vulkan (T5-1b runtime)` and
+  `Build — macOS Vulkan via MoltenVK (advisory)` went with the Vulkan backend
+  ([ADR-0726](../adr/0726-drop-vulkan-backend.md)).
+- Everything else still runs, under the short names it has had since #1286.
+  Required: `Windows MinGW64`, `Ubuntu gcc+DNN`, `Ubuntu clang+DNN`,
+  `Ubuntu HIP`, `Windows MSVC+SYCL`, `Cppcheck`, `Sanitizers (address)`,
+  `Sanitizers (thread)` and `Sanitizers (undefined)`. Not required:
+  `macOS clang+DNN`, `macOS Metal`, `Ubuntu gcc static`, `Ubuntu CUDA static`,
+  `Ubuntu SYCL` and `Ubuntu SYCL+CUDA`.
 
-**Why**: Container-first VMAFX posture (ADR-0686, ADR-0701). Docker images and
-the Helm chart are the user-facing artifacts; per-backend host binaries are no
-longer published. The canonical build matrix is now `build.yml` (ADR-0710):
-one job per OS (Linux GCC all-backends, macOS Clang, Windows MSVC+CUDA).
-
-**Migration**: No migration needed for end users — the C library API and CLI
-flags are unchanged. Contributors who previously tested against MinGW64 should
-use the Windows MSVC + CUDA path or the `vmafx-dev-mcp` Docker container.
-32-bit x86 is unsupported; the fork is 64-bit only.
-
-**References**: ADR-0691, ADR-0710, ADR-0728
+`build.yml` (Linux Intel LLVM, macOS Clang+Metal, Windows MSVC+CUDA) runs
+alongside `libvmaf-build-matrix.yml`; it did not replace it. A change that
+breaks `Windows MinGW64` blocks the merge like any other required check.
+ADR-1259 lists every lane and which checks are required.
 
 ---
 
@@ -100,7 +107,8 @@ never published as a standalone wheel to PyPI. No CI job performed wheel
 publication for this package at the time of audit. ADR-0691 §4 records this
 as a no-op for traceability.
 
-The Netflix Python harness (`python/test/`) continues to run via `tox` in the
-Linux full-build leg.
+The Netflix Python harness (`python/test/`) continues to run via `tox` in
+every Linux lane without a GPU backend and every macOS lane, and the required
+`Netflix CPU Golden` job runs the golden assertions.
 
 ---
