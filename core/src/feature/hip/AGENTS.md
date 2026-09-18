@@ -686,3 +686,14 @@ ceiling never binds and the variant passes against the unfixed twin.
   Shared CUDA/HIP tests skip `adm3` under `HAVE_HIP`.
 - HIP ADM tests run without `should_fail` since ADR-1211 staging; all pass on
   gfx1036. Do not re-add `should_fail` to hide a failure.
+
+## Integer ADM 16-bit vertical DWT sums in int64 (T-GPU-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18)
+
+- `core/src/feature/hip/integer_adm/adm_dwt2.hip`, scale-0 fused kernel: vertical accumulator = `DwtVertAccum<T>::type`
+  -> int64 for `uint16_t`, int32 for `uint8_t`.
+- Low-pass taps 1-3 sum 50582 -> int32 sum overflows (UB) once 3 16-bit
+  samples >= 42456. CPU twin: `adm_dwt2_vpass16_tap4()` (int64).
+- Normalised value fits int32 -> int64 form = old wrapped result. Scores
+  identical; never narrow back to int32 for speed.
+- Guard: `test_gpu_adm_bright_16bit_parity` in `test_gpu_adm_tiny_frames.c`
+  (parity only; device wrap hides the UB itself).

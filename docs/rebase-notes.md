@@ -233,6 +233,23 @@ Touched files:
 `docs/metrics/features.md`, `docs/state.md`,
 `changelog.d/fixed/hip-integer-ssim-int64-kernel.md`, `CHANGELOG.md`,
 `scripts/ci/tidy-baseline-hip.json` (scoped tightening).
+## fix/gpu-adm-dwt2-16bit-overflow — GPU integer ADM 16-bit vertical DWT sum (2026-09-18)
+
+Upstream Netflix/vmaf's CUDA integer ADM sums the scale-0 vertical DWT response
+of 16-bit samples in `int32_t`, which overflows once three samples reach 42456
+(T-GPU-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18). When a sync touches these
+files, keep the fork form:
+
+- `core/src/feature/cuda/integer_adm/adm_dwt2.cu` and its HIP twin
+  `adm_dwt2.hip`: the fused scale-0 kernel accumulates in
+  `DwtVertAccum<T>::type`, which is int64 for `uint16_t` input. The kernel is
+  also split into `adm_dwt2_load_column()`, `adm_dwt2_vert_tile()` and
+  `adm_dwt2_hori_tile()`, and the device helpers sit in an anonymous
+  namespace; re-apply upstream's arithmetic intent onto that structure rather
+  than taking its file.
+- `core/src/feature/metal/integer_adm.metal`: the raw vertical DWT kernel sums
+  in `long`.
+
 ## fix/gpu-adm-tiny-frames — GPU integer ADM on frames 17 to 32 pixels wide (2026-09-18)
 
 Upstream Netflix/vmaf ships the CUDA integer ADM this fork mirrors, and it
