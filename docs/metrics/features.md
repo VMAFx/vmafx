@@ -430,6 +430,13 @@ The scalar, AVX2, AVX-512 and NEON paths now give identical scores at every
 width in that range. The CUDA, HIP and SYCL twins agree with them within the
 1e-4 cross-backend tolerance, as they do on larger frames.
 
+The SYCL twin also used to drift on content with very large band
+coefficients, such as independent random noise, where the CPU's 16-bit
+intermediates wrap: `integer_adm_scale0` came out up to 2.1e-4 away from the
+CPU. It now wraps at the same points and rounds its scale 1-3 terms the way
+the CPU, CUDA and HIP do, which moves SYCL's ordinary-video scores by less
+than 1e-6, toward the CPU.
+
 ##### Fixed-point CSF limits
 
 The fixed-point `adm` extractor stores each scale's CSF weight as an integer:
