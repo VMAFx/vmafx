@@ -96,6 +96,17 @@ index, reading column `w` and rows past `h` for bands of 14 samples or fewer.
 CUDA, HIP and SYCL twins also accept frames below 17x17. The fixes are a
 separate PR because they touch GPU files outside this port.
 
+That PR (`fix/gpu-adm-tiny-frames`) measured the second defect alone on the
+gfx1036 iGPU as well: HIP gave the same 1.20869 against 0.99526 at 17x17 as
+CUDA. With both fixes, CUDA, HIP and SYCL agree with scalar within 1e-4 at
+every tested size from 17x17 to 640x360, and src01 on CUDA is unchanged.
+Cleaning the touched GPU files showed that the cuda, hip and sycl clang-tidy
+ratchet lanes had never been runnable: the lanes' compiler flags reached
+clang-tidy as clang-tidy options, and the `.cu` / `.hip` kernels were missing
+from `compile_commands.json`. It also showed that three HIP ADM tests were
+still registered `should_fail` long after their cause was fixed, which hid
+two tests reading a feature the HIP twin does not emit.
+
 ### checkasm versus the fork's parity tests
 
 checkasm compares each shipped scalar kernel against each ISA on random data,

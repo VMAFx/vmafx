@@ -23557,6 +23557,17 @@ is addressed.
   the correct key.
 
 
+- **The CUDA and HIP `integer_adm` twins now score frames 17 to 32 pixels wide
+  correctly, and every GPU twin refuses frames below 17x17.** At those widths
+  one of scale 0's right shifts is by zero bits. The CUDA and HIP host code
+  set its rounding term to 2^31 instead of 0, and their scale-0 kernels read
+  one column and one row past the band at the right and bottom edges. Scale 0
+  came out up to 0.2 away from the CPU, and 32x32 frames scored NaN. The CUDA,
+  HIP and SYCL twins also accepted frames smaller than 17x17, which the CPU
+  and Metal extractors refuse; they now fail with `-EINVAL` and an error that
+  names the extractor. Scores for frames wider than 32 pixels do not change.
+
+
 - **CUDA and SYCL CAMBI scores drifted from the CPU reference on real
   content.** Both GPU twins mis-mirrored two host-side stages of
   `cambi.c`. (1) The spatial-mask kernel clamped (replicated) out-of-image
@@ -28048,6 +28059,17 @@ ADR-0513.
   baselined — the two ssimulacra2 SIMD files by extracting the per-pixel
   edge-diff accumulation both their vector body and their scalar tail carried,
   which also removes the duplication ADR-1208 exists to prevent.
+
+
+- **`make tidy-ratchet LANE=cuda`, `LANE=hip` and `LANE=sycl` run again, and
+  measure the CUDA and HIP kernel files.** `tidy-ratchet.py` handed the lanes'
+  compiler flags to clang-tidy as clang-tidy options, and resolved the build
+  directory and the SYCL wrapper relative to each translation unit's
+  directory, so every GPU lane failed before measuring anything. The `.cu` and
+  `.hip` files were also missing from `compile_commands.json`, because meson
+  builds them through custom targets; the new
+  `scripts/ci/gen-gpu-compile-commands.py` adds them, and the make target runs
+  it first. The Tidy Ratchet job now tests this tooling on every pull request.
 
 
 - CI: the required `Tidy Changed` and `Tidy Ratchet` gates failed on every C/C++

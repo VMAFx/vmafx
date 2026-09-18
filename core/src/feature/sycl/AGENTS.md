@@ -424,3 +424,12 @@ tests catch per-kernel regressions automatically.
   flush blend/clip/seed/average logic must mirror into all four GPU
   twins (cuda/sycl/hip/metal) in same PR to keep `places=4`
   `test_sycl_motion_v2_parity` gate green.
+
+## Integer ADM tiny frames and linkage (T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18)
+
+- `init_fex_sycl()` calls `adm_frame_size_check()` first, before any device
+  resource. Bound = CPU bound (17x17).
+- `integer_adm_sycl.cpp` internals live in one anonymous namespace; only the
+  `extern "C"` extractor struct has external linkage. No C-style `static` at
+  file scope, no linkage NOLINT band.
+- Guard: `test_sycl_adm_tiny_frames`.

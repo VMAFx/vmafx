@@ -666,3 +666,23 @@ Copying the old `#define` from a neighbour re-adds a reserved identifier
 `core/src/feature/hip/*.c` inside `/* ... */` opens nested comment ->
 `-Wcomment` on every HIP build -> zero-warning gate fails. 14 parity tests had
 it. Name the set in prose: "the .c files under core/src/feature/hip/".
+`max_db` is derived once in `init_fex_hip` right after
+`ms_ssim_hip_init_dims()`, using the CPU's exact expression and integer
+types, and the dB conversion goes through `ms_ssim_convert_to_db()`.
+The guard is `test_hip_ms_ssim_parity.c::test_ms_ssim_clip_db_ceiling`,
+which feeds an IDENTICAL pair — on a merely high-similarity fixture the
+ceiling never binds and the variant passes against the unfixed twin.
+
+## Integer ADM tiny frames (T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18)
+
+- `init_fex_hip()` calls `adm_frame_size_check()` first, before any device
+  resource. Bound = CPU bound (17x17).
+- Host shift rounding constant = `adm_half_shift(x)`. In-kernel scale-0 shift
+  in `adm_cm_reduce_line_kernel_body` -> guarded ternary, 0 when shift = 0.
+  Never bare `1u << (x - 1)`.
+- Scale-0 CM kernel (`adm_cm_line_kernel_body`): `x + 1` -> `min(.., w - 1)`,
+  `y + 1` -> `min(.., h - 1)`; `x - 1`, `y - 1` -> `abs()` (ADR-1210 rule).
+- HIP twin emits no `adm3_score` (T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05).
+  Shared CUDA/HIP tests skip `adm3` under `HAVE_HIP`.
+- HIP ADM tests run without `should_fail` since ADR-1211 staging; all pass on
+  gfx1036. Do not re-add `should_fail` to hide a failure.
