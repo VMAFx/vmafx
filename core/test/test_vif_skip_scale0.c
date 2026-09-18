@@ -73,14 +73,35 @@ static int alloc_flat_pic(VmafPicture *pic, uint8_t luma_val)
     return 0;
 }
 
+/* Shared by both tests below: allocate the ref/dis pictures and run them
+ * through vmaf_read_pictures (plus the EOS flush). Same messages and order
+ * in both callers, so this is not duplicated per-test. */
+static char *check_vif_skip_scale0_pictures(VmafContext *vmaf)
+{
+    VmafPicture ref_pic;
+    VmafPicture dis_pic;
+    int err = alloc_flat_pic(&ref_pic, 100u);
+    mu_assert("ref picture alloc", err == 0);
+    err = alloc_flat_pic(&dis_pic, 120u);
+    mu_assert("dis picture alloc", err == 0);
+
+    err = vmaf_read_pictures(vmaf, &ref_pic, &dis_pic, 0);
+    mu_assert("vmaf_read_pictures should succeed", err == 0);
+
+    /* Flush: pass NULL, NULL to trigger the EOS path in vmaf_read_pictures. */
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("flush should succeed", err == 0);
+    return NULL;
+}
+
 /* ------------------------------------------------------------------ */
 /* Test 1: vif_skip_scale0=true -> scale0 score == 0.0                */
 /* ------------------------------------------------------------------ */
-static char *test_vif_skip_scale0_true(void)
+
+static char *check_vif_skip_scale0_true_setup(VmafContext **vmaf_out)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_threads = 1};
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
+    int err = vmaf_init(vmaf_out, cfg);
     mu_assert("vmaf_init should succeed", err == 0);
     if (err)
         return NULL;
@@ -93,34 +114,24 @@ static char *test_vif_skip_scale0_true(void)
      * regardless of success or failure.  Do NOT call
      * vmaf_feature_dictionary_free() on opts after this call — that would be a
      * double-free (CWE-415).  See ADR-0806. */
-    err = vmaf_use_feature(vmaf, "vif", opts);
+    err = vmaf_use_feature(*vmaf_out, "vif", opts);
     opts = NULL; /* consumed by vmaf_use_feature */
     mu_assert("vmaf_use_feature(vif) with vif_skip_scale0 should succeed", err == 0);
     if (err) {
-        (void)vmaf_close(vmaf);
+        (void)vmaf_close(*vmaf_out);
         return NULL;
     }
+    return NULL;
+}
 
-    VmafPicture ref_pic;
-    VmafPicture dis_pic;
-    err = alloc_flat_pic(&ref_pic, 100u);
-    mu_assert("ref picture alloc", err == 0);
-    err = alloc_flat_pic(&dis_pic, 120u);
-    mu_assert("dis picture alloc", err == 0);
-
-    err = vmaf_read_pictures(vmaf, &ref_pic, &dis_pic, 0);
-    mu_assert("vmaf_read_pictures should succeed", err == 0);
-
-    /* Flush: pass NULL, NULL to trigger the EOS path in vmaf_read_pictures. */
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("flush should succeed", err == 0);
-
+static char *check_vif_skip_scale0_true_scores(VmafContext *vmaf)
+{
     /* When vif_skip_scale0=true the FEATURE_PARAM flag causes the option
      * system to remap feature names: the alias "ssclz" is appended.
      * The alias of "VMAF_integer_feature_vif_scale0_score" is
      * "integer_vif_scale0", so the stored key is "integer_vif_scale0_ssclz". */
     double scale0 = -1.0;
-    err = vmaf_feature_score_at_index(vmaf, "integer_vif_scale0_ssclz", &scale0, 0);
+    int err = vmaf_feature_score_at_index(vmaf, "integer_vif_scale0_ssclz", &scale0, 0);
     mu_assert("scale0 score retrieval should succeed", err == 0);
     mu_assert("vif_skip_scale0=true: scale0_score must be exactly 0.0", scale0 == 0.0);
 
@@ -129,6 +140,23 @@ static char *test_vif_skip_scale0_true(void)
     err = vmaf_feature_score_at_index(vmaf, "integer_vif_scale1_ssclz", &scale1, 0);
     mu_assert("scale1 score retrieval should succeed", err == 0);
     mu_assert("scale1_score should be finite and non-negative", isfinite(scale1) && scale1 >= 0.0);
+    return NULL;
+}
+
+static char *test_vif_skip_scale0_true(void)
+{
+    VmafContext *vmaf = NULL;
+    char *msg = check_vif_skip_scale0_true_setup(&vmaf);
+    if (msg)
+        return msg;
+
+    msg = check_vif_skip_scale0_pictures(vmaf);
+    if (msg)
+        return msg;
+
+    msg = check_vif_skip_scale0_true_scores(vmaf);
+    if (msg)
+        return msg;
 
     (void)vmaf_close(vmaf);
     return NULL;
@@ -137,43 +165,51 @@ static char *test_vif_skip_scale0_true(void)
 /* ------------------------------------------------------------------ */
 /* Test 2: default (vif_skip_scale0=false) -> scale0 score > 0        */
 /* ------------------------------------------------------------------ */
-static char *test_vif_skip_scale0_false(void)
+
+static char *check_vif_skip_scale0_false_setup(VmafContext **vmaf_out)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_threads = 1};
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
+    int err = vmaf_init(vmaf_out, cfg);
     mu_assert("vmaf_init should succeed", err == 0);
     if (err)
         return NULL;
 
     /* No opts_dict -> vif_skip_scale0 defaults to false; standard feature names. */
-    err = vmaf_use_feature(vmaf, "vif", NULL);
+    err = vmaf_use_feature(*vmaf_out, "vif", NULL);
     mu_assert("vmaf_use_feature(vif) default should succeed", err == 0);
     if (err) {
-        (void)vmaf_close(vmaf);
+        (void)vmaf_close(*vmaf_out);
         return NULL;
     }
+    return NULL;
+}
 
-    VmafPicture ref_pic;
-    VmafPicture dis_pic;
-    err = alloc_flat_pic(&ref_pic, 100u);
-    mu_assert("ref picture alloc", err == 0);
-    err = alloc_flat_pic(&dis_pic, 120u);
-    mu_assert("dis picture alloc", err == 0);
-
-    err = vmaf_read_pictures(vmaf, &ref_pic, &dis_pic, 0);
-    mu_assert("vmaf_read_pictures should succeed", err == 0);
-
-    /* Flush: pass NULL, NULL to trigger the EOS path in vmaf_read_pictures. */
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("flush should succeed", err == 0);
-
+static char *check_vif_skip_scale0_false_scores(VmafContext *vmaf)
+{
     double scale0 = -1.0;
-    err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_vif_scale0_score", &scale0, 0);
+    int err =
+        vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_vif_scale0_score", &scale0, 0);
     mu_assert("scale0 score retrieval should succeed", err == 0);
     /* Without skip, scale0_score is a finite positive ratio. */
     mu_assert("vif_skip_scale0=false: scale0_score must be finite and > 0",
               isfinite(scale0) && scale0 > 0.0);
+    return NULL;
+}
+
+static char *test_vif_skip_scale0_false(void)
+{
+    VmafContext *vmaf = NULL;
+    char *msg = check_vif_skip_scale0_false_setup(&vmaf);
+    if (msg)
+        return msg;
+
+    msg = check_vif_skip_scale0_pictures(vmaf);
+    if (msg)
+        return msg;
+
+    msg = check_vif_skip_scale0_false_scores(vmaf);
+    if (msg)
+        return msg;
 
     (void)vmaf_close(vmaf);
     return NULL;

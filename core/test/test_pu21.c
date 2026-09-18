@@ -23,6 +23,7 @@
  * required Windows build compiles this TU with cl.exe, and this file mirrors
  * the C spelling of the surface it exercises. ADR-1138. */
 
+#include "mu_table.h"
 #include "test.h"
 // NOLINTNEXTLINE(bugprone-suspicious-include): white-box test deliberately includes pu21.c to reach the static pu21_compute_psnr and encode helpers, as test_ciede.c does (ADR-0141 / ADR-0278).
 #include "feature/pu21.c"
@@ -235,17 +236,18 @@ static char *test_pu21_ssim_nonsquare(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_pu21_encode_banding_glare);
-    mu_run_test(test_pu21_encode_peaks);
-    mu_run_test(test_pu21_psnr_oracle);
-    mu_run_test(test_pu21_psnr_identical);
-    mu_run_test(test_pu21_pq_eotf);
-    mu_run_test(test_pu21_ssim_identical);
-    mu_run_test(test_pu21_ssim_min_valid);
-    mu_run_test(test_pu21_ssim_reject_small);
-    mu_run_test(test_pu21_ssim_nonsquare);
-
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_pu21_encode_banding_glare),
+        MU_TEST(test_pu21_encode_peaks),
+        MU_TEST(test_pu21_psnr_oracle),
+        MU_TEST(test_pu21_psnr_identical),
+        MU_TEST(test_pu21_pq_eotf),
+        MU_TEST(test_pu21_ssim_identical),
+        MU_TEST(test_pu21_ssim_min_valid),
+        MU_TEST(test_pu21_ssim_reject_small),
+        MU_TEST(test_pu21_ssim_nonsquare),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

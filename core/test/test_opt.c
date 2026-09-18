@@ -15,6 +15,7 @@
 #include <math.h>
 #include <stddef.h>
 
+#include "mu_table.h"
 #include "test.h"
 
 #include "opt.h"
@@ -411,32 +412,34 @@ static char *test_string_assign(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_dispatch_null_obj);
-    mu_run_test(test_dispatch_null_opt);
-    mu_run_test(test_dispatch_unknown_type);
-    mu_run_test(test_bool_default_when_null_val);
-    mu_run_test(test_bool_true_string);
-    mu_run_test(test_bool_false_string);
-    mu_run_test(test_bool_invalid_string);
-    mu_run_test(test_int_default_when_null_val);
-    mu_run_test(test_int_valid_in_range);
-    mu_run_test(test_int_below_min);
-    mu_run_test(test_int_above_max);
-    mu_run_test(test_int_unparseable);
-    mu_run_test(test_int_trailing_garbage);
-    mu_run_test(test_int_overflow);
-    mu_run_test(test_double_default_when_null_val);
-    mu_run_test(test_double_valid_in_range);
-    mu_run_test(test_double_below_min);
-    mu_run_test(test_double_above_max);
-    mu_run_test(test_double_unparseable);
-    mu_run_test(test_double_trailing_garbage);
-    mu_run_test(test_double_overflow);
-    mu_run_test(test_double_nan_is_rejected);
-    mu_run_test(test_double_inf_rejected_when_max_finite);
-    mu_run_test(test_string_default_when_null_val);
-    mu_run_test(test_string_assign);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_dispatch_null_obj),
+        MU_TEST(test_dispatch_null_opt),
+        MU_TEST(test_dispatch_unknown_type),
+        MU_TEST(test_bool_default_when_null_val),
+        MU_TEST(test_bool_true_string),
+        MU_TEST(test_bool_false_string),
+        MU_TEST(test_bool_invalid_string),
+        MU_TEST(test_int_default_when_null_val),
+        MU_TEST(test_int_valid_in_range),
+        MU_TEST(test_int_below_min),
+        MU_TEST(test_int_above_max),
+        MU_TEST(test_int_unparseable),
+        MU_TEST(test_int_trailing_garbage),
+        MU_TEST(test_int_overflow),
+        MU_TEST(test_double_default_when_null_val),
+        MU_TEST(test_double_valid_in_range),
+        MU_TEST(test_double_below_min),
+        MU_TEST(test_double_above_max),
+        MU_TEST(test_double_unparseable),
+        MU_TEST(test_double_trailing_garbage),
+        MU_TEST(test_double_overflow),
+        MU_TEST(test_double_nan_is_rejected),
+        MU_TEST(test_double_inf_rejected_when_max_finite),
+        MU_TEST(test_string_default_when_null_val),
+        MU_TEST(test_string_assign),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

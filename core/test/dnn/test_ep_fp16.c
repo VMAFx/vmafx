@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mu_table.h"
 #include "test.h"
 
 #include "libvmaf/dnn.h"
@@ -330,6 +331,25 @@ static char *test_fp16_io_round_trip(void)
     return NULL;
 }
 
+/* The four fp16-edge output checks, extracted so the caller's branch count
+ * stays inside the readability-function-size budget: a helper
+ * `if (msg) return msg;` is one branch versus the two each mu_assert
+ * contributes at the call site. Mirrors the original: on any failure here,
+ * the caller returns without closing sess, exactly as the inline mu_assert
+ * sequence did. */
+static char *check_fp16_edge_outputs(const float *out_data)
+{
+    /* 1e-7 → underflow → ±0 (assert magnitude near zero) */
+    mu_assert("fp16 underflow → near zero", fabsf(out_data[0]) < 1.0e-6f);
+    /* 1e-5 → subnormal in fp16 → small positive value */
+    mu_assert("fp16 subnormal → small positive", out_data[1] > 0.0f && out_data[1] < 1.0e-3f);
+    /* 1e10 → overflow → +inf */
+    mu_assert("fp16 +overflow → +inf", isinf(out_data[2]) && out_data[2] > 0.0f);
+    /* -1e10 → overflow → -inf */
+    mu_assert("fp16 -overflow → -inf", isinf(out_data[3]) && out_data[3] < 0.0f);
+    return NULL;
+}
+
 static char *test_fp16_io_edge_values(void)
 {
     if (!vmaf_dnn_available())
@@ -362,14 +382,9 @@ static char *test_fp16_io_edge_values(void)
     mu_assert("fp16 edge run succeeds", rc == 0);
     mu_assert("fp16 edge output count is 4", out.written == 4);
 
-    /* 1e-7 → underflow → ±0 (assert magnitude near zero) */
-    mu_assert("fp16 underflow → near zero", fabsf(out_data[0]) < 1.0e-6f);
-    /* 1e-5 → subnormal in fp16 → small positive value */
-    mu_assert("fp16 subnormal → small positive", out_data[1] > 0.0f && out_data[1] < 1.0e-3f);
-    /* 1e10 → overflow → +inf */
-    mu_assert("fp16 +overflow → +inf", isinf(out_data[2]) && out_data[2] > 0.0f);
-    /* -1e10 → overflow → -inf */
-    mu_assert("fp16 -overflow → -inf", isinf(out_data[3]) && out_data[3] < 0.0f);
+    char *msg = check_fp16_edge_outputs(out_data);
+    if (msg)
+        return msg;
 
     vmaf_dnn_session_close(sess);
     return NULL;
@@ -417,20 +432,22 @@ static char *test_stub_attached_ep_returns_null(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_auto_falls_through_to_cpu);
-    mu_run_test(test_explicit_openvino_graceful_fallback);
-    mu_run_test(test_explicit_coreml_graceful_fallback);
-    mu_run_test(test_explicit_coreml_ane_graceful_fallback);
-    mu_run_test(test_explicit_coreml_cpu_graceful_fallback);
-    mu_run_test(test_explicit_openvino_npu_graceful_fallback);
-    mu_run_test(test_explicit_openvino_cpu_fallback_ep);
-    mu_run_test(test_explicit_openvino_gpu_graceful_fallback);
-    mu_run_test(test_explicit_cuda_graceful_fallback);
-    mu_run_test(test_fp16_io_round_trip);
-    mu_run_test(test_fp16_io_edge_values);
-    mu_run_test(test_fp16_model_rejects_fp32_config);
-    mu_run_test(test_stub_attached_ep_returns_null);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_auto_falls_through_to_cpu),
+        MU_TEST(test_explicit_openvino_graceful_fallback),
+        MU_TEST(test_explicit_coreml_graceful_fallback),
+        MU_TEST(test_explicit_coreml_ane_graceful_fallback),
+        MU_TEST(test_explicit_coreml_cpu_graceful_fallback),
+        MU_TEST(test_explicit_openvino_npu_graceful_fallback),
+        MU_TEST(test_explicit_openvino_cpu_fallback_ep),
+        MU_TEST(test_explicit_openvino_gpu_graceful_fallback),
+        MU_TEST(test_explicit_cuda_graceful_fallback),
+        MU_TEST(test_fp16_io_round_trip),
+        MU_TEST(test_fp16_io_edge_values),
+        MU_TEST(test_fp16_model_rejects_fp32_config),
+        MU_TEST(test_stub_attached_ep_returns_null),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

@@ -13,6 +13,7 @@
  *  This file pins down the strict-match contract so the bug cannot
  *  regress: a prefix-but-not-whole-token match is treated as no match.
  */
+#include "mu_table.h"
 #include "test.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -124,16 +125,18 @@ static char *test_null_inputs_safe(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_direct_matches_direct);
-    mu_run_test(test_directx_does_not_match_direct);
-    mu_run_test(test_direct_comma_separator_matches);
-    mu_run_test(test_direct_newline_terminator_matches);
-    mu_run_test(test_fastest_matches_fastest);
-    mu_run_test(test_balanced_prefix_does_not_match_balanced);
-    mu_run_test(test_second_token_directx_does_not_match);
-    mu_run_test(test_unrelated_feature_not_matched);
-    mu_run_test(test_null_inputs_safe);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_direct_matches_direct),
+        MU_TEST(test_directx_does_not_match_direct),
+        MU_TEST(test_direct_comma_separator_matches),
+        MU_TEST(test_direct_newline_terminator_matches),
+        MU_TEST(test_fastest_matches_fastest),
+        MU_TEST(test_balanced_prefix_does_not_match_balanced),
+        MU_TEST(test_second_token_directx_does_not_match),
+        MU_TEST(test_unrelated_feature_not_matched),
+        MU_TEST(test_null_inputs_safe),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

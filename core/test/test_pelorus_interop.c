@@ -56,8 +56,12 @@ static void fill_meta(PelorusSideData *m)
     m->producer_id = PEL_FOURCC('P', 'L', 'R', 'S');
 }
 
-/* Round-trip: pack three sections, parse them back, verify scalars + framing. */
-static void test_roundtrip(void)
+/* Build + pack the three-section round-trip fixture (banding + variance +
+ * film grain) and check the pack itself succeeded. Split out of
+ * test_roundtrip so that function stays within the readability-function-size
+ * branch budget: CHECK expands to a do-while plus an if, i.e. two branches
+ * each (ADR-0141). */
+static uint8_t *build_roundtrip_blob(size_t *out_len)
 {
     PelorusSideData meta;
     PelorusBandingSection band;
@@ -65,9 +69,6 @@ static void test_roundtrip(void)
     PelorusFilmGrainSection grain;
     PelorusPackSection secs[3];
     uint8_t *blob = NULL;
-    size_t len = 0;
-    const void *p = NULL;
-    size_t got = 0;
 
     fill_meta(&meta);
 
@@ -99,11 +100,19 @@ static void test_roundtrip(void)
     secs[2].data = &grain;
     secs[2].size = (uint32_t)sizeof(grain);
 
-    CHECK(pel_blob_pack(&meta, secs, 3, &blob, &len) == PEL_OK);
+    CHECK(pel_blob_pack(&meta, secs, 3, &blob, out_len) == PEL_OK);
     CHECK(blob != NULL);
-    CHECK(pel_blob_is_present(blob, len) == 1);
+    CHECK(pel_blob_is_present(blob, *out_len) == 1);
+    return blob;
+}
 
-    /* banding */
+/* The four per-section checks below are each their own function for the same
+ * branch-budget reason as build_roundtrip_blob above. */
+static void check_roundtrip_banding(const uint8_t *blob, size_t len)
+{
+    const void *p = NULL;
+    size_t got = 0;
+
     CHECK(pel_blob_find_section(blob, len, PEL_SEC_BANDING, sizeof(PelorusBandingSection), &p,
                                 &got) == PEL_OK);
     CHECK(got == sizeof(PelorusBandingSection));
@@ -112,16 +121,27 @@ static void test_roundtrip(void)
         CHECK(b->global_banding_risk == 0.42f);
         CHECK(b->flat_area_fraction == 0.61f);
     }
+}
 
-    /* variance */
+static void check_roundtrip_variance(const uint8_t *blob, size_t len)
+{
+    const void *p = NULL;
+    size_t got = 0;
+
     CHECK(pel_blob_find_section(blob, len, PEL_SEC_VARIANCE, sizeof(PelorusVarianceSection), &p,
                                 &got) == PEL_OK);
     {
         const PelorusVarianceSection *v = p;
         CHECK(v->texture_energy == 0.33f);
     }
+}
 
-    /* film grain — verify the 64-bit seed survived (alignment) */
+/* film grain — verify the 64-bit seed survived (alignment) */
+static void check_roundtrip_filmgrain(const uint8_t *blob, size_t len)
+{
+    const void *p = NULL;
+    size_t got = 0;
+
     CHECK(pel_blob_find_section(blob, len, PEL_SEC_FILMGRAIN, sizeof(PelorusFilmGrainSection), &p,
                                 &got) == PEL_OK);
     {
@@ -130,10 +150,28 @@ static void test_roundtrip(void)
         CHECK(g->num_y_points == 3);
         CHECK(g->apply == 1);
     }
+}
 
-    /* a section we did not write is absent (R3 back-compat fallback) */
+/* a section we did not write is absent (R3 back-compat fallback) */
+static void check_roundtrip_absent_motion(const uint8_t *blob, size_t len)
+{
+    const void *p = NULL;
+    size_t got = 0;
+
     CHECK(pel_blob_find_section(blob, len, PEL_SEC_MOTION, sizeof(PelorusMotionSection), &p,
                                 &got) == PEL_ERR_ABSENT);
+}
+
+/* Round-trip: pack three sections, parse them back, verify scalars + framing. */
+static void test_roundtrip(void)
+{
+    size_t len = 0;
+    uint8_t *blob = build_roundtrip_blob(&len);
+
+    check_roundtrip_banding(blob, len);
+    check_roundtrip_variance(blob, len);
+    check_roundtrip_filmgrain(blob, len);
+    check_roundtrip_absent_motion(blob, len);
 
     pel_blob_free(blob);
 }
@@ -316,22 +354,23 @@ static void test_pack_size_overflow(void)
     CHECK(blob == NULL);
 }
 
-/* PEL_SEC_QPREPORT (f): pack the encoder-honored QP readback with a per-cell
- * QP map appended after the blob, parse it back, verify scalars + the map. */
-static void test_qp_report_roundtrip(void)
+/* Fill the per-cell QP map with a recognizable ramp. This map is never read
+ * back by this test (the fold path is exercised separately in
+ * test_qp_report_fold); split out of test_qp_report_roundtrip purely to keep
+ * that function's line count within the readability-function-size budget
+ * (ADR-0141). */
+static void fill_qp_cellmap(int8_t *cellmap, uint16_t cells)
 {
-    PelorusSideData meta;
-    PelorusQpReportSection qp;
-    PelorusPackSection sec;
-    uint8_t *blob = NULL;
-    size_t len = 0;
-    const void *p = NULL;
-    size_t got = 0;
-    const uint16_t cells = 16 * 9; /* matches fill_meta grid */
-    int8_t cellmap[16 * 9];
-    int i;
+    for (int i = 0; i < (int)cells; i++) {
+        cellmap[i] = (int8_t)(20 + (i % 12)); /* a recognizable QP ramp */
+    }
+}
 
-    fill_meta(&meta);
+/* Build the PEL_SEC_QPREPORT scalars for test_qp_report_roundtrip. Split out
+ * for the same line-budget reason as fill_qp_cellmap above. */
+static PelorusQpReportSection build_qp_report_section(uint16_t cells)
+{
+    PelorusQpReportSection qp;
 
     memset(&qp, 0, sizeof(qp));
     qp.avg_qp = 27.5f;
@@ -345,44 +384,81 @@ static void test_qp_report_roundtrip(void)
     qp.block_size_log2 = 4; /* 16x16 */
     qp.qp_valid = 1;
     qp.qp_cell_size = cells; /* int8 per cell */
-    /* qp_cell_offset is set below once we know the section's blob offset. */
+    qp.qp_cell_offset = 0;   /* producer sets this when it appends cellmap */
+    return qp;
+}
 
-    for (i = 0; i < (int)cells; i++) {
-        cellmap[i] = (int8_t)(20 + (i % 12)); /* a recognizable QP ramp */
-    }
+/* Pack `qp` as the sole PEL_SEC_QPREPORT section and check the pack itself
+ * succeeded. Split out for the same branch-budget reason documented on
+ * build_roundtrip_blob above (CHECK is two branches per call, ADR-0141). */
+static uint8_t *pack_qp_report_blob(PelorusQpReportSection *qp, size_t *out_len)
+{
+    PelorusSideData meta;
+    PelorusPackSection sec;
+    uint8_t *blob = NULL;
 
+    fill_meta(&meta);
     sec.id = PEL_SEC_QPREPORT;
-    sec.data = &qp;
-    sec.size = (uint32_t)sizeof(qp);
+    sec.data = qp;
+    sec.size = (uint32_t)sizeof(*qp);
+
+    CHECK(pel_blob_pack(&meta, &sec, 1, &blob, out_len) == PEL_OK);
+    CHECK(blob != NULL);
+    CHECK(pel_blob_is_present(blob, *out_len) == 1);
+    return blob;
+}
+
+/* The bulk of the parsed-section scalar checks, split into two functions
+ * (core / extra) for the same branch-budget reason as pack_qp_report_blob
+ * above. */
+static void check_qp_report_core_fields(const PelorusQpReportSection *r)
+{
+    CHECK(r->avg_qp == 27.5f);
+    CHECK(r->psnr_y == 41.2f);
+    CHECK(r->total_bits == 1234567ULL);
+    CHECK(r->num_inter_blocks == 200);
+    CHECK(r->honored_fraction == 0.75f);
+    CHECK(r->report_source == PEL_QPSRC_QSV);
+    CHECK(r->block_size_log2 == 4);
+}
+
+static void check_qp_report_extra_fields(const PelorusQpReportSection *r, uint16_t cells)
+{
+    CHECK(r->qp_valid == 1);
+    CHECK(r->qp_cell_size == cells);
+    CHECK(r->num_intra_blocks == 40);
+    CHECK(r->num_skipped_blocks == 16);
+    CHECK(r->psnr_u == 0.0f);
+    CHECK(r->psnr_v == 0.0f);
+}
+
+/* PEL_SEC_QPREPORT (f): pack the encoder-honored QP readback with a per-cell
+ * QP map appended after the blob, parse it back, verify scalars + the map. */
+static void test_qp_report_roundtrip(void)
+{
+    const uint16_t cells = 16 * 9; /* matches fill_meta grid */
+    int8_t cellmap[16 * 9];
+    size_t len = 0;
+    const void *p = NULL;
+    size_t got = 0;
+
+    fill_qp_cellmap(cellmap, cells);
+    (void)cellmap;
 
     /* Pack the section and verify the scalars + the map offset/size fields
      * round-trip (the per-cell map payload itself is appended by the producer
      * after pack, like every other map section — see docs/api/interop-abi.md;
      * the fold path is exercised separately in test_qp_report_fold). */
-    qp.qp_cell_offset = 0; /* producer sets this when it appends cellmap */
-    (void)cellmap;
-    CHECK(pel_blob_pack(&meta, &sec, 1, &blob, &len) == PEL_OK);
-    CHECK(blob != NULL);
-    CHECK(pel_blob_is_present(blob, len) == 1);
+    PelorusQpReportSection qp = build_qp_report_section(cells);
+    uint8_t *blob = pack_qp_report_blob(&qp, &len);
 
     CHECK(pel_blob_find_section(blob, len, PEL_SEC_QPREPORT, sizeof(PelorusQpReportSection), &p,
                                 &got) == PEL_OK);
     CHECK(got == sizeof(PelorusQpReportSection));
     {
         const PelorusQpReportSection *r = p;
-        CHECK(r->avg_qp == 27.5f);
-        CHECK(r->psnr_y == 41.2f);
-        CHECK(r->total_bits == 1234567ULL);
-        CHECK(r->num_inter_blocks == 200);
-        CHECK(r->honored_fraction == 0.75f);
-        CHECK(r->report_source == PEL_QPSRC_QSV);
-        CHECK(r->block_size_log2 == 4);
-        CHECK(r->qp_valid == 1);
-        CHECK(r->qp_cell_size == cells);
-        CHECK(r->num_intra_blocks == 40);
-        CHECK(r->num_skipped_blocks == 16);
-        CHECK(r->psnr_u == 0.0f);
-        CHECK(r->psnr_v == 0.0f);
+        check_qp_report_core_fields(r);
+        check_qp_report_extra_fields(r, cells);
     }
 
     /* An older consumer (knows only the first two floats) still parses (R4). */
@@ -396,28 +472,34 @@ static void test_qp_report_roundtrip(void)
  * back, verify the offset/size/metric fields round-trip; a consumer that knows
  * only the offset/size (not conf_metric) still parses (R4); and a section we did
  * not write is absent (R3). */
-static void test_motion_conf_roundtrip(void)
+/* Pack `conf` as the sole PEL_SEC_MOTION_CONF section and check the pack
+ * itself succeeded. Split out of test_motion_conf_roundtrip for the same
+ * branch-budget reason documented on build_roundtrip_blob above (CHECK is
+ * two branches per call, ADR-0141). */
+static uint8_t *pack_motion_conf_blob(const PelorusMotionConfSection *conf, size_t *out_len)
 {
     PelorusSideData meta;
-    PelorusMotionConfSection conf;
     PelorusPackSection sec;
     uint8_t *blob = NULL;
-    size_t len = 0;
-    const void *p = NULL;
-    size_t got = 0;
 
     fill_meta(&meta);
-    memset(&conf, 0, sizeof(conf));
-    conf.conf_field_offset = 0;    /* producer patches once it appends the map */
-    conf.conf_field_size = 16 * 9; /* matches fill_meta grid (uint8 per cell)  */
-    conf.conf_metric = PEL_MOTION_CONF_SAD;
-
     sec.id = PEL_SEC_MOTION_CONF;
-    sec.data = &conf;
-    sec.size = (uint32_t)sizeof(conf);
-    CHECK(pel_blob_pack(&meta, &sec, 1, &blob, &len) == PEL_OK);
+    sec.data = conf;
+    sec.size = (uint32_t)sizeof(*conf);
+
+    CHECK(pel_blob_pack(&meta, &sec, 1, &blob, out_len) == PEL_OK);
     CHECK(blob != NULL);
-    CHECK(pel_blob_is_present(blob, len) == 1);
+    CHECK(pel_blob_is_present(blob, *out_len) == 1);
+    return blob;
+}
+
+/* The parsed-section field checks + R4/R3 fallback checks for
+ * test_motion_conf_roundtrip. Split out for the same branch-budget reason as
+ * pack_motion_conf_blob above. */
+static void check_motion_conf_fields(const uint8_t *blob, size_t len)
+{
+    const void *p = NULL;
+    size_t got = 0;
 
     CHECK(pel_blob_find_section(blob, len, PEL_SEC_MOTION_CONF, sizeof(PelorusMotionConfSection),
                                 &p, &got) == PEL_OK);
@@ -436,37 +518,75 @@ static void test_motion_conf_roundtrip(void)
     /* R3: the plain motion section we did NOT write is absent. */
     CHECK(pel_blob_find_section(blob, len, PEL_SEC_MOTION, sizeof(PelorusMotionSection), &p,
                                 &got) == PEL_ERR_ABSENT);
+}
 
+/* Production usage: vf_pelorus_mc writes MOTION and MOTION_CONF together —
+ * both must round-trip from one blob regardless of dir[] ordering. Split out
+ * for the same branch-budget reason as pack_motion_conf_blob above. */
+static void check_motion_conf_combined_section(const PelorusMotionConfSection *conf,
+                                               const PelorusSideData *meta)
+{
+    PelorusMotionSection mo;
+    PelorusPackSection both[2];
+    uint8_t *b2 = NULL;
+    size_t l2 = 0;
+    const void *p = NULL;
+    size_t got = 0;
+
+    memset(&mo, 0, sizeof(mo));
+    both[0].id = PEL_SEC_MOTION;
+    both[0].data = &mo;
+    both[0].size = (uint32_t)sizeof(mo);
+    both[1].id = PEL_SEC_MOTION_CONF;
+    both[1].data = conf;
+    both[1].size = (uint32_t)sizeof(*conf);
+    CHECK(pel_blob_pack(meta, both, 2, &b2, &l2) == PEL_OK);
+    CHECK(pel_blob_find_section(b2, l2, PEL_SEC_MOTION, sizeof(PelorusMotionSection), &p, &got) ==
+          PEL_OK);
+    CHECK(pel_blob_find_section(b2, l2, PEL_SEC_MOTION_CONF, sizeof(PelorusMotionConfSection), &p,
+                                &got) == PEL_OK);
+    CHECK(got == sizeof(PelorusMotionConfSection));
+    pel_blob_free(b2);
+}
+
+/* PEL_SEC_MOTION_CONF (g): pack the per-block MV confidence section, parse it
+ * back, verify the offset/size/metric fields round-trip; a consumer that knows
+ * only the offset/size (not conf_metric) still parses (R4); and a section we did
+ * not write is absent (R3). */
+static void test_motion_conf_roundtrip(void)
+{
+    PelorusSideData meta;
+    PelorusMotionConfSection conf;
+    size_t len = 0;
+    uint8_t *blob;
+
+    fill_meta(&meta);
+    memset(&conf, 0, sizeof(conf));
+    conf.conf_field_offset = 0;    /* producer patches once it appends the map */
+    conf.conf_field_size = 16 * 9; /* matches fill_meta grid (uint8 per cell)  */
+    conf.conf_metric = PEL_MOTION_CONF_SAD;
+
+    blob = pack_motion_conf_blob(&conf, &len);
+    check_motion_conf_fields(blob, len);
     pel_blob_free(blob);
 
-    /* Production usage: vf_pelorus_mc writes MOTION and MOTION_CONF together —
-     * both must round-trip from one blob regardless of dir[] ordering. */
-    {
-        PelorusMotionSection mo;
-        PelorusPackSection both[2];
-        uint8_t *b2 = NULL;
-        size_t l2 = 0;
-
-        memset(&mo, 0, sizeof(mo));
-        both[0].id = PEL_SEC_MOTION;
-        both[0].data = &mo;
-        both[0].size = (uint32_t)sizeof(mo);
-        both[1].id = PEL_SEC_MOTION_CONF;
-        both[1].data = &conf;
-        both[1].size = (uint32_t)sizeof(conf);
-        CHECK(pel_blob_pack(&meta, both, 2, &b2, &l2) == PEL_OK);
-        CHECK(pel_blob_find_section(b2, l2, PEL_SEC_MOTION, sizeof(PelorusMotionSection), &p,
-                                    &got) == PEL_OK);
-        CHECK(pel_blob_find_section(b2, l2, PEL_SEC_MOTION_CONF, sizeof(PelorusMotionConfSection),
-                                    &p, &got) == PEL_OK);
-        CHECK(got == sizeof(PelorusMotionConfSection));
-        pel_blob_free(b2);
-    }
+    check_motion_conf_combined_section(&conf, &meta);
 }
 
 /* PEL_SEC_COMPLEXITY (h): pack the per-frame complexity scalar, round-trip the
  * fields, and confirm R4 (an older consumer that knows only the first float
  * still parses). */
+/* The four scalar-field checks for test_complexity_roundtrip. Split out for
+ * the same branch-budget reason documented on build_roundtrip_blob above
+ * (CHECK is two branches per call, ADR-0141). */
+static void check_complexity_fields(const PelorusComplexitySection *r)
+{
+    CHECK(r->complexity == 0.625f);
+    CHECK(r->texture_energy == 0.5f);
+    CHECK(r->motion_component == 0.25f);
+    CHECK(r->has_scene_cut == 1);
+}
+
 static void test_complexity_roundtrip(void)
 {
     PelorusSideData meta;
@@ -495,15 +615,74 @@ static void test_complexity_roundtrip(void)
     CHECK(got == sizeof(PelorusComplexitySection));
     {
         const PelorusComplexitySection *r = p;
-        CHECK(r->complexity == 0.625f);
-        CHECK(r->texture_energy == 0.5f);
-        CHECK(r->motion_component == 0.25f);
-        CHECK(r->has_scene_cut == 1);
+        check_complexity_fields(r);
     }
     /* R4: a consumer that knows only `complexity` (first 4 bytes) still parses. */
     CHECK(pel_blob_find_section(blob, len, PEL_SEC_COMPLEXITY, 4, &p, &got) == PEL_OK);
     CHECK(got == 4);
     pel_blob_free(blob);
+}
+
+/* Fill every element of `arr` with `value`. Split out of test_qp_report_fold
+ * so that function stays within the readability-function-size branch budget:
+ * a `for` loop is one branch on top of whatever runs inside it (ADR-0141). */
+static void fill_uniform_i8(int8_t *arr, size_t n, int8_t value)
+{
+    for (size_t i = 0; i < n; i++) {
+        arr[i] = value;
+    }
+}
+
+/* Assert every element of `arr` equals `expect`. Split out for the same
+ * branch-budget reason as fill_uniform_i8 above. */
+static void check_uniform_i8(const int8_t *arr, size_t n, int8_t expect)
+{
+    for (size_t i = 0; i < n; i++) {
+        CHECK(arr[i] == expect); /* uniform block QP -> uniform cell QP */
+    }
+}
+
+/* The block-grid fold path: uniform block QP folds to a uniform per-cell QP.
+ * Split out for the same branch-budget reason as fill_uniform_i8 above. */
+static void check_qp_fold_from_blocks(const PelorusQpReportInput *in, int8_t *cells,
+                                      size_t cells_len)
+{
+    PelorusQpReportSection out;
+
+    CHECK(pel_qp_report_from_blocks(in, 4, 2, &out, cells, cells_len) == PEL_OK);
+    CHECK(out.qp_valid == 1);
+    CHECK(out.qp_cell_size == 4u * 2u);
+    CHECK(out.report_source == PEL_QPSRC_QSV);
+    CHECK(out.avg_qp == 30.0f);
+    check_uniform_i8(cells, cells_len, 30);
+}
+
+/* Frame-stats-only path: no block grid -> qp_valid 0, scalars preserved.
+ * Split out for the same branch-budget reason as fill_uniform_i8 above. */
+static void check_qp_fold_frame_stats_only(PelorusQpReportInput *in)
+{
+    PelorusQpReportSection out;
+
+    in->block_qp = NULL;
+    CHECK(pel_qp_report_from_blocks(in, 4, 2, &out, NULL, 0) == PEL_OK);
+    CHECK(out.qp_valid == 0);
+    CHECK(out.qp_cell_size == 0u);
+    CHECK(out.avg_qp == 30.0f);
+}
+
+/* Too-small buffer / NULL-input / zero-grid guards. Split out for the same
+ * branch-budget reason as fill_uniform_i8 above. */
+static void check_qp_fold_error_guards(const PelorusQpReportInput *in, int8_t *cells,
+                                       size_t cells_len)
+{
+    PelorusQpReportSection out;
+
+    /* Too-small output buffer is rejected, not overrun. */
+    CHECK(pel_qp_report_from_blocks(in, 4, 2, &out, cells, 3) == PEL_ERR_RANGE);
+
+    /* NULL inputs / zero grid are rejected. */
+    CHECK(pel_qp_report_from_blocks(NULL, 4, 2, &out, cells, cells_len) == PEL_ERR_INVALID);
+    CHECK(pel_qp_report_from_blocks(in, 0, 2, &out, cells, cells_len) == PEL_ERR_INVALID);
 }
 
 /* The reader stub: fold a per-block QP grid onto the cell grid. With a block
@@ -512,15 +691,11 @@ static void test_complexity_roundtrip(void)
 static void test_qp_report_fold(void)
 {
     PelorusQpReportInput in;
-    PelorusQpReportSection out;
     int8_t blocks[8 * 4];
     int8_t cells[4 * 2];
-    int i;
 
     memset(&in, 0, sizeof(in));
-    for (i = 0; i < (int)(sizeof(blocks)); i++) {
-        blocks[i] = 30; /* uniform actual QP across all blocks */
-    }
+    fill_uniform_i8(blocks, sizeof(blocks), 30); /* uniform actual QP across all blocks */
     in.block_qp = blocks;
     in.blk_cols = 8;
     in.blk_rows = 4;
@@ -529,71 +704,61 @@ static void test_qp_report_fold(void)
     in.avg_qp = 30.0f;
     in.num_inter_blocks = 32;
 
-    CHECK(pel_qp_report_from_blocks(&in, 4, 2, &out, cells, sizeof(cells)) == PEL_OK);
-    CHECK(out.qp_valid == 1);
-    CHECK(out.qp_cell_size == 4u * 2u);
-    CHECK(out.report_source == PEL_QPSRC_QSV);
-    CHECK(out.avg_qp == 30.0f);
-    for (i = 0; i < (int)(sizeof(cells)); i++) {
-        CHECK(cells[i] == 30); /* uniform block QP -> uniform cell QP */
-    }
+    check_qp_fold_from_blocks(&in, cells, sizeof(cells));
+    check_qp_fold_frame_stats_only(&in);
 
-    /* Frame-stats-only path: no block grid -> qp_valid 0, scalars preserved. */
-    in.block_qp = NULL;
-    CHECK(pel_qp_report_from_blocks(&in, 4, 2, &out, NULL, 0) == PEL_OK);
-    CHECK(out.qp_valid == 0);
-    CHECK(out.qp_cell_size == 0u);
-    CHECK(out.avg_qp == 30.0f);
-
-    /* Too-small output buffer is rejected, not overrun. */
     in.block_qp = blocks;
-    CHECK(pel_qp_report_from_blocks(&in, 4, 2, &out, cells, 3) == PEL_ERR_RANGE);
-
-    /* NULL inputs / zero grid are rejected. */
-    CHECK(pel_qp_report_from_blocks(NULL, 4, 2, &out, cells, sizeof(cells)) == PEL_ERR_INVALID);
-    CHECK(pel_qp_report_from_blocks(&in, 0, 2, &out, cells, sizeof(cells)) == PEL_ERR_INVALID);
+    check_qp_fold_error_guards(&in, cells, sizeof(cells));
 }
 
-/* The x265 CSV reader (ADR-0122): write a minimal x265-shaped CSV to a temp
- * file, parse it, fold it into a PEL_SEC_QPREPORT, and verify the aggregated
- * scalars + the requested-vs-honored honored_fraction. This is the runnable
- * closed-loop surface; the fixture exercises it without invoking x265. */
-static void test_x265_csv_reader(void)
+/* Write `csv` to `path`. Returns 1 on success, 0 if fopen failed (in which
+ * case the caller must not proceed — matches the bare `return` the original,
+ * unsplit test_x265_csv_reader took on this path). Split out of
+ * test_x265_csv_reader so that function stays within the
+ * readability-function-size line/branch budget (CHECK is two branches per
+ * call, ADR-0141). */
+static int write_x265_csv_fixture(const char *path, const char *csv)
 {
-    /* Three coded frames + a trailing aggregate row x265 appends. Columns match
-     * x265 --csv-log-level 2 (subset; the reader locates by header name). The
-     * honored QP differs from a flat requested QP per slice type, exactly the
-     * signal honored_fraction measures. */
-    static const char *csv = "Encode Order, Type, POC, QP, Bits, Y PSNR, U PSNR, V PSNR\n"
-                             "0, I-SLICE, 0, 26.00, 24000, 43.1, 40.5, 40.4\n"
-                             "1, P-SLICE, 2, 30.00, 8000, 38.0, 37.2, 36.8\n"
-                             "2, B-SLICE, 1, 34.00, 3000, 37.1, 36.6, 35.5\n"
-                             "Total frames, 3, , 30.00, , , , \n";
-    PelorusX265Frame frames[8];
-    size_t count = 0;
-    PelorusQpReportSection qp;
-    const char *path = "pelorus_x265_csv_test.csv";
-    FILE *fp;
-
-    fp = fopen(path, "w");
+    FILE *fp = fopen(path, "w");
     CHECK(fp != NULL);
     if (fp == NULL) {
-        return;
+        return 0;
     }
     CHECK(fputs(csv, fp) >= 0);
     CHECK(fclose(fp) == 0);
+    return 1;
+}
 
-    /* Parse: 3 coded frames, the "Total frames" aggregate row dropped. */
-    CHECK(pel_x265_csv_parse(path, frames, 8, &count) == PEL_OK);
+/* Parse `path` into `frames` (capacity `cap`) and check it succeeded with
+ * exactly the 3 coded rows. Split out for the same reason as
+ * write_x265_csv_fixture above. */
+static size_t parse_x265_csv_ok(const char *path, PelorusX265Frame *frames, size_t cap)
+{
+    size_t count = 0;
+
+    CHECK(pel_x265_csv_parse(path, frames, cap, &count) == PEL_OK);
     CHECK(count == 3);
+    return count;
+}
+
+/* The per-frame field checks on the 3 parsed rows. Split out for the same
+ * reason as write_x265_csv_fixture above. */
+static void check_x265_frames(const PelorusX265Frame *frames)
+{
     CHECK(frames[0].slice_type == 'I');
     CHECK(frames[0].qp == 26.0f);
     CHECK(frames[0].bits == 24000ULL);
     CHECK(frames[1].slice_type == 'P');
     CHECK(frames[2].qp == 34.0f);
     CHECK(frames[2].psnr_v == 35.5f);
+}
 
-    /* Fold, no requested map: bit-weighted mean QP, summed bits, qp_valid 0. */
+/* Fold, no requested map: bit-weighted mean QP, summed bits, qp_valid 0.
+ * Split out for the same reason as write_x265_csv_fixture above. */
+static void check_x265_fold_no_request(const PelorusX265Frame *frames, size_t count)
+{
+    PelorusQpReportSection qp;
+
     CHECK(pel_qp_report_from_x265_frames(frames, count, NULL, &qp) == PEL_OK);
     CHECK(qp.qp_valid == 0);
     CHECK(qp.report_source == PEL_QPSRC_NONE);
@@ -602,6 +767,13 @@ static void test_x265_csv_reader(void)
     CHECK(qp.avg_qp > 27.55f && qp.avg_qp < 27.65f);
     CHECK(qp.psnr_y > 41.0f && qp.psnr_y < 43.2f); /* I-frame-dominated */
     CHECK(qp.honored_fraction == 0.0f);            /* no request to compare */
+}
+
+/* The two honored_fraction cases (flat request vs shaped request). Split out
+ * for the same reason as write_x265_csv_fixture above. */
+static void check_x265_honored_fraction(const PelorusX265Frame *frames, size_t count)
+{
+    PelorusQpReportSection qp;
 
     /* honored_fraction: a downstream pass requested a FLAT QP 28 on every
      * frame; the encoder spread it (26/30/34). Frame 0 moved DOWN, frames 1+2
@@ -623,6 +795,14 @@ static void test_x265_csv_reader(void)
         CHECK(pel_qp_report_from_x265_frames(frames, count, requested_shaped, &qp) == PEL_OK);
         CHECK(qp.honored_fraction == 1.0f);
     }
+}
+
+/* Truncation / missing-file / NULL-argument guards. Split out for the same
+ * reason as write_x265_csv_fixture above. */
+static void check_x265_error_guards(const char *path, PelorusX265Frame *frames)
+{
+    size_t count = 0;
+    PelorusQpReportSection qp;
 
     /* A capacity smaller than the row count truncates and reports RANGE. */
     CHECK(pel_x265_csv_parse(path, frames, 2, &count) == PEL_ERR_RANGE);
@@ -635,6 +815,37 @@ static void test_x265_csv_reader(void)
     CHECK(pel_x265_csv_parse(NULL, frames, 8, &count) == PEL_ERR_INVALID);
     CHECK(pel_qp_report_from_x265_frames(NULL, 1, NULL, &qp) == PEL_ERR_INVALID);
     CHECK(pel_qp_report_from_x265_frames(frames, 0, NULL, &qp) == PEL_ERR_INVALID);
+}
+
+/* The x265 CSV reader (ADR-0122): write a minimal x265-shaped CSV to a temp
+ * file, parse it, fold it into a PEL_SEC_QPREPORT, and verify the aggregated
+ * scalars + the requested-vs-honored honored_fraction. This is the runnable
+ * closed-loop surface; the fixture exercises it without invoking x265. */
+static void test_x265_csv_reader(void)
+{
+    /* Three coded frames + a trailing aggregate row x265 appends. Columns match
+     * x265 --csv-log-level 2 (subset; the reader locates by header name). The
+     * honored QP differs from a flat requested QP per slice type, exactly the
+     * signal honored_fraction measures. */
+    static const char *csv = "Encode Order, Type, POC, QP, Bits, Y PSNR, U PSNR, V PSNR\n"
+                             "0, I-SLICE, 0, 26.00, 24000, 43.1, 40.5, 40.4\n"
+                             "1, P-SLICE, 2, 30.00, 8000, 38.0, 37.2, 36.8\n"
+                             "2, B-SLICE, 1, 34.00, 3000, 37.1, 36.6, 35.5\n"
+                             "Total frames, 3, , 30.00, , , , \n";
+    PelorusX265Frame frames[8];
+    const char *path = "pelorus_x265_csv_test.csv";
+
+    if (!write_x265_csv_fixture(path, csv)) {
+        return;
+    }
+
+    /* Parse: 3 coded frames, the "Total frames" aggregate row dropped. */
+    size_t count = parse_x265_csv_ok(path, frames, 8);
+    check_x265_frames(frames);
+
+    check_x265_fold_no_request(frames, count);
+    check_x265_honored_fraction(frames, count);
+    check_x265_error_guards(path, frames);
 
     (void)remove(path);
 }

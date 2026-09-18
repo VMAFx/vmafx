@@ -63,6 +63,7 @@
 #include <string.h>
 
 #include "config.h"
+#include "mu_table.h"
 #include "test.h"
 /* clang-format off */
 #include "simd_bitexact_test.h"
@@ -762,16 +763,19 @@ char *run_tests(void)
     if (!simd_test_have_avx512()) {
         return NULL; /* SKIP on hosts without AVX-512 */
     }
-    mu_run_test(test_pipeline_8_random);
-    mu_run_test(test_pipeline_8_bright_dis);
-    mu_run_test(test_pipeline_16_bpc10);
-    mu_run_test(test_pipeline_16_bpc12);
-    mu_run_test(test_pipeline_16_neg_diff_bpc10);
-    mu_run_test(test_sad_avx512);
-    mu_run_test(test_y_conv_8_avx512);
-    mu_run_test(test_y_conv_16_bpc10);
-    mu_run_test(test_y_conv_16_bpc12);
-    mu_run_test(test_x_conv_16_avx512);
+    static const MuTest tests[] = {
+        MU_TEST(test_pipeline_8_random),
+        MU_TEST(test_pipeline_8_bright_dis),
+        MU_TEST(test_pipeline_16_bpc10),
+        MU_TEST(test_pipeline_16_bpc12),
+        MU_TEST(test_pipeline_16_neg_diff_bpc10),
+        MU_TEST(test_sad_avx512),
+        MU_TEST(test_y_conv_8_avx512),
+        MU_TEST(test_y_conv_16_bpc10),
+        MU_TEST(test_y_conv_16_bpc12),
+        MU_TEST(test_x_conv_16_avx512),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 #else
     (void)fprintf(stderr, "skipping: non-x86 arch\n");
 #endif

@@ -49,25 +49,36 @@ static int alloc_grey8(VmafPicture *pic, uint8_t v)
     return 0;
 }
 
-static char *test_float_adm_8bit_identical(void)
+/* Look up the "float_adm" extractor, create+init a context over an
+ * FADM_W x FADM_H 8-bit YUV420P frame, then init a feature collector.
+ * Both tests below start this way; neither uses dictionary options. */
+static char *float_adm_fixture_open(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_adm");
     mu_assert("float_adm extractor present", fex != NULL);
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
     mu_assert("context_create", err == 0);
 
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, FADM_W, FADM_H);
+    err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, FADM_W, FADM_H);
     mu_assert("context_init", err == 0);
 
-    VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
+    err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
+    return NULL;
+}
+
+static char *test_float_adm_8bit_identical(void)
+{
+    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureCollector *fc = NULL;
+    char *msg = float_adm_fixture_open(&ctx, &fc);
+    if (msg)
+        return msg;
 
     VmafPicture ref;
     VmafPicture dist;
-    err = alloc_grey8(&ref, 128u);
+    int err = alloc_grey8(&ref, 128u);
     mu_assert("alloc ref", err == 0);
     err = alloc_grey8(&dist, 128u);
     mu_assert("alloc dist", err == 0);
@@ -103,23 +114,15 @@ static char *test_float_adm_8bit_identical(void)
 
 static char *test_float_adm_8bit_distinct(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_adm");
-    mu_assert("float_adm extractor present", fex != NULL);
-
     VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
-    mu_assert("context_create", err == 0);
-
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, FADM_W, FADM_H);
-    mu_assert("context_init", err == 0);
-
     VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
-    mu_assert("collector_init", err == 0);
+    char *msg = float_adm_fixture_open(&ctx, &fc);
+    if (msg)
+        return msg;
 
     VmafPicture ref;
     VmafPicture dist;
-    err = alloc_grey8(&ref, 50u);
+    int err = alloc_grey8(&ref, 50u);
     mu_assert("alloc ref", err == 0);
     err = alloc_grey8(&dist, 200u);
     mu_assert("alloc dist", err == 0);

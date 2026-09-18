@@ -40,6 +40,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mu_table.h"
 #include "test.h"
 
 #include "feature/feature_collector.h"
@@ -164,33 +165,60 @@ static char *test_niqe_aggd_large(void)
  *       rhat_norm=inf/inf=NaN; numpy's argmin of an all-NaN array returns
  *       index 0 -> alpha=0.2, bl=aggdratio*lms, br=0. The reference values
  *       below were generated with the Python harness for [-2,-1,-3,-1]. */
-static char *test_niqe_aggd_degenerate(void)
+/* (a) all-zero patch (mean_sq == 0): the harness returns alpha=0.2 and all
+ * other stats 0 (gamma_hat=0/0=NaN -> argmin of all-NaN -> index 0). */
+static char *check_aggd_flat_patch(const double *prec)
 {
-    static double prec[NIQE_GAMMA_COUNT];
-    niqe_build_gamma_table(prec);
-
-    /* (a) all-zero patch. */
     const float zeros[8] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
     const NiqeAggd z = niqe_extract_aggd(zeros, 8, prec);
     mu_assert("flat patch alpha != 0.2", close_abs(z.alpha, 0.2, 1e-15));
     mu_assert("flat patch N not finite/zero", isfinite(z.N) && close_abs(z.N, 0.0, 1e-15));
     mu_assert("flat patch bl not finite/zero", isfinite(z.bl) && close_abs(z.bl, 0.0, 1e-15));
     mu_assert("flat patch br not finite/zero", isfinite(z.br) && close_abs(z.br, 0.0, 1e-15));
+    return NULL;
+}
 
-    /* (b) all-negative patch -> rms == 0, mean_sq != 0. The pre-fix code would
-     * compute inf/inf = NaN here and abort under the sanitizer build. */
+/* Shape/finiteness checks for the all-negative patch below. */
+static char *check_aggd_all_negative_shape(const NiqeAggd *a)
+{
+    mu_assert("all-neg alpha != 0.2", close_abs(a->alpha, 0.2, 1e-15));
+    mu_assert("all-neg N not finite", isfinite(a->N));
+    mu_assert("all-neg bl not finite", isfinite(a->bl));
+    mu_assert("all-neg br != 0", close_abs(a->br, 0.0, 1e-15));
+    return NULL;
+}
+
+/* Harness reference for [-2,-1,-3,-1] at alpha=0.2 (aggdratio is tiny). */
+static char *check_aggd_all_negative_values(const NiqeAggd *a)
+{
+    mu_assert("all-neg lms", close_abs(a->lsq, 1.9364917278289795, 1e-6));
+    mu_assert("all-neg rms != 0", close_abs(a->rsq, 0.0, 1e-15));
+    mu_assert("all-neg N value", close_abs(a->N, -8.060654877743004e-06, 1e-9));
+    mu_assert("all-neg bl value", close_abs(a->bl, 3.213047092940099e-05, 1e-9));
+    return NULL;
+}
+
+/* (b) all-negative patch -> rms == 0, mean_sq != 0. The pre-fix code would
+ * compute inf/inf = NaN here and abort under the sanitizer build. */
+static char *check_aggd_all_negative_patch(const double *prec)
+{
     const float neg[4] = {-2.0f, -1.0f, -3.0f, -1.0f};
     const NiqeAggd a = niqe_extract_aggd(neg, 4, prec);
-    mu_assert("all-neg alpha != 0.2", close_abs(a.alpha, 0.2, 1e-15));
-    mu_assert("all-neg N not finite", isfinite(a.N));
-    mu_assert("all-neg bl not finite", isfinite(a.bl));
-    mu_assert("all-neg br != 0", close_abs(a.br, 0.0, 1e-15));
-    mu_assert("all-neg lms", close_abs(a.lsq, 1.9364917278289795, 1e-6));
-    mu_assert("all-neg rms != 0", close_abs(a.rsq, 0.0, 1e-15));
-    /* Harness reference for [-2,-1,-3,-1] at alpha=0.2 (aggdratio is tiny). */
-    mu_assert("all-neg N value", close_abs(a.N, -8.060654877743004e-06, 1e-9));
-    mu_assert("all-neg bl value", close_abs(a.bl, 3.213047092940099e-05, 1e-9));
-    return NULL;
+    char *msg = check_aggd_all_negative_shape(&a);
+    if (msg)
+        return msg;
+    return check_aggd_all_negative_values(&a);
+}
+
+static char *test_niqe_aggd_degenerate(void)
+{
+    static double prec[NIQE_GAMMA_COUNT];
+    niqe_build_gamma_table(prec);
+
+    char *msg = check_aggd_flat_patch(prec);
+    if (msg)
+        return msg;
+    return check_aggd_all_negative_patch(prec);
 }
 
 /* PIL-bicubic resampler: 4 input samples -> 2 output samples, single axis.
@@ -295,6 +323,63 @@ static int load_yuv420p8_frame0(VmafPicture *pic, const char *path, unsigned w, 
     return 0;
 }
 
+/* Shared teardown for the end-to-end / odd-dim extractor-context tests: unref
+ * the picture if it was allocated, then tear down the feature collector and
+ * context in the same order the inline cleanup labels used. */
+static void niqe_teardown(VmafPicture *pic, VmafFeatureCollector *fc,
+                          VmafFeatureExtractorContext *ctx)
+{
+    if (pic->data[0])
+        (void)vmaf_picture_unref(pic);
+    if (fc)
+        (void)vmaf_feature_collector_destroy(fc);
+    if (ctx) {
+        (void)vmaf_feature_extractor_context_close(ctx);
+        (void)vmaf_feature_extractor_context_destroy(ctx);
+    }
+}
+
+/* Look up the niqe extractor, stand up its context + feature collector, and
+ * load frame 0 of the natural fixture. Returns the mu message on failure
+ * (ctx/fc may be partially populated; the caller tears down regardless). */
+static char *niqe_e2e_setup(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc,
+                            VmafPicture *pic, unsigned w, unsigned h)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("niqe");
+    if (!fex)
+        return (char *)"niqe extractor not registered";
+
+    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    if (err)
+        return (char *)"niqe context_create failed";
+    err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, w, h);
+    if (err)
+        return (char *)"niqe context_init failed";
+    err = vmaf_feature_collector_init(fc);
+    if (err)
+        return (char *)"feature collector init failed";
+    err = load_yuv420p8_frame0(pic, NIQE_TESTDATA_DIR "/ref_576x324_48f.yuv", w, h);
+    if (err)
+        return (char *)"could not load ref_576x324_48f.yuv frame 0";
+    return NULL;
+}
+
+/* Run the extraction and read back the score. NR metric: ref and dist are the
+ * same picture (only dist is scored). */
+static char *niqe_e2e_check_score(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc,
+                                  VmafPicture *pic, double *score)
+{
+    int err = vmaf_feature_extractor_context_extract(ctx, pic, NULL, pic, NULL, 0, fc);
+    if (err)
+        return (char *)"niqe extract failed";
+    err = vmaf_feature_collector_get_score(fc, "niqe", score, 0);
+    if (err)
+        return (char *)"could not read niqe score";
+    if (!isfinite(*score))
+        return (char *)"niqe score is not finite";
+    return NULL;
+}
+
 static char *test_niqe_end_to_end(void)
 {
     /* Reference score from the fork Python harness on frame 0 of the natural
@@ -303,72 +388,95 @@ static char *test_niqe_end_to_end(void)
     const unsigned W = 576;
     const unsigned H = 324;
 
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("niqe");
-    mu_assert("niqe extractor not registered", fex != NULL);
-
     VmafFeatureExtractorContext *ctx = NULL;
     VmafFeatureCollector *fc = NULL;
     VmafPicture pic;
     memset(&pic, 0, sizeof(pic));
-    char *result = NULL;
 
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
-    if (err) {
-        result = (char *)"niqe context_create failed";
+    char *result = niqe_e2e_setup(&ctx, &fc, &pic, W, H);
+    if (result)
         goto cleanup;
-    }
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, W, H);
-    if (err) {
-        result = (char *)"niqe context_init failed";
-        goto cleanup;
-    }
-    err = vmaf_feature_collector_init(&fc);
-    if (err) {
-        result = (char *)"feature collector init failed";
-        goto cleanup;
-    }
-    err = load_yuv420p8_frame0(&pic, NIQE_TESTDATA_DIR "/ref_576x324_48f.yuv", W, H);
-    if (err) {
-        result = (char *)"could not load ref_576x324_48f.yuv frame 0";
-        goto cleanup;
-    }
-
-    /* NR metric: ref and dist are the same picture (only dist is scored). */
-    err = vmaf_feature_extractor_context_extract(ctx, &pic, NULL, &pic, NULL, 0, fc);
-    if (err) {
-        result = (char *)"niqe extract failed";
-        goto cleanup;
-    }
 
     double score = NAN;
-    err = vmaf_feature_collector_get_score(fc, "niqe", &score, 0);
-    if (err) {
-        result = (char *)"could not read niqe score";
+    result = niqe_e2e_check_score(ctx, fc, &pic, &score);
+    if (result)
         goto cleanup;
-    }
-    if (!isfinite(score)) {
-        result = (char *)"niqe score is not finite";
-        goto cleanup;
-    }
+
     /* Fork golden-gate bound: places=4 (1e-4 absolute). */
     if (!close_abs(score, oracle, 1e-4)) {
         static char msg[160];
         (void)snprintf(msg, sizeof(msg), "niqe end-to-end score %.10f != oracle %.10f (places=4)",
                        score, oracle);
         result = msg;
-        goto cleanup;
     }
 
 cleanup:
-    if (pic.data[0])
-        (void)vmaf_picture_unref(&pic);
-    if (fc)
-        (void)vmaf_feature_collector_destroy(fc);
-    if (ctx) {
-        (void)vmaf_feature_extractor_context_close(ctx);
-        (void)vmaf_feature_extractor_context_destroy(ctx);
-    }
+    niqe_teardown(&pic, fc, ctx);
     return result;
+}
+
+/* Regression test for BLOCKER-1 (heap overflow for odd frame dimensions).
+ * A 577x325 frame (both dimensions odd, both >= 97) causes
+ * w2 = floor(577/2) = 288, scale = 577/288 ≈ 2.003, ksize = 11 — the path
+ * that overflowed the old maxax*9 allocation.  We just need the run to
+ * return 0 and produce a finite score; no oracle is needed. */
+/* Set up the extractor context + collector + an allocated (uninitialized)
+ * picture at (w, h). Returns the mu message on failure. */
+static char *niqe_odd_dim_setup(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc,
+                                VmafPicture *pic, unsigned w, unsigned h)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("niqe");
+    if (!fex)
+        return (char *)"niqe extractor not registered (odd-dim)";
+
+    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    if (err)
+        return (char *)"odd-dim: context_create failed";
+    err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, w, h);
+    if (err)
+        return (char *)"odd-dim: context_init failed";
+    err = vmaf_feature_collector_init(fc);
+    if (err)
+        return (char *)"odd-dim: feature collector init failed";
+    err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, 8, w, h);
+    if (err)
+        return (char *)"odd-dim: picture alloc failed";
+    return NULL;
+}
+
+/* Fill luma with a deterministic sinusoidal pattern (non-flat, non-random)
+ * and chroma with a neutral constant (unused by NIQE). */
+static void niqe_fill_odd_dim_pattern(VmafPicture *pic, unsigned w, unsigned h)
+{
+    uint8_t *y = (uint8_t *)pic->data[0];
+    const ptrdiff_t ystride = pic->stride[0];
+    for (unsigned row = 0; row < h; row++) {
+        for (unsigned col = 0; col < w; col++) {
+            const double v = 128.0 + 80.0 * sin((double)row * 0.13 + (double)col * 0.07);
+            y[(size_t)row * (size_t)ystride + col] = (uint8_t)(int)v;
+        }
+    }
+    for (unsigned p = 1; p < 3; p++) {
+        uint8_t *c = (uint8_t *)pic->data[p];
+        for (unsigned row = 0; row < pic->h[p]; row++)
+            memset(c + (size_t)row * (size_t)pic->stride[p], 128, pic->w[p]);
+    }
+}
+
+/* Run the extraction and read back the score, using the odd-dim test's own
+ * message prefixes (distinct from niqe_e2e_check_score's). */
+static char *niqe_odd_dim_check_score(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc,
+                                      VmafPicture *pic, double *score)
+{
+    int err = vmaf_feature_extractor_context_extract(ctx, pic, NULL, pic, NULL, 0, fc);
+    if (err)
+        return (char *)"odd-dim: extract failed";
+    err = vmaf_feature_collector_get_score(fc, "niqe", score, 0);
+    if (err)
+        return (char *)"odd-dim: could not read niqe score";
+    if (!isfinite(*score))
+        return (char *)"odd-dim: niqe score is not finite";
+    return NULL;
 }
 
 /* Regression test for BLOCKER-1 (heap overflow for odd frame dimensions).
@@ -383,93 +491,34 @@ static char *test_niqe_odd_dim(void)
     const unsigned W = 577;
     const unsigned H = 325;
 
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("niqe");
-    mu_assert("niqe extractor not registered (odd-dim)", fex != NULL);
-
     VmafFeatureExtractorContext *ctx = NULL;
     VmafFeatureCollector *fc = NULL;
     VmafPicture pic;
     memset(&pic, 0, sizeof(pic));
-    char *result = NULL;
 
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
-    if (err) {
-        result = (char *)"odd-dim: context_create failed";
+    char *result = niqe_odd_dim_setup(&ctx, &fc, &pic, W, H);
+    if (result)
         goto cleanup;
-    }
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, W, H);
-    if (err) {
-        result = (char *)"odd-dim: context_init failed";
-        goto cleanup;
-    }
-    err = vmaf_feature_collector_init(&fc);
-    if (err) {
-        result = (char *)"odd-dim: feature collector init failed";
-        goto cleanup;
-    }
-    err = vmaf_picture_alloc(&pic, VMAF_PIX_FMT_YUV420P, 8, W, H);
-    if (err) {
-        result = (char *)"odd-dim: picture alloc failed";
-        goto cleanup;
-    }
 
-    /* Fill luma with a deterministic sinusoidal pattern (non-flat, non-random). */
-    {
-        uint8_t *y = (uint8_t *)pic.data[0];
-        const ptrdiff_t ystride = pic.stride[0];
-        for (unsigned row = 0; row < H; row++) {
-            for (unsigned col = 0; col < W; col++) {
-                const double v = 128.0 + 80.0 * sin((double)row * 0.13 + (double)col * 0.07);
-                y[(size_t)row * (size_t)ystride + col] = (uint8_t)(int)v;
-            }
-        }
-        for (unsigned p = 1; p < 3; p++) {
-            uint8_t *c = (uint8_t *)pic.data[p];
-            for (unsigned row = 0; row < pic.h[p]; row++)
-                memset(c + (size_t)row * (size_t)pic.stride[p], 128, pic.w[p]);
-        }
-    }
-
-    err = vmaf_feature_extractor_context_extract(ctx, &pic, NULL, &pic, NULL, 0, fc);
-    if (err) {
-        result = (char *)"odd-dim: extract failed";
-        goto cleanup;
-    }
+    niqe_fill_odd_dim_pattern(&pic, W, H);
 
     double score = NAN;
-    err = vmaf_feature_collector_get_score(fc, "niqe", &score, 0);
-    if (err) {
-        result = (char *)"odd-dim: could not read niqe score";
-        goto cleanup;
-    }
-    if (!isfinite(score)) {
-        result = (char *)"odd-dim: niqe score is not finite";
-        goto cleanup;
-    }
+    result = niqe_odd_dim_check_score(ctx, fc, &pic, &score);
 
 cleanup:
-    if (pic.data[0])
-        (void)vmaf_picture_unref(&pic);
-    if (fc)
-        (void)vmaf_feature_collector_destroy(fc);
-    if (ctx) {
-        (void)vmaf_feature_extractor_context_close(ctx);
-        (void)vmaf_feature_extractor_context_destroy(ctx);
-    }
+    niqe_teardown(&pic, fc, ctx);
     return result;
 }
 
 char *run_tests(void)
 {
-    mu_run_test(test_niqe_gauss_window);
-    mu_run_test(test_niqe_aggd_oracle1);
-    mu_run_test(test_niqe_aggd_large);
-    mu_run_test(test_niqe_aggd_degenerate);
-    mu_run_test(test_niqe_bicubic_coeffs);
-    mu_run_test(test_niqe_sym_pinv);
-    mu_run_test(test_niqe_end_to_end);
-    mu_run_test(test_niqe_odd_dim);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_niqe_gauss_window),   MU_TEST(test_niqe_aggd_oracle1),
+        MU_TEST(test_niqe_aggd_large),     MU_TEST(test_niqe_aggd_degenerate),
+        MU_TEST(test_niqe_bicubic_coeffs), MU_TEST(test_niqe_sym_pinv),
+        MU_TEST(test_niqe_end_to_end),     MU_TEST(test_niqe_odd_dim),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

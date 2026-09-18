@@ -62,6 +62,7 @@
 #include <stdlib.h>
 
 #include "config.h"
+#include "mu_table.h"
 #include "test.h"
 /* clang-format off — test.h has no header guard; must precede harness. */
 #include "simd_bitexact_test.h"
@@ -324,24 +325,33 @@ char *run_tests(void)
      * success exit (ADR-1138 keeps the null pointer constant spelled `NULL`
      * here for the MSVC C lane, so each extra one is measured debt). */
     if (simd_test_have_avx2()) {
-        mu_run_test(test_avx2_seed_a);
-        mu_run_test(test_avx2_seed_b);
-        mu_run_test(test_avx2_aligned_w);
-        mu_run_test(test_avx2_tiny);
-        mu_run_test(test_matmul_avx2_speed_native);
-        mu_run_test(test_matmul_avx2_rect);
-        mu_run_test(test_matmul_avx2_tails);
-        mu_run_test(test_matmul_avx2_narrow);
+        static const MuTest avx2_tests[] = {
+            MU_TEST(test_avx2_seed_a),
+            MU_TEST(test_avx2_seed_b),
+            MU_TEST(test_avx2_aligned_w),
+            MU_TEST(test_avx2_tiny),
+            MU_TEST(test_matmul_avx2_speed_native),
+            MU_TEST(test_matmul_avx2_rect),
+            MU_TEST(test_matmul_avx2_tails),
+            MU_TEST(test_matmul_avx2_narrow),
+        };
+        char *msg = mu_run_table(avx2_tests, MU_TABLE_LEN(avx2_tests));
+        if (msg)
+            return msg;
+
 #if HAVE_AVX512
         if (simd_test_have_avx512()) {
-            mu_run_test(test_avx512_seed_a);
-            mu_run_test(test_avx512_seed_b);
-            mu_run_test(test_avx512_aligned_w);
-            mu_run_test(test_avx512_tiny);
-            mu_run_test(test_matmul_avx512_speed_native);
-            mu_run_test(test_matmul_avx512_rect);
-            mu_run_test(test_matmul_avx512_tails);
-            mu_run_test(test_matmul_avx512_narrow);
+            static const MuTest avx512_tests[] = {
+                MU_TEST(test_avx512_seed_a),
+                MU_TEST(test_avx512_seed_b),
+                MU_TEST(test_avx512_aligned_w),
+                MU_TEST(test_avx512_tiny),
+                MU_TEST(test_matmul_avx512_speed_native),
+                MU_TEST(test_matmul_avx512_rect),
+                MU_TEST(test_matmul_avx512_tails),
+                MU_TEST(test_matmul_avx512_narrow),
+            };
+            return mu_run_table(avx512_tests, MU_TABLE_LEN(avx512_tests));
         }
 #endif /* HAVE_AVX512 */
     }

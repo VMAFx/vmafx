@@ -38,6 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mu_table.h"
 #include "test.h"
 
 /* ------------------------------------------------------------------ */
@@ -657,15 +658,17 @@ static char *test_cuda_ep_unavailable_nonempty_message(void)
 char *run_tests(void)
 {
     init_mock_api();
-    mu_run_test(test_ort_log_nonempty_message);
-    mu_run_test(test_ep_unavailable_nonempty_message);
-    mu_run_test(test_two_stage_retry_create_opts_fails);
-    mu_run_test(test_two_stage_retry_set_intra_threads);
-    mu_run_test(test_get_tensor_elem_type_output_error);
-    mu_run_test(test_cast_type_info_output_error);
-    mu_run_test(test_create_cpu_mem_info_failure);
-    mu_run_test(test_cuda_ep_unavailable_nonempty_message);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_ort_log_nonempty_message),
+        MU_TEST(test_ep_unavailable_nonempty_message),
+        MU_TEST(test_two_stage_retry_create_opts_fails),
+        MU_TEST(test_two_stage_retry_set_intra_threads),
+        MU_TEST(test_get_tensor_elem_type_output_error),
+        MU_TEST(test_cast_type_info_output_error),
+        MU_TEST(test_create_cpu_mem_info_failure),
+        MU_TEST(test_cuda_ep_unavailable_nonempty_message),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 #endif /* VMAF_HAVE_DNN */

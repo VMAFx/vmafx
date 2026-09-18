@@ -106,6 +106,41 @@ static int alloc_frame(VmafPicture *pic, unsigned seed)
     return 0;
 }
 
+/* Feed n ref/dist pairs through vmaf_read_pictures. Split out of
+ * test_batch_prev_ref_lifecycle so that function stays within the
+ * readability-function-size branch budget: each mu_assert expands to two
+ * branches and a `for` loop is one more (ADR-0141). */
+static char *feed_motion_frames(VmafContext *vmaf, unsigned n)
+{
+    for (unsigned i = 0; i < n; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = alloc_frame(&ref, i);
+        mu_assert("alloc_frame(ref) failed", !err);
+        err = alloc_frame(&dist, i + 1u); /* distinct to produce non-zero motion */
+        mu_assert("alloc_frame(dist) failed", !err);
+
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert("vmaf_read_pictures failed", !err);
+    }
+    return NULL;
+}
+
+/* Assert motion_sad_score is finite and non-negative for frames [from, to).
+ * Split out for the same branch-budget reason as feed_motion_frames above. */
+static char *check_motion_sad_scores_range(VmafContext *vmaf, unsigned from, unsigned to)
+{
+    for (unsigned i = from; i < to; i++) {
+        double score = -1.0;
+        int err =
+            vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion_sad_score", &score, i);
+        mu_assert("vmaf_feature_score_at_index(motion_sad_score) failed", !err);
+        mu_assert("motion_sad_score must be finite", isfinite(score));
+        mu_assert("motion_sad_score must be non-negative", score >= 0.0);
+    }
+    return NULL;
+}
+
 /*
  * test_batch_prev_ref_lifecycle
  * ------------------------------
@@ -141,17 +176,9 @@ static char *test_batch_prev_ref_lifecycle(void)
     err = vmaf_use_feature(vmaf, "motion", NULL);
     mu_assert("vmaf_use_feature(motion) failed", !err);
 
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref;
-        VmafPicture dist;
-        err = alloc_frame(&ref, i);
-        mu_assert("alloc_frame(ref) failed", !err);
-        err = alloc_frame(&dist, i + 1u); /* distinct to produce non-zero motion */
-        mu_assert("alloc_frame(dist) failed", !err);
-
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("vmaf_read_pictures failed", !err);
-    }
+    char *msg = feed_motion_frames(vmaf, NUM_FRAMES);
+    if (msg)
+        return msg;
 
     /* EOS: triggers flush_context_threaded (pool wait + flush loop). */
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
@@ -160,13 +187,9 @@ static char *test_batch_prev_ref_lifecycle(void)
     /* motion_sad_score is written unconditionally from frame 1 onward (frame 0
      * has no previous frame to compare against). motion_score is only written
      * when debug=true; use motion_sad_score as the always-present sanity check. */
-    for (unsigned i = 1u; i < 4u; i++) {
-        double score = -1.0;
-        err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion_sad_score", &score, i);
-        mu_assert("vmaf_feature_score_at_index(motion_sad_score) failed", !err);
-        mu_assert("motion_sad_score must be finite", isfinite(score));
-        mu_assert("motion_sad_score must be non-negative", score >= 0.0);
-    }
+    msg = check_motion_sad_scores_range(vmaf, 1u, 4u);
+    if (msg)
+        return msg;
 
     err = vmaf_close(vmaf);
     mu_assert("vmaf_close failed", !err);
@@ -174,9 +197,43 @@ static char *test_batch_prev_ref_lifecycle(void)
     return NULL;
 }
 
+/* Frame-feed loops for test_batch_flush_initialized_threaded/serial below,
+ * split out for the same branch-budget reason as feed_motion_frames above.
+ * Message prefixes differ per caller, so these are not merged with
+ * feed_motion_frames. */
+static char *feed_motion_frames_threaded(VmafContext *vmaf, unsigned n)
+{
+    for (unsigned i = 0; i < n; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = alloc_frame(&ref, i);
+        mu_assert("threaded: alloc_frame(ref) failed", !err);
+        err = alloc_frame(&dist, i + 1u);
+        mu_assert("threaded: alloc_frame(dist) failed", !err);
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert("threaded: vmaf_read_pictures failed", !err);
+    }
+    return NULL;
+}
+
+static char *feed_motion_frames_serial(VmafContext *vmaf, unsigned n)
+{
+    for (unsigned i = 0; i < n; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = alloc_frame(&ref, i);
+        mu_assert("serial: alloc_frame(ref) failed", !err);
+        err = alloc_frame(&dist, i + 1u);
+        mu_assert("serial: alloc_frame(dist) failed", !err);
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert("serial: vmaf_read_pictures failed", !err);
+    }
+    return NULL;
+}
+
 /*
- * test_batch_flush_initialized_flag
- * -----------------------------------
+ * test_batch_flush_initialized_threaded / _serial
+ * ------------------------------------------------
  * Isolated regression test for the ADR-1073 is_initialized gate:
  *
  * After flush_context_threaded sets fex_ctx->is_initialized = true and
@@ -185,90 +242,110 @@ static char *test_batch_prev_ref_lifecycle(void)
  * If close() is skipped, fex->close is never called and any state
  * allocated by flush() leaks (detected by ASan with detect_leaks=1).
  *
- * With n_threads=4 the threaded path is taken; with n_threads=0 the
- * serial path (flush_context_serial) is taken. Both must produce a
- * motion_score at frame 1.
+ * Split into two registered tests (was one, run_tests grew one more
+ * mu_run_test row) so each stays within the readability-function-size
+ * branch budget: the _threaded variant takes n_threads=4 (batch path); the
+ * _serial variant takes n_threads=0 (flush_context_serial path). Both must
+ * produce a motion_score at frame 1.
  */
-static char *test_batch_flush_initialized_flag(void)
+static char *test_batch_flush_initialized_threaded(void)
 {
     int err = 0;
 
-    /* Run with n_threads=4 (batch path) and verify motion score. */
-    {
-        VmafConfiguration cfg = {
-            .log_level = VMAF_LOG_LEVEL_NONE,
-            .n_threads = 4,
-        };
+    VmafConfiguration cfg = {
+        .log_level = VMAF_LOG_LEVEL_NONE,
+        .n_threads = 4,
+    };
 
-        VmafContext *vmaf = NULL;
-        err = vmaf_init(&vmaf, cfg);
-        mu_assert("threaded: vmaf_init failed", !err);
+    VmafContext *vmaf = NULL;
+    err = vmaf_init(&vmaf, cfg);
+    mu_assert("threaded: vmaf_init failed", !err);
 
-        err = vmaf_use_feature(vmaf, "motion", NULL);
-        mu_assert("threaded: vmaf_use_feature(motion) failed", !err);
+    err = vmaf_use_feature(vmaf, "motion", NULL);
+    mu_assert("threaded: vmaf_use_feature(motion) failed", !err);
 
-        for (unsigned i = 0; i < 3u; i++) {
-            VmafPicture ref;
-            VmafPicture dist;
-            err = alloc_frame(&ref, i);
-            mu_assert("threaded: alloc_frame(ref) failed", !err);
-            err = alloc_frame(&dist, i + 1u);
-            mu_assert("threaded: alloc_frame(dist) failed", !err);
-            err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-            mu_assert("threaded: vmaf_read_pictures failed", !err);
-        }
+    char *msg = feed_motion_frames_threaded(vmaf, 3u);
+    if (msg)
+        return msg;
 
-        err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-        mu_assert("threaded: EOS failed", !err);
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("threaded: EOS failed", !err);
 
-        double score = -1.0;
-        err =
-            vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion_sad_score", &score, 1u);
-        mu_assert("threaded: motion_score at index 1 failed", !err);
-        mu_assert("threaded: motion_score finite", isfinite(score));
+    double score = -1.0;
+    err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion_sad_score", &score, 1u);
+    mu_assert("threaded: motion_score at index 1 failed", !err);
+    mu_assert("threaded: motion_score finite", isfinite(score));
 
-        err = vmaf_close(vmaf);
-        mu_assert("threaded: vmaf_close failed", !err);
+    err = vmaf_close(vmaf);
+    mu_assert("threaded: vmaf_close failed", !err);
+
+    return NULL;
+}
+
+static char *test_batch_flush_initialized_serial(void)
+{
+    int err = 0;
+
+    VmafConfiguration cfg = {
+        .log_level = VMAF_LOG_LEVEL_NONE,
+        .n_threads = 0,
+    };
+
+    VmafContext *vmaf = NULL;
+    err = vmaf_init(&vmaf, cfg);
+    mu_assert("serial: vmaf_init failed", !err);
+
+    err = vmaf_use_feature(vmaf, "motion", NULL);
+    mu_assert("serial: vmaf_use_feature(motion) failed", !err);
+
+    char *msg = feed_motion_frames_serial(vmaf, 3u);
+    if (msg)
+        return msg;
+
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("serial: EOS failed", !err);
+
+    double score = -1.0;
+    err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion_sad_score", &score, 1u);
+    mu_assert("serial: motion_score at index 1 failed", !err);
+    mu_assert("serial: motion_score finite", isfinite(score));
+
+    err = vmaf_close(vmaf);
+    mu_assert("serial: vmaf_close failed", !err);
+
+    return NULL;
+}
+
+/* Frame-feed loop for test_batch_n_threads_stress, split out for the same
+ * branch-budget reason as feed_motion_frames above. */
+static char *feed_motion_frames_stress(VmafContext *vmaf, unsigned n)
+{
+    for (unsigned i = 0; i < n; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = alloc_frame(&ref, i);
+        mu_assert("stress: alloc_frame(ref) failed", !err);
+        err = alloc_frame(&dist, i + 1u);
+        mu_assert("stress: alloc_frame(dist) failed", !err);
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert("stress: vmaf_read_pictures failed", !err);
     }
+    return NULL;
+}
 
-    /* Run with n_threads=0 (serial path) and verify same constraint. */
-    {
-        VmafConfiguration cfg = {
-            .log_level = VMAF_LOG_LEVEL_NONE,
-            .n_threads = 0,
-        };
-
-        VmafContext *vmaf = NULL;
-        err = vmaf_init(&vmaf, cfg);
-        mu_assert("serial: vmaf_init failed", !err);
-
-        err = vmaf_use_feature(vmaf, "motion", NULL);
-        mu_assert("serial: vmaf_use_feature(motion) failed", !err);
-
-        for (unsigned i = 0; i < 3u; i++) {
-            VmafPicture ref;
-            VmafPicture dist;
-            err = alloc_frame(&ref, i);
-            mu_assert("serial: alloc_frame(ref) failed", !err);
-            err = alloc_frame(&dist, i + 1u);
-            mu_assert("serial: alloc_frame(dist) failed", !err);
-            err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-            mu_assert("serial: vmaf_read_pictures failed", !err);
-        }
-
-        err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-        mu_assert("serial: EOS failed", !err);
-
+/* Assert motion_sad_score is finite and non-negative at each of `count`
+ * indices. Split out for the same branch-budget reason as
+ * feed_motion_frames_stress above. */
+static char *check_stress_motion_scores(VmafContext *vmaf, const unsigned *indices, unsigned count)
+{
+    for (unsigned k = 0; k < count; k++) {
         double score = -1.0;
-        err =
-            vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion_sad_score", &score, 1u);
-        mu_assert("serial: motion_score at index 1 failed", !err);
-        mu_assert("serial: motion_score finite", isfinite(score));
-
-        err = vmaf_close(vmaf);
-        mu_assert("serial: vmaf_close failed", !err);
+        int err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion_sad_score", &score,
+                                              indices[k]);
+        mu_assert("stress: motion_score failed", !err);
+        mu_assert("stress: motion_score finite", isfinite(score));
+        mu_assert("stress: motion_score non-negative", score >= 0.0);
     }
-
     return NULL;
 }
 
@@ -298,30 +375,18 @@ static char *test_batch_n_threads_stress(void)
     err = vmaf_use_feature(vmaf, "motion", NULL);
     mu_assert("stress: vmaf_use_feature(motion) failed", !err);
 
-    for (unsigned i = 0; i < 16u; i++) {
-        VmafPicture ref;
-        VmafPicture dist;
-        err = alloc_frame(&ref, i);
-        mu_assert("stress: alloc_frame(ref) failed", !err);
-        err = alloc_frame(&dist, i + 1u);
-        mu_assert("stress: alloc_frame(dist) failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("stress: vmaf_read_pictures failed", !err);
-    }
+    char *msg = feed_motion_frames_stress(vmaf, 16u);
+    if (msg)
+        return msg;
 
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("stress: EOS failed", !err);
 
     /* Verify frames 1, 5, 10, 14 all have finite non-negative motion scores. */
     const unsigned check_indices[] = {1u, 5u, 10u, 14u};
-    for (unsigned k = 0; k < 4u; k++) {
-        double score = -1.0;
-        err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion_sad_score", &score,
-                                          check_indices[k]);
-        mu_assert("stress: motion_score failed", !err);
-        mu_assert("stress: motion_score finite", isfinite(score));
-        mu_assert("stress: motion_score non-negative", score >= 0.0);
-    }
+    msg = check_stress_motion_scores(vmaf, check_indices, 4u);
+    if (msg)
+        return msg;
 
     err = vmaf_close(vmaf);
     mu_assert("stress: vmaf_close failed", !err);
@@ -352,6 +417,44 @@ static char *test_batch_n_threads_stress(void)
  * cleanly AND that motion_v2's own feature (motion_v2_sad_score) is present
  * and finite — which it never was before the fix.
  */
+static char *feed_two_prev_ref_frames(VmafContext *vmaf, unsigned n)
+{
+    for (unsigned i = 0; i < n; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = alloc_frame(&ref, i);
+        mu_assert("two-prev-ref: alloc_frame(ref) failed", !err);
+        err = alloc_frame(&dist, i + 1u);
+        mu_assert("two-prev-ref: alloc_frame(dist) failed", !err);
+
+        /* Pre-fix this returned -EINVAL from frame 1 (motion_v2 starved). */
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert("two-prev-ref: vmaf_read_pictures failed (motion_v2 starved?)", !err);
+    }
+    return NULL;
+}
+
+/* BOTH extractors must have produced their own per-frame SAD feature over
+ * [from, to). motion_v2_sad_score is the one the pre-fix bug suppressed
+ * entirely. Split out for the same branch-budget reason as
+ * feed_two_prev_ref_frames above. */
+static char *check_two_prev_ref_scores(VmafContext *vmaf, unsigned from, unsigned to)
+{
+    for (unsigned i = from; i < to; i++) {
+        double m1 = -1.0;
+        double m2 = -1.0;
+        int err =
+            vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion_sad_score", &m1, i);
+        mu_assert("two-prev-ref: motion_sad_score missing", !err);
+        mu_assert("two-prev-ref: motion_sad_score finite", isfinite(m1) && m1 >= 0.0);
+
+        err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion_v2_sad_score", &m2, i);
+        mu_assert("two-prev-ref: motion_v2_sad_score missing (regression!)", !err);
+        mu_assert("two-prev-ref: motion_v2_sad_score finite", isfinite(m2) && m2 >= 0.0);
+    }
+    return NULL;
+}
+
 static char *test_batch_two_prev_ref_extractors(void)
 {
     int err = 0;
@@ -371,35 +474,16 @@ static char *test_batch_two_prev_ref_extractors(void)
     err = vmaf_use_feature(vmaf, "motion_v2", NULL);
     mu_assert("two-prev-ref: vmaf_use_feature(motion_v2) failed", !err);
 
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref;
-        VmafPicture dist;
-        err = alloc_frame(&ref, i);
-        mu_assert("two-prev-ref: alloc_frame(ref) failed", !err);
-        err = alloc_frame(&dist, i + 1u);
-        mu_assert("two-prev-ref: alloc_frame(dist) failed", !err);
-
-        /* Pre-fix this returned -EINVAL from frame 1 (motion_v2 starved). */
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("two-prev-ref: vmaf_read_pictures failed (motion_v2 starved?)", !err);
-    }
+    char *msg = feed_two_prev_ref_frames(vmaf, NUM_FRAMES);
+    if (msg)
+        return msg;
 
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("two-prev-ref: EOS failed", !err);
 
-    /* BOTH extractors must have produced their own per-frame SAD feature.
-     * motion_v2_sad_score is the one the bug suppressed entirely. */
-    for (unsigned i = 1u; i < 4u; i++) {
-        double m1 = -1.0;
-        double m2 = -1.0;
-        err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion_sad_score", &m1, i);
-        mu_assert("two-prev-ref: motion_sad_score missing", !err);
-        mu_assert("two-prev-ref: motion_sad_score finite", isfinite(m1) && m1 >= 0.0);
-
-        err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion_v2_sad_score", &m2, i);
-        mu_assert("two-prev-ref: motion_v2_sad_score missing (regression!)", !err);
-        mu_assert("two-prev-ref: motion_v2_sad_score finite", isfinite(m2) && m2 >= 0.0);
-    }
+    msg = check_two_prev_ref_scores(vmaf, 1u, 4u);
+    if (msg)
+        return msg;
 
     err = vmaf_close(vmaf);
     mu_assert("two-prev-ref: vmaf_close failed", !err);
@@ -410,7 +494,8 @@ static char *test_batch_two_prev_ref_extractors(void)
 char *run_tests()
 {
     mu_run_test(test_batch_prev_ref_lifecycle);
-    mu_run_test(test_batch_flush_initialized_flag);
+    mu_run_test(test_batch_flush_initialized_threaded);
+    mu_run_test(test_batch_flush_initialized_serial);
     mu_run_test(test_batch_n_threads_stress);
     mu_run_test(test_batch_two_prev_ref_extractors);
     return NULL;

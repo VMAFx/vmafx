@@ -27,6 +27,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mu_table.h"
 #include "test.h"
 #include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
@@ -139,6 +140,19 @@ static char *test_use_features_from_model_collection_null_mc(void)
 
 /* ---------------------------------------------------------------------- */
 
+/* NULL-guard checks shared by test_score_at_index_model_collection. Extracted
+ * so the caller's branch count stays inside the readability-function-size
+ * budget: a helper `if (msg) return msg;` is one branch versus the two each
+ * mu_assert contributes at the call site. */
+static char *check_score_at_index_null_guards(VmafContext *vmaf, VmafModelCollection *mc,
+                                              VmafModelCollectionScore *score)
+{
+    mu_assert("NULL vmaf -> error", vmaf_score_at_index_model_collection(NULL, mc, score, 0u) != 0);
+    mu_assert("NULL mc -> error", vmaf_score_at_index_model_collection(vmaf, NULL, score, 0u) != 0);
+    mu_assert("NULL score -> error", vmaf_score_at_index_model_collection(vmaf, mc, NULL, 0u) != 0);
+    return NULL;
+}
+
 static char *test_score_at_index_model_collection(void)
 {
     VmafConfiguration vcfg = {.log_level = VMAF_LOG_LEVEL_NONE};
@@ -157,11 +171,9 @@ static char *test_score_at_index_model_collection(void)
 
     /* NULL-guard checks. */
     VmafModelCollectionScore score = {0};
-    mu_assert("NULL vmaf -> error",
-              vmaf_score_at_index_model_collection(NULL, mc, &score, 0u) != 0);
-    mu_assert("NULL mc -> error",
-              vmaf_score_at_index_model_collection(vmaf, NULL, &score, 0u) != 0);
-    mu_assert("NULL score -> error", vmaf_score_at_index_model_collection(vmaf, mc, NULL, 0u) != 0);
+    char *msg = check_score_at_index_null_guards(vmaf, mc, &score);
+    if (msg)
+        return msg;
 
     /* Happy path: a real score for a seeded frame. */
     err = vmaf_score_at_index_model_collection(vmaf, mc, &score, 0u);
@@ -177,6 +189,23 @@ static char *test_score_at_index_model_collection(void)
 }
 
 /* ---------------------------------------------------------------------- */
+
+/* NULL-guard checks shared by test_score_pooled_model_collection. Extracted
+ * for the same branch-budget reason as check_score_at_index_null_guards. */
+static char *check_score_pooled_null_guards(VmafContext *vmaf, VmafModelCollection *mc,
+                                            VmafModelCollectionScore *score)
+{
+    mu_assert("NULL vmaf -> error",
+              vmaf_score_pooled_model_collection(NULL, mc, VMAF_POOL_METHOD_MEAN, score, 0u,
+                                                 N_FRAMES - 1u) != 0);
+    mu_assert("NULL mc -> error",
+              vmaf_score_pooled_model_collection(vmaf, NULL, VMAF_POOL_METHOD_MEAN, score, 0u,
+                                                 N_FRAMES - 1u) != 0);
+    mu_assert("NULL score -> error",
+              vmaf_score_pooled_model_collection(vmaf, mc, VMAF_POOL_METHOD_MEAN, NULL, 0u,
+                                                 N_FRAMES - 1u) != 0);
+    return NULL;
+}
 
 static char *test_score_pooled_model_collection(void)
 {
@@ -195,15 +224,9 @@ static char *test_score_pooled_model_collection(void)
 
     /* NULL-guard checks. */
     VmafModelCollectionScore score = {0};
-    mu_assert("NULL vmaf -> error",
-              vmaf_score_pooled_model_collection(NULL, mc, VMAF_POOL_METHOD_MEAN, &score, 0u,
-                                                 N_FRAMES - 1u) != 0);
-    mu_assert("NULL mc -> error",
-              vmaf_score_pooled_model_collection(vmaf, NULL, VMAF_POOL_METHOD_MEAN, &score, 0u,
-                                                 N_FRAMES - 1u) != 0);
-    mu_assert("NULL score -> error",
-              vmaf_score_pooled_model_collection(vmaf, mc, VMAF_POOL_METHOD_MEAN, NULL, 0u,
-                                                 N_FRAMES - 1u) != 0);
+    char *msg = check_score_pooled_null_guards(vmaf, mc, &score);
+    if (msg)
+        return msg;
 
     /* Happy path: pool all seeded frames. */
     err = vmaf_score_pooled_model_collection(vmaf, mc, VMAF_POOL_METHOD_MEAN, &score, 0u,
@@ -385,17 +408,19 @@ static char *test_model_collection_partial_failure_no_leak(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_model_collection_load_valid);
-    mu_run_test(test_model_collection_load_bad_version);
-    mu_run_test(test_use_features_from_model_collection_null_ctx);
-    mu_run_test(test_use_features_from_model_collection_null_mc);
-    mu_run_test(test_score_at_index_model_collection);
-    mu_run_test(test_score_pooled_model_collection);
-    mu_run_test(test_model_collection_load_from_path_valid);
-    mu_run_test(test_model_collection_load_from_path_bad_path);
-    mu_run_test(test_model_collection_feature_overload_null_guard);
-    mu_run_test(test_model_collection_partial_failure_no_leak);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_model_collection_load_valid),
+        MU_TEST(test_model_collection_load_bad_version),
+        MU_TEST(test_use_features_from_model_collection_null_ctx),
+        MU_TEST(test_use_features_from_model_collection_null_mc),
+        MU_TEST(test_score_at_index_model_collection),
+        MU_TEST(test_score_pooled_model_collection),
+        MU_TEST(test_model_collection_load_from_path_valid),
+        MU_TEST(test_model_collection_load_from_path_bad_path),
+        MU_TEST(test_model_collection_feature_overload_null_guard),
+        MU_TEST(test_model_collection_partial_failure_no_leak),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

@@ -40,6 +40,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "mu_table.h"
 #include "test.h"
 
 #include "cli_parse.h"
@@ -240,16 +241,18 @@ static char *test_threads_negative_is_rejected()
 
 char *run_tests()
 {
-    mu_run_test(test_threads_invalid_optarg_does_not_assert);
-    mu_run_test(test_subsample_invalid_optarg_does_not_assert);
-    mu_run_test(test_cpumask_invalid_optarg_does_not_assert);
-    mu_run_test(test_threads_abbrev_does_not_assert);
-    mu_run_test(test_frame_cnt_negative_is_rejected);
-    mu_run_test(test_frame_skip_ref_negative_is_rejected);
-    mu_run_test(test_frame_skip_dist_negative_is_rejected);
-    mu_run_test(test_frame_cnt_overflow_is_rejected);
-    mu_run_test(test_threads_negative_is_rejected);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_threads_invalid_optarg_does_not_assert),
+        MU_TEST(test_subsample_invalid_optarg_does_not_assert),
+        MU_TEST(test_cpumask_invalid_optarg_does_not_assert),
+        MU_TEST(test_threads_abbrev_does_not_assert),
+        MU_TEST(test_frame_cnt_negative_is_rejected),
+        MU_TEST(test_frame_skip_ref_negative_is_rejected),
+        MU_TEST(test_frame_skip_dist_negative_is_rejected),
+        MU_TEST(test_frame_cnt_overflow_is_rejected),
+        MU_TEST(test_threads_negative_is_rejected),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

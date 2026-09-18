@@ -42,6 +42,7 @@
 #if ARCH_AARCH64
 #include "feature/arm64/ms_ssim_decimate_neon.h"
 #endif
+#include "mu_table.h"
 #include "test.h"
 #if ARCH_X86
 #include "x86/cpu.h"
@@ -110,15 +111,21 @@ static char *check_case(int w, int h, uint32_t seed)
 
     float *src = (float *)malloc(src_n * sizeof(float));
     float *dst_scalar = (float *)malloc(dst_n * sizeof(float));
-    mu_assert("malloc failed", src && dst_scalar);
+    if (!src || !dst_scalar) {
+        free(src);
+        free(dst_scalar);
+        return "malloc failed";
+    }
 
     fill_pattern(src, src_n, seed);
     memset(dst_scalar, 0xAA, dst_n * sizeof(float));
 
     const int rc_scalar = ms_ssim_decimate_scalar(src, w, h, dst_scalar, NULL, NULL);
-    mu_assert("scalar decimate failed", rc_scalar == 0);
-
     char *msg = NULL;
+    if (rc_scalar != 0) {
+        msg = "scalar decimate failed";
+        goto done;
+    }
 #if ARCH_X86
     if (g_has_avx2) {
         msg = check_variant(src, w, h, dst_scalar, dst_n, ms_ssim_decimate_avx2, 0x55,
@@ -218,17 +225,12 @@ char *run_tests(void)
     }
 #endif
 
-    mu_run_test(test_1x1);
-    mu_run_test(test_8x8);
-    mu_run_test(test_9x9);
-    mu_run_test(test_10x10);
-    mu_run_test(test_16x16);
-    mu_run_test(test_32x32);
-    mu_run_test(test_33x17);
-    mu_run_test(test_480x270);
-    mu_run_test(test_576x324);
-    mu_run_test(test_1920x1080);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_1x1),     MU_TEST(test_8x8),       MU_TEST(test_9x9),   MU_TEST(test_10x10),
+        MU_TEST(test_16x16),   MU_TEST(test_32x32),     MU_TEST(test_33x17), MU_TEST(test_480x270),
+        MU_TEST(test_576x324), MU_TEST(test_1920x1080),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 #endif
 }
 

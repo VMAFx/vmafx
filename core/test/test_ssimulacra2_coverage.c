@@ -92,28 +92,43 @@ static int alloc_grey10_420(VmafPicture *pic, uint16_t luma)
     return 0;
 }
 
+/* Look up the "ssimulacra2" extractor, create+init a context over an
+ * S2_W x S2_H frame with the given `pix_fmt` / `bpc` (no dictionary options
+ * are used by any test in this file), then init a feature collector. Only
+ * the context_create / context_init failure messages differ per caller. */
+static char *ssimulacra2_fixture_open(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc,
+                                      enum VmafPixelFormat pix_fmt, unsigned bpc, char *create_msg,
+                                      char *init_msg)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssimulacra2");
+    mu_assert("ssimulacra2 extractor missing", fex != NULL);
+
+    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    mu_assert(create_msg, err == 0);
+    err = vmaf_feature_extractor_context_init(*ctx, pix_fmt, bpc, S2_W, S2_H);
+    mu_assert(init_msg, err == 0);
+
+    err = vmaf_feature_collector_init(fc);
+    mu_assert("collector_init", err == 0);
+    return NULL;
+}
+
 /* ----------------------------------------------------------------- */
 /* Default: 8-bit YUV420P, distinct inputs                          */
 /* ----------------------------------------------------------------- */
 
 static char *test_ssimulacra2_default_extract(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssimulacra2");
-    mu_assert("ssimulacra2 extractor missing", fex != NULL);
-
     VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
-    mu_assert("context_create", err == 0);
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, S2_W, S2_H);
-    mu_assert("context_init", err == 0);
-
     VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
-    mu_assert("collector_init", err == 0);
+    char *msg = ssimulacra2_fixture_open(&ctx, &fc, VMAF_PIX_FMT_YUV420P, 8u, "context_create",
+                                         "context_init");
+    if (msg)
+        return msg;
 
     VmafPicture ref;
     VmafPicture dist;
-    err = alloc_grey8_420(&ref, 100u);
+    int err = alloc_grey8_420(&ref, 100u);
     mu_assert("alloc ref", err == 0);
     err = alloc_grey8_420(&dist, 150u);
     mu_assert("alloc dist", err == 0);
@@ -140,22 +155,16 @@ static char *test_ssimulacra2_default_extract(void)
 
 static char *test_ssimulacra2_identical_extract(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssimulacra2");
-    mu_assert("ssimulacra2 extractor missing", fex != NULL);
-
     VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
-    mu_assert("context_create", err == 0);
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, S2_W, S2_H);
-    mu_assert("context_init", err == 0);
-
     VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
-    mu_assert("collector_init", err == 0);
+    char *msg = ssimulacra2_fixture_open(&ctx, &fc, VMAF_PIX_FMT_YUV420P, 8u, "context_create",
+                                         "context_init");
+    if (msg)
+        return msg;
 
     VmafPicture ref;
     VmafPicture dist;
-    err = alloc_grey8_420(&ref, 128u);
+    int err = alloc_grey8_420(&ref, 128u);
     mu_assert("alloc ref identical", err == 0);
     err = alloc_grey8_420(&dist, 128u);
     mu_assert("alloc dist identical", err == 0);
@@ -184,22 +193,16 @@ static char *test_ssimulacra2_identical_extract(void)
 
 static char *test_ssimulacra2_10bit_extract(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssimulacra2");
-    mu_assert("ssimulacra2 extractor missing", fex != NULL);
-
     VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
-    mu_assert("context_create 10bit", err == 0);
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 10u, S2_W, S2_H);
-    mu_assert("context_init 10bit", err == 0);
-
     VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
-    mu_assert("collector_init", err == 0);
+    char *msg = ssimulacra2_fixture_open(&ctx, &fc, VMAF_PIX_FMT_YUV420P, 10u,
+                                         "context_create 10bit", "context_init 10bit");
+    if (msg)
+        return msg;
 
     VmafPicture ref;
     VmafPicture dist;
-    err = alloc_grey10_420(&ref, 400u);
+    int err = alloc_grey10_420(&ref, 400u);
     mu_assert("alloc ref 10bit", err == 0);
     err = alloc_grey10_420(&dist, 700u);
     mu_assert("alloc dist 10bit", err == 0);
@@ -226,22 +229,16 @@ static char *test_ssimulacra2_10bit_extract(void)
 
 static char *test_ssimulacra2_yuv444p_extract(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssimulacra2");
-    mu_assert("ssimulacra2 extractor missing", fex != NULL);
-
     VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
-    mu_assert("context_create 444", err == 0);
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV444P, 8u, S2_W, S2_H);
-    mu_assert("context_init 444", err == 0);
-
     VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
-    mu_assert("collector_init", err == 0);
+    char *msg = ssimulacra2_fixture_open(&ctx, &fc, VMAF_PIX_FMT_YUV444P, 8u, "context_create 444",
+                                         "context_init 444");
+    if (msg)
+        return msg;
 
     VmafPicture ref;
     VmafPicture dist;
-    err = alloc_grey8_444(&ref, 100u);
+    int err = alloc_grey8_444(&ref, 100u);
     mu_assert("alloc ref 444", err == 0);
     err = alloc_grey8_444(&dist, 140u);
     mu_assert("alloc dist 444", err == 0);

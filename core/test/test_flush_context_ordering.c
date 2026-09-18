@@ -175,6 +175,39 @@ static char *test_central_flush_sets_flushed(void)
     return NULL;
 }
 
+/* Feed NUM_FRAMES ref/dist pairs through the serial read path (n_threads=0).
+ * Extracted so test_flush_via_public_api_sets_flushed stays within the
+ * readability-function-size branch budget: each mu_assert expands to two
+ * branches and a `for` loop is one more (ADR-0141). */
+static char *feed_serial_frames(VmafContext *vmaf, unsigned n)
+{
+    for (unsigned i = 0; i < n; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = alloc_frame(&ref, i);
+        mu_assert("serial: alloc_frame(ref) failed", !err);
+        err = alloc_frame(&dist, i + 1u);
+        mu_assert("serial: alloc_frame(dist) failed", !err);
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert("serial: vmaf_read_pictures failed", !err);
+    }
+    return NULL;
+}
+
+/* The second-flush-rejected check + final teardown, split out of
+ * test_flush_via_public_api_sets_flushed for the same branch-budget reason. */
+static char *check_double_flush_rejected_and_close(VmafContext *vmaf)
+{
+    /* A second flush must be rejected — proves the no-retry-once-flushed
+     * contract the fix's ordering depends on. */
+    int err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("serial: second flush must return -EINVAL", err == -EINVAL);
+
+    err = vmaf_close(vmaf);
+    mu_assert("serial: vmaf_close failed", !err);
+    return NULL;
+}
+
 /*
  * test_flush_via_public_api_sets_flushed
  * --------------------------------------
@@ -199,16 +232,9 @@ static char *test_flush_via_public_api_sets_flushed(void)
     err = vmaf_use_feature(vmaf, "motion", NULL);
     mu_assert("serial: vmaf_use_feature(motion) failed", !err);
 
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref;
-        VmafPicture dist;
-        err = alloc_frame(&ref, i);
-        mu_assert("serial: alloc_frame(ref) failed", !err);
-        err = alloc_frame(&dist, i + 1u);
-        mu_assert("serial: alloc_frame(dist) failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("serial: vmaf_read_pictures failed", !err);
-    }
+    char *msg = feed_serial_frames(vmaf, NUM_FRAMES);
+    if (msg)
+        return msg;
 
     mu_assert("serial: flushed false before EOS", !vmaf->flushed);
 
@@ -216,13 +242,9 @@ static char *test_flush_via_public_api_sets_flushed(void)
     mu_assert("serial: EOS flush failed", !err);
     mu_assert("serial: flushed must be true after EOS", vmaf->flushed);
 
-    /* A second flush must be rejected — proves the no-retry-once-flushed
-     * contract the fix's ordering depends on. */
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("serial: second flush must return -EINVAL", err == -EINVAL);
-
-    err = vmaf_close(vmaf);
-    mu_assert("serial: vmaf_close failed", !err);
+    msg = check_double_flush_rejected_and_close(vmaf);
+    if (msg)
+        return msg;
 
     return NULL;
 }

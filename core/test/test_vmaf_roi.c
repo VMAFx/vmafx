@@ -26,6 +26,7 @@
 #include <stddef.h>
 
 #include "test.h"
+#include "mu_table.h"
 #include "vmaf_roi_core.h"
 
 /* Mirror of the sample-count logic from vmaf_roi.c:frame_bytes().
@@ -198,16 +199,18 @@ static char *test_frame_bytes_444(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_reduce_full_ctu);
-    mu_run_test(test_reduce_partial_ctu);
-    mu_run_test(test_qp_signs);
-    mu_run_test(test_qp_clamp);
-    mu_run_test(test_qp_monotonic);
-    mu_run_test(test_frame_bytes_even);
-    mu_run_test(test_frame_bytes_odd_420);
-    mu_run_test(test_frame_bytes_odd_422);
-    mu_run_test(test_frame_bytes_444);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_reduce_full_ctu),
+        MU_TEST(test_reduce_partial_ctu),
+        MU_TEST(test_qp_signs),
+        MU_TEST(test_qp_clamp),
+        MU_TEST(test_qp_monotonic),
+        MU_TEST(test_frame_bytes_even),
+        MU_TEST(test_frame_bytes_odd_420),
+        MU_TEST(test_frame_bytes_odd_422),
+        MU_TEST(test_frame_bytes_444),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */
