@@ -34,6 +34,15 @@
 
 typedef void (*VmafRangeUpdater)(uint16_t *arr, int left, int right);
 
+/* Scalar spatial-mask row kernels (upstream 86da14d03). They are the reference
+ * the AVX2 / AVX-512 / NEON twins must match bit for bit, and the default the
+ * CPU dispatch in cambi.c falls back to. */
+void compute_dp_row(uint32_t *dp_curr, const uint32_t *dp_prev, const uint16_t *deriv, int width,
+                    int pad_size, bool deriv_valid);
+
+void compute_mask_row(uint16_t *mask_row, const uint32_t *dp_bottom, const uint32_t *dp_top,
+                      int width, int pad_size, uint32_t mask_index);
+
 // Auto-generated reciprocal LUT for cambi c_value_pixel
 // reciprocal_lut[i] = 1.0f / (float)i, with [0] = 0.0f
 #define CAMBI_RECIPROCAL_LUT_SIZE 4226
