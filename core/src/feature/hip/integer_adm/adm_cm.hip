@@ -321,8 +321,11 @@ adm_cm_line_kernel_body(AdmBufferHip buf, int h, int w, int top, int bottom, int
 
     for (int x = start_col + (int)threadIdx.x; x < end_col; x += (int)blockDim.x) {
         int pos_x[3] = {x - 1, x, x + 1};
+        /* ADR-1210's asymmetric rule, as the CPU's adm_cm_thresh(): x - 1 mirrors
+         * to 1 at the left edge, x + 1 clamps to w - 1 at the right edge. Both
+         * edges are inside the CM region only for bands of 14 samples or less. */
         pos_x[0]     = abs(pos_x[0]);
-        pos_x[2]     = pos_x[2] - max(0, 2 * (x - w) + 1);
+        pos_x[2]     = min(pos_x[2], w - 1);
 
         int32_t thr[rows_per_thread] = {0};
 
@@ -332,7 +335,7 @@ adm_cm_line_kernel_body(AdmBufferHip buf, int h, int w, int top, int bottom, int
             for (int row = 0; row < total_rows; ++row) {
                 int pos_y = y - 1 + row;
                 pos_y     = abs(pos_y);
-                pos_y     = pos_y - max(0, 2 * (y - h) + 1);
+                pos_y     = min(pos_y, h - 1);
 
                 int16_t csf_a_val =
                     inline_s0_csf_a(ref, dis, pos_y * src_stride + x, theta, i_rfactor,
@@ -425,8 +428,10 @@ adm_cm_reduce_line_kernel_body(int h, int w, int scale, int buffer_h, int buffer
     int32_t shift_sq       = 30;
     int32_t add_shift_sq   = 536870912; /* 2^29 */
     if (scale == 0) {
+        /* 0 for bands 9 to 16 samples wide (frames 17 to 32 pixels), where
+         * 1u << (shift_cub - 1) is undefined; see adm_half_shift(). */
         shift_cub     = (uint32_t)ceilf(log2f((float)w) - (float)cm_fixed_shift_const[band]);
-        add_shift_cub = 1u << (shift_cub - 1);
+        add_shift_cub = (shift_cub > 0u) ? (1u << (shift_cub - 1u)) : 0u;
         shift_sq      = cm_shift_xsq_const[band];
         add_shift_sq  = cm_add_shift_xsq_const[band];
     }

@@ -902,11 +902,11 @@ static int adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, in
         ws.shift_cub[band] -= (uint32_t)fixed_shift[band];
         ws.shift_sq[band] = (uint32_t)shift_xsq[band];
         ws.add_shift_sq[band] = (uint32_t)add_shift_xsq[band];
-        ws.add_shift_cub[band] = 1u << (ws.shift_cub[band] - 1u);
+        ws.add_shift_cub[band] = adm_half_shift(ws.shift_cub[band]);
     }
 
     uint32_t shift_inner_accum = (uint32_t)ceilf(log2f((float)h));
-    uint32_t add_shift_inner_accum = 1u << (shift_inner_accum - 1u);
+    uint32_t add_shift_inner_accum = adm_half_shift(shift_inner_accum);
 
     /* fused CM + reduce kernel */
     {
@@ -1153,6 +1153,13 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     (void)bpc;
 
     AdmStateHip *s = fex->priv;
+
+    /* Same frame-size bound as the CPU reference, checked before any device
+     * resource is claimed. */
+    const int size_err = adm_frame_size_check("adm_hip", w, h);
+    if (size_err) {
+        return size_err;
+    }
 
     if (s->adm_norm_view_dist * s->adm_ref_display_height <
         DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) {
