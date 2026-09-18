@@ -164,6 +164,61 @@ self.assertAlmostEqual(results[0]['Cambi_score'],
                         1.218365, places=4)
 ```
 
+## CPU SIMD paths
+
+The CPU extractor picks its kernels once, in `init()`, from the host's CPU
+flags. Nothing needs to be configured: the scalar C code is the default and
+the reference, and a SIMD kernel replaces it only on a CPU that supports its
+instruction set. Every dispatched kernel is integer-only and bit-exact against
+the scalar code, so the CAMBI score is identical whichever path runs.
+
+| Stage | AVX2 | AVX-512 | NEON (aarch64) |
+| --- | --- | --- | --- |
+| Anti-dithering filter (8-bit input) | dispatched | — | — |
+| Spatial mask: derivative row | dispatched | present, not dispatched | present, not dispatched |
+| Spatial mask: summed-area (dp) row | dispatched | dispatched | dispatched |
+| Spatial mask: box-sum threshold (mask) row | dispatched | dispatched | present, not dispatched |
+| Decimate, mode filter | dispatched | — | — |
+| c-values (sliding histogram) | dispatched | row kernel present, not dispatched | row kernel present, not dispatched |
+
+"Present, not dispatched" means the kernel is built and covered by a parity
+test but the extractor keeps the scalar code on that ISA. For the NEON mask row
+that is deliberate: GCC and Clang already compile the scalar loop into the same
+NEON instructions, so the hand-written twin would not remove any work. The
+remaining AVX-512 and NEON kernels predate the current c-values layout and were
+left undispatched when that layout was ported from upstream.
+
+The spatial-mask row kernels are what the extractor runs once per frame at
+full resolution. On one AMD Zen 5 core (release build, 1920x1080 frame, 7x7
+mask filter) they measured:
+
+| Kernel | Scalar | AVX2 | AVX-512 |
+| --- | --- | --- | --- |
+| dp row, GCC build | 486 µs | 216 µs (2.25x) | 153 µs (3.18x) |
+| dp row, Clang build | 428 µs | 236 µs (1.81x) | 165 µs (2.59x) |
+| mask row, GCC build | 275 µs | 164 µs (1.68x) | 122 µs (2.26x) |
+| mask row, Clang build | 251 µs | 167 µs (1.51x) | 121 µs (2.08x) |
+
+Both rows together are a small share of a CAMBI frame: about 0.76 ms of the
+roughly 23 ms a scalar frame of the 1080p checkerboard fixture took in the same
+setup, so the end-to-end gain from these two kernels is around 2 %.
+
+To compare paths on your own machine, mask CPU flags with `--cpumask`, which
+takes the flags to *disable*. The score must not change:
+
+```bash
+# default dispatch (AVX-512 where available)
+vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
+    --no_prediction --feature cambi --precision max --json -o simd.json
+# AVX2 only (disable the AVX-512 flag, bit 4)
+vmaf ... --cpumask 16 -o avx2.json
+# scalar only
+vmaf ... --cpumask 65535 -o scalar.json
+```
+
+The kernel parity tests are `test_cambi_spatial_mask_simd` and
+`test_cambi_simd` in the `simd` suite (`meson test -C build --suite simd`).
+
 ## GPU support
 
 CAMBI has a CUDA backend (T3-15a / [ADR-0360](../adr/0360-cambi-cuda.md)).

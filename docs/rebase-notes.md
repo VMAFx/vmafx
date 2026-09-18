@@ -1,6 +1,35 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## perf/cambi-spatial-mask-simd — upstream `86da14d03` adapted, not verbatim (2026-09-18)
+
+Upstream `86da14d03` ("feature/cambi: AVX2 vectorize spatial-mask dp row and
+mask row") is ported, with three differences a sync must keep:
+
+- `core/src/feature/x86/cambi_avx2.c`: `compute_dp_row_avx2` carries the
+  running prefix as `carry += broadcast(block total)` instead of re-broadcasting
+  lane 7 of the carried scan, and `inclusive_prefix_epi32` moves the low half's
+  total with `pshufd` + zeroing `vperm2i128` instead of `permute2x128` +
+  `shuffle` + `blend`. Upstream's form is 0.64–0.74x of scalar under Clang and
+  icx. `compute_mask_row_avx2` biases both compare operands by 2^31, so it is
+  exact for any `mask_index`, not only box sums below 2^31. If upstream later
+  changes these functions, take their intent and re-bench; do not replace the
+  fork's bodies.
+- `core/src/feature/cambi.c`: dispatch matches upstream for AVX2 and adds
+  AVX-512 (`#if HAVE_AVX512`) for both rows and NEON for the dp row only
+  (ADR-1256). `vmaf_cambi_get_spatial_mask` (the GPU twins' trampoline) passes
+  the scalar row kernels. `compute_dp_row` / `compute_mask_row` are non-static
+  with prototypes in `cambi.h`, as upstream made them; the other functions
+  upstream exported for checkasm stay `static` in the fork.
+- No checkasm in the fork: upstream's `check_cambi.c` cases are covered by
+  `core/test/test_cambi_spatial_mask_simd.c` instead; `test_cambi.c` takes
+  upstream's two extra `get_spatial_mask_for_index` arguments.
+
+`compute_*_row_avx512` and `compute_*_row_neon` are fork-local and have no
+upstream counterpart. The same branch refactors `calculate_c_values_row_neon`
+into a per-pixel helper (touched-file lint, bit-exact under `test_cambi_simd`).
+See [Research-2062](research/2062-cambi-spatial-mask-simd.md).
+
 ## Canonical envtest installer (2026-09-08)
 
 Keep Make, Go CI and controller-suite guidance on `scripts/ci/setup-envtest.sh`.
