@@ -14,7 +14,10 @@ authors = [
 # matplotlib / lightning) — those are not on the Phase-A retrain path.
 dependencies = [
   "torch>=2.14.0,<3.0",
-  "onnx>=1.22.0,<2.0",
+  # onnx 1.23 writes models at IR version 14 by default; onnxruntime 1.30,
+  # the runtime this repo pins, loads at most IR 13. Raise this cap only
+  # together with an onnxruntime that reads the newer IR.
+  "onnx>=1.22.0,<1.23",
   "onnxruntime>=1.30.0,<2.0",
   "numpy>=2.5.3,<3.0",
   "pandas>=3.0.5,<3.1",
