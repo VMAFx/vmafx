@@ -14,7 +14,6 @@
     "core/src/feature/hip/float_ssim/ssim_score.hip": 11,
     "core/src/feature/hip/float_vif/float_vif_score.hip": 21,
     "core/src/feature/hip/hip_hsaco_stubs.c": 1,
-    "core/src/feature/hip/integer_adm/adm_cm.hip": 84,
     "core/src/feature/hip/integer_adm/adm_csf.hip": 35,
     "core/src/feature/hip/integer_adm/adm_csf_den.hip": 15,
     "core/src/feature/hip/integer_adm/adm_decouple.hip": 49,
