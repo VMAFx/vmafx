@@ -1,6 +1,6 @@
 ---
 name: profile-hotpath
-description: Profile a hot path (feature + backend) using the appropriate profiler (perf / ncu / Vtune / rocprof), produce flamegraph + top-N hot functions, and suggest concrete optimizations. Delegates to the perf-profiler agent.
+description: Profile hot path (feature + backend) with matching profiler (perf / ncu / Vtune / rocprof), produce flamegraph + top-N hot functions, suggest concrete optimizations. Delegates to perf-profiler agent.
 ---
 <!-- markdownlint-disable MD013 -->
 

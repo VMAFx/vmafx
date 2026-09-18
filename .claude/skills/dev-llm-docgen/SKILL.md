@@ -1,6 +1,6 @@
 ---
 name: dev-llm-docgen
-description: Draft a Doxygen @brief/@param/@return block for a named function in a C/C++/CUDA file via local LLM (Ollama).
+description: Draft Doxygen @brief/@param/@return block for named function in C/C++/CUDA file via local LLM (Ollama).
 ---
 # /dev-llm-docgen
 

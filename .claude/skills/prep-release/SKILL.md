@@ -1,6 +1,6 @@
 ---
 name: prep-release
-description: Dry-run release-please locally, preview the CHANGELOG diff, verify signing prerequisites (Sigstore/OIDC), and surface any blockers before a release PR merges.
+description: Dry-run `release-please` locally, preview CHANGELOG diff, verify signing prerequisites (Sigstore/OIDC), surface blockers before release PR merges.
 ---
 <!-- markdownlint-disable MD013 -->
 
@@ -23,13 +23,13 @@ description: Dry-run release-please locally, preview the CHANGELOG diff, verify 
      names exist (ADR-1151 / ADR-1171). NO-GO if exit non-zero; master workflow
      stays idle-green without them, will not say so.
 2. Run `release-please release-pr --dry-run --repo-url=<fork>` (via
-   release-please CLI or scripted equivalent) from origin-faithful clone.
-   Repo fetches Netflix upstream tags into shared local tag namespace;
-   dry-run against ordinary development checkout can mistake upstream-only
+   `release-please` CLI or scripted equivalent), from origin-faithful clone.
+   Repo fetches Netflix upstream tags into shared local tag namespace.
+   Risk: dry-run against ordinary dev checkout can mistake upstream-only
    `vX.Y.Z` tag for VMAFx release -> bypasses configured bootstrap SHA.
-   Simulation clone must contain only tags advertised by `VMAFx/vmafx`, plus
-   candidate master tree. Pass GitHub token via protected file descriptor or
-   file path, never as literal command-line value.
+   Simulation clone: only tags advertised by `VMAFx/vmafx`, plus candidate
+   master tree. GitHub token: protected file descriptor or file path only,
+   never literal command-line value.
 3. Parse proposed release: version bump, CHANGELOG delta, affected packages.
 4. Display diff: version old -> new, CHANGELOG section added, tag created.
 5. Verify version matches ordinary SemVer scheme `vMAJOR.MINOR.PATCH`
@@ -42,8 +42,8 @@ description: Dry-run release-please locally, preview the CHANGELOG diff, verify 
 
 ## Notes
 
-- Skill never creates releases. Only previews what next release-please PR
-  would propose, so operator merges with confidence.
+- Skill never creates releases. Only previews next `release-please` PR
+  proposal -> operator merges with confidence.
 - If proposed version not ordinary SemVer or root-owned package versions
   diverge: surface as blocker, repair `release-please-config.json` before
   merging.

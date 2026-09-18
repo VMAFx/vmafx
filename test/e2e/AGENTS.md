@@ -1,40 +1,41 @@
 # Kubernetes E2E invariants
 
-The suite must assert executable production behavior. Its stable boundary is
-the Helm chart's default `Deployment` workload plus the opt-in operator, using
-the exact `e2e-test` images loaded into kind and `imagePullPolicy: Never`. The
-CPU case must complete a real `/v1/score` through the chart Service and validate
-finite response values; readiness alone is not an end-to-end score.
+Suite must assert executable production behavior. Stable boundary: Helm
+chart's default `Deployment` workload + opt-in operator, exact `e2e-test`
+images loaded into kind, `imagePullPolicy: Never`. CPU case must complete
+real `/v1/score` through chart Service, validate finite response values.
+Readiness alone is not an end-to-end score.
 
-The CPU bootstrap has no cert-manager or device-plugin dependency. Webhooks
-are disabled and `gpu.vendor=cpu` requests no GPU resource; do not restore
+CPU bootstrap: no cert-manager or device-plugin dependency. Webhooks
+disabled. `gpu.vendor=cpu` requests no GPU resource. Do not restore
 unrelated privileged or remote components as prerequisites for this lane.
 
-Every Kubernetes read, mutation, and cleanup must use the absolute path in
-`VMAFX_E2E_KUBECONFIG`. Before continuing, `assert-kind-context.sh` requires
-current context `kind-${KIND_CLUSTER_NAME}` and a loopback API server. Never
-fall back to the process-wide default kubeconfig. Kuttl keeps resources for
-diagnostics; only `kind-cluster.sh --teardown` deletes the exact named cluster.
+Every Kubernetes read, mutation, cleanup: use absolute path in
+`VMAFX_E2E_KUBECONFIG`. Before continuing, `assert-kind-context.sh`
+requires current context `kind-${KIND_CLUSTER_NAME}` + loopback API
+server. Never fall back to process-wide default kubeconfig. Kuttl keeps
+resources for diagnostics; only `kind-cluster.sh --teardown` deletes exact
+named cluster.
 
-The readiness commands live in `01-ready.yaml`. Do not rename a command-backed
-step to `*-assert.yaml`: kuttl reserves that suffix for declarative object
-matching and will wait for a `TestStep` custom resource that never exists. The
-fixture volume patch must remain strategic-merge/idempotent so interrupted
-local runs can be retried safely. `score-smoke.sh` binds an available IPv4
-loopback port and must continue to exercise the chart Service, not a direct Pod
-or Deployment port-forward.
+Readiness commands live in `01-ready.yaml`. Do not rename a
+command-backed step to `*-assert.yaml`: kuttl reserves that suffix for
+declarative object matching, will wait for a `TestStep` custom resource
+that never exists. Fixture volume patch must stay strategic-merge /
+idempotent so interrupted local runs retry safely. `score-smoke.sh` binds
+an available IPv4 loopback port, must keep exercising chart Service, not
+direct Pod or Deployment port-forward.
 
-Do not assert that `VmafxJobReconciler` creates worker Pods, that the operator
-writes `VmafxNode.status.lastHeartbeat`, or that
-`VmafxModelTrainingReconciler` creates trainer Pods or Services. Those are not
-implemented ownership contracts. Add such cases only after the production
-component and every fixture/service prerequisite exist.
+Do not assert: `VmafxJobReconciler` creates worker Pods; operator writes
+`VmafxNode.status.lastHeartbeat`; `VmafxModelTrainingReconciler` creates
+trainer Pods or Services. Not implemented as ownership contracts yet. Add
+such cases only after production component + every fixture/service
+prerequisite exist.
 
-`fixtures/gen-tiny-yuv.sh` validates the committed raw files and generates Y4M
-wrappers so the file-path REST API can infer 64x64 geometry. The scoring smoke
+`fixtures/gen-tiny-yuv.sh` validates committed raw files, generates Y4M
+wrappers so file-path REST API infers 64x64 geometry. Scoring smoke
 must not add or modify Netflix golden-score assertions.
 
-The suite is coupled to `.github/workflows/e2e-k8s.yml` and
-`scripts/ci/test_e2e_runtime_contract.py`: operator, CPU node, and Go server
-images are built/exported/loaded together, even though the default chart does
-not enable the node workload. Update all three surfaces in one change.
+Suite coupled to `.github/workflows/e2e-k8s.yml` +
+`scripts/ci/test_e2e_runtime_contract.py`: operator, CPU node, Go server
+images built/exported/loaded together, even though default chart does not
+enable node workload. Update all three surfaces in one change.

@@ -1,6 +1,6 @@
 ---
 name: port-upstream-commit
-description: Cherry-pick a single upstream Netflix/vmaf commit onto the fork's master, auto-adapting for SIMD/GPU paths where the commit touches a feature we have multiple implementations of.
+description: Cherry-pick single upstream Netflix/vmaf commit onto fork's master, auto-adapting SIMD/GPU paths where commit touches feature with multiple implementations.
 ---
 <!-- markdownlint-disable MD013 -->
 
