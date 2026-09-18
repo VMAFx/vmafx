@@ -551,3 +551,16 @@ emitting a `0.0` score. The twin also adopts the CPU rule that a channel with
 exactly one singular side (reference or distorted) scores 0 rather than an
 inflated value. The launch-geometry half of ADR-1202 was CUDA-only — this
 twin's solve launch was already correct.
+
+## CAMBI reads its device buffers in one copy (2026-09-17)
+
+`integer_cambi_sycl.cpp` enqueued one `q.memcpy` per row when reading the
+decimated image and mask back for the CPU residual. Both sides are packed at
+the same pitch, so the region was already contiguous and the loop bought
+nothing: it is now a single copy per buffer.
+
+The CUDA twin carried a worse version of the same defect — a *blocking* copy per
+row, which cost 0.602 s of a 1.03 s run over 48 frames of 1080p. See
+[the CUDA overview](../cuda/overview.md#cambi-reads-its-device-buffers-in-one-transfer-2026-09-17)
+for the measurements. **If you add a GPU twin that reads a plane back, copy it
+in one transfer.**

@@ -830,18 +830,23 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                                       CU_EVENT_WAIT_DEFAULT),
                     fail_cuda);
 
-    /* Step 2: HtoD upload pics[0].data[0] → d_image. */
-    const size_t row_bytes = s->proc_width * sizeof(uint16_t);
-    const uint16_t *src_data = (const uint16_t *)s->pics[0].data[0];
-    const ptrdiff_t src_stride_bytes = s->pics[0].stride[0];
-    for (unsigned row = 0; row < s->proc_height; row++) {
-        const uint8_t *src_row = (const uint8_t *)src_data + (size_t)row * (size_t)src_stride_bytes;
-        /* Arithmetic on CUdeviceptr (unsigned long long) directly — avoids
-         * the UB of casting an integer through uint8_t* and back. */
-        const CUdeviceptr dst_dptr =
-            s->d_image->data + (CUdeviceptr)((size_t)row * s->proc_width * sizeof(uint16_t));
-        CHECK_CUDA_GOTO(cu_f, cuMemcpyHtoDAsync(dst_dptr, src_row, row_bytes, stream), fail_cuda);
-    }
+    /* Step 2: HtoD upload pics[0].data[0] → d_image.
+     *
+     * One strided 2D copy, not one call per row. The host picture's stride and
+     * the packed device buffer's differ, which is exactly what the pitch fields
+     * are for; issuing a call per row cost `proc_height` driver round trips a
+     * frame for a copy the driver does in one. */
+    CUDA_MEMCPY2D upload = {
+        .srcMemoryType = CU_MEMORYTYPE_HOST,
+        .srcHost = s->pics[0].data[0],
+        .srcPitch = (size_t)s->pics[0].stride[0],
+        .dstMemoryType = CU_MEMORYTYPE_DEVICE,
+        .dstDevice = s->d_image->data,
+        .dstPitch = s->proc_width * sizeof(uint16_t),
+        .WidthInBytes = s->proc_width * sizeof(uint16_t),
+        .Height = s->proc_height,
+    };
+    CHECK_CUDA_GOTO(cu_f, cuMemcpy2DAsync(&upload, stream), fail_cuda);
 
     /* Step 3: spatial mask at full scale. */
     const unsigned mask_index_0 = (unsigned)cambi_cuda_get_mask_index(s->proc_width, s->proc_height,
@@ -1012,28 +1017,31 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         if (err)
             goto fail_cuda;
 
-        /* Synchronous DtoH: drain the picture stream so the host readback
-         * is safe before the CPU residual. */
+        /* DtoH: d_image → pics[0].data[0], d_mask → pics[1].data[0].
+         *
+         * Two strided 2D copies enqueued on the stream, then one stall that
+         * waits for both. This used to stall first and then issue two BLOCKING
+         * copies per row: at 1080p that is 2,160 driver round trips for scale 0
+         * alone, about 4,200 a frame across the five scales, and it dominated
+         * the whole CUDA pipeline — 0.60 s of a 1.03 s run over 48 frames,
+         * more than every other extractor combined. */
+        const size_t scaled_row_bytes = scaled_w * sizeof(uint16_t);
+        CUDA_MEMCPY2D readback = {
+            .srcMemoryType = CU_MEMORYTYPE_DEVICE,
+            .srcDevice = s->d_image->data,
+            .srcPitch = scaled_row_bytes,
+            .dstMemoryType = CU_MEMORYTYPE_HOST,
+            .dstHost = s->pics[0].data[0],
+            .dstPitch = (size_t)s->pics[0].stride[0],
+            .WidthInBytes = scaled_row_bytes,
+            .Height = scaled_h,
+        };
+        CHECK_CUDA_GOTO(cu_f, cuMemcpy2DAsync(&readback, stream), fail_cuda);
+        readback.srcDevice = s->d_mask->data;
+        readback.dstHost = s->pics[1].data[0];
+        readback.dstPitch = (size_t)s->pics[1].stride[0];
+        CHECK_CUDA_GOTO(cu_f, cuMemcpy2DAsync(&readback, stream), fail_cuda);
         CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(stream), fail_cuda);
-
-        /* DtoH: d_image → pics[0].data[0] (stride-aware). */
-        const ptrdiff_t pic_stride_bytes = s->pics[0].stride[0];
-        uint16_t *dst0 = (uint16_t *)s->pics[0].data[0];
-        uint16_t *dst1 = (uint16_t *)s->pics[1].data[0];
-        for (unsigned row = 0; row < scaled_h; row++) {
-            uint8_t *d0_row = (uint8_t *)dst0 + (size_t)row * (size_t)pic_stride_bytes;
-            /* Arithmetic on CUdeviceptr directly — avoids UB of casting integer
-             * through uint8_t* and back (same pattern as the HtoD loop above). */
-            const CUdeviceptr s0_dptr =
-                s->d_image->data + (CUdeviceptr)((size_t)row * scaled_w * sizeof(uint16_t));
-            CHECK_CUDA_GOTO(cu_f, cuMemcpyDtoH(d0_row, s0_dptr, scaled_w * sizeof(uint16_t)),
-                            fail_cuda);
-            uint8_t *d1_row = (uint8_t *)dst1 + (size_t)row * (size_t)pic_stride_bytes;
-            const CUdeviceptr s1_dptr =
-                s->d_mask->data + (CUdeviceptr)((size_t)row * scaled_w * sizeof(uint16_t));
-            CHECK_CUDA_GOTO(cu_f, cuMemcpyDtoH(d1_row, s1_dptr, scaled_w * sizeof(uint16_t)),
-                            fail_cuda);
-        }
 
         /* CPU residual: calculate_c_values + spatial pooling. */
         vmaf_cambi_calculate_c_values(&s->pics[0], &s->pics[1], s->buffers.c_values,

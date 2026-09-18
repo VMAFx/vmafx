@@ -396,14 +396,15 @@ static int run_gpu_pipeline(SpeedChromaCudaState *s, CudaFunctions *cu_f, CUdevi
                         fail);
     }
 
-    /* Sync to get cov_mat back to CPU for eigendecomp. */
+    /* Both downloads the host pass needs — the covariance matrix for the
+     * eigendecomposition and the independent term for the Q^T multiply — are
+     * enqueued before the one stall that waits for them. They used to be a
+     * copy, a stall, a copy and a second stall: a whole extra device round trip
+     * per plane per frame for ordering the stream already gives. */
     CHECK_CUDA_GOTO(cu_f,
                     cuMemcpyDtoHAsync(s->h_cov_mat, s->d_cov_mat,
                                       SC_ELEMENTS * SC_ELEMENTS * sizeof(float), s->stream),
                     fail);
-    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->stream), fail);
-
-    /* Download indterm (needed for Qt multiply on CPU). */
     const size_t indterm_bytes = (size_t)SC_ELEMENTS * num_blocks * sizeof(float);
     CHECK_CUDA_GOTO(
         cu_f,
@@ -440,7 +441,8 @@ static int launch_backward_substitution(SpeedChromaCudaState *s, CudaFunctions *
         cu_f,
         cuLaunchKernel(s->func_solve, blocks, 1u, 1u, threads, 1u, 1u, 0u, s->stream, args, NULL),
         fail);
-    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->stream), fail);
+    /* No stall: the solution stays on the device and its only consumer, the
+     * score kernel, is enqueued on this same stream, which orders it. */
     return 0;
 
 fail:
@@ -691,13 +693,11 @@ static int extract_channel(SpeedChromaCudaState *s, CudaFunctions *cu_f, VmafPic
     /* Stash the reference eigenvalues aside before the distorted linalg pass
      * overwrites s->d_eigenvalues. The CPU reference (est_params in speed.c)
      * computes SEPARATE ref and dis covariance + eigenvalues; the score kernel
-     * needs both. A synchronous DtoD copy is ordered against the prior async
-     * eigenvalue H2D on the same stream (run_cpu_linalg cuStreamSynchronize'd
-     * before returning when regular; the singular-path skips the solve but
-     * still uploads eigenvalues async — synchronize to be safe). */
-    CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(s->stream));
-    CHECK_CUDA_RETURN(
-        cu_f, cuMemcpyDtoD(s->d_eigenvalues_ref, s->d_eigenvalues, SC_ELEMENTS * sizeof(float)));
+     * needs both. The copy is enqueued on the same stream as the eigenvalue
+     * upload before it, so the stream orders the two and no host stall is
+     * needed. */
+    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoDAsync(s->d_eigenvalues_ref, s->d_eigenvalues,
+                                              SC_ELEMENTS * sizeof(float), s->stream));
 
     /* GPU pipeline: means → cov → indterm for distorted (keeps the DIS
      * covariance in h_cov_mat — no save/restore of the ref covariance). */

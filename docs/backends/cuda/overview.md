@@ -597,3 +597,31 @@ Two consequences for callers:
   were getting luma-only; pass `psnr_hvs_cuda=enable_chroma=false` to keep it.
 - The extractor now dispatches three planes instead of one, so it costs more
   GPU time than before.
+
+## CAMBI reads its device buffers in one transfer (2026-09-17)
+
+`integer_cambi_cuda.c` used to copy the decimated image and mask back to the
+host **one row at a time**, with a blocking `cuMemcpyDtoH` per row per scale.
+At 1080p that is 2,160 driver round trips for scale 0 alone and roughly 4,200
+per frame across the five scales.
+
+Measured per extractor on an RTX 4090 over 48 frames of 1080p, before the fix:
+
+| extractor | phase | time |
+| --- | --- | ---: |
+| `cambi_cuda` | submit | 0.602 s |
+| `speed_chroma_cuda` | extract | 0.239 s |
+| `adm_cuda` | submit | 0.003 s |
+| `motion_cuda` | submit | 0.000 s |
+
+The copies, not the kernels, were the pipeline: 0.602 s of a 1.03 s run. The
+upload and both readbacks are now single strided `cuMemcpy2DAsync` transfers
+enqueued on the stream with one stall for both — the host picture's stride and
+the packed device buffer's differ, which is what the pitch fields are for.
+`cambi_cuda` submit drops to **0.142 s** and the default-model CUDA run goes
+from **47 to 67 fps** at 1080p. Scores are unchanged; the two CAMBI parity
+gates and the rest of the GPU suite pass.
+
+**If you add a GPU twin that reads a plane back**, copy it in one transfer.
+A per-row loop looks harmless and is the single most expensive thing this
+pipeline has done.

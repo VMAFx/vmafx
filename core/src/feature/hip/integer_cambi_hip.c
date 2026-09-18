@@ -698,17 +698,16 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 
     const hipStream_t stream = (hipStream_t)s->lc.str;
 
-    /* HtoD upload pics[0].data[0] → d_image. */
+    /* HtoD upload pics[0].data[0] → d_image.
+     *
+     * One strided 2D copy, not one call per row: the host picture's stride and
+     * the packed device buffer's differ, which is what the pitch arguments are
+     * for. Mirrors the CUDA twin. */
     const size_t row_bytes = s->proc_width * sizeof(uint16_t);
-    const uint16_t *src_data = (const uint16_t *)s->pics[0].data[0];
-    const ptrdiff_t src_stride_bytes = s->pics[0].stride[0];
-    for (unsigned row = 0; row < s->proc_height; row++) {
-        const uint8_t *src_row = (const uint8_t *)src_data + (size_t)row * (size_t)src_stride_bytes;
-        const hipDeviceptr_t dst_dptr =
-            (hipDeviceptr_t)((uint8_t *)s->d_image +
-                             (size_t)row * s->proc_width * sizeof(uint16_t));
-        hipError_t hip_rc =
-            hipMemcpyHtoDAsync(dst_dptr, (void *)(uintptr_t)src_row, row_bytes, stream);
+    {
+        hipError_t hip_rc = hipMemcpy2DAsync(s->d_image, row_bytes, s->pics[0].data[0],
+                                             (size_t)s->pics[0].stride[0], row_bytes,
+                                             s->proc_height, hipMemcpyHostToDevice, stream);
         if (hip_rc != hipSuccess)
             return hip_err(hip_rc);
     }
@@ -766,30 +765,28 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
         if (err)
             return err;
 
-        /* Sync stream before host DtoH readback. */
-        hipError_t hip_rc = hipStreamSynchronize(stream);
+        /* DtoH: d_img / d_msk → pics[0] / pics[1].
+         *
+         * Two strided 2D copies enqueued on the stream, then one stall that
+         * waits for both. This used to stall first and then issue two BLOCKING
+         * copies per row — at 1080p, thousands of driver round trips a frame.
+         * The CUDA twin carried the identical defect and it cost 0.60 s of a
+         * 1.03 s run there; fixed here by inspection of that measurement, since
+         * this machine has no AMD device. */
+        const size_t scaled_row_bytes = scaled_w * sizeof(uint16_t);
+        hipError_t hip_rc = hipMemcpy2DAsync(s->pics[0].data[0], (size_t)s->pics[0].stride[0],
+                                             d_img, scaled_row_bytes, scaled_row_bytes, scaled_h,
+                                             hipMemcpyDeviceToHost, stream);
         if (hip_rc != hipSuccess)
             return hip_err(hip_rc);
-
-        /* DtoH: d_img / d_msk → pics[0] / pics[1]. */
-        const ptrdiff_t pic_stride_bytes = s->pics[0].stride[0];
-        uint16_t *dst0 = (uint16_t *)s->pics[0].data[0];
-        uint16_t *dst1 = (uint16_t *)s->pics[1].data[0];
-        for (unsigned row = 0; row < scaled_h; row++) {
-            uint8_t *d0_row = (uint8_t *)dst0 + (size_t)row * (size_t)pic_stride_bytes;
-            const hipDeviceptr_t s0_dptr =
-                (hipDeviceptr_t)((uint8_t *)d_img + (size_t)row * scaled_w * sizeof(uint16_t));
-            hip_rc = hipMemcpyDtoH(d0_row, s0_dptr, scaled_w * sizeof(uint16_t));
-            if (hip_rc != hipSuccess)
-                return hip_err(hip_rc);
-
-            uint8_t *d1_row = (uint8_t *)dst1 + (size_t)row * (size_t)pic_stride_bytes;
-            const hipDeviceptr_t s1_dptr =
-                (hipDeviceptr_t)((uint8_t *)d_msk + (size_t)row * scaled_w * sizeof(uint16_t));
-            hip_rc = hipMemcpyDtoH(d1_row, s1_dptr, scaled_w * sizeof(uint16_t));
-            if (hip_rc != hipSuccess)
-                return hip_err(hip_rc);
-        }
+        hip_rc = hipMemcpy2DAsync(s->pics[1].data[0], (size_t)s->pics[1].stride[0], d_msk,
+                                  scaled_row_bytes, scaled_row_bytes, scaled_h,
+                                  hipMemcpyDeviceToHost, stream);
+        if (hip_rc != hipSuccess)
+            return hip_err(hip_rc);
+        hip_rc = hipStreamSynchronize(stream);
+        if (hip_rc != hipSuccess)
+            return hip_err(hip_rc);
 
         /* CPU residual: calculate_c_values + spatial pooling. */
         vmaf_cambi_calculate_c_values(&s->pics[0], &s->pics[1], s->buffers.c_values,
