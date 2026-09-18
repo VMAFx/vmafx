@@ -13131,6 +13131,13 @@ values in divergent-branch kernels. The 25 `.cu` files with nested `if`-divergen
 all candidates for silent score corruption under the 13.2 toolchain.
 
 
+- **The CUDA integer ADM extractor allocates about 50 MB less device memory
+  at 1080p.** Two scratch buffers sized to the frame (`tmp_accum`,
+  3 x w x h x 8 bytes, and `tmp_accum_h`) were allocated at init and passed to
+  kernels that never read them, a leftover from an earlier reduction scheme.
+  They are gone; scores are unchanged.
+
+
 - **chore(deps): Bump pinned CUDA version from 13.2.0 to 13.3.0** across Dockerfile, `dev/Containerfile`, and CI workflow files (`build.yml`, `libvmaf-build-matrix.yml`).
 
 
@@ -23669,6 +23676,11 @@ is addressed.
   than timing assertions, are raised to 120 s after a CI run blew them under contention
   and the `TimeoutExpired` read as a real failure. `.gitignore` now also matches
   `.workingdir` / `.workingdir2` as symlinks, not only as directories.
+- **Editing a header now rebuilds the CUDA and HIP kernels that include it.**
+  The nvcc and hipcc build steps did not record header dependencies, so an
+  incremental build after a header change could link host code against
+  kernels compiled for an older struct layout, which crashed or, worse,
+  computed wrong results. Clean builds were never affected.
 
 
 - **GPU `motion_v2` twins emit `motion3_v2_score` (SYCL / HIP / Metal).** The
