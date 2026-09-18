@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """VideoToolbox codec adapter smoke tests (ADR-0283).
 
 Mocks ``subprocess.run`` so the suite has no runtime dependency on a

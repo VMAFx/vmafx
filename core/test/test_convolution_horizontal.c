@@ -1,6 +1,6 @@
 /*
  * Copyright 2026 Lusoris
- * SPDX-License-Identifier: BSD-2-Clause-Patent
+ * SPDX-License-Identifier: EUPL-1.2
  *
  * Horizontal SIMD regressions: the final row of every buffer ends at width,
  * without tail padding. ASan catches discarded vector reads as well as writes;

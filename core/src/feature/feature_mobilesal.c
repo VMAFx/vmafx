@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  MobileSal saliency feature extractor (T6-2a). No-reference scoring-side
  *  surface that runs a tiny ONNX saliency model over the distorted frame
@@ -48,6 +48,12 @@
  */
 
 #include <assert.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -109,11 +115,9 @@ static void mobilesal_release(MobilesalState *s)
     }
 }
 
-static int mobilesal_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                          unsigned w, unsigned h)
+/* Reject the input formats the saliency model cannot take. */
+static int mobilesal_check_input(enum VmafPixelFormat pix_fmt, unsigned bpc)
 {
-    MobilesalState *s = fex->priv;
-
     if (pix_fmt == VMAF_PIX_FMT_YUV400P) {
         return -EINVAL;
     }
@@ -134,8 +138,40 @@ static int mobilesal_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
                  bpc);
         return -ENOTSUP;
     }
+    return 0;
+}
 
-    int rc = vmaf_tiny_ai_require_runtime("mobilesal");
+/* Allocate the per-frame planes. On failure the caller releases whatever
+ * was allocated through mobilesal_release(). */
+static int mobilesal_alloc_buffers(MobilesalState *s, size_t plane)
+{
+    for (int i = 0; i < 3; ++i) {
+        s->rgb8[i] = (uint8_t *)aligned_malloc(plane, 32);
+        if (!s->rgb8[i]) {
+            return -ENOMEM;
+        }
+    }
+    s->tensor_in = (float *)aligned_malloc(3u * plane * sizeof(float), 32);
+    if (!s->tensor_in) {
+        return -ENOMEM;
+    }
+    s->sal_map = (float *)aligned_malloc(plane * sizeof(float), 32);
+    if (!s->sal_map) {
+        return -ENOMEM;
+    }
+    return 0;
+}
+
+static int mobilesal_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                          unsigned w, unsigned h)
+{
+    MobilesalState *s = fex->priv;
+
+    int rc = mobilesal_check_input(pix_fmt, bpc);
+    if (rc < 0) {
+        return rc;
+    }
+    rc = vmaf_tiny_ai_require_runtime("mobilesal");
     if (rc < 0) {
         return rc;
     }
@@ -159,28 +195,12 @@ static int mobilesal_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
     s->w = w;
     s->h = h;
-    const size_t plane = (size_t)w * (size_t)h;
-
-    for (int i = 0; i < 3; ++i) {
-        s->rgb8[i] = (uint8_t *)aligned_malloc(plane, 32);
-        if (!s->rgb8[i]) {
-            goto oom;
-        }
+    rc = mobilesal_alloc_buffers(s, (size_t)w * (size_t)h);
+    if (rc < 0) {
+        mobilesal_release(s);
+        return rc;
     }
-    s->tensor_in = (float *)aligned_malloc(3u * plane * sizeof(float), 32);
-    if (!s->tensor_in) {
-        goto oom;
-    }
-    s->sal_map = (float *)aligned_malloc(plane * sizeof(float), 32);
-    if (!s->sal_map) {
-        goto oom;
-    }
-
     return 0;
-
-oom:
-    mobilesal_release(s);
-    return -ENOMEM;
 }
 
 static int mobilesal_extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
@@ -267,6 +287,7 @@ static const VmafOption mobilesal_options[] = {
 
 static const char *mobilesal_provided_features[] = {"saliency_mean", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_mobilesal` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_mobilesal = {
     .name = "mobilesal",
     .init = mobilesal_init,
@@ -279,3 +300,5 @@ VmafFeatureExtractor vmaf_fex_mobilesal = {
      * TUs (silences -Wlto-type-mismatch — see ADR-0181). */
     .chars = {0},
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -2,18 +2,7 @@
  *
  *  Copyright 2026 Lusoris
  *
- *     Licensed under the BSD+Patent License (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
- *
- *         https://opensource.org/licenses/BSDplusPatent
- *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
- *
+ * SPDX-License-Identifier: EUPL-1.2
  */
 
 /*
@@ -52,6 +41,12 @@
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_cuda.h"
 #include "libvmaf/picture.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 
 /* Fixture geometry — large enough for the 17-tap VIF Gaussian and the
  * 4-scale pyramid (smallest scale is /8), small enough for a fast CI run. */
@@ -132,6 +127,38 @@ static int fill_dist(VmafPicture *pic, unsigned frame_idx)
 
 /* Run "integer_vif" (CPU) and read out the four scale features at frame
  * index 1 (mid-stream — avoids any first-frame edge case). */
+/* The frame loop and the scale-score loop are the same on both sides;
+ * extracting them keeps each run_* inside the lint profile's branch budget
+ * (ADR-0141 asks for the refactor rather than a suppression). */
+static char *feed_all_frames(VmafContext *vmaf)
+{
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = fill_ref(&ref, i);
+        if (err)
+            return "fill_ref failed";
+        err = fill_dist(&dist, i);
+        if (err)
+            return "fill_dist failed";
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        if (err)
+            return "vmaf_read_pictures failed";
+    }
+    return NULL;
+}
+
+static char *read_vif_scores(VmafContext *vmaf, double scores_out[NUM_VIF_SCALES])
+{
+    for (unsigned k = 0; k < NUM_VIF_SCALES; k++) {
+        const int err =
+            vmaf_feature_score_at_index(vmaf, VIF_SCALE_FEATURES[k], &scores_out[k], 1u);
+        if (err)
+            return "vmaf_feature_score_at_index(vif_scale, idx=1) failed";
+    }
+    return NULL;
+}
+
 static char *run_cpu_vif(double scores_out[NUM_VIF_SCALES])
 {
     int err = 0;
@@ -146,26 +173,36 @@ static char *run_cpu_vif(double scores_out[NUM_VIF_SCALES])
     err = vmaf_use_feature(vmaf, "vif", NULL);
     mu_assert("CPU: vmaf_use_feature(vif) failed", !err);
 
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_ref(&ref, i);
-        mu_assert("CPU: fill_ref failed", !err);
-        err = fill_dist(&dist, i);
-        mu_assert("CPU: fill_dist failed", !err);
-
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CPU: vmaf_read_pictures failed", !err);
-    }
+    char *feed_err = feed_all_frames(vmaf);
+    if (feed_err)
+        return feed_err;
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
 
-    for (unsigned k = 0; k < NUM_VIF_SCALES; k++) {
-        err = vmaf_feature_score_at_index(vmaf, VIF_SCALE_FEATURES[k], &scores_out[k], 1u);
-        mu_assert("CPU: vmaf_feature_score_at_index(vif_scale, idx=1) failed", !err);
-    }
+    char *score_err = read_vif_scores(vmaf, scores_out);
+    if (score_err)
+        return score_err;
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
+    return NULL;
+}
+
+/* Opening a CUDA-backed context for this feature is the same three calls;
+ * folding them into one keeps run_cuda_vif inside the branch budget. */
+static char *open_cuda_context(VmafContext **vmaf, VmafCudaState *cu_state,
+                               VmafFeatureDictionary *opts)
+{
+    const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(vmaf, cfg);
+    if (err)
+        return "CUDA: vmaf_init failed";
+    err = vmaf_cuda_import_state(*vmaf, cu_state);
+    if (err)
+        return "CUDA: vmaf_cuda_import_state failed";
+    err = vmaf_use_feature(*vmaf, "vif_cuda", opts);
+    if (err)
+        return "CUDA: vmaf_use_feature(vif_cuda) failed";
     return NULL;
 }
 
@@ -190,34 +227,20 @@ static char *run_cuda_vif(double scores_out[NUM_VIF_SCALES], VmafFeatureDictiona
         return NULL;
     }
 
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CUDA: vmaf_init failed", !err);
+    char *open_err = open_cuda_context(&vmaf, cu_state, opts);
+    if (open_err)
+        return open_err;
 
-    err = vmaf_cuda_import_state(vmaf, cu_state);
-    mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
-
-    err = vmaf_use_feature(vmaf, "vif_cuda", opts);
-    mu_assert("CUDA: vmaf_use_feature(vif_cuda) failed", !err);
-
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_ref(&ref, i);
-        mu_assert("CUDA: fill_ref failed", !err);
-        err = fill_dist(&dist, i);
-        mu_assert("CUDA: fill_dist failed", !err);
-
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CUDA: vmaf_read_pictures failed", !err);
-    }
+    char *feed_err = feed_all_frames(vmaf);
+    if (feed_err)
+        return feed_err;
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
 
-    for (unsigned k = 0; k < NUM_VIF_SCALES; k++) {
-        err = vmaf_feature_score_at_index(vmaf, VIF_SCALE_FEATURES[k], &scores_out[k], 1u);
-        mu_assert("CUDA: vmaf_feature_score_at_index(vif_scale, idx=1) failed", !err);
-    }
+    char *score_err = read_vif_scores(vmaf, scores_out);
+    if (score_err)
+        return score_err;
 
     err = vmaf_close(vmaf);
     mu_assert("CUDA: vmaf_close failed", !err);
@@ -290,3 +313,5 @@ char *run_tests(void)
     mu_run_test(test_vif_cpu_cuda_parity_4_2_0);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -2,18 +2,7 @@
  *
  *  Copyright 2026 Lusoris
  *
- *     Licensed under the BSD+Patent License (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
- *
- *         https://opensource.org/licenses/BSDplusPatent
- *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
- *
+ * SPDX-License-Identifier: EUPL-1.2
  */
 
 /*
@@ -46,6 +35,12 @@
  */
 
 #include <inttypes.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -156,94 +151,70 @@ static char *test_adm_accum_precision(void)
 #define ADM_TEST_STRIDE ((ADM_TEST_W + 7) & ~7)
 #define ADM_BAND_PX ((size_t)ADM_TEST_STRIDE * ADM_TEST_H)
 
-static char *test_adm_cm_avx2_smoke(void)
+/* Nine synthetic band arrays for decouple_r and csf_a/csf_f (adm_cm_avx2
+ * reads from buf->decouple_r and buf->csf_a/csf_f). */
+typedef struct AdmBands16 {
+    int16_t *dr_h, *dr_v, *dr_d;
+    int16_t *cf_h, *cf_v, *cf_d;
+    int16_t *ca_h, *ca_v, *ca_d;
+} AdmBands16;
+
+static int adm_bands16_alloc(AdmBands16 *b, size_t bytes)
 {
-    /* Allocate six band arrays for decouple_r and csf_a/csf_f
-     * (adm_cm_avx2 reads from buf->decouple_r and buf->csf_a/csf_f). */
-    const size_t bytes = ADM_BAND_PX * sizeof(int16_t);
+    b->dr_h = (int16_t *)simd_test_aligned_malloc(bytes, 32);
+    b->dr_v = (int16_t *)simd_test_aligned_malloc(bytes, 32);
+    b->dr_d = (int16_t *)simd_test_aligned_malloc(bytes, 32);
+    b->cf_h = (int16_t *)simd_test_aligned_malloc(bytes, 32);
+    b->cf_v = (int16_t *)simd_test_aligned_malloc(bytes, 32);
+    b->cf_d = (int16_t *)simd_test_aligned_malloc(bytes, 32);
+    b->ca_h = (int16_t *)simd_test_aligned_malloc(bytes, 32);
+    b->ca_v = (int16_t *)simd_test_aligned_malloc(bytes, 32);
+    b->ca_d = (int16_t *)simd_test_aligned_malloc(bytes, 32);
+    if (!b->dr_h || !b->dr_v || !b->dr_d || !b->cf_h || !b->cf_v || !b->cf_d || !b->ca_h ||
+        !b->ca_v || !b->ca_d)
+        return -1;
+    return 0;
+}
 
-    int16_t *dr_h = (int16_t *)simd_test_aligned_malloc(bytes, 32);
-    int16_t *dr_v = (int16_t *)simd_test_aligned_malloc(bytes, 32);
-    int16_t *dr_d = (int16_t *)simd_test_aligned_malloc(bytes, 32);
-    int16_t *cf_h = (int16_t *)simd_test_aligned_malloc(bytes, 32);
-    int16_t *cf_v = (int16_t *)simd_test_aligned_malloc(bytes, 32);
-    int16_t *cf_d = (int16_t *)simd_test_aligned_malloc(bytes, 32);
-    int16_t *ca_h = (int16_t *)simd_test_aligned_malloc(bytes, 32);
-    int16_t *ca_v = (int16_t *)simd_test_aligned_malloc(bytes, 32);
-    int16_t *ca_d = (int16_t *)simd_test_aligned_malloc(bytes, 32);
+static void adm_bands16_free(AdmBands16 *b)
+{
+    simd_test_aligned_free(b->dr_h);
+    simd_test_aligned_free(b->dr_v);
+    simd_test_aligned_free(b->dr_d);
+    simd_test_aligned_free(b->cf_h);
+    simd_test_aligned_free(b->cf_v);
+    simd_test_aligned_free(b->cf_d);
+    simd_test_aligned_free(b->ca_h);
+    simd_test_aligned_free(b->ca_v);
+    simd_test_aligned_free(b->ca_d);
+}
 
-    if (!dr_h || !dr_v || !dr_d || !cf_h || !cf_v || !cf_d || !ca_h || !ca_v || !ca_d) {
-        simd_test_aligned_free(dr_h);
-        simd_test_aligned_free(dr_v);
-        simd_test_aligned_free(dr_d);
-        simd_test_aligned_free(cf_h);
-        simd_test_aligned_free(cf_v);
-        simd_test_aligned_free(cf_d);
-        simd_test_aligned_free(ca_h);
-        simd_test_aligned_free(ca_v);
-        simd_test_aligned_free(ca_d);
-        return "aligned_malloc failed";
-    }
-
-    /* Fill band arrays with small non-zero int16 values (seed 0xdeadbeef).
-     * Using simd_test_fill_random_u16 masked to int16 range [0, 255]. */
-    uint32_t state = 0xdeadbeefu;
+/* Fill band arrays with small non-zero int16 values. Using
+ * simd_test_xorshift32 masked to int16 range [0, 255]. */
+static void adm_bands16_fill(AdmBands16 *b, uint32_t seed)
+{
+    uint32_t state = seed;
     for (size_t i = 0; i < ADM_BAND_PX; i++) {
         uint32_t r = simd_test_xorshift32(&state);
-        dr_h[i] = (int16_t)((int)(r & 0xFF) - 128);
-        dr_v[i] = (int16_t)((int)((r >> 8) & 0xFF) - 128);
-        dr_d[i] = (int16_t)((int)((r >> 16) & 0xFF) - 128);
-        cf_h[i] = (int16_t)((int)((r >> 24) & 0xFF));
+        b->dr_h[i] = (int16_t)((int)(r & 0xFF) - 128);
+        b->dr_v[i] = (int16_t)((int)((r >> 8) & 0xFF) - 128);
+        b->dr_d[i] = (int16_t)((int)((r >> 16) & 0xFF) - 128);
+        b->cf_h[i] = (int16_t)((int)((r >> 24) & 0xFF));
         r = simd_test_xorshift32(&state);
-        cf_v[i] = (int16_t)((int)(r & 0xFF));
-        cf_d[i] = (int16_t)((int)((r >> 8) & 0xFF));
+        b->cf_v[i] = (int16_t)((int)(r & 0xFF));
+        b->cf_d[i] = (int16_t)((int)((r >> 8) & 0xFF));
         r = simd_test_xorshift32(&state);
-        ca_h[i] = (int16_t)((int)(r & 0xFF));
-        ca_v[i] = (int16_t)((int)((r >> 8) & 0xFF));
-        ca_d[i] = (int16_t)((int)((r >> 16) & 0xFF));
+        b->ca_h[i] = (int16_t)((int)(r & 0xFF));
+        b->ca_v[i] = (int16_t)((int)((r >> 8) & 0xFF));
+        b->ca_d[i] = (int16_t)((int)((r >> 16) & 0xFF));
     }
+}
 
-    /* Populate AdmBuffer with our synthetic bands.  Zero-initialise the
-     * struct first so unused pointer members do not hold garbage. */
-    AdmBuffer buf;
-    (void)memset(&buf, 0, sizeof(buf));
-    buf.decouple_r.band_h = dr_h;
-    buf.decouple_r.band_v = dr_v;
-    buf.decouple_r.band_d = dr_d;
-    buf.csf_f.band_h = cf_h;
-    buf.csf_f.band_v = cf_v;
-    buf.csf_f.band_d = cf_d;
-    buf.csf_a.band_h = ca_h;
-    buf.csf_a.band_v = ca_v;
-    buf.csf_a.band_d = ca_d;
-
-    const int w = ADM_TEST_W;
-    const int h = ADM_TEST_H;
-    const int stride = ADM_TEST_STRIDE;
-    const double nvd = DEFAULT_ADM_NORM_VIEW_DIST;
-    const int rdh = DEFAULT_ADM_REF_DISPLAY_HEIGHT;
-    const double csf_s = 1.0;
-    const double csf_ds = 1.0;
-    const double nw = DEFAULT_ADM_NOISE_WEIGHT;
-
-    /* Call adm_cm_avx2 twice — must return the same value (determinism). */
-    const float r1 = adm_cm_avx2(&buf, w, h, stride, stride, nvd, rdh, ADM_CSF_MODE_WATSON97, csf_s,
-                                 csf_ds, nw, 3.0, false);
-    const float r2 = adm_cm_avx2(&buf, w, h, stride, stride, nvd, rdh, ADM_CSF_MODE_WATSON97, csf_s,
-                                 csf_ds, nw, 3.0, false);
-    const float r_p2 = adm_cm_avx2(&buf, w, h, stride, stride, nvd, rdh, ADM_CSF_MODE_WATSON97,
-                                   csf_s, csf_ds, nw, 2.0, false);
-
-    simd_test_aligned_free(dr_h);
-    simd_test_aligned_free(dr_v);
-    simd_test_aligned_free(dr_d);
-    simd_test_aligned_free(cf_h);
-    simd_test_aligned_free(cf_v);
-    simd_test_aligned_free(cf_d);
-    simd_test_aligned_free(ca_h);
-    simd_test_aligned_free(ca_v);
-    simd_test_aligned_free(ca_d);
-
+/* Result checks shared by the determinism + p_norm assertions below:
+ * finite/non-negative range, bit-exact determinism, and a visible change
+ * under a different adm_p_norm. */
+static char *check_adm_cm_avx2_smoke_result(float r1, float r2, float r_p2)
+{
     /* Result must be finite and non-negative. */
     if (!(r1 >= 0.0f && r1 < 1e10f)) {
         (void)fprintf(stderr, "  adm_cm_avx2 returned non-finite/negative: %g\n", (double)r1);
@@ -265,59 +236,141 @@ static char *test_adm_cm_avx2_smoke(void)
     return NULL;
 }
 
+static char *test_adm_cm_avx2_smoke(void)
+{
+    const size_t bytes = ADM_BAND_PX * sizeof(int16_t);
+    AdmBands16 bands;
+    if (adm_bands16_alloc(&bands, bytes)) {
+        adm_bands16_free(&bands);
+        return "aligned_malloc failed";
+    }
+    adm_bands16_fill(&bands, 0xdeadbeefu);
+
+    /* Populate AdmBuffer with our synthetic bands.  Zero-initialise the
+     * struct first so unused pointer members do not hold garbage. */
+    AdmBuffer buf;
+    (void)memset(&buf, 0, sizeof(buf));
+    buf.decouple_r.band_h = bands.dr_h;
+    buf.decouple_r.band_v = bands.dr_v;
+    buf.decouple_r.band_d = bands.dr_d;
+    buf.csf_f.band_h = bands.cf_h;
+    buf.csf_f.band_v = bands.cf_v;
+    buf.csf_f.band_d = bands.cf_d;
+    buf.csf_a.band_h = bands.ca_h;
+    buf.csf_a.band_v = bands.ca_v;
+    buf.csf_a.band_d = bands.ca_d;
+
+    const int w = ADM_TEST_W;
+    const int h = ADM_TEST_H;
+    const int stride = ADM_TEST_STRIDE;
+    const double nvd = DEFAULT_ADM_NORM_VIEW_DIST;
+    const int rdh = DEFAULT_ADM_REF_DISPLAY_HEIGHT;
+    const double csf_s = 1.0;
+    const double csf_ds = 1.0;
+    const double nw = DEFAULT_ADM_NOISE_WEIGHT;
+
+    /* Call adm_cm_avx2 twice — must return the same value (determinism). */
+    const float r1 = adm_cm_avx2(&buf, w, h, stride, stride, nvd, rdh, ADM_CSF_MODE_WATSON97, csf_s,
+                                 csf_ds, nw, 3.0, false);
+    const float r2 = adm_cm_avx2(&buf, w, h, stride, stride, nvd, rdh, ADM_CSF_MODE_WATSON97, csf_s,
+                                 csf_ds, nw, 3.0, false);
+    const float r_p2 = adm_cm_avx2(&buf, w, h, stride, stride, nvd, rdh, ADM_CSF_MODE_WATSON97,
+                                   csf_s, csf_ds, nw, 2.0, false);
+
+    adm_bands16_free(&bands);
+
+    return check_adm_cm_avx2_smoke_result(r1, r2, r_p2);
+}
+
+/* Nine synthetic band arrays for i4_decouple_r and i4_csf_a/i4_csf_f. */
+typedef struct AdmBands32 {
+    int32_t *dr_h, *dr_v, *dr_d;
+    int32_t *cf_h, *cf_v, *cf_d;
+    int32_t *ca_h, *ca_v, *ca_d;
+} AdmBands32;
+
+static int adm_bands32_alloc(AdmBands32 *b, size_t bytes)
+{
+    b->dr_h = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+    b->dr_v = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+    b->dr_d = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+    b->cf_h = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+    b->cf_v = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+    b->cf_d = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+    b->ca_h = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+    b->ca_v = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+    b->ca_d = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+    if (!b->dr_h || !b->dr_v || !b->dr_d || !b->cf_h || !b->cf_v || !b->cf_d || !b->ca_h ||
+        !b->ca_v || !b->ca_d)
+        return -1;
+    return 0;
+}
+
+static void adm_bands32_free(AdmBands32 *b)
+{
+    simd_test_aligned_free(b->dr_h);
+    simd_test_aligned_free(b->dr_v);
+    simd_test_aligned_free(b->dr_d);
+    simd_test_aligned_free(b->cf_h);
+    simd_test_aligned_free(b->cf_v);
+    simd_test_aligned_free(b->cf_d);
+    simd_test_aligned_free(b->ca_h);
+    simd_test_aligned_free(b->ca_v);
+    simd_test_aligned_free(b->ca_d);
+}
+
+static void adm_bands32_fill(AdmBands32 *b, uint32_t seed)
+{
+    uint32_t state = seed;
+    for (size_t i = 0; i < ADM_BAND_PX; i++) {
+        uint32_t r = simd_test_xorshift32(&state);
+        b->dr_h[i] = (int32_t)((int)(r & 0x3F) - 32);
+        b->dr_v[i] = (int32_t)((int)((r >> 8) & 0x3F) - 32);
+        b->dr_d[i] = (int32_t)((int)((r >> 16) & 0x3F) - 32);
+        b->cf_h[i] = (int32_t)((int)((r >> 24) & 0x3F));
+        r = simd_test_xorshift32(&state);
+        b->cf_v[i] = (int32_t)((int)(r & 0x3F));
+        b->cf_d[i] = (int32_t)((int)((r >> 8) & 0x3F));
+        r = simd_test_xorshift32(&state);
+        b->ca_h[i] = (int32_t)((int)(r & 0x3F));
+        b->ca_v[i] = (int32_t)((int)((r >> 8) & 0x3F));
+        b->ca_d[i] = (int32_t)((int)((r >> 16) & 0x3F));
+    }
+}
+
+static char *check_i4_adm_cm_avx2_p_norm_result(float r_p3, float r_p2)
+{
+    if (!(r_p3 >= 0.0f && r_p3 < 1e10f && r_p2 >= 0.0f && r_p2 < 1e10f)) {
+        return "i4_adm_cm_avx2 p-norm result invalid";
+    }
+    if (r_p2 ==
+        r_p3) { /* intentional exact compare: different p_norm must produce different result */
+        return "i4_adm_cm_avx2 ignored adm_p_norm";
+    }
+    return NULL;
+}
+
 static char *test_i4_adm_cm_avx2_p_norm(void)
 {
     const size_t bytes = ADM_BAND_PX * sizeof(int32_t);
-    int32_t *dr_h = (int32_t *)simd_test_aligned_malloc(bytes, 32);
-    int32_t *dr_v = (int32_t *)simd_test_aligned_malloc(bytes, 32);
-    int32_t *dr_d = (int32_t *)simd_test_aligned_malloc(bytes, 32);
-    int32_t *cf_h = (int32_t *)simd_test_aligned_malloc(bytes, 32);
-    int32_t *cf_v = (int32_t *)simd_test_aligned_malloc(bytes, 32);
-    int32_t *cf_d = (int32_t *)simd_test_aligned_malloc(bytes, 32);
-    int32_t *ca_h = (int32_t *)simd_test_aligned_malloc(bytes, 32);
-    int32_t *ca_v = (int32_t *)simd_test_aligned_malloc(bytes, 32);
-    int32_t *ca_d = (int32_t *)simd_test_aligned_malloc(bytes, 32);
-
-    if (!dr_h || !dr_v || !dr_d || !cf_h || !cf_v || !cf_d || !ca_h || !ca_v || !ca_d) {
-        simd_test_aligned_free(dr_h);
-        simd_test_aligned_free(dr_v);
-        simd_test_aligned_free(dr_d);
-        simd_test_aligned_free(cf_h);
-        simd_test_aligned_free(cf_v);
-        simd_test_aligned_free(cf_d);
-        simd_test_aligned_free(ca_h);
-        simd_test_aligned_free(ca_v);
-        simd_test_aligned_free(ca_d);
+    AdmBands32 bands;
+    if (adm_bands32_alloc(&bands, bytes)) {
+        adm_bands32_free(&bands);
         return "aligned_malloc failed";
     }
-
-    uint32_t state = 0x51d15eedu;
-    for (size_t i = 0; i < ADM_BAND_PX; i++) {
-        uint32_t r = simd_test_xorshift32(&state);
-        dr_h[i] = (int32_t)((int)(r & 0x3F) - 32);
-        dr_v[i] = (int32_t)((int)((r >> 8) & 0x3F) - 32);
-        dr_d[i] = (int32_t)((int)((r >> 16) & 0x3F) - 32);
-        cf_h[i] = (int32_t)((int)((r >> 24) & 0x3F));
-        r = simd_test_xorshift32(&state);
-        cf_v[i] = (int32_t)((int)(r & 0x3F));
-        cf_d[i] = (int32_t)((int)((r >> 8) & 0x3F));
-        r = simd_test_xorshift32(&state);
-        ca_h[i] = (int32_t)((int)(r & 0x3F));
-        ca_v[i] = (int32_t)((int)((r >> 8) & 0x3F));
-        ca_d[i] = (int32_t)((int)((r >> 16) & 0x3F));
-    }
+    adm_bands32_fill(&bands, 0x51d15eedu);
 
     AdmBuffer buf;
     (void)memset(&buf, 0, sizeof(buf));
-    buf.i4_decouple_r.band_h = dr_h;
-    buf.i4_decouple_r.band_v = dr_v;
-    buf.i4_decouple_r.band_d = dr_d;
-    buf.i4_csf_f.band_h = cf_h;
-    buf.i4_csf_f.band_v = cf_v;
-    buf.i4_csf_f.band_d = cf_d;
-    buf.i4_csf_a.band_h = ca_h;
-    buf.i4_csf_a.band_v = ca_v;
-    buf.i4_csf_a.band_d = ca_d;
+    buf.i4_decouple_r.band_h = bands.dr_h;
+    buf.i4_decouple_r.band_v = bands.dr_v;
+    buf.i4_decouple_r.band_d = bands.dr_d;
+    buf.i4_csf_f.band_h = bands.cf_h;
+    buf.i4_csf_f.band_v = bands.cf_v;
+    buf.i4_csf_f.band_d = bands.cf_d;
+    buf.i4_csf_a.band_h = bands.ca_h;
+    buf.i4_csf_a.band_v = bands.ca_v;
+    buf.i4_csf_a.band_d = bands.ca_d;
 
     const float r_p3 =
         i4_adm_cm_avx2(&buf, ADM_TEST_W, ADM_TEST_H, ADM_TEST_STRIDE, ADM_TEST_STRIDE, 1,
@@ -328,24 +381,9 @@ static char *test_i4_adm_cm_avx2_p_norm(void)
                        DEFAULT_ADM_NORM_VIEW_DIST, DEFAULT_ADM_REF_DISPLAY_HEIGHT,
                        ADM_CSF_MODE_WATSON97, 1.0, 1.0, DEFAULT_ADM_NOISE_WEIGHT, 2.0, false);
 
-    simd_test_aligned_free(dr_h);
-    simd_test_aligned_free(dr_v);
-    simd_test_aligned_free(dr_d);
-    simd_test_aligned_free(cf_h);
-    simd_test_aligned_free(cf_v);
-    simd_test_aligned_free(cf_d);
-    simd_test_aligned_free(ca_h);
-    simd_test_aligned_free(ca_v);
-    simd_test_aligned_free(ca_d);
+    adm_bands32_free(&bands);
 
-    if (!(r_p3 >= 0.0f && r_p3 < 1e10f && r_p2 >= 0.0f && r_p2 < 1e10f)) {
-        return "i4_adm_cm_avx2 p-norm result invalid";
-    }
-    if (r_p2 ==
-        r_p3) { /* intentional exact compare: different p_norm must produce different result */
-        return "i4_adm_cm_avx2 ignored adm_p_norm";
-    }
-    return NULL;
+    return check_i4_adm_cm_avx2_p_norm_result(r_p3, r_p2);
 }
 
 #endif /* ARCH_X86 */
@@ -366,3 +404,5 @@ char *run_tests(void)
 #endif
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

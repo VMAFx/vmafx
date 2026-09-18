@@ -716,3 +716,12 @@ Metal runtime contract for those devices.
   [ADR-0022](../adr/0022-inference-runtime-onnx.md),
   [ADR-0027](../adr/0027-non-conservative-image-pins.md) —
   governing decisions
+
+## Licensing of the GPU headers (ADR-1250)
+
+`libvmaf_sycl.h`, `libvmaf_cuda.h`, `libvmaf_hip.h` and `libvmaf_metal.h` are
+fork-authored and carry `SPDX-License-Identifier: EUPL-1.2`. Linking against
+them is use of the library, not modification: the reciprocity applies when you
+redistribute a **modified** libvmaf. See
+[ADR-1250](../adr/1250-eupl-fork-relicense.md) and the
+[README](../../README.md#upstream-and-license).

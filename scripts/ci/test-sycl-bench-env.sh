@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # scripts/ci/test-sycl-bench-env.sh — shell-injection regression test
 # for scripts/ci/sycl-bench-env.sh.
 #

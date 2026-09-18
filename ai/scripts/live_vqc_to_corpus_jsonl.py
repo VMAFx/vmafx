@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """LIVE-VQC -> MOS-corpus JSONL adapter (ADR-0370).
 
 LIVE Video Quality Challenge (LIVE-VQC; Sinno & Bovik, IEEE TIP 2019) is

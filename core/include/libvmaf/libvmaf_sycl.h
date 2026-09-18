@@ -2,22 +2,21 @@
  *
  *  Copyright 2026 Lusoris
  *
- *     Licensed under the BSD+Patent License (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
- *
- *         https://opensource.org/licenses/BSDplusPatent
- *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
- *
+ * SPDX-License-Identifier: EUPL-1.2
  */
 
 #ifndef LIBVMAF_LIBVMAF_SYCL_H
 #define LIBVMAF_LIBVMAF_SYCL_H
+
+/* NOLINTBEGIN(modernize-use-using, modernize-deprecated-headers, performance-enum-size):
+ * public C API header. clang-tidy reads it as C++ and proposes `using`,
+ * `<cstdint>` and a narrower enum base type; all three are wrong here. This
+ * header has to compile as C for every consumer of the shipped library, where
+ * `using` does not exist and the C spellings of the standard headers are the
+ * only ones available, and the enum's base type is part of the ABI the fork
+ * publishes. CLAUDE.md rule 12 reserves suppressions for exactly this: a rule
+ * that cannot be followed without breaking a load-bearing invariant
+ * (ADR-0141). */
 
 #include <libvmaf/libvmaf.h>
 #include <libvmaf/macros.h>
@@ -395,5 +394,7 @@ VMAF_EXPORT int vmaf_sycl_list_devices(void);
 #ifdef __cplusplus
 }
 #endif
+
+/* NOLINTEND(modernize-use-using, modernize-deprecated-headers, performance-enum-size) */
 
 #endif /* LIBVMAF_LIBVMAF_SYCL_H */

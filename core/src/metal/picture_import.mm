@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  IOSurface zero-copy import — implementation (ADR-0423 / T8-IOS).
  *  Replaces the audit-first scaffold's -ENOSYS stubs with real

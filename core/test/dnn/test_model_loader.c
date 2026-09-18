@@ -1,9 +1,14 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  */
 
 #include <errno.h>
+
+/* NOLINTBEGIN(concurrency-mt-unsafe): this test's subject is how the library
+ * resolves paths from the process environment, so it has to set and unset
+ * variables. Each test binary is its own single-threaded process, and nothing
+ * else reads the environment while it runs (ADR-0141). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +25,7 @@
 #include <unistd.h>
 #endif
 
+#include "mu_table.h"
 #include "test.h"
 
 #include "dnn/model_loader.h"
@@ -181,11 +187,25 @@ static char *test_validate_symlink_to_dir(void)
 static const unsigned char kAllowedOnnx[] = {0x3A, 0x08, 0x0A, 0x06, 0x22,
                                              0x04, 'C',  'o',  'n',  'v'};
 
+/* Validate @p model_path with VMAF_TINY_MODEL_DIR set to @p jail, then unset
+ * it again. Returns -1 when setenv itself failed (and leaves @p err_out
+ * untouched), else 0 with the validation result in @p err_out. The jail tests
+ * clean up their files before asserting on either, so a failure cannot leak
+ * or leave the variable set for the tests that follow. */
+static int validate_in_jail(const char *jail, const char *model_path, int *err_out)
+{
+    if (setenv("VMAF_TINY_MODEL_DIR", jail, 1) != 0)
+        return -1;
+    *err_out = vmaf_dnn_validate_onnx(model_path, 0);
+    (void)unsetenv("VMAF_TINY_MODEL_DIR");
+    return 0;
+}
+
 static char *test_jail_unset_accepts_anywhere(void)
 {
     /* With VMAF_TINY_MODEL_DIR unset the jail is a no-op; a valid model
      * anywhere in the filesystem must still validate. */
-    unsetenv("VMAF_TINY_MODEL_DIR");
+    (void)unsetenv("VMAF_TINY_MODEL_DIR");
     char *path = write_temp(kAllowedOnnx, sizeof(kAllowedOnnx));
     mu_assert("temp file creation failed", path != NULL);
     const int err = vmaf_dnn_validate_onnx(path, 0);
@@ -203,14 +223,13 @@ static char *test_jail_accepts_model_inside(void)
 
     char model_path[PATH_MAX];
     (void)snprintf(model_path, sizeof(model_path), "%s/allowed.onnx", jail);
-    mu_assert("write_file_600 model failed",
-              write_file_600(model_path, kAllowedOnnx, sizeof(kAllowedOnnx)) == 0);
-
-    mu_assert("setenv failed", setenv("VMAF_TINY_MODEL_DIR", jail, 1) == 0);
-    const int err = vmaf_dnn_validate_onnx(model_path, 0);
-    unsetenv("VMAF_TINY_MODEL_DIR");
+    const int wrc = write_file_600(model_path, kAllowedOnnx, sizeof(kAllowedOnnx));
+    int err = -1;
+    const int set_rc = (wrc == 0) ? validate_in_jail(jail, model_path, &err) : 0;
     (void)remove(model_path);
-    rmdir(jail);
+    (void)rmdir(jail);
+    mu_assert("write_file_600 model failed", wrc == 0);
+    mu_assert("setenv failed", set_rc == 0);
     mu_assert("model inside jail → 0", err == 0);
     return NULL;
 }
@@ -223,14 +242,15 @@ static char *test_jail_rejects_model_outside(void)
     mu_assert("mkdtemp failed", mkdtemp(jail) != NULL);
 
     char *outside = write_temp(kAllowedOnnx, sizeof(kAllowedOnnx));
+    int err = 0;
+    const int set_rc = outside ? validate_in_jail(jail, outside, &err) : 0;
+    if (outside) {
+        (void)remove(outside);
+        free(outside);
+    }
+    (void)rmdir(jail);
     mu_assert("write_temp failed", outside != NULL);
-
-    mu_assert("setenv failed", setenv("VMAF_TINY_MODEL_DIR", jail, 1) == 0);
-    const int err = vmaf_dnn_validate_onnx(outside, 0);
-    unsetenv("VMAF_TINY_MODEL_DIR");
-    (void)remove(outside);
-    free(outside);
-    rmdir(jail);
+    mu_assert("setenv failed", set_rc == 0);
     mu_assert("model outside jail → -EACCES", err == -EACCES);
     return NULL;
 }
@@ -246,21 +266,36 @@ static char *test_jail_rejects_sibling_prefix(void)
 
     char sibling_dir[PATH_MAX];
     (void)snprintf(sibling_dir, sizeof(sibling_dir), "%s-sibling", jail);
-    mu_assert("sibling mkdir failed", mkdir(sibling_dir, 0700) == 0);
+    const int mrc = mkdir(sibling_dir, 0700);
 
     char model_path[PATH_MAX];
-    (void)snprintf(model_path, sizeof(model_path), "%s/escape.onnx", sibling_dir);
-    mu_assert("write_file_600 sibling model failed",
-              write_file_600(model_path, kAllowedOnnx, sizeof(kAllowedOnnx)) == 0);
-
-    mu_assert("setenv failed", setenv("VMAF_TINY_MODEL_DIR", jail, 1) == 0);
-    const int err = vmaf_dnn_validate_onnx(model_path, 0);
-    unsetenv("VMAF_TINY_MODEL_DIR");
+    const int plen = snprintf(model_path, sizeof(model_path), "%s/escape.onnx", sibling_dir);
+    const int path_ok = plen > 0 && (size_t)plen < sizeof(model_path);
+    const int wrc =
+        (mrc == 0 && path_ok) ? write_file_600(model_path, kAllowedOnnx, sizeof(kAllowedOnnx)) : -1;
+    int err = 0;
+    const int set_rc = (wrc == 0) ? validate_in_jail(jail, model_path, &err) : 0;
     (void)remove(model_path);
-    rmdir(sibling_dir);
-    rmdir(jail);
+    (void)rmdir(sibling_dir);
+    (void)rmdir(jail);
+    mu_assert("sibling mkdir failed", mrc == 0);
+    mu_assert("sibling model path fits PATH_MAX", path_ok);
+    mu_assert("write_file_600 sibling model failed", wrc == 0);
+    mu_assert("setenv failed", set_rc == 0);
     mu_assert("sibling prefix must be rejected → -EACCES", err == -EACCES);
     return NULL;
+}
+
+/* Symlink @p link_path → @p target inside the jail and validate the link.
+ * Returns the symlink() result; on success @p set_rc / @p err hold the
+ * validate_in_jail() outcome. */
+static int validate_symlink_in_jail(const char *jail, const char *target, const char *link_path,
+                                    int *set_rc, int *err)
+{
+    const int lrc = symlink(target, link_path);
+    if (lrc == 0)
+        *set_rc = validate_in_jail(jail, link_path, err);
+    return lrc;
 }
 
 static char *test_jail_rejects_symlink_escape(void)
@@ -273,19 +308,20 @@ static char *test_jail_rejects_symlink_escape(void)
     mu_assert("mkdtemp failed", mkdtemp(jail) != NULL);
 
     char *outside = write_temp(kAllowedOnnx, sizeof(kAllowedOnnx));
-    mu_assert("write_temp failed", outside != NULL);
-
     char link_path[PATH_MAX];
     (void)snprintf(link_path, sizeof(link_path), "%s/escape.onnx", jail);
-    mu_assert("symlink() failed", symlink(outside, link_path) == 0);
-
-    mu_assert("setenv failed", setenv("VMAF_TINY_MODEL_DIR", jail, 1) == 0);
-    const int err = vmaf_dnn_validate_onnx(link_path, 0);
-    unsetenv("VMAF_TINY_MODEL_DIR");
+    int set_rc = 0;
+    int err = 0;
+    const int lrc = outside ? validate_symlink_in_jail(jail, outside, link_path, &set_rc, &err) : 0;
     (void)remove(link_path);
-    (void)remove(outside);
-    free(outside);
-    rmdir(jail);
+    if (outside) {
+        (void)remove(outside);
+        free(outside);
+    }
+    (void)rmdir(jail);
+    mu_assert("write_temp failed", outside != NULL);
+    mu_assert("symlink() failed", lrc == 0);
+    mu_assert("setenv failed", set_rc == 0);
     mu_assert("symlink escape must be rejected → -EACCES", err == -EACCES);
     return NULL;
 }
@@ -297,12 +333,11 @@ static char *test_jail_rejects_nonexistent_jail(void)
     char *model = write_temp(kAllowedOnnx, sizeof(kAllowedOnnx));
     mu_assert("write_temp failed", model != NULL);
 
-    mu_assert("setenv failed",
-              setenv("VMAF_TINY_MODEL_DIR", "/tmp/vmaf-does-not-exist-zzzyx", 1) == 0);
-    const int err = vmaf_dnn_validate_onnx(model, 0);
-    unsetenv("VMAF_TINY_MODEL_DIR");
+    int err = 0;
+    const int set_rc = validate_in_jail("/tmp/vmaf-does-not-exist-zzzyx", model, &err);
     (void)remove(model);
     free(model);
+    mu_assert("setenv failed", set_rc == 0);
     mu_assert("nonexistent jail dir → -EACCES", err == -EACCES);
     return NULL;
 }
@@ -314,15 +349,16 @@ static char *test_jail_rejects_non_directory(void)
     char *jail_file = write_temp((const unsigned char *)"x", 1u);
     mu_assert("write_temp failed", jail_file != NULL);
     char *model = write_temp(kAllowedOnnx, sizeof(kAllowedOnnx));
-    mu_assert("write_temp failed", model != NULL);
-
-    mu_assert("setenv failed", setenv("VMAF_TINY_MODEL_DIR", jail_file, 1) == 0);
-    const int err = vmaf_dnn_validate_onnx(model, 0);
-    unsetenv("VMAF_TINY_MODEL_DIR");
-    (void)remove(model);
+    int err = 0;
+    const int set_rc = model ? validate_in_jail(jail_file, model, &err) : 0;
+    if (model) {
+        (void)remove(model);
+        free(model);
+    }
     (void)remove(jail_file);
-    free(model);
     free(jail_file);
+    mu_assert("write_temp failed", model != NULL);
+    mu_assert("setenv failed", set_rc == 0);
     mu_assert("jail-is-file → -EACCES", err == -EACCES);
     return NULL;
 }
@@ -339,18 +375,42 @@ static char *test_jail_accepts_trailing_slash(void)
 
     char model_path[PATH_MAX];
     (void)snprintf(model_path, sizeof(model_path), "%s/allowed.onnx", jail);
-    mu_assert("write_file_600 model failed",
-              write_file_600(model_path, kAllowedOnnx, sizeof(kAllowedOnnx)) == 0);
-
-    mu_assert("setenv failed", setenv("VMAF_TINY_MODEL_DIR", jail_with_slash, 1) == 0);
-    const int err = vmaf_dnn_validate_onnx(model_path, 0);
-    unsetenv("VMAF_TINY_MODEL_DIR");
+    const int wrc = write_file_600(model_path, kAllowedOnnx, sizeof(kAllowedOnnx));
+    int err = -1;
+    const int set_rc = (wrc == 0) ? validate_in_jail(jail_with_slash, model_path, &err) : 0;
     (void)remove(model_path);
-    rmdir(jail);
+    (void)rmdir(jail);
+    mu_assert("write_file_600 model failed", wrc == 0);
+    mu_assert("setenv failed", set_rc == 0);
     mu_assert("jail with trailing slash → 0", err == 0);
     return NULL;
 }
 #endif /* !_WIN32 */
+
+/* First half of test_sidecar_parses' field checks. Split from
+ * check_sidecar_output_fields, and both extracted from the test body, so
+ * every function here stays inside the readability-function-size budget: a
+ * helper `if (msg) return msg;` is one branch versus the two each mu_assert
+ * contributes at the call site. */
+static char *check_sidecar_scalar_fields(const VmafModelSidecar *meta)
+{
+    mu_assert("kind FR", meta->kind == VMAF_MODEL_KIND_DNN_FR);
+    mu_assert("opset 17", meta->opset == 17);
+    mu_assert("name set", meta->name && !strcmp(meta->name, "vmaf_tiny_fr_v1"));
+    mu_assert("input set", meta->input_name && !strcmp(meta->input_name, "features"));
+    return NULL;
+}
+
+static char *check_sidecar_output_fields(const VmafModelSidecar *meta)
+{
+    mu_assert("output set", meta->output_name && !strcmp(meta->output_name, "score"));
+    mu_assert("output_names count", meta->n_output_names == 2u);
+    mu_assert("output_names[0] set",
+              meta->output_names[0] && !strcmp(meta->output_names[0], "score"));
+    mu_assert("output_names[1] set",
+              meta->output_names[1] && !strcmp(meta->output_names[1], "uncertainty"));
+    return NULL;
+}
 
 static char *test_sidecar_parses(void)
 {
@@ -393,16 +453,12 @@ static char *test_sidecar_parses(void)
     VmafModelSidecar meta;
     int err = vmaf_dnn_sidecar_load(onnx, &meta);
     mu_assert("sidecar_load failed", err == 0);
-    mu_assert("kind FR", meta.kind == VMAF_MODEL_KIND_DNN_FR);
-    mu_assert("opset 17", meta.opset == 17);
-    mu_assert("name set", meta.name && !strcmp(meta.name, "vmaf_tiny_fr_v1"));
-    mu_assert("input set", meta.input_name && !strcmp(meta.input_name, "features"));
-    mu_assert("output set", meta.output_name && !strcmp(meta.output_name, "score"));
-    mu_assert("output_names count", meta.n_output_names == 2u);
-    mu_assert("output_names[0] set",
-              meta.output_names[0] && !strcmp(meta.output_names[0], "score"));
-    mu_assert("output_names[1] set",
-              meta.output_names[1] && !strcmp(meta.output_names[1], "uncertainty"));
+    char *msg = check_sidecar_scalar_fields(&meta);
+    if (msg)
+        return msg;
+    msg = check_sidecar_output_fields(&meta);
+    if (msg)
+        return msg;
     vmaf_dnn_sidecar_free(&meta);
 
     (void)remove(sidecar);
@@ -833,6 +889,24 @@ static char *test_sidecar_feature_names_malformed_no_leak(void)
  * train_fr_regressor_v2.py) populates VmafModelSidecar.n_features,
  * feature_names[], feature_mean[], feature_std[], and
  * has_feature_scaler. */
+/* The canonical-6 feature-field checks, extracted so the caller's branch
+ * count stays inside the readability-function-size budget: a helper
+ * `if (msg) return msg;` is one branch versus the two each mu_assert
+ * contributes at the call site. */
+static char *check_canonical6_feature_fields(const VmafModelSidecar *meta)
+{
+    mu_assert("n_features == 6", meta->n_features == 6u);
+    mu_assert("feature_names[0] == adm2",
+              meta->feature_names[0] && strcmp(meta->feature_names[0], "adm2") == 0);
+    mu_assert("feature_names[5] == motion2",
+              meta->feature_names[5] && strcmp(meta->feature_names[5], "motion2") == 0);
+    mu_assert("has_feature_scaler", meta->has_feature_scaler);
+    mu_assert("feature_mean[0] ~ 0.86",
+              meta->feature_mean[0] > 0.85f && meta->feature_mean[0] < 0.87f);
+    mu_assert("feature_std[5] ~ 6.24", meta->feature_std[5] > 6.2f && meta->feature_std[5] < 6.3f);
+    return NULL;
+}
+
 static char *test_sidecar_feature_vector_canonical6(void)
 {
     char tmpl[] = "/tmp/vmaf-dnn-fv-XXXXXX";
@@ -860,15 +934,9 @@ static char *test_sidecar_feature_vector_canonical6(void)
     VmafModelSidecar meta;
     int err = vmaf_dnn_sidecar_load(onnx, &meta);
     mu_assert("sidecar_load canonical-6 failed", err == 0);
-    mu_assert("n_features == 6", meta.n_features == 6u);
-    mu_assert("feature_names[0] == adm2",
-              meta.feature_names[0] && strcmp(meta.feature_names[0], "adm2") == 0);
-    mu_assert("feature_names[5] == motion2",
-              meta.feature_names[5] && strcmp(meta.feature_names[5], "motion2") == 0);
-    mu_assert("has_feature_scaler", meta.has_feature_scaler);
-    mu_assert("feature_mean[0] ~ 0.86",
-              meta.feature_mean[0] > 0.85f && meta.feature_mean[0] < 0.87f);
-    mu_assert("feature_std[5] ~ 6.24", meta.feature_std[5] > 6.2f && meta.feature_std[5] < 6.3f);
+    char *msg = check_canonical6_feature_fields(&meta);
+    if (msg)
+        return msg;
     vmaf_dnn_sidecar_free(&meta);
     (void)remove(sidecar);
     (void)remove(onnx);
@@ -1581,53 +1649,50 @@ static char *test_codec_block_fill_h264_alias(void)
  * av1 → libsvtav1 (662-663), vp9 → libvpx-vp9 (664-665), vvc/h266 → libvvenc
  * (666-667). Each alias takes a separate branch in the chained strcmp ladder
  * and was uncovered when only the libx264 alias test ran. */
+/* One (alias, expected-vocab-slot) case for
+ * test_codec_block_fill_aliases_hevc_av1_vp9_vvc's resolve_codec_alias
+ * coverage grid. */
+typedef struct {
+    const char *alias;
+    int expected_slot;
+    char *msg_rc;
+    char *msg_buf;
+} CodecAliasCase;
+
+static const CodecAliasCase CODEC_ALIAS_CASES[] = {
+    /* hevc → libx265 (slot 1). */
+    {"hevc", 1, "hevc alias rc == 0", "hevc → libx265 (buf[1])"},
+    /* h265 (synonym of hevc) → libx265. */
+    {"h265", 1, "h265 alias rc == 0", "h265 → libx265 (buf[1])"},
+    /* av1 → libsvtav1 (slot 2). */
+    {"av1", 2, "av1 alias rc == 0", "av1 → libsvtav1 (buf[2])"},
+    /* vp9 → libvpx-vp9 (slot 4). */
+    {"vp9", 4, "vp9 alias rc == 0", "vp9 → libvpx-vp9 (buf[4])"},
+    /* vvc → libvvenc (slot 3). */
+    {"vvc", 3, "vvc alias rc == 0", "vvc → libvvenc (buf[3])"},
+    /* h266 (synonym of vvc) → libvvenc. */
+    {"h266", 3, "h266 alias rc == 0", "h266 → libvvenc (buf[3])"},
+    /* avc (synonym of h264) → libx264 — covers the second arm of the
+     * h264-side branch. */
+    {"avc", 0, "avc alias rc == 0", "avc → libx264 (buf[0])"},
+};
+
 static char *test_codec_block_fill_aliases_hevc_av1_vp9_vvc(void)
 {
     static const char *VOCAB[] = {"libx264",  "libx265",    "libsvtav1",
                                   "libvvenc", "libvpx-vp9", "unknown"};
     const size_t n_vocab = 6u;
     float buf[8] = {0};
-    /* hevc → libx265 (slot 1). */
-    int rc = vmaf_dnn_codec_block_fill(buf, n_vocab + 2u, VOCAB, n_vocab, "hevc", "medium", 28);
-    mu_assert("hevc alias rc == 0", rc == 0);
-    mu_assert("hevc → libx265 (buf[1])", buf[1] > 0.999f && buf[1] < 1.001f);
 
-    /* h265 (synonym of hevc) → libx265. */
-    memset(buf, 0, sizeof(buf));
-    rc = vmaf_dnn_codec_block_fill(buf, n_vocab + 2u, VOCAB, n_vocab, "h265", "medium", 28);
-    mu_assert("h265 alias rc == 0", rc == 0);
-    mu_assert("h265 → libx265 (buf[1])", buf[1] > 0.999f && buf[1] < 1.001f);
-
-    /* av1 → libsvtav1 (slot 2). */
-    memset(buf, 0, sizeof(buf));
-    rc = vmaf_dnn_codec_block_fill(buf, n_vocab + 2u, VOCAB, n_vocab, "av1", "medium", 28);
-    mu_assert("av1 alias rc == 0", rc == 0);
-    mu_assert("av1 → libsvtav1 (buf[2])", buf[2] > 0.999f && buf[2] < 1.001f);
-
-    /* vp9 → libvpx-vp9 (slot 4). */
-    memset(buf, 0, sizeof(buf));
-    rc = vmaf_dnn_codec_block_fill(buf, n_vocab + 2u, VOCAB, n_vocab, "vp9", "medium", 28);
-    mu_assert("vp9 alias rc == 0", rc == 0);
-    mu_assert("vp9 → libvpx-vp9 (buf[4])", buf[4] > 0.999f && buf[4] < 1.001f);
-
-    /* vvc → libvvenc (slot 3). */
-    memset(buf, 0, sizeof(buf));
-    rc = vmaf_dnn_codec_block_fill(buf, n_vocab + 2u, VOCAB, n_vocab, "vvc", "medium", 28);
-    mu_assert("vvc alias rc == 0", rc == 0);
-    mu_assert("vvc → libvvenc (buf[3])", buf[3] > 0.999f && buf[3] < 1.001f);
-
-    /* h266 (synonym of vvc) → libvvenc. */
-    memset(buf, 0, sizeof(buf));
-    rc = vmaf_dnn_codec_block_fill(buf, n_vocab + 2u, VOCAB, n_vocab, "h266", "medium", 28);
-    mu_assert("h266 alias rc == 0", rc == 0);
-    mu_assert("h266 → libvvenc (buf[3])", buf[3] > 0.999f && buf[3] < 1.001f);
-
-    /* avc (synonym of h264) → libx264 — covers the second arm of the
-     * h264-side branch. */
-    memset(buf, 0, sizeof(buf));
-    rc = vmaf_dnn_codec_block_fill(buf, n_vocab + 2u, VOCAB, n_vocab, "avc", "medium", 28);
-    mu_assert("avc alias rc == 0", rc == 0);
-    mu_assert("avc → libx264 (buf[0])", buf[0] > 0.999f && buf[0] < 1.001f);
+    const size_t n_cases = sizeof(CODEC_ALIAS_CASES) / sizeof(CODEC_ALIAS_CASES[0]);
+    for (size_t i = 0; i < n_cases; i++) {
+        const CodecAliasCase *c = &CODEC_ALIAS_CASES[i];
+        memset(buf, 0, sizeof(buf));
+        int rc =
+            vmaf_dnn_codec_block_fill(buf, n_vocab + 2u, VOCAB, n_vocab, c->alias, "medium", 28);
+        mu_assert(c->msg_rc, rc == 0);
+        mu_assert(c->msg_buf, buf[c->expected_slot] > 0.999f && buf[c->expected_slot] < 1.001f);
+    }
     return NULL;
 }
 
@@ -1679,146 +1744,114 @@ static char *test_codec_block_fill_crf_clamp(void)
     return NULL;
 }
 
+/* One (codec, preset) -> buf[12] preset-ordinal expectation row for
+ * test_codec_block_fill_preset_tables' exhaustive per-codec-family preset
+ * grid. All 31 calls in that grid share the same (buf, 14u, VOCAB, 12u, ...,
+ * crf=0) call shape; only the codec, preset, expected messages, and
+ * buf[12] bounds vary, so the grid table-drives them (ADR-0141 branch
+ * budget). has_lo distinguishes the common two-sided range check from the
+ * single-sided "< hi" check the original used for the ordinal-0 presets
+ * (ultrafast / realtime / p1), which asserted no lower bound. */
+typedef struct {
+    const char *codec;
+    const char *preset;
+    char *msg_rc;
+    char *msg_val;
+    bool has_lo;
+    float lo;
+    float hi;
+} PresetCase;
+
+static const PresetCase PRESET_CASES[] = {
+    {"libx265", "placebo", "x265 placebo ok", "x265 placebo preset = 1", true, 0.999f, 1.001f},
+    {"libsvtav1", "13", "svtav1 numeric preset ok", "svtav1 preset clamped to 1", true, 0.999f,
+     1.001f},
+    {"libvvenc", "slower", "vvenc slower ok", "vvenc slower preset", true, 0.888f, 0.890f},
+    {"libvpx-vp9", "best", "vp9 best ok", "vp9 best preset = 1", true, 0.999f, 1.001f},
+    {"h264_nvenc", "p7", "nvenc p7 ok", "nvenc p7 preset = 1", true, 0.999f, 1.001f},
+    {"hevc_qsv", "veryslow", "qsv veryslow ok", "qsv veryslow preset", true, 0.888f, 0.890f},
+    {"libx264", "ultrafast", "x264 ultrafast ok", "x264 ultrafast preset", false, 0.0f, 0.001f},
+    {"libx264", "superfast", "x264 superfast ok", "x264 superfast preset", true, 0.110f, 0.112f},
+    {"libx264", "veryfast", "x264 veryfast ok", "x264 veryfast preset", true, 0.221f, 0.223f},
+    {"libx264", "faster", "x264 faster ok", "x264 faster preset", true, 0.332f, 0.334f},
+    {"libx264", "fast", "x264 fast ok", "x264 fast preset", true, 0.443f, 0.445f},
+    {"libx264", "slow", "x264 slow ok", "x264 slow preset", true, 0.666f, 0.668f},
+    {"libx264", "slower", "x264 slower ok", "x264 slower preset", true, 0.777f, 0.779f},
+    {"libx264", "veryslow", "x264 veryslow ok", "x264 veryslow preset", true, 0.888f, 0.890f},
+    {"libvvenc", "faster", "vvenc faster ok", "vvenc faster preset", true, 0.110f, 0.112f},
+    {"libvvenc", "fast", "vvenc fast ok", "vvenc fast preset", true, 0.332f, 0.334f},
+    {"libvvenc", "medium", "vvenc medium ok", "vvenc medium preset", true, 0.555f, 0.556f},
+    {"libvvenc", "slow", "vvenc slow ok", "vvenc slow preset", true, 0.777f, 0.779f},
+    {"libvpx-vp9", "realtime", "vp9 realtime ok", "vp9 realtime preset", false, 0.0f, 0.001f},
+    {"libvpx-vp9", "good", "vp9 good ok", "vp9 good preset", true, 0.555f, 0.556f},
+    {"h264_nvenc", "p1", "nvenc p1 ok", "nvenc p1 preset", false, 0.0f, 0.001f},
+    {"h264_nvenc", "p2", "nvenc p2 ok", "nvenc p2 preset", true, 0.221f, 0.223f},
+    {"h264_nvenc", "p3", "nvenc p3 ok", "nvenc p3 preset", true, 0.332f, 0.334f},
+    {"h264_nvenc", "p4", "nvenc p4 ok", "nvenc p4 preset", true, 0.555f, 0.556f},
+    {"h264_nvenc", "p5", "nvenc p5 ok", "nvenc p5 preset", true, 0.666f, 0.668f},
+    {"h264_nvenc", "p6", "nvenc p6 ok", "nvenc p6 preset", true, 0.777f, 0.779f},
+    {"h264_qsv", "veryfast", "qsv veryfast ok", "qsv veryfast preset", true, 0.221f, 0.223f},
+    {"h264_qsv", "faster", "qsv faster ok", "qsv faster preset", true, 0.332f, 0.334f},
+    {"h264_qsv", "fast", "qsv fast ok", "qsv fast preset", true, 0.443f, 0.445f},
+    {"h264_qsv", "medium", "qsv medium ok", "qsv medium preset", true, 0.555f, 0.556f},
+    {"h264_qsv", "slow", "qsv slow ok", "qsv slow preset", true, 0.666f, 0.668f},
+};
+
 static char *test_codec_block_fill_preset_tables(void)
 {
     static const char *VOCAB[] = {"libx264",    "libx265",    "libsvtav1",  "libvvenc",
                                   "libvpx-vp9", "h264_nvenc", "hevc_nvenc", "av1_nvenc",
                                   "h264_qsv",   "hevc_qsv",   "av1_qsv",    "unknown"};
     float buf[14] = {0};
-    int rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx265", "placebo", 0);
-    mu_assert("x265 placebo ok", rc == 0);
-    mu_assert("x265 placebo preset = 1", buf[12] > 0.999f && buf[12] < 1.001f);
 
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libsvtav1", "13", 0);
-    mu_assert("svtav1 numeric preset ok", rc == 0);
-    mu_assert("svtav1 preset clamped to 1", buf[12] > 0.999f && buf[12] < 1.001f);
-
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libvvenc", "slower", 0);
-    mu_assert("vvenc slower ok", rc == 0);
-    mu_assert("vvenc slower preset", buf[12] > 0.888f && buf[12] < 0.890f);
-
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libvpx-vp9", "best", 0);
-    mu_assert("vp9 best ok", rc == 0);
-    mu_assert("vp9 best preset = 1", buf[12] > 0.999f && buf[12] < 1.001f);
-
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_nvenc", "p7", 0);
-    mu_assert("nvenc p7 ok", rc == 0);
-    mu_assert("nvenc p7 preset = 1", buf[12] > 0.999f && buf[12] < 1.001f);
-
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "hevc_qsv", "veryslow", 0);
-    mu_assert("qsv veryslow ok", rc == 0);
-    mu_assert("qsv veryslow preset", buf[12] > 0.888f && buf[12] < 0.890f);
-
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx264", "ultrafast", 0);
-    mu_assert("x264 ultrafast ok", rc == 0);
-    mu_assert("x264 ultrafast preset", buf[12] < 0.001f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx264", "superfast", 0);
-    mu_assert("x264 superfast ok", rc == 0);
-    mu_assert("x264 superfast preset", buf[12] > 0.110f && buf[12] < 0.112f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx264", "veryfast", 0);
-    mu_assert("x264 veryfast ok", rc == 0);
-    mu_assert("x264 veryfast preset", buf[12] > 0.221f && buf[12] < 0.223f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx264", "faster", 0);
-    mu_assert("x264 faster ok", rc == 0);
-    mu_assert("x264 faster preset", buf[12] > 0.332f && buf[12] < 0.334f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx264", "fast", 0);
-    mu_assert("x264 fast ok", rc == 0);
-    mu_assert("x264 fast preset", buf[12] > 0.443f && buf[12] < 0.445f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx264", "slow", 0);
-    mu_assert("x264 slow ok", rc == 0);
-    mu_assert("x264 slow preset", buf[12] > 0.666f && buf[12] < 0.668f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx264", "slower", 0);
-    mu_assert("x264 slower ok", rc == 0);
-    mu_assert("x264 slower preset", buf[12] > 0.777f && buf[12] < 0.779f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx264", "veryslow", 0);
-    mu_assert("x264 veryslow ok", rc == 0);
-    mu_assert("x264 veryslow preset", buf[12] > 0.888f && buf[12] < 0.890f);
-
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libvvenc", "faster", 0);
-    mu_assert("vvenc faster ok", rc == 0);
-    mu_assert("vvenc faster preset", buf[12] > 0.110f && buf[12] < 0.112f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libvvenc", "fast", 0);
-    mu_assert("vvenc fast ok", rc == 0);
-    mu_assert("vvenc fast preset", buf[12] > 0.332f && buf[12] < 0.334f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libvvenc", "medium", 0);
-    mu_assert("vvenc medium ok", rc == 0);
-    mu_assert("vvenc medium preset", buf[12] > 0.555f && buf[12] < 0.556f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libvvenc", "slow", 0);
-    mu_assert("vvenc slow ok", rc == 0);
-    mu_assert("vvenc slow preset", buf[12] > 0.777f && buf[12] < 0.779f);
-
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libvpx-vp9", "realtime", 0);
-    mu_assert("vp9 realtime ok", rc == 0);
-    mu_assert("vp9 realtime preset", buf[12] < 0.001f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libvpx-vp9", "good", 0);
-    mu_assert("vp9 good ok", rc == 0);
-    mu_assert("vp9 good preset", buf[12] > 0.555f && buf[12] < 0.556f);
-
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_nvenc", "p1", 0);
-    mu_assert("nvenc p1 ok", rc == 0);
-    mu_assert("nvenc p1 preset", buf[12] < 0.001f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_nvenc", "p2", 0);
-    mu_assert("nvenc p2 ok", rc == 0);
-    mu_assert("nvenc p2 preset", buf[12] > 0.221f && buf[12] < 0.223f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_nvenc", "p3", 0);
-    mu_assert("nvenc p3 ok", rc == 0);
-    mu_assert("nvenc p3 preset", buf[12] > 0.332f && buf[12] < 0.334f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_nvenc", "p4", 0);
-    mu_assert("nvenc p4 ok", rc == 0);
-    mu_assert("nvenc p4 preset", buf[12] > 0.555f && buf[12] < 0.556f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_nvenc", "p5", 0);
-    mu_assert("nvenc p5 ok", rc == 0);
-    mu_assert("nvenc p5 preset", buf[12] > 0.666f && buf[12] < 0.668f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_nvenc", "p6", 0);
-    mu_assert("nvenc p6 ok", rc == 0);
-    mu_assert("nvenc p6 preset", buf[12] > 0.777f && buf[12] < 0.779f);
-
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_qsv", "veryfast", 0);
-    mu_assert("qsv veryfast ok", rc == 0);
-    mu_assert("qsv veryfast preset", buf[12] > 0.221f && buf[12] < 0.223f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_qsv", "faster", 0);
-    mu_assert("qsv faster ok", rc == 0);
-    mu_assert("qsv faster preset", buf[12] > 0.332f && buf[12] < 0.334f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_qsv", "fast", 0);
-    mu_assert("qsv fast ok", rc == 0);
-    mu_assert("qsv fast preset", buf[12] > 0.443f && buf[12] < 0.445f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_qsv", "medium", 0);
-    mu_assert("qsv medium ok", rc == 0);
-    mu_assert("qsv medium preset", buf[12] > 0.555f && buf[12] < 0.556f);
-    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_qsv", "slow", 0);
-    mu_assert("qsv slow ok", rc == 0);
-    mu_assert("qsv slow preset", buf[12] > 0.666f && buf[12] < 0.668f);
+    const size_t n_cases = sizeof(PRESET_CASES) / sizeof(PRESET_CASES[0]);
+    for (size_t i = 0; i < n_cases; i++) {
+        const PresetCase *c = &PRESET_CASES[i];
+        int rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, c->codec, c->preset, 0);
+        mu_assert(c->msg_rc, rc == 0);
+        if (c->has_lo) {
+            mu_assert(c->msg_val, buf[12] > c->lo && buf[12] < c->hi);
+        } else {
+            mu_assert(c->msg_val, buf[12] < c->hi);
+        }
+    }
     return NULL;
 }
+
+/* One (codec, unrecognised-preset) row for
+ * test_codec_block_fill_unknown_presets_default's "every family defaults to
+ * medium" grid. All 6 calls share the same call/bound shape; table-driven
+ * for the same branch-budget reason as PRESET_CASES above. */
+typedef struct {
+    const char *codec;
+    const char *preset;
+    char *msg_rc;
+    char *msg_val;
+} UnknownPresetCase;
+
+static const UnknownPresetCase UNKNOWN_PRESET_CASES[] = {
+    {"libx264", "not-a-preset", "x264 unknown preset ok", "x264 unknown preset defaults medium"},
+    {"libsvtav1", "notnumeric", "svtav1 unknown preset ok",
+     "svtav1 unknown preset defaults medium"},
+    {"libvvenc", "not-a-preset", "vvenc unknown preset ok", "vvenc unknown preset defaults medium"},
+    {"libvpx-vp9", "not-a-deadline", "vp9 unknown preset ok", "vp9 unknown preset defaults medium"},
+    {"av1_nvenc", "p9", "nvenc unknown preset ok", "nvenc unknown preset defaults medium"},
+    {"av1_qsv", "not-a-preset", "qsv unknown preset ok", "qsv unknown preset defaults medium"},
+};
 
 static char *test_codec_block_fill_unknown_presets_default(void)
 {
     static const char *VOCAB[] = {"libx264",   "libsvtav1", "libvvenc", "libvpx-vp9",
                                   "av1_nvenc", "av1_qsv",   "unknown"};
     float buf[9] = {0};
-    int rc = vmaf_dnn_codec_block_fill(buf, 9u, VOCAB, 7u, "libx264", "not-a-preset", 0);
-    mu_assert("x264 unknown preset ok", rc == 0);
-    mu_assert("x264 unknown preset defaults medium", buf[7] > 0.555f && buf[7] < 0.556f);
 
-    rc = vmaf_dnn_codec_block_fill(buf, 9u, VOCAB, 7u, "libsvtav1", "notnumeric", 0);
-    mu_assert("svtav1 unknown preset ok", rc == 0);
-    mu_assert("svtav1 unknown preset defaults medium", buf[7] > 0.555f && buf[7] < 0.556f);
-
-    rc = vmaf_dnn_codec_block_fill(buf, 9u, VOCAB, 7u, "libvvenc", "not-a-preset", 0);
-    mu_assert("vvenc unknown preset ok", rc == 0);
-    mu_assert("vvenc unknown preset defaults medium", buf[7] > 0.555f && buf[7] < 0.556f);
-
-    rc = vmaf_dnn_codec_block_fill(buf, 9u, VOCAB, 7u, "libvpx-vp9", "not-a-deadline", 0);
-    mu_assert("vp9 unknown preset ok", rc == 0);
-    mu_assert("vp9 unknown preset defaults medium", buf[7] > 0.555f && buf[7] < 0.556f);
-
-    rc = vmaf_dnn_codec_block_fill(buf, 9u, VOCAB, 7u, "av1_nvenc", "p9", 0);
-    mu_assert("nvenc unknown preset ok", rc == 0);
-    mu_assert("nvenc unknown preset defaults medium", buf[7] > 0.555f && buf[7] < 0.556f);
-
-    rc = vmaf_dnn_codec_block_fill(buf, 9u, VOCAB, 7u, "av1_qsv", "not-a-preset", 0);
-    mu_assert("qsv unknown preset ok", rc == 0);
-    mu_assert("qsv unknown preset defaults medium", buf[7] > 0.555f && buf[7] < 0.556f);
+    const size_t n_cases = sizeof(UNKNOWN_PRESET_CASES) / sizeof(UNKNOWN_PRESET_CASES[0]);
+    for (size_t i = 0; i < n_cases; i++) {
+        const UnknownPresetCase *c = &UNKNOWN_PRESET_CASES[i];
+        int rc = vmaf_dnn_codec_block_fill(buf, 9u, VOCAB, 7u, c->codec, c->preset, 0);
+        mu_assert(c->msg_rc, rc == 0);
+        mu_assert(c->msg_val, buf[7] > 0.555f && buf[7] < 0.556f);
+    }
     return NULL;
 }
 
@@ -1846,72 +1879,88 @@ static char *test_codec_block_fill_bad_len(void)
     return NULL;
 }
 
+/* run_tests' table split into three file-scope segments (core validate/jail,
+ * sidecar, codec_block_fill) purely to keep run_tests itself under the
+ * readability-function-size LINE threshold: a single 59-row initializer
+ * spans more lines than the 60-line budget even with zero branches. Order
+ * across segments — and within each — matches the original sequential
+ * mu_run_test() calls exactly. */
+static const MuTest CORE_TESTS[] = {
+    MU_TEST(test_sniff_by_extension),          MU_TEST(test_size_cap),
+    MU_TEST(test_validate_null_path),
+#ifndef _WIN32
+    MU_TEST(test_validate_zero_byte),          MU_TEST(test_validate_allowed_onnx),
+    MU_TEST(test_validate_disallowed_onnx),    MU_TEST(test_validate_symlink_to_dir),
+    MU_TEST(test_jail_unset_accepts_anywhere), MU_TEST(test_jail_accepts_model_inside),
+    MU_TEST(test_jail_rejects_model_outside),  MU_TEST(test_jail_rejects_sibling_prefix),
+    MU_TEST(test_jail_rejects_symlink_escape), MU_TEST(test_jail_rejects_nonexistent_jail),
+    MU_TEST(test_jail_rejects_non_directory),  MU_TEST(test_jail_accepts_trailing_slash),
+#endif
+};
+
+static const MuTest SIDECAR_TESTS[] = {
+    MU_TEST(test_sidecar_parses),
+    MU_TEST(test_sidecar_rejects_null_args),
+    MU_TEST(test_sidecar_free_null_is_noop),
+    MU_TEST(test_sidecar_missing_returns_enoent),
+#ifndef _WIN32
+    MU_TEST(test_sidecar_non_regular_returns_einval),
+    MU_TEST(test_sidecar_parses_kind_nr),
+    MU_TEST(test_sidecar_quant_mode_default_fp32),
+    MU_TEST(test_sidecar_quant_mode_dynamic),
+    MU_TEST(test_sidecar_quant_mode_unknown_falls_back),
+    MU_TEST(test_sidecar_no_dot_onnx_extension),
+    MU_TEST(test_sidecar_oversized_path),
+    MU_TEST(test_sidecar_malformed_keys_default),
+    MU_TEST(test_sidecar_extract_string_no_close_quote),
+    MU_TEST(test_sidecar_string_array_malformed_no_leak),
+    MU_TEST(test_sidecar_feature_names_malformed_no_leak),
+    MU_TEST(test_sidecar_feature_vector_canonical6),
+    MU_TEST(test_sidecar_feature_vector_vmaf_tiny_field_names),
+    MU_TEST(test_sidecar_feature_vector_no_scaler),
+    MU_TEST(test_sidecar_onnx_has_scaler_flag),
+    MU_TEST(test_sidecar_onnx_has_scaler_absent),
+    MU_TEST(test_sidecar_encoder_vocab_v2),
+    MU_TEST(test_sidecar_no_encoder_vocab),
+    MU_TEST(test_sidecar_encoder_vocab_malformed_no_leak),
+    MU_TEST(test_sidecar_empty_arrays_are_valid),
+    MU_TEST(test_sidecar_encoder_vocab_over_max_returns_erange),
+    MU_TEST(test_sidecar_array_trailing_junk_wipes),
+    MU_TEST(test_sidecar_array_non_string_element_wipes),
+    MU_TEST(test_sidecar_opset_overflow_returns_default),
+    MU_TEST(test_sidecar_feature_mean_trailing_junk),
+    MU_TEST(test_sidecar_quant_mode_static),
+    MU_TEST(test_sidecar_quant_mode_qat),
+    MU_TEST(test_sidecar_kind_filter),
+#endif
+};
+
+static const MuTest CODEC_BLOCK_TESTS[] = {
+    MU_TEST(test_codec_block_fill_libx264_medium_28),
+    MU_TEST(test_codec_block_fill_unknown_returns_enoent),
+    MU_TEST(test_codec_block_fill_null_codec_is_ok),
+    MU_TEST(test_codec_block_fill_h264_alias),
+    MU_TEST(test_codec_block_fill_aliases_hevc_av1_vp9_vvc),
+    MU_TEST(test_codec_block_fill_preset_slower),
+    MU_TEST(test_codec_block_fill_null_vocab_entry_is_skipped),
+    MU_TEST(test_codec_block_fill_crf_clamp),
+    MU_TEST(test_codec_block_fill_preset_tables),
+    MU_TEST(test_codec_block_fill_unknown_presets_default),
+    MU_TEST(test_codec_block_fill_rejects_bad_args),
+    MU_TEST(test_codec_block_fill_bad_len),
+};
+
 char *run_tests(void)
 {
-    mu_run_test(test_sniff_by_extension);
-    mu_run_test(test_size_cap);
-    mu_run_test(test_validate_null_path);
-#ifndef _WIN32
-    mu_run_test(test_validate_zero_byte);
-    mu_run_test(test_validate_allowed_onnx);
-    mu_run_test(test_validate_disallowed_onnx);
-    mu_run_test(test_validate_symlink_to_dir);
-    mu_run_test(test_jail_unset_accepts_anywhere);
-    mu_run_test(test_jail_accepts_model_inside);
-    mu_run_test(test_jail_rejects_model_outside);
-    mu_run_test(test_jail_rejects_sibling_prefix);
-    mu_run_test(test_jail_rejects_symlink_escape);
-    mu_run_test(test_jail_rejects_nonexistent_jail);
-    mu_run_test(test_jail_rejects_non_directory);
-    mu_run_test(test_jail_accepts_trailing_slash);
-#endif
-    mu_run_test(test_sidecar_parses);
-    mu_run_test(test_sidecar_rejects_null_args);
-    mu_run_test(test_sidecar_free_null_is_noop);
-    mu_run_test(test_sidecar_missing_returns_enoent);
-#ifndef _WIN32
-    mu_run_test(test_sidecar_non_regular_returns_einval);
-    mu_run_test(test_sidecar_parses_kind_nr);
-    mu_run_test(test_sidecar_quant_mode_default_fp32);
-    mu_run_test(test_sidecar_quant_mode_dynamic);
-    mu_run_test(test_sidecar_quant_mode_unknown_falls_back);
-    mu_run_test(test_sidecar_no_dot_onnx_extension);
-    mu_run_test(test_sidecar_oversized_path);
-    mu_run_test(test_sidecar_malformed_keys_default);
-    mu_run_test(test_sidecar_extract_string_no_close_quote);
-    mu_run_test(test_sidecar_string_array_malformed_no_leak);
-    mu_run_test(test_sidecar_feature_names_malformed_no_leak);
-    mu_run_test(test_sidecar_feature_vector_canonical6);
-    mu_run_test(test_sidecar_feature_vector_vmaf_tiny_field_names);
-    mu_run_test(test_sidecar_feature_vector_no_scaler);
-    mu_run_test(test_sidecar_onnx_has_scaler_flag);
-    mu_run_test(test_sidecar_onnx_has_scaler_absent);
-    mu_run_test(test_sidecar_encoder_vocab_v2);
-    mu_run_test(test_sidecar_no_encoder_vocab);
-    mu_run_test(test_sidecar_encoder_vocab_malformed_no_leak);
-    mu_run_test(test_sidecar_empty_arrays_are_valid);
-    mu_run_test(test_sidecar_encoder_vocab_over_max_returns_erange);
-    mu_run_test(test_sidecar_array_trailing_junk_wipes);
-    mu_run_test(test_sidecar_array_non_string_element_wipes);
-    mu_run_test(test_sidecar_opset_overflow_returns_default);
-    mu_run_test(test_sidecar_feature_mean_trailing_junk);
-    mu_run_test(test_sidecar_quant_mode_static);
-    mu_run_test(test_sidecar_quant_mode_qat);
-    mu_run_test(test_sidecar_kind_filter);
-#endif
-    mu_run_test(test_codec_block_fill_libx264_medium_28);
-    mu_run_test(test_codec_block_fill_unknown_returns_enoent);
-    mu_run_test(test_codec_block_fill_null_codec_is_ok);
-    mu_run_test(test_codec_block_fill_h264_alias);
-    mu_run_test(test_codec_block_fill_aliases_hevc_av1_vp9_vvc);
-    mu_run_test(test_codec_block_fill_preset_slower);
-    mu_run_test(test_codec_block_fill_null_vocab_entry_is_skipped);
-    mu_run_test(test_codec_block_fill_crf_clamp);
-    mu_run_test(test_codec_block_fill_preset_tables);
-    mu_run_test(test_codec_block_fill_unknown_presets_default);
-    mu_run_test(test_codec_block_fill_rejects_bad_args);
-    mu_run_test(test_codec_block_fill_bad_len);
-    return NULL;
+    char *msg = mu_run_table(CORE_TESTS, MU_TABLE_LEN(CORE_TESTS));
+    if (msg)
+        return msg;
+    msg = mu_run_table(SIDECAR_TESTS, MU_TABLE_LEN(SIDECAR_TESTS));
+    if (msg)
+        return msg;
+    return mu_run_table(CODEC_BLOCK_TESTS, MU_TABLE_LEN(CODEC_BLOCK_TESTS));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */
+
+/* NOLINTEND(concurrency-mt-unsafe) */

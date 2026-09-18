@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Regression test for scripts/ci/check-default-model-single-source.sh.
 #
 # A gate that only ever passes proves nothing. This exercises both directions:

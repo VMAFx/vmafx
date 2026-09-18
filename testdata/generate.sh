@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Generate large-resolution test YUV pairs from Big Buck Bunny source.
 # Small resolutions (576x324, 640x480) are committed to the repo.
 # This script generates 720p, 1080p, and 4K pairs that are gitignored.

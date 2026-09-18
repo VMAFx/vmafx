@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Coverage round 2 — integer_motion.c gap-fill.
  *
@@ -76,6 +76,76 @@ static int alloc_random(VmafPicture *pic, uint32_t seed)
     return 0;
 }
 
+/* Create+init a context for the "motion" extractor over a MOT_W x MOT_H
+ * frame (optionally carrying `opts`) and init a feature collector. Every
+ * test below starts this way once `fex` is looked up; context_create /
+ * context_init use the same messages everywhere in this file. */
+static char *motion_fixture_open(VmafFeatureExtractor *fex, VmafFeatureExtractorContext **ctx,
+                                 VmafFeatureCollector **fc, VmafDictionary *opts)
+{
+    int err = vmaf_feature_extractor_context_create(ctx, fex, opts);
+    mu_assert("context_create", err == 0);
+    err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, MOT_W, MOT_H);
+    mu_assert("context_init", err == 0);
+
+    err = vmaf_feature_collector_init(fc);
+    mu_assert("collector_init", err == 0);
+    return NULL;
+}
+
+/* Allocate `n` (ref, dist) pairs of pseudo-random 8-bit frames, striding the
+ * PRNG seed by `ref_step` / `dist_step` per index so consecutive pairs
+ * differ. The single-frame caller passes n=1 and step=0. */
+static char *alloc_motion_pairs(VmafPicture *refs, VmafPicture *dists, unsigned n,
+                                uint32_t ref_seed0, uint32_t ref_step, uint32_t dist_seed0,
+                                uint32_t dist_step)
+{
+    for (unsigned i = 0; i < n; ++i) {
+        mu_assert("alloc ref", alloc_random(&refs[i], ref_seed0 + i * ref_step) == 0);
+        mu_assert("alloc dist", alloc_random(&dists[i], dist_seed0 + i * dist_step) == 0);
+    }
+    return NULL;
+}
+
+/* integer_motion has VMAF_FEATURE_EXTRACTOR_PREV_REF: in the normal
+ * vmaf_read_pictures() pipeline, libvmaf.c sets fex->prev_ref before calling
+ * extract() and clears it afterwards. When driving the extractor directly
+ * (as this coverage file does), we must replicate that protocol or extract()
+ * returns -EINVAL at index >= 1 because prev->ref is NULL. Pattern mirrors
+ * read_pictures_dispatch_one() in libvmaf.c. Runs extract() over `n` frames
+ * of `refs` / `dists`, asserting "extract frame" after each call. */
+static char *motion_extract_with_prev_ref(VmafFeatureExtractorContext *ctx,
+                                          VmafFeatureCollector *fc, VmafPicture *refs,
+                                          VmafPicture *dists, unsigned n)
+{
+    for (unsigned i = 0; i < n; ++i) {
+        if (i > 0)
+            vmaf_picture_ref(&ctx->fex->prev_ref, &refs[i - 1]);
+        int err =
+            vmaf_feature_extractor_context_extract(ctx, &refs[i], NULL, &dists[i], NULL, i, fc);
+        if (ctx->fex->prev_ref.ref) {
+            (void)vmaf_picture_unref(&ctx->fex->prev_ref);
+            memset(&ctx->fex->prev_ref, 0, sizeof(ctx->fex->prev_ref));
+        }
+        mu_assert("extract frame", err == 0);
+    }
+    return NULL;
+}
+
+/* Common teardown for every test in this file: close/destroy `ctx`, destroy
+ * `fc`, and unref `n` (ref, dist) pairs. */
+static void motion_fixture_close(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc,
+                                 VmafPicture *refs, VmafPicture *dists, unsigned n)
+{
+    (void)vmaf_feature_extractor_context_close(ctx);
+    (void)vmaf_feature_extractor_context_destroy(ctx);
+    vmaf_feature_collector_destroy(fc);
+    for (unsigned i = 0; i < n; ++i) {
+        vmaf_picture_unref(&refs[i]);
+        vmaf_picture_unref(&dists[i]);
+    }
+}
+
 /* ----------------------------------------------------------------- */
 /* motion_force_zero path                                            */
 /* ----------------------------------------------------------------- */
@@ -90,14 +160,10 @@ static char *test_motion_force_zero_extract_returns_zero(void)
     mu_assert("set motion_force_zero", err == 0);
 
     VmafFeatureExtractorContext *ctx = NULL;
-    err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
-    mu_assert("context_create", err == 0);
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, MOT_W, MOT_H);
-    mu_assert("context_init", err == 0);
-
     VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
-    mu_assert("collector_init", err == 0);
+    char *msg = motion_fixture_open(fex, &ctx, &fc, opts);
+    if (msg)
+        return msg;
 
     VmafPicture ref;
     VmafPicture dist;
@@ -112,11 +178,7 @@ static char *test_motion_force_zero_extract_returns_zero(void)
      * The branch is exercised by reaching extract_force_zero (line 320 of integer_motion.c);
      * we don't assert on the score key directly. */
 
-    (void)vmaf_feature_extractor_context_close(ctx);
-    (void)vmaf_feature_extractor_context_destroy(ctx);
-    vmaf_feature_collector_destroy(fc);
-    vmaf_picture_unref(&ref);
-    vmaf_picture_unref(&dist);
+    motion_fixture_close(ctx, fc, &ref, &dist, 1);
     /* opts ownership transferred to ctx and freed by context_destroy. */
     return NULL;
 }
@@ -131,40 +193,22 @@ static char *test_motion_three_frame_extract_emits_scores(void)
     mu_assert("motion extractor missing", fex != NULL);
 
     VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
-    mu_assert("context_create", err == 0);
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, MOT_W, MOT_H);
-    mu_assert("context_init", err == 0);
-
     VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
-    mu_assert("collector_init", err == 0);
+    char *msg = motion_fixture_open(fex, &ctx, &fc, NULL);
+    if (msg)
+        return msg;
 
     VmafPicture refs[4];
     VmafPicture dists[4];
-    for (unsigned i = 0; i < 4; ++i) {
-        mu_assert("alloc ref", alloc_random(&refs[i], 0x100u + i * 17u) == 0);
-        mu_assert("alloc dist", alloc_random(&dists[i], 0x200u + i * 23u) == 0);
-    }
+    msg = alloc_motion_pairs(refs, dists, 4, 0x100u, 17u, 0x200u, 23u);
+    if (msg)
+        return msg;
 
-    /* integer_motion has VMAF_FEATURE_EXTRACTOR_PREV_REF: in the normal
-     * vmaf_read_pictures() pipeline, libvmaf.c sets fex->prev_ref before
-     * calling extract() and clears it afterwards.  When driving the extractor
-     * directly (as this coverage test does), we must replicate that protocol
-     * or extract() returns -EINVAL at index >= 1 because prev->ref is NULL.
-     * Pattern mirrors read_pictures_dispatch_one() in libvmaf.c. */
-    for (unsigned i = 0; i < 4; ++i) {
-        if (i > 0)
-            vmaf_picture_ref(&ctx->fex->prev_ref, &refs[i - 1]);
-        err = vmaf_feature_extractor_context_extract(ctx, &refs[i], NULL, &dists[i], NULL, i, fc);
-        if (ctx->fex->prev_ref.ref) {
-            (void)vmaf_picture_unref(&ctx->fex->prev_ref);
-            memset(&ctx->fex->prev_ref, 0, sizeof(ctx->fex->prev_ref));
-        }
-        mu_assert("extract frame", err == 0);
-    }
+    msg = motion_extract_with_prev_ref(ctx, fc, refs, dists, 4);
+    if (msg)
+        return msg;
 
-    err = vmaf_feature_extractor_context_flush(ctx, fc);
+    int err = vmaf_feature_extractor_context_flush(ctx, fc);
     mu_assert("flush ok", err >= 0);
 
     /* index 2 has a real SAD2 (second-SAD branch at line 552-578).
@@ -175,13 +219,7 @@ static char *test_motion_three_frame_extract_emits_scores(void)
     mu_assert("get motion2 frame2", err == 0);
     mu_assert("motion2 finite", isfinite(m2));
 
-    (void)vmaf_feature_extractor_context_close(ctx);
-    (void)vmaf_feature_extractor_context_destroy(ctx);
-    vmaf_feature_collector_destroy(fc);
-    for (unsigned i = 0; i < 4; ++i) {
-        vmaf_picture_unref(&refs[i]);
-        vmaf_picture_unref(&dists[i]);
-    }
+    motion_fixture_close(ctx, fc, refs, dists, 4);
     return NULL;
 }
 
@@ -199,45 +237,27 @@ static char *test_motion_moving_average_branch(void)
     mu_assert("set motion_moving_average", err == 0);
 
     VmafFeatureExtractorContext *ctx = NULL;
-    err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
-    mu_assert("context_create", err == 0);
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, MOT_W, MOT_H);
-    mu_assert("context_init", err == 0);
-
     VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
-    mu_assert("collector_init", err == 0);
+    char *msg = motion_fixture_open(fex, &ctx, &fc, opts);
+    if (msg)
+        return msg;
 
     VmafPicture refs[3];
     VmafPicture dists[3];
-    for (unsigned i = 0; i < 3; ++i) {
-        mu_assert("alloc ref", alloc_random(&refs[i], 0x300u + i * 11u) == 0);
-        mu_assert("alloc dist", alloc_random(&dists[i], 0x400u + i * 13u) == 0);
-    }
+    msg = alloc_motion_pairs(refs, dists, 3, 0x300u, 11u, 0x400u, 13u);
+    if (msg)
+        return msg;
+
     /* Same VMAF_FEATURE_EXTRACTOR_PREV_REF protocol as
-     * test_motion_three_frame_extract_emits_scores — set prev_ref before
-     * each extract call at index > 0 and clear it afterwards. */
-    for (unsigned i = 0; i < 3; ++i) {
-        if (i > 0)
-            vmaf_picture_ref(&ctx->fex->prev_ref, &refs[i - 1]);
-        err = vmaf_feature_extractor_context_extract(ctx, &refs[i], NULL, &dists[i], NULL, i, fc);
-        if (ctx->fex->prev_ref.ref) {
-            (void)vmaf_picture_unref(&ctx->fex->prev_ref);
-            memset(&ctx->fex->prev_ref, 0, sizeof(ctx->fex->prev_ref));
-        }
-        mu_assert("extract frame", err == 0);
-    }
+     * test_motion_three_frame_extract_emits_scores. */
+    msg = motion_extract_with_prev_ref(ctx, fc, refs, dists, 3);
+    if (msg)
+        return msg;
 
     err = vmaf_feature_extractor_context_flush(ctx, fc);
     mu_assert("flush moving_average", err >= 0);
 
-    (void)vmaf_feature_extractor_context_close(ctx);
-    (void)vmaf_feature_extractor_context_destroy(ctx);
-    vmaf_feature_collector_destroy(fc);
-    for (unsigned i = 0; i < 3; ++i) {
-        vmaf_picture_unref(&refs[i]);
-        vmaf_picture_unref(&dists[i]);
-    }
+    motion_fixture_close(ctx, fc, refs, dists, 3);
     /* opts ownership transferred to ctx and freed by context_destroy. */
     return NULL;
 }
@@ -273,30 +293,23 @@ static char *test_motion_five_frame_under_min(void)
 
     /* Part B: default mode, single frame → flush exercises n<=min_idx arm */
     VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
-    mu_assert("context_create", err == 0);
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, MOT_W, MOT_H);
-    mu_assert("context_init", err == 0);
-
     VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
-    mu_assert("collector_init", err == 0);
+    char *msg = motion_fixture_open(fex, &ctx, &fc, NULL);
+    if (msg)
+        return msg;
 
     VmafPicture ref;
     VmafPicture dist;
-    mu_assert("alloc ref", alloc_random(&ref, 0x500u) == 0);
-    mu_assert("alloc dist", alloc_random(&dist, 0x600u) == 0);
+    msg = alloc_motion_pairs(&ref, &dist, 1, 0x500u, 0, 0x600u, 0);
+    if (msg)
+        return msg;
 
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    int err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
     mu_assert("extract frame0", err == 0);
     err = vmaf_feature_extractor_context_flush(ctx, fc);
     mu_assert("flush single-frame default mode", err >= 0);
 
-    (void)vmaf_feature_extractor_context_close(ctx);
-    (void)vmaf_feature_extractor_context_destroy(ctx);
-    vmaf_feature_collector_destroy(fc);
-    vmaf_picture_unref(&ref);
-    vmaf_picture_unref(&dist);
+    motion_fixture_close(ctx, fc, &ref, &dist, 1);
     return NULL;
 }
 

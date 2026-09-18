@@ -1,19 +1,9 @@
 /**
  *
+ *  Copyright 2001-2012 Xiph.Org and contributors.
  *  Copyright 2026 Lusoris
  *
- *     Licensed under the BSD+Patent License (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
- *
- *         https://opensource.org/licenses/BSDplusPatent
- *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
- *
+ * SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-2-Clause
  */
 
 /*
@@ -47,6 +37,12 @@
 
 #if ARCH_AARCH64
 #include "feature/arm64/psnr_hvs_neon.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #endif
 
 #if ARCH_AARCH64
@@ -203,3 +199,5 @@ char *run_tests(void)
 #endif
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -2,18 +2,7 @@
  *
  *  Copyright 2026 Lusoris
  *
- *     Licensed under the BSD+Patent License (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
- *
- *         https://opensource.org/licenses/BSDplusPatent
- *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
- *
+ * SPDX-License-Identifier: EUPL-1.2
  */
 
 /*
@@ -39,8 +28,8 @@
  * all double); pure (no I/O, no global mutable state).
  */
 
-#ifndef __VMAF_FEATURE_BRISQUE_MATH_H__
-#define __VMAF_FEATURE_BRISQUE_MATH_H__
+#ifndef VMAF_FEATURE_BRISQUE_MATH_H_
+#define VMAF_FEATURE_BRISQUE_MATH_H_
 
 #include <assert.h>
 #include <math.h>
@@ -173,6 +162,10 @@ typedef struct BrisqueAggd {
     double right_sq; /* rightstd^2 */
 } BrisqueAggd;
 
+/* One numerical procedure — the AGGD moment fit, matching the NIQE twin. Its
+ * intermediate sums feed a snapshot-gated score, so splitting it would change
+ * the order they combine in. ADR-0141 §2. */
+/* NOLINTNEXTLINE(readability-function-size) */
 static inline BrisqueAggd brisque_fit_aggd(const double *x, size_t n, const double *aggd_table)
 {
     assert(x != NULL && aggd_table != NULL && n > 0);
@@ -374,4 +367,4 @@ static inline double brisque_range_scale(double feat, double lo, double hi)
     return -1.0 + 2.0 / (hi - lo) * (feat - lo);
 }
 
-#endif /* __VMAF_FEATURE_BRISQUE_MATH_H__ */
+#endif /* VMAF_FEATURE_BRISQUE_MATH_H_ */

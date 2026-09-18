@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Shared struct-zero helpers for GPU kernel lifecycle structs.
  *
@@ -29,7 +29,12 @@
 #ifndef LIBVMAF_KERNEL_LIFECYCLE_COMMON_H_
 #define LIBVMAF_KERNEL_LIFECYCLE_COMMON_H_
 
+/* NOLINTBEGIN(modernize-deprecated-headers): shared C header, also included
+ * from C++ (SYCL) translation units, which is how clang-tidy analyses it.
+ * The <cstring>/<cstddef> spellings do not exist in C. Same reasoning as
+ * feature/feature_extractor.h (ADR-0141). */
 #include <string.h>
+/* NOLINTEND(modernize-deprecated-headers) */
 
 /*
  * Zero-initialise a lifecycle / readback / buffer struct pointer.

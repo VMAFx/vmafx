@@ -1,4 +1,6 @@
 /**
+ *  Copyright 2016-2023 Netflix, Inc.
+ *  Copyright 2021 NVIDIA Corporation.
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *

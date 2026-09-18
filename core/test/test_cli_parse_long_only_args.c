@@ -1,7 +1,7 @@
 /*
  * Copyright 2026 Lusoris
  *
- * SPDX-License-Identifier: BSD-3-Clause
+ * SPDX-License-Identifier: EUPL-1.2
  *
  * Regression test for the `cli_parse.c` long-only-error-fix
  * (ADR-0316, follow-up to ADR-0311 / PR #408 fuzzer-parked
@@ -28,12 +28,19 @@
  */
 
 #include <getopt.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "mu_table.h"
 #include "test.h"
 
 #include "cli_parse.h"
@@ -234,14 +241,18 @@ static char *test_threads_negative_is_rejected()
 
 char *run_tests()
 {
-    mu_run_test(test_threads_invalid_optarg_does_not_assert);
-    mu_run_test(test_subsample_invalid_optarg_does_not_assert);
-    mu_run_test(test_cpumask_invalid_optarg_does_not_assert);
-    mu_run_test(test_threads_abbrev_does_not_assert);
-    mu_run_test(test_frame_cnt_negative_is_rejected);
-    mu_run_test(test_frame_skip_ref_negative_is_rejected);
-    mu_run_test(test_frame_skip_dist_negative_is_rejected);
-    mu_run_test(test_frame_cnt_overflow_is_rejected);
-    mu_run_test(test_threads_negative_is_rejected);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_threads_invalid_optarg_does_not_assert),
+        MU_TEST(test_subsample_invalid_optarg_does_not_assert),
+        MU_TEST(test_cpumask_invalid_optarg_does_not_assert),
+        MU_TEST(test_threads_abbrev_does_not_assert),
+        MU_TEST(test_frame_cnt_negative_is_rejected),
+        MU_TEST(test_frame_skip_ref_negative_is_rejected),
+        MU_TEST(test_frame_skip_dist_negative_is_rejected),
+        MU_TEST(test_frame_cnt_overflow_is_rejected),
+        MU_TEST(test_threads_negative_is_rejected),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

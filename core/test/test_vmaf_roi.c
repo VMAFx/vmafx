@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Smoke test for the vmaf-roi sidecar core helpers (T6-2b / ADR-0247):
  *
@@ -17,9 +17,16 @@
  */
 
 #include <math.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #include <stddef.h>
 
 #include "test.h"
+#include "mu_table.h"
 #include "vmaf_roi_core.h"
 
 /* Mirror of the sample-count logic from vmaf_roi.c:frame_bytes().
@@ -192,14 +199,18 @@ static char *test_frame_bytes_444(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_reduce_full_ctu);
-    mu_run_test(test_reduce_partial_ctu);
-    mu_run_test(test_qp_signs);
-    mu_run_test(test_qp_clamp);
-    mu_run_test(test_qp_monotonic);
-    mu_run_test(test_frame_bytes_even);
-    mu_run_test(test_frame_bytes_odd_420);
-    mu_run_test(test_frame_bytes_odd_422);
-    mu_run_test(test_frame_bytes_444);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_reduce_full_ctu),
+        MU_TEST(test_reduce_partial_ctu),
+        MU_TEST(test_qp_signs),
+        MU_TEST(test_qp_clamp),
+        MU_TEST(test_qp_monotonic),
+        MU_TEST(test_frame_bytes_even),
+        MU_TEST(test_frame_bytes_odd_420),
+        MU_TEST(test_frame_bytes_odd_422),
+        MU_TEST(test_frame_bytes_444),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -1,5 +1,5 @@
 /* Copyright 2026 Lusoris
- * SPDX-License-Identifier: BSD-2-Clause-Patent
+ * SPDX-License-Identifier: EUPL-1.2
  * Exercise the production CLI's shared private reader and placeholder helpers.
  */
 /* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: preserve C/upstream NULL
@@ -108,10 +108,13 @@ static char *test_invalid_reader_input_does_not_read_or_write(void)
     for (size_t i = 0; i < sizeof(depths) / sizeof(depths[0]); ++i) {
         rejected = rejected && read_luma8(fp, &output, 1U, depths[i], &got) == -EINVAL;
     }
-    const size_t sizes[] = {0U, (size_t)VMAF_ROI_MAX_DIM * VMAF_ROI_MAX_DIM + 1U, SIZE_MAX};
-    for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
-        rejected = rejected && read_luma8(fp, &output, sizes[i], 16, &got) == -EINVAL;
-    }
+    /* One call per size, not a loop over them: GCC merges a loop's sizes into
+     * one range, cannot see the guard reject each, and reports the 1-byte
+     * `output` as overflowed (-Wstringop-overflow). Separate calls fold. */
+    rejected = rejected && read_luma8(fp, &output, 0U, 16, &got) == -EINVAL;
+    rejected = rejected && read_luma8(fp, &output, (size_t)VMAF_ROI_MAX_DIM * VMAF_ROI_MAX_DIM + 1U,
+                                      16, &got) == -EINVAL;
+    rejected = rejected && read_luma8(fp, &output, SIZE_MAX, 16, &got) == -EINVAL;
     rejected = rejected && read_luma8(NULL, &output, 1U, 8, &got) == -EINVAL;
     rejected = rejected && read_luma8(fp, NULL, 1U, 8, &got) == -EINVAL;
     rejected = rejected && read_luma8(fp, &output, 1U, 8, NULL) == -EINVAL;

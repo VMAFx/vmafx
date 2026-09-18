@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2016-2025 Netflix, Inc.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Metal compute kernel for integer_motion_v2 (T8-1c / ADR-0421).
  *  Translation of `libvmaf/src/feature/cuda/integer_motion_v2/

@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Tiny-AI model families: FR regressor (C1), NR metric (C2), learned filter (C3)."""
 
 from .exports import export_to_onnx

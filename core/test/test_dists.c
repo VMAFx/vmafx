@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  DISTS-Sq feature extractor — structural + missing-model tests.
  *
@@ -11,8 +11,17 @@
 
 #include "tiny_ai_test_template.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 #include "dnn/tiny_extractor_template.h"
 
+/* The registration tests set the model-path environment variable they
+ * exercise; the binary is single-threaded (ADR-0141). */
+/* NOLINTNEXTLINE(concurrency-mt-unsafe) */
 VMAF_TINY_AI_DEFINE_REGISTRATION_TESTS("dists_sq", "dists_sq", "VMAF_DISTS_SQ_MODEL_PATH", dists_sq)
 
 static void put_le16(uint8_t *dst, uint16_t v)
@@ -77,3 +86,5 @@ char *run_tests(void)
     mu_run_test(test_dists_high_bitdepth_rgb_normalisation);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

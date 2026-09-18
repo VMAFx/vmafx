@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  ORT error-injection unit tests for ort_backend.c.
  *
@@ -28,10 +28,17 @@
  */
 
 #include <errno.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "mu_table.h"
 #include "test.h"
 
 /* ------------------------------------------------------------------ */
@@ -166,10 +173,11 @@ static const char *ORT_API_CALL mock_GetErrorMessage(const OrtStatus *st)
 
 static void ORT_API_CALL mock_ReleaseStatus(OrtStatus *st)
 {
-    if (st == &g_status_a)
+    if (st == &g_status_a) {
         g_status_a.msg = NULL;
-    else if (st == &g_status_b)
+    } else if (st == &g_status_b) {
         g_status_b.msg = NULL;
+    }
 }
 
 static OrtStatus *ORT_API_CALL mock_CreateEnv(OrtLoggingLevel level, const char *id, OrtEnv **out)
@@ -650,15 +658,19 @@ static char *test_cuda_ep_unavailable_nonempty_message(void)
 char *run_tests(void)
 {
     init_mock_api();
-    mu_run_test(test_ort_log_nonempty_message);
-    mu_run_test(test_ep_unavailable_nonempty_message);
-    mu_run_test(test_two_stage_retry_create_opts_fails);
-    mu_run_test(test_two_stage_retry_set_intra_threads);
-    mu_run_test(test_get_tensor_elem_type_output_error);
-    mu_run_test(test_cast_type_info_output_error);
-    mu_run_test(test_create_cpu_mem_info_failure);
-    mu_run_test(test_cuda_ep_unavailable_nonempty_message);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_ort_log_nonempty_message),
+        MU_TEST(test_ep_unavailable_nonempty_message),
+        MU_TEST(test_two_stage_retry_create_opts_fails),
+        MU_TEST(test_two_stage_retry_set_intra_threads),
+        MU_TEST(test_get_tensor_elem_type_output_error),
+        MU_TEST(test_cast_type_info_output_error),
+        MU_TEST(test_create_cpu_mem_info_failure),
+        MU_TEST(test_cuda_ep_unavailable_nonempty_message),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 #endif /* VMAF_HAVE_DNN */
+
+/* NOLINTEND(modernize-use-nullptr) */

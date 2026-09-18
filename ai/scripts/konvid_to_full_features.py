@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """KoNViD-1k -> FULL_FEATURES VMAF parquet.
 
 This is the full-feature companion to ``konvid_to_vmaf_pairs.py``. It

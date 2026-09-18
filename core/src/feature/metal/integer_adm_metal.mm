@@ -1,6 +1,9 @@
 /**
+ *  Copyright 2016-2020 Netflix, Inc.
+ *  Copyright 2016-2023 Netflix, Inc.
+ *  Copyright 2021 NVIDIA Corporation.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  integer_adm feature extractor on the Metal backend (feature "adm" — the
  *  VMAF-default ADM path). Integer (fixed-point) twin of float_adm_metal.mm:

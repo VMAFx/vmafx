@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 # Copyright 2026 Lusoris
 """Run explicit MOS-label materialization for multiple feature tables."""
 

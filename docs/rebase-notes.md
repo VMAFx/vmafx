@@ -50945,3 +50945,41 @@ rework noted above, so treat the whole of `svm.cpp` as fork-modified and
 reapply — then re-run `fuzz_json_model` against
 `core/test/fuzz/json_model_corpus/svm_forged_sv_sentinel.bin` and the Netflix
 golden gate.
+
+## ADR-1250 — EUPL-1.2 relicensing of fork-authored code
+
+Upstream syncs are unaffected by design. Every file that moved to EUPL-1.2 has no
+counterpart path or file name in `upstream/master`, which is precisely the set a
+sync never touches. The files a sync does touch — the upstream mirrors, the
+`compat/python-vmaf/` tree, and the SIMD and GPU kernels that carry upstream code
+— all keep the terms and notices they had.
+
+Two things to know when replaying upstream changes:
+
+- **`core/src/feature/speed.c`** and the other upstream mirrors are unchanged by
+  the relicensing. If a future sync adds a new upstream file, it arrives with
+  Netflix's header and the classifier will leave it alone.
+- **A new fork-authored file** should carry `SPDX-License-Identifier: EUPL-1.2`.
+  `scripts/dev/relicense_fork_files.py --check` says so mechanically; it needs the
+  `upstream/master` ref present locally (`git fetch upstream`).
+- **The vendored Pelorus files are not relicensed.** The tool's `vendored-mirror`
+  veto (`[mirrors.pelorus]` in `relicense_provenance.toml`) leaves all ten
+  byte-identical to their origin, so `scripts/sync-pelorus-interop.sh --update`
+  keeps working; their terms change only if Pelorus changes them.
+
+The same PR brought every file it relicensed inside the lint profile (ADR-1142).
+Three results outlive it:
+
+- **`vmaf_ort_open_with_fallback()`** in `core/src/dnn/ort_backend.c` is now the
+  only home of the int8 → fp32 session retry. `vmaf_dnn_session_open()` and
+  `vmaf_use_tiny_model()` both call it; neither may call `vmaf_ort_open()` on an
+  int8 path directly (`core/src/dnn/AGENTS.md`). EP selection in
+  `vmaf_ort_open()` reads the AUTO order from `vmaf_ort_internal_auto_ep_order()`,
+  so the table `test_ort_internals.c` pins is the one the code uses.
+- **`core/test/mu_table.h`** is the table runner for `run_tests` bodies over seven
+  tests. It is fork-only; an upstream test that arrives with a long `run_tests`
+  can keep its `mu_run_test` list and take the function-size finding into the
+  ratchet, or be converted — either is a clean rebase.
+- **Tidy Changed** in `.github/workflows/lint-and-format.yml` defines its
+  exclusion list once, as `exclude_untidyable()`. Add a family there, not in the
+  four trigger branches that used to carry copies of it.

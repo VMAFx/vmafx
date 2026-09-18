@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Feature vector contract shared between datamodule and audit tools.
 
 Kept in its own module so lightweight callers (audit, MCP tools, op-allowlist

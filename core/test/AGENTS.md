@@ -33,6 +33,19 @@ Each `test_*.c` compiles into its own binary. `meson.build` registers them
 with `meson test`. No fixtures, no shared state — each test owns its setup
 and teardown.
 
+**Function size** (`readability-function-size`, 15-branch budget):
+
+- `mu_assert` / `mu_run_test` = 2 branches each (`if` + `do { } while (0)`) -> more than 7 in one function fails.
+- more than 7 tests -> `MU_TEST(fn)` rows + `mu_run_table()` from [mu_table.h](mu_table.h). 0 branches at any length.
+- assertion-heavy test -> `check_*` helpers, called as `char *msg = check_x(...); if (msg) return msg;` = 1 branch.
+
+**Clean up before asserting:**
+
+- failing `mu_assert` returns at once -> live heap, `FILE`, temp file or changed env var leaks.
+- free, close, remove, restore env first; keep result in a local; assert last.
+- `VMAF_TINY_MODEL_DIR` left set -> every later test in the binary breaks.
+- Tidy Changed analyzer reports these paths (`clang-analyzer-unix.Malloc`, `clang-analyzer-unix.Stream`).
+
 ## Ground rules
 
 - **No dead `/* ... */` blocks in test files.** Commented-out code that cannot

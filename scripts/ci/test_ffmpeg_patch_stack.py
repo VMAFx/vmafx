@@ -1,7 +1,7 @@
 """Exercise real Git replay, release selection and failure preservation."""
 
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 
 import importlib.util
 import json

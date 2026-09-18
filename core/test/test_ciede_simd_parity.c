@@ -1,5 +1,6 @@
 /**
  *
+ *  Copyright 2016-2026 Netflix, Inc.
  *  Copyright 2026 Lusoris
  *
  *     Licensed under the BSD+Patent License (the "License");
@@ -45,6 +46,12 @@
  */
 
 #include <stddef.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -103,35 +110,64 @@ static void ciede_preprocess_16_scalar(const uint16_t *y_buf, const uint16_t *u_
  * Test 1: 8-bit plane preprocessing parity.
  * ---------------------------------------------------------------------- */
 
+/* Fixture for the 8-bit parity test: three uint8 input planes plus scalar-
+ * and SIMD-output float planes for Y/U/V. */
+typedef struct CiedeParity8 {
+    uint8_t *y_in, *u_in, *v_in;
+    float *y_scalar, *u_scalar, *v_scalar;
+    float *y_simd, *u_simd, *v_simd;
+} CiedeParity8;
+
+static int ciede_parity8_alloc(CiedeParity8 *b, int w)
+{
+    const size_t plane_bytes = (size_t)w * sizeof(uint8_t);
+    const size_t out_bytes = (size_t)w * sizeof(float);
+    b->y_in = (uint8_t *)simd_test_aligned_malloc(plane_bytes, 32);
+    b->u_in = (uint8_t *)simd_test_aligned_malloc(plane_bytes, 32);
+    b->v_in = (uint8_t *)simd_test_aligned_malloc(plane_bytes, 32);
+    b->y_scalar = (float *)simd_test_aligned_malloc(out_bytes, 32);
+    b->u_scalar = (float *)simd_test_aligned_malloc(out_bytes, 32);
+    b->v_scalar = (float *)simd_test_aligned_malloc(out_bytes, 32);
+    b->y_simd = (float *)simd_test_aligned_malloc(out_bytes, 32);
+    b->u_simd = (float *)simd_test_aligned_malloc(out_bytes, 32);
+    b->v_simd = (float *)simd_test_aligned_malloc(out_bytes, 32);
+    if (!b->y_in || !b->u_in || !b->v_in || !b->y_scalar || !b->u_scalar || !b->v_scalar ||
+        !b->y_simd || !b->u_simd || !b->v_simd)
+        return -1;
+    return 0;
+}
+
+static void ciede_parity8_free_inputs(CiedeParity8 *b)
+{
+    simd_test_aligned_free(b->y_in);
+    simd_test_aligned_free(b->u_in);
+    simd_test_aligned_free(b->v_in);
+}
+
+static void ciede_parity8_free_outputs(CiedeParity8 *b)
+{
+    simd_test_aligned_free(b->y_scalar);
+    simd_test_aligned_free(b->u_scalar);
+    simd_test_aligned_free(b->v_scalar);
+    simd_test_aligned_free(b->y_simd);
+    simd_test_aligned_free(b->u_simd);
+    simd_test_aligned_free(b->v_simd);
+}
+
+static void ciede_parity8_free_all(CiedeParity8 *b)
+{
+    ciede_parity8_free_inputs(b);
+    ciede_parity8_free_outputs(b);
+}
+
 static char *test_ciede_preprocess_8_avx2_parity(void)
 {
     const int w = CIEDE_TEST_W;
-    const size_t plane_bytes = (size_t)w * sizeof(uint8_t);
     const size_t out_bytes = (size_t)w * sizeof(float);
 
-    uint8_t *y_in = (uint8_t *)simd_test_aligned_malloc(plane_bytes, 32);
-    uint8_t *u_in = (uint8_t *)simd_test_aligned_malloc(plane_bytes, 32);
-    uint8_t *v_in = (uint8_t *)simd_test_aligned_malloc(plane_bytes, 32);
-
-    float *y_scalar = (float *)simd_test_aligned_malloc(out_bytes, 32);
-    float *u_scalar = (float *)simd_test_aligned_malloc(out_bytes, 32);
-    float *v_scalar = (float *)simd_test_aligned_malloc(out_bytes, 32);
-
-    float *y_simd = (float *)simd_test_aligned_malloc(out_bytes, 32);
-    float *u_simd = (float *)simd_test_aligned_malloc(out_bytes, 32);
-    float *v_simd = (float *)simd_test_aligned_malloc(out_bytes, 32);
-
-    if (!y_in || !u_in || !v_in || !y_scalar || !u_scalar || !v_scalar || !y_simd || !u_simd ||
-        !v_simd) {
-        simd_test_aligned_free(y_in);
-        simd_test_aligned_free(u_in);
-        simd_test_aligned_free(v_in);
-        simd_test_aligned_free(y_scalar);
-        simd_test_aligned_free(u_scalar);
-        simd_test_aligned_free(v_scalar);
-        simd_test_aligned_free(y_simd);
-        simd_test_aligned_free(u_simd);
-        simd_test_aligned_free(v_simd);
+    CiedeParity8 b = {0};
+    if (ciede_parity8_alloc(&b, w)) {
+        ciede_parity8_free_all(&b);
         return "aligned_malloc failed";
     }
 
@@ -139,38 +175,30 @@ static char *test_ciede_preprocess_8_avx2_parity(void)
     uint32_t state = 0xc1ede2u;
     for (int j = 0; j < w; j++) {
         uint32_t r = simd_test_xorshift32(&state);
-        y_in[j] = (uint8_t)(r & 0xFFu);
-        u_in[j] = (uint8_t)((r >> 8) & 0xFFu);
-        v_in[j] = (uint8_t)((r >> 16) & 0xFFu);
+        b.y_in[j] = (uint8_t)(r & 0xFFu);
+        b.u_in[j] = (uint8_t)((r >> 8) & 0xFFu);
+        b.v_in[j] = (uint8_t)((r >> 16) & 0xFFu);
     }
 
     /* Ensure output buffers start clean so any unwritten element divergence
      * is detectable. */
-    (void)memset(y_scalar, 0xAB, out_bytes);
-    (void)memset(u_scalar, 0xAB, out_bytes);
-    (void)memset(v_scalar, 0xAB, out_bytes);
-    (void)memset(y_simd, 0xCD, out_bytes);
-    (void)memset(u_simd, 0xCD, out_bytes);
-    (void)memset(v_simd, 0xCD, out_bytes);
+    (void)memset(b.y_scalar, 0xAB, out_bytes);
+    (void)memset(b.u_scalar, 0xAB, out_bytes);
+    (void)memset(b.v_scalar, 0xAB, out_bytes);
+    (void)memset(b.y_simd, 0xCD, out_bytes);
+    (void)memset(b.u_simd, 0xCD, out_bytes);
+    (void)memset(b.v_simd, 0xCD, out_bytes);
 
-    ciede_preprocess_8_scalar(y_in, u_in, v_in, y_scalar, u_scalar, v_scalar, w);
-    ciede_preprocess_8_avx2(y_in, u_in, v_in, y_simd, u_simd, v_simd, w);
+    ciede_preprocess_8_scalar(b.y_in, b.u_in, b.v_in, b.y_scalar, b.u_scalar, b.v_scalar, w);
+    ciede_preprocess_8_avx2(b.y_in, b.u_in, b.v_in, b.y_simd, b.u_simd, b.v_simd, w);
 
-    simd_test_aligned_free(y_in);
-    simd_test_aligned_free(u_in);
-    simd_test_aligned_free(v_in);
+    ciede_parity8_free_inputs(&b);
 
-    SIMD_BITEXACT_ASSERT_MEMCMP(y_scalar, y_simd, out_bytes, "ciede_preprocess_8_avx2 Y plane");
-    SIMD_BITEXACT_ASSERT_MEMCMP(u_scalar, u_simd, out_bytes, "ciede_preprocess_8_avx2 U plane");
-    SIMD_BITEXACT_ASSERT_MEMCMP(v_scalar, v_simd, out_bytes, "ciede_preprocess_8_avx2 V plane");
+    SIMD_BITEXACT_ASSERT_MEMCMP(b.y_scalar, b.y_simd, out_bytes, "ciede_preprocess_8_avx2 Y plane");
+    SIMD_BITEXACT_ASSERT_MEMCMP(b.u_scalar, b.u_simd, out_bytes, "ciede_preprocess_8_avx2 U plane");
+    SIMD_BITEXACT_ASSERT_MEMCMP(b.v_scalar, b.v_simd, out_bytes, "ciede_preprocess_8_avx2 V plane");
 
-    simd_test_aligned_free(y_scalar);
-    simd_test_aligned_free(u_scalar);
-    simd_test_aligned_free(v_scalar);
-    simd_test_aligned_free(y_simd);
-    simd_test_aligned_free(u_simd);
-    simd_test_aligned_free(v_simd);
-
+    ciede_parity8_free_outputs(&b);
     return NULL;
 }
 
@@ -178,35 +206,64 @@ static char *test_ciede_preprocess_8_avx2_parity(void)
  * Test 2: 16-bit plane preprocessing parity.
  * ---------------------------------------------------------------------- */
 
+/* Fixture for the 16-bit parity test: three uint16 input planes plus
+ * scalar- and SIMD-output float planes for Y/U/V. */
+typedef struct CiedeParity16 {
+    uint16_t *y_in, *u_in, *v_in;
+    float *y_scalar, *u_scalar, *v_scalar;
+    float *y_simd, *u_simd, *v_simd;
+} CiedeParity16;
+
+static int ciede_parity16_alloc(CiedeParity16 *b, int w)
+{
+    const size_t plane_bytes = (size_t)w * sizeof(uint16_t);
+    const size_t out_bytes = (size_t)w * sizeof(float);
+    b->y_in = (uint16_t *)simd_test_aligned_malloc(plane_bytes, 32);
+    b->u_in = (uint16_t *)simd_test_aligned_malloc(plane_bytes, 32);
+    b->v_in = (uint16_t *)simd_test_aligned_malloc(plane_bytes, 32);
+    b->y_scalar = (float *)simd_test_aligned_malloc(out_bytes, 32);
+    b->u_scalar = (float *)simd_test_aligned_malloc(out_bytes, 32);
+    b->v_scalar = (float *)simd_test_aligned_malloc(out_bytes, 32);
+    b->y_simd = (float *)simd_test_aligned_malloc(out_bytes, 32);
+    b->u_simd = (float *)simd_test_aligned_malloc(out_bytes, 32);
+    b->v_simd = (float *)simd_test_aligned_malloc(out_bytes, 32);
+    if (!b->y_in || !b->u_in || !b->v_in || !b->y_scalar || !b->u_scalar || !b->v_scalar ||
+        !b->y_simd || !b->u_simd || !b->v_simd)
+        return -1;
+    return 0;
+}
+
+static void ciede_parity16_free_inputs(CiedeParity16 *b)
+{
+    simd_test_aligned_free(b->y_in);
+    simd_test_aligned_free(b->u_in);
+    simd_test_aligned_free(b->v_in);
+}
+
+static void ciede_parity16_free_outputs(CiedeParity16 *b)
+{
+    simd_test_aligned_free(b->y_scalar);
+    simd_test_aligned_free(b->u_scalar);
+    simd_test_aligned_free(b->v_scalar);
+    simd_test_aligned_free(b->y_simd);
+    simd_test_aligned_free(b->u_simd);
+    simd_test_aligned_free(b->v_simd);
+}
+
+static void ciede_parity16_free_all(CiedeParity16 *b)
+{
+    ciede_parity16_free_inputs(b);
+    ciede_parity16_free_outputs(b);
+}
+
 static char *test_ciede_preprocess_16_avx2_parity(void)
 {
     const int w = CIEDE_TEST_W;
-    const size_t plane_bytes = (size_t)w * sizeof(uint16_t);
     const size_t out_bytes = (size_t)w * sizeof(float);
 
-    uint16_t *y_in = (uint16_t *)simd_test_aligned_malloc(plane_bytes, 32);
-    uint16_t *u_in = (uint16_t *)simd_test_aligned_malloc(plane_bytes, 32);
-    uint16_t *v_in = (uint16_t *)simd_test_aligned_malloc(plane_bytes, 32);
-
-    float *y_scalar = (float *)simd_test_aligned_malloc(out_bytes, 32);
-    float *u_scalar = (float *)simd_test_aligned_malloc(out_bytes, 32);
-    float *v_scalar = (float *)simd_test_aligned_malloc(out_bytes, 32);
-
-    float *y_simd = (float *)simd_test_aligned_malloc(out_bytes, 32);
-    float *u_simd = (float *)simd_test_aligned_malloc(out_bytes, 32);
-    float *v_simd = (float *)simd_test_aligned_malloc(out_bytes, 32);
-
-    if (!y_in || !u_in || !v_in || !y_scalar || !u_scalar || !v_scalar || !y_simd || !u_simd ||
-        !v_simd) {
-        simd_test_aligned_free(y_in);
-        simd_test_aligned_free(u_in);
-        simd_test_aligned_free(v_in);
-        simd_test_aligned_free(y_scalar);
-        simd_test_aligned_free(u_scalar);
-        simd_test_aligned_free(v_scalar);
-        simd_test_aligned_free(y_simd);
-        simd_test_aligned_free(u_simd);
-        simd_test_aligned_free(v_simd);
+    CiedeParity16 b = {0};
+    if (ciede_parity16_alloc(&b, w)) {
+        ciede_parity16_free_all(&b);
         return "aligned_malloc failed";
     }
 
@@ -215,35 +272,30 @@ static char *test_ciede_preprocess_16_avx2_parity(void)
      * the 10-bit range (> 1023) and verifies the AVX2 zero-extension path
      * handles them correctly.
      */
-    simd_test_fill_random_u16(y_in, (size_t)w, 0xFFFF, 0xde16u);
-    simd_test_fill_random_u16(u_in, (size_t)w, 0xFFFF, 0xde16u + 1u);
-    simd_test_fill_random_u16(v_in, (size_t)w, 0xFFFF, 0xde16u + 2u);
+    simd_test_fill_random_u16(b.y_in, (size_t)w, 0xFFFF, 0xde16u);
+    simd_test_fill_random_u16(b.u_in, (size_t)w, 0xFFFF, 0xde16u + 1u);
+    simd_test_fill_random_u16(b.v_in, (size_t)w, 0xFFFF, 0xde16u + 2u);
 
-    (void)memset(y_scalar, 0xAB, out_bytes);
-    (void)memset(u_scalar, 0xAB, out_bytes);
-    (void)memset(v_scalar, 0xAB, out_bytes);
-    (void)memset(y_simd, 0xCD, out_bytes);
-    (void)memset(u_simd, 0xCD, out_bytes);
-    (void)memset(v_simd, 0xCD, out_bytes);
+    (void)memset(b.y_scalar, 0xAB, out_bytes);
+    (void)memset(b.u_scalar, 0xAB, out_bytes);
+    (void)memset(b.v_scalar, 0xAB, out_bytes);
+    (void)memset(b.y_simd, 0xCD, out_bytes);
+    (void)memset(b.u_simd, 0xCD, out_bytes);
+    (void)memset(b.v_simd, 0xCD, out_bytes);
 
-    ciede_preprocess_16_scalar(y_in, u_in, v_in, y_scalar, u_scalar, v_scalar, w);
-    ciede_preprocess_16_avx2(y_in, u_in, v_in, y_simd, u_simd, v_simd, w);
+    ciede_preprocess_16_scalar(b.y_in, b.u_in, b.v_in, b.y_scalar, b.u_scalar, b.v_scalar, w);
+    ciede_preprocess_16_avx2(b.y_in, b.u_in, b.v_in, b.y_simd, b.u_simd, b.v_simd, w);
 
-    simd_test_aligned_free(y_in);
-    simd_test_aligned_free(u_in);
-    simd_test_aligned_free(v_in);
+    ciede_parity16_free_inputs(&b);
 
-    SIMD_BITEXACT_ASSERT_MEMCMP(y_scalar, y_simd, out_bytes, "ciede_preprocess_16_avx2 Y plane");
-    SIMD_BITEXACT_ASSERT_MEMCMP(u_scalar, u_simd, out_bytes, "ciede_preprocess_16_avx2 U plane");
-    SIMD_BITEXACT_ASSERT_MEMCMP(v_scalar, v_simd, out_bytes, "ciede_preprocess_16_avx2 V plane");
+    SIMD_BITEXACT_ASSERT_MEMCMP(b.y_scalar, b.y_simd, out_bytes,
+                                "ciede_preprocess_16_avx2 Y plane");
+    SIMD_BITEXACT_ASSERT_MEMCMP(b.u_scalar, b.u_simd, out_bytes,
+                                "ciede_preprocess_16_avx2 U plane");
+    SIMD_BITEXACT_ASSERT_MEMCMP(b.v_scalar, b.v_simd, out_bytes,
+                                "ciede_preprocess_16_avx2 V plane");
 
-    simd_test_aligned_free(y_scalar);
-    simd_test_aligned_free(u_scalar);
-    simd_test_aligned_free(v_scalar);
-    simd_test_aligned_free(y_simd);
-    simd_test_aligned_free(u_simd);
-    simd_test_aligned_free(v_simd);
-
+    ciede_parity16_free_outputs(&b);
     return NULL;
 }
 
@@ -262,3 +314,5 @@ char *run_tests(void)
 #endif
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

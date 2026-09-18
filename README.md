@@ -3,7 +3,7 @@
 [![Tests](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
 [![Builds](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml)
 [![Release](https://img.shields.io/github/v/release/VMAFx/vmafx?include_prereleases&sort=semver)](https://github.com/VMAFx/vmafx/releases)
-[![License](https://img.shields.io/badge/License-BSD--2--Clause--Patent-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-EUPL--1.2%20%C2%B7%20BSD--2--Clause--Patent-blue.svg)](docs/adr/1250-eupl-fork-relicense.md)
 
 VMAFx is a fork of [Netflix/vmaf](https://github.com/Netflix/vmaf) for
 perceptual video quality assessment. It extends libvmaf with GPU and SIMD
@@ -67,5 +67,19 @@ VMAFx builds on [Netflix/vmaf](https://github.com/Netflix/vmaf).
 See [upstream releases](https://github.com/Netflix/vmaf/releases) for Netflix's
 release history.
 
-The repository uses the [BSD-2-Clause-Patent license](LICENSE), preserving
-upstream attribution and the license's patent grant.
+The repository carries two sets of terms, separated by provenance and recorded
+per file as an `SPDX-License-Identifier`
+([ADR-1250](docs/adr/1250-eupl-fork-relicense.md)):
+
+- **Code inherited, ported or translated from Netflix/vmaf or another project**
+  keeps the terms it already carries — [BSD-2-Clause-Patent](LICENSE) for
+  Netflix's code, and its own licence for the libjxl, Xiph and IQA code the fork
+  builds on. Those files carry the original copyright notice.
+- **Fork-authored code** is licensed under [EUPL-1.2](LICENSES/EUPL-1.2.txt), a
+  reciprocal licence.
+
+**What that means in practice**: because the shipped `libvmaf` links both
+together, redistributing a modified library obliges you to offer its source under
+EUPL-1.2. If you need permissive terms, use
+[Netflix/vmaf](https://github.com/Netflix/vmaf) upstream, which is unaffected.
+The per-file tags are authoritative; this paragraph is a summary.

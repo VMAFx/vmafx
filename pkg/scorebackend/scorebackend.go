@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 
 // Package scorebackend is the Go port of the backend-selection half of
 // tools/vmaf-tune/src/vmaftune/score_backend.py.

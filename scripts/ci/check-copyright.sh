@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # ADR-0105 copyright-header enforcement.
 #
 # Policy: every fork-added C/C++/CUDA source or header ships one of

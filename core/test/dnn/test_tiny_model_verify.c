@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  T6-9 / ADR-0211 — exercise the failure modes of
  *  vmaf_dnn_verify_signature() without requiring `cosign` on the test
@@ -9,6 +9,11 @@
  */
 
 #include <errno.h>
+
+/* NOLINTBEGIN(concurrency-mt-unsafe): this test's subject is how the library
+ * resolves paths from the process environment, so it has to set and unset
+ * variables. Each test binary is its own single-threaded process, and nothing
+ * else reads the environment while it runs (ADR-0141). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +25,7 @@
 #include <unistd.h>
 #endif
 
+#include "mu_table.h"
 #include "test.h"
 
 #include "dnn/model_loader.h"
@@ -283,12 +289,14 @@ static int write_fake_cosign(const char *dir, int exit_code)
     return 0;
 }
 
-static char *run_with_fake_cosign(int exit_code, int expected_err)
+/* Scratch-dir + registry + bundle + onnx + fake-cosign-stub setup shared by
+ * run_with_fake_cosign. Extracted so the caller's branch count stays inside
+ * the readability-function-size budget: a helper `if (msg) return msg;` is
+ * one branch versus the two each mu_assert contributes at the call site. */
+static char *setup_fake_cosign_fixture(char *dir, size_t dir_sz, int exit_code)
 {
-    char dir[256];
     mu_assert("setup scratch dir",
-              setup_scratch_dir(dir, sizeof(dir), exit_code == 0 ? "cosign_ok" : "cosign_fail") ==
-                  0);
+              setup_scratch_dir(dir, dir_sz, exit_code == 0 ? "cosign_ok" : "cosign_fail") == 0);
     /* Registry + bundle + onnx all under <dir>. The bundle must be a
      * regular file (any contents — the fake cosign ignores them). */
     const char *reg_body = "{\"models\":[{\"id\":\"k\",\"onnx\":\"k.onnx\",\"sha256\":\"00\","
@@ -297,6 +305,15 @@ static char *run_with_fake_cosign(int exit_code, int expected_err)
     mu_assert("write bundle", write_in_dir(dir, "k.onnx.sigstore.json", "{}") == 0);
     mu_assert("write onnx", write_in_dir(dir, "k.onnx", "fake") == 0);
     mu_assert("write fake cosign", write_fake_cosign(dir, exit_code) == 0);
+    return NULL;
+}
+
+static char *run_with_fake_cosign(int exit_code, int expected_err)
+{
+    char dir[256];
+    char *setup_msg = setup_fake_cosign_fixture(dir, sizeof(dir), exit_code);
+    if (setup_msg)
+        return setup_msg;
 
     /* Save + override PATH so locate_cosign() resolves to our stub. */
     char path_save[2048];
@@ -343,6 +360,20 @@ static char *test_verify_cosign_nonzero_exit(void)
     return run_with_fake_cosign(1, -EPROTO);
 }
 
+/* Scratch-dir + registry + bundle + onnx setup shared by
+ * test_verify_cosign_not_on_path. Extracted for the branch-budget reason
+ * noted on setup_fake_cosign_fixture above. */
+static char *setup_cosign_not_on_path_fixture(char *dir, size_t dir_sz)
+{
+    mu_assert("setup scratch dir", setup_scratch_dir(dir, dir_sz, "nopath") == 0);
+    const char *reg_body = "{\"models\":[{\"id\":\"q\",\"onnx\":\"q.onnx\",\"sha256\":\"00\","
+                           "\"sigstore_bundle\":\"q.onnx.sigstore.json\"}]}";
+    mu_assert("write registry", write_in_dir(dir, "registry.json", reg_body) == 0);
+    mu_assert("write bundle", write_in_dir(dir, "q.onnx.sigstore.json", "{}") == 0);
+    mu_assert("write onnx", write_in_dir(dir, "q.onnx", "fake") == 0);
+    return NULL;
+}
+
 static char *test_verify_cosign_not_on_path(void)
 {
     /* PATH set to an empty directory with no `cosign` binary. The
@@ -350,12 +381,9 @@ static char *test_verify_cosign_not_on_path(void)
      * returns -EACCES, which propagates through verify_signature().
      * Exercises the locate_cosign() failure tail (line 534). */
     char dir[256];
-    mu_assert("setup scratch dir", setup_scratch_dir(dir, sizeof(dir), "nopath") == 0);
-    const char *reg_body = "{\"models\":[{\"id\":\"q\",\"onnx\":\"q.onnx\",\"sha256\":\"00\","
-                           "\"sigstore_bundle\":\"q.onnx.sigstore.json\"}]}";
-    mu_assert("write registry", write_in_dir(dir, "registry.json", reg_body) == 0);
-    mu_assert("write bundle", write_in_dir(dir, "q.onnx.sigstore.json", "{}") == 0);
-    mu_assert("write onnx", write_in_dir(dir, "q.onnx", "fake") == 0);
+    char *setup_msg = setup_cosign_not_on_path_fixture(dir, sizeof(dir));
+    if (setup_msg)
+        return setup_msg;
 
     char path_save[2048];
     const char *path_env = getenv("PATH");
@@ -386,18 +414,29 @@ static char *test_verify_cosign_not_on_path(void)
     return NULL;
 }
 
+/* Scratch-dir + registry + bundle + onnx setup shared by
+ * test_verify_cosign_path_empty_string. Extracted for the branch-budget
+ * reason noted on setup_fake_cosign_fixture above. */
+static char *setup_cosign_empty_path_fixture(char *dir, size_t dir_sz)
+{
+    mu_assert("setup scratch dir", setup_scratch_dir(dir, dir_sz, "emptypath") == 0);
+    const char *reg_body = "{\"models\":[{\"id\":\"e\",\"onnx\":\"e.onnx\",\"sha256\":\"00\","
+                           "\"sigstore_bundle\":\"e.onnx.sigstore.json\"}]}";
+    mu_assert("write registry", write_in_dir(dir, "registry.json", reg_body) == 0);
+    mu_assert("write bundle", write_in_dir(dir, "e.onnx.sigstore.json", "{}") == 0);
+    mu_assert("write onnx", write_in_dir(dir, "e.onnx", "fake") == 0);
+    return NULL;
+}
+
 static char *test_verify_cosign_path_empty_string(void)
 {
     /* Empty PATH string short-circuits locate_cosign() at line 517 with
      * -EACCES before any directory walk. Distinct branch from the
      * "PATH set but cosign not present" case above. */
     char dir[256];
-    mu_assert("setup scratch dir", setup_scratch_dir(dir, sizeof(dir), "emptypath") == 0);
-    const char *reg_body = "{\"models\":[{\"id\":\"e\",\"onnx\":\"e.onnx\",\"sha256\":\"00\","
-                           "\"sigstore_bundle\":\"e.onnx.sigstore.json\"}]}";
-    mu_assert("write registry", write_in_dir(dir, "registry.json", reg_body) == 0);
-    mu_assert("write bundle", write_in_dir(dir, "e.onnx.sigstore.json", "{}") == 0);
-    mu_assert("write onnx", write_in_dir(dir, "e.onnx", "fake") == 0);
+    char *setup_msg = setup_cosign_empty_path_fixture(dir, sizeof(dir));
+    if (setup_msg)
+        return setup_msg;
 
     char path_save[2048];
     const char *path_env = getenv("PATH");
@@ -526,30 +565,34 @@ static char *test_verify_windows_returns_enosys(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_verify_null_path);
+    static const MuTest tests[] = {
+        MU_TEST(test_verify_null_path),
 #ifndef _WIN32
-    mu_run_test(test_verify_missing_registry);
-    mu_run_test(test_verify_no_matching_entry);
-    mu_run_test(test_verify_missing_bundle);
-    mu_run_test(test_verify_entry_without_bundle);
-    mu_run_test(test_verify_default_registry_missing);
-    mu_run_test(test_verify_default_registry_no_slash_in_onnx);
-    mu_run_test(test_verify_registry_no_slash_in_path);
-    mu_run_test(test_verify_bundle_is_directory);
-    mu_run_test(test_verify_malformed_onnx_no_colon);
-    mu_run_test(test_verify_malformed_onnx_no_open_quote);
-    mu_run_test(test_verify_malformed_onnx_no_close_quote);
-    mu_run_test(test_verify_malformed_bundle_no_colon);
-    mu_run_test(test_verify_malformed_bundle_no_open_quote);
-    mu_run_test(test_verify_malformed_bundle_no_close_quote);
-    mu_run_test(test_verify_cosign_path_empty_string);
-    mu_run_test(test_verify_cosign_not_on_path);
-    mu_run_test(test_verify_cosign_success);
-    mu_run_test(test_verify_cosign_nonzero_exit);
+        MU_TEST(test_verify_missing_registry),
+        MU_TEST(test_verify_no_matching_entry),
+        MU_TEST(test_verify_missing_bundle),
+        MU_TEST(test_verify_entry_without_bundle),
+        MU_TEST(test_verify_default_registry_missing),
+        MU_TEST(test_verify_default_registry_no_slash_in_onnx),
+        MU_TEST(test_verify_registry_no_slash_in_path),
+        MU_TEST(test_verify_bundle_is_directory),
+        MU_TEST(test_verify_malformed_onnx_no_colon),
+        MU_TEST(test_verify_malformed_onnx_no_open_quote),
+        MU_TEST(test_verify_malformed_onnx_no_close_quote),
+        MU_TEST(test_verify_malformed_bundle_no_colon),
+        MU_TEST(test_verify_malformed_bundle_no_open_quote),
+        MU_TEST(test_verify_malformed_bundle_no_close_quote),
+        MU_TEST(test_verify_cosign_path_empty_string),
+        MU_TEST(test_verify_cosign_not_on_path),
+        MU_TEST(test_verify_cosign_success),
+        MU_TEST(test_verify_cosign_nonzero_exit),
 #else
-    mu_run_test(test_verify_windows_returns_enosys);
+        MU_TEST(test_verify_windows_returns_enosys),
 #endif
-    return NULL;
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */
+
+/* NOLINTEND(concurrency-mt-unsafe) */

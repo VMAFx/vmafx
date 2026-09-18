@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Wrapper for the fork's `nr_metric_v1` (no-reference) predictor.
 #
 # Same harness schema as the external-competitor wrappers; calls

@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  TransNet V2 shot-boundary detector (T6-3a) — structural + stub-path
  *  tests. The four standard tiny-AI registration tests come from the
@@ -22,10 +22,19 @@
 
 #include <string.h>
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 #include "tiny_ai_test_template.h"
 
 #include "feature/feature_extractor.h"
 
+/* The registration tests set the model-path environment variable they
+ * exercise; the binary is single-threaded (ADR-0141). */
+/* NOLINTNEXTLINE(concurrency-mt-unsafe) */
 VMAF_TINY_AI_DEFINE_REGISTRATION_TESTS("transnet_v2", "shot_boundary_probability",
                                        "VMAF_TRANSNET_V2_MODEL_PATH", transnet_v2)
 
@@ -70,3 +79,5 @@ char *run_tests(void)
     mu_run_test(test_transnet_v2_provided_features_list_terminated);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

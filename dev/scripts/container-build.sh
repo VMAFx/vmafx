@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # container-build.sh — build the dev container from a verified source revision.
 #
 # `docker compose build dev-mcp` works, but it will happily build from a

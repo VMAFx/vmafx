@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # macOS (Intel + Apple Silicon). Uses Homebrew. No CUDA (NVIDIA dropped macOS).
 # SYCL is possible via Intel oneAPI on Intel Macs only — not supported on M1/M2/M3.
 set -euo pipefail

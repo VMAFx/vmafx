@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # test_registry.sh — verify model/tiny/registry.json integrity.
 #
 # Failure modes caught:

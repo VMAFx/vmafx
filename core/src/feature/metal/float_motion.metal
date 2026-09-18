@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2016-2026 Netflix, Inc.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Metal compute kernel for float_motion (T8-1h / ADR-0421).
  *  Mirrors `libvmaf/src/feature/vulkan/shaders/float_motion.comp`.

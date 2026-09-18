@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Type-check all branch-owned ai/scripts Python files against the master merge base.
 
 An old remote tip is not a PR base after a rebase: its diff includes unrelated

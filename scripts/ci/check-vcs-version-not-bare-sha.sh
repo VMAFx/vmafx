@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Guard VMAF_VERSION against silently degrading to a bare commit abbreviation.
 #
 # core/include/meson.build derives VMAF_VERSION from

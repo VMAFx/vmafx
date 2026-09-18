@@ -359,6 +359,14 @@ matches `VmafDnnConfig.device` being documented as a *hint*, not a
 requirement: a laptop and a workstation running the same binary get
 the best EP each one has.
 
+The same holds one step later. An EP can register successfully yet fail
+when ONNX Runtime creates the session on it — a CUDA-enabled ONNX Runtime on
+a machine without an NVIDIA GPU is the usual case. The session is then
+recreated on the CPU EP ([ADR-0113](../adr/0113-ort-create-session-fallback-multi-ep-ci.md)).
+Both fallbacks are expected, so they are logged at `DEBUG`, not `WARNING`; a
+session that cannot be created on the CPU EP either still logs a `WARNING`
+and fails.
+
 To see which EP actually bound, call
 `vmaf_dnn_session_attached_ep()` on the session:
 

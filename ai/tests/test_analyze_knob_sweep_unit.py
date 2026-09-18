@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for helpers in ``ai/scripts/analyze_knob_sweep.py`` not covered
 by the existing ``test_knob_sweep_analysis.py``.
 

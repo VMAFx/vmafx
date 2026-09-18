@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Coverage round 2 — barten_csf_tools.h gap-fill.
  *
@@ -13,10 +13,17 @@
  */
 
 #include <errno.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
 
+#include "mu_table.h"
 #include "test.h"
 
 #include "feature/barten_csf_tools.h"
@@ -148,17 +155,21 @@ static char *test_barten_csf_every_anchor_pair(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_blend_legacy_1080_5h);
-    mu_run_test(test_blend_legacy_2160);
-    mu_run_test(test_blend_legacy_720);
-    mu_run_test(test_blend_legacy_480);
-    mu_run_test(test_blend_legacy_unsupported_returns_einval);
-    mu_run_test(test_blend_mae_1080);
-    mu_run_test(test_blend_mae_2160);
-    mu_run_test(test_blend_mae_720);
-    mu_run_test(test_blend_mae_480);
-    mu_run_test(test_blend_mae_unsupported_returns_einval);
-    mu_run_test(test_barten_csf_high_scale_and_low_lum);
-    mu_run_test(test_barten_csf_every_anchor_pair);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_blend_legacy_1080_5h),
+        MU_TEST(test_blend_legacy_2160),
+        MU_TEST(test_blend_legacy_720),
+        MU_TEST(test_blend_legacy_480),
+        MU_TEST(test_blend_legacy_unsupported_returns_einval),
+        MU_TEST(test_blend_mae_1080),
+        MU_TEST(test_blend_mae_2160),
+        MU_TEST(test_blend_mae_720),
+        MU_TEST(test_blend_mae_480),
+        MU_TEST(test_blend_mae_unsupported_returns_einval),
+        MU_TEST(test_barten_csf_high_scale_and_low_lum),
+        MU_TEST(test_barten_csf_every_anchor_pair),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

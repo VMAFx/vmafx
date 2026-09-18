@@ -207,36 +207,62 @@ jobs:
           # lint a file that no longer exists on disk; without this filter
           # the script passes a missing path to clang-tidy and fails with
           # `clang-diagnostic-error: no such file or directory`.
+          #   - cmd/vmafx-node/bpf/ — eBPF programs. They include `vmlinux.h`,
+          #     which is generated from the running kernel's BTF and does not
+          #     exist on the runner, so clang-tidy cannot parse them at all
+          #     (`clang-diagnostic-error: 'vmlinux.h' file not found`). What it
+          #     does report is an artefact of reading an eBPF object as ordinary
+          #     C++: libbpf's `SEC()` macro identifiers, and programs and maps
+          #     that must keep external linkage for the loader to find them.
+          #     Same posture as the CUDA/SYCL/HIP families above.
           #   - core/src/interop/pelorus_*.c +
-          #     core/include/libvmaf/pelorus/ — vendored verbatim mirror of
+          #     core/include/libvmaf/pelorus/ +
+          #     core/test/test_pelorus_interop.c — vendored verbatim mirror of
           #     the Pelorus interop ABI (ADR-1113), byte-identical to its
           #     single source of truth; cannot absorb fork-local lint fixes
           #     without breaking scripts/sync-pelorus-interop.sh. Same posture
           #     as core/src/svm.cpp (vendored, excluded). Fix upstream in
           #     pelorus and re-sync.
+          #   - core/test/test_adm_small_border.c +
+          #     core/test/test_adm_wide_rounding.c — backend-neutral source
+          #     names, but meson builds them only as test_cuda_adm_* and
+          #     test_hip_adm_*, so the CPU build has no compile command for
+          #     them. CI has no GPU tidy lane; lint them against a CUDA or HIP
+          #     build with `make tidy-ratchet LANE=cuda` / `LANE=hip`.
+          #
+          # One filter shared by every trigger path below, so adding a family
+          # is a single edit.
+          exclude_untidyable() {
+            grep -v \
+              -e '^core/src/feature/arm64/' \
+              -e '^core/src/cuda/' \
+              -e '^core/src/feature/cuda/' \
+              -e '^core/test/test_cuda_' \
+              -e '^core/test/test_gpu_picture_pool\.c$' \
+              -e '^core/test/test_adm_small_border\.c$' \
+              -e '^core/test/test_adm_wide_rounding\.c$' \
+              -e '^core/test/tiny_ai_test_template\.h$' \
+              -e '^core/src/sycl/' \
+              -e '^core/src/feature/sycl/' \
+              -e '^core/test/test_sycl' \
+              -e '^core/tools/vmaf_vpl\.c$' \
+              -e '^core/src/mcp/' \
+              -e '^core/test/test_mcp' \
+              -e '^core/src/hip/' \
+              -e '^core/src/feature/hip/' \
+              -e '^core/test/test_hip' \
+              -e '^core/test/fuzz/' \
+              -e '^core/src/compat/win32/' \
+              -e '^core/src/interop/pelorus_' \
+              -e '^core/include/libvmaf/pelorus/' \
+              -e '^core/test/test_pelorus_interop\.c$' \
+              -e '^cmd/vmafx-node/bpf/'
+          }
           if [ "$GH_EVENT_NAME" = "pull_request" ]; then
             files=$(git diff --name-only --diff-filter=d \
               "origin/${PR_BASE_REF}...HEAD" \
               -- '*.c' '*.h' '*.cpp' '*.hpp' \
-              | grep -v '^core/src/feature/arm64/' \
-              | grep -v '^core/src/cuda/' \
-              | grep -v '^core/src/feature/cuda/' \
-              | grep -v '^core/test/test_cuda_' \
-              | grep -v '^core/test/test_gpu_picture_pool\.c$' \
-              | grep -v '^core/test/tiny_ai_test_template\.h$' \
-              | grep -v '^core/src/sycl/' \
-              | grep -v '^core/src/feature/sycl/' \
-              | grep -v '^core/test/test_sycl' \
-              | grep -v '^core/tools/vmaf_vpl\.c$' \
-              | grep -v '^core/src/mcp/' \
-              | grep -v '^core/test/test_mcp' \
-              | grep -v '^core/src/hip/' \
-              | grep -v '^core/src/feature/hip/' \
-              | grep -v '^core/test/test_hip' \
-              | grep -v '^core/test/fuzz/' \
-              | grep -v '^core/src/compat/win32/' \
-              | grep -v '^core/src/interop/pelorus_' \
-              | grep -v '^core/include/libvmaf/pelorus/' \
+              | exclude_untidyable \
               | tr '\n' ' ')
           elif [ "$GH_EVENT_NAME" = "push" ]; then
             before="$PUSH_BEFORE_SHA"
@@ -247,25 +273,7 @@ jobs:
               if git rev-parse HEAD~1 >/dev/null 2>&1; then
                 files=$(git diff --name-only --diff-filter=d HEAD~1..HEAD \
                   -- '*.c' '*.h' '*.cpp' '*.hpp' \
-                  | grep -v '^core/src/feature/arm64/' \
-              | grep -v '^core/src/cuda/' \
-              | grep -v '^core/src/feature/cuda/' \
-              | grep -v '^core/test/test_cuda_' \
-              | grep -v '^core/test/test_gpu_picture_pool\.c$' \
-              | grep -v '^core/test/tiny_ai_test_template\.h$' \
-              | grep -v '^core/src/sycl/' \
-              | grep -v '^core/src/feature/sycl/' \
-              | grep -v '^core/test/test_sycl' \
-              | grep -v '^core/tools/vmaf_vpl\.c$' \
-              | grep -v '^core/src/mcp/' \
-              | grep -v '^core/test/test_mcp' \
-              | grep -v '^core/src/hip/' \
-              | grep -v '^core/src/feature/hip/' \
-              | grep -v '^core/test/test_hip' \
-              | grep -v '^core/test/fuzz/' \
-              | grep -v '^core/src/compat/win32/' \
-              | grep -v '^core/src/interop/pelorus_' \
-              | grep -v '^core/include/libvmaf/pelorus/' \
+              | exclude_untidyable \
               | tr '\n' ' ')
               else
                 files=""
@@ -273,25 +281,7 @@ jobs:
             else
               files=$(git diff --name-only --diff-filter=d "$before"..HEAD \
                 -- '*.c' '*.h' '*.cpp' '*.hpp' \
-                | grep -v '^core/src/feature/arm64/' \
-              | grep -v '^core/src/cuda/' \
-              | grep -v '^core/src/feature/cuda/' \
-              | grep -v '^core/test/test_cuda_' \
-              | grep -v '^core/test/test_gpu_picture_pool\.c$' \
-              | grep -v '^core/test/tiny_ai_test_template\.h$' \
-              | grep -v '^core/src/sycl/' \
-              | grep -v '^core/src/feature/sycl/' \
-              | grep -v '^core/test/test_sycl' \
-              | grep -v '^core/tools/vmaf_vpl\.c$' \
-              | grep -v '^core/src/mcp/' \
-              | grep -v '^core/test/test_mcp' \
-              | grep -v '^core/src/hip/' \
-              | grep -v '^core/src/feature/hip/' \
-              | grep -v '^core/test/test_hip' \
-              | grep -v '^core/test/fuzz/' \
-              | grep -v '^core/src/compat/win32/' \
-              | grep -v '^core/src/interop/pelorus_' \
-              | grep -v '^core/include/libvmaf/pelorus/' \
+              | exclude_untidyable \
               | tr '\n' ' ')
             fi
           else
@@ -299,25 +289,7 @@ jobs:
             # but deliberate — operator asked for it).
             files=$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' \
               | grep -v '^subprojects/' \
-              | grep -v '^core/src/feature/arm64/' \
-              | grep -v '^core/src/cuda/' \
-              | grep -v '^core/src/feature/cuda/' \
-              | grep -v '^core/test/test_cuda_' \
-              | grep -v '^core/test/test_gpu_picture_pool\.c$' \
-              | grep -v '^core/test/tiny_ai_test_template\.h$' \
-              | grep -v '^core/src/sycl/' \
-              | grep -v '^core/src/feature/sycl/' \
-              | grep -v '^core/test/test_sycl' \
-              | grep -v '^core/tools/vmaf_vpl\.c$' \
-              | grep -v '^core/src/mcp/' \
-              | grep -v '^core/test/test_mcp' \
-              | grep -v '^core/src/hip/' \
-              | grep -v '^core/src/feature/hip/' \
-              | grep -v '^core/test/test_hip' \
-              | grep -v '^core/test/fuzz/' \
-              | grep -v '^core/src/compat/win32/' \
-              | grep -v '^core/src/interop/pelorus_' \
-              | grep -v '^core/include/libvmaf/pelorus/' \
+              | exclude_untidyable \
               | tr '\n' ' ')
           fi
           [ -z "$files" ] && { echo "no C/C++ changes"; exit 0; }
@@ -567,13 +539,17 @@ jobs:
           python3 scripts/ci/gen-sycl-compile-commands.py build-sycl
       - name: Run clang-tidy-sycl wrapper on changed files
         if: steps.detect.outputs.files != ''
+        # The file list is PR-controlled (file names), so it reaches the shell
+        # through env, never as an inline expression (same rule as the detect
+        # step above and the markdown job's MD_FILES).
+        env:
+          SYCL_FILES: ${{ steps.detect.outputs.files }}
         run: |
           set +u
           # shellcheck disable=SC1091
           source /opt/intel/oneapi/setvars.sh --force
           set -u
-          files="${{ steps.detect.outputs.files }}"
-          echo "$files" | tr ' ' '\n' | grep -v '^$' \
+          echo "$SYCL_FILES" | tr ' ' '\n' | grep -v '^$' \
             | parallel -j"$(nproc)" \
                 "CLANG_TIDY_BIN=/usr/bin/clang-tidy-22 scripts/ci/clang-tidy-sycl.sh -p build-sycl --quiet {} \
                   || touch /tmp/tidy-sycl.fail"

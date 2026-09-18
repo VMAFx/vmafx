@@ -91,14 +91,14 @@ Apache-2.0 §4 (a)–(d) addressed as follows (full walk in
 [Research-0086](../../research/0086-u2netp-fork-mirror-license-compliance.md)):
 
 - **§4 (a)** — full Apache-2.0 text at
-  [`LICENSES/Apache-2.0-u2netp.txt`](../../../LICENSES/Apache-2.0-u2netp.txt),
+  [`LICENSES/LicenseRef-Apache-2.0-u2netp.txt`](../../../LICENSES/LicenseRef-Apache-2.0-u2netp.txt),
   uploaded alongside the binary in every release carrying the mirror.
 - **§4 (b)** — applies to the ONNX rewrap (derivative work). The export
   script writes a `metadata_props` block on the ONNX graph stating the
   upstream source and conversion provenance. Verbatim `.pth` redistribution
   is not a derivative-work modification, so §4 (b) is moot in that case.
 - **§4 (c)** — attribution block in
-  [`LICENSES/Apache-2.0-u2netp.txt`](../../../LICENSES/Apache-2.0-u2netp.txt)
+  [`LICENSES/LicenseRef-Apache-2.0-u2netp.txt`](../../../LICENSES/LicenseRef-Apache-2.0-u2netp.txt)
   cites upstream copyright, paper, repository, and commit pin.
 - **§4 (d)** — moot. Upstream tree carries no `NOTICE` file (verified
   against HEAD `ac7e1c81`).
@@ -169,7 +169,7 @@ ONNX and manifest, but release and runtime promotion are still separate
 steps:
 
 1. Attach the ONNX, Sigstore bundle, provenance manifest, and
-   [`LICENSES/Apache-2.0-u2netp.txt`](../../../LICENSES/Apache-2.0-u2netp.txt)
+   [`LICENSES/LicenseRef-Apache-2.0-u2netp.txt`](../../../LICENSES/LicenseRef-Apache-2.0-u2netp.txt)
    to the release asset set.
 2. Run saliency/ROI materializer comparisons against refreshed tables.
 3. Only after measured benefit, add `u2netp_mirror_v1` as an alternative

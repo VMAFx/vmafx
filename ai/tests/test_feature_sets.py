@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Smoke tests for Research-0026 feature-set additions.
 
 The Phase-1 deliverable in Research-0026 extends

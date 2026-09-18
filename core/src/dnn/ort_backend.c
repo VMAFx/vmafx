@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  ONNX Runtime C-API wrapper. Selects CPU / CUDA / OpenVINO / ROCm execution
  *  providers per VmafDnnConfig, validates ops against op_allowlist.c, and
@@ -280,31 +280,338 @@ static void ort_discard_status(const OrtApi *api, OrtStatus *st)
         api->ReleaseStatus(st);
 }
 
-/* Log the ORT error message at WARNING level, then release the status.
+/* Log the ORT error message at @p level, then release the status.
  * ORT guarantees a non-empty message whenever st != NULL, so the else
  * branch ("no ORT error message") was unreachable in practice; it was
  * removed to lift coverage above the 83% security-critical floor. */
-static void ort_log_and_release_status(const OrtApi *api, OrtStatus *st, const char *ctx)
+static void ort_log_and_release_status_at(const OrtApi *api, OrtStatus *st, const char *ctx,
+                                          enum VmafLogLevel level)
 {
     if (st == NULL)
         return;
     const char *msg = api->GetErrorMessage(st);
-    vmaf_log(VMAF_LOG_LEVEL_WARNING, "libvmaf dnn %s: %s\n", ctx ? ctx : "ORT error",
+    vmaf_log(level, "libvmaf dnn %s: %s\n", ctx ? ctx : "ORT error",
              (msg && msg[0] != '\0') ? msg : "(no ORT error message)");
     api->ReleaseStatus(st);
 }
 
-#define ORT_TRY(call)                                                                              \
+static void ort_log_and_release_status(const OrtApi *api, OrtStatus *st, const char *ctx)
+{
+    ort_log_and_release_status_at(api, st, ctx, VMAF_LOG_LEVEL_WARNING);
+}
+
+/* Log and release a failed OrtStatus and fail the calling helper with -EIO.
+ * The vmaf_ort_open() helpers below never close the session themselves: they
+ * report the failure and vmaf_ort_open() closes the session exactly once. */
+#define ORT_CHECK(call)                                                                            \
     do {                                                                                           \
         OrtStatus *st__ = (call);                                                                  \
         if (st__ != NULL) {                                                                        \
             ort_log_and_release_status(sess->api, st__, #call);                                    \
-            vmaf_ort_close(sess);                                                                  \
             return -EIO;                                                                           \
         }                                                                                          \
     } while (0)
 
-int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConfig *cfg)
+/* Attach one execution provider, named as vmaf_ort_attached_ep() reports it.
+ * "CPU" needs no append because the CPU EP is always linked. Returns 0 when
+ * the EP attached and -ENOSYS when this ORT build or host does not offer it.
+ *
+ * OpenVINO EP option set is documented at:
+ *   https://onnxruntime.ai/docs/execution-providers/OpenVINO-ExecutionProvider.html
+ *   (accessed 2026-05-08).
+ * The part after "OpenVINO:" is passed as device_type; values understood by
+ * OpenVINOExecutionProvider include "CPU", "GPU" (alias for GPU.0), "GPU.0",
+ * "GPU.1", and "NPU". The NPU value targets the Intel AI-PC neural processing
+ * unit on Meteor / Lunar / Arrow Lake silicon. The CoreML variants pin a
+ * single MLComputeUnits value; plain "CoreML" lets the EP auto-route. */
+static int attach_named_ep(VmafOrtSession *sess, const char *name, int device_index)
+{
+    static const char openvino_prefix[] = "OpenVINO:";
+    if (strcmp(name, "CPU") == 0)
+        return 0;
+    if (strcmp(name, "CUDA") == 0)
+        return try_append_cuda(sess, device_index);
+    if (strcmp(name, "ROCm") == 0)
+        return try_append_rocm(sess);
+    if (strncmp(name, openvino_prefix, sizeof(openvino_prefix) - 1u) == 0)
+        return try_append_openvino(sess, name + sizeof(openvino_prefix) - 1u, sess->fp16_io);
+    if (strcmp(name, "CoreML") == 0)
+        return try_append_coreml(sess, NULL);
+    if (strcmp(name, "CoreML:ANE") == 0)
+        return try_append_coreml(sess, "CPUAndNeuralEngine");
+    if (strcmp(name, "CoreML:GPU") == 0)
+        return try_append_coreml(sess, "CPUAndGPU");
+    if (strcmp(name, "CoreML:CPU") == 0)
+        return try_append_coreml(sess, "CPUOnly");
+    return -ENOSYS;
+}
+
+static const char *const s_ep_cuda[] = {"CUDA", NULL};
+static const char *const s_ep_openvino[] = {"OpenVINO:GPU", "OpenVINO:CPU", NULL};
+static const char *const s_ep_openvino_npu[] = {"OpenVINO:NPU", NULL};
+static const char *const s_ep_openvino_cpu[] = {"OpenVINO:CPU", NULL};
+static const char *const s_ep_openvino_gpu[] = {"OpenVINO:GPU", NULL};
+static const char *const s_ep_rocm[] = {"ROCm", NULL};
+static const char *const s_ep_coreml[] = {"CoreML", NULL};
+static const char *const s_ep_coreml_ane[] = {"CoreML:ANE", NULL};
+static const char *const s_ep_coreml_gpu[] = {"CoreML:GPU", NULL};
+static const char *const s_ep_coreml_cpu[] = {"CoreML:CPU", NULL};
+static const char *const s_ep_none[] = {NULL};
+
+/* The execution providers a device selector tries, in order.
+ *
+ * AUTO uses the order vmaf_ort_internal_auto_ep_order() publishes (and
+ * test_ort_internals.c pins): on macOS (__APPLE__) CoreML first, then
+ * CUDA → OpenVINO:GPU → ROCm → CPU; elsewhere CUDA → OpenVINO:GPU → ROCm →
+ * CoreML → CPU. NPU is intentionally NOT in the AUTO chain: it has surprising
+ * latency floors on small graphs (power-state-transition cost dominates
+ * sub-ms inferences) and is opt-in only via `--tiny-device openvino-npu`.
+ *
+ * An explicit device tries only its own EP (OpenVINO tries GPU, then CPU); on
+ * failure the session silently downgrades to CPU. On non-Apple hosts the
+ * CoreML EP is absent from the linked ORT, so the CoreML selectors land on
+ * CPU there. Callers that need to know which EP actually bound check
+ * vmaf_ort_attached_ep(). */
+static const char *const *ep_order_for_device(VmafDnnDevice dev)
+{
+    switch (dev) {
+    case VMAF_DNN_DEVICE_CUDA:
+        return s_ep_cuda;
+    case VMAF_DNN_DEVICE_OPENVINO:
+        return s_ep_openvino;
+    case VMAF_DNN_DEVICE_OPENVINO_NPU:
+        return s_ep_openvino_npu;
+    case VMAF_DNN_DEVICE_OPENVINO_CPU:
+        return s_ep_openvino_cpu;
+    case VMAF_DNN_DEVICE_OPENVINO_GPU:
+        return s_ep_openvino_gpu;
+    case VMAF_DNN_DEVICE_ROCM:
+        return s_ep_rocm;
+    case VMAF_DNN_DEVICE_COREML:
+        return s_ep_coreml;
+    case VMAF_DNN_DEVICE_COREML_ANE:
+        return s_ep_coreml_ane;
+    case VMAF_DNN_DEVICE_COREML_GPU:
+        return s_ep_coreml_gpu;
+    case VMAF_DNN_DEVICE_COREML_CPU:
+        return s_ep_coreml_cpu;
+    case VMAF_DNN_DEVICE_AUTO:
+#ifdef __APPLE__
+        return vmaf_ort_internal_auto_ep_order(1);
+#else
+        return vmaf_ort_internal_auto_ep_order(0);
+#endif
+    case VMAF_DNN_DEVICE_CPU:
+    default:
+        return s_ep_none;
+    }
+}
+
+/* Attach the first EP of @p dev's order that this ORT build and host offer,
+ * and return the name vmaf_ort_attached_ep() will report. */
+static const char *select_execution_provider(VmafOrtSession *sess, VmafDnnDevice dev,
+                                             int device_index)
+{
+    const char *const *order = ep_order_for_device(dev);
+    for (size_t i = 0; order[i] != NULL; ++i) {
+        if (attach_named_ep(sess, order[i], device_index) == 0)
+            return order[i];
+    }
+    return "CPU";
+}
+
+static int create_session_options(VmafOrtSession *sess, const VmafDnnConfig *cfg)
+{
+    ORT_CHECK(sess->api->CreateSessionOptions(&sess->opts));
+    const int intra = (cfg && cfg->threads > 0) ? cfg->threads : 0;
+    if (intra > 0) {
+        ORT_CHECK(sess->api->SetIntraOpNumThreads(sess->opts, intra));
+    }
+    return 0;
+}
+
+/* Recreate the session options with no non-CPU EP and create the session on
+ * the CPU EP, which is always linked. Threads are best-effort here. */
+static int retry_session_on_cpu(VmafOrtSession *sess, const char *onnx_path,
+                                const VmafDnnConfig *cfg, enum VmafLogLevel fail_level)
+{
+    sess->api->ReleaseSessionOptions(sess->opts);
+    sess->opts = NULL;
+    OrtStatus *st = sess->api->CreateSessionOptions(&sess->opts);
+    if (st != NULL) {
+        ort_log_and_release_status(sess->api, st, "CreateSessionOptions (CPU retry)");
+        return -EIO;
+    }
+    const int intra = (cfg && cfg->threads > 0) ? cfg->threads : 0;
+    if (intra > 0)
+        ort_discard_status(sess->api, sess->api->SetIntraOpNumThreads(sess->opts, intra));
+    sess->ep_name = "CPU";
+    st = sess->api->CreateSession(g_ort_env, onnx_path, sess->opts, &sess->session);
+    if (st != NULL) {
+        ort_log_and_release_status_at(sess->api, st, "CreateSession (CPU fallback)", fail_level);
+        return -EIO;
+    }
+    return 0;
+}
+
+/* Two-stage session creation with non-CPU → CPU fallback.
+ *
+ * try_append_<EP> returning success only proves ORT *registered* the EP;
+ * actual hardware initialisation happens inside CreateSession. If no
+ * matching device is present (CUDA EP registered without an NVIDIA GPU,
+ * OpenVINO without an OV-supported runtime, etc.) CreateSession returns
+ * a non-null OrtStatus. Without this fallback, that condition would
+ * surface as -EIO and the entire session_open would fail — even though
+ * the CPU EP is always linked and could have served the request.
+ *
+ * Behaviour change on the happy path: when CUDA / OpenVINO / ROCm
+ * actually work, nothing changes. The fallback only fires when the
+ * non-CPU EP attached but its hardware is unavailable, which previously
+ * was a hard failure. Callers that need to detect the degraded mode can
+ * check vmaf_ort_attached_ep() — it now returns "CPU" after fallback.
+ * See ADR-0113.
+ *
+ * @p fail_level is the level a CPU-EP CreateSession failure is logged at:
+ * WARNING normally, DEBUG when the caller has a fallback graph to try (the
+ * int8 → fp32 retry, ADR-1032), where a missing kernel is expected. */
+static int create_session(VmafOrtSession *sess, const char *onnx_path, const VmafDnnConfig *cfg,
+                          enum VmafLogLevel fail_level)
+{
+    OrtStatus *st = sess->api->CreateSession(g_ort_env, onnx_path, sess->opts, &sess->session);
+    if (st == NULL)
+        return 0;
+    if (strcmp(sess->ep_name, "CPU") == 0) {
+        ort_log_and_release_status_at(sess->api, st, "CreateSession", fail_level);
+        return -EIO;
+    }
+    /* Hardware absent behind a registered EP is expected in CPU-only
+     * containers, so the primary-EP failure is DEBUG, not WARNING; the
+     * caller sees the outcome via vmaf_ort_attached_ep(). */
+    ort_log_and_release_status_at(sess->api, st, "CreateSession (non-CPU EP)",
+                                  VMAF_LOG_LEVEL_DEBUG);
+    return retry_session_on_cpu(sess, onnx_path, cfg, fail_level);
+}
+
+static int query_io_names(VmafOrtSession *sess)
+{
+    size_t ni = 0;
+    size_t no = 0;
+    ORT_CHECK(sess->api->SessionGetInputCount(sess->session, &ni));
+    ORT_CHECK(sess->api->SessionGetOutputCount(sess->session, &no));
+    if (ni == 0 || no == 0)
+        return -EINVAL;
+    sess->n_inputs = ni;
+    sess->n_outputs = no;
+    sess->input_names = (char **)calloc(ni, sizeof(char *));
+    sess->output_names = (char **)calloc(no, sizeof(char *));
+    if (!sess->input_names || !sess->output_names)
+        return -ENOMEM;
+    for (size_t i = 0; i < ni; ++i) {
+        ORT_CHECK(
+            sess->api->SessionGetInputName(sess->session, i, sess->alloc, &sess->input_names[i]));
+    }
+    for (size_t i = 0; i < no; ++i) {
+        ORT_CHECK(
+            sess->api->SessionGetOutputName(sess->session, i, sess->alloc, &sess->output_names[i]));
+    }
+    /* legacy single-IO pointers alias position 0 */
+    sess->input_name = sess->input_names[0];
+    sess->output_name = sess->output_names[0];
+    return 0;
+}
+
+/* Store the element type of one graph input or output in @p out, and always
+ * release @p ti. A failed tensor-info cast is logged and leaves @p out at
+ * ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED (0, from calloc); a failed
+ * element-type read is a hard -EINVAL. */
+static int read_elem_type(VmafOrtSession *sess, OrtTypeInfo *ti, bool is_input, int *out)
+{
+    int rc = 0;
+    const OrtTensorTypeAndShapeInfo *tinfo = NULL;
+    OrtStatus *cst = sess->api->CastTypeInfoToTensorInfo(ti, &tinfo);
+    if (cst == NULL && tinfo != NULL) {
+        ONNXTensorElementDataType et = ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
+        OrtStatus *et_st = sess->api->GetTensorElementType(tinfo, &et);
+        if (et_st != NULL) {
+            ort_log_and_release_status(sess->api, et_st,
+                                       is_input ? "GetTensorElementType (input)" :
+                                                  "GetTensorElementType (output)");
+            rc = -EINVAL;
+        } else {
+            *out = (int)et;
+        }
+    } else if (cst != NULL) {
+        ort_log_and_release_status(sess->api, cst,
+                                   is_input ? "CastTypeInfoToTensorInfo (input)" :
+                                              "CastTypeInfoToTensorInfo (output)");
+    }
+    sess->api->ReleaseTypeInfo(ti);
+    return rc;
+}
+
+/* Cache per-IO element types so the run path can decide fp32 vs fp16
+ * tensor creation without re-querying the model every call. */
+static int query_elem_types(VmafOrtSession *sess)
+{
+    sess->input_elem_types = (int *)calloc(sess->n_inputs, sizeof(int));
+    sess->output_elem_types = (int *)calloc(sess->n_outputs, sizeof(int));
+    if (!sess->input_elem_types || !sess->output_elem_types)
+        return -ENOMEM;
+    for (size_t i = 0; i < sess->n_inputs; ++i) {
+        OrtTypeInfo *ti = NULL;
+        ORT_CHECK(sess->api->SessionGetInputTypeInfo(sess->session, i, &ti));
+        const int rc = read_elem_type(sess, ti, true, &sess->input_elem_types[i]);
+        if (rc < 0)
+            return rc;
+    }
+    for (size_t i = 0; i < sess->n_outputs; ++i) {
+        OrtTypeInfo *ti = NULL;
+        ORT_CHECK(sess->api->SessionGetOutputTypeInfo(sess->session, i, &ti));
+        const int rc = read_elem_type(sess, ti, false, &sess->output_elem_types[i]);
+        if (rc < 0)
+            return rc;
+    }
+    return 0;
+}
+
+/* Every vmaf_ort_open() step after the OrtEnv exists. Leaves partial state in
+ * @p sess on failure; the caller closes it. */
+static int open_session_steps(VmafOrtSession *sess, const char *onnx_path, const VmafDnnConfig *cfg,
+                              enum VmafLogLevel fail_level)
+{
+    int rc = create_session_options(sess, cfg);
+    if (rc < 0)
+        return rc;
+
+    const VmafDnnDevice dev = cfg ? cfg->device : VMAF_DNN_DEVICE_AUTO;
+    const int idx = (cfg && cfg->device_index > 0) ? cfg->device_index : 0;
+    sess->fp16_io = (cfg != NULL) && cfg->fp16_io;
+    sess->ep_name = select_execution_provider(sess, dev, idx);
+
+    rc = create_session(sess, onnx_path, cfg, fail_level);
+    if (rc < 0)
+        return rc;
+    ORT_CHECK(sess->api->GetAllocatorWithDefaultOptions(&sess->alloc));
+    rc = query_io_names(sess);
+    if (rc < 0)
+        return rc;
+    rc = query_elem_types(sess);
+    if (rc < 0)
+        return rc;
+
+    /* Pre-create the CPU memory info once so vmaf_ort_infer / vmaf_ort_run
+     * can reuse it across all frames instead of allocating it per call. */
+    OrtStatus *mi_st =
+        sess->api->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &sess->cpu_mem_info);
+    if (mi_st != NULL) {
+        ort_log_and_release_status(sess->api, mi_st, "CreateCpuMemoryInfo");
+        return -EIO;
+    }
+    return 0;
+}
+
+static int ort_open_logging_at(VmafOrtSession **out, const char *onnx_path,
+                               const VmafDnnConfig *cfg, enum VmafLogLevel fail_level)
 {
     if (!out || !onnx_path)
         return -EINVAL;
@@ -329,266 +636,34 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
         return -ENOSYS;
     }
 
-    ORT_TRY(sess->api->CreateSessionOptions(&sess->opts));
-
-    const int intra = (cfg && cfg->threads > 0) ? cfg->threads : 0;
-    if (intra > 0) {
-        ORT_TRY(sess->api->SetIntraOpNumThreads(sess->opts, intra));
-    }
-
-    const VmafDnnDevice dev = cfg ? cfg->device : VMAF_DNN_DEVICE_AUTO;
-    const int idx = (cfg && cfg->device_index > 0) ? cfg->device_index : 0;
-    sess->fp16_io = (cfg != NULL) && cfg->fp16_io;
-
-    /* Execution-provider selection.
-     *
-     * AUTO: on macOS (__APPLE__), try CoreML (auto-route across ANE/GPU/CPU)
-     * first, then CUDA → OpenVINO:GPU → ROCm → CPU.
-     * On other platforms: try CUDA → OpenVINO:GPU → ROCm → CoreML → CPU.
-     * The first EP whose append call returns NULL OrtStatus wins; EPs absent
-     * from the ORT build return non-null and we fall through. The CPU EP is
-     * always linked, so the final fall-through never fails.
-     *
-     * Explicit device: try only the requested EP; on failure the session
-     * silently downgrades to CPU. Callers that need to know which EP
-     * actually bound can check sess->ep_name via vmaf_ort_attached_ep()
-     * (exposed for diagnostics / tests).
-     */
-    /* OpenVINO EP option set is documented at:
-     *   https://onnxruntime.ai/docs/execution-providers/OpenVINO-ExecutionProvider.html
-     *   (accessed 2026-05-08).
-     * device_type values understood by OpenVINOExecutionProvider include
-     * "CPU", "GPU" (alias for GPU.0), "GPU.0", "GPU.1", and "NPU". The NPU
-     * value targets the Intel AI-PC neural processing unit on Meteor /
-     * Lunar / Arrow Lake silicon. */
-    sess->ep_name = "CPU";
-    switch (dev) {
-    case VMAF_DNN_DEVICE_CUDA:
-        if (try_append_cuda(sess, idx) == 0)
-            sess->ep_name = "CUDA";
-        break;
-    case VMAF_DNN_DEVICE_OPENVINO:
-        if (try_append_openvino(sess, "GPU", sess->fp16_io) == 0) {
-            sess->ep_name = "OpenVINO:GPU";
-        } else if (try_append_openvino(sess, "CPU", sess->fp16_io) == 0) {
-            sess->ep_name = "OpenVINO:CPU";
-        }
-        break;
-    case VMAF_DNN_DEVICE_OPENVINO_NPU:
-        if (try_append_openvino(sess, "NPU", sess->fp16_io) == 0)
-            sess->ep_name = "OpenVINO:NPU";
-        break;
-    case VMAF_DNN_DEVICE_OPENVINO_CPU:
-        if (try_append_openvino(sess, "CPU", sess->fp16_io) == 0)
-            sess->ep_name = "OpenVINO:CPU";
-        break;
-    case VMAF_DNN_DEVICE_OPENVINO_GPU:
-        if (try_append_openvino(sess, "GPU", sess->fp16_io) == 0)
-            sess->ep_name = "OpenVINO:GPU";
-        break;
-    case VMAF_DNN_DEVICE_ROCM:
-        if (try_append_rocm(sess) == 0)
-            sess->ep_name = "ROCm";
-        break;
-    /* CoreML EP variants. The unscoped CoreML selector lets the EP
-     * auto-route across compute units; the explicit ANE/GPU/CPU
-     * selectors pin a single MLComputeUnits value. On non-Apple hosts
-     * (e.g. Linux CI runners) the CoreML EP is absent from the linked
-     * ORT and try_append_coreml returns -ENOSYS — the session keeps
-     * the default ep_name="CPU" and CreateSession runs on the CPU EP. */
-    case VMAF_DNN_DEVICE_COREML:
-        if (try_append_coreml(sess, NULL) == 0)
-            sess->ep_name = "CoreML";
-        break;
-    case VMAF_DNN_DEVICE_COREML_ANE:
-        if (try_append_coreml(sess, "CPUAndNeuralEngine") == 0)
-            sess->ep_name = "CoreML:ANE";
-        break;
-    case VMAF_DNN_DEVICE_COREML_GPU:
-        if (try_append_coreml(sess, "CPUAndGPU") == 0)
-            sess->ep_name = "CoreML:GPU";
-        break;
-    case VMAF_DNN_DEVICE_COREML_CPU:
-        if (try_append_coreml(sess, "CPUOnly") == 0)
-            sess->ep_name = "CoreML:CPU";
-        break;
-    case VMAF_DNN_DEVICE_AUTO:
-#ifdef __APPLE__
-        if (try_append_coreml(sess, NULL) == 0) {
-            sess->ep_name = "CoreML";
-        } else if (try_append_cuda(sess, idx) == 0) {
-            sess->ep_name = "CUDA";
-        } else if (try_append_openvino(sess, "GPU", sess->fp16_io) == 0) {
-            sess->ep_name = "OpenVINO:GPU";
-        } else if (try_append_rocm(sess) == 0) {
-            sess->ep_name = "ROCm";
-        }
-#else
-        if (try_append_cuda(sess, idx) == 0) {
-            sess->ep_name = "CUDA";
-        } else if (try_append_openvino(sess, "GPU", sess->fp16_io) == 0) {
-            sess->ep_name = "OpenVINO:GPU";
-        } else if (try_append_rocm(sess) == 0) {
-            sess->ep_name = "ROCm";
-        } else if (try_append_coreml(sess, NULL) == 0) {
-            sess->ep_name = "CoreML";
-        }
-#endif
-        /* NPU is intentionally NOT in the AUTO chain. NPU has surprising
-         * latency floors on small graphs (power-state-transition cost
-         * dominates sub-ms inferences) and is opt-in only via the
-         * explicit `--tiny-device openvino-npu` selector. */
-        break;
-    case VMAF_DNN_DEVICE_CPU:
-    default:
-        break;
-    }
-
-    /* Two-stage session creation with non-CPU → CPU fallback.
-     *
-     * try_append_<EP> returning success only proves ORT *registered* the EP;
-     * actual hardware initialisation happens inside CreateSession. If no
-     * matching device is present (CUDA EP registered without an NVIDIA GPU,
-     * OpenVINO without an OV-supported runtime, etc.) CreateSession returns
-     * a non-null OrtStatus. Without this fallback, that condition would
-     * surface as -EIO and the entire session_open would fail — even though
-     * the CPU EP is always linked and could have served the request.
-     *
-     * Behaviour change on the happy path: when CUDA / OpenVINO / ROCm
-     * actually work, nothing changes. The fallback only fires when the
-     * non-CPU EP attached but its hardware is unavailable, which previously
-     * was a hard failure. Callers that need to detect the degraded mode can
-     * check vmaf_ort_attached_ep() — it now returns "CPU" after fallback.
-     * See ADR-0113. */
-    OrtStatus *create_st =
-        sess->api->CreateSession(g_ort_env, onnx_path, sess->opts, &sess->session);
-    if (create_st != NULL) {
-        if (strcmp(sess->ep_name, "CPU") != 0) {
-            /* Log the primary-EP failure at DEBUG level (hardware absent is expected in
-             * CPU-only containers; the caller sees the result via vmaf_ort_attached_ep()). */
-            ort_log_and_release_status(sess->api, create_st, "CreateSession (non-CPU EP)");
-            create_st = NULL;
-            /* Recreate session_options with no non-CPU EPs and retry. */
-            sess->api->ReleaseSessionOptions(sess->opts);
-            sess->opts = NULL;
-            OrtStatus *opts_st = sess->api->CreateSessionOptions(&sess->opts);
-            if (opts_st != NULL) {
-                ort_log_and_release_status(sess->api, opts_st, "CreateSessionOptions (CPU retry)");
-                vmaf_ort_close(sess);
-                return -EIO;
-            }
-            const int intra_retry = (cfg && cfg->threads > 0) ? cfg->threads : 0;
-            if (intra_retry > 0) {
-                OrtStatus *t_st = sess->api->SetIntraOpNumThreads(sess->opts, intra_retry);
-                if (t_st != NULL)
-                    ort_discard_status(sess->api, t_st); /* best-effort; not fatal */
-            }
-            sess->ep_name = "CPU";
-            OrtStatus *retry_st =
-                sess->api->CreateSession(g_ort_env, onnx_path, sess->opts, &sess->session);
-            if (retry_st != NULL) {
-                ort_log_and_release_status(sess->api, retry_st, "CreateSession (CPU fallback)");
-                vmaf_ort_close(sess);
-                return -EIO;
-            }
-        } else {
-            ort_log_and_release_status(sess->api, create_st, "CreateSession");
-            create_st = NULL;
-            vmaf_ort_close(sess);
-            return -EIO;
-        }
-    }
-    ORT_TRY(sess->api->GetAllocatorWithDefaultOptions(&sess->alloc));
-
-    size_t ni = 0;
-    size_t no = 0;
-    ORT_TRY(sess->api->SessionGetInputCount(sess->session, &ni));
-    ORT_TRY(sess->api->SessionGetOutputCount(sess->session, &no));
-    if (ni == 0 || no == 0) {
+    const int rc = open_session_steps(sess, onnx_path, cfg, fail_level);
+    if (rc < 0) {
         vmaf_ort_close(sess);
-        return -EINVAL;
+        return rc;
     }
-    sess->n_inputs = ni;
-    sess->n_outputs = no;
-    sess->input_names = (char **)calloc(ni, sizeof(char *));
-    sess->output_names = (char **)calloc(no, sizeof(char *));
-    if (!sess->input_names || !sess->output_names) {
-        vmaf_ort_close(sess);
-        return -ENOMEM;
-    }
-    for (size_t i = 0; i < ni; ++i) {
-        ORT_TRY(
-            sess->api->SessionGetInputName(sess->session, i, sess->alloc, &sess->input_names[i]));
-    }
-    for (size_t i = 0; i < no; ++i) {
-        ORT_TRY(
-            sess->api->SessionGetOutputName(sess->session, i, sess->alloc, &sess->output_names[i]));
-    }
-    /* legacy single-IO pointers alias position 0 */
-    sess->input_name = sess->input_names[0];
-    sess->output_name = sess->output_names[0];
-
-    /* Cache per-IO element types so the run path can decide fp32 vs fp16
-     * tensor creation without re-querying the model every call. */
-    sess->input_elem_types = (int *)calloc(ni, sizeof(int));
-    sess->output_elem_types = (int *)calloc(no, sizeof(int));
-    if (!sess->input_elem_types || !sess->output_elem_types) {
-        vmaf_ort_close(sess);
-        return -ENOMEM;
-    }
-    for (size_t i = 0; i < ni; ++i) {
-        OrtTypeInfo *ti = NULL;
-        ORT_TRY(sess->api->SessionGetInputTypeInfo(sess->session, i, &ti));
-        const OrtTensorTypeAndShapeInfo *tinfo = NULL;
-        OrtStatus *cst = sess->api->CastTypeInfoToTensorInfo(ti, &tinfo);
-        if (cst == NULL && tinfo != NULL) {
-            ONNXTensorElementDataType et = ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
-            OrtStatus *et_st = sess->api->GetTensorElementType(tinfo, &et);
-            if (et_st != NULL) {
-                ort_log_and_release_status(sess->api, et_st, "GetTensorElementType (input)");
-                sess->api->ReleaseTypeInfo(ti);
-                vmaf_ort_close(sess);
-                return -EINVAL;
-            }
-            sess->input_elem_types[i] = (int)et;
-        } else if (cst != NULL) {
-            ort_log_and_release_status(sess->api, cst, "CastTypeInfoToTensorInfo (input)");
-        }
-        sess->api->ReleaseTypeInfo(ti);
-    }
-    for (size_t i = 0; i < no; ++i) {
-        OrtTypeInfo *ti = NULL;
-        ORT_TRY(sess->api->SessionGetOutputTypeInfo(sess->session, i, &ti));
-        const OrtTensorTypeAndShapeInfo *tinfo = NULL;
-        OrtStatus *cst = sess->api->CastTypeInfoToTensorInfo(ti, &tinfo);
-        if (cst == NULL && tinfo != NULL) {
-            ONNXTensorElementDataType et = ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
-            OrtStatus *et_st = sess->api->GetTensorElementType(tinfo, &et);
-            if (et_st != NULL) {
-                ort_log_and_release_status(sess->api, et_st, "GetTensorElementType (output)");
-                sess->api->ReleaseTypeInfo(ti);
-                vmaf_ort_close(sess);
-                return -EINVAL;
-            }
-            sess->output_elem_types[i] = (int)et;
-        } else if (cst != NULL) {
-            ort_log_and_release_status(sess->api, cst, "CastTypeInfoToTensorInfo (output)");
-        }
-        sess->api->ReleaseTypeInfo(ti);
-    }
-
-    /* Pre-create the CPU memory info once so vmaf_ort_infer / vmaf_ort_run
-     * can reuse it across all frames instead of allocating it per call. */
-    OrtStatus *mi_st =
-        sess->api->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &sess->cpu_mem_info);
-    if (mi_st != NULL) {
-        ort_log_and_release_status(sess->api, mi_st, "CreateCpuMemoryInfo");
-        vmaf_ort_close(sess);
-        return -EIO;
-    }
-
     *out = sess;
     return 0;
+}
+
+int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConfig *cfg)
+{
+    return ort_open_logging_at(out, onnx_path, cfg, VMAF_LOG_LEVEL_WARNING);
+}
+
+int vmaf_ort_open_with_fallback(VmafOrtSession **out, const char *load_path,
+                                const char *fallback_path, const VmafDnnConfig *cfg)
+{
+    if (load_path == fallback_path)
+        return vmaf_ort_open(out, load_path, cfg);
+    /* A graph this runtime cannot build is expected here and handled by the
+     * retry, so its CreateSession failure is DEBUG, not WARNING (ADR-1032). */
+    int rc = ort_open_logging_at(out, load_path, cfg, VMAF_LOG_LEVEL_DEBUG);
+    if (rc < 0) {
+        vmaf_log(VMAF_LOG_LEVEL_DEBUG,
+                 "dnn: int8 session open failed (%s, rc=%d); retrying fp32 path\n", load_path, rc);
+        rc = vmaf_ort_open(out, fallback_path, cfg);
+    }
+    return rc;
 }
 
 /* Build an OrtValue from caller-supplied fp32 data. When the model declares
@@ -952,6 +1027,108 @@ static const char *resolve_name(char **table, size_t count, const char *name, si
     return NULL;
 }
 
+/* Validate every caller input, resolve its graph name and wrap it as an
+ * OrtValue. On failure the values built so far stay in @p vals / @p scratch
+ * for the caller to release. */
+static int build_run_inputs(VmafOrtSession *sess, const VmafOrtTensorIn *inputs, size_t n,
+                            const char **names, OrtValue **vals, void **scratch)
+{
+    for (size_t i = 0; i < n; ++i) {
+        const VmafOrtTensorIn *in = &inputs[i];
+        if (!in->data || !in->shape || in->rank == 0u)
+            return -EINVAL;
+        names[i] = resolve_name(sess->input_names, sess->n_inputs, in->name, i);
+        if (!names[i])
+            return -EINVAL;
+        for (size_t d = 0; d < in->rank; ++d) {
+            if (in->shape[d] <= 0)
+                return -EINVAL;
+        }
+        const int rc = build_input_tensor(sess, sess->cpu_mem_info, i, in->data, in->shape,
+                                          in->rank, &vals[i], &scratch[i]);
+        if (rc != 0)
+            return rc;
+    }
+    return 0;
+}
+
+static int resolve_run_outputs(VmafOrtSession *sess, const VmafOrtTensorOut *outputs, size_t n,
+                               const char **names)
+{
+    for (size_t i = 0; i < n; ++i) {
+        if (!outputs[i].data)
+            return -EINVAL;
+        names[i] = resolve_name(sess->output_names, sess->n_outputs, outputs[i].name, i);
+        if (!names[i])
+            return -EINVAL;
+    }
+    return 0;
+}
+
+/* Copy every produced output into the caller's buffers. A short buffer
+ * records the required count and keeps going so all outputs get their
+ * `written` populated, and -ENOSPC is propagated at the end; any other
+ * error stops at once. */
+static int copy_run_outputs(VmafOrtSession *sess, OrtValue **vals, VmafOrtTensorOut *outputs,
+                            size_t n)
+{
+    int rc = 0;
+    for (size_t i = 0; i < n; ++i) {
+        size_t produced = 0;
+        const int cpy =
+            copy_output_tensor(sess, vals[i], outputs[i].data, outputs[i].capacity, &produced);
+        outputs[i].written = produced;
+        if (cpy == -ENOSPC) {
+            rc = -ENOSPC;
+        } else if (cpy != 0) {
+            return cpy;
+        }
+    }
+    return rc;
+}
+
+/* Per-call OrtValue and scratch bookkeeping for vmaf_ort_run(). Stack-held:
+ * no heap allocation on the per-frame hot path (F3-B). */
+typedef struct OrtRunIo {
+    const char *in_names[VMAF_ORT_MAX_IO];
+    const char *out_names[VMAF_ORT_MAX_IO];
+    OrtValue *in_vals[VMAF_ORT_MAX_IO];
+    OrtValue *out_vals[VMAF_ORT_MAX_IO];
+    void *in_scratch[VMAF_ORT_MAX_IO];
+} OrtRunIo;
+
+static void release_run_io(VmafOrtSession *sess, OrtRunIo *io, size_t n_inputs, size_t n_outputs)
+{
+    for (size_t i = 0; i < n_inputs; ++i) {
+        if (io->in_vals[i])
+            sess->api->ReleaseValue(io->in_vals[i]);
+        free(io->in_scratch[i]);
+    }
+    for (size_t i = 0; i < n_outputs; ++i) {
+        if (io->out_vals[i])
+            sess->api->ReleaseValue(io->out_vals[i]);
+    }
+}
+
+static int run_with_io(VmafOrtSession *sess, OrtRunIo *io, const VmafOrtTensorIn *inputs,
+                       size_t n_inputs, VmafOrtTensorOut *outputs, size_t n_outputs)
+{
+    int rc = build_run_inputs(sess, inputs, n_inputs, io->in_names, io->in_vals, io->in_scratch);
+    if (rc != 0)
+        return rc;
+    rc = resolve_run_outputs(sess, outputs, n_outputs, io->out_names);
+    if (rc != 0)
+        return rc;
+    OrtStatus *st_run =
+        sess->api->Run(sess->session, NULL, io->in_names, (const OrtValue *const *)io->in_vals,
+                       n_inputs, io->out_names, n_outputs, io->out_vals);
+    if (st_run) {
+        ort_log_and_release_status(sess->api, st_run, "Run");
+        return -EIO;
+    }
+    return copy_run_outputs(sess, io->out_vals, outputs, n_outputs);
+}
+
 int vmaf_ort_run(VmafOrtSession *sess, const VmafOrtTensorIn *inputs, size_t n_inputs,
                  VmafOrtTensorOut *outputs, size_t n_outputs)
 {
@@ -969,96 +1146,15 @@ int vmaf_ort_run(VmafOrtSession *sess, const VmafOrtTensorIn *inputs, size_t n_i
     if (n_inputs > VMAF_ORT_MAX_IO || n_outputs > VMAF_ORT_MAX_IO)
         return -EINVAL;
 
-    /* Reuse the session-level cached OrtMemoryInfo (perf audit F2-A / F3-A). */
-    OrtMemoryInfo *mem = sess->cpu_mem_info;
-    if (!mem)
+    /* Reuse the session-level cached OrtMemoryInfo (perf audit F2-A / F3-A);
+     * it is session-owned and released in vmaf_ort_close. */
+    if (!sess->cpu_mem_info)
         return -EINVAL;
 
-    /* Stack-allocated IO arrays — no heap allocation on the hot path. */
-    const char *in_names[VMAF_ORT_MAX_IO];
-    const char *out_names[VMAF_ORT_MAX_IO];
-    OrtValue *in_vals[VMAF_ORT_MAX_IO];
-    OrtValue *out_vals[VMAF_ORT_MAX_IO];
-    void *in_scratch[VMAF_ORT_MAX_IO];
-    memset((void *)in_names, 0, n_inputs * sizeof(in_names[0]));
-    memset((void *)out_names, 0, n_outputs * sizeof(out_names[0]));
-    memset((void *)in_vals, 0, n_inputs * sizeof(in_vals[0]));
-    memset((void *)out_vals, 0, n_outputs * sizeof(out_vals[0]));
-    memset((void *)in_scratch, 0, n_inputs * sizeof(in_scratch[0]));
-
-    int rc = 0;
-    for (size_t i = 0; i < n_inputs; ++i) {
-        if (!inputs[i].data || !inputs[i].shape || inputs[i].rank == 0u) {
-            rc = -EINVAL;
-            goto cleanup;
-        }
-        in_names[i] = resolve_name(sess->input_names, sess->n_inputs, inputs[i].name, i);
-        if (!in_names[i]) {
-            rc = -EINVAL;
-            goto cleanup;
-        }
-        for (size_t d = 0; d < inputs[i].rank; ++d) {
-            if (inputs[i].shape[d] <= 0) {
-                rc = -EINVAL;
-                goto cleanup;
-            }
-        }
-        int brc = build_input_tensor(sess, mem, i, inputs[i].data, inputs[i].shape, inputs[i].rank,
-                                     &in_vals[i], &in_scratch[i]);
-        if (brc != 0) {
-            rc = brc;
-            goto cleanup;
-        }
-    }
-    for (size_t i = 0; i < n_outputs; ++i) {
-        if (!outputs[i].data) {
-            rc = -EINVAL;
-            goto cleanup;
-        }
-        out_names[i] = resolve_name(sess->output_names, sess->n_outputs, outputs[i].name, i);
-        if (!out_names[i]) {
-            rc = -EINVAL;
-            goto cleanup;
-        }
-    }
-
-    OrtStatus *st_run =
-        sess->api->Run(sess->session, NULL, in_names, (const OrtValue *const *)in_vals, n_inputs,
-                       out_names, n_outputs, out_vals);
-    if (st_run) {
-        ort_log_and_release_status(sess->api, st_run, "Run");
-        rc = -EIO;
-        goto cleanup;
-    }
-
-    for (size_t i = 0; i < n_outputs; ++i) {
-        size_t produced = 0;
-        int cpy =
-            copy_output_tensor(sess, out_vals[i], outputs[i].data, outputs[i].capacity, &produced);
-        outputs[i].written = produced;
-        if (cpy == -ENOSPC) {
-            /* Short buffer — record the required count and keep going so all
-             * outputs get their `written` populated, but propagate -ENOSPC. */
-            rc = -ENOSPC;
-        } else if (cpy != 0) {
-            rc = cpy;
-            goto cleanup;
-        }
-    }
-
-cleanup:
-    for (size_t i = 0; i < n_inputs; ++i) {
-        if (in_vals[i])
-            sess->api->ReleaseValue(in_vals[i]);
-        free(in_scratch[i]);
-    }
-    for (size_t i = 0; i < n_outputs; ++i) {
-        if (out_vals[i])
-            sess->api->ReleaseValue(out_vals[i]);
-    }
-    /* mem is session-owned (cpu_mem_info); released in vmaf_ort_close.
-     * Stack arrays (in_names, out_names, in_vals, out_vals, in_scratch)
-     * are automatically reclaimed — no free() needed. */
+    OrtRunIo io;
+    (void)memset(&io, 0, sizeof(io));
+    const int rc = run_with_io(sess, &io, inputs, n_inputs, outputs, n_outputs);
+    release_run_io(sess, &io, n_inputs, n_outputs);
     return rc;
 }
 
@@ -1111,6 +1207,16 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
 {
     (void)out;
     (void)onnx_path;
+    (void)cfg;
+    return -ENOSYS;
+}
+
+int vmaf_ort_open_with_fallback(VmafOrtSession **out, const char *load_path,
+                                const char *fallback_path, const VmafDnnConfig *cfg)
+{
+    (void)out;
+    (void)load_path;
+    (void)fallback_path;
     (void)cfg;
     return -ENOSYS;
 }

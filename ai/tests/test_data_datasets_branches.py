@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Branch-coverage tests for :mod:`vmaf_train.data.datasets`.
 
 The module is a thin dataset-manifest loader (no torch, no ONNX). It had no

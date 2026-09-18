@@ -1,7 +1,7 @@
 /**
  * Copyright 2026 Lusoris
  *
- * SPDX-License-Identifier: BSD-2-Clause-Patent
+ * SPDX-License-Identifier: EUPL-1.2
  *
  * NEON-vs-scalar bit-exactness for the float-ADM DWT2 kernel
  * (`float_adm_dwt2_neon`, core/src/feature/arm64/float_adm_dwt2_neon.c).
@@ -63,6 +63,12 @@
 #include <string.h>
 
 #include "feature/arm64/float_adm_neon.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 
 /* Sentinel poison for cells neither kernel is allowed to touch: a quiet-NaN
  * payload that is trivially recognisable in a bit-pattern dump. */
@@ -364,3 +370,5 @@ char *run_tests(void)
 #endif
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

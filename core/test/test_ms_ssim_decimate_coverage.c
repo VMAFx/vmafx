@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Coverage round 2 — ms_ssim_decimate.c gap-fill.
  *
@@ -14,6 +14,12 @@
  */
 
 #include <stdint.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -61,7 +67,10 @@ static char *test_decimate_dispatch_matches_scalar(void)
     const int h_out = (h / 2) + (h & 1);
     float dst_scalar[9 * 5];
     float dst_dispatch[9 * 5];
-    int rw_s = -1, rh_s = -1, rw_d = -1, rh_d = -1;
+    int rw_s = -1;
+    int rh_s = -1;
+    int rw_d = -1;
+    int rh_d = -1;
 
     int rc_s = ms_ssim_decimate_scalar(src, w, h, dst_scalar, &rw_s, &rh_s);
     int rc_d = ms_ssim_decimate(src, w, h, dst_dispatch, &rw_d, &rh_d);
@@ -71,8 +80,13 @@ static char *test_decimate_dispatch_matches_scalar(void)
     mu_assert("scalar reports correct h_out", rh_s == h_out);
     mu_assert("dispatch reports correct w_out", rw_d == w_out);
     mu_assert("dispatch reports correct h_out", rh_d == h_out);
+    /* Compared as bytes, not float values: bit-exactness must also catch
+     * a signed-zero or NaN-payload difference (ADR-0125). */
+    const unsigned char *bytes_scalar = (const unsigned char *)dst_scalar;
+    const unsigned char *bytes_dispatch = (const unsigned char *)dst_dispatch;
     mu_assert("dispatch byte-identical to scalar",
-              memcmp(dst_scalar, dst_dispatch, sizeof(float) * (size_t)w_out * (size_t)h_out) == 0);
+              memcmp(bytes_scalar, bytes_dispatch, sizeof(float) * (size_t)w_out * (size_t)h_out) ==
+                  0);
     return NULL;
 }
 
@@ -97,3 +111,5 @@ char *run_tests(void)
     mu_run_test(test_decimate_dispatch_null_outputs);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Coverage round 3 — core/src/feature/feature_collector.cpp gap-fill.
  *
@@ -35,6 +35,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "mu_table.h"
 
 #include "feature/feature_collector.h"
 #include "feature/feature_collector_internal.h"
@@ -257,21 +258,23 @@ static char *test_feature_collector_destroy_null_no_crash(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_aggregate_vector_append_null_input);
-    mu_run_test(test_aggregate_vector_append_duplicate_same_score);
-    mu_run_test(test_aggregate_vector_append_duplicate_diff_score);
-    mu_run_test(test_feature_vector_append_null_input);
-    mu_run_test(test_feature_vector_append_duplicate_index);
-    mu_run_test(test_feature_vector_destroy_null_no_crash);
-    mu_run_test(test_feature_collector_init_null_out);
-    mu_run_test(test_feature_collector_append_null_collector);
-    mu_run_test(test_feature_collector_append_null_name);
-    mu_run_test(test_feature_collector_append_duplicate_index);
-    mu_run_test(test_feature_collector_unmount_null_inputs);
-    mu_run_test(test_feature_collector_unmount_not_found);
-    mu_run_test(test_feature_collector_aggregate_get_unknown);
-    mu_run_test(test_feature_collector_destroy_null_no_crash);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_aggregate_vector_append_null_input),
+        MU_TEST(test_aggregate_vector_append_duplicate_same_score),
+        MU_TEST(test_aggregate_vector_append_duplicate_diff_score),
+        MU_TEST(test_feature_vector_append_null_input),
+        MU_TEST(test_feature_vector_append_duplicate_index),
+        MU_TEST(test_feature_vector_destroy_null_no_crash),
+        MU_TEST(test_feature_collector_init_null_out),
+        MU_TEST(test_feature_collector_append_null_collector),
+        MU_TEST(test_feature_collector_append_null_name),
+        MU_TEST(test_feature_collector_append_duplicate_index),
+        MU_TEST(test_feature_collector_unmount_null_inputs),
+        MU_TEST(test_feature_collector_unmount_not_found),
+        MU_TEST(test_feature_collector_aggregate_get_unknown),
+        MU_TEST(test_feature_collector_destroy_null_no_crash),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

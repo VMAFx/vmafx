@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 
 // Package auto is the Go port of vmaftune.auto — the Phase F adaptive
 // recipe-aware tuning entry point (ADR-0364 / ADR-0325 / ADR-0454).

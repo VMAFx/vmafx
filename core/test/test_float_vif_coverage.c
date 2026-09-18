@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  CPU-only coverage for core/src/feature/float_vif.c.
  *
@@ -50,25 +50,36 @@ static int alloc_grey8(VmafPicture *pic, uint8_t v)
     return 0;
 }
 
-static char *test_float_vif_8bit_identical(void)
+/* Look up the "float_vif" extractor, create+init a context over an
+ * FVIF_W x FVIF_H 8-bit YUV420P frame, then init a feature collector.
+ * Both tests below start this way; neither uses dictionary options. */
+static char *float_vif_fixture_open(VmafFeatureExtractorContext **ctx, VmafFeatureCollector **fc)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_vif");
     mu_assert("float_vif extractor present", fex != NULL);
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
     mu_assert("context_create", err == 0);
 
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, FVIF_W, FVIF_H);
+    err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, FVIF_W, FVIF_H);
     mu_assert("context_init", err == 0);
 
-    VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
+    err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
+    return NULL;
+}
+
+static char *test_float_vif_8bit_identical(void)
+{
+    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureCollector *fc = NULL;
+    char *msg = float_vif_fixture_open(&ctx, &fc);
+    if (msg)
+        return msg;
 
     VmafPicture ref;
     VmafPicture dist;
-    err = alloc_grey8(&ref, 128u);
+    int err = alloc_grey8(&ref, 128u);
     mu_assert("alloc ref", err == 0);
     err = alloc_grey8(&dist, 128u);
     mu_assert("alloc dist", err == 0);
@@ -104,23 +115,15 @@ static char *test_float_vif_8bit_identical(void)
 
 static char *test_float_vif_8bit_distinct(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_vif");
-    mu_assert("float_vif extractor present", fex != NULL);
-
     VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
-    mu_assert("context_create", err == 0);
-
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, FVIF_W, FVIF_H);
-    mu_assert("context_init", err == 0);
-
     VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
-    mu_assert("collector_init", err == 0);
+    char *msg = float_vif_fixture_open(&ctx, &fc);
+    if (msg)
+        return msg;
 
     VmafPicture ref;
     VmafPicture dist;
-    err = alloc_grey8(&ref, 50u);
+    int err = alloc_grey8(&ref, 50u);
     mu_assert("alloc ref", err == 0);
     err = alloc_grey8(&dist, 200u);
     mu_assert("alloc dist", err == 0);

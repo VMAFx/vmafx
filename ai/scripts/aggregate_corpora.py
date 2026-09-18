@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Aggregate multiple MOS-corpus JSONL shards into a unified trainer JSONL.
 
 ADR-0340 (multi-corpus aggregation for `fr_regressor_v2` /

@@ -3,7 +3,7 @@
 # dependency-only for automated gate exemption (ADR-1152).
 #
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 #
 # Exemption criteria (BOTH must hold):
 #   (a) Author is `renovate[bot]` or `dependabot[bot]` (or `app/renovate` /

@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for :mod:`ai.scripts.waterloo_ivc_to_corpus_jsonl` (ADR-0369).
 
 These tests exercise the Waterloo IVC 4K-VQA adapter's pure-

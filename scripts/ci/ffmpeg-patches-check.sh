@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 # Compatibility entrypoint for the shared release-tag replay implementation.
 set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"

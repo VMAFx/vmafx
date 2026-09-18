@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  CPU-only coverage for core/src/feature/float_psnr.c.
  *
@@ -18,6 +18,12 @@
  */
 
 #include <errno.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
@@ -45,9 +51,10 @@ static int alloc_grey(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned b
         } else {
             uint16_t *row = (uint16_t *)pic->data[p];
             ptrdiff_t s = (ptrdiff_t)(pic->stride[p] / 2u);
-            for (unsigned i = 0; i < pic->h[p]; ++i)
+            for (unsigned i = 0; i < pic->h[p]; ++i) {
                 for (unsigned j = 0; j < pic->w[p]; ++j)
                     row[i * s + (ptrdiff_t)j] = (uint16_t)grey;
+            }
         }
     }
     return 0;
@@ -200,3 +207,5 @@ char *run_tests(void)
     mu_run_test(test_float_psnr_invalid_bpc);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

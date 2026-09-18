@@ -1,0 +1,406 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+#
+# Reviewed provenance for scripts/dev/relicense_fork_files.py (ADR-1250).
+#
+# A fork file that ports, copies or translates someone else's code keeps the
+# terms it has and carries that code's copyright notice; it does not move to
+# EUPL-1.2. This file records which files those are.
+#
+# - [sources.*]  An origin: the notices that must travel with its code, and its
+#                licence. `notices_from` reads the notices out of the in-tree
+#                copy of that code, so they stay verbatim across upstream syncs.
+# - [[families]] Files chosen by role: a SIMD or GPU kernel implements the
+#                upstream code that defines its metric, whether or not its
+#                header says so. First matching family wins.
+# - [ports.*]    Individual files reviewed as carrying other code, outside the
+#                kernel directories or needing more origins than their family.
+# - [not_ports]  Files whose header matched the derivation detector but which
+#                were reviewed and carry no one else's code. The value says why.
+# - [mirrors.*]  Verbatim mirrors of another repository. Their terms are decided
+#                there, and a sync script diffs them byte for byte against it,
+#                so the tool never rewrites them, not even to repair a tag.
+#
+# Precedence: ports, then not_ports, then families. A file the detector flags
+# that appears in none of them keeps its terms until someone reviews it.
+
+# ---------------------------------------------------------------------------
+# Origins
+# ---------------------------------------------------------------------------
+
+[sources.libjxl]
+# tools/ssimulacra2.cc in libjxl; the project's LICENSE is BSD-3-Clause.
+notices = ["Copyright (c) the JPEG XL Project Authors."]
+licences = ["BSD-3-Clause"]
+
+[sources.xiph]
+# Two-condition BSD text in the file itself.
+notices_from = ["core/src/feature/third_party/xiph/psnr_hvs.c"]
+licences = ["BSD-2-Clause"]
+
+[sources.xiph-integer-ssim]
+notices_from = ["core/src/feature/integer_ssim.c"]
+licences = ["BSD-2-Clause"]
+
+[sources.iqa]
+# Three-condition BSD text (with the non-endorsement clause) in the file itself.
+notices_from = ["core/src/feature/iqa/convolve.c"]
+licences = ["BSD-3-Clause"]
+
+[sources.netflix-integer-adm]
+notices_from = ["core/src/feature/integer_adm.c"]
+licences = ["BSD-2-Clause-Patent"]
+
+[sources.netflix-float-adm]
+notices_from = ["core/src/feature/adm_tools.c"]
+licences = ["BSD-2-Clause-Patent"]
+
+[sources.netflix-nvidia-adm]
+notices_from = ["core/src/feature/cuda/integer_adm_cuda.c"]
+licences = ["BSD-2-Clause-Patent"]
+
+[sources.netflix-integer-vif]
+notices_from = ["core/src/feature/integer_vif.c"]
+licences = ["BSD-2-Clause-Patent"]
+
+[sources.netflix-float-vif]
+notices_from = ["core/src/feature/vif_tools.c"]
+licences = ["BSD-2-Clause-Patent"]
+
+[sources.netflix-nvidia-vif]
+notices_from = ["core/src/feature/cuda/integer_vif_cuda.c"]
+licences = ["BSD-2-Clause-Patent"]
+
+[sources.netflix-integer-motion]
+notices_from = ["core/src/feature/integer_motion.c"]
+licences = ["BSD-2-Clause-Patent"]
+
+[sources.netflix-motion-v2]
+notices_from = ["core/src/feature/integer_motion_v2.c"]
+licences = ["BSD-2-Clause-Patent"]
+
+[sources.netflix-float-motion]
+notices_from = ["core/src/feature/float_motion.c"]
+licences = ["BSD-2-Clause-Patent"]
+
+[sources.netflix-nvidia-motion]
+# The .c carries only Netflix's line; NVIDIA's is on the header and the kernel.
+notices_from = ["core/src/feature/cuda/integer_motion_cuda.h"]
+licences = ["BSD-2-Clause-Patent"]
+
+[sources.netflix-integer-psnr]
+notices_from = ["core/src/feature/integer_psnr.c"]
+licences = ["BSD-2-Clause-Patent"]
+
+[sources.netflix-float-psnr]
+notices_from = ["core/src/feature/float_psnr.c"]
+licences = ["BSD-2-Clause-Patent"]
+
+[sources.netflix-float-ssim]
+notices_from = ["core/src/feature/float_ssim.c"]
+licences = ["BSD-2-Clause-Patent"]
+
+[sources.netflix-ms-ssim]
+notices_from = ["core/src/feature/float_ms_ssim.c"]
+licences = ["BSD-2-Clause-Patent"]
+
+[sources.netflix-moment]
+notices_from = ["core/src/feature/float_moment.c"]
+licences = ["BSD-2-Clause-Patent"]
+
+[sources.netflix-cambi]
+notices_from = ["core/src/feature/cambi.c"]
+licences = ["BSD-2-Clause-Patent"]
+
+[sources.netflix-ciede]
+# ciede.c carries Joshua Holmer's MIT-licensed CIEDE2000 math beside Netflix's code.
+notices_from = ["core/src/feature/ciede.c"]
+licences = ["BSD-2-Clause-Patent", "MIT"]
+
+[sources.netflix-ciede-host]
+# The Netflix part of ciede.c only: plane reads and chroma upsampling, not the
+# CIEDE2000 math.
+notices = ["Copyright 2016-2026 Netflix, Inc."]
+licences = ["BSD-2-Clause-Patent"]
+
+[sources.netflix-speed]
+notices_from = ["core/src/feature/speed.c"]
+licences = ["BSD-2-Clause-Patent"]
+
+# ---------------------------------------------------------------------------
+# Families: SIMD and GPU kernels, by the metric they implement
+# ---------------------------------------------------------------------------
+
+[[families]]
+name = "ssimulacra2"
+match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?ssimulacra2'
+from = ["libjxl"]
+
+[[families]]
+name = "psnr-hvs"
+match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?[^/]*psnr_hvs'
+from = ["xiph"]
+
+[[families]]
+name = "ms-ssim"
+match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?[^/]*ms_ssim'
+from = ["netflix-ms-ssim", "iqa"]
+
+[[families]]
+name = "simd-integer-ssim"
+match = '^core/src/feature/(x86|arm64)/integer_ssim'
+from = ["xiph-integer-ssim"]
+
+[[families]]
+name = "metal-float-ssim"
+match = '^core/src/feature/metal/float_ssim'
+from = ["netflix-float-ssim", "iqa"]
+
+[[families]]
+name = "metal-integer-ssim"
+match = '^core/src/feature/metal/integer_ssim'
+from = ["xiph-integer-ssim"]
+
+[[families]]
+# The CUDA, HIP and SYCL SSIM files cross both lineages: ADR-0549 keeps
+# upstream-mirror file names that define the float extractor under an integer_
+# prefix, and their headers cite float_ssim.c and integer_ssim.c together.
+name = "gpu-ssim"
+match = '^core/src/feature/(cuda|hip|sycl)/(.+/)?[^/]*ssim'
+from = ["netflix-float-ssim", "iqa", "xiph-integer-ssim"]
+
+[[families]]
+name = "float-adm"
+match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?float_adm'
+from = ["netflix-float-adm"]
+
+[[families]]
+name = "integer-adm"
+match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?[^/]*adm'
+from = ["netflix-integer-adm"]
+
+[[families]]
+name = "float-vif"
+match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?float_vif'
+from = ["netflix-float-vif"]
+
+[[families]]
+name = "integer-vif"
+match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?[^/]*vif'
+from = ["netflix-integer-vif"]
+
+[[families]]
+name = "motion-v2"
+match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?[^/]*motion_v2'
+from = ["netflix-motion-v2"]
+
+[[families]]
+name = "float-motion"
+match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?float_motion'
+from = ["netflix-float-motion"]
+
+[[families]]
+name = "integer-motion"
+match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?[^/]*motion'
+from = ["netflix-integer-motion"]
+
+[[families]]
+name = "float-psnr"
+match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?float_psnr'
+from = ["netflix-float-psnr"]
+
+[[families]]
+name = "integer-psnr"
+match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?[^/]*psnr'
+from = ["netflix-integer-psnr"]
+
+[[families]]
+name = "cambi"
+match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?[^/]*cambi'
+from = ["netflix-cambi"]
+
+[[families]]
+# The SIMD ciede kernels are the YUV-to-float preprocessing loops only; the
+# CIEDE2000 math stays scalar. The GPU kernels below carry that math.
+name = "simd-ciede"
+match = '^core/src/feature/(x86|arm64)/ciede'
+from = ["netflix-ciede-host"]
+
+[[families]]
+name = "ciede"
+match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?[^/]*ciede'
+from = ["netflix-ciede"]
+
+[[families]]
+name = "moment"
+match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?[^/]*moment'
+from = ["netflix-moment"]
+
+[[families]]
+name = "speed"
+match = '^core/src/feature/(x86|arm64|cuda|hip|sycl|metal)/(.+/)?[^/]*speed'
+from = ["netflix-speed"]
+
+[[families]]
+name = "iqa-convolve"
+match = '^core/src/feature/(x86|arm64)/convolve_'
+from = ["iqa"]
+
+# ---------------------------------------------------------------------------
+# Individually reviewed
+# ---------------------------------------------------------------------------
+
+# HIP and Metal files that document porting the NVIDIA-contributed upstream
+# CUDA extractors, not only the Netflix CPU reference.
+[ports."core/src/feature/hip/integer_adm_hip.c"]
+from = ["netflix-nvidia-adm"]
+[ports."core/src/feature/hip/integer_adm_hip.h"]
+from = ["netflix-nvidia-adm"]
+[ports."core/src/feature/metal/integer_adm.metal"]
+from = ["netflix-integer-adm", "netflix-nvidia-adm"]
+[ports."core/src/feature/metal/integer_adm_metal.mm"]
+from = ["netflix-integer-adm", "netflix-nvidia-adm"]
+[ports."core/src/feature/hip/integer_motion_hip.c"]
+from = ["netflix-nvidia-motion"]
+[ports."core/src/feature/hip/integer_motion_hip.h"]
+from = ["netflix-nvidia-motion"]
+[ports."core/src/feature/hip/integer_motion/motion_score.hip"]
+from = ["netflix-nvidia-motion"]
+[ports."core/src/feature/hip/integer_vif_hip.h"]
+from = ["netflix-nvidia-vif"]
+
+# Feature-directory helpers that carry upstream code or data.
+[ports."core/src/feature/adm_angle_flag.h"]
+from = ["netflix-integer-adm"]  # "the frozen expression, verbatim" from decouple()
+[ports."core/src/feature/cambi_internal.h"]
+from = ["netflix-cambi"]  # exposes cambi.c's per-stage helpers
+[ports."core/src/feature/delta_e_itp.c"]
+from = ["netflix-ciede-host"]  # "Mirrors ciede.c": plane reads, chroma upsampling
+[ports."core/src/feature/ms_ssim_decimate.c"]
+from = ["netflix-ms-ssim", "iqa"]  # ms_ssim.c's g_lpf coefficients; replaces iqa_decimate
+[ports."core/src/feature/ms_ssim_decimate.h"]
+from = ["netflix-ms-ssim", "iqa"]
+[ports."core/src/feature/pu21_ssim.c"]
+from = ["iqa", "netflix-float-ssim"]  # "mirrors iqa_ssim() ... step-for-step", zli-nflx clamps
+[ports."core/src/feature/speed_gpu_common.h"]
+from = ["netflix-speed"]
+[ports."core/src/feature/speed_internal.c"]
+from = ["netflix-speed"]  # "a self-contained port of the static helpers in speed.c"
+[ports."core/src/feature/speed_internal.h"]
+from = ["netflix-speed"]
+[ports."core/src/feature/speed_matmul.h"]
+from = ["netflix-speed"]
+[ports."core/src/feature/ssimulacra2.c"]
+from = ["libjxl"]  # "scalar C port of the libjxl reference implementation"
+
+# Tests whose scalar oracle is a transcription of upstream code.
+[ports."core/src/feature/arm64/ssim_neon.c"]
+from = ["iqa"]  # "mirror the scalar reference in iqa/ssim_tools.c byte-for-byte"
+[ports."core/src/feature/x86/ssim_avx2.c"]
+from = ["iqa"]  # same transcription, AVX2
+[ports."core/test/test_adm_dwt2_neon.c"]
+from = ["netflix-integer-adm"]  # mirrors dwt2_src_indices_filt()
+[ports."core/test/test_adm_dwt2_x86.c"]
+from = ["netflix-integer-adm"]  # mirrors dwt2_src_indices_filt(), static in integer_adm.c
+[ports."core/test/test_vif_neon.c"]
+from = ["netflix-integer-vif"]  # mirrors log_generate(), static in integer_vif.c
+[ports."core/test/test_cambi_simd.c"]
+from = ["netflix-cambi"]  # verbatim from cambi.c::calculate_c_values_row
+[ports."core/test/test_ciede_neon.c"]
+from = ["netflix-ciede-host"]  # verbatim copies of the ciede.c fallback loops
+[ports."core/test/test_ciede_simd_parity.c"]
+from = ["netflix-ciede-host"]  # scalar loop verbatim from the ciede.c fallback
+[ports."core/test/test_integer_ssim_simd.c"]
+from = ["xiph-integer-ssim"]  # verbatim copy of ssim_accumulate_row()
+[ports."core/test/test_motion_avx512_parity.c"]
+from = ["netflix-integer-motion"]  # line-for-line mirrors of integer_motion.c statics
+[ports."core/test/test_psnr_hvs_avx2.c"]
+from = ["xiph"]  # copies od_bin_fdct8x8
+[ports."core/test/test_psnr_hvs_neon.c"]
+from = ["xiph"]  # scalar reference copy of od_bin_fdct8x8
+[ports."core/test/test_psnr_hvs_simd.c"]
+from = ["xiph"]  # self-contained copy of calc_psnrhvs
+[ports."core/test/test_speed_simd.c"]
+from = ["netflix-speed"]  # mirrors compute_cov_kernel_scalar in speed.c
+
+# ---------------------------------------------------------------------------
+# Reviewed: the detector matched, but the file carries no one else's code
+# ---------------------------------------------------------------------------
+
+[not_ports]
+"ai/data/scores.py" = "mirrors the fork's own vmaftune defaultmodel.py constant"
+"ai/scripts/combine_full_feature_parquets.py" = "'derived data' describes the parquet aggregates"
+"ai/scripts/eval_loso_mlp_small.py" = "mirrors the fork's own MCP compare_models accounting"
+"ai/scripts/eval_loso_vmaf_tiny_v3.py" = "mirrors a validation methodology"
+"ai/scripts/eval_loso_vmaf_tiny_v4.py" = "mirrors a validation methodology"
+"ai/scripts/run_training.sh" = "'copy the corpus' is an instruction"
+"ai/scripts/train_fr_regressor_v2_ensemble_loso.py" = "mirrors the fold order of the fork's own eval scripts"
+"ai/scripts/validate_vmaf_tiny_v3.py" = "mirrors the fork's own validate_vmaf_tiny_v2.py"
+"ai/scripts/validate_vmaf_tiny_v4.py" = "mirrors the fork's own validate_vmaf_tiny_v3.py"
+"ai/train/train_combined.py" = "mirrors a training methodology"
+"core/src/dnn/dnn_ctx.h" = "'translation unit' names a C concept"
+"core/src/feature/common/convolution_avx512.c" = "widens the upstream AVX2 convolution it already credits"
+"core/src/feature/niqe_model.h" = "fork-trained model data; the Netflix line it cites keeps it on its terms"
+"core/src/feature/picture_copy.cpp" = "upstream file renamed to .cpp, Netflix notice intact"
+"core/src/percentile.h" = "describes where the helper is included, not code taken from there"
+"core/test/test_feature.cpp" = "upstream test renamed to .cpp, Netflix notice intact"
+"core/test/test_version.c" = "'verbatim' describes the version string in the output"
+"core/tools/vmaf_bench.c" = "upstream-mirror tool, Netflix notice intact"
+"core/src/feature/compat_builtin.h" = "'upstream-verbatim' describes the call sites, not this shim"
+"core/src/feature/pu21.c" = "mirrors float_ssim.c's allocate-once discipline, not its code"
+"core/src/feature/pu21_ssim.h" = "mirrors float_ssim.c's buffer-ownership discipline, not its code"
+"core/src/feature/speed_qa.c" = "SpEED-QA implemented from Bampis et al. 2017 (ADR-0253), not from speed.c"
+"core/src/feature/ssimulacra2_eotf_lut.h" = "generated sRGB EOTF table (IEC 61966-2-1)"
+"core/src/feature/ssimulacra2_math.h" = "the fork's own deterministic cbrt and EOTF replacements"
+"core/src/feature/ssimulacra2_simd_common.h" = "the fork's own plane-descriptor struct"
+"core/src/hip/picture_hip.c" = "mirrors the CUDA picture API's shape, not its code"
+"core/src/libvmaf_priv.h" = "'duplicate' describes a linkage hazard"
+"core/src/mcp/dispatcher.c" = "mirrors a list of extractor names"
+"core/src/metal/import.h" = "mirrors the fork's own removed Vulkan import header"
+"core/src/picture_v2.c" = "'copy' describes what the converters do"
+"core/test/dnn/meson.build" = "'copy' describes linking against the library instead"
+"core/test/fuzz/fuzz_cli_parse.c" = "describes upstream cli_free behaviour"
+"core/test/test_convolution_edge_small.c" = "cites Netflix/vmaf issues"
+"core/test/test_cuda_motion3_parity.c" = "describes where motion3 is implemented"
+"core/test/test_cuda_psnr_hvs_parity.c" = "describes where psnr_hvs is implemented"
+"core/test/test_float_adm_dwt2_neon.c" = "compares against the production adm_dwt2_s(), linked not copied"
+"core/test/test_float_vif_min_dim.c" = "'derived from' describes a guard computation"
+"core/test/test_flush_context_ordering.c" = "mirrors the fork's own white-box include pattern"
+"core/test/test_hip_adm_parity.c" = "describes how the HIP kernels were ported"
+"core/test/test_hip_float_ssim_parity.c" = "describes the float SSIM pipeline"
+"core/test/test_hip_motion3_parity.c" = "describes where motion3 is implemented"
+"core/test/test_integer_motion_edge16_coverage.c" = "'mirror' is the boundary-extension mode"
+"core/test/test_integer_vif_log2.c" = "'derived from' describes how the LUT values are computed"
+"core/test/test_iqa_helpers.c" = "exercises IQA through its public entry points"
+"core/test/test_metal_integer_ciede_parity.c" = "describes the Metal pipeline"
+"core/test/test_model_libsvm_dup_key.c" = "'duplicate' describes the leak under test"
+"core/test/test_motion_convolution_oob.c" = "'copy' describes the defect under test"
+"core/test/test_output.c" = "'duplicate' describes a linkage hazard"
+"core/test/test_pu21.c" = "mirrors the fork's own test_ciede.c layout"
+"core/test/test_speed.c" = "smoke tests written for the fork; the upstream corpus runs elsewhere"
+"core/test/test_sycl_cambi_parity.c" = "describes the SYCL port"
+"core/test/test_sycl_motion3_parity.c" = "describes where motion3 is implemented"
+"core/test/test_sycl_psnr_hvs_parity.c" = "describes where psnr_hvs is implemented"
+"noxfile.py" = "'duplicate' describes test setup"
+"pkg/cliopt/escape_test.go" = "mirrors the fork's own cli_split escape cases (ADR-1190), absent upstream"
+"pkg/corpus/hdr.go" = "matches Netflix's artefact file name"
+"pkg/libvmaf/libvmaf.go" = "explains why vmaf.c is not reimplemented"
+"pkg/model/default.go" = "'NOT derived from' a constant"
+"python/test/ssimulacra2_test.py" = "describes what the snapshot guards"
+"scripts/ci/check-state-md-rows.sh" = "'duplicate' describes state.md rows"
+"scripts/docs/concat-adr-index.sh" = "'duplicate' describes ADR numbers"
+"tools/vmaf-roi-score/src/vmafroiscore/defaultmodel.py" = "mirrors a constant from the fork's public header"
+"tools/vmaf-tune/src/vmaftune/codec_adapters/svtav1.py" = "mirrors the fork's own adapter interface"
+"tools/vmaf-tune/src/vmaftune/defaultmodel.py" = "'NOT derived from' a constant"
+"tools/vmaf-tune/src/vmaftune/ladder.py" = "cites the idea of a published paper"
+
+# ---------------------------------------------------------------------------
+# Vendored mirrors
+# ---------------------------------------------------------------------------
+
+[mirrors.pelorus]
+# ADR-1113: the Pelorus interop ABI is single-sourced in VMAFx/pelorus
+# (libpelorus/). scripts/sync-pelorus-interop.sh fails on any difference from
+# the pinned commit except its banner and include rewrites; the conformance
+# fixture is compared from its first include on.
+match = '^(core/include/libvmaf/pelorus/|core/src/interop/pelorus_[^/]+\.c$|core/test/test_pelorus_interop\.c$)'

@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Coverage round 2 — integer_vif.h log2_32 / log2_64 inline helpers.
  *
@@ -16,6 +16,12 @@
  */
 
 #include <math.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -29,7 +35,7 @@
 static void build_log2_table(uint16_t *t)
 {
     for (unsigned i = 0; i < VIF_LOG2_TABLE_SIZE; ++i) {
-        t[i] = (uint16_t)round(log2f((float)(VIF_LOG2_TABLE_OFFSET + i)) * 2048);
+        t[i] = (uint16_t)roundf(log2f((float)(VIF_LOG2_TABLE_OFFSET + i)) * 2048);
     }
 }
 
@@ -111,3 +117,5 @@ char *run_tests(void)
     mu_run_test(test_log2_monotonic_increasing);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

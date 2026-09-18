@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Public-surface tests for vmaf_use_tiny_model() — the ctx-attach path
  *  that was identified as having zero C-unit-test coverage in the 2026-05-16
@@ -33,6 +33,7 @@
 #include <unistd.h>
 #endif
 
+#include "mu_table.h"
 #include "test.h"
 
 #include "libvmaf/dnn.h"
@@ -209,6 +210,7 @@ static char *test_codec_context_and_resize_reject_bad_args(void)
 
     VmafContext *ctx = alloc_ctx();
     mu_assert("vmaf_init must succeed", ctx != NULL);
+    /* NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange) — the test's subject is an out-of-range resize mode (ADR-0141) */
     rc = vmaf_dnn_set_resize_mode(ctx, (VmafDnnResizeMode)99);
     mu_assert("invalid resize mode rejected", rc == -EINVAL);
     rc = vmaf_dnn_set_codec_context(ctx, "libx264", "medium", 23);
@@ -340,25 +342,18 @@ static char *test_happy_path_smoke_model(void)
     return NULL;
 }
 
-static char *test_attached_multi_output_model_records_named_scores(void)
+/* Runs one YUV400P frame through an already-attached multi-output model and
+ * verifies both named feature scores. Extracted so the caller's branch count
+ * stays inside the readability-function-size budget: a helper
+ * `if (msg) return msg;` is one branch versus the two each mu_assert
+ * contributes at the call site. Mirrors the original: on any failure here,
+ * the caller returns without closing ctx, exactly as the inline mu_assert
+ * sequence did. */
+static char *check_multi_output_frame_scores(VmafContext *ctx)
 {
-    if (!vmaf_dnn_available())
-        return NULL;
-
-#ifndef _WIN32
-    if (access(SMOKE_MULTI_OUTPUT_MODEL, R_OK) != 0)
-        return NULL;
-#endif
-
-    VmafContext *ctx = alloc_ctx();
-    mu_assert("vmaf_init must succeed", ctx != NULL);
-
-    int rc = vmaf_use_tiny_model(ctx, SMOKE_MULTI_OUTPUT_MODEL, NULL);
-    mu_assert("multi-output smoke model attach must return 0", rc == 0);
-
     VmafPicture ref = {0};
     VmafPicture dist = {0};
-    rc = vmaf_picture_alloc(&ref, VMAF_PIX_FMT_YUV400P, 8, 4, 4);
+    int rc = vmaf_picture_alloc(&ref, VMAF_PIX_FMT_YUV400P, 8, 4, 4);
     mu_assert("ref picture alloc must succeed", rc == 0);
     rc = vmaf_picture_alloc(&dist, VMAF_PIX_FMT_YUV400P, 8, 4, 4);
     mu_assert("dist picture alloc must succeed", rc == 0);
@@ -376,6 +371,28 @@ static char *test_attached_multi_output_model_records_named_scores(void)
     mu_assert("peak_score output must be recorded", rc == 0);
     mu_assert("mean_score must be positive", mean_score > 0.0);
     mu_assert("peak_score must be positive", peak_score > 0.0);
+    return NULL;
+}
+
+static char *test_attached_multi_output_model_records_named_scores(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+
+#ifndef _WIN32
+    if (access(SMOKE_MULTI_OUTPUT_MODEL, R_OK) != 0)
+        return NULL;
+#endif
+
+    VmafContext *ctx = alloc_ctx();
+    mu_assert("vmaf_init must succeed", ctx != NULL);
+
+    int rc = vmaf_use_tiny_model(ctx, SMOKE_MULTI_OUTPUT_MODEL, NULL);
+    mu_assert("multi-output smoke model attach must return 0", rc == 0);
+
+    char *msg = check_multi_output_frame_scores(ctx);
+    if (msg)
+        return msg;
 
     rc = vmaf_close(ctx);
     mu_assert("vmaf_close after multi-output tiny model must return 0", rc == 0);
@@ -604,24 +621,26 @@ static char *test_use_tiny_model_int8_session_fail_falls_back_to_fp32(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_returns_enosys_when_disabled);
-    mu_run_test(test_rejects_null_ctx);
-    mu_run_test(test_rejects_null_path);
-    mu_run_test(test_rejects_nonexistent_path);
-    mu_run_test(test_codec_context_and_resize_reject_bad_args);
+    static const MuTest tests[] = {
+        MU_TEST(test_returns_enosys_when_disabled),
+        MU_TEST(test_rejects_null_ctx),
+        MU_TEST(test_rejects_null_path),
+        MU_TEST(test_rejects_nonexistent_path),
+        MU_TEST(test_codec_context_and_resize_reject_bad_args),
 #ifndef _WIN32
-    mu_run_test(test_rejects_oversized_sidecar_before_ort_open);
-    mu_run_test(test_valid_scanner_invalid_ort_model_closes_session);
-    mu_run_test(test_invalid_ort_model_frees_loaded_sidecar);
-    mu_run_test(test_use_tiny_model_int8_redirect_and_fallback);
-    mu_run_test(test_use_tiny_model_missing_external_data_returns_error_not_abort);
-    mu_run_test(test_use_tiny_model_int8_session_fail_falls_back_to_fp32);
+        MU_TEST(test_rejects_oversized_sidecar_before_ort_open),
+        MU_TEST(test_valid_scanner_invalid_ort_model_closes_session),
+        MU_TEST(test_invalid_ort_model_frees_loaded_sidecar),
+        MU_TEST(test_use_tiny_model_int8_redirect_and_fallback),
+        MU_TEST(test_use_tiny_model_missing_external_data_returns_error_not_abort),
+        MU_TEST(test_use_tiny_model_int8_session_fail_falls_back_to_fp32),
 #endif
-    mu_run_test(test_happy_path_smoke_model);
-    mu_run_test(test_attached_multi_output_model_records_named_scores);
-    mu_run_test(test_attach_accepts_symbolic_batch_rank4);
-    mu_run_test(test_rank5_model_closes_session_after_shape_reject);
-    return NULL;
+        MU_TEST(test_happy_path_smoke_model),
+        MU_TEST(test_attached_multi_output_model_records_named_scores),
+        MU_TEST(test_attach_accepts_symbolic_batch_rank4),
+        MU_TEST(test_rank5_model_closes_session_after_shape_reject),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

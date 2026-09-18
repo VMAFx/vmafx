@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Tiny-AI extractor template — shared scaffolding for ONNX-Runtime-backed
  *  feature extractors (`feature_lpips.c`, `fastdvdnet_pre.c`,
@@ -82,6 +82,12 @@
 #include "log.h"
 #include "opt.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -129,6 +135,10 @@ static inline const char *vmaf_tiny_ai_resolve_model_path(const char *feature_na
         return option_value;
     }
     if (env_var && *env_var) {
+        /* The model path is resolved once during init, before any worker
+         * thread exists. There is no thread-safe getenv in C, and nothing in
+         * this library calls setenv from another thread. */
+        /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-threaded init, see above (ADR-0141). */
         const char *env = getenv(env_var);
         if (env && *env) {
             return env;
@@ -316,9 +326,12 @@ static inline int vmaf_tiny_ai_yuv_to_rgb8_planes(const VmafPicture *pic, uint8_
         uint8_t *brow = dst_b + (size_t)i * w;
         for (unsigned j = 0; j < w; ++j) {
             const unsigned cj = ss_hor ? (j >> 1) : j;
-            const uint16_t y = (uint16_t)yrow[j * 2u] | ((uint16_t)yrow[j * 2u + 1u] << 8u);
-            const uint16_t u = (uint16_t)urow[cj * 2u] | ((uint16_t)urow[cj * 2u + 1u] << 8u);
-            const uint16_t v = (uint16_t)vrow[cj * 2u] | ((uint16_t)vrow[cj * 2u + 1u] << 8u);
+            const uint16_t y =
+                (uint16_t)yrow[(size_t)j * 2u] | ((uint16_t)yrow[(size_t)j * 2u + 1u] << 8u);
+            const uint16_t u =
+                (uint16_t)urow[(size_t)cj * 2u] | ((uint16_t)urow[(size_t)cj * 2u + 1u] << 8u);
+            const uint16_t v =
+                (uint16_t)vrow[(size_t)cj * 2u] | ((uint16_t)vrow[(size_t)cj * 2u + 1u] << 8u);
             const int y8 = vmaf_tiny_ai_sample_to_8bit(y, pic->bpc);
             const int u8 = vmaf_tiny_ai_sample_to_8bit(u, pic->bpc);
             const int v8 = vmaf_tiny_ai_sample_to_8bit(v, pic->bpc);
@@ -366,3 +379,5 @@ static inline int vmaf_tiny_ai_yuv_to_rgb8_planes(const VmafPicture *pic, uint8_
 #endif
 
 #endif /* LIBVMAF_DNN_TINY_EXTRACTOR_TEMPLATE_H_ */
+
+/* NOLINTEND(modernize-use-nullptr) */

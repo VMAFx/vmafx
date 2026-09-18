@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # check-release-bot-secrets.sh — ADR-1151 / ADR-1171 preflight.
 #
 # release-please.yml authenticates as the release-bot GitHub App. Until the two

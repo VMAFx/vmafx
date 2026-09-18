@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  FastDVDnet temporal pre-filter (T6-7) — 5-frame-window denoiser.
  *
@@ -42,6 +42,12 @@
  */
 
 #include <assert.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
@@ -306,6 +312,7 @@ static const VmafOption fastdvdnet_pre_options[] = {
 
 static const char *fastdvdnet_pre_provided_features[] = {"fastdvdnet_pre_l1_residual", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_fastdvdnet_pre` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_fastdvdnet_pre = {
     .name = "fastdvdnet_pre",
     .init = fastdvdnet_pre_init,
@@ -319,3 +326,5 @@ VmafFeatureExtractor vmaf_fex_fastdvdnet_pre = {
      * shared with feature_lpips.c). */
     .chars = {0},
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -1,6 +1,8 @@
 /**
+ *  Copyright 2016-2026 Netflix, Inc.
+ *  Copyright (c) 2019 Joshua Holmer
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent AND MIT
  *
  *  HIP compute kernel for the ciede2000 feature extractor (T7-10b
  *  batch-4 / ADR-0377). Direct port of the CUDA twin at

@@ -1,3 +1,6 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # libFuzzer harnesses for parser surfaces.
 #
 # Opt-in: only built when `-Dfuzz=true` is passed to `meson setup`. Requires

@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Pixel-format edge coverage for the CPU extractor surface.
  *
@@ -107,6 +107,29 @@ static void fill_pic_pattern_hbd(VmafPicture *pic, unsigned bpc)
  * through the public extractor surface, and asserts the per-plane
  * PSNR reaches its psnr_max ceiling (i.e. mse=0). Returns NULL on
  * success or a mu_assert-compatible failure message. */
+/* Fetch the three per-plane PSNR scores and assert each hits expected_max
+ * (mse=0 ceiling). Split out of run_identical_psnr so that function stays
+ * within the readability-function-size branch budget (each mu_assert is two
+ * branches, ADR-0141). */
+static char *check_psnr_ceiling(VmafFeatureCollector *vfc, double expected_max)
+{
+    double psnr_y = -1.0;
+    double psnr_cb = -1.0;
+    double psnr_cr = -1.0;
+    int err = vmaf_feature_collector_get_score(vfc, "psnr_y", &psnr_y, 0);
+    err |= vmaf_feature_collector_get_score(vfc, "psnr_cb", &psnr_cb, 0);
+    err |= vmaf_feature_collector_get_score(vfc, "psnr_cr", &psnr_cr, 0);
+    mu_assert("collector_get_score failed (missing per-plane PSNR)", !err);
+
+    mu_assert("psnr_y must equal psnr_max ceiling for identical pair",
+              psnr_y >= expected_max - 1e-9 && psnr_y <= expected_max + 1e-9);
+    mu_assert("psnr_cb must equal psnr_max ceiling for identical pair",
+              psnr_cb >= expected_max - 1e-9 && psnr_cb <= expected_max + 1e-9);
+    mu_assert("psnr_cr must equal psnr_max ceiling for identical pair",
+              psnr_cr >= expected_max - 1e-9 && psnr_cr <= expected_max + 1e-9);
+    return NULL;
+}
+
 static char *run_identical_psnr(enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w, unsigned h)
 {
     int err = 0;
@@ -141,21 +164,9 @@ static char *run_identical_psnr(enum VmafPixelFormat pix_fmt, unsigned bpc, unsi
     /* Default psnr_max for mse=0 is (6 * bpc + 12) per the integer_psnr
      * init() fallback. Identical pictures must hit the ceiling. */
     const double expected_max = 6.0 * (double)bpc + 12.0;
-
-    double psnr_y = -1.0;
-    double psnr_cb = -1.0;
-    double psnr_cr = -1.0;
-    err |= vmaf_feature_collector_get_score(vfc, "psnr_y", &psnr_y, 0);
-    err |= vmaf_feature_collector_get_score(vfc, "psnr_cb", &psnr_cb, 0);
-    err |= vmaf_feature_collector_get_score(vfc, "psnr_cr", &psnr_cr, 0);
-    mu_assert("collector_get_score failed (missing per-plane PSNR)", !err);
-
-    mu_assert("psnr_y must equal psnr_max ceiling for identical pair",
-              psnr_y >= expected_max - 1e-9 && psnr_y <= expected_max + 1e-9);
-    mu_assert("psnr_cb must equal psnr_max ceiling for identical pair",
-              psnr_cb >= expected_max - 1e-9 && psnr_cb <= expected_max + 1e-9);
-    mu_assert("psnr_cr must equal psnr_max ceiling for identical pair",
-              psnr_cr >= expected_max - 1e-9 && psnr_cr <= expected_max + 1e-9);
+    char *msg = check_psnr_ceiling(vfc, expected_max);
+    if (msg)
+        return msg;
 
     err = vmaf_feature_extractor_context_close(fex_ctx);
     err |= vmaf_feature_extractor_context_destroy(fex_ctx);
@@ -190,6 +201,20 @@ static char *test_psnr_yuv420p_12bit_identical(void)
     return run_identical_psnr(VMAF_PIX_FMT_YUV420P, 12u, 320u, 240u);
 }
 
+/* Fetch the ssim score and assert it hits 1.0 for an identical pair. Split
+ * out of test_ssim_yuv422p_8bit_identical for the branch-budget reason
+ * documented on check_psnr_ceiling above. */
+static char *check_ssim_identical_score(VmafFeatureCollector *vfc)
+{
+    double score = -1.0;
+    int err = vmaf_feature_collector_get_score(vfc, "ssim", &score, 0);
+    mu_assert("ssim score must be retrievable on YUV422P 8-bit", !err);
+    /* Identical input must score 1.0 within float-rounding tolerance. */
+    mu_assert("ssim must be 1.0 for identical YUV422P pair",
+              score >= 1.0 - 1e-6 && score <= 1.0 + 1e-6);
+    return NULL;
+}
+
 static char *test_ssim_yuv422p_8bit_identical(void)
 {
     int err = 0;
@@ -219,12 +244,9 @@ static char *test_ssim_yuv422p_8bit_identical(void)
     err = vmaf_feature_extractor_context_extract(fex_ctx, &ref, NULL, &dist, NULL, 0, vfc);
     mu_assert("ssim extract failed on YUV422P 8-bit", !err);
 
-    double score = -1.0;
-    err = vmaf_feature_collector_get_score(vfc, "ssim", &score, 0);
-    mu_assert("ssim score must be retrievable on YUV422P 8-bit", !err);
-    /* Identical input must score 1.0 within float-rounding tolerance. */
-    mu_assert("ssim must be 1.0 for identical YUV422P pair",
-              score >= 1.0 - 1e-6 && score <= 1.0 + 1e-6);
+    char *msg = check_ssim_identical_score(vfc);
+    if (msg)
+        return msg;
 
     err = vmaf_feature_extractor_context_close(fex_ctx);
     err |= vmaf_feature_extractor_context_destroy(fex_ctx);
@@ -232,6 +254,26 @@ static char *test_ssim_yuv422p_8bit_identical(void)
     vmaf_feature_collector_destroy(vfc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
+    return NULL;
+}
+
+/* Fetch the ciede2000 score and assert it is a finite positive value for an
+ * identical pair. Split out of test_ciede_yuv422p_8bit_identical for the
+ * branch-budget reason documented on check_psnr_ceiling above. */
+static char *check_ciede_identical_score(VmafFeatureCollector *vfc)
+{
+    double score = -1.0;
+    int err = vmaf_feature_collector_get_score(vfc, "ciede2000", &score, 0);
+    mu_assert("ciede2000 score must be retrievable on YUV422P 8-bit", !err);
+    /* ciede2000 emits `45 - 20 * log10(mean_de00)`; identical pairs
+     * have de00_sum = 0, so the formula evaluates to +inf. Any non-NaN
+     * positive score is acceptable — chroma upscaling can introduce
+     * sub-ULP roundtrip noise depending on the compiler / libm. What
+     * we are guarding against is the YUV422P-specific init/extract
+     * failure (-EINVAL / -ENOMEM / scratch-buffer OOB) that would
+     * propagate as a negative or NaN score. */
+    mu_assert("ciede2000 score must not be NaN", score == score);
+    mu_assert("ciede2000 score must be positive for identical pair", score > 0.0);
     return NULL;
 }
 
@@ -265,18 +307,9 @@ static char *test_ciede_yuv422p_8bit_identical(void)
     err = vmaf_feature_extractor_context_extract(fex_ctx, &ref, NULL, &dist, NULL, 0, vfc);
     mu_assert("ciede extract failed on YUV422P 8-bit", !err);
 
-    double score = -1.0;
-    err = vmaf_feature_collector_get_score(vfc, "ciede2000", &score, 0);
-    mu_assert("ciede2000 score must be retrievable on YUV422P 8-bit", !err);
-    /* ciede2000 emits `45 - 20 * log10(mean_de00)`; identical pairs
-     * have de00_sum = 0, so the formula evaluates to +inf. Any non-NaN
-     * positive score is acceptable — chroma upscaling can introduce
-     * sub-ULP roundtrip noise depending on the compiler / libm. What
-     * we are guarding against is the YUV422P-specific init/extract
-     * failure (-EINVAL / -ENOMEM / scratch-buffer OOB) that would
-     * propagate as a negative or NaN score. */
-    mu_assert("ciede2000 score must not be NaN", score == score);
-    mu_assert("ciede2000 score must be positive for identical pair", score > 0.0);
+    char *msg = check_ciede_identical_score(vfc);
+    if (msg)
+        return msg;
 
     err = vmaf_feature_extractor_context_close(fex_ctx);
     err |= vmaf_feature_extractor_context_destroy(fex_ctx);

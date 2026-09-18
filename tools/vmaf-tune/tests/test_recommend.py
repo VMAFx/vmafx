@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Smoke tests for the ``recommend`` subcommand and library API.
 
 Validates the predicate semantics from Buckets #4 + #5 of

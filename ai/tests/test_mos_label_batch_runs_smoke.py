@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Scaffold + smoke tests for the KonViD and CHUG MOS-label batch-run manifests.
 
 ADR-0992.  ``ai/configs/mos-label-batch-konvid.json`` and

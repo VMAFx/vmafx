@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Branch-coverage top-up for ``aiutils.run_manifest``.
 
 The existing ``test_run_manifest.py`` covers the happy paths for shared

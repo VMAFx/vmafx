@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # scripts/ci/check-adr-numbering.sh — pre-commit / CI guard against ADR number collisions.
 #
 # Two checks are performed on every staged docs/adr/NNNN-*.md file:

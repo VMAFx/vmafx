@@ -1,23 +1,14 @@
 /**
  *
+ *  Copyright 2016-2026 Netflix, Inc.
+ *  Copyright (c) 2011, Tom Distler (http://tdistler.com)
  *  Copyright 2026 Lusoris
  *
- *     Licensed under the BSD+Patent License (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
- *
- *         https://opensource.org/licenses/BSDplusPatent
- *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
- *
+ * SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause
  */
 
-#ifndef __VMAF_MS_SSIM_DECIMATE_AVX2_H__
-#define __VMAF_MS_SSIM_DECIMATE_AVX2_H__
+#ifndef VMAF_MS_SSIM_DECIMATE_AVX2_H_
+#define VMAF_MS_SSIM_DECIMATE_AVX2_H_
 
 /*
  * AVX2 specialisation of ms_ssim_decimate_scalar.
@@ -43,4 +34,4 @@
 
 int ms_ssim_decimate_avx2(const float *src, int w, int h, float *dst, int *rw, int *rh);
 
-#endif /* __VMAF_MS_SSIM_DECIMATE_AVX2_H__ */
+#endif /* VMAF_MS_SSIM_DECIMATE_AVX2_H_ */

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
 # Power of 10 rule 5 — density check.
 # Policy: every fork-added C function ≥MIN_LINES lines (default 20) must
 # contain ≥1 assert() call. NASA/JPL recommends ≥2 per function on

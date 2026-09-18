@@ -2,18 +2,7 @@
  *
  *  Copyright 2026 Lusoris
  *
- *     Licensed under the BSD+Patent License (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
- *
- *         https://opensource.org/licenses/BSDplusPatent
- *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
- *
+ * SPDX-License-Identifier: EUPL-1.2
  */
 
 /*
@@ -32,6 +21,12 @@
  */
 
 #include <stdint.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,6 +42,7 @@
 #if ARCH_AARCH64
 #include "feature/arm64/ms_ssim_decimate_neon.h"
 #endif
+#include "mu_table.h"
 #include "test.h"
 #if ARCH_X86
 #include "x86/cpu.h"
@@ -106,6 +102,41 @@ static char *check_variant(const float *src, int w, int h, const float *dst_scal
     return NULL;
 }
 
+/* Compare every SIMD variant this build and host offer against the scalar
+ * output. Returns the first failure message, or NULL when all agree. */
+static char *check_simd_variants(const float *src, int w, int h, const float *dst_scalar,
+                                 size_t dst_n)
+{
+    char *msg = NULL;
+    /* Unused on hosts with neither an x86 nor an aarch64 SIMD variant. */
+    (void)src;
+    (void)w;
+    (void)h;
+    (void)dst_scalar;
+    (void)dst_n;
+#if ARCH_X86
+    if (g_has_avx2) {
+        msg = check_variant(src, w, h, dst_scalar, dst_n, ms_ssim_decimate_avx2, 0x55,
+                            "avx2 decimate failed", "avx2 output not bit-identical to scalar");
+        if (msg)
+            return msg;
+    }
+#if HAVE_AVX512
+    if (g_has_avx512) {
+        msg = check_variant(src, w, h, dst_scalar, dst_n, ms_ssim_decimate_avx512, 0x33,
+                            "avx512 decimate failed", "avx512 output not bit-identical to scalar");
+        if (msg)
+            return msg;
+    }
+#endif
+#endif
+#if ARCH_AARCH64
+    msg = check_variant(src, w, h, dst_scalar, dst_n, ms_ssim_decimate_neon, 0x66,
+                        "neon decimate failed", "neon output not bit-identical to scalar");
+#endif
+    return msg;
+}
+
 static char *check_case(int w, int h, uint32_t seed)
 {
     const int w_out = (w / 2) + (w & 1);
@@ -115,39 +146,18 @@ static char *check_case(int w, int h, uint32_t seed)
 
     float *src = (float *)malloc(src_n * sizeof(float));
     float *dst_scalar = (float *)malloc(dst_n * sizeof(float));
-    mu_assert("malloc failed", src && dst_scalar);
+    if (!src || !dst_scalar) {
+        free(src);
+        free(dst_scalar);
+        return "malloc failed";
+    }
 
     fill_pattern(src, src_n, seed);
     memset(dst_scalar, 0xAA, dst_n * sizeof(float));
 
     const int rc_scalar = ms_ssim_decimate_scalar(src, w, h, dst_scalar, NULL, NULL);
-    mu_assert("scalar decimate failed", rc_scalar == 0);
-
-    char *msg = NULL;
-#if ARCH_X86
-    if (g_has_avx2) {
-        msg = check_variant(src, w, h, dst_scalar, dst_n, ms_ssim_decimate_avx2, 0x55,
-                            "avx2 decimate failed", "avx2 output not bit-identical to scalar");
-        if (msg)
-            goto done;
-    }
-#if HAVE_AVX512
-    if (g_has_avx512) {
-        msg = check_variant(src, w, h, dst_scalar, dst_n, ms_ssim_decimate_avx512, 0x33,
-                            "avx512 decimate failed", "avx512 output not bit-identical to scalar");
-        if (msg)
-            goto done;
-    }
-#endif
-#endif
-#if ARCH_AARCH64
-    msg = check_variant(src, w, h, dst_scalar, dst_n, ms_ssim_decimate_neon, 0x66,
-                        "neon decimate failed", "neon output not bit-identical to scalar");
-    if (msg)
-        goto done;
-#endif
-
-done:
+    char *msg = (rc_scalar != 0) ? "scalar decimate failed" :
+                                   check_simd_variants(src, w, h, dst_scalar, dst_n);
     free(src);
     free(dst_scalar);
     return msg;
@@ -223,16 +233,13 @@ char *run_tests(void)
     }
 #endif
 
-    mu_run_test(test_1x1);
-    mu_run_test(test_8x8);
-    mu_run_test(test_9x9);
-    mu_run_test(test_10x10);
-    mu_run_test(test_16x16);
-    mu_run_test(test_32x32);
-    mu_run_test(test_33x17);
-    mu_run_test(test_480x270);
-    mu_run_test(test_576x324);
-    mu_run_test(test_1920x1080);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_1x1),     MU_TEST(test_8x8),       MU_TEST(test_9x9),   MU_TEST(test_10x10),
+        MU_TEST(test_16x16),   MU_TEST(test_32x32),     MU_TEST(test_33x17), MU_TEST(test_480x270),
+        MU_TEST(test_576x324), MU_TEST(test_1920x1080),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 #endif
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

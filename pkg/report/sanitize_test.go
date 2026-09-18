@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: EUPL-1.2
 //
 // pkg/report/sanitize_test.go — regression coverage for the NaN-in-
 // bisect_samples JSON-marshal crash. The prior EmitJSON shape declared

@@ -2,18 +2,7 @@
  *
  *  Copyright 2026 Lusoris
  *
- *     Licensed under the BSD+Patent License (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
- *
- *         https://opensource.org/licenses/BSDplusPatent
- *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
- *
+ * SPDX-License-Identifier: EUPL-1.2
  */
 
 /*
@@ -42,6 +31,12 @@
  */
 
 #include <math.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -65,13 +60,14 @@ struct nclass_fixture {
     struct svm_node *node_storage; /* n * 2 nodes per sample (feat + sentinel) */
 };
 
-/* Build a problem with n distinct integer classes 0..n-1, one sample per
- * class, one feature = the class index (clearly linearly separable).
- * The caller must call free_nclass_fixture() when done.
- * Returns 0 on success, -1 on allocation failure. */
-static int build_nclass_fixture(struct nclass_fixture *fx, int n)
+/* Build a problem with n_classes distinct integer classes 0..n_classes-1,
+ * samples_per_class samples each, one feature = the class index (clearly
+ * linearly separable). The caller must call free_nclass_fixture() when done.
+ * Returns 0 on success, -1 on allocation failure (nothing left allocated). */
+static int build_nclass_fixture(struct nclass_fixture *fx, int n_classes, int samples_per_class)
 {
     const int nodes_per_row = 2; /* feature[0] + sentinel[-1] */
+    const int n = n_classes * samples_per_class;
     fx->prob.l = n;
     fx->y_storage = (double *)calloc((size_t)n, sizeof(double));
     fx->x_storage = (struct svm_node **)calloc((size_t)n, sizeof(struct svm_node *));
@@ -84,10 +80,11 @@ static int build_nclass_fixture(struct nclass_fixture *fx, int n)
         return -1;
     }
     for (int i = 0; i < n; ++i) {
-        fx->y_storage[i] = (double)i; /* class label = i */
+        const int cls = i / samples_per_class;
+        fx->y_storage[i] = (double)cls;
         fx->x_storage[i] = &fx->node_storage[(size_t)i * (size_t)nodes_per_row];
         fx->x_storage[i][0].index = 1;
-        fx->x_storage[i][0].value = (double)i;
+        fx->x_storage[i][0].value = (double)cls;
         fx->x_storage[i][1].index = -1;
         fx->x_storage[i][1].value = 0.0;
     }
@@ -113,7 +110,7 @@ static void free_nclass_fixture(struct nclass_fixture *fx)
 static char *test_train_17class_csvc_exercises_realloc(void)
 {
     struct nclass_fixture fx = {0};
-    mu_assert("17-class fixture build", build_nclass_fixture(&fx, 17) == 0);
+    mu_assert("17-class fixture build", build_nclass_fixture(&fx, 17, 1) == 0);
 
     struct svm_parameter p;
     memset(&p, 0, sizeof(p));
@@ -149,7 +146,7 @@ static char *test_train_17class_csvc_exercises_realloc(void)
 static char *test_train_32class_csvc_exercises_second_realloc(void)
 {
     struct nclass_fixture fx = {0};
-    mu_assert("32-class fixture build", build_nclass_fixture(&fx, 32) == 0);
+    mu_assert("32-class fixture build", build_nclass_fixture(&fx, 32, 1) == 0);
 
     struct svm_parameter p;
     memset(&p, 0, sizeof(p));
@@ -186,33 +183,8 @@ static char *test_check_param_nusvc_17class_exercises_realloc(void)
     /* 2 samples per class keeps the per-class count balanced.
      * nu must satisfy: nu * (n1 + n2) / 2 <= min(n1, n2) = 2
      * i.e. nu * 2 <= 2 => nu <= 1.0.  Use nu=0.5 for headroom. */
-    const int n_classes = 17;
-    const int samples_per_class = 2;
-    const int n = n_classes * samples_per_class;
-    const int nodes_per_row = 2;
-
-    double *y = (double *)calloc((size_t)n, sizeof(double));
-    struct svm_node **x = (struct svm_node **)calloc((size_t)n, sizeof(struct svm_node *));
-    struct svm_node *nodes =
-        (struct svm_node *)calloc((size_t)n * (size_t)nodes_per_row, sizeof(struct svm_node));
-    mu_assert("alloc y", y != NULL);
-    mu_assert("alloc x", x != NULL);
-    mu_assert("alloc nodes", nodes != NULL);
-
-    for (int i = 0; i < n; ++i) {
-        int cls = i / samples_per_class;
-        y[i] = (double)cls;
-        x[i] = &nodes[(size_t)i * (size_t)nodes_per_row];
-        x[i][0].index = 1;
-        x[i][0].value = (double)cls;
-        x[i][1].index = -1;
-        x[i][1].value = 0.0;
-    }
-
-    struct svm_problem prob;
-    prob.l = n;
-    prob.y = y;
-    prob.x = x;
+    struct nclass_fixture fx = {0};
+    mu_assert("17-class x2 fixture build", build_nclass_fixture(&fx, 17, 2) == 0);
 
     struct svm_parameter p;
     memset(&p, 0, sizeof(p));
@@ -228,12 +200,10 @@ static char *test_check_param_nusvc_17class_exercises_realloc(void)
     /* svm_check_parameter with NU_SVC iterates all classes and allocates
      * label/count buffers starting at max_nr_class=16.  With 17 classes
      * it triggers the realloc doubling at svm.cpp line 2797. */
-    const char *err = svm_check_parameter(&prob, &p);
-    mu_assert("nu-svc 17-class realloc path: check_parameter returns NULL (feasible)", err == NULL);
+    const char *err = svm_check_parameter(&fx.prob, &p);
 
-    free(y);
-    free((void *)x);
-    free(nodes);
+    free_nclass_fixture(&fx);
+    mu_assert("nu-svc 17-class realloc path: check_parameter returns NULL (feasible)", err == NULL);
     return NULL;
 }
 
@@ -248,3 +218,5 @@ char *run_tests(void)
     mu_run_test(test_check_param_nusvc_17class_exercises_realloc);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

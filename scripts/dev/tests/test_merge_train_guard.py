@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Train control regressions: real Git/Make, fixture-only GitHub (ADR-1244)."""
 
 from __future__ import annotations

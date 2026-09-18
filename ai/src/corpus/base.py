@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Shared infrastructure for MOS-corpus JSONL ingestion adapters (ADR-0371).
 
 All six MOS-corpus adapters (KonViD-1k, KonViD-150k, LSVQ, LIVE-VQC,

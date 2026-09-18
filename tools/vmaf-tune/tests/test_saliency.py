@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Saliency-aware ROI tests (Bucket #2 / ADR-0293).
 
 The ONNX inference is mocked via ``session_factory`` — no

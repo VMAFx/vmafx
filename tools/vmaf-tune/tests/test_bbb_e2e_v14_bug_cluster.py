@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Regression tests for the BBB e2e v14 hardware-encoder bug cluster (ADR-0601).
 
 Three bugs blocked ``vmaf-tune compare`` from running with hardware encoders:

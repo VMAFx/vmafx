@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """libx265 codec adapter — ADR-0288 + ADR-0333.
 
 Mirrors :mod:`vmaftune.codec_adapters.x264` shape; differs only in the

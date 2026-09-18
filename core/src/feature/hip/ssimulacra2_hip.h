@@ -1,6 +1,7 @@
 /**
+ *  Copyright (c) the JPEG XL Project Authors.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause
  */
 
 #ifndef FEATURE_SSIMULACRA2_HIP_H_

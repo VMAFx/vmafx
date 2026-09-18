@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Find actionable modernization gaps across repo code, docs, and local state.
 
 The audit is intentionally read-only. It scans curated source/doc roots plus

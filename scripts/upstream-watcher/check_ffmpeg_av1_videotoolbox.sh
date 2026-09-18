@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 #
 # scripts/upstream-watcher/check_ffmpeg_av1_videotoolbox.sh
 #

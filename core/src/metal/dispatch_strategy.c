@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Dispatch support table for the Metal backend (ADR-0421 / T8-1c-k).
  *  Mirrors the CUDA / Vulkan dispatch predicates: callers ask whether
@@ -10,6 +10,12 @@
 #include "dispatch_strategy.h"
 
 #include <string.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 
 /* Each extractor's provided_features[] array is the source-of-truth for
  * the canonical score-level names the dispatcher's `feature` argument
@@ -182,3 +188,5 @@ int vmaf_metal_dispatch_supports(const VmafMetalContext *ctx, const char *featur
     }
     return 0;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

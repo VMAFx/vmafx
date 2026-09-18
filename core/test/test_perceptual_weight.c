@@ -2,18 +2,7 @@
  *
  *  Copyright 2026 Lusoris
  *
- *     Licensed under the BSD+Patent License (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
- *
- *         https://opensource.org/licenses/BSDplusPatent
- *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
- *
+ * SPDX-License-Identifier: EUPL-1.2
  */
 
 /*
@@ -61,6 +50,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "mu_table.h"
 
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/perceptual_weight.h"
@@ -90,6 +80,55 @@ static int inject_scores(VmafContext *vmaf, double s0, double s1, double s2)
     err |= vmaf_import_feature_score(vmaf, FEAT, s1, 1);
     err |= vmaf_import_feature_score(vmaf, FEAT, s2, 2);
     return err;
+}
+
+/* Populate the framing fields shared by every blob this file packs. Split out
+ * of build_banding_blob / build_banding_complexity_blob so each stays within
+ * the readability-function-size line budget (ADR-0141); the two callers
+ * differ only in section_mask/section_count. */
+static void fill_pelorus_header(PelorusSideData *hdr, uint32_t total_size, uint32_t section_mask,
+                                uint16_t section_count, uint16_t cols, uint16_t rows)
+{
+    memset(hdr, 0, sizeof(*hdr));
+    memcpy(hdr->magic, PELORUS_MAGIC_STR, PELORUS_MAGIC_LEN);
+    hdr->abi_major = (uint16_t)PELORUS_ABI_MAJOR;
+    hdr->abi_minor = (uint16_t)PELORUS_ABI_MINOR;
+    hdr->total_size = total_size;
+    hdr->section_mask = section_mask;
+    hdr->section_count = section_count;
+    hdr->header_size = (uint16_t)sizeof(*hdr);
+    hdr->plane_layout = PEL_LAYOUT_420;
+    hdr->bit_depth = 8;
+    hdr->grid_cols = cols;
+    hdr->grid_rows = rows;
+    hdr->producer_id = PEL_FOURCC('T', 'E', 'S', 'T');
+}
+
+/* Populate one PelorusSectionDir entry. Split out for the same
+ * line-budget reason as fill_pelorus_header above. */
+static void fill_section_dir(PelorusSectionDir *dir, uint32_t section_id, uint32_t offset,
+                             uint32_t size)
+{
+    memset(dir, 0, sizeof(*dir));
+    dir->section_id = section_id;
+    dir->offset = offset;
+    dir->size = size;
+    dir->struct_minor = (uint32_t)PELORUS_ABI_MINOR;
+}
+
+/* Populate a PelorusBandingSection: global scalar + (optional) per-cell map
+ * pointer. Split out for the same line-budget reason as fill_pelorus_header
+ * above. */
+static void fill_banding_section(PelorusBandingSection *band, uint32_t map_off, uint32_t n_cells,
+                                 float global_risk)
+{
+    memset(band, 0, sizeof(*band));
+    band->global_banding_risk = global_risk;
+    band->flat_area_fraction = 1.0f;
+    if (n_cells > 0) {
+        band->cell_data_offset = map_off;
+        band->cell_data_size = n_cells;
+    }
 }
 
 /*
@@ -126,38 +165,15 @@ static uint8_t *build_banding_blob(uint16_t cols, uint16_t rows, uint8_t risk_by
     memcpy(blob, pelorus_sidedata_uuid, PELORUS_SIDEDATA_UUID_LEN);
 
     PelorusSideData hdr;
-    memset(&hdr, 0, sizeof(hdr));
-    memcpy(hdr.magic, PELORUS_MAGIC_STR, PELORUS_MAGIC_LEN);
-    hdr.abi_major = (uint16_t)PELORUS_ABI_MAJOR;
-    hdr.abi_minor = (uint16_t)PELORUS_ABI_MINOR;
-    hdr.total_size = total_size;
-    hdr.section_mask = PEL_SEC_BANDING;
-    hdr.section_count = 1;
-    hdr.header_size = (uint16_t)header_size;
-    hdr.frame_pts = 0;
-    hdr.plane_layout = PEL_LAYOUT_420;
-    hdr.bit_depth = 8;
-    hdr.grid_cols = cols;
-    hdr.grid_rows = rows;
-    hdr.producer_id = PEL_FOURCC('T', 'E', 'S', 'T');
+    fill_pelorus_header(&hdr, total_size, PEL_SEC_BANDING, 1, cols, rows);
     memcpy(blob + PELORUS_SIDEDATA_UUID_LEN, &hdr, sizeof(hdr));
 
     PelorusSectionDir dir;
-    memset(&dir, 0, sizeof(dir));
-    dir.section_id = PEL_SEC_BANDING;
-    dir.offset = sect_off;
-    dir.size = sect_size;
-    dir.struct_minor = (uint32_t)PELORUS_ABI_MINOR;
+    fill_section_dir(&dir, PEL_SEC_BANDING, sect_off, sect_size);
     memcpy(blob + PELORUS_SIDEDATA_UUID_LEN + header_size, &dir, sizeof(dir));
 
     PelorusBandingSection band;
-    memset(&band, 0, sizeof(band));
-    band.global_banding_risk = global_risk;
-    band.flat_area_fraction = 1.0f;
-    if (n_cells > 0) {
-        band.cell_data_offset = map_off;
-        band.cell_data_size = n_cells;
-    }
+    fill_banding_section(&band, map_off, n_cells, global_risk);
     memcpy(blob + PELORUS_SIDEDATA_UUID_LEN + sect_off, &band, sizeof(band));
 
     if (n_cells > 0) {
@@ -205,41 +221,16 @@ static uint8_t *build_banding_complexity_blob(uint16_t cols, uint16_t rows, uint
     memcpy(blob, pelorus_sidedata_uuid, PELORUS_SIDEDATA_UUID_LEN);
 
     PelorusSideData hdr;
-    memset(&hdr, 0, sizeof(hdr));
-    memcpy(hdr.magic, PELORUS_MAGIC_STR, PELORUS_MAGIC_LEN);
-    hdr.abi_major = (uint16_t)PELORUS_ABI_MAJOR;
-    hdr.abi_minor = (uint16_t)PELORUS_ABI_MINOR;
-    hdr.total_size = total_size;
-    hdr.section_mask = PEL_SEC_BANDING | PEL_SEC_COMPLEXITY;
-    hdr.section_count = 2;
-    hdr.header_size = (uint16_t)header_size;
-    hdr.plane_layout = PEL_LAYOUT_420;
-    hdr.bit_depth = 8;
-    hdr.grid_cols = cols;
-    hdr.grid_rows = rows;
-    hdr.producer_id = PEL_FOURCC('T', 'E', 'S', 'T');
+    fill_pelorus_header(&hdr, total_size, PEL_SEC_BANDING | PEL_SEC_COMPLEXITY, 2, cols, rows);
     memcpy(blob + PELORUS_SIDEDATA_UUID_LEN, &hdr, sizeof(hdr));
 
     PelorusSectionDir dir[2];
-    memset(dir, 0, sizeof(dir));
-    dir[0].section_id = PEL_SEC_BANDING;
-    dir[0].offset = band_off;
-    dir[0].size = band_size;
-    dir[0].struct_minor = (uint32_t)PELORUS_ABI_MINOR;
-    dir[1].section_id = PEL_SEC_COMPLEXITY;
-    dir[1].offset = cx_off;
-    dir[1].size = cx_size;
-    dir[1].struct_minor = (uint32_t)PELORUS_ABI_MINOR;
+    fill_section_dir(&dir[0], PEL_SEC_BANDING, band_off, band_size);
+    fill_section_dir(&dir[1], PEL_SEC_COMPLEXITY, cx_off, cx_size);
     memcpy(blob + PELORUS_SIDEDATA_UUID_LEN + header_size, dir, sizeof(dir));
 
     PelorusBandingSection band;
-    memset(&band, 0, sizeof(band));
-    band.global_banding_risk = global_risk;
-    band.flat_area_fraction = 1.0f;
-    if (n_cells > 0) {
-        band.cell_data_offset = map_off;
-        band.cell_data_size = n_cells;
-    }
+    fill_banding_section(&band, map_off, n_cells, global_risk);
     memcpy(blob + PELORUS_SIDEDATA_UUID_LEN + band_off, &band, sizeof(band));
 
     PelorusComplexitySection cx;
@@ -339,7 +330,13 @@ static char *test_sidedata_but_disabled_is_inert(void)
     return NULL;
 }
 
-static char *test_weighting_applies_with_sidedata(void)
+/* Set up a context with weighting enabled (strength 1.0), inject the three
+ * standard scores, register the given banding blob for frame 2, and pool
+ * MEAN into *mean_out. Split out of test_weighting_applies_with_sidedata so
+ * that function stays within the readability-function-size branch budget
+ * (each mu_assert is two branches, ADR-0141); every setup failure mode keeps
+ * its own distinct message. */
+static char *setup_and_pool_weighted(double *mean_out)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
@@ -359,9 +356,19 @@ static char *test_weighting_applies_with_sidedata(void)
     free(blob); /* summary is copied; blob no longer needed */
     mu_assert("register side-data", rc == 0);
 
-    double mean = -1.0;
     mu_assert("pool MEAN failed",
-              vmaf_feature_score_pooled(vmaf, FEAT, VMAF_POOL_METHOD_MEAN, &mean, 0, 2) == 0);
+              vmaf_feature_score_pooled(vmaf, FEAT, VMAF_POOL_METHOD_MEAN, mean_out, 0, 2) == 0);
+
+    vmaf_close(vmaf);
+    return NULL;
+}
+
+static char *test_weighting_applies_with_sidedata(void)
+{
+    double mean = -1.0;
+    char *msg = setup_and_pool_weighted(&mean);
+    if (msg)
+        return msg;
 
     /* Closed-form weighted mean: (1*60 + 1*80 + 2*100) / (1 + 1 + 2). */
     double expect = (1.0 * 60.0 + 1.0 * 80.0 + 2.0 * 100.0) / (1.0 + 1.0 + 2.0);
@@ -372,7 +379,6 @@ static char *test_weighting_applies_with_sidedata(void)
     double unweighted = (60.0 + 80.0 + 100.0) / 3.0;
     mu_assert("weighted MEAN must shift up", mean > unweighted);
 
-    vmaf_close(vmaf);
     return NULL;
 }
 
@@ -429,12 +435,12 @@ static char *test_robustness_foreign_and_bad_abi(void)
     return NULL;
 }
 
-static char *test_argument_guards(void)
+/* NULL-argument guards for vmaf_set_perceptual_sidedata / _weight_enabled /
+ * _weight_strength. Split out of test_argument_guards so that function
+ * stays within the readability-function-size branch budget (each mu_assert
+ * is two branches, ADR-0141). */
+static char *check_sidedata_and_enable_guards(VmafContext *vmaf)
 {
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
-
     uint8_t buf[64];
     memset(buf, 0, sizeof(buf));
     mu_assert("NULL vmaf => -EINVAL",
@@ -444,12 +450,35 @@ static char *test_argument_guards(void)
               vmaf_set_perceptual_weight_enabled(NULL, 1) == -EINVAL);
     mu_assert("NULL vmaf (strength) => -EINVAL",
               vmaf_set_perceptual_weight_strength(NULL, 1.0) == -EINVAL);
+    return NULL;
+}
+
+/* Value-range guards for vmaf_set_perceptual_weight_strength (negative /
+ * NaN / Inf rejected, zero accepted). Split out for the same branch-budget
+ * reason as check_sidedata_and_enable_guards above. */
+static char *check_strength_value_guards(VmafContext *vmaf)
+{
     mu_assert("negative strength => -EINVAL",
               vmaf_set_perceptual_weight_strength(vmaf, -1.0) == -EINVAL);
     mu_assert("NaN strength => -EINVAL", vmaf_set_perceptual_weight_strength(vmaf, NAN) == -EINVAL);
     mu_assert("Inf strength => -EINVAL",
               vmaf_set_perceptual_weight_strength(vmaf, INFINITY) == -EINVAL);
     mu_assert("zero strength ok", vmaf_set_perceptual_weight_strength(vmaf, 0.0) == 0);
+    return NULL;
+}
+
+static char *test_argument_guards(void)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
+
+    char *msg = check_sidedata_and_enable_guards(vmaf);
+    if (msg)
+        return msg;
+    msg = check_strength_value_guards(vmaf);
+    if (msg)
+        return msg;
 
     vmaf_close(vmaf);
     return NULL;
@@ -495,32 +524,61 @@ static double pool_with_blob(uint8_t *blob, size_t blob_len)
     return mean;
 }
 
-static char *test_complexity_modulates_weight(void)
+/* Build the four banding/complexity blobs test_complexity_modulates_weight
+ * compares, pool each one, and hand the four means back. Split out so that
+ * function stays within the readability-function-size branch budget (each
+ * mu_assert is two branches, ADR-0141); every blob-alloc failure keeps its
+ * own distinct message. */
+static char *compute_complexity_means(double *mean_band_only, double *mean_cx0, double *mean_cx1,
+                                      double *mean_cxm)
 {
     /* Banding-only weight on frame 2: salience 1.0 -> weight 2.0. */
     size_t band_len = 0;
     uint8_t *band_blob = build_banding_blob(4, 4, 255, 1.0f, &band_len);
     mu_assert("banding blob alloc", band_blob != NULL);
-    double mean_band_only = pool_with_blob(band_blob, band_len);
+    *mean_band_only = pool_with_blob(band_blob, band_len);
     free(band_blob);
-    double expect_w2 = (1.0 * 60.0 + 1.0 * 80.0 + 2.0 * 100.0) / 4.0;
-    mu_assert("banding-only weighted mean (w=2.0)", bit_exact(mean_band_only, expect_w2));
 
     /* Same banding map + complexity 0.0: factor 1.0 -> weight 2.0, IDENTICAL. */
     size_t cx0_len = 0;
     uint8_t *cx0_blob = build_banding_complexity_blob(4, 4, 255, 1.0f, 0.0f, &cx0_len);
     mu_assert("cx0 blob alloc", cx0_blob != NULL);
-    double mean_cx0 = pool_with_blob(cx0_blob, cx0_len);
+    *mean_cx0 = pool_with_blob(cx0_blob, cx0_len);
     free(cx0_blob);
-    mu_assert("complexity==0 is identical to banding-only", bit_exact(mean_cx0, mean_band_only));
 
     /* Same banding map + complexity 1.0: factor (1 - 0.5*1) = 0.5 -> salience
      * 0.5 -> weight 1.5. Closed-form: (60 + 80 + 1.5*100) / (1 + 1 + 1.5). */
     size_t cx1_len = 0;
     uint8_t *cx1_blob = build_banding_complexity_blob(4, 4, 255, 1.0f, 1.0f, &cx1_len);
     mu_assert("cx1 blob alloc", cx1_blob != NULL);
-    double mean_cx1 = pool_with_blob(cx1_blob, cx1_len);
+    *mean_cx1 = pool_with_blob(cx1_blob, cx1_len);
     free(cx1_blob);
+
+    /* Monotone in complexity: a mid value (0.5 -> factor 0.75 -> weight 1.75)
+     * lands strictly between the two extremes. */
+    size_t cxm_len = 0;
+    uint8_t *cxm_blob = build_banding_complexity_blob(4, 4, 255, 1.0f, 0.5f, &cxm_len);
+    mu_assert("cxm blob alloc", cxm_blob != NULL);
+    *mean_cxm = pool_with_blob(cxm_blob, cxm_len);
+    free(cxm_blob);
+
+    return NULL;
+}
+
+static char *test_complexity_modulates_weight(void)
+{
+    double mean_band_only = 0.0;
+    double mean_cx0 = 0.0;
+    double mean_cx1 = 0.0;
+    double mean_cxm = 0.0;
+    char *msg = compute_complexity_means(&mean_band_only, &mean_cx0, &mean_cx1, &mean_cxm);
+    if (msg)
+        return msg;
+
+    double expect_w2 = (1.0 * 60.0 + 1.0 * 80.0 + 2.0 * 100.0) / 4.0;
+    mu_assert("banding-only weighted mean (w=2.0)", bit_exact(mean_band_only, expect_w2));
+    mu_assert("complexity==0 is identical to banding-only", bit_exact(mean_cx0, mean_band_only));
+
     double expect_w15 = (1.0 * 60.0 + 1.0 * 80.0 + 1.5 * 100.0) / (1.0 + 1.0 + 1.5);
     mu_assert("complexity==1 attenuates to weight 1.5", bit_exact(mean_cx1, expect_w15));
 
@@ -528,13 +586,6 @@ static char *test_complexity_modulates_weight(void)
      * complexity (the up-weighted high-scoring frame is pulled back). */
     mu_assert("high complexity lowers pooled mean", mean_cx1 < mean_band_only);
 
-    /* Monotone in complexity: a mid value (0.5 -> factor 0.75 -> weight 1.75)
-     * lands strictly between the two extremes. */
-    size_t cxm_len = 0;
-    uint8_t *cxm_blob = build_banding_complexity_blob(4, 4, 255, 1.0f, 0.5f, &cxm_len);
-    mu_assert("cxm blob alloc", cxm_blob != NULL);
-    double mean_cxm = pool_with_blob(cxm_blob, cxm_len);
-    free(cxm_blob);
     mu_assert("mid complexity between extremes", mean_cxm < mean_band_only && mean_cxm > mean_cx1);
 
     return NULL;
@@ -564,16 +615,18 @@ static char *test_complexity_modulates_grid_zero(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_pooling_unweighted_without_sidedata);
-    mu_run_test(test_enabled_but_no_sidedata_is_inert);
-    mu_run_test(test_sidedata_but_disabled_is_inert);
-    mu_run_test(test_weighting_applies_with_sidedata);
-    mu_run_test(test_grid_zero_degrades_to_scalar);
-    mu_run_test(test_robustness_foreign_and_bad_abi);
-    mu_run_test(test_argument_guards);
-    mu_run_test(test_complexity_modulates_weight);
-    mu_run_test(test_complexity_modulates_grid_zero);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_pooling_unweighted_without_sidedata),
+        MU_TEST(test_enabled_but_no_sidedata_is_inert),
+        MU_TEST(test_sidedata_but_disabled_is_inert),
+        MU_TEST(test_weighting_applies_with_sidedata),
+        MU_TEST(test_grid_zero_degrades_to_scalar),
+        MU_TEST(test_robustness_foreign_and_bad_abi),
+        MU_TEST(test_argument_guards),
+        MU_TEST(test_complexity_modulates_weight),
+        MU_TEST(test_complexity_modulates_grid_zero),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

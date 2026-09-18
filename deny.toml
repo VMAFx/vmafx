@@ -15,7 +15,7 @@
 #
 # Documentation: docs/development/cargo-deny.md
 #
-# SPDX-License-Identifier: BSD-2-Clause-Patent OR MIT
+# SPDX-License-Identifier: EUPL-1.2
 
 [graph]
 # Run the same checks for every host we ship Rust artifacts on (vmafx-sys

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Inspect and guard local VMAFx merge-train actions (ADR-1244).
 
 Every remote mutation requires --apply. Local gate receipts are produced only

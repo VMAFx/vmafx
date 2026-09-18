@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Single source of truth for the default VMAF model used by ``vmaf-roi-score``.
 
 See ``tools/vmaf-tune/src/vmaftune/defaultmodel.py`` for the full rationale.

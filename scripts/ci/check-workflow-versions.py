@@ -2,7 +2,7 @@
 """Check that CI workflows take toolchain versions from build-config.env.
 
 Copyright 2026 Lusoris
-SPDX-License-Identifier: BSD-2-Clause-Patent
+SPDX-License-Identifier: EUPL-1.2
 
 Dockerfiles are only half of the single-source problem (ADR-1231). The same
 versions appear in `.github/workflows/`, and they drifted there too:

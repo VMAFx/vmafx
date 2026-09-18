@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// SPDX-License-Identifier: EUPL-1.2
 
 // Package sidecar is the Go port of vmaftune.sidecar — the local, on-host
 // bias-correction model that rides alongside the shipped VMAF predictor

@@ -1,5 +1,6 @@
 /**
  *
+ *  Copyright 2016-2026 Netflix, Inc.
  *  Copyright 2026 Lusoris
  *
  *     Licensed under the BSD+Patent License (the "License");
@@ -62,6 +63,7 @@
 #include <string.h>
 
 #include "config.h"
+#include "mu_table.h"
 #include "test.h"
 /* clang-format off */
 #include "simd_bitexact_test.h"
@@ -92,6 +94,8 @@
  * ----------------------------------------------------------------------- */
 #define TEST_W 80u
 #define TEST_H 12u
+/* Widened once, so every size and loop bound below is computed in size_t. */
+#define TEST_PIXELS ((size_t)TEST_W * (size_t)TEST_H)
 #define ALIGN_BYTES 64u
 
 /* -----------------------------------------------------------------------
@@ -213,10 +217,11 @@ static inline uint32_t scalar_edge_8(const uint8_t *src, int height, int stride,
     uint32_t accum = 0;
     for (int k = 0; k < filter_width; ++k) {
         int i_tap = i - radius + k;
-        if (i_tap < 0)
+        if (i_tap < 0) {
             i_tap = -i_tap;
-        else if (i_tap >= height)
+        } else if (i_tap >= height) {
             i_tap = height - (i_tap - height + 2);
+        }
         accum += filter[k] * src[i_tap * stride + j];
     }
     return accum;
@@ -386,8 +391,8 @@ static void sad_scalar(VmafPicture *pic_a, VmafPicture *pic_b, uint64_t *sad)
 static char *check_pipeline_8(unsigned seed_val, const char *label)
 {
     const ptrdiff_t stride8 = (ptrdiff_t)TEST_W;
-    uint8_t *prev = (uint8_t *)simd_test_aligned_malloc(TEST_W * TEST_H, ALIGN_BYTES);
-    uint8_t *cur = (uint8_t *)simd_test_aligned_malloc(TEST_W * TEST_H, ALIGN_BYTES);
+    uint8_t *prev = (uint8_t *)simd_test_aligned_malloc(TEST_PIXELS, ALIGN_BYTES);
+    uint8_t *cur = (uint8_t *)simd_test_aligned_malloc(TEST_PIXELS, ALIGN_BYTES);
     int32_t *y_scalar = (int32_t *)simd_test_aligned_malloc(sizeof(int32_t) * TEST_W, ALIGN_BYTES);
     int32_t *y_avx512 = (int32_t *)simd_test_aligned_malloc(sizeof(int32_t) * TEST_W, ALIGN_BYTES);
 
@@ -400,7 +405,7 @@ static char *check_pipeline_8(unsigned seed_val, const char *label)
     }
 
     uint32_t state = seed_val;
-    for (unsigned i = 0; i < TEST_W * TEST_H; i++) {
+    for (unsigned i = 0; i < TEST_PIXELS; i++) {
         prev[i] = (uint8_t)(simd_test_xorshift32(&state) & 0xFF);
         cur[i] = (uint8_t)(simd_test_xorshift32(&state) & 0xFF);
     }
@@ -441,9 +446,9 @@ static char *check_pipeline_16(unsigned bpc, unsigned seed_val, const char *labe
 {
     const ptrdiff_t stride16 = (ptrdiff_t)TEST_W;
     uint16_t *prev =
-        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_W * TEST_H, ALIGN_BYTES);
+        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_PIXELS, ALIGN_BYTES);
     uint16_t *cur =
-        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_W * TEST_H, ALIGN_BYTES);
+        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_PIXELS, ALIGN_BYTES);
     int32_t *y_scalar = (int32_t *)simd_test_aligned_malloc(sizeof(int32_t) * TEST_W, ALIGN_BYTES);
     int32_t *y_avx512 = (int32_t *)simd_test_aligned_malloc(sizeof(int32_t) * TEST_W, ALIGN_BYTES);
 
@@ -455,8 +460,8 @@ static char *check_pipeline_16(unsigned bpc, unsigned seed_val, const char *labe
         return "allocation failure (pipeline_16)";
     }
 
-    simd_test_fill_random_u16(prev, TEST_W * TEST_H, (uint16_t)((1u << bpc) - 1u), seed_val);
-    simd_test_fill_random_u16(cur, TEST_W * TEST_H, (uint16_t)((1u << bpc) - 1u),
+    simd_test_fill_random_u16(prev, TEST_PIXELS, (uint16_t)((1u << bpc) - 1u), seed_val);
+    simd_test_fill_random_u16(cur, TEST_PIXELS, (uint16_t)((1u << bpc) - 1u),
                               seed_val ^ 0xFFFFFFFFu);
 
     const ptrdiff_t byte_stride = stride16 * (ptrdiff_t)sizeof(uint16_t);
@@ -497,9 +502,9 @@ static char *test_pipeline_16_neg_diff_bpc10(void)
     const unsigned bpc = 10;
     const ptrdiff_t stride16 = (ptrdiff_t)TEST_W;
     uint16_t *prev =
-        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_W * TEST_H, ALIGN_BYTES);
+        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_PIXELS, ALIGN_BYTES);
     uint16_t *cur =
-        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_W * TEST_H, ALIGN_BYTES);
+        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_PIXELS, ALIGN_BYTES);
     int32_t *y_scalar = (int32_t *)simd_test_aligned_malloc(sizeof(int32_t) * TEST_W, ALIGN_BYTES);
     int32_t *y_avx512 = (int32_t *)simd_test_aligned_malloc(sizeof(int32_t) * TEST_W, ALIGN_BYTES);
 
@@ -513,7 +518,7 @@ static char *test_pipeline_16_neg_diff_bpc10(void)
 
     /* prev low, cur high — forces negative accum (same fixture as AVX2 test) */
     uint32_t rng = 0xa5a5a5a5u;
-    for (unsigned i = 0; i < TEST_W * TEST_H; i++) {
+    for (unsigned i = 0; i < TEST_PIXELS; i++) {
         prev[i] = (uint16_t)(simd_test_xorshift32(&rng) & 0x3Fu);
         cur[i] = (uint16_t)(960u + (simd_test_xorshift32(&rng) & 0x3Fu));
     }
@@ -548,7 +553,8 @@ static char *test_pipeline_16_neg_diff_bpc10(void)
  * ----------------------------------------------------------------------- */
 static char *test_sad_avx512(void)
 {
-    VmafPicture pic_a, pic_b;
+    VmafPicture pic_a;
+    VmafPicture pic_b;
     memset(&pic_a, 0, sizeof(pic_a));
     memset(&pic_b, 0, sizeof(pic_b));
 
@@ -574,7 +580,8 @@ static char *test_sad_avx512(void)
         }
     }
 
-    uint64_t sad_s = 0, sad_v = 0;
+    uint64_t sad_s = 0;
+    uint64_t sad_v = 0;
     sad_scalar(&pic_a, &pic_b, &sad_s);
     sad_avx512(&pic_a, &pic_b, &sad_v);
 
@@ -597,11 +604,11 @@ static char *test_y_conv_8_avx512(void)
     const ptrdiff_t src_stride = (ptrdiff_t)TEST_W;
     const ptrdiff_t dst_stride = (ptrdiff_t)TEST_W;
 
-    uint8_t *src = (uint8_t *)simd_test_aligned_malloc(TEST_W * TEST_H, ALIGN_BYTES);
+    uint8_t *src = (uint8_t *)simd_test_aligned_malloc(TEST_PIXELS, ALIGN_BYTES);
     uint16_t *dst_s =
-        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_W * TEST_H, ALIGN_BYTES);
+        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_PIXELS, ALIGN_BYTES);
     uint16_t *dst_v =
-        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_W * TEST_H, ALIGN_BYTES);
+        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_PIXELS, ALIGN_BYTES);
 
     if (!src || !dst_s || !dst_v) {
         simd_test_aligned_free(src);
@@ -611,14 +618,14 @@ static char *test_y_conv_8_avx512(void)
     }
 
     uint32_t state = 0x11223344u;
-    for (unsigned i = 0; i < TEST_W * TEST_H; i++) {
+    for (unsigned i = 0; i < TEST_PIXELS; i++) {
         src[i] = (uint8_t)(simd_test_xorshift32(&state) & 0xFFu);
     }
 
     y_conv_8_scalar(src, dst_s, TEST_W, TEST_H, src_stride, dst_stride, 8);
     y_convolution_8_avx512(src, dst_v, TEST_W, TEST_H, src_stride, dst_stride, 8);
 
-    const size_t n_bytes = sizeof(uint16_t) * TEST_W * TEST_H;
+    const size_t n_bytes = sizeof(uint16_t) * TEST_PIXELS;
     SIMD_BITEXACT_ASSERT_MEMCMP(dst_s, dst_v, n_bytes, "y_convolution_8_avx512");
 
     simd_test_aligned_free(src);
@@ -636,11 +643,11 @@ static char *check_y_conv_16(unsigned bpc, uint32_t seed_val, const char *label)
     const ptrdiff_t dst_stride = (ptrdiff_t)TEST_W;
 
     uint16_t *src =
-        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_W * TEST_H, ALIGN_BYTES);
+        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_PIXELS, ALIGN_BYTES);
     uint16_t *dst_s =
-        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_W * TEST_H, ALIGN_BYTES);
+        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_PIXELS, ALIGN_BYTES);
     uint16_t *dst_v =
-        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_W * TEST_H, ALIGN_BYTES);
+        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_PIXELS, ALIGN_BYTES);
 
     if (!src || !dst_s || !dst_v) {
         simd_test_aligned_free(src);
@@ -649,19 +656,19 @@ static char *check_y_conv_16(unsigned bpc, uint32_t seed_val, const char *label)
         return "allocation failure (y_conv_16)";
     }
 
-    simd_test_fill_random_u16(src, TEST_W * TEST_H, (uint16_t)((1u << bpc) - 1u), seed_val);
-    memset(dst_s, 0, sizeof(uint16_t) * TEST_W * TEST_H);
-    memset(dst_v, 0, sizeof(uint16_t) * TEST_W * TEST_H);
+    simd_test_fill_random_u16(src, TEST_PIXELS, (uint16_t)((1u << bpc) - 1u), seed_val);
+    memset(dst_s, 0, sizeof(uint16_t) * TEST_PIXELS);
+    memset(dst_v, 0, sizeof(uint16_t) * TEST_PIXELS);
 
     y_conv_16_scalar(src, dst_s, TEST_W, TEST_H, src_stride, dst_stride, bpc);
     y_convolution_16_avx512(src, dst_v, TEST_W, TEST_H, src_stride, dst_stride, bpc);
 
-    const size_t n_bytes = sizeof(uint16_t) * TEST_W * TEST_H;
+    const size_t n_bytes = sizeof(uint16_t) * TEST_PIXELS;
     if (memcmp(dst_s, dst_v, n_bytes) != 0) {
         const uint16_t *ps = dst_s;
         const uint16_t *pv = dst_v;
         size_t idx = 0;
-        while (idx < TEST_W * TEST_H && ps[idx] == pv[idx]) {
+        while (idx < TEST_PIXELS && ps[idx] == pv[idx]) {
             idx++;
         }
         (void)fprintf(stderr,
@@ -699,11 +706,11 @@ static char *test_x_conv_16_avx512(void)
     const ptrdiff_t dst_stride = (ptrdiff_t)TEST_W;
 
     uint16_t *src =
-        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_W * TEST_H, ALIGN_BYTES);
+        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_PIXELS, ALIGN_BYTES);
     uint16_t *dst_s =
-        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_W * TEST_H, ALIGN_BYTES);
+        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_PIXELS, ALIGN_BYTES);
     uint16_t *dst_v =
-        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_W * TEST_H, ALIGN_BYTES);
+        (uint16_t *)simd_test_aligned_malloc(sizeof(uint16_t) * TEST_PIXELS, ALIGN_BYTES);
 
     if (!src || !dst_s || !dst_v) {
         simd_test_aligned_free(src);
@@ -713,19 +720,19 @@ static char *test_x_conv_16_avx512(void)
     }
 
     /* Use 16-bit full range (uint16_max) to stress the mulhi/mullo path */
-    simd_test_fill_random_u16(src, TEST_W * TEST_H, 0xFFFFu, 0xFACEFACEu);
-    memset(dst_s, 0, sizeof(uint16_t) * TEST_W * TEST_H);
-    memset(dst_v, 0, sizeof(uint16_t) * TEST_W * TEST_H);
+    simd_test_fill_random_u16(src, TEST_PIXELS, 0xFFFFu, 0xFACEFACEu);
+    memset(dst_s, 0, sizeof(uint16_t) * TEST_PIXELS);
+    memset(dst_v, 0, sizeof(uint16_t) * TEST_PIXELS);
 
     x_conv_16_scalar(src, dst_s, TEST_W, TEST_H, src_stride, dst_stride);
     x_convolution_16_avx512(src, dst_v, TEST_W, TEST_H, src_stride, dst_stride);
 
-    const size_t n_bytes = sizeof(uint16_t) * TEST_W * TEST_H;
+    const size_t n_bytes = sizeof(uint16_t) * TEST_PIXELS;
     if (memcmp(dst_s, dst_v, n_bytes) != 0) {
         const uint16_t *ps = dst_s;
         const uint16_t *pv = dst_v;
         size_t idx = 0;
-        while (idx < TEST_W * TEST_H && ps[idx] == pv[idx]) {
+        while (idx < TEST_PIXELS && ps[idx] == pv[idx]) {
             idx++;
         }
         (void)fprintf(stderr,
@@ -756,16 +763,19 @@ char *run_tests(void)
     if (!simd_test_have_avx512()) {
         return NULL; /* SKIP on hosts without AVX-512 */
     }
-    mu_run_test(test_pipeline_8_random);
-    mu_run_test(test_pipeline_8_bright_dis);
-    mu_run_test(test_pipeline_16_bpc10);
-    mu_run_test(test_pipeline_16_bpc12);
-    mu_run_test(test_pipeline_16_neg_diff_bpc10);
-    mu_run_test(test_sad_avx512);
-    mu_run_test(test_y_conv_8_avx512);
-    mu_run_test(test_y_conv_16_bpc10);
-    mu_run_test(test_y_conv_16_bpc12);
-    mu_run_test(test_x_conv_16_avx512);
+    static const MuTest tests[] = {
+        MU_TEST(test_pipeline_8_random),
+        MU_TEST(test_pipeline_8_bright_dis),
+        MU_TEST(test_pipeline_16_bpc10),
+        MU_TEST(test_pipeline_16_bpc12),
+        MU_TEST(test_pipeline_16_neg_diff_bpc10),
+        MU_TEST(test_sad_avx512),
+        MU_TEST(test_y_conv_8_avx512),
+        MU_TEST(test_y_conv_16_bpc10),
+        MU_TEST(test_y_conv_16_bpc12),
+        MU_TEST(test_x_conv_16_avx512),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 #else
     (void)fprintf(stderr, "skipping: non-x86 arch\n");
 #endif

@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Unit tests for the QAT training-loader selection in ``ai/scripts/qat_train.py``.
 
 Research-2029 gap 4: ``_build_train_loader_factory`` used to hand every

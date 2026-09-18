@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Netflix#1414 / ADR-0153 — `float_ms_ssim` init must reject input
  *  resolutions below 176x176 cleanly with -EINVAL. The 5-level 11-tap
@@ -12,6 +12,12 @@
  */
 
 #include <stdlib.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 
 #include "test.h"
 
@@ -89,3 +95,5 @@ char *run_tests(void)
     mu_run_test(test_float_ms_ssim_init_accepts_min_dim);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
