@@ -166,6 +166,12 @@ The skill scaffolds:
   `test_integer_adm_tiny_frames` sweeps w 17..32 vs scalar; UBSan lane
   flags the old form (T-ADM-AVX512-SMALL-WIDTH-SCALE0-2026-09-18).
 
+- **Integer ADM scale-0 CM centre tap wraps to int16, like scalar.**
+  Vector threshold macros: `srai(slli(tap, 16), 16)` after `>> 12`. Scalar
+  `adm_cm_thresh()` casts `(int16_t)`; |a| > ~15360 wraps. Drop the wrap ->
+  SIMD != scalar on full-range noise. Guard: `test_integer_adm_simd_noise`
+  (T-ADM-CM-SIMD-NOISE-NOT-BIT-EXACT-2026-09-18).
+
 ## Governing ADRs
 
 See [../AGENTS.md §Governing ADRs](../AGENTS.md) for the full list.

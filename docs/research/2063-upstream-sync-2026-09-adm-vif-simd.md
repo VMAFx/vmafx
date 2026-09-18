@@ -119,10 +119,12 @@ the ADM/VIF parity tests, and small-size sweeps.
 
 ## Open questions
 
-- `adm_cm` AVX2 and AVX-512 are not bit-exact with scalar on uncorrelated
-  full-range noise: 576x324 `integer_adm_scale0` gives `0.45876092664583873`
+- `adm_cm` AVX2 and AVX-512 were not bit-exact with scalar on uncorrelated
+  full-range noise: 576x324 `integer_adm_scale0` gave `0.45876092664583873`
   scalar against `0.45858330648667378` AVX2, with identical numbers upstream.
-  Tracked in `docs/state.md`.
+  Cause: the scalar centre tap `(int16_t)(((ONE_BY_15 * abs(a)) + 2048) >> 12)`
+  wraps for `|a|` above about 15360, the vector macros kept 32 bits. Fixed by
+  `fix/adm-cm-simd-bitexact`; the Netflix golden pairs never reach the wrap.
 - Upstream's scalar and SIMD ADM still carry the `(uint32_t)pow(2, shift - 1)`
   conversion. Worth reporting to Netflix/vmaf with the instruction evidence
   above.

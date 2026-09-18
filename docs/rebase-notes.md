@@ -44,6 +44,13 @@ Fork-only fix upstream still needs:
   fails at 17x70 with the upstream form on an AVX-512 host, and the UBSan
   lane flags it on any x86 host. `adm_half_shift()` moved there from
   `integer_adm.c`, whose frame-size check is now `adm_frame_size_check()`.
+- `x86/adm_avx2.c` and `x86/adm_avx512.c`, `ADM_CM_THRESH_S_I_J_avx256` /
+  `_avx512`: after each centre tap's `srai(..., 12)` the fork sign-extends the
+  low 16 bits (`srai(slli(x, 16), 16)`), reproducing the scalar reference's
+  `(int16_t)` conversion. Upstream's vector macros keep 32 bits and differ
+  from its own scalar on full-range content
+  (T-ADM-CM-SIMD-NOISE-NOT-BIT-EXACT-2026-09-18). Keep the fork form;
+  `test_integer_adm_simd_noise` fails without it.
 
 Retired (ADR-1257): `adm_dwt2_8_neon_apple_legacy()` and the
 `#if defined(__APPLE__)` NEON dispatch branch in `integer_adm.c`. Apple
