@@ -122,11 +122,19 @@ MODEL_PATH="${VMAF_MODEL_PATH:-/workspace/model}"
 # retry loop avoids spurious WARN lines on healthy hosts without masking a
 # real userspace<->kernel ABI mismatch (which never recovers and keeps
 # failing past the retry window).
+#
+# Security: the probe is ONE program name, run directly as argv[0] with no
+# shell interpretation. An earlier form ran `eval "${cmd}"`; with the callers
+# below passing constants that was latent, but this script is PID 1 with the
+# container's whole environment, so any future caller passing a configured
+# value would have been command injection. A probe that needs flags gets its
+# own explicit argv handling here — never `eval`, never `bash -c`.
+# scripts/ci/tests/test-dev-mcp-entrypoint-probe.sh pins this (pre-commit hook).
 _probe_with_retry() {
-  local label="$1" cmd="$2" pattern="$3" advice="$4"
+  local label="$1" prog="$2" pattern="$3" advice="$4"
   local attempt
   for attempt in 1 2 3 4 5 6 7 8 9 10; do
-    if eval "${cmd}" 2>&1 | grep -qE "${pattern}"; then
+    if "${prog}" 2>&1 | grep -qE "${pattern}"; then
       echo "[dev-mcp-entrypoint]   ${label} detected (attempt ${attempt})"
       return 0
     fi
