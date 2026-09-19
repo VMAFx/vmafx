@@ -65,6 +65,13 @@ typedef int32_t od_coeff_ref;
 #define OD_UNBIASED_RSHIFT32_REF(a, b) (((int32_t)(((uint32_t)(a) >> (32 - (b))) + (a))) >> (b))
 #define OD_DCT_RSHIFT_REF(a, b) OD_UNBIASED_RSHIFT32_REF(a, b)
 
+/* ref_od_bin_fdct8_hvs / ref_od_bin_fdct8x8_hvs / ref_calc_psnrhvs form one
+ * call chain whose only entry point, ref_calc_psnrhvs, is itself only
+ * called from the AVX2 check below (`#if ARCH_X86`); guard the whole
+ * chain the same way so a non-x86 build does not warn about any of the
+ * three. */
+#if ARCH_X86
+
 // NOLINTNEXTLINE(readability-function-size) — load-bearing upstream scalar copy (ADR-0138 / ADR-0141 / ADR-0278).
 static void ref_od_bin_fdct8_hvs(od_coeff_ref y[8], const od_coeff_ref *x, int xstride)
 {
@@ -269,6 +276,8 @@ static double ref_calc_psnrhvs(const unsigned char *src, int systride, const uns
     ret /= (float)(samplemax * samplemax);
     return (double)ret;
 }
+
+#endif /* ARCH_X86 */
 
 #if ARCH_X86
 

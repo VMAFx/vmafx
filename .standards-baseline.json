@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-09-18T18:37:56Z",
+  "generated_at": "2026-09-18T20:31:14Z",
   "repository": "",
   "commit_sha": "",
-  "total_infractions": 1627,
+  "total_infractions": 1623,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -2716,38 +2716,6 @@
       "symbol": "{",
       "message": "Function '{' (114 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:673:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/vif_neon.c",
-      "line_number": 292,
-      "symbol": "vif_subsample_rd_8_neon",
-      "message": "Function 'vif_subsample_rd_8_neon' (132 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/vif_neon.c:292:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/vif_neon.c",
-      "line_number": 427,
-      "symbol": "{",
-      "message": "Function '{' (137 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/vif_neon.c:427:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/vif_neon.c",
-      "line_number": 566,
-      "symbol": "vif_statistic_8_neon",
-      "message": "Function 'vif_statistic_8_neon' (326 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/vif_neon.c:566:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/vif_neon.c",
-      "line_number": 895,
-      "symbol": "{",
-      "message": "Function '{' (326 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/vif_neon.c:895:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -9777,10 +9745,10 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/test/test_psnr_hvs_simd.c",
-      "line_number": 157,
+      "line_number": 164,
       "symbol": "{",
       "message": "Function '{' (115 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_psnr_hvs_simd.c:157:HISS-04"
+      "fingerprint": "core/test/test_psnr_hvs_simd.c:164:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -9809,18 +9777,18 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/test/test_ssimulacra2_simd.c",
-      "line_number": 758,
+      "line_number": 768,
       "symbol": "{",
       "message": "Function '{' (76 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_ssimulacra2_simd.c:758:HISS-04"
+      "fingerprint": "core/test/test_ssimulacra2_simd.c:768:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/test/test_ssimulacra2_simd.c",
-      "line_number": 864,
+      "line_number": 874,
       "symbol": "test_ptlr_one",
       "message": "Function 'test_ptlr_one' (104 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_ssimulacra2_simd.c:864:HISS-04"
+      "fingerprint": "core/test/test_ssimulacra2_simd.c:874:HISS-04"
     },
     {
       "rule_id": "HISS-04",

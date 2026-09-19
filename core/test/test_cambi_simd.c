@@ -76,8 +76,11 @@
  * from a file-scope global; here we accept it as an explicit parameter
  * (which the SIMD kernels also do, so the calling convention is unified).
  *
- * This function is the ground truth for the parity assertions below.
- */
+ * This function is the ground truth for the parity assertions below. Only
+ * reached (via CALL_SCALAR) from the AVX-512 / NEON parity tests further
+ * down, so it is guarded the same way they are — `#if ARCH_X86` (AVX-512)
+ * unioned with `#if ARCH_AARCH64` (NEON). */
+#if ARCH_X86 || ARCH_AARCH64
 static void calculate_c_values_row_scalar(float *c_values, const uint16_t *histograms,
                                           const uint16_t *image, const uint16_t *mask, int row,
                                           int width, ptrdiff_t stride, const uint16_t num_diffs,
@@ -123,6 +126,7 @@ static void calculate_c_values_row_scalar(float *c_values, const uint16_t *histo
         c_row[col] = c_v;
     }
 }
+#endif /* ARCH_X86 || ARCH_AARCH64 */
 
 /* ---- Fixture parameters -------------------------------------------- */
 
@@ -164,6 +168,9 @@ typedef struct {
     uint16_t vlt_luma;
 } CambiRowFixture;
 
+/* Only reached from the AVX-512 / NEON parity tests further down — same
+ * guard as calculate_c_values_row_scalar above. */
+#if ARCH_X86 || ARCH_AARCH64
 static void build_fixture(CambiRowFixture *fx, uint32_t seed)
 {
     uint32_t state = seed;
@@ -207,6 +214,7 @@ static void build_fixture(CambiRowFixture *fx, uint32_t seed)
     /* vlt_luma: low enough that most pixels satisfy (value + delta) > vlt_luma. */
     fx->vlt_luma = 50;
 }
+#endif /* ARCH_X86 || ARCH_AARCH64 */
 
 /* ---- Helpers to call both scalar and SIMD with the same args ------- */
 

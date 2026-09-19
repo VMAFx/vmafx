@@ -76,6 +76,12 @@ static void fill_pattern(float *buf, size_t n, uint32_t seed)
     }
 }
 
+/* compare_bitexact and check_variant are only reached from the per-ISA
+ * variant checks below (`#if ARCH_X86` / `#if ARCH_AARCH64` in
+ * check_simd_variants); guard both with the same union condition so a
+ * build with neither ISA does not warn about either being unused. */
+#if ARCH_X86 || ARCH_AARCH64
+
 static int compare_bitexact(const float *a, const float *b, size_t n)
 {
     /*
@@ -101,6 +107,8 @@ static char *check_variant(const float *src, int w, int h, const float *dst_scal
     free(dst);
     return NULL;
 }
+
+#endif /* ARCH_X86 || ARCH_AARCH64 */
 
 /* Compare every SIMD variant this build and host offer against the scalar
  * output. Returns the first failure message, or NULL when all agree. */

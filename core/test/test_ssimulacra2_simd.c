@@ -77,6 +77,16 @@
 #endif
 #endif
 
+/* Everything from here through the end of the host-kernel tests is
+ * SIMD-parity scaffolding: scalar references, `pick_*` dispatchers and the
+ * `test_*` bodies they feed are each reachable only through the wrapper
+ * functions `run_tests()` calls under the `#if ARCH_X86 || ARCH_AARCH64`
+ * guard below (the only two ISAs this test file has SIMD kernels for).
+ * Guard the whole block with that same union condition so a build with
+ * neither ISA (e.g. `-Denable_asm=false`) does not warn about unused
+ * functions / const data all the way down the dependency chain. */
+#if ARCH_X86 || ARCH_AARCH64
+
 static const float kM00 = 0.30f;
 static const float kM02 = 0.078f;
 static const float kM10 = 0.23f;
@@ -1171,6 +1181,8 @@ static char *test_host_downsample(void)
     mu_assert("host_downsample_2x2 SIMD not bit-identical to scalar (plane_stride form)", match);
     return NULL;
 }
+
+#endif /* ARCH_X86 || ARCH_AARCH64 */
 
 /* Flat mu_run_test list — one line per subtest by design, not a
  * complexity violation. */

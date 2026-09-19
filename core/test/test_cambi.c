@@ -1052,6 +1052,32 @@ static char *test_compute_mask_row()
  * output float is identical (bit-exact). On non-x86 hosts the AVX2 path is
  * compiled out; the test falls through and passes as a no-op.
  */
+#if ARCH_X86
+/* AVX2 leg of the parity test below. x86-only, so non-x86 and
+ * -Denable_asm=false builds compile neither it nor its histogram buffer. */
+static char *check_c_values_avx2_parity(VmafPicture *input, const VmafPicture *mask,
+                                        const float *c_scalar, uint16_t window_size,
+                                        uint16_t num_diffs, const uint16_t *tvi_for_diff,
+                                        uint16_t vlt_luma, const int *diff_weights,
+                                        const int *all_diffs)
+{
+    if (!(vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX2)) {
+        return NULL;
+    }
+    float c_avx2[64] = {0};
+    uint16_t histograms_a[8 * 560] = {0};
+    calculate_c_values_avx2(input, mask, c_avx2, histograms_a, window_size, num_diffs, tvi_for_diff,
+                            vlt_luma, diff_weights, all_diffs, 8, 8);
+    for (int i = 0; i < 64; i++) {
+        /* Intentional bit-exact compare: AVX2 and scalar paths must produce
+         * identical float results per the CAMBI parity contract. */
+        mu_assert("scalar vs avx2 calculate_c_values parity (bit-exact)",
+                  c_scalar[i] == c_avx2[i]); /* bit-exact SIMD parity assertion */
+    }
+    return NULL;
+}
+#endif
+
 /* Runtime CPU-feature gate: the AVX2 helpers (`calculate_c_values_avx2`,
      * `cambi_increment_range_avx2`, etc.) build AVX2 SIMD constants
      * (`_mm256_setr_epi32`, `_mm256_set1_epi32`) at function entry — executing
@@ -1074,9 +1100,7 @@ static char *test_calculate_c_values_scalar_avx2_parity()
     mu_assert("parity test alloc error", !err);
 
     float c_scalar[64];
-    float c_avx2[64];
     memset(c_scalar, 0, sizeof(c_scalar));
-    memset(c_avx2, 0, sizeof(c_avx2));
 
     const uint16_t num_diffs = 4;
     const uint16_t tvi_for_diff[4] = {178, 305, 432, 559};
@@ -1087,7 +1111,6 @@ static char *test_calculate_c_values_scalar_avx2_parity()
      * via increment/decrement_range; pre-zeroing ensures deterministic
      * sanitizer-instrumented runs on Ubuntu 24.04 CI (T-CAMBI-AVX2-CI-SIGILL). */
     uint16_t histograms_s[8 * 560] = {0};
-    uint16_t histograms_a[8 * 560] = {0};
     uint16_t *diffs_to_consider = NULL;
     int *diff_weights = NULL;
     int *all_diffs = NULL;
@@ -1097,16 +1120,11 @@ static char *test_calculate_c_values_scalar_avx2_parity()
                        tvi_for_diff, vlt_luma, diff_weights, all_diffs, 8, 8);
 
 #if ARCH_X86
-    if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX2) {
-        calculate_c_values_avx2(&input_avx2, &mask_avx2, c_avx2, histograms_a, window_size,
-                                num_diffs, tvi_for_diff, vlt_luma, diff_weights, all_diffs, 8, 8);
-        for (int i = 0; i < 64; i++) {
-            /* Intentional bit-exact compare: AVX2 and scalar paths must produce
-             * identical float results per the CAMBI parity contract. */
-            mu_assert("scalar vs avx2 calculate_c_values parity (bit-exact)",
-                      c_scalar[i] == c_avx2[i]); /* bit-exact SIMD parity assertion */
-        }
-    }
+    char *msg =
+        check_c_values_avx2_parity(&input_avx2, &mask_avx2, c_scalar, window_size, num_diffs,
+                                   tvi_for_diff, vlt_luma, diff_weights, all_diffs);
+#else
+    char *msg = NULL;
 #endif
 
     vmaf_picture_unref(&input_scalar);
@@ -1117,7 +1135,7 @@ static char *test_calculate_c_values_scalar_avx2_parity()
     aligned_free(diff_weights);
     aligned_free(all_diffs);
 
-    return NULL;
+    return msg;
 }
 
 static char *run_cambi_preprocessing_and_masks(void)
