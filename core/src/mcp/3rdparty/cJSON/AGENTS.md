@@ -52,6 +52,16 @@ these ways, and only these:
    harness above, which ran under gcc, could not see it; the `Sanitizers` CI
    lane and `test_cjson`'s `test_number_valueint_*` tests do.
 
+**Denormals depend on the build's floating-point model.** `print_number()`
+takes its integer branch when `d == (double)valueint`. A build that treats
+denormals as zero answers true for the smallest denormal and prints `0`. icx
+defaults to that model (`-fp-model=fast` sets the MXCSR denormals-are-zero
+bit) and the `Linux Intel LLVM` lane builds this file with it; gcc and clang
+keep the denormal. `test_print_number_precision` probes the running build
+instead of asserting one answer. Do not pin one spelling into the test, and do
+not "fix" the printer: both outputs are what their build's own arithmetic says
+the value is.
+
 **Do not** silence any of this with `NOLINT`, a Semgrep path exclude, a
 `.semgrepignore` line or a baseline entry. Fix the call site.
 
