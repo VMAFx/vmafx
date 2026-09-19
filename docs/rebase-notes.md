@@ -51404,3 +51404,21 @@ variable; when re-applying upstream changes to the AArch64 block, keep the
 variable and do not put a literal `-ffp-contract=off` back into those six
 `c_args`. The SVE2 `cc.compiles()` probe is skipped on `msvc` for the same
 reason. See [Research-2066](research/2066-windows-arm64-lane.md).
+## HIP ADM parity tests: no `should_fail`, textured fixture (T-HIP-ADM-TESTS-STALE-SHOULD-FAIL-2026-09-18)
+
+Rebase impact: fork-local tests and `core/test/meson.build` only; no upstream
+file. `test_hip_adm_parity`, `test_hip_adm_small_border` and
+`test_hip_adm_wide_rounding` are registered without `should_fail`; the
+ADR-1154 staging deferral they cited ended with ADR-1211. Do not bring the
+marker back on a conflict: meson counts an unexpected pass as a failure.
+`test_adm_small_border.c` and `test_adm_wide_rounding.c` (built for CUDA and
+HIP from one source) skip `VMAF_integer_feature_adm3_score` under `HAVE_HIP`
+(the HIP twin has no AIM pass), print the failing feature and every compared
+score, and fill their pictures from `luma_sample()`, a stateless lowbias32
+texture. Keep the geometry (160x96 and 1920x144: scale-3 `top <= 0` and 60
+warps per row) and keep the texture: on the previous smooth ramp the planted
+pre-ADR-1167 border defect stayed under the 1e-4 gate. PR #1476 carries the
+same `adm3` guard and marker removal on the `port/upstream-2026-09` stack;
+those hunks are identical and merge clean, the fixture change is separate.
+The CUDA arms were not run here; run `test_cuda_adm_small_border` and
+`test_cuda_adm_wide_rounding` after any rebase that touches `adm_cm.cu`.
