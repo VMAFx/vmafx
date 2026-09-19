@@ -16,7 +16,7 @@ jobs:
   policy:
     # required-aggregator
     name: Scorecard PR Gate
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - name: Require ready review

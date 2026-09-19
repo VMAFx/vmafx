@@ -24,7 +24,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # required-aggregator
     name: Pre-Commit
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -64,7 +64,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # required-aggregator
     name: Tidy Changed
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -316,7 +316,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # required-aggregator
     name: Tidy Ratchet
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -405,7 +405,7 @@ jobs:
     # See ADR-0217 for the design rationale and alternatives matrix.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Tidy SYCL (advisory)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 40
     continue-on-error: true
     steps:
@@ -641,7 +641,7 @@ jobs:
     # branch-protection change.
     # required-aggregator
     name: Python Lint
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -661,7 +661,7 @@ jobs:
     # available, plus cross-file invariants (sha256 matches, sidecars
     # exist). Fails closed.
     name: Tiny-Model Registry Validate
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -684,7 +684,7 @@ jobs:
     # keep both source-owned metadata and rendered documentation required.
     # required-aggregator
     name: Docs
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -755,7 +755,7 @@ jobs:
     # required-aggregator.yml — rename both in the same commit.
     # required-aggregator
     name: Twin Drift
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -774,7 +774,7 @@ jobs:
     # the same surface in the same PR via the pinned hook revs.
     # required-aggregator
     name: ShellCheck + shfmt
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     needs: pre-commit
     steps:

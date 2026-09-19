@@ -22,7 +22,7 @@ jobs:
     if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     # required-aggregator
     name: FFmpeg Patch Stack
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - name: Check out source
@@ -71,7 +71,7 @@ jobs:
   refresh:
     if: github.event_name == 'schedule'
     name: FFmpeg Release Refresh
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - name: Check out master
