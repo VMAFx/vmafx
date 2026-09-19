@@ -32,7 +32,8 @@
     ".workingdir2/**",
     "build_artifacts/**",
     "model/**",
-    "ai/**/runs/**"
+    "ai/**/runs/**",
+    ".devcontainer/**"
   ],
   "packageRules": [
     {
@@ -85,6 +86,18 @@
       "description": "Group pre-commit hook rev bumps; auto-merge \u2014 mechanical, lint catches drift.",
       "matchManagers": [
         "pre-commit"
+      ],
+      "groupName": "pre-commit hooks",
+      "automerge": true,
+      "draftPR": false
+    },
+    {
+      "description": "The Makefile's ruff and black pins travel with the pre-commit hook revs: both files must name the same version or the single-source gate fails.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchFileNames": [
+        "Makefile"
       ],
       "groupName": "pre-commit hooks",
       "automerge": true,
@@ -234,6 +247,16 @@
       ]
     },
     {
+      "description": "onnx is held below 1.23: onnx 1.23 writes models at IR version 14, and onnxruntime 1.30, the runtime this repository pins, loads at most IR 13 (T-AI-ONNX-IR14-UNLOADABLE-2026-09-18). Raise this together with an onnxruntime that reads the newer IR, and with the cap in ai/pyproject.toml and tools/ensemble-training-kit/pyproject.toml.",
+      "matchDatasources": [
+        "pypi"
+      ],
+      "matchPackageNames": [
+        "onnx"
+      ],
+      "allowedVersions": "<1.23"
+    },
+    {
       "description": "dev-image deps (CUDA-adjacent, Intel NEO/LZ0, ONNX Runtime, SVT-AV1, VVenC, AMF) \u2014 manual review required. Container rebuild has large blast radius; validate GPU compatibility before merging. See ADR-0605, ADR-1145.",
       "matchPackageNames": [
         "intel/compute-runtime",
@@ -269,6 +292,30 @@
     }
   ],
   "customManagers": [
+    {
+      "customType": "regex",
+      "description": "ruff version that `make lint-tools` installs. It must equal the rev in .pre-commit-config.yaml (scripts/ci/check-workflow-versions.py fails otherwise), so a package rule groups it with the pre-commit hooks.",
+      "managerFilePatterns": [
+        "/^Makefile$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)RUFF_VERSION\\s*:=\\s*(?<currentValue>[0-9][0-9.]*)"
+      ],
+      "datasourceTemplate": "pypi",
+      "depNameTemplate": "ruff"
+    },
+    {
+      "customType": "regex",
+      "description": "black version that `make lint-tools` installs. It must equal the rev in .pre-commit-config.yaml (scripts/ci/check-workflow-versions.py fails otherwise), so a package rule groups it with the pre-commit hooks.",
+      "managerFilePatterns": [
+        "/^Makefile$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)BLACK_VERSION\\s*:=\\s*(?<currentValue>[0-9][0-9.]*)"
+      ],
+      "datasourceTemplate": "pypi",
+      "depNameTemplate": "black"
+    },
     {
       "customType": "regex",
       "description": "One envtest tool release owned by build-config.env and consumed by Make and Go CI (ADR-1231).",

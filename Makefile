@@ -95,7 +95,7 @@ $(NINJA): $(VENV_PIP)
 # Provision the lint / format toolchain into the project venv. Versions are
 # kept identical to .pre-commit-config.yaml so the local gate and the CI hooks
 # cannot disagree about what counts as a violation.
-RUFF_VERSION  := 0.16.5
+RUFF_VERSION  := 0.16.8
 BLACK_VERSION := 26.5.1
 
 .PHONY: lint-tools
@@ -207,9 +207,9 @@ preflight:
 
 lint-py:
 	@scripts/ci/check-python-requirements-single-source.sh
-	$(call require-tool,ruff,pip install ruff==0.15.17)
+	$(call require-tool,ruff,pip install ruff==$(RUFF_VERSION))
 	ruff check python/ ai/ scripts/
-	$(call require-tool,black,pip install black==26.5.1)
+	$(call require-tool,black,pip install black==$(BLACK_VERSION))
 	black --check python/ ai/ scripts/
 # mypy is advisory (leading `-`): it currently reports ~295 module-resolution
 # errors ("duplicate module", "adding __init__.py somewhere") that stop it
@@ -282,7 +282,7 @@ format-check:
 	      | grep -v '^subprojects/' | grep -v '^core/test/data/' \
 	      | grep -v '^core/src/interop/pelorus_' \
 	      | grep -v '^core/include/libvmaf/pelorus/')
-	$(call require-tool,black,pip install black==26.5.1)
+	$(call require-tool,black,pip install black==$(BLACK_VERSION))
 	black --check python/ ai/ scripts/
 	$(call require-tool,ruff,pip install ruff==$(RUFF_VERSION))
 	ruff check --select I python/ ai/ scripts/

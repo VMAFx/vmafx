@@ -104,6 +104,16 @@ pinned tag actually carries the version its knob claims, so `RELEASE_DEBIAN=13`
 cannot sit above a `debian:12` pin. That check is what would have caught the
 drift this file exists to prevent.
 
+### Formatter versions
+
+`.pre-commit-config.yaml` owns the ruff and black versions. The `Makefile`
+repeats them as `RUFF_VERSION` and `BLACK_VERSION` because `make lint-tools`
+installs the same tools into the project environment, and a formatter that
+differs between the hook and `make lint` disagrees about what counts as a
+violation. The gate compares the two files and rejects a literal `ruff==` or
+`black==` in a recipe, so a recipe can only name the variable. Renovate raises
+the Makefile pins in the same pull request as the hook revisions.
+
 ### Python and ONNX Runtime ownership
 
 Scientific Python dependency floors remain in each package's `pyproject.toml`.

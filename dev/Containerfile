@@ -61,8 +61,8 @@
 #
 # They must precede the FIRST FROM: an ARG declared after one is scoped to the
 # stage it follows, so `FROM ${ROCM_BUILDER}` above would expand to nothing.
-ARG DEV_BASE="ubuntu:26.04@sha256:513c074113a871b51a8d16ab445c88779d6452d937a164fb5cc479f32668a41d"
-ARG DEV_GO_BASE="golang:1.27-trixie@sha256:9baa6b4187bbb98d240372a8a235ac0bb6b5ddd52bba1431dc2f7c0705862728"
+ARG DEV_BASE="ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78"
+ARG DEV_GO_BASE="golang:1.27-trixie@sha256:a4d1d139d0b0e7313de2fbe7cf4e27e3b934c164c5c58b33af44af2e9ba2fc4f"
 ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.0.0-full@sha256:8ebc02ee1aefb6b7c0e952b4088542133bad8805d19730db92cc61be673421d1"
 
 FROM ${ROCM_BUILDER} AS rocm-src
