@@ -127,6 +127,10 @@ int vmaf_hip_picture_upload(const VmafHipPlaneUpload *planes, unsigned n_planes,
     hipStream_t str = vmaf_hip_stream_of(stream);
     unsigned enqueued = 0u;
     const hipError_t copy_rc = hip_pic_enqueue(planes, n_planes, str, &enqueued);
+    /* The wait below is only sufficient if every accepted copy was counted:
+     * success means all of them, and a failure stops the loop early. */
+    assert(enqueued <= n_planes);
+    assert(copy_rc != hipSuccess || enqueued == n_planes);
     /* Wait even when a copy failed: the ones already enqueued still read the
      * pictures, and the caller may recycle them as soon as this returns. */
     rc = (enqueued > 0u) ? hip_pic_wait(done, str) : hipSuccess;
