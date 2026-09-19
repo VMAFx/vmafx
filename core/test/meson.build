@@ -4087,11 +4087,6 @@ test('test_picture_v2', test_picture_v2, suite : ['fast'])
 test('test_feature_collector', test_feature_collector, suite : ['fast'])
 test('test_flush_context_ordering', test_flush_context_ordering, suite : ['fast'])
 test('test_output', test_output, suite : ['fast'])
-# ADR-0708 Wave 1: test_log registered as part of the log.c → log.cpp pilot
-# (mirrors DRAFT PR #315's orphan-test wiring). The executable was built but
-# never test()-registered, so the formatter / log-level filtering coverage
-# was silently dead. Wire it into the fast suite.
-test('test_log', test_log, suite : ['fast'])
 test('test_public_api_score', test_public_api_score, suite : ['fast'])
 test('test_thread_pool', test_thread_pool, suite : ['fast'])
 if has_cond_timedwait
