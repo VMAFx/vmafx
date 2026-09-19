@@ -32,7 +32,8 @@
     ".workingdir2/**",
     "build_artifacts/**",
     "model/**",
-    "ai/**/runs/**"
+    "ai/**/runs/**",
+    ".devcontainer/**"
   ],
   "packageRules": [
     {
@@ -232,6 +233,16 @@
         "rocm",
         "manual-review"
       ]
+    },
+    {
+      "description": "onnx is held below 1.23: onnx 1.23 writes models at IR version 14, and onnxruntime 1.30, the runtime this repository pins, loads at most IR 13 (T-AI-ONNX-IR14-UNLOADABLE-2026-09-18). Raise this together with an onnxruntime that reads the newer IR, and with the cap in ai/pyproject.toml and tools/ensemble-training-kit/pyproject.toml.",
+      "matchDatasources": [
+        "pypi"
+      ],
+      "matchPackageNames": [
+        "onnx"
+      ],
+      "allowedVersions": "<1.23"
     },
     {
       "description": "dev-image deps (CUDA-adjacent, Intel NEO/LZ0, ONNX Runtime, SVT-AV1, VVenC, AMF) \u2014 manual review required. Container rebuild has large blast radius; validate GPU compatibility before merging. See ADR-0605, ADR-1145.",
