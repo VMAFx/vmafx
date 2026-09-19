@@ -13,9 +13,15 @@
 # refactor passes `$ROOT` as a positional argument to the subshell so
 # its contents are treated as data regardless of shape.
 #
-# This test exercises the hardened path with a hostile `ONEAPI_PREFIX`
-# that contains `'`, `;`, and `>&2` — if the old vulnerability ever
-# regresses, "PWNED" appears on stderr and the test fails.
+# This test feeds the helper hostile `ONEAPI_PREFIX` values that close the
+# single-quote literal of the old command string. The oracle is a marker
+# file the payload would create under the test's `mktemp -d` directory; the
+# hostile prefix must also still work as an ordinary path.
+#
+# The fix was reverted once (PR #414 carried a stale copy of the helper) and
+# this test did not notice, because nothing ran it. It is now the
+# `test-sycl-bench-env` pre-commit hook, which the required Pre-Commit CI job
+# runs with --all-files.
 #
 # Run from anywhere:
 #   bash scripts/ci/test-sycl-bench-env.sh
@@ -91,12 +97,19 @@ cat >"$hostile_root/setvars.sh" <<'EOF'
 export CMPLR_ROOT=/contained
 EOF
 chmod +x "$hostile_root/setvars.sh"
-ONEAPI_PREFIX="$hostile_root" bash "$GATE" latest --quiet >/dev/null 2>&1 || true
+out2="$(ONEAPI_PREFIX="$hostile_root" bash "$GATE" latest --quiet 2>/dev/null || true)"
 if [ -f "${WORKDIR}/pwn-or-marker" ]; then
   ko "hostile ONEAPI_PREFIX || escaped subshell (marker file created)"
   rm -f "${WORKDIR}/pwn-or-marker"
 else
   ok "hostile ONEAPI_PREFIX || contained (no marker file)"
+fi
+# Containment must not come from the helper simply giving up: the hostile
+# prefix is a real directory, so its setvars.sh has to be sourced as data.
+if echo "$out2" | grep -q 'export CMPLR_ROOT=/contained'; then
+  ok "hostile ONEAPI_PREFIX || still used as a literal path"
+else
+  ko "hostile ONEAPI_PREFIX || was not sourced as a literal path"
 fi
 
 # --- Case 3: $(...) substitution inside single-quote literal is inert. ---
@@ -117,6 +130,31 @@ if [ -f "${WORKDIR}/pwn-sub-marker" ]; then
   rm -f "${WORKDIR}/pwn-sub-marker"
 else
   ok "hostile ONEAPI_PREFIX \$(…) contained (no marker file)"
+fi
+
+# --- Case 3b: quote-break + $(...) is the substitution that DOES fire. -----
+# Case 3 is inert even in the vulnerable form. Closing the single-quote
+# literal first is what arms it: `source 'dir'$(touch <marker>)'/setvars.sh'`
+# runs the substitution while the word is expanded, before `source` and
+# regardless of `set -e`. The positional-arg form never re-parses the value.
+hostile3_root="${WORKDIR}/q'\$(touch ${WORKDIR}/pwn-quote-sub-marker)'"
+mkdir -p "$hostile3_root"
+cat >"$hostile3_root/setvars.sh" <<'EOF'
+#!/bin/sh
+export CMPLR_ROOT=/contained3
+EOF
+chmod +x "$hostile3_root/setvars.sh"
+out3="$(ONEAPI_PREFIX="$hostile3_root" bash "$GATE" latest --quiet 2>/dev/null || true)"
+if [ -f "${WORKDIR}/pwn-quote-sub-marker" ]; then
+  ko "hostile ONEAPI_PREFIX '\$(…)' escaped subshell (marker file created)"
+  rm -f "${WORKDIR}/pwn-quote-sub-marker"
+else
+  ok "hostile ONEAPI_PREFIX '\$(…)' contained (no marker file)"
+fi
+if echo "$out3" | grep -q 'export CMPLR_ROOT=/contained3'; then
+  ok "hostile ONEAPI_PREFIX '\$(…)' still used as a literal path"
+else
+  ko "hostile ONEAPI_PREFIX '\$(…)' was not sourced as a literal path"
 fi
 
 # --- Case 4: missing version arg exits non-zero. --------------------------
