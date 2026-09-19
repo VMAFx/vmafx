@@ -25,6 +25,7 @@
  * over trivially-destructible or default-initialised objects is well-formed
  * C++23.  Spinner header uses inline to suppress ODR warnings. */
 
+#include <cstdint>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -84,6 +85,18 @@
  * Distinct from VMAF_EXIT_BACKEND_INIT_FAILED so CI gates can tell an
  * empty/short input apart from a backend failure. */
 #define VMAF_EXIT_NO_FRAMES_DECODED 101
+
+/* ADR-1262: dedicated exit code for "an input stream failed to read".
+ * Distinct from VMAF_EXIT_NO_FRAMES_DECODED, which means the inputs were
+ * merely empty or too short: 102 means bytes were expected and the read
+ * failed, so whatever frames were consumed are a truncated prefix and any
+ * pooled score over them is computed on less data than the caller asked for.
+ * Before ADR-1262 every read failure left the exit status at 0, so a corrupt
+ * pair was indistinguishable from a clean short one to any caller that tests
+ * `$?` rather than scraping stderr. A stream that simply ends earlier than
+ * its partner is NOT this: that stays a warning and exit 0, because scoring
+ * the common prefix of a legitimately shorter file is a supported use. */
+#define VMAF_EXIT_INPUT_READ_ERROR 102
 
 /* ADR-0543: sentinel returned by init_gpu_backends when the user passed
  * `--backend NAME` (non-auto/cpu) and that backend failed to initialise.
@@ -1265,17 +1278,66 @@ ProgressStyle console_progress_style()
 
 } // namespace
 
-/* Drive the main per-frame fetch + process loop. Returns the number of frames
- * successfully consumed (the post-increment `picture_index` value the original
- * inline loop used to compute `picture_index - 1` in pooling). Stops at EOF
- * on either side, on read errors, or when c->frame_cnt is reached.
+/* What a pair of fetch_picture() results means for the frame loop. */
+enum FrameFetchOutcome : std::uint8_t {
+    FRAME_FETCH_OK,    /* both pictures read; keep going */
+    FRAME_FETCH_END,   /* clean end of stream on one or both sides */
+    FRAME_FETCH_ERROR, /* at least one side failed to read */
+};
+
+/* Classify one pair of fetch_picture() results and emit the matching
+ * diagnostic. fetch_picture() returns 0 for a usable picture, 1 at end of
+ * stream and -1 on a read error (see finish_unread_picture).
+ *
+ * The error test comes FIRST, and that ordering is the whole point. `ret1 &&
+ * ret2` is true whenever both sides are non-zero, which includes both sides
+ * returning -1 -- so testing it first classified two failed reads as a clean
+ * end of stream, printing nothing and leaving the exit status at 0. A pair of
+ * truncated files then produced a full report over the frames that happened
+ * to arrive. See ADR-1262 and core/tools/test/test_vmaf_read_error_exit.sh. */
+FrameFetchOutcome classify_frame_fetch(int ret1, int ret2, const CLISettings *c)
+{
+    if (ret1 < 0 || ret2 < 0) {
+        (void)fprintf(stderr, "\nproblem while reading pictures\n");
+        return FRAME_FETCH_ERROR;
+    }
+    if (ret1 && ret2)
+        return FRAME_FETCH_END;
+    if (ret1) {
+        (void)fprintf(stderr, "\n\"%s\" ended before \"%s\".\n", c->path_ref, c->path_dist);
+        return FRAME_FETCH_END;
+    }
+    if (ret2) {
+        (void)fprintf(stderr, "\n\"%s\" ended before \"%s\".\n", c->path_dist, c->path_ref);
+        return FRAME_FETCH_END;
+    }
+    return FRAME_FETCH_OK;
+}
+
+/* Outcome of the per-frame fetch + process loop.
+ *
+ * `frames` is the number of frames successfully consumed (the post-increment
+ * `picture_index` value the pooling path uses to compute `picture_index - 1`).
+ * `exit_code` is 0 when the loop stopped for a benign reason -- end of either
+ * stream, or c->frame_cnt reached -- and non-zero when it stopped because a
+ * read failed. Reporting only the count, as this loop used to, gave main() no
+ * way to tell the two apart. */
+struct FrameLoopResult {
+    unsigned frames;
+    int exit_code;
+};
+
+/* Drive the main per-frame fetch + process loop. Stops at EOF on either side,
+ * on read errors, or when c->frame_cnt is reached; see FrameLoopResult for how
+ * the caller tells those apart.
  */
-unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_input *vid_dist,
-                        const CLISettings *c, int common_bitdepth, int istty)
+FrameLoopResult run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_input *vid_dist,
+                               const CLISettings *c, int common_bitdepth, int istty)
 {
     float fps = 0.;
     const double t0 = wall_time_s();
     const ProgressStyle progress_style = console_progress_style();
+    int exit_code = 0;
     unsigned picture_index;
     for (picture_index = 0;; picture_index++) {
 
@@ -1300,18 +1362,13 @@ unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_input *vi
             }
         }
 
-        if (ret1 && ret2) {
-            break;
-        } else if (ret1 < 0 || ret2 < 0) {
-            (void)fprintf(stderr, "\nproblem while reading pictures\n");
-            break;
-        } else if (ret1) {
-            (void)fprintf(stderr, "\n\"%s\" ended before \"%s\".\n", c->path_ref, c->path_dist);
-            break;
-        } else if (ret2) {
-            (void)fprintf(stderr, "\n\"%s\" ended before \"%s\".\n", c->path_dist, c->path_ref);
+        const FrameFetchOutcome outcome = classify_frame_fetch(ret1, ret2, c);
+        if (outcome == FRAME_FETCH_ERROR) {
+            exit_code = VMAF_EXIT_INPUT_READ_ERROR;
             break;
         }
+        if (outcome == FRAME_FETCH_END)
+            break;
 
         if (istty && !c->quiet) {
             if (picture_index > 0 && !(picture_index % 10)) {
@@ -1324,13 +1381,17 @@ unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_input *vi
         const int err = vmaf_read_pictures(vmaf, &pic_ref, &pic_dist, picture_index);
         if (err) {
             (void)fprintf(stderr, "\nproblem reading pictures\n");
+            /* Handing the pictures to the library failed, so this frame never
+             * entered the score. Same reasoning as a failed read: do not let
+             * the run report success over the frames that came before. */
+            exit_code = err;
             break;
         }
     }
     if (istty && !c->quiet)
         (void)fprintf(stderr, "\n");
 
-    return picture_index;
+    return {.frames = picture_index, .exit_code = exit_code};
 }
 
 /* Compute and report pooled VMAF scores for all loaded models and model
@@ -1752,17 +1813,29 @@ int main(int argc, char *argv[])
 
         skip_initial_frames(vmaf, &vid_ref, &vid_dist, &c, common_bitdepth);
 
-        const unsigned picture_index =
+        const FrameLoopResult loop =
             run_frame_loop(vmaf, &vid_ref, &vid_dist, &c, common_bitdepth, istty);
+        const unsigned picture_index = loop.frames;
 
-        /* No-frames guard: the pooling path below computes `picture_index - 1`.
+        /* Two ways the loop can fail, sharing one exit so this does not add a
+         * jump to the cleanup spine.
+         *
+         * ADR-1262: a failed read is reported first -- "the file would not
+         * read" is the more specific answer than "nothing came out of it", and
+         * it is the one the caller can act on. Either way the run must not
+         * exit 0 over a truncated prefix.
+         *
+         * No-frames guard: the pooling path below computes `picture_index - 1`.
          * With zero decoded frames that underflows the unsigned counter to
-         * UINT_MAX and feeds a garbage index range into vmaf_score_pooled.
-         * Fail fast with a dedicated exit code instead. */
-        if (picture_index == 0) {
-            (void)fprintf(stderr, "no frames decoded from \"%s\" / \"%s\"\n", c.path_ref,
-                          c.path_dist);
-            ret = VMAF_EXIT_NO_FRAMES_DECODED;
+         * UINT_MAX and feeds a garbage index range into vmaf_score_pooled. */
+        if (loop.exit_code || picture_index == 0) {
+            if (loop.exit_code) {
+                ret = loop.exit_code;
+            } else {
+                (void)fprintf(stderr, "no frames decoded from \"%s\" / \"%s\"\n", c.path_ref,
+                              c.path_dist);
+                ret = VMAF_EXIT_NO_FRAMES_DECODED;
+            }
             goto cleanup;
         }
 

@@ -56,3 +56,15 @@ test('test_vmaf_roi_high_bitdepth', test_vmaf_roi_high_bitdepth,
          'MESON_BUILD_ROOT=' + meson.project_build_root(),
          'MESON_SOURCE_ROOT=' + meson.project_source_root(),
      ])
+
+# ADR-1262 — a failed input read must exit non-zero. Pure CPU and tiny (24x24,
+# two frames), so it belongs in the fast pre-push suite rather than 'slow'.
+test_vmaf_read_error_exit = find_program('test_vmaf_read_error_exit.sh')
+test('test_vmaf_read_error_exit', test_vmaf_read_error_exit,
+     suite : ['fast'],
+     depends : [vmaf],
+     workdir : meson.project_build_root(),
+     env: [
+         'MESON_BUILD_ROOT=' + meson.project_build_root(),
+         'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+     ])

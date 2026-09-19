@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-09-19T19:47:02Z",
+  "generated_at": "2026-09-19T19:40:36Z",
   "repository": "",
   "commit_sha": "",
   "total_infractions": 1414,
@@ -4674,176 +4674,176 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 301,
+      "line_number": 302,
       "symbol": "write_scores",
       "message": "Function 'write_scores' (117 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:301:HISS-04"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:302:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 423,
+      "line_number": 424,
       "symbol": "static const VmafOption options_hip[] = {",
       "message": "Function 'static const VmafOption options_hip[] = {' (136 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:423:HISS-04"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:424:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 879,
+      "line_number": 880,
       "symbol": "{",
       "message": "Function '{' (66 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:879:HISS-04"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:880:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 953,
+      "line_number": 954,
       "symbol": "{",
       "message": "Function '{' (184 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:953:HISS-04"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:954:HISS-04"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1211,
+      "line_number": 1212,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1211:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1212:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1214,
+      "line_number": 1215,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1214:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1215:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1217,
+      "line_number": 1218,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1217:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1218:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1222,
+      "line_number": 1223,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1222:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1223:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1225,
+      "line_number": 1226,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1225:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1226:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1228,
+      "line_number": 1229,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1228:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1229:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1231,
+      "line_number": 1232,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1231:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1232:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1238,
+      "line_number": 1239,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1238:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1239:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1275,
+      "line_number": 1276,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1275:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1276:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1278,
+      "line_number": 1279,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1278:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1279:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1281,
+      "line_number": 1282,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1281:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1282:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1284,
+      "line_number": 1285,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1284:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1285:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1287,
+      "line_number": 1288,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1287:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1288:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1290,
+      "line_number": 1291,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1290:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1291:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1294,
+      "line_number": 1295,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1294:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1295:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1303,
+      "line_number": 1304,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1303:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1304:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1306,
+      "line_number": 1307,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1306:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1307:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1368,
+      "line_number": 1369,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1368:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1369:HISS-01"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1150,
+      "line_number": 1151,
       "symbol": "{",
       "message": "Function '{' (269 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1150:HISS-04"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1151:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_adm_hip.c",
-      "line_number": 1481,
+      "line_number": 1482,
       "symbol": "close_fex_hip",
       "message": "Function 'close_fex_hip' (82 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1481:HISS-04"
+      "fingerprint": "core/src/feature/hip/integer_adm_hip.c:1482:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -4856,152 +4856,152 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 165,
+      "line_number": 166,
       "symbol": "static const VmafOption options[] = {",
       "message": "Function 'static const VmafOption options[] = {' (129 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:165:HISS-04"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:166:HISS-04"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 531,
+      "line_number": 532,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:531:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:532:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 536,
+      "line_number": 537,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:536:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:537:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 541,
+      "line_number": 542,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:541:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:542:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 548,
+      "line_number": 549,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:548:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:549:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 553,
+      "line_number": 554,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:553:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:554:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 558,
+      "line_number": 559,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:558:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:559:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 564,
+      "line_number": 565,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:564:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:565:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 567,
+      "line_number": 568,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:567:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:568:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 574,
+      "line_number": 575,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:574:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:575:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 579,
+      "line_number": 580,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:579:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:580:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 584,
+      "line_number": 585,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:584:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:585:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 599,
+      "line_number": 600,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:599:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:600:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 604,
+      "line_number": 605,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:604:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:605:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 609,
+      "line_number": 610,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:609:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:610:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 617,
+      "line_number": 618,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:617:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:618:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 626,
+      "line_number": 627,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:626:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:627:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 631,
+      "line_number": 632,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:631:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:632:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 636,
+      "line_number": 637,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:636:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:637:HISS-01"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 488,
+      "line_number": 489,
       "symbol": "{",
       "message": "Function '{' (185 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:488:HISS-04"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:489:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_cambi_hip.c",
-      "line_number": 679,
+      "line_number": 680,
       "symbol": "{",
       "message": "Function '{' (144 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:679:HISS-04"
+      "fingerprint": "core/src/feature/hip/integer_cambi_hip.c:680:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -5038,217 +5038,217 @@
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 272,
+      "line_number": 273,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:272:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:273:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 275,
+      "line_number": 276,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:275:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:276:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 278,
+      "line_number": 279,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:278:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:279:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 301,
+      "line_number": 302,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:301:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:302:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 306,
+      "line_number": 307,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:306:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:307:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 309,
+      "line_number": 310,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:309:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:310:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 316,
+      "line_number": 317,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:316:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:317:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 321,
+      "line_number": 322,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:321:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:322:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 328,
+      "line_number": 329,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:328:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:329:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 331,
+      "line_number": 332,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:331:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:332:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 334,
+      "line_number": 335,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:334:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:335:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 337,
+      "line_number": 338,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:337:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:338:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 340,
+      "line_number": 341,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:340:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:341:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 347,
+      "line_number": 348,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:347:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:348:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 352,
+      "line_number": 353,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:352:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:353:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 360,
+      "line_number": 361,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:360:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:361:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 369,
+      "line_number": 370,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:369:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:370:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 374,
+      "line_number": 375,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:374:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:375:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 382,
+      "line_number": 383,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:382:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:383:HISS-01"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 290,
+      "line_number": 291,
       "symbol": "ms_ssim_hip_bufs_alloc",
       "message": "Function 'ms_ssim_hip_bufs_alloc' (172 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:290:HISS-04"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:291:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 465,
+      "line_number": 466,
       "symbol": "ms_ssim_hip_bufs_free",
       "message": "Function 'ms_ssim_hip_bufs_free' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:465:HISS-04"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:466:HISS-04"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 686,
+      "line_number": 687,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:686:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:687:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 691,
+      "line_number": 692,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:691:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:692:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 695,
+      "line_number": 696,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:695:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:696:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 699,
+      "line_number": 700,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:699:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:700:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 708,
+      "line_number": 709,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:708:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:709:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 710,
+      "line_number": 711,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:710:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:711:HISS-01"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 644,
+      "line_number": 645,
       "symbol": "{",
       "message": "Function '{' (83 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:644:HISS-04"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:645:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 765,
+      "line_number": 766,
       "symbol": "{",
       "message": "Function '{' (67 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:765:HISS-04"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:766:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_ms_ssim_hip.c",
-      "line_number": 835,
+      "line_number": 836,
       "symbol": "{",
       "message": "Function '{' (67 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:835:HISS-04"
+      "fingerprint": "core/src/feature/hip/integer_ms_ssim_hip.c:836:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -5269,94 +5269,94 @@
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_psnr_hvs_hip.c",
-      "line_number": 200,
+      "line_number": 201,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:200:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:201:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_psnr_hvs_hip.c",
-      "line_number": 205,
+      "line_number": 206,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:205:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:206:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_psnr_hvs_hip.c",
-      "line_number": 216,
+      "line_number": 217,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:216:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:217:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_psnr_hvs_hip.c",
-      "line_number": 221,
+      "line_number": 222,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:221:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:222:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_psnr_hvs_hip.c",
-      "line_number": 226,
+      "line_number": 227,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:226:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:227:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_psnr_hvs_hip.c",
-      "line_number": 232,
+      "line_number": 233,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:232:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:233:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_psnr_hvs_hip.c",
-      "line_number": 237,
+      "line_number": 238,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:237:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:238:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_psnr_hvs_hip.c",
-      "line_number": 242,
+      "line_number": 243,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:242:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:243:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_psnr_hvs_hip.c",
-      "line_number": 247,
+      "line_number": 248,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:247:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:248:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_psnr_hvs_hip.c",
-      "line_number": 252,
+      "line_number": 253,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:252:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:253:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_psnr_hvs_hip.c",
-      "line_number": 262,
+      "line_number": 263,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:262:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:263:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/integer_psnr_hvs_hip.c",
-      "line_number": 264,
+      "line_number": 265,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:264:HISS-01"
+      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:265:HISS-01"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_psnr_hvs_hip.c",
-      "line_number": 140,
+      "line_number": 141,
       "symbol": "{",
       "message": "Function '{' (177 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:140:HISS-04"
+      "fingerprint": "core/src/feature/hip/integer_psnr_hvs_hip.c:141:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -5401,142 +5401,142 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/speed_chroma_hip.c",
-      "line_number": 151,
+      "line_number": 152,
       "symbol": "static const VmafOption options_chroma[] = {",
       "message": "Function 'static const VmafOption options_chroma[] = {' (78 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:151:HISS-04"
+      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:152:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/speed_chroma_hip.c",
-      "line_number": 510,
+      "line_number": 511,
       "symbol": "run_score_sc",
       "message": "Function 'run_score_sc' (80 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:510:HISS-04"
+      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:511:HISS-04"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/speed_chroma_hip.c",
-      "line_number": 656,
+      "line_number": 657,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:656:HISS-01"
+      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:657:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/speed_chroma_hip.c",
-      "line_number": 662,
+      "line_number": 663,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:662:HISS-01"
+      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:663:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/speed_chroma_hip.c",
-      "line_number": 667,
+      "line_number": 668,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:667:HISS-01"
+      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:668:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/speed_chroma_hip.c",
-      "line_number": 683,
+      "line_number": 684,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:683:HISS-01"
+      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:684:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/speed_chroma_hip.c",
-      "line_number": 694,
+      "line_number": 695,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:694:HISS-01"
+      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:695:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/speed_chroma_hip.c",
-      "line_number": 703,
+      "line_number": 704,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:703:HISS-01"
+      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:704:HISS-01"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/speed_chroma_hip.c",
-      "line_number": 599,
+      "line_number": 600,
       "symbol": "{",
       "message": "Function '{' (124 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:599:HISS-04"
+      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:600:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/speed_chroma_hip.c",
-      "line_number": 728,
+      "line_number": 729,
       "symbol": "{",
       "message": "Function '{' (115 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:728:HISS-04"
+      "fingerprint": "core/src/feature/hip/speed_chroma_hip.c:729:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/speed_temporal_hip.c",
-      "line_number": 140,
+      "line_number": 141,
       "symbol": "static const VmafOption options_temporal[] = {",
       "message": "Function 'static const VmafOption options_temporal[] = {' (76 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:140:HISS-04"
+      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:141:HISS-04"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/speed_temporal_hip.c",
-      "line_number": 594,
+      "line_number": 595,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:594:HISS-01"
+      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:595:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/speed_temporal_hip.c",
-      "line_number": 600,
+      "line_number": 601,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:600:HISS-01"
+      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:601:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/speed_temporal_hip.c",
-      "line_number": 604,
+      "line_number": 605,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:604:HISS-01"
+      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:605:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/speed_temporal_hip.c",
-      "line_number": 620,
+      "line_number": 621,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:620:HISS-01"
+      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:621:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/speed_temporal_hip.c",
-      "line_number": 630,
+      "line_number": 631,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:630:HISS-01"
+      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:631:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/speed_temporal_hip.c",
-      "line_number": 640,
+      "line_number": 641,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:640:HISS-01"
+      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:641:HISS-01"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/speed_temporal_hip.c",
-      "line_number": 551,
+      "line_number": 552,
       "symbol": "{",
       "message": "Function '{' (111 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:551:HISS-04"
+      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:552:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/speed_temporal_hip.c",
-      "line_number": 667,
+      "line_number": 668,
       "symbol": "{",
       "message": "Function '{' (103 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:667:HISS-04"
+      "fingerprint": "core/src/feature/hip/speed_temporal_hip.c:668:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -5549,91 +5549,91 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/ssimulacra2_hip.c",
-      "line_number": 72,
+      "line_number": 73,
       "symbol": "static const double g_weights[108] = {",
       "message": "Function 'static const double g_weights[108] = {' (110 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:72:HISS-04"
+      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:73:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/ssimulacra2_hip.c",
-      "line_number": 364,
+      "line_number": 365,
       "symbol": "ss2h_picture_to_linear_rgb",
       "message": "Function 'ss2h_picture_to_linear_rgb' (75 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:364:HISS-04"
+      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:365:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/ssimulacra2_hip.c",
-      "line_number": 822,
+      "line_number": 823,
       "symbol": "ss2h_run_scale_gpu",
       "message": "Function 'ss2h_run_scale_gpu' (92 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:822:HISS-04"
+      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:823:HISS-04"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/ssimulacra2_hip.c",
-      "line_number": 959,
+      "line_number": 960,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:959:HISS-01"
+      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:960:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/ssimulacra2_hip.c",
-      "line_number": 962,
+      "line_number": 963,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:962:HISS-01"
+      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:963:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/ssimulacra2_hip.c",
-      "line_number": 965,
+      "line_number": 966,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:965:HISS-01"
+      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:966:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/ssimulacra2_hip.c",
-      "line_number": 968,
+      "line_number": 969,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:968:HISS-01"
+      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:969:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/ssimulacra2_hip.c",
-      "line_number": 971,
+      "line_number": 972,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:971:HISS-01"
+      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:972:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/ssimulacra2_hip.c",
-      "line_number": 975,
+      "line_number": 976,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:975:HISS-01"
+      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:976:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/hip/ssimulacra2_hip.c",
-      "line_number": 978,
+      "line_number": 979,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:978:HISS-01"
+      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:979:HISS-01"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/ssimulacra2_hip.c",
-      "line_number": 923,
+      "line_number": 924,
       "symbol": "{",
       "message": "Function '{' (77 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:923:HISS-04"
+      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:924:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/ssimulacra2_hip.c",
-      "line_number": 1009,
+      "line_number": 1010,
       "symbol": "{",
       "message": "Function '{' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:1009:HISS-04"
+      "fingerprint": "core/src/feature/hip/ssimulacra2_hip.c:1010:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -7997,7 +7997,7 @@
       "file_path": "core/test/test_hip_cambi_parity.c",
       "line_number": 135,
       "symbol": "run_hip_cambi",
-      "message": "Function 'run_hip_cambi' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "message": "Function 'run_hip_cambi' (61 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/test/test_hip_cambi_parity.c:135:HISS-04"
     },
     {
@@ -8005,7 +8005,7 @@
       "file_path": "core/test/test_hip_float_adm_parity.c",
       "line_number": 161,
       "symbol": "{",
-      "message": "Function '{' (71 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "message": "Function '{' (70 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/test/test_hip_float_adm_parity.c:161:HISS-04"
     },
     {
@@ -8013,7 +8013,7 @@
       "file_path": "core/test/test_hip_float_moment_parity.c",
       "line_number": 155,
       "symbol": "run_hip_float_moment",
-      "message": "Function 'run_hip_float_moment' (64 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "message": "Function 'run_hip_float_moment' (63 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/test/test_hip_float_moment_parity.c:155:HISS-04"
     },
     {
@@ -8021,7 +8021,7 @@
       "file_path": "core/test/test_hip_float_motion_parity.c",
       "line_number": 105,
       "symbol": "run_hip_float_motion",
-      "message": "Function 'run_hip_float_motion' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "message": "Function 'run_hip_float_motion' (61 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/test/test_hip_float_motion_parity.c:105:HISS-04"
     },
     {
@@ -8029,7 +8029,7 @@
       "file_path": "core/test/test_hip_float_psnr_parity.c",
       "line_number": 102,
       "symbol": "run_hip_float_psnr",
-      "message": "Function 'run_hip_float_psnr' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "message": "Function 'run_hip_float_psnr' (61 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/test/test_hip_float_psnr_parity.c:102:HISS-04"
     },
     {
@@ -8037,7 +8037,7 @@
       "file_path": "core/test/test_hip_float_ssim_parity.c",
       "line_number": 110,
       "symbol": "run_hip_float_ssim",
-      "message": "Function 'run_hip_float_ssim' (81 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "message": "Function 'run_hip_float_ssim' (80 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/test/test_hip_float_ssim_parity.c:110:HISS-04"
     },
     {
@@ -8045,7 +8045,7 @@
       "file_path": "core/test/test_hip_float_vif_parity.c",
       "line_number": 137,
       "symbol": "run_hip_float_vif",
-      "message": "Function 'run_hip_float_vif' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "message": "Function 'run_hip_float_vif' (73 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/test/test_hip_float_vif_parity.c:137:HISS-04"
     },
     {
@@ -8077,7 +8077,7 @@
       "file_path": "core/test/test_hip_ssimulacra2_parity.c",
       "line_number": 109,
       "symbol": "run_hip_ssimulacra2",
-      "message": "Function 'run_hip_ssimulacra2' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "message": "Function 'run_hip_ssimulacra2' (61 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/test/test_hip_ssimulacra2_parity.c:109:HISS-04"
     },
     {
@@ -8335,130 +8335,130 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 102,
+      "line_number": 115,
       "symbol": "{",
-      "message": "Function '{' (1365 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/tools/vmaf.cpp:102:HISS-04"
+      "message": "Function '{' (1413 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/tools/vmaf.cpp:115:HISS-04"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1557,
+      "line_number": 1618,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1557:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1618:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1564,
+      "line_number": 1625,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1564:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1625:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1570,
+      "line_number": 1631,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1570:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1631:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1597,
+      "line_number": 1658,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1597:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1658:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1629,
+      "line_number": 1690,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1629:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1690:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1660,
+      "line_number": 1721,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1660:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1721:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1669,
+      "line_number": 1730,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1669:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1730:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1677,
+      "line_number": 1738,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1677:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1738:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1698,
+      "line_number": 1759,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1698:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1759:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1736,
+      "line_number": 1797,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1736:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1797:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1744,
+      "line_number": 1805,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1744:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1805:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1750,
+      "line_number": 1811,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1750:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1811:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1766,
+      "line_number": 1839,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1766:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1839:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1773,
+      "line_number": 1846,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1773:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1846:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1779,
+      "line_number": 1852,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1779:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1852:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1792,
+      "line_number": 1865,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1792:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1865:HISS-01"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1470,
+      "line_number": 1531,
       "symbol": "main",
-      "message": "Function 'main' (381 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/tools/vmaf.cpp:1470:HISS-04"
+      "message": "Function 'main' (393 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/tools/vmaf.cpp:1531:HISS-04"
     },
     {
       "rule_id": "HISS-04",

@@ -1385,6 +1385,8 @@ nav:
         - "ADR-1259: ci-build-matrix-as-it-runs": adr/1259-ci-build-matrix-as-it-runs.md
         - "ADR-1260: windows-arm64-cpu-lane": adr/1260-windows-arm64-cpu-lane.md
         - "ADR-1261: mypy-pre-push-delta-gate": adr/1261-mypy-pre-push-delta-gate.md
+        - "ADR-1262: cli-input-read-error-exit-code": adr/1262-cli-input-read-error-exit-code.md
+        - "ADR-1263: hip-platform-macro-single-source": adr/1263-hip-platform-macro-single-source.md
         - "ADR-1264: hip-scaffold-enosys-contract": adr/1264-hip-scaffold-enosys-contract.md
       - "By tag":
         - Overview: adr/by-tag/index.md
@@ -1570,6 +1572,7 @@ nav:
         - "eval": adr/by-tag/eval.md
         - "executor": adr/by-tag/executor.md
         - "exit-code": adr/by-tag/exit-code.md
+        - "exit-codes": adr/by-tag/exit-codes.md
         - "extends-adr-0498": adr/by-tag/extends-adr-0498.md
         - "external-bench": adr/by-tag/external-bench.md
         - "extractor": adr/by-tag/extractor.md
