@@ -147,7 +147,27 @@ extensions on NEON types, brace-initialised or compound-literal vectors,
    probes SVE2 only under `__linux__`, so WoA dispatches NEON; no NEON
    source uses vector-extension indexing, brace-initialised vector types,
    compound-literal vectors or multi-register `_x2`..`_x4` loads.
-4. Noted, not fixed here: the x86 carve-outs (`core/src/meson.build`, the
+4. `core/src/feature/simd_dx.h` (found by the lane's first run, not by
+   reading): both NEON macro blocks were gated on `#if defined(__ARM_NEON)`.
+   MSVC does not define that ACLE macro — Microsoft's predefined-macros list
+   goes `__APX_F__`, `__ARM_ARCH`, `__ATOM__`, with no `__ARM_NEON` — so on
+   the lane the whole header was empty. `ssim_neon.c` failed loudly (26
+   errors: `SIMD_ALIGNED_F32_BUF_NEON`, `SIMD_LANES_NEON` undeclared, then
+   cascading type errors). `convolve_neon.c` failed *quietly*: its
+   `SIMD_WIDEN_ADD_F32_F64_NEON_4L(lo, hi, f4, coeff_f)` became an implicit
+   external function call under warning C4013, so the ADR-0138 bit-exact
+   widening reduction would have died at link — and the compile step, which
+   is what a build-only lane checks, reported success. That is the argument
+   for this lane running tests rather than being build-only, and for reading
+   MSVC warnings as well as errors. Fixed by accepting `_M_ARM64` /
+   `_M_ARM64EC` in both gates and using the `alignas` keyword for the spill
+   buffer, which the same run proved works (`ssimulacra2_host_neon.c`
+   compiled with bare `alignas(16)`), rather than the unproven `_Alignas`.
+   Note the blast radius: 19 of the 20 arm64 TUs compiled on that first run,
+   so the arm64 tree is in good shape under MSVC; the header was the one
+   shared dependency nothing had ever type-checked on Windows, because the
+   x64 MSVC lanes never define `__AVX2__` either.
+5. Noted, not fixed here: the x86 carve-outs (`core/src/meson.build`, the
    `x86_*` static libraries) and `libvmaf_psnr_hvs_scalar_static_lib` pass
    `-ffp-contract=off` to `cl.exe` on the x64 MSVC lanes, and
    `core/test/meson.build`'s `_simd_strict_fp_args` does the same for the

@@ -43,6 +43,12 @@
 #ifndef VMAF_FEATURE_SIMD_DX_H_
 #define VMAF_FEATURE_SIMD_DX_H_
 
+/* `alignas` is a keyword in C23 and a macro from this header before it.
+ * The spilled-lane buffers below use the keyword spelling rather than
+ * `_Alignas` because that is the one proven on every compiler that builds
+ * this tree, MSVC ARM64 included (ADR-1260). */
+#include <stdalign.h>
+
 /* ----------------------------------------------------------------- *
  * Pattern 1: widen-add bit-exact reduction (ADR-0138).
  *
@@ -88,7 +94,14 @@
 
 #endif /* __AVX512F__ */
 
-#if defined(__ARM_NEON) && !defined(SIMD_DX_NO_NEON)
+/* MSVC does not define the ACLE `__ARM_NEON` macro -- its ARM64 predefined
+ * set is `_M_ARM64` / `_M_ARM64EC` (plus `__ARM_ARCH` since VS 2022 17.10)
+ * -- but it does ship `<arm_neon.h>` and the intrinsics used below. Without
+ * the MSVC arm, these macros vanish on the Windows ARM64 lane (ADR-1260):
+ * `ssim_neon.c` fails to compile, and worse, `convolve_neon.c`'s
+ * widening-accumulate degrades to an implicit external function (C4013)
+ * that only fails at link time. */
+#if (defined(__ARM_NEON) || defined(_M_ARM64) || defined(_M_ARM64EC)) && !defined(SIMD_DX_NO_NEON)
 
 /* 4-lane F32 chunk → paired (low, high) 2-lane F64 accumulators.
  *
@@ -165,10 +178,17 @@
 
 #endif /* __AVX512F__ */
 
-#if defined(__ARM_NEON) && !defined(SIMD_DX_NO_NEON)
+/* MSVC does not define the ACLE `__ARM_NEON` macro -- its ARM64 predefined
+ * set is `_M_ARM64` / `_M_ARM64EC` (plus `__ARM_ARCH` since VS 2022 17.10)
+ * -- but it does ship `<arm_neon.h>` and the intrinsics used below. Without
+ * the MSVC arm, these macros vanish on the Windows ARM64 lane (ADR-1260):
+ * `ssim_neon.c` fails to compile, and worse, `convolve_neon.c`'s
+ * widening-accumulate degrades to an implicit external function (C4013)
+ * that only fails at link time. */
+#if (defined(__ARM_NEON) || defined(_M_ARM64) || defined(_M_ARM64EC)) && !defined(SIMD_DX_NO_NEON)
 
 /* NEON 128-bit `float32x4_t` covers 4 lanes. 16-byte aligned. */
-#define SIMD_ALIGNED_F32_BUF_NEON(name) _Alignas(16) float name[4]
+#define SIMD_ALIGNED_F32_BUF_NEON(name) alignas(16) float name[4]
 #define SIMD_LANES_NEON 4
 
 #endif /* __ARM_NEON */
