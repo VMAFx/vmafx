@@ -981,3 +981,4 @@
 1250-eupl-fork-relicense
 1249-praetor-governance-adoption
 1256-cambi-spatial-mask-simd-dispatch
+1261-mypy-pre-push-delta-gate

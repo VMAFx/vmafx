@@ -285,6 +285,26 @@ outgoing refs different from checked-out HEAD, fail closed on missing
 base/tool/file state. Keep `git-hooks/test-pre-push-mypy.py` registered in
 local hooks and required Pre-Commit CI. No new lint policy introduced.
 
+Hook fails on findings branch introduces, not inherited ones (ADR-1261).
+Two invariants:
+
+- Paths under `ai/src/` = own `mypy` run with `--explicit-package-bases`.
+  `ai/src` = `mypy_path` base -> path under it has two module names -> mypy
+  refuses run ("Source file found twice under different module names"), so every
+  push touching it failed. `exclude` in `pyproject.toml` stops crawl discovery
+  only, not a path named on command line.
+- Same files re-checked at merge base in disposable worktree; only new
+  fingerprints fail. Fingerprint = path + error code + message, no line number
+  (edit above a finding shifts it, does not change it). Worktree removed in
+  `finally` (ADR-0332 drift guard). CI `mypy` = advisory
+  (`|| echo` in `Python Lint`), inherited findings vary with installed
+  numpy / pandas / torch stubs.
+
+Non-zero exit with no attributable finding = mypy broke -> fail closed, exit 2.
+Do not restore raw exit-status propagation. Do not raise `python_version` from
+`3.10` here: stale, but `3.14` unmasks 175 findings on master
+(T-CI-MYPY-PYTHON-VERSION-STALE-2026-09-19).
+
 ### `run_unittests.sh` is upstream-mirror
 
 Script = part of original Netflix Python test harness

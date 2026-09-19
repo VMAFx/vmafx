@@ -275,6 +275,21 @@ back while resolving a conflict; the failure is `[Errno 122] Disk quota
 exceeded`, not a full disk. In `run:` blocks use `${RUNNER_TEMP}`; in action
 inputs use `${{ runner.temp }}`, because `with:` has no shell. The contract test
 `scripts/ci/test_e2e_runtime_contract.py` enforces exactly that split.
+## fix/pre-push-mypy-delta — introduced findings only (2026-09-19)
+
+`scripts/git-hooks/pre-push-mypy.py` keeps the `ai/`/`scripts/` merge-base
+scope from the note below, and adds two invariants (ADR-1261). Paths under
+`ai/src/` run in their own `mypy` invocation with `--explicit-package-bases`;
+that directory is a `mypy_path` base and without the flag mypy refuses the file
+for having two module names, which blocked every push touching it. The same
+files are re-checked at the merge base in a disposable worktree and only new
+findings fail, because CI's `mypy` is advisory and inherited findings vary with
+the checkout's installed stub packages. Do not restore the raw exit-status
+propagation: an unattributable non-zero exit now fails closed with its own
+message, which the regression suite pins. Do not raise `python_version` while
+resolving a conflict here; `3.10` is stale but `3.14` unmasks 175 findings on
+master and belongs to its own change. Fork-only tooling; no native API or
+FFmpeg patch impact.
 
 ## fix/pre-push-mypy-scope — merge-base ownership (2026-09-08)
 
