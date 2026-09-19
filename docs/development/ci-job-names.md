@@ -102,6 +102,7 @@ job the PR renamed, every required check and every build lane.
 | `libvmaf-build-matrix.yml` | `Build — Ubuntu CUDA` | `Ubuntu CUDA` | 11 | No |
 | `libvmaf-build-matrix.yml` | `Build — Ubuntu SYCL + CUDA` | `Ubuntu SYCL+CUDA` | 16 | No |
 | `lint-and-format.yml` | `Pre-Commit (Formatters + Basic Checks)` | `Pre-Commit` | 10 | Yes |
+| `libvmaf-build-matrix.yml` | new in ADR-1260 | `Windows ARM64 MSVC` | 18 | No |
 | `lint-and-format.yml` | `Clang-Tidy (Changed C/C++ Files)` | `Tidy Changed` | 12 | Yes |
 | `lint-and-format.yml` | `Clang-Tidy Ratchet (Whole Tree)` | `Tidy Ratchet` | 12 | Yes |
 | `lint-and-format.yml` | `Cppcheck (Whole Project)` | `Cppcheck` | 8 | Yes |

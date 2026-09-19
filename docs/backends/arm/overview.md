@@ -105,6 +105,15 @@ suite on real aarch64 hardware (not qemu).
 
 [libvmaf-build-matrix]: ../../../.github/workflows/libvmaf-build-matrix.yml
 
+The `Windows ARM64 MSVC` job in the same workflow builds the NEON tree
+natively with the ARM64-hosted MSVC toolset on `windows-11-vs2026-arm` and
+runs the meson `fast` suite there
+([ADR-1260](../../adr/1260-windows-arm64-cpu-lane.md)). It is advisory.
+MSVC gets `/fp:precise` where GCC and clang get `-ffp-contract=off`
+(`arm64_strict_fp_args` in `core/src/meson.build`); the SVE2 sister TUs are
+not built by MSVC, which has no `<arm_sve.h>`, and the SVE2 runtime probe is
+Linux-only, so a Windows build dispatches NEON.
+
 `make test-netflix-golden` runs on aarch64 in the same matrix and
 must remain green — see [`docs/principles.md`](../../principles.md)
 § 8 (Netflix golden gate).
@@ -116,6 +125,9 @@ must remain green — see [`docs/principles.md`](../../principles.md)
   `--cpumask 0` to drop to scalar across all extractors at once,
   then re-enable per-extractor by running individual `--feature`
   invocations.
+- Windows on ARM64 is NEON-only: SVE2 is neither built by MSVC nor
+  probed outside Linux. Building there is described in
+  [Building libvmaf on Windows](../../getting-started/building-on-windows.md#native-msvc-on-windows-arm64).
 - No discrete GPU path on aarch64 yet. The CUDA / SYCL / HIP backends
   compile for x86_64 only in the current matrix; on Apple Silicon the
   Metal backend ([metal/index.md](../metal/index.md)) is the aarch64 GPU
