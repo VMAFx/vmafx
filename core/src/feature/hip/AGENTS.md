@@ -433,16 +433,56 @@ Invariants:
   wave64 (GCN / CDNA) add in the same order. The tree is sized for the 16x8
   launch: `ISSIM_BLOCK_X/Y` in the kernel and `ISSIM_HIP_BLOCK_X/Y` in the
   host must change together.
-- **Wait for the picture upload.** `submit()` uploads the host pictures with
-  `hipMemcpy2DAsync` and then `hipStreamSynchronize`s before it returns.
-  Without the wait, a pageable-source copy can still be reading when the
-  picture pool refills that buffer with the next frame, and some frames get
-  scored against the next frame's samples. The single-frame fixtures never
-  showed this. Every HIP twin that uploads from `VmafPicture::data` has the same
-  exposure until a HIP picture pool exists (T7-10c); the ones still open are
-  listed under T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18 in `docs/state.md`. A
-  parity test that only feeds one frame cannot catch this. Feed several frames
-  from a CLI-sized pool, as `test_hip_ssim_parity.c` does.
+- **Wait for the picture upload.** `submit()` stages the host pictures through
+  `vmaf_hip_picture_upload()`; see "Picture uploads" below. This twin is where
+  the race was first seen, off by up to 0.2 on the Netflix 576x324 pair.
+
+## Picture uploads: never return from submit() with one in flight
+
+**Invariant: an extractor must not return from `submit()` while an upload from
+a pooled host picture is in flight.**
+
+HIP pictures are pageable host memory; there is no HIP picture pool yet
+(T7-10c). `hipMemcpy2DAsync` is asynchronous with respect to the host, so a
+bare call can still be reading `VmafPicture::data` after `submit()` has
+returned, and the caller may refill the picture at once. The CLI's pool is
+LIFO: the distorted picture of frame N is the first buffer refilled for frame
+N + 1. The result was frames scored against the next frame's samples, a
+different set on every run, or, with several extractors in one process, the
+same wrong 46 of 48 frames on every run (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18).
+
+Rules:
+
+- Stage every plane that comes from `VmafPicture::data` with
+  `vmaf_hip_picture_upload()` (`core/src/hip/picture_hip.h`). It enqueues the
+  copies and waits on an event recorded after them. Do not call
+  `hipMemcpy2DAsync` / `hipMemcpyAsync` on a picture plane directly. A copy
+  from an extractor-owned pinned buffer (`integer_ms_ssim_hip`,
+  `integer_psnr_hvs_hip`, the SpEED twins) is not affected: the extractor
+  owns that memory until it reuses it.
+- Pass the extractor's private stream (`lc.str`), even when the kernels run on
+  the null stream. A null-stream copy queues behind every null-stream kernel
+  of the frame, and the wait then blocks the host on all of them. The copy is
+  complete before any kernel is enqueued, so no cross-stream ordering is
+  needed. This is about the ordering guarantee, not speed: on the gfx1036 the
+  one hardware queue serialises the copy behind running kernels either way.
+- The reference picture looks safe and is not. `vmaf_read_pictures()` keeps it
+  alive for one more frame through `prev_ref`, which is why `motion_hip`,
+  `motion_v2_hip` and `float_motion_hip` never misbehaved under the CLI. That
+  is a libvmaf implementation detail, not a contract: through the extractor
+  API their copy was still reading after `submit()` on 10 of 10 runs.
+- A single-frame fixture cannot see any of this, and neither can a
+  determinism check alone. `core/test/test_hip_upload_race.c` covers every
+  uploading extractor twice: pooled frames against the CPU
+  (`hip_pooled_fixture.h`), and both pictures refilled the moment `submit()`
+  returns, where every score must be bit-identical. Add a new extractor to its
+  `race_cases[]` table.
+
+The wait costs host time: 21 % of `vmaf_float_v0.6.1`'s throughput at 1080p
+on the gfx1036, noise for `vmaf_v0.6.1`. Pinned staging buffers owned by the
+extractor would remove it; that follow-up is
+T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19 in `docs/state.md`. Do not buy the
+throughput back by dropping the wait.
 
 ## Integer ADM staging buffer requirement (ADR-1154)
 
