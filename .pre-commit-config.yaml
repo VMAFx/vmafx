@@ -212,6 +212,13 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: check-smoke-probe-flags
+        name: Check smoke-probe-loop.sh vmaf CLI flags against cli_parse.cpp
+        entry: scripts/ci/check-smoke-probe-flags.sh
+        language: script
+        pass_filenames: false
+        files: '^(dev/scripts/smoke-probe-loop\.sh|core/tools/cli_parse\.cpp)$'
+
       - id: check-default-model-single-source
         name: Default VMAF model is defined in exactly one place
         entry: scripts/ci/check-default-model-single-source.sh
