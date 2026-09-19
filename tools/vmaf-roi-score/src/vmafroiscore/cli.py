@@ -18,21 +18,11 @@ from pathlib import Path
 
 from . import ROI_RESULT_KEYS, SCHEMA_VERSION, __version__, blend_scores
 from .defaultmodel import DEFAULT_MODEL
-from .score import ScoreRequest, run_score
+from .score import ScoreRequest, ScoreResult, run_score
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="vmaf-roi-score",
-        description=(
-            "Region-of-interest VMAF score (Option C). Combines "
-            "a full-frame VMAF run with a saliency-masked VMAF run via a "
-            "user-supplied weight. Useful for content where bad "
-            "background should not penalise a good salient region. "
-            "Distinct from the core/tools/vmaf_roi binary (ADR-0247), "
-            "which emits encoder QP-offset sidecars."
-        ),
-    )
+def _add_io_args(parser: argparse.ArgumentParser) -> None:
+    """Register input/output CLI flags."""
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument(
         "--reference",
@@ -53,6 +43,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default="yuv420p",
         help="ffmpeg pix_fmt (default yuv420p)",
     )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="write JSON result to this file; default writes to stdout",
+    )
+
+
+def _add_saliency_args(parser: argparse.ArgumentParser) -> None:
+    """Register saliency-masking and scoring CLI flags."""
     parser.add_argument(
         "--saliency-model",
         type=Path,
@@ -102,12 +102,27 @@ def _build_parser() -> argparse.ArgumentParser:
         default="vmaf",
         help="path to the libvmaf CLI binary (default: vmaf on PATH)",
     )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=None,
-        help="write JSON result to this file; default writes to stdout",
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """Assemble the vmaf-roi-score CLI parser from grouped helpers.
+
+    Split out to keep it under the HISS-04 / NASA Rule 4 60-LOC limit;
+    the argument set and defaults are unchanged.
+    """
+    parser = argparse.ArgumentParser(
+        prog="vmaf-roi-score",
+        description=(
+            "Region-of-interest VMAF score (Option C). Combines "
+            "a full-frame VMAF run with a saliency-masked VMAF run via a "
+            "user-supplied weight. Useful for content where bad "
+            "background should not penalise a good salient region. "
+            "Distinct from the core/tools/vmaf_roi binary (ADR-0247), "
+            "which emits encoder QP-offset sidecars."
+        ),
     )
+    _add_io_args(parser)
+    _add_saliency_args(parser)
     return parser
 
 
@@ -137,28 +152,13 @@ def _validate(ns: argparse.Namespace) -> None:
         raise SystemExit(f"vmaf-roi-score: --fade must be in [0, 1], got {ns.fade}")
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = _build_parser()
-    ns = parser.parse_args(argv)
-    _validate(ns)
+def _run_masked_score(ns: argparse.Namespace) -> tuple[ScoreResult | None, int | None]:
+    """Materialise the saliency mask (or synthetic fill) and score it.
 
-    score_req = ScoreRequest(
-        reference=ns.reference,
-        distorted=ns.distorted,
-        width=ns.width,
-        height=ns.height,
-        pix_fmt=ns.pix_fmt,
-        model=ns.model,
-    )
-
-    full = run_score(score_req, vmaf_bin=ns.vmaf_bin)
-    if full.exit_status != 0:
-        sys.stderr.write(
-            f"vmaf-roi-score: full-frame vmaf run failed (exit={full.exit_status}); "
-            f"stderr tail:\n{full.stderr_tail}\n"
-        )
-        return full.exit_status
-
+    Split out of ``main()`` to keep it under the HISS-04 / NASA Rule 4
+    60-LOC limit. Returns ``(masked_score_result, None)`` on success, or
+    ``(None, exit_code)`` on a mask-materialisation or vmaf-run failure.
+    """
     with tempfile.TemporaryDirectory(prefix="vmaf_roi_score_") as tmp:
         masked_yuv = Path(tmp) / "distorted.saliency-masked.yuv"
         try:
@@ -193,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         except (ImportError, RuntimeError, ValueError) as exc:
             sys.stderr.write(f"vmaf-roi-score: saliency mask failed: {exc}\n")
-            return 64
+            return None, 64
 
         masked_req = ScoreRequest(
             reference=ns.reference,
@@ -210,9 +210,41 @@ def main(argv: list[str] | None = None) -> int:
             f"vmaf-roi-score: saliency-masked vmaf run failed (exit={masked.exit_status}); "
             f"stderr tail:\n{masked.stderr_tail}\n"
         )
-        return masked.exit_status
+        return None, masked.exit_status
+    return masked, None
 
-    roi = blend_scores(full.vmaf_score, masked.vmaf_score, ns.weight)
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    ns = parser.parse_args(argv)
+    _validate(ns)
+
+    score_req = ScoreRequest(
+        reference=ns.reference,
+        distorted=ns.distorted,
+        width=ns.width,
+        height=ns.height,
+        pix_fmt=ns.pix_fmt,
+        model=ns.model,
+    )
+
+    full = run_score(score_req, vmaf_bin=ns.vmaf_bin)
+    if full.exit_status != 0:
+        sys.stderr.write(
+            f"vmaf-roi-score: full-frame vmaf run failed (exit={full.exit_status}); "
+            f"stderr tail:\n{full.stderr_tail}\n"
+        )
+        return full.exit_status
+
+    masked, mask_rc = _run_masked_score(ns)
+    if masked is None:
+        return mask_rc
+
+    try:
+        roi = blend_scores(full.vmaf_score, masked.vmaf_score, ns.weight)
+    except ValueError as exc:
+        sys.stderr.write(f"vmaf-roi-score: invalid pooled score: {exc}\n")
+        return 65
 
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -228,7 +260,7 @@ def main(argv: list[str] | None = None) -> int:
     # Pin key order to the canonical schema; tests assert on this.
     payload = {k: payload[k] for k in ROI_RESULT_KEYS}
 
-    text = json.dumps(payload, indent=2)
+    text = json.dumps(payload, indent=2, allow_nan=False)
     if ns.output is None:
         sys.stdout.write(text + "\n")
     else:

@@ -26,6 +26,10 @@ wrapper-output schema, and [`README.md`](README.md) for operator usage.
   keys is fine; renaming or removing keys requires updating
   `compare.aggregate()` and every test in `tests/test_compare.py`
   in the same PR.
+- **Aggregate `--out-json` is strict RFC-8259 JSON.** When a competitor
+  has no valid rows, `aggregate()` may keep `NaN` means in memory so
+  the plain-text table still shows the missing-data condition, but
+  `render_json()` serializes those means as JSON `null`.
 - **`summary.competitor` is the registry key, not a display label.**
   Wrapper payloads MUST use the exact key from `compare.WRAPPERS`
   (`fork-fr-regressor`, `fork-nr-metric`, `x264-pvmaf`,

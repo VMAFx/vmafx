@@ -105,6 +105,10 @@ Output (JSON to stdout):
 }
 ```
 
+The output is strict RFC-8259 JSON. If the underlying `vmaf` run
+returns a non-finite pooled score, `vmaf-roi-score` exits with code 65
+instead of writing `NaN` or `Infinity` tokens.
+
 In synthetic mode `--synthetic-mask FILL` supplies a constant mask.
 `--threshold` and `--fade` are applied the same way as they are for a
 real saliency model, so `--threshold 0 --fade 1 --synthetic-mask 0.5`
@@ -150,7 +154,7 @@ the interval between them is blended.
 |---|---|
 | 0 | success |
 | 64 | saliency-mask materialisation failed (missing runtime deps, unsupported pix_fmt, bad mask shape) |
-| 65 | `vmaf` ran but produced JSON missing the pooled scalar |
+| 65 | `vmaf` ran but produced JSON missing the pooled scalar, or the pooled scalar was non-finite |
 | other | passed through from the underlying `vmaf` invocation |
 
 ## See also
