@@ -563,7 +563,19 @@ jobs:
     # Variable `ARC_RUNNERS_ENABLED=true` flips this job to the in-cluster
     # `arc-runners` scale set; default `false` keeps GitHub-hosted. If the
     # ARC pool is degraded, flip the var off and re-trigger CI.
-    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-26.04' }}
+    # This lane alone stays on ubuntu-24.04 while the rest of the matrix is
+    # on 26.04. The image decides the analyser: 24.04's archive carries
+    # cppcheck 2.13 and 26.04's carries 2.19, with no older version
+    # available there. 2.19's value-flow analysis reports 90 findings
+    # this tree has never seen, all in the vendored libsvm predictor
+    # core/src/svm.cpp: 88 mallocs dereferenced without a NULL check,
+    # plus the Cache class owning raw storage with neither a copy
+    # constructor nor an assignment operator. They are real and they are
+    # in scope under ADR-1142, which is why they are not suppressed:
+    # T-CI-CPPCHECK-219-LIBSVM-FINDINGS-2026-09-19 tracks fixing them and
+    # moving this lane, and that work belongs with a Netflix golden-data
+    # run because svm.cpp computes the VMAF prediction.
+    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-24.04' }}
     # Bumped 15→30 min on 2026-05-09: GitHub-hosted runner queue
     # saturation pushed Cppcheck past 15 min on ~all PRs and master.
     # Last green run on master took 5 min; the new ceiling absorbs
@@ -685,7 +697,13 @@ jobs:
     # required-aggregator
     name: Docs
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    # 20, not 10: `mkdocs build --strict` over this doc tree measured
+    # 9m31s, 9m21s and 5m21s on the last three green runs, and on
+    # ubuntu-26.04 it crosses 10 minutes, so the job was cancelled at the
+    # ceiling mid-build and the aggregator read that as a failure. The
+    # build itself passes with zero warnings; locally it takes about
+    # 3m20s. Sibling jobs in this file already sit at 25 and 30 minutes.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
