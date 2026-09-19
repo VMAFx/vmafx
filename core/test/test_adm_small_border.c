@@ -15,8 +15,13 @@
  * The pre-fix CUDA/HIP kernels walked running pointers reading rows {1, 2, 3} and
  * sampled csf_a at row 2 instead of row 0. The absolute-indexing fix restores
  * parity with CPU reference rows {1, 0, 1} and row 0 center csf_a.
+ *
+ * Fixture: the lowbias32 texture in luma_sample(). Measured on a gfx1036 with
+ * that border defect planted back into adm_cm.hip: the earlier smooth ramp
+ * moved adm2 by 7.5e-6 (under the 1e-4 gate), the texture moves it by 4.0e-4.
  */
 
+#include <assert.h>
 #include <errno.h>
 #include <math.h>
 #include <stdint.h>
@@ -52,41 +57,53 @@
 
 static const char *const ADM_FEATURES[] = {
     "VMAF_integer_feature_adm2_score",
+#if !defined(HAVE_HIP)
+    /* The HIP twin does not emit adm3_score (docs/metrics/features.md). */
     "VMAF_integer_feature_adm3_score",
+#endif
     "integer_adm_scale3",
 };
 #define NUM_ADM_FEATURES (sizeof(ADM_FEATURES) / sizeof(ADM_FEATURES[0]))
 
-static int fill_ref(VmafPicture *pic)
+/* lowbias32 of the position, seeded per picture. Stateless, so every backend
+ * scores the same frames. */
+static uint32_t position_hash(unsigned row, unsigned col, uint32_t seed)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            y[row * pic->stride[0] + col] = (uint8_t)((row * 7u + col * 5u) & 0xFFu);
-        }
-    }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
-        }
-    }
-    return 0;
+    uint32_t x = ((uint32_t)row << 16) ^ (uint32_t)col ^ seed;
+    x ^= x >> 16;
+    x *= 0x7FEB352Du;
+    x ^= x >> 15;
+    x *= 0x846CA68Bu;
+    x ^= x >> 16;
+    return x;
 }
 
-static int fill_dist(VmafPicture *pic)
+/* Full-range 8-bit noise for the reference; the distorted picture adds an
+ * independent perturbation in [-16, 15]. Every DWT band then carries energy
+ * at every scale and the pair stays correlated (adm2 in (0.5, 1)). A smooth
+ * ramp gives the contrast-masking kernel almost nothing to accumulate: with
+ * the earlier `(row * 7 + col * 5) & 0xFF` ramp the pre-ADR-1167 border and
+ * rounding defects moved the scores by at most 7.5e-6, under the 1e-4 gate. */
+static uint8_t luma_sample(unsigned row, unsigned col, int distorted)
+{
+    const int ref = (int)(position_hash(row, col, 0x85EBCA6Bu) >> 24);
+    if (!distorted)
+        return (uint8_t)ref;
+    const int delta = (int)(position_hash(row, col, 0x9E3779B9u) >> 27) - 16;
+    const int v = ref + delta;
+    return (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v));
+}
+
+static int fill_picture(VmafPicture *pic, int distorted)
 {
     int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
     if (err)
         return err;
+    assert(pic->data[0] != NULL);
     uint8_t *y = (uint8_t *)pic->data[0];
     for (unsigned row = 0; row < pic->h[0]; row++) {
         for (unsigned col = 0; col < pic->w[0]; col++) {
-            const int v = (int)((row * 7u + col * 5u) & 0xFFu) + 11;
-            y[row * pic->stride[0] + col] = (uint8_t)(v > 255 ? 255 : v);
+            y[row * pic->stride[0] + col] = luma_sample(row, col, distorted);
         }
     }
     for (unsigned p = 1; p < 3; p++) {
@@ -102,10 +119,10 @@ static char *feed_one_frame(VmafContext *vmaf)
 {
     VmafPicture ref;
     VmafPicture dist;
-    int err = fill_ref(&ref);
-    mu_assert("fill_ref failed", !err);
-    err = fill_dist(&dist);
-    mu_assert("fill_dist failed", !err);
+    int err = fill_picture(&ref, 0);
+    mu_assert("fill_picture(ref) failed", !err);
+    err = fill_picture(&dist, 1);
+    mu_assert("fill_picture(dist) failed", !err);
     err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
     mu_assert("vmaf_read_pictures failed", !err);
     return NULL;
@@ -118,8 +135,11 @@ static char *read_adm_scores(VmafContext *vmaf, double scores_out[NUM_ADM_FEATUR
 {
     for (unsigned k = 0; k < NUM_ADM_FEATURES; k++) {
         const int err = vmaf_feature_score_at_index(vmaf, ADM_FEATURES[k], &scores_out[k], index);
-        if (err)
+        if (err) {
+            (void)fprintf(stderr, "\nvmaf_feature_score_at_index(\"%s\", %u) failed: %d\n",
+                          ADM_FEATURES[k], index, err);
             return "vmaf_feature_score_at_index failed";
+        }
     }
     return NULL;
 }
@@ -200,10 +220,10 @@ static char *hip_feed_one_frame(VmafContext *vmaf, int *skipped)
     VmafPicture ref;
     VmafPicture dist;
     *skipped = 0;
-    int err = fill_ref(&ref);
-    mu_assert("fill_ref failed", !err);
-    err = fill_dist(&dist);
-    mu_assert("fill_dist failed", !err);
+    int err = fill_picture(&ref, 0);
+    mu_assert("fill_picture(ref) failed", !err);
+    err = fill_picture(&dist, 1);
+    mu_assert("fill_picture(dist) failed", !err);
     err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
     if (err == -ENOSYS) {
         *skipped = 1;
@@ -290,6 +310,8 @@ static char *test_small_border_parity(void)
 
     for (unsigned k = 0; k < NUM_ADM_FEATURES; k++) {
         const double delta = fabs(cpu[k] - gpu[k]);
+        (void)fprintf(stderr, "\n%s: cpu=%.8f gpu=%.8f delta=%.2e", ADM_FEATURES[k], cpu[k], gpu[k],
+                      delta);
         if (delta > PARITY_TOL) {
             (void)fprintf(
                 stderr,

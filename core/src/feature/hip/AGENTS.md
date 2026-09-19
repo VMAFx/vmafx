@@ -480,15 +480,21 @@ gfx1036, noise for `vmaf_v0.6.1`. Extractor-owned pinned staging buffers would
 remove it; follow-up = T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19 in
 `docs/state.md`. Do not buy throughput back by dropping wait.
 
-## Integer ADM staging buffer requirement (ADR-1154)
+## Integer ADM staging buffer requirement (ADR-1154, ADR-1211)
 
-`integer_adm_hip` retains `.flags = 0` (falling back to CPU) until
-internal HtoD picture staging buffers (~350 LOC) or HIP device
-picture pool (T7-10c, ~600 LOC) land. Unlike CUDA, which supports
-device picture pools, HIP incoming pictures arrive with host
-pointers; passing host pointers directly to device kernels causes
-GPU memory faults. Float ADM (`float_adm_hip.c`) manages own staging
-buffers, runs actively on GPU.
+HIP pictures arrive with host pointers (host-pic backend, ADR-0530);
+a host pointer handed to a device kernel faults the GPU
+(T-HIP-INTEGER-ADM-GPU-PAGE-FAULT-2026-09-05). `integer_adm_hip.c`
+stages the scale-0 luma plane per side in `init_fex_hip` and copies
+it with `hipMemcpy2DAsync` before the DWT2 launch (ADR-1211,
+PR #1370); staged rows are packed, so the kernel stride is `w`. The
+ADR-1154 deferral is over: do not re-add `should_fail` to the HIP ADM
+tests for it. `.flags` is still `0`, so model-driven dispatch under
+`--backend hip` keeps the CPU `adm`; the twin runs when named
+(`--feature adm_hip`). It has no AIM pass: `adm3_score` / `aim_score`
+stay out of `provided_features[]`
+(T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05). Float ADM
+(`float_adm_hip.c`) has its own staging.
 
 ## float_vif options must be kernel arguments (ADR-1217)
 
