@@ -120,6 +120,15 @@ With the lane come the two tree changes it needed:
   by default" since Visual Studio 2022, so the flag carries the carve-outs'
   intent on MSVC instead of a warning. The SVE2 probe is skipped on `msvc`.
 
+- `core/src/feature/simd_dx.h` gates both NEON macro blocks on
+  `__ARM_NEON` or `_M_ARM64` / `_M_ARM64EC`, and its NEON spill buffer uses
+  the `alignas` keyword. MSVC defines no `__ARM_NEON`, so the header was
+  empty on this lane: `ssim_neon.c` failed to compile and
+  `convolve_neon.c` silently degraded its ADR-0138 widening reduction to an
+  implicit external call (C4013). Found by the lane's first run, which is
+  the concrete argument for decision that it runs tests rather than being
+  build-only like the ADR-0121 legs.
+
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |

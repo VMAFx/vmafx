@@ -10079,8 +10079,12 @@ References: Research-0135, ADR-0445, PR #865.
   Windows (`VirtualAlloc` + `PAGE_NOACCESS` + SEH) as well as POSIX, and
   `core/src/meson.build` passes `/fp:precise` instead of
   `-ffp-contract=off` to MSVC for the float NEON carve-outs and skips the
-  SVE2 probe there. `docs/getting-started/building-on-windows.md` documents
-  the ARM64 recipe.
+  SVE2 probe there. `core/src/feature/simd_dx.h` recognises MSVC's
+  `_M_ARM64` so its NEON macros are not silently empty on that compiler
+  (they were: `ssim_neon.c` did not compile, and `convolve_neon.c` turned
+  a bit-exact widening reduction into an implicit external call).
+  `docs/getting-started/building-on-windows.md` documents the ARM64
+  recipe.
 
 
 **Added**
