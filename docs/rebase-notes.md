@@ -264,6 +264,18 @@ write initialized planes and scalar numerator/denominator outputs. Keep the
 odd-stride and temporal EOF/error lifecycle test registered. No public C API
 or FFmpeg surface changes; the scalar arithmetic remains Netflix-compatible.
 
+## renovate/ubuntu-26.04 — job artefacts leave /tmp (2026-09-19)
+
+The hosted runner label moved from `ubuntu-24.04` to `ubuntu-26.04` across 21
+workflows. On that image `/tmp` is a RAM-backed tmpfs with a per-user quota, so
+anything large must live under `RUNNER_TEMP`: the Tiny AI and MCP virtualenvs,
+the ONNX Runtime archives and their cache directory, and the Kubernetes
+end-to-end workflow's buildx layer cache and three-image tar. Do not move them
+back while resolving a conflict; the failure is `[Errno 122] Disk quota
+exceeded`, not a full disk. In `run:` blocks use `${RUNNER_TEMP}`; in action
+inputs use `${{ runner.temp }}`, because `with:` has no shell. The contract test
+`scripts/ci/test_e2e_runtime_contract.py` enforces exactly that split.
+
 ## fix/pre-push-mypy-scope — merge-base ownership (2026-09-08)
 
 Preserve the existing `ai/`/`scripts/` Python touched-file policy in

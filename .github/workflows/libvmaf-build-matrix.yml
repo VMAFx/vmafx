@@ -340,7 +340,7 @@ jobs:
         run: |
           set -euo pipefail
           ort_name="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
-          ort_archive="/tmp/${ort_name}"
+          ort_archive="${RUNNER_TEMP}/${ort_name}"
           ort_url="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${ort_name}"
           curl -fSL --retry 5 --retry-delay 5 --retry-all-errors --remove-on-error \
             --output "${ort_archive}" \

@@ -22,7 +22,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # required-aggregator
     name: go vet + go test
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -85,7 +85,7 @@ jobs:
         run: |
           set -euo pipefail
           ort_name="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
-          ort_archive="/tmp/${ort_name}"
+          ort_archive="${RUNNER_TEMP}/${ort_name}"
           ort_url="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${ort_name}"
           curl -fSL --retry 5 --retry-delay 5 --retry-all-errors --remove-on-error \
             --output "${ort_archive}" \

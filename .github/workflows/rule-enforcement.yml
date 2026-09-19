@@ -27,7 +27,7 @@ jobs:
     # ADR-0108
     # required-aggregator
     name: Deliverables Checklist
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -133,7 +133,7 @@ jobs:
     # ADR-0100 / ADR-0167
     # required-aggregator
     name: Doc-Substance Gate
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     # ADR-0167 (2026-04-25): promoted from advisory to blocking and
     # tightened to require a *path-mapped* docs hit. ADR additions
@@ -302,7 +302,7 @@ jobs:
     # ADR-0165
     # required-aggregator
     name: docs/state.md Gate
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     # ADR-0334 (2026-05-08): promotes CLAUDE.md §12 rule 13 (the
     # docs/state.md update discipline) from reviewer-enforced to
@@ -350,7 +350,7 @@ jobs:
     # CLAUDE.md §12 r14, ADR-0356
     # required-aggregator
     name: FFmpeg-Patches Surface Sync
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     # Blocking gate: every PR that changes a libvmaf public-surface
     # symbol consumed by ffmpeg-patches/*.patch must update at least
@@ -393,7 +393,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # ADR-0106
     name: ADR-Backfill Advisory
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     continue-on-error: true
     steps:
@@ -443,7 +443,7 @@ jobs:
     # ADR-0386 / ADR-0628
     # required-aggregator
     name: ADR Collision Guard
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     # Blocking gate: every ADR file added in this PR must have a 4-digit prefix
     # that does NOT already exist on origin/master AND does NOT collide with any
@@ -643,7 +643,7 @@ jobs:
     # ADR-1128
     # required-aggregator
     name: Release Script Contract
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
