@@ -117,10 +117,15 @@ Fork-local subtree. Read this before editing any TU under
    corrupt the host's main measurement run. The tool accepts YUV420p
    8/10/12/16-bit inputs only; adding 4:2:2 / 4:4:4 requires a
    `pixel_format` schema extension, docs, and tests in the same PR.
-5. **Vendored cJSON v1.7.18 is verbatim** under MIT. Do NOT patch
-   it locally — refresh by re-downloading from upstream
-   `DaveGamble/cJSON` and update `3rdparty/cJSON/LICENSE` in the
-   same commit.
+5. **Vendored cJSON is v1.7.19 plus a fork delta — NOT verbatim.**
+   `3rdparty/cJSON/cJSON.c` carries the banned-function replacements
+   (ADR-0683 / ADR-1061), the `cJSON_GetArraySize` saturation and the
+   ADR-1142 rework. A refresh re-downloads upstream, **re-applies that
+   delta**, and updates `3rdparty/cJSON/LICENSE` in the same commit;
+   [`3rdparty/cJSON/AGENTS.md`](3rdparty/cJSON/AGENTS.md) lists the
+   delta and the gates. This rule used to say "verbatim, do NOT patch
+   it locally", which contradicted the invariant further down; PR #883
+   followed it and silently reverted both fixes.
 6. **SSE transport is fork-owned plain POSIX sockets — NOT mongoose.**
    The original v3 plan to vendor cesanta/mongoose was reversed
    because mongoose 7.18 is GPL-2.0-only OR commercial,
@@ -178,16 +183,20 @@ defined by the build system or re-added at the top of the file.
 
 `3rdparty/cJSON/cJSON.c` must remain free of `sprintf`, `strcpy`,
 `strcat`, `strtok`, `atoi`, `atof`, `gets`, `rand`, `system`.
-Verify with:
+This is enforced, not remembered: the `vmaf-no-strcpy-strcat-sprintf`
+Semgrep rule covers this directory (hook `semgrep-local`, CI job
+`Semgrep`), and `scripts/ci/tests/test_semgrep_vendored_scope.py`
+(hook `test-semgrep-vendored-scope`) fails if a path exclude or a
+`.semgrepignore` line ever hides it again, which is what let the
+1.7.19 re-vendor bring eleven banned calls back unnoticed. Verify with:
 
 ```bash
-grep -n '\bsprintf\b\|\bstrcpy\b\|\bstrcat\b' core/src/mcp/3rdparty/cJSON/cJSON.c
+python3 -m unittest discover -s scripts/ci/tests -p test_semgrep_vendored_scope.py
 ```
 
-The expected output is empty (only comments mentioning these names
-are allowed). A future cJSON version sync must re-validate and
-re-apply the replacements documented in ADR-0683 / ADR-1061 if the
-upstream has not addressed them.
+A future cJSON version sync must re-apply the fork delta listed in
+[`3rdparty/cJSON/AGENTS.md`](3rdparty/cJSON/AGENTS.md). Never answer
+a finding here with an exclusion.
 
 ## Smoke test
 
