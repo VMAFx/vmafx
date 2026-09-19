@@ -230,7 +230,7 @@ repos:
         name: Base image and toolchain single-source tests
         entry: python3 -m unittest discover -s scripts/ci/tests -p 'test_*single_source.py'
         language: system
-        files: '^(build-config\.env|dev/Containerfile|renovate\.json|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-workflow-versions\.py|tests/test_(base_image|level_zero)_single_source\.py))$'
+        files: '^(Makefile|\.pre-commit-config\.yaml|build-config\.env|dev/Containerfile|renovate\.json|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-workflow-versions\.py|tests/test_(base_image|level_zero|formatter_pins)_single_source\.py))$'
         pass_filenames: false
 
       - id: test-envtest-single-source

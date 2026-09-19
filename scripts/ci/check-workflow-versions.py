@@ -25,6 +25,13 @@ script rather than more shell in check-base-image-single-source.sh because the
 Level Zero clone puts `--branch vX.Y.Z` and the repository URL on different
 lines, which a line-oriented grep cannot match.
 
+The formatter pins are the same problem one directory over. The Makefile
+installs ruff and black at versions it promises are identical to
+`.pre-commit-config.yaml`, and Renovate only ever moved the pre-commit side:
+by 2026-09 the hook ran ruff 0.16.8 while `make lint-tools` installed 0.16.5
+and a hint still said 0.15.17. `check_formatter_pins` compares the two files
+and rejects a literal `ruff==` / `black==` in the Makefile.
+
 Exit: 0 clean, 1 a literal disagrees with the config, 2 the config is missing.
 """
 
@@ -167,6 +174,47 @@ def check_vmafx_version(root: Path, ver_want: str | None) -> list[str]:
     return problems
 
 
+FORMATTER_PINS = {
+    # Makefile variable -> (pre-commit repository, tool name in `pip install`)
+    "RUFF_VERSION": ("https://github.com/astral-sh/ruff-pre-commit", "ruff"),
+    "BLACK_VERSION": ("https://github.com/psf/black", "black"),
+}
+
+
+def precommit_rev(text: str, repo: str) -> str | None:
+    """Return the `rev:` of one pre-commit repository, without a leading v."""
+    match = re.search(
+        rf"(?m)^\s*-\s*repo:\s*{re.escape(repo)}\s*\n\s*rev:\s*['\"]?v?([0-9][^'\"\s]*)", text
+    )
+    return match.group(1) if match else None
+
+
+def check_formatter_pins(root: Path) -> list[str]:
+    """The Makefile installs the formatters at the versions pre-commit runs."""
+    makefile = root / "Makefile"
+    hooks = root / ".pre-commit-config.yaml"
+    if not makefile.is_file() or not hooks.is_file():
+        return []
+    make_text = makefile.read_text(encoding="utf-8")
+    hook_text = hooks.read_text(encoding="utf-8")
+    problems: list[str] = []
+    for variable, (repo, tool) in FORMATTER_PINS.items():
+        pin = re.search(rf"(?m)^{variable}\s*:?=\s*(\S+)\s*$", make_text)
+        want = precommit_rev(hook_text, repo)
+        if pin and want and pin.group(1) != want:
+            problems.append(
+                f"Makefile sets {variable} := {pin.group(1)}; "
+                f".pre-commit-config.yaml runs {tool} {want}"
+            )
+        for literal in re.finditer(rf"\b{tool}==([0-9][0-9A-Za-z.]*)", make_text):
+            line_no = make_text[: literal.start()].count("\n") + 1
+            problems.append(
+                f"Makefile:{line_no} installs {tool}=={literal.group(1)} as a literal; "
+                f"use $({variable})"
+            )
+    return problems
+
+
 def main() -> int:
     # S603: the argument vector is a fixed literal -- no user input reaches it.
     root = Path(
@@ -186,6 +234,7 @@ def main() -> int:
     problems.extend(check_level_zero_container(root))
     problems.extend(check_workflows(root, lz_want, py_want))
     problems.extend(check_vmafx_version(root, ver_want))
+    problems.extend(check_formatter_pins(root))
 
     for problem in problems:
         print(f"::error title=version drift::{problem}", file=sys.stderr)

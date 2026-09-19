@@ -97,6 +97,14 @@ runs both single-source suites. `check-workflow-versions.py` verifies this
 container consumer alongside the Windows workflow mirror. Renovate tracks
 Level Zero only in `build-config.env`; ROCm uses the central image manager.
 
+`check-workflow-versions.py` also owns the formatter pins: the `Makefile`'s
+`RUFF_VERSION` / `BLACK_VERSION` must equal the ruff-pre-commit and black revs
+in `.pre-commit-config.yaml`, and a recipe may not spell `ruff==<n>` or
+`black==<n>` as a literal. Renovate moves both files through the
+`pre-commit hooks` group (two regex managers on `Makefile`); keep the group
+name identical on both rules or the bumps split into two pull requests and the
+first one fails this gate. Fixture: `tests/test_formatter_pins_single_source.py`.
+
 ### Workflow coupling
 
 The following pairs are tightly coupled — a rename or signature

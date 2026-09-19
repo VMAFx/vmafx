@@ -92,6 +92,18 @@
       "draftPR": false
     },
     {
+      "description": "The Makefile's ruff and black pins travel with the pre-commit hook revs: both files must name the same version or the single-source gate fails.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchFileNames": [
+        "Makefile"
+      ],
+      "groupName": "pre-commit hooks",
+      "automerge": true,
+      "draftPR": false
+    },
+    {
       "description": "Python patch updates auto-merge; minor + major need review.",
       "matchManagers": [
         "pep621",
@@ -280,6 +292,30 @@
     }
   ],
   "customManagers": [
+    {
+      "customType": "regex",
+      "description": "ruff version that `make lint-tools` installs. It must equal the rev in .pre-commit-config.yaml (scripts/ci/check-workflow-versions.py fails otherwise), so a package rule groups it with the pre-commit hooks.",
+      "managerFilePatterns": [
+        "/^Makefile$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)RUFF_VERSION\\s*:=\\s*(?<currentValue>[0-9][0-9.]*)"
+      ],
+      "datasourceTemplate": "pypi",
+      "depNameTemplate": "ruff"
+    },
+    {
+      "customType": "regex",
+      "description": "black version that `make lint-tools` installs. It must equal the rev in .pre-commit-config.yaml (scripts/ci/check-workflow-versions.py fails otherwise), so a package rule groups it with the pre-commit hooks.",
+      "managerFilePatterns": [
+        "/^Makefile$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)BLACK_VERSION\\s*:=\\s*(?<currentValue>[0-9][0-9.]*)"
+      ],
+      "datasourceTemplate": "pypi",
+      "depNameTemplate": "black"
+    },
     {
       "customType": "regex",
       "description": "One envtest tool release owned by build-config.env and consumed by Make and Go CI (ADR-1231).",
