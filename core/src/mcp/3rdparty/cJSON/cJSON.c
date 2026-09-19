@@ -397,16 +397,33 @@ static cJSON_bool parse_number(cJSON *const item, parse_buffer *const input_buff
     return true;
 }
 
+/* Fork delta: double -> int with saturation, defined for every input.
+ *
+ * Upstream 1.7.19 open-codes the two range checks at both call sites and then
+ * casts. NaN compares false against both bounds, so it reached `(int)number`,
+ * which is undefined behaviour (C11 6.3.1.4p1); clang's
+ * -fsanitize=float-cast-overflow reports it. It is reachable in production:
+ * the MCP server hands a VMAF score, which can be NaN, to
+ * cJSON_AddNumberToObject(). NaN maps to 0. `valuedouble` keeps the NaN, and
+ * print_number() still emits `null` for it, so printed output is unchanged. */
+static int saturate_to_int(double number)
+{
+    if (number != number) {
+        return 0;
+    }
+    if (number >= INT_MAX) {
+        return INT_MAX;
+    }
+    if (number <= (double)INT_MIN) {
+        return INT_MIN;
+    }
+    return (int)number;
+}
+
 /* don't ask me, but the original cJSON_SetNumberValue returns an integer or double */
 CJSON_PUBLIC(double) cJSON_SetNumberHelper(cJSON *object, double number)
 {
-    if (number >= INT_MAX) {
-        object->valueint = INT_MAX;
-    } else if (number <= (double)INT_MIN) {
-        object->valueint = INT_MIN;
-    } else {
-        object->valueint = (int)number;
-    }
+    object->valueint = saturate_to_int(number);
 
     return object->valuedouble = number;
 }
@@ -2443,15 +2460,7 @@ CJSON_PUBLIC(cJSON *) cJSON_CreateNumber(double num)
     if (item) {
         item->type = cJSON_Number;
         item->valuedouble = num;
-
-        /* use saturation in case of overflow */
-        if (num >= INT_MAX) {
-            item->valueint = INT_MAX;
-        } else if (num <= (double)INT_MIN) {
-            item->valueint = INT_MIN;
-        } else {
-            item->valueint = (int)num;
-        }
+        item->valueint = saturate_to_int(num);
     }
 
     return item;

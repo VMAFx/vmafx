@@ -40,6 +40,17 @@ these ways, and only these:
    upstream's dead `object = NULL` in `cJSON_free` is gone, and the file carries
    the [ADR-1138](../../../../../docs/adr/1138-c-translation-units-keep-null.md)
    `modernize-use-nullptr` bracket. These keep clang-tidy and cppcheck at zero.
+5. **`valueint` is defined for every double.** Upstream open-codes two range
+   checks in `cJSON_CreateNumber` and `cJSON_SetNumberHelper` and then casts.
+   NaN compares false against both bounds, so it reached `(int)number`, which
+   is undefined behaviour (C11 6.3.1.4p1). It is reachable in production:
+   `compute_vmaf.c` hands a VMAF score, which can be NaN, to
+   `cJSON_AddNumberToObject`. Both sites call `saturate_to_int`, which maps NaN
+   to 0. `valuedouble` keeps the NaN and `print_number` still emits `null`, so
+   printed output is unchanged. Only clang's UBSan reports the upstream form
+   (`float-cast-overflow` is not in gcc's `undefined` group), so the differential
+   harness above, which ran under gcc, could not see it; the `Sanitizers` CI
+   lane and `test_cjson`'s `test_number_valueint_*` tests do.
 
 **Do not** silence any of this with `NOLINT`, a Semgrep path exclude, a
 `.semgrepignore` line or a baseline entry. Fix the call site.
