@@ -16,6 +16,7 @@ Output goes to a JSON report + a text summary printed to stdout.
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -108,8 +109,7 @@ def _top_k_consensus(importances: dict[str, dict[str, float]], k: int) -> list[s
     return sorted(consensus)
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     ap = make_argument_parser(prog="feature_correlation.py")
     ap.add_argument("--parquet", type=Path, required=True)
     ap.add_argument(
@@ -126,49 +126,67 @@ def main(argv: list[str] | None = None) -> int:
         help="|Pearson r| above which pairs are flagged as redundant.",
     )
     ap.add_argument("--top-k", type=int, default=8)
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(raw_argv)
 
+
+def _load_clean_frame(parquet: Path, target: str):
+    """Read ``parquet`` and return ``(clean_frame, numeric_feature_columns)``.
+
+    Non-numeric columns (codec, chug_orientation, ...) cannot go through
+    ``to_numpy(dtype=np.float64)``; they are skipped with a log line.
+    """
     import pandas as pd
 
-    df = pd.read_parquet(args.parquet)
-    drop_cols = {"source", "dis_basename", "frame_index", "key", args.target}
-    feat_cols = [c for c in df.columns if c not in drop_cols]
-    print(
-        f"[corr] parquet={args.parquet} rows={len(df)} features={len(feat_cols)} "
-        f"target={args.target}"
-    )
+    df = pd.read_parquet(parquet)
+    drop_cols = {"source", "dis_basename", "frame_index", "key", target}
+    candidate_cols = [c for c in df.columns if c not in drop_cols]
+    feat_cols = list(df[candidate_cols].select_dtypes(include="number").columns)
+    skipped = sorted(set(candidate_cols) - set(feat_cols))
+    print(f"[corr] parquet={parquet} rows={len(df)} features={len(feat_cols)} target={target}")
+    if skipped:
+        print(f"[corr] skipped non-numeric columns: {skipped}")
 
-    df_clean = df.dropna(subset=[*feat_cols, args.target])
+    df_clean = df.dropna(subset=[*feat_cols, target])
     print(f"[corr] dropped NaN rows: {len(df) - len(df_clean)}; clean rows={len(df_clean)}")
+    return df_clean, feat_cols
+
+
+def _per_method_topk(
+    importances: dict[str, dict[str, float]], k: int
+) -> dict[str, list[tuple[str, float]]]:
+    """Top-``k`` finite scores per importance method, for the report."""
+    topk = {}
+    for method, scores in importances.items():
+        finite = {n: v for n, v in scores.items() if not np.isnan(v)}
+        topk[method] = sorted(finite.items(), key=lambda kv: -kv[1])[:k]
+    return topk
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+
+    df_clean, feat_cols = _load_clean_frame(args.parquet, args.target)
     x = df_clean[feat_cols].to_numpy(dtype=np.float64)
     y = df_clean[args.target].to_numpy(dtype=np.float64)
 
     print("[corr] Pearson matrix...")
     pearson = _pearson_matrix(x, feat_cols)
     redundant = _redundant_pairs(x, feat_cols, args.redundancy_threshold)
-    print(f"[corr] redundant pairs (|r|>={args.redundancy_threshold}): " f"{len(redundant)}")
+    print(f"[corr] redundant pairs (|r|>={args.redundancy_threshold}): {len(redundant)}")
     for p in redundant[:5]:
         print(f"        {p['a']:<22} ↔ {p['b']:<22} r={p['r']:+.4f}")
 
     print("[corr] mutual information vs target...")
     mi = _mutual_information_to_target(x, y, feat_cols)
-
     print("[corr] LASSO importance...")
     lasso = _lasso_importance(x, y, feat_cols)
-
     print("[corr] random forest importance...")
     rf = _random_forest_importance(x, y, feat_cols)
 
     importances = {"mi": mi, "lasso": lasso, "rf": rf}
     consensus = _top_k_consensus(importances, args.top_k)
     print(f"[corr] top-{args.top_k} consensus ({len(consensus)}): {consensus}")
-
-    # Per-method top-k for the report
-    per_method_topk = {}
-    for method, scores in importances.items():
-        finite = {n: v for n, v in scores.items() if not np.isnan(v)}
-        ranked = sorted(finite.items(), key=lambda kv: -kv[1])[: args.top_k]
-        per_method_topk[method] = ranked
 
     report = {
         "parquet": str(args.parquet),
@@ -180,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
         "redundancy_threshold": args.redundancy_threshold,
         "importances": importances,
         "top_k": args.top_k,
-        "per_method_topk": per_method_topk,
+        "per_method_topk": _per_method_topk(importances, args.top_k),
         "consensus_topk": consensus,
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,

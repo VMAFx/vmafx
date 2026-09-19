@@ -84,6 +84,43 @@ def test_top_k_consensus_handles_missing_method():
     assert consensus == ["a"]
 
 
+def test_corr_main_skips_non_numeric_columns(tmp_path, monkeypatch):
+    """Regression test: non-numeric columns (e.g. `codec` string) used to
+    crash with `ValueError: could not convert string to float: 'x264'`.
+    The fix selects numeric dtypes before to_numpy()."""
+    pytest.importorskip("sklearn")
+    parquet = tmp_path / "syn_with_string.parquet"
+    rng = np.random.default_rng(0)
+    n = 200
+    base = rng.standard_normal(n)
+    target = 0.7 * base + 0.1 * rng.standard_normal(n)
+    df = pd.DataFrame(
+        {
+            "source": ["clipA"] * n,
+            "dis_basename": ["clipA_dis.yuv"] * n,
+            "frame_index": np.arange(n),
+            "codec": rng.choice(["x264", "x265", "unknown"], size=n),  # non-numeric
+            "feat_a": base.astype(np.float32),
+            "feat_b": rng.standard_normal(n).astype(np.float32),
+            "vmaf": target.astype(np.float32),
+        }
+    )
+    df.to_parquet(parquet)
+    out = tmp_path / "report.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["feature_correlation.py", "--parquet", str(parquet), "--out", str(out), "--top-k", "1"],
+    )
+    rc = corr_main()
+    assert rc == 0
+    payload = json.loads(out.read_text())
+    # codec must be skipped (no string→float crash); feat_a must be present
+    feature_keys = set(payload.get("pearson", {}).keys())
+    assert "feat_a" in feature_keys
+    assert "codec" not in feature_keys
+
+
 def test_corr_main_invokable_via_argparse(tmp_path, monkeypatch):
     pytest.importorskip("sklearn")
     parquet = _make_synthetic_parquet(tmp_path / "syn.parquet")
