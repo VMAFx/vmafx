@@ -563,7 +563,7 @@ jobs:
     # Variable `ARC_RUNNERS_ENABLED=true` flips this job to the in-cluster
     # `arc-runners` scale set; default `false` keeps GitHub-hosted. If the
     # ARC pool is degraded, flip the var off and re-trigger CI.
-    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-26.04' }}
     # Bumped 15→30 min on 2026-05-09: GitHub-hosted runner queue
     # saturation pushed Cppcheck past 15 min on ~all PRs and master.
     # Last green run on master took 5 min; the new ceiling absorbs

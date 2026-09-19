@@ -57,7 +57,7 @@ jobs:
             meson_extra: -Denable_metal=disabled
             name: macOS clang
             experimental: true
-          - os: ubuntu-24.04-arm
+          - os: ubuntu-26.04-arm
             CC: ccache clang-22
             CXX: ccache clang++-22
             name: Ubuntu ARM clang

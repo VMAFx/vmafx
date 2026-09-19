@@ -1,4 +1,11 @@
 self-hosted-runner:
   labels:
+    # Self-hosted pools.
     - gpu-full
     - sycl-arc
+    # GitHub-hosted images that actionlint 1.7.12 does not know yet. They are
+    # real: the whole matrix runs on ubuntu-26.04, and actions/runner-images
+    # publishes Ubuntu2604-Readme.md, Ubuntu2604-Arm64-Readme.md and
+    # Windows11-VS2026-Arm64-Readme.md. Drop an entry once actionlint ships it.
+    - ubuntu-26.04
+    - ubuntu-26.04-arm

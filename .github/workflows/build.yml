@@ -17,9 +17,10 @@
 # lane below runs the native Meson suite, but deliberately does not compare
 # Intel LLVM output against GCC-authored Python numeric snapshots.
 #
-# CI runners pinned to ubuntu-24.04: GitHub-hosted ubuntu-26.04 (preview) does
-# not yet provide Python 3.14.5 / full toolchain. Re-bump when 26.04 runners
-# mature. Docker base images remain on 26.04 (they are real images, unaffected).
+# CI runners are on ubuntu-26.04, the same generation as the Docker base images.
+# The note that used to sit here said 26.04 was a preview without Python 3.14 or
+# a full toolchain; both stopped being true, and every lane now runs there. The
+# Python version comes from actions/setup-python, not from the image.
 
 name: Build
 
@@ -60,7 +61,7 @@ jobs:
           # SYCL project-level linking requires one Intel LLVM compiler
           # identity; CUDA and HIP custom targets invoke their own tools.
           # ──────────────────────────────────────────────────────────────
-          - os: ubuntu-24.04
+          - os: ubuntu-26.04
             name: Linux Intel LLVM
             CC: icx
             CXX: icpx
