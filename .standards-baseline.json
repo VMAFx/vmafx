@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-09-19T09:38:54Z",
+  "generated_at": "2026-09-19T11:44:48Z",
   "repository": "",
   "commit_sha": "",
-  "total_infractions": 1557,
+  "total_infractions": 1556,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -2583,14 +2583,6 @@
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/cambi_neon.c",
-      "line_number": 125,
-      "symbol": "{",
-      "message": "Function '{' (86 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/cambi_neon.c:125:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
       "file_path": "core/src/feature/arm64/float_adm_dwt2_neon.c",
       "line_number": 60,
       "symbol": "{",
@@ -2728,53 +2720,53 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 189,
+      "line_number": 196,
       "symbol": "static const VmafOption options[] = {",
       "message": "Function 'static const VmafOption options[] = {' (184 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cambi.c:189:HISS-04"
+      "fingerprint": "core/src/feature/cambi.c:196:HISS-04"
     },
     {
       "rule_id": "HISS-02",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 433,
+      "line_number": 440,
       "message": "Legacy unbounded loop in native code",
-      "fingerprint": "core/src/feature/cambi.c:433:HISS-02"
+      "fingerprint": "core/src/feature/cambi.c:440:HISS-02"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 834,
+      "line_number": 857,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/cambi.c:834:HISS-01"
+      "fingerprint": "core/src/feature/cambi.c:857:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 840,
+      "line_number": 863,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/cambi.c:840:HISS-01"
+      "fingerprint": "core/src/feature/cambi.c:863:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 847,
+      "line_number": 870,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/cambi.c:847:HISS-01"
+      "fingerprint": "core/src/feature/cambi.c:870:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 851,
+      "line_number": 874,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/cambi.c:851:HISS-01"
+      "fingerprint": "core/src/feature/cambi.c:874:HISS-01"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/cambi.h",
-      "line_number": 40,
+      "line_number": 49,
       "symbol": "static const float reciprocal_lut[CAMBI_RECIPROCAL_LUT_SIZE] = {0.0f,",
       "message": "Function 'static const float reciprocal_lut[CAMBI_RECIPROCAL_LUT_SIZE] = {0.0f,' (4226 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cambi.h:40:HISS-04"
+      "fingerprint": "core/src/feature/cambi.h:49:HISS-04"
     },
     {
       "rule_id": "HISS-04",
