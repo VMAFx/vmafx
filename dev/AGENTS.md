@@ -104,6 +104,18 @@ surfaces regression on container start as
 `WARN: SYCL level_zero:gpu NOT detected` or `WARN: HIP HSA agent NOT
 detected`. Bump relevant version owner, rebuild.
 
+**The probe runs argv, never a shell string.** `_probe_with_retry` in
+`scripts/dev-mcp-entrypoint.sh` takes one program name and runs it as
+`"${prog}"`. The earlier `eval "${cmd}"` form was removed by PR #350, came
+back through a stale squash-merge (PR #414) and was removed again on
+2026-09-19: the entrypoint is PID 1 with the container's whole environment,
+so a probe value that ever comes from configuration would be command
+injection. A probe that needs flags gets explicit argv handling in the
+function; do not reintroduce `eval` or `bash -c`. Keep the function at top
+level with the opening line `_probe_with_retry() {` —
+`scripts/ci/tests/test-dev-mcp-entrypoint-probe.sh` (pre-commit hook
+`test-dev-mcp-entrypoint-probe`) extracts it by that line.
+
 ### SHELL / hadolint DL4006
 
 - Declare `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` explicitly in
