@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-09-19T14:11:34Z",
+  "generated_at": "2026-09-19T16:34:14Z",
   "repository": "",
   "commit_sha": "",
   "total_infractions": 1433,
@@ -8483,130 +8483,130 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 102,
+      "line_number": 114,
       "symbol": "{",
-      "message": "Function '{' (1365 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/tools/vmaf.cpp:102:HISS-04"
+      "message": "Function '{' (1413 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/tools/vmaf.cpp:114:HISS-04"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1557,
+      "line_number": 1617,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1557:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1617:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1564,
+      "line_number": 1624,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1564:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1624:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1570,
+      "line_number": 1630,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1570:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1630:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1597,
+      "line_number": 1657,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1597:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1657:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1629,
+      "line_number": 1689,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1629:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1689:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1660,
+      "line_number": 1720,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1660:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1720:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1669,
+      "line_number": 1729,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1669:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1729:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1677,
+      "line_number": 1737,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1677:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1737:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1698,
+      "line_number": 1758,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1698:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1758:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1736,
+      "line_number": 1796,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1736:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1796:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1744,
+      "line_number": 1804,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1744:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1804:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1750,
+      "line_number": 1810,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1750:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1810:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1766,
+      "line_number": 1838,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1766:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1838:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1773,
+      "line_number": 1845,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1773:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1845:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1779,
+      "line_number": 1851,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1779:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1851:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1792,
+      "line_number": 1864,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/tools/vmaf.cpp:1792:HISS-01"
+      "fingerprint": "core/tools/vmaf.cpp:1864:HISS-01"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/tools/vmaf.cpp",
-      "line_number": 1470,
+      "line_number": 1530,
       "symbol": "main",
-      "message": "Function 'main' (381 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/tools/vmaf.cpp:1470:HISS-04"
+      "message": "Function 'main' (393 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/tools/vmaf.cpp:1530:HISS-04"
     },
     {
       "rule_id": "HISS-04",
