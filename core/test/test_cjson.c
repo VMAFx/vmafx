@@ -18,6 +18,7 @@
 
 /* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: retain C/upstream NULL
  * compatibility and the required Windows MSVC C build. */
+#include <float.h>
 #include <limits.h>
 #include <math.h>
 #include <stdbool.h>
@@ -88,7 +89,17 @@ static char *test_print_number_precision(void)
     mu_assert("15 digits are enough", prints_as(cJSON_CreateNumber(0.1 + 0.2), "0.3"));
     mu_assert("17 digits when 15 do not round-trip",
               prints_as(cJSON_CreateNumber(1.0 / 3.0), "0.33333333333333331"));
-    mu_assert("smallest denormal", prints_as(cJSON_CreateNumber(5e-324), "4.94065645841247e-324"));
+    /* print_number() takes its integer branch when `d == (double)valueint`.
+     * Under a build that treats denormals as zero, that comparison is true for
+     * the smallest denormal and it prints "0", which is what the build's own
+     * arithmetic says the value is. icx defaults to that model (`-fp-model=fast`
+     * sets the MXCSR denormals-are-zero bit), and the `Linux Intel LLVM` lane
+     * builds this file with it, while gcc and clang keep the denormal. The
+     * probe below asks the running build which world it is in rather than
+     * asserting one of them; `volatile` keeps the compiler from folding it. */
+    volatile double denormal = DBL_TRUE_MIN;
+    const char *const denormal_text = (denormal == 0.0) ? "0" : "4.94065645841247e-324";
+    mu_assert("smallest denormal", prints_as(cJSON_CreateNumber(DBL_TRUE_MIN), denormal_text));
     mu_assert("NaN prints null", prints_as(cJSON_CreateNumber((double)NAN), "null"));
     mu_assert("infinity prints null", prints_as(cJSON_CreateNumber((double)INFINITY), "null"));
     return NULL;
