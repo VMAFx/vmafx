@@ -1,7 +1,31 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
-## Canonical envtest installer (2026-09-08)
+## Silent-revert restoration sweep — AI / MCP / vmaf-tune / dev-MCP (2026-09-19)
+
+`fix/restore-reverted-ai-fixes` restores six Python/shell fixes the
+`libvmaf/` -> `core/` rename squash (`384d97d03`) silently reverted (audit
+ledger `.workingdir/evidence/silent-reverts-2026-09-18.md`, items A4, A9,
+A10, A12, A13, B8): the CHUG sidecar `chug_bit_depth` keep-list key
+(`ai/scripts/extract_k150k_features.py`); the AI strict-JSON manifest/
+report/cache write boundary (`aiutils.run_manifest`) and its dozen
+callers; strict JSON in `tools/external-bench/compare.py` and
+`tools/vmaf-roi-score`; the `mcp-server/vmaf-mcp` pytest `pythonpath`,
+the ADR-0543 `--backend`-probe test hardening, and the PyTorch
+`dynamo=False` filterwarnings; `/dev/shm` scratch auto-selection for
+K150K extraction; and `dev/scripts/smoke-probe-loop.sh`'s vmaf CLI
+flags. Every fix is fork-local Python (`ai/`, `tools/`, `mcp-server/`)
+or a dev-only shell script (`dev/scripts/`, `scripts/ci/`) plus test/doc
+files — no upstream-shared C/C++/headers, public C API, or CLI surface
+is touched. **No rebase impact.**
+
+Two items in the audit's Section A were found to be already-fixed or
+solved differently by later work rather than restored verbatim
+(`vmaf_train.registry.dumps_registry_json()` has its own independent
+non-finite-JSON implementation; `tools/vmaf-tune/src/vmaftune/
+benchmark.py` already routed through `jsonio.dumps_strict`) — see the
+per-item commit messages on this branch for the verification each one
+got before being left alone.
 
 Keep Make, Go CI and controller-suite guidance on `scripts/ci/setup-envtest.sh`.
 The tool release and Kubernetes default live in `build-config.env`; preserve

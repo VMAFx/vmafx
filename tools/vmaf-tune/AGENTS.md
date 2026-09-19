@@ -352,6 +352,12 @@ for the option-space digest.
   `compare.py`, `report.py`, or `benchmark.py` — import `dumps_strict` instead.
   Private `_nan_to_none` helpers in those modules were removed in ADR-0988; any
   reintroduction is a rebase regression.
+- **`auto.py::emit_plan_json`, `conformal.py::SplitConformalCalibration.to_json`,
+  `ladder.py::_emit_json` route through same `vmaftune.jsonio.dumps_strict`**
+  — no second strict-JSON helper for these; reuse existing one.
+  `conformal.py` residuals cannot be non-finite in practice (`__post_init__`
+  already rejects at construction); `dumps_strict` call here is
+  consistency / defense-in-depth, not fix for a reachable bug.
 - **Ladder uncertainty is post-hull / pre-knee.** `vmaf-tune ladder
   --with-uncertainty` must run the ADR-0279 prune/insert recipe only
   after `convex_hull()` and before `select_knees()`. Preserve corpus
@@ -530,7 +536,7 @@ for the option-space digest.
   `corpus.iter_rows` (Phase A encode+score) with
   `recommend.pick_target_vmaf` (smallest CRF clearing the target VMAF)
   over the canonical sweep
-  `DEFAULT_SAMPLER_CRF_SWEEP = (18, 23, 28, 33, 38)` at the codec
+  `DEFAULT_SAMPLER_CRF_SWEEP = (20, 25, 30, 35, 40)` at the codec
   adapter's mid-range preset (`"medium"` for libx264 / libx265 /
   libsvtav1). The 5-point sweep is the load-bearing default; do not
   widen it without an ADR-0307 follow-up — Phase E callers downstream
