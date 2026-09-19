@@ -21,6 +21,14 @@ import vmaf
 # platform-observed value. Both values are at places=4 against
 # their own libm; relative error stays below 6e-6 in all cases —
 # well under the 0.01 VMAF perceptual-significance threshold.
+#
+# 2026-09-19, maintainer-authorized (Q-round popup): the three
+# `VMAFEXEC_score` == 88.030463 assertions no longer carry a Darwin
+# value. After the September upstream reconciliation macOS produces
+# 88.030459, which is within places=4 of the Linux value and NOT of the
+# old Darwin one (88.030322), so the special case had become the thing
+# failing the macOS lanes. The other three per-platform values still
+# measure as recorded and stay.
 _IS_DARWIN = platform.system() == "Darwin"
 from vmaf.config import VmafConfig
 from vmaf.core.asset import Asset
@@ -938,7 +946,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
         self.assertAlmostEqual(
             results[0]["VMAFEXEC_score"],
-            88.030322 if _IS_DARWIN else 88.030463,
+            88.030463,
             places=4,
         )  # 132.78849246495625
 
@@ -1048,7 +1056,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
         self.assertAlmostEqual(
             results[0]["VMAFEXEC_score"],
-            88.030322 if _IS_DARWIN else 88.030463,
+            88.030463,
             places=4,
         )  # 132.78849246495625
 
@@ -1104,7 +1112,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
         self.assertAlmostEqual(
             results[0]["VMAFEXEC_score"],
-            88.030322 if _IS_DARWIN else 88.030463,
+            88.030463,
             places=4,
         )  # 132.78849246495625
 
