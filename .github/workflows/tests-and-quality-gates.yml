@@ -424,7 +424,7 @@ jobs:
         run: |
           set -euo pipefail
           ort_name="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
-          ort_archive="/tmp/${ort_name}"
+          ort_archive="${RUNNER_TEMP}/${ort_name}"
           ort_url="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${ort_name}"
           curl -fSL --retry 5 --retry-delay 5 --retry-all-errors --remove-on-error \
             --output "${ort_archive}" \
@@ -462,16 +462,23 @@ jobs:
         run: meson test -C build --suite=dnn --print-errorlogs
       - name: Set up Python + install vmaf-train
         if: steps.impact.outputs.tiny_ai == 'true'
+        # The venv lives under RUNNER_TEMP, not /tmp. On the ubuntu-26.04
+        # image /tmp is a RAM-backed tmpfs with a per-user quota (systemd
+        # enables one on a tmpfs /tmp), and the torch + CUDA wheel set is
+        # several gigabytes: pip died with "[Errno 122] Disk quota exceeded".
+        # RUNNER_TEMP is on the runner's disk and is emptied per job.
         run: |
-          python3 -m venv /tmp/vmaf-train-venv
-          /tmp/vmaf-train-venv/bin/pip install --upgrade pip
+          venv="${RUNNER_TEMP}/vmaf-train-venv"
+          python3 -m venv "${venv}"
+          "${venv}/bin/pip" install --upgrade pip
           # pytest is a test-time dep, not runtime, so install it explicitly
           # rather than relying on ai/pyproject.toml extras.
-          /tmp/vmaf-train-venv/bin/pip install pytest pytest-timeout
-          /tmp/vmaf-train-venv/bin/pip install -e ai
+          "${venv}/bin/pip" install pytest pytest-timeout
+          "${venv}/bin/pip" install -e ai
       - name: Run ai/ pytests
         if: steps.impact.outputs.tiny_ai == 'true'
-        run: /tmp/vmaf-train-venv/bin/pytest ai/tests/ -v --timeout=60 --timeout-method=signal
+        run: |
+          "${RUNNER_TEMP}/vmaf-train-venv/bin/pytest" ai/tests/ -v --timeout=60 --timeout-method=signal
 
       # ADR-0174 / T5-3b: enforce that every quantised model in the
       # registry stays inside its per-model PLCC drop budget. Skips
@@ -479,8 +486,8 @@ jobs:
       - name: Run ai-quant-accuracy gate
         if: steps.impact.outputs.tiny_ai == 'true'
         run: |
-          /tmp/vmaf-train-venv/bin/pip install onnx onnxruntime numpy
-          /tmp/vmaf-train-venv/bin/python ai/scripts/measure_quant_drop.py --all
+          "${RUNNER_TEMP}/vmaf-train-venv/bin/pip" install onnx onnxruntime numpy
+          "${RUNNER_TEMP}/vmaf-train-venv/bin/python" ai/scripts/measure_quant_drop.py --all
 
   # ===== MCP smoke gate (T7-MCP-SMOKE-CI / Research-0034 gap #3) =====
   # Builds libvmaf with the full MCP transport matrix (sse + uds + stdio)
@@ -501,9 +508,9 @@ jobs:
   #   meson compile -C build-mcp && \
   #   meson test -C build-mcp test_mcp_smoke --print-errorlogs
   #   cd ../mcp-server/vmaf-mcp && \
-  #   python3 -m venv /tmp/mcp-venv && \
-  #   /tmp/mcp-venv/bin/pip install -e .[dev] && \
-  #   /tmp/mcp-venv/bin/pytest tests/ -v
+  #   python3 -m venv ~/.cache/mcp-venv && \
+  #   ~/.cache/mcp-venv/bin/pip install -e .[dev] && \
+  #   ~/.cache/mcp-venv/bin/pytest tests/ -v
   mcp-smoke:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: MCP Smoke
@@ -558,10 +565,12 @@ jobs:
         # `dev` is the right name. Editable install so test_smoke_e2e.py
         # resolves the repo root via __file__.parents[3].
         run: |
-          python3 -m venv /tmp/mcp-venv
-          /tmp/mcp-venv/bin/pip install --upgrade pip
-          /tmp/mcp-venv/bin/pip install -e mcp-server/vmaf-mcp[dev]
-          /tmp/mcp-venv/bin/pip install pytest-timeout
+          # RUNNER_TEMP, not /tmp: see the Tiny AI job's venv step.
+          venv="${RUNNER_TEMP}/mcp-venv"
+          python3 -m venv "${venv}"
+          "${venv}/bin/pip" install --upgrade pip
+          "${venv}/bin/pip" install -e mcp-server/vmaf-mcp[dev]
+          "${venv}/bin/pip" install pytest-timeout
 
       - name: Run Python MCP server pytests
         # The MCP server's `_vmaf_binary()` defaults to
@@ -579,7 +588,7 @@ jobs:
             ls -la "$(dirname "$VMAF_BIN")" >&2 || true
             exit 1
           }
-          /tmp/mcp-venv/bin/pytest mcp-server/vmaf-mcp/tests/ -v --tb=short \
+          "${RUNNER_TEMP}/mcp-venv/bin/pytest" mcp-server/vmaf-mcp/tests/ -v --tb=short \
             --timeout=60 --timeout-method=signal
 
   # ===== Coverage gate (principles.md §3) =====
@@ -645,7 +654,7 @@ jobs:
         id: cache-ort
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          path: /tmp/ort-cache
+          path: ${{ runner.temp }}/ort-cache
           key: ort-tarball-linux-x64-gpu-1.22.0
       - name: Install ONNX Runtime (GPU build, CPU + CUDA EPs)
         if: steps.impact.outputs.golden_harness == 'true'
@@ -668,8 +677,8 @@ jobs:
           sudo apt-get install -y libcudart12 || sudo apt-get install -y nvidia-cuda-toolkit
           # Reuse cached tarball if present (cache hit), otherwise fetch
           # and populate the cache for the next run.
-          mkdir -p /tmp/ort-cache
-          tarball="/tmp/ort-cache/onnxruntime-linux-x64-gpu-${ORT_VERSION}.tgz"
+          mkdir -p "${RUNNER_TEMP}/ort-cache"
+          tarball="${RUNNER_TEMP}/ort-cache/onnxruntime-linux-x64-gpu-${ORT_VERSION}.tgz"
           if [ ! -f "$tarball" ]; then
             curl -sSL --retry 3 --retry-delay 5 -o "$tarball" \
               "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-gpu-${ORT_VERSION}.tgz"
