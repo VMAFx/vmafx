@@ -169,28 +169,75 @@ self.assertAlmostEqual(results[0]['Cambi_score'],
 The CPU extractor picks its kernels once, in `init()`, from the host's CPU
 flags. Nothing needs to be configured: the scalar C code is the default and
 the reference, and a SIMD kernel replaces it only on a CPU that supports its
-instruction set. Every dispatched kernel is integer-only and bit-exact against
-the scalar code, so the CAMBI score is identical whichever path runs.
+instruction set. Every dispatched kernel is bit-exact against the scalar code,
+so the CAMBI score is identical whichever path runs.
 
 | Stage | AVX2 | AVX-512 | NEON (aarch64) |
 | --- | --- | --- | --- |
-| Anti-dithering filter (8-bit input) | dispatched | — | — |
-| Spatial mask: derivative row | dispatched | present, not dispatched | present, not dispatched |
+| Anti-dithering filter (8-bit input) | dispatched | dispatched | dispatched |
+| Spatial mask: derivative row | dispatched | dispatched | dispatched |
 | Spatial mask: summed-area (dp) row | dispatched | dispatched | dispatched |
-| Spatial mask: box-sum threshold (mask) row | dispatched | dispatched | present, not dispatched |
-| Decimate, mode filter | dispatched | — | — |
-| c-values (sliding histogram) | dispatched | row kernel present, not dispatched | row kernel present, not dispatched |
+| Spatial mask: box-sum threshold (mask) row | dispatched | dispatched | scalar (see below) |
+| Decimate | dispatched | dispatched | dispatched |
+| Mode filter | dispatched | dispatched | scalar (see below) |
+| c-values (sliding histogram and c-value rows) | dispatched | dispatched | dispatched |
 
-"Present, not dispatched" means the kernel is built and covered by a parity
-test but the extractor keeps the scalar code on that ISA. For the NEON mask row
-that is deliberate: GCC and Clang already compile the scalar loop into the same
-NEON instructions, so the hand-written twin would not remove any work. The
-remaining AVX-512 and NEON kernels predate the current c-values layout and were
-left undispatched when that layout was ported from upstream.
+On aarch64 two stages keep the scalar code on purpose. For the mask row and the
+mode filter, GCC and Clang already compile the scalar loop into the same NEON
+instructions a hand-written kernel uses, so a NEON kernel would remove no work
+(measured by instruction count: 0.93x with GCC, 1.02x with Clang for the mode
+filter). Both NEON kernels are still built and covered by the parity tests, so
+they are ready if a compiler stops vectorising those loops.
 
-The spatial-mask row kernels are what the extractor runs once per frame at
-full resolution. On one AMD Zen 5 core (release build, 1920x1080 frame, 7x7
-mask filter) they measured:
+The c-values stage is the expensive one, and all three SIMD drivers (AVX2,
+AVX-512, NEON) are fast because they skip work, not because their vectors are
+wider. On flat, banding-prone content almost every pixel leaves the sliding
+histogram unchanged: it is masked out, outside the luma band CAMBI scores, or
+equal to the pixel it replaces. The scalar driver visits every pixel; the SIMD
+drivers test a block of up to 256 pixels with vector compares and update the
+histogram only for the ones that change it. The histogram each row sees is the
+same, so the scores are too. (Upstream's AVX2 driver, which visits every pixel,
+is still built and tested but no longer used: in icx builds it was slower than
+the scalar code.)
+
+Measured on one AMD Zen 5 core (Ryzen 9 9950X3D), single thread, release
+builds, over seven 576x324 to 3840x2176 8- and 10-bit inputs
+([Research-2065](../research/2065-cambi-simd-gaps.md)). The c-values stage
+against scalar:
+
+| c-values driver | GCC | Clang | icx |
+| --- | --- | --- | --- |
+| AVX2 | 2.09–2.78x | 3.50–5.52x | 2.87–4.48x |
+| AVX-512 | 2.17–3.21x | 4.00–7.08x | 3.04–5.68x |
+
+AVX-512 against AVX2, per stage:
+
+| Stage | GCC | Clang | icx |
+| --- | --- | --- | --- |
+| Anti-dithering filter | 2.07–2.44x | 1.73–2.03x | 1.23–2.47x |
+| Derivative row | 1.31–1.79x | 1.12–1.50x | 1.17–1.45x |
+| Decimate | 1.30–1.47x | 1.25–1.32x | 1.35–1.44x |
+| Mode filter | 1.37–1.42x | 1.30–1.37x | 1.08–1.18x |
+| c-values | 1.04–1.16x | 1.14–1.28x | 1.06–1.27x |
+
+A whole CAMBI frame on that host, single thread, frames per second. "Before"
+is the build without these kernels, at its default dispatch; "default" is
+AVX-512 on this host; "AVX2 only" is `--cpumask 48`, what a CPU without
+AVX-512 runs:
+
+| Input | GCC, before | GCC, default | GCC, AVX2 only | Clang, AVX2 only | icx, AVX2 only (before) |
+| --- | --- | --- | --- | --- | --- |
+| 576x324 8-bit | 2024 | 2668 | 2409 | 2540 | 2437 (1388) |
+| 1920x1088 8-bit | 191 | 252 | 229 | 240 | 227 (128) |
+| 1920x1080 10-bit | 267 | 339 | 313 | 338 | 318 (180) |
+| 3840x2176 8-bit | 46.8 | 60.5 | 56.4 | 57.4 | 56.7 (33.1) |
+
+On aarch64 there was no hardware to time; under `qemu-aarch64` the NEON
+kernels execute 9–24 % of the scalar instructions for the anti-dithering
+filter, derivative row and decimate, and 21–44 % for the c-values stage.
+
+The spatial-mask row kernels, measured on their own (1920x1080 frame, 7x7 mask
+filter, [Research-2062](../research/2062-cambi-spatial-mask-simd.md)):
 
 | Kernel | Scalar | AVX2 | AVX-512 |
 | --- | --- | --- | --- |
@@ -199,25 +246,27 @@ mask filter) they measured:
 | mask row, GCC build | 275 µs | 164 µs (1.68x) | 122 µs (2.26x) |
 | mask row, Clang build | 251 µs | 167 µs (1.51x) | 121 µs (2.08x) |
 
-Both rows together are a small share of a CAMBI frame: about 0.76 ms of the
-roughly 23 ms a scalar frame of the 1080p checkerboard fixture took in the same
-setup, so the end-to-end gain from these two kernels is around 2 %.
-
 To compare paths on your own machine, mask CPU flags with `--cpumask`, which
 takes the flags to *disable*. The score must not change:
 
 ```bash
-# default dispatch (AVX-512 where available)
+# default dispatch (AVX-512 or NEON where available)
 vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
     --no_prediction --feature cambi --precision max --json -o simd.json
-# AVX2 only (disable the AVX-512 flag, bit 4)
+# x86: AVX2 only (disable the AVX-512 flag, bit 4)
 vmaf ... --cpumask 16 -o avx2.json
-# scalar only
+# x86: scalar only
 vmaf ... --cpumask 65535 -o scalar.json
+# aarch64: scalar only (disable NEON, bit 0)
+vmaf ... --cpumask 1 -o scalar.json
 ```
 
-The kernel parity tests are `test_cambi_spatial_mask_simd` and
-`test_cambi_simd` in the `simd` suite (`meson test -C build --suite simd`).
+The JSON files differ only in `fps`. The tests behind this are in the `simd`
+suite (`meson test -C build --suite simd`): `test_cambi_stage_simd` compares
+every per-stage kernel with the scalar stage, `test_cambi_spatial_mask_simd`
+the spatial-mask rows, `test_cambi_simd` the c-values row, and
+`test_cambi_dispatch_invariance` runs the whole extractor at each dispatch
+level and requires identical scores.
 
 ## GPU support
 

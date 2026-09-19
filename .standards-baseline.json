@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-09-19T09:52:52Z",
+  "generated_at": "2026-09-19T11:30:29Z",
   "repository": "",
   "commit_sha": "",
   "total_infractions": 1622,
@@ -2735,23 +2735,9 @@
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 857,
+      "line_number": 868,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/cambi.c:857:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/cambi.c",
-      "line_number": 863,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/cambi.c:863:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/cambi.c",
-      "line_number": 870,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/cambi.c:870:HISS-01"
+      "fingerprint": "core/src/feature/cambi.c:868:HISS-01"
     },
     {
       "rule_id": "HISS-01",
@@ -2759,6 +2745,20 @@
       "line_number": 874,
       "message": "Legacy non-DAG control flow jump (goto)",
       "fingerprint": "core/src/feature/cambi.c:874:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "core/src/feature/cambi.c",
+      "line_number": 881,
+      "message": "Legacy non-DAG control flow jump (goto)",
+      "fingerprint": "core/src/feature/cambi.c:881:HISS-01"
+    },
+    {
+      "rule_id": "HISS-01",
+      "file_path": "core/src/feature/cambi.c",
+      "line_number": 885,
+      "message": "Legacy non-DAG control flow jump (goto)",
+      "fingerprint": "core/src/feature/cambi.c:885:HISS-01"
     },
     {
       "rule_id": "HISS-04",

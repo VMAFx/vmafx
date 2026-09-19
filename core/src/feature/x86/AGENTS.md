@@ -77,7 +77,7 @@ with matching change to other halves in **same PR**:
 | **MS-SSIM decimate LPF** (ADR-0125) | `ms_ssim_decimate_avx2.c` + `ms_ssim_decimate_avx512.c` + `../arm64/ms_ssim_decimate_neon.c` + scalar `../ms_ssim_decimate.c`. The 9-tap filter table appears verbatim in all four — diff all four when any one moves. |
 | **PSNR-HVS DCT** (ADR-0159 + ADR-0350) | `psnr_hvs_avx2.c` + `../arm64/psnr_hvs_neon.c` + scalar `../third_party/xiph/psnr_hvs.c`. Butterfly block is byte-identical across the three. **No `psnr_hvs_avx512.c` — AVX-512 closed as ceiling under T3-9 (a) per [ADR-0350](../../../../docs/adr/0350-psnr-hvs-avx512-ceiling.md): `perf record` cycle share is 78.42 % scalar tail (locked by ADR-0138/0139 bit-exactness) vs 14.82 % DCT, capping a 16-lane widening at 1.07–1.08× over AVX2 (Amdahl ceiling 1.17×) — well below T3-9's 1.3× ship gate.** Re-bench gate: any future upstream change to the Xiph/Daala scalar that shifts the per-block summation tree requires re-running [Research-0091 §7](../../../../docs/research/0091-psnr-hvs-avx512-bench-2026-05-09.md) before claiming the ceiling still holds. |
 | **VIF SIMD8** (ADR-0146) | `vif_statistic_avx2.c` (`vif_stat_simd8_compute` + `vif_stat_simd8_reduce` halves around `struct vif_simd8_lane`) + scalar `../vif.c`. Per-lane scalar-float reduction via 32-byte aligned `tmp_n[8]` / `tmp_d[8]` is load-bearing for ADR-0139. |
-| **CAMBI calculate_c_values_row** (ADR-0452) | `cambi_avx2.c` (`calculate_c_values_row_avx2`) + `cambi_avx512.c` (`calculate_c_values_row_avx512`) + `../arm64/cambi_neon.c` (`calculate_c_values_row_neon`) + scalar in `../cambi.c` (`calculate_c_values_row`). Every cambi inner-loop function ported to AVX2 **must** have AVX-512 + NEON siblings in the **same PR**. Bit-exact (integer pipeline, no float reduction tree). Tested in `../../test/test_cambi_simd.c`. |
+| **CAMBI stage kernels** (ADR-1256, Research-2065) | `cambi_avx2.c` (upstream mirror + fork-local scanned c-values driver at end) + `cambi_avx512.c` + `../arm64/cambi_neon.c` (fork-local) + scalar `../cambi.c`; AVX2 / AVX-512 / NEON c-values drivers share walk `../cambi_c_values_frame.h`. New AVX2 stage → AVX-512 + NEON twin same PR; dispatch only if measured faster. Tests: `test_cambi_stage_simd.c` (every stage kernel vs shipped scalar, guard bands), `test_cambi_dispatch_invariance.c` (whole extractor per cpumask), `test_cambi_simd.c` (c-values row). |
 | **CAMBI spatial-mask rows** (ADR-1256) | `cambi_avx2.c` (`compute_dp_row_avx2`, `compute_mask_row_avx2`) + `cambi_avx512.c` (`compute_dp_row_avx512`, `compute_mask_row_avx512`) + `../arm64/cambi_neon.c` (`compute_dp_row_neon`, `compute_mask_row_neon`) + scalar reference in `../cambi.c` (declared in `../cambi.h`). Adapted from upstream `86da14d03` but **not verbatim — keep the fork's versions on a sync**: the dp row keeps only `carry += broadcast(block total)` on the loop-carried chain (upstream's form is slower than scalar under Clang / icx), and the AVX2 mask row biases both compare operands by 2^31 so the signed `vpcmpgtd` equals the scalar unsigned compare for every input. Dispatch only what beats scalar on a measured run (ADR-1256); re-bench before wiring a changed kernel. Tested in `../../test/test_cambi_spatial_mask_simd.c`. |
 | **Integer ADM p-norm callback ABI** (ADR-0645) | `adm_avx2.c` + `adm_avx512.c` + scalar `../integer_adm.c` + headers `adm_avx2.h` / `adm_avx512.h`. The `adm_cm` and `i4_adm_cm` signatures must carry `adm_p_norm` through every twin so `integer_adm:adm_p_norm=...` is not silently ignored by x86 SIMD dispatch. Default `3.0` expression shape remains the Netflix-compatible path. |
 | **SSIMULACRA 2 SIMD** (ADR-0161 / 0162 / 0163 / 0252) | `ssimulacra2_avx2.c` + `ssimulacra2_avx512.c` + `../arm64/ssimulacra2_neon.c` + `../arm64/ssimulacra2_sve2.c` + `ssimulacra2_host_avx2.c` + `../arm64/ssimulacra2_host_neon.c` + scalar `../ssimulacra2.c` + Vulkan host-path call site `../vulkan/ssimulacra2_vulkan.c` |
@@ -90,6 +90,36 @@ with matching change to other halves in **same PR**:
 Complete invariants live in [../AGENTS.md
 §"Rebase-sensitive invariants"](../AGENTS.md); this table is
 **index** of which file groups move together.
+
+## CAMBI AVX2 scanned c-values invariants (Research-2065)
+
+- Dispatch binds `calculate_c_values_scan_avx2`, not upstream
+  `calculate_c_values_avx2` (0.81x scalar under icx). Upstream driver stays
+  built + tested; do not delete, do not re-bind without re-measuring.
+- Scans `scan_row_avx2` / `scan_slide_avx2` out of line
+  (`CAMBI_SCAN_NOINLINE_AVX2`), constants per call: no ymm live across
+  row-kernel calls (ADR-1254).
+- Band test unsigned via `min_epu16(v - base, size - 1) == v - base` (AVX2 has
+  no unsigned 16-bit compare). `size >= 1` guaranteed by `alloc_cambi_buffers`.
+- No masked loads on AVX2 → scalar tail (`cambi_column_*`) < 16 cols. Never
+  vector-load past last column; a bit set past `n` → helper writes outside
+  histogram.
+- `packs(lo128, hi128)` + `movemask_epi8` = one bit per column, in order.
+
+## CAMBI AVX-512 invariants (Research-2065)
+
+- Scans `scan_row_avx512` / `scan_slide_avx512` stay out of line
+  (`CAMBI_SCAN_NOINLINE`). Inlined → Clang hoists band broadcasts, spills zmm
+  around each row-kernel call → Win64 fault risk (ADR-1254). One call per
+  256-column block keeps call cost low.
+- Scan may over-flag, never under-flag. Mirrors `uh_slide` skip + band test in
+  `../cambi.h`; change one → change both.
+- Masked row tails (derivative, decimate, anti-dither, mode filter) load-bearing
+  for speed: unmasked derivative tail (≤ 32 scalar cols) lost to AVX2.
+- `calculate_c_values_row_avx512` keeps scalar tail: 4-byte gather on last lane
+  reads 2 B past histogram end.
+- Range updater width irrelevant (512 vs 256 within ±3 %). Gain = column scan,
+  not width.
 
 ## Integer ADM declaration cleanup (2026-09-08)
 
