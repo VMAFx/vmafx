@@ -73,6 +73,11 @@ reported as `wrapper <name> produced invalid JSON: ...`. A bad wrapper
 is skipped for that corpus item instead of crashing the whole run with
 an aggregation-time `KeyError`.
 
+The optional `--out-json` aggregate report is strict RFC-8259 JSON. If
+every row for a competitor is skipped, the text table still shows `nan`
+for the missing means, while the JSON report writes those missing means
+as `null` so strict parsers can consume the file.
+
 ## Operator install (external competitors only)
 
 The fork ships **only** the wrappers. You install the external binaries

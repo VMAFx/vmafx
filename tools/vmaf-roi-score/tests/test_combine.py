@@ -266,20 +266,20 @@ class _FakeCompleted:
         self.stderr = stderr
 
 
-def test_cli_synthetic_smoke(monkeypatch, tmp_path: Path):
-    """Drive ``main`` end-to-end with a mocked vmaf binary.
+def _setup_synthetic_smoke_fixture(
+    tmp_path: Path, monkeypatch
+) -> tuple[Path, Path, list[Path], list[bytes]]:
+    """Plant ref/dis fixtures + a fake vmaf-run stub for the synthetic-mask smoke test.
 
-    Verifies:
-    - exit code is 0;
-    - JSON output has the canonical key order;
-    - the blended score equals the (identical) underlying scores;
-    - the schema_version matches the package constant.
+    Split out of ``test_cli_synthetic_smoke`` to keep it under the HISS-04
+    60-LOC limit; pure fixture setup, no behaviour change. Returns
+    ``(ref, dis, distorted_paths, masked_bytes)`` — the latter two lists
+    are populated by the fake runner as ``main()`` invokes it.
     """
     ref = tmp_path / "ref.yuv"
     dis = tmp_path / "dis.yuv"
     ref.write_bytes(bytes([10] * 16 + [20] * 4 + [30] * 4))
     dis.write_bytes(bytes([110] * 16 + [120] * 4 + [130] * 4))
-    out = tmp_path / "result.json"
     distorted_paths: list[Path] = []
     masked_bytes: list[bytes] = []
 
@@ -300,6 +300,20 @@ def test_cli_synthetic_smoke(monkeypatch, tmp_path: Path):
         return _FakeCompleted(0, stderr="VMAF version: smoke-mock\n")
 
     monkeypatch.setattr("vmafroiscore.score.subprocess.run", _fake_run)
+    return ref, dis, distorted_paths, masked_bytes
+
+
+def test_cli_synthetic_smoke(monkeypatch, tmp_path: Path):
+    """Drive ``main`` end-to-end with a mocked vmaf binary.
+
+    Verifies:
+    - exit code is 0;
+    - JSON output has the canonical key order;
+    - the blended score equals the (identical) underlying scores;
+    - the schema_version matches the package constant.
+    """
+    out = tmp_path / "result.json"
+    ref, dis, distorted_paths, masked_bytes = _setup_synthetic_smoke_fixture(tmp_path, monkeypatch)
 
     rc = main(
         [
@@ -393,3 +407,51 @@ def test_cli_saliency_model_materialises_mask(monkeypatch, tmp_path: Path):
     assert payload["vmaf_masked"] == 95.0
     assert payload["vmaf_roi"] == 91.25
     assert payload["saliency_model"] == str(fake_model)
+
+
+def test_cli_rejects_nonfinite_vmaf_score(
+    monkeypatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+):
+    """A non-finite libvmaf score should not leak as invalid JSON."""
+    ref = tmp_path / "ref.yuv"
+    dis = tmp_path / "dis.yuv"
+    out = tmp_path / "result.json"
+    ref.write_bytes(bytes([10] * 16 + [20] * 4 + [30] * 4))
+    dis.write_bytes(bytes([110] * 16 + [120] * 4 + [130] * 4))
+
+    seen_distorted: list[Path] = []
+
+    def _fake_run(cmd, capture_output=False, text=False, check=False):
+        distorted = Path(cmd[cmd.index("--distorted") + 1])
+        seen_distorted.append(distorted)
+        score = float("nan") if distorted == dis else 95.0
+        Path(cmd[cmd.index("--output") + 1]).write_text(
+            json.dumps({"pooled_metrics": {"vmaf": {"mean": score}}}),
+            encoding="utf-8",
+        )
+        return _FakeCompleted(0, stderr="VMAF version: smoke-mock\n")
+
+    monkeypatch.setattr("vmafroiscore.score.subprocess.run", _fake_run)
+
+    rc = main(
+        [
+            "--reference",
+            str(ref),
+            "--distorted",
+            str(dis),
+            "--width",
+            "4",
+            "--height",
+            "4",
+            "--synthetic-mask",
+            "0.5",
+            "--output",
+            str(out),
+        ]
+    )
+
+    assert rc == 65
+    assert "invalid pooled score" in capsys.readouterr().err
+    assert not out.exists()

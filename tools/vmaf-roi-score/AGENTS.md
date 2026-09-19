@@ -28,6 +28,8 @@ Pure Python; no libvmaf C-side changes. See
 - JSON output schema pinned by `ROI_RESULT_KEYS`. Adding fields =
   forward-compatible (consumers ignore unknown keys); removing or
   renaming requires schema bump.
+- CLI output strict RFC-8259 JSON. Non-finite pooled score from
+  underlying `vmaf` run: exit 65, no `NaN` / `Infinity` tokens written.
 
 ## Things that are deferred (do not silently implement)
 
