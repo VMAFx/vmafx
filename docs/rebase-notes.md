@@ -320,6 +320,16 @@ normalization offset rather than widening the accumulator to int64 as the fork's
 #1477 does, because the int64 form costs 3.5 to 6 % of throughput upstream. Do
 not resolve that conflict by keeping both. Upstream #1494, by a maintainer,
 refactors the same ADM functions and will force a rebase either way.
+## ci/ubuntu-2604-matrix-tail — the lanes Renovate could not see (2026-09-19)
+
+Renovate's github-actions manager rewrites `runs-on:` values only. A lane that
+names its image as a matrix `os:` key, or inside an expression, is invisible to
+it: `build.yml`'s `Linux Intel LLVM` row, `libvmaf-build-matrix.yml`'s
+`Ubuntu ARM clang` row and the `Cppcheck` job's `ARC_RUNNERS_ENABLED` fallback
+all stayed on 24.04 after the bump. When the next image generation arrives,
+grep for `ubuntu-` rather than trusting the bot's diff. `.github/actionlint.yaml`
+carries `ubuntu-26.04` and `ubuntu-26.04-arm` because actionlint 1.7.12 does not
+know them; drop an entry once it ships the label.
 
 ## renovate/ubuntu-26.04 — job artefacts leave /tmp (2026-09-19)
 
