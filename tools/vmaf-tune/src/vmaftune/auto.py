@@ -79,6 +79,8 @@ if TYPE_CHECKING:
     from .hdr import HdrInfo
     from .predictor import ShotFeatures
 
+from .jsonio import dumps_strict
+
 _LOG = logging.getLogger(__name__)
 
 
@@ -258,6 +260,57 @@ def _find_calibrated_recipes_path() -> Path | None:
     return None
 
 
+def _load_recipes_payload(path: Path) -> dict | None:
+    """Read + parse the calibrated-recipes JSON at ``path``.
+
+    Returns the raw ``"recipes"`` object, or ``None`` (after a warning) on
+    any read/parse/schema failure. Split out of ``_load_calibrated_recipes``
+    to keep it under the HISS-04 / NASA Rule 4 60-LOC limit.
+    """
+    try:
+        with path.open("rt", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        _LOG.warning(
+            "failed to read %s (%s); falling back to F.4 placeholders",
+            path,
+            exc,
+        )
+        return None
+
+    raw_recipes = payload.get("recipes")
+    if not isinstance(raw_recipes, dict):
+        _LOG.warning(
+            "%s missing 'recipes' object; falling back to F.4 placeholders",
+            path,
+        )
+        return None
+    return raw_recipes
+
+
+def _merge_recipe_overrides(raw_recipes: dict) -> dict[str, dict[str, object]]:
+    """Merge JSON recipe overrides onto the F.4 placeholder base.
+
+    Unknown classes are ignored; ``_``-prefixed keys (e.g. ``_provenance``)
+    and keys outside ``_RECIPE_KEYS`` are stripped before merging.
+    """
+    merged: dict[str, dict[str, object]] = {
+        cls: dict(rec) for cls, rec in _F4_PLACEHOLDER_RECIPES.items()
+    }
+    for cls, rec in raw_recipes.items():
+        if cls not in merged or not isinstance(rec, dict):
+            continue
+        clean: dict[str, object] = {}
+        for key, value in rec.items():
+            if key.startswith("_"):
+                continue
+            if key in _RECIPE_KEYS:
+                clean[key] = value
+        if clean:
+            merged[cls] = clean
+    return merged
+
+
 def _load_calibrated_recipes() -> dict[str, dict[str, object]]:
     """Load the F.5-calibrated overrides, falling back to F.4 placeholders.
 
@@ -291,40 +344,11 @@ def _load_calibrated_recipes() -> dict[str, dict[str, object]]:
             "suppress this warning.",
         )
         return {cls: dict(rec) for cls, rec in _F4_PLACEHOLDER_RECIPES.items()}
-    try:
-        with path.open("rt", encoding="utf-8") as fh:
-            payload = json.load(fh)
-    except (OSError, json.JSONDecodeError) as exc:
-        _LOG.warning(
-            "failed to read %s (%s); falling back to F.4 placeholders",
-            path,
-            exc,
-        )
-        return {cls: dict(rec) for cls, rec in _F4_PLACEHOLDER_RECIPES.items()}
 
-    raw_recipes = payload.get("recipes")
-    if not isinstance(raw_recipes, dict):
-        _LOG.warning(
-            "%s missing 'recipes' object; falling back to F.4 placeholders",
-            path,
-        )
+    raw_recipes = _load_recipes_payload(path)
+    if raw_recipes is None:
         return {cls: dict(rec) for cls, rec in _F4_PLACEHOLDER_RECIPES.items()}
-
-    merged: dict[str, dict[str, object]] = {
-        cls: dict(rec) for cls, rec in _F4_PLACEHOLDER_RECIPES.items()
-    }
-    for cls, rec in raw_recipes.items():
-        if cls not in merged or not isinstance(rec, dict):
-            continue
-        clean: dict[str, object] = {}
-        for key, value in rec.items():
-            if key.startswith("_"):
-                continue
-            if key in _RECIPE_KEYS:
-                clean[key] = value
-        if clean:
-            merged[cls] = clean
-    return merged
+    return _merge_recipe_overrides(raw_recipes)
 
 
 # Resolved at module import — a single load, snapshotted into the
@@ -1588,7 +1612,7 @@ def emit_plan_json(plan: AutoPlan) -> str:
     are sorted so the output is reproducible across runs.
     """
     payload = {"cells": plan.cells, "metadata": plan.metadata}
-    return json.dumps(payload, indent=2, sort_keys=True)
+    return dumps_strict(payload)
 
 
 __all__ = [

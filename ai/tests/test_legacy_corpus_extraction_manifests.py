@@ -192,3 +192,45 @@ def test_konvid_vmaf_pairs_writes_manifest(tmp_path: Path, monkeypatch) -> None:
     assert manifest["stats"]["frames"] == 1
     assert manifest["crf"] == 37
     assert manifest["run_provenance"]["schema"] == "ai-run-provenance-v1"
+
+
+def test_konvid_vmaf_pairs_cache_uses_strict_json(tmp_path: Path, monkeypatch) -> None:
+    """Regression test (Research-0726): the per-clip cache write used a local
+
+    ``json.dump(rows, f)`` call with Python's default ``allow_nan=True``, so a
+    non-finite feature (an identity-pair metric or a missing ladder rung)
+    would serialize the cache with a literal ``NaN`` token.
+    """
+    mod = _load_module("konvid_to_vmaf_pairs")
+    cache_dir = tmp_path / "cache"
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+
+    monkeypatch.setattr(mod, "_decode_yuv", lambda *_args, **_kwargs: (16, 16, 1))
+    monkeypatch.setattr(mod, "_encode_dis", lambda *_args, **_kwargs: None)
+
+    def fake_run_vmaf(*args, **_kwargs) -> None:
+        out_json = args[5]
+        metrics = {f"integer_{feature}": 1.0 for feature in mod.DEFAULT_FEATURES}
+        metrics["vmaf"] = float("nan")
+        out_json.write_text(
+            json.dumps({"frames": [{"frameNum": 0, "metrics": metrics}]}),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(mod, "_run_vmaf", fake_run_vmaf)
+
+    rows = mod._process_clip(
+        "clip-a",
+        tmp_path / "src.mp4",
+        tmp_path / "vmaf",
+        tmp_path / "model.json",
+        37,
+        cache_dir,
+        scratch,
+    )
+
+    raw = (cache_dir / "clip-a.json").read_text(encoding="utf-8")
+    assert rows[0]["vmaf"] != rows[0]["vmaf"]
+    assert "NaN" not in raw
+    assert json.loads(raw)[0]["vmaf"] is None

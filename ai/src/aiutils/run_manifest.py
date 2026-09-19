@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -17,9 +18,17 @@ JsonValue = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 
 
 def normalise_manifest_value(value: Any) -> JsonValue:
-    """Convert common Python CLI values to deterministic JSON values."""
+    """Convert common Python CLI values to deterministic JSON values.
+
+    Non-finite floats (``NaN``, ``Infinity``, ``-Infinity``) normalise to
+    ``None`` (Research-0721): they are not valid RFC-8259 JSON tokens, but
+    training/export scripts legitimately compute them while exploring weak
+    fits or failed gates.
+    """
     if isinstance(value, Path):
         return str(value)
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
     if isinstance(value, Mapping):
         return {
             str(key): normalise_manifest_value(item)
@@ -173,10 +182,24 @@ def write_run_manifest(
     )
 
 
-def write_manifest_json(path: Path, payload: Mapping[str, Any]) -> None:
-    """Write a deterministic JSON manifest atomically with a trailing newline.
+def dumps_manifest_json(payload: Any) -> str:
+    """Serialize ``payload`` as deterministic, strict JSON with a trailing newline.
+
+    Accepts any JSON-serializable value, not just a mapping (Research-0726):
+    legacy per-clip caches are list-shaped. Non-finite floats normalise to
+    ``null`` via :func:`normalise_manifest_value` and ``allow_nan=False``
+    makes the encoder reject any that slip through, so this is the single
+    strict-JSON boundary shared by every manifest, stdout report, and legacy
+    cache writer in ``ai/`` (Research-0721, Research-0724).
+    """
+    normalised = normalise_manifest_value(payload)
+    return json.dumps(normalised, indent=2, sort_keys=True, allow_nan=False) + "\n"
+
+
+def write_manifest_json(path: Path, payload: Any) -> None:
+    """Write a deterministic, strict JSON manifest atomically.
 
     Uses :func:`aiutils.file_utils.write_text_atomic` so a crash during
     the write never leaves a partially-truncated manifest on disk.
     """
-    write_text_atomic(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    write_text_atomic(path, dumps_manifest_json(payload))

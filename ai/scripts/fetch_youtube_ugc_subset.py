@@ -84,11 +84,11 @@ def _download(url: str, dest: Path) -> None:
     tmp = dest.with_suffix(dest.suffix + ".tmp")
     # nosec B310: scheme restricted to https above; URL built from the
     # GCS_OBJ_URL module constant plus a bucket-object name.
+    # iter(callable, sentinel) terminates on the first empty read, so this
+    # is a bounded loop over the download's own byte length rather than an
+    # unbounded `while True` (HISS-02 / NASA Rule 2).
     with urllib.request.urlopen(url) as r, tmp.open("wb") as f:  # nosec B310
-        while True:
-            chunk = r.read(1 << 20)
-            if not chunk:
-                break
+        for chunk in iter(lambda: r.read(1 << 20), b""):
             f.write(chunk)
     tmp.rename(dest)
 
@@ -203,7 +203,7 @@ def main() -> int:
         manifest[stem] = entry
 
     args.manifest.parent.mkdir(parents=True, exist_ok=True)
-    args.manifest.write_text(json.dumps(manifest, indent=2) + "\n")
+    write_manifest_json(args.manifest, manifest)
     _write_run_manifest(args=args, ranked=ranked, total_bytes=total_bytes)
     print(
         f"[ugc-fetch] wrote {args.manifest} ({len(manifest)} stems); "
