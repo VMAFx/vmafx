@@ -208,8 +208,10 @@ bool unused_slots_clear(const RegisteredFeatureExtractors *entries)
     return true;
 }
 
-bool vector_unchanged(const RegisteredFeatureExtractors *entries, const void *storage,
-                      unsigned count, unsigned capacity)
+// Only the FEX_VECTOR_ALLOC_TEST cases below call this, so without that macro it is
+// unused and gcc warns; the attribute says so instead of hiding the helper in the #ifdef.
+[[maybe_unused]] bool vector_unchanged(const RegisteredFeatureExtractors *entries,
+                                       const void *storage, unsigned count, unsigned capacity)
 {
     return entries->cnt == count && entries->capacity == capacity &&
            static_cast<const void *>(entries->fex_ctx) == storage;

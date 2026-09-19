@@ -651,6 +651,7 @@ Writing a new HIP parity test: check `-ENOSYS` at **both** sites --
 `vmaf_use_feature()` AND `vmaf_read_pictures()`. Extractor may give up at
 registration or inside `extract()`; `speed_temporal_hip` does the latter.
 Reference shape: `core/test/test_hip_speed_temporal_parity.c`.
+
 ## `__HIP_PLATFORM_AMD__` comes from the build (ADR-1263)
 
 New HIP host source needs **no** `#define __HIP_PLATFORM_AMD__`. `hip_deps` in
