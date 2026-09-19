@@ -591,19 +591,29 @@ is enforced at the host, not just honored by convention.
 - **Required status check (1):** `Required Checks Aggregator`. Branch protection
   names exactly this one context; every other gate is enforced *through* it.
   The aggregator's own `required` array
-  (`.github/workflows/required-aggregator.yml`) is the real inventory — **34
-  entries** as of ADR-1151:
+  (`.github/workflows/required-aggregator.yml`) is the real inventory — **40
+  entries**, of which each run checks 39 (only the Scorecard gate for its own
+  event applies):
   - **Builds (7):** Ubuntu gcc+DNN, Ubuntu clang+DNN,
     Windows MinGW64, Windows MSVC+CUDA, Windows MSVC+SYCL,
-    Ubuntu HIP, SYCL float_ssim Parity.
+    Ubuntu HIP, SYCL float_ssim Parity. All but the last are
+    `libvmaf-build-matrix.yml` lanes; no `build.yml` row is required
+    ([ADR-1259](../adr/1259-ci-build-matrix-as-it-runs.md)). The `build.yml`
+    Windows row is named `Windows MSVC+CUDA (full)` so that it cannot
+    stand in for the required lane.
   - **Static analysis (10):** CodeQL ×4 (CodeQL, CodeQL (C/C++),
     CodeQL (Python), CodeQL (Actions)), Pre-Commit, Python Lint, Semgrep,
     Tidy Changed, Tidy Ratchet, Cppcheck.
-  - **Supply chain / docs (4):** Dependency Review, Gitleaks, Docs,
-    ShellCheck + shfmt.
-  - **Tests (7):** Netflix CPU Golden, Sanitizers ×3 (Sanitizers (address),
+  - **Supply chain / docs (6):** Dependency Review, Gitleaks, Docs,
+    ShellCheck + shfmt, Scorecard PR Gate (pull requests), Scorecard Master
+    Gate (master pushes).
+  - **Tests (9):** Netflix CPU Golden, Sanitizers ×3 (Sanitizers (address),
     Sanitizers (thread), Sanitizers (undefined)), Assertion Density, Twin Drift,
-    Tiny AI.
+    Tiny AI, go vet + go test, SYCL Parity (Arc A380) (enforced only while the
+    `SYCL_ARC_RUNNER_ENABLED` variable is `true`).
+  - **FFmpeg (1):** FFmpeg Patch Stack.
+  - **Governance (1):** Standards & Invariant Verification Gate
+    ([ADR-1249](../adr/1249-praetor-governance-adoption.md)).
   - **Process gates (6):** Deliverables Checklist, Doc-Substance Gate,
     docs/state.md Gate, FFmpeg-Patches Surface Sync, ADR Collision Guard,
     Release Script Contract. These report on every non-draft PR; four of the
@@ -620,7 +630,9 @@ is enforced at the host, not just honored by convention.
 - **Not required (non-blocking signals):** Coverage gate (~40 min — built
   with `-fprofile-update=atomic` since 2026-04-18 to survive parallel-meson
   SIMD-counter races, see [ADR-0110](../adr/0110-coverage-gate-fprofile-update-atomic.md)),
-  GPU-advisory jobs, Semgrep OSS.
+  GPU-advisory jobs, the other eleven `libvmaf-build-matrix.yml` lanes, the
+  three `build.yml` rows and the `sanitizers.yml` jobs
+  ([ADR-1259](../adr/1259-ci-build-matrix-as-it-runs.md)).
 
 Management: `gh api --method PUT repos/VMAFx/vmafx/branches/master/protection`
 with a JSON payload. The current rule set is documented in

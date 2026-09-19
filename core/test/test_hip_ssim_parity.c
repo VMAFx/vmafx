@@ -6,20 +6,31 @@
  */
 
 /*
- * ADR-0883 round-2 — integer SSIM CPU vs. HIP parity test.
+ * ADR-0883 round-2 / ADR-0564 — integer SSIM CPU vs. HIP parity test.
  *
- * SSIM (Structural Similarity) is computed by integer_ssim.c (CPU)
- * and by integer_ssim_hip.c + integer_ssim/integer_ssim_score.hip
- * (HIP).  The HIP path has no cross-backend assertion before this
- * test; a regression in the per-window mean/variance/covariance
- * accumulator would silently shift downstream metrics.
+ * SSIM is computed by integer_ssim.c (CPU, extractor `ssim`) and by
+ * integer_ssim_hip.c + integer_ssim/integer_ssim_score.hip (HIP, extractor
+ * `integer_ssim_hip`); both emit the `ssim` feature. The HIP twin runs the
+ * CPU's 9-tap int64 algorithm, so every frame must agree within places=4
+ * (1e-4), the gate the CUDA, SYCL and Metal integer_ssim twins use
+ * (ADR-0214). Measured deltas are around 1e-14: only the order in which the
+ * per-pixel terms are summed differs.
  *
- * Asserts the single emitted `ssim` channel.  Tolerance is places=3
- * (1e-3) per ADR-0214 — filtered features have larger reduction
- * trees than unfiltered ones and warrant the looser budget.
+ * The fixture (hip_pooled_fixture.h) is N_FRAMES frames fetched from a
+ * picture pool sized like the CLI's, so a picture buffer is refilled with the
+ * next frame as soon as vmaf_read_pictures() lets go of it. That is what
+ * exposed a HIP staging race: an asynchronous upload that was still reading a
+ * picture after submit() returned scored some frames against the next frame's
+ * samples. A single-frame fixture cannot see it. test_hip_upload_race.c runs
+ * the same fixture over every HIP extractor that uploads a host picture.
  *
- * Skip behaviour: if vmaf_hip_state_init() fails (no HIP runtime or
- * no device visible) the test emits "[skip: no HIP device]" and passes.
+ * meson registers this TU several times: at 8 bpc (the 256x144 default and
+ * a 960x540 variant), at 10 bpc (-DFIXTURE_BPC=10u, which runs the 16-bit
+ * horizontal kernel) and at an odd 577x323 size, where the window is
+ * truncated at a partial right and bottom block.
+ *
+ * Skip behaviour: no HIP device, or a build without device kernels
+ * (-ENOSYS from init), prints "[skip: ...]" and exits as skipped.
  */
 
 #include <errno.h>
@@ -31,76 +42,51 @@
 #include "test.h"
 
 #include "feature/feature_extractor.h"
+#include "hip_pooled_fixture.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
 
-#ifndef FIXTURE_W
-#define FIXTURE_W 256u
-#endif
-#ifndef FIXTURE_H
-#define FIXTURE_H 144u
-#endif
-#define FIXTURE_BPC 8u
-#define PARITY_TOL 1e-3
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
 
-static int fill_pic(VmafPicture *pic, unsigned salt)
+#define PARITY_TOL 1e-4
+
+/* Runs `extractor` over the fixture and reads the `ssim` score of every
+ * frame into `scores`. Returns 0, or the error of the first failing call. */
+static int run_ssim(VmafContext *vmaf, const char *extractor, double *scores)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            y[row * pic->stride[0] + col] = (uint8_t)((row + col + salt * 17u) & 0xFFu);
-        }
-    }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
-        }
-    }
-    return 0;
+    int err = vmaf_use_feature(vmaf, extractor, NULL);
+    if (!err)
+        err = hip_fixture_feed_frames(vmaf);
+    if (!err)
+        err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    for (unsigned f = 0u; f < N_FRAMES && !err; f++)
+        err = vmaf_feature_score_at_index(vmaf, "ssim", &scores[f], f);
+    return err;
 }
 
-static int feed_frame(VmafContext *vmaf)
-{
-    VmafPicture ref;
-    VmafPicture dist;
-    int err = fill_pic(&ref, 0u);
-    if (err)
-        return err;
-    err = fill_pic(&dist, 1u);
-    if (err) {
-        vmaf_picture_unref(&ref);
-        return err;
-    }
-    return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-}
-
-static char *run_cpu_ssim(double *score)
+static char *run_cpu_ssim(double *scores)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "ssim", NULL);
-    mu_assert("CPU: vmaf_use_feature(ssim) failed", !err);
-    err = feed_frame(vmaf);
-    mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "ssim", score, 0u);
-    mu_assert("CPU: vmaf_feature_score_at_index(ssim) failed", !err);
+    err = run_ssim(vmaf, "ssim", scores);
+    mu_assert("CPU: ssim extraction failed", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
     return NULL;
 }
 
-static char *run_hip_ssim(double *score)
+/* Sets *ran to false, with the test marked skipped, when there is no HIP
+ * device or the build has no device kernels. */
+static char *run_hip_ssim(double *scores, int *ran)
 {
-    *score = NAN;
+    *ran = 0;
     VmafHipState *hip_state = NULL;
     VmafHipConfiguration hip_cfg = {.device_index = -1};
     int err = vmaf_hip_state_init(&hip_state, hip_cfg);
@@ -115,24 +101,16 @@ static char *run_hip_ssim(double *score)
     mu_assert("HIP: vmaf_init failed", !err);
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "integer_ssim_hip", NULL);
-    mu_assert("HIP: vmaf_use_feature(integer_ssim_hip) failed", !err);
-    err = feed_frame(vmaf);
+    err = run_ssim(vmaf, "integer_ssim_hip", scores);
     if (err == -ENOSYS) {
-        /* Documented scaffold contract: an unimplemented HIP extractor returns
-         * -ENOSYS from init (see core/src/feature/hip/*.c). That is a
-         * not-built-yet signal, not a regression, so skip exactly as the
-         * no-device branch above does. Any other error still fails. */
+        /* Documented scaffold contract: a HIP extractor built without
+         * enable_hipcc returns -ENOSYS from init. Not a regression. */
         (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
+        mu_skipped = 1;
+    } else {
+        mu_assert("HIP: integer_ssim_hip extraction failed", !err);
+        *ran = 1;
     }
-    mu_assert("HIP: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "ssim", score, 0u);
-    mu_assert("HIP: vmaf_feature_score_at_index(ssim) failed", !err);
     err = vmaf_close(vmaf);
     mu_assert("HIP: vmaf_close failed", !err);
     vmaf_hip_state_free(&hip_state);
@@ -147,30 +125,53 @@ static char *test_ssim_hip_registered(void)
     return NULL;
 }
 
+/* With the HIP backend active, model-driven dispatch resolves the `ssim`
+ * feature to the HIP twin. Before the int64 kernel the twin was deliberately
+ * unflagged and `ssim` fell back to the CPU (ADR-1154). Needs no device. */
+static char *test_ssim_hip_dispatch(void)
+{
+    VmafFeatureExtractor *fex =
+        vmaf_get_feature_extractor_by_feature_name("ssim", VMAF_FEATURE_EXTRACTOR_HIP);
+    mu_assert("ssim must resolve to an extractor under the HIP flag", fex != NULL);
+    mu_assert("ssim under the HIP flag must resolve to integer_ssim_hip",
+              !strcmp(fex->name, "integer_ssim_hip"));
+    mu_assert("integer_ssim_hip must carry VMAF_FEATURE_EXTRACTOR_HIP",
+              (fex->flags & VMAF_FEATURE_EXTRACTOR_HIP) != 0);
+    return NULL;
+}
+
 static char *test_ssim_cpu_hip_parity(void)
 {
-    double cpu = 0.0;
-    double gpu = NAN;
-    char *msg = run_cpu_ssim(&cpu);
+    double cpu[N_FRAMES] = {0.0};
+    double gpu[N_FRAMES] = {0.0};
+    int ran = 0;
+    char *msg = run_cpu_ssim(cpu);
     if (msg)
         return msg;
-    msg = run_hip_ssim(&gpu);
-    if (msg)
+    msg = run_hip_ssim(gpu, &ran);
+    if (msg || !ran)
         return msg;
-    if (isnan(gpu))
-        return NULL;
-    double delta = fabs(cpu - gpu);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr, "\nssim parity FAIL: cpu=%.8f hip=%.8f delta=%.2e tol=%.2e\n", cpu,
-                      gpu, delta, PARITY_TOL);
+    double worst = 0.0;
+    for (unsigned f = 0u; f < N_FRAMES; f++) {
+        const double delta = fabs(cpu[f] - gpu[f]);
+        if (delta > PARITY_TOL) {
+            (void)fprintf(stderr, "\nssim parity FAIL frame %u: cpu=%.17g hip=%.17g delta=%.3e\n",
+                          f, cpu[f], gpu[f], delta);
+        }
+        worst = delta > worst ? delta : worst;
     }
-    mu_assert("ssim CPU vs. HIP delta exceeds places=3 tolerance (1e-3)", delta <= PARITY_TOL);
+    (void)fprintf(stderr, "[%ux%u %u bpc, %u frames, max delta %.3e] ", FIXTURE_W, FIXTURE_H,
+                  FIXTURE_BPC, N_FRAMES, worst);
+    mu_assert("ssim CPU vs. HIP delta exceeds places=4 tolerance (1e-4)", worst <= PARITY_TOL);
     return NULL;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_ssim_hip_registered);
+    mu_run_test(test_ssim_hip_dispatch);
     mu_run_test(test_ssim_cpu_hip_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

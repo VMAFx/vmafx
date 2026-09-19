@@ -76,16 +76,24 @@ fi
 #
 # The `--force` flag silences setvars.sh's "already initialized" notice when
 # a prior install was sourced earlier in the parent shell.
+#
+# Security: $ROOT reaches the subshell as a positional argument ($1) and is
+# never spliced into the script body, which is a single-quoted literal. $ROOT
+# comes from $ONEAPI_PREFIX or the version argument; interpolated into a
+# `bash -c "... source '$ROOT/setvars.sh' ..."` body, a value that closes the
+# quote (`x' || <payload>; false # ` or `x'$(<payload>)'`) ran arbitrary code
+# under the caller's UID. As $1 it stays data whatever it contains.
+# scripts/ci/test-sycl-bench-env.sh pins this; it runs as a pre-commit hook.
 ENV_DUMP=$(
-  bash -c "
+  bash -c '
     set -e
     # shellcheck disable=SC1090
-    source '$ROOT/setvars.sh' --force >/dev/null 2>&1 || true
-    printf 'CMPLR_ROOT=%s\n'      \"\${CMPLR_ROOT:-}\"
-    printf 'LD_LIBRARY_PATH=%s\n' \"\${LD_LIBRARY_PATH:-}\"
-    printf 'LIBRARY_PATH=%s\n'    \"\${LIBRARY_PATH:-}\"
-    printf 'PATH=%s\n'            \"\${PATH:-}\"
-  "
+    source "$1/setvars.sh" --force >/dev/null 2>&1 || true
+    printf "CMPLR_ROOT=%s\n"      "${CMPLR_ROOT:-}"
+    printf "LD_LIBRARY_PATH=%s\n" "${LD_LIBRARY_PATH:-}"
+    printf "LIBRARY_PATH=%s\n"    "${LIBRARY_PATH:-}"
+    printf "PATH=%s\n"            "${PATH:-}"
+  ' _ "$ROOT"
 )
 
 while IFS= read -r line; do

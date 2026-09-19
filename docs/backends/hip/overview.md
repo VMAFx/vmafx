@@ -30,20 +30,33 @@
 > launches per 48-frame clip confirm the HIP kernel is actually
 > dispatching.
 >
-> **Status (2026-09-02):** 17 of 19 registered HIP extractors carry
+> **Status (2026-09-18):** 18 of 19 registered HIP extractors carry
 > active GPU flags (`VMAF_FEATURE_EXTRACTOR_HIP` / `VMAF_FEATURE_EXTRACTOR_TEMPORAL`)
 > and execute on AMD GPU hardware. Each has been validated via device parity tests
 > against the CPU reference implementation.
 >
-> Two extractors legitimately retain `.flags = 0` (silently falling back to CPU):
+> `integer_ssim_hip` joined them on 2026-09-18. Its kernel used to be an 11-tap
+> float Gaussian, 4.5e-3 away from the CPU `ssim`, so it was kept out of dispatch
+> (ADR-0564). It now runs the CPU's 9-tap int64 kernel, ported from the CUDA
+> twin; see [integer_ssim_hip](#integer_ssim_hip) below.
 >
-> 1. `integer_ssim_hip`: `integer_ssim_score.hip` currently implements the 11-tap
->    float Gaussian rather than the 9-tap int64 kernel (`integer_ssim_score.cu`),
->    yielding a 4.5e-3 numeric divergence. Flags remain cleared to preserve golden
->    CPU fallback per ADR-0564 until the int64 kernel port lands (~280 LOC).
-> 2. `integer_adm_hip`: Lacks internal HtoD picture staging buffers and passes host
->    pointers directly into device kernels. Flags remain cleared until picture staging
->    (~350 LOC) or the HIP device picture pool (T7-10c, ~600 LOC) lands.
+> **Fixed (2026-09-19):** HIP extractors used to upload the host pictures with
+> an asynchronous copy and return without waiting for it. On a multi-frame run
+> the picture buffer was refilled with the next frame while the copy still read
+> it, so frames were scored against the next frame's samples: a different set
+> on every run with one extractor, and the same 46 of 48 frames on every run
+> with several in one process. It affected `ciede_hip`, `float_adm_hip`,
+> `float_moment_hip`, `float_psnr_hip`, `float_ssim_hip`, `float_vif_hip`,
+> `psnr_hip` and `vif_hip` (up to 10.7 dB on `float_psnr`, 0.30 on `vif`).
+> Scores from a multi-frame HIP run made before this fix should be recomputed.
+> Every extractor now waits for its uploads; see
+> [Picture uploads](#picture-uploads) below.
+>
+> One extractor legitimately retains `.flags = 0` (silently falling back to CPU):
+>
+> - `integer_adm_hip`: Lacks internal HtoD picture staging buffers and passes host
+>   pointers directly into device kernels. Flags remain cleared until picture staging
+>   (~350 LOC) or the HIP device picture pool (T7-10c, ~600 LOC) lands.
 >
 > | Extractor | Feature name | GPU Active | Added in |
 > | --- | --- | --- | --- |
@@ -62,7 +75,7 @@
 > | `integer_motion_hip` | `integer_motion_hip` | Yes | PR #1004 |
 > | `integer_adm_hip` | `integer_adm_hip` | Deferred | PR #1007 |
 > | `integer_ms_ssim_hip` | `ms_ssim_hip` | Yes | ADR-0285 / PR #1013 |
-> | `integer_ssim_hip` | `integer_ssim_hip` | Deferred | PR #999 |
+> | `integer_ssim_hip` | `integer_ssim_hip` | Yes | PR #999 / ADR-0564 |
 > | `float_adm_hip` | `float_adm_hip` | Yes | ADR-0468 / PR #1024 |
 > | `speed_chroma_hip` | `speed_chroma_hip` | Yes | ADR-0567 / ADR-0852 |
 > | `speed_temporal_hip` | `speed_temporal_hip` | Yes | ADR-0567 / ADR-0852 |
@@ -72,6 +85,44 @@
 > `vmaf_hip_picture_alloc` log an informative error naming `-Denable_hipcc=true`
 > before returning `-ENOSYS`. Pre-compiled HSACO fat binaries are not bundled
 > without `hipcc` because AMD ROCm requires target-specific HSACO code objects.
+
+## integer_ssim_hip
+
+`integer_ssim_hip` publishes the same `ssim` feature as the CPU `ssim`
+extractor (`integer_ssim.c`) and computes it the same way:
+
+- a 9-tap Gaussian with integer weights `[2, 9, 28, 55, 68, 55, 28, 9, 2]`;
+- int64 sums for the moments, which makes them exact;
+- near the frame border the window is truncated to the taps inside the frame,
+  as on the CPU;
+- the per-pixel SSIM term in double, built with `-ffp-contract=off` so that it
+  rounds like the CPU's.
+
+The only difference from the CPU is the order in which the per-pixel terms are
+added up, so scores agree to about 1e-14 on natural content. The worst case
+measured on a gfx1036 against the scalar CPU, over 8-, 10-, 12- and 16-bit
+inputs from 1x1 up to 1920x1080 (odd sizes included), was 1.06e-11. That was
+on a 1080p checkerboard whose score is -0.53, where terms of both signs cancel.
+The CUDA twin measures the same. Any frame size is accepted.
+
+How it gets selected:
+
+- **Models.** When a model lists `ssim` and the HIP backend is active
+  (`--backend hip`, or `vmaf_hip_import_state()` in the C API), the HIP twin
+  computes it. If the model sets an option the twin does not declare
+  (`enable_db` or `clip_db`), that feature is computed on the CPU instead.
+- **CLI `--feature`.** `--feature` takes an extractor name, so
+  `--feature ssim` always runs the CPU extractor, even with `--backend hip`.
+  Name the twin to run it on the GPU:
+
+```bash
+vmaf --reference ref.yuv --distorted dist.yuv \
+     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+     --backend hip --feature integer_ssim_hip \
+     --no_prediction --json --output ssim.json
+```
+
+The output has one `ssim` value per frame, as with `--feature ssim`.
 
 ## Building
 
@@ -182,7 +233,7 @@ core/src/feature/hip/          # per-feature kernels
   integer_motion_hip.c            # 5-tap Gaussian blur + warp-reduced SAD
   integer_moment_hip.c            # four uint64 atomic accumulator (integer)
   integer_psnr_hvs_hip.c          # PSNR-HVS frequency-weighted distortion
-  integer_ssim_hip.c              # two-pass separable Gaussian + SSIM combine
+  integer_ssim_hip.c              # 9-tap int64 moments + per-pixel SSIM (CPU kernel)
   integer_ms_ssim_hip.c           # multi-scale SSIM (5 scales, biorthogonal LPF)
   integer_adm_hip.c               # ADM DWT2 + CSF + CM + decouple pipeline
   integer_vif_hip.c               # multi-scale VIF integer pyramid
@@ -223,8 +274,10 @@ core/src/feature/hip/          # per-feature kernels
   `VMAF_feature_motion2_score`.
 - **`integer_psnr_hvs_hip`** — frequency-weighted distortion per 8×8 block,
   porting the CUDA twin. Emits `psnr_hvs` + per-channel variants.
-- **`integer_ssim_hip`** — two-pass separable 11-tap Gaussian SSIM, GCN/RDNA
-  warp-size-64 adaptation. Emits `integer_ssim`.
+- **`integer_ssim_hip`** — the CPU `ssim` extractor's algorithm, ported from
+  the CUDA twin (`ssim_cuda.c`): a 9-tap integer Gaussian, int64 moments, the
+  window truncated at the frame border, and the per-pixel SSIM term in double.
+  Emits `ssim`. See [integer_ssim_hip](#integer_ssim_hip).
 - **`integer_ms_ssim_hip`** — multi-scale SSIM over 5 pyramid levels; 9-tap
   biorthogonal LPF decimation + separable 11-tap Gaussian per scale. Emits
   `float_ms_ssim`. Per ADR-0285.
@@ -257,7 +310,7 @@ Each returns `-ENOSYS` at `init()`. Tracked in
   `uintptr_t`. This keeps `libvmaf_hip.h` free of `<hip/hip_runtime.h>`,
   mirroring the pattern Vulkan adopted in ADR-0184.
 - No CI runner with a real AMD GPU exists on GitHub-hosted infrastructure.
-  The CI compile lane (`Build — Ubuntu HIP`) runs with `-Denable_hip=true`
+  The CI compile lane (`Ubuntu HIP`) runs with `-Denable_hip=true`
   but `-Denable_hipcc=false`, so kernels are not compiled or exercised on CI.
 
 ## References
@@ -474,11 +527,51 @@ the HIP backend currently does not provide zero-copy picture buffer import
 (`VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE`).
 
 Incoming frames arrive with `VMAF_PICTURE_BUFFER_TYPE_HOST` in system memory.
-Each HIP feature extractor allocates internal device staging buffers and executes
-an explicit host-to-device 2D memory copy via `hipMemcpy2DAsync`.
+Each HIP feature extractor allocates internal device staging buffers and copies
+the planes it needs to the device; see [Picture uploads](#picture-uploads).
 Supporting direct DMA-BUF external memory import on AMD ROCm requires ROCm
 `hipImportExternalMemory` plumbing and device picture pool support (T7-10c),
 which is tracked as a deferred enhancement.
+
+### Picture uploads
+
+A HIP extractor copies the picture planes it needs with
+`vmaf_hip_picture_upload()` (`core/src/hip/picture_hip.h`) and does not return
+from `submit()` until the copy has finished reading them. The pictures are
+pageable host memory that the caller refills as soon as `submit()` returns, and
+`hipMemcpy2DAsync` alone can still be reading at that point.
+
+What this means for a run:
+
+- Scores are reproducible: every extractor gives the same per-frame output on
+  every run and agrees with the CPU within its parity tolerance. Measured on a
+  gfx1036 over the 48-frame Netflix pair at 576x324 and scaled to 1920x1080,
+  ten runs each, one extractor per process and all of them in one.
+- Throughput on a small device can drop. On the gfx1036 iGPU at 1080p,
+  `--model version=vmaf_float_v0.6.1` went from 18.8 to 14.8 frames per second
+  (-21 %), because a copy cannot start until the previous extractor's kernels
+  leave the GPU and the host now waits for it. `--model version=vmaf_v0.6.1`
+  (17.1 to 17.0), eleven extractors in one process (7.3 to 7.2) and the single
+  extractors were within run-to-run noise, except `vif_hip` (-7 %). Pinned
+  staging buffers would remove the wait and are tracked as
+  T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19 in [`docs/state.md`](../../state.md).
+
+To check a build on your own hardware, run one extractor twice and compare:
+
+```bash
+for i in 1 2; do
+  vmaf --reference ref.yuv --distorted dist.yuv \
+       --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+       --backend hip --feature float_psnr_hip --no_prediction \
+       --json --precision max --output run$i.json
+done
+cmp run1.json run2.json
+```
+
+Identical files do not prove the scores are right: with several extractors in
+one process the old defect was deterministic. Compare against
+`--backend cpu --feature float_psnr` as well, or run
+`meson test -C build test_hip_upload_race`.
 
 ### Dispatch strategy predicates and environment overrides
 

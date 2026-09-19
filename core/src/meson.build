@@ -78,7 +78,7 @@ endif
 is_avx512_enabled = get_option('enable_avx512') == true
 is_nvtx_enabled = get_option('enable_nvtx') == true
 # AVX-512 is a pure assembly path and requires enable_asm=true to have any
-# effect.  When enable_asm=false (e.g. i686 cross-compile or --no-asm builds)
+# effect.  When enable_asm=false (a --no-asm build)
 # silently disabling would produce a confusing build; warn and force-disable
 # instead of hard-erroring, so no-asm consumer builds configure cleanly.
 if is_avx512_enabled and not is_asm_enabled
@@ -320,8 +320,13 @@ if is_hipcc_enabled and is_hip_enabled
     # FMA and shifts the recursion past places=2 vs the CPU / Vulkan
     # `precise` twin). The CUDA twin passes `--fmad=false` for the same
     # reason; HIP's amdclang++-driven hipcc honours `-ffp-contract=off`.
+    # `integer_ssim_score` evaluates the CPU's per-pixel SSIM expression
+    # (integer_ssim.c::ssim_reduce_row_range) operand for operand; without
+    # the flag the variance / covariance products fuse into FMAs and each
+    # per-pixel term rounds differently from the CPU's (ADR-0564).
     hip_cu_extra_flags = {
         'ssimulacra2_blur' : ['-ffp-contract=off'],
+        'integer_ssim_score' : ['-ffp-contract=off'],
     }
     foreach name, src : hip_kernel_sources
         per_kernel_flags = hip_cu_extra_flags.get(name, [])

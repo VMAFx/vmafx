@@ -10398,17 +10398,6 @@ capture used by the newer AI corpus/report tooling.
   `sys.path` bootstrap blocks.
 
 
-**CI matrix deduplication (VMAFX Phase 1B, ADR-0689):** Remove five redundant
-build rows from the PR matrix — three bare CPU legs subsumed by their DNN
-counterparts (`Build — Ubuntu gcc (CPU)`, `Build — Ubuntu clang (CPU)`,
-`Build — macOS clang (CPU)`), the advisory macOS MoltenVK Vulkan lane moved to
-nightly, and the dynamic-only Ubuntu CUDA leg subsumed by the SYCL+CUDA
-combined leg. Drop the duplicate `vulkan-vif-cross-backend` job in
-`tests-and-quality-gates.yml` (the `vulkan-parity-matrix-gate` is a strict
-superset). Required checks are unchanged. Approximate saving: ~15–25 min of
-runner time per PR.
-
-
 - **refactor(core):** Pilot C++20 conversion of `core/src/metadata_handler.c`
   (renamed to `.cpp` via `git mv`). `vmaf_metadata_destroy` now uses a
   `std::unique_ptr<VmafCallbackList>` with a custom `CallbackListDeleter` that
@@ -12543,28 +12532,24 @@ Ubuntu 26.04 (expected H2 2026). CUDA pins (13.2.0), Windows runners
 images remain at their existing pins. ADR-0802.
 
 
-### CI matrix slimmed to 1 build per OS + state-of-the-art sanitizers (ADR-0710)
+### CI: `build.yml` and `sanitizers.yml` added alongside the existing matrix (ADR-0710)
 
-`libvmaf-build-matrix.yml` (15 build rows post-ADR-0689) is replaced by
-`build.yml` with three matrix rows:
+`build.yml` adds one all-in-one build per OS, next to
+`libvmaf-build-matrix.yml` rather than in place of it:
 
-- **Linux** — GCC + ALL backends (CUDA + SYCL + Vulkan + HIP + CPU + DNN); runs
-  the full meson test suite including Netflix golden assertions.
-- **macOS** — Apple Clang + CPU + Metal scaffold; runs meson suite + tox.
-- **Windows** — MSVC + CPU + CUDA (build-only); runs CPU unit tests.
+- **`Linux Intel LLVM`**: icx/icpx with CUDA, SYCL, HIP and DNN; runs the meson
+  suite and the HIP smoke test.
+- **`macOS Clang+Metal`**: Apple Clang with CPU and Metal; runs the meson
+  suite and tox.
+- **`Windows MSVC+CUDA`**: MSVC with CPU and CUDA; builds and runs the CPU
+  unit tests.
 
-Sanitizer jobs moved from `tests-and-quality-gates.yml` into a new
-`sanitizers.yml`:
+`sanitizers.yml` adds a combined `Sanitizers ASan+UBSan` job on pull requests,
+`Sanitizers TSan` on pushes to master and nightly libFuzzer runs.
 
-- `Sanitizers — ASan + UBSan (PR gate)` — combined `-fsanitize=address,undefined`
-  on every non-draft PR (replaces the 3-way per-PR matrix).
-- `Sanitizers — TSan (master push)` — thread-sanitizer fires only on master push.
-- `Fuzz — * (nightly)` — libFuzzer + ASan against all harnesses nightly.
-
-`Cppcheck (Whole Project)` removed from lint-and-format.yml; clang-tidy provides
-a superset of its signal. `Required Checks Aggregator` updated accordingly.
-
-Estimated per-PR runner-time reduction: ~70% versus the pre-ADR-0689 baseline.
+None of these jobs is a required check. `libvmaf-build-matrix.yml`, `Cppcheck`
+and the required `Sanitizers (address|thread|undefined)` matrix are unchanged;
+ADR-1259 records the matrix as it runs.
 
 
 - CI merge throughput: the `Required Checks Aggregator` poll deadline is raised
@@ -16477,16 +16462,6 @@ See [ADR-0356](docs/adr/0356-vulkan-two-level-gpu-reduction.md) and
 
 ### Removed
 
-- **CI: MinGW64 Windows build removed** — the `Build — Windows MinGW64 (CPU)`
-  job (MSYS2 / MinGW-w64 GCC, static link, `vmaf.exe` artifact) is no longer
-  present in the CI matrix. Windows coverage is provided by the MSVC + CUDA
-  and MSVC + oneAPI SYCL build-only legs. (ADR-0691, VMAFX Phase 1C)
-- **CI: i686 / no-asm 32-bit Linux build removed** — the `Build — Ubuntu i686
-  gcc (CPU, no-asm)` matrix entry (`--cross-file=build-aux/i686-linux-gnu.ini
-  -Denable_asm=false`) is no longer present. The fork targets 64-bit x86-64
-  and ARM64 exclusively. (ADR-0691, VMAFX Phase 1C)
-
-
 - **testdata: orphan debug scripts and slim-schema snapshot removed** — three
   fork-added files under `testdata/` with zero in-tree references were deleted:
   `check_borders.py` (one-off DWT-subband / ADM-border arithmetic debug script
@@ -16552,6 +16527,13 @@ No build/test/runtime impact — the `enable_vulkan` meson option was already re
   `integer_cambi_hip.c` updated to reflect the removal.
 
 
+- **CI: the 32-bit x86 (`Ubuntu i686 gcc`) lane is removed again.** ADR-0691
+  retired 32-bit x86 in May, but a merge the same day brought the lane back,
+  and it kept running compile-only with no tests. The fork stays 64-bit only
+  (ADR-1258). `scripts/dev/preflight.sh` drops its `m32` stage, which only
+  mirrored that lane.
+
+
 - **core: delete dead C translation units `core/src/gpu_picture_pool.c` and `core/src/opt.c`** — both translation units were superseded by modern C++23 implementations (`core/src/gpu_picture_pool.cpp` under ADR-0768, `core/src/opt.cpp` under ADR-0761) compiled into `libvmaf`. Their lingering inclusion in isolated test targets (`test_integer_ssim_simd` and `test_motion_avx512_parity`) in `core/test/meson.build` was updated to link against the standard C++23 libraries and objects (`gpu_picture_pool.cpp`, `log_cpp23_test_objects`, `wave8_opt_only_objects`), collapsing the twin pairs from 6 to 4 in `twin-drift-check.sh`.
 - **test: rescue orphaned `core/test/test_gpu_picture_pool_partial_init.c`** — wired into `core/test/meson.build` under the fast test suite, testing `vmaf_gpu_picture_pool_init` error-unwind paths against `gpu_picture_pool.cpp`.
 - **docs: fix stale pre-rename `libvmaf/` and `python/vmaf/` paths** — updated path references across `core/tools/meson.build`, `core/tools/compat/win32/getopt.{c,h}`, `core/tools/vmaf_roi_core.h`, `testdata/bench_all.sh`, and `docs/usage/{bd-rate,matlab,python}.md` to point to `core/` and `compat/python-vmaf/` (ADR-0700).
@@ -16574,38 +16556,6 @@ No build/test/runtime impact — the `enable_vulkan` meson option was already re
   `upstream-netflix-955-watcher.yml`) were all added on 2026-05-30
   with legitimate cron / release-published triggers that have not
   yet fired. No removals.
-
-
-**BREAKING: Sunset legacy native build modes (ADR-0728)**
-
-The following CI build configurations have been removed from
-`.github/workflows/libvmaf-build-matrix.yml` and the required-checks list:
-
-**Removed from CI matrix:**
-- `Build — Windows MinGW64 (CPU)` — MinGW64 is not a VMAFX production target
-- `Build — Ubuntu i686 gcc (CPU, no-asm)` — fork is 64-bit only
-- `Build — Ubuntu gcc (CPU) + DNN` — superseded by Linux full-build in build.yml
-- `Build — Ubuntu clang (CPU) + DNN` — superseded by Linux full-build in build.yml
-- `Build — macOS clang (CPU) + DNN` — superseded by macOS leg in build.yml
-- `Build — Ubuntu Vulkan (T5-1b runtime)` — folded into Linux full-build
-- `Build — macOS Vulkan via MoltenVK (advisory)` — too fragile; no required gate
-- `Build — Ubuntu HIP (T7-10b runtime)` — folded into Linux full-build
-- `Build — macOS Metal (T8-1 scaffold)` — folded into macOS leg in build.yml
-- `Build — Ubuntu gcc Static (CPU)` — pkgconfig verified within Linux full-build
-- `Build — Ubuntu CUDA Static` — NVCC-static covered by Linux full-build
-- `Build — Ubuntu SYCL` — folded into Linux full-build
-- `Build — Ubuntu SYCL + CUDA` — folded into Linux full-build
-- `Build — Windows MSVC + oneAPI SYCL (build only)` — SYCL in Linux full-build
-
-**New canonical build matrix** (`build.yml`, ADR-0710):
-- `Build — Linux (GCC, all backends)` — full stack: CUDA + SYCL + Vulkan + HIP + DNN + CPU
-- `Build — macOS (Clang, CPU + Metal)` — Apple Clang + CPU + Metal scaffold
-- `Build — Windows (MSVC + CUDA)` — MSVC + CPU + CUDA (build-only)
-
-**Required-checks aggregator updated** to use new check names from `build.yml`
-and `sanitizers.yml`. `Cppcheck (Whole Project)` removed (clang-tidy superset).
-
-Implements ADR-0691 + ADR-0710. No functional change to the C library or CLI.
 
 
 ### Removed
@@ -20825,6 +20775,13 @@ Resolved 8 pre-existing required-aggregator failures that blocked every PR post-
 Research digest: `docs/research/0735-ci-required-failures-round-3-2026-05-28.md`
 
 
+- **CI: a required check can no longer be masked by a second job with the
+  same name.** Two workflows reported `Windows MSVC+CUDA`, and the required
+  checks aggregator keeps only the newest run per name. The `build.yml` job is
+  now `Windows MSVC+CUDA (full)`, and `scripts/ci/check-aggregator-names.sh`
+  fails when more than one job reports a required name.
+
+
 **CI: fix build-matrix stale `libvmaf` source paths + ASan + motion_v2 coverage leaks**
 
 Three CI regressions fixed in a single sweep:
@@ -23743,6 +23700,27 @@ Matches the parity fix already shipped for `float_ssim_cuda` (PR #969).
   `vmaf --backend hip --feature adm_hip` returns real scores instead of dying.
 
 
+- **`integer_ssim_hip` now computes the CPU's integer SSIM, and model-driven
+  `ssim` runs on the HIP backend** (ADR-0564). The HIP kernel was an 11-tap
+  float Gaussian where the CPU `ssim` extractor uses a 9-tap int64 kernel, so
+  it scored 4.53e-3 away from the CPU and was left out of HIP dispatch: under
+  `--backend hip` a model requesting `ssim` quietly ran it on the CPU. The
+  kernel is now a port of the CUDA twin, with int64 moments, the CPU's window
+  truncation at the frame border, and the per-pixel term evaluated exactly as
+  the CPU evaluates it. Against the scalar CPU the worst per-frame delta over
+  8-, 10-, 12- and 16-bit inputs from 1x1 to 1920x1080 is 1.06e-11, the same as
+  the CUDA twin. `--feature integer_ssim_hip` also accepts any frame size now;
+  it used to reject frames smaller than 11x11.
+- **`integer_ssim_hip` no longer scores frames against the next frame's
+  samples.** It uploaded each host picture asynchronously and returned while
+  the copy could still be reading, and the CLI's picture pool refilled that
+  buffer with the next frame. On a multi-frame run a different set of frames
+  came out wrong on every run (by up to 0.2 on the Netflix 576x324 pair). The
+  extractor now waits for its uploads. Other HIP extractors that upload the
+  same way are affected too and are tracked in `docs/state.md`
+  (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18).
+
+
 - Remove duplicate `speed_chroma_hip.c` / `speed_temporal_hip.c` entries in
   `core/src/hip/meson.build`. ADR-0852 added a second wiring block for these
   two TUs without noticing that ADR-0964 had already included them earlier in
@@ -23862,6 +23840,27 @@ docs(hip): update HIP backend overview to reflect ninth consumer (`integer_ms_ss
   `integer_adm_hip`, `integer_ciede_hip`, `integer_moment_hip`, `integer_ms_ssim_hip`,
   `integer_ssim_hip`, `float_adm_hip`, `float_vif_hip`); add CLI examples; fix
   pre-existing MD013 line-length violations in the References section.
+
+
+- **HIP extractors no longer score frames against the next frame's samples.**
+  HIP pictures are ordinary host memory, and eleven HIP extractors uploaded
+  them with an asynchronous copy and returned without waiting for it. The
+  caller then refilled the picture with the next frame while the copy was
+  still reading. On a multi-frame run with `--backend hip`, `ciede_hip`,
+  `float_adm_hip`, `float_moment_hip`, `float_psnr_hip`, `float_ssim_hip`,
+  `float_vif_hip`, `psnr_hip` and `vif_hip` reported wrong values for some
+  frames (up to 10.7 dB on `float_psnr`, 0.30 on `vif`, over the 48-frame
+  Netflix pair): a different set of frames on every run, or, with several
+  extractors in one process, the same 46 of 48 frames on every run.
+  `float_motion_hip`, `motion_hip` and `motion_v2_hip` had the same defect but
+  could not show it through `vmaf_read_pictures()`. All of them now wait for
+  their uploads, through one shared helper. Recompute any multi-frame score
+  taken from these extractors before this release; a single-frame score was
+  never affected (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18).
+- **HIP throughput on small AMD GPUs can be lower with the float model.** The
+  wait above costs `--model version=vmaf_float_v0.6.1` about 21 % at 1080p on
+  a gfx1036 iGPU. `vmaf_v0.6.1` and single extractors are unchanged within
+  noise. Tracked as T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19.
 
 
 Corrected stale comment in `core/src/picture.h` for
@@ -29280,6 +29279,13 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   wrappers are global symbols.
 
 
+- **The AVX2 and AVX-512 sources no longer use x86-64-only intrinsics.**
+  `_mm_extract_epi64` in the ADM kernels and `_mm_cvtsi128_si64` in the PSNR
+  kernel were the cause of Netflix#1481 (no 32-bit x86 build with asm). They
+  now go through 32-bit-safe forms. Nothing changes on x86-64, and 32-bit x86
+  remains unsupported.
+
+
 - **`y4m_convert_411_422jpeg` 1-byte heap-buffer-overflow on
   4:1:1 streams whose destination chroma row reduces to a single
   pixel (`dst_c_w == 1`).** The Daala-derived 4:1:1 → 4:2:2-jpeg
@@ -29719,6 +29725,39 @@ See `docs/server/auth.md` for the full configuration guide.
 - Enforce independent human review, fresh required checks and one declared bypass actor
   on master through a public GitHub ruleset; enable private vulnerability
   reporting and add a read-only settings drift checker.
+
+
+- **Two security fixes that later merges had silently reverted are back, and each now has a gate
+  that runs.** Both were recorded as fixed in this changelog while the vulnerable code was on
+  `master`.
+  - **Vendored cJSON (embedded MCP server, `-Denable_mcp=true`).** The cJSON 1.7.18 → 1.7.19
+    re-vendor (PR #883) restored upstream's eleven `sprintf` / `strcpy` calls and the unclamped
+    `cJSON_GetArraySize`, undoing ADR-0683 (PR #1536) and ADR-1061 (PR #725). They are replaced
+    again with bounded `snprintf` / `memcpy`, and the array size saturates at `INT_MAX`. cJSON's
+    `goto`-based and over-long functions are split into helpers so the file meets the same
+    standards as the rest of the tree (ADR-1142); on 3,103 inputs, including every
+    allocation-failure point, its output, parse-error offsets and allocation counts are
+    byte-identical to pristine 1.7.19 under ASan + UBSan. The pdjson depth limit and overflow
+    guards from PR #725 were checked and had survived.
+  - **Undefined behaviour in cJSON on a NaN score.** `cJSON_CreateNumber` and
+    `cJSON_SetNumberHelper` cast the double to `int` after two range checks that NaN passes, which
+    is undefined behaviour, and the MCP server hands them a VMAF score that can be NaN. This is
+    upstream cJSON behaviour, found by the new test under clang's UBSan. Both now use one
+    saturating conversion that maps NaN to 0; the printed JSON is unchanged (`null`).
+  - **Shell injection.** PR #414 carried stale copies of two scripts and undid PR #350:
+    `scripts/ci/sycl-bench-env.sh` again interpolated the oneAPI prefix (`$ONEAPI_PREFIX` or the
+    version argument) into a `bash -c "…"` body, where a prefix such as `x'$(payload)'` runs
+    arbitrary code, and the dev container's entrypoint again ran its GPU probe through `eval`.
+    The prefix is passed as a positional argument again and the probe runs as argv.
+  - **Why nothing noticed, and what changed.** The banned-function Semgrep rule excluded
+    `core/src/mcp/3rdparty/` and `.semgrepignore` listed `cJSON.c`; both exclusions are gone,
+    the commit-time hook no longer skips `pdjson.{c,h}`, and a planted-defect test
+    (`scripts/ci/tests/test_semgrep_vendored_scope.py`) fails if vendored code is ever hidden
+    from that rule again. The existing `scripts/ci/test-sycl-bench-env.sh` would have failed on
+    the reverted helper, but no workflow or hook ran it; it and the new
+    `scripts/ci/tests/test-dev-mcp-entrypoint-probe.sh` are now pre-commit hooks, which the
+    required Pre-Commit CI job runs on every pull request. New `core/test/test_cjson.c` runs in
+    the `fast` suite of every build, with or without `enable_mcp`.
 
 
 - **Scorecard and Code Scanning audit and cleanup (2026-09-04)** —

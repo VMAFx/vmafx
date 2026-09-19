@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0728: Sunset Legacy Native Build Modes — Phase 4b.9 Follow-On
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-1259](1259-ci-build-matrix-as-it-runs.md)
 - **Date**: 2026-05-28
 - **Deciders**: lusoris
 - **Tags**: `ci`, `build`, `vmafx`, `breaking`

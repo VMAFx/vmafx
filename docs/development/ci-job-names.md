@@ -55,7 +55,16 @@ means re-pointing every badge.
 
 Branch protection targets a single context: `Required Checks Aggregator` in
 [`.github/workflows/required-aggregator.yml`](../../.github/workflows/required-aggregator.yml).
-The aggregator monitors 34 required checks defined across five workflows.
+The aggregator's `required` list holds 40 check names defined across eleven
+workflows; each run evaluates 39 of them, because only the Scorecard gate for
+the triggering event applies.
+
+A required name must be reported by exactly one job, because the aggregator
+keeps one check run per name, so two jobs sharing a name can mask each other's
+failure. `scripts/ci/check-aggregator-names.sh` enforces it. The `build.yml`
+Windows row used to share `Windows MSVC+CUDA` with the required
+`libvmaf-build-matrix.yml` lane and is now `Windows MSVC+CUDA (full)`
+([ADR-1259](../adr/1259-ci-build-matrix-as-it-runs.md)).
 
 To prevent drift between workflow job definitions and the aggregator's required
 check array, all required checks are tagged in their defining workflow with
@@ -69,77 +78,98 @@ The gate is wired into:
 
 ## Complete mapping table
 
+"Previous Name" is the display name before PR #1286 (`f93a0037f`) shortened
+it; "unchanged" means that PR did not rename the job. The table covers every
+job the PR renamed, every required check and every build lane.
+
 | Workflow | Previous Name | Shortened Name | Length | Required |
 | --- | --- | --- | --- | --- |
-| `libvmaf-build-matrix.yml` | `Linux CI (GCC + OpenVINO DNN)` | `Ubuntu gcc+DNN` | 14 | Yes |
-| `libvmaf-build-matrix.yml` | `Linux CI (Clang + OpenVINO DNN)` | `Ubuntu clang+DNN` | 16 | Yes |
-| `libvmaf-build-matrix.yml` | `Linux CI (AMD ROCm / HIP)` | `Ubuntu HIP` | 10 | Yes |
-| `libvmaf-build-matrix.yml` | `Windows CI (MinGW-w64 GCC)` | `Windows MinGW64` | 15 | Yes |
-| `libvmaf-build-matrix.yml` | `Windows CI (MSVC + CUDA 13)` | `Windows MSVC+CUDA` | 18 | Yes |
-| `libvmaf-build-matrix.yml` | `Windows CI (MSVC + Intel oneAPI SYCL)` | `Windows MSVC+SYCL` | 18 | Yes |
-| `lint-and-format.yml` | `Pre-Commit All-Files Hygiene Gate` | `Pre-Commit` | 10 | Yes |
+| `libvmaf-build-matrix.yml` | `Build — Ubuntu gcc (CPU) + DNN` | `Ubuntu gcc+DNN` | 14 | Yes |
+| `libvmaf-build-matrix.yml` | `Build — Ubuntu clang (CPU) + DNN` | `Ubuntu clang+DNN` | 16 | Yes |
+| `libvmaf-build-matrix.yml` | `Build — Ubuntu HIP (T7-10b runtime)` | `Ubuntu HIP` | 10 | Yes |
+| `libvmaf-build-matrix.yml` | `Build — Windows MinGW64 (CPU)` | `Windows MinGW64` | 15 | Yes |
+| `libvmaf-build-matrix.yml` | `Build — Windows MSVC + CUDA (build only)` | `Windows MSVC+CUDA` | 18 | Yes |
+| `libvmaf-build-matrix.yml` | `Build — Windows MSVC + oneAPI SYCL (build only)` | `Windows MSVC+SYCL` | 18 | Yes |
+| `libvmaf-build-matrix.yml` | `Build — Ubuntu gcc (CPU)` | `Ubuntu gcc` | 10 | No |
+| `libvmaf-build-matrix.yml` | `Build — Ubuntu clang (CPU)` | `Ubuntu clang` | 12 | No |
+| `libvmaf-build-matrix.yml` | `Build — macOS clang (CPU)` | `macOS clang` | 11 | No |
+| `libvmaf-build-matrix.yml` | `Build — Ubuntu ARM clang (CPU)` | `Ubuntu ARM clang` | 16 | No |
+| `libvmaf-build-matrix.yml` | `Build — macOS clang (CPU) + DNN` | `macOS clang+DNN` | 15 | No |
+| `libvmaf-build-matrix.yml` | `Build — macOS Metal (T8-1 scaffold)` | `macOS Metal` | 11 | No |
+| `libvmaf-build-matrix.yml` | `Build — Ubuntu gcc Static (CPU)` | `Ubuntu gcc static` | 17 | No |
+| `libvmaf-build-matrix.yml` | `Build — Ubuntu CUDA Static` | `Ubuntu CUDA static` | 18 | No |
+| `libvmaf-build-matrix.yml` | `Build — Ubuntu SYCL` | `Ubuntu SYCL` | 11 | No |
+| `libvmaf-build-matrix.yml` | `Build — Ubuntu CUDA` | `Ubuntu CUDA` | 11 | No |
+| `libvmaf-build-matrix.yml` | `Build — Ubuntu SYCL + CUDA` | `Ubuntu SYCL+CUDA` | 16 | No |
+| `lint-and-format.yml` | `Pre-Commit (Formatters + Basic Checks)` | `Pre-Commit` | 10 | Yes |
 | `lint-and-format.yml` | `Clang-Tidy (Changed C/C++ Files)` | `Tidy Changed` | 12 | Yes |
 | `lint-and-format.yml` | `Clang-Tidy Ratchet (Whole Tree)` | `Tidy Ratchet` | 12 | Yes |
-| `lint-and-format.yml` | `C/C++ Static Analysis (cppcheck)` | `Cppcheck` | 8 | Yes |
-| `lint-and-format.yml` | `Python Linters (black + ruff + mypy)` | `Python Lint` | 11 | Yes |
-| `lint-and-format.yml` | `Docs Build (Doxygen + Sphinx)` | `Docs` | 4 | Yes |
-| `lint-and-format.yml` | `Twin Drift (C/C++ Source Parity Gate)` | `Twin Drift` | 10 | Yes |
-| `lint-and-format.yml` | `Shell Scripts (ShellCheck + shfmt)` | `ShellCheck + shfmt` | 17 | Yes |
-| `lint-and-format.yml` | `Clang-Tidy (Full SYCL Codebase — Advisory)` | `Tidy SYCL (advisory)` | 20 | No |
-| `lint-and-format.yml` | `No Conflict Markers Staged / Committed` | `No Conflict Markers` | 19 | No |
-| `lint-and-format.yml` | `Markdown Lint (ADR-0866, changed files)` | `Markdown Lint` | 13 | No |
-| `rule-enforcement.yml` | `Deep-Dive Deliverables Checklist Gate` | `Deliverables Checklist` | 22 | Yes |
-| `rule-enforcement.yml` | `Doc-Substance Gate (ADR-0100 / ADR-0042)` | `Doc-Substance Gate` | 18 | Yes |
-| `rule-enforcement.yml` | `docs/state.md Freshness Gate` | `docs/state.md Gate` | 18 | Yes |
-| `rule-enforcement.yml` | `FFmpeg-Patches libvmaf Surface Parity Gate` | `FFmpeg-Patches Surface Sync` | 27 | Yes |
+| `lint-and-format.yml` | `Cppcheck (Whole Project)` | `Cppcheck` | 8 | Yes |
+| `lint-and-format.yml` | `Python Lint (Ruff + Black + mypy)` | `Python Lint` | 11 | Yes |
+| `lint-and-format.yml` | unchanged | `Docs` | 4 | Yes |
+| `lint-and-format.yml` | `Twin Drift + Stale Source Refs (ADR-1135)` | `Twin Drift` | 10 | Yes |
+| `lint-and-format.yml` | `ShellCheck + shfmt (All *.sh)` | `ShellCheck + shfmt` | 17 | Yes |
+| `lint-and-format.yml` | `Clang-Tidy SYCL (Changed Files, Advisory)` | `Tidy SYCL (advisory)` | 20 | No |
+| `lint-and-format.yml` | `Check — No committed conflict markers` | `No Conflict Markers` | 19 | No |
+| `lint-and-format.yml` | `Markdown lint (markdownlint-cli2)` | `Markdown Lint` | 13 | No |
+| `rule-enforcement.yml` | `Deep-Dive Deliverables Checklist (ADR-0108)` | `Deliverables Checklist` | 22 | Yes |
+| `rule-enforcement.yml` | `Doc-Substance Gate (ADR-0100 / 0167)` | `Doc-Substance Gate` | 18 | Yes |
+| `rule-enforcement.yml` | `docs/state.md Touch Gate (ADR-0165)` | `docs/state.md Gate` | 18 | Yes |
+| `rule-enforcement.yml` | `FFmpeg-Patches Surface Sync (CLAUDE.md §12 r14, ADR-0356)` | `FFmpeg-Patches Surface Sync` | 27 | Yes |
 | `rule-enforcement.yml` | `ADR Number Collision Guard (ADR-0386 / ADR-0628)` | `ADR Collision Guard` | 19 | Yes |
-| `rule-enforcement.yml` | `Release Script Contract Tests` | `Release Script Contract` | 23 | Yes |
-| `rule-enforcement.yml` | `ADR-Backfill Scope Check (Advisory)` | `ADR-Backfill Advisory` | 21 | No |
-| `security-scans.yml` | `Semgrep Code Quality & Security Scan` | `Semgrep` | 7 | Yes |
-| `security-scans.yml` | `CodeQL (C/C++ Analysis)` | `CodeQL (C/C++)` | 15 | Yes |
-| `security-scans.yml` | `CodeQL (Python Analysis)` | `CodeQL (Python)` | 15 | Yes |
-| `security-scans.yml` | `CodeQL (GitHub Actions Analysis)` | `CodeQL (Actions)` | 16 | Yes |
-| `security-scans.yml` | `CodeQL (Unified Analysis Status)` | `CodeQL` | 6 | Yes |
-| `security-scans.yml` | `Gitleaks Secrets Scan` | `Gitleaks` | 8 | Yes |
-| `security-scans.yml` | `Dependency Review (PR Dependency Changes)` | `Dependency Review` | 17 | Yes |
-| `tests-and-quality-gates.yml` | `Netflix Golden Data (x86_64 CPU)` | `Netflix CPU Golden` | 18 | Yes |
-| `tests-and-quality-gates.yml` | `Sanitizers (AddressSanitizer + LeakSanitizer)` | `Sanitizers (address)` | 20 | Yes |
-| `tests-and-quality-gates.yml` | `Sanitizers (ThreadSanitizer)` | `Sanitizers (thread)` | 19 | Yes |
-| `tests-and-quality-gates.yml` | `Sanitizers (UndefinedBehaviorSanitizer)` | `Sanitizers (undefined)` | 22 | Yes |
-| `tests-and-quality-gates.yml` | `Tiny AI Model Artifacts & Architecture Tests` | `Tiny AI` | 7 | Yes |
-| `tests-and-quality-gates.yml` | `SYCL float_ssim Parity Gate` | `SYCL float_ssim Parity` | 23 | Yes |
-| `tests-and-quality-gates.yml` | `Assertion Density (CERT C ENV33-C / JPL Rule 5)` | `Assertion Density` | 17 | Yes |
-| `tests-and-quality-gates.yml` | `Coverage Gate (C Engine + Python Core)` | `Coverage Gate` | 13 | No |
-| `tests-and-quality-gates.yml` | `Cross-Backend Parity (Floating-Point ULP Gate)` | `Cross-Backend ULP Diff` | 22 | No |
-| `tests-and-quality-gates.yml` | `Coverage (C Engine GPU Twins — Advisory)` | `Coverage GPU (advisory)` | 23 | No |
-| `tests-and-quality-gates.yml` | `MCP Server Smoke Test (stdio / JSON-RPC)` | `MCP Smoke` | 9 | No |
-| `build.yml` | `Linux Intel LLVM / SYCL (Arc GPU / Level Zero)` | `Linux Intel LLVM` | 16 | No |
-| `build.yml` | `macOS Clang (Metal GPU)` | `macOS Clang+Metal` | 17 | No |
-| `build.yml` | `Windows MSVC (CUDA 13 GPU)` | `Windows MSVC+CUDA` | 18 | No |
-| `ffmpeg-integration.yml` | `FFmpeg Integration (Ubuntu gcc)` | `FFmpeg Ubuntu gcc` | 17 | No |
-| `ffmpeg-integration.yml` | `FFmpeg Integration (macOS clang)` | `FFmpeg macOS clang` | 18 | No |
-| `ffmpeg-integration.yml` | `FFmpeg Integration (Ubuntu icpx SYCL)` | `FFmpeg SYCL` | 11 | No |
-| `sanitizers.yml` | `Sanitizers (AddressSanitizer + UndefinedBehaviorSanitizer)` | `Sanitizers ASan+UBSan` | 20 | No |
-| `sanitizers.yml` | `Sanitizers (ThreadSanitizer Data Race Detection)` | `Sanitizers TSan` | 15 | No |
-| `sanitizers.yml` | `Fuzz Target Regression Suite (${{ matrix.target }})` | `Fuzz ${{ matrix.target }}` | <=25 | No |
-| `rust-ci.yml` | `vmafx-sys Rust FFI Bindings & Integration Tests` | `vmafx-sys CI` | 12 | No |
-| `rust-ci.yml` | `Cargo Deny (Licenses + Advisories + Bans)` | `cargo-deny` | 10 | No |
-| `supply-chain.yml` | `Validate release version metadata` | `Validate release versions` | 25 | No |
-| `supply-chain.yml` | `Build multi-platform release artifacts` | `Build Linux artifacts` | 21 | No |
-| `supply-chain.yml` | `Verify release binary runtime compatibility` | `Verify Linux runtime` | 20 | No |
-| `supply-chain.yml` | `Generate CycloneDX SBOMs and hashes` | `Generate SBOMs` | 14 | No |
-| `supply-chain.yml` | `Sigstore keyless signing of release artifacts` | `Sigstore sign artifacts` | 23 | No |
-| `supply-chain.yml` | `Generate SLSA provenance for libvmaf artifacts` | `SLSA libvmaf` | 12 | No |
-| `supply-chain.yml` | `Sigstore keyless signing of vmaf-mcp wheels` | `Sigstore sign vmaf-mcp` | 22 | No |
-| `supply-chain.yml` | `Generate SLSA provenance for vmaf-mcp wheel` | `SLSA vmaf-mcp` | 12 | No |
-| `supply-chain.yml` | `Publish vmaf-mcp to PyPI via Trusted Publishing` | `Publish vmaf-mcp PyPI` | 20 | No |
-| `supply-chain.yml` | `Attach SLSA provenance and SBOM to GitHub Release` | `Attach release assets` | 21 | No |
+| `rule-enforcement.yml` | `Release Script Contract (ADR-1128)` | `Release Script Contract` | 23 | Yes |
+| `rule-enforcement.yml` | `ADR-Backfill Advisory (ADR-0106)` | `ADR-Backfill Advisory` | 21 | No |
+| `security-scans.yml` | `Semgrep (CWE Top 25 + CERT-C + Custom)` | `Semgrep` | 7 | Yes |
+| `security-scans.yml` | unchanged | `CodeQL (C/C++)` | 15 | Yes |
+| `security-scans.yml` | unchanged | `CodeQL (Python)` | 15 | Yes |
+| `security-scans.yml` | unchanged | `CodeQL (Actions)` | 16 | Yes |
+| `security-scans.yml` | unchanged | `CodeQL` | 6 | Yes |
+| `security-scans.yml` | `Gitleaks (Secret Scan)` | `Gitleaks` | 8 | Yes |
+| `security-scans.yml` | `Dependency Review (PR Diff)` | `Dependency Review` | 17 | Yes |
+| `tests-and-quality-gates.yml` | `Netflix CPU Golden Tests (D24)` | `Netflix CPU Golden` | 18 | Yes |
+| `tests-and-quality-gates.yml` | `Sanitizers — ASan + UBSan + MSan (address)` | `Sanitizers (address)` | 20 | Yes |
+| `tests-and-quality-gates.yml` | `Sanitizers — ASan + UBSan + MSan (thread)` | `Sanitizers (thread)` | 19 | Yes |
+| `tests-and-quality-gates.yml` | `Sanitizers — ASan + UBSan + MSan (undefined)` | `Sanitizers (undefined)` | 22 | Yes |
+| `tests-and-quality-gates.yml` | `Tiny AI (DNN Suite + ai/ Pytests)` | `Tiny AI` | 7 | Yes |
+| `tests-and-quality-gates.yml` | `SYCL float_ssim Parity (Arc DG2-G10)` | `SYCL float_ssim Parity` | 23 | Yes |
+| `tests-and-quality-gates.yml` | `Assertion Density (Power of 10 §5)` | `Assertion Density` | 17 | Yes |
+| `tests-and-quality-gates.yml` | `Coverage Gate (Ramping to 70% / 85% Critical)` | `Coverage Gate` | 13 | No |
+| `tests-and-quality-gates.yml` | `Cross-Backend ULP Diff (CPU Sanity)` | `Cross-Backend ULP Diff` | 22 | No |
+| `tests-and-quality-gates.yml` | `Coverage Gate — GPU Backends (Advisory)` | `Coverage GPU (advisory)` | 23 | No |
+| `tests-and-quality-gates.yml` | `MCP Smoke (Embedded C + Python Server)` | `MCP Smoke` | 9 | No |
+| `go-ci.yml` | unchanged | `go vet + go test` | 16 | Yes |
+| `scorecard-policy.yml` | added after #1286 | `Scorecard PR Gate` | 17 | Yes |
+| `scorecard.yml` | added after #1286 | `Scorecard Master Gate` | 21 | Yes |
+| `sycl-parity.yml` | added after #1286 | `SYCL Parity (Arc A380)` | 22 | Yes |
+| `ffmpeg-patch-stack.yml` | added after #1286 | `FFmpeg Patch Stack` | 18 | Yes |
+| `standards-gate.yml` | added after #1286 | `Standards & Invariant Verification Gate` | 39 | Yes |
+| `build.yml` | `Build — Linux (Intel LLVM, all backends)` | `Linux Intel LLVM` | 16 | No |
+| `build.yml` | `Build — macOS (Clang, CPU + Metal)` | `macOS Clang+Metal` | 17 | No |
+| `build.yml` | `Build — Windows (MSVC + CUDA)` | `Windows MSVC+CUDA (full)` | 24 | No |
+| `ffmpeg-integration.yml` | `FFmpeg — Ubuntu gcc (Build Only)` | `FFmpeg Ubuntu gcc` | 17 | No |
+| `ffmpeg-integration.yml` | `FFmpeg — macOS clang (Build Only)` | `FFmpeg macOS clang` | 18 | No |
+| `ffmpeg-integration.yml` | `FFmpeg — SYCL (Build Only)` | `FFmpeg SYCL` | 11 | No |
+| `sanitizers.yml` | `Sanitizers — ASan + UBSan (PR gate)` | `Sanitizers ASan+UBSan` | 20 | No |
+| `sanitizers.yml` | `Sanitizers — TSan (master push)` | `Sanitizers TSan` | 15 | No |
+| `sanitizers.yml` | `Fuzz — ${{ matrix.target }} (nightly)` | `Fuzz ${{ matrix.target }}` | <=25 | No |
+| `rust-ci.yml` | `vmafx-sys (fmt + clippy + test)` | `vmafx-sys CI` | 12 | No |
+| `rust-ci.yml` | `cargo-deny (licenses, bans, advisories, sources)` | `cargo-deny` | 10 | No |
+| `supply-chain.yml` | `Validate ordinary tag and coordinated versions` | `Validate release versions` | 25 | No |
+| `supply-chain.yml` | `Build Linux release artifacts (libvmaf.so chain, vmaf CLI, models)` | `Build Linux artifacts` | 21 | No |
+| `supply-chain.yml` | `Verify downloaded Linux release runtime` | `Verify Linux runtime` | 20 | No |
+| `supply-chain.yml` | `Generate libvmaf + vmaf-mcp SBOMs (SPDX + CycloneDX)` | `Generate SBOMs` | 14 | No |
+| `supply-chain.yml` | `Sigstore keyless sign (release artifacts + SBOMs)` | `Sigstore sign artifacts` | 23 | No |
+| `supply-chain.yml` | `SLSA L3 provenance — libvmaf artifacts` | `SLSA libvmaf` | 12 | No |
+| `supply-chain.yml` | `Sigstore keyless sign — vmaf-mcp` | `Sigstore sign vmaf-mcp` | 22 | No |
+| `supply-chain.yml` | `SLSA L3 provenance — vmaf-mcp distributions` | `SLSA vmaf-mcp` | 12 | No |
+| `supply-chain.yml` | `Publish vmaf-mcp to PyPI (Trusted Publishing)` | `Publish vmaf-mcp PyPI` | 20 | No |
+| `supply-chain.yml` | `Attach SBOM + signatures to GitHub Release` | `Attach release assets` | 21 | No |
 | `docker-publish-operator-node.yml` | `Validate published ordinary tag` | `Validate tag` | 12 | No |
-| `docker-publish-operator-node.yml` | `Build + push vmafx-operator image (amd64 + arm64)` | `Publish vmafx-operator` | 22 | No |
-| `docker-publish-operator-node.yml` | `Build + push vmafx-server image (amd64 + arm64)` | `Publish vmafx-server` | 20 | No |
-| `docker-publish-operator-node.yml` | `Build + push vmafx-node-cpu image (amd64 + arm64)` | `Publish vmafx-node CPU` | 21 | No |
-| `docker-publish-operator-node.yml` | `Smoke-test operator/node image entrypoints` | `Smoke-test images` | 17 | No |
-| `docker-publish-operator-node.yml` | `All operator/node images published` | `Images published` | 16 | No |
+| `docker-publish-operator-node.yml` | `Build + push vmafx-operator (amd64 + arm64)` | `Publish vmafx-operator` | 22 | No |
+| `docker-publish-operator-node.yml` | `Build + push vmafx-server (amd64 + arm64)` | `Publish vmafx-server` | 20 | No |
+| `docker-publish-operator-node.yml` | `Build + push vmafx-node CPU (amd64 + arm64)` | `Publish vmafx-node CPU` | 21 | No |
+| `docker-publish-operator-node.yml` | `Smoke-test operator + server + node images` | `Smoke-test images` | 17 | No |
+| `docker-publish-operator-node.yml` | `All Go service images published` | `Images published` | 16 | No |
 | `docker-publish-production.yml` | `Validate published ordinary tag` | `Validate tag` | 12 | No |
 | `docker-publish-production.yml` | `Build + push CPU image (amd64 + arm64)` | `Publish CPU image` | 17 | No |
 | `docker-publish-production.yml` | `Build + push CUDA 13 image (amd64)` | `Publish CUDA 13 image` | 21 | No |

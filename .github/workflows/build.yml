@@ -1,16 +1,20 @@
-# VMAFX build matrix — 1 job per OS (ADR-0710)
+# VMAFX build matrix — 1 job per OS (ADR-0710, recorded in ADR-1259)
 #
-# Supersedes libvmaf-build-matrix.yml (ADR-0689 dedup pass → ADR-0710 slim-down).
-# Three matrix rows only:
-#   - linux-full:          Intel LLVM + ALL Linux backends (CUDA + SYCL + HIP + CPU + DNN)
-#   - macos-cpu-metal:     Apple Clang + CPU + Metal scaffold
-#   - windows-msvc-cuda:   MSVC + CPU + CUDA
+# Runs alongside libvmaf-build-matrix.yml, which keeps the per-backend, ARM,
+# static, DNN and required lanes; ADR-0710 meant this file to replace it, but
+# that never happened and ADR-1259 records both as they run.
+# Three matrix rows, none of them a required check:
+#   - Linux Intel LLVM:    Intel LLVM + ALL Linux backends (CUDA + SYCL + HIP + CPU + DNN)
+#   - macOS Clang+Metal:   Apple Clang + CPU + Metal scaffold
+#   - Windows MSVC+CUDA (full): MSVC + CPU + CUDA, static, with the CPU
+#     tests. Named apart from the required `Windows MSVC+CUDA` lane in
+#     libvmaf-build-matrix.yml: the aggregator keeps one run per name, so a
+#     shared name let either job mask the other's failure
+#     (scripts/ci/check-aggregator-names.sh now rejects a shared required name).
 #
 # Rationale: container-first VMAFX philosophy (ADR-0686, ADR-0701) means the
-# production artefact is the `vmafx-dev-mcp` image, not a per-backend binary.
-# Per-backend build legs (SYCL-only, CUDA-only, HIP-only, Vulkan-only, etc.)
-# are folded into the single Linux full build. ARM, i686, static-only, DNN-
-# only, and MoltenVK advisory legs are retired. See ADR-0710.
+# production artefact is the `vmafx-dev-mcp` image, not a per-backend binary;
+# these rows prove the whole stack builds on each OS.
 #
 # Netflix golden assertions are pinned to the dedicated CPU/GCC jobs in
 # tests-and-quality-gates.yml and libvmaf-build-matrix.yml. The all-backend
@@ -99,7 +103,7 @@ jobs:
           # windows-2025 runner). CPU-only meson tests are run after build.
           # ──────────────────────────────────────────────────────────────
           - os: windows-2025
-            name: Windows MSVC+CUDA
+            name: Windows MSVC+CUDA (full)
             cuda: true
             windows: true
             meson_extra: >-

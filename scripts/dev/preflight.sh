@@ -11,7 +11,8 @@
 # one PR at a time can be in flight:
 #
 #   * a `static_assert` on `UINT_MAX <= SIZE_MAX/2/sizeof(ptr)` — true on LP64,
-#     FALSE on 32-bit, so `Ubuntu i686 gcc` would not compile the file;
+#     FALSE on 32-bit, so the i686 lane of the time would not compile the file
+#     (that lane is retired: the fork is 64-bit only, ADR-1258);
 #   * `#define ALIGNED(x) __declspec(align((x)))` — MSVC needs a literal there,
 #     so `Windows MSVC+CUDA` failed C2059 on every use;
 #   * `__attribute__(noinline)` (a paren accidentally stripped) — gcc accepted
@@ -124,7 +125,6 @@ stage          mirrors CI context            catches
 -----          ------------------            -------
 gcc            Ubuntu gcc(+DNN)              the baseline build
 clang          Ubuntu clang(+DNN)            clang-only syntax, e.g. __attribute__(x)
-m32            Ubuntu i686 gcc               32-bit-only static_assert / size assumptions
 msvcism        Windows MSVC+CUDA / +SYCL     constructs MSVC rejects (no MSVC needed)
 sanitizers     Sanitizers (a/t/ub)           UB and races the plain build hides
 tidy           Tidy Changed                  clang-tidy on the files this branch touches
@@ -172,61 +172,6 @@ if want clang; then
     fi
   else
     skipped clang "meson setup failed"
-  fi
-fi
-
-# ------------------------------------------------------------ 32-bit syntax --
-# A full 32-bit build needs multilib libraries; -fsyntax-only needs only the
-# compiler, and that is enough for the failure mode this exists for: an
-# assumption about the width of size_t / ptrdiff_t / pointers.
-if want m32; then
-  say "32-bit syntax sweep" "mirrors: Ubuntu i686 gcc"
-  if ! echo 'int main(void){return 0;}' | gcc -m32 -x c - -o /tmp/preflight-m32probe 2>/dev/null; then
-    skipped m32 "no 32-bit gcc support (install gcc-multilib)"
-  elif [ ! -f build/src/config.h ]; then
-    skipped m32 "build/src/config.h missing — run the gcc stage first"
-  else
-    m32_fail=0
-    # Sweep only what a CPU build compiles: the gcc stage's compile database
-    # lists it. That leaves out GPU sources and the per-backend GPU tests,
-    # which only build with a backend enabled.
-    cpu_units=$(python3 -c 'import json,os,sys
-for e in json.load(open("build/compile_commands.json")):
-    print(os.path.relpath(os.path.join(e["directory"], e["file"])))' 2>/dev/null)
-    while IFS= read -r f; do
-      [ -f "$f" ] || continue
-      case "$f" in *.h | *.hpp) continue ;; esac
-      printf '%s\n' "$cpu_units" | grep -Fxq "$f" || continue
-      # The i686 lane also configures -Denable_asm=false, so it never compiles
-      # the ISA-specific trees; under -m32 they report intrinsics that do not
-      # exist there, not width assumptions.
-      case "$f" in */x86/* | */arm64/* | */arm/*) continue ;; esac
-      if [ "${f%.cpp}" != "$f" ]; then
-        std=(-std=c++23 -x c++)
-      else
-        std=(-std=c2x -x c)
-      fi
-      # -I build/src supplies the generated config.h. Without it the compile
-      # aborts at the first #include and never reaches the code under test,
-      # which silently turned this stage into a no-op.
-      gcc -m32 -fsyntax-only "${std[@]}" -D_GNU_SOURCE \
-        -I core/include -I core/src -I core/src/feature -I core/tools -I core/test \
-        -I build/src -I build \
-        "$f" 2>/tmp/preflight-m32.err
-      # Missing generated headers (config.h) and absent intrinsics are expected
-      # outside a configured build; width assumptions are not.
-      if grep -qE 'error:' /tmp/preflight-m32.err &&
-        ! grep -qE "config\.h|file not found|No such file or directory|Datei oder Verzeichnis" /tmp/preflight-m32.err; then
-        printf '     %s\n' "$f"
-        grep -m2 -E 'error:' /tmp/preflight-m32.err | sed 's/^/       /'
-        m32_fail=1
-      fi
-    done < <(changed_sources)
-    if [ "$m32_fail" -eq 0 ]; then
-      ok m32
-    else
-      bad m32
-    fi
   fi
 fi
 

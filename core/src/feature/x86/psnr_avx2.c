@@ -107,7 +107,9 @@ uint64_t psnr_sse_line_16_avx2(const uint16_t *ref, const uint16_t *dis, unsigne
     __m128i thi = _mm256_extracti128_si256(total, 1);
     __m128i t128 = _mm_add_epi64(tlo, thi);
     t128 = _mm_add_epi64(t128, _mm_shuffle_epi32(t128, 0x4E));
-    uint64_t result = (uint64_t)_mm_cvtsi128_si64(t128);
+    /* _mm_storel_epi64, not _mm_cvtsi128_si64: the latter is x86-64 only. */
+    uint64_t result = 0;
+    _mm_storel_epi64((__m128i *)&result, t128);
 
     /* Scalar tail — use unsigned abs-diff to avoid signed-int overflow UB
      * (65535^2 > INT32_MAX); mirrors sse_line_16_c in integer_psnr.c. */

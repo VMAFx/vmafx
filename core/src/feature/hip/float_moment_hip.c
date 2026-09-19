@@ -36,7 +36,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define __HIP_PLATFORM_AMD__ 1
 #include <hip/hip_runtime_api.h>
 
 #include "dict.h"
@@ -46,7 +45,9 @@
 #include "libvmaf/picture.h"
 
 #include "../../hip/common.h"
+#include "../../hip/hip_handle.h"
 #include "../../hip/kernel_template.h"
+#include "../../hip/picture_hip.h"
 #include "float_moment_hip.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -119,147 +120,158 @@ static const VmafOption options[] = {{0}};
 /* ------------------------------------------------------------------ */
 
 #ifdef HAVE_HIPCC
-/*
- * Load the HSACO fat binary, resolve both kernel function handles, and
- * allocate luma-plane staging buffers. Extracted to keep init_fex_hip
- * under the 60-line readability-function-size limit.
- *
- * On failure: s->module, s->ref_in, s->dis_in are left NULL / unset;
- * caller unwinds via fail_after_rb.
- */
-static int moment_hip_module_load(MomentStateHip *s, unsigned bpc, unsigned w, unsigned h)
+/* Load the HSACO fat binary and resolve both kernel function handles. On
+ * failure the module is unloaded again and `s->module` is NULL. */
+static int moment_hip_module_load(MomentStateHip *s)
 {
     hipError_t hip_rc = hipModuleLoadData(&s->module, moment_score_hsaco);
     if (hip_rc != hipSuccess)
         return moment_hip_rc(hip_rc);
 
     hip_rc = hipModuleGetFunction(&s->funcbpc8, s->module, "calculate_moment_hip_kernel_8bpc");
+    if (hip_rc == hipSuccess) {
+        hip_rc =
+            hipModuleGetFunction(&s->funcbpc16, s->module, "calculate_moment_hip_kernel_16bpc");
+    }
     if (hip_rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
         s->module = NULL;
-        return moment_hip_rc(hip_rc);
     }
-    hip_rc = hipModuleGetFunction(&s->funcbpc16, s->module, "calculate_moment_hip_kernel_16bpc");
-    if (hip_rc != hipSuccess) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-        return moment_hip_rc(hip_rc);
-    }
+    return moment_hip_rc(hip_rc);
+}
 
-    const size_t bpp = (bpc <= 8u) ? 1u : 2u;
-    const size_t plane_bytes = (size_t)w * h * bpp;
-    hip_rc = hipMalloc(&s->ref_in, plane_bytes);
-    if (hip_rc != hipSuccess) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-        return moment_hip_rc(hip_rc);
-    }
-    hip_rc = hipMalloc(&s->dis_in, plane_bytes);
-    if (hip_rc != hipSuccess) {
-        (void)hipFree(s->ref_in);
-        s->ref_in = NULL;
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-        return moment_hip_rc(hip_rc);
-    }
-    return 0;
+/* Allocate the two luma staging buffers. The caller releases them. */
+static int moment_hip_bufs_alloc(MomentStateHip *s)
+{
+    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
+    const size_t plane_bytes = (size_t)s->frame_w * s->frame_h * bpp;
+    hipError_t hip_rc = hipMalloc(&s->ref_in, plane_bytes);
+    if (hip_rc == hipSuccess)
+        hip_rc = hipMalloc(&s->dis_in, plane_bytes);
+    return moment_hip_rc(hip_rc);
+}
+
+/* Launch the per-bpc kernel on `str`. Both kernels take the same seven
+ * arguments: the 16bpc one reads raw uint16_t samples whatever the bit
+ * depth, and the host sized ref_in/dis_in at 2 bytes per sample. */
+static int moment_hip_launch_kernel(MomentStateHip *s, ptrdiff_t row_w, hipStream_t str)
+{
+    const unsigned gx = (s->frame_w + MOMENT_HIP_BX - 1u) / MOMENT_HIP_BX;
+    const unsigned gy = (s->frame_h + MOMENT_HIP_BY - 1u) / MOMENT_HIP_BY;
+    void *sums_dev = s->rb.device;
+    void *args[] = {
+        (void *)&s->ref_in, (void *)&s->dis_in,  (void *)&row_w,      (void *)&row_w,
+        (void *)&sums_dev,  (void *)&s->frame_w, (void *)&s->frame_h,
+    };
+    hipFunction_t fn = (s->bpc == 8u) ? s->funcbpc8 : s->funcbpc16;
+    return moment_hip_rc(hipModuleLaunchKernel(fn, gx, gy, 1u, MOMENT_HIP_BX, MOMENT_HIP_BY, 1u, 0,
+                                               str, args, NULL));
 }
 
 /*
  * Per-frame submit body: zero the four uint64 accumulators, HtoD copies
- * of both luma planes, kernel launch, DtoH readback. Extracted to keep
- * submit_fex_hip under the 60-line readability-function-size limit.
+ * of both luma planes, kernel launch, DtoH readback.
  */
 static int moment_hip_launch(MomentStateHip *s, VmafPicture *ref_pic, VmafPicture *dist_pic)
 {
     const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
     const ptrdiff_t row_w = (ptrdiff_t)(s->frame_w * bpp);
-    const hipStream_t str = (hipStream_t)s->lc.str;
+    hipStream_t str = vmaf_hip_stream_of(s->lc.str);
+    const size_t sums_bytes = (size_t)MOMENT_HIP_COUNTERS * sizeof(uint64_t);
 
     /* Zero the four uint64 atomic accumulators before dispatch. */
-    hipError_t hip_rc =
-        hipMemsetAsync(s->rb.device, 0, (size_t)MOMENT_HIP_COUNTERS * sizeof(uint64_t), str);
+    hipError_t hip_rc = hipMemsetAsync(s->rb.device, 0, sums_bytes, str);
     if (hip_rc != hipSuccess)
         return moment_hip_rc(hip_rc);
 
-    hip_rc =
-        hipMemcpy2DAsync(s->ref_in, (size_t)row_w, ref_pic->data[0], (size_t)ref_pic->stride[0],
-                         (size_t)row_w, (size_t)s->frame_h, hipMemcpyHostToDevice, str);
-    if (hip_rc != hipSuccess)
-        return moment_hip_rc(hip_rc);
-
-    hip_rc =
-        hipMemcpy2DAsync(s->dis_in, (size_t)row_w, dist_pic->data[0], (size_t)dist_pic->stride[0],
-                         (size_t)row_w, (size_t)s->frame_h, hipMemcpyHostToDevice, str);
-    if (hip_rc != hipSuccess)
-        return moment_hip_rc(hip_rc);
-
-    const unsigned gx = (s->frame_w + MOMENT_HIP_BX - 1u) / MOMENT_HIP_BX;
-    const unsigned gy = (s->frame_h + MOMENT_HIP_BY - 1u) / MOMENT_HIP_BY;
-    void *sums_dev = s->rb.device;
-    if (s->bpc == 8u) {
-        void *args[] = {
-            &s->ref_in, &s->dis_in,  (void *)&row_w, (void *)&row_w,
-            &sums_dev,  &s->frame_w, &s->frame_h,
-        };
-        hip_rc = hipModuleLaunchKernel(s->funcbpc8, gx, gy, 1u, MOMENT_HIP_BX, MOMENT_HIP_BY, 1u, 0,
-                                       str, args, NULL);
-    } else {
-        /* 16bpc kernel has the same 7-arg signature as 8bpc — no bpc arg.
-         * The kernel reads raw uint16_t pixels regardless of bpc depth;
-         * the host already sized ref_in/dis_in at 2 bytes per pixel. */
-        void *args[] = {
-            &s->ref_in, &s->dis_in,  (void *)&row_w, (void *)&row_w,
-            &sums_dev,  &s->frame_w, &s->frame_h,
-        };
-        hip_rc = hipModuleLaunchKernel(s->funcbpc16, gx, gy, 1u, MOMENT_HIP_BX, MOMENT_HIP_BY, 1u,
-                                       0, str, args, NULL);
-    }
-    if (hip_rc != hipSuccess)
-        return moment_hip_rc(hip_rc);
+    /* Returns once both pictures are read: the caller recycles them when
+     * submit() returns (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
+    const VmafHipPlaneUpload planes[] = {
+        {.dst = s->ref_in,
+         .dst_pitch = (size_t)row_w,
+         .pic = ref_pic,
+         .plane = 0u,
+         .row_bytes = (size_t)row_w,
+         .rows = s->frame_h},
+        {.dst = s->dis_in,
+         .dst_pitch = (size_t)row_w,
+         .pic = dist_pic,
+         .plane = 0u,
+         .row_bytes = (size_t)row_w,
+         .rows = s->frame_h},
+    };
+    int err = vmaf_hip_picture_upload(planes, 2u, s->lc.str);
+    if (err == 0)
+        err = moment_hip_launch_kernel(s, row_w, str);
+    if (err != 0)
+        return err;
 
     /* Record submit event, DtoH copy of the four uint64 accumulators,
      * record finished event. */
-    hip_rc = hipEventRecord((hipEvent_t)s->lc.submit, str);
-    if (hip_rc != hipSuccess)
-        return moment_hip_rc(hip_rc);
-
-    hip_rc =
-        hipMemcpyAsync(s->rb.host_pinned, s->rb.device,
-                       (size_t)MOMENT_HIP_COUNTERS * sizeof(uint64_t), hipMemcpyDeviceToHost, str);
+    hip_rc = hipEventRecord(vmaf_hip_event_of(s->lc.submit), str);
+    if (hip_rc == hipSuccess) {
+        hip_rc =
+            hipMemcpyAsync(s->rb.host_pinned, s->rb.device, sums_bytes, hipMemcpyDeviceToHost, str);
+    }
     if (hip_rc != hipSuccess)
         return moment_hip_rc(hip_rc);
 
     return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
 }
-#endif /* HAVE_HIPCC */
 
-/* Free staging buffers + module. Safe to call with NULL handles.
- * Defined outside HAVE_HIPCC so init_fex_hip's fail_after_mod label
- * can call it unconditionally (mirrors float_psnr_hip_module_free). */
-static void moment_hip_module_free(MomentStateHip *s)
+/* Free the staging buffers and unload the module. Safe with NULL handles.
+ * Returns the first error. */
+static int moment_hip_module_free(MomentStateHip *s)
 {
-#ifdef HAVE_HIPCC
-    if (s->dis_in != NULL) {
-        (void)hipFree(s->dis_in);
-        s->dis_in = NULL;
-    }
-    if (s->ref_in != NULL) {
-        (void)hipFree(s->ref_in);
-        s->ref_in = NULL;
+    void **bufs[] = {&s->dis_in, &s->ref_in};
+    int rc = 0;
+    for (unsigned i = 0u; i < 2u; i++) {
+        if (*bufs[i] == NULL)
+            continue;
+        const int e = moment_hip_rc(hipFree(*bufs[i]));
+        *bufs[i] = NULL;
+        if (rc == 0)
+            rc = e;
     }
     if (s->module != NULL) {
-        (void)hipModuleUnload(s->module);
+        const int e = moment_hip_rc(hipModuleUnload(s->module));
         s->module = NULL;
+        if (rc == 0)
+            rc = e;
     }
-#else
-    (void)s;
-#endif /* HAVE_HIPCC */
+    return rc;
 }
+#endif /* HAVE_HIPCC */
 
 /* ------------------------------------------------------------------ */
 /* init / close                                                        */
 /* ------------------------------------------------------------------ */
+
+/* Tear down everything init() may have set up. Every step tolerates a handle
+ * that was never created, so this serves both a failed init() and close().
+ * The stream is drained first, so no kernel still uses a buffer. Returns the
+ * first error. */
+static int moment_hip_release(MomentStateHip *s)
+{
+    int rc = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
+    int e = 0;
+#ifdef HAVE_HIPCC
+    e = moment_hip_module_free(s);
+    if (rc == 0)
+        rc = e;
+#endif /* HAVE_HIPCC */
+    e = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
+    if (rc == 0)
+        rc = e;
+    if (s->feature_name_dict != NULL) {
+        e = vmaf_dictionary_free(&s->feature_name_dict);
+        if (rc == 0)
+            rc = e;
+    }
+    vmaf_hip_context_destroy(s->ctx);
+    s->ctx = NULL;
+    return rc;
+}
 
 static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                         unsigned w, unsigned h)
@@ -272,88 +284,35 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     s->frame_h = h;
 
     int err = vmaf_hip_context_new(&s->ctx, 0);
-    if (err != 0)
-        return err;
-
-    err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err != 0)
-        goto fail_after_ctx;
-
-    err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx,
-                                         (size_t)MOMENT_HIP_COUNTERS * sizeof(uint64_t));
-    if (err != 0)
-        goto fail_after_lc;
-
-#ifdef HAVE_HIPCC
-    err = moment_hip_module_load(s, bpc, w, h);
-#else
-    err = -ENOSYS;
-#endif
-    if (err != 0)
-        goto fail_after_rb;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) {
-        err = -ENOMEM;
-        goto fail_after_mod;
+    if (err == 0)
+        err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
+    if (err == 0) {
+        err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx,
+                                             (size_t)MOMENT_HIP_COUNTERS * sizeof(uint64_t));
     }
-    return 0;
-
-fail_after_mod:
-    moment_hip_module_free(s);
-fail_after_rb:
-    (void)vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
-fail_after_lc:
-    (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_after_ctx:
-    vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
+#ifdef HAVE_HIPCC
+    if (err == 0)
+        err = moment_hip_module_load(s);
+    if (err == 0)
+        err = moment_hip_bufs_alloc(s);
+#else
+    if (err == 0)
+        err = -ENOSYS;
+#endif
+    if (err == 0) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (s->feature_name_dict == NULL)
+            err = -ENOMEM;
+    }
+    if (err != 0)
+        (void)moment_hip_release(s);
     return err;
 }
 
 static int close_fex_hip(VmafFeatureExtractor *fex)
 {
-    MomentStateHip *s = fex->priv;
-    int rc = 0;
-
-#ifdef HAVE_HIPCC
-    if (s->dis_in != NULL) {
-        int e = moment_hip_rc(hipFree(s->dis_in));
-        s->dis_in = NULL;
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->ref_in != NULL) {
-        int e = moment_hip_rc(hipFree(s->ref_in));
-        s->ref_in = NULL;
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->module != NULL) {
-        int e = moment_hip_rc(hipModuleUnload(s->module));
-        s->module = NULL;
-        if (rc == 0)
-            rc = e;
-    }
-#endif /* HAVE_HIPCC */
-
-    int e = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-    if (rc == 0)
-        rc = e;
-    e = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
-    if (rc == 0)
-        rc = e;
-    if (s->feature_name_dict != NULL) {
-        e = vmaf_dictionary_free(&s->feature_name_dict);
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->ctx != NULL) {
-        vmaf_hip_context_destroy(s->ctx);
-        s->ctx = NULL;
-    }
-    return rc;
+    return moment_hip_release(fex->priv);
 }
 
 /* ------------------------------------------------------------------ */

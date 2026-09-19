@@ -178,6 +178,13 @@ Skill scaffolds:
   verbatim — they lose bit-exact contract that ADR-0138 /
   0139 / 0142 / 0143 froze.
 
+- **No x86-64-only intrinsics.** `_mm_extract_epi64`,
+  `_mm256_extract_epi64`, `_mm_cvtsi128_si64` and the like go through
+  `extract_epi64_128()` / `extract_epi64()` (ADM) or a store
+  (`_mm_storel_epi64`). The fork is 64-bit only (ADR-1258), but these files
+  stay 32-bit clean because they are upstream-mirror code and that is
+  Netflix#1481's fix (T-X86-64-ONLY-INTRINSICS-2026-09-18).
+
 ## Governing ADRs
 
 See [../AGENTS.md §Governing ADRs](../AGENTS.md) for full list.

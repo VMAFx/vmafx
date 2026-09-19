@@ -40,13 +40,12 @@ scripts/git-hooks/pre-push-mkdocs-strict.sh
 # exempt pre-push-mkdocs-strict.sh above.
 scripts/githooks/pre-commit.sh
 
-# Vendored upstream cJSON — three upstream TODO/FIXME markers that cannot be
-# fixed without diverging from the upstream cJSON source (cJSON 1.7.x).
-# They are tracked in the cJSON project itself; we do not modify this file.
-# Lines: 1660 (FIXME overflow), 2774 (TODO O(n^2)), 2786 (TODO proper fix).
-# (scaffold-audit ADR-0621 P3-6)
-# Path updated for ADR-0700 rename (libvmaf/ → core/):
-core/src/mcp/3rdparty/cJSON/cJSON.c
+# Vendored cJSON (core/src/mcp/3rdparty/cJSON/) is deliberately NOT listed.
+# ADR-0621 once ignored the whole file over three upstream TODO/FIXME markers,
+# which also hid it from the banned-function rule; the cJSON 1.7.19 re-vendor
+# then reintroduced eleven banned calls unnoticed. Vendored code is in scope
+# (ADR-0683, ADR-1142); scripts/ci/tests/test_semgrep_vendored_scope.py fails
+# if this file or a rule-level exclude hides that tree again.
 
 # Binary / data suffixes.
 *.pkl

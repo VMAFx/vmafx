@@ -268,6 +268,18 @@ foreach increment_case : [['zero', '0'], ['oversized', 'SIZE_MAX']]
     test(increment_test_name, increment_test, suite : ['fast'])
 endforeach
 
+# Behaviour pin for the vendored cJSON and its fork delta (ADR-0683, ADR-1061).
+# Deliberately NOT behind enable_mcp: the test compiles cJSON.c itself, so every
+# CPU build runs it and cJSON.c is in the CPU lane's compile database, which is
+# what puts it in front of the Tidy Ratchet and Cppcheck jobs. It needs libm for
+# the fabs() in cJSON's number comparison.
+test_cjson = executable('test_cjson',
+    ['test.c', 'test_cjson.c', '../src/mcp/3rdparty/cJSON/cJSON.c'],
+    include_directories : [test_inc, include_directories('../src/mcp/3rdparty/cJSON')],
+    dependencies : [math_lib],
+)
+test('test_cjson', test_cjson, suite : ['fast'])
+
 test_model = executable('test_model',
     ['test.c', 'test_model.c', '../src/dict.cpp', '../src/pdjson.c', json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
@@ -3635,20 +3647,39 @@ test('test_hip_motion_parity', test_hip_motion_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
 
-test_hip_ssim_parity = executable('test_hip_ssim_parity',
-    ['test.c', 'test_hip_ssim_parity.c'],
+# ADR-0564 — integer_ssim CPU vs. HIP parity, places=4 on every frame of an
+# 8-frame pooled clip. The kernel is the CPU's 9-tap int64 algorithm, so the
+# deltas are summation-order rounding (~1e-14). Registered at 8 bpc, at 10 bpc
+# (the 16-bit horizontal kernel) and at an odd size (a truncated window in a
+# partial last block); the 960x540 variant is in the large-fixture list below.
+foreach variant : [['', []], ['_10bit', ['-DFIXTURE_BPC=10u']],
+                   ['_odd', ['-DFIXTURE_W=577u', '-DFIXTURE_H=323u']]]
+    hip_ssim_exe = executable('test_hip_ssim_parity' + variant[0],
+        ['test.c', 'test_hip_ssim_parity.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        dependencies: [pthread_dependency, hip_deps, math_lib],
+        c_args: ['-DHAVE_HIP=1'] + variant[1]
+    )
+    test('test_hip_ssim_parity' + variant[0], hip_ssim_exe,
+        suite : ['fast', 'gpu'],
+        timeout : 60)
+endforeach
+
+# T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18: every HIP extractor that uploads a host
+# picture, over the pooled multi-frame fixture (hip_pooled_fixture.h) and with
+# both pictures refilled the moment submit() returns. 576x324 is the Netflix
+# pair's size; an upload outlives submit() more often the larger the plane.
+test_hip_upload_race = executable('test_hip_upload_race',
+    ['test.c', 'test_hip_upload_race.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1']
+    c_args: ['-DHAVE_HIP=1', '-DFIXTURE_W=576u', '-DFIXTURE_H=324u']
 )
-# Deferred per ADR-1154 (T-GAP-HIP-INTEGER-SSIM-FLOAT-KERNEL-DEFERRED-2026-09-02):
-# integer_ssim_score.hip implements the 11-tap float Gaussian instead of the 9-tap int64 kernel,
-# causing 4.5e-3 divergence vs CPU ground truth. Preserved CPU fallback per ADR-0564 until int64 kernel lands.
-test('test_hip_ssim_parity', test_hip_ssim_parity,
+test('test_hip_upload_race', test_hip_upload_race,
     suite : ['fast', 'gpu'],
-    should_fail : true,
-    timeout : 60)
+    timeout : 120)
 
 test_hip_ms_ssim_parity = executable('test_hip_ms_ssim_parity',
     ['test.c', 'test_hip_ms_ssim_parity.c'],
@@ -3736,12 +3767,6 @@ test('test_hip_speed_singular_parity', test_hip_speed_singular_parity,
 # ADR-1206 — large-fixture parity variants (resolution blind spot).
 # Same rationale as the CUDA and SYCL families. Verified on a gfx1030 once
 # ADR-1211 made the HIP ADM extractor able to run at all.
-# `test_hip_ssim_parity` is deliberately absent below. `integer_ssim_score.hip`
-# implements an 11-tap float Gaussian where the CPU uses a 9-tap int64 kernel, a
-# divergence formally deferred under ADR-0564 and tracked as
-# T-GAP-HIP-INTEGER-SSIM-FLOAT-KERNEL-DEFERRED-2026-09-02 (4.5e-3 vs a 1e-3
-# gate). A second fixture would only re-report that deferred gap at another
-# resolution; register it together with the int64 kernel port.
 hip_parity_large_fixture_tests = [
     'test_hip_adm_parity',
     'test_hip_cambi_parity',
@@ -3758,6 +3783,7 @@ hip_parity_large_fixture_tests = [
     'test_hip_psnr_parity',
     'test_hip_speed_chroma_parity',
     'test_hip_speed_temporal_parity',
+    'test_hip_ssim_parity',
     'test_hip_ssimulacra2_parity',
     'test_hip_vif_parity',
 ]

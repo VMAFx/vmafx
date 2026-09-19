@@ -73,6 +73,166 @@ mask row") is ported, with three differences a sync must keep:
 upstream counterpart. The same branch refactors `calculate_c_values_row_neon`
 into a per-pixel helper (touched-file lint, bit-exact under `test_cambi_simd`).
 See [Research-2062](research/2062-cambi-spatial-mask-simd.md).
+## ci/retire-i686-lane — the fork stays 64-bit only; x86 SIMD sources use no x86-64-only intrinsics (2026-09-18)
+
+- `.github/workflows/libvmaf-build-matrix.yml`: there is no i686 row
+  (ADR-0691, ADR-1258). Upstream Netflix/vmaf has its own 32-bit cross build
+  (`f6d6dde1`); do not port it. A merge that restores `i686: true` rows is
+  wrong: that is how the lane came back in `384d97d03`.
+- `core/src/feature/x86/adm_avx2.c`, `adm_avx512.c`: 64-bit lane extraction
+  from an `__m128i` goes through `extract_epi64_128()`, defined beside
+  `extract_epi64()`. Upstream calls `_mm_extract_epi64` directly; keep the fork
+  form.
+- `core/src/feature/x86/psnr_avx2.c`, `psnr_sse_line_16_avx2()`: the final
+  64-bit sum is read with `_mm_storel_epi64`, not `_mm_cvtsi128_si64`.
+
+## ci/retire-i686-lane — the CI build matrix of record (ADR-1259) (2026-09-18)
+
+- `.github/workflows/libvmaf-build-matrix.yml` and `build.yml` both run;
+  `build.yml` does not replace the matrix. ADR-0689, ADR-0691, ADR-0710 and
+  ADR-0728 are superseded by ADR-1259. A merge resolution that drops or
+  restores a lane is wrong unless an ADR asks for it: `384d97d03` undid
+  ADR-0689 and ADR-0691 that way.
+- The unreleased changelog fragments `changelog.d/removed/native-build-sunset.md`,
+  `changelog.d/removed/0691-vmafx-drop-legacy-build-paths.md` and
+  `changelog.d/changed/0689-vmafx-ci-matrix-dedupe.md` are deleted on purpose:
+  they announced removals that never happened. Do not restore them.
+## fix/restore-reverted-security-fixes — two fixes that a stale merge and a re-vendor undid (2026-09-19)
+
+Both regressions below came from taking a whole-file "theirs" over a security
+fix. Neither conflicts with upstream Netflix/vmaf (all files are fork-local);
+the risk is a future fork-internal rebase, squash-merge or re-vendor. See
+`docs/state.md`, `T-VENDORED-CJSON-BANNED-FUNCTIONS-REVERTED-2026-09-19` and
+`T-SHELL-INJECTION-ROUND2-REVERTED-2026-09-19`.
+
+1. **Vendored cJSON is upstream 1.7.19 plus a fork delta; a re-vendor must
+   re-apply the delta.** `core/src/mcp/3rdparty/cJSON/cJSON.c` differs from
+   upstream on purpose: bounded `snprintf` / `memcpy` instead of the banned
+   `sprintf` / `strcpy` (ADR-0683, ADR-1061), `cJSON_GetArraySize` saturating at
+   `INT_MAX`, and no `goto` or function over 60 lines (ADR-1142). `6ab6a58b1`
+   (PR #883) dropped upstream's files in unchanged and reverted the first two.
+   The delta, function by function, and the re-vendor procedure are in
+   [`core/src/mcp/3rdparty/cJSON/AGENTS.md`](../core/src/mcp/3rdparty/cJSON/AGENTS.md).
+   `cJSON.h` is unmodified upstream. `core/test/test_cjson.c` pins the version
+   string, so a re-vendor fails `test_version` until the delta has been carried
+   over and the version updated.
+2. **Never answer a finding in vendored code with an exclusion.** The
+   `vmaf-no-strcpy-strcat-sprintf` rule in `.semgrep.yml` no longer excludes
+   `/core/src/mcp/3rdparty/**`, `.semgrepignore` no longer lists `cJSON.c`, and
+   the `semgrep-local` hook no longer skips `core/src/pdjson.{c,h}`. If a rebase
+   brings any of those back, `scripts/ci/tests/test_semgrep_vendored_scope.py`
+   fails; resolve by keeping the exclusion out, not by editing the test.
+3. **`scripts/ci/sycl-bench-env.sh` and `dev/scripts/dev-mcp-entrypoint.sh`:
+   when resolving a conflict, never take the side that has
+   `bash -c "... '$ROOT/setvars.sh' ..."` or `eval "${cmd}"`.** `d9c33dc68`
+   (PR #414) did exactly that to `45d536962` (PR #350), along with PR #350's
+   state row, rebase note and `scripts/ci/AGENTS.md` rows. The correct forms are
+   `bash -c '... "$1/setvars.sh" ...' _ "$ROOT"` and `"${prog}" 2>&1 | grep ...`.
+4. **Keep the three new pre-commit hooks wired** (`test-semgrep-vendored-scope`,
+   `test-sycl-bench-env`, `test-dev-mcp-entrypoint-probe`). The sycl test
+   existed when its fix was reverted and would have failed; nothing ran it.
+   `test-dev-mcp-entrypoint-probe.sh` extracts `_probe_with_retry` from the real
+   entrypoint by its opening line `_probe_with_retry() {`, so keep that function
+   at top level under that name.
+5. **`core/test/test_cjson.c` must stay outside `if get_option('enable_mcp')`**
+   in `core/test/meson.build`. It compiles `cJSON.c` itself, which is the only
+   reason the CPU-lane Tidy Ratchet and Cppcheck jobs see that file (the lane
+   builds without MCP). `cJSON.c` has no entry in
+   `scripts/ci/tidy-baseline-cpu.json` because it measures zero; any warning a
+   rebase introduces there is a ratchet regression.
+6. **`.standards-baseline.json` was re-recorded downward** for this change from
+   a clean clone with the pinned engine. A rebase that reintroduces a banned
+   call or a `goto` in `cJSON.c` now fails the baseline-only CI audit as new
+   debt, not only the local touched-file rule.
+## fix/hip-pageable-upload-race — HIP extractors wait for their picture uploads (2026-09-19)
+
+**Rebase impact**: none upstream. Netflix ships no HIP backend; every touched
+source under `core/src/hip/`, `core/src/feature/hip/` and the two HIP tests is
+fork-local, and the `core/test/meson.build` hunk sits inside the `enable_hip`
+block upstream never edits.
+
+**Invariants** (see also `core/src/feature/hip/AGENTS.md`, "Picture uploads"):
+
+- A HIP extractor must not return from `submit()` while an upload from a host
+  picture is in flight. Every plane taken from `VmafPicture::data` goes through
+  `vmaf_hip_picture_upload()` (`core/src/hip/picture_hip.{c,h}`), on the
+  extractor's private stream. A port of a CUDA twin brings a bare
+  `cuMemcpy2DAsync` with it: CUDA pictures are device memory with a ready
+  event, HIP pictures are pageable host memory, so replace the copy with the
+  helper rather than translating it to `hipMemcpy2DAsync`.
+- The helper waits on an event, not on the stream, so that a null-stream caller
+  does not wait for every other stream on the device. Keep the wait when a copy
+  fails part-way: the copies already enqueued still read the pictures.
+- The wait costs throughput on a single-queue GPU (T-HIP-UPLOAD-WAIT-THROUGHPUT-
+  2026-09-19). Replace it with extractor-owned pinned staging, never by removing
+  it. `test_hip_upload_race` fails on every run without it.
+- A new HIP extractor that uploads a picture gets a row in `race_cases[]` in
+  `core/test/test_hip_upload_race.c`. The reference picture is not exempt:
+  `vmaf_read_pictures()` keeps it alive through `prev_ref`, which hides the
+  defect from a pooled test but does not remove it.
+- `core/src/hip/hip_handle.h` is the one place that converts the
+  `uintptr_t` handles of `kernel_template.h` back to `hipStream_t` /
+  `hipEvent_t`. The twelve touched extractors no longer define
+  `__HIP_PLATFORM_AMD__` themselves; `hip/meson.build` passes it.
+
+The twelve extractor files were also brought to zero clang-tidy findings and
+zero HISS findings, which the touched-file rule requires: `init()` /
+`close()` share one `*_release()` teardown in place of the `goto` ladders, and
+it drains the stream before it frees a buffer. `float_psnr_hip`,
+`float_moment_hip` and `float_ssim_hip` used to free first. A conflict in those functions should
+be resolved towards the single teardown.
+
+Touched files:
+`core/src/hip/picture_hip.{c,h}`, `core/src/hip/hip_handle.h` (new),
+`core/src/feature/hip/{ciede,float_adm,float_moment,float_motion,float_psnr,float_ssim,float_vif,integer_motion,integer_motion_v2,integer_psnr,integer_ssim,integer_vif}_hip.c`,
+`core/test/hip_pooled_fixture.h` (new), `core/test/test_hip_upload_race.c`
+(new), `core/test/test_hip_ssim_parity.c`, `core/test/meson.build`,
+`core/src/feature/hip/AGENTS.md`, `core/src/hip/AGENTS.md`,
+`docs/backends/hip/overview.md`, `docs/state.md`,
+`changelog.d/fixed/hip-pageable-upload-race.md`,
+`scripts/ci/tidy-baseline-hip.json`.
+
+## fix/hip-integer-ssim-int64-kernel — HIP integer SSIM runs the CPU kernel (2026-09-18)
+
+**Rebase impact**: none upstream. Every touched source is fork-local: Netflix
+ships no HIP backend, and `integer_ssim_hip.c`, `integer_ssim_score.hip`,
+`core/src/hip/dispatch_strategy.c` and `test_hip_ssim_parity.c` exist only in
+the fork. The `core/src/meson.build` hunk adds one `hip_cu_extra_flags` entry
+and the `core/test/meson.build` hunk replaces the `should_fail` registration
+with a variant loop; both are inside `enable_hip` blocks upstream never edits.
+
+**Invariants** (see also `core/src/feature/hip/AGENTS.md`):
+
+- `integer_ssim_score.hip` mirrors `integer_ssim.c::calc_ssim()`. The 9-tap
+  integer weights, the k_min / k_max truncation formulas, `SSIM_K1` /
+  `SSIM_K2` spelled `(0.01 * 0.01)` / `(0.03 * 0.03)`, and the operand order of
+  the per-pixel term are all load-bearing. If an upstream sync changes
+  `integer_ssim.c`, change every GPU twin (CUDA, SYCL, HIP, Metal) in the
+  same PR.
+- `hip_cu_extra_flags['integer_ssim_score']` keeps `-ffp-contract=off`.
+  Without it the per-pixel term fuses into FMAs and stops rounding like the
+  CPU's. The 1x1 case shows it: with the flag HIP matches the CPU exactly on
+  5 of 5 frames.
+- `submit()` waits for its two host-to-device uploads before returning. The
+  pictures are pageable memory that the pool recycles as soon as `submit()`
+  returns. Keep the wait until a HIP picture pool (T7-10c) hands device
+  pictures to the extractor. `test_hip_ssim_parity` feeds 8 pooled frames and
+  fails every run without it.
+- The block reduction in `integer_ssim_vert_combine` is sized for the 16x8
+  launch in `integer_ssim_hip.c`. Change `ISSIM_BLOCK_X` / `ISSIM_BLOCK_Y` and
+  `ISSIM_HIP_BLOCK_X` / `ISSIM_HIP_BLOCK_Y` together.
+
+Touched files:
+`core/src/feature/hip/integer_ssim/integer_ssim_score.hip` (rewritten),
+`core/src/feature/hip/integer_ssim_hip.c` (rewritten),
+`core/src/feature/hip/integer_ssim_hip.h` (comment),
+`core/src/hip/dispatch_strategy.c` (two table entries, ADR-1138 bracket),
+`core/src/meson.build`, `core/test/meson.build`,
+`core/test/test_hip_ssim_parity.c`, `core/src/feature/hip/AGENTS.md`,
+`docs/backends/hip/overview.md`, `docs/metrics/ssim.md`,
+`docs/metrics/features.md`, `docs/state.md`,
+`changelog.d/fixed/hip-integer-ssim-int64-kernel.md`, `CHANGELOG.md`,
+`scripts/ci/tidy-baseline-hip.json` (scoped tightening).
 
 ## Canonical envtest installer (2026-09-08)
 

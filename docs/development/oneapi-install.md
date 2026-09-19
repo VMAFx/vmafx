@@ -5,8 +5,9 @@ DPC++ compiler `icpx`. This page documents the minimum install needed for
 the SYCL build + clang-tidy lint cycle, the version we pin against, and
 the upgrade procedure when a newer Intel release ships.
 
-CI installs oneAPI via the official `intel/oneapi-runtime-toolkit`
-GitHub Action; this page covers the **local developer machine** path.
+CI installs oneAPI from Intel's apt repository on Linux and from Intel's
+offline installer on Windows; this page covers the **local developer machine**
+path.
 
 ## Pinned version
 
@@ -214,12 +215,12 @@ ICPX_ROOT=/opt/intel/oneapi-2025.3/compiler/latest/linux \
 
 ## CI vs local
 
-CI uses the `intel/oneapi-runtime-toolkit` action which installs
-whatever version Intel currently publishes as the "stable" tag
-(updated independently of this fork). The CI lane therefore may pick
-up a newer version than the local pin documented here. Local-vs-CI
-divergence on the SYCL kernel binaries is acceptable as long as both
-build cleanly and the `Build — Ubuntu SYCL` matrix row stays green;
+The Linux SYCL lanes install `${ONEAPI_APT_PACKAGE}` from Intel's apt
+repository; its version is set once, as `ONEAPI_VERSION` in
+`build-config.env`, and can differ from the local pin documented here. The
+`Windows MSVC+SYCL` lane pins its own offline-installer release in the
+workflow. Local-vs-CI divergence on the SYCL kernel binaries is acceptable as
+long as both build cleanly and the `Ubuntu SYCL` matrix row stays green;
 bit-identical SYCL output is **not** a guaranteed invariant across
 Intel oneAPI releases.
 

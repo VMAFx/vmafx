@@ -136,7 +136,7 @@ make test-netflix-golden                # Netflix CPU golden-data gate (see §8)
 ## 4. Lint / format
 
 ```text
-make preflight     # CI compiler matrix locally: clang, 32-bit, sanitizers, MSVC-hostile constructs, tidy, cppcheck
+make preflight     # CI compiler matrix locally: clang, sanitizers, MSVC-hostile constructs, tidy, cppcheck
 make lint          # configured native + Python, shell, Markdown, Go and docs checks
 make format        # clang-format + black + ruff (writes)
 make format-check  # dry-run (CI / pre-commit)
