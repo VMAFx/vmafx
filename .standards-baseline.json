@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-09-19T21:25:16Z",
+  "generated_at": "2026-09-19T21:37:26Z",
   "repository": "",
   "commit_sha": "",
   "total_infractions": 1414,
@@ -7893,7 +7893,7 @@
       "file_path": "core/test/test_fex_ctx_vector.cpp",
       "line_number": 65,
       "symbol": "{",
-      "message": "Function '{' (253 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "message": "Function '{' (255 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/test/test_fex_ctx_vector.cpp:65:HISS-04"
     },
     {
