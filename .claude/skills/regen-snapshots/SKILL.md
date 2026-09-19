@@ -2,7 +2,6 @@
 name: regen-snapshots
 description: Regenerate fork-added test snapshot JSONs under testdata/ (scores_cpu_*.json, netflix_benchmark_results.json) after an intentional numerical change. Requires justification committed to the message.
 ---
-
 <!-- markdownlint-disable MD013 -->
 
 # /regen-snapshots
@@ -16,17 +15,17 @@ description: Regenerate fork-added test snapshot JSONs under testdata/ (scores_c
 
 ## Steps
 
-1. Refuse if `--justification` is missing or empty.
-2. Build the requested backend (`/build-vmaf --backend=<backend>`).
+1. Refuse if `--justification` missing or empty.
+2. Build requested backend (`/build-vmaf --backend=<backend>`).
 3. For each snapshot in `--files` (default: all `testdata/scores_cpu_*.json` and
    `testdata/netflix_benchmark_results.json`):
-   - Locate the matching regeneration script (`testdata/gen_cpu_golden.py`,
+   - Locate matching regeneration script (`testdata/gen_cpu_golden.py`,
      `testdata/run_sycl_scores.py`, `testdata/benchmark_netflix.py`).
-   - Run it, writing to a tempfile.
-   - Diff old vs new; if identical, skip.
-   - Otherwise, replace.
-4. Emit a diff summary: file, frames affected, max delta observed.
-5. Prepare a commit message draft:
+   - Run script, write to tempfile.
+   - Diff old vs new; identical -> skip.
+   - Otherwise replace.
+4. Emit diff summary: file, frames affected, max delta observed.
+5. Prepare commit message draft:
 
    ```text
    test(snapshots): regenerate <files>
@@ -36,11 +35,11 @@ description: Regenerate fork-added test snapshot JSONs under testdata/ (scores_c
    Affected: <summary>
    ```
 
-   Print it; do NOT auto-commit.
+   Print draft; do NOT auto-commit.
 
 ## Guardrails
 
-- Never touches `python/test/**` — those hold Netflix golden assertions (see §8 of
-  CLAUDE.md). If the regeneration script tries to write there, ABORT.
-- Max delta > 0.5 (absolute) without justification mentioning a model/feature rewrite
-  aborts with an error.
+- Never touch `python/test/**` — holds Netflix golden assertions (see §8 of
+  CLAUDE.md). Regeneration script tries to write there -> ABORT.
+- Max delta > 0.5 (absolute) without justification mentioning model/feature
+  rewrite -> abort with error.

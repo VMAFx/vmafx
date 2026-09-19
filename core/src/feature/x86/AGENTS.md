@@ -1,14 +1,14 @@
 # AGENTS.md — core/src/feature/x86
 
-Orientation for agents working on the AVX2 / AVX-512 feature SIMD
+Orientation for agents working on AVX2 / AVX-512 feature SIMD
 paths. Parent: [../AGENTS.md](../AGENTS.md).
 
 ## Scope
 
 Per-feature AVX2 + AVX-512 SIMD implementations. Every TU here mirrors
-a scalar reference one level up (e.g. `ssim_avx2.c` ↔ `../iqa/ssim_tools.c`,
-`adm_avx2.c` ↔ `../adm.c`) and is dispatched at runtime from a feature's
-`*_dispatch.c` based on `vmaf_get_cpu_flags_x86()` (see
+scalar reference one level up (e.g. `ssim_avx2.c` ↔ `../iqa/ssim_tools.c`,
+`adm_avx2.c` ↔ `../adm.c`), dispatched at runtime from feature's
+`*_dispatch.c` via `vmaf_get_cpu_flags_x86()` (see
 [`../../x86/cpu.c`](../../x86/cpu.c)).
 
 ```text
@@ -18,57 +18,57 @@ feature/x86/
   ms_ssim_decimate_*.{c,h}  # 9-tap LPF SIMD (one of four byte-identical TUs — see parent AGENTS.md)
 ```
 
-The cross-feature plumbing (dispatch tables, the `simd_dx.h` macro
-header, the runtime CPUID gate) lives in `../` — this directory
+Cross-feature plumbing (dispatch tables, `simd_dx.h` macro
+header, runtime CPUID gate) lives in `../` — this directory
 contains only kernel TUs.
 
 ## Ground rules
 
 - **Every SIMD `.h` file MUST be self-contained.** Include every
-  standard header that names a type used in the file's own declarations
-  — do not rely on transitive includes from consumer `.c` files. In
-  particular, any header that declares a `ptrdiff_t` parameter MUST
+  standard header naming a type used in file's own declarations
+  — never rely on transitive includes from consumer `.c` files. In
+  particular, any header declaring `ptrdiff_t` parameter MUST
   include `<stddef.h>` directly. Standalone-include failures on Apple
-  Clang and Ubuntu ARM Clang are CI regressions (see PR #914 for the
-  cambi family; fixed for the motion family in the accompanying PR).
+  Clang and Ubuntu ARM Clang are CI regressions (see PR #914 for
+  cambi family; fixed for motion family in accompanying PR).
 - **Parent rules** apply in full (see [../AGENTS.md](../AGENTS.md) +
   [../../AGENTS.md](../../AGENTS.md)).
-- **Bit-exactness with the scalar reference is non-negotiable.** Every
-  AVX2 / AVX-512 kernel here mirrors a scalar TU byte-for-byte under
-  `FLT_EVAL_METHOD == 0`. The bit-exact regression tests in
+- **Bit-exactness with scalar reference is non-negotiable.** Every
+  AVX2 / AVX-512 kernel here mirrors scalar TU byte-for-byte under
+  `FLT_EVAL_METHOD == 0`. Bit-exact regression tests in
   [`../../../test/`](../../test/) (`test_*_simd.c`, migrated through
-  the [`simd_bitexact_test.h`](../../test/simd_bitexact_test.h) harness
-  per ADR-0245) catch ULP drift; pushing through them without a
-  paired scalar update is a regression.
-- **No FMA on the load-bearing reductions.** `#pragma STDC FP_CONTRACT
-  OFF` is set at TU level on every kernel that participates in
+  [`simd_bitexact_test.h`](../../test/simd_bitexact_test.h) harness
+  per ADR-0245) catch ULP drift; pushing through them without
+  paired scalar update is regression.
+- **No FMA on load-bearing reductions.** `#pragma STDC FP_CONTRACT
+  OFF` set at TU level on every kernel participating in
   ADR-0138 (`iqa_convolve` widen-then-add) or ADR-0139 (SSIM
-  per-lane scalar-double accumulate). The compiler's default
-  `-ffp-contract=fast` would silently fuse `a + b * c` and break
+  per-lane scalar-double accumulate). Compiler's default
+  `-ffp-contract=fast` would silently fuse `a + b * c`, break
   bit-identity vs scalar.
 - **Exception: SSIMULACRA 2 `picture_to_linear_rgb` colour matrix
-  is unified ON FMA across all implementations** (ADR-0891). The
-  AVX2 / AVX-512 main loops use `_mm256_fmadd_ps` / `_mm512_fmadd_ps`
-  and the scalar tails + the `test_ssimulacra2_simd.c` reference
-  use `fmaf()`. Reason: under icx + `-mfma`, the prior explicit
-  `_mm256_add_ps(_, _mm256_mul_ps(_, _))` pattern was being
+  is unified ON FMA across all implementations** (ADR-0891). AVX2 /
+  AVX-512 main loops use `_mm256_fmadd_ps` / `_mm512_fmadd_ps`;
+  scalar tails + `test_ssimulacra2_simd.c` reference
+  use `fmaf()`. Reason: under icx + `-mfma`, prior explicit
+  `_mm256_add_ps(_, _mm256_mul_ps(_, _))` pattern was
   auto-fused to FMA despite `-fp-model=precise`, while gcc kept
-  it as separate mul+add; unifying on FMA on both sides is the
-  cross-compiler bit-exact pairing. The left-to-right
-  associativity of `G = Yn + cb_g*Un + cr_g*Vn` is preserved by
+  it as separate mul+add; unifying on FMA on both sides =
+  cross-compiler bit-exact pairing. Left-to-right
+  associativity of `G = Yn + cb_g*Un + cr_g*Vn` preserved by
   chaining two FMAs (`G = fmaf(cb_g, Un, Yn);
-  G = fmaf(cr_g, Vn, G);`). Do NOT revert to separate mul+add
-  on rebase — the test will fail under icx.
+  G = fmaf(cr_g, Vn, G);`). Never revert to separate mul+add
+  on rebase — test fails under icx.
 - **Reserved-identifier hygiene** (ADR-0148): no leading-underscore
-  names. The IQA tree underwent a sweeping `_iqa_*` →
+  names. IQA tree underwent sweeping `_iqa_*` →
   `iqa_*` / `_kernel` → `iqa_kernel` / `_ssim_int` →
-  `ssim_int` rename; do not reintroduce the old spellings on
+  `ssim_int` rename; never reintroduce old spellings on
   rebase.
 
 ## Twin-update rules
 
-These TUs come in twin-bundles. A change to one half **must** ship
-with the matching change to the other halves in the **same PR**:
+These TUs come in twin-bundles. Change to one half **must** ship
+with matching change to other halves in **same PR**:
 
 | Group | TUs that move in lockstep |
 | --- | --- |
@@ -86,71 +86,71 @@ with the matching change to the other halves in the **same PR**:
 | **Motion v2 NEON / AVX2 divergence** (ADR-0145) | `motion_v2_avx2.c` (currently uses `_mm256_srlv_epi64` *logical*) is **knowingly out-of-spec** vs scalar; `../arm64/motion_v2_neon.c` matches scalar via arithmetic shift. Do NOT port the AVX2 logical pattern to NEON. The AVX2 audit is a separate batch. |
 | **Speed_chroma covariance-sum SIMD dispatch** (upstream 30f472b14, 2026-06-03) | `speed_avx2.c` + `speed_avx512.c` + scalar `compute_cov_kernel_scalar` in `../speed.c`. The three kernels share the `compute_cov_kernel_fn` typedef declared in `speed.c` and dispatched via `SpeedState::compute_cov_kernel` (set in `speed_init`). Any change to the kernel signature or the `SpeedState` struct must propagate to all three. Tolerance contract: 1e-9 relative (not byte-exact) due to FMA rounding; tested in `../../test/test_speed_simd.c`. **No NEON path yet** — the scalar kernel is always selected on non-x86 hosts. |
 
-The complete invariants live in [../AGENTS.md
-§"Rebase-sensitive invariants"](../AGENTS.md); this table is the
+Complete invariants live in [../AGENTS.md
+§"Rebase-sensitive invariants"](../AGENTS.md); this table is
 **index** of which file groups move together.
 
 ## Integer ADM declaration cleanup (2026-09-08)
 
-Keep the AVX2 and AVX-512 CM/CSF band descriptors and first-row threshold
-aliases read-only locally. Their pointed-to output buffers remain writable;
-this does not change the `AdmBuffer *` dispatch ABI. Scalar-tail temporaries
+Keep AVX2 and AVX-512 CM/CSF band descriptors and first-row threshold
+aliases read-only locally. Pointed-to output buffers remain writable;
+this does not change `AdmBuffer *` dispatch ABI. Scalar-tail temporaries
 and row accumulators belong to their existing inner scopes. Preserve every
 integer shift, float/double promotion, reduction order and prefetch distance;
 const qualification is not permission to change numerical expressions.
-Same-ISA old/new validation is described in
-[the cleanup digest](../../../../docs/research/2042-adm-simd-native-lint-2026-09-08.md).
+Same-ISA old/new validation described in
+[cleanup digest](../../../../docs/research/2042-adm-simd-native-lint-2026-09-08.md).
 
 ## simd_dx macros (ADR-0140)
 
 [`../simd_dx.h`](../simd_dx.h) is fork-internal. AVX2 / AVX-512 paths
 in this directory consume `SIMD_WIDEN_ADD_F32_F64_AVX2` /
 `SIMD_WIDEN_ADD_F32_F64_AVX512`, `SIMD_ALIGNED_F32_BUF_*`,
-`SIMD_LANES_*` to encode the ADR-0138 / 0139 patterns by
-construction. Macro names are ISA-suffixed on purpose; do not
-collapse them into cross-ISA aliases — the fork's SIMD policy
+`SIMD_LANES_*` to encode ADR-0138 / 0139 patterns by
+construction. Macro names are ISA-suffixed on purpose; never
+collapse them into cross-ISA aliases — fork's SIMD policy
 rules out Highway / simde / xsimd (user memory
 `feedback_simd_dx_scope.md`).
 
 ## Adding a new AVX2 / AVX-512 TU
 
 Use [`/add-simd-path`](../../../../.claude/skills/add-simd-path/SKILL.md).
-The skill scaffolds:
+Skill scaffolds:
 
-1. The TU + header, with `#pragma STDC FP_CONTRACT OFF` at the
-   top and the appropriate `#include "../simd_dx.h"`.
-2. The dispatch entry in the feature's `*_dispatch.c` so
-   `vmaf_get_cpu_flags_x86()` selects the new path.
-3. A bit-exact regression test under `../../test/test_<feature>_simd.c`
-   using the [`simd_bitexact_test.h`](../../test/simd_bitexact_test.h)
+1. TU + header, with `#pragma STDC FP_CONTRACT OFF` at
+   top and appropriate `#include "../simd_dx.h"`.
+2. Dispatch entry in feature's `*_dispatch.c` so
+   `vmaf_get_cpu_flags_x86()` selects new path.
+3. Bit-exact regression test under `../../test/test_<feature>_simd.c`
+   using [`simd_bitexact_test.h`](../../test/simd_bitexact_test.h)
    harness (ADR-0245).
 
 ## Upstream-sync notes
 
-- Every TU in this directory carries a Netflix copyright header
+- Every TU in this directory carries Netflix copyright header
   (`Copyright 2016-202x Netflix, Inc.`) — these files are
-  upstream-mirror at the structural level even though several
+  upstream-mirror at structural level even though several
   carry fork-only refactors (ADR-0146 helper splits in
   `vif_statistic_avx2.c`; ADR-0143 `static` + `ptrdiff_t` in
   `convolve_avx2.c`).
-- On `/sync-upstream` or `/port-upstream-commit`: if a Netflix
-  patch touches any TU in this directory, walk the corresponding
-  twin in `../arm64/` + the scalar reference + the SIMD-tail
+- On `/sync-upstream` or `/port-upstream-commit`: if Netflix
+  patch touches any TU in this directory, walk corresponding
+  twin in `../arm64/` + scalar reference + SIMD-tail
   reduction helper (`../iqa/ssim_accumulate_lane.h` for SSIM,
-  `../iqa/convolve.c` for convolve) before merging. The cross-
+  `../iqa/convolve.c` for convolve) before merging. Cross-
   backend parity gate at `places=4`
   ([`scripts/ci/cross_backend_parity_gate.py`](../../../../scripts/ci/cross_backend_parity_gate.py),
-  ADR-0214) catches scalar↔SIMD drift but only after a full run.
-- VIF kernelscale stays on the precomputed `vif_filter1d_table_s`
+  ADR-0214) catches scalar↔SIMD drift but only after full run.
+- VIF kernelscale stays on precomputed `vif_filter1d_table_s`
   flow ([Research-0024 Strategy E](../../../../docs/research/0024-vif-upstream-divergence.md)).
-  Do **not** port Netflix `4ad6e0ea` / `8c645ce3` runtime helpers
-  verbatim — they lose the bit-exact contract that ADR-0138 /
+  Never port Netflix `4ad6e0ea` / `8c645ce3` runtime helpers
+  verbatim — they lose bit-exact contract that ADR-0138 /
   0139 / 0142 / 0143 froze.
 
 ## Governing ADRs
 
-See [../AGENTS.md §Governing ADRs](../AGENTS.md) for the full list.
-The ones that carve invariants on this directory specifically:
+See [../AGENTS.md §Governing ADRs](../AGENTS.md) for full list.
+Ones that carve invariants on this directory specifically:
 
 - [ADR-0125](../../../../docs/adr/0125-ms-ssim-decimate-simd.md) —
   MS-SSIM decimate separable SIMD.
@@ -184,9 +184,9 @@ The ones that carve invariants on this directory specifically:
 `integer_ssim_avx2.c` exports `integer_ssim_accumulate_row_avx2` (8bpc)
 and `integer_ssim_accumulate_row_16_avx2` (16bpc), dispatched from
 `integer_ssim.c::init()` via function pointers in `IntegerSsimState`.
-The layout of `integer_ssim_moments_t` (six consecutive `int64_t` fields
-in the same order as `ssim_moments`) is a cross-TU invariant: changing
-field order or inserting padding breaks the cast in `calc_ssim()`.
+Layout of `integer_ssim_moments_t` (six consecutive `int64_t` fields
+in same order as `ssim_moments`) = cross-TU invariant: changing
+field order or inserting padding breaks cast in `calc_ssim()`.
 Any upstream change to `ssim_moments` in `integer_ssim.c` must be
 mirrored in `integer_ssim_avx2.h`.
 
@@ -194,62 +194,62 @@ mirrored in `integer_ssim_avx2.h`.
   LLVM IR diff harness. **Rebase-sensitive invariant**: any compiler
   bump (`dev/Containerfile` clang version, GitHub Actions runner image,
   `.github/workflows/*.yml` clang install lines) MUST be accompanied by
-  a local `make ir-diff` run. If the snapshots under
-  `testdata/ir-snapshots/` drift, do not regenerate them blindly —
-  investigate which intrinsic / FMA / FP-contract behaviour changed
-  and confirm it does not break the bit-exact contract that ADRs 0125
-  / 0138 / 0139 froze. Only after confirming intent is preserved (or
-  the ADRs are updated) is `make ir-diff-update` appropriate, with
-  justification in the commit message.
+  local `make ir-diff` run. If snapshots under
+  `testdata/ir-snapshots/` drift, never regenerate them blindly —
+  investigate which intrinsic / FMA / FP-contract behaviour changed,
+  confirm it does not break bit-exact contract that ADRs 0125
+  / 0138 / 0139 froze. Only after confirming intent preserved (or
+  ADRs updated) is `make ir-diff-update` appropriate, with
+  justification in commit message.
 
 ## Integer VIF AVX2 private stages (Research-2045)
 
-`vif_avx2.c` keeps the original packed 64-bit mean additions over 32-bit
+`vif_avx2.c` keeps original packed 64-bit mean additions over 32-bit
 products, distinct 8/16-bit moment packing and shifts, tap order, scalar tails
-and final copy/padding order. Do not merge those distinct lane layouts during
-rebases. Keep the GCC-only no-unroll constraint on the 8-bit second-moment tap loop;
-removing it reproduced full unrolling/spills and a repeatable slowdown. This
-constraint does not change arithmetic or apply to the other compilers.
-The four exported statistic/subsample signatures remain in
+and final copy/padding order. Never merge those distinct lane layouts during
+rebases. Keep GCC-only no-unroll constraint on 8-bit second-moment tap loop;
+removing it reproduced full unrolling/spills and repeatable slowdown. This
+constraint does not change arithmetic or apply to other compilers.
+Four exported statistic/subsample signatures remain in
 `vif_avx2.h`; statistic callbacks must continue to match `VifState` in
-`integer_vif.c`. The two precise Cppcheck const-parameter annotations preserve
-that shared function-pointer contract. Re-run the native scalar/AVX2 stage
+`integer_vif.c`. Two precise Cppcheck const-parameter annotations preserve
+that shared function-pointer contract. Re-run native scalar/AVX2 stage
 test and same-ISA old/new numerical comparisons after changing these stages.
 See [Research-2045](../../../../docs/research/2045-integer-vif-avx2-stages-2026-09-08.md).
 
 ## Integer VIF AVX-512 stages (Research-2046)
 
-Keep the private forced-inline statistic/subsample stages' per-accumulator tap
-order, lane permutations, rounding constants and scalar tails. Preserve the
+Keep private forced-inline statistic/subsample stages' per-accumulator tap
+order, lane permutations, rounding constants and scalar tails. Preserve
 fused two-channel horizontal mean and three-channel energy tap loops and their
-GCC unroll bounds; separate channel loops caused a measured 8-bit regression.
-The two
+GCC unroll bounds; separate channel loops caused measured 8-bit regression.
+Two
 ADR-0503 8-bit subsample block helpers remain noinline/noclone; their call
-boundaries control register pressure. The statistic callbacks keep the mutable
+boundaries control register pressure. Statistic callbacks keep mutable
 `VifPublicState *` type required by `VifState` dispatch, despite only reading
 that struct and writing through its buffer pointers. Run
 `test_integer_vif_avx512_stages` after rebasing these kernels; preserve all five
-vertical planes and bit-exact numerator/denominator checks. The 8-bit vertical
-vector extent is rounded down to 16 samples but loads/stores 32 at a time;
+vertical planes and bit-exact numerator/denominator checks. 8-bit vertical
+vector extent rounded down to 16 samples but loads/stores 32 at time;
 production scratch padding owns those extra lanes, while scalar tails overwrite
 valid residual pixels. See [Research-2046](../../../../docs/research/2046-integer-vif-avx512-stage-lint.md).
 
 ## Wide vector register pressure is a Windows correctness constraint (ADR-1254)
 
-A kernel here must not hold enough `__m512` / `__m256` values live to make the
-compiler spill one to the stack. gcc's MinGW target allocates 32/64-byte-aligned
-spill slots addressed off `%rsp`, but the MS x64 ABI guarantees only 16-byte
-alignment and its unwind contract prevents the frame realignment gcc performs on
-SysV — so a spilled `ymm` / `zmm` is a general-protection fault on most call
-paths, surfacing as an access violation on `0xFFFFFFFFFFFFFFFF`.
+A kernel here must not hold enough `__m512` / `__m256` values live to make
+compiler spill one to stack. gcc's MinGW target allocates 32/64-byte-aligned
+spill slots addressed off `%rsp`. MS x64 ABI guarantees only 16-byte
+alignment; its unwind contract prevents frame realignment gcc performs on
+SysV. Spilled `ymm` / `zmm` = general-protection fault on most call
+paths, surfacing as access violation on `0xFFFFFFFFFFFFFFFF`.
 
-Concretely: `ssim_accumulate_avx512` rebuilds its broadcast constants per block
-instead of hoisting them across the loop. Keep it that way; the same applies to
-any kernel that gains vector-valued loop invariants.
+Concretely: `ssim_accumulate_avx512` rebuilds broadcast constants per block
+instead of hoisting them across loop. Keep it that way; same applies to
+any kernel gaining vector-valued loop invariants.
 
-Review cannot see this — it is a register-allocator decision, and CI's Windows
-runners have no AVX-512, so the test leg never executes these kernels.
-`scripts/ci/check-win64-stack-alignment.py` reads the emitted code on the
-`Windows MinGW64` lane instead. When it fires, reduce pressure in the named
+Review cannot see this — it is register-allocator decision, and CI's Windows
+runners have no AVX-512, so test leg never executes these kernels.
+`scripts/ci/check-win64-stack-alignment.py` reads emitted code on
+`Windows MinGW64` lane instead. When it fires, reduce pressure in named
 function rather than suppressing it. See
 [Research-2061](../../../../docs/research/2061-win64-cannot-realign-the-stack.md).

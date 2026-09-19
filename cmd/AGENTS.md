@@ -1,8 +1,7 @@
 # AGENTS.md — cmd/
 
-The seven Go binaries. Per-binary guides live next to each `main.go`
-(`cmd/vmafx-*/AGENTS.md`); this file holds the invariants that span all of
-them.
+7 Go binaries. Per-binary guides next to each `main.go`
+(`cmd/vmafx-*/AGENTS.md`). Invariants spanning all binaries below.
 
 | Binary             | Shape                                        | Composition                                                                   |
 |--------------------|----------------------------------------------|-------------------------------------------------------------------------------|
@@ -16,34 +15,31 @@ them.
 
 ## Rebase-sensitive invariants
 
-1. **Every binary initialises OpenTelemetry through the shared helper,
-   `internal/app/bootstrap`, and nowhere else** (ADR-0782, ADR-1119).
-   `bootstrap.Base` carries golusoris's `otel.Module` (OTLP/gRPC exporter,
-   W3C propagators, fx `OnStop` flush, silent no-op without an endpoint)
-   and the `withServiceIdentity` decorator that supplies `service.version`
-   from `pkg/version` and honours `OTEL_SERVICE_NAME`. Do not call
+1. **Every binary inits OpenTelemetry via `internal/app/bootstrap` only**
+   (ADR-0782, ADR-1119). `bootstrap.Base` carries golusoris `otel.Module`
+   (OTLP/gRPC exporter, W3C propagators, fx `OnStop` flush, silent no-op
+   without endpoint) and `withServiceIdentity` (`service.version` from
+   `pkg/version`, honours `OTEL_SERVICE_NAME`). Do not call
    `pkg/observability.InitOTel`, `otel.New`, or `sdktrace.NewTracerProvider`
-   from a `main` package — two providers cannot both be the global, and a
-   second init path is exactly the boilerplate ADR-1119 removed. Each
-   binary's `TestOTelWiredThroughBootstrap` locks this in (no-op providers
-   without an endpoint, `service.name` = binary name, `service.version` =
-   `pkg/version`).
+   from `main` package: two providers cannot both be global; second init
+   path = boilerplate ADR-1119 removed. Binary
+   `TestOTelWiredThroughBootstrap` locks this in (no-op providers without
+   endpoint, `service.name` = binary name, `service.version` = `pkg/version`).
 
-2. **HTTP surfaces are traced through `bootstrap`, not per binary.** A
-   root that wires `golusoris.HTTP` puts `bootstrap.HTTPTracing` next to it
-   (server, controller); a hand-rolled `*http.Server` wraps its handler with
-   `bootstrap.TraceHTTPHandler` as the outermost layer (mcp). The span name
-   (`<METHOD> <path>`, Swagger subtree collapsed) and the probe/scrape
-   filter (`/healthz`, `/readyz`, `/livez`, `/startupz`, `/metrics`) are
-   defined once there.
+2. **HTTP surfaces traced via `bootstrap`, not per binary.** Root wiring
+   `golusoris.HTTP` puts `bootstrap.HTTPTracing` next to it (server,
+   controller). Hand-rolled `*http.Server` wraps handler with
+   `bootstrap.TraceHTTPHandler` outermost (mcp). Span name (`<METHOD> <path>`,
+   Swagger subtree collapsed) and probe/scrape filter (`/healthz`, `/readyz`,
+   `/livez`, `/startupz`, `/metrics`) defined once there.
 
-3. **gRPC spans come from golusoris.** Servers get the `otelgrpc` stats
-   handler from `grpc.Module`; clients dial through `grpc.NewConnFactory()`
-   (operator) or attach `otelgrpc.NewClientHandler()` (`pkg/score`) so the
-   `traceparent` crosses every hop (ADR-1095). Never add a bare
-   `grpc.NewClient` / `grpc.DialContext` in a binary without the handler.
+3. **gRPC spans come from golusoris.** Servers get `otelgrpc` stats handler
+   from `grpc.Module`; clients dial via `grpc.NewConnFactory()` (operator) or
+   attach `otelgrpc.NewClientHandler()` (`pkg/score`) -> `traceparent` crosses
+   every hop (ADR-1095). Never add bare `grpc.NewClient` / `grpc.DialContext`
+   in binary without handler.
 
-4. **Application spans use the ADR-0782 names from
+4. **Application spans use ADR-0782 names from
    `pkg/observability/otel_instruments.go`** (`observability.StartSpan` /
    `EndSpan`); do not invent names inline. Per-binary job spans:
    `vmafx.job.submit` (controller), `vmafx.scoring` /
@@ -52,14 +48,14 @@ them.
    (tune, `withGolusoris`), `vmafx.onnx.inference` (tune via `pkg/ai`).
 
 5. **`vmafx-ort-runner` stays OTel-free** (ADR-1134, its AGENTS.md #5).
-   The inference span belongs to the caller (`pkg/ai.Registry.Infer`); do
-   not "fix" the runner by adding an init to it.
+   Inference span belongs to caller (`pkg/ai.Registry.Infer`); do not "fix"
+   runner by adding init to it.
 
 6. **`VMAFX_` env prefix everywhere** (ADR-1119 §2): every root replaces
-   `config.Options` with `EnvPrefix: "VMAFX_"`, so the OTel knobs are
-   `VMAFX_OTEL_*` (`otel.*` koanf keys) on every binary; the standard
+   `config.Options` with `EnvPrefix: "VMAFX_"`. OTel knobs = `VMAFX_OTEL_*`
+   (`otel.*` koanf keys) on every binary; standard
    `OTEL_EXPORTER_OTLP_*_ENDPOINT` / `OTEL_SDK_DISABLED` /
-   `OTEL_SERVICE_NAME` variables work in addition. The operator guide is
+   `OTEL_SERVICE_NAME` variables work in addition. Operator guide:
    [docs/development/observability.md](../docs/development/observability.md).
 
 ## Test requirements
@@ -71,5 +67,5 @@ CGO_LDFLAGS=-L$PWD/core/build-cpu/src LD_LIBRARY_PATH=$PWD/core/build-cpu/src \
   go test ./cmd/vmafx-server/ ./cmd/vmafx-controller/ ./cmd/vmafx-node/ ./cmd/vmafx-mcp/
 ```
 
-Span tests install a process-global recorder via `internal/oteltest`;
-they must not use `t.Parallel()`.
+Span tests install process-global recorder via `internal/oteltest`;
+must not use `t.Parallel()`.

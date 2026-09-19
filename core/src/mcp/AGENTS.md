@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD025 -->
 # AGENTS.md — core/src/mcp
 
-Orientation for agents working on the embedded MCP server.
+Orientation for agents working on embedded MCP server.
 Parent: [../../AGENTS.md](../../AGENTS.md).
 
 ## Scope
@@ -24,68 +24,68 @@ Smoke test: [`../../test/test_mcp_smoke.c`](../../test/test_mcp_smoke.c).
 ## Backend status
 
 **Live** (T5-2b + v2 + v3, [ADR-0209](../../../docs/adr/0209-mcp-embedded-scaffold.md)).
-All three transports are real implementations: stdio,
-`AF_UNIX` UDS (mode 0700, single client at a time), and
+All three transports = real implementations: stdio,
+`AF_UNIX` UDS (mode 0700, one client at a time), and
 loopback-only HTTP/1.1 + SSE (fork-owned plain POSIX sockets;
-mongoose was rejected on license grounds — see invariant #6
-below). Every public entry point still validates its arguments
-first (`-EINVAL` on NULLs / negative fds / NULL paths); the
-smoke test pins both the input-validation contract and the
+mongoose rejected on license grounds — see invariant #6
+below). Every public entry point still validates arguments
+first (`-EINVAL` on NULLs / negative fds / NULL paths); smoke
+test pins both input-validation contract and
 live round-trip behaviour.
 
 ## Ground rules
 
 - **Parent rules** apply (see [../../AGENTS.md](../../AGENTS.md)).
-- **Wholly-new fork file** — uses the dual Lusoris/Claude (Anthropic)
+- **Wholly-new fork file** — uses dual Lusoris/Claude (Anthropic)
   copyright header per [ADR-0025](../../../docs/adr/0025-copyright-handling-dual-notice.md).
 - **Audit-first contract** ([ADR-0209](../../../docs/adr/0209-mcp-embedded-scaffold.md)):
-  every public entry point validates its arguments **before**
-  returning `-ENOSYS`. The validation must survive the runtime PR
-  — the smoke tests for `_init`, `_start_uds`, `_start_stdio` rely
-  on early `-EINVAL` even after the runtime arrives.
+  every public entry point validates arguments **before**
+  returning `-ENOSYS`. Validation must survive runtime PR
+  — smoke tests for `_init`, `_start_uds`, `_start_stdio` rely
+  on early `-EINVAL` even after runtime arrives.
 
 ## Rebase-sensitive invariants
 
-- **The smoke test pins the contract.**
+- **Smoke test pins the contract.**
   [`../../test/test_mcp_smoke.c`](../../test/test_mcp_smoke.c) has
   12 sub-tests asserting per-entry-point return values
   (`-EINVAL` on NULL args, `-ENOSYS` on valid args). Any rebase or
-  refactor that "succeeds" the scaffold (e.g. accidentally enables
-  a code path) without flipping the smoke expectations breaks the
-  rebase story for the runtime PR. **The runtime PR (T5-2b) is the
-  ONLY PR allowed to update the smoke expectations.**
-- **`enable_mcp` umbrella flag defaults `false`**. The silent-flip
-  risk is the same as ADR-0175's Vulkan precedent. Do not flip it
-  to `true` until all three transport bodies are stable and
+  refactor "succeeding" scaffold (e.g. accidentally enabling
+  code path) without flipping smoke expectations breaks
+  rebase story for runtime PR. **Runtime PR (T5-2b) is
+  ONLY PR allowed to update smoke expectations.**
+- **`enable_mcp` umbrella flag defaults `false`**. Silent-flip
+  risk = same as ADR-0175's Vulkan precedent. Never flip it
+  to `true` until all three transport bodies stable and
   reviewed.
-- **Per-build-flag availability**. The umbrella `enable_mcp` flag
-  flips `HAVE_MCP`; per-transport sub-flags flip the matching
+- **Per-build-flag availability**. Umbrella `enable_mcp` flag
+  flips `HAVE_MCP`; per-transport sub-flags flip matching
   `HAVE_MCP_*` macros (`HAVE_MCP_SSE`, `HAVE_MCP_UDS`,
-  `HAVE_MCP_STDIO`). The header surface is identical either way;
-  only the runtime PR distinguishes built-without (returns
+  `HAVE_MCP_STDIO`). Header surface identical either way;
+  only runtime PR distinguishes built-without (returns
   `-ENOSYS` forever) vs built-with (returns `-ENOSYS` only until
-  the runtime is wired). **On rebase**: keep the per-transport
-  bitmask fold-pattern in `vmaf_mcp_transport_available` — the
-  preprocessor-fed arithmetic compiles to a constant load +
-  bittest at every call site, which avoids per-arm `#ifdef`
+  runtime wired). **On rebase**: keep per-transport
+  bitmask fold-pattern in `vmaf_mcp_transport_available` —
+  preprocessor-fed arithmetic compiles to constant load +
+  bittest at every call site, avoiding per-arm `#ifdef`
   branches that trip clang-tidy
   `readability-function-cognitive-complexity` and JPL-P10 rule 4.
 - **NULL-argument validation comes first.** Every public entry
   point's body reads `if (!arg_a || arg_b < 0) return -EINVAL;`,
-  then any future runtime body, then a fall-through
-  `return -ENOSYS;`. Do not invert this order on rebase — the
-  smoke contract depends on it.
+  then any future runtime body, then fall-through
+  `return -ENOSYS;`. Never invert this order on rebase — smoke
+  contract depends on it.
 
 ## Power-of-10 reservations for the runtime PR
 
-Documented for forward-looking discipline (these are not enforced
-by code yet — the runtime PR makes them load-bearing):
+Documented for forward-looking discipline (not enforced
+by code yet — runtime PR makes them load-bearing):
 
-- **No alloc on the measurement-thread hot path** (rule 3). The
-  runtime PR uses a pre-sized SPSC ring buffer drained at frame
-  boundaries; the measurement thread never calls `malloc`.
-- **Bounded drain loops** (rule 2). Every loop in the future
-  runtime body has a static upper bound on iteration count.
+- **No alloc on measurement-thread hot path** (rule 3). Runtime
+  PR uses pre-sized SPSC ring buffer drained at frame
+  boundaries; measurement thread never calls `malloc`.
+- **Bounded drain loops** (rule 2). Every loop in future
+  runtime body has static upper bound on iteration count.
 
 ## Governing ADRs
 
@@ -101,57 +101,57 @@ Fork-local subtree. Read this before editing any TU under
 
 ## Rebase-sensitive invariants (ADR-0108)
 
-1. **The entire subtree is fork-local.** Netflix/vmaf upstream has
-   no embedded MCP surface. If a future upstream sync introduces
-   a colliding `mcp/` directory, expect a port-only resolution —
+1. **Entire subtree is fork-local.** Netflix/vmaf upstream has
+   no embedded MCP surface. If future upstream sync introduces
+   colliding `mcp/` directory, expect port-only resolution —
    names collide, semantics may not.
 2. **Public ABI lives in `core/include/libvmaf/libvmaf_mcp.h`**;
-   `mcp_internal.h` is implementation-only. ABI breaks require an
+   `mcp_internal.h` is implementation-only. ABI breaks require
    ADR per CLAUDE §12 r8.
-3. **UDS socket file is mode 0700** (owner-only). The `chmod`
-   happens in `vmaf_mcp_start_uds` after `bind` and is a
-   load-bearing security invariant per ADR-0128. Do NOT relax it.
-4. **`compute_vmaf` uses a per-call ephemeral `VmafContext`.** Do
-   NOT rewire it to reuse `server->ctx`: `vmaf_score_pooled`
-   commits the model destructively to the context, which would
-   corrupt the host's main measurement run. The tool accepts YUV420p
-   8/10/12/16-bit inputs only; adding 4:2:2 / 4:4:4 requires a
-   `pixel_format` schema extension, docs, and tests in the same PR.
-5. **Vendored cJSON v1.7.18 is verbatim** under MIT. Do NOT patch
+3. **UDS socket file is mode 0700** (owner-only). `chmod`
+   happens in `vmaf_mcp_start_uds` after `bind`, is
+   load-bearing security invariant per ADR-0128. Never relax it.
+4. **`compute_vmaf` uses per-call ephemeral `VmafContext`.** Never
+   rewire it to reuse `server->ctx`: `vmaf_score_pooled`
+   commits model destructively to context — would
+   corrupt host's main measurement run. Tool accepts YUV420p
+   8/10/12/16-bit inputs only; adding 4:2:2 / 4:4:4 requires
+   `pixel_format` schema extension, docs, and tests in same PR.
+5. **Vendored cJSON v1.7.18 is verbatim** under MIT. Never patch
    it locally — refresh by re-downloading from upstream
-   `DaveGamble/cJSON` and update `3rdparty/cJSON/LICENSE` in the
+   `DaveGamble/cJSON`, update `3rdparty/cJSON/LICENSE` in
    same commit.
 6. **SSE transport is fork-owned plain POSIX sockets — NOT mongoose.**
-   The original v3 plan to vendor cesanta/mongoose was reversed
+   Original v3 plan to vendor cesanta/mongoose was reversed
    because mongoose 7.18 is GPL-2.0-only OR commercial,
-   incompatible with the fork's BSD-3-Clause-Plus-Patent license
-   (verified 2026-05-09). Do NOT re-introduce mongoose (or any
-   GPL-licensed HTTP library) without first amending CLAUDE §1 and
-   adding a separate license-compatibility ADR. The minimal
+   incompatible with fork's BSD-3-Clause-Plus-Patent license
+   (verified 2026-05-09). Never re-introduce mongoose (or any
+   GPL-licensed HTTP library) without first amending CLAUDE §1,
+   adding separate license-compatibility ADR. Minimal
    HTTP/1.1 + SSE surface lives in `transport_sse.c` (~500 LOC).
 7. **SSE listener-shutdown uses `shutdown(SHUT_RDWR)` before
-   `close()`.** Plain `close()` of an AF_INET listening fd from
-   another thread does NOT unblock `accept()` on Linux. The UDS
-   transport (AF_UNIX) does not need this; the SSE transport does.
-   The smoke test `test_sse_event_stream` regresses if the
-   shutdown call is removed (test hangs waiting for join).
-8. **SSE binds `INADDR_LOOPBACK` only.** Do NOT switch to
-   `INADDR_ANY` without an ADR + auth design — v3 explicitly ships
-   without CORS/Bearer/per-session auth on the assumption of a
+   `close()`.** Plain `close()` of AF_INET listening fd from
+   another thread does NOT unblock `accept()` on Linux. UDS
+   transport (AF_UNIX) does not need this; SSE transport does.
+   Smoke test `test_sse_event_stream` regresses if
+   shutdown call removed (test hangs waiting for join).
+8. **SSE binds `INADDR_LOOPBACK` only.** Never switch to
+   `INADDR_ANY` without ADR + auth design — v3 explicitly ships
+   without CORS/Bearer/per-session auth on assumption of
    same-host trust boundary.
 9. **`sse_emit_event` and `sse_extract_id` are reserved for v4
-   broadcast.** Marked `__attribute__((unused))` in v3 to keep the
-   build warning-free; v4 will route POST replies onto subscribed
+   broadcast.** Marked `__attribute__((unused))` in v3 to keep
+   build warning-free; v4 routes POST replies onto subscribed
    GET streams via these helpers.
-10. **Every `read(2)` on a blocking fd must retry on `EINTR`.** The
-    primary helpers (`read_line`, `sse_read_n`, `read_exact`) and
-    the over-length line drain loops in `transport_stdio.c` and
-    `transport_uds.c` all follow the pattern: `if (r < 0 && errno
+10. **Every `read(2)` on blocking fd must retry on `EINTR`.**
+    Primary helpers (`read_line`, `sse_read_n`, `read_exact`) and
+    over-length line drain loops in `transport_stdio.c` and
+    `transport_uds.c` all follow pattern: `if (r < 0 && errno
     == EINTR) continue;` then break on hard error / EOF / `\n`.
-    Do NOT collapse this to `if (r <= 0) break;` — a stray signal
-    (SIGCHLD, SIGURG, debugger attach) will then desynchronise the
-    stream framing on the very next request. Same for `write(2)` —
-    every fork-added write site loops `off < len` and retries on
+    Never collapse this to `if (r <= 0) break;` — stray signal
+    (SIGCHLD, SIGURG, debugger attach) then desynchronises
+    stream framing on very next request. Same for `write(2)` —
+    every fork-added write site loops `off < len`, retries on
     `EINTR`. ADR-0872.
 
 ## Build flags
@@ -167,11 +167,11 @@ meson setup build -Denable_mcp=true \
 
 ## Invariant: pdjson depth limit (ADR-1061)
 
-`PDJSON_STACK_MAX` is defined to `512` at the top of
-`core/src/pdjson.c` (before the `#ifdef` guard). This definition
-must survive any future vendor sync. If you replace `pdjson.c` with
-a newer upstream release, check that `PDJSON_STACK_MAX` is either
-defined by the build system or re-added at the top of the file.
+`PDJSON_STACK_MAX` is defined to `512` at top of
+`core/src/pdjson.c` (before `#ifdef` guard). This definition
+must survive any future vendor sync. If replacing `pdjson.c` with
+newer upstream release, check `PDJSON_STACK_MAX` either
+defined by build system or re-added at top of file.
 512 levels is well beyond any VMAF model or MCP message depth.
 
 ## Invariant: cJSON banned-function-free (ADR-0683 / ADR-1061)
@@ -184,9 +184,9 @@ Verify with:
 grep -n '\bsprintf\b\|\bstrcpy\b\|\bstrcat\b' core/src/mcp/3rdparty/cJSON/cJSON.c
 ```
 
-The expected output is empty (only comments mentioning these names
-are allowed). A future cJSON version sync must re-validate and
-re-apply the replacements documented in ADR-0683 / ADR-1061 if the
+Expected output = empty (only comments mentioning these names
+allowed). Future cJSON version sync must re-validate,
+re-apply replacements documented in ADR-0683 / ADR-1061 if
 upstream has not addressed them.
 
 ## Smoke test
@@ -195,18 +195,18 @@ upstream has not addressed them.
 build/test/test_mcp_smoke   # expects "17 tests run, 17 passed"
 ```
 
-The v3 sub-test `test_sse_event_stream` spawns the SSE server on
-an ephemeral loopback port, performs a `GET /mcp/sse` and checks
-for `Content-Type: text/event-stream`, an `event: ready` field, a
-`data:` field, and the blank-line frame terminator (per WHATWG
-SSE §9.2, accessed 2026-05-09); then performs a `POST /mcp/sse`
-with a `tools/list` JSON-RPC request and verifies the inline
-response contains `list_features`. The v2 sub-tests
+v3 sub-test `test_sse_event_stream` spawns SSE server on
+ephemeral loopback port, performs `GET /mcp/sse`, checks
+for `Content-Type: text/event-stream`, `event: ready` field,
+`data:` field, and blank-line frame terminator (per WHATWG
+SSE §9.2, accessed 2026-05-09); then performs `POST /mcp/sse`
+with `tools/list` JSON-RPC request, verifies inline
+response contains `list_features`. v2 sub-tests
 `test_uds_roundtrip` and `test_compute_vmaf_real_score` remain.
 
 ## Path allowlist parity (R2-4)
 
-`compute_vmaf.c` `validate_path()` / `build_allowed_roots()` MUST keep the same
-allowlisted root set as the Python (`_allowed_roots`) and Go (`AllowedRoots`)
+`compute_vmaf.c` `validate_path()` / `build_allowed_roots()` MUST keep same
+allowlisted root set as Python (`_allowed_roots`) and Go (`AllowedRoots`)
 MCP servers; change all three together. Guarded by
 `test_mcp_compute_vmaf_allowlist.c`.

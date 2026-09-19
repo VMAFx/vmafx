@@ -1,8 +1,7 @@
 ---
 name: add-feature-extractor
-description: Scaffold a new feature extractor (e.g. a novel metric) with C source+header, registry entry, doc stub, and a smoke test. Does not produce a SIMD or GPU path — those come via /add-simd-path and /add-gpu-backend.
+description: Scaffold new feature extractor (e.g. novel metric) with C source+header, registry entry, doc stub, smoke test. Produces no SIMD or GPU path — those come via /add-simd-path and /add-gpu-backend.
 ---
-
 <!-- markdownlint-disable MD060 -->
 
 # /add-feature-extractor
@@ -24,19 +23,19 @@ description: Scaffold a new feature extractor (e.g. a novel metric) with C sourc
 
 ## Files patched
 
-- `core/src/feature/feature_extractor.c` — registry row.
-- `core/src/feature/all.c` — `#include "<name>.h"` + array entry.
-- `core/src/meson.build` — new source in the feature set.
-- `core/test/meson.build` — register test.
+- `core/src/feature/feature_extractor.c`: registry row.
+- `core/src/feature/all.c`: `#include "<name>.h"` + array entry.
+- `core/src/meson.build`: new source in feature set.
+- `core/test/meson.build`: register test.
 
 ## Template fills
 
 - Extractor struct: `extract` pointer, name, type (FR/NR), features exposed.
-- No SIMD / GPU variants wired — the feature first exists as a scalar implementation
-  and is the reference against which SIMD/GPU paths are later tested.
+- No SIMD / GPU variants wired: feature exists first as scalar reference;
+  SIMD/GPU paths tested against it later.
 
 ## Guardrails
 
-- Names collide-checked against the existing registry.
-- The smoke test must actually pass (non-NaN, finite) against the sample YUVs in
+- Names collide-checked against existing registry.
+- Smoke test must pass (non-NaN, finite) against sample YUVs in
   `python/test/resource/yuv/`.

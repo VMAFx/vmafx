@@ -2,7 +2,6 @@
 name: dev-llm-review
 description: Run a local LLM code review via vmaf-dev-llm (Ollama-backed) against a specific file. Dev-time self-review pass before PR.
 ---
-
 # /dev-llm-review
 
 ## Invocation
@@ -13,22 +12,22 @@ description: Run a local LLM code review via vmaf-dev-llm (Ollama-backed) agains
 
 ## Steps
 
-1. Verify the tool is installed: `vmaf-dev-llm --help` must exit 0.
-   If not, instruct the user to `pip install -e dev-llm` and exit.
-2. Verify Ollama is reachable: `vmaf-dev-llm check` must exit 0. If not,
-   instruct the user to `ollama serve` and pull the default model:
+1. Verify tool installed: `vmaf-dev-llm --help` must exit 0. Not installed
+   -> instruct user to `pip install -e dev-llm` -> exit, no fallback.
+2. Verify Ollama reachable: `vmaf-dev-llm check` must exit 0. Unreachable ->
+   instruct user to `ollama serve` and pull default model:
    `ollama pull qwen2.5-coder:7b`.
 3. Run `vmaf-dev-llm review --file <path>` (add `-m <model>` if provided).
-4. Print the review output verbatim. Do not rewrite findings — the user
-   should see exactly what the local model produced.
+4. Print review output verbatim. Do not rewrite findings: user sees exactly
+   what local model produced, no editorializing added on top.
 
 ## Guardrails
 
-- Never writes to the file being reviewed. Read-only.
-- Does not send file contents to any cloud service — the backend defaults
-  to local Ollama.
-- If `path` is inside `subprojects/` (vendored upstream), refuse and
-  suggest reviewing the fork's overlay instead.
+- Never writes to file being reviewed. Read-only, no side effects.
+- Does not send file contents to any cloud service: backend defaults to
+  local Ollama, stays on-machine.
+- If `path` inside `subprojects/` (vendored upstream), refuse -> suggest
+  reviewing fork overlay instead of vendored copy.
 
 ## Output format
 

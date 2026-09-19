@@ -1,7 +1,7 @@
 # AGENTS.md — core/src/feature/common
 
-Orientation for agents working on the cross-architecture helpers
-shared by feature extractors. Parent: [../AGENTS.md](../AGENTS.md).
+Orientation: cross-architecture helpers shared by feature extractors.
+Parent: [../AGENTS.md](../AGENTS.md).
 
 ## Scope
 
@@ -16,105 +16,86 @@ feature/common/
   macros.h                   # cross-toolchain FORCE_INLINE / RESTRICT / UNUSED_FUNCTION
 ```
 
-Note: the `iqa/` tree (`iqa_convolve`, `iqa_ssim_tools`) is a separate
-SSIM-specific scalar reference — do not confuse it with the
-`convolution.c` here, which handles the wider feature population
-(`float_adm`, `float_vif`, `motion`, etc.).
+`iqa/` tree (`iqa_convolve`, `iqa_ssim_tools`) = separate SSIM-specific scalar
+reference. Do not confuse with `convolution.c` here (`float_adm`, `float_vif`,
+`motion`, etc.).
 
 ## Ground rules
 
 - **Parent rules** apply (see [../AGENTS.md](../AGENTS.md) +
   [../../AGENTS.md](../../AGENTS.md)).
-- **Headers are upstream-mirror at the structural level** (Netflix
-  copyright on `macros.h`, `alignment.{c,h}`, `convolution.{c,h}`)
-  even though `convolution_avx.c` is fork-local at the surface
-  level (ADR-0143).
-- **`RESTRICT` is the project-wide spelling** for the C99 `restrict`
-  qualifier; `FORCE_INLINE` is the project-wide spelling for the
-  always-inline attribute. Both are defined in `macros.h` with MSVC
-  / GCC / Clang dispatch. Do not introduce a parallel spelling.
+- **Headers = upstream-mirror at structural level** (Netflix copyright on
+  `macros.h`, `alignment.{c,h}`, `convolution.{c,h}`). `convolution_avx.c` =
+  fork-local at surface level (ADR-0143).
+- **`RESTRICT` = project-wide spelling** for C99 `restrict` qualifier;
+  `FORCE_INLINE` = project-wide spelling for always-inline attribute. Both
+  defined in `macros.h` with MSVC / GCC / Clang dispatch. Do not introduce
+  parallel spelling.
 
 ## Rebase-sensitive invariants
 
-- **`convolution_avx.c` scanline helpers are fork-local `static`**
-  (ADR-0143). The four
-  `convolution_f32_avx_s_1d_{h,v}_scanline` helpers inside the TU
-  carry `static` linkage in the fork (upstream leaves them with
-  external linkage out of habit, but no other TU references them).
-  Strides are `ptrdiff_t` inside helpers, `int` at the public
+- **`convolution_avx.c` scanline helpers = fork-local `static`** (ADR-0143).
+  Four `convolution_f32_avx_s_1d_{h,v}_scanline` helpers inside TU carry
+  `static` linkage in fork (upstream leaves external linkage; no other TU
+  references them). Strides = `ptrdiff_t` inside helpers, `int` at public
   `convolution_f32_avx_*_s` wrappers, with `(ptrdiff_t)` casts at
-  pointer-offset multiplication sites. **On rebase**: keep the
-  fork's `static` and `ptrdiff_t` unless upstream adopts them. The
-  detailed reason lives in [../AGENTS.md
+  pointer-offset multiplication sites. **On rebase**: keep fork `static` and
+  `ptrdiff_t` unless upstream adopts them. Detail in [../AGENTS.md
   §"Generalised AVX convolve scanline helpers"](../AGENTS.md) and
   [ADR-0143](../../../../docs/adr/0143-port-netflix-f3a628b4-generalized-avx-convolve.md);
-  [`docs/rebase-notes.md` §0036](../../../../docs/rebase-notes.md)
-  carries the port history.
-
-- **`convolution_avx512.c` inherits the same invariants** (ADR-0504).
-  The four static scanline helpers (`convolution_f32_avx512_s_1d_*`)
-  and three public wrappers use `static` linkage and `ptrdiff_t`
-  strides identically to the AVX2 counterparts. Key additional
-  constraint: the project-wide allocation contract is `MAX_ALIGN == 32`,
-  so AVX-512 vertical scanlines must use `_mm512_loadu_ps` /
-  `_mm512_storeu_ps` even when the stride is a multiple of 16 floats.
-  Do not reintroduce aligned 64-byte AVX-512 memory ops unless
-  `MAX_ALIGN` and every float-buffer caller are promoted together.
-  **Results are NOT bit-identical to the AVX2 path** (wider FMA tree
-  → different rounding) — this is accepted for the float path per
-  ADR-0214.
-
+  [`docs/rebase-notes.md` §0036](../../../../docs/rebase-notes.md) carries
+  port history.
+- **`convolution_avx512.c` inherits same invariants** (ADR-0504). Four static
+  scanline helpers (`convolution_f32_avx512_s_1d_*`) and three public wrappers
+  use `static` linkage and `ptrdiff_t` strides identical to AVX2 counterparts.
+  Key constraint: project-wide allocation contract = `MAX_ALIGN == 32`,
+  so AVX-512 vertical scanlines must use `_mm512_loadu_ps` / `_mm512_storeu_ps`
+  even when stride = multiple of 16 floats. Do not reintroduce aligned 64-byte
+  AVX-512 memory ops unless `MAX_ALIGN` and every float-buffer caller
+  promoted together. **Results NOT bit-identical to AVX2 path** (wider FMA tree
+  -> different rounding) — accepted for float path per ADR-0214.
 - **Horizontal convolution bounds preserve arithmetic regions**:
-  `j_vec_end` denotes the first final scalar output. The horizontal SIMD
-  source-start count is `max(j_vec_end - radius, 0)`. Full vectors plus
-  masked final loads/stores cover only those outputs; never compute discarded
-  lanes past a row, even when a caller often pads its workspace. Keep the
-  original final scalar start and the AVX2 multiply/add versus AVX-512 FMA
-  operations. Clamp tiny-width scalar borders to the plane. Normal, squared
-  and cross-product wrappers share their ISA's horizontal pass. Preserve
-  `test_convolution_horizontal` and its tight final-row allocation contract.
-  See [boundary investigation](../../../../docs/research/convolution-horizontal-boundary-2026-09-08.md).
-
-- **`MAX_FWIDTH_AVX_CONV` in `convolution.h`** sizes the
-  `__m256 f[]` filter-tap buffer in `convolution_avx.c`. Bumping
-  this constant changes the per-call stack frame for the convolution
-  fast path; keep it the current supported limit of 17 unless an ADR
-  justifies the bump.
-
-- **Header-level Netflix copyright on `convolution.{c,h}` and
-  `macros.h`** — these are upstream-mirror files. On rebase, prefer
-  upstream's shape and only annotate fork-local divergence with an
-  inline comment + an ADR reference.
+  `j_vec_end` = first final scalar output. Horizontal SIMD source-start count
+  = `max(j_vec_end - radius, 0)`. Full vectors plus masked final loads/stores
+  cover only those outputs; never compute discarded lanes past row, even when
+  caller pads workspace. Keep original final scalar start and AVX2
+  multiply/add versus AVX-512 FMA operations. Clamp tiny-width scalar borders
+  to plane. Normal, squared and cross-product wrappers share ISA horizontal
+  pass. Preserve `test_convolution_horizontal` and tight final-row allocation
+  contract. See [boundary
+  investigation](../../../../docs/research/convolution-horizontal-boundary-2026-09-08.md).
+- **`MAX_FWIDTH_AVX_CONV` in `convolution.h`** sizes `__m256 f[]` filter-tap
+  buffer in `convolution_avx.c`. Bumping constant changes per-call stack frame
+  for convolution fast path; keep current supported limit of 17 unless ADR
+  justifies bump.
+- **Header-level Netflix copyright on `convolution.{c,h}` and `macros.h`** —
+  upstream-mirror files. On rebase: prefer upstream shape; annotate fork-local
+  divergence only with inline comment + ADR reference.
 
 ## Twin-update rules
 
-- **`convolution_avx.c` ↔ `convolution.c`**: the AVX path mirrors
-  the scalar separable convolve. Any kernel-shape change in the
-  scalar (boundary handling, accumulator type, kernel-width
-  semantics) needs a paired AVX edit.
-
-- **`alignment.{c,h}`** is consumed by every SIMD TU (`__m256` /
-  `__m512` / `float64x2_t` aligned spills) and most GPU host-glue
-  TUs (CUDA pinned host, SYCL USM host, other host staging buffers).
-  Renaming `vmaf_align` is a project-wide event; don't.
-
-- **`blur_array.{c,h}`** is consumed by `motion.c`, `motion_v2.c`,
-  and several GPU motion twins (`../cuda/integer_motion_*_cuda.c`,
-  `../sycl/integer_motion_*_sycl.cpp`).
-  The ring-buffer carry semantics are part of the GPU twins'
-  ping-pong contract — see [../AGENTS.md §"motion3_score GPU
+- **`convolution_avx.c` ↔ `convolution.c`**: AVX path mirrors scalar separable
+  convolve. Kernel-shape change in scalar (boundary handling, accumulator
+  type, kernel-width semantics) requires paired AVX edit.
+- **`alignment.{c,h}`** consumed by every SIMD TU (`__m256` / `__m512` /
+  `float64x2_t` aligned spills) and most GPU host-glue TUs (CUDA pinned host,
+  SYCL USM host, other host staging buffers). Renaming `vmaf_align` =
+  project-wide event; don't.
+- **`blur_array.{c,h}`** consumed by `motion.c`, `motion_v2.c`, and GPU motion
+  twins (`../cuda/integer_motion_*_cuda.c`,
+  `../sycl/integer_motion_*_sycl.cpp`). Ring-buffer carry semantics = part of
+  GPU twins ping-pong contract — see [../AGENTS.md §"motion3_score GPU
   contract"](../AGENTS.md).
 
 ## Governing ADRs
 
 - ADR-0143
   ([`0143-port-netflix-f3a628b4-generalized-avx-convolve.md`](../../../../docs/adr/0143-port-netflix-f3a628b4-generalized-avx-convolve.md))
-  — generalised AVX convolve scanlines (`static` + `ptrdiff_t`
-  fork-local invariants).
+  — generalised AVX convolve scanlines (`static` + `ptrdiff_t` fork-local
+  invariants).
 - ADR-0504
   ([`0504-float-convolution-avx512-port.md`](../../../../docs/adr/0504-float-convolution-avx512-port.md))
-  — AVX-512F port of the same scanlines; dispatched before AVX2 in
-  `vif_tools.c`; inherits all ADR-0143 invariants.
+  — AVX-512F port of same scanlines; dispatched before AVX2 in `vif_tools.c`;
+  inherits all ADR-0143 invariants.
 - [ADR-0146](../../../../docs/adr/0146-nolint-sweep-function-size.md) —
-  helper-decomposition discipline applied across the IQA, common,
-  and VIF surfaces.
+  helper-decomposition discipline across IQA, common, VIF surfaces.

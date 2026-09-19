@@ -2,28 +2,26 @@
 name: add-mcp-tool
 description: Scaffold a new VMAFX MCP tool handler with byte-compatible Go (cmd/vmafx-mcp) and Python (mcp-server/vmaf-mcp) implementations, registration, smoke tests, and docs/mcp/ page. Companion to /add-gpu-backend and /add-feature-extractor for the MCP surface.
 ---
-
 <!-- markdownlint-disable MD013 -->
 
 # /add-mcp-tool
 
-Adds a new MCP tool to **both** the Go server (`cmd/vmafx-mcp`) and the Python
-server (`mcp-server/vmaf-mcp`) so the two stay byte-for-byte parity per the
-contract in [`docs/mcp/tools.md`](../../../docs/mcp/tools.md) and
-[ADR-0703](../../../docs/adr/0703-go-grpc-scoring-service.md). Both servers must
-expose the identical tool list, identical JSON-Schema, and identical response
-shape for any IDE MCP client (Claude Desktop, Cursor) to switch transports
-without re-configuration.
+Adds new MCP tool to **both** Go server (`cmd/vmafx-mcp`) and Python server
+(`mcp-server/vmaf-mcp`).
+Byte-for-byte parity per [`docs/mcp/tools.md`](../../../docs/mcp/tools.md) and
+[ADR-0703](../../../docs/adr/0703-go-grpc-scoring-service.md).
+Both servers must expose identical tool list, identical JSON-Schema,
+identical response shape -> any IDE MCP client (Claude Desktop, Cursor)
+switches transports without re-configuration.
 
 ## When to use
 
-- Adding a new tool that delegates to the `vmaf` CLI binary, the `vmaf-tune`
-  CLI, or a libvmaf subprocess — `tools.go` and `vmaf_mcp/server.py` both grow
-  by one handler.
-- NOT for adding a new transport (HTTP, stdio, SSE) — that is a server-level
-  change; use the ADR process.
-- NOT for adding non-tool resources / prompts (those live under different
-  registration paths).
+- Add tool delegating to `vmaf` CLI binary, `vmaf-tune` CLI, or libvmaf
+  subprocess: `tools.go` and `vmaf_mcp/server.py` each add 1 handler.
+- NOT for new transport (HTTP, stdio, SSE): server-level change -> use ADR
+  process.
+- NOT for non-tool resources / prompts: live under different
+  registration paths.
 
 ## Invocation
 
@@ -31,10 +29,10 @@ without re-configuration.
 /add-mcp-tool <name>
 ```
 
-`<name>` is `snake_case`, prefixed with the subject domain. Established
-prefixes: `vmaf_*` (scoring), `tune_*` (vmaf-tune), `model_*` (model
-catalogue), `health_*` (server health). Reject names that collide with an
-existing tool in either server.
+`<name>` = `snake_case`, prefixed with subject domain.
+Established prefixes: `vmaf_*` (scoring), `tune_*` (vmaf-tune),
+`model_*` (model catalogue), `health_*` (server health).
+Reject names colliding with existing tool in either server.
 
 ## Files created
 
@@ -50,51 +48,51 @@ existing tool in either server.
 ## Files patched
 
 - `cmd/vmafx-mcp/tools.go` — append `addRawTool(srv, ...)` registration block
-  with the JSON-Schema input definition.
+  with JSON-Schema input definition.
 - `mcp-server/vmaf-mcp/src/vmaf_mcp/server.py` — append tool registration in
-  `_list_tools()` and dispatch in `_call_tool()`.
-- `docs/mcp/tools.md` — append a row to the master tool table (sorted by
-  domain prefix, then name).
-- `docs/mcp/index.md` — bump the tool-count in the overview paragraph.
-- `cmd/vmafx-mcp/AGENTS.md` + `mcp-server/AGENTS.md` — note the parity
-  contract entry under "Tools currently shipped" (see ADR-0703 invariants).
+  `_list_tools()`, dispatch in `_call_tool()`.
+- `docs/mcp/tools.md` — append row to master tool table (sorted by domain
+  prefix, then name).
+- `docs/mcp/index.md` — bump tool-count in overview paragraph.
+- `cmd/vmafx-mcp/AGENTS.md` + `mcp-server/AGENTS.md` — note parity contract
+  entry under "Tools currently shipped" (see ADR-0703 invariants).
 
 ## Workflow
 
-1. Validate `<name>` matches `^[a-z]+_[a-z0-9_]+$` and is unique in both
-   servers (grep `cmd/vmafx-mcp/tools.go` and
+1. Validate `<name>` matches `^[a-z]+_[a-z0-9_]+$`, unique in both servers
+   (grep `cmd/vmafx-mcp/tools.go` and
    `mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`).
-2. Copy templates and substitute `@NAME@`, `@NAME_UPPER@`, `@NAME_PASCAL@`,
-   and `@COPYRIGHT@` placeholders.
-3. Apply the registration patches (idempotent — refuse if the registration
-   block already exists).
-4. Run the Go test (`go test ./cmd/vmafx-mcp/...`) and Python test
-   (`pytest mcp-server/vmaf-mcp/tests/test_<name>.py`) to confirm the stubs
-   compile and the schema parses on both sides.
-5. Run `scripts/mcp/parity-check.sh` (if present) to confirm both servers
-   advertise the new tool with identical schema bytes.
-6. Open a PR checklist comment with:
+2. Copy templates; substitute `@NAME@`, `@NAME_UPPER@`, `@NAME_PASCAL@`,
+   `@COPYRIGHT@` placeholders.
+3. Apply registration patches (idempotent: refuse if registration block
+   already exists).
+4. Run Go test (`go test ./cmd/vmafx-mcp/...`) and Python test
+   (`pytest mcp-server/vmaf-mcp/tests/test_<name>.py`): confirm stubs compile,
+   schema parses on both sides.
+5. Run `scripts/mcp/parity-check.sh` (if present): confirm both servers
+   advertise tool with identical schema bytes.
+6. Open PR checklist comment:
    - Implementation TODO list (real CLI invocation, output parsing, error
      mapping).
    - `isError=True` reminder for failure paths (see memory entry
      `project_mcp_iserror_must_be_true`).
-   - Per-surface doc bar (ADR-0100): the `docs/mcp/tools/<name>.md` page MUST
+   - Per-surface doc bar (ADR-0100): `docs/mcp/tools/<name>.md` page MUST
      describe input schema, output schema, example invocation, error modes,
-     and security considerations before the PR can merge.
+     security considerations before PR merges.
 
 ## Guardrails
 
-- **Never** ship a tool to only one server. Parity is the contract — if the
-  Python side can't yet implement (e.g. depends on a Go-only dependency),
-  the Python handler raises `NotImplementedError` with a TODO comment AND
-  the docs page calls out the gap explicitly.
-- **Never** set `isError=False` on a failure path. The Python `tools/<name>.py`
-  template hard-codes the helper that asserts this at registration time.
-- **Never** overwrite existing files. Scaffold refuses if any target path
+- **Never** ship tool to only one server. Parity = contract. If Python side
+  cannot yet implement (e.g. depends on Go-only dependency), Python handler
+  raises `NotImplementedError` with TODO comment AND docs page calls out gap
+  explicitly.
+- **Never** set `isError=False` on failure path. Python `tools/<name>.py`
+  template hard-codes helper asserting this at registration time.
+- **Never** overwrite existing files. Scaffold refuses if target path
   already exists.
-- **Never** add a tool without the doc page — the per-surface doc rule in
+- **Never** add tool without doc page: per-surface doc rule in
   [ADR-0100](../../../docs/adr/0100-project-wide-doc-substance-rule.md) makes
-  the PR unmergeable without it.
+  PR unmergeable without it.
 
 ## References
 
@@ -104,4 +102,5 @@ existing tool in either server.
   transport
 - [`docs/mcp/tools.md`](../../../docs/mcp/tools.md) — master tool reference
 - [`cmd/vmafx-mcp/tools.go`](../../../cmd/vmafx-mcp/tools.go) — Go registry
-- [`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`](../../../mcp-server/vmaf-mcp/src/vmaf_mcp/server.py) — Python registry
+- [`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`](../../../mcp-server/vmaf-mcp/src/vmaf_mcp/server.py)
+  — Python registry

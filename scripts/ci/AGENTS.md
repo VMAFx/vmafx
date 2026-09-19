@@ -3,31 +3,31 @@
 
 Parent: [../AGENTS.md](../AGENTS.md).
 
-Fork-local CI utilities. Anything in this directory is invoked from
+Fork-local CI utilities. Anything here invoked from
 `.github/workflows/*.yml` (see "Rebase-sensitive surfaces" below);
-upstream Netflix/vmaf has no equivalent tree, so the rebase risk is
-"workflow drift" rather than "merge conflict".
+upstream Netflix/vmaf has no equivalent tree, so rebase risk =
+"workflow drift", not "merge conflict".
 
 ## Rebase-sensitive surfaces
 
 ### Exact-source Scorecard reports (ADR-1247)
 
-`scorecard_gate.py` validates the complete reviewed check sets and tool identity,
-recomputes the risk-weighted unrounded score, and rejects scanner errors. Keep
-all zero and inconclusive states in its summaries; only Signed-Releases/-1 with
-exact reason `no releases found` is unassessed rather than an error. PR-local
+`scorecard_gate.py` validates complete reviewed check sets and tool identity,
+recomputes risk-weighted unrounded score, rejects scanner errors. Keep
+all zero and inconclusive states in summaries; only Signed-Releases/-1 with
+exact reason `no releases found` unassessed rather than error. PR-local
 reports have no upstream commit identity: preserve Git-object byte/mode checks,
-extra-input rejection and before/after run-bound receipts. Every followed
-symlink component must be tracked; do not permit links through Git metadata or
-other mutable inputs even when the final file is tracked. Preserve literal
+extra-input rejection, before/after run-bound receipts. Every followed
+symlink component must track; do not permit links through Git metadata or
+other mutable inputs even when final file tracked. Preserve literal
 symlink targets and legitimate directory chains, with bounded cycle rejection.
-Git subprocesses and
-fixtures must clear inherited GIT_* and caller global/system configuration.
-Never use latest public API results, merge SHA instead of PR head, or omit a
-check to improve the denominator. The workflow/aggregator and source-tamper
-controls run through the `scorecard-policy-contract` hook and both gate jobs.
-Preserve the companion ADR-1248 offline repository-policy hook and live master
-checker; neither a local fixture pass nor an aggregate score proves settings.
+Git subprocesses and fixtures must clear inherited GIT_* and caller
+global/system configuration.
+Never use latest public API results, merge SHA instead of PR head, or omit
+check to improve denominator. Workflow/aggregator and source-tamper
+controls run through `scorecard-policy-contract` hook and both gate jobs.
+Preserve companion ADR-1248 offline repository-policy hook and live master
+checker; neither local fixture pass nor aggregate score proves settings.
 
 ### Configured native lint (ADR-1142)
 
@@ -35,76 +35,76 @@ checker; neither a local fixture pass nor an aggregate score proves settings.
 Meson metadata with `--reconfigure BUILD_DIR LIBVMAF_DIR`, without option
 overrides, then builds generated prerequisites. Intersect Meson's native database with tracked native sources, including engine roots, tests,
 C++ tools and tracked vendored code. Preserve every configured command variant;
-never infer commands for inactive backends or regenerate the database with
+never infer commands for inactive backends, never regenerate database with
 unfiltered `ninja -t compdb`. Only positive numeric `-flto=N` becomes `-flto`
-in a private analyzer copy. Keep missing/invalid inputs fatal, report excluded
-scope, and run cppcheck even after clang-tidy fails. The scratch-Git fixture
-`tests/test_lint_configured.py` executes the real Make target and both analyzer
-boundaries; required Pre-Commit runs it when the driver or Makefile changes.
-This does not replace lane-specific ratchet measurements or their baselines.
+in private analyzer copy. Keep missing/invalid inputs fatal, report excluded
+scope, run cppcheck even after clang-tidy fails. Scratch-Git fixture
+`tests/test_lint_configured.py` executes real Make target and both analyzer
+boundaries; required Pre-Commit runs it when driver or Makefile changes.
+Does not replace lane-specific ratchet measurements or their baselines.
 
-The real-Make fixtures create their failing/recording pip sentinel before fake
-Meson and Ninja, satisfying the recursive build dependency graph without tool
+Real-Make fixtures create failing/recording pip sentinel before fake
+Meson and Ninja, satisfying recursive build dependency graph without tool
 bootstrap. GNU Make does not propagate `-o` to sub-makes. Keep `PIP_NO_INDEX=1`
 and assertions that no pip call, real venv or sentinel overwrite occurred;
-host network access must never turn a broken fixture into a passing test.
+host network access must never turn broken fixture into passing test.
 
-Both local and required CI cppcheck invocations load its shipped `posix` model.
-The fork uses pthread types on POSIX and through its Windows compatibility shim;
-these are C aggregates, not unknown C++ classes with implicit constructors.
+Both local and required CI cppcheck invocations load shipped `posix` model.
+Fork uses pthread types on POSIX and through its Windows compatibility shim;
+these = C aggregates, not unknown C++ classes with implicit constructors.
 Keep `--library=posix` separate from target selection: preserve database defines,
 include paths and language settings, with no forced platform or language.
 `tests/test_cppcheck_posix_model.py` runs actual cppcheck on shared headers and
-uninitialized-member/constructor negative controls in the Cppcheck job after
-installation. Missing tools/models fail that test; no diagnostic category is
-disabled. See the [model investigation](../../docs/research/cppcheck-pthread-model-2026-09-08.md).
+uninitialized-member/constructor negative controls in Cppcheck job after
+installation. Missing tools/models fail that test; no diagnostic category
+disabled. See [model investigation](../../docs/research/cppcheck-pthread-model-2026-09-08.md).
 
 Both paths select `--check-level=exhaustive` (ADR-1245). Preserve this value-flow
-policy alongside the existing severity sets and all command variants; never
-suppress `normalCheckLevelMaxBranches` to hide incomplete analysis. The real-tool
+policy alongside existing severity sets and all command variants; never
+suppress `normalCheckLevelMaxBranches` to hide incomplete analysis. Real-tool
 suite includes normal/exhaustive branch-budget controls and defect controls.
 
 Both paths also load `cppcheck-public-entrypoints.cfg` (ADR-1246). Keep its exact
-public names shared; adding a private helper to remove an unused warning is not
-an export contract. The configured-driver hook validates the model against
+public names shared; adding private helper to remove unused warning is not
+export contract. Configured-driver hook validates model against
 `VMAF_EXPORT` declarations and Meson's explicit installed-header lists, including
 option-conditional headers. Preserve its cfg/header/workflow/test trigger paths.
-The real-tool Cppcheck suite must reject missing/invalid models and still find
+Real-tool Cppcheck suite must reject missing/invalid models and still find
 unlisted unused helpers and defects inside listed bodies. Entry names are
-scope/linkage-blind: do not reuse them for private/static functions. Keep the
+scope/linkage-blind: do not reuse them for private/static functions. Keep
 measured collision control and both existing severity selections unchanged.
 
 ### Base-image references (ADR-1231)
 
 `check-base-image-single-source.sh` delegates FROM/COPY instruction parsing to
-`check-container-image-references.py`. External references without a digest
-are still external: never restore the old `*@sha256:*`-only detection. Keep
-instruction case, flags and continuations covered by the fixture tests.
-Shared FROM arguments need a global, single-line default named by
-`build-config.env`; the shell gate owns default drift/repair. Local image
-exceptions bind an exact consumer and value, never a broad unpinned-tag rule.
-`tests/test_base_image_single_source.py` exercises the actual gate in scratch
-repositories and is wired through `test-base-image-single-source` in
+`check-container-image-references.py`. External references without digest
+still external: never restore old `*@sha256:*`-only detection. Keep
+instruction case, flags and continuations covered by fixture tests.
+Shared FROM arguments need global, single-line default named by
+`build-config.env`; shell gate owns default drift/repair. Local image
+exceptions bind exact consumer and value, never broad unpinned-tag rule.
+`tests/test_base_image_single_source.py` exercises actual gate in scratch
+repositories, wired through `test-base-image-single-source` in
 `.pre-commit-config.yaml`.
 
 ### Level Zero version consumption (ADR-1231)
 
 `dev/Containerfile` copies and sources `build-config.env` in its SDK download
-RUN. The loader version is runtime shell input, so it needs no Docker ARG
-mirror. Preserve the source step, both URL components and the command-execution
-fixture in `tests/test_level_zero_single_source.py`; the base-image test hook
+RUN. Loader version = runtime shell input, so needs no Docker ARG
+mirror. Preserve source step, both URL components and command-execution
+fixture in `tests/test_level_zero_single_source.py`; base-image test hook
 runs both single-source suites. `check-workflow-versions.py` verifies this
-container consumer alongside the Windows workflow mirror. Renovate tracks
-Level Zero only in `build-config.env`; ROCm uses the central image manager.
+container consumer alongside Windows workflow mirror. Renovate tracks
+Level Zero only in `build-config.env`; ROCm uses central image manager.
 
 ### Workflow coupling
 
-The following pairs are tightly coupled — a rename or signature
-change in one **must** land alongside the matching update in the
-other, in the **same PR**. Required-status-check names are derived
-from the workflow file's `name:` fields, so a check that gets dropped
-or renamed turns into a phantom-required gate that blocks every PR
-until master is fixed.
+Following pairs tightly coupled — rename or signature
+change in one **must** land alongside matching update in
+other, in **same PR**. Required-status-check names derive
+from workflow file's `name:` fields, so check dropped
+or renamed turns into phantom-required gate that blocks every PR
+until master fixed.
 
 | Script | Workflow lane(s) that invoke it | What couples them |
 | --- | --- | --- |
@@ -138,14 +138,14 @@ until master is fixed.
 ## `check-vcs-version-not-bare-sha.sh` invariants
 
 `core/include/meson.build` builds `VMAF_VERSION` from `git describe`, and
-upstream Netflix/vmaf spells that call with `--always`. The fork deliberately
-does not. With `--always`, git exits 0 even with no reachable `v*.*.*` tag and
-prints a bare abbreviated object name, which meson writes into
-`vcs_version.h` verbatim — so `vmaf --version`, the JSON/XML `version` field
-and `vmaf_version()` all report a commit instead of a version on any shallow
+upstream Netflix/vmaf spells that call with `--always`. Fork deliberately
+does not. With `--always`, git exits 0 even with no reachable `v*.*.*` tag,
+prints bare abbreviated object name. Meson writes that into
+`vcs_version.h` verbatim — so `vmaf --version`, JSON/XML `version` field
+and `vmaf_version()` all report commit instead of version, on any shallow
 checkout, tarball export, or worktree whose `.git` is a file.
 
-Three properties are load-bearing, and this gate enforces each:
+Three properties load-bearing; this gate enforces each:
 
 | Property | Why it matters |
 | --- | --- |
@@ -153,52 +153,52 @@ Three properties are load-bearing, and this gate enforces each:
 | An explicit `fallback:` | Meson would default it to `meson.project_version()`, but the fallback *is* the tagless path here; spelling it out keeps the intent across meson upgrades. |
 | `--match 'v*.*.*'` retained | Without it any tag in the repository can supply the version. |
 
-Two things make the defect easy to reintroduce and hard to notice. It conflicts
-with upstream on every sync, so a mechanical "take theirs" resolution restores
-`--always`; and it is invisible until the seven-character abbreviation happens
-to contain no ASCII digit — about one commit in a thousand — which is the only
+Two things make defect easy to reintroduce, hard to notice. Conflicts
+with upstream on every sync, so mechanical "take theirs" resolution restores
+`--always`. Invisible until seven-character abbreviation happens
+to contain no ASCII digit — about one commit in a thousand — only
 condition `core/test/test_output.c::test_vmaf_version` can detect. Assume any
-version-string failure on one leg is environmental until you have checked
-whether the checkout could reach a tag.
+version-string failure on one leg environmental until checked
+whether checkout could reach a tag.
 
 `.github/workflows/build.yml` must therefore keep `fetch-depth: 0` on its
-checkout: `git describe --long` needs both the tag objects and the commit
-distance to them, and the `actions/checkout` default of 1 supplies neither.
+checkout: `git describe --long` needs both tag objects and commit
+distance to them; `actions/checkout` default of 1 supplies neither.
 
 ## Calibration table contract (ADR-0234)
 
-`gpu_ulp_calibration.yaml` is the single source of truth for
-per-GPU-generation tolerance overrides on the cross-backend parity
-gate. The lookup contract:
+`gpu_ulp_calibration.yaml` = single source of truth for
+per-GPU-generation tolerance overrides on cross-backend parity
+gate. Lookup contract:
 
-1. Caller passes `--gpu-id <runtime_id>` to the gate. ID format
+1. Caller passes `--gpu-id <runtime_id>` to gate. ID format
    follows Research-0041:
    - `vulkan:0xVVVV:0xDDDD`
    - `cuda:M.m`
    - `sycl:0xVVVV:DRIVER`
-2. The loader picks the most-specific glob match (longest non-
-   wildcard prefix wins; trailing `*` is supported).
-3. If a row has a `features:` override for the cell, that wins.
-   Otherwise the gate falls back to its built-in
+2. Loader picks most-specific glob match (longest non-
+   wildcard prefix wins; trailing `*` supported).
+3. If row has `features:` override for cell, that wins.
+   Else gate falls back to built-in
    `FEATURE_TOLERANCE` default (preserving backward compatibility
-   for every caller that pre-dates ADR-0234).
-4. If `--gpu-id` is omitted, no calibration is consulted at all
+   for every caller pre-dating ADR-0234).
+4. If `--gpu-id` omitted, no calibration consulted at all
    (legacy behaviour exact).
 
 **Invariant**: `tolerance_for(feature, gpu_id, default)` returns
-`default` whenever any of the resolution steps above falls through.
-This is enforced by `test_calibration.py`. A future PR that
-"optimises" the lookup must keep all four fallback paths intact, or
-existing CI lanes that don't pass `--gpu-id` will silently change
+`default` whenever any resolution step above falls through.
+Enforced by `test_calibration.py`. Future PR
+"optimising" lookup must keep all four fallback paths intact, or
+existing CI lanes not passing `--gpu-id` will silently change
 behaviour.
 
 ## When adding a new lane
 
 1. New `--feature` value → add to `FEATURE_METRICS` in *both*
-   gate scripts (single source of truth lives in the parity gate;
-   the per-feature script mirrors it). Add the workflow step to
+   gate scripts (single source of truth lives in parity gate;
+   per-feature script mirrors it). Add workflow step to
    `tests-and-quality-gates.yml`.
-   Existing compatibility names are not always `feature + suffix`:
+   Existing compatibility names not always `feature + suffix`:
    ADR-0586 renamed Vulkan integer ADM to `integer_adm_vulkan`, so both
    scripts must keep `BACKEND_EXTRACTOR_ALIASES[("adm", "vulkan")]`.
    ADR-0662 routes lavapipe motion parity through
@@ -207,316 +207,316 @@ behaviour.
    compatibility extractor stays explicit-name only.
 2. New backend → extend `BACKEND_SUFFIX`, `BACKEND_DEVICE_FLAG`,
    `BACKEND_DEFAULT_DEVICE` in both scripts.
-3. New GPU arch → add a row to `gpu_ulp_calibration.yaml`. Mark it
-   `status: placeholder` until a real-hardware corpus exists; the
-   placeholder row is operationally a no-op (empty `features:`
+3. New GPU arch → add row to `gpu_ulp_calibration.yaml`. Mark it
+   `status: placeholder` until real-hardware corpus exists;
+   placeholder row operationally no-op (empty `features:`
    block).
 
 ## When updating from upstream
 
-`scripts/ci/` is fork-introduced; nothing in here merges from
-upstream. The risk on `/sync-upstream` is the opposite: an upstream
-change to a feature extractor's emitted-metric names would silently
-invalidate `FEATURE_METRICS` rows. Re-run the matrix gate after any
-upstream sync that touches `core/src/feature/`.
+`scripts/ci/` fork-introduced; nothing here merges from
+upstream. Risk on `/sync-upstream` = opposite: upstream
+change to feature extractor's emitted-metric names would silently
+invalidate `FEATURE_METRICS` rows. Re-run matrix gate after any
+upstream sync touching `core/src/feature/`.
 
 ## PR-body deliverables validator (`validate-pr-body.sh`)
 
 `scripts/ci/validate-pr-body.sh`, `scripts/git-hooks/pre-push`, and
-`scripts/git-hooks/pre-push-pr-body-lint.sh` are local mirrors of the
+`scripts/git-hooks/pre-push-pr-body-lint.sh` = local mirrors of
 `.github/workflows/rule-enforcement.yml` deep-dive-checklist gate
-(ADR-0108). They re-use `scripts/ci/deliverables-check.sh` verbatim as
-the parser; the validator only injects the diff via a `PATH`-shim that
+(ADR-0108). Re-use `scripts/ci/deliverables-check.sh` verbatim as
+parser; validator only injects diff via `PATH`-shim that
 intercepts `git diff --name-only`.
 
-`pre-push-pr-body-lint.sh` is the standalone entry point referenced by
+`pre-push-pr-body-lint.sh` = standalone entry point referenced by
 the `.pre-commit-config.yaml` `validate-pr-body` hook (`stages:
-[pre-push]`). The omnibus `pre-push` hook delegates to the same
-validator logic. Both skip gracefully when `gh` is absent or no open PR
-exists for the current branch.
+[pre-push]`). The omnibus `pre-push` hook delegates to same
+validator logic. Both skip gracefully when `gh` absent or no open PR
+exists for current branch.
 
 **Invariant — single parser source of truth**: do not fork or
-re-implement the deliverables-check parsing logic in any other
-language. If the gate's regex shape ever changes, the change lands
-in `deliverables-check.sh` and the validator picks it up
-automatically. The test harness `test-validate-pr-body.sh` should
-catch any drift between the validator's expectations and the
+re-implement deliverables-check parsing logic in any other
+language. If gate's regex shape ever changes, change lands
+in `deliverables-check.sh`, validator picks it up
+automatically. Test harness `test-validate-pr-body.sh` should
+catch any drift between validator's expectations and
 parser's actual behaviour.
 
-**Invariant — shim scope**: the `git` shim built inside
-`validate-pr-body.sh` intercepts only the `diff --name-only` call
-shape. Every other `git` invocation falls through to the real
-binary. A future change to `deliverables-check.sh` that uses a
-different git subcommand to compute the diff must update the shim
-accordingly, or `validate-pr-body.sh` will silently use the real
-git's output (potentially fine, potentially wrong depending on
-local repo state).
+**Invariant — shim scope**: `git` shim built inside
+`validate-pr-body.sh` intercepts only `diff --name-only` call
+shape. Every other `git` invocation falls through to real
+binary. Future change to `deliverables-check.sh` using
+different git subcommand to compute diff must update shim.
+Else `validate-pr-body.sh` silently uses real
+git's output — potentially fine, potentially wrong depending on
+local repo state.
 
 ## assertion-density.sh — copyright-grep scope (ADR-0968)
 
-`assertion-density.sh` identifies fork-added files by scanning the first
-20 lines of each `.c` / `.cpp` for a Lusoris copyright marker. The grep
+`assertion-density.sh` identifies fork-added files by scanning first
+20 lines of each `.c` / `.cpp` for Lusoris copyright marker. Grep
 pattern **must** accept both the legacy format (`Lusoris and Claude
 (Anthropic)`) and the current post-rebrand format (`Copyright YYYY
-Lusoris`). The current pattern is:
+Lusoris`). Current pattern:
 
 ```text
 grep -qE "(Lusoris and Claude|Copyright [0-9]+ Lusoris)"
 ```
 
-**Invariant**: do not simplify this to a single literal string. The
+**Invariant**: do not simplify this to single literal string.
 2026-05-27 copyright-rebrand decision (memory: `project_copyright_lusoris_only`)
 dropped "and Claude (Anthropic)" from new files; older files in-tree still
-carry the legacy form. A grep that matches only one format causes the script
-to silently exit 0 ("no fork-added files found; skipping"), bypassing the
-assertion-density gate for all files carrying the other format.
+carry legacy form. Grep matching only one format causes script
+to silently exit 0 ("no fork-added files found; skipping"), bypassing
+assertion-density gate for all files carrying other format.
 
 Test coverage: `scripts/ci/tests/test-assertion-density.sh` (T1–T6).
 
 ## Coverage Gate ratchet (ADR-0922)
 
-`scripts/ci/coverage-check.sh` (absolute floors) and the new
-`scripts/ci/coverage-delta-check.sh` (per-PR delta gate) are tightly
-coupled to `.github/workflows/tests-and-quality-gates.yml` and to each
+`scripts/ci/coverage-check.sh` (absolute floors) and new
+`scripts/ci/coverage-delta-check.sh` (per-PR delta gate) tightly
+coupled to `.github/workflows/tests-and-quality-gates.yml` and each
 other. Rebase-sensitive invariants:
 
-1. **Floors are one-way.** `OVERALL_MIN` (70), `CRITICAL_MIN` (90), and
-   every `PER_FILE_MIN` value may be raised in any PR; lowering any of
-   them requires a new ADR that explicitly supersedes ADR-0922 and is
-   cited inline at the changed threshold. The change-control comment
-   above each `PER_FILE_MIN` row carries the citation; do not delete
-   those comments when editing the table.
-2. **Delta-gate tolerances default to 0.5pp.** The two CLI flags
-   (`--max-overall-drop`, `--max-file-drop`) exist for the workflow to
-   pin the values explicitly; do not tighten beyond 0.5pp without first
+1. **Floors one-way.** `OVERALL_MIN` (70), `CRITICAL_MIN` (90), and
+   every `PER_FILE_MIN` value may raise in any PR; lowering any of
+   them requires new ADR explicitly superseding ADR-0922, cited
+   inline at changed threshold. Change-control comment
+   above each `PER_FILE_MIN` row carries citation; do not delete
+   those comments when editing table.
+2. **Delta-gate tolerances default to 0.5pp.** Two CLI flags
+   (`--max-overall-drop`, `--max-file-drop`) exist for workflow to
+   pin values explicitly; do not tighten beyond 0.5pp without first
    confirming gcov hit-count variance has fallen (current floor of
    variance ~0.2pp, see ADR-0922 alternatives table).
 3. **Workflow coupling.** The `Compute base-branch coverage for delta
    gate` and `Enforce coverage-delta gate (ADR-0922)` steps in
    `tests-and-quality-gates.yml`'s `coverage` job require:
-   - `actions/checkout` with `fetch-depth: 0` (the delta gate runs
+   - `actions/checkout` with `fetch-depth: 0` (delta gate runs
      `git merge-base HEAD "$BASE_REF"` — shallow clone breaks it).
-   - `gcovr>=8.0` installed in the runner (same dependency as
+   - `gcovr>=8.0` installed in runner (same dependency as
      `coverage-check.sh`).
-   - The `coverage:` job's `if:` predicate still gates on draft-PR
+   - `coverage:` job's `if:` predicate still gates on draft-PR
      status (ADR-0331 self-hosted-runner economy convention applies
-     even for the hosted CPU lane to avoid wasted base-coverage builds
+     even for hosted CPU lane, to avoid wasted base-coverage builds
      on draft PRs).
-4. **Grace window.** PRs opened before 2026-05-31 are exempt from the
-   new floors and the delta gate through 2026-06-30 (operational, not
-   enforced in code). After 2026-06-30 the workflow can drop any
+4. **Grace window.** PRs opened before 2026-05-31 exempt from
+   new floors and delta gate through 2026-06-30 (operational, not
+   enforced in code). After 2026-06-30 workflow can drop any
    remaining grace-related notes.
 5. **Upstream sync impact.** Upstream Netflix/vmaf has no coverage
-   gate, so `/sync-upstream` cannot conflict with these files. The
-   only risk is that an upstream-introduced source file lands without
-   any tests and drags overall coverage below the OVERALL_MIN floor; in
-   that case the sync PR itself trips the gate and the resolution is to
-   add tests in the same PR (preferred) or to land an ADR-0922 supersede
-   ADR first (only if structurally impossible).
+   gate, so `/sync-upstream` cannot conflict with these files. Only
+   risk: upstream-introduced source file lands without
+   any tests, drags overall coverage below OVERALL_MIN floor. Sync
+   PR itself then trips gate; resolution = add tests in same PR
+   (preferred), or land ADR-0922 supersede ADR first (only if
+   structurally impossible).
 
 ## Pre-commit hook hygiene — no submodules (ADR-0893)
 
-`.pre-commit-config.yaml` ships the upstream `forbid-new-submodules`
-hook. The fork pulls upstream Netflix/vmaf code via `subprojects/`
+`.pre-commit-config.yaml` ships upstream `forbid-new-submodules`
+hook. Fork pulls upstream Netflix/vmaf code via `subprojects/`
 (Meson wraps with sha256 pinning) and `ffmpeg-patches/` (out-of-tree
-patch series), **never** via `.gitmodules`. A submodule entry would
+patch series), **never** via `.gitmodules`. Submodule entry would
 bypass:
 
-- the wrap-pin sha256 enforcement,
-- the CycloneDX SBOM walk (which inspects `subprojects/*.wrap`, not
+- wrap-pin sha256 enforcement,
+- CycloneDX SBOM walk (inspects `subprojects/*.wrap`, not
   `.gitmodules`),
-- and the license-allow-list audit.
+- and license-allow-list audit.
 
-If you need to add a new third-party dependency, use a Meson wrap
-(or vendor it under a clear "Vendored 3rd-party" banner, with the
+Adding new third-party dependency -> use Meson wrap
+(or vendor it under clear "Vendored 3rd-party" banner, with
 attendant `.semgrepignore` / `check-copyright` exclusion). Do not
-work around the `forbid-new-submodules` hook with `--no-verify`.
+work around `forbid-new-submodules` hook with `--no-verify`.
 
 **Pinned-revision audit cadence**: re-audit `.pre-commit-config.yaml`
-revisions roughly every ~6 months or when CI surfaces a deprecation
-warning. Use `pre-commit autoupdate` as a starting point but verify
-each proposed bump against `git ls-remote --tags --refs <repo>` —
-the autoupdate heuristic has a known sort-order bug on repos that
-land point releases out of branch order (it suggested a
-`gitleaks v8.30.1 → v8.30.0` downgrade during the ADR-0893 audit).
-Alpha pre-releases (`X.Y.Za<N>`) are never an acceptable pin.
+revisions roughly every ~6 months or when CI surfaces deprecation
+warning. `pre-commit autoupdate` = starting point only; verify
+each proposed bump against `git ls-remote --tags --refs <repo>`.
+Autoupdate heuristic has known sort-order bug on repos that
+land point releases out of branch order (suggested a
+`gitleaks v8.30.1 → v8.30.0` downgrade during ADR-0893 audit).
+Alpha pre-releases (`X.Y.Za<N>`) never acceptable pin.
 
 ## CI impact planner (ADR-1140)
 
-- `plan-ci-impact.py` + `.github/ci-impact.json` decide which surfaces a change
-  touches; every required job runs it first and gates heavy steps on the
-  selectors. It is **fail-closed**: unknown top-level paths, non-additive
+- `plan-ci-impact.py` + `.github/ci-impact.json` decide which surfaces change
+  touches; every required job runs it first, gates heavy steps on
+  selectors. **Fail-closed**: unknown top-level paths, non-additive
   statuses (delete/rename/copy), CI-authority files (this directory included),
   missing merge-base, non-linear pushes and over-large diffs all yield
   `mode=full`.
-- Any file under `scripts/ci/` is a CI-authority input: changing one forces
+- Any file under `scripts/ci/` = CI-authority input: changing one forces
   `full` mode for that PR by design.
-- `tests/test_ci_impact.py` (stdlib `unittest`) pins the map ↔ tree contract and
-  the no-path-filter invariant on required-context workflows. Run it after
-  adding a top-level directory or a required check.
+- `tests/test_ci_impact.py` (stdlib `unittest`) pins map ↔ tree contract and
+  no-path-filter invariant on required-context workflows. Run it after
+  adding top-level directory or required check.
 
 ## tidy-ratchet.py invariants (ADR-1142)
 
-- `scripts/ci/tidy-baseline-<lane>.json` is generated only by `tidy-ratchet.py --write`
-  (or `make tidy-ratchet-write`); never hand-edit a count. A baseline may only
-  decrease; raising a number to make CI green is a policy violation, not a fix.
-- The dedup key `(path, line, column, check)` and the NOLINT rule ("cited" =
-  `ADR-NNNN` on the previous, the same or the next line, or anywhere in the
-  `/* ... */` block comment that holds the marker; `NOLINTEND` never counts) are
-  load-bearing: the baselines were measured with exactly these rules, so
-  changing either requires re-measuring every lane in the same PR (the `cpu`
-  full baseline is CI's own `tidy-ratchet-cpu` artifact; ADR-1243 permits
+- `scripts/ci/tidy-baseline-<lane>.json` generated only by `tidy-ratchet.py --write`
+  (or `make tidy-ratchet-write`); never hand-edit count. Baseline may only
+  decrease; raising number to make CI green = policy violation, not fix.
+- Dedup key `(path, line, column, check)` and NOLINT rule ("cited" =
+  `ADR-NNNN` on previous, same or next line, or anywhere in
+  `/* ... */` block comment holding marker; `NOLINTEND` never counts) =
+  load-bearing: baselines measured with exactly these rules, so
+  changing either requires re-measuring every lane in same PR (`cpu`
+  full baseline = CI's own `tidy-ratchet-cpu` artifact; ADR-1243 permits
   only guarded scoped tightening afterward).
-- The `Tidy Ratchet` job starts unconditionally and gates its
-  work on the ADR-1140 planner's `c_core` selector; `.clang-tidy`, this
-  directory (ratchet + baselines) and the workflow are CI-authority inputs, so
-  editing any of them forces `mode=full` and the lane runs. Never add a
-  `paths:` filter or a custom early-skip probe to the job.
-- A `clang-diagnostic-error` in any TU is a measurement failure (exit 4), never a
+- `Tidy Ratchet` job starts unconditionally, gates its
+  work on ADR-1140 planner's `c_core` selector; `.clang-tidy`, this
+  directory (ratchet + baselines) and workflow = CI-authority inputs, so
+  editing any of them forces `mode=full`, lane runs. Never add
+  `paths:` filter or custom early-skip probe to job.
+- `clang-diagnostic-error` in any TU = measurement failure (exit 4), never
   zero. Build (generated headers) before measuring.
 - **Scoped writer (ADR-1243):** `--only` plus `--write` requires exact nonempty
-  measured-TU coverage, the original tool version/lane and no observed debt
+  measured-TU coverage, original tool version/lane, no observed debt
   increase. Preserve every unselected TU/header entry and all full-report
   metadata; append explicit scoped provenance. Validate report/baseline aliases
-  before output, and replace the validated baseline atomically. Full and scoped
-  writers share a resolved-path advisory lock; preserve baseline-drift checks
-  around measurement/replacement and fail on unreadable NOLINT inputs. A diagnostic
-  `--only` run is not a full comparison. Keep failure/zero-tightening cases in
+  before output, replace validated baseline atomically. Full and scoped
+  writers share resolved-path advisory lock; preserve baseline-drift checks
+  around measurement/replacement, fail on unreadable NOLINT inputs. Diagnostic
+  `--only` run is not full comparison. Keep failure/zero-tightening cases in
   `tests/test_tidy_scoped_write.py`; never make CI's full lane use `--only`.
 - Promoted clang-tidy checks (`-warnings-as-errors`) remain counted debt. Only
-  the recognized promotion exit/summary may bypass the nonzero-tool-exit guard;
+  recognized promotion exit/summary may bypass nonzero-tool-exit guard;
   parse/compile failures still invalidate that measurement. Reports retain
-  actual `measured_sources` and `compile_failures` so partial/error output is
-  never presented as a successful whole-tree scan.
+  actual `measured_sources` and `compile_failures` so partial/error output
+  never presented as successful whole-tree scan.
 
 ## release-pr-exempt.sh invariants (ADR-1151)
 
-- The predicate is `release-please--` head ref **AND** bot author. Never relax
-  it to head-ref-only: the four gates it disarms are required contexts, so a
-  head-ref-only test would let anyone skip them by naming a branch
+- Predicate = `release-please--` head ref **AND** bot author. Never relax
+  it to head-ref-only: four gates it disarms = required contexts, so
+  head-ref-only test would let anyone skip them by naming branch
   `release-please--anything`.
-- It always exits 0 and communicates through `exempt=true|false`. A gate that
-  consumes it must use a step-level `if:` so the job still **reports** —
-  skipping the whole job makes the check *absent*, which the aggregator's
-  absent-means-pass rule (ADR-0313) cannot tell apart from a path-filter skip,
-  and that is exactly the ambiguity the `mustReport` list exists to close.
-- Only the four authoring-discipline gates may consult it: Deliverables
+- Always exits 0, communicates through `exempt=true|false`. Gate
+  consuming it must use step-level `if:` so job still **reports**.
+  Skipping whole job makes check *absent*, which aggregator's
+  absent-means-pass rule (ADR-0313) cannot tell apart from path-filter skip.
+  That ambiguity is exactly what `mustReport` list exists to close.
+- Only four authoring-discipline gates may consult it: Deliverables
   Checklist, Doc-Substance Gate, `docs/state.md` Gate, FFmpeg-Patches Surface
   Sync. `Release Script Contract` and `ADR Collision Guard` stay armed on
-  release PRs — the former is the gate that proves the cut ran, and it also runs
-  `tests/test-release-pr-exempt.sh`, so the exemption's own test can never be
-  skipped by the exemption.
-- A new gate added to the aggregator's `required` array must be checked against
-  a release PR's shape (a `.release-please-manifest.json` + coordinated
-  version-marker diff, and a rendered-changelog body) before it is promoted.
+  release PRs. Former = gate proving cut ran; also runs
+  `tests/test-release-pr-exempt.sh`, so exemption's own test can never
+  be skipped by exemption.
+- New gate added to aggregator's `required` array must be checked against
+  release PR's shape (`.release-please-manifest.json` + coordinated
+  version-marker diff, and rendered-changelog body) before promoted.
 
 ## Adding a Renovate-managed surface (ADR-1152)
 
 `tests/test_renovate_file_patterns.py` validates positive file-selection
 fixtures for custom managers. `managerFilePatterns` regexes have one slash
 delimiter at each end; doubled delimiters silently select no files despite
-passing Renovate's schema validator. Keep the base-image custom manager's
-config-plus-mirror set paired with the built-in Docker manager exclusions.
-The `test-renovate-file-patterns` pre-commit hook runs these fixtures whenever
-the Renovate configuration or the test changes.
+passing Renovate's schema validator. Keep base-image custom manager's
+config-plus-mirror set paired with built-in Docker manager exclusions.
+`test-renovate-file-patterns` pre-commit hook runs these fixtures whenever
+Renovate configuration or test changes.
 
-`classify-dependency-pr.sh` exempts a bot PR only when **every** changed path
-matches its allowlist — one unmatched path fails the whole PR, and a bot cannot
-write a deliverables checklist to recover. So whenever a new dependency-pinning
-surface appears in the tree (a new chart under `deploy/helm/`, a new compose
-file, a new container build file outside `docker/`), add it to
-`is_allowed_dependency_path` **and** add a fixture case to
-`test-classify-dependency-pr.sh` in the same change.
+`classify-dependency-pr.sh` exempts bot PR only when **every** changed path
+matches its allowlist — one unmatched path fails whole PR; bot cannot
+write deliverables checklist to recover. New dependency-pinning
+surface appearing in tree (new chart under `deploy/helm/`, new compose
+file, new container build file outside `docker/`) -> add it to
+`is_allowed_dependency_path` **and** add fixture case to
+`test-classify-dependency-pr.sh` in same change.
 
-The `build-config.env` allowance is an exact root-path match (ADR-1231).
-Never replace it with an env-file glob or a basename match: nested build
-configs and unrelated runtime env files must still fail the path condition.
+`build-config.env` allowance = exact root-path match (ADR-1231).
+Never replace with env-file glob or basename match: nested build
+configs and unrelated runtime env files must still fail path condition.
 
-Two invariants the test suite pins deliberately — do not "simplify" them away:
+Two invariants test suite pins deliberately — do not "simplify" them away:
 
-- Widening the allowlist must never drop the conjunction with condition (a).
-  A human-authored PR touching an allowlisted path must still be gated.
-- A bot PR that touches an allowlisted path **and** source code must still be
-  gated. That asymmetry is the entire point of the gate.
+- Widening allowlist must never drop conjunction with condition (a).
+  Human-authored PR touching allowlisted path must still be gated.
+- Bot PR touching allowlisted path **and** source code must still be
+  gated. That asymmetry = entire point of gate.
 
-Derive additions from what Renovate actually edits (`gh pr list --author
-app/renovate` and diff the file lists), not from what looks like a manifest —
+Derive additions from what Renovate edits (`gh pr list --author
+app/renovate` and diff the file lists), not from what looks like manifest —
 see [`docs/research/1152-dependency-classifier-surface-audit.md`](../../docs/research/1152-dependency-classifier-surface-audit.md).
 
 ## check-aggregator-names.sh invariants
 
-- Gates 1:1 parity between the required status checks declared in
+- Gates 1:1 parity between required status checks declared in
   `.github/workflows/required-aggregator.yml` (`const required = [...]`) and
-  the `# required-aggregator` markers on `name:` fields across workflow files.
+  `# required-aggregator` markers on `name:` fields across workflow files.
 - Enforced locally via `make lint-sh` and pre-commit hook `check-aggregator-names`.
 - Display names must stay concise ($\le 30$ chars) per `docs/development/ci-job-names.md`.
 
 ## Self-hosted SYCL Arc runner invariants (ADR-1177)
 
-The Intel Arc A380 self-hosted runner executes hardware-in-the-loop SYCL parity tests
-under `.github/workflows/sycl-parity.yml`. The following invariants are load-bearing:
+Intel Arc A380 self-hosted runner executes hardware-in-the-loop SYCL parity tests
+under `.github/workflows/sycl-parity.yml`. Following invariants load-bearing:
 
 1. **Untrusted fork PR execution prohibition**: `sycl-parity.yml` must strictly enforce
    `if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository`.
    Fork PRs must NEVER execute arbitrary workflows or code on self-hosted infrastructure.
-2. **Device isolation**: Container passthrough (`dev/docker-compose.runner.yml`) is
+2. **Device isolation**: Container passthrough (`dev/docker-compose.runner.yml`)
    restricted to `/dev/dri/renderD129` (Intel Arc A380, vendor `0x8086`, device `0x56a5`,
-   PCI `03:00.0`). The host NVIDIA RTX 4090 and AMD iGPU device nodes must NOT be passed into
-   the container under any circumstances.
-3. **Container security posture**: The runner container runs as an unprivileged user
+   PCI `03:00.0`). Host NVIDIA RTX 4090 and AMD iGPU device nodes must NOT pass into
+   container under any circumstances.
+3. **Container security posture**: Runner container runs as unprivileged user
    `runner` (uid 1001, gid 1001) in groups 988 (`render`) and 984 (`video`). No Docker socket
-   (`/var/run/docker.sock`) is mounted. Container resource limits are capped at 8 CPUs and 16 GB RAM.
-   Ephemeral mode (`--ephemeral`) ensures a clean environment per job without state persistence.
-4. **Lane-switch contract**: `required-aggregator.yml` lists `SYCL Parity (Arc A380)` as required and
-   reads `vars.SYCL_ARC_RUNNER_ENABLED` (it makes no runner API call — `GITHUB_TOKEN` cannot list
+   (`/var/run/docker.sock`) mounted. Container resource limits capped at 8 CPUs and 16 GB RAM.
+   Ephemeral mode (`--ephemeral`) ensures clean environment per job without state persistence.
+4. **Lane-switch contract**: `required-aggregator.yml` lists `SYCL Parity (Arc A380)` as required,
+   reads `vars.SYCL_ARC_RUNNER_ENABLED` (makes no runner API call — `GITHUB_TOKEN` cannot list
    self-hosted runners):
-   - Lane disabled (variable unset / not `true`): absent or skipped is accepted as pass.
-   - Lane enabled: the job MUST report `success`; absent or skipped (the probe failed because the
-     runner is unregistered, offline, or the probe token was rejected) is a loud aggregator failure.
-   Never reintroduce an auto-detect probe that treats an API error as "unregistered" — that makes a
+   - Lane disabled (variable unset / not `true`): absent or skipped accepted as pass.
+   - Lane enabled: job MUST report `success`; absent or skipped (probe failed because
+     runner unregistered, offline, or probe token rejected) = loud aggregator failure.
+   Never reintroduce auto-detect probe that treats API error as "unregistered" — makes
    required check silently green.
-5. **Probe token**: `check-runner-available.sh` runs the runner-list query only while the lane is
+5. **Probe token**: `check-runner-available.sh` runs runner-list query only while lane
    enabled, with `secrets.SYCL_RUNNER_PROBE_TOKEN` (fine-grained PAT, single repository,
-   Administration: read-only). Do not widen the workflow's `permissions:` in an attempt to replace it —
-   there is no `administration` scope there.
-6. **Render node is resolved, not hard-coded**: `dev/docker-compose.runner.yml` takes
+   Administration: read-only). Do not widen workflow's `permissions:` to replace it —
+   no `administration` scope there.
+6. **Render node resolved, not hard-coded**: `dev/docker-compose.runner.yml` takes
    `ARC_RENDER_NODE` from `dev/scripts/arc-render-node.sh` (exactly one vendor-`0x8086` render node).
-   Do not replace it with a bare `renderD<N>`; numbers change after PCI re-enumeration.
+   Do not replace with bare `renderD<N>`; numbers change after PCI re-enumeration.
 
 ## FFmpeg patch lifecycle (ADR-1240)
 
-`ffmpeg_patch_stack.py`, the local `ffmpeg-patches-apply-check` hook and
+`ffmpeg_patch_stack.py`, local `ffmpeg-patches-apply-check` hook and
 `ffmpeg-patch-stack.yml` share one release owner: `build-config.env`.
-Replay `series.txt` cumulatively, fail on fetch/replay/configuration drift, and
-write only after the whole candidate succeeds. Disposable Git must discard
+Replay `series.txt` cumulatively, fail on fetch/replay/configuration drift,
+write only after whole candidate succeeds. Disposable Git must discard
 inherited `GIT_*` repository variables and caller Git configuration. Discovery
-is scheduled and accepts only stable tags; ordinary checks use the reviewed tag.
-The required aggregator name is exactly `FFmpeg Patch Stack`.
+scheduled, accepts only stable tags; ordinary checks use reviewed tag.
+Required aggregator name = exactly `FFmpeg Patch Stack`.
 
-Fixture setup and assertions obey the same isolation rule as the production
+Fixture setup and assertions obey same isolation rule as production
 replayer. `test_ffmpeg_patch_stack.py`, `test_ffmpeg_patch_smoke_safety.py`
-and the dependency-classifier shell fixture discard inherited `GIT_*` before
-their first Git command and disable caller global/system Git configuration.
+and dependency-classifier shell fixture discard inherited `GIT_*` before
+their first Git command, disable caller global/system Git configuration.
 Never rely on `git -C` alone. `test_git_fixture_isolation.py` runs those
-fixtures plus the agent-cleanup fixture with disposable caller variables,
-checks byte-for-byte metadata/work preservation, and remains registered in
+fixtures plus agent-cleanup fixture with disposable caller variables,
+checks byte-for-byte metadata/work preservation, remains registered in
 pre-commit/pre-push and required Pre-Commit CI. Poison only fresh temporary
-caller paths; never export the real repository's Git paths into a test.
+caller paths; never export real repository's Git paths into test.
 
-Level Zero fixture setup and its checker subprocess use the same Git isolation.
-Preserve the real linked-worktree hook regression: Git itself exports `GIT_DIR`,
-so a clean parent shell is insufficient. The old-command control may mutate
-only a disposable caller; the fixed helper must preserve every shared Git and
+Level Zero fixture setup and its checker subprocess use same Git isolation.
+Preserve real linked-worktree hook regression: Git itself exports `GIT_DIR`,
+so clean parent shell insufficient. Old-command control may mutate
+only disposable caller; fixed helper must preserve every shared Git and
 linked-worktree file, including both indexes and staged/unstaged work.
 
 ## Shared envtest installer (ADR-1231)
 
-`setup-envtest.sh` is the executable consumer of the envtest tool/version
-fields in `build-config.env`. Both Make and Go CI call it; keep the Go module
+`setup-envtest.sh` = executable consumer of envtest tool/version
+fields in `build-config.env`. Both Make and Go CI call it; keep Go module
 metadata check, direct GOBIN/first-GOPATH executable path, and installed-only
 `path`/`env` lookup. Only `install` may fetch assets; inherited
 `ENVTEST_USE_ENV` must not bypass configured selection. Do not restore
-`@latest`, PATH-existence acceptance or a second Kubernetes default in CI.
-Preserve install/asset failures and shell-quoted export output, and keep
+`@latest`, PATH-existence acceptance or second Kubernetes default in CI.
+Preserve install/asset failures and shell-quoted export output; keep
 `tests/test_envtest_single_source.py` wired to commit/push checks. See
 [Research-2058](../../docs/research/2058-envtest-version-owner.md).
