@@ -13,6 +13,12 @@ import textwrap
 import unittest
 from pathlib import Path
 
+# A hang detector, not a timing assertion: these subprocesses finish in tens of
+# milliseconds locally, but a loaded CI runner has blown a 10-second cap and the
+# TimeoutExpired then reads as a real test failure (bug ledger L-76). 120s still
+# catches a genuine hang long before the job's own timeout.
+SUBPROCESS_TIMEOUT_S = 120
+
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github/workflows"
 
@@ -184,7 +190,7 @@ new AsyncFunction('github','context','core','process','Date','setTimeout',input.
             text=True,
             capture_output=True,
             check=True,
-            timeout=10,
+            timeout=SUBPROCESS_TIMEOUT_S,
         )
         messages: object = json.loads(result.stdout)
         if not isinstance(messages, list) or not all(isinstance(m, str) for m in messages):

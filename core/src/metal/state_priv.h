@@ -4,8 +4,13 @@
  *
  *  Private state-struct definitions shared between common.mm and the
  *  IOSurface import TU. Kept out of common.h because consumer TUs
- *  outside libvmaf/src/metal/ (e.g. feature/metal/*.mm) only need the
- *  opaque-pointer accessors — they must not touch struct layout.
+ *  outside core/src/metal/ (the .mm files under core/src/feature/metal/)
+ *  only need the opaque-pointer accessors — they must not touch struct
+ *  layout.
+ *
+ *  Do not write a glob here: a literal "/" followed by "*" inside this
+ *  block comment opens a nested comment and every macOS build warns
+ *  (-Wcomment), which the zero-warning gate then fails on.
  */
 
 #ifndef LIBVMAF_METAL_STATE_PRIV_H_

@@ -9,7 +9,7 @@
  * Round-2 GPU-kernel coverage gap-fill — adm2 / adm3 CPU vs. CUDA parity test.
  *
  * The ADM (Additive Detail Metric) is computed by integer_adm.c (CPU scalar)
- * and integer_adm_cuda.c + integer_adm/*.cu (CUDA kernel set: adm_dwt2,
+ * and integer_adm_cuda.c plus the .cu kernels under integer_adm/ (adm_dwt2,
  * adm_decouple, adm_csf, adm_csf_den, adm_cm). It is a load-bearing component
  * of the libvmaf-2.x.x default model — a regression in the DWT2 stage or the
  * CSF normaliser would silently bias the VMAF score across CHUG re-extracts.

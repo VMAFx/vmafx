@@ -51404,3 +51404,24 @@ variable; when re-applying upstream changes to the AArch64 block, keep the
 variable and do not put a literal `-ffp-contract=off` back into those six
 `c_args`. The SVE2 `cc.compiles()` probe is skipped on `msvc` for the same
 reason. See [Research-2066](research/2066-windows-arm64-lane.md).
+## `__HIP_PLATFORM_AMD__` comes from `hip_deps`, not from each source (ADR-1263)
+
+`core/src/hip/meson.build` appends `declare_dependency(compile_args: ['-D__HIP_PLATFORM_AMD__=1'])`
+to `hip_deps` **outside** the `if not hip_runtime_dep.found()` block. Two ways to break it:
+
+1. **Moving it back inside the `if`.** It used to live there, which left the
+   `dependency('hip-lang')` branch with no definition — invisible, because the eight host
+   sources each carried their own `#define` as well. Those defines are gone now, so a
+   pkg-config ROCm would fail outright.
+2. **Re-adding `#define __HIP_PLATFORM_AMD__ 1` to a HIP host source.** It is a reserved
+   identifier (`cert-dcl37-c`) and makes the next PR that touches that file responsible for
+   removing it again. A new HIP host file needs nothing: `hip_deps` already supplies it.
+
+## Globs inside block comments break every GPU build (-Wcomment)
+
+Writing a path glob such as `core/src/feature/hip/*.c` inside a `/* ... */` comment opens a
+nested comment; GCC and clang both warn, and the zero-warning gate fails. Fifteen files had
+it (14 HIP parity tests, one CUDA ADM test) plus `core/src/metal/state_priv.h`. When a rebase
+reintroduces one of these comments, spell the set out in prose ("the .c files under
+core/src/feature/hip/") instead of restoring the glob. `core/src/metal/state_priv.h` carries
+an inline note to that effect.

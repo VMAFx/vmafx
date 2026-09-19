@@ -44,7 +44,6 @@
 #include "hip/integer_adm_hip.h"
 
 #ifdef HAVE_HIPCC
-#define __HIP_PLATFORM_AMD__ 1
 #include <hip/hip_runtime_api.h>
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as

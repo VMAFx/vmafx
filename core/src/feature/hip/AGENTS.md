@@ -628,3 +628,18 @@ types; dB conversion goes through `ms_ssim_convert_to_db()`. Guard =
 `test_hip_ms_ssim_parity.c::test_ms_ssim_clip_db_ceiling`, which
 feeds IDENTICAL pair — on merely high-similarity fixture, ceiling
 never binds, variant passes against unfixed twin.
+
+## `__HIP_PLATFORM_AMD__` comes from the build (ADR-1263)
+
+New HIP host source needs **no** `#define __HIP_PLATFORM_AMD__`. `hip_deps` in
+`core/src/hip/meson.build` supplies `-D__HIP_PLATFORM_AMD__=1` to every HIP TU,
+outside the `hip_runtime_dep` discovery branch, so both branches get it.
+
+Copying the old `#define` from a neighbour re-adds a reserved identifier
+(`cert-dcl37-c`): next PR touching that file then owns removing it.
+
+## No path globs in block comments
+
+`core/src/feature/hip/*.c` inside `/* ... */` opens nested comment ->
+`-Wcomment` on every HIP build -> zero-warning gate fails. 14 parity tests had
+it. Name the set in prose: "the .c files under core/src/feature/hip/".
