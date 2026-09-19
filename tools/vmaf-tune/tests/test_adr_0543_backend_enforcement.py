@@ -38,12 +38,39 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
 
+def _binary_supports_backend_flag(path: Path) -> bool:
+    """Return True iff the binary advertises ``--backend`` in its help output.
+
+    The ADR-0543 tests exercise ``--backend NAME`` hard-fail behaviour
+    that was added to the fork's libvmaf CLI.  The upstream system
+    binary shipped at ``/usr/local/bin/vmaf`` (or equivalent) predates
+    that flag; invoking it with ``--backend`` exits 255 ("unrecognised
+    option") rather than the expected 100, causing spurious failures.
+    We therefore skip any binary whose help output does not include the
+    ``--backend`` token.
+    """
+    try:
+        result = subprocess.run(
+            [str(path), "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return "--backend" in (result.stdout + result.stderr)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def _resolve_vmaf_binary() -> Path | None:
     """Locate a built libvmaf CLI binary for the integration test.
 
     Lookup order mirrors V5-1 (``test_bbb_e2e_v5_bug_cluster.py``):
     ``$VMAF_BIN_FOR_TESTS`` env override, ``shutil.which("vmaf")``,
     then walk-up to ``build/tools/vmaf`` under the nearest repo root.
+
+    Binaries that do not advertise ``--backend`` in their help text are
+    skipped — they are pre-ADR-0543 system installs that would return
+    255 instead of the expected 100 for explicit-backend failures.
     """
     env = os.environ.get("VMAF_BIN_FOR_TESTS")
     if env:
@@ -52,7 +79,9 @@ def _resolve_vmaf_binary() -> Path | None:
             return env_path
     which = shutil.which("vmaf")
     if which:
-        return Path(which)
+        which_path = Path(which)
+        if _binary_supports_backend_flag(which_path):
+            return which_path
     for parent in [_HERE, *_HERE.parents]:
         if (parent / "meson.build").is_file() and (parent / "libvmaf").is_dir():
             candidate = parent / "build" / "tools" / "vmaf"
