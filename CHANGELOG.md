@@ -20775,6 +20775,13 @@ Resolved 8 pre-existing required-aggregator failures that blocked every PR post-
 Research digest: `docs/research/0735-ci-required-failures-round-3-2026-05-28.md`
 
 
+- **CI: a required check can no longer be masked by a second job with the
+  same name.** Two workflows reported `Windows MSVC+CUDA`, and the required
+  checks aggregator keeps only the newest run per name. The `build.yml` job is
+  now `Windows MSVC+CUDA (full)`, and `scripts/ci/check-aggregator-names.sh`
+  fails when more than one job reports a required name.
+
+
 **CI: fix build-matrix stale `libvmaf` source paths + ASan + motion_v2 coverage leaks**
 
 Three CI regressions fixed in a single sweep:
