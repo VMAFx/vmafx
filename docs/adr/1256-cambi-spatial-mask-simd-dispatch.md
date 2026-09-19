@@ -2,7 +2,7 @@
 
 # ADR-1256: Dispatch CAMBI's spatial-mask row SIMD kernels only where they measurably beat scalar
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-18
 - **Deciders**: Lusoris
 - **Tags**: simd, avx2, avx512, neon, cambi, perf, upstream-port, fork-local
@@ -74,3 +74,4 @@ with a 2^31 bias so it is exact for every input, not only for box sums under
   only where it beats scalar on a measured run; wire NEON only if the op count
   clearly drops; leave a slower variant unwired or drop it.
 - [Research-2062](../research/2062-cambi-spatial-mask-simd.md)
+- Q3.5 (popup, 2026-09-19): "Accept it (Recommended)".
