@@ -372,3 +372,77 @@ def test_duplicate_video_name_in_scores_aborts(monkeypatch, tmp_path: Path, caps
     assert "duplicate video_name" in err
     assert "clip-a.mp4" in err
     assert not out.exists()
+
+
+def _write_chug_bit_depth_sidecar(tmp_path: Path) -> Path:
+    """Write a 3-row CHUG JSONL sidecar covering 10-bit, 8-bit, and no-depth clips.
+
+    Split out of the regression test below to keep it under the HISS-04
+    60-LOC limit; pure fixture setup, no behaviour change.
+    """
+    meta_jsonl = tmp_path / "chug.jsonl"
+    meta_jsonl.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "src": "clip-10bit.mp4",
+                        "chug_width_manifest": 1920,
+                        "chug_height_manifest": 1080,
+                        "chug_framerate_manifest": "25/1",
+                        "chug_bit_depth": 10,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "src": "clip-8bit.mp4",
+                        "chug_width_manifest": 1280,
+                        "chug_height_manifest": 720,
+                        "chug_framerate_manifest": "30/1",
+                        "chug_bit_depth": 8,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "src": "clip-no-depth.mp4",
+                        "chug_width_manifest": 640,
+                        "chug_height_manifest": 360,
+                        "chug_framerate_manifest": "24/1",
+                        # chug_bit_depth absent — should default to yuv420p.
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return meta_jsonl
+
+
+def test_geometry_from_sidecar_infers_10bit_pix_fmt(tmp_path: Path) -> None:
+    """chug_bit_depth=10 in sidecar must yield yuv420p10le, not yuv420p.
+
+    Regression test for F6-B: _load_jsonl_metadata previously omitted
+    ``chug_bit_depth`` from the ``keep`` allowlist, causing
+    _geometry_from_sidecar to always return ``yuv420p`` regardless of
+    actual bit depth — silently mis-decoding 10-bit CHUG clips as 8-bit.
+    """
+    meta_jsonl = _write_chug_bit_depth_sidecar(tmp_path)
+    metadata = K150K._load_jsonl_metadata(meta_jsonl, split_seed="stable")
+
+    geom_10 = K150K._geometry_from_sidecar(metadata["clip-10bit.mp4"])
+    assert geom_10 is not None
+    _w, _h, pix_fmt_10, _fps = geom_10
+    assert pix_fmt_10 == "yuv420p10le", (
+        "10-bit CHUG clip must be decoded as yuv420p10le; got " + pix_fmt_10
+    )
+
+    geom_8 = K150K._geometry_from_sidecar(metadata["clip-8bit.mp4"])
+    assert geom_8 is not None
+    _w, _h, pix_fmt_8, _fps = geom_8
+    assert pix_fmt_8 == "yuv420p", "8-bit CHUG clip must be decoded as yuv420p; got " + pix_fmt_8
+
+    geom_nd = K150K._geometry_from_sidecar(metadata["clip-no-depth.mp4"])
+    assert geom_nd is not None
+    _w, _h, pix_fmt_nd, _fps = geom_nd
+    assert pix_fmt_nd == "yuv420p", "Clip with no chug_bit_depth must default to yuv420p"
