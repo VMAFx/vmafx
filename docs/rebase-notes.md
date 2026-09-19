@@ -51422,3 +51422,20 @@ same `adm3` guard and marker removal on the `port/upstream-2026-09` stack;
 those hunks are identical and merge clean, the fixture change is separate.
 The CUDA arms were not run here; run `test_cuda_adm_small_border` and
 `test_cuda_adm_wide_rounding` after any rebase that touches `adm_cm.cu`.
+
+## Upstream reports of 2026-09-19 — recognise them when they land
+
+Four pull requests and two issues were sent to Netflix/vmaf on 2026-09-19
+(`docs/development/known-upstream-bugs.md` has the table). When a sync brings any of them in:
+
+- **#1603** touches `libvmaf/test/checkasm/`, which this fork does not carry — nothing to port.
+- **#1604** changes the direct YUV/y4m readers and `fetch_picture()`. The fork needs **none** of
+  it: chroma geometry is already ceiling-based, the direct-read path is compiled out, and
+  reader errors already map to `-1`. Take upstream's new `test_video_input.c` only if its
+  19x19 cases are adapted — the fork's CLI refuses odd 4:2:0 dimensions by design.
+- **#1605** adds the early return the fork's `adm_avx2.c` has had since PR #792. A conflict
+  there is two spellings of the same guard; keep the fork's.
+- **#1606** patches a VLA the fork replaced with `ModelArrays` (ADR-0809) — nothing to port.
+- **#1607 / #1608** are issues. If upstream chooses to *support* frames below 17 px rather
+  than refuse them, that is a behaviour decision for the fork too, not a mechanical port:
+  the fork currently refuses with `integer_adm requires width >= 17 and height >= 17`.
