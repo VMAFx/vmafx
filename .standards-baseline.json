@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-09-18T20:40:41Z",
+  "generated_at": "2026-09-19T11:17:17Z",
   "repository": "",
   "commit_sha": "",
-  "total_infractions": 1627,
+  "total_infractions": 1622,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -2583,14 +2583,6 @@
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/cambi_neon.c",
-      "line_number": 125,
-      "symbol": "{",
-      "message": "Function '{' (86 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/cambi_neon.c:125:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
       "file_path": "core/src/feature/arm64/float_adm_dwt2_neon.c",
       "line_number": 60,
       "symbol": "{",
@@ -2719,38 +2711,6 @@
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/vif_neon.c",
-      "line_number": 292,
-      "symbol": "vif_subsample_rd_8_neon",
-      "message": "Function 'vif_subsample_rd_8_neon' (132 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/vif_neon.c:292:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/vif_neon.c",
-      "line_number": 427,
-      "symbol": "{",
-      "message": "Function '{' (137 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/vif_neon.c:427:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/vif_neon.c",
-      "line_number": 566,
-      "symbol": "vif_statistic_8_neon",
-      "message": "Function 'vif_statistic_8_neon' (326 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/vif_neon.c:566:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/vif_neon.c",
-      "line_number": 895,
-      "symbol": "{",
-      "message": "Function '{' (326 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/vif_neon.c:895:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
       "file_path": "core/src/feature/brisque_math.h",
       "line_number": 170,
       "symbol": "brisque_fit_aggd",
@@ -2760,53 +2720,53 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 189,
+      "line_number": 196,
       "symbol": "static const VmafOption options[] = {",
       "message": "Function 'static const VmafOption options[] = {' (184 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cambi.c:189:HISS-04"
+      "fingerprint": "core/src/feature/cambi.c:196:HISS-04"
     },
     {
       "rule_id": "HISS-02",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 433,
+      "line_number": 440,
       "message": "Legacy unbounded loop in native code",
-      "fingerprint": "core/src/feature/cambi.c:433:HISS-02"
+      "fingerprint": "core/src/feature/cambi.c:440:HISS-02"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 834,
+      "line_number": 857,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/cambi.c:834:HISS-01"
+      "fingerprint": "core/src/feature/cambi.c:857:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 840,
+      "line_number": 863,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/cambi.c:840:HISS-01"
+      "fingerprint": "core/src/feature/cambi.c:863:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 847,
+      "line_number": 870,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/cambi.c:847:HISS-01"
+      "fingerprint": "core/src/feature/cambi.c:870:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 851,
+      "line_number": 874,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/cambi.c:851:HISS-01"
+      "fingerprint": "core/src/feature/cambi.c:874:HISS-01"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/cambi.h",
-      "line_number": 40,
+      "line_number": 49,
       "symbol": "static const float reciprocal_lut[CAMBI_RECIPROCAL_LUT_SIZE] = {0.0f,",
       "message": "Function 'static const float reciprocal_lut[CAMBI_RECIPROCAL_LUT_SIZE] = {0.0f,' (4226 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cambi.h:40:HISS-04"
+      "fingerprint": "core/src/feature/cambi.h:49:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -9777,10 +9737,10 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/test/test_psnr_hvs_simd.c",
-      "line_number": 157,
+      "line_number": 164,
       "symbol": "{",
       "message": "Function '{' (115 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_psnr_hvs_simd.c:157:HISS-04"
+      "fingerprint": "core/test/test_psnr_hvs_simd.c:164:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -9809,18 +9769,18 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/test/test_ssimulacra2_simd.c",
-      "line_number": 758,
+      "line_number": 768,
       "symbol": "{",
       "message": "Function '{' (76 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_ssimulacra2_simd.c:758:HISS-04"
+      "fingerprint": "core/test/test_ssimulacra2_simd.c:768:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/test/test_ssimulacra2_simd.c",
-      "line_number": 864,
+      "line_number": 874,
       "symbol": "test_ptlr_one",
       "message": "Function 'test_ptlr_one' (104 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_ssimulacra2_simd.c:864:HISS-04"
+      "fingerprint": "core/test/test_ssimulacra2_simd.c:874:HISS-04"
     },
     {
       "rule_id": "HISS-04",
