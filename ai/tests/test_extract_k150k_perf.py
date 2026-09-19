@@ -7,6 +7,8 @@ Covers:
            parquet is equivalent to the old per-200-flush strategy.
   Win 2 — ffprobe skip: geometry is resolved from the CHUG JSONL sidecar when
            all required fields are present.
+  Win 3 — tmpfs scratch: temporary YUV files are auto-selected to /dev/shm
+           when it is writable and has enough free space.
 
 These tests are intentionally vmaf-binary-free and ffprobe-free; they exercise
 only the I/O layer (Research-0135) via small synthetic data.
@@ -28,8 +30,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ai" / "scripts"))
 
 from extract_k150k_features import (
+    _DEV_SHM,
+    _TMPFS_HEADROOM_BYTES,
     FEATURE_NAMES,
     _append_row_to_staging,
+    _choose_scratch_dir,
     _geometry_from_sidecar,
     _load_staging_rows,
     _process_clip,
@@ -370,3 +375,81 @@ class TestProcessClipFfprobeSkip:
 
         assert len(probe_called) == 1
         assert row["height"] == 480
+
+
+# ---------------------------------------------------------------------------
+# Win 3: tmpfs scratch directory auto-selection
+# ---------------------------------------------------------------------------
+
+
+class TestChooseScratchDir:
+    """_choose_scratch_dir selects /dev/shm when available and large enough."""
+
+    def test_explicit_path_always_honoured(self, tmp_path: Path) -> None:
+        """An explicit requested path is returned as-is without any stat."""
+        result = _choose_scratch_dir(tmp_path)
+        assert result == tmp_path
+
+    def test_devshm_selected_when_writable_and_large(self) -> None:
+        """Returns /dev/shm subdir when writable and free >= threshold."""
+        fake_stat = type(
+            "st",
+            (),
+            {"f_bavail": _TMPFS_HEADROOM_BYTES // 4096 + 1, "f_frsize": 4096},
+        )()
+        with (
+            patch("extract_k150k_features._DEV_SHM", _DEV_SHM),
+            patch("os.path.isdir", return_value=True),
+            patch("os.access", return_value=True),
+            patch("os.statvfs", return_value=fake_stat),
+        ):
+            # Replicate the logic under test; the patch targets module globals.
+
+            import extract_k150k_features as mod
+
+            orig_dev_shm = mod._DEV_SHM
+            mod._DEV_SHM = Path("/dev/shm")
+            try:
+                result = _choose_scratch_dir(None)
+            finally:
+                mod._DEV_SHM = orig_dev_shm
+        # When /dev/shm is present and large, the result should be under it.
+        assert str(result).startswith("/dev/shm"), f"Expected path under /dev/shm, got {result}"
+
+    def test_fallback_when_devshm_missing(self, tmp_path: Path) -> None:
+        """Falls back to OS temp when /dev/shm does not exist."""
+        import extract_k150k_features as mod
+
+        orig = mod._DEV_SHM
+        mod._DEV_SHM = tmp_path / "nonexistent_shm"  # does not exist
+        try:
+            result = _choose_scratch_dir(None)
+        finally:
+            mod._DEV_SHM = orig
+        # Must not be under the fake /dev/shm path.
+        assert not str(result).startswith(str(tmp_path / "nonexistent_shm"))
+
+    def test_fallback_when_devshm_too_small(self, tmp_path: Path) -> None:
+        """Falls back to OS temp when /dev/shm has insufficient free space."""
+        import extract_k150k_features as mod
+
+        shm_dir = tmp_path / "fake_shm"
+        shm_dir.mkdir()
+        orig = mod._DEV_SHM
+        mod._DEV_SHM = shm_dir
+        # statvfs returns only 1 GiB free — below 20 GiB threshold.
+        fake_stat = type(
+            "st",
+            (),
+            {"f_bavail": (1 * 1024 * 1024 * 1024) // 4096, "f_frsize": 4096},
+        )()
+        try:
+            with patch("os.statvfs", return_value=fake_stat):
+                result = _choose_scratch_dir(None)
+        finally:
+            mod._DEV_SHM = orig
+        assert not str(result).startswith(str(shm_dir))
+
+    def test_threshold_constant_sanity(self) -> None:
+        """_TMPFS_HEADROOM_BYTES is at least 20 GiB (8 workers × ~1.5 GiB each)."""
+        assert _TMPFS_HEADROOM_BYTES >= 20 * 1024 * 1024 * 1024
