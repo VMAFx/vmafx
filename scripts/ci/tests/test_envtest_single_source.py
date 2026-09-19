@@ -16,6 +16,12 @@ import textwrap
 import unittest
 from pathlib import Path
 
+# A hang detector, not a timing assertion: these subprocesses finish in tens of
+# milliseconds locally, but a loaded CI runner has blown a 10-second cap and the
+# TimeoutExpired then reads as a real test failure (bug ledger L-76). 120s still
+# catches a genuine hang long before the job's own timeout.
+SUBPROCESS_TIMEOUT_S = 120
+
 ROOT = Path(__file__).resolve().parents[3]
 MODULE = "sigs.k8s.io/controller-runtime/tools/setup-envtest"
 BASH = shutil.which("bash") or "/bin/bash"
@@ -89,7 +95,7 @@ if not os.environ.get("EMPTY_ASSETS"):print(os.environ["ASSET_PATH"])
             env=self.env,
             text=True,
             capture_output=True,
-            timeout=10,
+            timeout=SUBPROCESS_TIMEOUT_S,
         )
 
     def helper_run(self, mode: str) -> subprocess.CompletedProcess[str]:

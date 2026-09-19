@@ -651,3 +651,17 @@ Writing a new HIP parity test: check `-ENOSYS` at **both** sites --
 `vmaf_use_feature()` AND `vmaf_read_pictures()`. Extractor may give up at
 registration or inside `extract()`; `speed_temporal_hip` does the latter.
 Reference shape: `core/test/test_hip_speed_temporal_parity.c`.
+## `__HIP_PLATFORM_AMD__` comes from the build (ADR-1263)
+
+New HIP host source needs **no** `#define __HIP_PLATFORM_AMD__`. `hip_deps` in
+`core/src/hip/meson.build` supplies `-D__HIP_PLATFORM_AMD__=1` to every HIP TU,
+outside the `hip_runtime_dep` discovery branch, so both branches get it.
+
+Copying the old `#define` from a neighbour re-adds a reserved identifier
+(`cert-dcl37-c`): next PR touching that file then owns removing it.
+
+## No path globs in block comments
+
+`core/src/feature/hip/*.c` inside `/* ... */` opens nested comment ->
+`-Wcomment` on every HIP build -> zero-warning gate fails. 14 parity tests had
+it. Name the set in prose: "the .c files under core/src/feature/hip/".

@@ -986,3 +986,4 @@
 1259-ci-build-matrix-as-it-runs
 1260-windows-arm64-cpu-lane
 1264-hip-scaffold-enosys-contract
+1263-hip-platform-macro-single-source

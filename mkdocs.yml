@@ -1971,6 +1971,7 @@ nav:
         - "vulkan-video": adr/by-tag/vulkan-video.md
         - "vulkan": adr/by-tag/vulkan.md
         - "vvc": adr/by-tag/vvc.md
+        - "warnings": adr/by-tag/warnings.md
         - "wasm": adr/by-tag/wasm.md
         - "wave-1": adr/by-tag/wave-1.md
         - "wavelet": adr/by-tag/wavelet.md
