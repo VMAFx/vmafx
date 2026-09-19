@@ -11,6 +11,68 @@ file a follow-up ticket and link to it here.
 
 ---
 
+## Open pull requests this fork has sent upstream
+
+Eight, all open on 2026-09-19 and all validated against upstream
+`86da14d0306a138fd3f01319860b905169746516`. No CI has ever run on any of them:
+every workflow on the upstream repository sits at `action_required`, waiting for
+a maintainer to approve a first-time contributor's run. Each was rebased onto
+that revision and re-validated locally on 2026-09-19.
+
+| Upstream PR | What it fixes | Where the fork tracks it |
+| --- | --- | --- |
+| [#1588](https://github.com/Netflix/vmaf/pull/1588) | `vmaf_model_feature_overload()` leaks the caller's dictionary when a merge fails | `T-UPSTREAM-1242-FEATURE-DICT-OWNERSHIP-2026-09-03` |
+| [#1589](https://github.com/Netflix/vmaf/pull/1589) | percentile pooling methods on the C API | `T-UPSTREAM-818-POOLING-ENUM-NO-PERCENTILES-2026-09-03` |
+| [#1590](https://github.com/Netflix/vmaf/pull/1590) | model-collection allocation failure handling | ADR-1166 harvest |
+| [#1591](https://github.com/Netflix/vmaf/pull/1591) | thread-pool creation error paths | ADR-1166 harvest |
+| [#1599](https://github.com/Netflix/vmaf/pull/1599) | scale-3 DWT reads index -1 for frame dimensions 17 to 32 | `T-ADM-SCALE3-TINY-FRAME-OOB-READ-2026-09-18` |
+| [#1600](https://github.com/Netflix/vmaf/pull/1600) | `pow(2, shift - 1)` with a shift of 0 in `adm_cm` | `T-ADM-AVX512-SMALL-WIDTH-SCALE0-2026-09-18` |
+| [#1601](https://github.com/Netflix/vmaf/pull/1601) | signed overflow in the 16-bit vertical DWT, and a left shift of negative taps | `T-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18` |
+| [#1602](https://github.com/Netflix/vmaf/pull/1602) | the SIMD `adm_cm` centre tap keeps 32 bits where scalar wraps to int16 | `T-ADM-CM-SIMD-NOISE-NOT-BIT-EXACT-2026-09-18` |
+
+Two of these differ from what the fork carries, which matters at the next sync:
+
+- **#1601 takes a cheaper fix than the fork's.** The fork widens the accumulator
+  to int64 (PR #1477). Upstream measured that at 3.5 to 6 % of throughput, so
+  the upstream patch starts the sum from the normalization offset instead, which
+  adds no operation and measures within noise. **That approach is worth bringing
+  back to the fork.**
+- **#1602 makes SIMD follow scalar**, as the fork does, and says plainly that
+  `float_adm` is closer to the unwrapped vector value than to scalar, so the
+  wrap is an artefact of the scalar reference. If upstream decides to remove the
+  int16 cast everywhere instead, the fork's PR #1474 needs revisiting.
+
+Upstream PR [#1494](https://github.com/Netflix/vmaf/pull/1494) (open since April,
+by an upstream maintainer) refactors the same ADM functions. It does not touch
+the lines above, but whichever lands first leaves the other needing a rebase.
+
+## Seen upstream, not reported
+
+Found on `86da14d0` while validating the pull requests above, outside their
+scope. Nothing about these was posted upstream; each is a candidate for a later
+one. Recorded here so the fork does not rediscover them.
+
+1. **checkasm's `check_adm_dwt2` over-reads its 16-bit source**
+   (`libvmaf/test/checkasm/check_adm.c:381`): it passes `w * sizeof(uint16_t)`
+   as `src_stride`, but `adm_dwt2_16()` indexes samples, not bytes. ASan on a
+   checkasm build reports a `heap-buffer-overflow` read of size 2, zero bytes after
+   a 512-byte region. One-line fix, and the newest code of the list.
+2. **Direct-read YUV input breaks odd dimensions**
+   (`yuv_fetch_into_vmaf_picture`): it reads `w >> 1` chroma samples per row
+   while the frame layout uses `(w + 1) / 2`. A 19x19 4:2:0 clip reports an error
+   and then segfaults, because the tool continues after the failed fetch.
+3. **Frames below 17 px crash integer ADM.** At 16x16, UBSan reports a shift
+   exponent of 4294967295 in `adm_cm` and a release build dumps core.
+4. **`get_best15_from32()` shifts by a negative count** (`adm_avx2.c:1339`) for
+   values below 32768, on every lane before the blend. The result is discarded.
+5. **A zero-length variable-length array** at `vmaf.c:220` with
+   `--no_prediction`.
+6. **The SIMD `adm_cm` casts its accumulator to float before dividing**
+   (`adm_avx2.c:2383`, `adm_avx512.c:2040`) where scalar divides the int64 in
+   double. This likely explains upstream's 1e-4 checkasm tolerance. Not measured.
+
+---
+
 ## `adm_decouple_s123_avx512` LTO+release SEGV — fixed in this fork
 
 **Status:** fixed in this fork (PR #69 follow-up commit), still present upstream.
