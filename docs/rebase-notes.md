@@ -264,6 +264,19 @@ write initialized planes and scalar numerator/denominator outputs. Keep the
 odd-stride and temporal EOF/error lifecycle test registered. No public C API
 or FFmpeg surface changes; the scalar arithmetic remains Netflix-compatible.
 
+## docs/upstream-pr-links — what the fork has open upstream (2026-09-19)
+
+`docs/development/known-upstream-bugs.md` lists the eight pull requests this
+fork has open against Netflix/vmaf and the six upstream defects it found and did
+not report. The next sync should read it before resolving conflicts in
+`integer_adm.c`, `adm_avx2.c`, `adm_avx512.c` or `output.c`: if an upstream PR
+landed, the incoming side may already carry the fork's fix, and in two cases it
+carries a *different* fix. Upstream #1601 starts the 16-bit DWT sum from the
+normalization offset rather than widening the accumulator to int64 as the fork's
+#1477 does, because the int64 form costs 3.5 to 6 % of throughput upstream. Do
+not resolve that conflict by keeping both. Upstream #1494, by a maintainer,
+refactors the same ADM functions and will force a rebase either way.
+
 ## renovate/ubuntu-26.04 — job artefacts leave /tmp (2026-09-19)
 
 The hosted runner label moved from `ubuntu-24.04` to `ubuntu-26.04` across 21

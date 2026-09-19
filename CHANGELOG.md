@@ -15912,6 +15912,16 @@ audit needed before the abs() refactor can land safely.
   beyond the documentation entries themselves.
 
 
+- **The fork now records the eight pull requests it has open against
+  Netflix/vmaf, and six upstream defects it found but did not report.**
+  `docs/development/known-upstream-bugs.md` lists each contribution against the
+  fork's own bug id, and states where the upstream fix differs from the fork's:
+  upstream's 16-bit DWT overflow patch starts the sum from the normalization
+  offset instead of widening the accumulator, which costs nothing and is worth
+  bringing back here. Three `docs/state.md` rows cite the upstream pull request
+  that carries their fix.
+
+
 - Single-source package versions across the repository and eliminate Python dependency triplication ([ADR-1236](docs/adr/1236-version-single-source-tree.md)):
   - `python/pyproject.toml` `[project].dependencies` is now the single owner of the `vmaf` Python package runtime dependencies. Duplicate `install_requires` in `python/setup.py` is removed, relying on standard setuptools reading `pyproject.toml`.
   - `python/requirements.txt` is mechanically derived from `python/pyproject.toml` via `scripts/ci/check-python-requirements-single-source.sh --write` (`make python-deps-sync`), verified by CI and pre-commit hooks.
