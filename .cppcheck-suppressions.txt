@@ -6,11 +6,12 @@
 # so every other exclusion this file used to carry has been retired and the
 # findings behind them fixed in the source.
 
-# NOTE: do not write a bare "#" line in this file. cppcheck 2.13 -- the version
-# CI installs from the Ubuntu 24.04 archive -- strips the leading "#" and then
-# fails to parse the empty remainder with "Failed to add suppression. No id.",
-# which aborts the whole run. Blank lines are fine; comment lines must carry
-# text. Measured against 2.13.0 in a container.
+# NOTE: do not write a bare "#" line in this file. cppcheck 2.13 strips the
+# leading "#" and then fails to parse the empty remainder with "Failed to add
+# suppression. No id.", which aborts the whole run. Blank lines are fine;
+# comment lines must carry text. Measured against 2.13.0 in a container. CI now
+# installs 2.19 from the Ubuntu 26.04 archive, which does not have that bug, but
+# the rule costs nothing and keeps the file usable with either version.
 
 # Generated / fetched at build time.
 *:build/*
