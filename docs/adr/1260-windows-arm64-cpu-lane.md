@@ -125,9 +125,14 @@ With the lane come the two tree changes it needed:
   the `alignas` keyword. MSVC defines no `__ARM_NEON`, so the header was
   empty on this lane: `ssim_neon.c` failed to compile and
   `convolve_neon.c` silently degraded its ADR-0138 widening reduction to an
-  implicit external call (C4013). Found by the lane's first run, which is
-  the concrete argument for decision that it runs tests rather than being
-  build-only like the ADR-0121 legs.
+  implicit external call (C4013).
+
+That last defect is why this lane runs tests instead of only building, as the
+ADR-0121 Windows legs do. `ssim_neon.c` failing to compile would have stopped a
+build-only lane too, but the `convolve_neon.c` degradation would not: C4013 is a
+warning, the object links, and a build-only lane reports the step green while a
+bit-exact reduction has quietly become a call to a function that does not exist.
+The lane's first run found it. A lane that only builds would not have.
 
 ## Alternatives considered
 
