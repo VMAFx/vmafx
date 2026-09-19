@@ -117,10 +117,16 @@ Fork-local subtree. Read this before editing any TU under
    corrupt host's main measurement run. Tool accepts YUV420p
    8/10/12/16-bit inputs only; adding 4:2:2 / 4:4:4 requires
    `pixel_format` schema extension, docs, and tests in same PR.
-5. **Vendored cJSON v1.7.18 is verbatim** under MIT. Never patch
-   it locally — refresh by re-downloading from upstream
-   `DaveGamble/cJSON`, update `3rdparty/cJSON/LICENSE` in
-   same commit.
+5. **Vendored cJSON = v1.7.19 plus fork delta, NOT verbatim.**
+   `3rdparty/cJSON/cJSON.c` carries banned-function replacements
+   (ADR-0683 / ADR-1061), `cJSON_GetArraySize` saturation, ADR-1142
+   rework, `saturate_to_int` for NaN. Refresh = re-download upstream,
+   **re-apply that delta**, update `3rdparty/cJSON/LICENSE` in same
+   commit. [`3rdparty/cJSON/AGENTS.md`](3rdparty/cJSON/AGENTS.md) lists
+   delta + gates. Rule used to read "verbatim, do NOT patch it locally",
+   contradicting invariant further down same file; PR #883 followed it
+   and reverted two security fixes
+   (`T-VENDORED-CJSON-BANNED-FUNCTIONS-REVERTED-2026-09-19`).
 6. **SSE transport is fork-owned plain POSIX sockets — NOT mongoose.**
    Original v3 plan to vendor cesanta/mongoose was reversed
    because mongoose 7.18 is GPL-2.0-only OR commercial,
@@ -176,18 +182,22 @@ defined by build system or re-added at top of file.
 
 ## Invariant: cJSON banned-function-free (ADR-0683 / ADR-1061)
 
-`3rdparty/cJSON/cJSON.c` must remain free of `sprintf`, `strcpy`,
-`strcat`, `strtok`, `atoi`, `atof`, `gets`, `rand`, `system`.
-Verify with:
+`3rdparty/cJSON/cJSON.c` stays free of `sprintf`, `strcpy`, `strcat`,
+`strtok`, `atoi`, `atof`, `gets`, `rand`, `system`. Enforced, not
+remembered: `vmaf-no-strcpy-strcat-sprintf` Semgrep rule covers this
+directory (hook `semgrep-local`, CI job `Semgrep`), and
+`scripts/ci/tests/test_semgrep_vendored_scope.py` (hook
+`test-semgrep-vendored-scope`) fails if path exclude or `.semgrepignore`
+line ever hides it again -> that is what let the 1.7.19 re-vendor bring
+eleven banned calls back unnoticed. Verify:
 
 ```bash
-grep -n '\bsprintf\b\|\bstrcpy\b\|\bstrcat\b' core/src/mcp/3rdparty/cJSON/cJSON.c
+python3 -m unittest discover -s scripts/ci/tests -p test_semgrep_vendored_scope.py
 ```
 
-Expected output = empty (only comments mentioning these names
-allowed). Future cJSON version sync must re-validate,
-re-apply replacements documented in ADR-0683 / ADR-1061 if
-upstream has not addressed them.
+Future cJSON version sync re-applies fork delta listed in
+[`3rdparty/cJSON/AGENTS.md`](3rdparty/cJSON/AGENTS.md). Never answer a
+finding here with an exclusion.
 
 ## Smoke test
 

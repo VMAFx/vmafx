@@ -268,6 +268,18 @@ foreach increment_case : [['zero', '0'], ['oversized', 'SIZE_MAX']]
     test(increment_test_name, increment_test, suite : ['fast'])
 endforeach
 
+# Behaviour pin for the vendored cJSON and its fork delta (ADR-0683, ADR-1061).
+# Deliberately NOT behind enable_mcp: the test compiles cJSON.c itself, so every
+# CPU build runs it and cJSON.c is in the CPU lane's compile database, which is
+# what puts it in front of the Tidy Ratchet and Cppcheck jobs. It needs libm for
+# the fabs() in cJSON's number comparison.
+test_cjson = executable('test_cjson',
+    ['test.c', 'test_cjson.c', '../src/mcp/3rdparty/cJSON/cJSON.c'],
+    include_directories : [test_inc, include_directories('../src/mcp/3rdparty/cJSON')],
+    dependencies : [math_lib],
+)
+test('test_cjson', test_cjson, suite : ['fast'])
+
 test_model = executable('test_model',
     ['test.c', 'test_model.c', '../src/dict.cpp', '../src/pdjson.c', json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
