@@ -29652,6 +29652,15 @@ See `docs/server/auth.md` for the full configuration guide.
   `gosec -exclude-generated ./...` is the new zero-finding contract.
 
 
+- **`google.golang.org/grpc` stays on the patched 1.83.x line.** A dependency
+  bump had raised it to 1.84.0, which carries GHSA-2v4p-qf9q-27wj: a gRPC xDS
+  server panics on a request that arrives with neither an `:authority` nor a
+  `Host` header, which is a denial of service. The only fix for the 1.84 line is
+  an unreleased development pseudo-version, so there is no stable release past
+  1.84.0 to move to. A Renovate rule holds the package below 1.84.0 until
+  grpc-go tags one.
+
+
 - **Vendored libsvm 3.24 audit closes one residual parser oob in `svm.cpp`
   and ratifies the existing fork patch set.** The fork-local
   SAN-MODEL-MALLOC-OOB hardening (introduced 2026-05-09) bounded the

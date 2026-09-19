@@ -247,6 +247,16 @@
       ]
     },
     {
+      "description": "google.golang.org/grpc is held at the patched 1.83.x line. GHSA-2v4p-qf9q-27wj (high) covers >= 1.84.0-dev, and the only fix in that line is the unreleased pseudo-version 1.85.0-dev.0.20260825072537-93e31b48545e, so no stable tag past 1.84.0 carries it. Raise this when grpc-go tags a release at or after that pseudo-version; Dependency Review fails the pull request otherwise (T-GO-GRPC-1840-ADVISORY-2026-09-19).",
+      "matchDatasources": [
+        "go"
+      ],
+      "matchPackageNames": [
+        "google.golang.org/grpc"
+      ],
+      "allowedVersions": "<1.84.0"
+    },
+    {
       "description": "onnx is held below 1.23: onnx 1.23 writes models at IR version 14, and onnxruntime 1.30, the runtime this repository pins, loads at most IR 13 (T-AI-ONNX-IR14-UNLOADABLE-2026-09-18). Raise this together with an onnxruntime that reads the newer IR, and with the cap in ai/pyproject.toml and tools/ensemble-training-kit/pyproject.toml.",
       "matchDatasources": [
         "pypi"
