@@ -233,6 +233,26 @@ and teardown.
   `fill_random` FP rounding order is load-bearing for input bit
   patterns).
 
+## AArch64-gated tests compile under MSVC (ADR-1260)
+
+`Windows ARM64 MSVC` lane builds every test `core/test/meson.build` gates on
+`cpu_family()` containing `aarch64` with `cl.exe`, then runs `--suite fast`.
+Rules for those files:
+
+- No POSIX-only headers or calls under `#if ARCH_AARCH64`: `<sys/mman.h>`,
+  `<unistd.h>`, `sigaction`, `sigsetjmp`, `sysconf`, `_exit`. Windows twin or
+  no use.
+- Guard-page probes go through `test_ciede_neon.c`'s five entry points
+  (`probe_page_size`, `guarded_row_alloc`, `guarded_row_free`,
+  `fault_trap_install` / `fault_trap_restore`, `run_kernel_guarded`): POSIX =
+  `mmap` + `PROT_NONE` + `sigsetjmp`; Windows = `VirtualAlloc` +
+  `PAGE_NOACCESS` + SEH `__try` / `__except`. Copy that shape, do not
+  reinvent.
+- ADR-1138 `NULL` carve-out applies (MSVC `/std:clatest`, no `nullptr`).
+- Local check before push: `meson setup build/aarch64 core --cross-file
+  ~/.cache/vmafx-cross/aarch64-clang.ini`, `meson test -C build/aarch64
+  <test>` under qemu. MSVC itself: CI only.
+
 ## Governing ADRs
 
 - [ADR-0015](../../docs/adr/0015-ci-matrix-asan-ubsan-tsan.md) —

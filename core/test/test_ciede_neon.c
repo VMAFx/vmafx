@@ -28,12 +28,15 @@
  *      adm_dwt2 vertical-pass tail were: `ciede_preprocess_8_neon` stepped
  *      four pixels per iteration but issued an eight-byte `vld1_u8`, so the
  *      final vector iteration always read four bytes it never consumed. The
- *      probe below places each plane row immediately before a PROT_NONE guard
- *      page and reports the exact number of bytes past `w` the kernel touches.
+ *      probe below places each plane row immediately before an inaccessible
+ *      guard page and reports the exact number of bytes past `w` the kernel
+ *      touches. The guard page is `mmap` + `PROT_NONE` on POSIX and
+ *      `VirtualAlloc` + `PAGE_NOACCESS` on Windows; the fault is caught with
+ *      `sigsetjmp` / `siglongjmp` and with SEH `__try` / `__except`
+ *      respectively, so the Windows ARM64 lane (ADR-1260) runs the same
+ *      probe as the Linux and macOS aarch64 builds.
  */
 
-#include <setjmp.h>
-#include <signal.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -44,8 +47,19 @@
 #include "test.h"
 
 #if ARCH_AARCH64
+#if defined(_WIN32)
+#if !defined(_MSC_VER) && !defined(__clang__)
+#error "the guard-page probe needs structured exception handling (__try) on Windows"
+#endif
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#else
+#include <setjmp.h>
+#include <signal.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#endif
 
 #include "feature/arm64/ciede_neon.h"
 
@@ -98,11 +112,104 @@ static uint32_t xorshift32(uint32_t *state)
 /* -------------------------------------------------------------------------
  * Guard-page probe.
  *
- * Each plane row is placed so that its last byte abuts a PROT_NONE page. A
- * kernel that reads even one byte past the row faults; the handler unwinds
- * back into the probe, which retries with one more readable byte of slack.
- * The first slack value that survives IS the kernel's over-read extent.
+ * Each plane row is placed so that its last byte abuts an inaccessible page.
+ * A kernel that reads even one byte past the row faults; the fault is caught
+ * and the probe retries with one more readable byte of slack. The first slack
+ * value that survives IS the kernel's over-read extent.
+ *
+ * The platform layer below is two implementations of the same five entry
+ * points: `probe_page_size`, `guarded_row_alloc`, `guarded_row_free`,
+ * `fault_trap_install` / `fault_trap_restore`, and `run_kernel_guarded`.
  * ---------------------------------------------------------------------- */
+
+typedef struct GuardedRow {
+    uint8_t *map;   /* base of the two-page mapping */
+    size_t map_len; /* total mapped bytes */
+    uint8_t *row;   /* row start; row + readable == guard page */
+} GuardedRow;
+
+static void run_kernel(const GuardedRow g[3], float *const out[3], int w, int elem_size)
+{
+    if (elem_size == 1) {
+        ciede_preprocess_8_neon(g[0].row, g[1].row, g[2].row, out[0], out[1], out[2], w);
+    } else {
+        ciede_preprocess_16_neon((const uint16_t *)g[0].row, (const uint16_t *)g[1].row,
+                                 (const uint16_t *)g[2].row, out[0], out[1], out[2], w);
+    }
+}
+
+#if defined(_WIN32)
+
+/* SEH needs no process-wide state; the struct only keeps both platform
+ * variants of the probe on the same call shape. */
+typedef struct FaultTrap {
+    int armed;
+} FaultTrap;
+
+static long probe_page_size(void)
+{
+    SYSTEM_INFO info;
+    GetSystemInfo(&info);
+    return (long)info.dwPageSize;
+}
+
+/* Commits [readable-page][PAGE_NOACCESS page] and returns a row whose last
+ * readable byte is the last byte of the first page. Returns 0 on success. */
+static int guarded_row_alloc(GuardedRow *g, size_t readable, long page)
+{
+    DWORD old_protect = 0;
+    g->map_len = (size_t)page * 2u;
+    g->map = VirtualAlloc(NULL, g->map_len, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (!g->map) {
+        return -1;
+    }
+    if (!VirtualProtect(g->map + page, (size_t)page, PAGE_NOACCESS, &old_protect)) {
+        (void)VirtualFree(g->map, 0, MEM_RELEASE);
+        g->map = NULL;
+        return -1;
+    }
+    g->row = g->map + (size_t)page - readable;
+    return 0;
+}
+
+static void guarded_row_free(GuardedRow *g)
+{
+    if (g->map) {
+        (void)VirtualFree(g->map, 0, MEM_RELEASE);
+    }
+    g->map = NULL;
+}
+
+static int fault_trap_install(FaultTrap *trap)
+{
+    trap->armed = 1;
+    return 0;
+}
+
+static void fault_trap_restore(FaultTrap *trap)
+{
+    trap->armed = 0;
+}
+
+/* Returns 1 if the kernel ran to completion, 0 if it faulted on the guard. Any
+ * exception other than an access violation is not ours and keeps propagating. */
+static int run_kernel_guarded(const GuardedRow g[3], float *const out[3], int w, int elem_size)
+{
+    __try {
+        run_kernel(g, out, w, elem_size);
+    } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER :
+                                                                   EXCEPTION_CONTINUE_SEARCH) {
+        return 0;
+    }
+    return 1;
+}
+
+#else /* POSIX */
+
+typedef struct FaultTrap {
+    struct sigaction old_segv;
+    struct sigaction old_bus;
+} FaultTrap;
 
 static sigjmp_buf g_fault_jmp;
 static volatile sig_atomic_t g_fault_armed;
@@ -116,11 +223,10 @@ static void fault_handler(int sig)
     _exit(128 + sig);
 }
 
-typedef struct GuardedRow {
-    uint8_t *map;   /* base of the two-page mapping */
-    size_t map_len; /* total mapped bytes */
-    uint8_t *row;   /* row start; row + readable == guard page */
-} GuardedRow;
+static long probe_page_size(void)
+{
+    return sysconf(_SC_PAGESIZE);
+}
 
 /* Maps [readable-page][PROT_NONE page] and returns a row whose last readable
  * byte is the last byte of the first page. Returns 0 on success. */
@@ -143,87 +249,130 @@ static int guarded_row_alloc(GuardedRow *g, size_t readable, long page)
 
 static void guarded_row_free(GuardedRow *g)
 {
-    if (g->map)
+    if (g->map) {
         (void)munmap(g->map, g->map_len);
+    }
     g->map = NULL;
 }
 
-/* Returns the smallest number of readable bytes past `w` elements that lets
- * the kernel run without faulting, or -1 if it exceeds `max_slack`. */
-static int probe_overread(int w, int elem_size, int max_slack)
+static int fault_trap_install(FaultTrap *trap)
 {
-    const long page = sysconf(_SC_PAGESIZE);
-    struct sigaction sa, old_segv, old_bus;
-    float *out[3] = {NULL, NULL, NULL};
-    int result = -1;
-
-    for (int k = 0; k < 3; k++) {
-        out[k] = calloc((size_t)w + 8u, sizeof(float));
-        if (!out[k])
-            goto done;
-    }
-
+    struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = fault_handler;
-    sigemptyset(&sa.sa_mask);
+    (void)sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_NODEFER;
-    if (sigaction(SIGSEGV, &sa, &old_segv) != 0)
-        goto done;
-    if (sigaction(SIGBUS, &sa, &old_bus) != 0) {
-        (void)sigaction(SIGSEGV, &old_segv, NULL);
-        goto done;
+    if (sigaction(SIGSEGV, &sa, &trap->old_segv) != 0) {
+        return -1;
     }
+    if (sigaction(SIGBUS, &sa, &trap->old_bus) != 0) {
+        (void)sigaction(SIGSEGV, &trap->old_segv, NULL);
+        return -1;
+    }
+    return 0;
+}
 
-    /* `slack`, `mapped` and `survived` are live across the siglongjmp, so they
-     * must be volatile: a register-allocated local would be restored to its
-     * pre-sigsetjmp value when the handler unwinds (C11 7.13.2.1p3). */
-    for (volatile int slack = 0; slack <= max_slack; slack++) {
-        const size_t readable = (size_t)(w + slack) * (size_t)elem_size;
-        GuardedRow g[3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
-        uint32_t seed = 0xC1EDE000u ^ (uint32_t)(w * 7 + slack);
-        volatile int mapped = 0;
-        volatile int survived = 0;
+static void fault_trap_restore(FaultTrap *trap)
+{
+    (void)sigaction(SIGSEGV, &trap->old_segv, NULL);
+    (void)sigaction(SIGBUS, &trap->old_bus, NULL);
+}
 
-        if (readable > (size_t)page)
+/* Returns 1 if the kernel ran to completion, 0 if it faulted on the guard.
+ * `survived` is live across the siglongjmp, so it must be volatile: a
+ * register-allocated local would be restored to its pre-sigsetjmp value when
+ * the handler unwinds (C11 7.13.2.1p3). */
+static int run_kernel_guarded(const GuardedRow g[3], float *const out[3], int w, int elem_size)
+{
+    volatile int survived = 0;
+    g_fault_armed = 1;
+    if (sigsetjmp(g_fault_jmp, 1) == 0) {
+        run_kernel(g, out, w, elem_size);
+        survived = 1;
+    }
+    g_fault_armed = 0;
+    return survived;
+}
+
+#endif /* _WIN32 */
+
+/* Fills three guarded rows with `readable` pseudo-random bytes and runs the
+ * kernel over them. Returns 1 if the kernel survived, 0 if it faulted, -1 if a
+ * row could not be mapped. */
+static int probe_slack(int w, int elem_size, int slack, long page, float *const out[3])
+{
+    const size_t readable = ((size_t)w + (size_t)slack) * (size_t)elem_size;
+    GuardedRow g[3] = {{NULL, 0, NULL}, {NULL, 0, NULL}, {NULL, 0, NULL}};
+    uint32_t seed = 0xC1EDE000u ^ (uint32_t)(w * 7 + slack);
+    int mapped = 0;
+    int survived = -1;
+
+    for (int k = 0; k < 3; k++) {
+        if (guarded_row_alloc(&g[k], readable, page) != 0) {
             break;
-        for (int k = 0; k < 3; k++) {
-            if (guarded_row_alloc(&g[k], readable, page) != 0)
-                goto unmap;
-            for (size_t b = 0; b < readable; b++)
-                g[k].row[b] = (uint8_t)xorshift32(&seed);
-            mapped++;
         }
-
-        g_fault_armed = 1;
-        if (sigsetjmp(g_fault_jmp, 1) == 0) {
-            if (elem_size == 1)
-                ciede_preprocess_8_neon(g[0].row, g[1].row, g[2].row, out[0], out[1], out[2], w);
-            else
-                ciede_preprocess_16_neon((const uint16_t *)g[0].row, (const uint16_t *)g[1].row,
-                                         (const uint16_t *)g[2].row, out[0], out[1], out[2], w);
-            survived = 1;
-        } else {
-            survived = 0;
+        for (size_t b = 0; b < readable; b++) {
+            g[k].row[b] = (uint8_t)xorshift32(&seed);
         }
-        g_fault_armed = 0;
+        mapped++;
+    }
+    if (mapped == 3) {
+        survived = run_kernel_guarded(g, out, w, elem_size);
+    }
+    for (int k = 0; k < mapped; k++) {
+        guarded_row_free(&g[k]);
+    }
+    return survived;
+}
 
-    unmap:
-        for (int k = 0; k < mapped; k++)
-            guarded_row_free(&g[k]);
-        if (mapped < 3)
-            break;
-        if (survived) {
-            result = slack * elem_size;
-            break;
+static int probe_outputs_alloc(float *out[3], int w)
+{
+    for (int k = 0; k < 3; k++) {
+        out[k] = calloc((size_t)w + 8u, sizeof(float));
+        if (!out[k]) {
+            return -1;
         }
     }
+    return 0;
+}
 
-    (void)sigaction(SIGSEGV, &old_segv, NULL);
-    (void)sigaction(SIGBUS, &old_bus, NULL);
-
-done:
-    for (int k = 0; k < 3; k++)
+static void probe_outputs_free(float *out[3])
+{
+    for (int k = 0; k < 3; k++) {
         free(out[k]);
+        out[k] = NULL;
+    }
+}
+
+/* Returns the smallest number of readable bytes past `w` elements that lets
+ * the kernel run without faulting, or -1 if it exceeds `max_slack` or the
+ * probe could not be set up. */
+static int probe_overread(int w, int elem_size, int max_slack)
+{
+    const long page = probe_page_size();
+    float *out[3] = {NULL, NULL, NULL};
+    FaultTrap trap;
+    int result = -1;
+
+    if (probe_outputs_alloc(out, w) == 0 && fault_trap_install(&trap) == 0) {
+        for (int slack = 0; slack <= max_slack; slack++) {
+            const size_t readable = ((size_t)w + (size_t)slack) * (size_t)elem_size;
+            int survived;
+            if (readable > (size_t)page) {
+                break;
+            }
+            survived = probe_slack(w, elem_size, slack, page, out);
+            if (survived < 0) {
+                break;
+            }
+            if (survived) {
+                result = slack * elem_size;
+                break;
+            }
+        }
+        fault_trap_restore(&trap);
+    }
+    probe_outputs_free(out);
     return result;
 }
 
@@ -231,79 +380,120 @@ done:
  * Value parity.
  * ---------------------------------------------------------------------- */
 
-static int check_parity_8(int w, uint32_t seed)
+typedef struct ParityBuffers {
+    void *in[3];    /* packed input rows, uint8_t or uint16_t */
+    float *ref[3];  /* scalar output */
+    float *simd[3]; /* NEON output */
+} ParityBuffers;
+
+static void parity_buffers_free(ParityBuffers *b)
 {
-    const size_t out_bytes = (size_t)w * sizeof(float);
-    uint8_t *in[3];
-    float *ref[3], *simd[3];
-    int mismatches = 0;
-
     for (int k = 0; k < 3; k++) {
-        in[k] = malloc((size_t)w);
-        ref[k] = malloc(out_bytes);
-        simd[k] = malloc(out_bytes);
-        if (!in[k] || !ref[k] || !simd[k])
-            return -1;
-        memset(ref[k], 0xA5, out_bytes);
-        memset(simd[k], 0x5A, out_bytes);
-        for (int j = 0; j < w; j++)
-            in[k][j] = (uint8_t)xorshift32(&seed);
+        free(b->in[k]);
+        free(b->ref[k]);
+        free(b->simd[k]);
+        b->in[k] = NULL;
+        b->ref[k] = NULL;
+        b->simd[k] = NULL;
     }
+}
 
-    ciede_preprocess_8_scalar(in[0], in[1], in[2], ref[0], ref[1], ref[2], w);
-    ciede_preprocess_8_neon(in[0], in[1], in[2], simd[0], simd[1], simd[2], w);
+/* Allocates every buffer first and only then checks, so a partial failure
+ * releases what it got (consolidated guard, core/test/AGENTS.md). The two
+ * output sets start from different fill bytes so an untouched element cannot
+ * pass as a match. Returns 0 on success. */
+static int parity_buffers_alloc(ParityBuffers *b, size_t in_bytes, size_t out_bytes)
+{
+    int ok = 1;
+    for (int k = 0; k < 3; k++) {
+        b->in[k] = malloc(in_bytes);
+        b->ref[k] = malloc(out_bytes);
+        b->simd[k] = malloc(out_bytes);
+        ok = ok && b->in[k] && b->ref[k] && b->simd[k];
+    }
+    if (!ok) {
+        parity_buffers_free(b);
+        return -1;
+    }
+    for (int k = 0; k < 3; k++) {
+        memset(b->ref[k], 0xA5, out_bytes);
+        memset(b->simd[k], 0x5A, out_bytes);
+    }
+    return 0;
+}
 
+/* Bit-for-bit float comparison: parity means the same 32 bits, so -0.0f and
+ * +0.0f differ and two NaNs with the same payload agree. */
+static int float_bits_differ(float a, float b)
+{
+    uint32_t ua;
+    uint32_t ub;
+    memcpy(&ua, &a, sizeof(ua));
+    memcpy(&ub, &b, sizeof(ub));
+    return ua != ub;
+}
+
+static int count_mismatches(const ParityBuffers *b, int w)
+{
+    int mismatches = 0;
     for (int k = 0; k < 3; k++) {
         for (int j = 0; j < w; j++) {
-            if (memcmp(&ref[k][j], &simd[k][j], sizeof(float)) != 0) {
-                if (mismatches < 4)
-                    (void)fprintf(stderr, "  w=%d plane %d idx %d: scalar %.9g != neon %.9g\n", w,
-                                  k, j, (double)ref[k][j], (double)simd[k][j]);
-                mismatches++;
+            if (!float_bits_differ(b->ref[k][j], b->simd[k][j])) {
+                continue;
             }
+            if (mismatches < 4) {
+                (void)fprintf(stderr, "  w=%d plane %d idx %d: scalar %.9g != neon %.9g\n", w, k, j,
+                              (double)b->ref[k][j], (double)b->simd[k][j]);
+            }
+            mismatches++;
         }
-        free(in[k]);
-        free(ref[k]);
-        free(simd[k]);
     }
+    return mismatches;
+}
+
+static int check_parity_8(int w, uint32_t seed)
+{
+    ParityBuffers b;
+    int mismatches;
+
+    if (parity_buffers_alloc(&b, (size_t)w, (size_t)w * sizeof(float)) != 0) {
+        return -1;
+    }
+    for (int k = 0; k < 3; k++) {
+        uint8_t *in = b.in[k];
+        for (int j = 0; j < w; j++) {
+            in[j] = (uint8_t)xorshift32(&seed);
+        }
+    }
+
+    ciede_preprocess_8_scalar(b.in[0], b.in[1], b.in[2], b.ref[0], b.ref[1], b.ref[2], w);
+    ciede_preprocess_8_neon(b.in[0], b.in[1], b.in[2], b.simd[0], b.simd[1], b.simd[2], w);
+
+    mismatches = count_mismatches(&b, w);
+    parity_buffers_free(&b);
     return mismatches;
 }
 
 static int check_parity_16(int w, uint32_t seed)
 {
-    const size_t out_bytes = (size_t)w * sizeof(float);
-    uint16_t *in[3];
-    float *ref[3], *simd[3];
-    int mismatches = 0;
+    ParityBuffers b;
+    int mismatches;
 
-    for (int k = 0; k < 3; k++) {
-        in[k] = malloc((size_t)w * sizeof(uint16_t));
-        ref[k] = malloc(out_bytes);
-        simd[k] = malloc(out_bytes);
-        if (!in[k] || !ref[k] || !simd[k])
-            return -1;
-        memset(ref[k], 0xA5, out_bytes);
-        memset(simd[k], 0x5A, out_bytes);
-        for (int j = 0; j < w; j++)
-            in[k][j] = (uint16_t)xorshift32(&seed);
+    if (parity_buffers_alloc(&b, (size_t)w * sizeof(uint16_t), (size_t)w * sizeof(float)) != 0) {
+        return -1;
     }
-
-    ciede_preprocess_16_scalar(in[0], in[1], in[2], ref[0], ref[1], ref[2], w);
-    ciede_preprocess_16_neon(in[0], in[1], in[2], simd[0], simd[1], simd[2], w);
-
     for (int k = 0; k < 3; k++) {
+        uint16_t *in = b.in[k];
         for (int j = 0; j < w; j++) {
-            if (memcmp(&ref[k][j], &simd[k][j], sizeof(float)) != 0) {
-                if (mismatches < 4)
-                    (void)fprintf(stderr, "  w=%d plane %d idx %d: scalar %.9g != neon %.9g\n", w,
-                                  k, j, (double)ref[k][j], (double)simd[k][j]);
-                mismatches++;
-            }
+            in[j] = (uint16_t)xorshift32(&seed);
         }
-        free(in[k]);
-        free(ref[k]);
-        free(simd[k]);
     }
+
+    ciede_preprocess_16_scalar(b.in[0], b.in[1], b.in[2], b.ref[0], b.ref[1], b.ref[2], w);
+    ciede_preprocess_16_neon(b.in[0], b.in[1], b.in[2], b.simd[0], b.simd[1], b.simd[2], w);
+
+    mismatches = count_mismatches(&b, w);
+    parity_buffers_free(&b);
     return mismatches;
 }
 #endif /* ARCH_AARCH64 */
@@ -355,15 +545,17 @@ static char *test_ciede_preprocess_8_neon_read_bounds(void)
     for (int i = 0; i < K_NUM_WIDTHS; i++) {
         const int w = kWidths[i];
         int over;
-        if ((size_t)(w + 32) > (size_t)sysconf(_SC_PAGESIZE))
+        if ((size_t)w + 32u > (size_t)probe_page_size()) {
             continue;
+        }
         over = probe_overread(w, 1, 32);
         mu_assert("ciede_preprocess_8_neon reads more than 32 bytes past the row", over >= 0);
         if (over > 0) {
             (void)fprintf(stderr, "  w=%d: ciede_preprocess_8_neon reads %d byte(s) past buf+w\n",
                           w, over);
-            if (over > worst)
+            if (over > worst) {
                 worst = over;
+            }
         }
     }
     mu_assert("ciede_preprocess_8_neon reads past the end of the plane row", worst == 0);
@@ -380,15 +572,17 @@ static char *test_ciede_preprocess_16_neon_read_bounds(void)
     for (int i = 0; i < K_NUM_WIDTHS; i++) {
         const int w = kWidths[i];
         int over;
-        if ((size_t)(w + 32) * 2u > (size_t)sysconf(_SC_PAGESIZE))
+        if (((size_t)w + 32u) * 2u > (size_t)probe_page_size()) {
             continue;
+        }
         over = probe_overread(w, 2, 32);
         mu_assert("ciede_preprocess_16_neon reads more than 64 bytes past the row", over >= 0);
         if (over > 0) {
             (void)fprintf(stderr, "  w=%d: ciede_preprocess_16_neon reads %d byte(s) past buf+w\n",
                           w, over);
-            if (over > worst)
+            if (over > worst) {
                 worst = over;
+            }
         }
     }
     mu_assert("ciede_preprocess_16_neon reads past the end of the plane row", worst == 0);

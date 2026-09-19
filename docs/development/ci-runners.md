@@ -82,6 +82,38 @@ Windows package names or install paths, update
 [ADR-0664](../adr/0664-windows-cuda-toolkit-installer.md) and the workflow
 together.
 
+## Windows ARM64 lane
+
+`Windows ARM64 MSVC` ([ADR-1260](../adr/1260-windows-arm64-cpu-lane.md))
+runs on the GitHub-hosted `windows-11-vs2026-arm` runner: Windows 11 Arm64
+with Visual Studio 2026, free for public repositories. It is the only lane
+that compiles `core/src/feature/arm64/` and the `#if ARCH_AARCH64` branches
+with `cl.exe`, and it executes the meson `fast` suite on ARM64 silicon. The
+lane is advisory: it reports on every non-draft PR and master push but is not
+in the required-aggregator list.
+
+What the job pins, and why:
+
+- `windows-11-vs2026-arm` rather than `windows-11-arm`: the latter is being
+  migrated to the same Visual Studio 2026 image between 2026-09-21 and
+  2026-09-30 (`actions/runner-images` #14602); the explicit label keeps one
+  image. After the migration the two labels are interchangeable.
+- `TheMrMilchmann/setup-msvc-dev` with `arch: arm64`, which runs
+  `vcvarsall.bat arm64`: the ARM64-hosted native toolset. `amd64_arm64`
+  would select the x64-hosted cross compiler under emulation. The job runs
+  `cl.exe` and greps its banner for `for ARM64` before configuring.
+- `actions/setup-python` 3.14.7 (published for `win32`/`arm64`) and
+  `pip install meson ninja` (`ninja` has a `win_arm64` wheel). No nasm; the
+  build only probes it on x86.
+- The same MSVC configure as the x64 legs: `/experimental:c11atomics`,
+  `--default-library=static`, `-Denable_float=true`, no CUDA or SYCL.
+- A PowerShell check that `install\bin\vmaf.exe` has PE machine `0xAA64`,
+  so an accidental x64 build cannot pass under emulation.
+
+CUDA is off: CUDA 13.3.1, the repository pin, ships no `windows-arm64`
+packages; 13.4.1 is the first release that does. A CUDA-on-WoA leg follows
+the coordinated CUDA 13.4 bump.
+
 ## What lives in the cluster
 
 Outside the scope of this repository:

@@ -631,7 +631,11 @@ feature/
   append `-fp-model=precise`; SIMD test executables in
   `core/test/meson.build` do same via `_simd_strict_fp_args`. Do
   not remove these flags without re-running `--suite=fast --suite=simd`
-  under icx. Traced via 2026-05-30 all-backends CI failure. See
+  under icx. AArch64 carve-outs use `arm64_strict_fp_args`
+  instead: `/fp:precise` on `msvc` (`Windows ARM64 MSVC` lane, ADR-1260),
+  `-ffp-contract=off` elsewhere; x86 carve-outs still pass the literal to
+  MSVC (D9002 noise, `T-MSVC-FFP-CONTRACT-D9002-2026-09-19`). Traced via
+  2026-05-30 all-backends CI failure. See
   [ADR-0160](../../../docs/adr/0160-psnr-hvs-neon-bitexact.md)
   and [rebase-notes 0052](../../../docs/rebase-notes.md).
   **two flags are order-sensitive and must not be re-sorted.**

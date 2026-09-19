@@ -77,6 +77,7 @@ The gate is wired into:
 | `libvmaf-build-matrix.yml` | `Windows CI (MinGW-w64 GCC)` | `Windows MinGW64` | 15 | Yes |
 | `libvmaf-build-matrix.yml` | `Windows CI (MSVC + CUDA 13)` | `Windows MSVC+CUDA` | 18 | Yes |
 | `libvmaf-build-matrix.yml` | `Windows CI (MSVC + Intel oneAPI SYCL)` | `Windows MSVC+SYCL` | 18 | Yes |
+| `libvmaf-build-matrix.yml` | new in ADR-1260 | `Windows ARM64 MSVC` | 18 | No |
 | `lint-and-format.yml` | `Pre-Commit All-Files Hygiene Gate` | `Pre-Commit` | 10 | Yes |
 | `lint-and-format.yml` | `Clang-Tidy (Changed C/C++ Files)` | `Tidy Changed` | 12 | Yes |
 | `lint-and-format.yml` | `Clang-Tidy Ratchet (Whole Tree)` | `Tidy Ratchet` | 12 | Yes |

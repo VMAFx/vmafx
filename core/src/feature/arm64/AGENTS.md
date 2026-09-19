@@ -70,6 +70,18 @@ feature/arm64/
   ADR-0159: local accumulator drifts Netflix golden by ~5.5e-5
   (`psnr_hvs_neon.c`).
 
+- **MSVC compiles this directory (ADR-1260, `Windows ARM64 MSVC` lane).**
+  `cl.exe` ARM64: no GCC vector extensions on NEON types (`v[0]`, `a + b`,
+  brace-initialised or compound-literal vectors), no `_x2`/`_x3`/`_x4`
+  multi-register loads, `__attribute__` / `#pragma GCC` / `#pragma clang`
+  only under `#if defined(__GNUC__)` or `defined(__clang__)` guards as
+  today. `<arm_neon.h>` is the include on every compiler. Strict FP:
+  `arm64_strict_fp_args` in `core/src/meson.build` (`/fp:precise` on msvc,
+  `-ffp-contract=off` else); never a literal `-ffp-contract=off` in the
+  arm64 `c_args`. SVE2 TUs never build under MSVC (no `<arm_sve.h>`;
+  probe skipped). Local MSVC check impossible; qemu cross build covers
+  GCC/clang side only.
+
 ## Twin-update rules
 
 TUs come in twin-bundles. Change to one half **must** ship with matching change
