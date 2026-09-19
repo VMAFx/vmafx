@@ -513,6 +513,13 @@ Reported upstream as [Netflix/vmaf#743](https://github.com/Netflix/vmaf/issues/7
 | 1 | Any parse / I/O / runtime error. `vmaf` writes a diagnostic to stderr before exiting. |
 | 100 | Explicit `--backend <name>` requested but the backend failed to initialise (ADR-0543). |
 | 101 | No frames were decoded (empty or too-short input, or a `--frame_skip_*` value past end-of-stream). `vmaf` writes `no frames decoded ...` to stderr. |
+| 102 | An input stream failed to read (truncated file, unreadable media, I/O error). `vmaf` writes `problem while reading pictures` to stderr and writes **no** output file, so a partial score cannot be mistaken for a complete one (ADR-1262). |
+
+A reference or distorted stream that simply **ends earlier than its partner** is
+not an error. `vmaf` writes `"<path>" ended before "<path>".` to stderr, scores
+the frames the two have in common, and exits 0 — scoring a shorter distorted
+clip against a longer reference is a supported use. Exit 102 is reserved for a
+read that *failed*, which is a different thing from a stream that *ended*.
 
 A failed output-file write (bad path, full disk, permission denied) also exits
 non-zero: `vmaf` writes `problem writing output to <path> (err=<n>)` to stderr,

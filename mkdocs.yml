@@ -1384,6 +1384,7 @@ nav:
         - "ADR-1258: keep-64-bit-only-retire-i686-lane": adr/1258-keep-64-bit-only-retire-i686-lane.md
         - "ADR-1259: ci-build-matrix-as-it-runs": adr/1259-ci-build-matrix-as-it-runs.md
         - "ADR-1261: mypy-pre-push-delta-gate": adr/1261-mypy-pre-push-delta-gate.md
+        - "ADR-1262: cli-input-read-error-exit-code": adr/1262-cli-input-read-error-exit-code.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -1568,6 +1569,7 @@ nav:
         - "eval": adr/by-tag/eval.md
         - "executor": adr/by-tag/executor.md
         - "exit-code": adr/by-tag/exit-code.md
+        - "exit-codes": adr/by-tag/exit-codes.md
         - "extends-adr-0498": adr/by-tag/extends-adr-0498.md
         - "external-bench": adr/by-tag/external-bench.md
         - "extractor": adr/by-tag/extractor.md
