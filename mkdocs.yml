@@ -1832,6 +1832,7 @@ nav:
         - "quantization": adr/by-tag/quantization.md
         - "queue": adr/by-tag/queue.md
         - "raii": adr/by-tag/raii.md
+        - "ratchet": adr/by-tag/ratchet.md
         - "rbac": adr/by-tag/rbac.md
         - "rc-blocking": adr/by-tag/rc-blocking.md
         - "rc": adr/by-tag/rc.md
