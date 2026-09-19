@@ -29679,6 +29679,11 @@ See `docs/server/auth.md` for the full configuration guide.
     allocation-failure point, its output, parse-error offsets and allocation counts are
     byte-identical to pristine 1.7.19 under ASan + UBSan. The pdjson depth limit and overflow
     guards from PR #725 were checked and had survived.
+  - **Undefined behaviour in cJSON on a NaN score.** `cJSON_CreateNumber` and
+    `cJSON_SetNumberHelper` cast the double to `int` after two range checks that NaN passes, which
+    is undefined behaviour, and the MCP server hands them a VMAF score that can be NaN. This is
+    upstream cJSON behaviour, found by the new test under clang's UBSan. Both now use one
+    saturating conversion that maps NaN to 0; the printed JSON is unchanged (`null`).
   - **Shell injection.** PR #414 carried stale copies of two scripts and undid PR #350:
     `scripts/ci/sycl-bench-env.sh` again interpolated the oneAPI prefix (`$ONEAPI_PREFIX` or the
     version argument) into a `bash -c "…"` body, where a prefix such as `x'$(payload)'` runs
