@@ -54,13 +54,14 @@ def test_cache_path_carries_feature_count() -> None:
     assert f".f{len(FULL_FEATURES)}." in p.name
 
 
-def test_stale_short_cache_is_not_silently_truncated(tmp_path: Path, monkeypatch) -> None:
-    """A cache whose stored feature_names no longer match FULL_FEATURES must be
-    recomputed, not zipped (truncated) against the current FULL_FEATURES."""
-    mod = _load_module()
+def _plant_stale_cache_and_mocks(mod, tmp_path: Path, monkeypatch) -> Path:
+    """Plant a stale 2-column cache and mock a fresh full-column compute.
+
+    Split out of ``test_stale_short_cache_is_not_silently_truncated`` to
+    keep it under the HISS-04 60-LOC limit; pure fixture setup, no
+    behaviour change. Returns the cache dir.
+    """
     cache_dir = tmp_path / "cache"
-    out = tmp_path / "full_features.parquet"
-    vmaf_bin = _fake_executable(tmp_path / "vmaf")
     pair = SimpleNamespace(
         source="clip-a",
         ref_path=tmp_path / "ref.yuv",
@@ -102,6 +103,16 @@ def test_stale_short_cache_is_not_silently_truncated(tmp_path: Path, monkeypatch
         "teacher_scores",
         lambda *_a, **_k: SimpleNamespace(per_frame=np.asarray([80.0, 81.0], dtype=np.float32)),
     )
+    return cache_dir
+
+
+def test_stale_short_cache_is_not_silently_truncated(tmp_path: Path, monkeypatch) -> None:
+    """A cache whose stored feature_names no longer match FULL_FEATURES must be
+    recomputed, not zipped (truncated) against the current FULL_FEATURES."""
+    mod = _load_module()
+    out = tmp_path / "full_features.parquet"
+    vmaf_bin = _fake_executable(tmp_path / "vmaf")
+    cache_dir = _plant_stale_cache_and_mocks(mod, tmp_path, monkeypatch)
 
     rc = mod.main(
         [
@@ -124,3 +135,47 @@ def test_stale_short_cache_is_not_silently_truncated(tmp_path: Path, monkeypatch
     # The last column must carry the fresh value, not be dropped.
     last_col = FULL_FEATURES[-1]
     assert float(frame[last_col].iloc[0]) == float(len(FULL_FEATURES) - 1)
+
+
+def test_load_or_compute_cache_uses_strict_json(tmp_path: Path, monkeypatch) -> None:
+    """Regression test (Research-0726): the per-clip cache write used a local
+
+    ``json.dumps(payload)`` call with Python's default ``allow_nan=True``, so a
+    non-finite per-frame diagnostic (an identity pair, or a feature undefined
+    for a given content type) would serialize with a literal ``NaN`` token.
+    """
+    mod = _load_module()
+    cache_dir = tmp_path / "cache"
+    vmaf_bin = _fake_executable(tmp_path / "vmaf")
+    pair = SimpleNamespace(
+        source="clip-a",
+        ref_path=tmp_path / "ref.yuv",
+        dis_path=tmp_path / "dis.yuv",
+        width=16,
+        height=16,
+    )
+
+    nan_per_frame = np.full((2, len(FULL_FEATURES)), np.nan, dtype=np.float32)
+    monkeypatch.setattr(
+        mod,
+        "extract_features",
+        lambda *_a, **_k: SimpleNamespace(
+            feature_names=tuple(FULL_FEATURES), per_frame=nan_per_frame
+        ),
+    )
+    monkeypatch.setattr(
+        mod,
+        "teacher_scores",
+        lambda *_a, **_k: SimpleNamespace(per_frame=np.asarray([np.nan, np.nan], dtype=np.float32)),
+    )
+
+    payload = mod._load_or_compute(pair, cache_dir, vmaf_bin)
+
+    assert payload["per_frame"][0][0] != payload["per_frame"][0][0]
+    teacher_name = mod.resolve_teacher_model(None).name
+    cache_path = mod._per_clip_cache_path(cache_dir, pair.source, pair.dis_path.stem, teacher_name)
+    raw = cache_path.read_text(encoding="utf-8")
+    assert "NaN" not in raw
+    loaded = json.loads(raw)
+    assert loaded["per_frame"][0][0] is None
+    assert loaded["teacher_per_frame"][0] is None
