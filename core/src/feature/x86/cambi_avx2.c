@@ -601,4 +601,78 @@ void calculate_c_values_avx2(VmafPicture *pic, const VmafPicture *mask_pic, floa
                               v_band_base, v_band_size);
 }
 
+/*
+ * Spatial-mask row kernels, adapted from upstream Netflix/vmaf 86da14d03
+ * ("feature/cambi: AVX2 vectorize spatial-mask dp row and mask row").
+ * Both are integer-only and bit-exact against the scalar compute_dp_row /
+ * compute_mask_row in cambi.c for every input, including uint32 wraparound.
+ */
+
+/* Inclusive prefix sum of the eight uint32 lanes (modular, like the scalar). */
+static inline __m256i inclusive_prefix_epi32(__m256i x)
+{
+    x = _mm256_add_epi32(x, _mm256_slli_si256(x, 4));
+    x = _mm256_add_epi32(x, _mm256_slli_si256(x, 8));
+    /* Add the low half's total (lane 3) to the four high lanes: broadcast it
+     * within each half, then move the low half up and zero the low half. */
+    const __m256i lane3 = _mm256_shuffle_epi32(x, _MM_SHUFFLE(3, 3, 3, 3));
+    return _mm256_add_epi32(x, _mm256_permute2x128_si256(lane3, lane3, 0x08));
+}
+
+void compute_dp_row_avx2(uint32_t *dp_curr, const uint32_t *dp_prev, const uint16_t *deriv,
+                         int width, int pad_size, bool deriv_valid)
+{
+    const int dp_offset = pad_size + 1;
+    const int actual_width = deriv_valid ? width : 0;
+    const __m256i last_lane = _mm256_set1_epi32(7);
+    __m256i carry = _mm256_setzero_si256();
+    int j = 0;
+    for (; j + 8 <= actual_width; j += 8) {
+        const __m256i d = _mm256_cvtepu16_epi32(_mm_loadu_si128((const __m128i *)&deriv[j]));
+        const __m256i scan = inclusive_prefix_epi32(d);
+        const __m256i prev = _mm256_loadu_si256((const __m256i *)&dp_prev[dp_offset + j]);
+        _mm256_storeu_si256((__m256i *)&dp_curr[dp_offset + j],
+                            _mm256_add_epi32(prev, _mm256_add_epi32(scan, carry)));
+        /* Only this add is loop-carried; the block total does not wait on carry. */
+        carry = _mm256_add_epi32(carry, _mm256_permutevar8x32_epi32(scan, last_lane));
+    }
+    uint32_t prefix = (uint32_t)_mm256_extract_epi32(carry, 0);
+    for (; j < actual_width; j++) {
+        prefix += deriv[j];
+        dp_curr[dp_offset + j] = dp_prev[dp_offset + j] + prefix;
+    }
+    const int n = width + pad_size;
+    for (; j < n; j++) {
+        dp_curr[dp_offset + j] = dp_prev[dp_offset + j] + prefix;
+    }
+}
+
+void compute_mask_row_avx2(uint16_t *mask_row, const uint32_t *dp_bottom, const uint32_t *dp_top,
+                           int width, int pad_size, uint32_t mask_index)
+{
+    const int delta = 2 * pad_size + 1;
+    /* AVX2 only has a signed 32-bit compare. Biasing both operands by 2^31
+     * turns it into the unsigned compare the scalar performs. */
+    const __m256i bias = _mm256_set1_epi32(INT32_MIN);
+    const __m256i midx = _mm256_xor_si256(_mm256_set1_epi32((int32_t)mask_index), bias);
+    const __m256i one = _mm256_set1_epi32(1);
+    int j = 0;
+    for (; j + 8 <= width; j += 8) {
+        const __m256i bd = _mm256_loadu_si256((const __m256i *)&dp_bottom[j + delta]);
+        const __m256i t = _mm256_loadu_si256((const __m256i *)&dp_top[j]);
+        const __m256i b = _mm256_loadu_si256((const __m256i *)&dp_bottom[j]);
+        const __m256i td = _mm256_loadu_si256((const __m256i *)&dp_top[j + delta]);
+        const __m256i result = _mm256_sub_epi32(_mm256_add_epi32(bd, t), _mm256_add_epi32(b, td));
+        const __m256i gt = _mm256_cmpgt_epi32(_mm256_xor_si256(result, bias), midx);
+        const __m256i v = _mm256_and_si256(gt, one);
+        const __m128i packed =
+            _mm_packus_epi32(_mm256_castsi256_si128(v), _mm256_extracti128_si256(v, 1));
+        _mm_storeu_si128((__m128i *)&mask_row[j], packed);
+    }
+    for (; j < width; j++) {
+        const uint32_t result = dp_bottom[j + delta] + dp_top[j] - dp_bottom[j] - dp_top[j + delta];
+        mask_row[j] = (uint16_t)(result > mask_index);
+    }
+}
+
 // NOLINTEND(modernize-use-nullptr) — ADR-1138.

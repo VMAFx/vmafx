@@ -980,3 +980,4 @@
 1255-spdx-residual-identifier-correction
 1250-eupl-fork-relicense
 1249-praetor-governance-adoption
+1256-cambi-spatial-mask-simd-dispatch

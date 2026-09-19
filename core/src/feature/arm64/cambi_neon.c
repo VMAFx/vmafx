@@ -22,6 +22,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cambi_neon.h"
+
 void cambi_increment_range_neon(uint16_t *arr, int left, int right)
 {
     uint16x8_t one = vdupq_n_u16(1);
@@ -96,6 +98,51 @@ void get_derivative_data_for_row_neon(const uint16_t *image_data, uint16_t *deri
     }
 }
 
+/* Row-invariant inputs of the per-pixel c-value, bundled so the helper below
+ * keeps a short parameter list. */
+typedef struct {
+    const uint16_t *histograms;
+    const uint16_t *tvi_thresholds;
+    const int *diff_weights;
+    const int *all_diffs;
+    const float *reciprocal_lut;
+    int width;
+    uint16_t num_diffs;
+    uint16_t vlt_luma;
+    uint16_t v_band_base;
+    uint16_t v_band_size;
+} CambiCValueRowNeon;
+
+/* The scalar per-pixel c-value, verbatim in operation order (ADR-0452). */
+static inline float c_value_pixel_neon(const CambiCValueRowNeon *r, uint16_t mask_value,
+                                       uint16_t pixel, int col)
+{
+    if (!mask_value)
+        return 0.0f;
+    const uint16_t value = (uint16_t)(pixel + r->num_diffs);
+    const int compact_v_signed = (int)pixel - (int)r->v_band_base;
+    if ((unsigned)compact_v_signed >= r->v_band_size)
+        return 0.0f;
+    const ptrdiff_t width = r->width;
+    const uint16_t p_0 = r->histograms[(ptrdiff_t)compact_v_signed * width + col];
+    float c_v = 0.0f;
+    for (int d = 0; d < r->num_diffs; d++) {
+        const int diff_up = r->all_diffs[r->num_diffs + d + 1];
+        if ((value > r->tvi_thresholds[d]) || ((value + diff_up) <= r->vlt_luma))
+            continue;
+        const int idx1 = compact_v_signed + diff_up;
+        const int idx2 = compact_v_signed + r->all_diffs[r->num_diffs - d - 1];
+        const uint16_t p_1 = r->histograms[(ptrdiff_t)idx1 * width + col];
+        const uint16_t p_2 = (idx2 >= 0) ? r->histograms[(ptrdiff_t)idx2 * width + col] : 0;
+        const uint16_t p_max = (p_1 > p_2) ? p_1 : p_2;
+        const float val =
+            (float)(r->diff_weights[d] * p_0 * p_max) * r->reciprocal_lut[p_max + p_0];
+        if (val > c_v)
+            c_v = val;
+    }
+    return c_v;
+}
+
 /*
  * calculate_c_values_row_neon — NEON-assisted port of calculate_c_values_row.
  *
@@ -126,10 +173,22 @@ void calculate_c_values_row_neon(float *c_values, const uint16_t *histograms, co
     int v_lo_signed_sc = (int)vlt_luma - 3 * (int)num_diffs + 1;
     uint16_t v_band_base = v_lo_signed_sc > 0 ? (uint16_t)v_lo_signed_sc : 0;
     uint16_t v_band_size = tvi_thresholds[num_diffs - 1] + 1 - v_band_base;
+    const CambiCValueRowNeon r = {
+        .histograms = histograms,
+        .tvi_thresholds = tvi_thresholds,
+        .diff_weights = diff_weights,
+        .all_diffs = all_diffs,
+        .reciprocal_lut = reciprocal_lut,
+        .width = width,
+        .num_diffs = num_diffs,
+        .vlt_luma = vlt_luma,
+        .v_band_base = v_band_base,
+        .v_band_size = v_band_size,
+    };
 
     const uint16_t *image_row = &image[row * stride];
     const uint16_t *mask_row = &mask[row * stride];
-    float *c_row = &c_values[row * width];
+    float *c_row = &c_values[(ptrdiff_t)row * width];
 
     int col = 0;
     /* Fast-skip 8 columns at a time when all masks are zero. */
@@ -145,66 +204,95 @@ void calculate_c_values_row_neon(float *c_values, const uint16_t *histograms, co
         /* At least one active lane: process each pixel individually via the
          * scalar reference to guarantee bit-identical output. */
         for (int k = col; k < col + 8; k++) {
-            if (!mask_row[k]) {
-                c_row[k] = 0.0f;
-                continue;
-            }
-            uint16_t value = (uint16_t)(image_row[k] + num_diffs);
-            int compact_v_signed = (int)image_row[k] - (int)v_band_base;
-            if ((unsigned)compact_v_signed >= v_band_size) {
-                c_row[k] = 0.0f;
-                continue;
-            }
-            uint16_t compact_v_sc = (uint16_t)compact_v_signed;
-            uint16_t p_0 = histograms[compact_v_sc * width + k];
-            float c_v = 0.0f;
-            for (int d = 0; d < num_diffs; d++) {
-                if ((value <= tvi_thresholds[d]) &&
-                    ((value + all_diffs[num_diffs + d + 1]) > vlt_luma)) {
-                    int idx1 = compact_v_signed + all_diffs[num_diffs + d + 1];
-                    int idx2 = compact_v_signed + all_diffs[num_diffs - d - 1];
-                    uint16_t p_1 = histograms[idx1 * width + k];
-                    uint16_t p_2 = (idx2 >= 0) ? histograms[idx2 * width + k] : 0;
-                    uint16_t p_max = (p_1 > p_2) ? p_1 : p_2;
-                    float val =
-                        (float)(diff_weights[d] * p_0 * p_max) * reciprocal_lut[p_max + p_0];
-                    if (val > c_v)
-                        c_v = val;
-                }
-            }
-            c_row[k] = c_v;
+            c_row[k] = c_value_pixel_neon(&r, mask_row[k], image_row[k], k);
         }
     }
 
     /* Scalar tail for remaining columns. */
     for (; col < width; col++) {
-        if (mask_row[col]) {
-            uint16_t value = (uint16_t)(image_row[col] + num_diffs);
-            int compact_v_signed = (int)image_row[col] - (int)v_band_base;
-            if ((unsigned)compact_v_signed >= v_band_size) {
-                c_row[col] = 0.0f;
-                continue;
-            }
-            uint16_t compact_v_sc = (uint16_t)compact_v_signed;
-            uint16_t p_0 = histograms[compact_v_sc * width + col];
-            float c_v = 0.0f;
-            for (int d = 0; d < num_diffs; d++) {
-                if ((value <= tvi_thresholds[d]) &&
-                    ((value + all_diffs[num_diffs + d + 1]) > vlt_luma)) {
-                    int idx1 = compact_v_signed + all_diffs[num_diffs + d + 1];
-                    int idx2 = compact_v_signed + all_diffs[num_diffs - d - 1];
-                    uint16_t p_1 = histograms[idx1 * width + col];
-                    uint16_t p_2 = (idx2 >= 0) ? histograms[idx2 * width + col] : 0;
-                    uint16_t p_max = (p_1 > p_2) ? p_1 : p_2;
-                    float val =
-                        (float)(diff_weights[d] * p_0 * p_max) * reciprocal_lut[p_max + p_0];
-                    if (val > c_v)
-                        c_v = val;
-                }
-            }
-            c_row[col] = c_v;
-        } else {
-            c_row[col] = 0.0f;
-        }
+        c_row[col] = c_value_pixel_neon(&r, mask_row[col], image_row[col], col);
+    }
+}
+
+/*
+ * Spatial-mask row kernels: NEON twins of compute_dp_row_avx2 /
+ * compute_mask_row_avx2 (adapted from upstream Netflix/vmaf 86da14d03).
+ * Integer-only and bit-exact against the scalar compute_dp_row /
+ * compute_mask_row in cambi.c for every input.
+ */
+
+/* Inclusive prefix sum of the four uint32 lanes (modular, like the scalar).
+ * vextq_u32 against zero shifts the vector up by k lanes. */
+static inline uint32x4_t inclusive_prefix_u32_neon(uint32x4_t x)
+{
+    const uint32x4_t zero = vdupq_n_u32(0);
+    x = vaddq_u32(x, vextq_u32(zero, x, 3));
+    x = vaddq_u32(x, vextq_u32(zero, x, 2));
+    return x;
+}
+
+void compute_dp_row_neon(uint32_t *dp_curr, const uint32_t *dp_prev, const uint16_t *deriv,
+                         int width, int pad_size, bool deriv_valid)
+{
+    const int dp_offset = pad_size + 1;
+    const int actual_width = deriv_valid ? width : 0;
+    uint32x4_t carry = vdupq_n_u32(0);
+    int j = 0;
+    for (; j + 8 <= actual_width; j += 8) {
+        const uint16x8_t d = vld1q_u16(&deriv[j]);
+        /* Eight-lane prefix: the high half also gets the low half's total. */
+        const uint32x4_t lo = inclusive_prefix_u32_neon(vmovl_u16(vget_low_u16(d)));
+        const uint32x4_t hi =
+            vaddq_u32(inclusive_prefix_u32_neon(vmovl_high_u16(d)), vdupq_laneq_u32(lo, 3));
+        uint32_t *out = &dp_curr[dp_offset + j];
+        const uint32_t *prev = &dp_prev[dp_offset + j];
+        vst1q_u32(out, vaddq_u32(vld1q_u32(prev), vaddq_u32(lo, carry)));
+        vst1q_u32(out + 4, vaddq_u32(vld1q_u32(prev + 4), vaddq_u32(hi, carry)));
+        /* Only this add is loop-carried; the block total does not wait on carry. */
+        carry = vaddq_u32(carry, vdupq_laneq_u32(hi, 3));
+    }
+    uint32_t prefix = vgetq_lane_u32(carry, 0);
+    for (; j < actual_width; j++) {
+        prefix += deriv[j];
+        dp_curr[dp_offset + j] = dp_prev[dp_offset + j] + prefix;
+    }
+    const int n = width + pad_size;
+    for (; j < n; j++) {
+        dp_curr[dp_offset + j] = dp_prev[dp_offset + j] + prefix;
+    }
+}
+
+/* Four-lane box sum: dp_bottom[j + delta] + dp_top[j] - dp_bottom[j] - dp_top[j + delta]. */
+static inline uint32x4_t box_sum_u32_neon(const uint32_t *dp_bottom, const uint32_t *dp_top, int j,
+                                          int delta)
+{
+    const uint32x4_t bd = vld1q_u32(&dp_bottom[j + delta]);
+    const uint32x4_t t = vld1q_u32(&dp_top[j]);
+    const uint32x4_t b = vld1q_u32(&dp_bottom[j]);
+    const uint32x4_t td = vld1q_u32(&dp_top[j + delta]);
+    return vsubq_u32(vaddq_u32(bd, t), vaddq_u32(b, td));
+}
+
+/* Not dispatched: GCC and Clang already auto-vectorize the scalar
+ * compute_mask_row into this instruction sequence (cmhi + uzp1, eight columns
+ * per iteration), so it would not reduce the op count. It is kept as the NEON
+ * twin and stays under the parity test. */
+void compute_mask_row_neon(uint16_t *mask_row, const uint32_t *dp_bottom, const uint32_t *dp_top,
+                           int width, int pad_size, uint32_t mask_index)
+{
+    const int delta = 2 * pad_size + 1;
+    const uint32x4_t midx = vdupq_n_u32(mask_index);
+    const uint16x8_t one = vdupq_n_u16(1);
+    int j = 0;
+    for (; j + 8 <= width; j += 8) {
+        /* vcgtq_u32 is the unsigned compare the scalar performs. */
+        const uint32x4_t gt_lo = vcgtq_u32(box_sum_u32_neon(dp_bottom, dp_top, j, delta), midx);
+        const uint32x4_t gt_hi = vcgtq_u32(box_sum_u32_neon(dp_bottom, dp_top, j + 4, delta), midx);
+        const uint16x8_t gt = vcombine_u16(vmovn_u32(gt_lo), vmovn_u32(gt_hi));
+        vst1q_u16(&mask_row[j], vandq_u16(gt, one));
+    }
+    for (; j < width; j++) {
+        const uint32_t result = dp_bottom[j + delta] + dp_top[j] - dp_bottom[j] - dp_top[j + delta];
+        mask_row[j] = (uint16_t)(result > mask_index);
     }
 }
