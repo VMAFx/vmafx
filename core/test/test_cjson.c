@@ -94,6 +94,50 @@ static char *test_print_number_precision(void)
     return NULL;
 }
 
+/* `valueint` is defined for every double. Upstream cast NaN to int, which is
+ * undefined behaviour; the fork maps it to 0 (see saturate_to_int in cJSON.c).
+ * The sanitizer lane is what turns a regression here into a failure. */
+static int valueint_of(double number)
+{
+    cJSON *item = cJSON_CreateNumber(number);
+    if (item == NULL) {
+        return -1;
+    }
+    const int value = item->valueint;
+    cJSON_Delete(item);
+    return value;
+}
+
+static char *test_number_valueint_non_finite(void)
+{
+    mu_assert("NaN maps to 0", valueint_of((double)NAN) == 0);
+    mu_assert("negative NaN maps to 0", valueint_of(-(double)NAN) == 0);
+    mu_assert("+infinity saturates", valueint_of((double)INFINITY) == INT_MAX);
+    mu_assert("-infinity saturates", valueint_of(-(double)INFINITY) == INT_MIN);
+    return NULL;
+}
+
+static char *test_number_valueint_range(void)
+{
+    mu_assert("above INT_MAX saturates", valueint_of(2147483648.0) == INT_MAX);
+    mu_assert("below INT_MIN saturates", valueint_of(-2147483649.0) == INT_MIN);
+    mu_assert("INT_MAX itself", valueint_of(2147483647.0) == INT_MAX);
+    mu_assert("INT_MIN itself", valueint_of(-2147483648.0) == INT_MIN);
+    mu_assert("truncates toward zero", valueint_of(-1.9) == -1);
+    return NULL;
+}
+
+static char *test_number_setter_maps_nan_to_zero(void)
+{
+    cJSON *item = cJSON_CreateNumber(1.0);
+    mu_assert("number item", item != NULL);
+    (void)cJSON_SetNumberHelper(item, (double)NAN);
+    const int after_set = item->valueint;
+    cJSON_Delete(item);
+    mu_assert("the setter maps NaN to 0 too", after_set == 0);
+    return NULL;
+}
+
 static char *test_print_strings(void)
 {
     cJSON *without_value = cJSON_CreateString("x");
@@ -392,6 +436,14 @@ static char *test_allocation_failures(void)
     return NULL;
 }
 
+static char *run_number_valueint_tests(void)
+{
+    mu_run_test(test_number_valueint_non_finite);
+    mu_run_test(test_number_valueint_range);
+    mu_run_test(test_number_setter_maps_nan_to_zero);
+    return NULL;
+}
+
 static char *run_print_tests(void)
 {
     mu_run_test(test_print_literals);
@@ -399,7 +451,7 @@ static char *run_print_tests(void)
     mu_run_test(test_print_number_precision);
     mu_run_test(test_print_strings);
     mu_run_test(test_print_preallocated);
-    return NULL;
+    return run_number_valueint_tests();
 }
 
 static char *run_parse_tests(void)
