@@ -102,12 +102,13 @@ probe_backend() {
 
   t0="$(ms_now)"
 
-  # Build the vmaf CLI backend flag
+  # Build the vmaf CLI backend flag (core/tools/cli_parse.cpp: --backend
+  # <name> is the exclusive selector; there is no bare --cuda/--sycl/--hip).
   case "${backend}" in
     cpu) backend_flag="" ;;
-    cuda) backend_flag="--cuda" ;;
-    sycl) backend_flag="--sycl" ;;
-    hip) backend_flag="--hip" ;;
+    cuda) backend_flag="--backend=cuda" ;;
+    sycl) backend_flag="--backend=sycl" ;;
+    hip) backend_flag="--backend=hip" ;;
     *)
       printf 'null\t0\t%s' "unknown backend: ${backend}"
       return
@@ -129,7 +130,7 @@ probe_backend() {
     --model "path=${VMAF_MODEL}" \
     --output /dev/null \
     ${backend_flag} \
-    --no_prediction_flags \
+    --no_prediction \
     >"${tmp_out}" 2>&1; then
     t1="$(ms_now)"
     # Parse the aggregate VMAF score from stdout
