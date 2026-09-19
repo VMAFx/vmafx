@@ -47,7 +47,9 @@
 #include "log.h"
 
 #include "../../hip/common.h"
+#include "../../hip/hip_handle.h"
 #include "../../hip/kernel_template.h"
+#include "../../hip/picture_hip.h"
 #include "integer_ssim_hip.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -122,28 +124,6 @@ static const VmafOption options[] = {
 static size_t issim_hip_bytes_per_sample(unsigned bpc)
 {
     return (bpc <= 8u) ? 1u : 2u;
-}
-
-/* kernel_template.h carries the HIP handles as uintptr_t so that it stays
- * free of <hip/hip_runtime_api.h> (ADR-0241). Read the stored bits back as
- * the handle type through a union rather than cast an integer to a
- * pointer. */
-typedef union IssimHipHandle {
-    uintptr_t bits;
-    hipStream_t stream;
-    hipEvent_t event;
-} IssimHipHandle;
-
-static hipStream_t issim_hip_stream(const VmafHipKernelLifecycle *lc)
-{
-    const IssimHipHandle h = {.bits = lc->str};
-    return h.stream;
-}
-
-static hipEvent_t issim_hip_submit_event(const VmafHipKernelLifecycle *lc)
-{
-    const IssimHipHandle h = {.bits = lc->submit};
-    return h.event;
 }
 
 static void issim_hip_init_dims(IssimStateHip *s, unsigned w, unsigned h, unsigned bpc)
@@ -335,7 +315,7 @@ static int issim_hip_launch_vert(IssimStateHip *s, hipStream_t str)
  * that collect() waits on. */
 static int issim_hip_readback(IssimStateHip *s, hipStream_t str)
 {
-    hipError_t rc = hipEventRecord(issim_hip_submit_event(&s->lc), str);
+    hipError_t rc = hipEventRecord(vmaf_hip_event_of(s->lc.submit), str);
     if (rc == hipSuccess) {
         rc = hipMemcpyAsync(s->rb_ssim.host_pinned, s->rb_ssim.device,
                             (size_t)s->block_count * sizeof(double), hipMemcpyDeviceToHost, str);
@@ -349,31 +329,34 @@ static int issim_hip_readback(IssimStateHip *s, hipStream_t str)
     return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
 }
 
-/* Stage both host luma planes into the packed device buffers, and wait for
- * the copies before returning.
+/* Stage both host luma planes into the packed device buffers.
  *
- * The wait is load-bearing. The pictures are pageable host memory that the
- * caller may recycle as soon as submit() returns: the CLI's picture pool
- * refills a slot with the next frame right away. hipMemcpy2DAsync from
- * pageable memory can still be reading the source after it returns, and
- * without the wait some frames were scored against a mix of their own and
- * the next frame's samples (off by up to 0.2 on the Netflix 576x324 pair,
- * a different set of frames on every run). Only the two copies are waited
- * for: collect() of the previous frame already drained the stream. */
-static int issim_hip_upload(IssimStateHip *s, const VmafPicture *ref_pic,
-                            const VmafPicture *dist_pic, hipStream_t str)
+ * vmaf_hip_picture_upload() returns only once the copies have read the
+ * pictures, and that is load-bearing: the caller may recycle them as soon as
+ * submit() returns, and the CLI's picture pool refills a slot with the next
+ * frame right away. Without the wait some frames were scored against a mix
+ * of their own and the next frame's samples (off by up to 0.2 on the Netflix
+ * 576x324 pair, a different set of frames on every run;
+ * T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
+static int issim_hip_upload(const IssimStateHip *s, const VmafPicture *ref_pic,
+                            const VmafPicture *dist_pic)
 {
     const size_t row_bytes = (size_t)s->width * issim_hip_bytes_per_sample(s->bpc);
-    hipError_t rc =
-        hipMemcpy2DAsync(s->ref_in, row_bytes, ref_pic->data[0], (size_t)ref_pic->stride[0],
-                         row_bytes, s->height, hipMemcpyHostToDevice, str);
-    if (rc == hipSuccess) {
-        rc = hipMemcpy2DAsync(s->cmp_in, row_bytes, dist_pic->data[0], (size_t)dist_pic->stride[0],
-                              row_bytes, s->height, hipMemcpyHostToDevice, str);
-    }
-    if (rc == hipSuccess)
-        rc = hipStreamSynchronize(str);
-    return issim_hip_rc(rc);
+    const VmafHipPlaneUpload planes[] = {
+        {.dst = s->ref_in,
+         .dst_pitch = row_bytes,
+         .pic = ref_pic,
+         .plane = 0u,
+         .row_bytes = row_bytes,
+         .rows = s->height},
+        {.dst = s->cmp_in,
+         .dst_pitch = row_bytes,
+         .pic = dist_pic,
+         .plane = 0u,
+         .row_bytes = row_bytes,
+         .rows = s->height},
+    };
+    return vmaf_hip_picture_upload(planes, 2u, s->lc.str);
 }
 
 static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -383,9 +366,9 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     (void)dist_pic_90;
     (void)index;
     IssimStateHip *s = fex->priv;
-    hipStream_t str = issim_hip_stream(&s->lc);
+    hipStream_t str = vmaf_hip_stream_of(s->lc.str);
 
-    int err = issim_hip_upload(s, ref_pic, dist_pic, str);
+    int err = issim_hip_upload(s, ref_pic, dist_pic);
     if (err == 0)
         err = issim_hip_launch_horiz(s, str);
     if (err == 0)

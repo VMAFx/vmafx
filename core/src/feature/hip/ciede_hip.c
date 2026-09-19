@@ -36,11 +36,13 @@
 
 #include "../../hip/common.h"
 #include "../../hip/kernel_template.h"
+#include "../../hip/picture_hip.h"
 #include "ciede_hip.h"
 
 #ifdef HAVE_HIPCC
-#define __HIP_PLATFORM_AMD__ 1
 #include <hip/hip_runtime_api.h>
+
+#include "../../hip/hip_handle.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
@@ -137,8 +139,7 @@ static int ciede_hip_module_load(CiedeStateHip *s)
     return 0;
 }
 
-/* Allocate the 6 YUV staging device buffers. On partial failure, already-
- * allocated buffers are freed and NULLed before returning an error. */
+/* Allocate the 6 YUV staging device buffers. */
 static int ciede_hip_bufs_alloc(CiedeStateHip *s, unsigned w, unsigned h, unsigned bpc,
                                 unsigned ss_hor, unsigned ss_ver)
 {
@@ -157,17 +158,13 @@ static int ciede_hip_bufs_alloc(CiedeStateHip *s, unsigned w, unsigned h, unsign
     const size_t chroma_bytes = (size_t)s->chroma_w * s->chroma_h * bpp;
 
     void **bufs[6] = {&s->ref_y, &s->ref_u, &s->ref_v, &s->dis_y, &s->dis_u, &s->dis_v};
-    size_t sizes[6] = {luma_bytes, chroma_bytes, chroma_bytes,
-                       luma_bytes, chroma_bytes, chroma_bytes};
-    for (int i = 0; i < 6; i++) {
-        hipError_t rc = hipMalloc(bufs[i], sizes[i]);
-        if (rc != hipSuccess) {
-            for (int j = i - 1; j >= 0; j--) {
-                (void)hipFree(*bufs[j]);
-                *bufs[j] = NULL;
-            }
+    const size_t sizes[6] = {luma_bytes, chroma_bytes, chroma_bytes,
+                             luma_bytes, chroma_bytes, chroma_bytes};
+    /* On failure the buffers already allocated stay set; the caller's
+     * ciede_hip_release() frees them. */
+    for (unsigned i = 0u; i < 6u; i++) {
+        if (hipMalloc(bufs[i], sizes[i]) != hipSuccess)
             return -ENOMEM;
-        }
     }
     return 0;
 }
@@ -189,15 +186,54 @@ static void ciede_hip_bufs_free(CiedeStateHip *s)
     }
 }
 
-/* HtoD copy one plane (packed-pitch staging). */
-static int ciede_hip_copy_plane(void *dst, const uint8_t *src, ptrdiff_t src_stride, unsigned pw,
-                                unsigned ph, unsigned bpc, hipStream_t str)
+/* HtoD copy of all six planes into the packed staging buffers. Returns once
+ * the pictures are read: the caller recycles them when submit() returns
+ * (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
+static int ciede_hip_upload(const CiedeStateHip *s, const VmafPicture *ref_pic,
+                            const VmafPicture *dist_pic)
 {
-    const size_t bpp = (bpc <= 8u) ? 1u : 2u;
-    const size_t plane_pitch = (size_t)pw * bpp;
-    hipError_t rc = hipMemcpy2DAsync(dst, plane_pitch, src, (size_t)src_stride, plane_pitch,
-                                     (size_t)ph, hipMemcpyHostToDevice, str);
-    return (rc == hipSuccess) ? 0 : -EIO;
+    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
+    const size_t luma = (size_t)s->frame_w * bpp;
+    const size_t chroma = (size_t)s->chroma_w * bpp;
+    const VmafHipPlaneUpload planes[] = {
+        {.dst = s->ref_y,
+         .dst_pitch = luma,
+         .pic = ref_pic,
+         .plane = 0u,
+         .row_bytes = luma,
+         .rows = s->frame_h},
+        {.dst = s->ref_u,
+         .dst_pitch = chroma,
+         .pic = ref_pic,
+         .plane = 1u,
+         .row_bytes = chroma,
+         .rows = s->chroma_h},
+        {.dst = s->ref_v,
+         .dst_pitch = chroma,
+         .pic = ref_pic,
+         .plane = 2u,
+         .row_bytes = chroma,
+         .rows = s->chroma_h},
+        {.dst = s->dis_y,
+         .dst_pitch = luma,
+         .pic = dist_pic,
+         .plane = 0u,
+         .row_bytes = luma,
+         .rows = s->frame_h},
+        {.dst = s->dis_u,
+         .dst_pitch = chroma,
+         .pic = dist_pic,
+         .plane = 1u,
+         .row_bytes = chroma,
+         .rows = s->chroma_h},
+        {.dst = s->dis_v,
+         .dst_pitch = chroma,
+         .pic = dist_pic,
+         .plane = 2u,
+         .row_bytes = chroma,
+         .rows = s->chroma_h},
+    };
+    return vmaf_hip_picture_upload(planes, 6u, s->lc.str);
 }
 
 /* Launch the appropriate bpc kernel. Extracted to keep submit under 60 lines. */
@@ -250,30 +286,9 @@ static int ciede_hip_launch(CiedeStateHip *s, hipStream_t str)
 /* Submit: HtoD copies of all 6 YUV planes, kernel launch, event/DtoH. */
 static int ciede_hip_do_submit(CiedeStateHip *s, VmafPicture *ref_pic, VmafPicture *dist_pic)
 {
-    hipStream_t str = (hipStream_t)s->lc.str;
+    hipStream_t str = vmaf_hip_stream_of(s->lc.str);
 
-    int err = ciede_hip_copy_plane(s->ref_y, ref_pic->data[0], ref_pic->stride[0], s->frame_w,
-                                   s->frame_h, s->bpc, str);
-    if (err)
-        return err;
-    err = ciede_hip_copy_plane(s->ref_u, ref_pic->data[1], ref_pic->stride[1], s->chroma_w,
-                               s->chroma_h, s->bpc, str);
-    if (err)
-        return err;
-    err = ciede_hip_copy_plane(s->ref_v, ref_pic->data[2], ref_pic->stride[2], s->chroma_w,
-                               s->chroma_h, s->bpc, str);
-    if (err)
-        return err;
-    err = ciede_hip_copy_plane(s->dis_y, dist_pic->data[0], dist_pic->stride[0], s->frame_w,
-                               s->frame_h, s->bpc, str);
-    if (err)
-        return err;
-    err = ciede_hip_copy_plane(s->dis_u, dist_pic->data[1], dist_pic->stride[1], s->chroma_w,
-                               s->chroma_h, s->bpc, str);
-    if (err)
-        return err;
-    err = ciede_hip_copy_plane(s->dis_v, dist_pic->data[2], dist_pic->stride[2], s->chroma_w,
-                               s->chroma_h, s->bpc, str);
+    int err = ciede_hip_upload(s, ref_pic, dist_pic);
     if (err)
         return err;
 
@@ -281,7 +296,7 @@ static int ciede_hip_do_submit(CiedeStateHip *s, VmafPicture *ref_pic, VmafPictu
     if (err)
         return err;
 
-    hipError_t rc = hipEventRecord((hipEvent_t)s->lc.submit, str);
+    hipError_t rc = hipEventRecord(vmaf_hip_event_of(s->lc.submit), str);
     if (rc != hipSuccess)
         return ciede_hip_rc(rc);
 
@@ -294,78 +309,65 @@ static int ciede_hip_do_submit(CiedeStateHip *s, VmafPicture *ref_pic, VmafPictu
 }
 #endif /* HAVE_HIPCC */
 
+/* Tear down everything init() may have set up. Every step tolerates a handle
+ * that was never created, so this serves both a failed init() and close().
+ * The stream is drained first, so no kernel still uses a buffer. Returns the
+ * first error; freeing the staging buffers and the module is best-effort. */
+static int ciede_hip_release(CiedeStateHip *s)
+{
+    int rc = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
+#ifdef HAVE_HIPCC
+    /* ciede_hip_bufs_free also unloads the module. */
+    ciede_hip_bufs_free(s);
+#endif /* HAVE_HIPCC */
+    int err = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
+    if (err != 0 && rc == 0)
+        rc = err;
+    if (s->feature_name_dict != NULL) {
+        err = vmaf_dictionary_free(&s->feature_name_dict);
+        if (err != 0 && rc == 0)
+            rc = err;
+    }
+    vmaf_hip_context_destroy(s->ctx);
+    s->ctx = NULL;
+    return rc;
+}
+
 static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                         unsigned w, unsigned h)
 {
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P) {
+    if (pix_fmt == VMAF_PIX_FMT_YUV400P)
         return -EINVAL;
-    }
     CiedeStateHip *s = fex->priv;
-
-    int err = vmaf_hip_context_new(&s->ctx, 0);
-    if (err != 0) {
-        return err;
-    }
-
-    err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err != 0) {
-        goto fail_after_ctx;
-    }
 
     s->bpc = bpc;
     s->ss_hor = (pix_fmt != VMAF_PIX_FMT_YUV444P) ? 1u : 0u;
     s->ss_ver = (pix_fmt == VMAF_PIX_FMT_YUV420P) ? 1u : 0u;
-
     const unsigned grid_x = (w + (CIEDE_HIP_BX - 1u)) / CIEDE_HIP_BX;
     const unsigned grid_y = (h + (CIEDE_HIP_BY - 1u)) / CIEDE_HIP_BY;
     s->partials_capacity = grid_x * grid_y;
 
-    err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx,
-                                         (size_t)s->partials_capacity * sizeof(float));
-    if (err != 0) {
-        goto fail_after_lc;
+    int err = vmaf_hip_context_new(&s->ctx, 0);
+    if (err == 0)
+        err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
+    if (err == 0) {
+        err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx,
+                                             (size_t)s->partials_capacity * sizeof(float));
     }
-
 #ifdef HAVE_HIPCC
-    err = ciede_hip_module_load(s);
-    if (err != 0) {
-        goto fail_after_rb;
-    }
-
-    err = ciede_hip_bufs_alloc(s, w, h, bpc, s->ss_hor, s->ss_ver);
-    if (err != 0) {
-        goto fail_after_module;
-    }
+    if (err == 0)
+        err = ciede_hip_module_load(s);
+    if (err == 0)
+        err = ciede_hip_bufs_alloc(s, w, h, bpc, s->ss_hor, s->ss_ver);
 #endif /* HAVE_HIPCC */
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) {
-        err = -ENOMEM;
-#ifdef HAVE_HIPCC
-        ciede_hip_bufs_free(s);
-        goto fail_after_rb;
-#else
-        goto fail_after_rb;
-#endif
+    if (err == 0) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (s->feature_name_dict == NULL)
+            err = -ENOMEM;
     }
-
-    return 0;
-
-#ifdef HAVE_HIPCC
-fail_after_module:
-    if (s->module != NULL) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-    }
-#endif /* HAVE_HIPCC */
-fail_after_rb:
-    (void)vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
-fail_after_lc:
-    (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_after_ctx:
-    vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
+    if (err != 0)
+        (void)ciede_hip_release(s);
     return err;
 }
 
@@ -425,30 +427,7 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
 
 static int close_fex_hip(VmafFeatureExtractor *fex)
 {
-    CiedeStateHip *s = fex->priv;
-
-    int rc = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-
-#ifdef HAVE_HIPCC
-    /* ciede_hip_bufs_free also unloads the module; best-effort only. */
-    ciede_hip_bufs_free(s);
-#endif /* HAVE_HIPCC */
-
-    int err = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
-    if (err != 0 && rc == 0) {
-        rc = err;
-    }
-    if (s->feature_name_dict != NULL) {
-        err = vmaf_dictionary_free(&s->feature_name_dict);
-        if (err != 0 && rc == 0) {
-            rc = err;
-        }
-    }
-    if (s->ctx != NULL) {
-        vmaf_hip_context_destroy(s->ctx);
-        s->ctx = NULL;
-    }
-    return rc;
+    return ciede_hip_release(fex->priv);
 }
 
 static const char *provided_features[] = {"ciede2000", NULL};

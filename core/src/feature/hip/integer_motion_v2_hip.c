@@ -48,11 +48,13 @@
 
 #include "../../hip/common.h"
 #include "../../hip/kernel_template.h"
+#include "../../hip/picture_hip.h"
 #include "integer_motion_v2_hip.h"
 
 #ifdef HAVE_HIPCC
-#define __HIP_PLATFORM_AMD__ 1
 #include <hip/hip_runtime_api.h>
+
+#include "../../hip/hip_handle.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
@@ -217,19 +219,14 @@ static int mv2_hip_module_load(MotionV2StateHip *s)
     return 0;
 }
 
-/* Allocate ping-pong device buffers. On failure frees partial allocs. */
+/* Allocate ping-pong device buffers. On failure the one already allocated
+ * stays set; the caller's mv2_hip_release() frees it. */
 static int mv2_hip_bufs_alloc(MotionV2StateHip *s)
 {
     hipError_t rc = hipMalloc(&s->pix[0], s->plane_bytes);
-    if (rc != hipSuccess)
-        return -ENOMEM;
-    rc = hipMalloc(&s->pix[1], s->plane_bytes);
-    if (rc != hipSuccess) {
-        (void)hipFree(s->pix[0]);
-        s->pix[0] = NULL;
-        return -ENOMEM;
-    }
-    return 0;
+    if (rc == hipSuccess)
+        rc = hipMalloc(&s->pix[1], s->plane_bytes);
+    return (rc == hipSuccess) ? 0 : -ENOMEM;
 }
 
 /* Free ping-pong buffers and unload the module. Safe with NULL handles. */
@@ -249,36 +246,10 @@ static void mv2_hip_bufs_free(MotionV2StateHip *s)
     }
 }
 
-/* Per-frame submit: HtoD copy, optional kernel launch, event/DtoH copy.
- * Extracted to keep submit_fex_hip under the 60-line readability limit. */
-static int mv2_hip_launch(MotionV2StateHip *s, VmafPicture *ref_pic, unsigned index)
+/* SAD kernel over the two ping-pong slots, accumulating into rb.device. */
+static int mv2_hip_launch_kernel(MotionV2StateHip *s, unsigned cur_idx, unsigned prev_idx,
+                                 ptrdiff_t plane_pitch, hipStream_t str)
 {
-    hipStream_t str = (hipStream_t)s->lc.str;
-    const unsigned cur_idx = index % 2u;
-    const unsigned prev_idx = (index + 1u) % 2u;
-    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-    const ptrdiff_t plane_pitch = (ptrdiff_t)(s->frame_w * bpp);
-
-    /* HtoD copy of current ref Y plane into ping-pong slot cur_idx. */
-    hipError_t rc = hipMemcpy2DAsync(s->pix[cur_idx], (size_t)plane_pitch, ref_pic->data[0],
-                                     (size_t)ref_pic->stride[0], (size_t)plane_pitch,
-                                     (size_t)s->frame_h, hipMemcpyHostToDevice, str);
-    if (rc != hipSuccess)
-        return mv2_hip_rc(rc);
-
-    /* Frame 0: nothing to diff against; record submit event so collect
-     * can sync. Emit 0 in collect. */
-    if (index == 0u) {
-        rc = hipEventRecord((hipEvent_t)s->lc.submit, str);
-        return (rc == hipSuccess) ? 0 : mv2_hip_rc(rc);
-    }
-
-    /* Reset device int64 SAD accumulator (single uint64_t). Must run
-     * before the kernel so the atomicAdd starts from 0. */
-    rc = hipMemsetAsync(s->rb.device, 0, sizeof(uint64_t), str);
-    if (rc != hipSuccess)
-        return mv2_hip_rc(rc);
-
     const unsigned gx = (s->frame_w + MV2H_BX - 1u) / MV2H_BX;
     const unsigned gy = (s->frame_h + MV2H_BY - 1u) / MV2H_BY;
     uint8_t *prev_dev = (uint8_t *)s->pix[prev_idx];
@@ -288,39 +259,94 @@ static int mv2_hip_launch(MotionV2StateHip *s, VmafPicture *ref_pic, unsigned in
     unsigned h = s->frame_h;
     unsigned bpc = s->bpc;
 
-    hipFunction_t func;
-    if (s->bpc == 8u) {
-        func = s->funcbpc8;
-        void *args[] = {(void *)&prev_dev,
-                        (void *)&cur_dev,
-                        (void *)&plane_pitch,
-                        (void *)&plane_pitch,
-                        (void *)&sad_dev,
-                        (void *)&w,
-                        (void *)&h};
-        rc = hipModuleLaunchKernel(func, gx, gy, 1, MV2H_BX, MV2H_BY, 1, 0, str, args, NULL);
-    } else {
-        func = s->funcbpc16;
-        void *args[] = {(void *)&prev_dev,    (void *)&cur_dev, (void *)&plane_pitch,
-                        (void *)&plane_pitch, (void *)&sad_dev, (void *)&w,
-                        (void *)&h,           (void *)&bpc};
-        rc = hipModuleLaunchKernel(func, gx, gy, 1, MV2H_BX, MV2H_BY, 1, 0, str, args, NULL);
+    /* The 16bpc kernel takes one more argument than the 8bpc one: `bpc`. */
+    void *args8[] = {(void *)&prev_dev,
+                     (void *)&cur_dev,
+                     (void *)&plane_pitch,
+                     (void *)&plane_pitch,
+                     (void *)&sad_dev,
+                     (void *)&w,
+                     (void *)&h};
+    void *args16[] = {(void *)&prev_dev,    (void *)&cur_dev, (void *)&plane_pitch,
+                      (void *)&plane_pitch, (void *)&sad_dev, (void *)&w,
+                      (void *)&h,           (void *)&bpc};
+    const bool is8 = (s->bpc == 8u);
+    return mv2_hip_rc(hipModuleLaunchKernel(is8 ? s->funcbpc8 : s->funcbpc16, gx, gy, 1, MV2H_BX,
+                                            MV2H_BY, 1, 0, str, is8 ? args8 : args16, NULL));
+}
+
+/* Per-frame submit: HtoD copy, optional kernel launch, event/DtoH copy. */
+static int mv2_hip_launch(MotionV2StateHip *s, VmafPicture *ref_pic, unsigned index)
+{
+    hipStream_t str = vmaf_hip_stream_of(s->lc.str);
+    hipEvent_t submit_ev = vmaf_hip_event_of(s->lc.submit);
+    const unsigned cur_idx = index % 2u;
+    const unsigned prev_idx = (index + 1u) % 2u;
+    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
+    const ptrdiff_t plane_pitch = (ptrdiff_t)(s->frame_w * bpp);
+
+    /* HtoD copy of current ref Y plane into ping-pong slot cur_idx. Returns
+     * once the picture is read: the caller may recycle it when submit()
+     * returns (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
+    const VmafHipPlaneUpload plane = {.dst = s->pix[cur_idx],
+                                      .dst_pitch = (size_t)plane_pitch,
+                                      .pic = ref_pic,
+                                      .plane = 0u,
+                                      .row_bytes = (size_t)plane_pitch,
+                                      .rows = s->frame_h};
+    int err = vmaf_hip_picture_upload(&plane, 1u, s->lc.str);
+    if (err != 0)
+        return err;
+
+    /* Frame 0: nothing to diff against; record submit event so collect
+     * can sync. Emit 0 in collect. */
+    if (index == 0u)
+        return mv2_hip_rc(hipEventRecord(submit_ev, str));
+
+    /* Reset device int64 SAD accumulator (single uint64_t). Must run
+     * before the kernel so the atomicAdd starts from 0. */
+    hipError_t rc = hipMemsetAsync(s->rb.device, 0, sizeof(uint64_t), str);
+    if (rc != hipSuccess)
+        return mv2_hip_rc(rc);
+    err = mv2_hip_launch_kernel(s, cur_idx, prev_idx, plane_pitch, str);
+    if (err != 0)
+        return err;
+
+    rc = hipEventRecord(submit_ev, str);
+    if (rc == hipSuccess) {
+        rc = hipMemcpyAsync(s->rb.host_pinned, s->rb.device, sizeof(uint64_t),
+                            hipMemcpyDeviceToHost, str);
     }
-    if (rc != hipSuccess)
-        return mv2_hip_rc(rc);
-
-    rc = hipEventRecord((hipEvent_t)s->lc.submit, str);
-    if (rc != hipSuccess)
-        return mv2_hip_rc(rc);
-
-    rc = hipMemcpyAsync(s->rb.host_pinned, s->rb.device, sizeof(uint64_t), hipMemcpyDeviceToHost,
-                        str);
     if (rc != hipSuccess)
         return mv2_hip_rc(rc);
 
     return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
 }
 #endif /* HAVE_HIPCC */
+
+/* Tear down everything init() may have set up. Every step tolerates a handle
+ * that was never created, so this serves both a failed init() and close().
+ * The stream is drained first, so no kernel still uses a buffer. Returns the
+ * first error; freeing the buffers and the module is best-effort. */
+static int mv2_hip_release(MotionV2StateHip *s)
+{
+    int rc = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
+#ifdef HAVE_HIPCC
+    /* mv2_hip_bufs_free also unloads the module. */
+    mv2_hip_bufs_free(s);
+#endif /* HAVE_HIPCC */
+    int err = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
+    if (err != 0 && rc == 0)
+        rc = err;
+    if (s->feature_name_dict != NULL) {
+        err = vmaf_dictionary_free(&s->feature_name_dict);
+        if (err != 0 && rc == 0)
+            rc = err;
+    }
+    vmaf_hip_context_destroy(s->ctx);
+    s->ctx = NULL;
+    return rc;
+}
 
 static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                         unsigned w, unsigned h)
@@ -345,61 +371,25 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     }
 
     int err = vmaf_hip_context_new(&s->ctx, 0);
-    if (err != 0) {
-        return err;
-    }
-
-    err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err != 0) {
-        goto fail_after_ctx;
-    }
-
+    if (err == 0)
+        err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
     /* Readback pair: single int64 SAD accumulator + pinned host slot. */
-    err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx, sizeof(uint64_t));
-    if (err != 0) {
-        goto fail_after_lc;
-    }
-
+    if (err == 0)
+        err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx, sizeof(uint64_t));
 #ifdef HAVE_HIPCC
-    err = mv2_hip_module_load(s);
-    if (err != 0) {
-        goto fail_after_rb;
-    }
-
-    err = mv2_hip_bufs_alloc(s);
-    if (err != 0) {
-        goto fail_after_module;
-    }
+    if (err == 0)
+        err = mv2_hip_module_load(s);
+    if (err == 0)
+        err = mv2_hip_bufs_alloc(s);
 #endif /* HAVE_HIPCC */
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) {
-        err = -ENOMEM;
-#ifdef HAVE_HIPCC
-        mv2_hip_bufs_free(s);
-        goto fail_after_rb;
-#else
-        goto fail_after_rb;
-#endif
+    if (err == 0) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (s->feature_name_dict == NULL)
+            err = -ENOMEM;
     }
-
-    return 0;
-
-#ifdef HAVE_HIPCC
-fail_after_module:
-    if (s->module != NULL) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-    }
-#endif /* HAVE_HIPCC */
-fail_after_rb:
-    (void)vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
-fail_after_lc:
-    (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_after_ctx:
-    vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
+    if (err != 0)
+        (void)mv2_hip_release(s);
     return err;
 }
 
@@ -454,6 +444,71 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
 #endif /* HAVE_HIPCC */
 }
 
+#ifdef HAVE_HIPCC
+/* Number of consecutive frames, from 0, that carry a SAD score. */
+static unsigned mv2_hip_count_frames(VmafFeatureCollector *fc, const char *sad_name)
+{
+    unsigned n_frames = 0;
+    double dummy;
+    while (!vmaf_feature_collector_get_score(fc, sad_name, &dummy, n_frames))
+        n_frames++;
+    return n_frames;
+}
+
+/* motion3_v2 seeding — mirrors integer_motion_v2.c::flush exactly.
+ * stamp_value blends the *raw SAD* at min_idx, clipped to motion_max_val;
+ * it is emitted for all indices i < min_idx. */
+static double mv2_hip_stamp_value(const MotionV2StateHip *s, VmafFeatureCollector *fc,
+                                  const char *sad_name, unsigned n_frames, unsigned min_idx)
+{
+    double stamp_value = 0.;
+    if (n_frames > min_idx) {
+        double sad_at_min_idx;
+        if (!vmaf_feature_collector_get_score(fc, sad_name, &sad_at_min_idx, min_idx)) {
+            stamp_value =
+                MIN(motion_blend(sad_at_min_idx, s->motion_blend_factor, s->motion_blend_offset),
+                    s->motion_max_val);
+        }
+    }
+    return stamp_value;
+}
+
+/* motion2_v2 of frame i: the smaller fps-weighted SAD of frames i and i + 1,
+ * or frame i's alone for the last frame. Mirrors CPU integer_motion_v2.c
+ * flush; bit-exact when motion_fps_weight = 1.0 (default). */
+static double mv2_hip_motion2(const MotionV2StateHip *s, VmafFeatureCollector *fc,
+                              const char *sad_name, unsigned i, unsigned n_frames)
+{
+    double score_cur;
+    double score_next;
+    vmaf_feature_collector_get_score(fc, sad_name, &score_cur, i);
+    score_cur *= s->motion_fps_weight;
+    if (i + 1u >= n_frames)
+        return score_cur;
+    vmaf_feature_collector_get_score(fc, sad_name, &score_next, i + 1u);
+    score_next *= s->motion_fps_weight;
+    return score_cur < score_next ? score_cur : score_next;
+}
+
+/* motion3_v2 of frame i: per-frame blend + clip + optional moving-average,
+ * or the stamp value below min_idx. `*prev_processed` carries the moving
+ * average across frames. Mirrors integer_motion_v2.c::flush byte-for-byte. */
+static double mv2_hip_motion3(const MotionV2StateHip *s, double motion2, unsigned i,
+                              unsigned min_idx, double stamp_value, double *prev_processed)
+{
+    if (i < min_idx) {
+        *prev_processed = stamp_value;
+        return stamp_value;
+    }
+    const double processed = MIN(
+        motion_blend(motion2, s->motion_blend_factor, s->motion_blend_offset), s->motion_max_val);
+    const double motion3 =
+        s->motion_moving_average ? (processed + *prev_processed) / 2.0 : processed;
+    *prev_processed = processed;
+    return motion3;
+}
+#endif /* HAVE_HIPCC */
+
 static int flush_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
 #ifndef HAVE_HIPCC
@@ -474,69 +529,27 @@ static int flush_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *featur
         vmaf_dictionary_get(&s->feature_name_dict, "VMAF_integer_feature_motion_v2_sad_score", 0);
     const char *sad_name = e_sad ? e_sad->val : "VMAF_integer_feature_motion_v2_sad_score";
 
-    unsigned n_frames = 0;
-    double dummy;
-    while (!vmaf_feature_collector_get_score(feature_collector, sad_name, &dummy, n_frames))
-        n_frames++;
-
+    const unsigned n_frames = mv2_hip_count_frames(feature_collector, sad_name);
     if (n_frames < 2u)
         return 1;
 
-    /* motion3_v2 seeding — mirrors integer_motion_v2.c::flush exactly.
-     * 3-frame mode only (min_idx = 1; the 5-frame window is unsupported
-     * on motion_v2, ADR-0337). stamp_value blends the *raw SAD* at
-     * min_idx, clipped to motion_max_val; it is emitted for all indices
-     * i < min_idx. */
+    /* 3-frame mode only (min_idx = 1; the 5-frame window is unsupported on
+     * motion_v2, ADR-0337). */
     const unsigned min_idx = 1;
-    double stamp_value = 0.;
-    if (n_frames > min_idx) {
-        double sad_at_min_idx;
-        if (!vmaf_feature_collector_get_score(feature_collector, sad_name, &sad_at_min_idx,
-                                              min_idx)) {
-            stamp_value =
-                MIN(motion_blend(sad_at_min_idx, s->motion_blend_factor, s->motion_blend_offset),
-                    s->motion_max_val);
-        }
-    }
+    const double stamp_value =
+        mv2_hip_stamp_value(s, feature_collector, sad_name, n_frames, min_idx);
 
     double prev_processed = 0.;
     for (unsigned i = 0; i < n_frames; i++) {
-        double score_cur;
-        double score_next;
-        vmaf_feature_collector_get_score(feature_collector, sad_name, &score_cur, i);
-        /* Apply fps weight — mirrors CPU integer_motion_v2.c flush logic.
-         * Bit-exact when motion_fps_weight = 1.0 (default). */
-        score_cur *= s->motion_fps_weight;
-
-        double motion2;
-        if (i + 1u < n_frames) {
-            vmaf_feature_collector_get_score(feature_collector, sad_name, &score_next, i + 1u);
-            score_next *= s->motion_fps_weight;
-            motion2 = score_cur < score_next ? score_cur : score_next;
-        } else {
-            motion2 = score_cur;
-        }
-
+        const double motion2 = mv2_hip_motion2(s, feature_collector, sad_name, i, n_frames);
         int append_err = vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_v2_score",
             motion2, i);
         if (append_err)
             return append_err;
 
-        /* motion3_v2_score: per-frame blend + clip + optional moving-average.
-         * Mirrors integer_motion_v2.c::flush byte-for-byte. */
-        double motion3;
-        if (i < min_idx) {
-            motion3 = stamp_value;
-            prev_processed = stamp_value;
-        } else {
-            double processed =
-                MIN(motion_blend(motion2, s->motion_blend_factor, s->motion_blend_offset),
-                    s->motion_max_val);
-            motion3 = s->motion_moving_average ? (processed + prev_processed) / 2.0 : processed;
-            prev_processed = processed;
-        }
-
+        const double motion3 =
+            mv2_hip_motion3(s, motion2, i, min_idx, stamp_value, &prev_processed);
         append_err = vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion3_v2_score",
             motion3, i);
@@ -550,30 +563,7 @@ static int flush_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *featur
 
 static int close_fex_hip(VmafFeatureExtractor *fex)
 {
-    MotionV2StateHip *s = fex->priv;
-
-    int rc = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-
-#ifdef HAVE_HIPCC
-    /* mv2_hip_bufs_free also unloads the module; best-effort only. */
-    mv2_hip_bufs_free(s);
-#endif /* HAVE_HIPCC */
-
-    int err = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
-    if (err != 0 && rc == 0) {
-        rc = err;
-    }
-    if (s->feature_name_dict != NULL) {
-        err = vmaf_dictionary_free(&s->feature_name_dict);
-        if (err != 0 && rc == 0) {
-            rc = err;
-        }
-    }
-    if (s->ctx != NULL) {
-        vmaf_hip_context_destroy(s->ctx);
-        s->ctx = NULL;
-    }
-    return rc;
+    return mv2_hip_release(fex->priv);
 }
 
 static const char *provided_features[] = {"VMAF_integer_feature_motion_v2_sad_score",
