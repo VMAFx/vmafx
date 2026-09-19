@@ -159,6 +159,18 @@ markers = [
   "slow: tests that take more than 30s",
   "gpu: requires a GPU backend (CUDA/SYCL)",
 ]
+# Suppress DeprecationWarnings from PyTorch 2.9+ that fire unconditionally
+# when torch.onnx.export is called with dynamo=False (the legacy TorchScript
+# path).  The fork intentionally pins dynamo=False for all ONNX exports
+# because the dynamo exporter does not yet handle the quantisation-related
+# intermediate buffers produced by convert_fx (see ADR-0207 §Why two-step).
+# The warnings originate inside torch/onnx/__init__.py and cannot be avoided
+# by callers — suppression at the pytest config level is the standard remedy.
+filterwarnings = [
+    "ignore:You are using the legacy TorchScript-based ONNX export:DeprecationWarning",
+    "ignore:from_dynamic_axes_to_dynamic_shapes is deprecated:DeprecationWarning",
+    "ignore:The feature will be removed. Please remove usage of this function:DeprecationWarning",
+]
 
 [tool.mypy]
 python_version = "3.10"
