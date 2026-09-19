@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-09-19T09:52:52Z",
+  "generated_at": "2026-09-19T09:38:54Z",
   "repository": "",
   "commit_sha": "",
-  "total_infractions": 1622,
+  "total_infractions": 1557,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -2583,6 +2583,14 @@
     },
     {
       "rule_id": "HISS-04",
+      "file_path": "core/src/feature/arm64/cambi_neon.c",
+      "line_number": 125,
+      "symbol": "{",
+      "message": "Function '{' (86 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/feature/arm64/cambi_neon.c:125:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
       "file_path": "core/src/feature/arm64/float_adm_dwt2_neon.c",
       "line_number": 60,
       "symbol": "{",
@@ -2720,53 +2728,53 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 196,
+      "line_number": 189,
       "symbol": "static const VmafOption options[] = {",
       "message": "Function 'static const VmafOption options[] = {' (184 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cambi.c:196:HISS-04"
+      "fingerprint": "core/src/feature/cambi.c:189:HISS-04"
     },
     {
       "rule_id": "HISS-02",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 440,
+      "line_number": 433,
       "message": "Legacy unbounded loop in native code",
-      "fingerprint": "core/src/feature/cambi.c:440:HISS-02"
+      "fingerprint": "core/src/feature/cambi.c:433:HISS-02"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 857,
+      "line_number": 834,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/cambi.c:857:HISS-01"
+      "fingerprint": "core/src/feature/cambi.c:834:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 863,
+      "line_number": 840,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/cambi.c:863:HISS-01"
+      "fingerprint": "core/src/feature/cambi.c:840:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 870,
+      "line_number": 847,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/cambi.c:870:HISS-01"
+      "fingerprint": "core/src/feature/cambi.c:847:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/cambi.c",
-      "line_number": 874,
+      "line_number": 851,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/cambi.c:874:HISS-01"
+      "fingerprint": "core/src/feature/cambi.c:851:HISS-01"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/cambi.h",
-      "line_number": 49,
+      "line_number": 40,
       "symbol": "static const float reciprocal_lut[CAMBI_RECIPROCAL_LUT_SIZE] = {0.0f,",
       "message": "Function 'static const float reciprocal_lut[CAMBI_RECIPROCAL_LUT_SIZE] = {0.0f,' (4226 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cambi.h:49:HISS-04"
+      "fingerprint": "core/src/feature/cambi.h:40:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -7891,480 +7899,6 @@
       "symbol": "extern \"C\" {",
       "message": "Function 'extern \"C\" {' (71 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/log.cpp:122:HISS-04"
-    },
-    {
-      "rule_id": "HISS-08",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 125,
-      "message": "Banned unsafe sprintf() invocation; snprintf required",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:125:HISS-08"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 331,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:331:HISS-01"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 290,
-      "symbol": "parse_number",
-      "message": "Function 'parse_number' (88 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:290:HISS-04"
-    },
-    {
-      "rule_id": "HISS-08",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 417,
-      "message": "Banned unsafe strcpy() invocation; bounded string copy required",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:417:HISS-08"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 444,
-      "symbol": "ensure",
-      "message": "Function 'ensure' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:444:HISS-04"
-    },
-    {
-      "rule_id": "HISS-08",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 549,
-      "message": "Banned unsafe sprintf() invocation; snprintf required",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:549:HISS-08"
-    },
-    {
-      "rule_id": "HISS-08",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 551,
-      "message": "Banned unsafe sprintf() invocation; snprintf required",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:551:HISS-08"
-    },
-    {
-      "rule_id": "HISS-08",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 554,
-      "message": "Banned unsafe sprintf() invocation; snprintf required",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:554:HISS-08"
-    },
-    {
-      "rule_id": "HISS-08",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 560,
-      "message": "Banned unsafe sprintf() invocation; snprintf required",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:560:HISS-08"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 636,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:636:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 644,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:644:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 655,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:655:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 660,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:660:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 668,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:668:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 698,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:698:HISS-01"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 625,
-      "symbol": "{",
-      "message": "Function '{' (96 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:625:HISS-04"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 732,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:732:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 745,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:745:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 754,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:754:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 761,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:761:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 775,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:775:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 805,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:805:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 810,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:810:HISS-01"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 724,
-      "symbol": "parse_string",
-      "message": "Function 'parse_string' (115 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:724:HISS-04"
-    },
-    {
-      "rule_id": "HISS-08",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 861,
-      "message": "Banned unsafe strcpy() invocation; bounded string copy required",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:861:HISS-08"
-    },
-    {
-      "rule_id": "HISS-08",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 938,
-      "message": "Banned unsafe sprintf() invocation; snprintf required",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:938:HISS-08"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 843,
-      "symbol": "{",
-      "message": "Function '{' (106 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:843:HISS-04"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1031,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1031:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1042,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1042:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1047,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1047:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1054,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1054:HISS-01"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1022,
-      "symbol": "{",
-      "message": "Function '{' (66 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1022:HISS-04"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1117,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1117:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1122,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1122:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1130,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1130:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1137,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1137:HISS-01"
-    },
-    {
-      "rule_id": "HISS-08",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1288,
-      "message": "Banned unsafe strcpy() invocation; bounded string copy required",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1288:HISS-08"
-    },
-    {
-      "rule_id": "HISS-08",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1296,
-      "message": "Banned unsafe strcpy() invocation; bounded string copy required",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1296:HISS-08"
-    },
-    {
-      "rule_id": "HISS-08",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1304,
-      "message": "Banned unsafe strcpy() invocation; bounded string copy required",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1304:HISS-08"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1275,
-      "symbol": "print_value",
-      "message": "Function 'print_value' (63 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1275:HISS-04"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1352,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1352:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1359,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1359:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1365,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1365:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1375,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1375:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1393,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1393:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1399,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1399:HISS-01"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1341,
-      "symbol": "parse_array",
-      "message": "Function 'parse_array' (82 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1341:HISS-04"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1490,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1490:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1496,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1496:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1502,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1502:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1512,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1512:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1527,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1527:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1534,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1534:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1543,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1543:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1550,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1550:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1556,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1556:HISS-01"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1480,
-      "symbol": "parse_object",
-      "message": "Function 'parse_object' (99 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1480:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 1582,
-      "symbol": "print_object",
-      "message": "Function 'print_object' (94 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:1582:HISS-04"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 2496,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:2496:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 2501,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:2501:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 2511,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:2511:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 2519,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:2519:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 2530,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:2530:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 2535,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:2535:HISS-01"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 2488,
-      "symbol": "cJSON_Duplicate_rec",
-      "message": "Function 'cJSON_Duplicate_rec' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:2488:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/mcp/3rdparty/cJSON/cJSON.c",
-      "line_number": 2742,
-      "symbol": "cJSON_Compare",
-      "message": "Function 'cJSON_Compare' (108 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/mcp/3rdparty/cJSON/cJSON.c:2742:HISS-04"
     },
     {
       "rule_id": "HISS-04",
