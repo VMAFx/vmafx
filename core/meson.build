@@ -1,5 +1,5 @@
 project('libvmaf', ['c', 'cpp'],
-    version : '3.2.1', # x-release-please-version
+    version : '1.0.0-rc.1', # x-release-please-version
     # c_std is deliberately NOT set here — see the compiler-aware block
     # below. MSVC advertises only ['none','c89','c99','c11'], so any
     # value this project actually wants aborts configure before that
