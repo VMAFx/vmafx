@@ -60,10 +60,11 @@ workflows; each run evaluates 39 of them, because only the Scorecard gate for
 the triggering event applies.
 
 A required name must be reported by exactly one job, because the aggregator
-keeps one check run per name. `Windows MSVC+CUDA` currently breaks that: the
-required `libvmaf-build-matrix.yml` lane and the `build.yml` row share it
-(`T-CI-MSVC-CUDA-SHARED-CHECK-NAME-2026-09-18` in [state.md](../state.md);
-[ADR-1259](../adr/1259-ci-build-matrix-as-it-runs.md)).
+keeps one check run per name, so two jobs sharing a name can mask each other's
+failure. `scripts/ci/check-aggregator-names.sh` enforces it. The `build.yml`
+Windows row used to share `Windows MSVC+CUDA` with the required
+`libvmaf-build-matrix.yml` lane and is now `Windows MSVC+CUDA (full)`
+([ADR-1259](../adr/1259-ci-build-matrix-as-it-runs.md)).
 
 To prevent drift between workflow job definitions and the aggregator's required
 check array, all required checks are tagged in their defining workflow with
@@ -144,7 +145,7 @@ job the PR renamed, every required check and every build lane.
 | `standards-gate.yml` | added after #1286 | `Standards & Invariant Verification Gate` | 39 | Yes |
 | `build.yml` | `Build — Linux (Intel LLVM, all backends)` | `Linux Intel LLVM` | 16 | No |
 | `build.yml` | `Build — macOS (Clang, CPU + Metal)` | `macOS Clang+Metal` | 17 | No |
-| `build.yml` | `Build — Windows (MSVC + CUDA)` | `Windows MSVC+CUDA` | 18 | No |
+| `build.yml` | `Build — Windows (MSVC + CUDA)` | `Windows MSVC+CUDA (full)` | 24 | No |
 | `ffmpeg-integration.yml` | `FFmpeg — Ubuntu gcc (Build Only)` | `FFmpeg Ubuntu gcc` | 17 | No |
 | `ffmpeg-integration.yml` | `FFmpeg — macOS clang (Build Only)` | `FFmpeg macOS clang` | 18 | No |
 | `ffmpeg-integration.yml` | `FFmpeg — SYCL (Build Only)` | `FFmpeg SYCL` | 11 | No |

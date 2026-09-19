@@ -108,7 +108,7 @@ Windows lanes build every time.
 | `Ubuntu CUDA` | CUDA build, CPU-only tests | not required | `eaad70462` | removed by ADR-0689, restored by `384d97d03` |
 | `Ubuntu SYCL+CUDA` | icpx SYCL and CUDA build, CPU-only tests | not required | `eaad70462` | decision 2 |
 | `Windows MinGW64` | MSYS2 gcc static build, Win64 stack-alignment check, meson tests | required | ADR-0115, ADR-0116 | ADR-1234, ADR-1253, ADR-1254; removed by ADR-0691, restored by `384d97d03` |
-| `Windows MSVC+CUDA` | MSVC and nvcc build, no tests | required; the name is shared, see below | ADR-0121 | ADR-1234 |
+| `Windows MSVC+CUDA` | MSVC and nvcc build, no tests | required | ADR-0121 | ADR-1234 |
 | `Windows MSVC+SYCL` | MSVC and oneAPI build, no tests | required | ADR-0121 | ADR-1234 |
 
 ### `build.yml` (workflow `Build`)
@@ -120,7 +120,7 @@ only documentation (`paths-ignore`).
 | --- | --- | --- | --- | --- |
 | `Linux Intel LLVM` | icx/icpx build with CUDA, SYCL, HIP and DNN, meson dnn suite, meson tests, HIP smoke test; no tox | not required | ADR-0710 | GCC until #1161 (`195f88a22`); ADR-1185 |
 | `macOS Clang+Metal` | CPU and Metal build, meson tests, tox | not required | ADR-0710 | ADR-1234 cites a failure it caught |
-| `Windows MSVC+CUDA` | MSVC and nvcc build, CPU tests | not required in its own right; shares the required name, see below | ADR-0710 | — |
+| `Windows MSVC+CUDA (full)` | MSVC and nvcc build, CPU tests | not required; renamed by this ADR, see below | ADR-0710 | — |
 
 ### Sanitizer and static-analysis gates (decision 3)
 
@@ -145,9 +145,11 @@ lane and the `build.yml` row both report as `Windows MSVC+CUDA`, so either can
 hide a failure of the other. On master commit `7cc0cc91b` the `build.yml`
 run was cancelled and the matrix run, which started one second later,
 succeeded; only the success counts. `scripts/ci/check-aggregator-names.sh`
-compares sets of names, so it cannot see a duplicate. This ADR records the
-defect but does not fix it, because the fix changes a required name. It is
-tracked as `T-CI-MSVC-CUDA-SHARED-CHECK-NAME-2026-09-18` in `docs/state.md`.
+compared sets of names, so it could not see a duplicate. The maintainer chose
+to rename the `build.yml` job (see References), which leaves the required name
+and the ruleset untouched: it is now `Windows MSVC+CUDA (full)`, and
+`check-aggregator-names.sh` fails when more than one job reports a required
+name (`T-CI-MSVC-CUDA-SHARED-CHECK-NAME-2026-09-18` in `docs/state.md`).
 
 ## Alternatives considered
 
@@ -167,13 +169,12 @@ tracked as `T-CI-MSVC-CUDA-SHARED-CHECK-NAME-2026-09-18` in `docs/state.md`.
 - **Negative**: every non-draft PR that touches the C core still runs 17 matrix
   lanes and the three `build.yml` rows, and `build.yml` largely repeats the
   matrix (`Linux Intel LLVM` against the SYCL, CUDA and HIP lanes,
-  `macOS Clang+Metal` against `macOS Metal`, and the two `Windows MSVC+CUDA`
-  jobs). The shared check name stays open.
+  `macOS Clang+Metal` against `macOS Metal`, and the two Windows MSVC and
+  CUDA jobs).
 - **Neutral / follow-ups**: the unreleased changelog fragments that announced
   the ADR-0689, ADR-0691, ADR-0710 and ADR-0728 removals are removed or
   corrected, so the first VMAFx release notes do not announce them. Trimming
-  the overlap, and renaming one of the two `Windows MSVC+CUDA` jobs, are
-  separate decisions.
+  the overlap is a separate decision.
 
 ## References
 
@@ -206,3 +207,5 @@ tracked as `T-CI-MSVC-CUDA-SHARED-CHECK-NAME-2026-09-18` in `docs/state.md`.
 - Popup, 2026-09-18, lanes without a later ADR: "Keep them, record it
   (Recommended)".
 - Popup, 2026-09-18, required checks: "Keep the four required (Recommended)".
+- Popup, 2026-09-19, shared `Windows MSVC+CUDA` check name: "Rename build.yml's
+  job (Recommended)".
