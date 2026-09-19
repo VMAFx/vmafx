@@ -9,7 +9,7 @@
 # every container base in this repository. These defaults are mirrors kept in
 # sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
 # these lines, then run that script with --write.
-ARG CUDA_BUILDER="nvidia/cuda:13.3.1-devel-ubuntu26.04@sha256:8cf42b8dc4c34d47fb42ffb0923f8a5e363469a7149181c094da336d311bb466"
+ARG CUDA_BUILDER="nvidia/cuda:13.4.1-devel-ubuntu26.04@sha256:fe678162c7114158e170f2f727a7582162a3a55d7090ed31fac04f2dbc173378"
 
 FROM ${CUDA_BUILDER}
 
