@@ -515,3 +515,33 @@ both documented in ADR-1206:
 
 HIP and Metal are not registered yet — unverifiable on current
 workstation.
+
+## Shared GPU test sources request only names every arm emits (T-HIP-ADM-TESTS-STALE-SHOULD-FAIL-2026-09-18)
+
+`test_adm_small_border.c` and `test_adm_wide_rounding.c` build twice:
+`-DHAVE_CUDA=1` and `-DHAVE_HIP=1`. Feature list must hold only names
+the arm's twin provides. HIP `integer_adm` twin has no AIM pass, so
+`VMAF_integer_feature_adm3_score` / `_aim_score` stay out of its
+`provided_features[]` (T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05);
+asking for them returns `-EINVAL` from `vmaf_feature_score_at_index()`
+before any parity check runs. Guard such names with
+`#if !defined(HAVE_HIP)`. Print the failing name: a bare "failed" cost a
+session to diagnose.
+
+`should_fail : true` in `meson.build` needs a reason that is true today.
+Meson counts an unexpected pass as a failure, so a stale marker breaks
+`meson test` on every machine with the device. When the cited defect is
+fixed, drop the marker in the same PR (ADR-1211 fixed the staging fault
+the three HIP ADM markers cited; the markers outlived it by two weeks).
+
+Parity fixtures must carry texture. Smooth ramps such as
+`(row * 7 + col * 5) & 0xFF` leave the ADM contrast-masking kernel almost
+nothing to accumulate: with the pre-ADR-1167 border defect planted back
+into `adm_cm.hip`, the ramp moved adm2 by 7.5e-6, under the 1e-4 gate;
+the lowbias32 texture in `luma_sample()` moves it by 4.0e-4. Before
+trusting a new parity test, plant the defect it targets and watch it
+fail. Rounding placement inside a row (per pixel, per warp, per row)
+does not reach any emitted ADM score: the CPU divides the accumulator by
+`2^(52 - shift_cub - shift_inner_accum)` and casts to `float`. No
+score-level tolerance detects it
+(T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19).
