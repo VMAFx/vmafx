@@ -32,6 +32,24 @@ IMAGE_NAMES = (
 )
 
 
+def run_blocks(workflow: str) -> list[str]:
+    """Every `run:` block in the workflow, to the end of its indented body."""
+    blocks = []
+    lines = workflow.splitlines()
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped.startswith(("run:", "- run:")):
+            continue
+        indent = len(line) - len(line.lstrip())
+        body = [line]
+        for following in lines[index + 1 :]:
+            if following.strip() and (len(following) - len(following.lstrip())) <= indent:
+                break
+            body.append(following)
+        blocks.append("\n".join(body))
+    return blocks
+
+
 def _workflow_step(workflow: str, name: str) -> str:
     """Return one top-level step block from the E2E workflow."""
     marker = f"      - name: {name}\n"
@@ -47,6 +65,10 @@ def _workflow_step(workflow: str, name: str) -> str:
 
 class E2ERuntimeContractTest(unittest.TestCase):
     """Keep the nightly test aligned with artifacts it actually executes."""
+
+    # Declared so the type checker knows setUpClass introduces it; assigning in
+    # setUpClass alone leaves every use of self.workflow an unknown attribute.
+    workflow: str
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -164,7 +186,15 @@ class E2ERuntimeContractTest(unittest.TestCase):
         self.assertIn('kubeconfig_dir="${RUNNER_TEMP}/vmafx-e2e"', self.workflow)
         self.assertIn("printf 'VMAFX_E2E_KUBECONFIG=%s", self.workflow)
         self.assertIn('>> "${GITHUB_ENV}"', self.workflow)
-        self.assertNotIn("${{ runner.temp }}", self.workflow)
+        # A `run:` block has a shell, so it must use ${RUNNER_TEMP}: the
+        # kubeconfig and tool-install logic below is written against it, and an
+        # expression there would be substituted before the shell ever sees the
+        # value. An action input has no shell, and GitHub does not expand
+        # environment variables inside `with:`, so ${{ runner.temp }} is the
+        # only way to place a cache or artifact path outside the workspace.
+        # That is why this is scoped to run blocks rather than the whole file.
+        for block in run_blocks(self.workflow):
+            self.assertNotIn("${{ runner.temp }}", block)
         self.assertGreaterEqual(self.workflow.count("bash test/e2e/assert-kind-context.sh"), 2)
         self.assertIn("--config test/e2e/kuttl-tests/kuttl-test.yaml", self.workflow)
         self.assertNotIn("kind-cluster.sh --teardown || true", self.workflow)
