@@ -307,7 +307,7 @@ CI round-trip:
 | --- | --- | --- |
 | `assertion-density` | pre-push | NASA Power-of-10 §5 — every fork-added C function ≥20 lines has ≥1 `assert()`. Backed by `scripts/ci/assertion-density.sh`. |
 | `twin-drift-check` | pre-push | [ADR-1135](../adr/1135-ci-twin-drift-gate.md) — every `.c`/`.cpp` twin side is compiled by some build file (or allowlisted with a reason in `scripts/ci/twin-drift-allowlist.txt`); every source path a `meson.build` / `setup.py` / `*.pyx` names exists. Backed by `scripts/ci/twin-drift-check.sh`; same predicate as the required CI check. |
-| `mypy-local` | pre-push | `mypy ai/ scripts/` — same invocation as the `Python Lint` CI job. Requires `pip install mypy` (system tool, not in `pyproject.toml`). |
+| `mypy-local` | pre-push | `mypy` over the `ai/` and `scripts/` Python files the branch changed, failing only on findings absent at the merge base (ADR-1261). Files under `ai/src/` run with `--explicit-package-bases`. Requires `pip install mypy` (system tool, not in `pyproject.toml`). |
 | `semgrep-local` | pre-commit | Project-local rules from `.semgrep.yml` (`--error` exit code on match). Standard rule packs (`p/cert-c-strict`, `p/cwe-top-25`) still run in CI only. |
 | `ffmpeg-patches-apply-check` | pre-push | Replay every patch in `ffmpeg-patches/series.txt` cumulatively with `git am --3way` against a cached FFmpeg `n9.0.1` checkout. Backed by `scripts/ci/ffmpeg-patches-check.sh`. |
 | `ffmpeg-patches-surface-check` | (CI + local) | CLAUDE.md §12 r14 — public-libvmaf-surface change without a matching `ffmpeg-patches/*.patch` update fails the build. Runnable locally via `BASE_SHA=… HEAD_SHA=… PR_BODY=… bash scripts/ci/ffmpeg-patches-surface-check.sh`. Backed by [ADR-0409](../adr/0409-ffmpeg-patches-surface-gate.md). |

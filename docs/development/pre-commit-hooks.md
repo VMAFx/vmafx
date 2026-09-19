@@ -56,6 +56,36 @@ after a rebase. Neither omission may narrow the check. This does not expand
 the explicit file policy to other Python packages or unchanged master files.
 Mypy's normal import checking still applies to the selected sources.
 
+### What makes the hook fail
+
+The hook reports only findings the branch introduces
+([ADR-1261](../adr/1261-mypy-pre-push-delta-gate.md)). It checks the selected
+files, then checks the same files again as they are at the merge base in a
+disposable worktree, and lists what is new. Line numbers are left out of the
+comparison, so inserting a line above an existing finding does not make it
+look new. The output ends with a count of the findings that were inherited and
+therefore not reported.
+
+Two consequences worth knowing:
+
+- A file that already fails still fails for its own reasons, and you may edit
+  it. Adding a *different* finding to it is reported; the ones that were
+  already there are not.
+- A non-zero exit with nothing to attribute to a file is treated as mypy
+  breaking, and blocks the push.
+
+The reason for the delta is that `mypy` in CI is advisory
+(`|| echo "mypy advisory only on first run"` in the `Python Lint` job) because
+numpy, pandas and torch stub coverage is uneven, so how many findings a
+checkout reports depends on which of those packages it has installed. A
+blocking local hook that reported all of them rejected findings that `master`
+produces on its own files.
+
+Files under `ai/src/` are checked in a separate run with
+`--explicit-package-bases`. That directory is a `mypy_path` base, so without
+the flag mypy sees each file under two module names and refuses the run
+outright.
+
 Run the same check manually from the repository root:
 
 ```bash
