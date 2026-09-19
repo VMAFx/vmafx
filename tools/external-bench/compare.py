@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import math
 import pathlib
 import subprocess
 import sys
@@ -335,6 +336,22 @@ def render_table(aggs: Sequence[CompetitorAggregate]) -> str:
     return "\n".join(out)
 
 
+def _json_safe(value: object) -> object:
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    return value
+
+
+def render_json(aggs: Sequence[CompetitorAggregate]) -> str:
+    """Render aggregate output as strict RFC-8259 JSON."""
+    payload = _json_safe([dataclasses.asdict(a) for a in aggs])
+    return json.dumps(payload, indent=2, allow_nan=False)
+
+
 # ---- main -------------------------------------------------------------------
 
 
@@ -419,12 +436,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(table)
 
     if args.out_json:
-        args.out_json.write_text(
-            json.dumps(
-                [dataclasses.asdict(a) for a in aggs],
-                indent=2,
-            )
-        )
+        args.out_json.write_text(render_json(aggs) + "\n", encoding="utf-8")
 
     return 0
 
