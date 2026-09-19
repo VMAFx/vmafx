@@ -6,10 +6,11 @@
 # Three matrix rows, none of them a required check:
 #   - Linux Intel LLVM:    Intel LLVM + ALL Linux backends (CUDA + SYCL + HIP + CPU + DNN)
 #   - macOS Clang+Metal:   Apple Clang + CPU + Metal scaffold
-#   - Windows MSVC+CUDA:   MSVC + CPU + CUDA. The required lane in
-#     libvmaf-build-matrix.yml has the same display name, and the aggregator
-#     keeps one run per name: see T-CI-MSVC-CUDA-SHARED-CHECK-NAME-2026-09-18
-#     in docs/state.md.
+#   - Windows MSVC+CUDA (full): MSVC + CPU + CUDA, static, with the CPU
+#     tests. Named apart from the required `Windows MSVC+CUDA` lane in
+#     libvmaf-build-matrix.yml: the aggregator keeps one run per name, so a
+#     shared name let either job mask the other's failure
+#     (scripts/ci/check-aggregator-names.sh now rejects a shared required name).
 #
 # Rationale: container-first VMAFX philosophy (ADR-0686, ADR-0701) means the
 # production artefact is the `vmafx-dev-mcp` image, not a per-backend binary;
@@ -101,7 +102,7 @@ jobs:
           # windows-2025 runner). CPU-only meson tests are run after build.
           # ──────────────────────────────────────────────────────────────
           - os: windows-2025
-            name: Windows MSVC+CUDA
+            name: Windows MSVC+CUDA (full)
             cuda: true
             windows: true
             meson_extra: >-

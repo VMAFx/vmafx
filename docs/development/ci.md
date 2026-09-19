@@ -19,7 +19,7 @@ The main `pull_request`-triggered workflows include:
 | [`go-ci.yml`](../../.github/workflows/go-ci.yml) | Required Go vet, security scan, runner smoke, and tests (ADR-1238). |
 | [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) | FFmpeg + libvmaf build (Linux GCC / macOS Clang / SYCL). |
 | [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform / cross-backend libvmaf build matrix: 17 lanes, six of them required. |
-| [`build.yml`](../../.github/workflows/build.yml) | One all-backend build per OS (`Linux Intel LLVM`, `macOS Clang+Metal`, `Windows MSVC+CUDA`), alongside the matrix; not required. |
+| [`build.yml`](../../.github/workflows/build.yml) | One all-backend build per OS (`Linux Intel LLVM`, `macOS Clang+Metal`, `Windows MSVC+CUDA (full)`), alongside the matrix; not required. |
 | [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100 / 0106 / 0108 / 0165 process gates. |
 | [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml) | Netflix golden, sanitizers, tiny-AI, MCP, coverage, assertion-density. |
 | [`sanitizers.yml`](../../.github/workflows/sanitizers.yml) | Combined ASan+UBSan on PRs, TSan on master pushes, nightly fuzzing; not required (the required sanitizers are in `tests-and-quality-gates.yml`). |

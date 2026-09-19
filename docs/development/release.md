@@ -599,9 +599,8 @@ is enforced at the host, not just honored by convention.
     Ubuntu HIP, SYCL float_ssim Parity. All but the last are
     `libvmaf-build-matrix.yml` lanes; no `build.yml` row is required
     ([ADR-1259](../adr/1259-ci-build-matrix-as-it-runs.md)). The `build.yml`
-    Windows row also reports as `Windows MSVC+CUDA`, and the aggregator keeps
-    only the later of the two runs (`T-CI-MSVC-CUDA-SHARED-CHECK-NAME-2026-09-18`
-    in [state.md](../state.md)).
+    Windows row is named `Windows MSVC+CUDA (full)` so that it cannot
+    stand in for the required lane.
   - **Static analysis (10):** CodeQL ×4 (CodeQL, CodeQL (C/C++),
     CodeQL (Python), CodeQL (Actions)), Pre-Commit, Python Lint, Semgrep,
     Tidy Changed, Tidy Ratchet, Cppcheck.

@@ -690,6 +690,15 @@ jobs:
           bash scripts/ci/check-state-md-rows.sh
           bash scripts/ci/tests/test-check-state-md-rows.sh
 
+      - name: Required check names have one reporter each (ADR-1259)
+        # The aggregator keeps one check run per name, so two jobs sharing a
+        # required name can mask each other's failure (`Windows MSVC+CUDA` was
+        # reported by two workflows until 2026-09-19). The gate also runs as a
+        # pre-commit hook; its hermetic self-test runs here.
+        run: |
+          bash scripts/ci/check-aggregator-names.sh
+          bash scripts/ci/tests/test-check-aggregator-names.sh
+
       - name: Test the self-hosted SYCL runner probe
         # ADR-1177. Hermetic unit suite for check-runner-available.sh.
         run: bash scripts/ci/tests/test-runner-available.sh
