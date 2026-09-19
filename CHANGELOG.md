@@ -25464,6 +25464,13 @@ clear diagnostic: `enable_nvtx=true requires enable_cuda=true`.
   preventing the package from compiling. Fixes PR #534.
 
 
+- **The AI tooling no longer pulls in an `onnx` whose models the pinned
+  runtime cannot load.** `onnx` 1.23 writes models at IR version 14, and
+  onnxruntime 1.30, the runtime this repository pins, reads at most IR 13.
+  The `ai` and ensemble-training-kit packages now require `onnx<1.23` until
+  onnxruntime catches up.
+
+
 - Repair the Helm operator Deployment and image metadata after the ADR-1119
   fx migration: runtime configuration now uses the supported
   `VMAFX_OPERATOR_*` environment variables, metrics bind to `:8080`, and
