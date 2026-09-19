@@ -480,6 +480,20 @@ normalization offset rather than widening the accumulator to int64 as the fork's
 #1477 does, because the int64 form costs 3.5 to 6 % of throughput upstream. Do
 not resolve that conflict by keeping both. Upstream #1494, by a maintainer,
 refactors the same ADM functions and will force a rebase either way.
+## fix/svm-cppcheck-219 — libsvm is split, and stays split (2026-09-19)
+
+`core/src/svm.cpp` is no longer close to upstream libsvm's layout. The
+allocation macro goes through `svm_checked_malloc`, and 14 oversized blocks are
+split into named helpers: the solver, both working-set selections, the trainer,
+the sigmoid trainer, the model parser and two class bodies. A re-vendor that
+drops a fresh libsvm in will undo all of it, exactly as the 1.7.19 cJSON
+re-vendor undid that file's fixes. Re-apply the delta rather than replacing the
+file, and check with the two gates that found this: cppcheck 2.19 (which comes
+from the `ubuntu-26.04` runner image, not from a pin) and the size limit, which
+applies to every block in a file the pull request touches. Every split preserved
+its expressions in order; the check that it stayed correct is the Netflix pair
+byte-identical at `--precision max`, which is the first thing to re-run.
+
 ## ci/ubuntu-2604-matrix-tail — the lanes Renovate could not see (2026-09-19)
 
 Renovate's github-actions manager rewrites `runs-on:` values only. A lane that
