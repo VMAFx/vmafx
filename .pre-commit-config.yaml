@@ -416,16 +416,19 @@ repos:
         additional_dependencies: ["semgrep>=1.177.0,<2.0"]
         require_serial: true
         types_or: [c, c++, cuda, python]
-        # Mirror `check-copyright`'s exclude list — same upstream /
-        # vendored paths that ship with their own hygiene contract:
-        # (a) upstream vendored subprojects, (b) test fixtures,
-        # (c) compat/python-vmaf/resource/ + python/test/resource/ assets,
-        # (d) core/src/pdjson.{c,h} 3rd-party JSON parser,
-        # (e) compat/python-vmaf/matlab/ — Netflix-upstream MATLAB MEX C
-        # sources (they call `sprintf` / `strcpy` etc., which are
-        # banned by .semgrep.yml but are out of scope for fork-local
-        # hygiene; cleaning them up is an upstream change, not ours).
-        exclude: '^subprojects/|^core/test/data/|^compat/python-vmaf/resource/|^python/test/resource/|^compat/python-vmaf/matlab/|^core/src/pdjson\.(c|h)$'
+        # Paths this hook skips: (a) upstream vendored subprojects,
+        # (b) test fixtures, (c) compat/python-vmaf/resource/ +
+        # python/test/resource/ assets, (d) compat/python-vmaf/matlab/ —
+        # Netflix-upstream MATLAB MEX C sources (they call `sprintf` /
+        # `strcpy` etc., which are banned by .semgrep.yml but are out of
+        # scope for fork-local hygiene; cleaning them up is an upstream
+        # change, not ours).
+        # The vendored JSON code the library links — core/src/pdjson.{c,h}
+        # and core/src/mcp/3rdparty/cJSON/ — is deliberately NOT skipped
+        # (ADR-0683, ADR-1142): this hook is the commit-time guard that
+        # stops a re-vendor from bringing banned libc calls back, and the
+        # whole-tree Semgrep CI job has always scanned pdjson anyway.
+        exclude: '^subprojects/|^core/test/data/|^compat/python-vmaf/resource/|^python/test/resource/|^compat/python-vmaf/matlab/'
         # Runs at pre-commit time — fast on a single-file diff and the
         # rules in .semgrep.yml are the project's own, not p/cert-c-strict.
         # `pass_filenames: true` (the default) because semgrep accepts
@@ -433,6 +436,43 @@ repos:
         # the gate cheap on a single-file diff. For full-tree audits, run
         # `make lint` (which invokes `semgrep scan` against the worktree
         # without an explicit file list, picking up .semgrepignore).
+
+      - id: test-semgrep-vendored-scope
+        name: Banned-function guard sees vendored JSON code (planted-defect recall)
+        # The hook above is only a guard for the paths it is allowed to see.
+        # A rule-level exclude plus a .semgrepignore line once hid vendored
+        # cJSON from it, and a re-vendor silently reverted two security fixes.
+        # This plants banned calls at the vendored paths and requires both the
+        # explicit-file form (this hook) and the whole-tree form (the Semgrep
+        # CI job) to report them, then scans the real vendored files.
+        # Same isolated semgrep environment and serial execution as above.
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_semgrep_vendored_scope.py
+        language: python
+        additional_dependencies: ["semgrep>=1.177.0,<2.0"]
+        require_serial: true
+        files: '^(\.semgrep\.yml|\.semgrepignore|\.pre-commit-config\.yaml|scripts/ci/tests/test_semgrep_vendored_scope\.py|core/src/pdjson\.(c|h)|core/src/mcp/3rdparty/.*)$'
+        pass_filenames: false
+
+      # Shell-injection regression tests. Both fixes below were reverted once
+      # by a pull request that carried stale copies of the scripts (PR #414
+      # undid PR #350). The sycl-bench-env test already existed and would have
+      # failed, but nothing ran it; the entrypoint probe had no test at all.
+      # Hermetic (mktemp, stub programs, no Docker, no oneAPI), well under 1 s.
+      - id: test-sycl-bench-env
+        name: sycl-bench-env.sh keeps the oneAPI prefix out of the bash -c body
+        entry: bash scripts/ci/test-sycl-bench-env.sh
+        language: system
+        files: '^(scripts/ci/(sycl-bench-env|test-sycl-bench-env)\.sh|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: test-dev-mcp-entrypoint-probe
+        name: dev-mcp entrypoint probes run argv, never eval
+        entry: bash scripts/ci/tests/test-dev-mcp-entrypoint-probe.sh
+        language: system
+        files: '^(dev/scripts/dev-mcp-entrypoint\.sh|scripts/ci/tests/test-dev-mcp-entrypoint-probe\.sh|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
 
       - id: ffmpeg-patches-apply-check
         name: FFmpeg patch stack on the configured release

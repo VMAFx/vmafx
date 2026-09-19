@@ -76,13 +76,13 @@ rules:
         - /matlab/**
         - /core/tools/cli_parse.c
         - /core/tools/y4m_input.c
-        # Vendored third-party code — kept verbatim under their original
-        # license so upstream security fixes can be picked up unchanged.
-        # cJSON v1.7.18 (MIT) is used by the embedded MCP server
-        # (ADR-0128 / ADR-0209). The library is bound-checked internally
-        # via its own input-length tracking; we accept it as-is rather
-        # than fork the upstream sources.
-        - /core/src/mcp/3rdparty/**
+        # Vendored code is NOT excluded (ADR-0683, ADR-1142). An earlier
+        # `/core/src/mcp/3rdparty/**` entry here, together with a whole-file
+        # `.semgrepignore` line, is why the cJSON 1.7.19 re-vendor could put
+        # eleven banned calls back without any gate noticing. A re-vendor that
+        # trips this rule re-applies the fork delta described in
+        # core/src/mcp/3rdparty/cJSON/AGENTS.md; it does not get an exclusion.
+        # scripts/ci/tests/test_semgrep_vendored_scope.py pins this.
     message: Use strncpy/strncat/snprintf with explicit bound. (CERT STR31-C / Power-of-10 Rule 9.)
     languages: [c, cpp]
     severity: ERROR
