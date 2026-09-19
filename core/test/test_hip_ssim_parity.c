@@ -16,12 +16,13 @@
  * (ADR-0214). Measured deltas are around 1e-14: only the order in which the
  * per-pixel terms are summed differs.
  *
- * The fixture is N_FRAMES frames fetched from a picture pool sized like the
- * CLI's, so a picture buffer is refilled with the next frame as soon as
- * vmaf_read_pictures() lets go of it. That is what exposed a HIP staging
- * race: an asynchronous upload that was still reading a picture after
- * submit() returned scored some frames against the next frame's samples.
- * A single-frame fixture cannot see it.
+ * The fixture (hip_pooled_fixture.h) is N_FRAMES frames fetched from a
+ * picture pool sized like the CLI's, so a picture buffer is refilled with the
+ * next frame as soon as vmaf_read_pictures() lets go of it. That is what
+ * exposed a HIP staging race: an asynchronous upload that was still reading a
+ * picture after submit() returned scored some frames against the next frame's
+ * samples. A single-frame fixture cannot see it. test_hip_upload_race.c runs
+ * the same fixture over every HIP extractor that uploads a host picture.
  *
  * meson registers this TU several times: at 8 bpc (the 256x144 default and
  * a 960x540 variant), at 10 bpc (-DFIXTURE_BPC=10u, which runs the 16-bit
@@ -41,6 +42,7 @@
 #include "test.h"
 
 #include "feature/feature_extractor.h"
+#include "hip_pooled_fixture.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
@@ -51,99 +53,7 @@
  * required Windows build compiles this TU with cl.exe, and this test mirrors
  * the C spelling of the surface it exercises. ADR-1138. */
 
-#ifndef FIXTURE_W
-#define FIXTURE_W 256u
-#endif
-#ifndef FIXTURE_H
-#define FIXTURE_H 144u
-#endif
-#ifndef FIXTURE_BPC
-#define FIXTURE_BPC 8u
-#endif
-#define N_FRAMES 8u
-/* 2 * (threads + 1) + 1 with no worker threads: the CLI's pool size. */
-#define POOL_PICTURES 3u
 #define PARITY_TOL 1e-4
-
-/* Bit-depth generic sample writer: an 8-bit ramp in the high bits and a
- * second pattern in the low (bpc - 8) bits. */
-static void put_luma(VmafPicture *pic, unsigned row, unsigned col, unsigned v8, unsigned low_seed)
-{
-#if FIXTURE_BPC > 8u
-    uint16_t *y = (uint16_t *)((uint8_t *)pic->data[0] + (size_t)row * (size_t)pic->stride[0]);
-    const unsigned low_mask = (1u << (FIXTURE_BPC - 8u)) - 1u;
-    y[col] = (uint16_t)(((v8 & 0xFFu) << (FIXTURE_BPC - 8u)) | (low_seed & low_mask));
-#else
-    uint8_t *y = (uint8_t *)pic->data[0] + (size_t)row * (size_t)pic->stride[0];
-    (void)low_seed;
-    y[col] = (uint8_t)(v8 & 0xFFu);
-#endif
-}
-
-static void fill_chroma_grey(VmafPicture *pic)
-{
-    for (unsigned p = 1u; p < 3u; p++) {
-        for (unsigned row = 0u; row < pic->h[p]; row++) {
-            for (unsigned col = 0u; col < pic->w[p]; col++) {
-#if FIXTURE_BPC > 8u
-                uint16_t *c =
-                    (uint16_t *)((uint8_t *)pic->data[p] + (size_t)row * (size_t)pic->stride[p]);
-                c[col] = (uint16_t)(128u << (FIXTURE_BPC - 8u));
-#else
-                uint8_t *c = (uint8_t *)pic->data[p] + (size_t)row * (size_t)pic->stride[p];
-                c[col] = 128u;
-#endif
-            }
-        }
-    }
-}
-
-/* Frame `frame` of the reference (salt 0) or the distorted clip (salt 1).
- * The content moves every frame and the distortion offset grows with the
- * frame index, so each frame has its own score and a frame scored against
- * another frame's samples shows up as a delta. */
-static int fetch_frame(VmafContext *vmaf, VmafPicture *pic, unsigned frame, unsigned salt)
-{
-    const int err = vmaf_fetch_preallocated_picture(vmaf, pic);
-    if (err)
-        return err;
-    const unsigned offset = frame * 11u + salt * (17u + 3u * frame);
-    for (unsigned row = 0u; row < pic->h[0]; row++) {
-        for (unsigned col = 0u; col < pic->w[0]; col++)
-            put_luma(pic, row, col, row + col + offset, row * 7u + col * 3u + salt);
-    }
-    fill_chroma_grey(pic);
-    return 0;
-}
-
-static int feed_frames(VmafContext *vmaf)
-{
-    const VmafPictureConfiguration pool = {
-        .pic_params =
-            {
-                .w = FIXTURE_W,
-                .h = FIXTURE_H,
-                .bpc = FIXTURE_BPC,
-                .pix_fmt = VMAF_PIX_FMT_YUV420P,
-            },
-        .pic_cnt = POOL_PICTURES,
-    };
-    int err = vmaf_preallocate_pictures(vmaf, pool);
-    for (unsigned f = 0u; f < N_FRAMES && !err; f++) {
-        VmafPicture ref;
-        VmafPicture dist;
-        err = fetch_frame(vmaf, &ref, f, 0u);
-        if (err)
-            break;
-        err = fetch_frame(vmaf, &dist, f, 1u);
-        if (err) {
-            (void)vmaf_picture_unref(&ref);
-            break;
-        }
-        err = vmaf_read_pictures(vmaf, &ref, &dist, f);
-    }
-    return err;
-}
 
 /* Runs `extractor` over the fixture and reads the `ssim` score of every
  * frame into `scores`. Returns 0, or the error of the first failing call. */
@@ -151,7 +61,7 @@ static int run_ssim(VmafContext *vmaf, const char *extractor, double *scores)
 {
     int err = vmaf_use_feature(vmaf, extractor, NULL);
     if (!err)
-        err = feed_frames(vmaf);
+        err = hip_fixture_feed_frames(vmaf);
     if (!err)
         err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     for (unsigned f = 0u; f < N_FRAMES && !err; f++)
