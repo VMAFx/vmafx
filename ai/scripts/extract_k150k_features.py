@@ -748,10 +748,34 @@ def detect_fr_corpus_misuse(meta_by_clip: dict[str, dict[str, Any]]) -> dict[str
     ``dis_count``, ``content_groups_with_both`` (count), and ``example``
     (one ``chug_content_name`` that demonstrates the misuse).
     """
+    ref_count, dis_count, by_content = _tally_fr_corpus_refs(meta_by_clip)
+    groups_with_both = 0
+    example: str | None = None
+    for content, counts in by_content.items():
+        if counts["ref"] >= 1 and counts["dis"] >= 1:
+            groups_with_both += 1
+            if example is None:
+                example = content
+    return {
+        "misuse_detected": groups_with_both >= 1,
+        "ref_count": ref_count,
+        "dis_count": dis_count,
+        "content_groups_with_both": groups_with_both,
+        "example": example,
+    }
+
+
+def _tally_fr_corpus_refs(
+    meta_by_clip: dict[str, dict[str, Any]],
+) -> tuple[int, int, dict[str, dict[str, int]]]:
+    """Count ``chug_ref`` / ``chug_content_name`` rows for the FR-corpus-misuse check.
+
+    Split out of ``detect_fr_corpus_misuse`` to keep that function under the
+    HISS-04 / NASA Rule 4 60-LOC limit; pure extraction, no behaviour change.
+    """
     ref_count = 0
     dis_count = 0
     by_content: dict[str, dict[str, int]] = {}
-    example: str | None = None
     for meta in meta_by_clip.values():
         if not isinstance(meta, dict):
             continue
@@ -772,19 +796,7 @@ def detect_fr_corpus_misuse(meta_by_clip: dict[str, dict[str, Any]]) -> dict[str
         else:
             dis_count += 1
             bucket["dis"] += 1
-    groups_with_both = 0
-    for content, counts in by_content.items():
-        if counts["ref"] >= 1 and counts["dis"] >= 1:
-            groups_with_both += 1
-            if example is None:
-                example = content
-    return {
-        "misuse_detected": groups_with_both >= 1,
-        "ref_count": ref_count,
-        "dis_count": dis_count,
-        "content_groups_with_both": groups_with_both,
-        "example": example,
-    }
+    return ref_count, dis_count, by_content
 
 
 def _load_jsonl_metadata(path: Path | None, *, split_seed: str) -> dict[str, dict[str, Any]]:
@@ -804,6 +816,9 @@ def _load_jsonl_metadata(path: Path | None, *, split_seed: str) -> dict[str, dic
         "chug_content_name",
         "chug_height_manifest",
         "chug_width_manifest",
+        # _geometry_from_sidecar() infers yuv420p10le from this field. Left out,
+        # every sidecar-covered 10-bit clip decodes as 8-bit yuv420p.
+        "chug_bit_depth",
     )
     out: dict[str, dict[str, Any]] = {}
     with path.open("r", encoding="utf-8") as fh:
@@ -1135,19 +1150,12 @@ def _process_clip(
 # ---------------------------------------------------------------------------
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(
-        prog="extract_k150k_features.py",
-        description="Extract FULL_FEATURES from KoNViD-150k-A via FR-from-NR adapter (ADR-0346).",
-    )
-    _k150k_dir = os.environ.get(
-        "VMAF_KONVID_150K_DIR",
-        str(Path(__file__).resolve().parents[2] / ".corpus" / "konvid-150k"),
-    )
+def _add_input_args(ap: argparse.ArgumentParser, k150k_dir: Path) -> None:
+    """Register corpus-input CLI flags (clips, scores, sidecar, split seed)."""
     ap.add_argument(
         "--clips-dir",
         type=Path,
-        default=Path(_k150k_dir) / "k150ka_extracted",
+        default=k150k_dir / "k150ka_extracted",
         help=(
             "Directory containing K150K-A .mp4 clips. Override the parent "
             "dir via the ``VMAF_KONVID_150K_DIR`` env var."
@@ -1156,7 +1164,7 @@ def main() -> int:
     ap.add_argument(
         "--scores",
         type=Path,
-        default=Path(_k150k_dir) / "k150ka_scores.csv",
+        default=k150k_dir / "k150ka_scores.csv",
         help=(
             "CSV with columns video_name, video_score (MOS labels). "
             "Parent dir overridden via ``VMAF_KONVID_150K_DIR``."
@@ -1176,6 +1184,10 @@ def main() -> int:
         default=DEFAULT_CHUG_SPLIT_SEED,
         help="Seed for CHUG content-level split metadata when --metadata-jsonl has no split.",
     )
+
+
+def _add_output_args(ap: argparse.ArgumentParser) -> None:
+    """Register output-surface CLI flags (vmaf binaries, parquet, manifest)."""
     ap.add_argument(
         "--vmaf-bin",
         type=Path,
@@ -1213,6 +1225,10 @@ def main() -> int:
             "and the exact CLI args used to build the derived parquet."
         ),
     )
+
+
+def _add_runtime_args(ap: argparse.ArgumentParser) -> None:
+    """Register worker/throughput CLI flags (threads, progress, limit, scratch)."""
     ap.add_argument(
         "--threads",
         type=int,
@@ -1268,6 +1284,10 @@ def main() -> int:
         default=Path(tempfile.gettempdir()) / "k150k_yuv_scratch",
         help="Scratch directory for temporary YUV files.  Cleaned per-clip.",
     )
+
+
+def _add_misc_args(ap: argparse.ArgumentParser) -> None:
+    """Register the remaining CLI flags (FR-corpus guard override, teacher model)."""
     ap.add_argument(
         "--allow-fr-from-nr",
         action="store_true",
@@ -1288,20 +1308,33 @@ def main() -> int:
             f"default ({DEFAULT_MODEL} via ADR-1168/ADR-1173)."
         ),
     )
-    args = ap.parse_args()
-    if args.manifest_out is None:
-        args.manifest_out = args.out.with_suffix(".manifest.json")
 
-    resolved_teacher = resolve_teacher_model(args.vmaf_model)
 
-    # --flush-every is a legacy alias; --progress-every takes precedence.
-    progress_every: int = args.progress_every
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """Assemble the extract_k150k_features.py CLI parser from grouped helpers.
 
-    use_cuda = not args.no_cuda
+    Split out of ``main()`` to keep it under the HISS-04 / NASA Rule 4 60-LOC
+    limit; the argument set and defaults are unchanged.
+    """
+    ap = argparse.ArgumentParser(
+        prog="extract_k150k_features.py",
+        description="Extract FULL_FEATURES from KoNViD-150k-A via FR-from-NR adapter (ADR-0346).",
+    )
+    k150k_dir = Path(
+        os.environ.get(
+            "VMAF_KONVID_150K_DIR",
+            str(Path(__file__).resolve().parents[2] / ".corpus" / "konvid-150k"),
+        )
+    )
+    _add_input_args(ap, k150k_dir)
+    _add_output_args(ap)
+    _add_runtime_args(ap)
+    _add_misc_args(ap)
+    return ap
 
-    # ------------------------------------------------------------------
-    # Pre-flight checks
-    # ------------------------------------------------------------------
+
+def _run_preflight_checks(args: argparse.Namespace, *, use_cuda: bool) -> int | None:
+    """Validate CLI-supplied paths. Returns an exit code on failure, else None."""
     if not args.clips_dir.is_dir():
         print(f"error: clips-dir not found: {args.clips_dir}", file=sys.stderr)
         return 2
@@ -1321,11 +1354,14 @@ def main() -> int:
     if use_cuda and not args.cpu_vmaf_bin.is_file():
         print(f"error: cpu-vmaf-bin not found: {args.cpu_vmaf_bin}", file=sys.stderr)
         return 2
+    return None
 
-    # ------------------------------------------------------------------
-    # Load MOS labels
-    # ------------------------------------------------------------------
-    scores_df = pd.read_csv(args.scores)
+
+def _load_mos_labels(
+    scores_path: Path,
+) -> tuple[dict[str, float], dict[str, dict[str, Any]]] | None:
+    """Load the MOS-label CSV. Returns None (after printing) on duplicate keys."""
+    scores_df = pd.read_csv(scores_path)
     scores_df = scores_df.rename(columns={"video_score": "mos"})
     # zip(strict=True) only verifies equal length, NOT key uniqueness, so a
     # scores CSV with duplicate video_name rows would silently collapse to the
@@ -1336,12 +1372,12 @@ def main() -> int:
         dups = sorted(scores_df.loc[dup_mask, "video_name"].astype(str).unique())
         preview = ", ".join(dups[:10]) + (" ..." if len(dups) > 10 else "")
         print(
-            f"error: scores CSV {args.scores} has {len(dups)} duplicate "
+            f"error: scores CSV {scores_path} has {len(dups)} duplicate "
             f"video_name key(s); each clip must appear once. Offending "
             f"names: {preview}",
             file=sys.stderr,
         )
-        return 2
+        return None
     mos_map: dict[str, float] = dict(zip(scores_df["video_name"], scores_df["mos"], strict=True))
     score_meta: dict[str, dict[str, Any]] = {}
     for row in scores_df.to_dict(orient="records"):
@@ -1352,15 +1388,22 @@ def main() -> int:
         if "mos_raw_0_100" in row:
             meta["mos_raw_0_100"] = row["mos_raw_0_100"]
         score_meta[name] = meta
-    jsonl_meta = _load_jsonl_metadata(args.metadata_jsonl, split_seed=args.split_seed)
+    return mos_map, score_meta
 
-    # FR-corpus misuse guard (ADR-0510).  The script is an FR-from-NR adapter:
-    # ref == distorted.  Running it on a corpus that ships real references
-    # (CHUG: ``chug_ref==1`` rows paired with bitrate-ladder distortions for
-    # the same ``chug_content_name``) silently degrades every difference-based
-    # metric to its identity-pair floor and produces a parquet with no quality
-    # signal (vmaf~99 across all rungs including 360p @ 0.2 Mbps).  Use
-    # ai/scripts/chug_extract_features.py for FR corpora.
+
+def _check_fr_corpus_misuse(
+    jsonl_meta: dict[str, dict[str, Any]], args: argparse.Namespace
+) -> int | None:
+    """FR-corpus misuse guard (ADR-0510). Returns an exit code if it should abort.
+
+    The script is an FR-from-NR adapter: ref == distorted. Running it on a
+    corpus that ships real references (CHUG: ``chug_ref==1`` rows paired with
+    bitrate-ladder distortions for the same ``chug_content_name``) silently
+    degrades every difference-based metric to its identity-pair floor and
+    produces a parquet with no quality signal (vmaf~99 across all rungs
+    including 360p @ 0.2 Mbps). Use ai/scripts/chug_extract_features.py for
+    FR corpora.
+    """
     misuse = detect_fr_corpus_misuse(jsonl_meta)
     if misuse["misuse_detected"] and not args.allow_fr_from_nr:
         print(
@@ -1379,10 +1422,13 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    return None
 
-    # ------------------------------------------------------------------
-    # Enumerate clips and apply checkpoint
-    # ------------------------------------------------------------------
+
+def _enumerate_pending_clips(
+    args: argparse.Namespace, *, use_cuda: bool
+) -> tuple[list[Path], Path, set[str], list[Path], Path]:
+    """Enumerate clips, apply the --limit + .done checkpoint, and report the plan."""
     clips = sorted(args.clips_dir.glob("*.mp4"))
     if args.limit is not None:
         clips = clips[: args.limit]
@@ -1416,165 +1462,246 @@ def main() -> int:
         f"out={args.out}",
         flush=True,
     )
+    return clips, done_path, done_set, pending, staging_path
 
-    if not pending:
-        recovered_rows = _load_staging_rows(staging_path)
-        if recovered_rows:
-            _write_parquet_from_rows(recovered_rows, args.out)
-            # fsync parquet before unlinking the staging file so a power-loss
-            # between rename(2) and unlink(2) cannot leave us with neither.
-            _fsync_path(args.out)
-            staging_path.unlink(missing_ok=True)
-        # ------------------------------------------------------------------
-        # Consistency check: the .done checkpoint is the authoritative ledger
-        # of which clips have been processed.  If the parquet (+ any staging
-        # rows recovered above) has fewer rows than .done claims, a previous
-        # run lost data — refuse to silently no-op, or the operator will
-        # never notice the gap.  See ADR k150k-crash-restart-row-loss.
-        # ------------------------------------------------------------------
-        parquet_rows = _parquet_row_count(args.out)
-        # When recovered_rows was non-empty, _write_parquet_from_rows above
-        # has already merged-and-deduped recovered rows into the parquet,
-        # so parquet_rows already accounts for them; otherwise we still
-        # tolerate len(recovered_rows) extra rows as a margin.
-        accounted = parquet_rows if recovered_rows else parquet_rows + len(recovered_rows)
-        if len(done_set) > accounted:
-            missing = len(done_set) - accounted
-            raise RuntimeError(
-                f"[k150k] CONSISTENCY ERROR: .done lists {len(done_set)} "
-                f"completed clip(s) but parquet has only {parquet_rows} "
-                f"row(s) (+{len(recovered_rows)} recovered from staging). "
-                f"{missing} clip(s) appear to have been lost by a prior "
-                f"crash mid-write. Operator must re-extract them: remove "
-                f"the affected entries from {done_path} (or delete it to "
-                f"re-extract everything) and re-run. "
-                f"See ADR k150k-crash-restart-row-loss-consistency-check."
-            )
-        _write_extraction_manifest(
-            manifest_out=args.manifest_out,
-            args=args,
-            use_cuda=use_cuda,
-            total_clips=len(clips),
-            done_before=len(done_set),
-            pending_count=0,
-            recovered_rows=len(recovered_rows),
-            ok=0,
-            fail=0,
-            elapsed_seconds=0.0,
-            status="complete-noop",
-        )
-        print("[k150k] nothing to do.", flush=True)
-        return 0
 
-    args.scratch_dir.mkdir(parents=True, exist_ok=True)
-
-    # JSONL staging file — accumulates rows during the run for crash durability.
-    # Converted to parquet exactly once at the end (Research-0135 Win 1).
-    # Reload any rows from a previous partial run that are in the done set but
-    # whose staging rows survived.  This covers the edge-case where the process
-    # was killed after writing the staging line but before the final parquet write.
+def _finalize_noop_run(
+    args: argparse.Namespace,
+    *,
+    use_cuda: bool,
+    clips: list[Path],
+    done_path: Path,
+    done_set: set[str],
+    staging_path: Path,
+) -> int:
+    """Handle the case where every enumerated clip is already in .done."""
     recovered_rows = _load_staging_rows(staging_path)
-    recovered_names = {r.get("clip_name") for r in recovered_rows if r.get("clip_name")}
+    if recovered_rows:
+        _write_parquet_from_rows(recovered_rows, args.out)
+        # fsync parquet before unlinking the staging file so a power-loss
+        # between rename(2) and unlink(2) cannot leave us with neither.
+        _fsync_path(args.out)
+        staging_path.unlink(missing_ok=True)
+    # Consistency check: the .done checkpoint is the authoritative ledger of
+    # which clips have been processed. If the parquet (+ any staging rows
+    # recovered above) has fewer rows than .done claims, a previous run lost
+    # data -- refuse to silently no-op, or the operator will never notice the
+    # gap. See ADR k150k-crash-restart-row-loss.
+    parquet_rows = _parquet_row_count(args.out)
+    # When recovered_rows was non-empty, _write_parquet_from_rows above has
+    # already merged-and-deduped recovered rows into the parquet, so
+    # parquet_rows already accounts for them; otherwise we still tolerate
+    # len(recovered_rows) extra rows as a margin.
+    accounted = parquet_rows if recovered_rows else parquet_rows + len(recovered_rows)
+    if len(done_set) > accounted:
+        missing = len(done_set) - accounted
+        raise RuntimeError(
+            f"[k150k] CONSISTENCY ERROR: .done lists {len(done_set)} "
+            f"completed clip(s) but parquet has only {parquet_rows} "
+            f"row(s) (+{len(recovered_rows)} recovered from staging). "
+            f"{missing} clip(s) appear to have been lost by a prior "
+            f"crash mid-write. Operator must re-extract them: remove "
+            f"the affected entries from {done_path} (or delete it to "
+            f"re-extract everything) and re-run. "
+            f"See ADR k150k-crash-restart-row-loss-consistency-check."
+        )
+    _write_extraction_manifest(
+        manifest_out=args.manifest_out,
+        args=args,
+        use_cuda=use_cuda,
+        total_clips=len(clips),
+        done_before=len(done_set),
+        pending_count=0,
+        recovered_rows=len(recovered_rows),
+        ok=0,
+        fail=0,
+        elapsed_seconds=0.0,
+        status="complete-noop",
+    )
+    print("[k150k] nothing to do.", flush=True)
+    return 0
 
-    # ------------------------------------------------------------------
-    # Parallel extraction via ProcessPoolExecutor
-    # ------------------------------------------------------------------
-    rows: list[dict] = list(recovered_rows)
-    ok = 0
-    fail = 0
-    t0 = time.time()
-    completed = 0
 
-    # MOS-label join integrity guard: a format mismatch between the scores CSV
-    # 'video_name' column and the corpus filenames would make every label NaN,
-    # so the regressor would train on garbage after days of GPU extraction.
-    # Verify coverage up front — hard-fail the catastrophic (zero-match) case,
-    # warn on partial coverage (some clips can legitimately lack a score).
-    _mos_covered = sum(1 for mp4 in pending if mp4.name in mos_map or mp4.stem in mos_map)
-    if pending and _mos_covered == 0:
-        _eg_clip = pending[0].name
-        _eg_keys = list(mos_map)[:3]
+def _verify_mos_coverage(pending: list[Path], mos_map: dict[str, float]) -> None:
+    """Hard-fail on zero MOS-label join coverage; warn on partial coverage.
+
+    A format mismatch between the scores CSV 'video_name' column and the
+    corpus filenames would make every label NaN, so the regressor would train
+    on garbage after days of GPU extraction. Verify up front.
+    """
+    mos_covered = sum(1 for mp4 in pending if mp4.name in mos_map or mp4.stem in mos_map)
+    if pending and mos_covered == 0:
+        eg_clip = pending[0].name
+        eg_keys = list(mos_map)[:3]
         raise SystemExit(
             f"[k150k] FATAL: MOS-label join matched 0/{len(pending)} pending clips. "
             f"The scores CSV 'video_name' column does not line up with the corpus "
-            f"filenames — every label would be NaN. Example clip: {_eg_clip!r}; "
-            f"example score keys: {_eg_keys!r}. Fix the join key (e.g. the file "
+            f"filenames — every label would be NaN. Example clip: {eg_clip!r}; "
+            f"example score keys: {eg_keys!r}. Fix the join key (e.g. the file "
             f"extension) before extracting."
         )
-    if pending and _mos_covered < len(pending):
+    if pending and mos_covered < len(pending):
         print(
-            f"[k150k] WARNING: {len(pending) - _mos_covered}/{len(pending)} pending "
+            f"[k150k] WARNING: {len(pending) - mos_covered}/{len(pending)} pending "
             "clips have no MOS label and will carry mos=NaN.",
             file=sys.stderr,
             flush=True,
         )
 
-    # Build submit order: (future, clip_name) pairs.
-    # We use as_completed() so results flow back as soon as workers finish,
-    # keeping the checkpoint and staging file up-to-date without waiting for
-    # the whole batch.  Parquet is written once at the end.
-    with concurrent.futures.ProcessPoolExecutor(max_workers=args.threads_cuda) as executor:
-        future_to_clip: dict[concurrent.futures.Future, str] = {}
-        for idx, mp4 in enumerate(pending):
-            clip_name = mp4.name
-            # Tolerate a filename<->'video_name' extension mismatch (corpus
-            # '<clip>.mp4' vs scores CSV 'video_name' == '<clip>'); the stem
-            # fallback mirrors the coverage guard above.
-            mos = mos_map.get(clip_name)
-            if mos is None:
-                mos = mos_map.get(mp4.stem, float("nan"))
-            # Pass sidecar metadata to the worker for ffprobe skip (Win 2).
-            clip_sidecar = jsonl_meta.get(clip_name)
-            fut = executor.submit(
-                _process_clip,
-                str(mp4),
-                mos,
-                str(args.vmaf_bin),
-                str(args.cpu_vmaf_bin),
-                str(args.scratch_dir),
-                args.threads,
-                use_cuda,
-                idx % args.threads_cuda,
-                clip_sidecar,
-                resolved_teacher.arg,
-                resolved_teacher.name,
+
+def _submit_clip_jobs(
+    executor: concurrent.futures.ProcessPoolExecutor,
+    pending: list[Path],
+    args: argparse.Namespace,
+    *,
+    use_cuda: bool,
+    mos_map: dict[str, float],
+    jsonl_meta: dict[str, dict[str, Any]],
+    resolved_teacher: Any,
+) -> dict[concurrent.futures.Future, str]:
+    """Submit one _process_clip job per pending clip; return future -> clip_name."""
+    future_to_clip: dict[concurrent.futures.Future, str] = {}
+    for idx, mp4 in enumerate(pending):
+        clip_name = mp4.name
+        # Tolerate a filename<->'video_name' extension mismatch (corpus
+        # '<clip>.mp4' vs scores CSV 'video_name' == '<clip>'); the stem
+        # fallback mirrors the coverage guard above.
+        mos = mos_map.get(clip_name)
+        if mos is None:
+            mos = mos_map.get(mp4.stem, float("nan"))
+        # Pass sidecar metadata to the worker for ffprobe skip (Win 2).
+        clip_sidecar = jsonl_meta.get(clip_name)
+        fut = executor.submit(
+            _process_clip,
+            str(mp4),
+            mos,
+            str(args.vmaf_bin),
+            str(args.cpu_vmaf_bin),
+            str(args.scratch_dir),
+            args.threads,
+            use_cuda,
+            idx % args.threads_cuda,
+            clip_sidecar,
+            resolved_teacher.arg,
+            resolved_teacher.name,
+        )
+        future_to_clip[fut] = clip_name
+    return future_to_clip
+
+
+def _collect_clip_results(
+    future_to_clip: dict[concurrent.futures.Future, str],
+    *,
+    pending_count: int,
+    progress_every: int,
+    score_meta: dict[str, dict[str, Any]],
+    jsonl_meta: dict[str, dict[str, Any]],
+    staging_path: Path,
+    recovered_names: set[str],
+    done_path: Path,
+    t0: float,
+) -> tuple[list[dict], int, int]:
+    """Drain completed futures, staging/checkpointing each row; log progress."""
+    rows: list[dict] = []
+    ok = 0
+    fail = 0
+    for completed, fut in enumerate(concurrent.futures.as_completed(future_to_clip), start=1):
+        clip_name = future_to_clip[fut]
+        try:
+            row = fut.result()
+            row.update(score_meta.get(clip_name, {}))
+            row.update(jsonl_meta.get(clip_name, {}))
+            # Append to JSONL staging immediately for crash durability.
+            if clip_name not in recovered_names:
+                _append_row_to_staging(staging_path, row)
+            rows.append(row)
+            _append_done(done_path, clip_name)
+            ok += 1
+        except Exception as exc:
+            print(f"[k150k] FAIL {clip_name}: {exc}", file=sys.stderr, flush=True)
+            fail += 1
+
+        # Periodic progress log (no parquet write -- that happens at the end).
+        if completed % progress_every == 0 or completed == pending_count:
+            elapsed = time.time() - t0
+            rate = completed / elapsed if elapsed > 0 else 0.0
+            remaining = (pending_count - completed) / rate / 3600.0 if rate > 0 else float("nan")
+            print(
+                f"[k150k] {completed}/{pending_count} ok={ok} fail={fail} "
+                f"{rate:.2f} clip/s eta={remaining:.1f}h",
+                flush=True,
             )
-            future_to_clip[fut] = clip_name
+    return rows, ok, fail
 
-        for fut in concurrent.futures.as_completed(future_to_clip):
-            clip_name = future_to_clip[fut]
-            completed += 1
-            try:
-                row = fut.result()
-                row.update(score_meta.get(clip_name, {}))
-                row.update(jsonl_meta.get(clip_name, {}))
-                # Append to JSONL staging immediately for crash durability.
-                if clip_name not in recovered_names:
-                    _append_row_to_staging(staging_path, row)
-                rows.append(row)
-                _append_done(done_path, clip_name)
-                ok += 1
-            except Exception as exc:
-                print(f"[k150k] FAIL {clip_name}: {exc}", file=sys.stderr, flush=True)
-                fail += 1
 
-            # Periodic progress log (no parquet write — that happens at the end).
-            if completed % progress_every == 0 or completed == len(pending):
-                elapsed = time.time() - t0
-                rate = completed / elapsed if elapsed > 0 else 0.0
-                remaining = (len(pending) - completed) / rate / 3600.0 if rate > 0 else float("nan")
-                print(
-                    f"[k150k] {completed}/{len(pending)} ok={ok} fail={fail} "
-                    f"{rate:.2f} clip/s eta={remaining:.1f}h",
-                    flush=True,
-                )
+def _run_extraction_pool(
+    pending: list[Path],
+    args: argparse.Namespace,
+    *,
+    use_cuda: bool,
+    mos_map: dict[str, float],
+    jsonl_meta: dict[str, dict[str, Any]],
+    score_meta: dict[str, dict[str, Any]],
+    staging_path: Path,
+    recovered_rows: list[dict],
+    recovered_names: set[str],
+    done_path: Path,
+    progress_every: int,
+    resolved_teacher: Any,
+) -> tuple[list[dict], int, int, float]:
+    """Run the parallel extraction pool. Returns (rows, ok, fail, elapsed)."""
+    t0 = time.time()
+    # Build submit order: (future, clip_name) pairs. We use as_completed() so
+    # results flow back as soon as workers finish, keeping the checkpoint and
+    # staging file up-to-date without waiting for the whole batch. Parquet is
+    # written once at the end (Research-0135 Win 1).
+    with concurrent.futures.ProcessPoolExecutor(max_workers=args.threads_cuda) as executor:
+        future_to_clip = _submit_clip_jobs(
+            executor,
+            pending,
+            args,
+            use_cuda=use_cuda,
+            mos_map=mos_map,
+            jsonl_meta=jsonl_meta,
+            resolved_teacher=resolved_teacher,
+        )
+        new_rows, ok, fail = _collect_clip_results(
+            future_to_clip,
+            pending_count=len(pending),
+            progress_every=progress_every,
+            score_meta=score_meta,
+            jsonl_meta=jsonl_meta,
+            staging_path=staging_path,
+            recovered_names=recovered_names,
+            done_path=done_path,
+            t0=t0,
+        )
+    rows = list(recovered_rows) + new_rows
+    elapsed = time.time() - t0
+    return rows, ok, fail, elapsed
 
-    # Write parquet exactly once at the end (Research-0135 Win 1).
-    # Include both newly-processed rows and any rows recovered from the staging file.
+
+def _finalize_extraction_run(
+    rows: list[dict],
+    ok: int,
+    fail: int,
+    elapsed: float,
+    *,
+    recovered_rows: list[dict],
+    staging_path: Path,
+    args: argparse.Namespace,
+    use_cuda: bool,
+    clips: list[Path],
+    done_set: set[str],
+    pending: list[Path],
+) -> int:
+    """Write the final parquet + manifest and report the run summary."""
+    # Write parquet exactly once at the end (Research-0135 Win 1). Include
+    # both newly-processed rows and any rows recovered from the staging file.
     if rows:
-        # Sanity check: row accounting must balance.
-        # rows = recovered_rows (loaded above) + newly produced ok rows.
-        # Failures don't append rows, so total ok = ok counter.
+        # Sanity check: row accounting must balance. rows = recovered_rows
+        # (loaded before the pool ran) + newly produced ok rows. Failures
+        # don't append rows, so total ok == the ok counter.
         expected = len(recovered_rows) + ok
         if len(rows) != expected:
             raise RuntimeError(
@@ -1590,13 +1717,12 @@ def main() -> int:
         # Fsync the parquet (and its parent dir) BEFORE unlinking staging.
         # Otherwise a power-loss between rename(2) and unlink(2) can leave
         # the directory entry pointing at a 0-byte parquet and the staging
-        # file gone — exactly the failure class this whole code path
+        # file gone -- exactly the failure class this whole code path
         # exists to prevent.
         _fsync_path(args.out)
         # Clean up the staging file now that the parquet is durable.
         staging_path.unlink(missing_ok=True)
 
-    elapsed = time.time() - t0
     rate = ok / elapsed if elapsed > 0 else 0.0
     print(
         f"[k150k] done. ok={ok} fail={fail} total_time={elapsed:.1f}s "
@@ -1617,6 +1743,97 @@ def main() -> int:
         status="complete" if fail == 0 else "failed",
     )
     return 0 if fail == 0 else 1
+
+
+def _finalize_args(args: argparse.Namespace) -> tuple[Any, int, bool]:
+    """Fill in derived CLI defaults and resolve the VMAF teacher model."""
+    if args.manifest_out is None:
+        args.manifest_out = args.out.with_suffix(".manifest.json")
+    resolved_teacher = resolve_teacher_model(args.vmaf_model)
+    # --flush-every is a legacy alias; --progress-every takes precedence.
+    progress_every: int = args.progress_every
+    use_cuda = not args.no_cuda
+    return resolved_teacher, progress_every, use_cuda
+
+
+def _prepare_pool_inputs(
+    args: argparse.Namespace,
+    staging_path: Path,
+    pending: list[Path],
+    mos_map: dict[str, float],
+) -> tuple[list[dict], set[str]]:
+    """Prep the scratch dir + staging recovery before the extraction pool runs."""
+    args.scratch_dir.mkdir(parents=True, exist_ok=True)
+    # JSONL staging file -- accumulates rows during the run for crash
+    # durability. Reload any rows from a previous partial run that are in the
+    # done set but whose staging rows survived (the process was killed after
+    # writing the staging line but before the final parquet write).
+    recovered_rows = _load_staging_rows(staging_path)
+    recovered_names = {r.get("clip_name") for r in recovered_rows if r.get("clip_name")}
+    _verify_mos_coverage(pending, mos_map)
+    return recovered_rows, recovered_names
+
+
+def main() -> int:
+    ap = _build_arg_parser()
+    args = ap.parse_args()
+    resolved_teacher, progress_every, use_cuda = _finalize_args(args)
+
+    preflight_rc = _run_preflight_checks(args, use_cuda=use_cuda)
+    if preflight_rc is not None:
+        return preflight_rc
+
+    loaded_labels = _load_mos_labels(args.scores)
+    if loaded_labels is None:
+        return 2
+    mos_map, score_meta = loaded_labels
+    jsonl_meta = _load_jsonl_metadata(args.metadata_jsonl, split_seed=args.split_seed)
+
+    guard_rc = _check_fr_corpus_misuse(jsonl_meta, args)
+    if guard_rc is not None:
+        return guard_rc
+
+    clips, done_path, done_set, pending, staging_path = _enumerate_pending_clips(
+        args, use_cuda=use_cuda
+    )
+    if not pending:
+        return _finalize_noop_run(
+            args,
+            use_cuda=use_cuda,
+            clips=clips,
+            done_path=done_path,
+            done_set=done_set,
+            staging_path=staging_path,
+        )
+
+    recovered_rows, recovered_names = _prepare_pool_inputs(args, staging_path, pending, mos_map)
+    rows, ok, fail, elapsed = _run_extraction_pool(
+        pending,
+        args,
+        use_cuda=use_cuda,
+        mos_map=mos_map,
+        jsonl_meta=jsonl_meta,
+        score_meta=score_meta,
+        staging_path=staging_path,
+        recovered_rows=recovered_rows,
+        recovered_names=recovered_names,
+        done_path=done_path,
+        progress_every=progress_every,
+        resolved_teacher=resolved_teacher,
+    )
+    return _finalize_extraction_run(
+        rows,
+        ok,
+        fail,
+        elapsed,
+        recovered_rows=recovered_rows,
+        staging_path=staging_path,
+        args=args,
+        use_cuda=use_cuda,
+        clips=clips,
+        done_set=done_set,
+        pending=pending,
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover
