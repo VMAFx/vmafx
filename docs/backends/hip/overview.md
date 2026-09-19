@@ -40,14 +40,17 @@
 > (ADR-0564). It now runs the CPU's 9-tap int64 kernel, ported from the CUDA
 > twin; see [integer_ssim_hip](#integer_ssim_hip) below.
 >
-> **Known issue (2026-09-18):** most HIP extractors upload the host pictures
-> with an asynchronous copy and do not wait for it. On a multi-frame run the
-> picture buffer can be refilled with the next frame while the copy still reads
-> it, so a few frames per run are scored against mixed samples. Seen on
-> `float_ssim_hip` (up to 8.4e-2 off) and `psnr_hip` (10.4 dB off on one frame)
-> over the 48-frame Netflix pair. `integer_ssim_hip` waits for its uploads and
-> is not affected. Tracked as T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18 in
-> [`docs/state.md`](../../state.md).
+> **Fixed (2026-09-19):** HIP extractors used to upload the host pictures with
+> an asynchronous copy and return without waiting for it. On a multi-frame run
+> the picture buffer was refilled with the next frame while the copy still read
+> it, so frames were scored against the next frame's samples: a different set
+> on every run with one extractor, and the same 46 of 48 frames on every run
+> with several in one process. It affected `ciede_hip`, `float_adm_hip`,
+> `float_moment_hip`, `float_psnr_hip`, `float_ssim_hip`, `float_vif_hip`,
+> `psnr_hip` and `vif_hip` (up to 10.7 dB on `float_psnr`, 0.30 on `vif`).
+> Scores from a multi-frame HIP run made before this fix should be recomputed.
+> Every extractor now waits for its uploads; see
+> [Picture uploads](#picture-uploads) below.
 >
 > One extractor legitimately retains `.flags = 0` (silently falling back to CPU):
 >
@@ -524,11 +527,51 @@ the HIP backend currently does not provide zero-copy picture buffer import
 (`VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE`).
 
 Incoming frames arrive with `VMAF_PICTURE_BUFFER_TYPE_HOST` in system memory.
-Each HIP feature extractor allocates internal device staging buffers and executes
-an explicit host-to-device 2D memory copy via `hipMemcpy2DAsync`.
+Each HIP feature extractor allocates internal device staging buffers and copies
+the planes it needs to the device; see [Picture uploads](#picture-uploads).
 Supporting direct DMA-BUF external memory import on AMD ROCm requires ROCm
 `hipImportExternalMemory` plumbing and device picture pool support (T7-10c),
 which is tracked as a deferred enhancement.
+
+### Picture uploads
+
+A HIP extractor copies the picture planes it needs with
+`vmaf_hip_picture_upload()` (`core/src/hip/picture_hip.h`) and does not return
+from `submit()` until the copy has finished reading them. The pictures are
+pageable host memory that the caller refills as soon as `submit()` returns, and
+`hipMemcpy2DAsync` alone can still be reading at that point.
+
+What this means for a run:
+
+- Scores are reproducible: every extractor gives the same per-frame output on
+  every run and agrees with the CPU within its parity tolerance. Measured on a
+  gfx1036 over the 48-frame Netflix pair at 576x324 and scaled to 1920x1080,
+  ten runs each, one extractor per process and all of them in one.
+- Throughput on a small device can drop. On the gfx1036 iGPU at 1080p,
+  `--model version=vmaf_float_v0.6.1` went from 18.8 to 14.8 frames per second
+  (-21 %), because a copy cannot start until the previous extractor's kernels
+  leave the GPU and the host now waits for it. `--model version=vmaf_v0.6.1`
+  (17.1 to 17.0), eleven extractors in one process (7.3 to 7.2) and the single
+  extractors were within run-to-run noise, except `vif_hip` (-7 %). Pinned
+  staging buffers would remove the wait and are tracked as
+  T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19 in [`docs/state.md`](../../state.md).
+
+To check a build on your own hardware, run one extractor twice and compare:
+
+```bash
+for i in 1 2; do
+  vmaf --reference ref.yuv --distorted dist.yuv \
+       --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+       --backend hip --feature float_psnr_hip --no_prediction \
+       --json --precision max --output run$i.json
+done
+cmp run1.json run2.json
+```
+
+Identical files do not prove the scores are right: with several extractors in
+one process the old defect was deterministic. Compare against
+`--backend cpu --feature float_psnr` as well, or run
+`meson test -C build test_hip_upload_race`.
 
 ### Dispatch strategy predicates and environment overrides
 

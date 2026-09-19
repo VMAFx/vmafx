@@ -144,6 +144,54 @@ the risk is a future fork-internal rebase, squash-merge or re-vendor. See
    a clean clone with the pinned engine. A rebase that reintroduces a banned
    call or a `goto` in `cJSON.c` now fails the baseline-only CI audit as new
    debt, not only the local touched-file rule.
+## fix/hip-pageable-upload-race — HIP extractors wait for their picture uploads (2026-09-19)
+
+**Rebase impact**: none upstream. Netflix ships no HIP backend; every touched
+source under `core/src/hip/`, `core/src/feature/hip/` and the two HIP tests is
+fork-local, and the `core/test/meson.build` hunk sits inside the `enable_hip`
+block upstream never edits.
+
+**Invariants** (see also `core/src/feature/hip/AGENTS.md`, "Picture uploads"):
+
+- A HIP extractor must not return from `submit()` while an upload from a host
+  picture is in flight. Every plane taken from `VmafPicture::data` goes through
+  `vmaf_hip_picture_upload()` (`core/src/hip/picture_hip.{c,h}`), on the
+  extractor's private stream. A port of a CUDA twin brings a bare
+  `cuMemcpy2DAsync` with it: CUDA pictures are device memory with a ready
+  event, HIP pictures are pageable host memory, so replace the copy with the
+  helper rather than translating it to `hipMemcpy2DAsync`.
+- The helper waits on an event, not on the stream, so that a null-stream caller
+  does not wait for every other stream on the device. Keep the wait when a copy
+  fails part-way: the copies already enqueued still read the pictures.
+- The wait costs throughput on a single-queue GPU (T-HIP-UPLOAD-WAIT-THROUGHPUT-
+  2026-09-19). Replace it with extractor-owned pinned staging, never by removing
+  it. `test_hip_upload_race` fails on every run without it.
+- A new HIP extractor that uploads a picture gets a row in `race_cases[]` in
+  `core/test/test_hip_upload_race.c`. The reference picture is not exempt:
+  `vmaf_read_pictures()` keeps it alive through `prev_ref`, which hides the
+  defect from a pooled test but does not remove it.
+- `core/src/hip/hip_handle.h` is the one place that converts the
+  `uintptr_t` handles of `kernel_template.h` back to `hipStream_t` /
+  `hipEvent_t`. The twelve touched extractors no longer define
+  `__HIP_PLATFORM_AMD__` themselves; `hip/meson.build` passes it.
+
+The twelve extractor files were also brought to zero clang-tidy findings and
+zero HISS findings, which the touched-file rule requires: `init()` /
+`close()` share one `*_release()` teardown in place of the `goto` ladders, and
+it drains the stream before it frees a buffer. `float_psnr_hip`,
+`float_moment_hip` and `float_ssim_hip` used to free first. A conflict in those functions should
+be resolved towards the single teardown.
+
+Touched files:
+`core/src/hip/picture_hip.{c,h}`, `core/src/hip/hip_handle.h` (new),
+`core/src/feature/hip/{ciede,float_adm,float_moment,float_motion,float_psnr,float_ssim,float_vif,integer_motion,integer_motion_v2,integer_psnr,integer_ssim,integer_vif}_hip.c`,
+`core/test/hip_pooled_fixture.h` (new), `core/test/test_hip_upload_race.c`
+(new), `core/test/test_hip_ssim_parity.c`, `core/test/meson.build`,
+`core/src/feature/hip/AGENTS.md`, `core/src/hip/AGENTS.md`,
+`docs/backends/hip/overview.md`, `docs/state.md`,
+`changelog.d/fixed/hip-pageable-upload-race.md`,
+`scripts/ci/tidy-baseline-hip.json`.
+
 ## fix/hip-integer-ssim-int64-kernel — HIP integer SSIM runs the CPU kernel (2026-09-18)
 
 **Rebase impact**: none upstream. Every touched source is fork-local: Netflix

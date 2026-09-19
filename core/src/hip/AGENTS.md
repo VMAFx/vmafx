@@ -15,7 +15,10 @@ in [../feature/hip/](../feature/hip/).
 ```text
 hip/
   common.{c,h}          # HIP context + (future) stream management
-  picture_hip.{c,h}     # VmafPicture on a HIP device — stub
+  picture_hip.{c,h}     # device picture alloc/free, and vmaf_hip_picture_upload():
+                        #   the one way a host VmafPicture plane reaches the
+                        #   device (waits for the copy; see ../feature/hip/AGENTS.md)
+  hip_handle.h          # uintptr_t <-> hipStream_t / hipEvent_t, via a union
   dispatch_strategy.{c,h} # Feature-name → kernel routing — stub
   kernel_template.{h,c} # per-feature HIP kernel scaffolding (T7-10 / ADR-0241)
   stubs.c               # -ENOSYS fallbacks for the public libvmaf_hip.h
