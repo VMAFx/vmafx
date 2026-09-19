@@ -106,19 +106,12 @@ def baseline_fingerprints(executable: str, paths: list[str], root: Path, base: s
     finally:
         # --force: the checkout is untouched, but a failed mypy run must not
         # leave a registration behind for the ADR-0332 worktree-drift guard.
-        subprocess.run(  # noqa: S603 -- literal git operation, argument vector
-            [
-                shutil.which("git") or "git",
-                "-C",
-                str(root),
-                "worktree",
-                "remove",
-                "--force",
-                str(worktree),
-            ],
-            capture_output=True,
-            check=False,
-        )
+        # Routed through git() so the argument vector is built in one place;
+        # a cleanup failure must not mask the finding the caller is reporting.
+        try:
+            git("-C", str(root), "worktree", "remove", "--force", str(worktree))
+        except (OSError, RuntimeError, subprocess.CalledProcessError):
+            print(f"mypy: could not remove the baseline worktree {worktree}", file=sys.stderr)
 
 
 def selected_paths(base: str, head: str) -> list[str]:
