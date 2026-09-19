@@ -51422,3 +51422,20 @@ same `adm3` guard and marker removal on the `port/upstream-2026-09` stack;
 those hunks are identical and merge clean, the fixture change is separate.
 The CUDA arms were not run here; run `test_cuda_adm_small_border` and
 `test_cuda_adm_wide_rounding` after any rebase that touches `adm_cm.cu`.
+
+## The HIP scaffold posture reports `-ENOSYS`, at one of two sites (ADR-1264)
+
+`enable_hipcc` defaults to false, so the ordinary `-Denable_hip=true` build has no device
+kernels and every HIP extractor must report `-ENOSYS`. Two things to preserve:
+
+1. **A scaffold path returns `-ENOSYS` directly.** It does not call a kernel-submit helper
+   with placeholder arguments first. `float_vif_hip.c` and `integer_psnr_hvs_hip.c` used to
+   call `vmaf_hip_kernel_submit_pre_launch(&s->lc, s->ctx, NULL, …)` and return its error;
+   the NULL `rb` check is that helper's first statement, so they always returned `-EINVAL`
+   and their `return -ENOSYS` was dead. Do not reintroduce the call, and do not relax the
+   helper's NULL guard to accommodate it.
+2. **A HIP parity test checks `-ENOSYS` at BOTH observation points** — the
+   `vmaf_use_feature()` return and the `vmaf_read_pictures()` return. Which one fires depends
+   on whether the extractor gives up at registration or inside `extract()`;
+   `speed_temporal_hip` does the latter, so a registration-only check fails the test instead
+   of skipping it. `core/test/test_hip_speed_temporal_parity.c` is the reference shape.

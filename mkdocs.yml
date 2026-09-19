@@ -1385,6 +1385,7 @@ nav:
         - "ADR-1259: ci-build-matrix-as-it-runs": adr/1259-ci-build-matrix-as-it-runs.md
         - "ADR-1260: windows-arm64-cpu-lane": adr/1260-windows-arm64-cpu-lane.md
         - "ADR-1261: mypy-pre-push-delta-gate": adr/1261-mypy-pre-push-delta-gate.md
+        - "ADR-1264: hip-scaffold-enosys-contract": adr/1264-hip-scaffold-enosys-contract.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

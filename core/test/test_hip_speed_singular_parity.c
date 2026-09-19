@@ -35,10 +35,15 @@
  * zeroes the independent term as well and the score kernel's
  * `sum(sol * indterm)` vanishes whatever the solution holds.
  *
- * Skip behaviour: if vmaf_hip_state_init() fails (no HIP runtime / no device) OR
- * vmaf_use_feature() returns -ENOSYS (scaffold posture under
- * enable_hipcc=false) every test emits a "[skip: ...]" marker and passes — the
- * same skip contract as test_hip_speed_temporal_parity.c.
+ * Skip behaviour, matching test_hip_speed_temporal_parity.c: every test emits a
+ * "[skip: ...]" marker and passes when
+ *   1. vmaf_hip_state_init() fails (no HIP runtime, or no visible device), or
+ *   2. vmaf_use_feature() returns -ENOSYS, or
+ *   3. the first frame submit returns -ENOSYS.
+ * Case 3 is the one that fires under enable_hipcc=false: registration succeeds
+ * and only extract() knows there is no kernel, so the scaffold reports itself
+ * through vmaf_read_pictures(). It was documented here but never implemented,
+ * which is why the default HIP build failed this file instead of skipping it.
  */
 
 #include <errno.h>
@@ -152,7 +157,7 @@ enum fixture_mode {
  * independently so a run can make exactly one side's temporal difference
  * singular. */
 static char *feed(VmafContext *vmaf, unsigned index, unsigned ref_pattern, unsigned dis_pattern,
-                  int singular_chroma)
+                  int singular_chroma, int *scaffold)
 {
     VmafPicture ref;
     VmafPicture dist;
@@ -163,6 +168,17 @@ static char *feed(VmafContext *vmaf, unsigned index, unsigned ref_pattern, unsig
         vmaf_picture_unref(&ref);
     mu_assert("fill_fixture(dist) failed", !err);
     err = vmaf_read_pictures(vmaf, &ref, &dist, index);
+    /* Under enable_hipcc=false the scaffold reports -ENOSYS from the frame
+     * submit, not from vmaf_use_feature(): registration succeeds and only
+     * extract() knows there is no kernel. This file's own header claims the
+     * same skip contract as test_hip_speed_temporal_parity.c, but the check
+     * existed only at the vmaf_use_feature() site, so the default HIP build
+     * failed here instead of skipping. The sibling test has always checked
+     * both sites; this now matches it. */
+    if (scaffold != NULL && err == -ENOSYS) {
+        *scaffold = 1;
+        return NULL;
+    }
     mu_assert("vmaf_read_pictures failed", !err);
     return NULL;
 }
@@ -221,9 +237,18 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
             ref_pattern = 0u;
             dis_pattern = 0u;
         }
-        char *msg = feed(vmaf, i, ref_pattern, dis_pattern, singular_chroma);
+        int scaffold = 0;
+        char *msg =
+            feed(vmaf, i, ref_pattern, dis_pattern, singular_chroma, use_gpu ? &scaffold : NULL);
         if (msg)
             return msg;
+        if (scaffold) {
+            (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS on submit] ");
+            *skipped = 1;
+            (void)vmaf_close(vmaf);
+            vmaf_hip_state_free(&hip_state);
+            return NULL;
+        }
     }
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("vmaf_read_pictures(EOS) failed", !err);

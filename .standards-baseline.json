@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-09-19T20:13:44Z",
+  "generated_at": "2026-09-19T21:21:10Z",
   "repository": "",
   "commit_sha": "",
-  "total_infractions": 1414,
+  "total_infractions": 1415,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -4649,6 +4649,14 @@
     },
     {
       "rule_id": "HISS-04",
+      "file_path": "core/src/feature/hip/float_vif_hip.c",
+      "line_number": 492,
+      "symbol": "{",
+      "message": "Function '{' (67 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/feature/hip/float_vif_hip.c:492:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_adm/adm_cm.hip",
       "line_number": 177,
       "symbol": "extern \"C\" {",
@@ -8059,10 +8067,10 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/test/test_hip_speed_singular_parity.c",
-      "line_number": 175,
+      "line_number": 191,
       "symbol": "{",
-      "message": "Function '{' (65 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_hip_speed_singular_parity.c:175:HISS-04"
+      "message": "Function '{' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/test/test_hip_speed_singular_parity.c:191:HISS-04"
     },
     {
       "rule_id": "HISS-04",
