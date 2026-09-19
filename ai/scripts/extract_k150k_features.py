@@ -450,6 +450,38 @@ def _feature_arg(extractor: str, is_hdr: bool, motion_fps_weight: float) -> str:
     return f"{base}=" + ":".join(opts)
 
 
+_DEV_SHM = Path("/dev/shm")
+_TMPFS_HEADROOM_BYTES = 20 * 1024 * 1024 * 1024  # 20 GiB minimum free
+
+
+def _choose_scratch_dir(requested: Path | None = None) -> Path:
+    """Return an appropriate scratch directory for temporary YUV files.
+
+    Priority (Win 3 — Research-0135):
+    1. ``requested`` — explicit caller override; always honoured.
+    2. ``/dev/shm`` — Linux tmpfs RAM-disk.  Used automatically when the
+       mount exists, is a directory, is writable by the current user, and
+       ``statvfs`` reports at least 20 GiB of free space (headroom for 8
+       concurrent workers each holding a 1080p 10-bit 240-frame clip,
+       ~1.5 GiB each).
+    3. ``tempfile.gettempdir()`` — portable fallback (NVMe or OS temp).
+
+    On non-Linux hosts ``/dev/shm`` is absent and the function always falls
+    back to (3) without raising.
+    """
+    if requested is not None:
+        return requested
+    try:
+        if _DEV_SHM.is_dir() and os.access(_DEV_SHM, os.W_OK):
+            st = os.statvfs(_DEV_SHM)
+            free = st.f_bavail * st.f_frsize
+            if free >= _TMPFS_HEADROOM_BYTES:
+                return _DEV_SHM / "k150k_yuv_scratch"
+    except OSError:
+        pass
+    return Path(tempfile.gettempdir()) / "k150k_yuv_scratch"
+
+
 def _decode_to_yuv(mp4: Path, yuv_path: Path, pix_fmt: str) -> None:
     """Decode ``mp4`` to raw YUV.  Writes atomically via a ``.tmp`` sibling."""
     tmp = yuv_path.with_suffix(".tmp")
@@ -1278,11 +1310,21 @@ def _add_runtime_args(ap: argparse.ArgumentParser) -> None:
             "binary); only needed if passing a CUDA-capable binary explicitly."
         ),
     )
+
+
+def _add_scratch_arg(ap: argparse.ArgumentParser) -> None:
+    """Register --scratch-dir. Split out to keep _add_runtime_args under 60 LOC."""
     ap.add_argument(
         "--scratch-dir",
         type=Path,
-        default=Path(tempfile.gettempdir()) / "k150k_yuv_scratch",
-        help="Scratch directory for temporary YUV files.  Cleaned per-clip.",
+        default=None,
+        help=(
+            "Scratch directory for temporary YUV files.  Cleaned per-clip.  "
+            "Defaults to /dev/shm/k150k_yuv_scratch when /dev/shm is writable "
+            "and has >=20 GiB free (Win 3 — Research-0135 tmpfs path), "
+            "otherwise falls back to the OS temp directory.  "
+            "Pass an explicit path to override auto-selection."
+        ),
     )
 
 
@@ -1329,6 +1371,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     _add_input_args(ap, k150k_dir)
     _add_output_args(ap)
     _add_runtime_args(ap)
+    _add_scratch_arg(ap)
     _add_misc_args(ap)
     return ap
 
@@ -1763,7 +1806,11 @@ def _prepare_pool_inputs(
     mos_map: dict[str, float],
 ) -> tuple[list[dict], set[str]]:
     """Prep the scratch dir + staging recovery before the extraction pool runs."""
+    # Resolve scratch directory: auto-select /dev/shm when available and
+    # large enough; fall back to OS temp dir (Win 3 -- Research-0135).
+    args.scratch_dir = _choose_scratch_dir(args.scratch_dir)
     args.scratch_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[k150k] scratch_dir={args.scratch_dir}", flush=True)
     # JSONL staging file -- accumulates rows during the run for crash
     # durability. Reload any rows from a previous partial run that are in the
     # done set but whose staging rows survived (the process was killed after
