@@ -35,16 +35,18 @@ feature/arm64/
   [`../../../test/`](../../test/) (`test_*_simd.c`, migrated through
   [`simd_bitexact_test.h`](../../test/simd_bitexact_test.h) harness per
   ADR-0245) catch ULP drift.
-- **Integer-ADM has one named Apple production compatibility boundary
-  (ADR-1057, 2026-08-31).** `adm_dwt2_8_neon()` remains universal four-tap,
-  scalar-bit-exact kernel; `test_adm_dwt2_neon` must keep proving that on every
-  AArch64 platform. On Apple AArch64 only, `integer_adm.c` dispatches
-  production calls through `adm_dwt2_8_neon_apple_legacy()`. Wrapper overwrites
-  only first output column with historical three-tap boundary result from
-  immutable Darwin Python goldens. Do not move three-tap rule back into
-  universal kernel, broaden to Linux AArch64, or replace with score offset.
-  Same test separately proves compatibility wrapper matches legacy reference
-  and changes no column except `j == 0`.
+- **Integer-ADM DWT2: one NEON path on every AArch64 platform
+  ([ADR-1257](../../../../docs/adr/1257-retire-darwin-adm-dwt2-legacy-dispatch.md),
+  supersedes ADR-1057 Apple wrapper).** `integer_adm.c` dispatches
+  `adm_dwt2_8_neon()` on Apple + Linux alike. Never reintroduce
+  platform-specific first-column rule or score offset.
+- **`adm_dwt2_8_neon()` horizontal 8-wide loop stops at
+  `half_w >= 2 ? half_w - 1 - ((half_w - 2) % 8) : 1`** (Netflix/vmaf
+  `ea012e387`, adapted). Column 0 + every column from that bound on go through
+  `adm_dwt2_8_neon_hpass_column()` and `ind_x`, which applies mirror. Without
+  bound: vector store runs past half-resolution row and, on last row, into next
+  band of ADM slab. `test_adm_dwt2_neon` checks bit-exactness + guard band at
+  production band stride.
 - **`#pragma STDC FP_CONTRACT OFF` kept at TU level** even though aarch64 GCC
   ignores it with non-fatal `-Wunknown-pragmas`. Pragma is portable; aarch64 GCC
   does not contract `a + b * c` across statements at default optimisation
@@ -59,41 +61,6 @@ feature/arm64/
   signed-zero parity with `adm_dwt2_s`. Keep NEON TU `-ffp-contract=off`;
   do not introduce `vfmaq`, `fmaf`, or other fused form. Guarded by bit-exact
   `test_float_adm_dwt2_neon` (including signed zero) under Clang and GCC
-- **Bit-exactness with the scalar reference is non-negotiable.** Same
-  rule as the AVX2 / AVX-512 sibling — every NEON kernel mirrors the
-  scalar TU byte-for-byte under `FLT_EVAL_METHOD == 0`. The bit-exact
-  regression tests in [`../../../test/`](../../test/) (`test_*_simd.c`,
-  migrated through the [`simd_bitexact_test.h`](../../test/simd_bitexact_test.h)
-  harness per ADR-0245) catch ULP drift.
-- **Integer-ADM DWT2 has one NEON path on every AArch64 platform
-  ([ADR-1257](../../../../docs/adr/1257-retire-darwin-adm-dwt2-legacy-dispatch.md),
-  which supersedes ADR-1057's Apple wrapper).** `integer_adm.c` dispatches
-  `adm_dwt2_8_neon()` on Apple and Linux alike. Do not reintroduce a
-  platform-specific first-column rule or a score offset.
-- **`adm_dwt2_8_neon()`'s horizontal 8-wide loop stops at
-  `half_w >= 2 ? half_w - 1 - ((half_w - 2) % 8) : 1`** (Netflix/vmaf
-  `ea012e387`, adapted). Column 0 and every column from that bound on go
-  through `adm_dwt2_8_neon_hpass_column()` and `ind_x`, which applies the
-  mirror. Without the bound the vector store runs past the half-resolution
-  row and, on the last row, into the next band of the ADM slab.
-  `test_adm_dwt2_neon` checks both bit-exactness and a guard band at the
-  production band stride.
-- **`#pragma STDC FP_CONTRACT OFF` is kept at TU level** even though
-  aarch64 GCC ignores it with a non-fatal `-Wunknown-pragmas`. The
-  pragma is portable and aarch64 GCC does not contract `a + b * c`
-  across statements at default optimisation anyway. Removing it on
-  rebase loses the cross-architecture documentation.
-- **Float-ADM DWT2 is unconditionally non-contracting (ADR-1057,
-  2026-08-31).** The golden-producing scalar `adm_dwt2_s` carries a
-  function-scoped Clang `contract(off)` pragma and GCC
-  `optimize("-ffp-contract=off")` attribute. Do not widen either guard to
-  all of `adm_tools.c`: the earlier file-scope form changed unrelated ADM
-  reductions. `float_adm_dwt2_neon.c` starts every accumulator at +0,
-  then uses four explicit `vmulq_laneq_f32` + `vaddq_f32` steps and
-  matching scalar sequences. The initial +0 is load-bearing for signed-zero
-  parity with `adm_dwt2_s`. Keep the NEON TU's `-ffp-contract=off`; do not
-  introduce `vfmaq`, `fmaf`, or another fused form. Guarded by bit-exact
-  `test_float_adm_dwt2_neon` (including signed zero) under both Clang and GCC
   AArch64/QEMU.
 - **Float-arithmetic NEON TUs belong in `arm64_v8_fp`** (not `arm64_v8`).
   Static lib `arm64_v8_fp` compiled with `-ffp-contract=off` (ADR-0873);
