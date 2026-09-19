@@ -43,9 +43,12 @@
 #include "integer_vif.h"
 #include "integer_vif_hip.h"
 
+#include "../../hip/picture_hip.h"
+
 #ifdef HAVE_HIPCC
-#define __HIP_PLATFORM_AMD__ 1
 #include <hip/hip_runtime_api.h>
+
+#include "../../hip/hip_handle.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
@@ -100,6 +103,12 @@ typedef struct VifStateHip {
     void *ref_in_dev;
     void *dis_in_dev;
     size_t pic_dev_bytes;
+
+    /* The half-resolution planes inside data_buf that scales 1..3 read: the
+     * same addresses as buf.ref / buf.dis, which the kernels take as
+     * uintptr_t, kept as pointers for the host-side launches. */
+    void *rd_ref;
+    void *rd_dis;
 #endif /* HAVE_HIPCC */
 } VifStateHip;
 
@@ -143,6 +152,55 @@ typedef struct {
 } VifScore;
 
 #ifdef HAVE_HIPCC
+static const char *const vif_hip_num_names[4] = {
+    "integer_vif_num_scale0",
+    "integer_vif_num_scale1",
+    "integer_vif_num_scale2",
+    "integer_vif_num_scale3",
+};
+static const char *const vif_hip_den_names[4] = {
+    "integer_vif_den_scale0",
+    "integer_vif_den_scale1",
+    "integer_vif_den_scale2",
+    "integer_vif_den_scale3",
+};
+static const char *const vif_hip_score_names[4] = {
+    "VMAF_integer_feature_vif_scale0_score",
+    "VMAF_integer_feature_vif_scale1_score",
+    "VMAF_integer_feature_vif_scale2_score",
+    "VMAF_integer_feature_vif_scale3_score",
+};
+
+/* Debug-mode outputs: the aggregate integer_vif and every per-scale num / den.
+ * vif_skip_scale0 drops scale 0 from the aggregate and reports it as 0 / -1. */
+static int write_debug_scores_hip(VmafFeatureCollector *feature_collector, VifStateHip *s,
+                                  const VifScore *vif, unsigned index)
+{
+    const bool skip0 = s->vif_skip_scale0;
+    const double score_num = (skip0 ? 0.0 : (double)vif->scale[0].num) + (double)vif->scale[1].num +
+                             (double)vif->scale[2].num + (double)vif->scale[3].num;
+    const double score_den = (skip0 ? 0.0 : (double)vif->scale[0].den) + (double)vif->scale[1].den +
+                             (double)vif->scale[2].den + (double)vif->scale[3].den;
+    const double score = (score_den == 0.0) ? 1.0 : score_num / score_den;
+
+    int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                      "integer_vif", score, index);
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "integer_vif_num", score_num, index);
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "integer_vif_den", score_den, index);
+    for (unsigned sc = 0; sc < 4u; ++sc) {
+        const bool skipped = skip0 && sc == 0u;
+        err |= vmaf_feature_collector_append_with_dict(
+            feature_collector, s->feature_name_dict, vif_hip_num_names[sc],
+            skipped ? 0.0 : (double)vif->scale[sc].num, index);
+        err |= vmaf_feature_collector_append_with_dict(
+            feature_collector, s->feature_name_dict, vif_hip_den_names[sc],
+            skipped ? -1.0 : (double)vif->scale[sc].den, index);
+    }
+    return err;
+}
+
 static int write_scores_hip(VmafFeatureCollector *feature_collector, VifStateHip *s, unsigned index)
 {
     VifScore vif;
@@ -158,63 +216,18 @@ static int write_scores_hip(VmafFeatureCollector *feature_collector, VifStateHip
     }
 
     int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_integer_feature_vif_scale0_score",
-        s->vif_skip_scale0 ? 0.0 : vif.scale[0].num / vif.scale[0].den, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_vif_scale1_score",
-                                                   vif.scale[1].num / vif.scale[1].den, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_vif_scale2_score",
-                                                   vif.scale[2].num / vif.scale[2].den, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_vif_scale3_score",
-                                                   vif.scale[3].num / vif.scale[3].den, index);
+    for (unsigned sc = 0; sc < 4u; ++sc) {
+        /* The ratio is taken in float, as the CPU and the CUDA twin take it. */
+        const float ratio = vif.scale[sc].num / vif.scale[sc].den;
+        const bool skipped = s->vif_skip_scale0 && sc == 0u;
+        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                       vif_hip_score_names[sc],
+                                                       skipped ? 0.0 : (double)ratio, index);
+    }
 
     if (!s->debug)
         return err;
-
-    const double score_num = (s->vif_skip_scale0 ? 0.0 : (double)vif.scale[0].num) +
-                             (double)vif.scale[1].num + (double)vif.scale[2].num +
-                             (double)vif.scale[3].num;
-    const double score_den = (s->vif_skip_scale0 ? 0.0 : (double)vif.scale[0].den) +
-                             (double)vif.scale[1].den + (double)vif.scale[2].den +
-                             (double)vif.scale[3].den;
-    const double score = (score_den == 0.0) ? 1.0 : score_num / score_den;
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_vif", score, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_vif_num", score_num, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_vif_den", score_den, index);
-    if (s->vif_skip_scale0) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "integer_vif_num_scale0", 0.0, index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "integer_vif_den_scale0", -1.0, index);
-    } else {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "integer_vif_num_scale0", vif.scale[0].num,
-                                                       index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "integer_vif_den_scale0", vif.scale[0].den,
-                                                       index);
-    }
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "integer_vif_num_scale1", vif.scale[1].num, index);
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "integer_vif_den_scale1", vif.scale[1].den, index);
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "integer_vif_num_scale2", vif.scale[2].num, index);
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "integer_vif_den_scale2", vif.scale[2].den, index);
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "integer_vif_num_scale3", vif.scale[3].num, index);
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "integer_vif_den_scale3", vif.scale[3].den, index);
-
-    return err;
+    return err | write_debug_scores_hip(feature_collector, s, &vif, index);
 }
 #endif /* HAVE_HIPCC */
 
@@ -240,48 +253,57 @@ static int vif_hip_err(hipError_t rc)
     }
 }
 
+typedef struct VifHipKernelSlot {
+    hipFunction_t *slot;
+    const char *name;
+} VifHipKernelSlot;
+
+/* Load the kernel blob and resolve the ten kernels by name. On failure the
+ * module is unloaded again and `s->module` is NULL. */
 static int vif_hip_module_load(VifStateHip *s)
 {
     hipError_t rc = hipModuleLoadData(&s->module, vif_statistics_hsaco);
     if (rc != hipSuccess)
         return vif_hip_err(rc);
 
-#define LOAD_FUNC(field, name)                                                                     \
-    rc = hipModuleGetFunction(&s->field, s->module, name);                                         \
-    if (rc != hipSuccess) {                                                                        \
-        (void)hipModuleUnload(s->module);                                                          \
-        s->module = NULL;                                                                          \
-        return vif_hip_err(rc);                                                                    \
+    const VifHipKernelSlot kernels[] = {
+        {&s->func_vert_8_17_9, "filter1d_8_vertical_kernel_uint32_t_17_9"},
+        {&s->func_hori_8_17_9, "filter1d_8_horizontal_kernel_2_17_9"},
+        {&s->func_vert_16_17_9_0, "filter1d_16_vertical_kernel_uint2_17_9_0"},
+        {&s->func_vert_16_9_5_1, "filter1d_16_vertical_kernel_uint2_9_5_1"},
+        {&s->func_vert_16_5_3_2, "filter1d_16_vertical_kernel_uint2_5_3_2"},
+        {&s->func_vert_16_3_0_3, "filter1d_16_vertical_kernel_uint2_3_0_3"},
+        {&s->func_hori_16_17_9_0, "filter1d_16_horizontal_kernel_2_17_9_0"},
+        {&s->func_hori_16_9_5_1, "filter1d_16_horizontal_kernel_2_9_5_1"},
+        {&s->func_hori_16_5_3_2, "filter1d_16_horizontal_kernel_2_5_3_2"},
+        {&s->func_hori_16_3_0_3, "filter1d_16_horizontal_kernel_2_3_0_3"},
+    };
+    const unsigned n_kernels = (unsigned)(sizeof(kernels) / sizeof(kernels[0]));
+    for (unsigned i = 0; i < n_kernels && rc == hipSuccess; i++)
+        rc = hipModuleGetFunction(kernels[i].slot, s->module, kernels[i].name);
+    if (rc != hipSuccess) {
+        (void)hipModuleUnload(s->module);
+        s->module = NULL;
     }
-
-    LOAD_FUNC(func_vert_8_17_9, "filter1d_8_vertical_kernel_uint32_t_17_9")
-    LOAD_FUNC(func_hori_8_17_9, "filter1d_8_horizontal_kernel_2_17_9")
-    LOAD_FUNC(func_vert_16_17_9_0, "filter1d_16_vertical_kernel_uint2_17_9_0")
-    LOAD_FUNC(func_vert_16_9_5_1, "filter1d_16_vertical_kernel_uint2_9_5_1")
-    LOAD_FUNC(func_vert_16_5_3_2, "filter1d_16_vertical_kernel_uint2_5_3_2")
-    LOAD_FUNC(func_vert_16_3_0_3, "filter1d_16_vertical_kernel_uint2_3_0_3")
-    LOAD_FUNC(func_hori_16_17_9_0, "filter1d_16_horizontal_kernel_2_17_9_0")
-    LOAD_FUNC(func_hori_16_9_5_1, "filter1d_16_horizontal_kernel_2_9_5_1")
-    LOAD_FUNC(func_hori_16_5_3_2, "filter1d_16_horizontal_kernel_2_5_3_2")
-    LOAD_FUNC(func_hori_16_3_0_3, "filter1d_16_horizontal_kernel_2_3_0_3")
-#undef LOAD_FUNC
-
-    return 0;
+    return vif_hip_err(rc);
 }
 
 /* 8-bpc scale 0 launch. */
 static int vif_hip_filter1d_8(VifStateHip *s, uint8_t *ref_in, uint8_t *dis_in, int w, int h,
                               hipStream_t stream)
 {
-    const int BX_V = 32, BY_V = 8;
+    const int BX_V = 32;
+    const int BY_V = 8;
     const int GX_V = (w + BX_V - 1) / BX_V;
     const int GY_V = (h + BY_V - 1) / BY_V;
 
+    /* The kernels take the VifBufferHip by value: args[0] points at it. */
     VifBufferHip *buf = &s->buf;
     /* ADR-0537: pass &vif_filt_dev (address of the variable storing
      * the device pointer), NOT the host-array address. */
     void *vif_filt_dev = s->vif_filt_dev;
-    void *args_vert[] = {buf, &ref_in, &dis_in, &w, &h, &vif_filt_dev};
+    void *args_vert[] = {(void *)buf, (void *)&ref_in, (void *)&dis_in,
+                         (void *)&w,  (void *)&h,      (void *)&vif_filt_dev};
     hipError_t rc =
         hipModuleLaunchKernel(s->func_vert_8_17_9, (unsigned)GX_V, (unsigned)GY_V, 1u,
                               (unsigned)BX_V, (unsigned)BY_V, 1u, 0u, stream, args_vert, NULL);
@@ -293,66 +315,76 @@ static int vif_hip_filter1d_8(VifStateHip *s, uint8_t *ref_in, uint8_t *dis_in, 
     const int GY_H = h;
 
     vif_accums_hip *accum_ptr = &((vif_accums_hip *)s->accum_dev)[0];
-    void *args_hori[] = {buf, &w, &h, &vif_filt_dev, &s->vif_enhn_gain_limit, &accum_ptr};
+    void *args_hori[] = {(void *)buf,
+                         (void *)&w,
+                         (void *)&h,
+                         (void *)&vif_filt_dev,
+                         (void *)&s->vif_enhn_gain_limit,
+                         (void *)&accum_ptr};
     rc = hipModuleLaunchKernel(s->func_hori_8_17_9, (unsigned)GX_H, (unsigned)GY_H, 1u,
                                (unsigned)BX_H, 1u, 1u, 0u, stream, args_hori, NULL);
     return vif_hip_err(rc);
+}
+
+/* The vertical / horizontal 16-bpc kernel pair of one scale. */
+static int vif_hip_pick_16(const VifStateHip *s, int scale, hipFunction_t *vert_func,
+                           hipFunction_t *hori_func)
+{
+    switch (scale) {
+    case 0:
+        *vert_func = s->func_vert_16_17_9_0;
+        *hori_func = s->func_hori_16_17_9_0;
+        return 0;
+    case 1:
+        *vert_func = s->func_vert_16_9_5_1;
+        *hori_func = s->func_hori_16_9_5_1;
+        return 0;
+    case 2:
+        *vert_func = s->func_vert_16_5_3_2;
+        *hori_func = s->func_hori_16_5_3_2;
+        return 0;
+    case 3:
+        *vert_func = s->func_vert_16_3_0_3;
+        *hori_func = s->func_hori_16_3_0_3;
+        return 0;
+    default:
+        return -EINVAL;
+    }
 }
 
 /* 16-bpc launch — all four scales. */
 static int vif_hip_filter1d_16(VifStateHip *s, uint16_t *ref_in, uint16_t *dis_in, int w, int h,
                                int scale, int bpc, hipStream_t stream)
 {
-    int32_t add_shift_VP, shift_VP, add_shift_VP_sq, shift_VP_sq;
-    int32_t add_shift_HP, shift_HP;
-
-    if (scale == 0) {
-        shift_HP = 16;
-        add_shift_HP = 32768;
-        shift_VP = bpc;
-        add_shift_VP = 1 << (bpc - 1);
-        shift_VP_sq = (bpc - 8) * 2;
+    /* Scale 0 reads samples at the picture's bit depth; scales 1..3 read the
+     * 16-bit planes the previous scale wrote. */
+    const bool raw = (scale == 0);
+    int32_t shift_HP = 16;
+    int32_t add_shift_HP = 32768;
+    int32_t shift_VP = raw ? bpc : 16;
+    int32_t add_shift_VP = raw ? (1 << (bpc - 1)) : 32768;
+    int32_t shift_VP_sq = raw ? ((bpc - 8) * 2) : 16;
+    int32_t add_shift_VP_sq = 32768;
+    if (raw)
         add_shift_VP_sq = (bpc == 8) ? 0 : 1 << (shift_VP_sq - 1);
-    } else {
-        shift_HP = 16;
-        add_shift_HP = 32768;
-        shift_VP = 16;
-        add_shift_VP = 32768;
-        shift_VP_sq = 16;
-        add_shift_VP_sq = 32768;
-    }
 
-    hipFunction_t vert_func;
-    hipFunction_t hori_func;
-    switch (scale) {
-    case 0:
-        vert_func = s->func_vert_16_17_9_0;
-        hori_func = s->func_hori_16_17_9_0;
-        break;
-    case 1:
-        vert_func = s->func_vert_16_9_5_1;
-        hori_func = s->func_hori_16_9_5_1;
-        break;
-    case 2:
-        vert_func = s->func_vert_16_5_3_2;
-        hori_func = s->func_hori_16_5_3_2;
-        break;
-    case 3:
-        vert_func = s->func_vert_16_3_0_3;
-        hori_func = s->func_hori_16_3_0_3;
-        break;
-    default:
-        return -EINVAL;
-    }
+    hipFunction_t vert_func = NULL;
+    hipFunction_t hori_func = NULL;
+    const int pick_err = vif_hip_pick_16(s, scale, &vert_func, &hori_func);
+    if (pick_err != 0)
+        return pick_err;
 
-    const int BX_V = 32, BY_V = 8;
+    const int BX_V = 32;
+    const int BY_V = 8;
     const int GX_V = (w + BX_V - 1) / BX_V;
     const int GY_V = (h + BY_V - 1) / BY_V;
 
     VifBufferHip *buf = &s->buf;
     void *vif_filt_dev = s->vif_filt_dev;
-    void *args_vert[] = {buf,           &ref_in,   &dis_in,          &w,           &h,
-                         &add_shift_VP, &shift_VP, &add_shift_VP_sq, &shift_VP_sq, &vif_filt_dev};
+    void *args_vert[] = {
+        (void *)buf,          (void *)&ref_in,       (void *)&dis_in,   (void *)&w,
+        (void *)&h,           (void *)&add_shift_VP, (void *)&shift_VP, (void *)&add_shift_VP_sq,
+        (void *)&shift_VP_sq, (void *)&vif_filt_dev};
     hipError_t rc =
         hipModuleLaunchKernel(vert_func, (unsigned)GX_V, (unsigned)GY_V, 1u, (unsigned)BX_V,
                               (unsigned)BY_V, 1u, 0u, stream, args_vert, NULL);
@@ -364,11 +396,156 @@ static int vif_hip_filter1d_16(VifStateHip *s, uint16_t *ref_in, uint16_t *dis_i
     const int GY_H = h;
 
     vif_accums_hip *accum_ptr = &((vif_accums_hip *)s->accum_dev)[scale];
-    void *args_hori[] = {
-        buf, &w, &h, &add_shift_HP, &shift_HP, &vif_filt_dev, &s->vif_enhn_gain_limit, &accum_ptr};
+    void *args_hori[] = {(void *)buf,
+                         (void *)&w,
+                         (void *)&h,
+                         (void *)&add_shift_HP,
+                         (void *)&shift_HP,
+                         (void *)&vif_filt_dev,
+                         (void *)&s->vif_enhn_gain_limit,
+                         (void *)&accum_ptr};
     rc = hipModuleLaunchKernel(hori_func, (unsigned)GX_H, (unsigned)GY_H, 1u, (unsigned)BX_H, 1u,
                                1u, 0u, stream, args_hori, NULL);
     return vif_hip_err(rc);
+}
+
+/* Private stream and the two events. On failure the handles already created
+ * stay set; vif_hip_release() destroys them. */
+static int vif_hip_stream_init(VifStateHip *s)
+{
+    hipError_t rc = hipStreamCreate(&s->str);
+    if (rc == hipSuccess)
+        rc = hipEventCreate(&s->submit);
+    if (rc == hipSuccess)
+        rc = hipEventCreate(&s->finished);
+    return vif_hip_err(rc);
+}
+
+/* Byte strides of every plane, cache-line aligned. Returns the size of the
+ * one device slab that holds the planes, and the half-resolution plane size
+ * through `rd_size`. */
+static size_t vif_hip_layout_strides(VifBufferHip *buf, unsigned w, unsigned h, unsigned bpc,
+                                     size_t *rd_size)
+{
+    const int cache_line = 64;
+    const ptrdiff_t bpp = (bpc > 8) ? 2 : 1;
+    buf->stride = ((ptrdiff_t)w * bpp + cache_line - 1) / cache_line * cache_line;
+    buf->rd_stride = (((ptrdiff_t)((w + 1) / 2) * 2) + cache_line - 1) / cache_line * cache_line;
+    buf->stride_16 =
+        (ptrdiff_t)(((w * sizeof(uint16_t)) + cache_line - 1) / cache_line * cache_line);
+    buf->stride_32 =
+        (ptrdiff_t)(((w * sizeof(uint32_t)) + cache_line - 1) / cache_line * cache_line);
+    buf->stride_64 =
+        (ptrdiff_t)(((w * sizeof(uint64_t)) + cache_line - 1) / cache_line * cache_line);
+    buf->stride_tmp = buf->stride_32;
+
+    *rd_size = (size_t)buf->rd_stride * ((h + 1) / 2);
+    return 2u * *rd_size + 2u * ((size_t)h * (size_t)buf->stride_16) +
+           5u * ((size_t)h * (size_t)buf->stride_32) + 8u * ((size_t)h * (size_t)buf->stride_tmp);
+}
+
+/* Carve the slab `data_buf` into the planes, in the order the CUDA twin lays
+ * them out: two half-resolution planes, two 16-bit mu planes, five 32-bit
+ * moment planes, eight 32-bit tmp planes. */
+static void vif_hip_layout_planes(VifStateHip *s, size_t rd_size, unsigned h)
+{
+    VifBufferHip *buf = &s->buf;
+    uint8_t *ptr = (uint8_t *)s->data_buf;
+    s->rd_ref = ptr;
+    buf->ref = (uintptr_t)ptr;
+    ptr += rd_size;
+    s->rd_dis = ptr;
+    buf->dis = (uintptr_t)ptr;
+    ptr += rd_size;
+
+    const size_t plane_16 = (size_t)h * (size_t)buf->stride_16;
+    buf->mu1 = (uint16_t *)ptr;
+    ptr += plane_16;
+    buf->mu2 = (uint16_t *)ptr;
+    ptr += plane_16;
+
+    const size_t plane_32 = (size_t)h * (size_t)buf->stride_32;
+    uint32_t **moments[] = {&buf->mu1_32, &buf->mu2_32, &buf->ref_sq, &buf->dis_sq, &buf->ref_dis};
+    for (unsigned i = 0; i < 5u; i++) {
+        *moments[i] = (uint32_t *)ptr;
+        ptr += plane_32;
+    }
+
+    const size_t plane_tmp = (size_t)h * (size_t)buf->stride_tmp;
+    uint32_t **tmps[] = {&buf->tmp.mu1,        &buf->tmp.mu2,     &buf->tmp.ref,
+                         &buf->tmp.dis,        &buf->tmp.ref_dis, &buf->tmp.ref_convol,
+                         &buf->tmp.dis_convol, &buf->tmp.padding};
+    for (unsigned i = 0; i < 8u; i++) {
+        *tmps[i] = (uint32_t *)ptr;
+        ptr += plane_tmp;
+    }
+}
+
+/* Allocate the plane slab, the picture staging buffers (ADR-0537), the
+ * accumulators and the filter-table buffer. On failure the buffers already
+ * allocated stay set; vif_hip_release() frees them. */
+static int vif_hip_bufs_alloc(VifStateHip *s, size_t data_sz, unsigned h)
+{
+    s->pic_dev_bytes = (size_t)s->buf.stride * (size_t)h;
+    hipError_t rc = hipMalloc(&s->data_buf, data_sz);
+    if (rc == hipSuccess)
+        rc = hipMalloc(&s->ref_in_dev, s->pic_dev_bytes);
+    if (rc == hipSuccess)
+        rc = hipMalloc(&s->dis_in_dev, s->pic_dev_bytes);
+    if (rc == hipSuccess)
+        rc = hipMalloc(&s->accum_dev, sizeof(vif_accums_hip) * 4u);
+    if (rc == hipSuccess)
+        rc = hipHostMalloc(&s->accum_host, sizeof(vif_accums_hip) * 4u, 0u);
+    if (rc == hipSuccess)
+        rc = hipMalloc(&s->vif_filt_dev, sizeof(vif_filter1d_table));
+    return (rc == hipSuccess) ? 0 : -ENOMEM;
+}
+
+/* Tear down everything init() may have set up. Every step tolerates a handle
+ * that was never created, so this serves both a failed init() and close().
+ * The stream is drained first, so no kernel still uses a buffer. Returns the
+ * first error. */
+static int vif_hip_release(VifStateHip *s)
+{
+    int ret = 0;
+    if (s->str != NULL)
+        ret = vif_hip_err(hipStreamSynchronize(s->str));
+
+    hipError_t rc = (s->accum_host != NULL) ? hipHostFree(s->accum_host) : hipSuccess;
+    s->accum_host = NULL;
+    if (ret == 0)
+        ret = vif_hip_err(rc);
+
+    void **dev_bufs[] = {&s->accum_dev, &s->ref_in_dev, &s->dis_in_dev, &s->data_buf,
+                         &s->vif_filt_dev};
+    for (unsigned i = 0; i < 5u; i++) {
+        rc = (*dev_bufs[i] != NULL) ? hipFree(*dev_bufs[i]) : hipSuccess;
+        *dev_bufs[i] = NULL;
+        if (ret == 0)
+            ret = vif_hip_err(rc);
+    }
+    s->rd_ref = NULL;
+    s->rd_dis = NULL;
+
+    const hipError_t rcs[] = {
+        (s->module != NULL) ? hipModuleUnload(s->module) : hipSuccess,
+        (s->finished != NULL) ? hipEventDestroy(s->finished) : hipSuccess,
+        (s->submit != NULL) ? hipEventDestroy(s->submit) : hipSuccess,
+        (s->str != NULL) ? hipStreamDestroy(s->str) : hipSuccess,
+    };
+    s->module = NULL;
+    s->finished = NULL;
+    s->submit = NULL;
+    s->str = NULL;
+    for (unsigned i = 0; i < 4u && ret == 0; i++)
+        ret = vif_hip_err(rcs[i]);
+
+    if (s->feature_name_dict != NULL) {
+        const int e = vmaf_dictionary_free(&s->feature_name_dict);
+        if (ret == 0)
+            ret = e;
+    }
+    return ret;
 }
 
 #endif /* HAVE_HIPCC */
@@ -377,184 +554,72 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                         unsigned w, unsigned h)
 {
     (void)pix_fmt;
-    (void)bpc;
 
 #ifndef HAVE_HIPCC
     (void)fex;
+    (void)bpc;
     (void)w;
     (void)h;
     return -ENOSYS;
 #else
     VifStateHip *s = fex->priv;
-    int err = 0; /* R3-6: init early so fail_stream/fail_submit return a defined code */
 
-    hipError_t rc = hipStreamCreate(&s->str);
-    if (rc != hipSuccess)
-        return vif_hip_err(rc);
-    rc = hipEventCreate(&s->submit);
-    if (rc != hipSuccess)
-        goto fail_stream;
-    rc = hipEventCreate(&s->finished);
-    if (rc != hipSuccess)
-        goto fail_submit;
+    size_t rd_size = 0u;
+    const size_t data_sz = vif_hip_layout_strides(&s->buf, w, h, bpc, &rd_size);
 
-    err = vif_hip_module_load(s);
+    int err = vif_hip_stream_init(s);
+    if (err == 0)
+        err = vif_hip_module_load(s);
+    if (err == 0)
+        err = vif_hip_bufs_alloc(s, data_sz, h);
+    if (err == 0) {
+        vif_hip_layout_planes(s, rd_size, h);
+        /* ADR-0537: upload the host-side static `vif_filter1d_table` to a
+         * device buffer (144 bytes). */
+        if (hipMemcpy(s->vif_filt_dev, vif_filter1d_table, sizeof(vif_filter1d_table),
+                      hipMemcpyHostToDevice) != hipSuccess)
+            err = -EIO;
+    }
+    if (err == 0) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (!s->feature_name_dict)
+            err = -ENOMEM;
+    }
     if (err != 0)
-        goto fail_finished;
-
-    const int cache_line = 64;
-    const ptrdiff_t bpp = (bpc > 8) ? 2 : 1;
-    s->buf.stride = ((ptrdiff_t)w * bpp + cache_line - 1) / cache_line * cache_line;
-    s->buf.rd_stride = (((ptrdiff_t)((w + 1) / 2) * 2) + cache_line - 1) / cache_line * cache_line;
-    s->buf.stride_16 =
-        (ptrdiff_t)(((w * sizeof(uint16_t)) + cache_line - 1) / cache_line * cache_line);
-    s->buf.stride_32 =
-        (ptrdiff_t)(((w * sizeof(uint32_t)) + cache_line - 1) / cache_line * cache_line);
-    s->buf.stride_64 =
-        (ptrdiff_t)(((w * sizeof(uint64_t)) + cache_line - 1) / cache_line * cache_line);
-    s->buf.stride_tmp = s->buf.stride_32;
-
-    const size_t rd_size = (size_t)s->buf.rd_stride * ((h + 1) / 2);
-    const size_t data_sz = 2u * rd_size + 2u * ((size_t)h * (size_t)s->buf.stride_16) +
-                           5u * ((size_t)h * (size_t)s->buf.stride_32) +
-                           8u * ((size_t)h * (size_t)s->buf.stride_tmp);
-
-    rc = hipMalloc(&s->data_buf, data_sz);
-    if (rc != hipSuccess) {
-        err = -ENOMEM;
-        goto fail_module;
-    }
-
-    uint8_t *ptr = (uint8_t *)s->data_buf;
-    s->buf.ref = (uintptr_t)ptr;
-    ptr += rd_size;
-    s->buf.dis = (uintptr_t)ptr;
-    ptr += rd_size;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.mu1 = (uint16_t *)ptr;
-    ptr += (size_t)h * (size_t)s->buf.stride_16;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.mu2 = (uint16_t *)ptr;
-    ptr += (size_t)h * (size_t)s->buf.stride_16;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.mu1_32 = (uint32_t *)ptr;
-    ptr += (size_t)h * (size_t)s->buf.stride_32;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.mu2_32 = (uint32_t *)ptr;
-    ptr += (size_t)h * (size_t)s->buf.stride_32;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.ref_sq = (uint32_t *)ptr;
-    ptr += (size_t)h * (size_t)s->buf.stride_32;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.dis_sq = (uint32_t *)ptr;
-    ptr += (size_t)h * (size_t)s->buf.stride_32;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.ref_dis = (uint32_t *)ptr;
-    ptr += (size_t)h * (size_t)s->buf.stride_32;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.tmp.mu1 = (uint32_t *)ptr;
-    ptr += (size_t)h * (size_t)s->buf.stride_tmp;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.tmp.mu2 = (uint32_t *)ptr;
-    ptr += (size_t)h * (size_t)s->buf.stride_tmp;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.tmp.ref = (uint32_t *)ptr;
-    ptr += (size_t)h * (size_t)s->buf.stride_tmp;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.tmp.dis = (uint32_t *)ptr;
-    ptr += (size_t)h * (size_t)s->buf.stride_tmp;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.tmp.ref_dis = (uint32_t *)ptr;
-    ptr += (size_t)h * (size_t)s->buf.stride_tmp;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.tmp.ref_convol = (uint32_t *)ptr;
-    ptr += (size_t)h * (size_t)s->buf.stride_tmp;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.tmp.dis_convol = (uint32_t *)ptr;
-    ptr += (size_t)h * (size_t)s->buf.stride_tmp;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.tmp.padding = (uint32_t *)ptr;
-
-    /* ADR-0537: per-frame host->device staging for the input picture. */
-    s->pic_dev_bytes = (size_t)s->buf.stride * (size_t)h;
-    rc = hipMalloc(&s->ref_in_dev, s->pic_dev_bytes);
-    if (rc != hipSuccess) {
-        err = -ENOMEM;
-        goto fail_data;
-    }
-    rc = hipMalloc(&s->dis_in_dev, s->pic_dev_bytes);
-    if (rc != hipSuccess) {
-        err = -ENOMEM;
-        goto fail_ref_in_dev;
-    }
-
-    rc = hipMalloc(&s->accum_dev, sizeof(vif_accums_hip) * 4u);
-    if (rc != hipSuccess) {
-        err = -ENOMEM;
-        goto fail_dis_in_dev;
-    }
-
-    rc = hipHostMalloc(&s->accum_host, sizeof(vif_accums_hip) * 4u, 0u);
-    if (rc != hipSuccess) {
-        err = -ENOMEM;
-        goto fail_accum_dev;
-    }
-
-    /* ADR-0537: upload the host-side static `vif_filter1d_table` to a
-     * device buffer (144 bytes). */
-    rc = hipMalloc(&s->vif_filt_dev, sizeof(vif_filter1d_table));
-    if (rc != hipSuccess) {
-        err = -ENOMEM;
-        goto fail_accum_host;
-    }
-    rc = hipMemcpy(s->vif_filt_dev, vif_filter1d_table, sizeof(vif_filter1d_table),
-                   hipMemcpyHostToDevice);
-    if (rc != hipSuccess) {
-        err = -EIO;
-        goto fail_filt_dev;
-    }
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        err = -ENOMEM;
-        goto fail_filt_dev;
-    }
-
-    return 0;
-
-fail_filt_dev:
-    (void)hipFree(s->vif_filt_dev);
-    s->vif_filt_dev = NULL;
-fail_accum_host:
-    (void)hipHostFree(s->accum_host);
-    s->accum_host = NULL;
-fail_accum_dev:
-    (void)hipFree(s->accum_dev);
-    s->accum_dev = NULL;
-fail_dis_in_dev:
-    (void)hipFree(s->dis_in_dev);
-    s->dis_in_dev = NULL;
-fail_ref_in_dev:
-    (void)hipFree(s->ref_in_dev);
-    s->ref_in_dev = NULL;
-fail_data:
-    (void)hipFree(s->data_buf);
-    s->data_buf = NULL;
-fail_module:
-    if (s->module != NULL) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-    }
-fail_finished:
-    (void)hipEventDestroy(s->finished);
-fail_submit:
-    (void)hipEventDestroy(s->submit);
-fail_stream:
-    (void)hipStreamDestroy(s->str);
+        (void)vif_hip_release(s);
     return err;
 #endif
 }
+
+#ifdef HAVE_HIPCC
+/* Launch the four scales on the private stream. Scale 0 reads the staged
+ * picture (ADR-0537); scales 1..3 read the half-resolution planes the
+ * previous scale wrote. */
+static int vif_hip_launch_scales(VifStateHip *s, unsigned w0, unsigned h0, unsigned bpc)
+{
+    int w = (int)w0;
+    int h = (int)h0;
+    int err = 0;
+    for (unsigned scale = 0; scale < 4u && err == 0; ++scale) {
+        if (scale > 0) {
+            w /= 2;
+            h /= 2;
+        }
+        if (bpc == 8u && scale == 0u) {
+            err = vif_hip_filter1d_8(s, (uint8_t *)s->ref_in_dev, (uint8_t *)s->dis_in_dev, w, h,
+                                     s->str);
+        } else if (scale == 0u) {
+            err = vif_hip_filter1d_16(s, (uint16_t *)s->ref_in_dev, (uint16_t *)s->dis_in_dev, w, h,
+                                      (int)scale, (int)bpc, s->str);
+        } else {
+            err = vif_hip_filter1d_16(s, (uint16_t *)s->rd_ref, (uint16_t *)s->rd_dis, w, h,
+                                      (int)scale, (int)bpc, s->str);
+        }
+    }
+    return err;
+}
+#endif /* HAVE_HIPCC */
 
 static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
@@ -575,45 +640,30 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     if (rc != hipSuccess)
         return vif_hip_err(rc);
 
-    /* ADR-0537: stage the host Y plane into device memory. */
+    /* ADR-0537: stage the host Y plane into device memory. Returns once both
+     * pictures are read: the caller recycles them when submit() returns
+     * (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
     const ptrdiff_t bpp = (ref_pic->bpc > 8) ? 2 : 1;
     const size_t row_bytes = (size_t)ref_pic->w[0] * (size_t)bpp;
-    rc = hipMemcpy2DAsync(s->ref_in_dev, (size_t)s->buf.stride, ref_pic->data[0],
-                          (size_t)ref_pic->stride[0], row_bytes, (size_t)ref_pic->h[0],
-                          hipMemcpyHostToDevice, s->str);
-    if (rc != hipSuccess)
-        return vif_hip_err(rc);
-    rc = hipMemcpy2DAsync(s->dis_in_dev, (size_t)s->buf.stride, dist_pic->data[0],
-                          (size_t)dist_pic->stride[0], row_bytes, (size_t)dist_pic->h[0],
-                          hipMemcpyHostToDevice, s->str);
-    if (rc != hipSuccess)
-        return vif_hip_err(rc);
-
-    int w = (int)ref_pic->w[0];
-    int h = (int)ref_pic->h[0];
-
-    for (unsigned scale = 0; scale < 4u; ++scale) {
-        if (scale > 0) {
-            w /= 2;
-            h /= 2;
-        }
-
-        int err = 0;
-        if (ref_pic->bpc == 8u && scale == 0u) {
-            /* ADR-0537: device staging buffers (host pic was copied above). */
-            err = vif_hip_filter1d_8(s, (uint8_t *)s->ref_in_dev, (uint8_t *)s->dis_in_dev, w, h,
-                                     s->str);
-        } else if (scale == 0u) {
-            err = vif_hip_filter1d_16(s, (uint16_t *)s->ref_in_dev, (uint16_t *)s->dis_in_dev, w, h,
-                                      (int)scale, (int)ref_pic->bpc, s->str);
-        } else {
-            /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-            err = vif_hip_filter1d_16(s, (uint16_t *)s->buf.ref, (uint16_t *)s->buf.dis, w, h,
-                                      (int)scale, (int)ref_pic->bpc, s->str);
-        }
-        if (err != 0)
-            return err;
-    }
+    const VmafHipPlaneUpload planes[] = {
+        {.dst = s->ref_in_dev,
+         .dst_pitch = (size_t)s->buf.stride,
+         .pic = ref_pic,
+         .plane = 0u,
+         .row_bytes = row_bytes,
+         .rows = ref_pic->h[0]},
+        {.dst = s->dis_in_dev,
+         .dst_pitch = (size_t)s->buf.stride,
+         .pic = dist_pic,
+         .plane = 0u,
+         .row_bytes = row_bytes,
+         .rows = dist_pic->h[0]},
+    };
+    int err = vmaf_hip_picture_upload(planes, 2u, vmaf_hip_stream_bits(s->str));
+    if (err == 0)
+        err = vif_hip_launch_scales(s, ref_pic->w[0], ref_pic->h[0], ref_pic->bpc);
+    if (err != 0)
+        return err;
 
     rc = hipMemcpyAsync(s->accum_host, s->accum_dev, sizeof(vif_accums_hip) * 4u,
                         hipMemcpyDeviceToHost, s->str);
@@ -665,67 +715,7 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
     (void)fex;
     return -ENOSYS;
 #else
-    VifStateHip *s = fex->priv;
-    int ret = 0;
-
-    hipError_t rc = hipStreamSynchronize(s->str);
-    if (rc != hipSuccess)
-        ret = vif_hip_err(rc);
-
-    if (s->accum_host != NULL) {
-        rc = hipHostFree(s->accum_host);
-        if (rc != hipSuccess && ret == 0)
-            ret = vif_hip_err(rc);
-        s->accum_host = NULL;
-    }
-    if (s->accum_dev != NULL) {
-        rc = hipFree(s->accum_dev);
-        if (rc != hipSuccess && ret == 0)
-            ret = vif_hip_err(rc);
-        s->accum_dev = NULL;
-    }
-    if (s->ref_in_dev != NULL) {
-        rc = hipFree(s->ref_in_dev);
-        if (rc != hipSuccess && ret == 0)
-            ret = vif_hip_err(rc);
-        s->ref_in_dev = NULL;
-    }
-    if (s->dis_in_dev != NULL) {
-        rc = hipFree(s->dis_in_dev);
-        if (rc != hipSuccess && ret == 0)
-            ret = vif_hip_err(rc);
-        s->dis_in_dev = NULL;
-    }
-    if (s->data_buf != NULL) {
-        rc = hipFree(s->data_buf);
-        if (rc != hipSuccess && ret == 0)
-            ret = vif_hip_err(rc);
-        s->data_buf = NULL;
-    }
-    if (s->vif_filt_dev != NULL) {
-        rc = hipFree(s->vif_filt_dev);
-        if (rc != hipSuccess && ret == 0)
-            ret = vif_hip_err(rc);
-        s->vif_filt_dev = NULL;
-    }
-    if (s->module != NULL) {
-        rc = hipModuleUnload(s->module);
-        if (rc != hipSuccess && ret == 0)
-            ret = vif_hip_err(rc);
-        s->module = NULL;
-    }
-    rc = hipEventDestroy(s->finished);
-    if (rc != hipSuccess && ret == 0)
-        ret = vif_hip_err(rc);
-    rc = hipEventDestroy(s->submit);
-    if (rc != hipSuccess && ret == 0)
-        ret = vif_hip_err(rc);
-    rc = hipStreamDestroy(s->str);
-    if (rc != hipSuccess && ret == 0)
-        ret = vif_hip_err(rc);
-
-    ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    return ret;
+    return vif_hip_release(fex->priv);
 #endif
 }
 
@@ -748,6 +738,8 @@ static const char *provided_features[] = {
     NULL,
 };
 
+/* Declared via extern in feature_extractor.cpp's registry. */
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_vif_hip = {
     .name = "vif_hip",
     .init = init_fex_hip,

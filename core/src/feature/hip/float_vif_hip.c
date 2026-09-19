@@ -50,10 +50,12 @@
 
 #include "../../hip/common.h"
 #include "../../hip/kernel_template.h"
+#include "../../hip/picture_hip.h"
 
 #ifdef HAVE_HIPCC
-#define __HIP_PLATFORM_AMD__ 1
 #include <hip/hip_runtime_api.h>
+
+#include "../../hip/hip_handle.h"
 #include "float_vif_hip.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -197,118 +199,53 @@ static int fvif_hip_module_load(FloatVifStateHip *s)
         return fvif_hip_rc(rc);
 
     rc = hipModuleGetFunction(&s->func_compute, s->module, "float_vif_compute");
+    if (rc == hipSuccess)
+        rc = hipModuleGetFunction(&s->func_decimate, s->module, "float_vif_decimate");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
         s->module = NULL;
-        return fvif_hip_rc(rc);
     }
-    rc = hipModuleGetFunction(&s->func_decimate, s->module, "float_vif_decimate");
-    if (rc != hipSuccess) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-        return fvif_hip_rc(rc);
-    }
-    return 0;
+    return fvif_hip_rc(rc);
 }
 
-/* Allocate all device + pinned-host buffers.  On failure, any partially-
- * allocated buffers are freed and NULL-ed; caller unwinds via
- * fail_after_module.  Extracted to keep init_fex_hip readable. */
+/* Per-scale (num, den) partials + pinned host readback for one scale. */
+static bool fvif_hip_partials_alloc(FloatVifStateHip *s, int i)
+{
+    const size_t pbytes = (size_t)s->wg_count[i] * sizeof(float);
+    /* hipHostMalloc's C prototype is (void **, size_t, unsigned). The
+     * num_host / den_host buffers are float* (host-side reduction loop
+     * indexes them as floats), so &s->num_host[i] is float** and needs
+     * an explicit (void **) cast in C. HIP's C++ header provides a
+     * templated hipHostMalloc<T>(T**, ...) overload, but this TU is
+     * compiled as C by icx so the template isn't visible. Without the
+     * cast, icx emits -Wincompatible-pointer-types as a hard error
+     * under the container's strict CFLAGS. */
+    return (hipMalloc(&s->num_partials[i], pbytes) == hipSuccess) &&
+           (hipMalloc(&s->den_partials[i], pbytes) == hipSuccess) &&
+           (hipHostMalloc((void **)&s->num_host[i], pbytes, 0) == hipSuccess) &&
+           (hipHostMalloc((void **)&s->den_host[i], pbytes, 0) == hipSuccess);
+}
+
+/* Allocate all device + pinned-host buffers. On failure the buffers already
+ * allocated stay set; the caller's fvif_hip_release() frees them through
+ * fvif_hip_bufs_free(). */
 static int fvif_hip_bufs_alloc(FloatVifStateHip *s)
 {
     const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
     const size_t raw_bytes = (size_t)s->width * s->height * bpp;
-
-    if (hipMalloc(&s->ref_raw, raw_bytes) != hipSuccess)
-        return -ENOMEM;
-    if (hipMalloc(&s->dis_raw, raw_bytes) != hipSuccess) {
-        (void)hipFree(s->ref_raw);
-        s->ref_raw = NULL;
-        return -ENOMEM;
-    }
-
     /* Intermediate float buffers: scale_w[1]*scale_h[1] floats each.
      * Ping-pong: even scales use ref_buf[0]/dis_buf[0], odd use [1]. */
     const size_t fbytes = (size_t)s->scale_w[1] * s->scale_h[1] * sizeof(float);
-    for (int i = 0; i < 2; i++) {
-        if (hipMalloc(&s->ref_buf[i], fbytes) != hipSuccess ||
-            hipMalloc(&s->dis_buf[i], fbytes) != hipSuccess) {
-            for (int j = i; j >= 0; j--) {
-                if (s->ref_buf[j] != NULL) {
-                    (void)hipFree(s->ref_buf[j]);
-                    s->ref_buf[j] = NULL;
-                }
-                if (s->dis_buf[j] != NULL) {
-                    (void)hipFree(s->dis_buf[j]);
-                    s->dis_buf[j] = NULL;
-                }
-            }
-            (void)hipFree(s->dis_raw);
-            s->dis_raw = NULL;
-            (void)hipFree(s->ref_raw);
-            s->ref_raw = NULL;
-            return -ENOMEM;
-        }
-    }
 
-    /* Per-scale (num, den) partials + pinned host readback. */
-    for (int i = 0; i < 4; i++) {
-        const size_t pbytes = (size_t)s->wg_count[i] * sizeof(float);
-        /* hipHostMalloc's C prototype is (void **, size_t, unsigned). The
-         * num_host / den_host buffers are float* (host-side reduction loop
-         * indexes them as floats), so &s->num_host[i] is float** and needs
-         * an explicit (void **) cast in C. HIP's C++ header provides a
-         * templated hipHostMalloc<T>(T**, ...) overload, but this TU is
-         * compiled as C by icx so the template isn't visible. Without the
-         * cast, icx emits -Wincompatible-pointer-types as a hard error
-         * under the container's strict CFLAGS. */
-        bool ok = (hipMalloc(&s->num_partials[i], pbytes) == hipSuccess) &&
-                  (hipMalloc(&s->den_partials[i], pbytes) == hipSuccess) &&
-                  (hipHostMalloc((void **)&s->num_host[i], pbytes, 0) == hipSuccess) &&
-                  (hipHostMalloc((void **)&s->den_host[i], pbytes, 0) == hipSuccess);
-        if (!ok) {
-            /* Free this scale's partially-allocated slots. */
-            if (s->den_host[i] != NULL) {
-                (void)hipHostFree(s->den_host[i]);
-                s->den_host[i] = NULL;
-            }
-            if (s->num_host[i] != NULL) {
-                (void)hipHostFree(s->num_host[i]);
-                s->num_host[i] = NULL;
-            }
-            if (s->den_partials[i] != NULL) {
-                (void)hipFree(s->den_partials[i]);
-                s->den_partials[i] = NULL;
-            }
-            if (s->num_partials[i] != NULL) {
-                (void)hipFree(s->num_partials[i]);
-                s->num_partials[i] = NULL;
-            }
-            /* Free prior scales. */
-            for (int j = i - 1; j >= 0; j--) {
-                (void)hipHostFree(s->den_host[j]);
-                s->den_host[j] = NULL;
-                (void)hipHostFree(s->num_host[j]);
-                s->num_host[j] = NULL;
-                (void)hipFree(s->den_partials[j]);
-                s->den_partials[j] = NULL;
-                (void)hipFree(s->num_partials[j]);
-                s->num_partials[j] = NULL;
-            }
-            for (int k = 1; k >= 0; k--) {
-                (void)hipFree(s->dis_buf[k]);
-                s->dis_buf[k] = NULL;
-                (void)hipFree(s->ref_buf[k]);
-                s->ref_buf[k] = NULL;
-            }
-            (void)hipFree(s->dis_raw);
-            s->dis_raw = NULL;
-            (void)hipFree(s->ref_raw);
-            s->ref_raw = NULL;
-            return -ENOMEM;
-        }
+    bool ok = (hipMalloc(&s->ref_raw, raw_bytes) == hipSuccess) &&
+              (hipMalloc(&s->dis_raw, raw_bytes) == hipSuccess);
+    for (int i = 0; i < 2 && ok; i++) {
+        ok = (hipMalloc(&s->ref_buf[i], fbytes) == hipSuccess) &&
+             (hipMalloc(&s->dis_buf[i], fbytes) == hipSuccess);
     }
-    return 0;
+    for (int i = 0; i < 4 && ok; i++)
+        ok = fvif_hip_partials_alloc(s, i);
+    return ok ? 0 : -ENOMEM;
 }
 
 /* Release all device buffers + pinned host slabs + HSACO module.
@@ -357,8 +294,7 @@ static void fvif_hip_bufs_free(FloatVifStateHip *s)
     }
 }
 
-/* Reset partial buffers for one scale, then launch float_vif_compute.
- * Extracted to keep submit_fex_hip under the 60-line limit. */
+/* Reset partial buffers for one scale, then launch float_vif_compute. */
 static int fvif_launch_compute(FloatVifStateHip *s, hipStream_t str, int scale, void *ref_raw_d,
                                void *dis_raw_d, ptrdiff_t raw_stride, void *ref_f_d, void *dis_f_d)
 {
@@ -438,12 +374,9 @@ static int fvif_launch_decimate_and_compute(FloatVifStateHip *s, hipStream_t str
 }
 #endif /* HAVE_HIPCC */
 
-static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                        unsigned w, unsigned h)
+/* Reject the options and frame sizes this twin does not support. */
+static int fvif_hip_check_config(const FloatVifStateHip *s, unsigned w, unsigned h)
 {
-    (void)pix_fmt;
-    FloatVifStateHip *s = fex->priv;
-
     /* Only kernelscale=1.0 is implemented (mirrors CUDA twin). */
     if (s->vif_kernelscale != 1.0)
         return -EINVAL;
@@ -464,6 +397,38 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                  vif_min_dim, w, h);
         return -EINVAL;
     }
+    return 0;
+}
+
+/* Tear down everything init() may have set up. Every step tolerates a handle
+ * that was never created, so this serves both a failed init() and close().
+ * The stream is drained first, so no kernel still uses a buffer. Returns the
+ * first error; freeing the buffers and the module is best-effort. */
+static int fvif_hip_release(FloatVifStateHip *s)
+{
+    int rc = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
+#ifdef HAVE_HIPCC
+    fvif_hip_bufs_free(s);
+#endif /* HAVE_HIPCC */
+    if (s->feature_name_dict != NULL) {
+        const int err = vmaf_dictionary_free(&s->feature_name_dict);
+        if (err != 0 && rc == 0)
+            rc = err;
+    }
+    vmaf_hip_context_destroy(s->ctx);
+    s->ctx = NULL;
+    return rc;
+}
+
+static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                        unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    FloatVifStateHip *s = fex->priv;
+
+    int err = fvif_hip_check_config(s, w, h);
+    if (err != 0)
+        return err;
 
     s->width = w;
     s->height = h;
@@ -476,52 +441,51 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         s->wg_count[i] = gx * gy;
     }
 
-    int err = vmaf_hip_context_new(&s->ctx, 0);
-    if (err != 0)
-        return err;
-
-    err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err != 0)
-        goto fail_after_ctx;
-
+    err = vmaf_hip_context_new(&s->ctx, 0);
+    if (err == 0)
+        err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
 #ifdef HAVE_HIPCC
-    err = fvif_hip_module_load(s);
-    if (err != 0)
-        goto fail_after_lc;
-
-    err = fvif_hip_bufs_alloc(s);
-    if (err != 0)
-        goto fail_after_module;
+    if (err == 0)
+        err = fvif_hip_module_load(s);
+    if (err == 0)
+        err = fvif_hip_bufs_alloc(s);
 #endif /* HAVE_HIPCC */
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) {
-        err = -ENOMEM;
-#ifdef HAVE_HIPCC
-        fvif_hip_bufs_free(s);
-        goto fail_after_lc;
-#else
-        goto fail_after_lc;
-#endif
+    if (err == 0) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (s->feature_name_dict == NULL)
+            err = -ENOMEM;
     }
-
-    return 0;
-
-#ifdef HAVE_HIPCC
-fail_after_module:
-    if (s->module != NULL) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-    }
-#endif /* HAVE_HIPCC */
-fail_after_lc:
-    (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_after_ctx:
-    vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
+    if (err != 0)
+        (void)fvif_hip_release(s);
     return err;
 }
+
+#ifdef HAVE_HIPCC
+/* Bridge the kernels' stream to the private stream: record the submit event
+ * on `pic_stream`, make the private stream wait for it, enqueue the DtoH
+ * copies of every scale's partials and record the finished event. */
+static int fvif_hip_readback(FloatVifStateHip *s, hipStream_t pic_stream)
+{
+    hipStream_t str = vmaf_hip_stream_of(s->lc.str);
+    hipEvent_t submit_ev = vmaf_hip_event_of(s->lc.submit);
+    hipError_t rc = hipEventRecord(submit_ev, pic_stream);
+    if (rc == hipSuccess)
+        rc = hipStreamWaitEvent(str, submit_ev, 0);
+
+    for (int i = 0; i < 4 && rc == hipSuccess; i++) {
+        const size_t pbytes = (size_t)s->wg_count[i] * sizeof(float);
+        rc = hipMemcpyAsync(s->num_host[i], s->num_partials[i], pbytes, hipMemcpyDeviceToHost, str);
+        if (rc == hipSuccess) {
+            rc = hipMemcpyAsync(s->den_host[i], s->den_partials[i], pbytes, hipMemcpyDeviceToHost,
+                                str);
+        }
+    }
+    if (rc != hipSuccess)
+        return fvif_hip_rc(rc);
+    return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
+}
+#endif /* HAVE_HIPCC */
 
 static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
@@ -532,54 +496,47 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     FloatVifStateHip *s = fex->priv;
 
 #ifdef HAVE_HIPCC
-    const hipStream_t pic_stream = (hipStream_t)0;
+    hipStream_t pic_stream = vmaf_hip_stream_of(0u);
     const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
     const ptrdiff_t raw_stride = (ptrdiff_t)(s->width * bpp);
 
-    /* HtoD copy of ref and dist luma planes into tightly-pitched staging. */
-    hipError_t rc = hipMemcpy2DAsync(s->ref_raw, (size_t)raw_stride, ref_pic->data[0],
-                                     (size_t)ref_pic->stride[0], (size_t)raw_stride,
-                                     (size_t)s->height, hipMemcpyHostToDevice, pic_stream);
-    if (rc != hipSuccess)
-        return fvif_hip_rc(rc);
-    rc = hipMemcpy2DAsync(s->dis_raw, (size_t)raw_stride, dist_pic->data[0],
-                          (size_t)dist_pic->stride[0], (size_t)raw_stride, (size_t)s->height,
-                          hipMemcpyHostToDevice, pic_stream);
-    if (rc != hipSuccess)
-        return fvif_hip_rc(rc);
-
-    /* Launch: compute at scale 0, then decimate + compute for scales 1-3. */
-    int err = fvif_launch_compute(s, pic_stream, 0, s->ref_raw, s->dis_raw, raw_stride, NULL, NULL);
+    /* HtoD copy of ref and dist luma planes into tightly-pitched staging.
+     * Returns once both pictures are read: the caller recycles them when
+     * submit() returns (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
+    const VmafHipPlaneUpload planes[] = {
+        {.dst = s->ref_raw,
+         .dst_pitch = (size_t)raw_stride,
+         .pic = ref_pic,
+         .plane = 0u,
+         .row_bytes = (size_t)raw_stride,
+         .rows = s->height},
+        {.dst = s->dis_raw,
+         .dst_pitch = (size_t)raw_stride,
+         .pic = dist_pic,
+         .plane = 0u,
+         .row_bytes = (size_t)raw_stride,
+         .rows = s->height},
+    };
+    /* Upload on the private stream, not the null stream the kernels use: a
+     * null-stream copy would queue behind every other extractor's kernels of
+     * this frame, and the wait would block the host on all of them. The
+     * copies are complete before the kernels are enqueued, and collect() of
+     * the previous frame has already drained the kernels that read these
+     * buffers. */
+    int err = vmaf_hip_picture_upload(planes, 2u, s->lc.str);
     if (err != 0)
         return err;
 
-    for (int ns = 1; ns < 4; ns++) {
+    /* Launch: compute at scale 0, then decimate + compute for scales 1-3. */
+    err = fvif_launch_compute(s, pic_stream, 0, s->ref_raw, s->dis_raw, raw_stride, NULL, NULL);
+    for (int ns = 1; ns < 4 && err == 0; ns++) {
         err =
             fvif_launch_decimate_and_compute(s, pic_stream, ns, s->ref_raw, s->dis_raw, raw_stride);
-        if (err != 0)
-            return err;
     }
+    if (err != 0)
+        return err;
 
-    /* Bridge to private stream: record submit event, wait, DtoH partials. */
-    const hipStream_t str = (hipStream_t)s->lc.str;
-    rc = hipEventRecord((hipEvent_t)s->lc.submit, pic_stream);
-    if (rc != hipSuccess)
-        return fvif_hip_rc(rc);
-    rc = hipStreamWaitEvent(str, (hipEvent_t)s->lc.submit, 0);
-    if (rc != hipSuccess)
-        return fvif_hip_rc(rc);
-
-    for (int i = 0; i < 4; i++) {
-        const size_t pbytes = (size_t)s->wg_count[i] * sizeof(float);
-        rc = hipMemcpyAsync(s->num_host[i], s->num_partials[i], pbytes, hipMemcpyDeviceToHost, str);
-        if (rc != hipSuccess)
-            return fvif_hip_rc(rc);
-        rc = hipMemcpyAsync(s->den_host[i], s->den_partials[i], pbytes, hipMemcpyDeviceToHost, str);
-        if (rc != hipSuccess)
-            return fvif_hip_rc(rc);
-    }
-
-    return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
+    return fvif_hip_readback(s, pic_stream);
 #else
     /* Scaffold posture: surface -ENOSYS. */
     (void)ref_pic;
@@ -590,6 +547,40 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     return -ENOSYS;
 #endif /* HAVE_HIPCC */
 }
+
+#ifdef HAVE_HIPCC
+/* Debug-mode outputs: the aggregate vif and every per-scale num / den.
+ * `scores` is {num, den} per scale. */
+static int fvif_hip_emit_debug(FloatVifStateHip *s, VmafFeatureCollector *feature_collector,
+                               const double scores[8], unsigned index)
+{
+    const double num0 = s->vif_skip_scale0 ? 0.0 : scores[0];
+    const double den0 = s->vif_skip_scale0 ? 0.0 : scores[1];
+    const double score_num = num0 + scores[2] + scores[4] + scores[6];
+    const double score_den = den0 + scores[3] + scores[5] + scores[7];
+    const double score = (score_den == 0.0) ? 1.0 : score_num / score_den;
+    int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                      "vif", score, index);
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "vif_num", score_num, index);
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "vif_den", score_den, index);
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "vif_num_scale0", num0, index);
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "vif_den_scale0",
+                                                   s->vif_skip_scale0 ? -1.0 : scores[1], index);
+    const char *names[6] = {
+        "vif_num_scale1", "vif_den_scale1", "vif_num_scale2",
+        "vif_den_scale2", "vif_num_scale3", "vif_den_scale3",
+    };
+    for (int i = 0; i < 6; i++) {
+        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                       names[i], scores[i + 2], index);
+    }
+    return err;
+}
+#endif /* HAVE_HIPCC */
 
 static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                            VmafFeatureCollector *feature_collector)
@@ -603,7 +594,8 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
 #ifdef HAVE_HIPCC
     double scores[8];
     for (int i = 0; i < 4; i++) {
-        double n = 0.0, d = 0.0;
+        double n = 0.0;
+        double d = 0.0;
         for (unsigned j = 0; j < s->wg_count[i]; j++) {
             n += (double)s->num_host[i][j];
             d += (double)s->den_host[i][j];
@@ -627,33 +619,8 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                                                    "VMAF_feature_vif_scale3_score",
                                                    scores[6] / scores[7], index);
 
-    if (s->debug && !err) {
-        double score_num =
-            (s->vif_skip_scale0 ? 0.0 : scores[0]) + scores[2] + scores[4] + scores[6];
-        double score_den =
-            (s->vif_skip_scale0 ? 0.0 : scores[1]) + scores[3] + scores[5] + scores[7];
-        double score = (score_den == 0.0) ? 1.0 : score_num / score_den;
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif", score, index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_num", score_num, index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_den", score_den, index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_num_scale0",
-                                                       s->vif_skip_scale0 ? 0.0 : scores[0], index);
-        err |= vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "vif_den_scale0",
-            s->vif_skip_scale0 ? -1.0 : scores[1], index);
-        const char *names[6] = {
-            "vif_num_scale1", "vif_den_scale1", "vif_num_scale2",
-            "vif_den_scale2", "vif_num_scale3", "vif_den_scale3",
-        };
-        for (int i = 0; i < 6; i++) {
-            err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                           names[i], scores[i + 2], index);
-        }
-    }
+    if (s->debug && !err)
+        err |= fvif_hip_emit_debug(s, feature_collector, scores, index);
 
     return err;
 #else
@@ -665,24 +632,7 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
 
 static int close_fex_hip(VmafFeatureExtractor *fex)
 {
-    FloatVifStateHip *s = fex->priv;
-
-    int rc = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-
-#ifdef HAVE_HIPCC
-    fvif_hip_bufs_free(s);
-#endif /* HAVE_HIPCC */
-
-    if (s->feature_name_dict != NULL) {
-        int err = vmaf_dictionary_free(&s->feature_name_dict);
-        if (err != 0 && rc == 0)
-            rc = err;
-    }
-    if (s->ctx != NULL) {
-        vmaf_hip_context_destroy(s->ctx);
-        s->ctx = NULL;
-    }
-    return rc;
+    return fvif_hip_release(fex->priv);
 }
 
 static const char *provided_features[] = {

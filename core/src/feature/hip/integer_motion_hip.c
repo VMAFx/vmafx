@@ -62,11 +62,13 @@
 
 #include "../../hip/common.h"
 #include "../../hip/kernel_template.h"
+#include "../../hip/picture_hip.h"
 #include "integer_motion_hip.h"
 
 #ifdef HAVE_HIPCC
-#define __HIP_PLATFORM_AMD__ 1
 #include <hip/hip_runtime_api.h>
+
+#include "../../hip/hip_handle.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
@@ -127,94 +129,44 @@ typedef struct MotionStateHip {
     VmafDictionary *feature_name_dict;
 } MotionStateHip;
 
+/* Compact layout: clang-format would put every field on its own line and push
+ * the table past the 60-line HISS-04 function-size limit. */
+// clang-format off
 static const VmafOption options[] = {
-    {
-        .name = "debug",
-        .help = "debug mode: enable additional output",
-        .offset = offsetof(MotionStateHip, debug),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = true,
-    },
-    {
-        .name = "motion_force_zero",
-        .help = "forcing motion score to zero",
-        .offset = offsetof(MotionStateHip, motion_force_zero),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "motion_blend_factor",
-        .alias = "mbf",
-        .help = "blend motion score given an offset",
-        .offset = offsetof(MotionStateHip, motion_blend_factor),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = 1.0,
-        .min = 0.0,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "motion_blend_offset",
-        .alias = "mbo",
-        .help = "blend motion score starting from this offset",
-        .offset = offsetof(MotionStateHip, motion_blend_offset),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = 40.0,
-        .min = 0.0,
-        .max = 1000.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "motion_fps_weight",
-        .alias = "mfw",
-        .help = "fps-aware multiplicative weight/correction",
-        .offset = offsetof(MotionStateHip, motion_fps_weight),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = 1.0,
-        .min = 0.0,
-        .max = 5.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "motion_max_val",
-        .alias = "mmxv",
-        .help = "maximum value allowed; larger values will be clipped to this value",
-        .offset = offsetof(MotionStateHip, motion_max_val),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = MOTION_HIP_DEFAULT_MAX_VAL,
-        .min = 0.0,
-        .max = 10000.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "motion_five_frame_window",
-        .alias = "mffw",
-        .help = "use five-frame temporal window (NOT YET SUPPORTED on HIP — deferred)",
-        .offset = offsetof(MotionStateHip, motion_five_frame_window),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "motion_moving_average",
-        .alias = "mma",
-        .help = "use moving average for motion3 scores after first frame",
-        .offset = offsetof(MotionStateHip, motion_moving_average),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "motion_add_uv",
-        .alias = "mau",
-        .help = "include U and V plane SADs (NOT YET SUPPORTED on HIP — ADR-0989 deferred)",
-        .offset = offsetof(MotionStateHip, motion_add_uv),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
+    {.name = "debug", .help = "debug mode: enable additional output",
+     .offset = offsetof(MotionStateHip, debug), .type = VMAF_OPT_TYPE_BOOL, .default_val.b = true},
+    {.name = "motion_force_zero", .help = "forcing motion score to zero",
+     .offset = offsetof(MotionStateHip, motion_force_zero), .type = VMAF_OPT_TYPE_BOOL,
+     .default_val.b = false, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "motion_blend_factor", .alias = "mbf", .help = "blend motion score given an offset",
+     .offset = offsetof(MotionStateHip, motion_blend_factor), .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = 1.0, .min = 0.0, .max = 1.0, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "motion_blend_offset", .alias = "mbo",
+     .help = "blend motion score starting from this offset",
+     .offset = offsetof(MotionStateHip, motion_blend_offset), .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = 40.0, .min = 0.0, .max = 1000.0, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "motion_fps_weight", .alias = "mfw", .help = "fps-aware multiplicative weight/correction",
+     .offset = offsetof(MotionStateHip, motion_fps_weight), .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = 1.0, .min = 0.0, .max = 5.0, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "motion_max_val", .alias = "mmxv",
+     .help = "maximum value allowed; larger values will be clipped to this value",
+     .offset = offsetof(MotionStateHip, motion_max_val), .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = MOTION_HIP_DEFAULT_MAX_VAL, .min = 0.0, .max = 10000.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "motion_five_frame_window", .alias = "mffw",
+     .help = "use five-frame temporal window (NOT YET SUPPORTED on HIP — deferred)",
+     .offset = offsetof(MotionStateHip, motion_five_frame_window), .type = VMAF_OPT_TYPE_BOOL,
+     .default_val.b = false, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "motion_moving_average", .alias = "mma",
+     .help = "use moving average for motion3 scores after first frame",
+     .offset = offsetof(MotionStateHip, motion_moving_average), .type = VMAF_OPT_TYPE_BOOL,
+     .default_val.b = false, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "motion_add_uv", .alias = "mau",
+     .help = "include U and V plane SADs (NOT YET SUPPORTED on HIP — ADR-0989 deferred)",
+     .offset = offsetof(MotionStateHip, motion_add_uv), .type = VMAF_OPT_TYPE_BOOL,
+     .default_val.b = false, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {0}};
+// clang-format on
 
 /* ------------------------------------------------------------------ */
 /* motion3 host post-processing — mirrors integer_motion_cuda.c.      */
@@ -331,28 +283,17 @@ static int msh_module_load(MotionStateHip *s)
     return 0;
 }
 
-/* Allocate blurred ping-pong buffers + raw Y-plane staging buffer.
- * On partial failure, frees whatever was allocated. */
+/* Allocate blurred ping-pong buffers + raw Y-plane staging buffer. On
+ * failure the buffers already allocated stay set; the caller's
+ * msh_release() frees them. */
 static int msh_bufs_alloc(MotionStateHip *s)
 {
     hipError_t rc = hipMalloc(&s->blur[0], s->blurred_bytes);
-    if (rc != hipSuccess)
-        return -ENOMEM;
-    rc = hipMalloc(&s->blur[1], s->blurred_bytes);
-    if (rc != hipSuccess) {
-        (void)hipFree(s->blur[0]);
-        s->blur[0] = NULL;
-        return -ENOMEM;
-    }
-    rc = hipMalloc(&s->ref_in, s->plane_bytes);
-    if (rc != hipSuccess) {
-        (void)hipFree(s->blur[1]);
-        s->blur[1] = NULL;
-        (void)hipFree(s->blur[0]);
-        s->blur[0] = NULL;
-        return -ENOMEM;
-    }
-    return 0;
+    if (rc == hipSuccess)
+        rc = hipMalloc(&s->blur[1], s->blurred_bytes);
+    if (rc == hipSuccess)
+        rc = hipMalloc(&s->ref_in, s->plane_bytes);
+    return (rc == hipSuccess) ? 0 : -ENOMEM;
 }
 
 /* Free all device buffers and unload the module. Safe with NULL. */
@@ -376,35 +317,15 @@ static void msh_bufs_free(MotionStateHip *s)
     }
 }
 
-/* Per-frame kernel dispatch: HtoD copy, memset SAD, kernel launch,
- * DtoH enqueue. Extracted to keep submit_fex_hip under 60 lines. */
-static int msh_launch(MotionStateHip *s, VmafPicture *ref_pic, unsigned index)
+/* Blur + SAD kernel: blurs the staged frame into blur[cur_idx] and adds its
+ * SAD against blur[prev_idx] into rb.device. */
+static int msh_launch_kernel(MotionStateHip *s, unsigned cur_idx, unsigned prev_idx,
+                             ptrdiff_t src_pitch, hipStream_t str)
 {
-    hipStream_t str = (hipStream_t)s->lc.str;
-
-    const unsigned cur_idx = index % 2u;
-    const unsigned prev_idx = (index + 1u) % 2u;
-    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-    const ptrdiff_t src_pitch = (ptrdiff_t)(s->frame_w * bpp);
     /* Blurred buffer stride in bytes: w * sizeof(uint16_t). */
-    const ptrdiff_t blurred_stride = (ptrdiff_t)(s->frame_w * sizeof(uint16_t));
-
-    /* HtoD copy of current ref Y plane into staging buffer. */
-    hipError_t rc =
-        hipMemcpy2DAsync(s->ref_in, (size_t)src_pitch, ref_pic->data[0], (size_t)ref_pic->stride[0],
-                         (size_t)src_pitch, (size_t)s->frame_h, hipMemcpyHostToDevice, str);
-    if (rc != hipSuccess)
-        return msh_rc(rc);
-
-    /* Frame 0: kernel writes blur[0] but no SAD (no prev frame).
-     * Still need to launch so blur[0] is populated for frame 1. */
-    rc = hipMemsetAsync(s->rb.device, 0, sizeof(uint64_t), str);
-    if (rc != hipSuccess)
-        return msh_rc(rc);
-
+    ptrdiff_t blurred_stride = (ptrdiff_t)(s->frame_w * sizeof(uint16_t));
     const unsigned gx = (s->frame_w + MSH_BX - 1u) / MSH_BX;
     const unsigned gy = (s->frame_h + MSH_BY - 1u) / MSH_BY;
-
     uint8_t *src_dev = (uint8_t *)s->ref_in;
     uint16_t *cur_blurred_dev = (uint16_t *)s->blur[cur_idx];
     uint16_t *prev_blurred_dev = (uint16_t *)s->blur[prev_idx];
@@ -413,36 +334,62 @@ static int msh_launch(MotionStateHip *s, VmafPicture *ref_pic, unsigned index)
     unsigned h = s->frame_h;
     unsigned bpc = s->bpc;
 
-    if (s->bpc <= 8u) {
-        void *args[] = {
-            (void *)&src_dev,
-            (void *)&cur_blurred_dev,
-            (void *)&prev_blurred_dev,
-            (void *)&sad_dev,
-            (void *)&w,
-            (void *)&h,
-            (void *)&src_pitch,
-            (void *)&blurred_stride,
-        };
-        rc = hipModuleLaunchKernel(s->funcbpc8, gx, gy, 1, MSH_BX, MSH_BY, 1, 0, str, args, NULL);
-    } else {
-        void *args[] = {
-            (void *)&src_dev,
-            (void *)&cur_blurred_dev,
-            (void *)&prev_blurred_dev,
-            (void *)&sad_dev,
-            (void *)&w,
-            (void *)&h,
-            (void *)&src_pitch,
-            (void *)&blurred_stride,
-            (void *)&bpc,
-        };
-        rc = hipModuleLaunchKernel(s->funcbpc16, gx, gy, 1, MSH_BX, MSH_BY, 1, 0, str, args, NULL);
-    }
+    /* The 16bpc kernel takes one more argument than the 8bpc one: `bpc`. */
+    void *args8[] = {(void *)&src_dev,
+                     (void *)&cur_blurred_dev,
+                     (void *)&prev_blurred_dev,
+                     (void *)&sad_dev,
+                     (void *)&w,
+                     (void *)&h,
+                     (void *)&src_pitch,
+                     (void *)&blurred_stride};
+    void *args16[] = {(void *)&src_dev,
+                      (void *)&cur_blurred_dev,
+                      (void *)&prev_blurred_dev,
+                      (void *)&sad_dev,
+                      (void *)&w,
+                      (void *)&h,
+                      (void *)&src_pitch,
+                      (void *)&blurred_stride,
+                      (void *)&bpc};
+    const bool is8 = (s->bpc <= 8u);
+    return msh_rc(hipModuleLaunchKernel(is8 ? s->funcbpc8 : s->funcbpc16, gx, gy, 1, MSH_BX, MSH_BY,
+                                        1, 0, str, is8 ? args8 : args16, NULL));
+}
+
+/* Per-frame kernel dispatch: HtoD copy, memset SAD, kernel launch,
+ * DtoH enqueue. */
+static int msh_launch(MotionStateHip *s, VmafPicture *ref_pic, unsigned index)
+{
+    hipStream_t str = vmaf_hip_stream_of(s->lc.str);
+    const unsigned cur_idx = index % 2u;
+    const unsigned prev_idx = (index + 1u) % 2u;
+    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
+    const ptrdiff_t src_pitch = (ptrdiff_t)(s->frame_w * bpp);
+
+    /* HtoD copy of current ref Y plane into staging buffer. Returns once the
+     * picture is read: the caller may recycle it when submit() returns
+     * (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
+    const VmafHipPlaneUpload plane = {.dst = s->ref_in,
+                                      .dst_pitch = (size_t)src_pitch,
+                                      .pic = ref_pic,
+                                      .plane = 0u,
+                                      .row_bytes = (size_t)src_pitch,
+                                      .rows = s->frame_h};
+    int err = vmaf_hip_picture_upload(&plane, 1u, s->lc.str);
+    if (err != 0)
+        return err;
+
+    /* Frame 0: kernel writes blur[0] but no SAD (no prev frame).
+     * Still need to launch so blur[0] is populated for frame 1. */
+    hipError_t rc = hipMemsetAsync(s->rb.device, 0, sizeof(uint64_t), str);
     if (rc != hipSuccess)
         return msh_rc(rc);
+    err = msh_launch_kernel(s, cur_idx, prev_idx, src_pitch, str);
+    if (err != 0)
+        return err;
 
-    rc = hipEventRecord((hipEvent_t)s->lc.submit, str);
+    rc = hipEventRecord(vmaf_hip_event_of(s->lc.submit), str);
     if (rc != hipSuccess)
         return msh_rc(rc);
 
@@ -461,12 +408,9 @@ static int msh_launch(MotionStateHip *s, VmafPicture *ref_pic, unsigned index)
 
 #endif /* HAVE_HIPCC */
 
-static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                        unsigned w, unsigned h)
+/* Reject the options and frame sizes this twin does not support. */
+static int msh_check_config(const MotionStateHip *s, unsigned w, unsigned h)
 {
-    (void)pix_fmt;
-    MotionStateHip *s = fex->priv;
-
     /* Reject 5-frame window: same as CUDA twin (ADR-0219). */
     if (s->motion_five_frame_window) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
@@ -493,6 +437,43 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                  w, h);
         return -EINVAL;
     }
+    return 0;
+}
+
+/* Tear down everything init() may have set up. Every step tolerates a handle
+ * that was never created, so this serves a failed init(), close(), and the
+ * motion_force_zero switch to extract(). The stream is drained first, so no
+ * kernel still uses a buffer. Returns the first error; freeing the buffers
+ * and the module is best-effort. */
+static int msh_release(MotionStateHip *s)
+{
+    int rc = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
+#ifdef HAVE_HIPCC
+    /* msh_bufs_free also unloads the module. */
+    msh_bufs_free(s);
+#endif
+    const int err_rb = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
+    if (err_rb != 0 && rc == 0)
+        rc = err_rb;
+    if (s->feature_name_dict != NULL) {
+        const int err_dict = vmaf_dictionary_free(&s->feature_name_dict);
+        if (err_dict != 0 && rc == 0)
+            rc = err_dict;
+    }
+    vmaf_hip_context_destroy(s->ctx);
+    s->ctx = NULL;
+    return rc;
+}
+
+static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                        unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    MotionStateHip *s = fex->priv;
+
+    int err = msh_check_config(s, w, h);
+    if (err != 0)
+        return err;
 
     s->frame_w = w;
     s->frame_h = h;
@@ -503,66 +484,40 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     s->frame_index = 0;
     s->prev_motion3_blended = 0.0;
 
-    int err = vmaf_hip_context_new(&s->ctx, 0);
-    if (err != 0)
-        return err;
-
-    err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err != 0)
-        goto fail_after_ctx;
-
+    err = vmaf_hip_context_new(&s->ctx, 0);
+    if (err == 0)
+        err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
     /* Readback pair: single uint64_t SAD accumulator + pinned host slot. */
-    err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx, sizeof(uint64_t));
-    if (err != 0)
-        goto fail_after_lc;
-
+    if (err == 0)
+        err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx, sizeof(uint64_t));
 #ifdef HAVE_HIPCC
-    err = msh_module_load(s);
-    if (err != 0)
-        goto fail_after_rb;
-
-    err = msh_bufs_alloc(s);
-    if (err != 0)
-        goto fail_after_module;
+    if (err == 0)
+        err = msh_module_load(s);
+    if (err == 0)
+        err = msh_bufs_alloc(s);
 #endif /* HAVE_HIPCC */
 
-    if (s->motion_force_zero) {
+    if (err == 0 && s->motion_force_zero) {
+        /* extract_force_zero needs no device state, and close() is not
+         * called on this path, so release the HIP resources now rather than
+         * leak them. */
         fex->extract = extract_force_zero;
         fex->submit = NULL;
         fex->collect = NULL;
         fex->flush = NULL;
         fex->close = NULL;
+        (void)msh_release(s);
         return 0;
     }
 
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) {
-        err = -ENOMEM;
-#ifdef HAVE_HIPCC
-        msh_bufs_free(s);
-        goto fail_after_rb;
-#else
-        goto fail_after_rb;
-#endif
+    if (err == 0) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (s->feature_name_dict == NULL)
+            err = -ENOMEM;
     }
-
-    return 0;
-
-#ifdef HAVE_HIPCC
-fail_after_module:
-    if (s->module != NULL) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-    }
-#endif /* HAVE_HIPCC */
-fail_after_rb:
-    (void)vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
-fail_after_lc:
-    (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_after_ctx:
-    vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
+    if (err != 0)
+        (void)msh_release(s);
     return err;
 }
 
@@ -584,6 +539,40 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     return -ENOSYS;
 #endif
 }
+
+#ifdef HAVE_HIPCC
+/* motion2 / motion3 of frame index - 1, now that frame index's SAD is known.
+ * Mirrors integer_motion_cuda.c collect logic exactly. */
+static int msh_emit_prev_frame(MotionStateHip *s, VmafFeatureCollector *feature_collector,
+                               unsigned index, double score_prev)
+{
+    int e = 0;
+    if (index == 1u) {
+        const double score_clipped = s->score * s->motion_fps_weight < s->motion_max_val ?
+                                         s->score * s->motion_fps_weight :
+                                         s->motion_max_val;
+        const double motion3_score = motion3_postprocess_hip(s, score_clipped);
+        e |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                     "VMAF_integer_feature_motion3_score",
+                                                     motion3_score, index - 1u);
+    }
+
+    if (index > 1u) {
+        const double motion2_raw = score_prev < s->score ? score_prev : s->score;
+        const double motion2_clipped = motion2_raw * s->motion_fps_weight < s->motion_max_val ?
+                                           motion2_raw * s->motion_fps_weight :
+                                           s->motion_max_val;
+        e |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                     "VMAF_integer_feature_motion2_score",
+                                                     motion2_clipped, index - 1u);
+        const double motion3_score = motion3_postprocess_hip(s, motion2_clipped);
+        e |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                     "VMAF_integer_feature_motion3_score",
+                                                     motion3_score, index - 1u);
+    }
+    return e;
+}
+#endif /* HAVE_HIPCC */
 
 static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                            VmafFeatureCollector *feature_collector)
@@ -625,32 +614,7 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                                                      "VMAF_integer_feature_motion_score", s->score,
                                                      index);
     }
-
-    /* Mirror integer_motion_cuda.c collect logic exactly. */
-    if (index == 1u) {
-        const double score_clipped = s->score * s->motion_fps_weight < s->motion_max_val ?
-                                         s->score * s->motion_fps_weight :
-                                         s->motion_max_val;
-        const double motion3_score = motion3_postprocess_hip(s, score_clipped);
-        e |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                     "VMAF_integer_feature_motion3_score",
-                                                     motion3_score, index - 1u);
-    }
-
-    if (index > 1u) {
-        const double motion2_raw = score_prev < s->score ? score_prev : s->score;
-        const double motion2_clipped = motion2_raw * s->motion_fps_weight < s->motion_max_val ?
-                                           motion2_raw * s->motion_fps_weight :
-                                           s->motion_max_val;
-        e |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                     "VMAF_integer_feature_motion2_score",
-                                                     motion2_clipped, index - 1u);
-        const double motion3_score = motion3_postprocess_hip(s, motion2_clipped);
-        e |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                     "VMAF_integer_feature_motion3_score",
-                                                     motion3_score, index - 1u);
-    }
-
+    e |= msh_emit_prev_frame(s, feature_collector, index, score_prev);
     return e;
 #endif /* HAVE_HIPCC */
 }
@@ -689,29 +653,7 @@ static int flush_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *featur
 
 static int close_fex_hip(VmafFeatureExtractor *fex)
 {
-    MotionStateHip *s = fex->priv;
-
-    int rc = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-
-#ifdef HAVE_HIPCC
-    /* msh_bufs_free also unloads the module. */
-    msh_bufs_free(s);
-#endif
-
-    const int err_rb = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
-    if (err_rb != 0 && rc == 0)
-        rc = err_rb;
-
-    if (s->feature_name_dict != NULL) {
-        const int err_dict = vmaf_dictionary_free(&s->feature_name_dict);
-        if (err_dict != 0 && rc == 0)
-            rc = err_dict;
-    }
-    if (s->ctx != NULL) {
-        vmaf_hip_context_destroy(s->ctx);
-        s->ctx = NULL;
-    }
-    return rc;
+    return msh_release(fex->priv);
 }
 
 static const char *provided_features[] = {"VMAF_integer_feature_motion_score",
