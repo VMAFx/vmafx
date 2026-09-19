@@ -26,11 +26,17 @@ Rules for new script in `ai/scripts/` or module in
    `read_parquet_with_schema(path)` -> `(df, schema_version)` (v1 = legacy raw
    `df.to_parquet(...)`, v2 = helper). **Do not** call `df.to_parquet(...)`
    directly in new code.
-5. **Run provenance:** Use `aiutils.run_manifest.write_run_manifest()` for
+5. **Run provenance / strict JSON artifacts:** Use
+   `aiutils.run_manifest.write_run_manifest()` for
    script sidecars needing stable entrypoint, args, input, output metadata,
    adapter counts/config. Use `build_run_provenance()` only when embedding
    provenance block into existing report schema. Do not hand-roll path hashing
-   or manifest envelope in each script.
+   or manifest envelope in each script. Manifest JSON = strict RFC-8259 JSON:
+   non-finite floats serialized as `null`, never `NaN` / `Infinity`. Use
+   `dumps_manifest_json()` for stdout JSON paths exposing same report payload
+   without writing to disk. Use `write_manifest_json()` for legacy report/cache
+   JSON artifacts needing no new provenance envelope but same strict
+   serialization boundary.
 6. **CLI setup:** Use `make_argument_parser()` and `collect_cli_argv()` from
    `aiutils.cli_helpers` for operator scripts. Batch manifest runners must also
    use `add_batch_manifest_arguments()`: keeps `--manifest`, `--base-dir`,
@@ -51,5 +57,5 @@ Rules for new script in `ai/scripts/` or module in
   `detect_schema_version(path) -> int`,
   `apply_standard_column_order(df, *, labels=None, metadata=None) -> DataFrame`
   (ADR-0926; schema v2 = on-disk default)
-- `run_manifest.py` — deterministic `run_provenance` sidecar helpers
+- `run_manifest.py` — deterministic `run_provenance` sidecar/stdout helpers
 - `cli_helpers.py` — shared parser/raw-argv/batch-manifest argument helpers
