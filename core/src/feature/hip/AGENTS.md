@@ -407,82 +407,78 @@ tests.
 
 ## Integer SSIM CPU contract (ADR-0564)
 
-`integer_ssim_hip` publishes the canonical `"ssim"` feature and carries
-`VMAF_FEATURE_EXTRACTOR_HIP`, so model-driven dispatch under `--backend hip`
-runs it instead of the CPU `ssim`. That is only acceptable while it computes
-what `integer_ssim.c::calc_ssim()` computes. ADR-0564 rules out drift under
-this name; before the int64 port the twin ran an 11-tap float Gaussian 4.5e-3
-off the CPU and had to stay unflagged (ADR-1154).
+`integer_ssim_hip` publishes canonical `"ssim"` feature, carries
+`VMAF_FEATURE_EXTRACTOR_HIP` -> model-driven dispatch under `--backend hip`
+runs it instead of CPU `ssim`. Acceptable only while it computes what
+`integer_ssim.c::calc_ssim()` computes. ADR-0564 rules out drift under this
+name. Before int64 port: twin ran 11-tap float Gaussian, 4.5e-3 off CPU, had to
+stay unflagged (ADR-1154).
 
 Invariants:
 
-- **Same kernel as the CPU.** 9 integer taps `[2,9,28,55,68,55,28,9,2]`, int64
-  moments, and boundary *truncation*: taps outside the frame are skipped and
-  the weight counts only the in-bounds taps. Do not mirror or clamp at the
-  border, as the VIF kernels do (ADR-1103); the CPU does neither here.
-- **Same per-pixel expression.** `issim_pixel_term()` is
-  `ssim_reduce_row_range()` operand for operand, with `SSIM_K1` / `SSIM_K2`
-  spelled `(0.01 * 0.01)` / `(0.03 * 0.03)`. The literals `0.0001` /
-  `0.0009` are different doubles. `hip_cu_extra_flags` builds the kernel with
-  `-ffp-contract=off` so nothing fuses into an FMA; with both, a 1x1 frame
-  matches the CPU exactly. The only remaining difference is summation order,
-  measured at 2e-14 on the Netflix pair and 1.06e-11 at worst (1080p
-  checkerboard), the same as the CUDA twin.
-- **Wavefront-independent reduction.** The per-block sums use a shared-memory
-  tree over all 128 threads, not `warpSize` shuffles, so wave32 (RDNA) and
-  wave64 (GCN / CDNA) add in the same order. The tree is sized for the 16x8
-  launch: `ISSIM_BLOCK_X/Y` in the kernel and `ISSIM_HIP_BLOCK_X/Y` in the
-  host must change together.
-- **Wait for the picture upload.** `submit()` stages the host pictures through
-  `vmaf_hip_picture_upload()`; see "Picture uploads" below. This twin is where
-  the race was first seen, off by up to 0.2 on the Netflix 576x324 pair.
+- **Same kernel as CPU.** 9 integer taps `[2,9,28,55,68,55,28,9,2]`, int64
+  moments, boundary *truncation*: taps outside frame skipped, weight counts
+  in-bounds taps only. Do not mirror or clamp at border as VIF kernels do
+  (ADR-1103); CPU does neither here.
+- **Same per-pixel expression.** `issim_pixel_term()` =
+  `ssim_reduce_row_range()` operand for operand. `SSIM_K1` / `SSIM_K2`
+  spelled `(0.01 * 0.01)` / `(0.03 * 0.03)`; literals `0.0001` / `0.0009` are
+  different doubles. `hip_cu_extra_flags` builds kernel with
+  `-ffp-contract=off` -> nothing fuses into FMA. With both, 1x1 frame matches
+  CPU exactly. Only remaining difference: summation order, 2e-14 on Netflix
+  pair, 1.06e-11 worst case (1080p checkerboard), same as CUDA twin.
+- **Wavefront-independent reduction.** Per-block sums use shared-memory tree
+  over all 128 threads, not `warpSize` shuffles -> wave32 (RDNA) and wave64
+  (GCN / CDNA) add in same order. Tree sized for 16x8 launch:
+  `ISSIM_BLOCK_X/Y` in kernel and `ISSIM_HIP_BLOCK_X/Y` in host change
+  together.
+- **Wait for picture upload.** `submit()` stages host pictures through
+  `vmaf_hip_picture_upload()`; see "Picture uploads" below. Race first seen in
+  this twin: off by up to 0.2 on Netflix 576x324 pair.
 
 ## Picture uploads: never return from submit() with one in flight
 
-**Invariant: an extractor must not return from `submit()` while an upload from
-a pooled host picture is in flight.**
+**Invariant: extractor must not return from `submit()` while upload from
+pooled host picture is in flight.**
 
-HIP pictures are pageable host memory; there is no HIP picture pool yet
-(T7-10c). `hipMemcpy2DAsync` is asynchronous with respect to the host, so a
-bare call can still be reading `VmafPicture::data` after `submit()` has
-returned, and the caller may refill the picture at once. The CLI's pool is
-LIFO: the distorted picture of frame N is the first buffer refilled for frame
-N + 1. The result was frames scored against the next frame's samples, a
-different set on every run, or, with several extractors in one process, the
-same wrong 46 of 48 frames on every run (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18).
+HIP pictures = pageable host memory; no HIP picture pool yet (T7-10c).
+`hipMemcpy2DAsync` is asynchronous with respect to host: bare call can still
+read `VmafPicture::data` after `submit()` returned, and caller may refill
+picture at once. CLI pool is LIFO: distorted picture of frame N = first buffer
+refilled for frame N + 1. Result: frames scored against next frame's samples.
+Different set on every run. With several extractors in one process: same wrong
+46 of 48 frames on every run (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18).
 
 Rules:
 
-- Stage every plane that comes from `VmafPicture::data` with
-  `vmaf_hip_picture_upload()` (`core/src/hip/picture_hip.h`). It enqueues the
-  copies and waits on an event recorded after them. Do not call
-  `hipMemcpy2DAsync` / `hipMemcpyAsync` on a picture plane directly. A copy
-  from an extractor-owned pinned buffer (`integer_ms_ssim_hip`,
-  `integer_psnr_hvs_hip`, the SpEED twins) is not affected: the extractor
-  owns that memory until it reuses it.
-- Pass the extractor's private stream (`lc.str`), even when the kernels run on
-  the null stream. A null-stream copy queues behind every null-stream kernel
-  of the frame, and the wait then blocks the host on all of them. The copy is
-  complete before any kernel is enqueued, so no cross-stream ordering is
-  needed. This is about the ordering guarantee, not speed: on the gfx1036 the
-  one hardware queue serialises the copy behind running kernels either way.
-- The reference picture looks safe and is not. `vmaf_read_pictures()` keeps it
-  alive for one more frame through `prev_ref`, which is why `motion_hip`,
-  `motion_v2_hip` and `float_motion_hip` never misbehaved under the CLI. That
-  is a libvmaf implementation detail, not a contract: through the extractor
-  API their copy was still reading after `submit()` on 10 of 10 runs.
-- A single-frame fixture cannot see any of this, and neither can a
-  determinism check alone. `core/test/test_hip_upload_race.c` covers every
-  uploading extractor twice: pooled frames against the CPU
-  (`hip_pooled_fixture.h`), and both pictures refilled the moment `submit()`
-  returns, where every score must be bit-identical. Add a new extractor to its
-  `race_cases[]` table.
+- Stage every plane from `VmafPicture::data` with
+  `vmaf_hip_picture_upload()` (`core/src/hip/picture_hip.h`). It enqueues
+  copies, waits on event recorded after them. Do not call
+  `hipMemcpy2DAsync` / `hipMemcpyAsync` on picture plane directly. Copy from
+  extractor-owned pinned buffer (`integer_ms_ssim_hip`,
+  `integer_psnr_hvs_hip`, SpEED twins) not affected: extractor owns that
+  memory until it reuses it.
+- Pass extractor's private stream (`lc.str`), even when kernels run on null
+  stream. Null-stream copy queues behind every null-stream kernel of frame;
+  wait then blocks host on all of them. Copy completes before any kernel is
+  enqueued -> no cross-stream ordering needed. About ordering guarantee, not
+  speed: on gfx1036 one hardware queue serialises copy behind running kernels
+  either way.
+- Reference picture looks safe, is not. `vmaf_read_pictures()` keeps it alive
+  one more frame through `prev_ref`; hence `motion_hip`, `motion_v2_hip`,
+  `float_motion_hip` never misbehaved under CLI. libvmaf implementation
+  detail, not contract: through extractor API their copy was still reading
+  after `submit()` on 10 of 10 runs.
+- Single-frame fixture cannot see any of this; neither can determinism check
+  alone. `core/test/test_hip_upload_race.c` covers every uploading extractor
+  twice: pooled frames against CPU (`hip_pooled_fixture.h`), and both pictures
+  refilled the moment `submit()` returns, where every score must be
+  bit-identical. Add new extractor to its `race_cases[]` table.
 
-The wait costs host time: 21 % of `vmaf_float_v0.6.1`'s throughput at 1080p
-on the gfx1036, noise for `vmaf_v0.6.1`. Pinned staging buffers owned by the
-extractor would remove it; that follow-up is
-T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19 in `docs/state.md`. Do not buy the
-throughput back by dropping the wait.
+Wait costs host time: 21 % of `vmaf_float_v0.6.1` throughput at 1080p on
+gfx1036, noise for `vmaf_v0.6.1`. Extractor-owned pinned staging buffers would
+remove it; follow-up = T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19 in
+`docs/state.md`. Do not buy throughput back by dropping wait.
 
 ## Integer ADM staging buffer requirement (ADR-1154)
 
