@@ -3629,6 +3629,21 @@ foreach variant : [['', []], ['_10bit', ['-DFIXTURE_BPC=10u']],
         timeout : 60)
 endforeach
 
+# T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18: every HIP extractor that uploads a host
+# picture, over the pooled multi-frame fixture (hip_pooled_fixture.h) and with
+# both pictures refilled the moment submit() returns. 576x324 is the Netflix
+# pair's size; an upload outlives submit() more often the larger the plane.
+test_hip_upload_race = executable('test_hip_upload_race',
+    ['test.c', 'test_hip_upload_race.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1', '-DFIXTURE_W=576u', '-DFIXTURE_H=324u']
+)
+test('test_hip_upload_race', test_hip_upload_race,
+    suite : ['fast', 'gpu'],
+    timeout : 120)
+
 test_hip_ms_ssim_parity = executable('test_hip_ms_ssim_parity',
     ['test.c', 'test_hip_ms_ssim_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
