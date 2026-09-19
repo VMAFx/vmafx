@@ -293,10 +293,6 @@ No Apple hardware in dev fleet, so these asserted by construction
 against CPU reference and CUDA twin rather than measured. Treat any
 Metal float-ADM change as unverified until someone runs
 `test_metal_float_adm_parity` on real silicon.
-There is no Apple hardware in the dev fleet, so these are asserted by
-construction against the CPU reference and the CUDA twin rather than
-measured. Treat any Metal float-ADM change as unverified until someone
-runs `test_metal_float_adm_parity` on real silicon.
 
 ## Integer ADM 16-bit vertical DWT sums in 64 bits (T-GPU-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18)
 
