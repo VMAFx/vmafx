@@ -97,6 +97,17 @@ markers = [
     # See docs/adr/0908-slow-test-audit-2026-05-30.md.
     "slow: marks tests as slow (deselect with -m 'not slow')",
 ]
+# Suppress PyTorch 2.9+ DeprecationWarning that fires unconditionally when
+# torch.onnx.export is called with dynamo=False (legacy TorchScript path).
+# The fork intentionally pins dynamo=False for all ONNX exports because
+# the dynamo exporter does not yet support the quantisation-related intermediate
+# buffers produced by convert_fx (see ADR-0207 §Why two-step).  The warning
+# originates inside torch/onnx/__init__.py and cannot be avoided by callers.
+filterwarnings = [
+    "ignore:You are using the legacy TorchScript-based ONNX export:DeprecationWarning",
+    "ignore:from_dynamic_axes_to_dynamic_shapes is deprecated:DeprecationWarning",
+    "ignore:The feature will be removed. Please remove usage of this function:DeprecationWarning",
+]
 
 [tool.ruff]
 line-length = 100

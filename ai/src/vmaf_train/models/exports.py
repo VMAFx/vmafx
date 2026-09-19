@@ -47,6 +47,11 @@ def export_to_onnx(
     dummy = _guess_dummy(model, in_shape)
 
     dynamic_axes = {input_name: {0: "batch"}, output_name: {0: "batch"}}
+    # dynamo=False pins the legacy TorchScript exporter; PyTorch 2.9+
+    # switched the default to the dynamo-based exporter which does not
+    # accept dynamic_axes and raises a DeprecationWarning when it is
+    # supplied.  The legacy path handles the simple conv/relu/linear
+    # graphs used by every shipped tiny-AI model cleanly (ADR-0174).
     torch.onnx.export(
         model,
         dummy,
@@ -55,6 +60,7 @@ def export_to_onnx(
         output_names=[output_name],
         dynamic_axes=dynamic_axes,
         opset_version=opset,
+        dynamo=False,
     )
     loaded = onnx.load(str(out_path))
     # torch.onnx duplicates every initialiser into graph.value_info with
