@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-09-19T14:11:34Z",
+  "generated_at": "2026-09-19T20:36:35Z",
   "repository": "",
   "commit_sha": "",
-  "total_infractions": 1433,
+  "total_infractions": 1415,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -4649,6 +4649,14 @@
     },
     {
       "rule_id": "HISS-04",
+      "file_path": "core/src/feature/hip/float_vif_hip.c",
+      "line_number": 492,
+      "symbol": "{",
+      "message": "Function '{' (67 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/feature/hip/float_vif_hip.c:492:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/integer_adm/adm_cm.hip",
       "line_number": 177,
       "symbol": "extern \"C\" {",
@@ -7546,118 +7554,6 @@
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "core/src/svm.cpp",
-      "line_number": 492,
-      "symbol": "{",
-      "message": "Function '{' (76 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/svm.cpp:492:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/svm.cpp",
-      "line_number": 621,
-      "symbol": "{",
-      "message": "Function '{' (237 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/svm.cpp:621:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/svm.cpp",
-      "line_number": 861,
-      "symbol": "Solver::select_working_set",
-      "message": "Function 'Solver::select_working_set' (82 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/svm.cpp:861:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/svm.cpp",
-      "line_number": 1069,
-      "symbol": "Solver_NU::select_working_set",
-      "message": "Function 'Solver_NU::select_working_set' (95 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/svm.cpp:1069:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/svm.cpp",
-      "line_number": 1383,
-      "symbol": "{",
-      "message": "Function '{' (78 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/svm.cpp:1383:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/svm.cpp",
-      "line_number": 1722,
-      "symbol": "{",
-      "message": "Function '{' (106 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/svm.cpp:1722:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/svm.cpp",
-      "line_number": 1900,
-      "symbol": "{",
-      "message": "Function '{' (77 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/svm.cpp:1900:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/svm.cpp",
-      "line_number": 2014,
-      "symbol": "{",
-      "message": "Function '{' (84 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/svm.cpp:2014:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/svm.cpp",
-      "line_number": 2103,
-      "symbol": "svm_train",
-      "message": "Function 'svm_train' (227 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/svm.cpp:2103:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/svm.cpp",
-      "line_number": 2334,
-      "symbol": "{",
-      "message": "Function '{' (106 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/svm.cpp:2334:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/svm.cpp",
-      "line_number": 2482,
-      "symbol": "svm_predict_values",
-      "message": "Function 'svm_predict_values' (69 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/svm.cpp:2482:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/svm.cpp",
-      "line_number": 2614,
-      "symbol": "svm_save_model",
-      "message": "Function 'svm_save_model' (107 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/svm.cpp:2614:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/svm.cpp",
-      "line_number": 2772,
-      "symbol": "svm_check_parameter",
-      "message": "Function 'svm_check_parameter' (116 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/svm.cpp:2772:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/svm.cpp",
-      "line_number": 3022,
-      "symbol": "{",
-      "message": "Function '{' (235 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/svm.cpp:3022:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
       "file_path": "core/src/svm.h",
       "line_number": 42,
       "symbol": "extern \"C\" {",
@@ -7844,42 +7740,6 @@
       "line_number": 440,
       "message": "Legacy non-DAG control flow jump (goto)",
       "fingerprint": "core/test/test_brisque.c:440:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/test/test_ciede_neon.c",
-      "line_number": 163,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/test/test_ciede_neon.c:163:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/test/test_ciede_neon.c",
-      "line_number": 171,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/test/test_ciede_neon.c:171:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/test/test_ciede_neon.c",
-      "line_number": 174,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/test/test_ciede_neon.c:174:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/test/test_ciede_neon.c",
-      "line_number": 191,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/test/test_ciede_neon.c:191:HISS-01"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/test/test_ciede_neon.c",
-      "line_number": 154,
-      "symbol": "probe_overread",
-      "message": "Function 'probe_overread' (75 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_ciede_neon.c:154:HISS-04"
     },
     {
       "rule_id": "HISS-01",
@@ -8207,10 +8067,10 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/test/test_hip_speed_singular_parity.c",
-      "line_number": 175,
+      "line_number": 191,
       "symbol": "{",
-      "message": "Function '{' (65 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_hip_speed_singular_parity.c:175:HISS-04"
+      "message": "Function '{' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/test/test_hip_speed_singular_parity.c:191:HISS-04"
     },
     {
       "rule_id": "HISS-04",

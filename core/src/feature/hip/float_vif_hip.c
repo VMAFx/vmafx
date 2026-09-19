@@ -541,9 +541,18 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     /* Scaffold posture: surface -ENOSYS. */
     (void)ref_pic;
     (void)dist_pic;
-    int err = vmaf_hip_kernel_submit_pre_launch(&s->lc, s->ctx, NULL, 0, 0);
-    if (err != 0)
-        return err;
+    /* Scaffold posture (enable_hipcc=false): report not-implemented, which is
+     * the contract `meson_options.txt` documents and every HIP parity test
+     * skips on.
+     *
+     * This used to call `vmaf_hip_kernel_submit_pre_launch(&s->lc, s->ctx,
+     * NULL, 0, 0)` first and return its result on error. That call passes
+     * `rb == NULL`, which the helper rejects outright, so it ALWAYS returned
+     * -EINVAL and the `-ENOSYS` below was unreachable. The extractor therefore
+     * failed instead of skipping on every default-configured HIP build, and
+     * `test_hip_float_vif_parity` failed with it. The call did nothing else:
+     * the NULL check is the helper's first statement, ahead of any work. */
+    (void)s;
     return -ENOSYS;
 #endif /* HAVE_HIPCC */
 }
