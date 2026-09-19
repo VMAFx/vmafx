@@ -42,10 +42,10 @@
  */
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#define __HIP_PLATFORM_AMD__ 1
 #include <hip/hip_runtime_api.h>
 
 #include "dict.h"
@@ -56,7 +56,9 @@
 #include "log.h"
 
 #include "../../hip/common.h"
+#include "../../hip/hip_handle.h"
 #include "../../hip/kernel_template.h"
+#include "../../hip/picture_hip.h"
 #include "float_ssim_hip.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -236,10 +238,8 @@ static void ssim_hip_init_dims(SsimStateHip *s, unsigned w, unsigned h, unsigned
 /* ------------------------------------------------------------------ */
 
 #ifdef HAVE_HIPCC
-/*
- * Load the HSACO fat binary, resolve the three kernel function handles.
- * On failure returns a negative errno; caller unwinds via fail_after_rb.
- */
+/* Load the HSACO fat binary and resolve the three kernel function handles.
+ * On failure the module is unloaded again and `s->module` is NULL. */
 static int ssim_hip_module_load(SsimStateHip *s)
 {
     hipError_t hip_rc = hipModuleLoadData(&s->module, ssim_score_hsaco);
@@ -247,143 +247,63 @@ static int ssim_hip_module_load(SsimStateHip *s)
         return ssim_hip_rc(hip_rc);
 
     hip_rc = hipModuleGetFunction(&s->func_horiz_8, s->module, "calculate_ssim_hip_horiz_8bpc");
+    if (hip_rc == hipSuccess) {
+        hip_rc =
+            hipModuleGetFunction(&s->func_horiz_16, s->module, "calculate_ssim_hip_horiz_16bpc");
+    }
+    if (hip_rc == hipSuccess)
+        hip_rc = hipModuleGetFunction(&s->func_vert, s->module, "calculate_ssim_hip_vert_combine");
     if (hip_rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
         s->module = NULL;
-        return ssim_hip_rc(hip_rc);
     }
-    hip_rc = hipModuleGetFunction(&s->func_horiz_16, s->module, "calculate_ssim_hip_horiz_16bpc");
-    if (hip_rc != hipSuccess) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-        return ssim_hip_rc(hip_rc);
-    }
-    hip_rc = hipModuleGetFunction(&s->func_vert, s->module, "calculate_ssim_hip_vert_combine");
-    if (hip_rc != hipSuccess) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-        return ssim_hip_rc(hip_rc);
-    }
-    return 0;
+    return ssim_hip_rc(hip_rc);
 }
 
-/*
- * Allocate five intermediate float device buffers + two luma staging
- * buffers. Extracted to keep init_fex_hip under the 60-line
- * readability-function-size limit.
- *
- * On failure: partially allocated buffers are freed and all pointers
- * are left NULL; caller unwinds via fail_after_module.
- */
+/* Number of device buffers: five horiz-pass planes + two luma staging. */
+#define SSIM_HIP_N_BUFS 7u
+#define SSIM_HIP_N_HORIZ 5u
+
+/* The seven device buffers, horiz-pass planes first. */
+static void ssim_hip_buf_slots(SsimStateHip *s, void **slots[SSIM_HIP_N_BUFS])
+{
+    slots[0] = &s->d_ref_mu;
+    slots[1] = &s->d_cmp_mu;
+    slots[2] = &s->d_ref_sq;
+    slots[3] = &s->d_cmp_sq;
+    slots[4] = &s->d_refcmp;
+    slots[5] = &s->ref_in;
+    slots[6] = &s->cmp_in;
+}
+
+/* Allocate five intermediate float device buffers + two luma staging
+ * buffers. On failure the buffers already allocated stay set; the caller's
+ * ssim_hip_release() frees them. */
 static int ssim_hip_bufs_alloc(SsimStateHip *s)
 {
     const size_t horiz_bytes = (size_t)s->w_horiz * s->h_horiz * sizeof(float);
     const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
     const size_t stage_bytes = (size_t)s->width * s->height * bpp;
 
-    hipError_t hip_rc;
-    hip_rc = hipMalloc(&s->d_ref_mu, horiz_bytes);
-    if (hip_rc != hipSuccess)
-        return ssim_hip_rc(hip_rc);
-    hip_rc = hipMalloc(&s->d_cmp_mu, horiz_bytes);
-    if (hip_rc != hipSuccess) {
-        (void)hipFree(s->d_ref_mu);
-        s->d_ref_mu = NULL;
-        return ssim_hip_rc(hip_rc);
-    }
-    hip_rc = hipMalloc(&s->d_ref_sq, horiz_bytes);
-    if (hip_rc != hipSuccess) {
-        (void)hipFree(s->d_cmp_mu);
-        s->d_cmp_mu = NULL;
-        (void)hipFree(s->d_ref_mu);
-        s->d_ref_mu = NULL;
-        return ssim_hip_rc(hip_rc);
-    }
-    hip_rc = hipMalloc(&s->d_cmp_sq, horiz_bytes);
-    if (hip_rc != hipSuccess) {
-        (void)hipFree(s->d_ref_sq);
-        s->d_ref_sq = NULL;
-        (void)hipFree(s->d_cmp_mu);
-        s->d_cmp_mu = NULL;
-        (void)hipFree(s->d_ref_mu);
-        s->d_ref_mu = NULL;
-        return ssim_hip_rc(hip_rc);
-    }
-    hip_rc = hipMalloc(&s->d_refcmp, horiz_bytes);
-    if (hip_rc != hipSuccess) {
-        (void)hipFree(s->d_cmp_sq);
-        s->d_cmp_sq = NULL;
-        (void)hipFree(s->d_ref_sq);
-        s->d_ref_sq = NULL;
-        (void)hipFree(s->d_cmp_mu);
-        s->d_cmp_mu = NULL;
-        (void)hipFree(s->d_ref_mu);
-        s->d_ref_mu = NULL;
-        return ssim_hip_rc(hip_rc);
-    }
-    hip_rc = hipMalloc(&s->ref_in, stage_bytes);
-    if (hip_rc != hipSuccess) {
-        (void)hipFree(s->d_refcmp);
-        s->d_refcmp = NULL;
-        (void)hipFree(s->d_cmp_sq);
-        s->d_cmp_sq = NULL;
-        (void)hipFree(s->d_ref_sq);
-        s->d_ref_sq = NULL;
-        (void)hipFree(s->d_cmp_mu);
-        s->d_cmp_mu = NULL;
-        (void)hipFree(s->d_ref_mu);
-        s->d_ref_mu = NULL;
-        return ssim_hip_rc(hip_rc);
-    }
-    hip_rc = hipMalloc(&s->cmp_in, stage_bytes);
-    if (hip_rc != hipSuccess) {
-        (void)hipFree(s->ref_in);
-        s->ref_in = NULL;
-        (void)hipFree(s->d_refcmp);
-        s->d_refcmp = NULL;
-        (void)hipFree(s->d_cmp_sq);
-        s->d_cmp_sq = NULL;
-        (void)hipFree(s->d_ref_sq);
-        s->d_ref_sq = NULL;
-        (void)hipFree(s->d_cmp_mu);
-        s->d_cmp_mu = NULL;
-        (void)hipFree(s->d_ref_mu);
-        s->d_ref_mu = NULL;
-        return ssim_hip_rc(hip_rc);
-    }
-    return 0;
+    void **slots[SSIM_HIP_N_BUFS];
+    ssim_hip_buf_slots(s, slots);
+    hipError_t hip_rc = hipSuccess;
+    for (unsigned i = 0u; i < SSIM_HIP_N_BUFS && hip_rc == hipSuccess; i++)
+        hip_rc = hipMalloc(slots[i], (i < SSIM_HIP_N_HORIZ) ? horiz_bytes : stage_bytes);
+    return ssim_hip_rc(hip_rc);
 }
 
-/* Free all seven device buffers. Safe to call with NULL pointers. */
+/* Free all seven device buffers, last allocated first. Safe to call with
+ * NULL pointers. */
 static void ssim_hip_bufs_free(SsimStateHip *s)
 {
-    if (s->cmp_in != NULL) {
-        (void)hipFree(s->cmp_in);
-        s->cmp_in = NULL;
-    }
-    if (s->ref_in != NULL) {
-        (void)hipFree(s->ref_in);
-        s->ref_in = NULL;
-    }
-    if (s->d_refcmp != NULL) {
-        (void)hipFree(s->d_refcmp);
-        s->d_refcmp = NULL;
-    }
-    if (s->d_cmp_sq != NULL) {
-        (void)hipFree(s->d_cmp_sq);
-        s->d_cmp_sq = NULL;
-    }
-    if (s->d_ref_sq != NULL) {
-        (void)hipFree(s->d_ref_sq);
-        s->d_ref_sq = NULL;
-    }
-    if (s->d_cmp_mu != NULL) {
-        (void)hipFree(s->d_cmp_mu);
-        s->d_cmp_mu = NULL;
-    }
-    if (s->d_ref_mu != NULL) {
-        (void)hipFree(s->d_ref_mu);
-        s->d_ref_mu = NULL;
+    void **slots[SSIM_HIP_N_BUFS];
+    ssim_hip_buf_slots(s, slots);
+    for (unsigned i = SSIM_HIP_N_BUFS; i > 0u; i--) {
+        void **slot = slots[i - 1u];
+        if (*slot != NULL)
+            (void)hipFree(*slot);
+        *slot = NULL;
     }
 }
 
@@ -397,27 +317,23 @@ static int ssim_hip_launch_horiz(SsimStateHip *s, hipStream_t str)
     const unsigned grid_horiz_x = (s->w_horiz + SSIM_HIP_BLOCK_X - 1u) / SSIM_HIP_BLOCK_X;
     const unsigned grid_horiz_y = (s->h_horiz + SSIM_HIP_BLOCK_Y - 1u) / SSIM_HIP_BLOCK_Y;
 
-    const ptrdiff_t ref_stride = (ptrdiff_t)(s->width * ((s->bpc <= 8u) ? 1u : 2u));
-    /* Horiz kernel takes raw uint8* for both bpc variants. */
-    hipError_t hip_rc;
-    if (s->bpc == 8u) {
-        void *args[] = {
-            &s->ref_in,   (void *)&ref_stride, &s->cmp_in,   (void *)&ref_stride,
-            &s->d_ref_mu, &s->d_cmp_mu,        &s->d_ref_sq, &s->d_cmp_sq,
-            &s->d_refcmp, &s->w_horiz,         &s->h_horiz,
-        };
-        hip_rc = hipModuleLaunchKernel(s->func_horiz_8, grid_horiz_x, grid_horiz_y, 1u,
-                                       SSIM_HIP_BLOCK_X, SSIM_HIP_BLOCK_Y, 1u, 0, str, args, NULL);
-    } else {
-        void *args[] = {
-            &s->ref_in,   (void *)&ref_stride, &s->cmp_in,   (void *)&ref_stride,
-            &s->d_ref_mu, &s->d_cmp_mu,        &s->d_ref_sq, &s->d_cmp_sq,
-            &s->d_refcmp, &s->w_horiz,         &s->h_horiz,  &s->bpc,
-        };
-        hip_rc = hipModuleLaunchKernel(s->func_horiz_16, grid_horiz_x, grid_horiz_y, 1u,
-                                       SSIM_HIP_BLOCK_X, SSIM_HIP_BLOCK_Y, 1u, 0, str, args, NULL);
-    }
-    return ssim_hip_rc(hip_rc);
+    const ptrdiff_t ref_stride = (ptrdiff_t)s->width * ((s->bpc <= 8u) ? 1 : 2);
+    /* Horiz kernel takes raw uint8* for both bpc variants; the 16bpc one
+     * takes one more argument, `bpc`. */
+    void *args8[] = {
+        (void *)&s->ref_in,   (void *)&ref_stride,  (void *)&s->cmp_in,   (void *)&ref_stride,
+        (void *)&s->d_ref_mu, (void *)&s->d_cmp_mu, (void *)&s->d_ref_sq, (void *)&s->d_cmp_sq,
+        (void *)&s->d_refcmp, (void *)&s->w_horiz,  (void *)&s->h_horiz,
+    };
+    void *args16[] = {
+        (void *)&s->ref_in,   (void *)&ref_stride,  (void *)&s->cmp_in,   (void *)&ref_stride,
+        (void *)&s->d_ref_mu, (void *)&s->d_cmp_mu, (void *)&s->d_ref_sq, (void *)&s->d_cmp_sq,
+        (void *)&s->d_refcmp, (void *)&s->w_horiz,  (void *)&s->h_horiz,  (void *)&s->bpc,
+    };
+    const bool is8 = (s->bpc == 8u);
+    return ssim_hip_rc(hipModuleLaunchKernel(is8 ? s->func_horiz_8 : s->func_horiz_16, grid_horiz_x,
+                                             grid_horiz_y, 1u, SSIM_HIP_BLOCK_X, SSIM_HIP_BLOCK_Y,
+                                             1u, 0, str, is8 ? args8 : args16, NULL));
 }
 
 /*
@@ -432,8 +348,9 @@ static int ssim_hip_launch_vert_readback(SsimStateHip *s, hipStream_t str)
     const unsigned grid_y = (s->h_final + SSIM_HIP_BLOCK_Y - 1u) / SSIM_HIP_BLOCK_Y;
 
     void *args2[] = {
-        &s->d_ref_mu, &s->d_cmp_mu, &s->d_ref_sq, &s->d_cmp_sq, &s->d_refcmp, &s->rb.device,
-        &s->w_horiz,  &s->w_final,  &s->h_final,  &s->c1,       &s->c2,
+        (void *)&s->d_ref_mu, (void *)&s->d_cmp_mu,  (void *)&s->d_ref_sq, (void *)&s->d_cmp_sq,
+        (void *)&s->d_refcmp, (void *)&s->rb.device, (void *)&s->w_horiz,  (void *)&s->w_final,
+        (void *)&s->h_final,  (void *)&s->c1,        (void *)&s->c2,
     };
     hipError_t hip_rc = hipModuleLaunchKernel(s->func_vert, grid_x, grid_y, 1u, SSIM_HIP_BLOCK_X,
                                               SSIM_HIP_BLOCK_Y, 1u, 0, str, args2, NULL);
@@ -442,7 +359,7 @@ static int ssim_hip_launch_vert_readback(SsimStateHip *s, hipStream_t str)
 
     /* Record submit event on the picture stream, then DtoH copy on the
      * private readback stream (same pattern as float_psnr_hip.c). */
-    hip_rc = hipEventRecord((hipEvent_t)s->lc.submit, str);
+    hip_rc = hipEventRecord(vmaf_hip_event_of(s->lc.submit), str);
     if (hip_rc != hipSuccess)
         return ssim_hip_rc(hip_rc);
 
@@ -460,6 +377,36 @@ static int ssim_hip_launch_vert_readback(SsimStateHip *s, hipStream_t str)
 /* init / close                                                        */
 /* ------------------------------------------------------------------ */
 
+/* Tear down everything init() may have set up. Every step tolerates a handle
+ * that was never created, so this serves both a failed init() and close().
+ * The stream is drained first, so no kernel still uses a buffer. Returns the
+ * first error. */
+static int ssim_hip_release(SsimStateHip *s)
+{
+    int rc = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
+    int e = 0;
+#ifdef HAVE_HIPCC
+    ssim_hip_bufs_free(s);
+    if (s->module != NULL) {
+        e = ssim_hip_rc(hipModuleUnload(s->module));
+        s->module = NULL;
+        if (rc == 0)
+            rc = e;
+    }
+#endif /* HAVE_HIPCC */
+    e = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
+    if (rc == 0)
+        rc = e;
+    if (s->feature_name_dict != NULL) {
+        e = vmaf_dictionary_free(&s->feature_name_dict);
+        if (rc == 0)
+            rc = e;
+    }
+    vmaf_hip_context_destroy(s->ctx);
+    s->ctx = NULL;
+    return rc;
+}
+
 static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                         unsigned w, unsigned h)
 {
@@ -473,93 +420,39 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     ssim_hip_init_dims(s, w, h, bpc);
 
     err = vmaf_hip_context_new(&s->ctx, 0);
-    if (err != 0)
-        return err;
-
-    err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err != 0)
-        goto fail_after_ctx;
-
-    err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx,
-                                         (size_t)s->partials_capacity * sizeof(float));
-    if (err != 0)
-        goto fail_after_lc;
-
-#ifdef HAVE_HIPCC
-    err = ssim_hip_module_load(s);
-    if (err != 0)
-        goto fail_after_rb;
-    err = ssim_hip_bufs_alloc(s);
-    if (err != 0)
-        goto fail_after_module;
-#else
-    vmaf_log(VMAF_LOG_LEVEL_ERROR,
-             "feature '%s' requires HIP device kernels compiled with -Denable_hipcc=true\n",
-             fex->name);
-    err = -ENOSYS;
-    if (err != 0)
-        goto fail_after_rb;
-#endif
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) {
-        err = -ENOMEM;
-#ifdef HAVE_HIPCC
-        ssim_hip_bufs_free(s);
-        goto fail_after_module;
-#else
-        goto fail_after_rb;
-#endif
+    if (err == 0)
+        err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
+    if (err == 0) {
+        err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx,
+                                             (size_t)s->partials_capacity * sizeof(float));
     }
-    return 0;
-
 #ifdef HAVE_HIPCC
-fail_after_module:
-    (void)hipModuleUnload(s->module);
-    s->module = NULL;
+    if (err == 0)
+        err = ssim_hip_module_load(s);
+    if (err == 0)
+        err = ssim_hip_bufs_alloc(s);
+#else
+    if (err == 0) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "feature '%s' requires HIP device kernels compiled with -Denable_hipcc=true\n",
+                 fex->name);
+        err = -ENOSYS;
+    }
 #endif
-fail_after_rb:
-    (void)vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
-fail_after_lc:
-    (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_after_ctx:
-    vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
+    if (err == 0) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (s->feature_name_dict == NULL)
+            err = -ENOMEM;
+    }
+    if (err != 0)
+        (void)ssim_hip_release(s);
     return err;
 }
 
 static int close_fex_hip(VmafFeatureExtractor *fex)
 {
-    SsimStateHip *s = fex->priv;
-    int rc = 0;
-
-#ifdef HAVE_HIPCC
-    ssim_hip_bufs_free(s);
-    if (s->module != NULL) {
-        int e = ssim_hip_rc(hipModuleUnload(s->module));
-        s->module = NULL;
-        if (rc == 0)
-            rc = e;
-    }
-#endif /* HAVE_HIPCC */
-
-    int e = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-    if (rc == 0)
-        rc = e;
-    e = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
-    if (rc == 0)
-        rc = e;
-    if (s->feature_name_dict != NULL) {
-        e = vmaf_dictionary_free(&s->feature_name_dict);
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->ctx != NULL) {
-        vmaf_hip_context_destroy(s->ctx);
-        s->ctx = NULL;
-    }
-    return rc;
+    return ssim_hip_release(fex->priv);
 }
 
 /* ------------------------------------------------------------------ */
@@ -592,23 +485,31 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
      * Pass 1 (horiz Gaussian) and Pass 2 (vert + SSIM combine) on the
      * same stream. VMAF_FEATURE_EXTRACTOR_HIP is not set (T7-10b
      * posture), so pictures arrive as CPU VmafPictures. */
-    const hipStream_t str = (hipStream_t)s->lc.str;
+    hipStream_t str = vmaf_hip_stream_of(s->lc.str);
     const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
     const ptrdiff_t row_w = (ptrdiff_t)(s->width * bpp);
 
-    hipError_t hip_rc =
-        hipMemcpy2DAsync(s->ref_in, (size_t)row_w, ref_pic->data[0], (size_t)ref_pic->stride[0],
-                         (size_t)row_w, (size_t)s->height, hipMemcpyHostToDevice, str);
-    if (hip_rc != hipSuccess)
-        return ssim_hip_rc(hip_rc);
+    /* Returns once both pictures are read: the caller recycles them when
+     * submit() returns (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
+    const VmafHipPlaneUpload planes[] = {
+        {.dst = s->ref_in,
+         .dst_pitch = (size_t)row_w,
+         .pic = ref_pic,
+         .plane = 0u,
+         .row_bytes = (size_t)row_w,
+         .rows = s->height},
+        {.dst = s->cmp_in,
+         .dst_pitch = (size_t)row_w,
+         .pic = dist_pic,
+         .plane = 0u,
+         .row_bytes = (size_t)row_w,
+         .rows = s->height},
+    };
+    int err = vmaf_hip_picture_upload(planes, 2u, s->lc.str);
+    if (err != 0)
+        return err;
 
-    hip_rc =
-        hipMemcpy2DAsync(s->cmp_in, (size_t)row_w, dist_pic->data[0], (size_t)dist_pic->stride[0],
-                         (size_t)row_w, (size_t)s->height, hipMemcpyHostToDevice, str);
-    if (hip_rc != hipSuccess)
-        return ssim_hip_rc(hip_rc);
-
-    int err = ssim_hip_launch_horiz(s, str);
+    err = ssim_hip_launch_horiz(s, str);
     if (err != 0)
         return err;
 
