@@ -97,6 +97,53 @@ See [Research-2062](research/2062-cambi-spatial-mask-simd.md).
   `changelog.d/removed/0691-vmafx-drop-legacy-build-paths.md` and
   `changelog.d/changed/0689-vmafx-ci-matrix-dedupe.md` are deleted on purpose:
   they announced removals that never happened. Do not restore them.
+## fix/restore-reverted-security-fixes — two fixes that a stale merge and a re-vendor undid (2026-09-19)
+
+Both regressions below came from taking a whole-file "theirs" over a security
+fix. Neither conflicts with upstream Netflix/vmaf (all files are fork-local);
+the risk is a future fork-internal rebase, squash-merge or re-vendor. See
+`docs/state.md`, `T-VENDORED-CJSON-BANNED-FUNCTIONS-REVERTED-2026-09-19` and
+`T-SHELL-INJECTION-ROUND2-REVERTED-2026-09-19`.
+
+1. **Vendored cJSON is upstream 1.7.19 plus a fork delta; a re-vendor must
+   re-apply the delta.** `core/src/mcp/3rdparty/cJSON/cJSON.c` differs from
+   upstream on purpose: bounded `snprintf` / `memcpy` instead of the banned
+   `sprintf` / `strcpy` (ADR-0683, ADR-1061), `cJSON_GetArraySize` saturating at
+   `INT_MAX`, and no `goto` or function over 60 lines (ADR-1142). `6ab6a58b1`
+   (PR #883) dropped upstream's files in unchanged and reverted the first two.
+   The delta, function by function, and the re-vendor procedure are in
+   [`core/src/mcp/3rdparty/cJSON/AGENTS.md`](../core/src/mcp/3rdparty/cJSON/AGENTS.md).
+   `cJSON.h` is unmodified upstream. `core/test/test_cjson.c` pins the version
+   string, so a re-vendor fails `test_version` until the delta has been carried
+   over and the version updated.
+2. **Never answer a finding in vendored code with an exclusion.** The
+   `vmaf-no-strcpy-strcat-sprintf` rule in `.semgrep.yml` no longer excludes
+   `/core/src/mcp/3rdparty/**`, `.semgrepignore` no longer lists `cJSON.c`, and
+   the `semgrep-local` hook no longer skips `core/src/pdjson.{c,h}`. If a rebase
+   brings any of those back, `scripts/ci/tests/test_semgrep_vendored_scope.py`
+   fails; resolve by keeping the exclusion out, not by editing the test.
+3. **`scripts/ci/sycl-bench-env.sh` and `dev/scripts/dev-mcp-entrypoint.sh`:
+   when resolving a conflict, never take the side that has
+   `bash -c "... '$ROOT/setvars.sh' ..."` or `eval "${cmd}"`.** `d9c33dc68`
+   (PR #414) did exactly that to `45d536962` (PR #350), along with PR #350's
+   state row, rebase note and `scripts/ci/AGENTS.md` rows. The correct forms are
+   `bash -c '... "$1/setvars.sh" ...' _ "$ROOT"` and `"${prog}" 2>&1 | grep ...`.
+4. **Keep the three new pre-commit hooks wired** (`test-semgrep-vendored-scope`,
+   `test-sycl-bench-env`, `test-dev-mcp-entrypoint-probe`). The sycl test
+   existed when its fix was reverted and would have failed; nothing ran it.
+   `test-dev-mcp-entrypoint-probe.sh` extracts `_probe_with_retry` from the real
+   entrypoint by its opening line `_probe_with_retry() {`, so keep that function
+   at top level under that name.
+5. **`core/test/test_cjson.c` must stay outside `if get_option('enable_mcp')`**
+   in `core/test/meson.build`. It compiles `cJSON.c` itself, which is the only
+   reason the CPU-lane Tidy Ratchet and Cppcheck jobs see that file (the lane
+   builds without MCP). `cJSON.c` has no entry in
+   `scripts/ci/tidy-baseline-cpu.json` because it measures zero; any warning a
+   rebase introduces there is a ratchet regression.
+6. **`.standards-baseline.json` was re-recorded downward** for this change from
+   a clean clone with the pinned engine. A rebase that reintroduces a banned
+   call or a `goto` in `cJSON.c` now fails the baseline-only CI audit as new
+   debt, not only the local touched-file rule.
 
 ## Canonical envtest installer (2026-09-08)
 
