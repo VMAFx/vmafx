@@ -1072,3 +1072,123 @@ jobs:
       # No test step — windows-2025 has no GPU. The whole point of
       # this job is exercising the MSVC + CUDA / MSVC + oneAPI link
       # paths to catch portability regressions at compile time.
+
+  # ===== Windows on ARM64 (native MSVC ARM64, CPU + NEON) =====
+  # Builds libvmaf natively on a Windows 11 Arm64 runner with the
+  # ARM64-hosted MSVC toolset and runs the `fast` unit suite, so the
+  # NEON kernels under core/src/feature/arm64/ and every
+  # `#if ARCH_AARCH64` branch are compiled by cl.exe and executed on
+  # ARM64 silicon. Before this lane the arm64 tree was only ever
+  # compiled by gcc/clang (Ubuntu ARM clang, macOS) and MSVC only ever
+  # saw the x86 tree. CPU only: CUDA 13.3.1, the repository pin, ships
+  # no windows-arm64 packages (13.4.1 is the first that does); a
+  # CUDA-on-WoA leg waits for the coordinated 13.4 bump. Advisory --
+  # not in required-aggregator.yml -- until the maintainer promotes
+  # it. See ADR-1260.
+  #
+  # Runner: `windows-11-vs2026-arm` (GA 2026-08-19, runner-images
+  # #14592) rather than `windows-11-arm`, which is being migrated to
+  # the same Visual Studio 2026 image between 2026-09-21 and
+  # 2026-09-30 (runner-images #14602); the explicit label pins one
+  # image across that window. Both labels are free for public
+  # repositories. The x64 MSVC legs' `windows-2025` label resolves to
+  # the VS 2026 image as well, so every MSVC lane runs the same major.
+  #
+  # Toolchain: TheMrMilchmann/setup-msvc-dev forwards `arch` verbatim
+  # to vcvarsall.bat; `arm64` selects the ARM64-hosted native toolset
+  # (VC\Auxiliary\Build\vcvarsarm64.bat, VS 2022 17.4+), whereas
+  # `amd64_arm64` would pick the x64-hosted cross compiler running
+  # under emulation. The image ships no meson and no nasm; nasm is
+  # only probed under `cpu_family().startswith('x86')` in
+  # core/src/meson.build, so nothing is missing for ARM64.
+  windows-arm64:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Windows ARM64 MSVC
+    runs-on: windows-11-vs2026-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 1
+
+      # actions/python-versions publishes win32/arm64 builds of 3.14.7
+      # (versions-manifest.json, checked 2026-09-19): same pin as the
+      # x64 Windows legs.
+      - name: Setup python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.14.7'
+
+      - name: Install meson and ninja
+        run: |
+          python -m pip install --upgrade pip
+          pip install meson ninja
+
+      - name: Setup MSVC dev environment (ARM64 native)
+        uses: TheMrMilchmann/setup-msvc-dev@368ef7d1ee4d1171b31d4a7f67f4d954f903f5a9  # v4.1.0
+        with:
+          arch: arm64
+
+      # Same reason as the x64 MSVC legs: a ccache.exe on PATH makes
+      # meson wrap the compiler at configure time.
+      - name: Disable ccache wrap (windows)
+        shell: pwsh
+        run: |
+          $p = 'C:\Strawberry\c\bin\ccache.exe'
+          if (Test-Path $p) { Rename-Item -Path $p -NewName 'ccache.exe.disabled' }
+          Write-Host "ccache binary disabled"
+
+      # Fail before the build if vcvarsall handed us anything but the
+      # ARM64 compiler: cl.exe's banner names its target architecture.
+      - name: Show compiler
+        shell: cmd
+        run: |
+          where cl.exe
+          cl.exe 2>&1 | findstr /i /C:"for ARM64"
+
+      # `/experimental:c11atomics` as on every MSVC leg (see the
+      # windows-gpu-build comment). `enable_asm` stays at its default,
+      # which on aarch64 means the NEON translation units.
+      - name: Configure libvmaf
+        shell: cmd
+        env:
+          CFLAGS: /experimental:c11atomics
+          CXXFLAGS: /experimental:c11atomics
+        run: |
+          meson setup core core\build --buildtype release ^
+            --prefix %CD%\install ^
+            --default-library=static ^
+            -Denable_cuda=false -Denable_sycl=false ^
+            -Denable_float=true
+
+      - name: Build libvmaf
+        shell: cmd
+        run: ninja -v -C core\build install
+
+      # The PE header's Machine field must read 0xAA64 (ARM64). An x64
+      # binary would still run here under emulation and pass the tests,
+      # so this pins that the lane exercised native ARM64 code.
+      - name: Check vmaf.exe is an ARM64 image
+        shell: pwsh
+        run: |
+          $bytes = [IO.File]::ReadAllBytes('install\bin\vmaf.exe')
+          $pe = [BitConverter]::ToInt32($bytes, 0x3C)
+          $machine = [BitConverter]::ToUInt16($bytes, $pe + 4)
+          if ($machine -ne 0xAA64) {
+            throw ("vmaf.exe machine field is 0x{0:X4}, expected 0xAA64 (ARM64)" -f $machine)
+          }
+          "vmaf.exe machine field 0x{0:X4} (ARM64)" -f $machine
+
+      # The MinGW64 lane runs the whole suite; this lane starts with
+      # `fast`. --print-errorlogs mirrors that lane so a failing test's
+      # output lands in the CI log instead of only in testlog.txt.
+      - name: Run fast unit suite
+        shell: cmd
+        run: meson test -C core\build --suite fast --print-errorlogs
+
+      - name: Upload vmaf.exe artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: windows-arm64-msvc-vmaf
+          path: install\bin\vmaf.exe
+          if-no-files-found: error

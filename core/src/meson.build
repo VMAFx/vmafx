@@ -417,7 +417,11 @@ if is_asm_enabled
         # `arm/cpu.c` is `__linux__`-gated, hardware lacks the
         # extension) and the SVE2 SSIMULACRA 2 TU itself fails to
         # build on Apple Clang. Force HAVE_SVE2 off on Darwin.
-        if host_machine.system() == 'darwin'
+        #
+        # MSVC gate (ADR-1260): cl.exe has no `<arm_sve.h>` and would only
+        # warn D9002 on `-march=`; the probe cannot succeed, so skip it and
+        # keep the configure log free of a doomed compile.
+        if host_machine.system() == 'darwin' or cc.get_id() == 'msvc'
             is_sve2_supported = false
         else
             sve2_test_src = '''
@@ -710,6 +714,19 @@ platform_specific_cpu_objects = []
 
 if is_asm_enabled
     if host_machine.cpu_family().startswith('arm64') or host_machine.cpu_family().startswith('aarch64')
+        # Strict-FP flag for the float NEON carve-outs below. GCC and
+        # clang take `-ffp-contract=off`. MSVC (the Windows ARM64 lane,
+        # ADR-1260) would only warn D9002 on that spelling; there the
+        # default `/fp:precise` generates no contractions (documented
+        # behaviour since Visual Studio 2022), so it is passed explicitly
+        # to carry the same intent. clang-cl is not covered: it accepts
+        # `/fp:precise` but keeps clang's in-statement contraction.
+        if cc.get_id() == 'msvc'
+            arm64_strict_fp_args = ['/fp:precise']
+        else
+            arm64_strict_fp_args = ['-ffp-contract=off']
+        endif
+
         # Integer-only NEON TUs — no floating-point arithmetic; no
         # `-ffp-contract=off` needed.  ADR-0873.
         arm64_int_sources = [
@@ -753,7 +770,7 @@ if is_asm_enabled
           'arm64_v8_fp',
           arm64_fp_sources,
           include_directories : vmaf_base_include,
-          c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-ffp-contract=off'],
+          c_args : vmaf_cflags_common + ['-DARCH_AARCH64'] + arm64_strict_fp_args,
         )
 
         # float-ADM DWT2 NEON carve-out (ADR-1057).
@@ -766,7 +783,7 @@ if is_asm_enabled
           'arm64_adm_dwt2_neon',
           feature_src_dir + 'arm64/float_adm_dwt2_neon.c',
           include_directories : vmaf_base_include,
-          c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-ffp-contract=off'],
+          c_args : vmaf_cflags_common + ['-DARCH_AARCH64'] + arm64_strict_fp_args,
         )
 
         # ssim_neon carve-out (mirror of ssimulacra2_neon and x86 ssim_avx2).
@@ -781,7 +798,7 @@ if is_asm_enabled
           'arm64_ssim_neon',
           feature_src_dir + 'arm64/ssim_neon.c',
           include_directories : vmaf_base_include,
-          c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-ffp-contract=off'],
+          c_args : vmaf_cflags_common + ['-DARCH_AARCH64'] + arm64_strict_fp_args,
         )
 
         # ssimulacra2_neon.c compiles in its own static lib with
@@ -795,7 +812,7 @@ if is_asm_enabled
               feature_src_dir + 'arm64/ssimulacra2_host_neon.c',
           ],
           include_directories : vmaf_base_include,
-          c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-ffp-contract=off'],
+          c_args : vmaf_cflags_common + ['-DARCH_AARCH64'] + arm64_strict_fp_args,
         )
 
         platform_specific_cpu_objects += arm64_static_lib.extract_all_objects(recursive: false)
@@ -815,7 +832,7 @@ if is_asm_enabled
                 'arm64_ssimulacra2_sve2',
                 feature_src_dir + 'arm64/ssimulacra2_sve2.c',
                 include_directories : vmaf_base_include,
-                c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-march=armv9-a+sve2', '-ffp-contract=off'],
+                c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-march=armv9-a+sve2'] + arm64_strict_fp_args,
             )
             platform_specific_cpu_objects += arm64_ssimulacra2_sve2_lib.extract_all_objects(recursive: false)
 
@@ -828,7 +845,7 @@ if is_asm_enabled
                 'arm64_moment_sve2',
                 feature_src_dir + 'arm64/moment_sve2.c',
                 include_directories : vmaf_base_include,
-                c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-march=armv9-a+sve2', '-ffp-contract=off'],
+                c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-march=armv9-a+sve2'] + arm64_strict_fp_args,
             )
             platform_specific_cpu_objects += arm64_moment_sve2_lib.extract_all_objects(recursive: false)
         endif

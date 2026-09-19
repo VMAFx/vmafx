@@ -51366,3 +51366,27 @@ build and
 `scripts/ci/tidy-ratchet.py --lane cpu --build-dir <aarch64-clang-build> --only core/src/feature/arm64/vif_neon.c`,
 which must stay at zero. No CI lane measures the arm64 tree, so nothing else
 catches a regression here.
+
+## `test_ciede_neon.c` platform layer and `arm64_strict_fp_args` (ADR-1260)
+
+Rebase impact. The `Windows ARM64 MSVC` lane is the first to compile the
+AArch64 tree with `cl.exe`, and two things in the tree exist only for it.
+
+`core/test/test_ciede_neon.c` keeps its guard-page over-read probe on POSIX
+and on Windows through five entry points: `probe_page_size`,
+`guarded_row_alloc`, `guarded_row_free`, `fault_trap_install` /
+`fault_trap_restore` and `run_kernel_guarded`. POSIX is `mmap` + `PROT_NONE`
++ `sigsetjmp`; Windows is `VirtualAlloc` + `PAGE_NOACCESS` + SEH `__try` /
+`__except`. Upstream has no such test, so a sync never touches it; a port of
+another guard-page test must go through the same five entry points rather
+than reintroduce `<sys/mman.h>` under `#if ARCH_AARCH64`. The probe loop is
+split into `probe_outputs_alloc`, `probe_slack` and `probe_overread` with no
+`goto`; keep it that way (HISS-01, HISS-04).
+
+`core/src/meson.build` builds the float NEON and SVE2 carve-outs with
+`arm64_strict_fp_args`: `/fp:precise` on `msvc`, `-ffp-contract=off`
+elsewhere. Upstream's `meson.build` has neither the carve-outs nor the
+variable; when re-applying upstream changes to the AArch64 block, keep the
+variable and do not put a literal `-ffp-contract=off` back into those six
+`c_args`. The SVE2 `cc.compiles()` probe is skipped on `msvc` for the same
+reason. See [Research-2066](research/2066-windows-arm64-lane.md).
