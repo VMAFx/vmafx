@@ -287,3 +287,22 @@ More generally, `--gpumask` is not per-op bitmask despite `$bitmask`
 placeholder: passing flag opts into GPU backend selection, any non-zero
 value then disables GPU feature extractors, so run falls back to CPU.
 `--gpumask 0` = use GPU, `--gpumask 1` = use CPU.
+
+## Read failures exit 102, short streams exit 0 (ADR-1262)
+
+`run_frame_loop()` returns `FrameLoopResult { frames, exit_code }`, not a bare
+count. Returning only count is why `vmaf` used to exit 0 on every read
+failure and still write a report over truncated prefix.
+
+`classify_frame_fetch()` tests error **before** end of stream. Order is
+load-bearing: `fetch_picture()` gives `1` at EOF, `-1` on error, so
+`ret1 && ret2` is true when both sides FAIL. Testing it first classifies two
+corrupt inputs as clean end of stream — silent, exit 0. Upstream still has that
+order (Netflix/vmaf#1604, known, unfixed), so rebase conflict offers it as
+"theirs". Keep ours.
+
+A stream that ENDS earlier than partner is not an error: keeps `ended before`
+warning, keeps report, exits 0. Scoring common prefix of shorter clip is
+supported use. Do not fold two cases together.
+
+`core/tools/test/test_vmaf_read_error_exit.sh` pins all four cases, `fast` suite.

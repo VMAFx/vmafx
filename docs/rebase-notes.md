@@ -51404,3 +51404,22 @@ variable; when re-applying upstream changes to the AArch64 block, keep the
 variable and do not put a literal `-ffp-contract=off` back into those six
 `c_args`. The SVE2 `cc.compiles()` probe is skipped on `msvc` for the same
 reason. See [Research-2066](research/2066-windows-arm64-lane.md).
+## `core/tools/vmaf.cpp` — the frame loop reports a status, not just a count (ADR-1262)
+
+`run_frame_loop()` returns `FrameLoopResult { frames, exit_code }`, and the pair of
+`fetch_picture()` results is classified by `classify_frame_fetch()`. Two things there are
+load-bearing and an upstream sync will try to undo both, because upstream still has the
+original shape:
+
+1. **The error test runs before the end-of-stream test.** `fetch_picture()` returns `1` at
+   EOF and `-1` on a read error, so `ret1 && ret2` is true when *both* sides fail. Upstream's
+   ordering tests that first and therefore reports two corrupt inputs as a clean end of
+   stream — no diagnostic, exit 0. Netflix/vmaf#1604 records this as known and unfixed
+   upstream, so a conflict here will present the buggy order as "theirs". Keep ours.
+2. **The loop's status reaches `main()`.** Upstream returns only the frame count, which is
+   why every read failure exits 0 there. If a rebase collapses `FrameLoopResult` back to an
+   `unsigned`, exit code 102 stops being reachable and
+   `core/tools/test/test_vmaf_read_error_exit.sh` fails on case 2.
+
+A legitimately shorter stream must stay exit 0 with its `ended before` warning; that is a
+deliberate line, not an oversight. See `docs/usage/cli.md` §Exit codes.
