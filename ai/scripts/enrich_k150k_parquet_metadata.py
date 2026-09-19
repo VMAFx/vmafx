@@ -12,7 +12,7 @@ content-level split columns are filled into the parquet.
 
 from __future__ import annotations
 
-import json
+import argparse
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +29,11 @@ from extract_k150k_features import DEFAULT_CHUG_SPLIT_SEED, _load_jsonl_metadata
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.run_manifest import (  # noqa: E402
+    build_run_provenance,
+    dumps_manifest_json,
+    write_manifest_json,
+)
 
 
 def _is_missing(value: Any) -> bool:
@@ -76,8 +80,12 @@ def enrich_frame(
     }
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """Assemble the enrich_k150k_parquet_metadata.py CLI parser.
+
+    Split out of ``main()`` to keep it under the HISS-04 / NASA Rule 4
+    60-LOC limit; the argument set and defaults are unchanged.
+    """
     ap = make_argument_parser(
         prog="enrich_k150k_parquet_metadata.py",
         description=__doc__,
@@ -120,24 +128,18 @@ def main(argv: list[str] | None = None) -> int:
             "CLI args used to build the derived parquet."
         ),
     )
-    args = ap.parse_args(raw_argv)
+    return ap
 
-    if not args.features_parquet.is_file():
-        raise SystemExit(f"error: features parquet not found: {args.features_parquet}")
-    if not args.metadata_jsonl.is_file():
-        raise SystemExit(f"error: metadata JSONL not found: {args.metadata_jsonl}")
 
-    metadata = _load_jsonl_metadata(args.metadata_jsonl, split_seed=args.split_seed)
-    frame = pd.read_parquet(args.features_parquet)
-    enriched, stats = enrich_frame(
-        frame,
-        metadata,
-        overwrite=args.overwrite_metadata,
-    )
-    out_path = args.out or args.features_parquet
-    if args.manifest_out is None:
-        args.manifest_out = out_path.with_suffix(".manifest.json")
-    write_parquet_atomic(enriched, out_path, index=False)
+def _write_enrichment_manifest(
+    *,
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    metadata: dict[str, dict[str, Any]],
+    stats: dict[str, int],
+    out_path: Path,
+) -> None:
+    """Write the k150k-metadata-enrichment-manifest-v1 sidecar."""
     write_manifest_json(
         args.manifest_out,
         {
@@ -158,10 +160,34 @@ def main(argv: list[str] | None = None) -> int:
             ),
         },
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_arg_parser().parse_args(raw_argv)
+
+    if not args.features_parquet.is_file():
+        raise SystemExit(f"error: features parquet not found: {args.features_parquet}")
+    if not args.metadata_jsonl.is_file():
+        raise SystemExit(f"error: metadata JSONL not found: {args.metadata_jsonl}")
+
+    metadata = _load_jsonl_metadata(args.metadata_jsonl, split_seed=args.split_seed)
+    frame = pd.read_parquet(args.features_parquet)
+    enriched, stats = enrich_frame(
+        frame,
+        metadata,
+        overwrite=args.overwrite_metadata,
+    )
+    out_path = args.out or args.features_parquet
+    if args.manifest_out is None:
+        args.manifest_out = out_path.with_suffix(".manifest.json")
+    write_parquet_atomic(enriched, out_path, index=False)
+    _write_enrichment_manifest(
+        args=args, raw_argv=raw_argv, metadata=metadata, stats=stats, out_path=out_path
+    )
     print(
-        json.dumps(
-            {"out": str(out_path), "manifest": str(args.manifest_out), **stats}, sort_keys=True
-        )
+        dumps_manifest_json({"out": str(out_path), "manifest": str(args.manifest_out), **stats}),
+        end="",
     )
     return 0
 

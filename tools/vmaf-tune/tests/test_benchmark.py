@@ -14,7 +14,9 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
 from vmaftune.benchmark import (
+    BenchmarkSummary,
     render_csv,
+    render_json,
     render_markdown,
     summaries_to_dicts,
     summarize_benchmark,
@@ -122,6 +124,39 @@ def test_render_markdown_and_csv_include_delta_columns():
     assert "libx265" in markdown
     assert "bitrate_delta_pct" in csv_text
     assert "-20.000" in csv_text
+
+
+def test_render_json_coerces_nonfinite_summary_values_to_null():
+    """Regression test (Research-0716): non-finite BenchmarkSummary fields
+
+    (e.g. ``margin`` for a status other than "ok") must serialize as
+    RFC-8259 ``null``, not the non-standard ``NaN`` / ``Infinity`` tokens
+    Python's default ``json.dumps()`` would emit.
+    """
+    payload = json.loads(
+        render_json(
+            [
+                BenchmarkSummary(
+                    encoder="libx264",
+                    status="ok",
+                    rows=1,
+                    source_count=1,
+                    preset_count=1,
+                    best_row=_row(encoder="libx264"),
+                    target_vmaf=92.0,
+                    margin=float("nan"),
+                    bitrate_kbps=2000.0,
+                    bitrate_delta_pct=float("inf"),
+                    encode_fps=float("-inf"),
+                    score_fps=None,
+                )
+            ]
+        )
+    )
+
+    assert payload[0]["margin"] is None
+    assert payload[0]["bitrate_delta_pct"] is None
+    assert payload[0]["encode_fps"] is None
 
 
 def test_cli_benchmark_json_from_corpus(tmp_path: Path, capsys):

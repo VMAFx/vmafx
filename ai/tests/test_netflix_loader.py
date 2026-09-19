@@ -110,6 +110,26 @@ def test_load_or_compute_caches(mock_corpus: Path, tmp_path: Path, monkeypatch) 
     assert json.loads(cache_file.read_text()) == {"hello": "world"}
 
 
+def test_load_or_compute_cache_uses_strict_json(
+    mock_corpus: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """Regression test (Research-0726): the per-clip cache write used a local
+
+    ``json.dumps(payload)`` call with Python's default ``allow_nan=True``, so a
+    non-finite diagnostic (e.g. an undefined score for an identity pair) would
+    serialize as the non-standard ``NaN`` token instead of JSON ``null``.
+    """
+    monkeypatch.setenv("VMAF_TINY_AI_CACHE", str(tmp_path / "cache"))
+    pair = next(iter(netflix_loader.iter_pairs(mock_corpus, assume_dims=(16, 16))))
+
+    out = netflix_loader.load_or_compute(pair, lambda _p: {"score": float("nan")})
+
+    assert out["score"] != out["score"]  # NaN
+    raw = netflix_loader.cache_path_for(pair).read_text(encoding="utf-8")
+    assert "NaN" not in raw
+    assert json.loads(raw) == {"score": None}
+
+
 def test_load_or_compute_recovers_from_corrupt_cache(
     mock_corpus: Path, tmp_path: Path, monkeypatch
 ) -> None:
