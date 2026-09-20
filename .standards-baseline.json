@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-09-19T21:48:34Z",
+  "generated_at": "2026-09-20T07:31:53Z",
   "repository": "",
   "commit_sha": "",
-  "total_infractions": 1414,
+  "total_infractions": 1411,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -2572,14 +2572,6 @@
       "symbol": "static Alias alias_map[] = {",
       "message": "Function 'static Alias alias_map[] = {' (118 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/feature/alias.c:26:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/adm_neon.c",
-      "line_number": 64,
-      "symbol": "{",
-      "message": "Function '{' (212 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/adm_neon.c:64:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -5638,10 +5630,10 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/integer_adm.c",
-      "line_number": 114,
+      "line_number": 115,
       "symbol": "static const VmafOption options[] = {",
       "message": "Function 'static const VmafOption options[] = {' (136 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/integer_adm.c:114:HISS-04"
+      "fingerprint": "core/src/feature/integer_adm.c:115:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -6429,210 +6421,210 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 203,
+      "line_number": 204,
       "symbol": "ADM_CM_THRESH_S_I_J_avx256",
       "message": "Function 'ADM_CM_THRESH_S_I_J_avx256' (92 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:203:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx2.c:204:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 507,
+      "line_number": 508,
       "symbol": "do {                                                                                           \\",
       "message": "Function 'do {                                                                                           \\' (105 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:507:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx2.c:508:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 776,
+      "line_number": 777,
       "symbol": "{",
-      "message": "Function '{' (364 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:776:HISS-04"
+      "message": "Function '{' (367 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/feature/x86/adm_avx2.c:777:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 1144,
+      "line_number": 1148,
       "symbol": "{",
       "message": "Function '{' (318 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:1144:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx2.c:1148:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 1536,
+      "line_number": 1540,
       "symbol": "{",
       "message": "Function '{' (747 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:1536:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx2.c:1540:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 2308,
+      "line_number": 2312,
       "symbol": "{",
       "message": "Function '{' (483 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:2308:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx2.c:2312:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 2797,
+      "line_number": 2801,
       "symbol": "{",
       "message": "Function '{' (551 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:2797:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx2.c:2801:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 3352,
+      "line_number": 3356,
       "symbol": "{",
       "message": "Function '{' (242 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:3352:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx2.c:3356:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 3599,
+      "line_number": 3603,
       "symbol": "{",
       "message": "Function '{' (532 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:3599:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx2.c:3603:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 4137,
+      "line_number": 4141,
       "symbol": "{",
       "message": "Function '{' (155 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:4137:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx2.c:4141:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 4297,
+      "line_number": 4301,
       "symbol": "{",
       "message": "Function '{' (179 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:4297:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx2.c:4301:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 4481,
+      "line_number": 4485,
       "symbol": "{",
       "message": "Function '{' (223 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:4481:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx2.c:4485:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx2.c",
-      "line_number": 4710,
+      "line_number": 4714,
       "symbol": "{",
       "message": "Function '{' (151 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx2.c:4710:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx2.c:4714:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 209,
+      "line_number": 210,
       "symbol": "ADM_CM_THRESH_S_I_J_avx512",
       "message": "Function 'ADM_CM_THRESH_S_I_J_avx512' (92 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:209:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx512.c:210:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 513,
+      "line_number": 514,
       "symbol": "do {                                                                                           \\",
       "message": "Function 'do {                                                                                           \\' (92 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:513:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx512.c:514:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 757,
+      "line_number": 758,
       "symbol": "{",
       "message": "Function '{' (387 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:757:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx512.c:758:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 1206,
+      "line_number": 1207,
       "symbol": "{",
       "message": "Function '{' (682 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:1206:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx512.c:1207:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 1913,
+      "line_number": 1914,
       "symbol": "{",
       "message": "Function '{' (476 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:1913:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx512.c:1914:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 2395,
+      "line_number": 2396,
       "symbol": "{",
       "message": "Function '{' (542 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:2395:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx512.c:2396:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 2963,
+      "line_number": 2964,
       "symbol": "{",
       "message": "Function '{' (492 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:2963:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx512.c:2964:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 3459,
+      "line_number": 3460,
       "symbol": "{",
       "message": "Function '{' (242 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:3459:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx512.c:3460:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 3726,
+      "line_number": 3727,
       "symbol": "{",
       "message": "Function '{' (319 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:3726:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx512.c:3727:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 4050,
+      "line_number": 4051,
       "symbol": "{",
       "message": "Function '{' (173 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:4050:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx512.c:4051:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 4228,
+      "line_number": 4229,
       "symbol": "{",
       "message": "Function '{' (226 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:4228:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx512.c:4229:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 4460,
+      "line_number": 4461,
       "symbol": "{",
       "message": "Function '{' (161 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:4460:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx512.c:4461:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/adm_avx512.c",
-      "line_number": 4627,
+      "line_number": 4628,
       "symbol": "{",
       "message": "Function '{' (157 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/adm_avx512.c:4627:HISS-04"
+      "fingerprint": "core/src/feature/x86/adm_avx512.c:4628:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -7687,22 +7679,6 @@
       "symbol": "LLVMFuzzerTestOneInput",
       "message": "Function 'LLVMFuzzerTestOneInput' (61 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/test/fuzz/fuzz_yuv_input.c:64:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/test/test_adm_dwt2_neon.c",
-      "line_number": 46,
-      "symbol": "ref_src_indices",
-      "message": "Function 'ref_src_indices' (65 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_adm_dwt2_neon.c:46:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/test/test_adm_dwt2_neon.c",
-      "line_number": 184,
-      "symbol": "test_adm_dwt2_8_neon_matches_scalar",
-      "message": "Function 'test_adm_dwt2_8_neon_matches_scalar' (122 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_adm_dwt2_neon.c:184:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -10051,18 +10027,18 @@
     {
       "rule_id": "HISS-04",
       "file_path": "python/test/vmafexec_test.py",
-      "line_number": 299,
+      "line_number": 307,
       "symbol": "test_run_vmafexec_runner_n_threads",
       "message": "Function 'test_run_vmafexec_runner_n_threads' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "python/test/vmafexec_test.py:299:HISS-04"
+      "fingerprint": "python/test/vmafexec_test.py:307:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "python/test/vmafexec_test.py",
-      "line_number": 726,
+      "line_number": 734,
       "symbol": "test_run_vmafexec_runner_yuv420p10le_sparks",
       "message": "Function 'test_run_vmafexec_runner_yuv420p10le_sparks' (76 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "python/test/vmafexec_test.py:726:HISS-04"
+      "fingerprint": "python/test/vmafexec_test.py:734:HISS-04"
     },
     {
       "rule_id": "HISS-02",
