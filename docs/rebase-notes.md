@@ -51567,3 +51567,11 @@ Four pull requests and two issues were sent to Netflix/vmaf on 2026-09-19
 - **#1607 / #1608** are issues. If upstream chooses to *support* frames below 17 px rather
   than refuse them, that is a behaviour decision for the fork too, not a mechanical port:
   the fork currently refuses with `integer_adm requires width >= 17 and height >= 17`.
+## `.clang-tidy` `HeaderFilterRegex` must accept absolute paths (ADR-1265)
+
+The filter is `(^|/)(core/(include|src|tools|test)|python|ai)/.*\.(h|hpp|hxx|cuh)$`. The
+`(^|/)` is load-bearing: clang-tidy matches the regex against the absolute path from
+`compile_commands.json`, and the previous `^core/…` form matched nothing, which is how the
+ratchet ran for months without a single header finding. If a sync or a tidy-config refresh
+restores the `^`-only anchor, `Tidy Ratchet` will start reporting every header file's count as
+`N -> 0` and ask to tighten — that is the filter breaking again, not a cleanup.

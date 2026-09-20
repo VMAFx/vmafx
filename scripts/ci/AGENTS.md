@@ -534,3 +534,16 @@ metadata check, direct GOBIN/first-GOPATH executable path, and installed-only
 Preserve install/asset failures and shell-quoted export output; keep
 `tests/test_envtest_single_source.py` wired to commit/push checks. See
 [Research-2058](../../docs/research/2058-envtest-version-owner.md).
+
+## Tidy ratchet counts headers via an absolute-path-safe filter (ADR-1265)
+
+`.clang-tidy` `HeaderFilterRegex` starts `(^|/)`. clang-tidy matches ABSOLUTE
+paths; a `^core/` anchor matches nothing, headers vanish as "non-user code",
+ratchet reports 0 header findings forever. That was the state before ADR-1265.
+
+Symptom of regression: `Tidy Ratchet` says every `*.h` went `N -> 0`, asks to
+tighten. Do not tighten; restore the `(^|/)`.
+
+CPU baseline = CI's `tidy-ratchet-cpu` artifact (clang-tidy 22, ubuntu-26.04),
+never a local run with another clang-tidy. GPU lanes: local `make
+tidy-ratchet-write LANE=<cuda|hip|sycl>`, advisory.

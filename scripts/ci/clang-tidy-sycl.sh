@@ -94,6 +94,32 @@ esac
 #                                     — same rationale for icpx pragmas
 #                                       (`#pragma clang fp ...` etc).
 # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Translate icx-only driver flags that stock clang rejects outright.
+# ---------------------------------------------------------------------
+# An icx/icpx build records `-fp-model=precise` on every strict-FP translation
+# unit. Stock clang spells that `-ffp-model=precise` and treats the icx form as
+# `error: unknown argument`, which no -Wno-* can downgrade -- so 104 of the
+# lane's TUs were reported as compile failures and the whole-lane ratchet could
+# not be written (ledger L-41). clang-tidy reads flags from the compilation
+# database, so the only place to translate is a copy of that database.
+ARGS=("$@")
+for ((i = 0; i < ${#ARGS[@]}; i++)); do
+  if [[ "${ARGS[i]}" == "-p" && -n "${ARGS[i + 1]:-}" ]]; then
+    SRC_DB="${ARGS[i + 1]}/compile_commands.json"
+    if [[ -f "$SRC_DB" ]] && grep -q -- '-fp-model=' "$SRC_DB"; then
+      DB_DIR="${TMPDIR:-/tmp}/clang-tidy-sycl-db.$(printf '%s' "$SRC_DB" | cksum | cut -d' ' -f1)"
+      mkdir -p "$DB_DIR"
+      if [[ ! -f "$DB_DIR/compile_commands.json" || "$SRC_DB" -nt "$DB_DIR/compile_commands.json" ]]; then
+        sed -e 's/\([" ]\)-fp-model=/\1-ffp-model=/g' "$SRC_DB" >"$DB_DIR/compile_commands.json.$$"
+        mv -f "$DB_DIR/compile_commands.json.$$" "$DB_DIR/compile_commands.json"
+      fi
+      ARGS[i + 1]="$DB_DIR"
+    fi
+  fi
+done
+set -- "${ARGS[@]}"
+
 exec "$CLANG_TIDY_BIN" \
   "-extra-arg-before=-std=c++20" \
   "-extra-arg-before=-isystem$SYCL_INCLUDE_BASE" \

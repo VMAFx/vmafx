@@ -280,7 +280,22 @@ def run_one(
     binary: str, build_dir: Path, extra_args: list[str], unit: tuple[Path, Path]
 ) -> tuple[str, str, int]:
     source, directory = unit
-    argv = [binary, "-p", str(build_dir), *extra_args, str(source)]
+    # A repository-relative --clang-tidy (the sycl wrapper) must survive the cwd
+    # switch into the build directory below; resolve it once, leave bare names
+    # to PATH lookup.
+    if "/" in binary and Path(binary).exists():
+        binary = str(Path(binary).resolve())
+    # Each value of our --extra-arg is a compiler flag for clang-tidy to forward
+    # (that is what its help text promises), so it has to reach clang-tidy
+    # wrapped as --extra-arg=<flag>. Passing the values bare handed clang-tidy
+    # its own unknown options -- "--cuda-host-only", "-x", "hip" -- and every
+    # translation unit of the cuda and hip lanes was reported as a compile
+    # failure, which is why those baselines could not be re-measured (ledger
+    # L-41). Values that already carry the wrapper pass through unchanged.
+    forwarded = [
+        arg if arg.startswith("--extra-arg") else f"--extra-arg={arg}" for arg in extra_args
+    ]
+    argv = [binary, "-p", str(build_dir), *forwarded, str(source)]
     proc = subprocess.run(  # noqa: S603 -- argv built from compile_commands, no shell
         argv, capture_output=True, text=True, check=False, cwd=str(directory)
     )

@@ -3,8 +3,8 @@
   "lane": "cpu",
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
-  "cc_version": "gcc-15 (Ubuntu 15.2.0-14ubuntu1~24~ppa1) 15.2.0",
-  "tus": 306,
+  "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
+  "tus": 312,
   "measured_sources": [
     "build/src/brisque_live.model.c",
     "build/src/vmaf_4k_v0.6.1.json.c",
@@ -145,6 +145,7 @@
     "core/src/interop/pelorus_version.c",
     "core/src/libvmaf.c",
     "core/src/log.cpp",
+    "core/src/mcp/3rdparty/cJSON/cJSON.c",
     "core/src/mem.cpp",
     "core/src/metadata_handler.cpp",
     "core/src/metal/stubs.c",
@@ -184,9 +185,13 @@
     "core/test/test_barten_csf_coverage.c",
     "core/test/test_brisque.c",
     "core/test/test_cambi.c",
+    "core/test/test_cambi_dispatch_invariance.c",
     "core/test/test_cambi_simd.c",
+    "core/test/test_cambi_spatial_mask_simd.c",
+    "core/test/test_cambi_stage_simd.c",
     "core/test/test_ciede.c",
     "core/test/test_ciede_simd_parity.c",
+    "core/test/test_cjson.c",
     "core/test/test_cli_parse.c",
     "core/test/test_cli_parse_long_only_args.c",
     "core/test/test_compat_clz.c",
@@ -283,6 +288,7 @@
     "core/test/test_speed.c",
     "core/test/test_speed_qa.c",
     "core/test/test_speed_simd.c",
+    "core/test/test_speed_singular_tally.c",
     "core/test/test_spinner.cpp",
     "core/test/test_ssim_coverage.c",
     "core/test/test_ssimulacra2_coverage.c",
@@ -314,7 +320,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 462,
+  "total_warnings": 775,
   "total_nolint_uncited": 0,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
@@ -335,41 +341,98 @@
     "build/src/vmaf_v1.0.16_hfr_3d0h.json.c": 2,
     "build/src/vmaf_v1.0.16_hfr_3d0h_2160.json.c": 2,
     "build/src/vmaf_v1.0.16_hfr_5d0h.json.c": 2,
+    "core/include/libvmaf/dnn.h": 8,
+    "core/include/libvmaf/feature.h": 1,
+    "core/include/libvmaf/libvmaf.h": 7,
+    "core/include/libvmaf/model.h": 8,
+    "core/include/libvmaf/picture.h": 3,
+    "core/src/cpu.h": 1,
     "core/src/dict.cpp": 15,
+    "core/src/dict.h": 4,
+    "core/src/dict_internal.h": 2,
     "core/src/feature/adm.c": 31,
+    "core/src/feature/adm_csf_tools.h": 2,
+    "core/src/feature/adm_options.h": 1,
+    "core/src/feature/adm_tools.h": 142,
     "core/src/feature/alias.c": 1,
+    "core/src/feature/barten_csf_tools.h": 7,
+    "core/src/feature/cambi_internal.h": 3,
     "core/src/feature/common/blur_array.c": 6,
+    "core/src/feature/common/convolution_internal.h": 8,
+    "core/src/feature/feature_characteristics.h": 3,
     "core/src/feature/feature_collector.cpp": 13,
+    "core/src/feature/feature_collector.h": 4,
+    "core/src/feature/feature_name.h": 1,
     "core/src/feature/float_adm.c": 5,
     "core/src/feature/float_moment.c": 2,
     "core/src/feature/float_ms_ssim.c": 3,
     "core/src/feature/float_ssim.c": 2,
     "core/src/feature/float_vif.c": 8,
     "core/src/feature/integer_motion.c": 11,
+    "core/src/feature/integer_motion.h": 4,
     "core/src/feature/integer_motion_v2.c": 4,
+    "core/src/feature/iqa/iqa.h": 1,
+    "core/src/feature/iqa/iqa_options.h": 1,
+    "core/src/feature/iqa/iqa_os.h": 1,
+    "core/src/feature/iqa/math_utils.h": 6,
     "core/src/feature/iqa/ssim_tools.c": 4,
+    "core/src/feature/luminance_tools.h": 3,
     "core/src/feature/moment.c": 2,
+    "core/src/feature/moment_options.h": 1,
     "core/src/feature/motion.c": 2,
+    "core/src/feature/motion_blend_tools.h": 1,
+    "core/src/feature/motion_options.h": 1,
+    "core/src/feature/motion_tools.h": 1,
     "core/src/feature/ms_ssim.c": 6,
+    "core/src/feature/niqe_model.h": 1,
     "core/src/feature/null.c": 1,
     "core/src/feature/picture_copy.cpp": 1,
+    "core/src/feature/picture_copy.h": 1,
+    "core/src/feature/psnr_options.h": 1,
+    "core/src/feature/speed_internal.h": 3,
     "core/src/feature/ssim.c": 6,
+    "core/src/feature/vif_options.h": 1,
+    "core/src/feature/vif_tools.h": 1,
     "core/src/feature/x86/float_adm_avx2.c": 7,
     "core/src/feature/x86/float_adm_avx512.c": 26,
     "core/src/feature/x86/motion_avx2.c": 7,
     "core/src/feature/x86/motion_avx512.c": 18,
+    "core/src/fex_ctx_vector.h": 2,
     "core/src/framesync.c": 7,
+    "core/src/framesync.h": 2,
     "core/src/gpu_picture_pool.cpp": 1,
+    "core/src/gpu_picture_pool.h": 2,
     "core/src/hip/stubs.c": 2,
     "core/src/interop/pelorus_deband_params.c": 1,
     "core/src/interop/pelorus_denoise_params.c": 1,
     "core/src/interop/pelorus_interop.c": 10,
     "core/src/interop/pelorus_qp_report_csv.c": 4,
+    "core/src/log.h": 1,
+    "core/src/mcp/3rdparty/cJSON/cJSON.h": 8,
+    "core/src/mem.h": 1,
+    "core/src/metadata.h": 4,
+    "core/src/metadata_handler.h": 3,
     "core/src/model.c": 8,
+    "core/src/model.h": 7,
+    "core/src/opt.h": 4,
+    "core/src/output.h": 1,
+    "core/src/pdjson.h": 5,
+    "core/src/percentile.h": 1,
+    "core/src/picture.h": 2,
     "core/src/picture_pool.c": 5,
     "core/src/picture_pool.cpp": 8,
+    "core/src/picture_pool.h": 3,
+    "core/src/predict.h": 1,
+    "core/src/read_json_model.h": 1,
+    "core/src/ref.h": 2,
+    "core/src/svm.h": 3,
+    "core/src/sycl/dispatch_strategy.h": 2,
     "core/src/thread_locale.cpp": 9,
+    "core/src/thread_locale.h": 2,
+    "core/src/thread_pool.h": 1,
     "core/src/x86/cpu.c": 1,
+    "core/src/x86/cpu.h": 2,
+    "core/test/test.h": 2,
     "core/test/test_adm_csf.c": 2,
     "core/test/test_ciede.c": 11,
     "core/test/test_context.c": 14,
@@ -388,535 +451,787 @@
     "core/test/test_psnr.c": 4,
     "core/test/test_ref.c": 2,
     "core/test/test_thread_pool.c": 8,
-    "core/test/test_version.c": 3
+    "core/test/test_version.c": 3,
+    "core/test/tiny_ai_test_template.h": 2,
+    "core/tools/cli_parse.h": 4,
+    "core/tools/vidinput.h": 12
   },
   "nolint_uncited": {},
-  "scoped_updates": [
-    {
-      "sources": [
-        "core/src/feature/fastdvdnet_pre.c",
-        "core/src/feature/feature_dists.c",
-        "core/src/feature/feature_lpips.c",
-        "core/src/feature/feature_mobilesal.c",
-        "core/src/feature/perceptual_weight.c",
-        "core/src/feature/pu21.c",
-        "core/src/feature/pu21_ssim.c",
-        "core/src/feature/transnet_v2.c",
-        "core/src/feature/x86/integer_ssim_avx2.c",
-        "core/src/feature/x86/ssimulacra2_avx2.c",
-        "core/src/feature/x86/ssimulacra2_avx512.c",
-        "core/src/feature/y_funque_plus.c",
-        "core/src/metal/stubs.c",
-        "core/test/dnn/test_ep_fp16.c",
-        "core/test/dnn/test_model_loader.c",
-        "core/test/dnn/test_op_allowlist.c",
-        "core/test/dnn/test_tiny_model_verify.c",
-        "core/test/dnn/test_vmaf_use_tiny_model.c",
-        "core/test/test_adm_coverage.c",
-        "core/test/test_adm_csf_tools_coverage.c",
-        "core/test/test_barten_csf_coverage.c",
-        "core/test/test_brisque.c",
-        "core/test/test_cambi_simd.c",
-        "core/test/test_ciede_simd_parity.c",
-        "core/test/test_cli_parse_long_only_args.c",
-        "core/test/test_dists.c",
-        "core/test/test_fastdvdnet_pre.c",
-        "core/test/test_feature_collector_coverage.c",
-        "core/test/test_float_adm_coverage.c",
-        "core/test/test_float_moment_coverage.c",
-        "core/test/test_float_ms_ssim_coverage.c",
-        "core/test/test_float_ms_ssim_min_dim.c",
-        "core/test/test_float_psnr_coverage.c",
-        "core/test/test_float_ssim_coverage.c",
-        "core/test/test_float_vif_coverage.c",
-        "core/test/test_flush_context_ordering.c",
-        "core/test/test_gpu_dispatch_parse.c",
-        "core/test/test_gpu_picture_pool_uaf.c",
-        "core/test/test_integer_adm_min_dim.c",
-        "core/test/test_integer_adm_simd.c",
-        "core/test/test_integer_motion_coverage.c",
-        "core/test/test_integer_ssim_simd.c",
-        "core/test/test_integer_vif_log2.c",
-        "core/test/test_iqa_convolve.c",
-        "core/test/test_lpips.c",
-        "core/test/test_mkdirp.c",
-        "core/test/test_mobilesal.c",
-        "core/test/test_model_collection_api.c",
-        "core/test/test_model_libsvm_dup_key.c",
-        "core/test/test_motion_avx512_parity.c",
-        "core/test/test_motion_v2_simd.c",
-        "core/test/test_ms_ssim_decimate.c",
-        "core/test/test_ms_ssim_decimate_coverage.c",
-        "core/test/test_niqe.c",
-        "core/test/test_opt.c",
-        "core/test/test_perceptual_weight.c",
-        "core/test/test_picture_pool_error_paths.c",
-        "core/test/test_picture_v2.c",
-        "core/test/test_pixel_format_edge_coverage.c",
-        "core/test/test_psnr_hvs_coverage.c",
-        "core/test/test_pu21.c",
-        "core/test/test_public_api_score.c",
-        "core/test/test_read_pictures_monotonic.c",
-        "core/test/test_score_pooled_eagain.c",
-        "core/test/test_speed_simd.c",
-        "core/test/test_ssimulacra2_coverage.c",
-        "core/test/test_svm_multiclass.c",
-        "core/test/test_thread_safety_batch.c",
-        "core/test/test_transnet_v2.c",
-        "core/test/test_validate_pic_params_bpc.c",
-        "core/test/test_vif_simd.c",
-        "core/test/test_vif_skip_scale0.c",
-        "core/test/test_vmaf_roi.c",
-        "core/test/test_y4m_411_oob.c"
-      ],
-      "clang_tidy_version": "22.1.8",
-      "changes": {
-        "core/src/feature/fastdvdnet_pre.c": {
-          "warnings": [
-            7,
-            0
-          ]
-        },
-        "core/src/feature/feature_dists.c": {
-          "warnings": [
-            8,
-            0
-          ]
-        },
-        "core/src/feature/feature_lpips.c": {
-          "warnings": [
-            8,
-            0
-          ]
-        },
-        "core/src/feature/feature_mobilesal.c": {
-          "warnings": [
-            8,
-            0
-          ]
-        },
-        "core/src/feature/perceptual_weight.c": {
-          "warnings": [
-            5,
-            0
-          ]
-        },
-        "core/src/feature/pu21.c": {
-          "warnings": [
-            4,
-            0
-          ]
-        },
-        "core/src/feature/pu21_ssim.c": {
-          "warnings": [
-            15,
-            0
-          ]
-        },
-        "core/src/feature/transnet_v2.c": {
-          "warnings": [
-            7,
-            0
-          ]
-        },
-        "core/src/feature/x86/integer_ssim_avx2.c": {
-          "warnings": [
-            2,
-            0
-          ]
-        },
-        "core/src/feature/x86/ssimulacra2_avx2.c": {
-          "warnings": [
-            3,
-            0
-          ]
-        },
-        "core/src/feature/x86/ssimulacra2_avx512.c": {
-          "warnings": [
-            3,
-            0
-          ]
-        },
-        "core/src/feature/y_funque_plus.c": {
-          "warnings": [
-            10,
-            0
-          ]
-        },
-        "core/src/metal/stubs.c": {
-          "warnings": [
-            3,
-            0
-          ]
-        },
-        "core/test/dnn/test_ep_fp16.c": {
-          "warnings": [
-            2,
-            0
-          ]
-        },
-        "core/test/dnn/test_model_loader.c": {
-          "warnings": [
-            24,
-            0
-          ]
-        },
-        "core/test/dnn/test_op_allowlist.c": {
-          "warnings": [
-            6,
-            0
-          ]
-        },
-        "core/test/dnn/test_tiny_model_verify.c": {
-          "warnings": [
-            13,
-            0
-          ]
-        },
-        "core/test/dnn/test_vmaf_use_tiny_model.c": {
-          "warnings": [
-            3,
-            0
-          ]
-        },
-        "core/test/test_adm_coverage.c": {
-          "warnings": [
-            5,
-            0
-          ]
-        },
-        "core/test/test_adm_csf_tools_coverage.c": {
-          "warnings": [
-            7,
-            0
-          ]
-        },
-        "core/test/test_barten_csf_coverage.c": {
-          "warnings": [
-            14,
-            0
-          ]
-        },
-        "core/test/test_brisque.c": {
-          "warnings": [
-            4,
-            0
-          ]
-        },
-        "core/test/test_cambi_simd.c": {
-          "warnings": [
-            8,
-            0
-          ]
-        },
-        "core/test/test_ciede_simd_parity.c": {
-          "warnings": [
-            12,
-            0
-          ]
-        },
-        "core/test/test_cli_parse_long_only_args.c": {
-          "warnings": [
-            11,
-            0
-          ]
-        },
-        "core/test/test_dists.c": {
-          "warnings": [
-            4,
-            0
-          ]
-        },
-        "core/test/test_fastdvdnet_pre.c": {
-          "warnings": [
-            3,
-            0
-          ]
-        },
-        "core/test/test_feature_collector_coverage.c": {
-          "warnings": [
-            1,
-            0
-          ]
-        },
-        "core/test/test_float_adm_coverage.c": {
-          "warnings": [
-            18,
-            0
-          ]
-        },
-        "core/test/test_float_moment_coverage.c": {
-          "warnings": [
-            18,
-            0
-          ]
-        },
-        "core/test/test_float_ms_ssim_coverage.c": {
-          "warnings": [
-            18,
-            0
-          ]
-        },
-        "core/test/test_float_ms_ssim_min_dim.c": {
-          "warnings": [
-            4,
-            0
-          ]
-        },
-        "core/test/test_float_psnr_coverage.c": {
-          "warnings": [
-            13,
-            0
-          ]
-        },
-        "core/test/test_float_ssim_coverage.c": {
-          "warnings": [
-            18,
-            0
-          ]
-        },
-        "core/test/test_float_vif_coverage.c": {
-          "warnings": [
-            2,
-            0
-          ]
-        },
-        "core/test/test_flush_context_ordering.c": {
-          "warnings": [
-            5,
-            0
-          ]
-        },
-        "core/test/test_gpu_dispatch_parse.c": {
-          "warnings": [
-            16,
-            0
-          ]
-        },
-        "core/test/test_gpu_picture_pool_uaf.c": {
-          "warnings": [
-            6,
-            0
-          ]
-        },
-        "core/test/test_integer_adm_min_dim.c": {
-          "warnings": [
-            4,
-            0
-          ]
-        },
-        "core/test/test_integer_adm_simd.c": {
-          "warnings": [
-            7,
-            0
-          ]
-        },
-        "core/test/test_integer_motion_coverage.c": {
-          "warnings": [
-            4,
-            0
-          ]
-        },
-        "core/test/test_integer_ssim_simd.c": {
-          "warnings": [
-            9,
-            0
-          ]
-        },
-        "core/test/test_integer_vif_log2.c": {
-          "warnings": [
-            5,
-            0
-          ]
-        },
-        "core/test/test_iqa_convolve.c": {
-          "warnings": [
-            11,
-            0
-          ]
-        },
-        "core/test/test_lpips.c": {
-          "warnings": [
-            3,
-            0
-          ]
-        },
-        "core/test/test_mkdirp.c": {
-          "warnings": [
-            7,
-            0
-          ]
-        },
-        "core/test/test_mobilesal.c": {
-          "warnings": [
-            3,
-            0
-          ]
-        },
-        "core/test/test_model_collection_api.c": {
-          "warnings": [
-            5,
-            0
-          ]
-        },
-        "core/test/test_model_libsvm_dup_key.c": {
-          "warnings": [
-            6,
-            0
-          ]
-        },
-        "core/test/test_motion_avx512_parity.c": {
-          "warnings": [
-            14,
-            0
-          ]
-        },
-        "core/test/test_motion_v2_simd.c": {
-          "warnings": [
-            3,
-            0
-          ]
-        },
-        "core/test/test_ms_ssim_decimate.c": {
-          "warnings": [
-            10,
-            0
-          ]
-        },
-        "core/test/test_ms_ssim_decimate_coverage.c": {
-          "warnings": [
-            10,
-            0
-          ]
-        },
-        "core/test/test_niqe.c": {
-          "warnings": [
-            4,
-            0
-          ]
-        },
-        "core/test/test_opt.c": {
-          "warnings": [
-            2,
-            0
-          ]
-        },
-        "core/test/test_perceptual_weight.c": {
-          "warnings": [
-            6,
-            0
-          ]
-        },
-        "core/test/test_picture_pool_error_paths.c": {
-          "warnings": [
-            10,
-            0
-          ]
-        },
-        "core/test/test_picture_v2.c": {
-          "warnings": [
-            6,
-            0
-          ]
-        },
-        "core/test/test_pixel_format_edge_coverage.c": {
-          "warnings": [
-            3,
-            0
-          ]
-        },
-        "core/test/test_psnr_hvs_coverage.c": {
-          "warnings": [
-            4,
-            0
-          ]
-        },
-        "core/test/test_pu21.c": {
-          "warnings": [
-            16,
-            0
-          ]
-        },
-        "core/test/test_public_api_score.c": {
-          "warnings": [
-            15,
-            0
-          ]
-        },
-        "core/test/test_read_pictures_monotonic.c": {
-          "warnings": [
-            6,
-            0
-          ]
-        },
-        "core/test/test_score_pooled_eagain.c": {
-          "warnings": [
-            14,
-            0
-          ]
-        },
-        "core/test/test_speed_simd.c": {
-          "warnings": [
-            5,
-            0
-          ]
-        },
-        "core/test/test_ssimulacra2_coverage.c": {
-          "warnings": [
-            4,
-            0
-          ]
-        },
-        "core/test/test_svm_multiclass.c": {
-          "warnings": [
-            6,
-            0
-          ]
-        },
-        "core/test/test_thread_safety_batch.c": {
-          "warnings": [
-            10,
-            0
-          ]
-        },
-        "core/test/test_transnet_v2.c": {
-          "warnings": [
-            5,
-            0
-          ]
-        },
-        "core/test/test_validate_pic_params_bpc.c": {
-          "warnings": [
-            8,
-            0
-          ]
-        },
-        "core/test/test_vif_simd.c": {
-          "warnings": [
-            9,
-            0
-          ]
-        },
-        "core/test/test_vif_skip_scale0.c": {
-          "warnings": [
-            20,
-            0
-          ]
-        },
-        "core/test/test_vmaf_roi.c": {
-          "warnings": [
-            11,
-            0
-          ]
-        },
-        "core/test/test_y4m_411_oob.c": {
-          "warnings": [
-            3,
-            0
-          ]
-        }
-      },
-      "previous_baseline_sha256": "ab5458d611ee39d5d34e4067968b8743cd33642aef5adb3dfd39e5878df8cf4d"
-    }
+  "diagnostics": [
+    "build/src/brisque_live.model.c:1:15: [misc-use-internal-linkage]",
+    "build/src/brisque_live.model.c:29288:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_4k_v0.6.1.json.c:1913:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_4k_v0.6.1.json.c:1:15: [misc-use-internal-linkage]",
+    "build/src/vmaf_4k_v0.6.1neg.json.c:1947:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_4k_v0.6.1neg.json.c:1:15: [misc-use-internal-linkage]",
+    "build/src/vmaf_b_v0.6.3.json.c:1:15: [misc-use-internal-linkage]",
+    "build/src/vmaf_b_v0.6.3.json.c:34077:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_float_4k_v0.6.1.json.c:1908:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_float_4k_v0.6.1.json.c:1:15: [misc-use-internal-linkage]",
+    "build/src/vmaf_float_b_v0.6.3.json.c:1:15: [misc-use-internal-linkage]",
+    "build/src/vmaf_float_b_v0.6.3.json.c:33979:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_float_v0.6.1.json.c:1591:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_float_v0.6.1.json.c:1:15: [misc-use-internal-linkage]",
+    "build/src/vmaf_float_v0.6.1neg.json.c:1625:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_float_v0.6.1neg.json.c:1:15: [misc-use-internal-linkage]",
+    "build/src/vmaf_v0.6.1.json.c:1595:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_v0.6.1.json.c:1:15: [misc-use-internal-linkage]",
+    "build/src/vmaf_v0.6.1neg.json.c:1630:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_v0.6.1neg.json.c:1:15: [misc-use-internal-linkage]",
+    "build/src/vmaf_v1.0.16_1d5h_2160.json.c:1222:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_v1.0.16_1d5h_2160.json.c:1:15: [misc-use-internal-linkage]",
+    "build/src/vmaf_v1.0.16_3d0h.json.c:1228:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_v1.0.16_3d0h.json.c:1:15: [misc-use-internal-linkage]",
+    "build/src/vmaf_v1.0.16_3d0h_2160.json.c:1230:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_v1.0.16_3d0h_2160.json.c:1:15: [misc-use-internal-linkage]",
+    "build/src/vmaf_v1.0.16_5d0h.json.c:1232:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_v1.0.16_5d0h.json.c:1:15: [misc-use-internal-linkage]",
+    "build/src/vmaf_v1.0.16_hfr_1d5h_2160.json.c:1230:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_v1.0.16_hfr_1d5h_2160.json.c:1:15: [misc-use-internal-linkage]",
+    "build/src/vmaf_v1.0.16_hfr_3d0h.json.c:1236:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_v1.0.16_hfr_3d0h.json.c:1:15: [misc-use-internal-linkage]",
+    "build/src/vmaf_v1.0.16_hfr_3d0h_2160.json.c:1238:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_v1.0.16_hfr_3d0h_2160.json.c:1:15: [misc-use-internal-linkage]",
+    "build/src/vmaf_v1.0.16_hfr_5d0h.json.c:1240:14: [misc-use-internal-linkage]",
+    "build/src/vmaf_v1.0.16_hfr_5d0h.json.c:1:15: [misc-use-internal-linkage]",
+    "core/include/libvmaf/dnn.h:200:14: [performance-enum-size]",
+    "core/include/libvmaf/dnn.h:200:1: [modernize-use-using]",
+    "core/include/libvmaf/dnn.h:232:1: [modernize-use-using]",
+    "core/include/libvmaf/dnn.h:315:1: [modernize-use-using]",
+    "core/include/libvmaf/dnn.h:328:1: [modernize-use-using]",
+    "core/include/libvmaf/dnn.h:33:14: [performance-enum-size]",
+    "core/include/libvmaf/dnn.h:33:1: [modernize-use-using]",
+    "core/include/libvmaf/dnn.h:75:1: [modernize-use-using]",
+    "core/include/libvmaf/feature.h:67:1: [modernize-use-using]",
+    "core/include/libvmaf/libvmaf.h:152:6: [performance-enum-size]",
+    "core/include/libvmaf/libvmaf.h:222:1: [modernize-use-using]",
+    "core/include/libvmaf/libvmaf.h:245:1: [modernize-use-using]",
+    "core/include/libvmaf/libvmaf.h:533:1: [modernize-use-using]",
+    "core/include/libvmaf/libvmaf.h:53:6: [performance-enum-size]",
+    "core/include/libvmaf/libvmaf.h:70:6: [performance-enum-size]",
+    "core/include/libvmaf/libvmaf.h:99:6: [performance-enum-size]",
+    "core/include/libvmaf/model.h:103:1: [modernize-use-using]",
+    "core/include/libvmaf/model.h:284:1: [modernize-use-using]",
+    "core/include/libvmaf/model.h:294:6: [performance-enum-size]",
+    "core/include/libvmaf/model.h:313:1: [modernize-use-using]",
+    "core/include/libvmaf/model.h:45:1: [modernize-use-using]",
+    "core/include/libvmaf/model.h:64:14: [performance-enum-size]",
+    "core/include/libvmaf/model.h:64:1: [modernize-use-using]",
+    "core/include/libvmaf/model.h:91:6: [performance-enum-size]",
+    "core/include/libvmaf/picture.h:50:6: [performance-enum-size]",
+    "core/include/libvmaf/picture.h:69:1: [modernize-use-using]",
+    "core/include/libvmaf/picture.h:81:1: [modernize-use-using]",
+    "core/src/cpu.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/dict.cpp:103:33: [bugprone-suspicious-stringview-data-usage]",
+    "core/src/dict.cpp:103:5: [misc-const-correctness]",
+    "core/src/dict.cpp:121:47: [misc-use-anonymous-namespace]",
+    "core/src/dict.cpp:141:47: [misc-use-anonymous-namespace]",
+    "core/src/dict.cpp:144:57: [bugprone-suspicious-stringview-data-usage]",
+    "core/src/dict.cpp:147:41: [bugprone-suspicious-stringview-data-usage]",
+    "core/src/dict.cpp:161:1: [misc-use-anonymous-namespace]",
+    "core/src/dict.cpp:166:35: [bugprone-suspicious-stringview-data-usage]",
+    "core/src/dict.cpp:169:35: [bugprone-suspicious-stringview-data-usage]",
+    "core/src/dict.cpp:204:5: [misc-const-correctness]",
+    "core/src/dict.cpp:258:5: [misc-const-correctness]",
+    "core/src/dict.cpp:297:9: [misc-const-correctness]",
+    "core/src/dict.cpp:66:1: [misc-use-anonymous-namespace]",
+    "core/src/dict.cpp:68:5: [misc-const-correctness]",
+    "core/src/dict.cpp:95:1: [misc-use-anonymous-namespace]",
+    "core/src/dict.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/dict.h:29:1: [modernize-use-using]",
+    "core/src/dict.h:39:1: [modernize-use-using]",
+    "core/src/dict.h:52:6: [performance-enum-size]",
+    "core/src/dict_internal.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/dict_internal.h:45:27: [bugprone-suspicious-stringview-data-usage]",
+    "core/src/feature/adm.c:106:20: [modernize-use-nullptr]",
+    "core/src/feature/adm.c:107:29: [bugprone-casting-through-void]",
+    "core/src/feature/adm.c:109:29: [bugprone-casting-through-void]",
+    "core/src/feature/adm.c:111:29: [bugprone-casting-through-void]",
+    "core/src/feature/adm.c:116:5: [misc-use-internal-linkage]",
+    "core/src/feature/adm.c:116:5: [readability-function-size]",
+    "core/src/feature/adm.c:129:23: [modernize-use-nullptr]",
+    "core/src/feature/adm.c:132:23: [modernize-use-nullptr]",
+    "core/src/feature/adm.c:132:40: [modernize-use-nullptr]",
+    "core/src/feature/adm.c:132:5: [readability-isolate-declaration]",
+    "core/src/feature/adm.c:133:23: [modernize-use-nullptr]",
+    "core/src/feature/adm.c:133:40: [modernize-use-nullptr]",
+    "core/src/feature/adm.c:133:5: [readability-isolate-declaration]",
+    "core/src/feature/adm.c:134:5: [readability-isolate-declaration]",
+    "core/src/feature/adm.c:174:9: [cert-err33-c]",
+    "core/src/feature/adm.c:178:20: [bugprone-assignment-in-if-condition]",
+    "core/src/feature/adm.c:180:9: [cert-err33-c]",
+    "core/src/feature/adm.c:194:22: [bugprone-assignment-in-if-condition]",
+    "core/src/feature/adm.c:194:39: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/adm.c:196:9: [cert-err33-c]",
+    "core/src/feature/adm.c:210:22: [bugprone-assignment-in-if-condition]",
+    "core/src/feature/adm.c:210:39: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/adm.c:212:9: [cert-err33-c]",
+    "core/src/feature/adm.c:79:29: [bugprone-casting-through-void]",
+    "core/src/feature/adm.c:81:29: [bugprone-casting-through-void]",
+    "core/src/feature/adm.c:83:29: [bugprone-casting-through-void]",
+    "core/src/feature/adm.c:85:29: [bugprone-casting-through-void]",
+    "core/src/feature/adm.c:93:30: [bugprone-casting-through-void]",
+    "core/src/feature/adm.c:95:30: [bugprone-casting-through-void]",
+    "core/src/feature/adm.c:97:30: [bugprone-casting-through-void]",
+    "core/src/feature/adm.c:99:30: [bugprone-casting-through-void]",
+    "core/src/feature/adm_csf_tools.h:23:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/feature/adm_csf_tools.h:36:1: [portability-avoid-pragma-once]",
+    "core/src/feature/adm_options.h:19:1: [portability-avoid-pragma-once]",
+    "core/src/feature/adm_tools.h:101:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:102:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:104:25: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:104:42: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:105:25: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:105:42: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:109:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:110:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:117:14: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:124:10: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:126:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:127:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:129:25: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:129:42: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:130:25: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:130:42: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:131:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:132:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:133:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:134:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:135:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:136:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:137:52: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:138:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:139:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:140:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:141:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:142:14: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:149:10: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:151:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:152:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:154:25: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:154:42: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:155:25: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:155:42: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:156:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:158:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:159:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:160:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:161:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:163:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:164:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:166:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:167:14: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:174:10: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:176:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:177:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:179:25: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:179:42: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:180:25: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:180:42: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:181:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:183:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:184:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:185:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:186:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:188:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:189:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:190:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:191:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:193:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:194:14: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:201:10: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:203:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:204:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:206:25: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:206:42: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:207:25: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:207:42: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:211:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:212:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:216:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:217:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:221:14: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:228:10: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:230:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:231:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:233:25: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:233:42: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:234:25: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:234:42: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:235:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:236:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:237:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:238:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:239:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:240:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:241:52: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:242:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:243:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:244:24: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:245:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:246:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:247:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:248:14: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:28:1: [portability-avoid-pragma-once]",
+    "core/src/feature/adm_tools.h:36:10: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:38:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:39:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:41:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:43:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:47:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:49:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:50:14: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:57:10: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:59:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:60:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:62:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:62:44: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:63:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:63:44: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:64:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:64:44: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:65:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:66:52: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:67:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:68:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:68:44: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:69:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:69:44: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:70:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:70:44: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:71:14: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:78:10: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:80:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:81:36: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:83:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:83:44: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:84:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:84:44: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:85:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:85:44: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:86:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:88:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:89:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:89:44: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:90:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:90:44: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:91:28: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:91:44: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:92:14: [bugprone-macro-parentheses]",
+    "core/src/feature/adm_tools.h:99:10: [bugprone-macro-parentheses]",
+    "core/src/feature/alias.c:145:13: [misc-use-internal-linkage]",
+    "core/src/feature/barten_csf_tools.h:108:5: [readability-isolate-declaration]",
+    "core/src/feature/barten_csf_tools.h:123:27: [performance-type-promotion-in-math-fn]",
+    "core/src/feature/barten_csf_tools.h:124:28: [performance-type-promotion-in-math-fn]",
+    "core/src/feature/barten_csf_tools.h:218:70: [bugprone-branch-clone]",
+    "core/src/feature/barten_csf_tools.h:23:1: [portability-avoid-pragma-once]",
+    "core/src/feature/barten_csf_tools.h:249:70: [bugprone-branch-clone]",
+    "core/src/feature/barten_csf_tools.h:72:16: [performance-type-promotion-in-math-fn]",
+    "core/src/feature/cambi_internal.h:77:1: [modernize-use-using]",
+    "core/src/feature/cambi_internal.h:78:1: [modernize-use-using]",
+    "core/src/feature/cambi_internal.h:85:1: [modernize-use-using]",
+    "core/src/feature/common/blur_array.c:181:18: [modernize-use-nullptr]",
+    "core/src/feature/common/blur_array.c:32:5: [readability-function-size]",
+    "core/src/feature/common/blur_array.c:42:48: [modernize-use-nullptr]",
+    "core/src/feature/common/blur_array.c:50:55: [modernize-use-nullptr]",
+    "core/src/feature/common/blur_array.c:61:37: [modernize-use-nullptr]",
+    "core/src/feature/common/blur_array.c:73:18: [modernize-use-nullptr]",
+    "core/src/feature/common/convolution_internal.h:118:24: [readability-braces-around-statements]",
+    "core/src/feature/common/convolution_internal.h:120:13: [readability-braces-around-statements]",
+    "core/src/feature/common/convolution_internal.h:137:5: [readability-isolate-declaration]",
+    "core/src/feature/common/convolution_internal.h:145:24: [readability-braces-around-statements]",
+    "core/src/feature/common/convolution_internal.h:147:13: [readability-braces-around-statements]",
+    "core/src/feature/common/convolution_internal.h:19:1: [portability-avoid-pragma-once]",
+    "core/src/feature/common/convolution_internal.h:72:24: [readability-braces-around-statements]",
+    "core/src/feature/common/convolution_internal.h:74:13: [readability-braces-around-statements]",
+    "core/src/feature/feature_characteristics.h:28:1: [modernize-use-using]",
+    "core/src/feature/feature_characteristics.h:28:9: [performance-enum-size]",
+    "core/src/feature/feature_characteristics.h:47:1: [modernize-use-using]",
+    "core/src/feature/feature_collector.cpp:139:5: [misc-const-correctness]",
+    "core/src/feature/feature_collector.cpp:161:5: [misc-const-correctness]",
+    "core/src/feature/feature_collector.cpp:375:5: [misc-const-correctness]",
+    "core/src/feature/feature_collector.cpp:382:37: [misc-use-anonymous-namespace]",
+    "core/src/feature/feature_collector.cpp:412:1: [misc-use-anonymous-namespace]",
+    "core/src/feature/feature_collector.cpp:429:26: [misc-use-anonymous-namespace]",
+    "core/src/feature/feature_collector.cpp:452:13: [misc-use-anonymous-namespace]",
+    "core/src/feature/feature_collector.cpp:455:5: [misc-const-correctness]",
+    "core/src/feature/feature_collector.cpp:460:9: [misc-const-correctness]",
+    "core/src/feature/feature_collector.cpp:474:13: [misc-use-anonymous-namespace]",
+    "core/src/feature/feature_collector.cpp:478:5: [misc-const-correctness]",
+    "core/src/feature/feature_collector.cpp:541:5: [misc-const-correctness]",
+    "core/src/feature/feature_collector.cpp:563:5: [misc-const-correctness]",
+    "core/src/feature/feature_collector.h:52:1: [modernize-use-using]",
+    "core/src/feature/feature_collector.h:61:1: [modernize-use-using]",
+    "core/src/feature/feature_collector.h:69:1: [modernize-use-using]",
+    "core/src/feature/feature_collector.h:74:1: [modernize-use-using]",
+    "core/src/feature/feature_name.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/feature/float_adm.c:313:6: [modernize-use-nullptr]",
+    "core/src/feature/float_adm.c:346:12: [readability-function-size]",
+    "core/src/feature/float_adm.c:361:5: [readability-isolate-declaration]",
+    "core/src/feature/float_adm.c:489:43: [modernize-use-nullptr]",
+    "core/src/feature/float_adm.c:491:22: [misc-use-internal-linkage]",
+    "core/src/feature/float_moment.c:166:59: [modernize-use-nullptr]",
+    "core/src/feature/float_moment.c:168:22: [misc-use-internal-linkage]",
+    "core/src/feature/float_ms_ssim.c:193:12: [readability-function-size]",
+    "core/src/feature/float_ms_ssim.c:279:5: [modernize-use-nullptr]",
+    "core/src/feature/float_ms_ssim.c:90:6: [modernize-use-nullptr]",
+    "core/src/feature/float_ssim.c:212:57: [modernize-use-nullptr]",
+    "core/src/feature/float_ssim.c:89:6: [modernize-use-nullptr]",
+    "core/src/feature/float_vif.c:186:6: [modernize-use-nullptr]",
+    "core/src/feature/float_vif.c:188:12: [readability-function-size]",
+    "core/src/feature/float_vif.c:226:19: [bugprone-incorrect-roundings]",
+    "core/src/feature/float_vif.c:227:19: [bugprone-incorrect-roundings]",
+    "core/src/feature/float_vif.c:295:12: [readability-function-size]",
+    "core/src/feature/float_vif.c:320:5: [readability-isolate-declaration]",
+    "core/src/feature/float_vif.c:430:43: [modernize-use-nullptr]",
+    "core/src/feature/float_vif.c:432:22: [misc-use-internal-linkage]",
+    "core/src/feature/integer_motion.c:146:6: [modernize-use-nullptr]",
+    "core/src/feature/integer_motion.c:252:12: [readability-function-size]",
+    "core/src/feature/integer_motion.c:302:18: [readability-braces-around-statements]",
+    "core/src/feature/integer_motion.c:304:9: [readability-braces-around-statements]",
+    "core/src/feature/integer_motion.c:309:22: [readability-braces-around-statements]",
+    "core/src/feature/integer_motion.c:311:13: [readability-braces-around-statements]",
+    "core/src/feature/integer_motion.c:316:22: [readability-braces-around-statements]",
+    "core/src/feature/integer_motion.c:318:13: [readability-braces-around-statements]",
+    "core/src/feature/integer_motion.c:398:12: [readability-function-size]",
+    "core/src/feature/integer_motion.c:497:5: [modernize-use-nullptr]",
+    "core/src/feature/integer_motion.c:500:22: [misc-use-internal-linkage]",
+    "core/src/feature/integer_motion.h:40:27: [readability-braces-around-statements]",
+    "core/src/feature/integer_motion.h:42:37: [readability-braces-around-statements]",
+    "core/src/feature/integer_motion.h:45:27: [readability-braces-around-statements]",
+    "core/src/feature/integer_motion.h:47:38: [readability-braces-around-statements]",
+    "core/src/feature/integer_motion_v2.c:150:6: [modernize-use-nullptr]",
+    "core/src/feature/integer_motion_v2.c:256:12: [readability-function-size]",
+    "core/src/feature/integer_motion_v2.c:387:12: [readability-function-size]",
+    "core/src/feature/integer_motion_v2.c:492:84: [modernize-use-nullptr]",
+    "core/src/feature/iqa/iqa.h:35:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/feature/iqa/iqa_options.h:19:1: [portability-avoid-pragma-once]",
+    "core/src/feature/iqa/iqa_os.h:35:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/feature/iqa/math_utils.h:35:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/feature/iqa/math_utils.h:43:5: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/feature/iqa/math_utils.h:45:5: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/feature/iqa/math_utils.h:47:5: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/feature/iqa/math_utils.h:53:5: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/feature/iqa/math_utils.h:60:5: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/feature/iqa/ssim_tools.c:53:47: [modernize-use-nullptr]",
+    "core/src/feature/iqa/ssim_tools.c:54:43: [modernize-use-nullptr]",
+    "core/src/feature/iqa/ssim_tools.c:55:47: [modernize-use-nullptr]",
+    "core/src/feature/iqa/ssim_tools.c:66:41: [modernize-use-nullptr]",
+    "core/src/feature/luminance_tools.h:26:1: [modernize-use-using]",
+    "core/src/feature/luminance_tools.h:33:6: [performance-enum-size]",
+    "core/src/feature/luminance_tools.h:42:1: [modernize-use-using]",
+    "core/src/feature/moment.c:31:5: [misc-use-internal-linkage]",
+    "core/src/feature/moment.c:51:5: [misc-use-internal-linkage]",
+    "core/src/feature/moment_options.h:19:1: [portability-avoid-pragma-once]",
+    "core/src/feature/motion.c:157:5: [misc-use-internal-linkage]",
+    "core/src/feature/motion.c:92:7: [misc-use-internal-linkage]",
+    "core/src/feature/motion_blend_tools.h:21:1: [portability-avoid-pragma-once]",
+    "core/src/feature/motion_options.h:19:1: [portability-avoid-pragma-once]",
+    "core/src/feature/motion_tools.h:19:1: [portability-avoid-pragma-once]",
+    "core/src/feature/ms_ssim.c:209:78: [modernize-use-nullptr]",
+    "core/src/feature/ms_ssim.c:209:81: [modernize-use-nullptr]",
+    "core/src/feature/ms_ssim.c:240:58: [modernize-use-nullptr]",
+    "core/src/feature/ms_ssim.c:240:64: [modernize-use-nullptr]",
+    "core/src/feature/ms_ssim.c:326:24: [modernize-use-nullptr]",
+    "core/src/feature/ms_ssim.c:327:24: [modernize-use-nullptr]",
+    "core/src/feature/niqe_model.h:47:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/feature/null.c:49:22: [misc-use-internal-linkage]",
+    "core/src/feature/picture_copy.cpp:49:13: [misc-use-anonymous-namespace]",
+    "core/src/feature/picture_copy.h:19:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/feature/psnr_options.h:19:1: [portability-avoid-pragma-once]",
+    "core/src/feature/speed_internal.h:118:1: [modernize-use-using]",
+    "core/src/feature/speed_internal.h:289:1: [modernize-use-using]",
+    "core/src/feature/speed_internal.h:98:1: [modernize-use-using]",
+    "core/src/feature/ssim.c:127:40: [modernize-use-nullptr]",
+    "core/src/feature/ssim.c:156:52: [modernize-use-nullptr]",
+    "core/src/feature/ssim.c:98:60: [modernize-use-nullptr]",
+    "core/src/feature/ssim.c:98:63: [modernize-use-nullptr]",
+    "core/src/feature/ssim.c:98:66: [modernize-use-nullptr]",
+    "core/src/feature/ssim.c:99:60: [modernize-use-nullptr]",
+    "core/src/feature/vif_options.h:19:1: [portability-avoid-pragma-once]",
+    "core/src/feature/vif_tools.h:19:1: [portability-avoid-pragma-once]",
+    "core/src/feature/x86/float_adm_avx2.c:239:28: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx2.c:286:28: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx2.c:49:6: [readability-function-size]",
+    "core/src/feature/x86/float_adm_avx2.c:87:29: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx2.c:88:29: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx2.c:89:29: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx2.c:90:29: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:100:29: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:101:29: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:102:29: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:103:29: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:162:17: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:164:17: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:172:17: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:174:17: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:185:44: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:186:44: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:190:44: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:191:44: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:199:34: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:205:34: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:207:37: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:208:37: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:212:37: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:213:37: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:221:34: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:227:34: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:276:32: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:277:26: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:278:26: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:312:28: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:353:28: [bugprone-implicit-widening-of-multiplication-result]",
+    "core/src/feature/x86/float_adm_avx512.c:64:6: [readability-function-size]",
+    "core/src/feature/x86/motion_avx2.c:137:10: [misc-use-internal-linkage]",
+    "core/src/feature/x86/motion_avx2.c:137:10: [readability-function-size]",
+    "core/src/feature/x86/motion_avx2.c:156:9: [readability-isolate-declaration]",
+    "core/src/feature/x86/motion_avx2.c:238:10: [misc-use-internal-linkage]",
+    "core/src/feature/x86/motion_avx2.c:238:10: [readability-function-size]",
+    "core/src/feature/x86/motion_avx2.c:251:9: [readability-isolate-declaration]",
+    "core/src/feature/x86/motion_avx2.c:48:24: [readability-function-size]",
+    "core/src/feature/x86/motion_avx512.c:123:10: [misc-use-internal-linkage]",
+    "core/src/feature/x86/motion_avx512.c:123:10: [readability-function-size]",
+    "core/src/feature/x86/motion_avx512.c:141:9: [readability-isolate-declaration]",
+    "core/src/feature/x86/motion_avx512.c:220:10: [misc-use-internal-linkage]",
+    "core/src/feature/x86/motion_avx512.c:220:10: [readability-function-size]",
+    "core/src/feature/x86/motion_avx512.c:233:9: [readability-isolate-declaration]",
+    "core/src/feature/x86/motion_avx512.c:335:6: [misc-use-internal-linkage]",
+    "core/src/feature/x86/motion_avx512.c:385:6: [misc-use-internal-linkage]",
+    "core/src/feature/x86/motion_avx512.c:385:6: [readability-function-size]",
+    "core/src/feature/x86/motion_avx512.c:404:31: [readability-braces-around-statements]",
+    "core/src/feature/x86/motion_avx512.c:406:47: [readability-braces-around-statements]",
+    "core/src/feature/x86/motion_avx512.c:41:24: [readability-function-size]",
+    "core/src/feature/x86/motion_avx512.c:490:31: [readability-braces-around-statements]",
+    "core/src/feature/x86/motion_avx512.c:492:47: [readability-braces-around-statements]",
+    "core/src/feature/x86/motion_avx512.c:507:6: [misc-use-internal-linkage]",
+    "core/src/feature/x86/motion_avx512.c:507:6: [readability-function-size]",
+    "core/src/feature/x86/motion_avx512.c:584:6: [misc-use-internal-linkage]",
+    "core/src/feature/x86/motion_avx512.c:584:6: [readability-function-size]",
+    "core/src/fex_ctx_vector.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/fex_ctx_vector.h:38:1: [modernize-use-using]",
+    "core/src/framesync.c:145:30: [modernize-use-nullptr]",
+    "core/src/framesync.c:209:5: [readability-function-size]",
+    "core/src/framesync.c:63:46: [modernize-use-nullptr]",
+    "core/src/framesync.c:64:47: [modernize-use-nullptr]",
+    "core/src/framesync.c:65:41: [modernize-use-nullptr]",
+    "core/src/framesync.c:73:19: [modernize-use-nullptr]",
+    "core/src/framesync.c:80:21: [modernize-use-nullptr]",
+    "core/src/framesync.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/framesync.h:43:1: [modernize-use-using]",
+    "core/src/gpu_picture_pool.cpp:168:5: [misc-const-correctness]",
+    "core/src/gpu_picture_pool.h:51:1: [modernize-use-using]",
+    "core/src/gpu_picture_pool.h:59:1: [modernize-use-using]",
+    "core/src/hip/stubs.c:43:16: [modernize-use-nullptr]",
+    "core/src/hip/stubs.c:62:18: [modernize-use-nullptr]",
+    "core/src/interop/pelorus_deband_params.c:75:13: [modernize-use-nullptr]",
+    "core/src/interop/pelorus_denoise_params.c:76:13: [modernize-use-nullptr]",
+    "core/src/interop/pelorus_interop.c:113:12: [readability-function-size]",
+    "core/src/interop/pelorus_interop.c:148:17: [modernize-use-nullptr]",
+    "core/src/interop/pelorus_interop.c:177:30: [bugprone-casting-through-void]",
+    "core/src/interop/pelorus_interop.c:181:32: [bugprone-casting-through-void]",
+    "core/src/interop/pelorus_interop.c:211:36: [bugprone-casting-through-void]",
+    "core/src/interop/pelorus_interop.c:218:12: [readability-function-size]",
+    "core/src/interop/pelorus_interop.c:228:20: [modernize-use-nullptr]",
+    "core/src/interop/pelorus_interop.c:245:36: [bugprone-casting-through-void]",
+    "core/src/interop/pelorus_interop.c:265:38: [bugprone-casting-through-void]",
+    "core/src/interop/pelorus_interop.c:292:12: [readability-function-size]",
+    "core/src/interop/pelorus_qp_report_csv.c:183:18: [modernize-use-nullptr]",
+    "core/src/interop/pelorus_qp_report_csv.c:199:18: [modernize-use-nullptr]",
+    "core/src/interop/pelorus_qp_report_csv.c:218:18: [modernize-use-nullptr]",
+    "core/src/interop/pelorus_qp_report_csv.c:281:12: [readability-function-size]",
+    "core/src/log.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/mcp/3rdparty/cJSON/cJSON.h:302:63: [bugprone-macro-parentheses]",
+    "core/src/mcp/3rdparty/cJSON/cJSON.h:302:7: [bugprone-macro-parentheses]",
+    "core/src/mcp/3rdparty/cJSON/cJSON.h:308:7: [bugprone-macro-parentheses]",
+    "core/src/mcp/3rdparty/cJSON/cJSON.h:315:10: [bugprone-macro-parentheses]",
+    "core/src/mcp/3rdparty/cJSON/cJSON.h:315:21: [bugprone-macro-parentheses]",
+    "core/src/mcp/3rdparty/cJSON/cJSON.h:315:61: [bugprone-macro-parentheses]",
+    "core/src/mcp/3rdparty/cJSON/cJSON.h:316:10: [bugprone-macro-parentheses]",
+    "core/src/mcp/3rdparty/cJSON/cJSON.h:316:20: [bugprone-macro-parentheses]",
+    "core/src/mem.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/metadata.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/metadata.h:22:1: [modernize-use-using]",
+    "core/src/metadata.h:35:1: [modernize-use-using]",
+    "core/src/metadata.h:50:1: [modernize-use-using]",
+    "core/src/metadata_handler.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/metadata_handler.h:28:1: [modernize-use-using]",
+    "core/src/metadata_handler.h:35:1: [modernize-use-using]",
+    "core/src/model.c:171:6: [modernize-use-nullptr]",
+    "core/src/model.c:183:46: [modernize-use-nullptr]",
+    "core/src/model.c:208:16: [modernize-use-nullptr]",
+    "core/src/model.c:396:25: [modernize-use-nullptr]",
+    "core/src/model.c:419:46: [modernize-use-nullptr]",
+    "core/src/model.c:468:36: [modernize-use-nullptr]",
+    "core/src/model.c:492:16: [modernize-use-nullptr]",
+    "core/src/model.c:495:41: [modernize-use-nullptr]",
+    "core/src/model.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/model.h:32:6: [performance-enum-size]",
+    "core/src/model.h:39:6: [performance-enum-size]",
+    "core/src/model.h:45:1: [modernize-use-using]",
+    "core/src/model.h:51:1: [modernize-use-using]",
+    "core/src/model.h:56:1: [modernize-use-using]",
+    "core/src/model.h:96:1: [modernize-use-using]",
+    "core/src/opt.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/opt.h:30:6: [performance-enum-size]",
+    "core/src/opt.h:38:6: [performance-enum-size]",
+    "core/src/opt.h:60:1: [modernize-use-using]",
+    "core/src/output.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/pdjson.h:29:1: [cert-int09-c]",
+    "core/src/pdjson.h:29:6: [performance-enum-size]",
+    "core/src/pdjson.h:50:1: [modernize-use-using]",
+    "core/src/pdjson.h:52:1: [modernize-use-using]",
+    "core/src/pdjson.h:53:1: [modernize-use-using]",
+    "core/src/percentile.h:21:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/picture.h:33:6: [performance-enum-size]",
+    "core/src/picture.h:52:1: [modernize-use-using]",
+    "core/src/picture_pool.c:113:30: [modernize-use-nullptr]",
+    "core/src/picture_pool.c:153:40: [modernize-use-nullptr]",
+    "core/src/picture_pool.c:157:44: [modernize-use-nullptr]",
+    "core/src/picture_pool.c:178:13: [modernize-use-nullptr]",
+    "core/src/picture_pool.c:210:5: [readability-function-size]",
+    "core/src/picture_pool.cpp:208:5: [readability-function-size]",
+    "core/src/picture_pool.cpp:229:5: [misc-const-correctness]",
+    "core/src/picture_pool.cpp:34:8: [misc-use-internal-linkage]",
+    "core/src/picture_pool.cpp:61:12: [misc-use-anonymous-namespace]",
+    "core/src/picture_pool.cpp:66:5: [misc-const-correctness]",
+    "core/src/picture_pool.cpp:68:5: [misc-const-correctness]",
+    "core/src/picture_pool.cpp:81:12: [misc-use-anonymous-namespace]",
+    "core/src/picture_pool.cpp:91:9: [misc-const-correctness]",
+    "core/src/picture_pool.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/picture_pool.h:37:1: [modernize-use-using]",
+    "core/src/picture_pool.h:46:1: [modernize-use-using]",
+    "core/src/predict.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/read_json_model.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/ref.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/ref.h:48:1: [modernize-use-using]",
+    "core/src/svm.h:37:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/svm.h:58:1: [performance-enum-size]",
+    "core/src/svm.h:59:1: [performance-enum-size]",
+    "core/src/sycl/dispatch_strategy.h:19:1: [modernize-use-using]",
+    "core/src/sycl/dispatch_strategy.h:19:9: [performance-enum-size]",
+    "core/src/thread_locale.cpp:105:27: [modernize-use-nullptr]",
+    "core/src/thread_locale.cpp:110:38: [modernize-use-nullptr]",
+    "core/src/thread_locale.cpp:153:5: [misc-const-correctness]",
+    "core/src/thread_locale.cpp:53:10: [modernize-deprecated-headers]",
+    "core/src/thread_locale.cpp:60:14: [misc-non-private-member-variables-in-classes]",
+    "core/src/thread_locale.cpp:60:33: [modernize-use-nullptr]",
+    "core/src/thread_locale.cpp:61:14: [misc-non-private-member-variables-in-classes]",
+    "core/src/thread_locale.cpp:61:35: [modernize-use-nullptr]",
+    "core/src/thread_locale.cpp:77:35: [modernize-use-nullptr]",
+    "core/src/thread_locale.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/thread_locale.h:30:1: [modernize-use-using]",
+    "core/src/thread_pool.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/x86/cpu.c:43:10: [readability-function-size]",
+    "core/src/x86/cpu.h:20:9: [bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp]",
+    "core/src/x86/cpu.h:22:6: [performance-enum-size]",
+    "core/test/test.h:33:1: [modernize-use-using]",
+    "core/test/test.h:63:77: [modernize-redundant-void-arg]",
+    "core/test/test_adm_csf.c:39:12: [modernize-use-nullptr]",
+    "core/test/test_adm_csf.c:45:12: [modernize-use-nullptr]",
+    "core/test/test_ciede.c:120:12: [modernize-use-nullptr]",
+    "core/test/test_ciede.c:133:12: [modernize-use-nullptr]",
+    "core/test/test_ciede.c:144:12: [modernize-use-nullptr]",
+    "core/test/test_ciede.c:155:12: [modernize-use-nullptr]",
+    "core/test/test_ciede.c:166:12: [modernize-use-nullptr]",
+    "core/test/test_ciede.c:177:12: [modernize-use-nullptr]",
+    "core/test/test_ciede.c:20:11: [bugprone-suspicious-include]",
+    "core/test/test_ciede.c:25:12: [performance-type-promotion-in-math-fn]",
+    "core/test/test_ciede.c:35:14: [readability-function-size]",
+    "core/test/test_ciede.c:77:12: [modernize-use-nullptr]",
+    "core/test/test_ciede.c:80:14: [readability-function-size]",
+    "core/test/test_context.c:100:25: [modernize-use-nullptr]",
+    "core/test/test_context.c:114:12: [modernize-use-nullptr]",
+    "core/test/test_context.c:122:40: [modernize-use-nullptr]",
+    "core/test/test_context.c:125:25: [modernize-use-nullptr]",
+    "core/test/test_context.c:130:42: [modernize-use-nullptr]",
+    "core/test/test_context.c:136:12: [modernize-use-nullptr]",
+    "core/test/test_context.c:146:12: [modernize-use-nullptr]",
+    "core/test/test_context.c:27:25: [modernize-use-nullptr]",
+    "core/test/test_context.c:35:12: [modernize-use-nullptr]",
+    "core/test/test_context.c:38:14: [readability-function-size]",
+    "core/test/test_context.c:41:25: [modernize-use-nullptr]",
+    "core/test/test_context.c:70:12: [modernize-use-nullptr]",
+    "core/test/test_context.c:78:25: [modernize-use-nullptr]",
+    "core/test/test_context.c:93:12: [modernize-use-nullptr]",
+    "core/test/test_cpu.c:31:12: [modernize-use-nullptr]",
+    "core/test/test_cpu.c:37:12: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:102:32: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:113:12: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:116:21: [misc-use-anonymous-namespace]",
+    "core/test/test_dict.cpp:116:21: [readability-function-size]",
+    "core/test/test_dict.cpp:119:25: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:120:25: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:121:25: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:122:40: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:180:12: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:183:21: [misc-use-anonymous-namespace]",
+    "core/test/test_dict.cpp:183:21: [readability-function-size]",
+    "core/test/test_dict.cpp:187:25: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:188:25: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:228:12: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:231:21: [misc-use-anonymous-namespace]",
+    "core/test/test_dict.cpp:231:21: [readability-function-size]",
+    "core/test/test_dict.cpp:235:25: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:236:36: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:292:12: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:295:21: [misc-use-anonymous-namespace]",
+    "core/test/test_dict.cpp:299:35: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:307:12: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:310:21: [misc-use-anonymous-namespace]",
+    "core/test/test_dict.cpp:314:28: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:339:12: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:342:21: [misc-use-anonymous-namespace]",
+    "core/test/test_dict.cpp:342:21: [readability-function-size]",
+    "core/test/test_dict.cpp:358:12: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:35:21: [misc-use-anonymous-namespace]",
+    "core/test/test_dict.cpp:35:21: [readability-function-size]",
+    "core/test/test_dict.cpp:370:12: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:39:28: [modernize-use-nullptr]",
+    "core/test/test_dict.cpp:78:40: [modernize-use-nullptr]",
+    "core/test/test_feature_collector.c:123:12: [modernize-use-nullptr]",
+    "core/test/test_feature_collector.c:126:14: [readability-function-size]",
+    "core/test/test_feature_collector.c:137:15: [clang-analyzer-unix.Malloc]",
+    "core/test/test_feature_collector.c:162:12: [modernize-use-nullptr]",
+    "core/test/test_feature_collector.c:188:12: [modernize-use-nullptr]",
+    "core/test/test_feature_collector.c:20:11: [bugprone-suspicious-include]",
+    "core/test/test_feature_collector.c:21:11: [bugprone-suspicious-include]",
+    "core/test/test_feature_collector.c:221:15: [clang-analyzer-unix.Malloc]",
+    "core/test/test_feature_collector.c:225:12: [modernize-use-nullptr]",
+    "core/test/test_feature_collector.c:228:14: [readability-function-size]",
+    "core/test/test_feature_collector.c:280:12: [modernize-use-nullptr]",
+    "core/test/test_feature_collector.c:292:12: [modernize-use-nullptr]",
+    "core/test/test_feature_collector.c:31:25: [modernize-use-nullptr]",
+    "core/test/test_feature_collector.c:35:34: [modernize-use-nullptr]",
+    "core/test/test_feature_collector.c:49:12: [modernize-use-nullptr]",
+    "core/test/test_feature_collector.c:96:12: [modernize-use-nullptr]",
+    "core/test/test_framesync.c:110:14: [readability-function-size]",
+    "core/test/test_framesync.c:130:19: [clang-analyzer-unix.Malloc]",
+    "core/test/test_framesync.c:164:12: [modernize-use-nullptr]",
+    "core/test/test_framesync.c:170:12: [modernize-use-nullptr]",
+    "core/test/test_framesync.c:44:12: [readability-function-size]",
+    "core/test/test_framesync.c:53:57: [bugprone-multi-level-implicit-pointer-conversion]",
+    "core/test/test_framesync.c:68:5: [concurrency-mt-unsafe]",
+    "core/test/test_framesync.c:75:62: [bugprone-multi-level-implicit-pointer-conversion]",
+    "core/test/test_hip_wavefront_reduce.c:65:12: [modernize-use-nullptr]",
+    "core/test/test_hip_wavefront_reduce.c:77:12: [modernize-use-nullptr]",
+    "core/test/test_hip_wavefront_reduce.c:90:12: [modernize-use-nullptr]",
+    "core/test/test_hip_wavefront_reduce.c:98:12: [modernize-use-nullptr]",
+    "core/test/test_locale_handling.c:115:11: [concurrency-mt-unsafe]",
+    "core/test/test_locale_handling.c:120:14: [readability-function-size]",
+    "core/test/test_locale_handling.c:146:11: [concurrency-mt-unsafe]",
+    "core/test/test_locale_handling.c:154:5: [bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c]",
+    "core/test/test_locale_handling.c:156:25: [clang-analyzer-unix.Errno]",
+    "core/test/test_locale_handling.c:170:11: [concurrency-mt-unsafe]",
+    "core/test/test_locale_handling.c:175:14: [readability-function-size]",
+    "core/test/test_locale_handling.c:201:11: [concurrency-mt-unsafe]",
+    "core/test/test_locale_handling.c:209:5: [bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c]",
+    "core/test/test_locale_handling.c:211:25: [clang-analyzer-unix.Errno]",
+    "core/test/test_locale_handling.c:225:11: [concurrency-mt-unsafe]",
+    "core/test/test_locale_handling.c:246:11: [concurrency-mt-unsafe]",
+    "core/test/test_locale_handling.c:254:5: [bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c]",
+    "core/test/test_locale_handling.c:256:25: [clang-analyzer-unix.Errno]",
+    "core/test/test_locale_handling.c:267:11: [concurrency-mt-unsafe]",
+    "core/test/test_locale_handling.c:291:11: [concurrency-mt-unsafe]",
+    "core/test/test_locale_handling.c:317:11: [concurrency-mt-unsafe]",
+    "core/test/test_locale_handling.c:44:30: [concurrency-mt-unsafe]",
+    "core/test/test_locale_handling.c:52:20: [concurrency-mt-unsafe]",
+    "core/test/test_locale_handling.c:56:15: [concurrency-mt-unsafe]",
+    "core/test/test_locale_handling.c:97:11: [concurrency-mt-unsafe]",
+    "core/test/test_log.c:35:14: [clang-analyzer-optin.core.EnumCastOutOfRange]",
+    "core/test/test_log.c:36:14: [clang-analyzer-optin.core.EnumCastOutOfRange]",
+    "core/test/test_log.c:38:12: [modernize-use-nullptr]",
+    "core/test/test_log.c:44:12: [modernize-use-nullptr]",
+    "core/test/test_luminance_tools.cpp:103:21: [misc-use-anonymous-namespace]",
+    "core/test/test_luminance_tools.cpp:132:21: [misc-use-anonymous-namespace]",
+    "core/test/test_luminance_tools.cpp:157:21: [misc-use-anonymous-namespace]",
+    "core/test/test_luminance_tools.cpp:165:5: [misc-const-correctness]",
+    "core/test/test_luminance_tools.cpp:181:12: [modernize-use-nullptr]",
+    "core/test/test_luminance_tools.cpp:20:11: [bugprone-suspicious-include]",
+    "core/test/test_luminance_tools.cpp:25:5: [misc-use-internal-linkage]",
+    "core/test/test_luminance_tools.cpp:31:21: [misc-use-anonymous-namespace]",
+    "core/test/test_luminance_tools.cpp:43:21: [misc-use-anonymous-namespace]",
+    "core/test/test_luminance_tools.cpp:58:21: [misc-use-anonymous-namespace]",
+    "core/test/test_luminance_tools.cpp:76:21: [misc-use-anonymous-namespace]",
+    "core/test/test_pelorus_interop.c:198:30: [bugprone-casting-through-void]",
+    "core/test/test_pelorus_interop.c:292:30: [bugprone-casting-through-void]",
+    "core/test/test_pelorus_interop.c:293:32: [bugprone-casting-through-void]",
+    "core/test/test_pelorus_interop.c:326:13: [readability-function-size]",
+    "core/test/test_pelorus_interop.c:404:13: [readability-function-size]",
+    "core/test/test_pelorus_interop.c:475:13: [readability-function-size]",
+    "core/test/test_pelorus_interop.c:517:13: [readability-function-size]",
+    "core/test/test_pelorus_interop.c:566:13: [readability-function-size]",
+    "core/test/test_pelorus_interop.c:71:13: [readability-function-size]",
+    "core/test/test_pic_preallocation.c:207:14: [readability-function-size]",
+    "core/test/test_pic_preallocation.c:270:14: [readability-function-size]",
+    "core/test/test_pic_preallocation.c:376:14: [readability-function-size]",
+    "core/test/test_pic_preallocation.c:40:14: [readability-function-size]",
+    "core/test/test_pic_preallocation.c:414:36: [bugprone-multi-level-implicit-pointer-conversion]",
+    "core/test/test_pic_preallocation.c:417:22: [bugprone-multi-level-implicit-pointer-conversion]",
+    "core/test/test_pic_preallocation.c:424:22: [bugprone-multi-level-implicit-pointer-conversion]",
+    "core/test/test_pic_preallocation.c:436:14: [bugprone-multi-level-implicit-pointer-conversion]",
+    "core/test/test_pic_preallocation.c:452:5: [concurrency-mt-unsafe]",
+    "core/test/test_pic_preallocation.c:508:14: [readability-function-size]",
+    "core/test/test_pic_preallocation.c:547:36: [bugprone-multi-level-implicit-pointer-conversion]",
+    "core/test/test_pic_preallocation.c:550:22: [bugprone-multi-level-implicit-pointer-conversion]",
+    "core/test/test_pic_preallocation.c:557:22: [bugprone-multi-level-implicit-pointer-conversion]",
+    "core/test/test_pic_preallocation.c:569:14: [bugprone-multi-level-implicit-pointer-conversion]",
+    "core/test/test_pic_preallocation.c:579:7: [readability-function-size]",
+    "core/test/test_pic_preallocation.c:98:14: [readability-function-size]",
+    "core/test/test_predict.c:137:18: [modernize-use-nullptr]",
+    "core/test/test_predict.c:155:12: [modernize-use-nullptr]",
+    "core/test/test_predict.c:158:14: [readability-function-size]",
+    "core/test/test_predict.c:221:12: [modernize-use-nullptr]",
+    "core/test/test_predict.c:224:14: [readability-function-size]",
+    "core/test/test_predict.c:25:11: [bugprone-suspicious-include]",
+    "core/test/test_predict.c:300:12: [modernize-use-nullptr]",
+    "core/test/test_predict.c:328:12: [modernize-use-nullptr]",
+    "core/test/test_predict.c:338:12: [modernize-use-nullptr]",
+    "core/test/test_predict.c:62:12: [modernize-use-nullptr]",
+    "core/test/test_predict.c:65:6: [misc-use-internal-linkage]",
+    "core/test/test_predict.c:77:14: [readability-function-size]",
+    "core/test/test_predict.c:81:28: [modernize-use-nullptr]",
+    "core/test/test_propagate_metadata.c:26:6: [misc-use-internal-linkage]",
+    "core/test/test_propagate_metadata.c:42:12: [modernize-use-nullptr]",
+    "core/test/test_propagate_metadata.c:55:12: [modernize-use-nullptr]",
+    "core/test/test_propagate_metadata.c:64:50: [modernize-use-nullptr]",
+    "core/test/test_propagate_metadata.c:65:36: [modernize-use-nullptr]",
+    "core/test/test_propagate_metadata.c:84:12: [modernize-use-nullptr]",
+    "core/test/test_propagate_metadata.c:92:12: [modernize-use-nullptr]",
+    "core/test/test_psnr.c:106:12: [modernize-use-nullptr]",
+    "core/test/test_psnr.c:20:11: [bugprone-suspicious-include]",
+    "core/test/test_psnr.c:53:14: [readability-function-size]",
+    "core/test/test_psnr.c:99:12: [modernize-use-nullptr]",
+    "core/test/test_ref.c:41:12: [modernize-use-nullptr]",
+    "core/test/test_ref.c:47:12: [modernize-use-nullptr]",
+    "core/test/test_thread_pool.c:109:35: [modernize-use-nullptr]",
+    "core/test/test_thread_pool.c:113:28: [modernize-use-nullptr]",
+    "core/test/test_thread_pool.c:125:12: [modernize-use-nullptr]",
+    "core/test/test_thread_pool.c:132:12: [modernize-use-nullptr]",
+    "core/test/test_thread_pool.c:70:48: [modernize-use-nullptr]",
+    "core/test/test_thread_pool.c:72:48: [modernize-use-nullptr]",
+    "core/test/test_thread_pool.c:74:48: [modernize-use-nullptr]",
+    "core/test/test_thread_pool.c:86:12: [modernize-use-nullptr]",
+    "core/test/test_version.c:36:12: [modernize-use-nullptr]",
+    "core/test/test_version.c:51:12: [modernize-use-nullptr]",
+    "core/test/test_version.c:58:12: [modernize-use-nullptr]",
+    "core/test/tiny_ai_test_template.h:64:12: [concurrency-mt-unsafe]",
+    "core/test/tiny_ai_test_template.h:68:12: [concurrency-mt-unsafe]",
+    "core/tools/cli_parse.h:37:1: [modernize-use-using]",
+    "core/tools/cli_parse.h:43:1: [modernize-use-using]",
+    "core/tools/cli_parse.h:56:1: [modernize-use-using]",
+    "core/tools/cli_parse.h:56:9: [clang-analyzer-optin.performance.Padding]",
+    "core/tools/vidinput.h:51:1: [modernize-use-using]",
+    "core/tools/vidinput.h:52:1: [modernize-use-using]",
+    "core/tools/vidinput.h:53:1: [modernize-use-using]",
+    "core/tools/vidinput.h:60:1: [modernize-use-using]",
+    "core/tools/vidinput.h:62:1: [modernize-use-using]",
+    "core/tools/vidinput.h:63:1: [modernize-use-using]",
+    "core/tools/vidinput.h:64:1: [modernize-use-using]",
+    "core/tools/vidinput.h:66:1: [modernize-use-using]",
+    "core/tools/vidinput.h:67:1: [modernize-use-using]",
+    "core/tools/vidinput.h:70:1: [modernize-use-using]",
+    "core/tools/vidinput.h:98:1: [modernize-use-using]",
+    "core/tools/vidinput.h:98:9: [performance-enum-size]"
   ]
 }
