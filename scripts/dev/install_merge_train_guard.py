@@ -18,13 +18,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-try:
-    from scripts.lib.safe_subprocess import CommandFailed
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from lib.safe_subprocess import CommandFailed
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import CommandFailed
+from scripts.lib.safe_subprocess import run as run_command
 
 SOURCE_PATH = "scripts/dev/merge_train_guard.py"
 RUNTIME_FILES = ("train.sh", "rebase-clean.sh", "watchdog.sh", "merge_train_operator.py")

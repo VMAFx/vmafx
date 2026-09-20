@@ -34,12 +34,20 @@ memory ceiling. POSIX children run in a new session so timeout and overflow
 cleanup signal the complete process group; Windows children run in a new
 process group and use the platform termination path.
 
-Expose synchronous and asynchronous entry points with one immutable result
-type and explicit exception types. A stream redirected to a file is outside
-the in-memory cap by design; the caller owns that file's retention and size
-policy. Keep domain-level runner injection seams where tests need them, but
-the production default inside the repository-automation scope remains this
-boundary.
+Expose synchronous and asynchronous entry points with immutable binary and
+text result types plus explicit exception types. An uncaptured stream is the
+empty value of its selected type; callers therefore never weaken successful
+output handling to an unchecked nullable union. A stream redirected to a file
+is outside the in-memory cap by design; the caller owns that file's retention
+and size policy. Keep domain-level runner injection seams where tests need
+them, but the production default inside the repository-automation scope
+remains this boundary.
+
+Make `scripts/` an explicit Python package and import the boundary only as
+`scripts.lib.safe_subprocess`. Direct-path scripts prepend their resolved
+repository root before that import. This gives the helper one runtime and mypy
+module identity instead of the conflicting `lib.safe_subprocess` and
+`scripts.lib.safe_subprocess` names exposed by the first pre-push run.
 
 ## Alternatives considered
 
@@ -56,6 +64,8 @@ boundary.
   `subprocess` launch left and no `S603` waiver is needed for those calls.
 - **Positive**: floods, hangs, invalid executables, malformed arguments, and
   non-zero exits have executable negative controls.
+- **Positive**: direct script execution and package imports share one helper
+  class identity, and the complete changed Python scope is strict-mypy clean.
 - **Negative**: callers must select realistic timeout and output ceilings;
   an undersized value fails closed and requires evidence before adjustment.
 - **Neutral / follow-ups**: application packages with injectable runner APIs

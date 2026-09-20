@@ -11,11 +11,13 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from typing import Any, cast
 
 from scripts.lib.safe_subprocess import (
     MAX_ARG_BYTES,
     CommandFailed,
     CommandOutputLimitExceeded,
+    CommandResult,
     CommandTimedOut,
     CommandValidationError,
     run,
@@ -26,14 +28,25 @@ ALLOW_PYTHON = (PYTHON,)
 
 
 class SafeSubprocessTests(unittest.TestCase):
-    def python(self, source: str, **kwargs: object):
-        return run([PYTHON, "-c", source], allowed_executables=ALLOW_PYTHON, **kwargs)
+    def python(self, source: str, **kwargs: Any) -> CommandResult:
+        return cast(
+            CommandResult,
+            run([PYTHON, "-c", source], allowed_executables=ALLOW_PYTHON, **kwargs),
+        )
 
     def test_text_and_binary_capture_are_distinct(self) -> None:
         binary = self.python("import sys; sys.stdout.buffer.write(b'\\xffok')", capture_output=True)
         self.assertEqual(binary.stdout, b"\xffok")
         text = self.python("print('ok')", capture_output=True, text=True)
         self.assertEqual(text.stdout, "ok\n")
+        self.assertEqual(text.stderr, "")
+
+    def test_uncaptured_streams_use_typed_empty_values(self) -> None:
+        binary = self.python("pass")
+        self.assertEqual(binary.stdout, b"")
+        self.assertEqual(binary.stderr, b"")
+        text = self.python("pass", text=True)
+        self.assertEqual(text.stdout, "")
         self.assertEqual(text.stderr, "")
 
     def test_cwd_and_replacement_environment_are_explicit(self) -> None:
@@ -88,7 +101,10 @@ class SafeSubprocessTests(unittest.TestCase):
                 max_output_bytes=1024,
                 timeout_seconds=5,
             )
-        self.assertEqual(len(raised.exception.stdout), 1024)
+        captured = raised.exception.stdout
+        self.assertIsNotNone(captured)
+        assert captured is not None
+        self.assertEqual(len(captured), 1024)
 
     def test_timeout_terminates_the_child_and_returns_partial_output(self) -> None:
         started = time.monotonic()

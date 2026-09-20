@@ -10,13 +10,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-try:
-    from scripts.lib.safe_subprocess import CommandResult
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from lib.safe_subprocess import CommandResult
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[2]
 SMOKE = ROOT / "ffmpeg-patches/test/build-and-run.sh"
@@ -116,7 +113,7 @@ class SmokeSafety(unittest.TestCase):
             }
         )
 
-    def run_smoke(self) -> CommandResult:
+    def run_smoke(self) -> TextCommandResult:
         # Fixed Bash executable, copied repository script and fixture-owned cwd.
         bash = shutil.which("bash")
         self.assertIsNotNone(bash)

@@ -17,13 +17,10 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-try:
-    from scripts.lib.safe_subprocess import CommandResult
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from lib.safe_subprocess import CommandResult
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import CommandResult
+from scripts.lib.safe_subprocess import run as run_command
 
 # A hang detector, not a timing assertion: these subprocesses finish in tens of
 # milliseconds locally, but a loaded CI runner has blown a 10-second cap and the

@@ -15,13 +15,10 @@ import textwrap
 import unittest
 from pathlib import Path
 
-try:
-    from scripts.lib.safe_subprocess import CommandResult
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from lib.safe_subprocess import CommandResult
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
 
 # A hang detector, not a timing assertion: these subprocesses finish in tens of
 # milliseconds locally, but a loaded CI runner has blown a 10-second cap and the
@@ -95,7 +92,7 @@ if not os.environ.get("EMPTY_ASSETS"):print(os.environ["ASSET_PATH"])
         (fake / "setup-envtest").write_text("#!/bin/sh\nexit 99\n")
         (fake / "setup-envtest").chmod(0o755)
 
-    def run_command(self, *args: str) -> CommandResult:
+    def run_command(self, *args: str) -> TextCommandResult:
         return run_command(
             list(args),
             allowed_executables=(BASH, MAKE),
@@ -106,7 +103,7 @@ if not os.environ.get("EMPTY_ASSETS"):print(os.environ["ASSET_PATH"])
             timeout_seconds=SUBPROCESS_TIMEOUT_S,
         )
 
-    def helper_run(self, mode: str) -> CommandResult:
+    def helper_run(self, mode: str) -> TextCommandResult:
         return self.run_command(BASH, str(self.helper), mode)
 
     def calls(self, filename: str) -> list[list[str]]:

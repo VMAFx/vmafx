@@ -263,6 +263,10 @@ contract while preserving ADR-1113's base mirror decision.
 - Consumer tests deliberately preserve each command's prior return and output
   semantics. Keep the `allowed_executables` set narrow and command-specific;
   broadening it to whatever happens to be on `PATH` defeats the boundary.
+- `scripts/__init__.py` and canonical `scripts.lib.safe_subprocess` imports are
+  load-bearing. Direct-path scripts first prepend their resolved repository
+  root; do not restore the `lib.safe_subprocess` fallback, which gives mypy two
+  names for the same file. Keep the two-root regression test.
 - `.github/ci-impact.json` classifies every tracked top-level entry. Add new
   roots to `known_prefixes` or `known_files` in the same change that creates
   them so routing does not silently degrade to the fail-closed full plan.

@@ -39,7 +39,7 @@ from typing import Any
 try:
     import yaml  # type: ignore[import-untyped]
 except ImportError:  # pragma: no cover - exercised only when pyyaml absent
-    yaml = None  # type: ignore[assignment]
+    yaml = None
 
 
 DEFAULT_CALIBRATION_PATH = Path(__file__).parent / "gpu_ulp_calibration.yaml"

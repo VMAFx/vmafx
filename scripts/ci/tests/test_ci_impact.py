@@ -20,11 +20,9 @@ from pathlib import Path
 from types import ModuleType
 from typing import Protocol, cast
 
-try:
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import run as run_command
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PLANNER = REPO_ROOT / "scripts" / "ci" / "plan-ci-impact.py"

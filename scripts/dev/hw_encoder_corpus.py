@@ -32,15 +32,12 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
-try:
-    from scripts.lib.safe_subprocess import CommandResult
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from lib.safe_subprocess import CommandResult
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
 
 CANONICAL_6 = (
     "integer_adm2",
@@ -65,7 +62,7 @@ def resolve_executable(value: str | Path) -> Path:
     return path
 
 
-def report_process_output(process: CommandResult) -> None:
+def report_process_output(process: TextCommandResult) -> None:
     """Surface every diagnostic emitted by a child process."""
     if process.stdout:
         sys.stdout.write(process.stdout)
@@ -250,15 +247,15 @@ def score_cuda(
 
 
 def emit_rows(
-    payload: dict,
+    payload: dict[str, Any],
     *,
     src: str,
     encoder: str,
     cq: int,
     enc_bytes: int,
     enc_time_ms: float,
-) -> list[dict]:
-    rows: list[dict] = []
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     for fr in payload.get("frames", []):
         m = fr.get("metrics", {})
         if not all(k in m for k in CANONICAL_6):
@@ -358,7 +355,7 @@ def score_candidate(
     mp4: Path,
     enc_ms: float,
     size: int,
-) -> tuple[dict, list[dict]] | None:
+) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
     """Decode and score one encoded quality point."""
     yuv = workdir / f"{src_stem}_{args.encoder}_cq{cq}.yuv"
     if decode_to_raw(mp4, yuv, args.pix_fmt, ffmpeg_bin=args.ffmpeg_bin) != 0 or not yuv.exists():

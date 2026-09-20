@@ -13,19 +13,22 @@ import tempfile
 import unittest
 from pathlib import Path
 
-try:
-    from scripts.lib.safe_subprocess import CommandResult
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from lib.safe_subprocess import CommandResult
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
 
 SCRIPT = Path(__file__).with_name("pre-push-mypy.py").resolve()
 HELPER = SCRIPT.parents[1] / "lib/safe_subprocess.py"
 CONFIG = SCRIPT.parents[2] / ".pre-commit-config.yaml"
+ROOT = SCRIPT.parents[2]
 GIT = shutil.which("git") or "/usr/bin/git"
 PRE_COMMIT = shutil.which("pre-commit") or "/usr/bin/pre-commit"
+MYPY = (
+    str(Path(sys.executable).with_name("mypy"))
+    if Path(sys.executable).with_name("mypy").is_file()
+    else shutil.which("mypy")
+)
 
 
 def hook_config(identifier: str) -> str:
@@ -111,7 +114,7 @@ class MypyScope(unittest.TestCase):
         self.git("add", "-A")
         self.git("commit", "-qm", message)
 
-    def run_hook(self, *args: str) -> CommandResult:
+    def run_hook(self, *args: str) -> TextCommandResult:
         return run_command(
             [sys.executable, str(SCRIPT), *args],
             allowed_executables=(sys.executable,),
@@ -123,7 +126,7 @@ class MypyScope(unittest.TestCase):
             timeout_seconds=300,
         )
 
-    def run_framework(self, from_ref: str, to_ref: str) -> CommandResult:
+    def run_framework(self, from_ref: str, to_ref: str) -> TextCommandResult:
         """Drive the shipped hook configuration through the installed framework."""
         return run_command(
             [
@@ -353,6 +356,23 @@ class MypyScope(unittest.TestCase):
         self.assertIn("always_run: true", scope)
         self.assertIn("pass_filenames: false", scope)
         self.assertNotIn("\n        files:", scope)
+
+
+@unittest.skipUnless(MYPY, "mypy is not installed")
+class MypyModuleIdentity(unittest.TestCase):
+    def test_helper_and_hook_have_one_module_identity(self) -> None:
+        """Simultaneous roots must not name safe_subprocess twice."""
+        assert MYPY is not None
+        result = run_command(
+            [MYPY, str(HELPER.relative_to(ROOT)), str(SCRIPT.relative_to(ROOT))],
+            allowed_executables=(MYPY,),
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

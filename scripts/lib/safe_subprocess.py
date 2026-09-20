@@ -24,7 +24,7 @@ import signal
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, Any, Literal, overload
 
 MAX_ARG_COUNT = 4096
 MAX_ARG_BYTES = 65_536
@@ -44,17 +44,36 @@ class CommandValidationError(ValueError):
 
 @dataclass(frozen=True)
 class CommandResult:
-    """Small immutable result returned by :func:`run`."""
+    """Small immutable result returned by :func:`run`.
+
+    Streams that were not captured are represented by an empty value of the
+    selected text or binary type.  This keeps every successful result safe to
+    inspect without weakening its type to ``None``.
+    """
 
     argv: tuple[str, ...]
     returncode: int
-    stdout: str | bytes | None
-    stderr: str | bytes | None
+    stdout: str | bytes
+    stderr: str | bytes
 
     def check_returncode(self) -> None:
         """Raise :class:`CommandFailed` when the child did not succeed."""
         if self.returncode != 0:
             raise CommandFailed(self)
+
+
+class TextCommandResult(CommandResult):
+    """Result whose captured streams were decoded to text."""
+
+    stdout: str
+    stderr: str
+
+
+class BinaryCommandResult(CommandResult):
+    """Result whose captured streams remain bytes."""
+
+    stdout: bytes
+    stderr: bytes
 
 
 class CommandFailed(RuntimeError):
@@ -484,10 +503,91 @@ def _finalize_result(
     if overflowed:
         raise CommandOutputLimitExceeded(command, max_output_bytes, decoded_stdout, decoded_stderr)
     assert process.returncode is not None
-    result = CommandResult(command, process.returncode, decoded_stdout, decoded_stderr)
+    result: CommandResult
+    if text:
+        assert decoded_stdout is None or isinstance(decoded_stdout, str)
+        assert decoded_stderr is None or isinstance(decoded_stderr, str)
+        result = TextCommandResult(
+            command,
+            process.returncode,
+            decoded_stdout or "",
+            decoded_stderr or "",
+        )
+    else:
+        assert decoded_stdout is None or isinstance(decoded_stdout, bytes)
+        assert decoded_stderr is None or isinstance(decoded_stderr, bytes)
+        result = BinaryCommandResult(
+            command,
+            process.returncode,
+            decoded_stdout or b"",
+            decoded_stderr or b"",
+        )
     if check:
         result.check_returncode()
     return result
+
+
+@overload
+async def run_async(
+    argv: Sequence[Arg],
+    *,
+    allowed_executables: Collection[Arg],
+    cwd: str | os.PathLike[str] | None = None,
+    env: Mapping[str, str] | None = None,
+    input_data: str | bytes | None = None,
+    capture_output: bool = False,
+    stdout: IO[Any] | None = None,
+    stderr: IO[Any] | None = None,
+    stderr_to_stdout: bool = False,
+    text: Literal[True],
+    encoding: str | None = None,
+    errors: str = "strict",
+    check: bool = False,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
+) -> TextCommandResult: ...
+
+
+@overload
+async def run_async(
+    argv: Sequence[Arg],
+    *,
+    allowed_executables: Collection[Arg],
+    cwd: str | os.PathLike[str] | None = None,
+    env: Mapping[str, str] | None = None,
+    input_data: str | bytes | None = None,
+    capture_output: bool = False,
+    stdout: IO[Any] | None = None,
+    stderr: IO[Any] | None = None,
+    stderr_to_stdout: bool = False,
+    text: Literal[False] = False,
+    encoding: str | None = None,
+    errors: str = "strict",
+    check: bool = False,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
+) -> BinaryCommandResult: ...
+
+
+@overload
+async def run_async(
+    argv: Sequence[Arg],
+    *,
+    allowed_executables: Collection[Arg],
+    cwd: str | os.PathLike[str] | None = None,
+    env: Mapping[str, str] | None = None,
+    input_data: str | bytes | None = None,
+    capture_output: bool = False,
+    stdout: IO[Any] | None = None,
+    stderr: IO[Any] | None = None,
+    stderr_to_stdout: bool = False,
+    text: bool,
+    encoding: str | None = None,
+    errors: str = "strict",
+    check: bool = False,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
+) -> CommandResult: ...
 
 
 async def run_async(
@@ -560,6 +660,69 @@ async def run_async(
         max_output_bytes=max_output_bytes,
         check=check,
     )
+
+
+@overload
+def run(
+    argv: Sequence[Arg],
+    *,
+    allowed_executables: Collection[Arg],
+    cwd: str | os.PathLike[str] | None = None,
+    env: Mapping[str, str] | None = None,
+    input_data: str | bytes | None = None,
+    capture_output: bool = False,
+    stdout: IO[Any] | None = None,
+    stderr: IO[Any] | None = None,
+    stderr_to_stdout: bool = False,
+    text: Literal[True],
+    encoding: str | None = None,
+    errors: str = "strict",
+    check: bool = False,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
+) -> TextCommandResult: ...
+
+
+@overload
+def run(
+    argv: Sequence[Arg],
+    *,
+    allowed_executables: Collection[Arg],
+    cwd: str | os.PathLike[str] | None = None,
+    env: Mapping[str, str] | None = None,
+    input_data: str | bytes | None = None,
+    capture_output: bool = False,
+    stdout: IO[Any] | None = None,
+    stderr: IO[Any] | None = None,
+    stderr_to_stdout: bool = False,
+    text: Literal[False] = False,
+    encoding: str | None = None,
+    errors: str = "strict",
+    check: bool = False,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
+) -> BinaryCommandResult: ...
+
+
+@overload
+def run(
+    argv: Sequence[Arg],
+    *,
+    allowed_executables: Collection[Arg],
+    cwd: str | os.PathLike[str] | None = None,
+    env: Mapping[str, str] | None = None,
+    input_data: str | bytes | None = None,
+    capture_output: bool = False,
+    stdout: IO[Any] | None = None,
+    stderr: IO[Any] | None = None,
+    stderr_to_stdout: bool = False,
+    text: bool,
+    encoding: str | None = None,
+    errors: str = "strict",
+    check: bool = False,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
+) -> CommandResult: ...
 
 
 def run(

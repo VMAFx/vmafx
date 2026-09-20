@@ -54,11 +54,9 @@ from pathlib import Path
 # is the drift ADR-1282 deliberately left alone; move this import up when it is raised.
 import tomllib
 
-try:
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import run as run_command
 
 # A `git clone` invocation, following backslash continuations, that mentions
 # level-zero somewhere in it.

@@ -318,6 +318,11 @@ Two invariants:
   refuses run ("Source file found twice under different module names"), so every
   push touching it failed. `exclude` in `pyproject.toml` stops crawl discovery
   only, not a path named on command line.
+- `scripts/` is an explicit package. Keep `scripts/__init__.py`, prepend the
+  resolved repository root for direct-path execution, and import shared code by
+  its canonical `scripts.*` name. The real-mypy two-root regression checks the
+  helper and hook together; an implicit namespace gives the same file two
+  module names and makes every push fail before findings can be reported.
 - Same files re-checked at merge base in disposable worktree; only new
   fingerprints fail. Fingerprint = path + error code + message, no line number
   (edit above a finding shifts it, does not change it). Worktree removed in

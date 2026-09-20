@@ -22,11 +22,9 @@ import tempfile
 from pathlib import Path
 from typing import Any, cast
 
-try:
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import run as run_command
 
 SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".cu", ".hip", ".m", ".mm"}
 GCC_LTO_THREADS = re.compile(r"-flto=[1-9][0-9]*\Z")
@@ -89,7 +87,10 @@ def entry_arguments(entry: dict[str, Any], index: int) -> list[str]:
 
 
 def report_prepared_scope(
-    sources: set[Path], selected: list[dict[str, Any]], tracked: set[Path], adaptations: list[dict]
+    sources: set[Path],
+    selected: list[dict[str, Any]],
+    tracked: set[Path],
+    adaptations: list[dict[str, Any]],
 ) -> None:
     """Report the exact configured scope without altering the build database."""
     print(

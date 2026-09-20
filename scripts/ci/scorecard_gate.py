@@ -25,11 +25,9 @@ from fractions import Fraction
 from pathlib import Path
 from typing import cast
 
-try:
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import run as run_command
 
 VERSION = "v5.5.0"
 TOOL_COMMIT = "c395761df6afe1a69e476bc60a013a94bcbc153f"

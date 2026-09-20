@@ -14,13 +14,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-try:
-    from scripts.lib.safe_subprocess import CommandResult
-    from scripts.lib.safe_subprocess import run as run_command
-except ModuleNotFoundError:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from lib.safe_subprocess import CommandResult
-    from lib.safe_subprocess import run as run_command
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
 CONFIG = """repos:
@@ -166,13 +163,15 @@ class HookInstallTests(unittest.TestCase):
         target.write_text(text)
         target.chmod(0o755)
 
-    def run_command(self, *args: str, cwd: Path | None = None, check: bool = True) -> CommandResult:
+    def run_command(
+        self, *args: str, cwd: Path | None = None, check: bool = True
+    ) -> TextCommandResult:
         if args[0] in {"git", "bash", "pre-commit"}:
             allowed = (args[0],)
         else:
             executable = Path(args[0]).resolve(strict=True)
             executable.relative_to(self.repo)
-            allowed = (executable,)
+            allowed = (str(executable),)
         result = run_command(
             args,
             allowed_executables=allowed,
@@ -186,10 +185,10 @@ class HookInstallTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
 
-    def run_git(self, *args: str, cwd: Path | None = None, check: bool = True) -> CommandResult:
+    def run_git(self, *args: str, cwd: Path | None = None, check: bool = True) -> TextCommandResult:
         return self.run_command("git", "-C", str(cwd or self.repo), *args, check=check)
 
-    def install(self, *, cwd: Path | None = None, check: bool = True) -> CommandResult:
+    def install(self, *, cwd: Path | None = None, check: bool = True) -> TextCommandResult:
         return self.run_command("bash", "scripts/githooks/install.sh", cwd=cwd, check=check)
 
     def events(self) -> list[list[str]]:
