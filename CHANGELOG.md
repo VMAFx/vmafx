@@ -25843,6 +25843,15 @@ clear diagnostic: `enable_nvtx=true requires enable_cuda=true`.
   and remove the vendored parser's blanket lint suppression.
 
 
+- **Pelorus v0.2.2 interop blobs no longer trigger undefined behavior when the
+  caller's byte buffer has a misaligned base.** The vendored parser now moves
+  wire headers and directory entries through aligned locals with `memcpy` and
+  rejects a `header_size` that would misalign the section directory. ABI 1.3 is
+  unchanged. The shared fixture is again exact Pelorus source (16 vectors), and
+  a required fail-closed drift check plus VMAFx-side lint exclusions prevent
+  local fixture edits from diverging again.
+
+
 `vmaf-tune` per-shot report: Bitrate column now shows real kbps values (was "—" for
 every shot because the bisect-predicate side-channel was not wired up); per-shot
 timeline chart now renders the last shot's CRF band visibly (asymmetric x-axis

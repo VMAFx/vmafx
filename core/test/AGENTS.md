@@ -265,6 +265,24 @@ Rules for those files:
   ~/.cache/vmafx-cross/aarch64-clang.ini`, `meson test -C build/aarch64
   <test>` under qemu. MSVC itself: CI only.
 
+## Pelorus exact-source conformance fixture (ADR-1113)
+
+`test_pelorus_interop.c` is not a fork-authored test implementation. From its
+first vendored `#include` onward, it is the exact Pelorus fixture body at
+`PELORUS_VENDOR_SHA`, with only the `pelorus/` to `libvmaf/pelorus/` include
+rewrite. Keep every test, cast, return-value expression, and formatting choice
+identical to that source.
+
+- Never add VMAFx-only `NOLINT` bands, `(void)` casts, formatting changes, or
+  warning repairs to this file. Fix a real defect in Pelorus, publish/review the
+  source commit, then re-vendor it.
+- Put VMAFx lint and format policy in `.pre-commit-config.yaml`, the Makefile,
+  and `scripts/ci/tidy-ratchet.py`. The exact-source fixture is excluded there.
+- After any re-pin, run `scripts/sync-pelorus-interop.sh` against a Git checkout
+  containing the exact object, then run `test_pelorus_interop` under normal,
+  ASan, and UBSan builds. The default guard compares the transformed body
+  byte-for-byte and fails closed when the object is unavailable.
+
 ## Governing ADRs
 
 - [ADR-0015](../../docs/adr/0015-ci-matrix-asan-ubsan-tsan.md) —
