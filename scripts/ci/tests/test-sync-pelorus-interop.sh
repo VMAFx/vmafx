@@ -29,6 +29,7 @@ cp -R "${repo_root}/core/include/libvmaf/pelorus" "${mirror}/core/include/libvma
 cp -R "${repo_root}/core/src/interop" "${mirror}/core/src/"
 cp "${repo_root}/core/test/test_pelorus_interop.c" "${mirror}/core/test/"
 git init -q "${mirror}"
+git -C "${mirror}" add scripts core
 
 strip_banner() {
   awk '
@@ -85,16 +86,44 @@ git -C "${source_repo}" init -q
 git -C "${source_repo}" add libpelorus
 git -C "${source_repo}" -c user.name=fixture -c user.email=fixture.invalid commit -q -m fixture
 fixture_pin="$(git -C "${source_repo}" rev-parse HEAD)"
-sed -i \
-  's/^PELORUS_VENDOR_SHA="[0-9a-f]\{40\}"$/PELORUS_VENDOR_SHA="'"${fixture_pin}"'"/' \
-  "${mirror}/scripts/sync-pelorus-interop.sh"
-while IFS= read -r vendored_path; do
-  sed -i \
-    's/VMAFx\/pelorus@[0-9a-f]\{40\}/VMAFx\/pelorus@'"${fixture_pin}"'/' \
-    "${vendored_path}"
-done < <(grep -rl 'VMAFx/pelorus@[0-9a-f]\{40\}' "${mirror}/core")
-
 fail=0
+
+# Rewrite bytes portably: BSD sed requires an argument after -i, while GNU sed
+# does not. The fixture exercises the same path on Linux and macOS runners.
+python3 - "${mirror}/scripts/sync-pelorus-interop.sh" "${fixture_pin}" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+pin = sys.argv[2].encode("ascii")
+data, replacements = re.subn(
+    rb'^PELORUS_VENDOR_SHA="[0-9a-f]{40}"$',
+    b'PELORUS_VENDOR_SHA="' + pin + b'"',
+    path.read_bytes(),
+    flags=re.MULTILINE,
+)
+assert replacements == 1
+path.write_bytes(data)
+PY
+
+update_output=""
+update_rc=0
+update_output="$(
+  cd "${mirror}" && scripts/sync-pelorus-interop.sh --update "${source_repo}" 2>&1
+)" || update_rc=$?
+if [[ "${update_rc}" -ne 0 ]]; then
+  printf 'FAIL: synthetic re-pin update failed\n%s\n' "${update_output}" >&2
+  fail=$((fail + 1))
+elif ! grep -Fq "VMAFx/pelorus@${fixture_pin}" \
+  "${mirror}/core/test/test_pelorus_interop.c"; then
+  printf 'FAIL: synthetic re-pin left the fixture source banner stale\n%s\n' \
+    "${update_output}" >&2
+  fail=$((fail + 1))
+else
+  printf 'PASS: synthetic re-pin updates every rendered banner\n'
+fi
+
 expect_fail_closed() {
   local name="$1" source="$2" expected="$3" output rc=0
   output="$(cd "${mirror}" && scripts/sync-pelorus-interop.sh "${source}" 2>&1)" || rc=$?
@@ -127,13 +156,13 @@ expect_drift() {
   local name="$1" expected="$2" output rc=0
   output="$(cd "${mirror}" && scripts/sync-pelorus-interop.sh "${source_repo}" 2>&1)" || rc=$?
   if [[ "${rc}" -eq 0 ]]; then
-    printf 'FAIL: %s ignored EOF-byte drift\n%s\n' "${name}" "${output}" >&2
+    printf 'FAIL: %s ignored mirror drift\n%s\n' "${name}" "${output}" >&2
     fail=$((fail + 1))
   elif ! grep -Fq "${expected}" <<<"${output}"; then
     printf 'FAIL: %s did not report %q\n%s\n' "${name}" "${expected}" "${output}" >&2
     fail=$((fail + 1))
   else
-    printf 'PASS: %s detects EOF-byte drift\n' "${name}"
+    printf 'PASS: %s detects mirror drift\n' "${name}"
   fi
 }
 
@@ -162,9 +191,39 @@ data = path.read_bytes()
 assert data.endswith(b"\n")
 path.write_bytes(data[:-1])
 PY
-expect_drift "fixture missing final newline" "conformance fixture body differs"
+expect_drift "fixture missing final newline" "conformance fixture differs"
 printf '\n' >>"${fixture_eof}"
 expect_clean "restored EOF bytes"
+
+python3 - "${fixture_eof}" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+data = path.read_bytes()
+old = b"SHARED Pelorus interop ABI"
+assert data.count(old) == 1
+path.write_bytes(data.replace(old, b"MUTATED Pelorus interop ABI"))
+PY
+expect_drift "fixture prefix mutation" "conformance fixture differs"
+(
+  cd "${mirror}"
+  scripts/sync-pelorus-interop.sh --update "${source_repo}" >/dev/null
+)
+if grep -Fq "MUTATED Pelorus interop ABI" "${fixture_eof}"; then
+  printf 'FAIL: --update preserved a mutated fixture prefix\n' >&2
+  fail=$((fail + 1))
+else
+  printf 'PASS: --update restores the canonical fixture prefix\n'
+fi
+expect_clean "canonical fixture restored"
+
+extra_mirror="core/include/libvmaf/pelorus/unmanifested.h"
+printf '/* must not inherit exact-mirror lint exemptions */\n' >"${mirror}/${extra_mirror}"
+git -C "${mirror}" add "${extra_mirror}"
+expect_drift "unmanifested tracked mirror" "tracked exact-mirror path set differs"
+git -C "${mirror}" rm -q -f -- "${extra_mirror}"
+expect_clean "unmanifested mirror removed"
 
 workflow="${repo_root}/.github/workflows/lint-and-format.yml"
 for required in \

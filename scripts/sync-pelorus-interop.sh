@@ -8,8 +8,9 @@
 # The data-plane interop ABI is SINGLE-SOURCED in pelorus (ADR-0103). vmafx
 # carries a verbatim, append-only mirror under:
 #
-#   core/include/libvmaf/pelorus/{pelorus,interop,deband}.h
-#   core/src/interop/pelorus_{interop,deband_params,version}.c
+#   core/include/libvmaf/pelorus/{pelorus,interop,deband,denoise}.h
+#   core/src/interop/pelorus_{interop,deband_params,denoise_params,
+#                            qp_report_csv,version}.c
 #   core/test/test_pelorus_interop.c   (conformance fixture)
 #
 # Each vendored file is byte-identical to its pelorus origin EXCEPT for two
@@ -131,9 +132,10 @@ manifest=(
   "src/version.c|core/src/interop/pelorus_version.c|pelorus/pelorus.h|libvmaf/pelorus/pelorus.h"
 )
 
-# The test fixture is vendored with a Lusoris-authored header rather than a
-# pelorus license clone, so it is diffed body-only (from the first #include).
-test_dst="$repo_root/core/test/test_pelorus_interop.c"
+# The conformance fixture uses a canonical VMAFx-authored prefix followed by
+# the transformed Pelorus body. Both parts are rendered and checked as one file.
+test_rel="core/test/test_pelorus_interop.c"
+test_dst="$repo_root/$test_rel"
 
 # --- Helpers ---------------------------------------------------------------
 
@@ -180,6 +182,48 @@ sys.stdout.buffer.write(b"".join(lines[:17]) + banner + body)
 
 drift=0
 
+# The lint carve-out is valid only for files the manifest owns. Reject any
+# added, removed, or renamed tracked path in those namespaces before it can
+# inherit exact-source format/tidy exemptions without a corresponding manifest
+# review. `git ls-files` deliberately ignores untracked developer artifacts.
+check_tracked_mirror_set() {
+  local row rel_src rel_dst inc_from inc_to
+  local expected_unsorted="$sync_tmp/tracked-mirrors.expected.unsorted"
+  local actual_unsorted="$sync_tmp/tracked-mirrors.actual.unsorted"
+  local expected="$sync_tmp/tracked-mirrors.expected"
+  local actual="$sync_tmp/tracked-mirrors.actual"
+
+  : >"$expected_unsorted"
+  for row in "${manifest[@]}"; do
+    IFS='|' read -r rel_src rel_dst inc_from inc_to <<<"$row"
+    printf '%s\n' "$rel_dst" >>"$expected_unsorted"
+  done
+  printf '%s\n' "$test_rel" >>"$expected_unsorted"
+
+  if ! git -C "$repo_root" ls-files -- \
+    ':(glob)core/include/libvmaf/pelorus/**' \
+    ':(glob)core/src/interop/pelorus_*.c' \
+    "$test_rel" >"$actual_unsorted"; then
+    printf 'error: cannot enumerate tracked Pelorus mirror paths\n' >&2
+    return 1
+  fi
+  LC_ALL=C sort "$expected_unsorted" >"$expected"
+  LC_ALL=C sort "$actual_unsorted" >"$actual"
+
+  if cmp -s "$expected" "$actual"; then
+    return 0
+  fi
+
+  printf 'DRIFT: tracked exact-mirror path set differs from the manifest\n' >&2
+  diff -u --label 'manifest-owned mirror paths' \
+    --label 'tracked lint-exempt mirror paths' "$expected" "$actual" >&2 || true
+  return 1
+}
+
+if [ "$mode" = "check" ] && ! check_tracked_mirror_set; then
+  drift=1
+fi
+
 for row in "${manifest[@]}"; do
   IFS='|' read -r rel_src rel_dst inc_from inc_to <<<"$row"
   dst="$repo_root/$rel_dst"
@@ -210,91 +254,106 @@ for row in "${manifest[@]}"; do
 done
 
 # --- Conformance fixture --------------------------------------------------
-# The fixture is split into two parts:
-#   header = the vmafx Lusoris-authored part BEFORE the first vendored include
-#            (license header + a vmafx-specific doc block); NOT a pelorus clone,
-#            so it is preserved verbatim across re-vendors.
-#   body   = from the first vendored include onward; the verbatim pelorus
+# The fixture is rendered from two canonical inputs:
+#   prefix = a deterministic VMAFx-authored license/provenance block whose pin
+#            and ABI version come from the pinned Pelorus object.
+#   body   = from the first vendored include onward; the verbatim Pelorus
 #            test/interop_test.c body with "pelorus/" -> "libvmaf/pelorus/".
 # The pelorus repo formats its C with the same .clang-format as vmafx (its
 # config notes it "matches the vmafx sibling"), so the re-vendored body is
 # already clang-format clean — we vendor it raw and do NOT reformat it. The
-# drift check below is byte-sensitive through EOF, so even a local reformat or
-# trailing-newline change fails rather than weakening shared provenance.
+# complete rendered file is byte-sensitive through EOF, so prefix mutations,
+# local reformats, and trailing-newline changes all fail closed.
 
-# Emit the rewritten Pelorus body (first vendored include onward) on stdout.
-fixture_body_pel() {
-  read_src "test/interop_test.c" | python3 -c '
+# Emit the canonical VMAFx fixture (prefix plus rewritten Pelorus body).
+render_fixture() {
+  local pinned_interop="$sync_tmp/pinned-interop.h"
+  local pinned_fixture="$sync_tmp/pinned-interop-test.c"
+  read_src "include/pelorus/interop.h" >"$pinned_interop"
+  read_src "test/interop_test.c" >"$pinned_fixture"
+  python3 - "$PELORUS_VENDOR_SHA" "$pinned_interop" "$pinned_fixture" <<'PY'
 import re
 import sys
+from pathlib import Path
 
-source = sys.stdin.buffer.read()
+sha, interop_path, fixture_path = sys.argv[1:]
+source = Path(fixture_path).read_bytes()
+interop = Path(interop_path).read_bytes()
+
+def abi_component(name):
+    match = re.search(
+        rb"(?m)^#define[ \t]+" + name.encode() + rb"[ \t]+([0-9]+)u?[ \t]*$",
+        interop,
+    )
+    if match is None:
+        raise SystemExit(f"Pelorus interop header has no {name}")
+    return match.group(1).decode("ascii")
+
 match = re.search(rb"(?m)^#include \"pelorus/", source)
 if match is None:
     raise SystemExit("Pelorus fixture has no vendored include")
 body = source[match.start():].replace(
     b"#include \"pelorus/", b"#include \"libvmaf/pelorus/"
 )
-sys.stdout.buffer.write(body)
-'
-}
+major = abi_component("PELORUS_ABI_MAJOR")
+minor = abi_component("PELORUS_ABI_MINOR")
+prefix = f"""/**
+ *
+ *  Copyright 2026 Lusoris
+ *
+ *     Licensed under the BSD+Patent License (the "License");
+ *     you may not use this file except in compliance with the License.
+ *     You may obtain a copy of the License at
+ *
+ *         https://opensource.org/licenses/BSDplusPatent
+ *
+ *     Unless required by applicable law or agreed to in writing, software
+ *     distributed under the License is distributed on an "AS IS" BASIS,
+ *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *     See the License for the specific language governing permissions and
+ *     limitations under the License.
+ *
+ */
 
-# Emit either the VMAFx-authored header before the first vendored include or
-# the exact vendored body beginning at that include.
-fixture_part_vmafx() {
-  local part="$1"
-  python3 -c '
-import re
-import sys
+/*
+ * test_pelorus_interop.c — vmafx side of the SHARED Pelorus interop ABI
+ * conformance fixture (VMAFx/pelorus@{sha}
+ * test/interop_test.c, ABI {major}.{minor}).
+ *
+ * Both repos run byte-for-byte the same checks against their own copy of
+ * interop.c. A green run here proves vmafx's vendored parser (ADR-1113) is
+ * byte-identical to pelorus's writer: a blob packed by pelorus parses in vmafx
+ * and vice versa, and the forward/back-compat rules (R3, R4, R6) hold. Keep
+ * this file in sync with the pelorus original via
+ * scripts/sync-pelorus-interop.sh; the only intended local edit is the include
+ * path rewrite ("pelorus/<x>.h" -> "libvmaf/pelorus/<x>.h").
+ *
+ * No external test framework — exit non-zero on first failure (does NOT use the
+ * libvmaf minunit harness in test.c; it carries its own main()).
+ */
 
-part, path = sys.argv[1:]
-source = open(path, "rb").read()
-match = re.search(rb"(?m)^#include \"libvmaf/pelorus/", source)
-if match is None:
-    raise SystemExit("VMAFx fixture has no vendored include")
-if part == "header":
-    output = source[:match.start()]
-elif part == "body":
-    output = source[match.start():]
-else:
-    raise SystemExit(f"unknown fixture part: {part}")
-sys.stdout.buffer.write(output)
-' "$part" "$test_dst"
+""".encode()
+sys.stdout.buffer.write(prefix + body)
+PY
 }
 
 if [ "$mode" = "update" ]; then
-  # --update re-vendors the manifest files above; it MUST also re-vendor the
-  # fixture body, or the immediately-following drift check fails on a fixture
-  # that still carries the previous pin's body. Preserve the Lusoris-authored
-  # header (everything before the first "libvmaf/pelorus/" include) and replace
-  # the body with the freshly-pinned pelorus body.
-  if [ ! -f "$test_dst" ]; then
-    printf 'error: conformance fixture missing: core/test/test_pelorus_interop.c\n' >&2
-    printf '       (cannot re-vendor body without the Lusoris-authored header)\n' >&2
-    exit 1
-  fi
-  {
-    fixture_part_vmafx header
-    fixture_body_pel
-  } >"$test_dst.tmp"
+  render_fixture >"$test_dst.tmp"
   mv "$test_dst.tmp" "$test_dst"
-  printf 're-vendored: core/test/test_pelorus_interop.c (body)\n'
+  printf 're-vendored: %s (full file)\n' "$test_rel"
 fi
 
 if [ "$mode" = "check" ]; then
   if [ ! -f "$test_dst" ]; then
-    printf 'DRIFT: conformance fixture missing: core/test/test_pelorus_interop.c\n' >&2
+    printf 'DRIFT: conformance fixture missing: %s\n' "$test_rel" >&2
     drift=1
   else
-    body_pel="$sync_tmp/fixture.expected"
-    body_vmafx="$sync_tmp/fixture.actual"
-    fixture_body_pel >"$body_pel"
-    fixture_part_vmafx body >"$body_vmafx"
-    if ! cmp -s "$body_pel" "$body_vmafx"; then
-      printf 'DRIFT: conformance fixture body differs from pelorus test/interop_test.c\n' >&2
-      diff -u --label 'pelorus:test/interop_test.c (transformed body)' \
-        --label 'core/test/test_pelorus_interop.c (body)' \
-        "$body_pel" "$body_vmafx" >&2 || true
+    expected_fixture="$sync_tmp/fixture.expected"
+    render_fixture >"$expected_fixture"
+    if ! cmp -s "$expected_fixture" "$test_dst"; then
+      printf 'DRIFT: conformance fixture differs from canonical rendered source\n' >&2
+      diff -u --label 'pelorus:test/interop_test.c (canonical transform)' \
+        --label "$test_rel" "$expected_fixture" "$test_dst" >&2 || true
       drift=1
     fi
   fi

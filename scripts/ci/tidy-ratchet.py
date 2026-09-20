@@ -51,14 +51,25 @@ NOLINT_RE = re.compile(r"NOLINT(?:NEXTLINE|BEGIN)?(?:\([^)]*\))?(?!END)")
 ADR_CITE_RE = re.compile(r"ADR-\d{4}")
 GITHUB_ACTIONS = os.environ.get("GITHUB_ACTIONS") == "true"
 
+EXACT_PELORUS_MIRROR_PATHS = frozenset(
+    {
+        "core/include/libvmaf/pelorus/pelorus.h",
+        "core/include/libvmaf/pelorus/interop.h",
+        "core/include/libvmaf/pelorus/deband.h",
+        "core/include/libvmaf/pelorus/denoise.h",
+        "core/src/interop/pelorus_interop.c",
+        "core/src/interop/pelorus_deband_params.c",
+        "core/src/interop/pelorus_denoise_params.c",
+        "core/src/interop/pelorus_qp_report_csv.c",
+        "core/src/interop/pelorus_version.c",
+        "core/test/test_pelorus_interop.c",
+    }
+)
+
 
 def is_exact_pelorus_mirror(path: str) -> bool:
-    """Return whether *path* is an exact-source Pelorus mirror (ADR-1113)."""
-    return (
-        path == "core/test/test_pelorus_interop.c"
-        or path.startswith("core/include/libvmaf/pelorus/")
-        or (path.startswith("core/src/interop/pelorus_") and path.endswith(".c"))
-    )
+    """Return whether *path* is a manifest-owned Pelorus mirror (ADR-1113)."""
+    return path in EXACT_PELORUS_MIRROR_PATHS
 
 
 @dataclass

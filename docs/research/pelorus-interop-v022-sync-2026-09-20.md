@@ -69,9 +69,10 @@ After the port, the same UBSan configure/build/test command passed 1/1 with
 The complete fixture now runs sixteen shared vectors, including all base skews
 one through seven and the malformed `header_size` rejection.
 
-The fixture proof compared Pelorus's body at the exact v0.2.2 Git object with
-VMAFx's body after only the documented include rewrite; the diff was empty.
-Every vendored banner carries the full 40-character source commit.
+The fixture proof renders a canonical VMAFx prefix from the exact v0.2.2 Git
+object's pin and ABI version, appends Pelorus's body after only the documented
+include rewrite, and compares the complete file through EOF; the diff was
+empty. Every vendored banner carries the full 40-character source commit.
 
 ## Why PR #1351's local lint edits were removed
 
@@ -81,13 +82,16 @@ but violated ADR-1113's stronger property: both repositories run the same test
 body against their respective copies of the parser. A whitespace-insensitive
 manual guard allowed that divergence to persist.
 
-The fix moves policy to the correct layer. VMAFx's format selectors and
-clang-tidy ratchet now identify all exact mirror paths, including the fixture;
-the fixture itself stays unchanged. The drift guard compares the transformed
-files and fixture byte-for-byte through EOF, reads only the pinned Git object,
-fails closed if that object is unavailable, and runs in the existing required
-Pre-Commit workflow. Regression fixtures remove the final newline from a
-manifest header and from the conformance body; both mutations fail the guard.
+The fix moves policy to the correct layer. VMAFx's clang-tidy ratchet now names
+only manifest-owned exact mirror paths, including the fixture; the fixture
+itself stays unchanged. The drift guard compares every complete rendered file
+byte-for-byte through EOF, reads only the pinned Git object, rejects extra
+tracked files in lint-exempt namespaces, fails closed if that object is
+unavailable, and runs in the existing required Pre-Commit workflow. Regression
+fixtures exercise a synthetic re-pin/update, mutate the fixture prefix, add an
+unmanifested tracked header, and remove final newlines; every drift case fails
+the guard. The synthetic pin rewrite uses portable Python byte IO rather than
+GNU-only in-place `sed` syntax.
 
 ## Whole-tree tidy verification
 
