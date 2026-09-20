@@ -28,11 +28,16 @@ from __future__ import annotations
 import argparse
 import re
 import shutil
-import subprocess
 import sys
 from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
+
+try:
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[2]
 """Repository the state tree belongs to. `--repo-root` overrides it, which is how
@@ -69,7 +74,8 @@ SHARED_OBJECT = re.compile(r"\.(so|dylib|dll)(\.[0-9]+)*$")
 PROTECTED_NAMES = frozenset({"rescue", "evidence", "archive", "netflix"})
 
 MANIFEST = "GC-MANIFEST.md"
-GIT = shutil.which("git") or "/usr/bin/git"
+_GIT_PATH = shutil.which("git")
+GIT = str(Path(_GIT_PATH).resolve(strict=True)) if _GIT_PATH is not None else None
 KIB = 1024
 RUN_DEPTH = 2
 MANIFEST_LIST_CAP = 200
@@ -77,7 +83,9 @@ MANIFEST_LIST_CAP = 200
 
 def cited_paths(state_root: Path, repo_root: Path) -> set[str]:
     """Collect every `<state-root>/...` path any committed ref mentions."""
-    refs = subprocess.run(  # noqa: S603 -- fixed git read query, absolute binary, no shell
+    if GIT is None:
+        raise RuntimeError("git is required to collect committed evidence references")
+    refs = run_command(
         [
             GIT,
             "-C",
@@ -87,10 +95,11 @@ def cited_paths(state_root: Path, repo_root: Path) -> set[str]:
             "refs/heads",
             "refs/remotes",
         ],
+        allowed_executables=(GIT,),
         capture_output=True,
         text=True,
         check=True,
-        timeout=120,
+        timeout_seconds=120,
     ).stdout.split()
     if not refs:
         return set()
@@ -100,11 +109,13 @@ def cited_paths(state_root: Path, repo_root: Path) -> set[str]:
     # git grep over every ref at once is one process but a large output; chunk it.
     for start in range(0, len(refs), 40):
         chunk = refs[start : start + 40]
-        result = subprocess.run(  # noqa: S603 -- fixed git read query, refs from git itself
+        result = run_command(
             [GIT, "-C", str(repo_root), "grep", "--no-color", "-h", "-o", "-E", pattern, *chunk],
+            allowed_executables=(GIT,),
             capture_output=True,
             text=True,
-            timeout=900,
+            timeout_seconds=900,
+            max_output_bytes=32 * 1_048_576,
         )
         for line in result.stdout.splitlines():
             text = line.strip()
@@ -240,7 +251,8 @@ def collect(state_root: Path, citations: set[str]) -> list[tuple[Path, int, str]
     return sorted(walk(state_root, citations), key=lambda item: -item[1])
 
 
-def main(argv: Iterable[str] | None = None) -> int:
+def parse_args(argv: Iterable[str] | None) -> argparse.Namespace:
+    """Parse the dry-run and repository-scope controls."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "state_root",
@@ -260,7 +272,11 @@ def main(argv: Iterable[str] | None = None) -> int:
         default=None,
         help="repository the state tree belongs to (default: this script's repository)",
     )
-    args = parser.parse_args(list(argv) if argv is not None else None)
+    return parser.parse_args(list(argv) if argv is not None else None)
+
+
+def main(argv: Iterable[str] | None = None) -> int:
+    args = parse_args(argv)
 
     repo_root = Path(args.repo_root).resolve() if args.repo_root else ROOT
     state_root = (repo_root / args.state_root).resolve()

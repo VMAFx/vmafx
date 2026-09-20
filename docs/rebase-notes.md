@@ -1,6 +1,24 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/bounded-process-execution — repository automation process boundary (fork-local, 2026-09-20)
+
+- `scripts/lib/safe_subprocess.py` is the process-execution boundary for
+  Python automation under `scripts/`: executable allowlist, bounded argv and
+  captured output, explicit deadline, closed unused stdin, and process-group
+  cleanup. When an upstream sync or script port adds a direct `subprocess`
+  launch in this scope, adapt it to the boundary; do not restore an `S603`
+  annotation.
+- Consumer tests deliberately preserve each command's prior return and output
+  semantics. Keep the `allowed_executables` set narrow and command-specific;
+  broadening it to whatever happens to be on `PATH` defeats the boundary.
+- `.github/ci-impact.json` classifies every tracked top-level entry. Add new
+  roots to `known_prefixes` or `known_files` in the same change that creates
+  them so routing does not silently degrade to the fail-closed full plan.
+
+See [ADR-1270](adr/1270-bounded-process-execution.md) and
+[Research-2071](research/2071-bounded-process-execution.md).
+
 ## perf/cambi-simd-gaps-2 — AVX-512 and NEON for every CAMBI stage, scanned AVX2 c-values (fork-local, 2026-09-18)
 
 Everything here is fork-local: upstream Netflix/vmaf ships AVX2 CAMBI kernels

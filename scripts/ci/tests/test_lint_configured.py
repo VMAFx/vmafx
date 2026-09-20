@@ -9,7 +9,6 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -17,6 +16,14 @@ import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
+
+try:
+    from scripts.lib.safe_subprocess import CommandResult
+    from scripts.lib.safe_subprocess import run as run_command
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from lib.safe_subprocess import CommandResult
+    from lib.safe_subprocess import run as run_command
 
 SCRIPT = Path(__file__).resolve().parents[1] / "lint-configured.py"
 ROOT = SCRIPT.parents[2]
@@ -219,9 +226,15 @@ class ConfiguredLintTests(unittest.TestCase):
             )
             stub.chmod(0o755)
 
-    def command(self, argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        result = subprocess.run(  # noqa: S603 -- fixture-owned argv, no shell
-            argv, cwd=self.root, env=self.env, capture_output=True, text=True, check=False, **kwargs
+    def command(self, argv: list[str], **kwargs: Any) -> CommandResult:
+        result = run_command(
+            argv,
+            allowed_executables=("git", "make", sys.executable),
+            cwd=self.root,
+            env=self.env,
+            capture_output=True,
+            text=True,
+            **kwargs,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
@@ -236,8 +249,8 @@ class ConfiguredLintTests(unittest.TestCase):
     def write_database(self) -> None:
         self.database.write_text(json.dumps(self.entries), encoding="utf-8")
 
-    def run_driver(self, **env: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(  # noqa: S603 -- execute fixture driver without shell
+    def run_driver(self, **env: str) -> CommandResult:
+        return run_command(
             [
                 sys.executable,
                 str(SCRIPT),
@@ -248,6 +261,7 @@ class ConfiguredLintTests(unittest.TestCase):
                 "--jobs",
                 "2",
             ],
+            allowed_executables=(sys.executable,),
             cwd=self.root,
             env={**self.env, **env},
             capture_output=True,
@@ -494,23 +508,8 @@ class ConfiguredLintTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("invalid output", result.stderr)
 
-    def run_make_target(self, *, polluted: bool = False) -> None:
-        shutil.copy2(ROOT / "Makefile", self.root / "Makefile")
-        target = self.root / "scripts/ci/lint-configured.py"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(SCRIPT, target)
-        original = self.database.read_bytes()
-        (self.root / "native-database.json").write_bytes(original)
-        if polluted:
-            self.entries += [
-                {
-                    "directory": str(self.build),
-                    "file": "meson-internal__test",
-                    "command": "",
-                    "output": "test",
-                }
-            ]
-            self.write_database()
+    def install_make_fixture_tools(self) -> tuple[Path, str]:
+        """Install the fail-closed pip and deterministic Meson/Ninja shims."""
         # Recursive Make does not inherit -o: satisfy the actual tool prerequisites.
         pip = self.root / "fixture-venv/bin/pip"
         pip.parent.mkdir(parents=True)
@@ -546,6 +545,29 @@ class ConfiguredLintTests(unittest.TestCase):
             encoding="utf-8",
         )
         ninja.chmod(0o755)
+        return pip, pip_source
+
+    def run_make_target(self, *, polluted: bool = False) -> None:
+        shutil.copy2(ROOT / "Makefile", self.root / "Makefile")
+        target = self.root / "scripts/ci/lint-configured.py"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(SCRIPT, target)
+        helper = self.root / "scripts/lib/safe_subprocess.py"
+        helper.parent.mkdir(parents=True)
+        shutil.copy2(ROOT / "scripts/lib/safe_subprocess.py", helper)
+        original = self.database.read_bytes()
+        (self.root / "native-database.json").write_bytes(original)
+        if polluted:
+            self.entries += [
+                {
+                    "directory": str(self.build),
+                    "file": "meson-internal__test",
+                    "command": "",
+                    "output": "test",
+                }
+            ]
+            self.write_database()
+        pip, pip_source = self.install_make_fixture_tools()
         # Keep the initial configured-build target; recursive build checks real prerequisites.
         result = self.command(
             [
