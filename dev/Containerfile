@@ -346,7 +346,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # separate apt-get update/install round (saves one image layer). ADR-0790.
 # The matched set of Intel NEO runtime, gmmlib, and IGC packages is derived
 # dynamically from the pinned NEO_VER release metadata at build time. ADR-1145.
-ARG NEO_VER=26.31.39395.13
+ARG NEO_VER=26.35.39758.10
 ARG GITHUB_TOKEN=""
 COPY dev/scripts/fetch-intel-neo.py /tmp/fetch-intel-neo.py
 # hadolint ignore=DL3003,DL3008,DL3009
