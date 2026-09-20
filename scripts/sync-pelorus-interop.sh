@@ -47,6 +47,7 @@ set -euo pipefail
 PELORUS_VENDOR_SHA="93bef1206d68d9e09024c08a12732fb8e77b9b16"
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+mirror_policy="$repo_root/scripts/ci/pelorus_mirror.py"
 
 mode="check"
 pelorus_dir=""
@@ -182,32 +183,57 @@ sys.stdout.buffer.write(b"".join(lines[:17]) + banner + body)
 
 drift=0
 
-# The lint carve-out is valid only for files the manifest owns. Reject any
-# added, removed, or renamed tracked path in those namespaces before it can
-# inherit exact-source format/tidy exemptions without a corresponding manifest
-# review. `git ls-files` deliberately ignores untracked developer artifacts.
-check_tracked_mirror_set() {
+# The lint carve-out is valid only for files the shared path manifest owns.
+# First prove this script's render destinations match that manifest, then
+# reject any added, removed, or renamed tracked path in the mirror namespaces.
+# The source glob deliberately has no suffix restriction: a future .cc/.cpp or
+# header variant cannot silently inherit a prefix-based exemption. `git
+# ls-files` deliberately ignores untracked developer artifacts.
+check_render_manifest() {
   local row rel_src rel_dst inc_from inc_to
-  local expected_unsorted="$sync_tmp/tracked-mirrors.expected.unsorted"
-  local actual_unsorted="$sync_tmp/tracked-mirrors.actual.unsorted"
-  local expected="$sync_tmp/tracked-mirrors.expected"
-  local actual="$sync_tmp/tracked-mirrors.actual"
+  local rendered_unsorted="$sync_tmp/rendered-mirrors.unsorted"
+  local rendered="$sync_tmp/rendered-mirrors"
+  local shared="$sync_tmp/shared-mirrors"
 
-  : >"$expected_unsorted"
+  : >"$rendered_unsorted"
   for row in "${manifest[@]}"; do
     IFS='|' read -r rel_src rel_dst inc_from inc_to <<<"$row"
-    printf '%s\n' "$rel_dst" >>"$expected_unsorted"
+    printf '%s\n' "$rel_dst" >>"$rendered_unsorted"
   done
-  printf '%s\n' "$test_rel" >>"$expected_unsorted"
+  printf '%s\n' "$test_rel" >>"$rendered_unsorted"
+
+  if ! python3 "$mirror_policy" list >"$shared"; then
+    printf 'error: cannot read shared Pelorus mirror manifest\n' >&2
+    return 1
+  fi
+  LC_ALL=C sort "$rendered_unsorted" >"$rendered"
+  if cmp -s "$shared" "$rendered"; then
+    return 0
+  fi
+
+  printf 'error: sync render destinations differ from the shared mirror manifest\n' >&2
+  diff -u --label 'shared lint-exempt mirror paths' \
+    --label 'sync render destinations' "$shared" "$rendered" >&2 || true
+  return 1
+}
+
+check_tracked_mirror_set() {
+  local expected="$sync_tmp/tracked-mirrors.expected"
+  local actual_unsorted="$sync_tmp/tracked-mirrors.actual.unsorted"
+  local actual="$sync_tmp/tracked-mirrors.actual"
+
+  if ! python3 "$mirror_policy" list >"$expected"; then
+    printf 'error: cannot read shared Pelorus mirror manifest\n' >&2
+    return 1
+  fi
 
   if ! git -C "$repo_root" ls-files -- \
     ':(glob)core/include/libvmaf/pelorus/**' \
-    ':(glob)core/src/interop/pelorus_*.c' \
+    ':(glob)core/src/interop/pelorus_*' \
     "$test_rel" >"$actual_unsorted"; then
     printf 'error: cannot enumerate tracked Pelorus mirror paths\n' >&2
     return 1
   fi
-  LC_ALL=C sort "$expected_unsorted" >"$expected"
   LC_ALL=C sort "$actual_unsorted" >"$actual"
 
   if cmp -s "$expected" "$actual"; then
@@ -219,6 +245,10 @@ check_tracked_mirror_set() {
     --label 'tracked lint-exempt mirror paths' "$expected" "$actual" >&2 || true
   return 1
 }
+
+if ! check_render_manifest; then
+  exit 1
+fi
 
 if [ "$mode" = "check" ] && ! check_tracked_mirror_set; then
   drift=1

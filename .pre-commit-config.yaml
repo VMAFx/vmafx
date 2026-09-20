@@ -71,10 +71,12 @@ repos:
     rev: v23.1.1
     hooks:
       - id: clang-format
+        entry: python3 scripts/ci/pelorus_mirror.py clang-format
         types_or: [c, c++, cuda]
         # Pelorus interop sources, headers, and shared conformance fixture are
-        # a vendored read-only mirror (ADR-1113); keep exact, never reformat.
-        exclude: '^subprojects/|^core/test/data/|^core/src/interop/|^core/include/libvmaf/pelorus/|^core/test/test_pelorus_interop\.c$'
+        # a vendored read-only mirror (ADR-1113). The wrapper exempts only paths
+        # in the shared exact-path manifest; an added pelorus_*.cpp stays linted.
+        exclude: '^subprojects/|^core/test/data/'
 
   - repo: https://github.com/psf/black
     rev: 26.5.1
@@ -470,7 +472,7 @@ repos:
         name: Pelorus mirror guard fails closed without its exact Git pin
         entry: bash scripts/ci/tests/test-sync-pelorus-interop.sh
         language: system
-        files: '^(scripts/sync-pelorus-interop\.sh|scripts/ci/tests/test-sync-pelorus-interop\.sh|\.github/workflows/lint-and-format\.yml|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/sync-pelorus-interop\.sh|scripts/ci/pelorus[-_]mirror[^/]*|scripts/ci/tests/(test-sync-pelorus-interop\.sh|test_pelorus_mirror\.py)|\.github/workflows/lint-and-format\.yml|Makefile|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

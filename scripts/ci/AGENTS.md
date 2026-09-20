@@ -403,13 +403,15 @@ Alpha pre-releases (`X.Y.Za<N>`) never acceptable pin.
   actual `measured_sources` and `compile_failures` so partial/error output
   never presented as successful whole-tree scan.
 - ADR-1113's manifest-owned Pelorus mirror is outside native-lint ownership.
-  Keep the explicit path set in `tidy-ratchet.py` aligned with the sync
-  manifest; do not restore prefix/directory classification. Keep one shared
-  `is_exact_pelorus_mirror()` predicate for TU selection, header diagnostics,
-  and legacy-baseline normalization. A scoped baseline write must preserve
-  historical entries for this excluded scope; only a full generated write may
-  remove them. Fix mirror diagnostics in Pelorus and re-pin; never edit the
-  fixture or raise a baseline locally. Tests live in `test_tidy_ratchet.py` and
+  `pelorus-mirror-paths.txt` is the single exact-path exemption set consumed by
+  the sync guard, format hooks, changed-file tidy gate, and `tidy-ratchet.py`;
+  do not restore prefix/directory classification. Keep one shared
+  `is_exact_pelorus_mirror()` predicate inside the ratchet for TU selection,
+  header diagnostics, and legacy-baseline normalization. A scoped baseline
+  write must preserve historical entries for this excluded scope; only a full
+  generated write may remove them. Fix mirror diagnostics in Pelorus and
+  re-pin; never edit the fixture or raise a baseline locally. Tests live in
+  `test_pelorus_mirror.py`, `test_tidy_ratchet.py`, and
   `test_tidy_scoped_write.py`.
 
 ## Pelorus mirror provenance gate (ADR-1113)

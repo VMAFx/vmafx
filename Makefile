@@ -275,9 +275,7 @@ format:
 	@command -v clang-format >/dev/null && \
 	 clang-format -i $$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' \
 	                   | grep -v '^subprojects/' | grep -v '^core/test/data/' \
-	                   | grep -v '^core/src/interop/pelorus_' \
-	                   | grep -v '^core/include/libvmaf/pelorus/' \
-	                   | grep -v '^core/test/test_pelorus_interop\.c$$') || true
+	                   | python3 scripts/ci/pelorus_mirror.py filter) || true
 	@command -v black >/dev/null && black python/ ai/ scripts/ 2>/dev/null || true
 	@command -v ruff >/dev/null && ruff check --fix-only --quiet python/ ai/ scripts/ || true
 	@command -v shfmt >/dev/null && shfmt -w -i 2 -ci $$(git ls-files '*.sh') || true
@@ -288,9 +286,7 @@ format-check:
 	clang-format --dry-run --Werror \
 	   $$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' \
 	      | grep -v '^subprojects/' | grep -v '^core/test/data/' \
-	      | grep -v '^core/src/interop/pelorus_' \
-	      | grep -v '^core/include/libvmaf/pelorus/' \
-	      | grep -v '^core/test/test_pelorus_interop\.c$$')
+	      | python3 scripts/ci/pelorus_mirror.py filter)
 	$(call require-tool,black,pip install black==$(BLACK_VERSION))
 	black --check python/ ai/ scripts/
 	$(call require-tool,ruff,pip install ruff==$(RUFF_VERSION))

@@ -1,0 +1,12 @@
+# Exact VMAFx paths rendered from the pinned Pelorus object (ADR-1113).
+# Keep sorted. Lint and format exemptions are membership-based, never prefix-based.
+core/include/libvmaf/pelorus/deband.h
+core/include/libvmaf/pelorus/denoise.h
+core/include/libvmaf/pelorus/interop.h
+core/include/libvmaf/pelorus/pelorus.h
+core/src/interop/pelorus_deband_params.c
+core/src/interop/pelorus_denoise_params.c
+core/src/interop/pelorus_interop.c
+core/src/interop/pelorus_qp_report_csv.c
+core/src/interop/pelorus_version.c
+core/test/test_pelorus_interop.c

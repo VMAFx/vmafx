@@ -201,8 +201,10 @@ scripts/sync-pelorus-interop.sh /path/to/pelorus
 # correctness/security fix (an ABI-minor bump is not required):
 #   1. bump PELORUS_VENDOR_SHA in the script + this doc + ADR (the banners are
 #      rewritten automatically by --update)
-#   2. add any new pelorus source/header to the script's `manifest` (and to
-#      core/src/meson.build + the test target if it needs to compile/link)
+#   2. add any new Pelorus source/header to the script's render manifest and
+#      scripts/ci/pelorus-mirror-paths.txt (plus core/src/meson.build + the
+#      test target if it needs to compile/link); the guard requires both path
+#      sets to match exactly
 #   3. re-vendor and confirm clean:
 scripts/sync-pelorus-interop.sh --update /path/to/pelorus
 scripts/sync-pelorus-interop.sh /path/to/pelorus

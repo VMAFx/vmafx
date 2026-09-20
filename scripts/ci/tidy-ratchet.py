@@ -51,19 +51,11 @@ NOLINT_RE = re.compile(r"NOLINT(?:NEXTLINE|BEGIN)?(?:\([^)]*\))?(?!END)")
 ADR_CITE_RE = re.compile(r"ADR-\d{4}")
 GITHUB_ACTIONS = os.environ.get("GITHUB_ACTIONS") == "true"
 
+PELORUS_MIRROR_MANIFEST = Path(__file__).with_name("pelorus-mirror-paths.txt")
 EXACT_PELORUS_MIRROR_PATHS = frozenset(
-    {
-        "core/include/libvmaf/pelorus/pelorus.h",
-        "core/include/libvmaf/pelorus/interop.h",
-        "core/include/libvmaf/pelorus/deband.h",
-        "core/include/libvmaf/pelorus/denoise.h",
-        "core/src/interop/pelorus_interop.c",
-        "core/src/interop/pelorus_deband_params.c",
-        "core/src/interop/pelorus_denoise_params.c",
-        "core/src/interop/pelorus_qp_report_csv.c",
-        "core/src/interop/pelorus_version.c",
-        "core/test/test_pelorus_interop.c",
-    }
+    line.strip()
+    for line in PELORUS_MIRROR_MANIFEST.read_text(encoding="utf-8").splitlines()
+    if line.strip() and not line.lstrip().startswith("#")
 )
 
 
