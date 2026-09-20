@@ -11,14 +11,15 @@ modes: **saliency-aware encoding**, **CRF recommendation**,
 
 ## Prerequisites
 
-Apply the fork's FFmpeg patches against a clean `n9.0.1` checkout
-(latest released FFmpeg 8.x.x tag verified on 2026-05-20):
+Apply the fork's FFmpeg patches against a clean `n9.0.2` checkout
+(the maintained stable release verified on 2026-09-20):
 
 ```bash
-cd /path/to/ffmpeg && git checkout n9.0.1
-for p in /path/to/vmaf/ffmpeg-patches/000*-*.patch; do
-    git am --3way "$p" || break
-done
+cd /path/to/ffmpeg && git checkout n9.0.2
+while IFS= read -r patch; do
+    case "$patch" in ""|\#*) continue ;; esac
+    git am --3way "/path/to/vmaf/ffmpeg-patches/$patch" || exit 1
+done < /path/to/vmaf/ffmpeg-patches/series.txt
 ./configure --enable-libvmaf --enable-libx264 --enable-libsvtav1 --enable-libaom --enable-gpl
 make -j$(nproc)
 ```
@@ -33,6 +34,36 @@ Confirm the new options are recognised:
 ./ffmpeg -h | grep -i pass-autotune
 ./ffmpeg -h | grep -i vmaf-profile
 ```
+
+## Strict failure behavior in the maintained FFmpeg build
+
+Patch 0019 makes failures exposed by the warning-clean `n9.0.2` build
+observable instead of truncating data or continuing after an error:
+
+- Malformed AAC SBR, RV60 block geometry, and WMA channel metadata return an
+  invalid-data error. A file that previously reached undefined or out-of-bounds
+  behavior may therefore stop decoding with an explicit error.
+- The AAC encoder rejects an impossible psychoacoustic window count instead of
+  indexing beyond its eight-window grouping state. This reports an internal
+  encoder error; valid one-window and eight-window inputs are unchanged.
+- RTSP setup returns an error when a Transport or SETUP header exceeds its
+  bounded buffer, or when sending the SETUP command fails. Headers are never
+  silently truncated.
+- DASH/HLS and Smooth Streaming muxing propagates playlist, fragment,
+  copy, rename, and overlong-path failures to the `ffmpeg` process. Automation
+  should treat the non-zero exit as an incomplete output and retry only after
+  correcting the filesystem, network, or path problem.
+- The companion `ismindex` tool constructs output paths without a fixed
+  truncation limit and returns non-zero when allocation, open, or manifest
+  write/close fails. An empty `-output` value no longer reads before the
+  string; it retains the current directory prefix.
+- Matroska muxing rejects a non-finite, negative, or 100-hour-or-longer stream
+  duration when writing its fixed-width `DURATION` tag; it no longer emits a
+  truncated tag.
+
+These checks do not change successful inputs or outputs. They intentionally
+make formerly ignored failure states fail closed, so callers must inspect the
+process exit status rather than relying only on the presence of an output file.
 
 ## Hook 1: `-qpfile <path>` (patch 0007)
 

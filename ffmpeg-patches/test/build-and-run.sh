@@ -67,9 +67,14 @@ ffmpeg_git() {
     -c user.name='VMAFx smoke test' -c user.email=smoke@localhost "$@"
 }
 
-FFMPEG_SRC="${FFMPEG_SRC:-$(mktemp -d -t vmafx-ffmpeg-smoke.XXXXXXXX)}"
+checkout_parent=""
+if [[ -z "${FFMPEG_SRC:-}" ]]; then
+  checkout_parent="$(mktemp -d -t vmafx-ffmpeg-smoke.XXXXXXXX)"
+  FFMPEG_SRC="${checkout_parent}/ffmpeg"
+fi
 echo "Cloning FFmpeg into $FFMPEG_SRC …"
-ffmpeg_git clone --depth 1 --branch "$FFMPEG_SHA" "$FFMPEG_REMOTE" "$FFMPEG_SRC"
+"${PATCHES_DIR}/../scripts/ci/checkout-annotated-tag.sh" \
+  "$FFMPEG_REMOTE" "$FFMPEG_SHA" "$FFMPEG_SRC"
 
 echo "Applying patches from $PATCHES_DIR …"
 while IFS= read -r line; do
@@ -83,6 +88,7 @@ done <"$PATCHES_DIR/series.txt"
 echo "Configuring FFmpeg …"
 cd "$FFMPEG_SRC"
 ./configure \
+  --fatal-warnings \
   --disable-doc \
   --disable-debug \
   --disable-programs \
@@ -92,7 +98,24 @@ cd "$FFMPEG_SRC"
   --enable-gpl
 
 echo "Building FFmpeg …"
-make -j"$(nproc)"
+build_log="$FFMPEG_SRC/vmafx-build.log"
+make -j"$(nproc)" build 2>&1 | tee "$build_log"
+echo "Running generated FATE subset …"
+fate_list="$(make -s fate-list)"
+fate_targets=()
+while IFS= read -r target; do
+  fate_targets+=("$target")
+done < <(printf '%s\n' "$fate_list" | awk '/^fate-/')
+if ((${#fate_targets[@]} == 0)); then
+  echo "FFmpeg generated no local FATE targets" >&2
+  exit 1
+fi
+make -j"$(nproc)" "${fate_targets[@]}" 2>&1 | tee -a "$build_log"
+if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' "$build_log"; then
+  echo "FFmpeg emitted compiler warnings" >&2
+  exit 1
+fi
+rm "$build_log"
 
 echo "Verifying new options …"
 ./ffmpeg -hide_banner -h filter=libvmaf 2>&1 | grep -q -- 'tiny_model' ||
@@ -111,4 +134,7 @@ echo "PASS: ffmpeg-patches smoke ok"
 if [[ -z "$KEEP_BUILD" ]]; then
   echo "Cleaning $FFMPEG_SRC (set KEEP_BUILD=1 to keep)."
   rm -rf "$FFMPEG_SRC"
+  if [[ -n "$checkout_parent" ]]; then
+    rmdir "$checkout_parent"
+  fi
 fi

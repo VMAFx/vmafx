@@ -642,12 +642,11 @@ not as fixed constants.
      `log_cpp23_lib`, `opt_cpp23_lib`, `picture_pool_cpp23_lib`, `gpu_picture_pool_cpp23_lib`,
      `read_json_model_cpp23_lib`, `libvmaf_cpu_static_lib`, `vmaf` / `vmafx` tools,
      `test_cli_parse*` / `test_picture_pool_cpp_error_paths` tests and `fuzz_cli_parse` are all
-     compiled at project-wide C++ standard that `core/meson.build` injects through
-     `add_project_arguments` (ADR-1003 / ADR-1056). That flag is emitted *after* any
-     per-target `cpp_std=` option, so former `override_options : ['cpp_std=...']`
-     entries (and `libvmaf_cpu_cpp_std` token variable) never changed effective
-     standard — `compile_commands.json` showed `-std=c++23 ... -std=c++26` on every
-     overridden TU, last flag wins. Never re-add per-target `cpp_std` overrides for new
+     compiled at the project-wide C++ standard selected by Meson's built-in
+     preference list (ADR-1003 / ADR-1273). Former
+     `override_options : ['cpp_std=...']` entries (and the
+     `libvmaf_cpu_cpp_std` token variable) created conflicting duplicate flags.
+     Never re-add per-target `cpp_std` overrides for new
      `.c → .cpp` conversions; do keep isolated-lib + `extract_all_objects` link pattern
      (it is what test targets consume). Only `override_options` remaining are
      `b_lto=false` ones (AVX-512 symbol visibility, macOS `test_output`) and those are real.

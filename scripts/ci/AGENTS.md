@@ -778,6 +778,15 @@ inherited `GIT_*` repository variables and caller Git configuration. Discovery
 scheduled, accepts only stable tags; ordinary checks use reviewed tag.
 Required aggregator name = exactly `FFmpeg Patch Stack`.
 
+`checkout-annotated-tag.sh` is the warning-clean release checkout shared by
+Docker, dev-container, hosted-integration, and smoke consumers. It must resolve
+the peeled commit for annotated tags, fetch that exact commit without inherited
+`GIT_*` or caller configuration, verify `HEAD`, and recreate the local tag for
+version discovery. Never replace it with `git clone --depth=1 --branch`: the
+container Git version warns that an annotated tag object is not a commit.
+`test_ffmpeg_patch_smoke_safety.py` uses an annotated fixture tag and rejects
+warning/error output.
+
 Fixture setup and assertions obey same isolation rule as production
 replayer. `test_ffmpeg_patch_stack.py`, `test_ffmpeg_patch_smoke_safety.py`
 and dependency-classifier shell fixture discard inherited `GIT_*` before

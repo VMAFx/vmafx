@@ -297,9 +297,9 @@ cuda/
   exactly like SYCL/Vulkan do via patches `0003`/`0004`. **On
   rename / signature change of any of those entry points**: FFmpeg
   patch must update in same PR per CLAUDE.md §12 r14. Verify by
-  cumulative `git am --3way` replay of `ffmpeg-patches/000{1..9}-*` +
-  `0010-*` against pristine FFmpeg `n9.0.1`. CUDA filter selector
-  mirrors picture-pool ownership contract above: state freed
+  cumulative `git am --3way` replay of every entry in
+  `ffmpeg-patches/series.txt` against pristine FFmpeg `n9.0.2`.
+  CUDA filter selector mirrors picture-pool ownership contract above: state freed
   *after* `vmaf_close()`. Reversing order = use-after-free.
 
 ## Build

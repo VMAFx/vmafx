@@ -46,10 +46,21 @@ cc = meson.get_compiler('c')
 cxx = meson.get_compiler('cpp')
 libvmaf_inc = include_directories(['include'])
 
-# Meson's MSVC-like C compiler backend validates c_std but currently emits no
-# corresponding /std flag. Keep the platform spelling narrowly scoped to that
-# backend, including feature probes; non-MSVC compilers use Meson's built-in
-# c_std/cpp_std options exclusively.
+# Meson's built-in standard option reaches compiler feature probes as well as
+# targets, so verify the C++23 library primitive the implementation consumes.
+cxx_std_probe = '''#include <expected>
+std::expected<int, int> f() { return 1; }
+int main() { return f().value_or(1) - 1; }
+'''
+if not cxx.compiles(cxx_std_probe, name: 'std::expected in selected C++ standard')
+    error('The selected C++ standard library does not provide std::expected')
+endif
+
+# Platform feature macros used by individual compiler checks below. Meson's
+# MSVC-like C compiler backend validates c_std but currently emits no
+# corresponding /std flag, so keep that platform spelling narrowly scoped to
+# that backend, feature probes included; non-MSVC compilers use Meson's
+# built-in c_std/cpp_std options exclusively.
 test_args = []
 if cc.get_argument_syntax() == 'msvc'
     add_project_arguments('/std:clatest', language: 'c')

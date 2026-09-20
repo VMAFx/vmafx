@@ -21,7 +21,7 @@ docker buildx build --target node-cpu \
 # Verify ffmpeg version
 docker run --rm --entrypoint /usr/local/bin/ffmpeg \
   vmafx-node:dev -version | head -1
-# → ffmpeg version n9.0.1 ...
+# → ffmpeg version n9.0.2 ...
 
 # Verify codec inventory
 docker run --rm --entrypoint /usr/local/bin/ffmpeg \
@@ -47,14 +47,14 @@ accelerate VMAF scoring, not video encoding.
 ## ffmpeg version policy
 
 The node image pins ffmpeg to the **latest stable tagged release**
-(`FFMPEG_TAG=n9.0.1` as of 2026-08-31). The tag is a Docker build argument:
+(`FFMPEG_TAG=n9.0.2` as of 2026-09-20). The tag is a Docker build argument:
 
 ```bash
 # Override to test against a specific release
 docker buildx build --target node-cpu \
-  --build-arg FFMPEG_TAG=n9.0.1 \
+  --build-arg FFMPEG_TAG=n9.0.2 \
   -f docker/Dockerfile.node \
-  -t vmafx-node:n9.0.1-test .
+  -t vmafx-node:n9.0.2-test .
 ```
 
 **Update cadence**: `FFMPEG_TAG` is updated in the same PR that bumps
@@ -67,13 +67,17 @@ behind pinning to a tag rather than a rolling release branch.
 
 ## ffmpeg-patches
 
-The node image applies the fork's full 17-patch series from `ffmpeg-patches/`
+The node image applies the fork's full 19-patch series from `ffmpeg-patches/`
 during the `ffmpeg-builder-cpu` stage. The patches:
 
 - Carry the fork's libvmaf selector/filter integrations plus `vmaf_pre` and
   `libvmaf_tune`; the node's shared FFmpeg build enables only CPU libvmaf.
 - Add the vmaf-tune `qpfile` AVOption to libx264 / libsvtav1.
 - Wire the `-pass-autotune` and `-vmaf-profile` CLI glue.
+- Keep the pinned FFmpeg sources warning-clean under GCC 14 and GCC 16 without
+  removing VVC or another codec and without compiler-warning suppressions.
+- Resolve annotated release tags through the shared peeled-commit checkout
+  helper; direct shallow clones emit dependency-setup warnings in BuildKit.
 
 If a patch fails to apply against a new ffmpeg tag, the build fails at the
 `git am` step with a message naming the offending patch. Fix the patch before
@@ -149,6 +153,23 @@ Build time is approximately 10–15 minutes on a standard developer machine
 (dominated by the ffmpeg compile). Use `--cache-from` or BuildKit layer cache
 to speed up subsequent builds.
 
+The libvmaf build stage intentionally installs both `xxd` and `make`. `xxd`
+embeds the default models; without it Meson can complete while producing a
+library with no built-in models. GCC uses `make` to execute the configured LTO
+partitions in parallel. The stage preserves the `libvmaf.so` SONAME link chain
+and carries Meson's generated `libvmaf.pc`, whose version is the library
+interface (`3.0.0`) rather than the image/product tag. The root Go-server image
+uses the same staging contract.
+
+Every maintained FFmpeg build runs configure with `--fatal-warnings`, captures
+the compiler log, and fails if any GCC/Clang/NVCC warning diagnostic remains.
+This applies to the root CUDA image, `Dockerfile.ffmpeg`, the dev container,
+the node image, the hosted FFmpeg integration matrix, and the patch smoke
+harness. The ordinary hosted matrix applies only patch 0019, retaining its
+stock-surface compatibility purpose without compiling the known-warning source.
+A stable-tag or toolchain update must fix a new warning at its root; it must not
+weaken the scan, add a suppression, or disable the affected codec.
+
 ## Smoke tests
 
 After building:
@@ -197,7 +218,7 @@ docker run --rm \
 
 ## Relationship to dev container
 
-The dev container (`dev/Containerfile`) also builds ffmpeg (currently n9.0.1).
+The dev container (`dev/Containerfile`) also builds ffmpeg (currently n9.0.2).
 The two builds are intentionally separate:
 
 - Dev container: full workbench with CUDA toolchain, oneAPI, MCP server, Python

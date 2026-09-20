@@ -62,16 +62,21 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         gcc \
         g++ \
+        make \
         meson \
         ninja-build \
         nasm \
         pkg-config \
+        xxd \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
 COPY core/ core/
 COPY model/ model/
+# core/test/meson.build resolves this guard at configure time. The release
+# build context must include it even though this stage compiles only tools/vmaf.
+COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/check-msvc-clz-shim.sh
 
 RUN meson setup /build core \
         --buildtype=release \
@@ -82,8 +87,9 @@ RUN meson setup /build core \
         -Denable_avx512=true \
     && ninja -C /build -j"${VMAF_BUILD_JOBS}" tools/vmaf
 
-RUN mkdir -p /dist/lib /dist/bin /dist/model \
-    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
+RUN mkdir -p /dist/lib/pkgconfig /dist/bin /dist/model \
+    && cp -a /build/src/libvmaf.so* /dist/lib/ \
+    && cp /build/meson-private/libvmaf.pc /dist/lib/pkgconfig/libvmaf.pc \
     && cp /build/tools/vmaf /dist/bin/ \
     && ln -s vmaf /dist/bin/vmafx \
     && cp -r model/. /dist/model/

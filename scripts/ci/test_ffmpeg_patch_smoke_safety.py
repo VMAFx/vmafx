@@ -17,6 +17,7 @@ from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[2]
 SMOKE = ROOT / "ffmpeg-patches/test/build-and-run.sh"
+TAG_CHECKOUT = ROOT / "scripts/ci/checkout-annotated-tag.sh"
 
 
 class SmokeSafety(unittest.TestCase):
@@ -55,18 +56,15 @@ class SmokeSafety(unittest.TestCase):
         assert isinstance(result.stdout, str)
         return result.stdout
 
-    def setUp(self) -> None:
-        temporary = tempfile.TemporaryDirectory(prefix="ffmpeg-smoke-safety-")
-        self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
-        self.upstream = self.root / "upstream"
-        self.caller = self.root / "caller"
+    def init_repositories(self) -> None:
         for path in (self.upstream, self.caller):
             path.mkdir()
             self.git(path, "init", "-q", "-b", "master")
             (path / "sample").write_text("before\n")
             self.git(path, "add", "sample")
             self.git(path, "commit", "-qm", "initial fixture")
+
+    def create_upstream_patch(self) -> str:
         configure = self.upstream / "configure"
         configure.write_text(
             "#!/bin/sh\ncat > ffmpeg <<'BINARY'\n#!/bin/sh\n"
@@ -77,26 +75,43 @@ class SmokeSafety(unittest.TestCase):
         configure.chmod(0o755)
         self.git(self.upstream, "add", "configure")
         self.git(self.upstream, "commit", "-qm", "fake native configure")
-        self.git(self.upstream, "tag", "n9.0.1")
+        self.git(self.upstream, "tag", "-a", "n9.0.1", "-m", "annotated fixture release")
         (self.upstream / "sample").write_text("patched\n")
         self.git(self.upstream, "commit", "-qam", "integration patch")
-        patch = self.git(self.upstream, "format-patch", "-1", "--stdout")
+        return self.git(self.upstream, "format-patch", "-1", "--stdout")
+
+    def create_project_fixture(self, patch: str) -> None:
         self.project = self.root / "fixture"
         patches = self.project / "ffmpeg-patches"
         (patches / "test").mkdir(parents=True)
         self.script = patches / "test/build-and-run.sh"
         shutil.copy2(SMOKE, self.script)
+        helper_dir = self.project / "scripts/ci"
+        helper_dir.mkdir(parents=True)
+        shutil.copy2(TAG_CHECKOUT, helper_dir / TAG_CHECKOUT.name)
         (patches / "0001-fixture.patch").write_text(patch)
         (patches / "series.txt").write_text("0001-fixture.patch\n")
         (self.project / "build-config.env").write_text(
             f'FFMPEG_REMOTE="{self.upstream}"\nFFMPEG_TAG="n9.0.1"\n'
         )
+
+    def create_fake_tools(self) -> None:
         self.bin = self.root / "bin"
         self.bin.mkdir()
-        for name, body in (("pkg-config", "exit 0"), ("make", "exit 0"), ("nproc", "echo 1")):
+        for name, body in (
+            ("pkg-config", "exit 0"),
+            (
+                "make",
+                'if [ "$*" = "-s fate-list" ]; then '
+                "printf 'GEN\\ttests/generated.mak\\nfate-fixture\\n'; fi\nexit 0",
+            ),
+            ("nproc", "echo 1"),
+        ):
             path = self.bin / name
             path.write_text("#!/bin/sh\n" + body + "\n")
             path.chmod(0o755)
+
+    def configure_caller_environment(self) -> None:
         (self.caller / "unique-staged-work").write_text("preserve this staging\n")
         self.git(self.caller, "add", "unique-staged-work")
         self.before_head = self.git(self.caller, "rev-parse", "HEAD")
@@ -127,6 +142,9 @@ class SmokeSafety(unittest.TestCase):
             capture_output=True,
             timeout_seconds=30,
         )
+        if result.returncode == 0:
+            self.assertNotRegex(result.stdout + result.stderr, r"(?i)warning:|error:")
+        return result
 
     def assert_caller_preserved(self) -> None:
         self.assertEqual(self.git(self.caller, "rev-parse", "HEAD"), self.before_head)

@@ -21,6 +21,8 @@ from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/ffmpeg-patch-stack.yml"
+INTEGRATION_WORKFLOW = ROOT / ".github/workflows/ffmpeg-integration.yml"
+SMOKE_SCRIPT = ROOT / "ffmpeg-patches/test/build-and-run.sh"
 HOOKS = ROOT / ".pre-commit-config.yaml"
 LINT_WORKFLOW = ROOT / ".github/workflows/lint-and-format.yml"
 BASH = shutil.which("bash") or "/bin/bash"
@@ -99,12 +101,50 @@ class FFmpegWorkflowContract(unittest.TestCase):
         self.assertNotRegex(publication, r"(?m)^\s+FFMPEG_TAG=n[0-9]")
 
     def test_integration_loads_config_before_consumers(self) -> None:
-        integration = (ROOT / ".github/workflows/ffmpeg-integration.yml").read_text()
+        integration = INTEGRATION_WORKFLOW.read_text()
         sycl = _job(integration, "ffmpeg-sycl")
         self.assertLess(sycl.index("uses: actions/checkout@"), sycl.index("load-build-config.sh"))
         self.assertLess(sycl.index("load-build-config.sh"), sycl.index("Install Intel oneAPI"))
         self.assertNotIn(". ./build-config.env", sycl)
         self.assertNotIn("--branch n9.0.1", integration)
+
+    def test_integration_and_smoke_builds_fail_on_diagnostics(self) -> None:
+        integration = INTEGRATION_WORKFLOW.read_text(encoding="utf-8")
+        ordinary = _job(integration, "ffmpeg")
+        sycl = _job(integration, "ffmpeg-sycl")
+        smoke = SMOKE_SCRIPT.read_text(encoding="utf-8")
+        warning_pattern = "grep -Ei '(^|[[:space:]])warning([[:space:]#:])'"
+
+        for name, source in (("ordinary", ordinary), ("sycl", sycl), ("smoke", smoke)):
+            with self.subTest(name=name):
+                self.assertIn("--fatal-warnings", source)
+                self.assertIn("2>&1 | tee", source)
+                self.assertRegex(source, r"make .*build")
+                self.assertIn("make -s fate-list", source)
+                self.assertIn("awk '/^fate-/'", source)
+                self.assertIn('"${fate_targets[@]}"', source)
+                self.assertIn(warning_pattern, source)
+
+        self.assertIn(
+            "git apply ../ffmpeg-patches/0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch",
+            ordinary,
+        )
+        self.assertNotIn("patch -p1", integration)
+        self.assertIn("FATAL: ffmpeg-patches/$line did not apply", sycl)
+
+    def test_all_release_consumers_use_warning_clean_tag_checkout(self) -> None:
+        helper = "scripts/ci/checkout-annotated-tag.sh"
+        integration = INTEGRATION_WORKFLOW.read_text(encoding="utf-8")
+        smoke = SMOKE_SCRIPT.read_text(encoding="utf-8")
+        node = (ROOT / "docker/Dockerfile.node").read_text(encoding="utf-8")
+        dev = (ROOT / "dev/Containerfile").read_text(encoding="utf-8")
+
+        self.assertEqual(integration.count(helper), 2)
+        self.assertIn(helper, smoke)
+        self.assertIn("checkout-annotated-tag", node)
+        self.assertEqual(dev.count(helper), 2)
+        for source in (integration, smoke, node, dev):
+            self.assertNotRegex(source, r"git clone[^\n]+(?:FFMPEG|AMF)")
 
     def test_contracts_run_before_impact_or_upstream_network(self) -> None:
         command = "python3 -m unittest discover -s scripts/ci -p 'test_ffmpeg_patch*.py' -v"

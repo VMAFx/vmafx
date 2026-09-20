@@ -13,6 +13,12 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "e2e-k8s.yml"
 RULES_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "rule-enforcement.yml"
 NODE_DOCKERFILE = REPO_ROOT / "docker" / "Dockerfile.node"
 SERVER_DOCKERFILE = REPO_ROOT / "Dockerfile.go-server"
+ROOT_DOCKERFILE = REPO_ROOT / "Dockerfile"
+FFMPEG_DOCKERFILE = REPO_ROOT / "Dockerfile.ffmpeg"
+DEV_CONTAINERFILE = REPO_ROOT / "dev" / "Containerfile"
+FFMPEG_SERIES = REPO_ROOT / "ffmpeg-patches" / "series.txt"
+CORE_MESON = REPO_ROOT / "core" / "meson.build"
+MSVC_CLZ_GUARD = "scripts/ci/check-msvc-clz-shim.sh"
 GITIGNORE = REPO_ROOT / ".gitignore"
 KIND_SCRIPT = REPO_ROOT / "test" / "e2e" / "kind-cluster.sh"
 ASSERT_CONTEXT_SCRIPT = REPO_ROOT / "test" / "e2e" / "assert-kind-context.sh"
@@ -63,6 +69,22 @@ def _workflow_step(workflow: str, name: str) -> str:
     return workflow[start:end]
 
 
+def _docker_stage(dockerfile: str, name: str) -> str:
+    """Return one named Docker build stage through the next FROM line."""
+    marker = f" AS {name}"
+    lines = dockerfile.splitlines()
+    start = next(
+        index
+        for index, line in enumerate(lines)
+        if line.startswith("FROM ") and line.rstrip().endswith(marker)
+    )
+    end = next(
+        (index for index in range(start + 1, len(lines)) if lines[index].startswith("FROM ")),
+        len(lines),
+    )
+    return "\n".join(lines[start:end])
+
+
 class E2ERuntimeContractTest(unittest.TestCase):
     """Keep the nightly test aligned with artifacts it actually executes."""
 
@@ -91,6 +113,81 @@ class E2ERuntimeContractTest(unittest.TestCase):
         self.assertIn("test -f /dist/model/vmaf_v0.6.1.json", node_dockerfile)
         self.assertNotIn("cp -r model/ /dist/model/", node_dockerfile)
         self.assertRegex(server_dockerfile, r"(?m)^FROM\s+.+\s+AS\s+go-server\s*$")
+
+    def test_partial_image_contexts_include_configure_time_source_guards(self) -> None:
+        copy = f"COPY {MSVC_CLZ_GUARD} {MSVC_CLZ_GUARD}"
+
+        for dockerfile in (NODE_DOCKERFILE, SERVER_DOCKERFILE):
+            with self.subTest(dockerfile=dockerfile.name):
+                source = dockerfile.read_text(encoding="utf-8")
+                self.assertIn(copy, source)
+                self.assertLess(source.index(copy), source.index("RUN meson setup /build core"))
+
+    def test_partial_image_builders_preserve_libvmaf_build_contract(self) -> None:
+        for dockerfile in (NODE_DOCKERFILE, SERVER_DOCKERFILE):
+            with self.subTest(dockerfile=dockerfile.name):
+                source = dockerfile.read_text(encoding="utf-8")
+                builder = _docker_stage(source, "vmaf-builder")
+                self.assertRegex(builder, r"(?m)^\s+make \\\s*$")
+                self.assertRegex(builder, r"(?m)^\s+xxd \\\s*$")
+                self.assertIn("cp -a /build/src/libvmaf.so* /dist/lib/", builder)
+                self.assertIn(
+                    "cp /build/meson-private/libvmaf.pc /dist/lib/pkgconfig/libvmaf.pc",
+                    builder,
+                )
+                self.assertNotIn("find /build/src", builder)
+
+        node = NODE_DOCKERFILE.read_text(encoding="utf-8")
+        self.assertNotIn('pkg_version="${VMAFX_VERSION#v}"', node)
+
+    def test_ffmpeg_builders_fail_on_every_diagnostic(self) -> None:
+        builders = (
+            ROOT_DOCKERFILE,
+            FFMPEG_DOCKERFILE,
+            DEV_CONTAINERFILE,
+            NODE_DOCKERFILE,
+        )
+
+        for dockerfile in builders:
+            with self.subTest(dockerfile=dockerfile.name):
+                source = dockerfile.read_text(encoding="utf-8")
+                self.assertIn("--fatal-warnings", source)
+                self.assertIn("tee /tmp/ffmpeg-build.log", source)
+                self.assertIn("grep -Ei '(^|[[:space:]])warning([[:space:]#:])'", source)
+                self.assertIn("FATAL: FFmpeg emitted compiler warnings", source)
+
+        compatibility = FFMPEG_DOCKERFILE.read_text(encoding="utf-8")
+        self.assertIn("COPY ffmpeg-patches/ /tmp/ffmpeg-patches/", compatibility)
+        self.assertIn("done < /tmp/ffmpeg-patches/series.txt", compatibility)
+        self.assertNotIn("ffmpeg-libvmaf-gpu.patch", compatibility)
+        self.assertNotIn("--enable-libnpp", compatibility)
+
+        dev = DEV_CONTAINERFILE.read_text(encoding="utf-8")
+        self.assertIn("FATAL %s missing from ffmpeg -encoders", dev)
+        self.assertNotIn("WARN %s missing from ffmpeg -encoders", dev)
+        self.assertIn('test "$missing" -eq 0', dev)
+
+        for dockerfile in (ROOT_DOCKERFILE, FFMPEG_DOCKERFILE):
+            with self.subTest(patch_replay=dockerfile.name):
+                source = dockerfile.read_text(encoding="utf-8")
+                self.assertIn("FATAL: patch", source)
+                self.assertNotIn("patch -p1 <", source)
+
+        series = FFMPEG_SERIES.read_text(encoding="utf-8").splitlines()
+        self.assertIn("0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch", series)
+
+    def test_language_standards_use_warning_clean_meson_options(self) -> None:
+        meson = CORE_MESON.read_text(encoding="utf-8")
+
+        self.assertIn("'c_std=c23,c2x,c17'", meson)
+        self.assertIn("'cpp_std=c++23,c++latest'", meson)
+        self.assertIn("std::expected in selected C++ standard", meson)
+        self.assertNotIn("c_std_args", meson)
+        self.assertNotIn("cxx_std_flag", meson)
+        self.assertNotRegex(
+            meson,
+            r"add_project_arguments\([^\n]*(?:-std=|/std:)",
+        )
 
     def test_all_runtime_images_are_exported_and_loaded(self) -> None:
         export_step = _workflow_step(self.workflow, "Export images as tar for transfer to e2e job")

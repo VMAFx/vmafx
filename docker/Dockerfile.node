@@ -12,7 +12,7 @@
 # Every target includes:
 #   - vmafx-node Go binary (cmd/vmafx-node)
 #   - libvmaf.so (built from core/)
-#   - ffmpeg n9.0.1 with the fork's ffmpeg-patches/ applied
+#   - ffmpeg n9.0.2 with the fork's ffmpeg-patches/ applied
 #   - Full soft-codec inventory: libx264, libx265, libvpx, libsvtav1, libdav1d
 #   - libvmaf filter + fork-specific VMAF filters compiled in
 #
@@ -24,7 +24,7 @@
 #
 # Build args (all optional):
 #   VMAF_BUILD_JOBS  — ninja / make parallelism (default: 4)
-#   FFMPEG_TAG       — FFmpeg release tag to pin (default: n9.0.1)
+#   FFMPEG_TAG       — FFmpeg release tag to pin (default: n9.0.2)
 #   SVTAV1_VERSION   — SVT-AV1 release tag (default: 4.2.0)
 #
 # ADR-0709: vmafx-phase4b-distributed-platform (Phase 4b umbrella)
@@ -73,10 +73,12 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         gcc \
         g++ \
+        make \
         meson \
         ninja-build \
         nasm \
         pkg-config \
+        xxd \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -84,6 +86,10 @@ WORKDIR /src
 # Keep the expensive C/C++ layer independent of Go, workflow, and docs edits.
 COPY core/ core/
 COPY model/ model/
+# core/test/meson.build registers this source guard during configure, even
+# when the image only needs release binaries. Keep the partial build context
+# closed over every configure-time input rather than disabling the test.
+COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/check-msvc-clz-shim.sh
 
 RUN meson setup /build core \
         --buildtype=release \
@@ -94,14 +100,15 @@ RUN meson setup /build core \
         -Denable_avx512=true \
     && ninja -C /build -j"${VMAF_BUILD_JOBS}"
 
-RUN mkdir -p /dist/lib /dist/bin /dist/model \
-    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
+RUN mkdir -p /dist/lib/pkgconfig /dist/bin /dist/model \
+    && cp -a /build/src/libvmaf.so* /dist/lib/ \
+    && cp /build/meson-private/libvmaf.pc /dist/lib/pkgconfig/libvmaf.pc \
     && cp /build/tools/vmaf /dist/bin/ \
     && cp -r model/. /dist/model/ \
     && test -f /dist/model/vmaf_v0.6.1.json
 
 # ---------------------------------------------------------------------------
-# Stage 2 — ffmpeg-builder: build ffmpeg n9.0.1 with ffmpeg-patches/ applied
+# Stage 2 — ffmpeg-builder: build ffmpeg n9.0.2 with ffmpeg-patches/ applied
 # ---------------------------------------------------------------------------
 # Shared across all node variants (cpu/cuda/rocm/sycl). The CUDA/ROCm/SYCL
 # variants add HW encoder support on top of this common base.
@@ -145,18 +152,11 @@ RUN apt-get update \
 
 # ---- libvmaf headers + library for --enable-libvmaf configure probe --------
 COPY --from=vmaf-builder /dist/lib/ /usr/local/lib/
-# Copy public headers from source tree (pkg-config needs them)
+# Copy public headers from source tree (pkg-config consumers need them).
 COPY core/include/libvmaf/ /usr/local/include/libvmaf/
-# Write a minimal libvmaf.pc so ffmpeg's pkg-config probe succeeds
-ARG VMAFX_VERSION
-# The single-quoted pkg-config template must preserve literal `${prefix}` for
-# pkg-config expansion at runtime.
-# hadolint ignore=SC2016
-RUN mkdir -p /usr/local/lib/pkgconfig \
-    && pkg_version="${VMAFX_VERSION#v}" \
-    && printf 'prefix=/usr/local\nexec_prefix=${prefix}\nlibdir=${exec_prefix}/lib\nincludedir=${prefix}/include\n\nName: libvmaf\nDescription: VMAF library\nVersion: %s\nLibs: -L${libdir} -lvmaf\nCflags: -I${includedir} -I${includedir}/libvmaf\n' "${pkg_version}" \
-        > /usr/local/lib/pkgconfig/libvmaf.pc \
-    && ldconfig
+# Meson generated this file from vmaf_soname_version, the authoritative
+# interface version consumed by FFmpeg's pkg-config range probe.
+RUN ldconfig
 
 # ---- SVT-AV1 source build --------------------------------------------------
 # Ubuntu's libsvtav1-dev omits SvtAv1Enc.pc. Build from source so
@@ -180,7 +180,7 @@ RUN git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
 # ---------------------------------------------------------------------------
 FROM ffmpeg-deps-base AS ffmpeg-builder-cpu
 
-ARG FFMPEG_TAG=n9.0.1
+ARG FFMPEG_TAG=n9.0.2
 ARG FFMPEG_REMOTE=https://github.com/FFmpeg/FFmpeg.git
 
 # Restate the shell in this named stage so static Dockerfile linters can prove
@@ -188,9 +188,9 @@ ARG FFMPEG_REMOTE=https://github.com/FFmpeg/FFmpeg.git
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 COPY ffmpeg-patches/ /src/ffmpeg-patches/
+COPY scripts/ci/checkout-annotated-tag.sh /usr/local/bin/checkout-annotated-tag
 
-RUN git clone --depth=1 --branch "${FFMPEG_TAG}" \
-        "${FFMPEG_REMOTE}" /src/ffmpeg
+RUN checkout-annotated-tag "${FFMPEG_REMOTE}" "${FFMPEG_TAG}" /src/ffmpeg
 
 WORKDIR /src/ffmpeg
 
@@ -210,6 +210,7 @@ RUN git config user.email "vmafx-node-builder@localhost" \
 RUN multiarch="$(gcc -print-multiarch)" \
     && PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/local/lib/${multiarch}/pkgconfig:/usr/lib/${multiarch}/pkgconfig:/usr/lib/pkgconfig" \
     ./configure \
+        --fatal-warnings \
         --prefix=/ffmpeg-install \
         --enable-gpl --enable-version3 --enable-nonfree \
         --enable-libvmaf \
@@ -220,7 +221,12 @@ RUN multiarch="$(gcc -print-multiarch)" \
         --enable-libass --enable-libfreetype --enable-libfontconfig --enable-libfribidi \
         --extra-cflags="-I/usr/local/include" \
         --extra-ldflags="-L/usr/local/lib" \
-    && make -j"$(nproc)" \
+    && make -j"$(nproc)" 2>&1 | tee /tmp/ffmpeg-build.log \
+    && if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' /tmp/ffmpeg-build.log; then \
+        echo "FATAL: FFmpeg emitted compiler warnings" >&2; \
+        exit 1; \
+    fi \
+    && rm /tmp/ffmpeg-build.log \
     && make install
 
 # Stage the complete non-glibc dependency closure for ffmpeg/ffprobe. `ldd`
@@ -266,13 +272,7 @@ RUN apt-get update \
 COPY --from=vmaf-builder /dist/lib/ /usr/local/lib/
 COPY core/include/libvmaf/ /usr/local/include/libvmaf/
 ARG VMAFX_VERSION
-# Preserve literal pkg-config variables; see the matching builder template.
-# hadolint ignore=SC2016
-RUN mkdir -p /usr/local/lib/pkgconfig \
-    && pkg_version="${VMAFX_VERSION#v}" \
-    && printf 'prefix=/usr/local\nexec_prefix=${prefix}\nlibdir=${exec_prefix}/lib\nincludedir=${prefix}/include\n\nName: libvmaf\nDescription: VMAF library\nVersion: %s\nLibs: -L${libdir} -lvmaf\nCflags: -I${includedir} -I${includedir}/libvmaf\n' "${pkg_version}" \
-        > /usr/local/lib/pkgconfig/libvmaf.pc \
-    && ldconfig
+RUN ldconfig
 
 WORKDIR /src
 COPY . .

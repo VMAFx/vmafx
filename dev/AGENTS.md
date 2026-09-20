@@ -306,13 +306,20 @@ would fail to compile:
    --enable-cuda-nvcc --enable-libvpl --enable-amf`, in addition to
    software codec flags.** Dropping any one silently disappears
    hardware-encoder family from `ffmpeg -encoders` listing, breaks
-   `vmaf-tune compare` sweep. Build-time encoder probe at end of
-   stage 3.5 catches drops with `WARN <encoder>
-   missing` lines. Do NOT add `--enable-libnpp`. FFmpeg n9.0.1's NPP
-   support tops out
-   at CUDA 12.x; image's `cuda-toolkit` meta-package tracks 13.x.
-   Passing flag hard-errors at configure time. `scale_cuda` (built
-   via `--enable-cuda-nvcc`) = replacement for `scale_npp` pipeline.
+   `vmaf-tune compare` sweep. The build-time encoder probe at the end
+   of stage 3.5 fails if any promised encoder is missing; listing a
+   compiled hardware encoder does not require a device. Do NOT add
+   `--enable-libnpp`. FFmpeg n9.0.2 has
+   removed libnpp support; the option is a compatibility no-op that
+   emits `libnpp has been removed and enabling it does nothing`.
+   Keeping it absent preserves warning-clean configure output.
+   `scale_cuda` (built via `--enable-cuda-nvcc`) covers the GPU-scale
+   pipeline. Reconsider only if a future FFmpeg release restores a
+   real libnpp probe and the matching CUDA contract is validated.
+   AMF and FFmpeg release checkouts use
+   `scripts/ci/checkout-annotated-tag.sh`. Direct `git clone --depth=1
+   --branch <tag>` emits a warning for both annotated tags in the image's Git
+   version and violates the zero-diagnostic build contract.
 6. **FFmpeg SYCL patch must use current libvmaf state-free ownership
    contract.** `libvmaf_sycl.h` declares
    `vmaf_sycl_state_free(VmafSyclState **sycl_state)`, matching

@@ -2,11 +2,13 @@
 # hadolint ignore=DL3006,DL3007
 FROM vmaf:latest
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends pkg-config && \
     rm -rf /var/lib/apt/lists/*
 
-ARG FFMPEG_TAG=n9.0.1
+ARG FFMPEG_TAG=n9.0.2
 ARG FFMPEG_REMOTE=https://github.com/FFmpeg/FFmpeg.git
 # Matches the main Dockerfile NVCC_FLAGS: Turing + Ampere + Hopper +
 # Blackwell consumer. CUDA 13 removed sm_50/60/70.
@@ -16,15 +18,22 @@ ARG NVCC_FLAGS="-gencode arch=compute_75,code=sm_75 -gencode arch=compute_80,cod
 RUN wget -q "${FFMPEG_REMOTE%.git}/archive/${FFMPEG_TAG}.zip" && \
     unzip -q "${FFMPEG_TAG}.zip"
 
-# apply libvmaf GPU filter patch (SYCL)
-COPY patches/ffmpeg-libvmaf-gpu.patch /tmp/
+# Apply the same cumulative patch series as every other FFmpeg image.
+COPY ffmpeg-patches/ /tmp/ffmpeg-patches/
 WORKDIR /FFmpeg-${FFMPEG_TAG}
-RUN if ! git apply /tmp/ffmpeg-libvmaf-gpu.patch 2>/dev/null; then \
-        patch -p1 < /tmp/ffmpeg-libvmaf-gpu.patch; \
-    fi
+RUN while IFS= read -r patch_name; do \
+        case "${patch_name}" in \
+            ""|"#"*) continue ;; \
+        esac ; \
+        echo "applying ffmpeg-patches/${patch_name}" ; \
+        if ! git apply "/tmp/ffmpeg-patches/${patch_name}"; then \
+            echo "FATAL: patch ${patch_name} did not apply against ${FFMPEG_TAG}" >&2 ; \
+            exit 1 ; \
+        fi ; \
+    done < /tmp/ffmpeg-patches/series.txt
 
 RUN ./configure \
-        --enable-libnpp \
+        --fatal-warnings \
         --enable-nonfree \
         --enable-nvdec \
         --enable-nvenc \
@@ -35,7 +44,12 @@ RUN ./configure \
         --enable-ffnvcodec \
         --disable-stripping \
         --nvccflags="${NVCC_FLAGS}" && \
-    make -j"$(nproc)" && \
+    make -j"$(nproc)" 2>&1 | tee /tmp/ffmpeg-build.log && \
+    if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' /tmp/ffmpeg-build.log; then \
+        echo "FATAL: FFmpeg emitted compiler warnings" >&2; \
+        exit 1; \
+    fi && \
+    rm /tmp/ffmpeg-build.log && \
     make install
 
 WORKDIR /

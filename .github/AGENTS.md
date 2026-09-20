@@ -526,6 +526,22 @@ The MoltenVK lane (ADR-0338) went with the Vulkan backend (ADR-0726). The
 `macOS clang` and `macOS clang+DNN`, are advisory: their failure does not
 fail the workflow run. Neither is a required check.
 
+## FFmpeg diagnostics are fail-closed
+
+Every FFmpeg build in `workflows/ffmpeg-integration.yml` configures with
+`--fatal-warnings`, captures the complete compiler log, and fails on GCC,
+Clang, or NVCC warning diagnostics. The build compiles all test programs and
+runs every generated, sample-independent FATE target under the same log gate,
+so test translation units share the warning-clean contract with production
+objects. Capture `make -s fate-list` first and select only `fate-*` lines: a
+pristine tree may also emit a generated-makefile status line. Release checkouts
+must use `scripts/ci/checkout-annotated-tag.sh`; direct shallow clones warn on
+the annotated FFmpeg tag. The ordinary GCC/macOS matrix deliberately
+avoids patches 0001-0018 so it tests stock FFmpeg surfaces against libvmaf, but
+applies patch 0019 alone to harden the pinned upstream source. The SYCL lane
+replays the complete series. Both paths require exact `git apply`; never
+restore a fuzz-capable `patch -p1` fallback or quiet compiler output.
+
 ## Renovate (ADR-0363) supersedes Dependabot
 
 Note: pin updates to `codeql-action/upload-sarif` now arrive via Renovate
