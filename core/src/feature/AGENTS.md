@@ -1697,6 +1697,7 @@ Concretely, when kernel promotes `float` inputs to `double`, do promotion
 **before** arithmetic, not after. `(double)a - (double)b` is exact for two
 floats; `(double)(a - b)` is not, and mixing two between vector body and
 its scalar tail makes result depend on vector width.
+
 ## Twin option tables mirror the CPU's aliases and semantics (ADR-1214)
 
 When a GPU twin copies an option from the CPU extractor, copy the `alias` and
