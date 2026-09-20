@@ -327,6 +327,7 @@ Same rule applies to `AdmFixedParametersHip` (~244 bytes) once that
 follow-up scoped; see ADR-0759 alternatives table. Do not add new
 by-value large struct parameters to ADM kernels without explicit ADR
 justification.
+
 - `adm_csf_kernel_1_4`, `i4_adm_csf_kernel_1_4` (`integer_adm/adm_csf.hip`),
   `i4_adm_cm_line_kernel` and `adm_cm_line_kernel_8` (`integer_adm/adm_cm.hip`)
   take `const AdmBufferHip *__restrict__ buf_ptr`. By value, the 328-byte
