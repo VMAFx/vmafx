@@ -12,17 +12,20 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import ModuleType
 
 ROOT = Path(__file__).resolve().parents[3]
 
 
-def load_ratchet():
+def load_ratchet() -> ModuleType:
+    """Import the hyphenated ratchet script under test by path."""
     spec = importlib.util.spec_from_file_location(
         "tidy_ratchet", ROOT / "scripts/ci/tidy-ratchet.py"
     )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot build an import spec for scripts/ci/tidy-ratchet.py")
     module = importlib.util.module_from_spec(spec)
     sys.modules["tidy_ratchet"] = module
-    assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
 
@@ -78,7 +81,7 @@ class ExtraArgForwarding(unittest.TestCase):
             stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
             source = here / "unit.c"
             source.write_text("int x;\n", encoding="utf-8")
-            previous = os.getcwd()
+            previous = Path.cwd()
             os.chdir(here)
             try:
                 _src, output, rc = ratchet.run_one("scripts/wrapper.sh", build, [], (source, build))
