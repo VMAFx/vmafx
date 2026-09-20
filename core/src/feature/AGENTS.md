@@ -1706,6 +1706,7 @@ every non-default option, so `cs` on the twin and `scf` on the CPU means two
 different keys for one feature. And copy the *semantics* from the branch the
 twin actually implements — `adm_csf_scale` is a Barten-mode argument, so in the
 Watson-only twins it must be a no-op exactly as it is on the CPU.
+
 ## Integer ADM's 16-bit vertical DWT sums in int64
 
 - `adm_dwt2_vpass16_tap4()` (`integer_adm.h`) = only 16-bit vertical DWT
