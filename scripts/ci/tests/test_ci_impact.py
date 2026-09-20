@@ -115,6 +115,7 @@ class ConfigContract(unittest.TestCase):
             ".gemini/settings.json",
             ".github/ci-impact.json",
             ".github/workflows/required-aggregator.yml",
+            ".github/workflows/scorecard-policy.yml",
             ".pre-commit-config.yaml",
             ".gosec.json",
             ".helix/languages.toml",

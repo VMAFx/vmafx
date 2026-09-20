@@ -124,6 +124,7 @@
     ".gemini/**",
     ".github/ci-impact.json",
     ".github/workflows/required-aggregator.yml",
+    ".github/workflows/scorecard-policy.yml",
     ".github/workflows/go-ci.yml",
     ".github/workflows/lint-and-format.yml",
     ".github/workflows/security-scans.yml",

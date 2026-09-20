@@ -24126,7 +24126,7 @@ to pass cleanly on CPU-only CI runners.
   and [Research-0688](../../docs/research/0688-hip-raphael-igpu-divergence.md).
 
 
-The required standards gate now replays declared HISS enforcement fixtures on Linux, macOS, and Windows with strict-success aggregation; the canonical agent contract and README badge identify the current HISS-21 standard.
+The required standards gate now replays declared HISS enforcement fixtures on Linux, macOS, and Windows with strict-success aggregation; the canonical agent contract and README badge identify the current HISS-21 standard. Draft Scorecard runs retain their deliberate policy failure without adding a false missing-artifact error, and edits to that required workflow now force a full CI impact plan.
 
 
 

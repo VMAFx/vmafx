@@ -44,6 +44,16 @@ the generic aggregator policy accepts an absent check as a path-filter skip and
 accepts `skipped` or `neutral` conclusions. A contract test therefore pins the
 workflow matrix, local entrypoints, strict list, and success-only evaluator.
 
+## Hosted validation follow-up
+
+PR #1514 passed the replay job on Linux, macOS, and Windows. Its deliberate
+draft failure also exposed an unrelated error cascade in the required Scorecard
+workflow: `if: always()` tried to upload three artifacts after the ready-review
+guard had stopped the job before any could exist. The upload now runs only for
+non-draft attempts while retaining `if-no-files-found: error` for real scans.
+The Scorecard PR workflow is also a full-impact authority path, so its contract
+tests cannot be skipped by the impact planner when that workflow changes.
+
 ## Reproducer
 
 ```bash

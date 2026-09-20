@@ -57,7 +57,7 @@ jobs:
             --receipt "$RUNNER_TEMP/scorecard-local-gate.json" \
             --summary "$GITHUB_STEP_SUMMARY"
       - name: Preserve local findings and source receipt
-        if: always()
+        if: ${{ always() && github.event.pull_request.draft == false }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: scorecard-local-${{ github.run_id }}-${{ github.run_attempt }}

@@ -51601,3 +51601,9 @@ matrix green by dropping the contradictory fixture or removing a required
 context from `.github/workflows/required-aggregator.yml`. The four governance
 contexts live in `strictMustReport`: absence, skip, or neutral is a failure, not
 an ADR-0313 path-filter exemption.
+
+Hosted replay validation also proved that the draft-only Scorecard guard runs
+before its artifacts exist. Preserve the non-draft predicate on the artifact
+upload in `.github/workflows/scorecard-policy.yml`; `if-no-files-found: error`
+remains mandatory once a real scan starts. Keep that workflow in
+`.github/ci-impact.json`'s `full_patterns` so changes exercise its contracts.
