@@ -347,14 +347,16 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # The matched set of Intel NEO runtime, gmmlib, and IGC packages is derived
 # dynamically from the pinned NEO_VER release metadata at build time. ADR-1145.
 ARG NEO_VER=26.35.39758.10
-ARG GITHUB_TOKEN=""
 COPY dev/scripts/fetch-intel-neo.py /tmp/fetch-intel-neo.py
 # hadolint ignore=DL3003,DL3008,DL3009
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends clinfo \
     && mkdir -p /tmp/neo && cd /tmp/neo \
-    && python3 /tmp/fetch-intel-neo.py --neo-ver "${NEO_VER}" ${GITHUB_TOKEN:+--github-token "${GITHUB_TOKEN}"} \
+    && token_args=() \
+    && if [[ -n "${GITHUB_TOKEN:-}" ]]; then token_args=(--github-token "${GITHUB_TOKEN}"); fi \
+    && python3 /tmp/fetch-intel-neo.py --neo-ver "${NEO_VER}" "${token_args[@]}" \
     && apt-get update \
     && apt-get install -y --no-install-recommends ./*.deb \
     && cd / && rm -rf /tmp/neo /tmp/fetch-intel-neo.py
